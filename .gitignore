@@ -1,5 +1,4 @@
 __build
-__build_mlir
 build
 /3rdParty/llvm
 .vs
