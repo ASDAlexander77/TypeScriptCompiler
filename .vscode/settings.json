@@ -16,5 +16,6 @@
     "3rdParty": true,
     ".vscode": true,
     ".vs": true
-  }
+  },
+  "python.pythonPath": "C:\\tools\\Python36\\python.exe"
 }

@@ -4,10 +4,11 @@ set(LIBS
         ${dialect_libs}
         ${conversion_libs}
         MLIROptLib
+        MLIRTypeScript
         )
-add_llvm_executable(tsc driver.cpp)
+add_llvm_executable(tsc-opt tsc-opt.cpp)
 
-llvm_update_compile_flags(tsc)
-target_link_libraries(tsc PRIVATE ${LIBS})
+llvm_update_compile_flags(tsc-opt)
+target_link_libraries(tsc-opt PRIVATE ${LIBS})
 
-mlir_check_all_link_libraries(tsc)
+mlir_check_all_link_libraries(tsc-opt)
