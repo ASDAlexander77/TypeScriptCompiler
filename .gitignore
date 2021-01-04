@@ -4,3 +4,4 @@ __build_mlir
 /3rdParty/llvm
 .vs
 /tsc/.vs
+/tsc/out
