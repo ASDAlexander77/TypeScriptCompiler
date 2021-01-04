@@ -1,0 +1,6 @@
+__build
+__build_mlir
+/tsc/__build
+/3rdParty/llvm
+.vs
+/tsc/.vs

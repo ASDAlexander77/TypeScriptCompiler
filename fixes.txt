@@ -1,0 +1,18 @@
+1) can't copy compiled files 
+
+Solution:
+
+https://stackoverflow.com/questions/46108390/building-llvm-with-cmake-and-visual-stuidio-fails-to-install
+
+https://github.com/llvm/llvm-project/blob/master/compiler-rt/cmake/Modules/AddCompilerRT.cmake#L12
+
+string(REGEX REPLACE "\\$\\(Configuration\\)" "$<CONFIG>" output_dir "${output_dir}")
+
+2) mlir_async_runtime.lib is missing
+
+Solution:
+
+in MLIRTargets-release.cmake comment lines 
+
+list(APPEND _IMPORT_CHECK_FILES_FOR_mlir_async_runtime "${_IMPORT_PREFIX}/lib/mlir_async_runtime.lib" "${_IMPORT_PREFIX}/bin/mlir_async_runtime.dll" )
+
