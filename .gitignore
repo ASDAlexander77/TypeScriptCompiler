@@ -1,7 +1,7 @@
 __build
 __build_mlir
-/tsc/__build
+build
 /3rdParty/llvm
 .vs
-/tsc/.vs
+.vscode
 /tsc/out
