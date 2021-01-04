@@ -1,0 +1,20 @@
+{
+  "cmake.sourceDirectory": "${workspaceFolder}/tsc",
+  "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+
+  "files.exclude": {
+    "**/__build": true,
+    "**/__build_*": true,
+    "**/.vs": true,
+    "**/*.csproj": true,
+    "**/*.sln": true,
+    "**/bin": true,
+    "**/build": true,
+    "**/node_modules": true,
+    "**/obj": true,
+    "**/out": true,
+    "3rdParty": true,
+    ".vscode": true,
+    ".vs": true
+  }
+}
