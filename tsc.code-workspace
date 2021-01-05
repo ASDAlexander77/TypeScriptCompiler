@@ -1,0 +1,45 @@
+{
+	"folders": [
+		{
+			"name": "TypeScript Compiler (Root)",
+			"path": "./tsc"
+		},
+		{
+			"name": "TypeScript Compiler Source (Lib)",
+			"path": "./tsc/lib"
+		},
+		{
+			"name": "TypeScript Compiler Include",
+			"path": "./tsc/include"
+		},
+		{
+			"name": "TypeScript Compiler Tests",
+			"path": "./tsc/tests"
+		},
+		{
+			"name": "TypeScript tsc-opt",
+			"path": "./tsc/tsc-opt"
+		},
+		{
+			"name": "TypeScript tsc-translate",
+			"path": "./tsc/tsc-translate"
+		}
+	],
+	"settings": {
+		"files.exclude": {
+			"**/__build": true,
+			"**/__build_*": true,
+			"**/.vs": true,
+			"**/*.csproj": true,
+			"**/*.sln": true,
+			"**/bin": true,
+			"**/build": true,
+			"**/node_modules": true,
+			"**/obj": true,
+			"**/out": true,
+			"3rdParty": true,
+			".vscode": true,
+			".vs": true
+		}
+	}
+}
