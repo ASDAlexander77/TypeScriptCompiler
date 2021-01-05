@@ -17,8 +17,6 @@ project(tsc LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 14 CACHE STRING "C++ standard to conform to")
 
-string(TOLOWER ${CMAKE_BUILD_TYPE} CMAKE_BUILD_TYPE_LOWER)
-set(MLIR_ROOT ${PROJECT_SOURCE_DIR}/../3rdParty/llvm/${CMAKE_BUILD_TYPE_LOWER})
 find_package(MLIR REQUIRED CONFIG)
 
 message(STATUS "Using MLIRConfig.cmake in: ${MLIR_DIR}")
@@ -44,6 +42,7 @@ add_definitions(${LLVM_DEFINITIONS})
 
 add_subdirectory(include)
 add_subdirectory(lib)
+#add_subdirectory(test)
 add_subdirectory(tsc-opt)
 add_subdirectory(tsc-translate)
 
