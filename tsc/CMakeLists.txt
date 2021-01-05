@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.13.4)
+cmake_minimum_required(VERSION 3.19.2)
 
 if(POLICY CMP0068)
   cmake_policy(SET CMP0068 NEW)
@@ -16,6 +16,20 @@ endif()
 project(tsc LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 14 CACHE STRING "C++ standard to conform to")
+
+# set vars
+if ("${LLVM_EXTERNAL_LIT}" STREQUAL "" OR "${LLVM_EXTERNAL_LIT}" STREQUAL "LLVM_EXTERNAL_LIT-NOTFOUND")
+file(REAL_PATH "${CMAKE_SOURCE_DIR}/../__build/llvm/debug/bin/llvm-lit.py" LLVM_EXTERNAL_LIT)
+message(STATUS "LLVM_EXTERNAL_LIT is ${LLVM_EXTERNAL_LIT}")
+endif()
+
+if ("${MLIR_DIR}" STREQUAL "" OR "${MLIR_DIR}" STREQUAL "MLIR_DIR-NOTFOUND")
+file(REAL_PATH "${CMAKE_SOURCE_DIR}/../3rdParty/llvm/debug/lib/cmake/mlir" MLIR_DIR)
+message(STATUS "MLIR_DIR is ${MLIR_DIR}")
+endif()
+
+set(CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE "x64")
+message(STATUS "CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE is ${CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE}")
 
 find_package(MLIR REQUIRED CONFIG)
 
