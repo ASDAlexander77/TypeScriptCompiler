@@ -1,5 +1,5 @@
 {
-  "cmake.sourceDirectory": "${workspaceFolder}/tsc",
+  "cmake.sourceDirectory": "${workspaceFolder}/..",
   "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
   "cmake.autoSelectActiveFolder": false,
 

@@ -13,6 +13,10 @@
 			"path": "./tsc/include"
 		},
 		{
+			"name": "TypeScript Compiler",
+			"path": "./tsc/tsc"
+		},
+		{
 			"name": "TypeScript Compiler Tests",
 			"path": "./tsc/tests"
 		},
@@ -40,6 +44,9 @@
 			"3rdParty": true,
 			".vscode": true,
 			".vs": true
+		},
+		"files.associations": {
+			"memory": "cpp"
 		}
 	}
 }
