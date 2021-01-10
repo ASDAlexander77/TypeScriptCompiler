@@ -3,9 +3,7 @@
         {
             "name": "Win32",
             "includePath": [
-                "${workspaceFolder}/**",
-                "${workspaceFolder}/../include",
-                "${workspaceFolder}/../../3rdParty/llvm/debug/include"
+                "${workspaceFolder}/**"
             ],
             "defines": [
                 "_DEBUG",

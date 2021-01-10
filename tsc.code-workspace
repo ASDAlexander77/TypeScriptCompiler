@@ -46,7 +46,9 @@
 			".vs": true
 		},
 		"files.associations": {
-			"memory": "cpp"
+			"memory": "cpp",
+			"iterator": "cpp",
+			"*.inc": "cpp"
 		}
 	}
 }
