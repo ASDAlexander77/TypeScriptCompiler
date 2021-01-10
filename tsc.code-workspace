@@ -14,7 +14,7 @@
 		},
 		{
 			"name": "TypeScript Compiler Tests",
-			"path": "./tsc/tests"
+			"path": "./tsc/test"
 		},
 		{
 			"name": "TypeScript tsc-opt",
