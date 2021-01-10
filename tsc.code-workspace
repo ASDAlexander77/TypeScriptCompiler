@@ -1,10 +1,6 @@
 {
 	"folders": [
 		{
-			"name": "TypeScript Compiler (Root)",
-			"path": "./tsc"
-		},
-		{
 			"name": "TypeScript Compiler Source (Lib)",
 			"path": "./tsc/lib"
 		},
