@@ -9,6 +9,10 @@
 			"path": "./tsc/include"
 		},
 		{
+			"name": "TypeScript Grammar",
+			"path": "./tsc/tsc-grammar"
+		},
+		{
 			"name": "TypeScript Compiler",
 			"path": "./tsc/tsc"
 		},
@@ -45,6 +49,13 @@
 			"memory": "cpp",
 			"iterator": "cpp",
 			"*.inc": "cpp"
+		},
+		"antlr4.generation": {
+			"mode": "external",
+			"language": "Cpp",
+			"visitors": true,
+			"outputDir": "./generated",
+			"package": "typescript"
 		}
 	}
 }

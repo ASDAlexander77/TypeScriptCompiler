@@ -2,4 +2,5 @@ __build
 build
 /3rdParty/llvm
 .vs
+.antlr
 /tsc/out
