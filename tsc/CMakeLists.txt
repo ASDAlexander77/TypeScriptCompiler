@@ -17,6 +17,8 @@ project(tsc LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 14 CACHE STRING "C++ standard to conform to")
 
+##### LLVM config ########
+
 # set vars
 if ("${LLVM_EXTERNAL_LIT}" STREQUAL "" OR "${LLVM_EXTERNAL_LIT}" STREQUAL "LLVM_EXTERNAL_LIT-NOTFOUND")
 file(REAL_PATH "${CMAKE_SOURCE_DIR}/../__build/llvm/debug/bin/llvm-lit.py" LLVM_EXTERNAL_LIT)
@@ -54,9 +56,30 @@ include_directories(${PROJECT_BINARY_DIR}/include)
 link_directories(${LLVM_BUILD_LIBRARY_DIR})
 add_definitions(${LLVM_DEFINITIONS})
 
+###### ANTLR4 config ########
+
+# required if linking to static library
+add_definitions(-DANTLR4CPP_STATIC)
+
+# using /MD flag for antlr4_runtime (for Visual C++ compilers only)
+set(ANTLR4_WITH_STATIC_CRT OFF)
+# add external build for antlrcpp
+include(ExternalAntlr4Cpp)
+# add antrl4cpp artifacts to project environment
+include_directories(${ANTLR4_INCLUDE_DIRS})
+
+# set variable pointing to the antlr tool that supports C++
+# this is not required if the jar file can be found under PATH environment
+set(ANTLR_EXECUTABLE /home/user/antlr-4.9.1-complete.jar)
+# add macros to generate ANTLR Cpp code from grammar
+find_package(ANTLR REQUIRED)
+
+###### 
+
 add_subdirectory(include)
 add_subdirectory(lib)
 add_subdirectory(test)
+add_subdirectory(tsc-grammar)
 add_subdirectory(tsc)
 add_subdirectory(tsc-opt)
 add_subdirectory(tsc-translate)
