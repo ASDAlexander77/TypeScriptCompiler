@@ -10,6 +10,7 @@ get_property(conversion_libs GLOBAL PROPERTY MLIR_CONVERSION_LIBS)
 set(LIBS
         ${dialect_libs}
         ${conversion_libs}
+	antlr4_static
   	MLIRAnalysis
   	MLIREDSC
   	MLIRExecutionEngine
@@ -28,6 +29,6 @@ add_llvm_executable(tsc tsc.cpp
 	)
 
 llvm_update_compile_flags(tsc)
-target_link_libraries(tsc antlr4_static PRIVATE ${LIBS})
+target_link_libraries(tsc PRIVATE ${LIBS})
 
 mlir_check_all_link_libraries(tsc)
