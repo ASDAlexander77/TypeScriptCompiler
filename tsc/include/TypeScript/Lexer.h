@@ -1,10 +1,15 @@
 #ifndef MLIR_TYPESCRIPT_LEXER_H_
 #define MLIR_TYPESCRIPT_LEXER_H_
 
+#include "TypeScriptLexerANTLR.h"
+#include "TypeScriptParserANTLR.h"
+
 #include "llvm/ADT/StringRef.h"
 
 #include <memory>
 #include <string>
+
+#define __EOF__ (-1)
 
 namespace typescript
 {
@@ -100,7 +105,7 @@ namespace typescript
     {
       // The current line buffer should not be empty unless it is the end of file.
       if (curLineBuffer.empty())
-        return EOF;
+        return __EOF__;
       ++curCol;
       auto nextchar = curLineBuffer.front();
       curLineBuffer = curLineBuffer.drop_front();
@@ -163,14 +168,14 @@ namespace typescript
         do
         {
           lastChar = Token(getNextChar());
-        } while (lastChar != EOF && lastChar != '\n' && lastChar != '\r');
+        } while (lastChar != __EOF__ && lastChar != '\n' && lastChar != '\r');
 
-        if (lastChar != EOF)
+        if (lastChar != __EOF__)
           return getTok();
       }
 
       // Check for end of file.  Don't eat the EOF.
-      if (lastChar == EOF)
+      if (lastChar == __EOF__)
         return tok_eof;
 
       // Otherwise, just return the character as its ascii value.

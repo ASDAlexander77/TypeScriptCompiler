@@ -76,7 +76,8 @@ include_directories(${ANTLR4_INCLUDE_DIRS})
 
 # set variable pointing to the antlr tool that supports C++
 # this is not required if the jar file can be found under PATH environment
-set(ANTLR_EXECUTABLE ${CMAKE_SOURCE_DIR}/../3rdParty/antlr-bin/antlr-4.9.1-complete.jar)
+file(REAL_PATH "${CMAKE_SOURCE_DIR}/../3rdParty/antlr-bin/antlr-4.9.1-complete.jar" ANTLR_EXECUTABLE)
+message(STATUS "ANTLR_EXECUTABLE is ${ANTLR_EXECUTABLE}, Java executable is ${Java_JAVA_EXECUTABLE}")
 # add macros to generate ANTLR Cpp code from grammar
 find_package(ANTLR REQUIRED)
 
@@ -85,7 +86,6 @@ find_package(ANTLR REQUIRED)
 add_subdirectory(include)
 add_subdirectory(lib)
 add_subdirectory(test)
-add_subdirectory(tsc-grammar)
 add_subdirectory(tsc)
 add_subdirectory(tsc-opt)
 add_subdirectory(tsc-translate)

@@ -28,10 +28,11 @@
 using namespace typescript;
 namespace cl = llvm::cl;
 
-static cl::opt<std::string> inputFilename(cl::Positional,
-                                          cl::desc("<input TypeScript file>"),
-                                          cl::init("-"),
-                                          cl::value_desc("filename"));
+static cl::opt<std::string> inputFilename(
+    cl::Positional,
+    cl::desc("<input TypeScript file>"),
+    cl::init("-"),
+    cl::value_desc("filename"));
 
 namespace
 {
@@ -43,8 +44,8 @@ namespace
 }
 
 static cl::opt<enum InputType> inputType(
-    "x", 
-    cl::init(TypeScript), 
+    "x",
+    cl::init(TypeScript),
     cl::desc("Decided the kind of output desired"),
     cl::values(clEnumValN(TypeScript, "TypeScript", "load the input file as a TypeScript source.")),
     cl::values(clEnumValN(MLIR, "mlir", "load the input file as an MLIR file")));
@@ -64,7 +65,8 @@ namespace
 }
 
 static cl::opt<enum Action> emitAction(
-    "emit", cl::desc("Select the kind of output desired"),
+    "emit",
+    cl::desc("Select the kind of output desired"),
     cl::values(clEnumValN(DumpAST, "ast", "output the AST dump")),
     cl::values(clEnumValN(DumpMLIR, "mlir", "output the MLIR dump")),
     cl::values(clEnumValN(DumpMLIRAffine, "mlir-affine", "output the MLIR dump after affine lowering")),
@@ -77,8 +79,7 @@ static cl::opt<bool> enableOpt("opt", cl::desc("Enable optimizations"));
 /// Returns a TypeScript AST resulting from parsing the file or a nullptr on error.
 std::unique_ptr<typescript::ModuleAST> parseInputFile(llvm::StringRef filename)
 {
-  llvm::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>> fileOrErr =
-      llvm::MemoryBuffer::getFileOrSTDIN(filename);
+  auto fileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(filename);
   if (std::error_code ec = fileOrErr.getError())
   {
     llvm::errs() << "Could not open input file: " << ec.message() << "\n";

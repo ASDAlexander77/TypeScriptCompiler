@@ -54,7 +54,8 @@
 			"mode": "external",
 			"language": "Cpp",
 			"visitors": true,
-			"outputDir": "./generated",
+			"listeners": false,
+			"outputDir": "./.antlr/generated",
 			"package": "typescript"
 		}
 	}

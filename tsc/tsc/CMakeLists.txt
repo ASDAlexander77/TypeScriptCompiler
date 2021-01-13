@@ -23,10 +23,8 @@ set(LIBS
         MLIROptLib
         MLIRTypeScript
         )
-add_llvm_executable(tsc tsc.cpp
-        ${ANTLR_TypeScriptLexerANTLR_CXX_OUTPUTS}
-        ${ANTLR_TypeScriptParserANTLR_CXX_OUTPUTS}
-	)
+
+add_llvm_executable(tsc tsc.cpp)
 
 llvm_update_compile_flags(tsc)
 target_link_libraries(tsc PRIVATE ${LIBS})
