@@ -88,6 +88,10 @@ std::unique_ptr<typescript::ModuleAST> parseInputFile(llvm::StringRef filename)
   auto buffer = fileOrErr.get()->getBuffer();
   LexerBuffer lexer(buffer.begin(), buffer.end(), std::string(filename));
   Parser parser(lexer);
+
+ // ASD: test
+ lexer.lex();
+
   return parser.parseModule();
 }
 

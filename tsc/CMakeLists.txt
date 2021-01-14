@@ -26,6 +26,10 @@ set(CMAKE_CXX_STANDARD 14 CACHE STRING "C++ standard to conform to")
 ##### LLVM config ########
 
 # set vars
+if ("${CMAKE_BUILD_TYPE}" STREQUAL "")
+set(CMAKE_BUILD_TYPE "Debug")
+endif()
+
 if ("${LLVM_EXTERNAL_LIT}" STREQUAL "" OR "${LLVM_EXTERNAL_LIT}" STREQUAL "LLVM_EXTERNAL_LIT-NOTFOUND")
 file(REAL_PATH "${CMAKE_SOURCE_DIR}/../__build/llvm/${CMAKE_BUILD_TYPE}/bin/llvm-lit.py" LLVM_EXTERNAL_LIT)
 message(STATUS "LLVM_EXTERNAL_LIT is ${LLVM_EXTERNAL_LIT}")

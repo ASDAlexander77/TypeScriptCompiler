@@ -92,6 +92,15 @@ namespace typescript
     // Return the current column in the file.
     int getCol() { return curCol; }
 
+    void lex() 
+    {
+        antlr4::ANTLRInputStream input("");
+        typescript::TypeScriptLexerANTLR lexer(&input);
+        antlr4::CommonTokenStream tokens(&lexer);
+        typescript::TypeScriptParserANTLR parser(&tokens);    
+        auto* tree = parser.main();
+    }
+
   private:
     /// Delegate to a derived class fetching the next line. Returns an empty
     /// string to signal end of file (EOF). Lines are expected to always finish
@@ -183,16 +192,6 @@ namespace typescript
       lastChar = Token(getNextChar());
       return thisChar;
     }
-
-    void lex() 
-    {
-        antlr4::ANTLRInputStream input("");
-        typescript::TypeScriptLexerANTLR lexer(&input);
-        antlr4::CommonTokenStream tokens(&lexer);
-        typescript::TypeScriptParserANTLR parser(&tokens);    
-        auto* tree = parser.main();
-    }
-
 
     /// The last token read from the input.
     Token curTok = tok_eof;
