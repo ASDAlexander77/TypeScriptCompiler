@@ -1,3 +1,7 @@
+include_directories(
+    ${ANTLR_OUTPUT_DIRS}
+    )
+
 set(LLVM_LINK_COMPONENTS
   Core
   Support
@@ -8,8 +12,8 @@ set(LLVM_LINK_COMPONENTS
 get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
 get_property(conversion_libs GLOBAL PROPERTY MLIR_CONVERSION_LIBS)
 set(LIBS
-        ${dialect_libs}
-        ${conversion_libs}
+    ${dialect_libs}
+    ${conversion_libs}
 	antlr4_static
   	MLIRAnalysis
   	MLIREDSC
@@ -20,9 +24,9 @@ set(LIBS
   	MLIRParser
   	MLIRTargetLLVMIR
   	MLIRSupport
-        MLIROptLib
-        MLIRTypeScript
-        )
+    MLIROptLib
+    MLIRTypeScript
+    )
 
 add_llvm_executable(tsc tsc.cpp)
 

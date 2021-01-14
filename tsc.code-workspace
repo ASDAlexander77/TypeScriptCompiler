@@ -30,6 +30,9 @@
 		}
 	],
 	"settings": {
+		"editor.detectIndentation": false,
+		"editor.insertSpaces": true,
+		"editor.tabSize": 4,
 		"files.exclude": {
 			"**/__build": true,
 			"**/__build_*": true,

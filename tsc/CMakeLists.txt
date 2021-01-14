@@ -27,12 +27,12 @@ set(CMAKE_CXX_STANDARD 14 CACHE STRING "C++ standard to conform to")
 
 # set vars
 if ("${LLVM_EXTERNAL_LIT}" STREQUAL "" OR "${LLVM_EXTERNAL_LIT}" STREQUAL "LLVM_EXTERNAL_LIT-NOTFOUND")
-file(REAL_PATH "${CMAKE_SOURCE_DIR}/../__build/llvm/debug/bin/llvm-lit.py" LLVM_EXTERNAL_LIT)
+file(REAL_PATH "${CMAKE_SOURCE_DIR}/../__build/llvm/${CMAKE_BUILD_TYPE}/bin/llvm-lit.py" LLVM_EXTERNAL_LIT)
 message(STATUS "LLVM_EXTERNAL_LIT is ${LLVM_EXTERNAL_LIT}")
 endif()
 
 if ("${MLIR_DIR}" STREQUAL "" OR "${MLIR_DIR}" STREQUAL "MLIR_DIR-NOTFOUND")
-file(REAL_PATH "${CMAKE_SOURCE_DIR}/../3rdParty/llvm/debug/lib/cmake/mlir" MLIR_DIR)
+file(REAL_PATH "${CMAKE_SOURCE_DIR}/../3rdParty/llvm/${CMAKE_BUILD_TYPE}/lib/cmake/mlir" MLIR_DIR)
 message(STATUS "MLIR_DIR is ${MLIR_DIR}")
 endif()
 
@@ -81,7 +81,7 @@ message(STATUS "ANTLR_EXECUTABLE is ${ANTLR_EXECUTABLE}, Java executable is ${Ja
 # add macros to generate ANTLR Cpp code from grammar
 find_package(ANTLR REQUIRED)
 
-###### 
+######
 
 add_subdirectory(include)
 add_subdirectory(lib)

@@ -184,6 +184,16 @@ namespace typescript
       return thisChar;
     }
 
+    void lex() 
+    {
+        antlr4::ANTLRInputStream input("");
+        typescript::TypeScriptLexerANTLR lexer(&input);
+        antlr4::CommonTokenStream tokens(&lexer);
+        typescript::TypeScriptParserANTLR parser(&tokens);    
+        auto* tree = parser.main();
+    }
+
+
     /// The last token read from the input.
     Token curTok = tok_eof;
 

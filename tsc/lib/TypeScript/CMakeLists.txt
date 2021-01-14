@@ -11,26 +11,35 @@ message(STATUS "Using TypeScriptLexerANTLR in: ${ANTLR_TypeScriptLexerANTLR_OUTP
 message(STATUS "Using TypeScriptParserANTLR in: ${ANTLR_TypeScriptParserANTLR_OUTPUT_DIR}")
 
 # include generated files in project environment
-include_directories(${ANTLR_TypeScriptLexerANTLR_OUTPUT_DIR})
-include_directories(${ANTLR_TypeScriptParserANTLR_OUTPUT_DIR})
+include_directories(
+    ${ANTLR_TypeScriptLexerANTLR_OUTPUT_DIR}
+    ${ANTLR_TypeScriptParserANTLR_OUTPUT_DIR}
+    )
+
+set (ANTLR_OUTPUT_DIRS 
+    ${ANTLR_TypeScriptLexerANTLR_OUTPUT_DIR} 
+    ${ANTLR_TypeScriptParserANTLR_OUTPUT_DIR}
+    CACHE INTERNAL "")
+
+message(STATUS "set ANTLR_OUTPUT_DIRS as: ${ANTLR_OUTPUT_DIRS}")    
 
 add_mlir_dialect_library(MLIRTypeScript
-        TypeScriptDialect.cpp
-        TypeScriptOps.cpp
+    TypeScriptDialect.cpp
+    TypeScriptOps.cpp
   	AST.cpp
   	MLIRGen.cpp
   	LowerToAffineLoops.cpp
   	LowerToLLVM.cpp
-        ${ANTLR_TypeScriptLexerANTLR_CXX_OUTPUTS}
-        ${ANTLR_TypeScriptParserANTLR_CXX_OUTPUTS}
+    ${ANTLR_TypeScriptLexerANTLR_CXX_OUTPUTS}
+    ${ANTLR_TypeScriptParserANTLR_CXX_OUTPUTS}
 
-        ADDITIONAL_HEADER_DIRS
-        ${PROJECT_SOURCE_DIR}/include/TypeScript
+    ADDITIONAL_HEADER_DIRS
+    ${PROJECT_SOURCE_DIR}/include/TypeScript
 	${ANTLR_TypeScriptLexerANTLR_OUTPUT_DIR}
 	${ANTLR_TypeScriptParserANTLR_OUTPUT_DIR}
 
-        DEPENDS
-        MLIRTypeScriptOpsIncGen
+    DEPENDS
+    MLIRTypeScriptOpsIncGen
 
 	LINK_LIBS PUBLIC
 	MLIRIR
