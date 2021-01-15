@@ -52,7 +52,10 @@
             "memory": "cpp",
             "iterator": "cpp",
             "*.inc": "cpp",
-            "xstring": "cpp"
+            "xstring": "cpp",
+            "string": "cpp",
+            "iostream": "cpp",
+            "stdexcept": "cpp"
         },
 		"antlr4.generation": {
 			"mode": "external",

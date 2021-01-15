@@ -16,6 +16,11 @@ include_directories(
     ${ANTLR_TypeScriptParserANTLR_OUTPUT_DIR}
     )
 
+set (ANTLR_CXX_OUTPUT_DIRS 
+    ${ANTLR_TypeScriptLexerANTLR_CXX_OUTPUTS} 
+    ${ANTLR_TypeScriptParserANTLR_CXX_OUTPUTS}
+    CACHE INTERNAL "")
+
 set (ANTLR_OUTPUT_DIRS 
     ${ANTLR_TypeScriptLexerANTLR_OUTPUT_DIR} 
     ${ANTLR_TypeScriptParserANTLR_OUTPUT_DIR}

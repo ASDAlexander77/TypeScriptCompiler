@@ -2,7 +2,7 @@
 #include <stdexcept>
 #include <iostream>
 
-#define ALEPH_ASSERT_THROW( condition )                             \
+#define ASSERT_THROW( condition )                                   \
 {                                                                   \
   if( !( condition ) )                                              \
   {                                                                 \
@@ -15,7 +15,7 @@
   }                                                                 \
 }
 
-#define ALEPH_ASSERT_EQUAL( x, y )                                  \
+#define ASSERT_EQUAL( x, y )                                        \
 {                                                                   \
   if( ( x ) != ( y ) )                                              \
   {                                                                 \

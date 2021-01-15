@@ -168,12 +168,10 @@ LS : [\u2028] ;
 PS : [\u2029] ;
 */
 
-fragment LineTerminatorFrag: [\n\r\u2028\u2029] ;
-
-LineTerminator: LineTerminatorFrag ; // return LineTerminator to parser (is end-statement signal)
+LineTerminator: [\n\r\u2028\u2029] ; // return LineTerminator to parser (is end-statement signal)
 
 /** Comment */
-Comment
+fragment Comment
     : MultiLineComment
     | SingleLineComment ;
 
@@ -183,7 +181,7 @@ MultiLineComment
 SingleLineComment
     : '//' ~[\n\r\u2028\u2029]* ;
 
-CommonToken 
+fragment CommonToken
     : IdentifierName
     | Punctuator
     | NumericLiteral
