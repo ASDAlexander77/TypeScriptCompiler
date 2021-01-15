@@ -2,145 +2,10 @@ lexer grammar TypeScriptLexerANTLR;
 
 tokens 
 {
-    ABSTRACT_KEYWORD, 
-    ANY_KEYWORD, 
-    AS_KEYWORD, 
-    ASSERTS_KEYWORD, 
-    BIGINT_KEYWORD, 
-    BOOLEAN_KEYWORD, 
-    BREAK_KEYWORD, 
-    CASE_KEYWORD, 
-    CATCH_KEYWORD, 
-    CLASS_KEYWORD, 
-    CONTINUE_KEYWORD, 
-    CONST_KEYWORD, 
-    DEBUGGER_KEYWORD, 
-    DECLARE_KEYWORD, 
-    DEFAULT_KEYWORD, 
-    DELETE_KEYWORD, 
-    DO_KEYWORD, 
-    ELSE_KEYWORD, 
-    ENUM_KEYWORD, 
-    EXPORT_KEYWORD, 
-    EXTENDS_KEYWORD, 
-    FALSE_KEYWORD, 
-    FINALLY_KEYWORD, 
-    FOR_KEYWORD, 
-    FROM_KEYWORD, 
-    FUNCTION_KEYWORD, 
-    GET_KEYWORD, 
-    IF_KEYWORD, 
-    IMPLEMENTS_KEYWORD, 
-    IMPORT_KEYWORD, 
-    IN_KEYWORD, 
-    INFER_KEYWORD, 
-    INSTANCEOF_KEYWORD, 
-    INTERFACE_KEYWORD, 
-    INTRINSIC_KEYWORD, 
-    IS_KEYWORD, 
-    KEYOF_KEYWORD, 
-    LET_KEYWORD, 
-    MODULE_KEYWORD, 
-    NAMESPACE_KEYWORD, 
-    NEVER_KEYWORD, 
-    NEW_KEYWORD, 
-    NULL_KEYWORD, 
-    NUMBER_KEYWORD, 
-    OBJECT_KEYWORD, 
-    PACKAGE_KEYWORD, 
-    PRIVATE_KEYWORD, 
-    PROTECTED_KEYWORD, 
-    PUBLIC_KEYWORD, 
-    READONLY_KEYWORD, 
-    REQUIRE_KEYWORD, 
-    GLOBAL_KEYWORD, 
-    RETURN_KEYWORD, 
-    SET_KEYWORD, 
-    STATIC_KEYWORD, 
-    STRING_KEYWORD, 
-    SUPER_KEYWORD, 
-    SWITCH_KEYWORD, 
-    SYMBOL_KEYWORD, 
-    THIS_KEYWORD, 
-    THROW_KEYWORD, 
-    TRUE_KEYWORD, 
-    TRY_KEYWORD, 
-    TYPE_KEYWORD, 
-    TYPEOF_KEYWORD, 
-    UNDEFINED_KEYWORD, 
-    UNIQUE_KEYWORD, 
-    UNKNOWN_KEYWORD, 
-    VAR_KEYWORD, 
-    VOID_KEYWORD, 
-    WHILE_KEYWORD, 
-    WITH_KEYWORD, 
-    YIELD_KEYWORD, 
-    ASYNC_KEYWORD, 
-    AWAIT_KEYWORD, 
-    OF_KEYWORD,
-
-    OPENBRACE_TOKEN,
-    CLOSEBRACE_TOKEN,
-    OPENPAREN_TOKEN,
-    CLOSEPAREN_TOKEN,
-    OPENBRACKET_TOKEN,
-    CLOSEBRACKET_TOKEN,
-    DOT_TOKEN,
-    DOTDOTDOT_TOKEN,
-    SEMICOLON_TOKEN,
-    COMMA_TOKEN,
-    LESSTHAN_TOKEN,
-    GREATERTHAN_TOKEN,
-    LESSTHANEQUALS_TOKEN,
-    GREATERTHANEQUALS_TOKEN,
-    EQUALSEQUALS_TOKEN,
-    EXCLAMATIONEQUALS_TOKEN,
-    EQUALSEQUALSEQUALS_TOKEN,
-    EXCLAMATIONEQUALSEQUALS_TOKEN,
-    EQUALSGREATERTHAN_TOKEN,
-    PLUS_TOKEN,
-    MINUS_TOKEN,
-    ASTERISKASTERISK_TOKEN,
-    ASTERISK_TOKEN,
-    SLASH_TOKEN,
-    PERCENT_TOKEN,
-    PLUSPLUS_TOKEN,
-    MINUSMINUS_TOKEN,
-    LESSTHANLESSTHAN_TOKEN,
-    LESSTHANSLASH_TOKEN,
-    GREATERTHANGREATERTHAN_TOKEN,
-    GREATERTHANGREATERTHANGREATERTHAN_TOKEN,
-    AMPERSAND_TOKEN,
-    BAR_TOKEN,
-    CARET_TOKEN,
-    EXCLAMATION_TOKEN,
-    TILDE_TOKEN,
-    AMPERSANDAMPERSAND_TOKEN,
-    BARBAR_TOKEN,
-    QUESTION_TOKEN,
-    QUESTIONQUESTION_TOKEN,
-    QUESTIONDOT_TOKEN,
-    COLON_TOKEN,
-    EQUALS_TOKEN,
-    PLUSEQUALS_TOKEN,
-    MINUSEQUALS_TOKEN,
-    ASTERISKEQUALS_TOKEN,
-    ASTERISKASTERISKEQUALS_TOKEN,
-    SLASHEQUALS_TOKEN,
-    PERCENTEQUALS_TOKEN,
-    LESSTHANLESSTHANEQUALS_TOKEN,
-    GREATERTHANGREATERTHANEQUALS_TOKEN,
-    GREATERTHANGREATERTHANGREATERTHANEQUALS_TOKEN,
-    AMPERSANDEQUALS_TOKEN,
-    BAREQUALS_TOKEN,
-    CARETEQUALS_TOKEN,
-    BARBAREQUALS_TOKEN,
-    AMPERSANDAMPERSANDEQUALS_TOKEN,
-    QUESTIONQUESTIONEQUALS_TOKEN,
-    AT_TOKEN,    
-    BACKTICK_TOKEN
+    // extra tokens
 }
 
+/** Keywords */
 ABSTRACT_KEYWORD: 'abstract' ;
 ANY_KEYWORD: 'any' ;
 AS_KEYWORD: 'as' ;
@@ -218,6 +83,7 @@ ASYNC_KEYWORD: 'async' ;
 AWAIT_KEYWORD: 'await' ;
 OF_KEYWORD: 'of' ;
 
+/** punctuators */
 OPENBRACE_TOKEN: '{' ;
 CLOSEBRACE_TOKEN: '}' ;
 OPENPAREN_TOKEN: '(' ;
@@ -278,3 +144,194 @@ AMPERSANDAMPERSANDEQUALS_TOKEN: '&&=' ;
 QUESTIONQUESTIONEQUALS_TOKEN: '??=' ;
 AT_TOKEN: '@' ;
 BACKTICK_TOKEN: '`' ;
+
+/** Rules */
+/** White space */
+/**
+TAB : [\t] ;
+VT : [\u000B] ;
+FF : [\f] ;
+SP : [ ] ;
+NBSP : [\u00A0] ;
+ZWNBSP : [\u000D] ;
+USP : [\uFEFF] ;
+UNICODE_WS : [\p{White_Space}] ;
+ */
+
+WhiteSpace: [\t\u000B\f \u00A0\u000D\uFEFF\p{White_Space}] -> skip ;
+
+/** Line Terminators */
+/**
+LF : [\n] ;
+CR : [\r] ;
+LS : [\u2028] ;
+PS : [\u2029] ;
+*/
+
+fragment LineTerminatorFrag: [\n\r\u2028\u2029] ;
+
+LineTerminator: LineTerminatorFrag ; // return LineTerminator to parser (is end-statement signal)
+
+/** Comment */
+Comment
+    : MultiLineComment
+    | SingleLineComment ;
+
+MultiLineComment
+    : '/*' .*? '*/' ; 
+
+SingleLineComment
+    : '//' ~[\n\r\u2028\u2029]* ;
+
+CommonToken 
+    : IdentifierName
+    | Punctuator
+    | NumericLiteral
+    | StringLiteral
+    ;
+    //| Template ;
+
+IdentifierName
+    : IdentifierStart IdentifierPart* ;
+
+fragment IdentifierStart 
+    : [\p{ID_Start}$_]
+    | UnicodeEscapeSequence ;
+
+/**
+ZWNJ : [\u200C] ;
+ZWJ : [\uu200D] ;
+*/ 
+fragment IdentifierPart 
+    : [\p{ID_Continue}$\u200C\u200D]
+    | UnicodeEscapeSequence
+    ;
+
+Punctuator
+    : OPENBRACE_TOKEN | CLOSEBRACE_TOKEN | OPENPAREN_TOKEN | CLOSEPAREN_TOKEN | OPENBRACKET_TOKEN | CLOSEBRACKET_TOKEN | DOT_TOKEN | DOTDOTDOT_TOKEN
+    | SEMICOLON_TOKEN | COMMA_TOKEN | LESSTHAN_TOKEN | GREATERTHAN_TOKEN | LESSTHANEQUALS_TOKEN | GREATERTHANEQUALS_TOKEN | EQUALSEQUALS_TOKEN | EXCLAMATIONEQUALS_TOKEN
+    | EQUALSEQUALSEQUALS_TOKEN | EXCLAMATIONEQUALSEQUALS_TOKEN | EQUALSGREATERTHAN_TOKEN | PLUS_TOKEN | MINUS_TOKEN | ASTERISKASTERISK_TOKEN | ASTERISK_TOKEN
+    | SLASH_TOKEN | PERCENT_TOKEN | PLUSPLUS_TOKEN | MINUSMINUS_TOKEN | LESSTHANLESSTHAN_TOKEN | LESSTHANSLASH_TOKEN | GREATERTHANGREATERTHAN_TOKEN | GREATERTHANGREATERTHANGREATERTHAN_TOKEN
+    | AMPERSAND_TOKEN | BAR_TOKEN | CARET_TOKEN | EXCLAMATION_TOKEN | TILDE_TOKEN | AMPERSANDAMPERSAND_TOKEN | BARBAR_TOKEN | QUESTION_TOKEN | QUESTIONQUESTION_TOKEN | QUESTIONDOT_TOKEN
+    | COLON_TOKEN | EQUALS_TOKEN | PLUSEQUALS_TOKEN | MINUSEQUALS_TOKEN | ASTERISKEQUALS_TOKEN | ASTERISKASTERISKEQUALS_TOKEN | SLASHEQUALS_TOKEN
+    | PERCENTEQUALS_TOKEN | LESSTHANLESSTHANEQUALS_TOKEN | GREATERTHANGREATERTHANEQUALS_TOKEN | GREATERTHANGREATERTHANGREATERTHANEQUALS_TOKEN | AMPERSANDEQUALS_TOKEN
+    | BAREQUALS_TOKEN | CARETEQUALS_TOKEN | BARBAREQUALS_TOKEN | AMPERSANDAMPERSANDEQUALS_TOKEN | QUESTIONQUESTIONEQUALS_TOKEN | AT_TOKEN | BACKTICK_TOKEN ;    
+
+NumericLiteral 
+    : DecimalLiteral
+    | DecimalBigIntegerLiteral
+    | NonDecimalIntegerLiteral
+    | NonDecimalIntegerLiteral BigIntLiteralSuffix ;
+
+DecimalBigIntegerLiteral 
+    : '0' BigIntLiteralSuffix
+    | NonZeroDigit NumericLiteralSeparator? DecimalDigits? BigIntLiteralSuffix ;
+
+fragment NumericLiteralSeparator
+    : '_' ;
+
+NonDecimalIntegerLiteral
+    : BinaryIntegerLiteral
+    | OctalIntegerLiteral
+    | HexIntegerLiteral ;
+
+fragment BigIntLiteralSuffix 
+    : 'n' ;
+
+DecimalLiteral
+    : DecimalIntegerLiteral? '.' DecimalDigits ExponentPart?
+    | DecimalIntegerLiteral ExponentPart? ;
+
+fragment DecimalIntegerLiteral 
+    : '0'
+    | NonZeroDigit
+    | NonZeroDigit (NumericLiteralSeparator | DecimalDigit)* ;
+
+fragment DecimalDigits
+    : DecimalDigit (NumericLiteralSeparator | DecimalDigit)* ;
+
+fragment DecimalDigit 
+    : [0-9] ; 
+
+fragment NonZeroDigit
+    : [1-9] ;
+
+fragment ExponentPart
+    : [eE] SignedInteger ;
+
+fragment SignedInteger
+    : [+-]? DecimalDigits ;
+
+BinaryIntegerLiteral
+    : '0' [b|B] BinaryDigits ;
+
+fragment BinaryDigits
+    : BinaryDigit (NumericLiteralSeparator | BinaryDigit)* ;
+
+fragment BinaryDigit 
+    : [01] ;    
+
+OctalIntegerLiteral
+    : '0' [oO] OctalDigits* ;
+
+fragment OctalDigits
+    : OctalDigit (NumericLiteralSeparator | OctalDigit)* ;
+
+fragment OctalDigit
+    : [0-7] ;
+
+HexIntegerLiteral
+    : '0' [xX] HexDigits ;
+
+fragment HexDigits
+    : HexDigit (NumericLiteralSeparator | HexDigit)* ;    
+
+fragment HexDigit
+    : [0-9a-fA-F] ;    
+
+fragment CodePoint 
+    : HexDigits ;
+
+/**
+LS : [\u2028] ;
+PS : [\u2029] ;
+*/ 
+StringLiteral
+    : '"' DoubleStringCharacter* '"'
+    | '\'' SingleStringCharacter* '\'' ;
+
+fragment DoubleStringCharacter 
+    : ~["\\\n\r\u2028\u2029]
+    | [\u2028\u2029]
+    | '\\' EscapeSequence
+    | LineContinuation ;
+
+fragment SingleStringCharacter 
+    : ~['\\\n\r\u2028\u2029]
+    | [\u2028\u2029]
+    | '\\' EscapeSequence
+    | LineContinuation ;    
+
+fragment LineContinuation
+    : '\\' LineTerminatorSequence ;
+    
+fragment LineTerminatorSequence
+    : LineTerminator LineTerminator* ;
+
+fragment EscapeSequence
+    : CharacterEscapeSequence
+    | '0'
+    | HexEscapeSequence
+    | UnicodeEscapeSequence ;
+
+fragment CharacterEscapeSequence
+    :  ~[\u2028\u2029] ;
+
+HexEscapeSequence
+    : 'x' HexDigit HexDigit ;
+
+fragment UnicodeEscapeSequence
+    : '\\u' (Hex4Digits | '{' CodePoint '}' ) ;
+
+fragment Hex4Digits
+    : HexDigit HexDigit HexDigit HexDigit ;        
