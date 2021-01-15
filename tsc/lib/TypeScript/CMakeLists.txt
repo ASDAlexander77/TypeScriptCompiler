@@ -1,3 +1,5 @@
+message(STATUS ">>> lib >>> TypeScript")
+
 # generate files first
 # Call macro to add lexer and grammar to your build dependencies.
 antlr_target(TypeScriptLexerANTLR "${CMAKE_SOURCE_DIR}/tsc-grammar/TypeScriptLexerANTLR.g4" LEXER

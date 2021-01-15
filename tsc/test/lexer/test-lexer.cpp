@@ -49,7 +49,7 @@ void testToken(const char *value, size_t tokenExpected)
 void testLexer()
 {
     printTokens("123 456\r\n789");
-    //T("123", l::NumericLiteral);
+    T("123", l::NumericLiteral);
 }
 
 int main(int, char **)

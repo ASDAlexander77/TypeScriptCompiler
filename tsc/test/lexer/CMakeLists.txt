@@ -1,3 +1,5 @@
+message(STATUS ">>> test >>> lexer")
+
 include_directories(
     ${ANTLR_OUTPUT_DIRS}
     )
