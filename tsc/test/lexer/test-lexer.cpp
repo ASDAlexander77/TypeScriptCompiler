@@ -27,8 +27,9 @@ void printTokens(const char *value)
 
     auto print = [](const auto& n) 
     { 
-        auto* tokenPtr = n.get();
-        std::cout << "TOKEN: type=" << tokenPtr->getType() << " text=" << tokenPtr->getText() << std::endl; 
+        //auto* tokenPtr = n.get();
+        //std::cout << "TOKEN: type=" << tokenPtr->getType() << " text=" << tokenPtr->getText() << std::endl; 
+        std::cout << n.get()->toString() << std::endl; 
     };
 
     std::for_each(tokens.cbegin(), tokens.cend(), print);
