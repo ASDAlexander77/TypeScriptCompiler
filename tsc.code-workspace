@@ -49,10 +49,11 @@
 			".vs": true
 		},
 		"files.associations": {
-			"memory": "cpp",
-			"iterator": "cpp",
-			"*.inc": "cpp"
-		},
+            "memory": "cpp",
+            "iterator": "cpp",
+            "*.inc": "cpp",
+            "xstring": "cpp"
+        },
 		"antlr4.generation": {
 			"mode": "external",
 			"language": "Cpp",

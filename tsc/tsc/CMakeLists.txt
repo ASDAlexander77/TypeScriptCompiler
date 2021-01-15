@@ -3,27 +3,27 @@ include_directories(
     )
 
 set(LLVM_LINK_COMPONENTS
-  Core
-  Support
-  nativecodegen
-  native
-  )
+    Core
+    Support
+    nativecodegen
+    native
+    )
 
 get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
 get_property(conversion_libs GLOBAL PROPERTY MLIR_CONVERSION_LIBS)
 set(LIBS
     ${dialect_libs}
     ${conversion_libs}
-	antlr4_static
-  	MLIRAnalysis
-  	MLIREDSC
-  	MLIRExecutionEngine
-  	MLIRIR
-  	MLIRJitRunner
-  	MLIRLLVMIR
-  	MLIRParser
-  	MLIRTargetLLVMIR
-  	MLIRSupport
+    antlr4_static
+    MLIRAnalysis
+    MLIREDSC
+    MLIRExecutionEngine
+    MLIRIR
+    MLIRJitRunner
+    MLIRLLVMIR
+    MLIRParser
+    MLIRTargetLLVMIR
+    MLIRSupport
     MLIROptLib
     MLIRTypeScript
     )

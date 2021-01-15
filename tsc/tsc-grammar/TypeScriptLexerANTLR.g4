@@ -220,8 +220,7 @@ Punctuator
 NumericLiteral 
     : DecimalLiteral
     | DecimalBigIntegerLiteral
-    | NonDecimalIntegerLiteral
-    | NonDecimalIntegerLiteral BigIntLiteralSuffix ;
+    | NonDecimalIntegerLiteral BigIntLiteralSuffix? ;
 
 DecimalBigIntegerLiteral 
     : '0' BigIntLiteralSuffix
