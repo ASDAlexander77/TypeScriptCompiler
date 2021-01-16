@@ -73,17 +73,25 @@ add_definitions(-DANTLR4CPP_STATIC)
 
 # using /MD flag for antlr4_runtime (for Visual C++ compilers only)
 set(ANTLR4_WITH_STATIC_CRT OFF)
-# add external build for antlrcpp
-include(ExternalAntlr4Cpp)
-# add antrl4cpp artifacts to project environment
-include_directories(${ANTLR4_INCLUDE_DIRS})
 
 # set variable pointing to the antlr tool that supports C++
 # this is not required if the jar file can be found under PATH environment
 file(REAL_PATH "${CMAKE_SOURCE_DIR}/../3rdParty/antlr-bin/antlr-4.9.1-complete.jar" ANTLR_EXECUTABLE)
 message(STATUS "ANTLR_EXECUTABLE is ${ANTLR_EXECUTABLE}, Java executable is ${Java_JAVA_EXECUTABLE}")
-# add macros to generate ANTLR Cpp code from grammar
-find_package(ANTLR REQUIRED)
+
+# Set path to generator
+set(ANTLR4_JAR_LOCATION ${ANTLR_EXECUTABLE})
+
+file(REAL_PATH "${CMAKE_SOURCE_DIR}/../3rdParty/antlr4/${CMAKE_BUILD_TYPE}/lib/cmake/antlr4-runtime" antlr4-runtime_DIR)
+file(REAL_PATH "${CMAKE_SOURCE_DIR}/../3rdParty/antlr4/${CMAKE_BUILD_TYPE}/lib/cmake/antlr4-generator" antlr4-generator_DIR)
+
+# Bring in the required packages
+find_package(antlr4-runtime REQUIRED)
+find_package(antlr4-generator REQUIRED)
+
+# add antrl4cpp artifacts to project environment
+include_directories(${ANTLR4_INCLUDE_DIR})
+message(STATUS "ANTLR4_INCLUDE_DIR is ${ANTLR4_INCLUDE_DIR}")
 
 ######
 
