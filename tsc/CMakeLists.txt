@@ -95,6 +95,9 @@ link_directories(${ANTLR4_LIB_DIR})
 
 include(grammar_generator)
 
+# enabling testing
+enable_testing()
+
 ######
 
 add_subdirectory(include)
