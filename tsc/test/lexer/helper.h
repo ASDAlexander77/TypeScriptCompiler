@@ -24,6 +24,7 @@
                               + std::to_string( __LINE__ )          \
                               + std::string( " in " )               \
                               + std::string( __func__ )             \
+                              + std::string( " " )                  \
                               + std::string( msg )                  \
     );                                                              \
   }                                                                 \
@@ -59,6 +60,7 @@
                               + std::to_string( ( x ) )             \
                               + std::string( " != " )               \
                               + std::to_string( ( y ) )             \
+                              + std::string( " " )                  \
                               + std::string( msg )                  \
     );                                                              \
   }                                                                 \

@@ -56,7 +56,7 @@ void testToken(const char *value, size_t tokenExpected)
     auto token = tokens.front().get();
 
     std::ostringstream stringStream;
-    stringStream << "Expecting token:" << lexer.getTokenNames()[tokenExpected] << "text: " << value << " but get token:" << lexer.getTokenNames()[token->getType()] << " Text:" << token->getText();
+    stringStream << "Expecting: [" << lexer.getTokenNames()[tokenExpected] << "] \"" << value << "\" but get: [" << lexer.getTokenNames()[token->getType()] << "] \"" << token->getText() << "\".";
     auto msg = stringStream.str();    
 
     ASSERT_EQUAL_MSG(token->getType(), tokenExpected, msg);
@@ -70,5 +70,13 @@ void testLexer()
 
 int main(int, char **)
 {
-    testLexer();
+    try
+    {
+        testLexer();
+    }
+    catch(const std::exception& e)
+    {
+        std::cerr << e.what() << '\n';
+        throw;
+    }
 }
