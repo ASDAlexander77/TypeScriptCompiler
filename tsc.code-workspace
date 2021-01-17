@@ -55,7 +55,9 @@
             "xstring": "cpp",
             "string": "cpp",
             "iostream": "cpp",
-            "stdexcept": "cpp"
+            "stdexcept": "cpp",
+            "vector": "cpp",
+            "iosfwd": "cpp"
         },
 		"antlr4.generation": {
 			"mode": "external",
