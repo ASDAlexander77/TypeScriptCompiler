@@ -4,10 +4,6 @@ set(LIBS
     antlr4_static
     )
 
-include_directories(
-    ${GRAMMAR_GENERATED_DIRS}
-    )
-
 grammar_generator()
 
 if(MSVC)
@@ -22,6 +18,11 @@ if(MSVC)
 
     SET (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHsc")
 endif()
+
+include_directories(
+    ${ANTLR4_INCLUDE_DIR_TypeScriptLexerANTLR} 
+    ${ANTLR4_INCLUDE_DIR_TypeScriptParserANTLR} 
+    )
 
 add_executable(test-lexer test-lexer.cpp ${ANTLR4_SRC_FILES_TypeScriptLexerANTLR} ${ANTLR4_SRC_FILES_TypeScriptParserANTLR})
 

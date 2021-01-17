@@ -158,7 +158,7 @@ USP : [\uFEFF] ;
 UNICODE_WS : [\p{White_Space}] ;
  */
 
-WhiteSpace: [\t\u000B\f \u00A0\u000D\uFEFF\p{White_Space}] -> skip ;
+WhiteSpace: [\t\u000B\f \u00A0\uFEFF\p{White_Space}] -> skip ;
 
 /** Line Terminators */
 /**

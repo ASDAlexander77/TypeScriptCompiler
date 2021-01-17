@@ -1,5 +1,9 @@
 message(STATUS ">>> lib >>> TypeScript")
 
+if(MSVC)
+    SET (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHsc")
+endif()
+
 grammar_generator()
 
 set (GRAMMAR_GENERATED_DIRS 
