@@ -1,5 +1,5 @@
 include_directories(
-    ${ANTLR_OUTPUT_DIRS}
+    ${GRAMMAR_GENERATED_DIRS}
     )
 
 set(LLVM_LINK_COMPONENTS

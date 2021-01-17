@@ -91,7 +91,9 @@ find_package(antlr4-generator REQUIRED)
 
 # add antrl4cpp artifacts to project environment
 include_directories(${ANTLR4_INCLUDE_DIR})
-message(STATUS "ANTLR4_INCLUDE_DIR is ${ANTLR4_INCLUDE_DIR}")
+link_directories(${ANTLR4_LIB_DIR})
+
+include(grammar_generator)
 
 ######
 
