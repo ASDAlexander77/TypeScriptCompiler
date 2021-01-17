@@ -168,10 +168,15 @@ LS : [\u2028] ;
 PS : [\u2029] ;
 */
 
-LineTerminatorIgnore
-    : '\r' -> skip ;
-LineTerminator
-    : [\n\u2028\u2029] ; // return LineTerminator to parser (is end-statement signal)
+fragment LineTerminator
+    : [\r\n\u2028\u2029] ;
+
+fragment NotLineTerminator
+    : ~[\r\n\u2028\u2029] ;
+
+LineTerminatorSequence
+    : '\r\n'
+    | LineTerminator ; 
 
 /** Comment */
 fragment Comment
@@ -182,13 +187,13 @@ MultiLineComment
     : '/*' .*? '*/' ; 
 
 SingleLineComment
-    : '//' ~[\n\r\u2028\u2029]* ;
+    : '//' NotLineTerminator* ;
 
 fragment CommonToken
     : IdentifierName
     | Punctuator
-    | NullLiteral
-    | BooleanLiteral
+    //| NullLiteral
+    //| BooleanLiteral
     | NumericLiteral
     | StringLiteral
     ;
@@ -220,12 +225,14 @@ fragment Punctuator
     | PERCENTEQUALS_TOKEN | LESSTHANLESSTHANEQUALS_TOKEN | GREATERTHANGREATERTHANEQUALS_TOKEN | GREATERTHANGREATERTHANGREATERTHANEQUALS_TOKEN | AMPERSANDEQUALS_TOKEN
     | BAREQUALS_TOKEN | CARETEQUALS_TOKEN | BARBAREQUALS_TOKEN | AMPERSANDAMPERSANDEQUALS_TOKEN | QUESTIONQUESTIONEQUALS_TOKEN | AT_TOKEN | BACKTICK_TOKEN ;    
 
+/*
 NullLiteral
     : NULL_KEYWORD ;
 
 BooleanLiteral
     : TRUE_KEYWORD
     | FALSE_KEYWORD ;
+*/    
 
 NumericLiteral 
     : DecimalLiteral
@@ -298,9 +305,6 @@ fragment HexDigits
 fragment HexDigit
     : [0-9a-fA-F] ;    
 
-fragment CodePoint 
-    : HexDigits ;
-
 /**
 LS : [\u2028] ;
 PS : [\u2029] ;
@@ -324,9 +328,6 @@ fragment SingleStringCharacter
 fragment LineContinuation
     : '\\' LineTerminatorSequence ;
     
-fragment LineTerminatorSequence
-    : LineTerminator LineTerminator* ;
-
 fragment EscapeSequence
     : CharacterEscapeSequence
     | '0'
@@ -344,3 +345,63 @@ fragment UnicodeEscapeSequence
 
 fragment Hex4Digits
     : HexDigit HexDigit HexDigit HexDigit ;        
+
+fragment CodePoint 
+    : HexDigits ;
+
+RegularExpressionLiteral 
+    : '/' RegularExpressionBody '/' RegularExpressionFlags ;
+
+fragment RegularExpressionBody
+    : RegularExpressionFirstChar RegularExpressionChar* ;
+
+fragment RegularExpressionFirstChar 
+    : ~[*\r\n\u2028\u2029\\/[] // LineTerminator and not one of * or \ or / or [
+    | '\\' NotLineTerminator ;
+
+fragment RegularExpressionChar 
+    : ~[\r\n\u2028\u2029\\/[] // LineTerminator and not one of \ or / or [
+    | '\\' NotLineTerminator ;    
+
+fragment RegularExpressionFlags
+    : IdentifierPart* ;
+
+/*
+fragment Template
+    : NoSubstitutionTemplate
+    | TemplateHead ;
+*/    
+
+NoSubstitutionTemplate
+    : '`' TemplateCharacter*? '`' ;
+
+TemplateHead
+    : '`' TemplateCharacter*? '${' ;
+
+/*
+fragment TemplateSubstitutionTail
+    : TemplateMiddle
+    | TemplateTail ;
+ */
+
+TemplateMiddle
+    : '}' TemplateCharacter*? '${' ;
+
+TemplateTail
+    : '}' TemplateCharacter*? '`' ;
+
+fragment TemplateCharacter
+    : '$'
+    | '\\' EscapeSequence
+    | '\\' NotEscapeSequence
+    | LineContinuation
+    | LineTerminatorSequence
+    | ~[`\\$\r\n\u2028\u2029] ; // but not one of ` or \ or $ or LineTerminator
+
+fragment NotEscapeSequence
+    : '0' DecimalDigit
+    | NonZeroDigit
+    | 'x' HexDigit?
+    | 'u' HexDigit? HexDigit? HexDigit?
+    | 'u' '{' CodePoint? ;
+    
