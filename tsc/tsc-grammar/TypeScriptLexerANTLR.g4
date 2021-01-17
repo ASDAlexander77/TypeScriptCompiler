@@ -153,12 +153,12 @@ VT : [\u000B] ;
 FF : [\f] ;
 SP : [ ] ;
 NBSP : [\u00A0] ;
-ZWNBSP : [\u000D] ;
-USP : [\uFEFF] ;
-UNICODE_WS : [\p{White_Space}] ;
+ZWNBSP : [\uFEFF] ;
+USP : [\p{Space_Separator}] ;
  */
 
-WhiteSpace: [\t\u000B\f \u00A0\uFEFF\p{White_Space}] -> skip ;
+WhiteSpace
+    : [\t\u000B\f \u00A0\uFEFF\p{Space_Separator}] -> skip ;
 
 /** Line Terminators */
 /**
@@ -168,7 +168,10 @@ LS : [\u2028] ;
 PS : [\u2029] ;
 */
 
-LineTerminator: [\n\r\u2028\u2029] ; // return LineTerminator to parser (is end-statement signal)
+LineTerminatorIgnore
+    : '\r' -> skip ;
+LineTerminator
+    : [\n\u2028\u2029] ; // return LineTerminator to parser (is end-statement signal)
 
 /** Comment */
 fragment Comment
