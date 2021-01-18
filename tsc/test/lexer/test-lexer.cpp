@@ -22,6 +22,8 @@ void testBasic()
 
 void printTokens(typescript::TypeScriptLexerANTLR& lexer, std::vector<std::unique_ptr<antlr4::Token>>& tokens) 
 {
+    std::cout << "Printing tokens:" << std::endl;
+
     auto print = [&](const auto& n) 
     { 
         //auto* tokenPtr = n.get();
@@ -63,9 +65,48 @@ void testToken(const char *value, size_t tokenExpected)
     ASSERT_THROW_MSG(token->getText().compare(value) == 0, msg);
 }
 
+void testToken(const char *value, std::vector<size_t> tokensExpected)
+{
+    antlr4::ANTLRInputStream input(value);
+    typescript::TypeScriptLexerANTLR lexer(&input);
+
+    auto tokens = lexer.getAllTokens();
+
+    printTokens(lexer, tokens);
+
+    auto index = 0;    
+    for (auto& token : tokens) {
+        auto tokenExpected = tokensExpected[index];
+
+        std::ostringstream stringStream;
+        stringStream << "Expecting: [" << lexer.getTokenNames()[tokenExpected] << "] in \"" << value << "\" @ " << index << " but get: [" << lexer.getTokenNames()[token->getType()] << "] \"" << token->getText() << "\".";
+        auto msg = stringStream.str();    
+
+        ASSERT_EQUAL_MSG(token->getType(), tokenExpected, msg);
+        // can't match text
+        //ASSERT_THROW_MSG(token->getText().compare(value) == 0, msg);
+
+        index++;
+    }
+}
+
 void testLexer()
 {
-    T("123a", l::NumericLiteral);
+    std::cout << "[ Numeric ]" << std::endl;
+
+    T("123", l::NumericLiteral);
+}
+
+void testRegex()
+{
+    std::cout << "[ Regex ]" << std::endl;
+
+    T("/ asdf /", l::RegularExpressionLiteral);
+    T("/**// asdf /", { l::MultiLineComment, l::RegularExpressionLiteral });
+    T("/**///**/ asdf /       // should be a comment line\r\n1", { l::MultiLineComment, l::SingleLineComment, l::LineTerminatorSequence, l::NumericLiteral });
+    T("/**// /**/asdf /", { l::MultiLineComment, l::RegularExpressionLiteral, l::ASTERISKASTERISK_TOKEN, l::RegularExpressionLiteral });// /**/ comment, regex (/ /) power(**) regex(/ asdf /)
+    T("/**// asdf/**/ /", { l::MultiLineComment, l::RegularExpressionLiteral, l::ASTERISKASTERISK_TOKEN, l::RegularExpressionLiteral }); 
+    T("/(?:)/", l::RegularExpressionLiteral); // empty regular expression
 }
 
 int main(int, char **)
@@ -73,6 +114,7 @@ int main(int, char **)
     try
     {
         testLexer();
+        testRegex();
     }
     catch(const std::exception& e)
     {
