@@ -234,37 +234,56 @@ BooleanLiteral
     | FALSE_KEYWORD ;
 */    
 
-NumericLiteral 
-    : DecimalLiteral
-    | DecimalBigIntegerLiteral
-    | NonDecimalIntegerLiteral BigIntLiteralSuffix? ;
+BinaryIntegerLiteral
+    : '0' [bB] BinaryDigits ;
+
+OctalIntegerLiteral
+    : '0' [oO]? OctalDigits ;
+
+HexIntegerLiteral
+    : '0' [xX] HexDigits ;
+
+DecimalIntegerLiteral 
+    : DecimalDigits ;
+
+DecimalLiteral
+    : DecimalIntegerLiteral? '.' DecimalDigits ExponentPart?
+    | DecimalIntegerLiteral ExponentPart ;
 
 DecimalBigIntegerLiteral 
     : '0' BigIntLiteralSuffix
     | NonZeroDigit NumericLiteralSeparator? DecimalDigits? BigIntLiteralSuffix ;
 
+fragment NumericLiteral 
+    : DecimalLiteral
+    | DecimalBigIntegerLiteral
+    | NonDecimalBigIntegerLiteral ;
+
+fragment NonDecimalBigIntegerLiteral    
+    : NonDecimalIntegerLiteral BigIntLiteralSuffix ;
+
 fragment NumericLiteralSeparator
     : '_' ;
 
-NonDecimalIntegerLiteral
+fragment NonDecimalIntegerLiteral
     : BinaryIntegerLiteral
     | OctalIntegerLiteral
     | HexIntegerLiteral ;
 
+BinaryBigIntegerLiteral
+    : BinaryIntegerLiteral BigIntLiteralSuffix ;
+
+OctalBigIntegerLiteral
+    : OctalIntegerLiteral BigIntLiteralSuffix ;
+
+HexBigIntegerLiteral
+    : HexIntegerLiteral BigIntLiteralSuffix ;
+
 fragment BigIntLiteralSuffix 
     : 'n' ;
 
-DecimalLiteral
-    : DecimalIntegerLiteral? '.' DecimalDigits ExponentPart?
-    | DecimalIntegerLiteral ExponentPart? ;
-
-fragment DecimalIntegerLiteral 
-    : '0'
-    | NonZeroDigit
-    | NonZeroDigit (NumericLiteralSeparator | DecimalDigit)* ;
-
 fragment DecimalDigits
-    : DecimalDigit (NumericLiteralSeparator | DecimalDigit)* ;
+    : DecimalDigit (NumericLiteralSeparator DecimalDigit | DecimalDigit)* ;
 
 fragment DecimalDigit 
     : [0-9] ; 
@@ -278,29 +297,20 @@ fragment ExponentPart
 fragment SignedInteger
     : [+-]? DecimalDigits ;
 
-BinaryIntegerLiteral
-    : '0' [b|B] BinaryDigits ;
-
 fragment BinaryDigits
-    : BinaryDigit (NumericLiteralSeparator | BinaryDigit)* ;
+    : BinaryDigit (NumericLiteralSeparator BinaryDigit | BinaryDigit)* ;
 
 fragment BinaryDigit 
     : [01] ;    
 
-OctalIntegerLiteral
-    : '0' [oO] OctalDigits* ;
-
 fragment OctalDigits
-    : OctalDigit (NumericLiteralSeparator | OctalDigit)* ;
+    : OctalDigit (NumericLiteralSeparator OctalDigit | OctalDigit)* ;
 
 fragment OctalDigit
     : [0-7] ;
 
-HexIntegerLiteral
-    : '0' [xX] HexDigits ;
-
 fragment HexDigits
-    : HexDigit (NumericLiteralSeparator | HexDigit)* ;    
+    : HexDigit (NumericLiteralSeparator HexDigit | HexDigit)* ;    
 
 fragment HexDigit
     : [0-9a-fA-F] ;    
