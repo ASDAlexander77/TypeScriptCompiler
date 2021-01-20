@@ -125,7 +125,7 @@ BARBAR_TOKEN: '||' ;
 QUESTION_TOKEN: '?' ;
 QUESTIONQUESTION_TOKEN: '??' ;
 QUESTIONDOT_TOKEN: '?.' ;
-COLON_TOKEN: '_TOKEN:' ;
+COLON_TOKEN: ':' ;
 EQUALS_TOKEN: '=' ;
 PLUSEQUALS_TOKEN: '+=' ;
 MINUSEQUALS_TOKEN: '-=' ;
@@ -179,25 +179,11 @@ LineTerminatorSequence
     | LineTerminator ; 
 
 /** Comment */
-fragment Comment
-    : MultiLineComment
-    | SingleLineComment ;
-
 MultiLineComment
     : '/*' .*? '*/' ; 
 
 SingleLineComment
     : '//' NotLineTerminator* ;
-
-fragment CommonToken
-    : IdentifierName
-    | Punctuator
-    //| NullLiteral
-    //| BooleanLiteral
-    | NumericLiteral
-    | StringLiteral
-    ;
-    //| Template ;
 
 IdentifierName
     : IdentifierStart IdentifierPart* ;
@@ -225,15 +211,6 @@ fragment Punctuator
     | PERCENTEQUALS_TOKEN | LESSTHANLESSTHANEQUALS_TOKEN | GREATERTHANGREATERTHANEQUALS_TOKEN | GREATERTHANGREATERTHANGREATERTHANEQUALS_TOKEN | AMPERSANDEQUALS_TOKEN
     | BAREQUALS_TOKEN | CARETEQUALS_TOKEN | BARBAREQUALS_TOKEN | AMPERSANDAMPERSANDEQUALS_TOKEN | QUESTIONQUESTIONEQUALS_TOKEN | AT_TOKEN | BACKTICK_TOKEN ;    
 
-/*
-NullLiteral
-    : NULL_KEYWORD ;
-
-BooleanLiteral
-    : TRUE_KEYWORD
-    | FALSE_KEYWORD ;
-*/    
-
 BinaryIntegerLiteral
     : '0' [bB] BinaryDigits ;
 
@@ -254,21 +231,8 @@ DecimalBigIntegerLiteral
     : '0' BigIntLiteralSuffix
     | NonZeroDigit NumericLiteralSeparator? DecimalDigits? BigIntLiteralSuffix ;
 
-fragment NumericLiteral 
-    : DecimalLiteral
-    | DecimalBigIntegerLiteral
-    | NonDecimalBigIntegerLiteral ;
-
-fragment NonDecimalBigIntegerLiteral    
-    : NonDecimalIntegerLiteral BigIntLiteralSuffix ;
-
 fragment NumericLiteralSeparator
     : '_' ;
-
-fragment NonDecimalIntegerLiteral
-    : BinaryIntegerLiteral
-    | OctalIntegerLiteral
-    | HexIntegerLiteral ;
 
 BinaryBigIntegerLiteral
     : BinaryIntegerLiteral BigIntLiteralSuffix ;
@@ -384,10 +348,10 @@ fragment Template
 */    
 
 fragment NoSubstitutionTemplate
-    : '`' TemplateCharacter*? '`' ;
+    : '`' TemplateCharacter* '`' ;
 
 TemplateHead
-    : '`' TemplateCharacter*? '${' ;
+    : '`' TemplateCharacter* '${' ;
 
 /*
 fragment TemplateSubstitutionTail
@@ -396,13 +360,13 @@ fragment TemplateSubstitutionTail
  */
 
 TemplateMiddle
-    : '}' TemplateCharacter*? '${' ;
+    : '}' TemplateCharacter* '${' ;
 
 TemplateTail
-    : '}' TemplateCharacter*? '`' ;
+    : '}' TemplateCharacter* '`' ;
 
 fragment TemplateCharacter
-    : '$'
+    : '$' {_input->LA(1) != '{'}?
     | '\\' EscapeSequence
     | '\\' NotEscapeSequence
     | LineContinuation

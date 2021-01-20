@@ -5,3 +5,4 @@ build
 .vs
 .antlr
 /tsc/out
+/tsc/Testing

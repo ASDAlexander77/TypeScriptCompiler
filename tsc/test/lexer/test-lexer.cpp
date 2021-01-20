@@ -10,16 +10,6 @@
 
 using l = typescript::TypeScriptLexerANTLR;
 
-void testBasic()
-{
-    auto foo = 2.0;
-    auto bar = 1.0;
-
-    ASSERT_THROW(foo != bar);
-    ASSERT_EQUAL(foo, 2.0);
-    ASSERT_EQUAL(bar, 1.0);
-}
-
 void printTokens(typescript::TypeScriptLexerANTLR& lexer, std::vector<std::unique_ptr<antlr4::Token>>& tokens) 
 {
     std::cout << "Printing tokens:" << std::endl;
@@ -217,6 +207,12 @@ void testTemplateString()
 {
     T("` string template`", l::StringLiteral);
     T("`foo ${a}`", { l::TemplateHead, l::IdentifierName, l::TemplateTail });
+    T("`\\u0061wait`", l::StringLiteral);
+    T("`\\u0079ield`", l::StringLiteral);
+    T("`\\u{0076}ar`", l::StringLiteral);
+    T("`\\u{0079}ield`", l::StringLiteral);
+    T("`typ\\u{0065}`", l::StringLiteral);
+    T("`def\\u0061ult`", l::StringLiteral);
 }
 
 void testSingleLineComments()
@@ -257,7 +253,7 @@ int main(int, char **)
     }
     catch(const std::exception& e)
     {
-        std::cerr << e.what() << '\n';
+        std::cerr << e.what() << std::endl;
         throw;
     }
 }
