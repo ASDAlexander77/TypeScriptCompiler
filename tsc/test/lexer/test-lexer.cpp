@@ -210,6 +210,28 @@ void testString()
     T("\"\"", l::StringLiteral);
     T("'foo\\\r\nbar'", l::StringLiteral);
     T("\"foo\\\r\nbar\"", l::StringLiteral);
+    T("'aaa//aaa'", l::StringLiteral);
+}
+
+void testTemplateString()
+{
+    T("` string template`", l::StringLiteral);
+    T("`foo ${a}`", { l::TemplateHead, l::IdentifierName, l::TemplateTail });
+}
+
+void testSingleLineComments()
+{
+    T("//", l::SingleLineComment);
+    T("// test", l::SingleLineComment);
+    T("// /* test */", l::SingleLineComment);
+}
+
+void testMultiLineComments()
+{
+    T("/**/", l::MultiLineComment);
+    T("/* test  */", l::MultiLineComment);
+    T("/* //test */", l::MultiLineComment);
+    T("/**\r\n * comment\r\n */", l::MultiLineComment);
 }
 
 int main(int, char **)
@@ -228,6 +250,9 @@ int main(int, char **)
         testDecimalBigIntegerLiteral();
         testIdentifier();
         testString();
+        testTemplateString();
+        testSingleLineComments();
+        testMultiLineComments();
         testRegex();
     }
     catch(const std::exception& e)

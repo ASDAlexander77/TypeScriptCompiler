@@ -321,7 +321,8 @@ PS : [\u2029] ;
 */ 
 StringLiteral
     : '"' DoubleStringCharacter* '"'
-    | '\'' SingleStringCharacter* '\'' ;
+    | '\'' SingleStringCharacter* '\''
+    | NoSubstitutionTemplate ;
 
 fragment DoubleStringCharacter 
     : ~["\\\n\r\u2028\u2029]
@@ -382,7 +383,7 @@ fragment Template
     | TemplateHead ;
 */    
 
-NoSubstitutionTemplate
+fragment NoSubstitutionTemplate
     : '`' TemplateCharacter*? '`' ;
 
 TemplateHead
