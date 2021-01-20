@@ -120,6 +120,7 @@ void testBinaryBigIntegerLiteral()
 
 void testOctalIntegerLiteral()
 {
+    T("01", l::OctalIntegerLiteral);
     T("0123", l::OctalIntegerLiteral);
     T("045436", l::OctalIntegerLiteral);
     T("0o45436", l::OctalIntegerLiteral);
@@ -153,15 +154,20 @@ void testDecimalIntegerLiteral()
     T("0123888", l::DecimalIntegerLiteral);
     T("0123_888", l::DecimalIntegerLiteral);
     T("123", l::DecimalIntegerLiteral);
+    T("-03", l::DecimalIntegerLiteral);
+    T("009", l::DecimalIntegerLiteral);    
 }
 
 void testDecimalLiteral()
 {
     T("0.0", l::DecimalLiteral);
     T("1.0", l::DecimalLiteral);
+    T("01.0", l::DecimalLiteral);
     T("123.0", l::DecimalLiteral);
     T("123_4.0", l::DecimalLiteral);
     T("123e1", l::DecimalLiteral);
+    T("1e0", l::DecimalLiteral);
+    T("1e+0", l::DecimalLiteral);
 }
 
 void testDecimalBigIntegerLiteral()
@@ -184,6 +190,26 @@ void testRegex()
     T("/**// /**/asdf /", { l::MultiLineComment, l::RegularExpressionLiteral, l::ASTERISKASTERISK_TOKEN, l::RegularExpressionLiteral });// /**/ comment, regex (/ /) power(**) regex(/ asdf /)
     T("/**// asdf/**/ /", { l::MultiLineComment, l::RegularExpressionLiteral, l::ASTERISKASTERISK_TOKEN, l::RegularExpressionLiteral }); 
     T("/(?:)/", l::RegularExpressionLiteral); // empty regular expression
+    T("/what/", l::RegularExpressionLiteral);
+    T("/\\\\\\\\/", l::RegularExpressionLiteral);
+}
+
+void testIdentifier()
+{
+    T("\\u0061wait", l::IdentifierName);
+    T("\\u0079ield", l::IdentifierName);
+    T("\\u{0076}ar", l::IdentifierName);
+    T("\\u{0079}ield", l::IdentifierName);
+    T("typ\\u{0065}", l::IdentifierName);
+    T("def\\u0061ult", l::IdentifierName);
+}
+
+void testString()
+{
+    T("''", l::StringLiteral);
+    T("\"\"", l::StringLiteral);
+    T("'foo\\\r\nbar'", l::StringLiteral);
+    T("\"foo\\\r\nbar\"", l::StringLiteral);
 }
 
 int main(int, char **)
@@ -200,6 +226,8 @@ int main(int, char **)
         testHexBigIntegerLiteral();
         testDecimalLiteral();
         testDecimalBigIntegerLiteral();
+        testIdentifier();
+        testString();
         testRegex();
     }
     catch(const std::exception& e)
