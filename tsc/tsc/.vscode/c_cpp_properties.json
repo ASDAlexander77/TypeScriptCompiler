@@ -4,10 +4,10 @@
             "name": "Win32",
             "includePath": [
                 "${workspaceFolder}/**",
-		"${workspaceFolder}/../include",
-                "${workspaceFolder}/../../3rdParty/llvm/release/include",
-		"${workspaceFolder}/../../3rdParty/antlr/runtime/Cpp/runtime/src",
-		"${workspaceFolder}/../../__build/tsc/include",
+                "${workspaceFolder}/../include",
+                "${workspaceFolder}/../../3rdParty/llvm/debug/include",
+                "${workspaceFolder}/../../3rdParty/antlr/runtime/Cpp/runtime/src",
+                "${workspaceFolder}/../../__build/tsc/include",
                 "${workspaceFolder}/../../tsc/tsc-grammar/.antlr/generated"
             ],
             "defines": [
