@@ -10,7 +10,7 @@
 
 using l = typescript::TypeScriptLexerANTLR;
 
-void printTokens(typescript::TypeScriptLexerANTLR& lexer, std::vector<std::unique_ptr<antlr4::Token>>& tokens) 
+void printTokens(const typescript::TypeScriptLexerANTLR& lexer, const std::vector<std::unique_ptr<antlr4::Token>>& tokens) 
 {
     std::cout << "Printing tokens:" << std::endl;
 
@@ -24,9 +24,9 @@ void printTokens(typescript::TypeScriptLexerANTLR& lexer, std::vector<std::uniqu
     std::for_each(tokens.cbegin(), tokens.cend(), print);
 }
 
-void printTokens(typescript::TypeScriptLexerANTLR& lexer) 
+void printTokens(const typescript::TypeScriptLexerANTLR& lexer) 
 {
-    printTokens(lexer, lexer.getAllTokens());
+    printTokens(lexer, const_cast<typescript::TypeScriptLexerANTLR&>(lexer).getAllTokens());
 }
 
 void printTokens(const char *value) 

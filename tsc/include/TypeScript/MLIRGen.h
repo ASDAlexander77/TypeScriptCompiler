@@ -9,13 +9,15 @@ namespace mlir
     class OwningModuleRef;
 } // namespace mlir
 
+namespace llvm
+{
+    class StringRef;
+} // namespace mlir
+
 namespace typescript
 {
-    class ModuleAST;
-
-    /// Emit IR for the given TypeScript moduleAST, returns a newly created MLIR module
-    /// or nullptr on failure.
-    mlir::OwningModuleRef mlirGen(mlir::MLIRContext &context, ModuleAST &moduleAST);
+    llvm::StringRef dumpFromSource(const llvm::StringRef &source);
+    mlir::OwningModuleRef mlirGenFromSource(const mlir::MLIRContext &context, const llvm::StringRef &source);
 } // namespace typescript
 
 #endif // MLIR_TYPESCRIPT_MLIRGEN_H_

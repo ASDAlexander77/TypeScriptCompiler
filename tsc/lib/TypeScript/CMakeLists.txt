@@ -1,9 +1,5 @@
 message(STATUS ">>> lib >>> TypeScript")
 
-if(MSVC)
-    SET (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHsc")
-endif()
-
 grammar_generator()
 
 set (GRAMMAR_GENERATED_DIRS 
@@ -20,7 +16,6 @@ include_directories(
 add_mlir_dialect_library(MLIRTypeScript
     TypeScriptDialect.cpp
     TypeScriptOps.cpp
-    AST.cpp
     MLIRGen.cpp
     LowerToAffineLoops.cpp
     LowerToLLVM.cpp
@@ -35,5 +30,6 @@ add_mlir_dialect_library(MLIRTypeScript
     MLIRTypeScriptOpsIncGen
 
     LINK_LIBS PUBLIC
+    antlr4_static
     MLIRIR
     )

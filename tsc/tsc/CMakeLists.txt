@@ -1,3 +1,5 @@
+set_MSVC_Options()
+
 include_directories(
     ${GRAMMAR_GENERATED_DIRS}
     )
@@ -14,7 +16,6 @@ get_property(conversion_libs GLOBAL PROPERTY MLIR_CONVERSION_LIBS)
 set(LIBS
     ${dialect_libs}
     ${conversion_libs}
-    antlr4_static
     MLIRAnalysis
     MLIREDSC
     MLIRExecutionEngine

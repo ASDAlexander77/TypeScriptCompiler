@@ -5,19 +5,7 @@ set(LIBS
     )
 
 grammar_generator()
-
-if(MSVC)
-    message(STATUS "Using static MSVC CRT")
-    # http://stackoverflow.com/a/32128977/486990
-    add_compile_options(
-        "$<$<CONFIG:Debug>:/MTd>"
-        "$<$<CONFIG:RelWithDebInfo>:/MT>"
-        "$<$<CONFIG:Release>:/MT>"
-        "$<$<CONFIG:MinSizeRel>:/MT>"
-    )
-
-    SET (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHsc")
-endif()
+set_MSVC_Options()
 
 include_directories(
     ${ANTLR4_INCLUDE_DIR_TypeScriptLexerANTLR} 
@@ -27,7 +15,7 @@ include_directories(
 add_executable(test-lexer test-lexer.cpp ${ANTLR4_SRC_FILES_TypeScriptLexerANTLR} ${ANTLR4_SRC_FILES_TypeScriptParserANTLR})
 
 # add required runtime library
-add_dependencies(test-lexer antlr4_static)
+add_dependencies(test-lexer ${LIBS})
 
 target_link_libraries(test-lexer PRIVATE ${LIBS})
 

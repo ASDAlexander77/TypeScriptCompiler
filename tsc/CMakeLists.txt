@@ -74,9 +74,6 @@ add_definitions(${LLVM_DEFINITIONS})
 # required if linking to static library
 add_definitions(-DANTLR4CPP_STATIC)
 
-# using /MD flag for antlr4_runtime (for Visual C++ compilers only)
-set(ANTLR4_WITH_STATIC_CRT OFF)
-
 # set variable pointing to the antlr tool that supports C++
 # this is not required if the jar file can be found under PATH environment
 file(REAL_PATH "${CMAKE_SOURCE_DIR}/../3rdParty/antlr-bin/antlr-4.9.1-complete.jar" ANTLR_EXECUTABLE)
