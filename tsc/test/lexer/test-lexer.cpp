@@ -176,7 +176,7 @@ void testRegex()
 {
     T("/ asdf /", l::RegularExpressionLiteral);
     T("/**// asdf /", { l::MultiLineComment, l::RegularExpressionLiteral });
-    T("/**///**/ asdf /       // should be a comment line\r\n1", { l::MultiLineComment, l::SingleLineComment, l::LineTerminatorSequence, l::DecimalIntegerLiteral });
+    T("/**///**/ asdf /       // should be a comment line\r\n1", { l::MultiLineComment, l::SingleLineComment, l::DecimalIntegerLiteral });
     T("/**// /**/asdf /", { l::MultiLineComment, l::RegularExpressionLiteral, l::ASTERISKASTERISK_TOKEN, l::RegularExpressionLiteral });// /**/ comment, regex (/ /) power(**) regex(/ asdf /)
     T("/**// asdf/**/ /", { l::MultiLineComment, l::RegularExpressionLiteral, l::ASTERISKASTERISK_TOKEN, l::RegularExpressionLiteral }); 
     T("/(?:)/", l::RegularExpressionLiteral); // empty regular expression

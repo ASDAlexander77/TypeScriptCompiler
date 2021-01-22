@@ -175,8 +175,7 @@ fragment NotLineTerminator
     : ~[\r\n\u2028\u2029] ;
 
 LineTerminatorSequence
-    : '\r\n'
-    | LineTerminator ; 
+    : ('\r\n' | LineTerminator) -> skip ;
 
 /** Comment */
 MultiLineComment
