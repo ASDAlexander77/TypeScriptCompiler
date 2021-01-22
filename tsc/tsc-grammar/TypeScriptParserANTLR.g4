@@ -33,6 +33,7 @@ literal
 
 numericLiteral 
     : DecimalLiteral
+    | DecimalIntegerLiteral
     | DecimalBigIntegerLiteral
     | BinaryBigIntegerLiteral
     | OctalBigIntegerLiteral
