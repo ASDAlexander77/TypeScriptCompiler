@@ -85,7 +85,7 @@ int loadMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module)
         if (std::error_code ec = fileOrErr.getError())
         {
             llvm::errs() << "Could not open input file: " << ec.message() << "\n";
-            return 0;
+            return -1;
         }
 
         module = mlirGenFromSource(context, fileOrErr.get()->getBuffer());
@@ -117,7 +117,9 @@ int loadAndProcessMLIR(mlir::MLIRContext &context,
                        mlir::OwningModuleRef &module)
 {
     if (int error = loadMLIR(context, module))
+    {
         return error;
+    }
 
     mlir::PassManager pm(&context);
     // Apply any generic pass manager command line options and run the pipeline.
@@ -165,7 +167,10 @@ int loadAndProcessMLIR(mlir::MLIRContext &context,
     }
 
     if (mlir::failed(pm.run(*module)))
+    {
         return 4;
+    }
+    
     return 0;
 }
 

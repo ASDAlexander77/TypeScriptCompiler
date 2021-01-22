@@ -44,26 +44,24 @@ namespace
 
         /// Public API: convert the AST for a TypeScript module (source file) to an MLIR
         /// Module operation.
-        mlir::ModuleOp mlirGen(const TypeScriptParserANTLR::MainContext &moduleAST)
+        mlir::ModuleOp mlirGen(TypeScriptParserANTLR::MainContext *moduleAST)
         {
             // We create an empty MLIR module and codegen functions one at a time and
             // add them to the module.
             theModule = mlir::ModuleOp::create(builder.getUnknownLoc());
 
             // Process generating here
-            /*
-            for (auto &record : moduleAST)
+            for (auto *statement : moduleAST->statement())
             {
-                if (NumberExprAST *num = llvm::dyn_cast<NumberExprAST>(record.get()))
+                if (auto *expressionStatement = statement->expressionStatement())
                 {
-                    mlirGen(*num);
+                    mlirGen(expressionStatement);
                 }
                 else
                 {
-                llvm_unreachable("unknown record type");
+                    llvm_unreachable("unknown record type");
                 }
             }
-            */
 
             // Verify the module after we have finished constructing it, this will check
             // the structural properties of the IR and invoke any specific verifiers we
@@ -76,6 +74,170 @@ namespace
 
             return theModule;
         }
+
+        void mlirGen(TypeScriptParserANTLR::ExpressionStatementContext *expressionStatementAST)
+        {
+            mlirGen(expressionStatementAST->expression());
+        }
+
+        void mlirGen(TypeScriptParserANTLR::ExpressionContext *expressionAST)
+        {
+            if (auto *primaryExpression = expressionAST->primaryExpression())
+            {
+                mlirGen(primaryExpression);
+            }
+            else if (auto *leftHandSideExpression = expressionAST->leftHandSideExpression())
+            {
+                mlirGen(leftHandSideExpression);
+            }
+        }
+
+        void mlirGen(TypeScriptParserANTLR::PrimaryExpressionContext *primaryExpression)
+        {
+            if (auto *literal = primaryExpression->literal())
+            {
+                mlirGen(literal);
+            }
+            else if (auto *identifierReference = primaryExpression->identifierReference())
+            {
+                mlirGen(identifierReference);
+            }
+        }
+
+        void mlirGen(TypeScriptParserANTLR::LeftHandSideExpressionContext *leftHandSideExpression)
+        {
+            if (auto *callExpression = leftHandSideExpression->callExpression())
+            {
+                mlirGen(callExpression);
+            }
+        }        
+
+        void mlirGen(TypeScriptParserANTLR::CallExpressionContext *callExpression)
+        {
+            // get function ref.
+            if (auto *memberExpression = callExpression->memberExpression())
+            {
+                mlirGen(memberExpression);
+            }
+            else if (auto *callExpressionRecursive = callExpression->callExpression())
+            {
+                mlirGen(callExpressionRecursive);
+            }
+
+            // process arguments
+            mlirGen(callExpression->arguments());
+        }         
+
+        void mlirGen(TypeScriptParserANTLR::MemberExpressionContext *memberExpression)
+        {
+            // TODO: finish it
+        }          
+
+        void mlirGen(TypeScriptParserANTLR::ArgumentsContext *arguments)
+        {
+            // TODO: finish it
+        }               
+
+        void mlirGen(TypeScriptParserANTLR::LiteralContext *literal)
+        {
+            if (auto *nullLiteral = literal->nullLiteral())
+            {
+                mlirGen(nullLiteral);
+            }
+            else if (auto *booleanLiteral = literal->booleanLiteral())
+            {
+                mlirGen(booleanLiteral);
+            }     
+            else if (auto *numericLiteral = literal->numericLiteral())
+            {
+                mlirGen(numericLiteral);
+            }       
+            else 
+            {
+                mlirGenStringLiteral(literal->StringLiteral());
+            }
+        }
+
+        void mlirGen(TypeScriptParserANTLR::NullLiteralContext *nullLiteral)
+        {
+        }
+
+        void mlirGen(TypeScriptParserANTLR::BooleanLiteralContext *booleanLiteral)
+        {
+        }
+
+        void mlirGen(TypeScriptParserANTLR::NumericLiteralContext *numericLiteral)
+        {
+            if (auto *decimalLiteral = numericLiteral->DecimalLiteral())
+            {
+                mlirGenDecimalLiteral(decimalLiteral);
+            }   
+            else if (auto *decimalIntegerLiteral = numericLiteral->DecimalIntegerLiteral())
+            {
+                mlirGenDecimalIntegerLiteral(decimalIntegerLiteral);
+            }
+            else if (auto *decimalBigIntegerLiteral = numericLiteral->DecimalBigIntegerLiteral())
+            {
+                mlirGenDecimalBigIntegerLiteral(decimalBigIntegerLiteral);
+            }
+            else if (auto *binaryBigIntegerLiteral = numericLiteral->BinaryBigIntegerLiteral())
+            {
+                mlirGenBinaryBigIntegerLiteral(binaryBigIntegerLiteral);
+            }
+            else if (auto *octalBigIntegerLiteral = numericLiteral->OctalBigIntegerLiteral())
+            {
+                mlirGenOctalBigIntegerLiteral(octalBigIntegerLiteral);
+            }
+            else if (auto *hexBigIntegerLiteral = numericLiteral->HexBigIntegerLiteral())
+            {
+                mlirGenHexBigIntegerLiteral(hexBigIntegerLiteral);
+            }
+        }
+
+        void mlirGen(TypeScriptParserANTLR::IdentifierReferenceContext *identifierReference)
+        {
+            mlirGenIdentifierName(identifierReference->IdentifierName());
+        }
+
+        void mlirGenIdentifierName(antlr4::tree::TerminalNode *identifierName)
+        {
+            // TODO:
+        }        
+
+        void mlirGenStringLiteral(antlr4::tree::TerminalNode *stringLiteral)
+        {
+            // TODO:
+        }   
+
+        void mlirGenDecimalLiteral(antlr4::tree::TerminalNode *decimalLiteral)
+        {
+            // TODO:
+        }  
+
+        void mlirGenDecimalIntegerLiteral(antlr4::tree::TerminalNode *decimalIntegerLiteral)
+        {
+            // TODO:
+        }  
+
+        void mlirGenDecimalBigIntegerLiteral(antlr4::tree::TerminalNode *decimalBigIntegerLiteraligIntegerLiteral)
+        {
+            // TODO:
+        }  
+
+        void mlirGenBinaryBigIntegerLiteral(antlr4::tree::TerminalNode *binaryBigIntegerLiteral)
+        {
+            // TODO:
+        }  
+
+        void mlirGenOctalBigIntegerLiteral(antlr4::tree::TerminalNode *octalBigIntegerLiteral)
+        {
+            // TODO:
+        }         
+
+        void mlirGenHexBigIntegerLiteral(antlr4::tree::TerminalNode *hexBigIntegerLiteral)
+        {
+            // TODO:
+        }                                  
 
     private:
         /// A "module" matches a TypeScript source file: containing a list of functions.
@@ -100,23 +262,22 @@ namespace
 namespace typescript
 {
     llvm::StringRef dumpFromSource(const llvm::StringRef &source)
-    {    
+    {
         antlr4::ANTLRInputStream input((std::string)source);
         typescript::TypeScriptLexerANTLR lexer(&input);
         antlr4::CommonTokenStream tokens(&lexer);
         typescript::TypeScriptParserANTLR parser(&tokens);
-        auto* moduleAST = parser.main();
+        auto *moduleAST = parser.main();
         return llvm::StringRef(moduleAST->toStringTree());
     }
 
     mlir::OwningModuleRef mlirGenFromSource(const mlir::MLIRContext &context, const llvm::StringRef &source)
-    {    
+    {
         antlr4::ANTLRInputStream input((std::string)source);
         typescript::TypeScriptLexerANTLR lexer(&input);
         antlr4::CommonTokenStream tokens(&lexer);
         typescript::TypeScriptParserANTLR parser(&tokens);
-        auto& moduleAST = *parser.main();
-        return MLIRGenImpl(context).mlirGen(moduleAST);
+        return MLIRGenImpl(context).mlirGen(parser.main());
     }
 
 } // namespace typescript
