@@ -59,7 +59,7 @@ namespace
                 }
                 else
                 {
-                    llvm_unreachable("unknown record type");
+                    llvm_unreachable("unknown statement");
                 }
             }
 
@@ -114,6 +114,8 @@ namespace
 
         void mlirGen(TypeScriptParserANTLR::CallExpressionContext *callExpression)
         {
+            auto location = loc(callExpression->getSourceInterval());
+
             // get function ref.
             if (auto *memberExpression = callExpression->memberExpression())
             {
@@ -130,12 +132,44 @@ namespace
 
         void mlirGen(TypeScriptParserANTLR::MemberExpressionContext *memberExpression)
         {
-            // TODO: finish it
+            if (auto *primaryExpression = memberExpression->primaryExpression())
+            {
+                mlirGen(primaryExpression);
+            }
+            else if (auto *memberExpressionRecursive = memberExpression->memberExpression())
+            {
+                mlirGen(memberExpressionRecursive);
+            }
+            else
+            {
+                mlirGenIdentifierName(memberExpression->IdentifierName());
+            }
         }          
 
         void mlirGen(TypeScriptParserANTLR::ArgumentsContext *arguments)
         {
-            // TODO: finish it
+            auto firstExpression = arguments->expression();
+            // first argument
+            if (firstExpression.size() == 0)
+            {
+                return;
+            }
+
+            auto *first = firstExpression.front();
+
+            mlirGen(first);
+
+            auto index = 0;
+            while (true)
+            {
+                auto *next = arguments->expression(index++);
+                if (!next)
+                {
+                    break;
+                }
+
+                mlirGen(next);
+            }
         }               
 
         void mlirGen(TypeScriptParserANTLR::LiteralContext *literal)
@@ -249,12 +283,10 @@ namespace
         mlir::OpBuilder builder;
 
         /// Helper conversion for a TypeScript AST location to an MLIR location.
-        /*
-        mlir::Location loc(Location loc)
+        mlir::Location loc(const antlr4::misc::Interval &loc)
         {
-            return builder.getFileLineColLoc(builder.getIdentifier(*loc.file), loc.line, loc.col);
+            return builder.getFileLineColLoc(builder.getIdentifier(theModule.getName() ? theModule.getName().getValue() : ""), loc.a, loc.b);
         }
-        */
     };
 
 } // namespace

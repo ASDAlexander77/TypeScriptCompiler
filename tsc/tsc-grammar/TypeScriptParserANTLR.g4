@@ -46,7 +46,7 @@ leftHandSideExpression
     : callExpression ;
 
 arguments
-    :  OPENPAREN_TOKEN expression (COMMA_TOKEN expression)* CLOSEPAREN_TOKEN ;
+    :  OPENPAREN_TOKEN (expression (COMMA_TOKEN expression)*)? CLOSEPAREN_TOKEN ;
 
 callExpression
     : memberExpression arguments
