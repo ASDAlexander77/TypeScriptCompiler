@@ -1,5 +1,6 @@
 #include "TypeScript/MLIRGen.h"
 #include "TypeScript/TypeScriptDialect.h"
+#include "TypeScript/TypeScriptOps.h"
 
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
@@ -7,6 +8,9 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Verifier.h"
+
+#include "mlir/Dialect/StandardOps/IR/Ops.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/ScopedHashTable.h"
@@ -29,7 +33,6 @@ using llvm::ScopedHashTableScope;
 using llvm::SmallVector;
 using llvm::StringRef;
 using llvm::Twine;
-
 namespace
 {
     /// Implementation of a simple MLIR emission from the TypeScript AST.
@@ -49,13 +52,18 @@ namespace
             // We create an empty MLIR module and codegen functions one at a time and
             // add them to the module.
             theModule = mlir::ModuleOp::create(builder.getUnknownLoc());
+            builder.setInsertionPointToStart(theModule.getBody());
 
             // Process generating here
             for (auto *statement : moduleAST->statement())
             {
                 if (auto *expressionStatement = statement->expressionStatement())
                 {
-                    mlirGen(expressionStatement);
+                    auto op = mlirGen(expressionStatement);
+                    if (op)
+                    {
+                        //theModule.push_back(op);
+                    }
                 }
                 else
                 {
@@ -75,44 +83,56 @@ namespace
             return theModule;
         }
 
-        void mlirGen(TypeScriptParserANTLR::ExpressionStatementContext *expressionStatementAST)
+        mlir::Value mlirGen(TypeScriptParserANTLR::ExpressionStatementContext *expressionStatementAST)
         {
-            mlirGen(expressionStatementAST->expression());
+            return mlirGen(expressionStatementAST->expression());
         }
 
-        void mlirGen(TypeScriptParserANTLR::ExpressionContext *expressionAST)
+        mlir::Value mlirGen(TypeScriptParserANTLR::ExpressionContext *expressionAST)
         {
             if (auto *primaryExpression = expressionAST->primaryExpression())
             {
-                mlirGen(primaryExpression);
+                return mlirGen(primaryExpression);
             }
             else if (auto *leftHandSideExpression = expressionAST->leftHandSideExpression())
             {
-                mlirGen(leftHandSideExpression);
+                return mlirGen(leftHandSideExpression);
             }
+            else
+            {
+                llvm_unreachable("unknown statement");
+            }            
         }
 
-        void mlirGen(TypeScriptParserANTLR::PrimaryExpressionContext *primaryExpression)
+        mlir::Value mlirGen(TypeScriptParserANTLR::PrimaryExpressionContext *primaryExpression)
         {
             if (auto *literal = primaryExpression->literal())
             {
-                mlirGen(literal);
+                return mlirGen(literal);
             }
             else if (auto *identifierReference = primaryExpression->identifierReference())
             {
-                mlirGen(identifierReference);
+                return mlirGen(identifierReference);
             }
+            else
+            {
+                llvm_unreachable("unknown statement");
+            }               
         }
 
-        void mlirGen(TypeScriptParserANTLR::LeftHandSideExpressionContext *leftHandSideExpression)
+        mlir::Value mlirGen(TypeScriptParserANTLR::LeftHandSideExpressionContext *leftHandSideExpression)
         {
             if (auto *callExpression = leftHandSideExpression->callExpression())
             {
-                mlirGen(callExpression);
+                return mlirGen(callExpression);
             }
-        }        
+            else
+            {
+                llvm_unreachable("unknown statement");
+            }             
+        }
 
-        void mlirGen(TypeScriptParserANTLR::CallExpressionContext *callExpression)
+        mlir::Value mlirGen(TypeScriptParserANTLR::CallExpressionContext *callExpression)
         {
             auto location = loc(callExpression->getSourceInterval());
 
@@ -128,23 +148,76 @@ namespace
 
             // process arguments
             mlirGen(callExpression->arguments());
-        }         
 
-        void mlirGen(TypeScriptParserANTLR::MemberExpressionContext *memberExpression)
+            SmallVector<mlir::Value, 0> operands;
+            /*
+            SmallVector<mlir::Value, 4> operands;
+            for (auto &expr : call.getArgs())
+            {
+                auto arg = mlirGen(*expr);
+                if (!arg)
+                {
+                    return nullptr;
+                }
+                
+                operands.push_back(arg);
+            }
+            */
+
+            // declare
+            SmallVector<mlir::Type, 0> argTypes;
+            auto fnType = builder.getFunctionType(argTypes, llvm::None);
+            auto function = builder.create<mlir::FuncOp>(theModule.getLoc(), "test", fnType);
+            function.setPrivate();
+
+            // empty block
+            /*
+            auto &entryBlock = *function.addEntryBlock();
+            auto point = builder.saveInsertionPoint();
+            builder.setInsertionPointToStart(&entryBlock);
+            builder.create<mlir::ReturnOp>(theModule.getLoc());   
+            builder.restoreInsertionPoint(point);
+            */
+
+            auto funcOp = mlir::FuncOp::create(theModule.getLoc(), "test", fnType);
+            auto &entryBlock = *function.addEntryBlock();
+            builder.setInsertionPointToStart(&entryBlock);
+
+            // // declare printf
+            // // Create a function declaration for printf, the signature is:
+            // //   * `i32 (i8*, ...)`
+            // auto context = theModule.getContext();
+            // auto llvmI32Ty = mlir::LLVM::LLVMIntegerType::get(context, 32);
+            // auto llvmI8PtrTy = mlir::LLVM::LLVMPointerType::get(mlir::LLVM::LLVMIntegerType::get(context, 8));
+            // auto llvmFnType = mlir::LLVM::LLVMFunctionType::get(llvmI32Ty, llvmI8PtrTy, /*isVarArg=*/true);
+            // builder.create<mlir::LLVM::LLVMFuncOp>(theModule.getLoc(), "printf", llvmFnType);
+
+            auto callOp = builder.create<mlir::CallOp>(
+                    location,
+                    builder.getSymbolRefAttr("test"),
+                    llvm::None,
+                    operands);
+
+            // no result
+            return nullptr;
+        }
+
+        mlir::Value mlirGen(TypeScriptParserANTLR::MemberExpressionContext *memberExpression)
         {
             if (auto *primaryExpression = memberExpression->primaryExpression())
             {
-                mlirGen(primaryExpression);
+                return mlirGen(primaryExpression);
             }
             else if (auto *memberExpressionRecursive = memberExpression->memberExpression())
             {
-                mlirGen(memberExpressionRecursive);
+                return mlirGen(memberExpressionRecursive);
             }
             else
             {
-                mlirGenIdentifierName(memberExpression->IdentifierName());
+                //return mlirGenIdentifierName(memberExpression->IdentifierName());
+                llvm_unreachable("not implemented");
             }
-        }          
+        }
 
         void mlirGen(TypeScriptParserANTLR::ArgumentsContext *arguments)
         {
@@ -170,108 +243,122 @@ namespace
 
                 mlirGen(next);
             }
-        }               
+        }
 
-        void mlirGen(TypeScriptParserANTLR::LiteralContext *literal)
+        mlir::Value mlirGen(TypeScriptParserANTLR::LiteralContext *literal)
         {
             if (auto *nullLiteral = literal->nullLiteral())
             {
-                mlirGen(nullLiteral);
+                return mlirGen(nullLiteral);
             }
             else if (auto *booleanLiteral = literal->booleanLiteral())
             {
-                mlirGen(booleanLiteral);
-            }     
+                return mlirGen(booleanLiteral);
+            }
             else if (auto *numericLiteral = literal->numericLiteral())
             {
-                mlirGen(numericLiteral);
-            }       
-            else 
+                return mlirGen(numericLiteral);
+            }
+            else
             {
-                mlirGenStringLiteral(literal->StringLiteral());
+                return mlirGenStringLiteral(literal->StringLiteral());
             }
         }
 
-        void mlirGen(TypeScriptParserANTLR::NullLiteralContext *nullLiteral)
+        mlir::Value mlirGen(TypeScriptParserANTLR::NullLiteralContext *nullLiteral)
         {
+            llvm_unreachable("not implemented");
         }
 
-        void mlirGen(TypeScriptParserANTLR::BooleanLiteralContext *booleanLiteral)
+        mlir::Value mlirGen(TypeScriptParserANTLR::BooleanLiteralContext *booleanLiteral)
         {
+            llvm_unreachable("not implemented");
         }
 
-        void mlirGen(TypeScriptParserANTLR::NumericLiteralContext *numericLiteral)
+        mlir::Value mlirGen(TypeScriptParserANTLR::NumericLiteralContext *numericLiteral)
         {
             if (auto *decimalLiteral = numericLiteral->DecimalLiteral())
             {
-                mlirGenDecimalLiteral(decimalLiteral);
-            }   
+                return mlirGenDecimalLiteral(decimalLiteral);
+            }
             else if (auto *decimalIntegerLiteral = numericLiteral->DecimalIntegerLiteral())
             {
-                mlirGenDecimalIntegerLiteral(decimalIntegerLiteral);
+                return mlirGenDecimalIntegerLiteral(decimalIntegerLiteral);
             }
             else if (auto *decimalBigIntegerLiteral = numericLiteral->DecimalBigIntegerLiteral())
             {
-                mlirGenDecimalBigIntegerLiteral(decimalBigIntegerLiteral);
+                return mlirGenDecimalBigIntegerLiteral(decimalBigIntegerLiteral);
             }
             else if (auto *binaryBigIntegerLiteral = numericLiteral->BinaryBigIntegerLiteral())
             {
-                mlirGenBinaryBigIntegerLiteral(binaryBigIntegerLiteral);
+                return mlirGenBinaryBigIntegerLiteral(binaryBigIntegerLiteral);
             }
             else if (auto *octalBigIntegerLiteral = numericLiteral->OctalBigIntegerLiteral())
             {
-                mlirGenOctalBigIntegerLiteral(octalBigIntegerLiteral);
+                return mlirGenOctalBigIntegerLiteral(octalBigIntegerLiteral);
             }
             else if (auto *hexBigIntegerLiteral = numericLiteral->HexBigIntegerLiteral())
             {
-                mlirGenHexBigIntegerLiteral(hexBigIntegerLiteral);
+                return mlirGenHexBigIntegerLiteral(hexBigIntegerLiteral);
             }
+            else
+            {
+                llvm_unreachable("unknown statement");
+            }             
         }
 
-        void mlirGen(TypeScriptParserANTLR::IdentifierReferenceContext *identifierReference)
+        mlir::Value mlirGen(TypeScriptParserANTLR::IdentifierReferenceContext *identifierReference)
         {
-            mlirGenIdentifierName(identifierReference->IdentifierName());
+            auto name = mlirGenIdentifierName(identifierReference->IdentifierName());
+            return IdentifierReferenceOp::create(theModule.getLoc(), name);
         }
 
-        void mlirGenIdentifierName(antlr4::tree::TerminalNode *identifierName)
+        StringRef mlirGenIdentifierName(antlr4::tree::TerminalNode *identifierName)
         {
-            // TODO:
-        }        
+            return identifierName->getText();
+        }
 
-        void mlirGenStringLiteral(antlr4::tree::TerminalNode *stringLiteral)
+        mlir::Value mlirGenStringLiteral(antlr4::tree::TerminalNode *stringLiteral)
         {
             // TODO:
-        }   
+            llvm_unreachable("not implemented");
+        }
 
-        void mlirGenDecimalLiteral(antlr4::tree::TerminalNode *decimalLiteral)
+        mlir::Value mlirGenDecimalLiteral(antlr4::tree::TerminalNode *decimalLiteral)
         {
             // TODO:
-        }  
+            llvm_unreachable("not implemented");
+        }
 
-        void mlirGenDecimalIntegerLiteral(antlr4::tree::TerminalNode *decimalIntegerLiteral)
+        mlir::Value mlirGenDecimalIntegerLiteral(antlr4::tree::TerminalNode *decimalIntegerLiteral)
         {
             // TODO:
-        }  
+            llvm_unreachable("not implemented");
+        }
 
-        void mlirGenDecimalBigIntegerLiteral(antlr4::tree::TerminalNode *decimalBigIntegerLiteraligIntegerLiteral)
+        mlir::Value mlirGenDecimalBigIntegerLiteral(antlr4::tree::TerminalNode *decimalBigIntegerLiteraligIntegerLiteral)
         {
             // TODO:
-        }  
+            llvm_unreachable("not implemented");
+        }
 
-        void mlirGenBinaryBigIntegerLiteral(antlr4::tree::TerminalNode *binaryBigIntegerLiteral)
+        mlir::Value mlirGenBinaryBigIntegerLiteral(antlr4::tree::TerminalNode *binaryBigIntegerLiteral)
         {
             // TODO:
-        }  
+            llvm_unreachable("not implemented");
+        }
 
-        void mlirGenOctalBigIntegerLiteral(antlr4::tree::TerminalNode *octalBigIntegerLiteral)
+        mlir::Value mlirGenOctalBigIntegerLiteral(antlr4::tree::TerminalNode *octalBigIntegerLiteral)
         {
             // TODO:
-        }         
+            llvm_unreachable("not implemented");
+        }
 
-        void mlirGenHexBigIntegerLiteral(antlr4::tree::TerminalNode *hexBigIntegerLiteral)
+        mlir::Value mlirGenHexBigIntegerLiteral(antlr4::tree::TerminalNode *hexBigIntegerLiteral)
         {
             // TODO:
-        }                                  
+            llvm_unreachable("not implemented");
+        }
 
     private:
         /// A "module" matches a TypeScript source file: containing a list of functions.
@@ -284,8 +371,9 @@ namespace
 
         /// Helper conversion for a TypeScript AST location to an MLIR location.
         mlir::Location loc(const antlr4::misc::Interval &loc)
-        {
-            return builder.getFileLineColLoc(builder.getIdentifier(theModule.getName() ? theModule.getName().getValue() : ""), loc.a, loc.b);
+        {    
+            //return builder.getFileLineColLoc(builder.getIdentifier(""), loc.a, loc.b);
+            return builder.getUnknownLoc();
         }
     };
 

@@ -132,7 +132,8 @@
             "xtree": "cpp",
             "xutility": "cpp",
             "coroutine": "cpp",
-            "resumable": "cpp"
+            "resumable": "cpp",
+            "variant": "cpp"
         },
 		"antlr4.generation": {
 			"mode": "external",

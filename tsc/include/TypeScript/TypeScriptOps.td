@@ -31,4 +31,26 @@ def TypeScript_FooOp : TypeScript_Op<"foo", [NoSideEffect,
     }];
 }
 
+def IdentifierReferenceOp : TypeScript_Op<"identifier_reference", [NoSideEffect]> {
+  let summary = "identifier reference operation";
+  let description = [{
+    Identifier reference
+  }];
+
+  // The identifier operation takes a symbol reference attribute as the
+  // identifier
+  let arguments = (ins FlatSymbolRefAttr:$identifier);
+
+  let results = (outs TypeScript_IdentifierReferenceType);
+
+  // Add custom build methods for the identifier reference
+  let builders = [
+    OpBuilderDAG<(ins "StringRef":$identifier)>
+  ];
+  let extraClassDeclaration = [{
+    static IdentifierReferenceOp create(Location location, StringRef name);
+  }];
+}
+
+
 #endif // TYPESCRIPT_OPS
