@@ -33,8 +33,81 @@ using llvm::ScopedHashTableScope;
 using llvm::SmallVector;
 using llvm::StringRef;
 using llvm::Twine;
+
 namespace
 {
+    struct ValueOrString 
+    {
+        enum VariantEnum
+        {
+            Empty,
+            Value,
+            StringRef
+        };
+
+    public:
+        ValueOrString() : variant(VariantEnum::Empty), values{} {}
+
+        ValueOrString(mlir::Value value) : variant(VariantEnum::Value), values{value} {}
+
+        ValueOrString(llvm::StringRef value) : variant(VariantEnum::StringRef), values{value} {}
+
+        template <typename T>
+        bool constexpr has() {
+            return false;
+        }
+
+        template<>
+        bool constexpr has<mlir::Value>() 
+        {
+            return variant == VariantEnum::Value;
+        }        
+
+        template<>
+        bool constexpr has<llvm::StringRef>() 
+        {
+            return variant == VariantEnum::StringRef;
+        }        
+
+        explicit constexpr operator mlir::Value() 
+        {
+            return values.value;
+        }
+
+        explicit constexpr operator llvm::StringRef() 
+        {
+            return values.strRef;
+        }
+
+        ValueOrString& operator=(mlir::Value value)
+        {
+            variant = VariantEnum::Value;
+            values = value;
+            return *this;
+        }
+
+        ValueOrString& operator=(llvm::StringRef value)
+        {
+            variant = VariantEnum::StringRef;
+            values = value;
+            return *this;
+        }
+
+        VariantEnum variant;
+        union Union
+        {
+            Union() : value(nullptr) {}
+
+            Union(mlir::Value value) : value(value) {}
+
+            Union(llvm::StringRef value) : strRef(value) {}
+            
+            void* empty;
+            mlir::Value value;
+            llvm::StringRef strRef;
+        } values;
+    };
+
     /// Implementation of a simple MLIR emission from the TypeScript AST.
     ///
     /// This will emit operations that are specific to the TypeScript language, preserving
@@ -59,11 +132,7 @@ namespace
             {
                 if (auto *expressionStatement = statement->expressionStatement())
                 {
-                    auto op = mlirGen(expressionStatement);
-                    if (op)
-                    {
-                        //theModule.push_back(op);
-                    }
+                    mlirGen(expressionStatement);
                 }
                 else
                 {
@@ -136,69 +205,30 @@ namespace
         {
             auto location = loc(callExpression->getSourceInterval());
 
+            mlir::Value result;
+
             // get function ref.
             if (auto *memberExpression = callExpression->memberExpression())
             {
-                mlirGen(memberExpression);
+                result = mlirGen(memberExpression);
             }
             else if (auto *callExpressionRecursive = callExpression->callExpression())
             {
-                mlirGen(callExpressionRecursive);
+                result = mlirGen(callExpressionRecursive);
             }
 
             // process arguments
             mlirGen(callExpression->arguments());
 
             SmallVector<mlir::Value, 0> operands;
-            /*
-            SmallVector<mlir::Value, 4> operands;
-            for (auto &expr : call.getArgs())
-            {
-                auto arg = mlirGen(*expr);
-                if (!arg)
-                {
-                    return nullptr;
-                }
-                
-                operands.push_back(arg);
-            }
-            */
 
-            // declare
-            SmallVector<mlir::Type, 0> argTypes;
-            auto fnType = builder.getFunctionType(argTypes, llvm::None);
-            auto function = builder.create<mlir::FuncOp>(theModule.getLoc(), "test", fnType);
-            function.setPrivate();
-
-            // empty block
-            /*
-            auto &entryBlock = *function.addEntryBlock();
-            auto point = builder.saveInsertionPoint();
-            builder.setInsertionPointToStart(&entryBlock);
-            builder.create<mlir::ReturnOp>(theModule.getLoc());   
-            builder.restoreInsertionPoint(point);
-            */
-
-            auto funcOp = mlir::FuncOp::create(theModule.getLoc(), "test", fnType);
-            auto &entryBlock = *function.addEntryBlock();
-            builder.setInsertionPointToStart(&entryBlock);
-
-            // // declare printf
-            // // Create a function declaration for printf, the signature is:
-            // //   * `i32 (i8*, ...)`
-            // auto context = theModule.getContext();
-            // auto llvmI32Ty = mlir::LLVM::LLVMIntegerType::get(context, 32);
-            // auto llvmI8PtrTy = mlir::LLVM::LLVMPointerType::get(mlir::LLVM::LLVMIntegerType::get(context, 8));
-            // auto llvmFnType = mlir::LLVM::LLVMFunctionType::get(llvmI32Ty, llvmI8PtrTy, /*isVarArg=*/true);
-            // builder.create<mlir::LLVM::LLVMFuncOp>(theModule.getLoc(), "printf", llvmFnType);
-
-            auto callOp = builder.create<mlir::CallOp>(
+            auto callOp = 
+                builder.create<mlir::CallOp>(
                     location,
+                    mlir::TypeRange(llvm::None),
                     builder.getSymbolRefAttr("test"),
-                    llvm::None,
                     operands);
 
-            // no result
             return nullptr;
         }
 
@@ -214,8 +244,7 @@ namespace
             }
             else
             {
-                //return mlirGenIdentifierName(memberExpression->IdentifierName());
-                llvm_unreachable("not implemented");
+                return mlirGenIdentifierName(memberExpression->IdentifierName());
             }
         }
 
@@ -309,13 +338,12 @@ namespace
 
         mlir::Value mlirGen(TypeScriptParserANTLR::IdentifierReferenceContext *identifierReference)
         {
-            auto name = mlirGenIdentifierName(identifierReference->IdentifierName());
-            return IdentifierReferenceOp::create(theModule.getLoc(), name);
+            return mlirGenIdentifierName(identifierReference->IdentifierName());
         }
 
-        StringRef mlirGenIdentifierName(antlr4::tree::TerminalNode *identifierName)
+        mlir::Value mlirGenIdentifierName(antlr4::tree::TerminalNode *identifierName)
         {
-            return identifierName->getText();
+            return builder.create<IdentifierReference>(theModule.getLoc(), llvm::None, identifierName->getText());
         }
 
         mlir::Value mlirGenStringLiteral(antlr4::tree::TerminalNode *stringLiteral)

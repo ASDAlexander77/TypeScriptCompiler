@@ -3,9 +3,10 @@
 
 include "TypeScriptDialect.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
+include "mlir/IR/SymbolInterfaces.td"
+include "mlir/Interfaces/CallInterfaces.td"
 
-def TypeScript_FooOp : TypeScript_Op<"foo", [NoSideEffect,
-                                             SameOperandsAndResultType]> {
+def TypeScript_IdentifierReference : TypeScript_Op<"identifier_reference", [NoSideEffect]> {
     let summary = "Illustrates how to define an operation.";
     let description = [{
         The `typescript.foo` operation illustrates how to define a new
@@ -17,40 +18,20 @@ def TypeScript_FooOp : TypeScript_Op<"foo", [NoSideEffect,
         Example:
 
         ```mlir
-        %0 = constant 2 : i32
-        // Apply the foo operation to %0
-        %1 = typescript.foo %0 : i32
+        %1 = typescript.identifier_reference @my_identifier_name
         ```
     }];
 
-    let arguments = (ins I32:$input);
-    let results = (outs I32:$res);
+    let arguments = (ins FlatSymbolRefAttr:$callee);
+    let results = (outs AnyType);
 
     let assemblyFormat = [{
-        $input attr-dict `:` type($input)
+        $callee attr-dict `:` type(results)
     }];
+
+    let builders = [
+        OpBuilderDAG<(ins "StringRef":$callee)>
+    ];
 }
-
-def IdentifierReferenceOp : TypeScript_Op<"identifier_reference", [NoSideEffect]> {
-  let summary = "identifier reference operation";
-  let description = [{
-    Identifier reference
-  }];
-
-  // The identifier operation takes a symbol reference attribute as the
-  // identifier
-  let arguments = (ins FlatSymbolRefAttr:$identifier);
-
-  let results = (outs TypeScript_IdentifierReferenceType);
-
-  // Add custom build methods for the identifier reference
-  let builders = [
-    OpBuilderDAG<(ins "StringRef":$identifier)>
-  ];
-  let extraClassDeclaration = [{
-    static IdentifierReferenceOp create(Location location, StringRef name);
-  }];
-}
-
 
 #endif // TYPESCRIPT_OPS

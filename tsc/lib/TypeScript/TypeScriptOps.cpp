@@ -11,15 +11,5 @@ using namespace mlir;
 using namespace mlir::typescript;
 
 //===----------------------------------------------------------------------===//
-// IdentifierReferenceOp
+// xxxxOp
 //===----------------------------------------------------------------------===//
-
-IdentifierReferenceOp IdentifierReferenceOp::create(Location location, StringRef name) {
-  OperationState state(location, "identRef");
-  OpBuilder builder(location->getContext());
-
-  state.addAttribute(SymbolTable::getSymbolAttrName(),
-                     builder.getStringAttr(name));
-
-  return cast<IdentifierReferenceOp>(Operation::create(state));
-}

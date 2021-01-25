@@ -23,10 +23,4 @@ def TypeScript_Dialect : Dialect {
 class TypeScript_Op<string mnemonic, list<OpTrait> traits = []> :
         Op<TypeScript_Dialect, mnemonic, traits>;
 
-def TypeScript_IdentifierReferenceType :
-    Type<CPred<"$_self.isa<IdentifierReferenceType>()">, "TypeScript identifier reference type">;
-
-// Provide a definition of the types that are used within the TypeScript dialect.
-def TypeScript_Type : AnyTypeOf<[TypeScript_IdentifierReferenceType]>;
-
 #endif // TYPESCRIPT_DIALECT
