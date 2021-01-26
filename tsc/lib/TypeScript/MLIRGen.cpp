@@ -217,17 +217,29 @@ namespace
                 result = mlirGen(callExpressionRecursive);
             }
 
-            // process arguments
-            mlirGen(callExpression->arguments());
+            auto definingOp = result.getDefiningOp();
+            if (definingOp)
+            {
+                auto opName = definingOp->getName().getStringRef();
+                auto attrName = StringRef("callee");
+                if (definingOp->hasAttrOfType<mlir::FlatSymbolRefAttr>(attrName))
+                {
+                    auto calleeName = definingOp->getAttrOfType<mlir::FlatSymbolRefAttr>(attrName);
+                    auto functionName = calleeName.getValue();
 
-            SmallVector<mlir::Value, 0> operands;
+                    // process arguments
+                    mlirGen(callExpression->arguments());
 
-            auto callOp = 
-                builder.create<mlir::CallOp>(
-                    location,
-                    mlir::TypeRange(llvm::None),
-                    builder.getSymbolRefAttr("test"),
-                    operands);
+                    SmallVector<mlir::Value, 0> operands;
+
+                    auto callOp = 
+                        builder.create<mlir::CallOp>(
+                            location,
+                            llvm::None, 
+                            functionName,
+                            operands);
+                }
+            }
 
             return nullptr;
         }
@@ -343,7 +355,7 @@ namespace
 
         mlir::Value mlirGenIdentifierName(antlr4::tree::TerminalNode *identifierName)
         {
-            return builder.create<IdentifierReference>(theModule.getLoc(), llvm::None, identifierName->getText());
+            return builder.create<IdentifierReference>(theModule.getLoc(), builder.getI1Type(), identifierName->getText());
         }
 
         mlir::Value mlirGenStringLiteral(antlr4::tree::TerminalNode *stringLiteral)
