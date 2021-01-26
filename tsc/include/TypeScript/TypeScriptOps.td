@@ -18,19 +18,19 @@ def TypeScript_IdentifierReference : TypeScript_Op<"identifier_reference", [NoSi
         Example:
 
         ```mlir
-        %1 = typescript.identifier_reference @my_identifier_name
+        typescript.identifier_reference @my_identifier_name
         ```
     }];
 
-    let arguments = (ins FlatSymbolRefAttr:$callee);
-    let results = (outs AnyType);
+    let arguments = (ins FlatSymbolRefAttr:$identifier);
+    let results = (outs NoneType);
 
     let assemblyFormat = [{
-        $callee attr-dict `:` type(results)
+        $identifier attr-dict
     }];
 
     let builders = [
-        OpBuilderDAG<(ins "StringRef":$callee)>
+        OpBuilderDAG<(ins "StringRef":$identifier)>
     ];
 }
 

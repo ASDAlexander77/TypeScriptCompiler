@@ -221,7 +221,7 @@ namespace
             if (definingOp)
             {
                 auto opName = definingOp->getName().getStringRef();
-                auto attrName = StringRef("callee");
+                auto attrName = StringRef("identifier");
                 if (definingOp->hasAttrOfType<mlir::FlatSymbolRefAttr>(attrName))
                 {
                     auto calleeName = definingOp->getAttrOfType<mlir::FlatSymbolRefAttr>(attrName);
@@ -355,7 +355,7 @@ namespace
 
         mlir::Value mlirGenIdentifierName(antlr4::tree::TerminalNode *identifierName)
         {
-            return builder.create<IdentifierReference>(theModule.getLoc(), builder.getI1Type(), identifierName->getText());
+            return builder.create<IdentifierReference>(theModule.getLoc(), builder.getNoneType(), identifierName->getText());
         }
 
         mlir::Value mlirGenStringLiteral(antlr4::tree::TerminalNode *stringLiteral)
