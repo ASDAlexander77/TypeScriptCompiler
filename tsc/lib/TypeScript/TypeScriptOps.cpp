@@ -13,3 +13,14 @@ using namespace mlir::typescript;
 //===----------------------------------------------------------------------===//
 // xxxxOp
 //===----------------------------------------------------------------------===//
+
+//===----------------------------------------------------------------------===//
+// IdentifierReference
+//===----------------------------------------------------------------------===//
+
+IdentifierReference IdentifierReference::create(Location location, StringRef name) {
+  OperationState state(location, "identifier_reference");
+  OpBuilder builder(location->getContext());
+  IdentifierReference::build(builder, state, builder.getNoneType(), name);
+  return IdentifierReference(Operation::create(state));
+}
