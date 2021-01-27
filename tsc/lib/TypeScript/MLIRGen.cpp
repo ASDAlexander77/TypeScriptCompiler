@@ -229,9 +229,8 @@ namespace
                     auto functionName = calleeName.getValue();
 
                     // process arguments
-                    mlirGen(callExpression->arguments());
-
                     SmallVector<mlir::Value, 0> operands;
+                    mlirGen(callExpression->arguments(), operands);
 
                     auto callOp = 
                         builder.create<mlir::CallOp>(
@@ -266,30 +265,14 @@ namespace
             }
         }
 
-        void mlirGen(TypeScriptParserANTLR::ArgumentsContext *arguments)
+        mlir::LogicalResult mlirGen(TypeScriptParserANTLR::ArgumentsContext *arguments, SmallVector<mlir::Value, 0>& operands)
         {
-            auto firstExpression = arguments->expression();
-            // first argument
-            if (firstExpression.size() == 0)
+            for (auto& next : arguments->expression())
             {
-                return;
+                operands.push_back(mlirGen(next));
             }
 
-            auto *first = firstExpression.front();
-
-            mlirGen(first);
-
-            auto index = 0;
-            while (true)
-            {
-                auto *next = arguments->expression(index++);
-                if (!next)
-                {
-                    break;
-                }
-
-                mlirGen(next);
-            }
+            return mlir::success();
         }
 
         mlir::Value mlirGen(TypeScriptParserANTLR::LiteralContext *literal)
@@ -379,8 +362,10 @@ namespace
 
         mlir::Value mlirGenDecimalIntegerLiteral(antlr4::tree::TerminalNode *decimalIntegerLiteral)
         {
-            // TODO:
-            llvm_unreachable("not implemented");
+            return builder.create<mlir::ConstantOp>(
+                theModule.getLoc(), 
+                builder.getI32Type(), 
+                builder.getI32IntegerAttr(std::stoi(decimalIntegerLiteral->getText())));
         }
 
         mlir::Value mlirGenDecimalBigIntegerLiteral(antlr4::tree::TerminalNode *decimalBigIntegerLiteraligIntegerLiteral)
