@@ -15,4 +15,17 @@ def TypeScript_IdentifierReference : TypeScript_Op<"identifier_reference", [NoSi
     }];
 }
 
+def TypeScript_PrintOp : TypeScript_Op<"print"> {
+  let summary = "print operation";
+  let description = [{
+    The "print" builtin operation prints a given input string, and produces
+    no results.
+  }];
+
+  let arguments = (ins AnyType:$input);
+
+  let assemblyFormat = "$input attr-dict `:` type($input)";
+}
+
+
 #endif // TYPESCRIPT_OPS

@@ -232,16 +232,34 @@ namespace
                     SmallVector<mlir::Value, 0> operands;
                     mlirGen(callExpression->arguments(), operands);
 
+                    // result;
+                    auto hasResult = false;
+                    auto resultType = builder.getNoneType();
+
+                    // custom print op;
+                    // TODO: can it be improved somehow?
+                    if (functionName.compare(StringRef("print")) == 0)
+                    {
+                        auto printOp = 
+                            builder.create<PrintOp>(
+                                location,
+                                operands.front());
+
+                        return nullptr;
+                    }
+
                     auto callOp = 
                         builder.create<mlir::CallOp>(
                             location,
-                            //builder.getI1Type(),
-                            builder.getNoneType(),
+                            resultType, // result
                             functionName,
                             operands);
 
-                    // i guess this is how we can pass result if any
-                    //return callOp.getResult(0);
+                    if (hasResult)
+                    {
+                        return callOp.getResult(0);
+                    }
+
                     return nullptr;
                 }
             }
