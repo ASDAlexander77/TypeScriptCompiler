@@ -49,8 +49,6 @@ namespace
 
         LogicalResult matchAndRewrite(Operation *op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const override
         {
-            auto memRefType = (*op->operand_type_begin()).cast<MemRefType>();
-            auto memRefShape = memRefType.getShape();
             auto loc = op->getLoc();
 
             ModuleOp parentModule = op->getParentOfType<ModuleOp>();
@@ -62,6 +60,10 @@ namespace
             Value newLineCst = getOrCreateGlobalString(
                 loc, rewriter, "nl", StringRef("\n\0", 2), parentModule);
 
+            // print new line
+            rewriter.create<CallOp>(loc, printfRef, rewriter.getIntegerType(32), newLineCst);            
+
+/*
             // Create a loop for each of the dimensions within the shape.
             SmallVector<Value, 4> loopIvs;
             for (unsigned i = 0, e = memRefShape.size(); i != e; ++i)
@@ -91,9 +93,11 @@ namespace
             auto elementLoad = rewriter.create<LoadOp>(loc, printOp.input(), loopIvs);
             rewriter.create<CallOp>(loc, printfRef, rewriter.getIntegerType(32),
                                     ArrayRef<Value>({formatSpecifierCst, elementLoad}));
+*/            
 
             // Notify the rewriter that this operation has been removed.
             rewriter.eraseOp(op);
+
             return success();
         }
 

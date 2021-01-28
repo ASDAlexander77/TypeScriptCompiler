@@ -9,7 +9,7 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${command:cmake.launchTargetPath}",
-            "args": [],
+            "args": ["-emit=mlir-llvm", "C:\\temp\\1.ts"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
