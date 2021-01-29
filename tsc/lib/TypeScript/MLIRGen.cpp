@@ -128,15 +128,11 @@ namespace
             builder.setInsertionPointToStart(theModule.getBody());
 
             // Process generating here
-            for (auto *statement : moduleAST->statement())
+            for (auto *declaration : moduleAST->declaration())
             {
-                if (auto *expressionStatement = statement->expressionStatement())
+                if (failed(mlirGen(declaration)))
                 {
-                    mlirGen(expressionStatement);
-                }
-                else
-                {
-                    llvm_unreachable("unknown statement");
+                    return nullptr;
                 }
             }
 
@@ -151,6 +147,101 @@ namespace
             }
 
             return theModule;
+        }
+
+        mlir::LogicalResult mlirGen(TypeScriptParserANTLR::DeclarationContext *declarationAST)
+        {
+            if (auto *functionDeclaration = declarationAST->functionDeclaration())
+            {
+                mlirGen(functionDeclaration);
+            }
+            else
+            {
+                llvm_unreachable("unknown statement");
+            }
+
+            return mlir::success();
+        }         
+
+        mlir::LogicalResult mlirGen(TypeScriptParserANTLR::FormalParametersContext *formalParametersContextAST, const llvm::SmallVector<mlir::Type, 0>& argTypesParam)
+        {
+            auto argTypes = const_cast<llvm::SmallVector<mlir::Type, 0>&>(argTypesParam);
+
+            argTypes.reserve(formalParametersContextAST->formalParameter().size());
+            for (auto &arg : formalParametersContextAST->formalParameter()) 
+            {
+                mlir::Type type = getType(arg, theModule.getLoc());
+                if (!type)
+                {
+                    return mlir::failure();
+                }
+
+                argTypes.push_back(type);
+            }
+
+            return mlir::success();
+        }
+
+        mlir::FuncOp mlirGenFunctionPrototype(TypeScriptParserANTLR::FunctionDeclarationContext *functionDeclarationAST)
+        {
+            auto location = theModule.getLoc();
+
+            // This is a generic function, the return type will be inferred later.
+            llvm::SmallVector<mlir::Type, 0> argTypes;
+            if (mlir::failed(mlirGen(functionDeclarationAST->formalParameters(), argTypes)))
+            {
+                return nullptr;
+            }
+
+            std::string name;
+            auto *identifier = functionDeclarationAST->IdentifierName();
+            if (identifier)
+            {
+                name = identifier->getText();
+            }
+            else
+            {
+                // auto calculate name
+                // __func+location
+            }
+
+            auto func_type = builder.getFunctionType(argTypes, llvm::None);
+            return mlir::FuncOp::create(location, StringRef(name), func_type);
+        }
+
+        mlir::LogicalResult mlirGen(TypeScriptParserANTLR::FunctionDeclarationContext *functionDeclarationAST)
+        {
+            auto funcOp = mlirGenFunctionPrototype(functionDeclarationAST);
+
+            for (auto *statementListItem : functionDeclarationAST->functionBody()->statementListItem())
+            {
+                if (auto *statement = statementListItem->statement())
+                {
+                    mlirGen(statement);
+                }
+                else if (auto *declaration = statementListItem->declaration())
+                {
+                    mlirGen(declaration);
+                }
+                else
+                {
+                    llvm_unreachable("unknown statement");
+                }
+            }
+
+            return mlir::success();
+        }        
+
+        mlir::Value mlirGen(TypeScriptParserANTLR::StatementContext *statementAST)
+        {
+            if (auto *expressionStatement = statementAST->expressionStatement())
+            {
+                return mlirGen(expressionStatement);
+            }
+            else
+            {
+                llvm_unreachable("unknown statement");
+            }
         }
 
         mlir::Value mlirGen(TypeScriptParserANTLR::ExpressionStatementContext *expressionStatementAST)
@@ -408,6 +499,13 @@ namespace
         {
             // TODO:
             llvm_unreachable("not implemented");
+        }
+
+        mlir::Type getType(TypeScriptParserANTLR::FormalParameterContext *formalParameterAST, mlir::Location loc) 
+        {
+            // TODO: finish it.
+            // return default type, pointer to any type
+            return mlir::UnrankedMemRefType::get(builder.getI1Type(), 0);
         }
 
     private:

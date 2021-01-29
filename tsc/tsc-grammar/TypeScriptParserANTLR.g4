@@ -6,7 +6,42 @@ options {
 
 // Actual grammar start.
 main
-    : statement* EOF ;
+    : declaration* EOF ;
+
+declaration
+    : functionDeclaration ;    
+
+functionDeclaration
+    : FUNCTION_KEYWORD IdentifierName? OPENPAREN_TOKEN (formalParameters)? CLOSEPAREN_TOKEN OPENBRACE_TOKEN functionBody CLOSEBRACE_TOKEN ;
+
+formalParameters
+    : functionRestParameter
+    | formalParameter (COMMA_TOKEN formalParameter)* (COMMA_TOKEN functionRestParameter)? ;    
+
+formalParameter
+    : IdentifierName QUESTION_TOKEN? typeParameter? initializer? ;    
+
+typeParameter
+    : COLON_TOKEN typeDeclaration ;    
+
+initializer
+    : EQUALS_TOKEN assignmentExpression ;  
+
+assignmentExpression
+    : leftHandSideExpression ;   
+
+typeDeclaration
+    : ANY_KEYWORD ;    
+
+functionRestParameter
+    : DOTDOTDOT_TOKEN formalParameter ;
+
+functionBody
+    : statementListItem* ;    
+
+statementListItem
+    : statement 
+    | declaration ;
 
 statement
     : expressionStatement ;
@@ -42,16 +77,16 @@ numericLiteral
 identifierReference
     : IdentifierName ;
 
-leftHandSideExpression     
-    : callExpression ;
+leftHandSideExpression
+    : memberExpression     
+    | callExpression ;
 
 arguments
     :  OPENPAREN_TOKEN (expression (COMMA_TOKEN expression)*)? CLOSEPAREN_TOKEN ;
 
 callExpression
     : memberExpression arguments
-    | callExpression arguments
-    ;
+    | callExpression arguments ;
 
 memberExpression    
     : primaryExpression
@@ -60,4 +95,3 @@ memberExpression
 primaryExpression
     : literal
     | identifierReference ;
-
