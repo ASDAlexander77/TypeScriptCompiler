@@ -36,7 +36,7 @@ using llvm::Twine;
 
 namespace
 {
-    struct ValueOrString 
+    struct ValueOrString
     {
         enum VariantEnum
         {
@@ -53,40 +53,41 @@ namespace
         ValueOrString(llvm::StringRef value) : variant(VariantEnum::StringRef), values{value} {}
 
         template <typename T>
-        bool constexpr has() {
+        bool constexpr has()
+        {
             return false;
         }
 
-        template<>
-        bool constexpr has<mlir::Value>() 
+        template <>
+        bool constexpr has<mlir::Value>()
         {
             return variant == VariantEnum::Value;
-        }        
+        }
 
-        template<>
-        bool constexpr has<llvm::StringRef>() 
+        template <>
+        bool constexpr has<llvm::StringRef>()
         {
             return variant == VariantEnum::StringRef;
-        }        
+        }
 
-        explicit constexpr operator mlir::Value() 
+        explicit constexpr operator mlir::Value()
         {
             return values.value;
         }
 
-        explicit constexpr operator llvm::StringRef() 
+        explicit constexpr operator llvm::StringRef()
         {
             return values.strRef;
         }
 
-        ValueOrString& operator=(mlir::Value value)
+        ValueOrString &operator=(mlir::Value value)
         {
             variant = VariantEnum::Value;
             values = value;
             return *this;
         }
 
-        ValueOrString& operator=(llvm::StringRef value)
+        ValueOrString &operator=(llvm::StringRef value)
         {
             variant = VariantEnum::StringRef;
             values = value;
@@ -101,8 +102,8 @@ namespace
             Union(mlir::Value value) : value(value) {}
 
             Union(llvm::StringRef value) : strRef(value) {}
-            
-            void* empty;
+
+            void *empty;
             mlir::Value value;
             llvm::StringRef strRef;
         } values;
@@ -161,22 +162,24 @@ namespace
             }
 
             return mlir::success();
-        }         
+        }
 
-        mlir::LogicalResult mlirGen(TypeScriptParserANTLR::FormalParametersContext *formalParametersContextAST, const llvm::SmallVector<mlir::Type, 0>& argTypesParam)
+        mlir::LogicalResult mlirGen(TypeScriptParserANTLR::FormalParametersContext *formalParametersContextAST, const llvm::SmallVector<mlir::Type, 0> &argTypesParam)
         {
-            auto argTypes = const_cast<llvm::SmallVector<mlir::Type, 0>&>(argTypesParam);
-
-            argTypes.reserve(formalParametersContextAST->formalParameter().size());
-            for (auto &arg : formalParametersContextAST->formalParameter()) 
+            auto argTypes = const_cast<llvm::SmallVector<mlir::Type, 0> &>(argTypesParam);
+            if (formalParametersContextAST)
             {
-                mlir::Type type = getType(arg, theModule.getLoc());
-                if (!type)
+                argTypes.reserve(formalParametersContextAST->formalParameter().size());
+                for (auto &arg : formalParametersContextAST->formalParameter())
                 {
-                    return mlir::failure();
-                }
+                    mlir::Type type = getType(arg, theModule.getLoc());
+                    if (!type)
+                    {
+                        return mlir::failure();
+                    }
 
-                argTypes.push_back(type);
+                    argTypes.push_back(type);
+                }
             }
 
             return mlir::success();
@@ -212,6 +215,13 @@ namespace
         mlir::LogicalResult mlirGen(TypeScriptParserANTLR::FunctionDeclarationContext *functionDeclarationAST)
         {
             auto funcOp = mlirGenFunctionPrototype(functionDeclarationAST);
+            if (!funcOp)
+            {
+                return mlir::failure();
+            }
+
+            auto &entryBlock = *funcOp.addEntryBlock();
+            builder.setInsertionPointToStart(&entryBlock);
 
             for (auto *statementListItem : functionDeclarationAST->functionBody()->statementListItem())
             {
@@ -229,8 +239,37 @@ namespace
                 }
             }
 
+            // add return
+            mlir::ReturnOp returnOp;
+            if (!entryBlock.empty())
+            {
+                returnOp = dyn_cast<mlir::ReturnOp>(entryBlock.back());
+            }
+
+            if (!returnOp)
+            {
+                builder.create<mlir::ReturnOp>(theModule.getLoc());
+            }
+            else if (!returnOp.operands().empty())
+            {
+                // Otherwise, if this return operation has an operand then add a result to
+                // the function.
+                funcOp.setType(
+                    builder.getFunctionType(
+                        funcOp.getType().getInputs(),
+                        *returnOp.operand_type_begin()));
+            }
+
+            // set visibility index
+            if (functionDeclarationAST->IdentifierName()->getText() != "main")
+            {
+                funcOp.setPrivate();
+            }
+
+            theModule.push_back(funcOp);
+
             return mlir::success();
-        }        
+        }
 
         mlir::Value mlirGen(TypeScriptParserANTLR::StatementContext *statementAST)
         {
@@ -262,7 +301,7 @@ namespace
             else
             {
                 llvm_unreachable("unknown statement");
-            }            
+            }
         }
 
         mlir::Value mlirGen(TypeScriptParserANTLR::PrimaryExpressionContext *primaryExpression)
@@ -278,7 +317,7 @@ namespace
             else
             {
                 llvm_unreachable("unknown statement");
-            }               
+            }
         }
 
         mlir::Value mlirGen(TypeScriptParserANTLR::LeftHandSideExpressionContext *leftHandSideExpression)
@@ -290,7 +329,7 @@ namespace
             else
             {
                 llvm_unreachable("unknown statement");
-            }             
+            }
         }
 
         mlir::Value mlirGen(TypeScriptParserANTLR::CallExpressionContext *callExpression)
@@ -331,7 +370,7 @@ namespace
                     // TODO: can it be improved somehow?
                     if (functionName.compare(StringRef("print")) == 0)
                     {
-                        auto printOp = 
+                        auto printOp =
                             builder.create<PrintOp>(
                                 location,
                                 operands.front());
@@ -339,7 +378,7 @@ namespace
                         return nullptr;
                     }
 
-                    auto callOp = 
+                    auto callOp =
                         builder.create<mlir::CallOp>(
                             location,
                             resultType, // result
@@ -374,9 +413,9 @@ namespace
             }
         }
 
-        mlir::LogicalResult mlirGen(TypeScriptParserANTLR::ArgumentsContext *arguments, SmallVector<mlir::Value, 0>& operands)
+        mlir::LogicalResult mlirGen(TypeScriptParserANTLR::ArgumentsContext *arguments, SmallVector<mlir::Value, 0> &operands)
         {
-            for (auto& next : arguments->expression())
+            for (auto &next : arguments->expression())
             {
                 operands.push_back(mlirGen(next));
             }
@@ -443,7 +482,7 @@ namespace
             else
             {
                 llvm_unreachable("unknown statement");
-            }             
+            }
         }
 
         mlir::Value mlirGen(TypeScriptParserANTLR::IdentifierReferenceContext *identifierReference)
@@ -472,8 +511,8 @@ namespace
         mlir::Value mlirGenDecimalIntegerLiteral(antlr4::tree::TerminalNode *decimalIntegerLiteral)
         {
             return builder.create<mlir::ConstantOp>(
-                theModule.getLoc(), 
-                builder.getI32Type(), 
+                theModule.getLoc(),
+                builder.getI32Type(),
                 builder.getI32IntegerAttr(std::stoi(decimalIntegerLiteral->getText())));
         }
 
@@ -501,7 +540,7 @@ namespace
             llvm_unreachable("not implemented");
         }
 
-        mlir::Type getType(TypeScriptParserANTLR::FormalParameterContext *formalParameterAST, mlir::Location loc) 
+        mlir::Type getType(TypeScriptParserANTLR::FormalParameterContext *formalParameterAST, mlir::Location loc)
         {
             // TODO: finish it.
             // return default type, pointer to any type
@@ -519,7 +558,7 @@ namespace
 
         /// Helper conversion for a TypeScript AST location to an MLIR location.
         mlir::Location loc(const antlr4::misc::Interval &loc)
-        {    
+        {
             //return builder.getFileLineColLoc(builder.getIdentifier(""), loc.a, loc.b);
             return builder.getUnknownLoc();
         }

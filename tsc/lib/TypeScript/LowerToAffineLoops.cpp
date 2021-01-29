@@ -1,4 +1,5 @@
 #include "TypeScript/TypeScriptDialect.h"
+#include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/Passes.h"
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
@@ -58,6 +59,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction() {
   // a partial lowering, we explicitly mark the TypeScript operations that don't want
   // to lower, `typescript.print`, as `legal`.
   target.addIllegalDialect<typescript::TypeScriptDialect>();
+  target.addLegalOp<::mlir::typescript::PrintOp>();
 
   // Now that the conversion target has been defined, we just need to provide
   // the set of patterns that will lower the TypeScript operations.
