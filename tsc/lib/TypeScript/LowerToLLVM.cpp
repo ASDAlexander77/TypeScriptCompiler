@@ -113,8 +113,8 @@ namespace
 
             // Create a function declaration for printf, the signature is:
             //   * `i32 (i8*, ...)`
-            auto llvmI32Ty = LLVM::LLVMIntegerType::get(context, 32);
-            auto llvmI8PtrTy = LLVM::LLVMPointerType::get(LLVM::LLVMIntegerType::get(context, 8));
+            auto llvmI32Ty = IntegerType::get(context, 32);
+            auto llvmI8PtrTy = LLVM::LLVMPointerType::get(IntegerType::get(context, 8));
             auto llvmFnType = LLVM::LLVMFunctionType::get(llvmI32Ty, llvmI8PtrTy, true);
 
             // Insert the printf function into the body of the parent module.
@@ -137,19 +137,19 @@ namespace
                 OpBuilder::InsertionGuard insertGuard(builder);
                 builder.setInsertionPointToStart(module.getBody());
                 auto type = LLVM::LLVMArrayType::get(
-                    LLVM::LLVMIntegerType::get(builder.getContext(), 8), value.size());
+                    IntegerType::get(builder.getContext(), 8), value.size());
                 global = builder.create<LLVM::GlobalOp>(loc, type, true, LLVM::Linkage::Internal, name, builder.getStringAttr(value));
             }
 
             // Get the pointer to the first character in the global string.
             Value globalPtr = builder.create<LLVM::AddressOfOp>(loc, global);
             Value cst0 = builder.create<LLVM::ConstantOp>(
-                loc, LLVM::LLVMIntegerType::get(builder.getContext(), 64),
+                loc, IntegerType::get(builder.getContext(), 64),
                 builder.getIntegerAttr(builder.getIndexType(), 0));
             return builder.create<LLVM::GEPOp>(
                 loc,
                 LLVM::LLVMPointerType::get(
-                    LLVM::LLVMIntegerType::get(builder.getContext(), 8)),
+                    IntegerType::get(builder.getContext(), 8)),
                 globalPtr, ArrayRef<Value>({cst0, cst0}));
         }
     };
