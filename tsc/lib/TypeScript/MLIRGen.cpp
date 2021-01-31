@@ -378,6 +378,18 @@ namespace
                         return nullptr;
                     }
 
+                    // assert
+                    if (functionName.compare(StringRef("assert")) == 0)
+                    {
+                        auto assertOp =
+                            builder.create<mlir::AssertOp>(
+                                location,
+                                operands.front(),
+                                mlir::StringAttr::get(StringRef("assert msg"), theModule.getContext()));
+
+                        return nullptr;
+                    }                    
+
                     auto callOp =
                         builder.create<mlir::CallOp>(
                             location,
@@ -450,7 +462,26 @@ namespace
 
         mlir::Value mlirGen(TypeScriptParserANTLR::BooleanLiteralContext *booleanLiteral)
         {
-            llvm_unreachable("not implemented");
+            if (booleanLiteral->TRUE_KEYWORD())
+            {
+                return 
+                    builder.create<mlir::ConstantOp>(
+                        theModule.getLoc(),
+                        builder.getI1Type(),
+                        mlir::BoolAttr::get(true, theModule.getContext()));
+            }
+            else if (booleanLiteral->FALSE_KEYWORD())
+            {
+                return 
+                    builder.create<mlir::ConstantOp>(
+                        theModule.getLoc(),
+                        builder.getI1Type(),
+                        mlir::BoolAttr::get(false, theModule.getContext()));
+            }
+            else
+            {
+                llvm_unreachable("not implemented");
+            }
         }
 
         mlir::Value mlirGen(TypeScriptParserANTLR::NumericLiteralContext *numericLiteral)
