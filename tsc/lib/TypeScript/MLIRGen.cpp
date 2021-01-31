@@ -379,8 +379,9 @@ namespace
                     }
 
                     // assert
-                    if (functionName.compare(StringRef("assert")) == 0)
+                    if (functionName.compare(StringRef("assert")) == 0 && operands.size() > 1)
                     {
+                        auto msg = StringRef("assert msg");
                         auto assertOp =
                             builder.create<mlir::AssertOp>(
                                 location,
@@ -529,8 +530,10 @@ namespace
 
         mlir::Value mlirGenStringLiteral(antlr4::tree::TerminalNode *stringLiteral)
         {
-            // TODO:
-            llvm_unreachable("not implemented");
+            return builder.create<mlir::ConstantOp>(
+                theModule.getLoc(),
+                mlir::UnrankedTensorType::get(mlir::IntegerType::get(theModule.getContext(), 8)),
+                builder.getStringAttr(StringRef(stringLiteral->getText())));
         }
 
         mlir::Value mlirGenDecimalLiteral(antlr4::tree::TerminalNode *decimalLiteral)
