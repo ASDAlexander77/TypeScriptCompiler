@@ -432,7 +432,7 @@ namespace
             }
 
             auto assertOp =
-                builder.create<mlir::AssertOp>(
+                builder.create<AssertOp>(
                     location,
                     operands.front(),
                     mlir::StringAttr::get(msg, theModule.getContext()));

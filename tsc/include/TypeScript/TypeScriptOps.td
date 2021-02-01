@@ -26,4 +26,26 @@ def TypeScript_PrintOp : TypeScript_Op<"print"> {
   let assemblyFormat = "$input attr-dict `:` type($input)";
 }
 
+def TypeScript_AssertOp : TypeScript_Op<"assert"> {
+  let summary = "Assert operation";
+  let description = [{
+    Assert operation
+
+    Example:
+
+    ```mlir
+    assert %b, "Expected ... to be true"
+    ```
+  }];
+
+  let arguments = (ins I1:$arg, StrAttr:$msg);
+
+  let assemblyFormat = "$arg `,` $msg attr-dict";
+
+  // AssertOp is fully verified by its traits.
+  let verifier = ?;
+
+  let hasCanonicalizer = 1;
+}
+
 #endif // TYPESCRIPT_OPS

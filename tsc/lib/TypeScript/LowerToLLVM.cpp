@@ -61,39 +61,7 @@ namespace
                 loc, rewriter, "nl", StringRef("\n\0", 2), parentModule);
 
             // print new line
-            rewriter.create<CallOp>(loc, printfRef, rewriter.getIntegerType(32), newLineCst);            
-
-/*
-            // Create a loop for each of the dimensions within the shape.
-            SmallVector<Value, 4> loopIvs;
-            for (unsigned i = 0, e = memRefShape.size(); i != e; ++i)
-            {
-                auto lowerBound = rewriter.create<ConstantIndexOp>(loc, 0);
-                auto upperBound = rewriter.create<ConstantIndexOp>(loc, memRefShape[i]);
-                auto step = rewriter.create<ConstantIndexOp>(loc, 1);
-                auto loop =
-                    rewriter.create<scf::ForOp>(loc, lowerBound, upperBound, step);
-                for (Operation &nested : *loop.getBody())
-                    rewriter.eraseOp(&nested);
-                loopIvs.push_back(loop.getInductionVar());
-
-                // Terminate the loop body.
-                rewriter.setInsertionPointToEnd(loop.getBody());
-
-                // Insert a newline after each of the inner dimensions of the shape.
-                if (i != e - 1)
-                    rewriter.create<CallOp>(loc, printfRef, rewriter.getIntegerType(32),
-                                            newLineCst);
-                rewriter.create<scf::YieldOp>(loc);
-                rewriter.setInsertionPointToStart(loop.getBody());
-            }
-
-            // Generate a call to printf for the current element of the loop.
-            auto printOp = cast<typescript::PrintOp>(op);
-            auto elementLoad = rewriter.create<LoadOp>(loc, printOp.input(), loopIvs);
-            rewriter.create<CallOp>(loc, printfRef, rewriter.getIntegerType(32),
-                                    ArrayRef<Value>({formatSpecifierCst, elementLoad}));
-*/            
+            rewriter.create<CallOp>(loc, printfRef, rewriter.getIntegerType(32), newLineCst);
 
             // Notify the rewriter that this operation has been removed.
             rewriter.eraseOp(op);
@@ -153,6 +121,49 @@ namespace
                 globalPtr, ArrayRef<Value>({cst0, cst0}));
         }
     };
+
+    struct AssertOpLowering : public ConversionPattern
+    {
+        explicit AssertOpLowering(MLIRContext *context)
+            : ConversionPattern(typescript::AssertOp::getOperationName(), 1, context) {}
+
+        LogicalResult matchAndRewrite(Operation *op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const override
+        {
+            auto loc = op->getLoc();
+            AssertOp::Adaptor transformed(operands);
+
+            // Insert the `abort` declaration if necessary.
+            auto module = op->getParentOfType<ModuleOp>();
+            auto abortFunc = module.lookupSymbol<LLVM::LLVMFuncOp>("abort");
+            if (!abortFunc)
+            {
+                auto *context = module.getContext();
+
+                OpBuilder::InsertionGuard guard(rewriter);
+                rewriter.setInsertionPointToStart(module.getBody());
+                auto abortFuncTy = LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(context), {});
+                abortFunc = rewriter.create<LLVM::LLVMFuncOp>(rewriter.getUnknownLoc(), "abort", abortFuncTy);
+            }
+
+            // Split block at `assert` operation.
+            Block *opBlock = rewriter.getInsertionBlock();
+            auto opPosition = rewriter.getInsertionPoint();
+            Block *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
+
+            // Generate IR to call `abort`.
+            Block *failureBlock = rewriter.createBlock(opBlock->getParent());
+            rewriter.create<LLVM::CallOp>(loc, abortFunc, llvm::None);
+            rewriter.create<LLVM::UnreachableOp>(loc);
+
+            // Generate assertion test.
+            rewriter.setInsertionPointToEnd(opBlock);
+            rewriter.replaceOpWithNewOp<LLVM::CondBrOp>(
+                op, transformed.arg(), continuationBlock, failureBlock);
+
+            return success();
+        }
+    };
+
 } // end anonymous namespace
 
 //===----------------------------------------------------------------------===//
@@ -202,7 +213,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 
     // The only remaining operation to lower from the `typescript` dialect, is the
     // PrintOp.
-    patterns.insert<PrintOpLowering>(&getContext());
+    patterns.insert<PrintOpLowering, AssertOpLowering>(&getContext());
 
     // We want to completely lower to LLVM, so we use a `FullConversion`. This
     // ensures that only legal operations will remain after the conversion.
