@@ -283,8 +283,8 @@ LS : [\u2028] ;
 PS : [\u2029] ;
 */ 
 StringLiteral
-    : '"' DoubleStringCharacter* '"'
-    | '\'' SingleStringCharacter* '\''
+    : '"' (DoubleStringCharacter*) '"'
+    | '\'' (SingleStringCharacter*) '\''
     | NoSubstitutionTemplate ;
 
 fragment DoubleStringCharacter 

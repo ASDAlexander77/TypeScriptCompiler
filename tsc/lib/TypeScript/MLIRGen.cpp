@@ -366,31 +366,25 @@ namespace
                     auto hasResult = false;
                     auto resultType = builder.getNoneType();
 
-                    // custom print op;
-                    // TODO: can it be improved somehow?
+                    // print - internal command;
                     if (functionName.compare(StringRef("print")) == 0)
                     {
-                        auto printOp =
-                            builder.create<PrintOp>(
-                                location,
-                                operands.front());
-
-                        return nullptr;
+                        if (mlir::succeeded(mlirGenPrint(location, operands)))
+                        {
+                            return nullptr;
+                        }
                     }
 
-                    // assert
-                    if (functionName.compare(StringRef("assert")) == 0 && operands.size() > 1)
+                    // assert - internal command;
+                    if (functionName.compare(StringRef("assert")) == 0 && operands.size() > 0)
                     {
-                        auto msg = StringRef("assert msg");
-                        auto assertOp =
-                            builder.create<mlir::AssertOp>(
-                                location,
-                                operands.front(),
-                                mlir::StringAttr::get(StringRef("assert msg"), theModule.getContext()));
-
-                        return nullptr;
+                        if (mlir::succeeded(mlirGenAssert(location, operands)))
+                        {
+                            return nullptr;
+                        }
                     }                    
 
+                    // default call by name
                     auto callOp =
                         builder.create<mlir::CallOp>(
                             location,
@@ -408,6 +402,42 @@ namespace
             }
 
             return nullptr;
+        }
+
+        mlir::LogicalResult mlirGenPrint(const mlir::Location& location, const SmallVector<mlir::Value, 0>& operands)
+        {
+            auto printOp =
+                builder.create<PrintOp>(
+                    location,
+                    operands.front());
+
+            return mlir::success();
+        }
+
+        mlir::LogicalResult mlirGenAssert(const mlir::Location& location, const SmallVector<mlir::Value, 0>& operands)
+        {
+            auto msg = StringRef("assert");
+            if (operands.size() > 1)
+            {
+                auto param2 = operands[1];
+                auto definingOpParam2 = param2.getDefiningOp();
+                auto valueAttrName = StringRef("value");
+                if (definingOpParam2
+                    && definingOpParam2->hasAttrOfType<mlir::StringAttr>(valueAttrName))
+                {
+                    auto valueAttr = definingOpParam2->getAttrOfType<mlir::StringAttr>(valueAttrName);
+                    msg = valueAttr.getValue();
+                    definingOpParam2->erase();
+                }
+            }
+
+            auto assertOp =
+                builder.create<mlir::AssertOp>(
+                    location,
+                    operands.front(),
+                    mlir::StringAttr::get(msg, theModule.getContext()));
+
+            return mlir::success();
         }
 
         mlir::Value mlirGen(TypeScriptParserANTLR::MemberExpressionContext *memberExpression)
@@ -530,10 +560,13 @@ namespace
 
         mlir::Value mlirGenStringLiteral(antlr4::tree::TerminalNode *stringLiteral)
         {
+            auto text = stringLiteral->getText();
+            auto innerText = text.substr(1, text.length() - 2);
+
             return builder.create<mlir::ConstantOp>(
                 theModule.getLoc(),
                 mlir::UnrankedTensorType::get(mlir::IntegerType::get(theModule.getContext(), 8)),
-                builder.getStringAttr(StringRef(stringLiteral->getText())));
+                builder.getStringAttr(StringRef(innerText)));
         }
 
         mlir::Value mlirGenDecimalLiteral(antlr4::tree::TerminalNode *decimalLiteral)
