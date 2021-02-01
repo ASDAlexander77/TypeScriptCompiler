@@ -77,9 +77,11 @@ static cl::opt<bool> enableOpt("opt", cl::desc("Enable optimizations"));
 
 int loadMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module)
 {
+    auto fileName = llvm::StringRef(inputFilename);
+
     // Handle '.TypeScript' input to the compiler.
     if (inputType != InputType::MLIR &&
-        !llvm::StringRef(inputFilename).endswith(".mlir"))
+        !fileName.endswith(".mlir"))
     {
         auto fileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(inputFilename);
         if (std::error_code ec = fileOrErr.getError())
@@ -88,7 +90,7 @@ int loadMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module)
             return -1;
         }
 
-        module = mlirGenFromSource(context, fileOrErr.get()->getBuffer());
+        module = mlirGenFromSource(context, fileOrErr.get()->getBuffer(), fileName);
         return !module ? 1 : 0;
     }
 

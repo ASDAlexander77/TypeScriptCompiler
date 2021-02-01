@@ -17,7 +17,7 @@ namespace llvm
 namespace typescript
 {
     llvm::StringRef dumpFromSource(const llvm::StringRef &source);
-    mlir::OwningModuleRef mlirGenFromSource(const mlir::MLIRContext &context, const llvm::StringRef &source);
+    mlir::OwningModuleRef mlirGenFromSource(const mlir::MLIRContext &context, const llvm::StringRef &source, const llvm::StringRef &fileName);
 } // namespace typescript
 
 #endif // MLIR_TYPESCRIPT_MLIRGEN_H_

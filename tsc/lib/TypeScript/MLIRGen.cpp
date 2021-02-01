@@ -117,7 +117,15 @@ namespace
     class MLIRGenImpl
     {
     public:
-        MLIRGenImpl(const mlir::MLIRContext &context) : builder(&const_cast<mlir::MLIRContext &>(context)) {}
+        MLIRGenImpl(const mlir::MLIRContext &context) : builder(&const_cast<mlir::MLIRContext &>(context)) 
+        {
+            fileName = "<unknown>";
+        }
+
+        MLIRGenImpl(const mlir::MLIRContext &context, const llvm::StringRef &fileNameParam) : builder(&const_cast<mlir::MLIRContext &>(context)) 
+        {
+            fileName = fileNameParam;
+        }
 
         /// Public API: convert the AST for a TypeScript module (source file) to an MLIR
         /// Module operation.
@@ -172,7 +180,7 @@ namespace
                 argTypes.reserve(formalParametersContextAST->formalParameter().size());
                 for (auto &arg : formalParametersContextAST->formalParameter())
                 {
-                    mlir::Type type = getType(arg, theModule.getLoc());
+                    mlir::Type type = getType(arg, loc(arg));
                     if (!type)
                     {
                         return mlir::failure();
@@ -187,7 +195,7 @@ namespace
 
         mlir::FuncOp mlirGenFunctionPrototype(TypeScriptParserANTLR::FunctionDeclarationContext *functionDeclarationAST)
         {
-            auto location = theModule.getLoc();
+            auto location = loc(functionDeclarationAST);
 
             // This is a generic function, the return type will be inferred later.
             llvm::SmallVector<mlir::Type, 0> argTypes;
@@ -248,7 +256,7 @@ namespace
 
             if (!returnOp)
             {
-                builder.create<mlir::ReturnOp>(theModule.getLoc());
+                builder.create<mlir::ReturnOp>(loc(functionDeclarationAST->functionBody()));
             }
             else if (!returnOp.operands().empty())
             {
@@ -334,7 +342,7 @@ namespace
 
         mlir::Value mlirGen(TypeScriptParserANTLR::CallExpressionContext *callExpression)
         {
-            auto location = loc(callExpression->getSourceInterval());
+            auto location = loc(callExpression);
 
             mlir::Value result;
 
@@ -497,7 +505,7 @@ namespace
             {
                 return 
                     builder.create<mlir::ConstantOp>(
-                        theModule.getLoc(),
+                        loc(booleanLiteral),
                         builder.getI1Type(),
                         mlir::BoolAttr::get(true, theModule.getContext()));
             }
@@ -505,7 +513,7 @@ namespace
             {
                 return 
                     builder.create<mlir::ConstantOp>(
-                        theModule.getLoc(),
+                        loc(booleanLiteral),
                         builder.getI1Type(),
                         mlir::BoolAttr::get(false, theModule.getContext()));
             }
@@ -554,8 +562,7 @@ namespace
 
         mlir::Value mlirGenIdentifierName(antlr4::tree::TerminalNode *identifierName)
         {
-            //return builder.create<IdentifierReference>(theModule.getLoc(), builder.getNoneType(), identifierName->getText());
-            return IdentifierReference::create(theModule.getLoc(), identifierName->getText());
+            return IdentifierReference::create(loc(identifierName), identifierName->getText());
         }
 
         mlir::Value mlirGenStringLiteral(antlr4::tree::TerminalNode *stringLiteral)
@@ -564,7 +571,7 @@ namespace
             auto innerText = text.substr(1, text.length() - 2);
 
             return builder.create<mlir::ConstantOp>(
-                theModule.getLoc(),
+                loc(stringLiteral),
                 mlir::UnrankedTensorType::get(mlir::IntegerType::get(theModule.getContext(), 8)),
                 builder.getStringAttr(StringRef(innerText)));
         }
@@ -578,7 +585,7 @@ namespace
         mlir::Value mlirGenDecimalIntegerLiteral(antlr4::tree::TerminalNode *decimalIntegerLiteral)
         {
             return builder.create<mlir::ConstantOp>(
-                theModule.getLoc(),
+                loc(decimalIntegerLiteral),
                 builder.getI32Type(),
                 builder.getI32IntegerAttr(std::stoi(decimalIntegerLiteral->getText())));
         }
@@ -623,11 +630,13 @@ namespace
         /// the next operations will be introduced.
         mlir::OpBuilder builder;
 
+        mlir::StringRef fileName;
+
         /// Helper conversion for a TypeScript AST location to an MLIR location.
-        mlir::Location loc(const antlr4::misc::Interval &loc)
+        mlir::Location loc(antlr4::tree::ParseTree *tree)
         {
-            //return builder.getFileLineColLoc(builder.getIdentifier(""), loc.a, loc.b);
-            return builder.getUnknownLoc();
+            const antlr4::misc::Interval &loc = tree->getSourceInterval();
+            return builder.getFileLineColLoc(builder.getIdentifier(fileName), loc.a, loc.b);
         }
     };
 
@@ -645,13 +654,13 @@ namespace typescript
         return llvm::StringRef(moduleAST->toStringTree());
     }
 
-    mlir::OwningModuleRef mlirGenFromSource(const mlir::MLIRContext &context, const llvm::StringRef &source)
+    mlir::OwningModuleRef mlirGenFromSource(const mlir::MLIRContext &context, const llvm::StringRef &source, const llvm::StringRef &fileName)
     {
         antlr4::ANTLRInputStream input((std::string)source);
         typescript::TypeScriptLexerANTLR lexer(&input);
         antlr4::CommonTokenStream tokens(&lexer);
         typescript::TypeScriptParserANTLR parser(&tokens);
-        return MLIRGenImpl(context).mlirGen(parser.main());
+        return MLIRGenImpl(context, fileName).mlirGen(parser.main());
     }
 
 } // namespace typescript

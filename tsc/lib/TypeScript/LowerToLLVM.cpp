@@ -30,6 +30,7 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "llvm/ADT/Sequence.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 using namespace mlir;
 
@@ -39,57 +40,12 @@ using namespace mlir;
 
 namespace
 {
-    /// Lowers `typescript.print` to a loop nest calling `printf` on each of the individual
-    /// elements of the array.
-    class PrintOpLowering : public ConversionPattern
+    class BaseConversionPattern : public ConversionPattern
     {
-    public:
-        explicit PrintOpLowering(MLIRContext *context)
-            : ConversionPattern(typescript::PrintOp::getOperationName(), 1, context) {}
-
-        LogicalResult matchAndRewrite(Operation *op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const override
+    public:        
+        explicit BaseConversionPattern(StringRef rootName, PatternBenefit benefit, MLIRContext *ctx)
+            : ConversionPattern(rootName, benefit, ctx) 
         {
-            auto loc = op->getLoc();
-
-            ModuleOp parentModule = op->getParentOfType<ModuleOp>();
-
-            // Get a symbol reference to the printf function, inserting it if necessary.
-            auto printfRef = getOrInsertPrintf(rewriter, parentModule);
-            Value formatSpecifierCst = getOrCreateGlobalString(
-                loc, rewriter, "frmt_spec", StringRef("%f \0", 4), parentModule);
-            Value newLineCst = getOrCreateGlobalString(
-                loc, rewriter, "nl", StringRef("\n\0", 2), parentModule);
-
-            // print new line
-            rewriter.create<CallOp>(loc, printfRef, rewriter.getIntegerType(32), newLineCst);
-
-            // Notify the rewriter that this operation has been removed.
-            rewriter.eraseOp(op);
-
-            return success();
-        }
-
-    private:
-        /// Return a symbol reference to the printf function, inserting it into the
-        /// module if necessary.
-        static FlatSymbolRefAttr getOrInsertPrintf(PatternRewriter &rewriter,
-                                                   ModuleOp module)
-        {
-            auto *context = module.getContext();
-            if (module.lookupSymbol<LLVM::LLVMFuncOp>("printf"))
-                return SymbolRefAttr::get("printf", context);
-
-            // Create a function declaration for printf, the signature is:
-            //   * `i32 (i8*, ...)`
-            auto llvmI32Ty = IntegerType::get(context, 32);
-            auto llvmI8PtrTy = LLVM::LLVMPointerType::get(IntegerType::get(context, 8));
-            auto llvmFnType = LLVM::LLVMFunctionType::get(llvmI32Ty, llvmI8PtrTy, true);
-
-            // Insert the printf function into the body of the parent module.
-            PatternRewriter::InsertionGuard insertGuard(rewriter);
-            rewriter.setInsertionPointToStart(module.getBody());
-            rewriter.create<LLVM::LLVMFuncOp>(module.getLoc(), "printf", llvmFnType);
-            return SymbolRefAttr::get("printf", context);
         }
 
         /// Return a value representing an access into a global string with the given
@@ -104,8 +60,7 @@ namespace
             {
                 OpBuilder::InsertionGuard insertGuard(builder);
                 builder.setInsertionPointToStart(module.getBody());
-                auto type = LLVM::LLVMArrayType::get(
-                    IntegerType::get(builder.getContext(), 8), value.size());
+                auto type = LLVM::LLVMArrayType::get(IntegerType::get(builder.getContext(), 8), value.size());
                 global = builder.create<LLVM::GlobalOp>(loc, type, true, LLVM::Linkage::Internal, name, builder.getStringAttr(value));
             }
 
@@ -120,30 +75,93 @@ namespace
                     IntegerType::get(builder.getContext(), 8)),
                 globalPtr, ArrayRef<Value>({cst0, cst0}));
         }
+
+        static LLVM::LLVMFuncOp getOrInsertFunction(
+            PatternRewriter &rewriter, ModuleOp module, const StringRef& name, const LLVM::LLVMFunctionType& llvmFnType)
+        {
+            if (auto funcOp = module.lookupSymbol<LLVM::LLVMFuncOp>(name))
+            {
+                return funcOp;
+            }
+
+            // Insert the printf function into the body of the parent module.
+            PatternRewriter::InsertionGuard insertGuard(rewriter);
+            rewriter.setInsertionPointToStart(module.getBody());
+            return rewriter.create<LLVM::LLVMFuncOp>(module.getLoc(), name, llvmFnType);
+        }       
+
+        static LLVM::LLVMPointerType getI8PtrType(MLIRContext *context) {
+            return LLVM::LLVMPointerType::get(IntegerType::get(context, 8));
+        } 
     };
 
-    struct AssertOpLowering : public ConversionPattern
+    /// Lowers `typescript.print` to a loop nest calling `printf` on each of the individual
+    /// elements of the array.
+    class PrintOpLowering : public BaseConversionPattern
     {
-        explicit AssertOpLowering(MLIRContext *context)
-            : ConversionPattern(typescript::AssertOp::getOperationName(), 1, context) {}
+    public:
+        explicit PrintOpLowering(MLIRContext *context)
+            : BaseConversionPattern(typescript::PrintOp::getOperationName(), 1, context) {}
 
         LogicalResult matchAndRewrite(Operation *op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const override
         {
             auto loc = op->getLoc();
-            AssertOp::Adaptor transformed(operands);
+            auto parentModule = op->getParentOfType<ModuleOp>();
+            auto *context = parentModule.getContext();
 
-            // Insert the `abort` declaration if necessary.
-            auto module = op->getParentOfType<ModuleOp>();
-            auto abortFunc = module.lookupSymbol<LLVM::LLVMFuncOp>("abort");
-            if (!abortFunc)
-            {
-                auto *context = module.getContext();
+            // Get a symbol reference to the printf function, inserting it if necessary.
+            auto printfFuncOp = 
+                getOrInsertFunction(
+                    rewriter, 
+                    parentModule, 
+                    "printf", 
+                    LLVM::LLVMFunctionType::get(rewriter.getIntegerType(32), getI8PtrType(context), true));
 
-                OpBuilder::InsertionGuard guard(rewriter);
-                rewriter.setInsertionPointToStart(module.getBody());
-                auto abortFuncTy = LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(context), {});
-                abortFunc = rewriter.create<LLVM::LLVMFuncOp>(rewriter.getUnknownLoc(), "abort", abortFuncTy);
-            }
+            Value formatSpecifierCst = getOrCreateGlobalString(
+                loc, rewriter, "frmt_spec", StringRef("%f \0", 4), parentModule);
+
+            Value newLineCst = getOrCreateGlobalString(
+                loc, rewriter, "nl", StringRef("\n\0", 2), parentModule);
+
+            // print new line
+            rewriter.create<LLVM::CallOp>(loc, printfFuncOp, newLineCst);
+
+            // Notify the rewriter that this operation has been removed.
+            rewriter.eraseOp(op);
+
+            return success();
+        }
+    };
+
+    struct AssertOpLowering : public BaseConversionPattern
+    {
+        explicit AssertOpLowering(MLIRContext *context)
+            : BaseConversionPattern(typescript::AssertOp::getOperationName(), 1, context) {}
+
+        LogicalResult matchAndRewrite(Operation *op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const override
+        {
+            auto loc = op->getLoc();
+
+            auto line = 0;
+            auto fileName = StringRef("");
+            TypeSwitch<LocationAttr>(loc)
+            .Case<FileLineColLoc>([&](FileLineColLoc loc) {
+                fileName = loc.getFilename();
+                line = loc.getLine();
+            });
+
+            auto parentModule = op->getParentOfType<ModuleOp>();
+            auto *context = parentModule.getContext();            
+            typescript::AssertOp::Adaptor transformed(operands);
+
+            // Insert the `_assert` declaration if necessary.
+            auto i8PtrTy = getI8PtrType(context);
+            auto assertFuncOp = 
+                getOrInsertFunction(
+                    rewriter, 
+                    parentModule, 
+                    "_assert", 
+                    LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(context), {i8PtrTy, i8PtrTy, rewriter.getIntegerType(32)}));
 
             // Split block at `assert` operation.
             Block *opBlock = rewriter.getInsertionBlock();
@@ -152,13 +170,22 @@ namespace
 
             // Generate IR to call `abort`.
             Block *failureBlock = rewriter.createBlock(opBlock->getParent());
-            rewriter.create<LLVM::CallOp>(loc, abortFunc, llvm::None);
+
+            auto msgCst = getOrCreateGlobalString(
+                loc, rewriter, "nullStr", StringRef("\0", 1), parentModule);
+
+            Value lineNumberRes = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(32), rewriter.getI32IntegerAttr(line));
+
+            rewriter.create<LLVM::CallOp>(loc, assertFuncOp, ValueRange({msgCst, msgCst, lineNumberRes}));
             rewriter.create<LLVM::UnreachableOp>(loc);
 
             // Generate assertion test.
             rewriter.setInsertionPointToEnd(opBlock);
             rewriter.replaceOpWithNewOp<LLVM::CondBrOp>(
-                op, transformed.arg(), continuationBlock, failureBlock);
+                op, 
+                transformed.arg(), 
+                continuationBlock, 
+                failureBlock);
 
             return success();
         }
