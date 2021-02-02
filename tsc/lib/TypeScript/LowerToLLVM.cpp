@@ -216,19 +216,21 @@ namespace
             msgVarName << "m_" << opHash;
 
             std::stringstream msgWithNUL;
-            msgWithNUL << assertOp.msg().str() << "\\0";
+            msgWithNUL << assertOp.msg().str();
+            auto msgWithNULStr = msgWithNUL.str();
 
             std::stringstream fileVarName;
             fileVarName << "f_" << hash_value(fileName);
 
             std::stringstream fileWithNUL;
-            fileWithNUL << fileName.str() << "\\0";
+            fileWithNUL << fileName.str();
+            auto fileWithNULStr = fileWithNUL.str();
 
             auto msgCst = getOrCreateGlobalString(
-                loc, rewriter, msgVarName.str(), msgWithNUL.str(), parentModule);
+                loc, rewriter, msgVarName.str(), StringRef(msgWithNULStr.data(), msgWithNULStr.length() + 1), parentModule);
 
             auto fileCst = getOrCreateGlobalString(
-                loc, rewriter, fileVarName.str(), fileWithNUL.str(), parentModule);
+                loc, rewriter, fileVarName.str(), StringRef(fileWithNULStr.data(), fileWithNULStr.length() + 1), parentModule);
 
             //auto nullCst = rewriter.create<LLVM::NullOp>(loc, getI8PtrType(context));
 
