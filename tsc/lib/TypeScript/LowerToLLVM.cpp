@@ -46,6 +46,7 @@ namespace
         explicit BaseConversionPattern(StringRef rootName, PatternBenefit benefit, MLIRContext *ctx)
             : ConversionPattern(rootName, benefit, ctx) 
         {
+            context = ctx;
         }
 
         /// Return a value representing an access into a global string with the given
@@ -90,9 +91,28 @@ namespace
             return rewriter.create<LLVM::LLVMFuncOp>(module.getLoc(), name, llvmFnType);
         }       
 
-        static LLVM::LLVMPointerType getI8PtrType(MLIRContext *context) {
-            return LLVM::LLVMPointerType::get(IntegerType::get(context, 8));
+        static LLVM::LLVMVoidType getVoidType(MLIRContext *context) {
+            return LLVM::LLVMVoidType::get(context);
         } 
+
+        static IntegerType getI8Type(MLIRContext *context) {
+            return IntegerType::get(context, 8);
+        } 
+
+        static IntegerType getI32Type(MLIRContext *context) {
+            return IntegerType::get(context, 32);
+        } 
+
+        static IntegerType getI64Type(MLIRContext *context) {
+            return IntegerType::get(context, 64);
+        } 
+
+        static LLVM::LLVMPointerType getI8PtrType(MLIRContext *context) {
+            return LLVM::LLVMPointerType::get(getI8Type(context));
+        } 
+
+    protected:
+        MLIRContext *context;
     };
 
     /// Lowers `typescript.print` to a loop nest calling `printf` on each of the individual
@@ -115,7 +135,7 @@ namespace
                     rewriter, 
                     parentModule, 
                     "printf", 
-                    LLVM::LLVMFunctionType::get(rewriter.getIntegerType(32), getI8PtrType(context), true));
+                    LLVM::LLVMFunctionType::get(getI32Type(context), getI8PtrType(context), true));
 
             Value formatSpecifierCst = getOrCreateGlobalString(
                 loc, rewriter, "frmt_spec", StringRef("%f \0", 4), parentModule);
@@ -145,10 +165,10 @@ namespace
             auto line = 0;
             auto fileName = StringRef("");
             TypeSwitch<LocationAttr>(loc)
-            .Case<FileLineColLoc>([&](FileLineColLoc loc) {
-                fileName = loc.getFilename();
-                line = loc.getLine();
-            });
+                .Case<FileLineColLoc>([&](FileLineColLoc loc) {
+                    fileName = loc.getFilename();
+                    line = loc.getLine();
+                });
 
             auto parentModule = op->getParentOfType<ModuleOp>();
             auto *context = parentModule.getContext();            
@@ -161,7 +181,7 @@ namespace
                     rewriter, 
                     parentModule, 
                     "_assert", 
-                    LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(context), {i8PtrTy, i8PtrTy, rewriter.getIntegerType(32)}));
+                    LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(context), {i8PtrTy, i8PtrTy, getI8Type(context)}));
 
             // Split block at `assert` operation.
             Block *opBlock = rewriter.getInsertionBlock();
@@ -174,7 +194,7 @@ namespace
             auto msgCst = getOrCreateGlobalString(
                 loc, rewriter, "nullStr", StringRef("\0", 1), parentModule);
 
-            Value lineNumberRes = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(32), rewriter.getI32IntegerAttr(line));
+            Value lineNumberRes = rewriter.create<LLVM::ConstantOp>(loc, getI32Type(context), rewriter.getI32IntegerAttr(line));
 
             rewriter.create<LLVM::CallOp>(loc, assertFuncOp, ValueRange({msgCst, msgCst, lineNumberRes}));
             rewriter.create<LLVM::UnreachableOp>(loc);
