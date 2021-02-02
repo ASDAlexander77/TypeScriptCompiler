@@ -133,7 +133,8 @@
             "xutility": "cpp",
             "coroutine": "cpp",
             "resumable": "cpp",
-            "variant": "cpp"
+            "variant": "cpp",
+            "filesystem": "cpp"
         },
 		"antlr4.generation": {
 			"mode": "external",
