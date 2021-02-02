@@ -42,9 +42,9 @@ namespace
 {
     class BaseConversionPattern : public ConversionPattern
     {
-    public:        
+    public:
         explicit BaseConversionPattern(StringRef rootName, PatternBenefit benefit, MLIRContext *ctx)
-            : ConversionPattern(rootName, benefit, ctx) 
+            : ConversionPattern(rootName, benefit, ctx)
         {
             context = ctx;
         }
@@ -72,13 +72,12 @@ namespace
                 builder.getIntegerAttr(builder.getIndexType(), 0));
             return builder.create<LLVM::GEPOp>(
                 loc,
-                LLVM::LLVMPointerType::get(
-                    IntegerType::get(builder.getContext(), 8)),
+                getI8PtrType(builder.getContext()),
                 globalPtr, ArrayRef<Value>({cst0, cst0}));
         }
 
         static LLVM::LLVMFuncOp getOrInsertFunction(
-            PatternRewriter &rewriter, ModuleOp module, const StringRef& name, const LLVM::LLVMFunctionType& llvmFnType)
+            PatternRewriter &rewriter, ModuleOp module, const StringRef &name, const LLVM::LLVMFunctionType &llvmFnType)
         {
             if (auto funcOp = module.lookupSymbol<LLVM::LLVMFuncOp>(name))
             {
@@ -89,27 +88,42 @@ namespace
             PatternRewriter::InsertionGuard insertGuard(rewriter);
             rewriter.setInsertionPointToStart(module.getBody());
             return rewriter.create<LLVM::LLVMFuncOp>(module.getLoc(), name, llvmFnType);
-        }       
+        }
 
-        static LLVM::LLVMVoidType getVoidType(MLIRContext *context) {
+        static LLVM::LLVMVoidType getVoidType(MLIRContext *context)
+        {
             return LLVM::LLVMVoidType::get(context);
-        } 
+        }
 
-        static IntegerType getI8Type(MLIRContext *context) {
+        static IntegerType getI8Type(MLIRContext *context)
+        {
             return IntegerType::get(context, 8);
-        } 
+        }
 
-        static IntegerType getI32Type(MLIRContext *context) {
+        static IntegerType getI32Type(MLIRContext *context)
+        {
             return IntegerType::get(context, 32);
-        } 
+        }
 
-        static IntegerType getI64Type(MLIRContext *context) {
+        static IntegerType getI64Type(MLIRContext *context)
+        {
             return IntegerType::get(context, 64);
-        } 
+        }
 
-        static LLVM::LLVMPointerType getI8PtrType(MLIRContext *context) {
-            return LLVM::LLVMPointerType::get(getI8Type(context));
-        } 
+        static LLVM::LLVMPointerType getPointerType(mlir::Type type)
+        {
+            return LLVM::LLVMPointerType::get(type);
+        }
+
+        static LLVM::LLVMPointerType getI8PtrType(MLIRContext *context)
+        {
+            return getPointerType(getI8Type(context));
+        }
+
+        static LLVM::LLVMFunctionType getFunctionType(mlir::Type result, mlir::ResultRange::type_range arguments, bool isVarArg = false)
+        {
+            return LLVM::LLVMFunctionType::get(result, arguments, isVarArg);
+        }
 
     protected:
         MLIRContext *context;
@@ -130,12 +144,12 @@ namespace
             auto *context = parentModule.getContext();
 
             // Get a symbol reference to the printf function, inserting it if necessary.
-            auto printfFuncOp = 
+            auto printfFuncOp =
                 getOrInsertFunction(
-                    rewriter, 
-                    parentModule, 
-                    "printf", 
-                    LLVM::LLVMFunctionType::get(getI32Type(context), getI8PtrType(context), true));
+                    rewriter,
+                    parentModule,
+                    "printf",
+                    getFunctionType(getI32Type(context), getI8PtrType(context), true));
 
             Value formatSpecifierCst = getOrCreateGlobalString(
                 loc, rewriter, "frmt_spec", StringRef("%f \0", 4), parentModule);
@@ -160,28 +174,33 @@ namespace
 
         LogicalResult matchAndRewrite(Operation *op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const override
         {
+            // llvm::StringMap<pybind11::object>
             auto loc = op->getLoc();
 
+            auto assertOp = cast<typescript::AssertOp>(op);
+
             auto line = 0;
+            auto column = 0;
             auto fileName = StringRef("");
             TypeSwitch<LocationAttr>(loc)
                 .Case<FileLineColLoc>([&](FileLineColLoc loc) {
                     fileName = loc.getFilename();
                     line = loc.getLine();
+                    column = loc.getColumn();
                 });
 
             auto parentModule = op->getParentOfType<ModuleOp>();
-            auto *context = parentModule.getContext();            
+            auto *context = parentModule.getContext();
             typescript::AssertOp::Adaptor transformed(operands);
 
             // Insert the `_assert` declaration if necessary.
             auto i8PtrTy = getI8PtrType(context);
-            auto assertFuncOp = 
+            auto assertFuncOp =
                 getOrInsertFunction(
-                    rewriter, 
-                    parentModule, 
-                    "_assert", 
-                    LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(context), {i8PtrTy, i8PtrTy, getI8Type(context)}));
+                    rewriter,
+                    parentModule,
+                    "_assert",
+                    getFunctionType(getVoidType(context), {i8PtrTy, i8PtrTy, getI32Type(context)}));
 
             // Split block at `assert` operation.
             Block *opBlock = rewriter.getInsertionBlock();
@@ -191,20 +210,43 @@ namespace
             // Generate IR to call `abort`.
             Block *failureBlock = rewriter.createBlock(opBlock->getParent());
 
+            auto opHash = OperationEquivalence::computeHash(op, OperationEquivalence::Flags::IgnoreOperands);
+
+            std::stringstream msgVarName;
+            msgVarName << "m_" << opHash;
+
+            std::stringstream msgWithNUL;
+            msgWithNUL << assertOp.msg().str() << "\\0";
+
+            std::stringstream fileVarName;
+            fileVarName << "f_" << hash_value(fileName);
+
+            std::stringstream fileWithNUL;
+            fileWithNUL << fileName.str() << "\\0";
+
             auto msgCst = getOrCreateGlobalString(
-                loc, rewriter, "nullStr", StringRef("\0", 1), parentModule);
+                loc, rewriter, msgVarName.str(), msgWithNUL.str(), parentModule);
 
-            Value lineNumberRes = rewriter.create<LLVM::ConstantOp>(loc, getI32Type(context), rewriter.getI32IntegerAttr(line));
+            auto fileCst = getOrCreateGlobalString(
+                loc, rewriter, fileVarName.str(), fileWithNUL.str(), parentModule);
 
-            rewriter.create<LLVM::CallOp>(loc, assertFuncOp, ValueRange({msgCst, msgCst, lineNumberRes}));
+            //auto nullCst = rewriter.create<LLVM::NullOp>(loc, getI8PtrType(context));
+
+            Value lineNumberRes = 
+                rewriter.create<LLVM::ConstantOp>(
+                    loc, 
+                    getI32Type(context), 
+                    rewriter.getI32IntegerAttr(line));
+
+            rewriter.create<LLVM::CallOp>(loc, assertFuncOp, ValueRange{msgCst, fileCst, lineNumberRes});
             rewriter.create<LLVM::UnreachableOp>(loc);
 
             // Generate assertion test.
             rewriter.setInsertionPointToEnd(opBlock);
             rewriter.replaceOpWithNewOp<LLVM::CondBrOp>(
-                op, 
-                transformed.arg(), 
-                continuationBlock, 
+                op,
+                transformed.arg(),
+                continuationBlock,
                 failureBlock);
 
             return success();
