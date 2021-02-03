@@ -24,11 +24,34 @@ void printParse(const char *value)
     std::cout << s << std::endl;
 }
 
+void testParse(const char *value)
+{
+    antlr4::ANTLRInputStream input(value);
+    typescript::TypeScriptLexerANTLR lexer(&input);
+    antlr4::CommonTokenStream tokens(&lexer);
+    typescript::TypeScriptParserANTLR parser(&tokens);    
+    parser.main();    
+} 
+
+void testCallExpr()
+{
+    testParse("function main() { hello(1); }");
+}
+
+void testFunctionDecl()
+{
+    testParse("function defaultArgs1() {}");
+    testParse("function defaultArgs2(x: number) {}");
+    testParse("function defaultArgs3(y = 3) {}");
+    testParse("function defaultArgs3(x: number, y = 3) {}");
+}
+
 int main(int, char **)
 {
     try
     {
-        printParse("hello(1);");
+        testCallExpr();
+        testFunctionDecl();
     }
     catch(const std::exception& e)
     {

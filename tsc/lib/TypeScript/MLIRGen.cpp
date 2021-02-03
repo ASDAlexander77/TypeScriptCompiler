@@ -36,77 +36,21 @@ using llvm::Twine;
 
 namespace
 {
-    struct ValueOrString
+    struct FunctionProto
     {
-        enum VariantEnum
+        FunctionProto()
         {
-            Empty,
-            Value,
-            StringRef
-        };
-
-    public:
-        ValueOrString() : variant(VariantEnum::Empty), values{} {}
-
-        ValueOrString(mlir::Value value) : variant(VariantEnum::Value), values{value} {}
-
-        ValueOrString(llvm::StringRef value) : variant(VariantEnum::StringRef), values{value} {}
-
-        template <typename T>
-        bool constexpr has()
-        {
-            return false;
         }
 
-        template <>
-        bool constexpr has<mlir::Value>()
+        FunctionProto(bool successVal)
         {
-            return variant == VariantEnum::Value;
+            success = successVal;
         }
 
-        template <>
-        bool constexpr has<llvm::StringRef>()
-        {
-            return variant == VariantEnum::StringRef;
-        }
-
-        explicit constexpr operator mlir::Value()
-        {
-            return values.value;
-        }
-
-        explicit constexpr operator llvm::StringRef()
-        {
-            return values.strRef;
-        }
-
-        ValueOrString &operator=(mlir::Value value)
-        {
-            variant = VariantEnum::Value;
-            values = value;
-            return *this;
-        }
-
-        ValueOrString &operator=(llvm::StringRef value)
-        {
-            variant = VariantEnum::StringRef;
-            values = value;
-            return *this;
-        }
-
-        VariantEnum variant;
-        union Union
-        {
-            Union() : value(nullptr) {}
-
-            Union(mlir::Value value) : value(value) {}
-
-            Union(llvm::StringRef value) : strRef(value) {}
-
-            void *empty;
-            mlir::Value value;
-            llvm::StringRef strRef;
-        } values;
+        bool success;
+        mlir::FuncOp functionOp;
+        llvm::SmallVector<mlir::StringRef, 0> argNames;
+        llvm::SmallVector<mlir::Type, 0> argTypes;        
     };
 
     /// Implementation of a simple MLIR emission from the TypeScript AST.
@@ -117,12 +61,12 @@ namespace
     class MLIRGenImpl
     {
     public:
-        MLIRGenImpl(const mlir::MLIRContext &context) : builder(&const_cast<mlir::MLIRContext &>(context)) 
+        MLIRGenImpl(const mlir::MLIRContext &context) : builder(&const_cast<mlir::MLIRContext &>(context))
         {
             fileName = "<unknown>";
         }
 
-        MLIRGenImpl(const mlir::MLIRContext &context, const llvm::StringRef &fileNameParam) : builder(&const_cast<mlir::MLIRContext &>(context)) 
+        MLIRGenImpl(const mlir::MLIRContext &context, const llvm::StringRef &fileNameParam) : builder(&const_cast<mlir::MLIRContext &>(context))
         {
             fileName = fileNameParam;
         }
@@ -172,20 +116,21 @@ namespace
             return mlir::success();
         }
 
-        mlir::LogicalResult mlirGen(TypeScriptParserANTLR::FormalParametersContext *formalParametersContextAST, const llvm::SmallVector<mlir::Type, 0> &argTypesParam)
+        mlir::LogicalResult mlirGen(TypeScriptParserANTLR::FormalParametersContext *formalParametersContextAST, llvm::SmallVector<mlir::StringRef, 0> &argNames, llvm::SmallVector<mlir::Type, 0> &argTypes)
         {
-            auto argTypes = const_cast<llvm::SmallVector<mlir::Type, 0> &>(argTypesParam);
             if (formalParametersContextAST)
             {
                 argTypes.reserve(formalParametersContextAST->formalParameter().size());
                 for (auto &arg : formalParametersContextAST->formalParameter())
                 {
-                    mlir::Type type = getType(arg, loc(arg));
+                    auto name = arg->IdentifierName()->getText();
+                    auto type = getType(arg, loc(arg));
                     if (!type)
                     {
                         return mlir::failure();
                     }
 
+                    argNames.push_back(name);
                     argTypes.push_back(type);
                 }
             }
@@ -193,15 +138,16 @@ namespace
             return mlir::success();
         }
 
-        mlir::FuncOp mlirGenFunctionPrototype(TypeScriptParserANTLR::FunctionDeclarationContext *functionDeclarationAST)
+        FunctionProto mlirGenFunctionPrototype(TypeScriptParserANTLR::FunctionDeclarationContext *functionDeclarationAST)
         {
             auto location = loc(functionDeclarationAST);
 
             // This is a generic function, the return type will be inferred later.
+            llvm::SmallVector<mlir::StringRef, 0> argNames;
             llvm::SmallVector<mlir::Type, 0> argTypes;
-            if (mlir::failed(mlirGen(functionDeclarationAST->formalParameters(), argTypes)))
+            if (mlir::failed(mlirGen(functionDeclarationAST->formalParameters(), argNames, argTypes)))
             {
-                return nullptr;
+                return FunctionProto(false);
             }
 
             std::string name;
@@ -217,18 +163,38 @@ namespace
             }
 
             auto func_type = builder.getFunctionType(argTypes, llvm::None);
-            return mlir::FuncOp::create(location, StringRef(name), func_type);
+            auto funcOp = mlir::FuncOp::create(location, StringRef(name), func_type);
+
+            FunctionProto functionProto;
+            functionProto.functionOp = funcOp;
+            functionProto.argNames = argNames;
+            functionProto.argTypes = argTypes;
+
+            return functionProto;
         }
 
         mlir::LogicalResult mlirGen(TypeScriptParserANTLR::FunctionDeclarationContext *functionDeclarationAST)
         {
-            auto funcOp = mlirGenFunctionPrototype(functionDeclarationAST);
+            auto functionProto = mlirGenFunctionPrototype(functionDeclarationAST);
+            auto funcOp = functionProto.functionOp;
             if (!funcOp)
             {
                 return mlir::failure();
             }
 
             auto &entryBlock = *funcOp.addEntryBlock();
+
+            // process function params
+            for (const auto nameValue : llvm::zip(functionProto.argTypes, entryBlock.getArguments()))
+            {
+                /*
+                if (failed(declare(*std::get<0>(nameValue), std::get<1>(nameValue))))
+                {
+                    return mlir::failure();
+                }
+                */
+            }
+
             builder.setInsertionPointToStart(&entryBlock);
 
             for (auto *statementListItem : functionDeclarationAST->functionBody()->statementListItem())
@@ -390,7 +356,7 @@ namespace
                         {
                             return nullptr;
                         }
-                    }                    
+                    }
 
                     // default call by name
                     auto callOp =
@@ -412,7 +378,7 @@ namespace
             return nullptr;
         }
 
-        mlir::LogicalResult mlirGenPrint(const mlir::Location& location, const SmallVector<mlir::Value, 0>& operands)
+        mlir::LogicalResult mlirGenPrint(const mlir::Location &location, const SmallVector<mlir::Value, 0> &operands)
         {
             auto printOp =
                 builder.create<PrintOp>(
@@ -422,7 +388,7 @@ namespace
             return mlir::success();
         }
 
-        mlir::LogicalResult mlirGenAssert(const mlir::Location& location, const SmallVector<mlir::Value, 0>& operands)
+        mlir::LogicalResult mlirGenAssert(const mlir::Location &location, const SmallVector<mlir::Value, 0> &operands)
         {
             auto msg = StringRef("assert");
             if (operands.size() > 1)
@@ -430,8 +396,7 @@ namespace
                 auto param2 = operands[1];
                 auto definingOpParam2 = param2.getDefiningOp();
                 auto valueAttrName = StringRef("value");
-                if (definingOpParam2
-                    && definingOpParam2->hasAttrOfType<mlir::StringAttr>(valueAttrName))
+                if (definingOpParam2 && definingOpParam2->hasAttrOfType<mlir::StringAttr>(valueAttrName))
                 {
                     auto valueAttr = definingOpParam2->getAttrOfType<mlir::StringAttr>(valueAttrName);
                     msg = valueAttr.getValue();
@@ -503,19 +468,17 @@ namespace
         {
             if (booleanLiteral->TRUE_KEYWORD())
             {
-                return 
-                    builder.create<mlir::ConstantOp>(
-                        loc(booleanLiteral),
-                        builder.getI1Type(),
-                        mlir::BoolAttr::get(true, theModule.getContext()));
+                return builder.create<mlir::ConstantOp>(
+                    loc(booleanLiteral),
+                    builder.getI1Type(),
+                    mlir::BoolAttr::get(true, theModule.getContext()));
             }
             else if (booleanLiteral->FALSE_KEYWORD())
             {
-                return 
-                    builder.create<mlir::ConstantOp>(
-                        loc(booleanLiteral),
-                        builder.getI1Type(),
-                        mlir::BoolAttr::get(false, theModule.getContext()));
+                return builder.create<mlir::ConstantOp>(
+                    loc(booleanLiteral),
+                    builder.getI1Type(),
+                    mlir::BoolAttr::get(false, theModule.getContext()));
             }
             else
             {

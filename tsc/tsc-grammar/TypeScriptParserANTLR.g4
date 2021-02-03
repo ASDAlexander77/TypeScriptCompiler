@@ -31,7 +31,8 @@ assignmentExpression
     : leftHandSideExpression ;   
 
 typeDeclaration
-    : ANY_KEYWORD ;    
+    : ANY_KEYWORD 
+    | NUMBER_KEYWORD ;    
 
 functionRestParameter
     : DOTDOTDOT_TOKEN formalParameter ;
