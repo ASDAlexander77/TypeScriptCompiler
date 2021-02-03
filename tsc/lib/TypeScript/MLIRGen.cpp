@@ -2,6 +2,8 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 
+#include "TypeScript/DOM.h"
+
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -36,23 +38,6 @@ using llvm::Twine;
 
 namespace
 {
-    struct FunctionProto
-    {
-        FunctionProto()
-        {
-        }
-
-        FunctionProto(bool successVal)
-        {
-            success = successVal;
-        }
-
-        bool success;
-        mlir::FuncOp functionOp;
-        llvm::SmallVector<mlir::StringRef, 0> argNames;
-        llvm::SmallVector<mlir::Type, 0> argTypes;        
-    };
-
     /// Implementation of a simple MLIR emission from the TypeScript AST.
     ///
     /// This will emit operations that are specific to the TypeScript language, preserving
@@ -60,7 +45,11 @@ namespace
     /// analysis and transformation based on these high level semantics.
     class MLIRGenImpl
     {
+        using VariablePairT = std::pair<mlir::Value, VariableDeclarationDOM*>;
+        using SymbolTableScopeT = llvm::ScopedHashTableScope<StringRef, VariablePairT>;
+
     public:
+
         MLIRGenImpl(const mlir::MLIRContext &context) : builder(&const_cast<mlir::MLIRContext &>(context))
         {
             fileName = "<unknown>";
@@ -73,15 +62,17 @@ namespace
 
         /// Public API: convert the AST for a TypeScript module (source file) to an MLIR
         /// Module operation.
-        mlir::ModuleOp mlirGen(TypeScriptParserANTLR::MainContext *moduleAST)
+        mlir::ModuleOp mlirGen(TypeScriptParserANTLR::MainContext *module)
         {
             // We create an empty MLIR module and codegen functions one at a time and
             // add them to the module.
             theModule = mlir::ModuleOp::create(builder.getUnknownLoc());
             builder.setInsertionPointToStart(theModule.getBody());
 
+            theModuleDOM.parseTree = module;
+
             // Process generating here
-            for (auto *declaration : moduleAST->declaration())
+            for (auto *declaration : module->declaration())
             {
                 if (failed(mlirGen(declaration)))
                 {
@@ -116,39 +107,35 @@ namespace
             return mlir::success();
         }
 
-        mlir::LogicalResult mlirGen(TypeScriptParserANTLR::FormalParametersContext *formalParametersContextAST, llvm::SmallVector<mlir::StringRef, 0> &argNames, llvm::SmallVector<mlir::Type, 0> &argTypes)
+        std::vector<std::unique_ptr<FunctionParamDOM>> mlirGen(TypeScriptParserANTLR::FormalParametersContext *formalParametersContextAST)
         {
-            if (formalParametersContextAST)
+            std::vector<std::unique_ptr<FunctionParamDOM>> params;
+            if (!formalParametersContextAST)
             {
-                argTypes.reserve(formalParametersContextAST->formalParameter().size());
-                for (auto &arg : formalParametersContextAST->formalParameter())
-                {
-                    auto name = arg->IdentifierName()->getText();
-                    auto type = getType(arg, loc(arg));
-                    if (!type)
-                    {
-                        return mlir::failure();
-                    }
-
-                    argNames.push_back(name);
-                    argTypes.push_back(type);
-                }
+                return params;
             }
 
-            return mlir::success();
+            for (auto &arg : formalParametersContextAST->formalParameter())
+            {
+                auto name = StringRef(arg->IdentifierName()->getText());
+                auto type = getType(arg, loc(arg));
+                if (!type)
+                {
+                    return params;
+                }
+
+                params.push_back(std::make_unique<FunctionParamDOM>(std::move(arg), std::move(name), std::move(type)));
+            }
+
+            return params;
         }
 
-        FunctionProto mlirGenFunctionPrototype(TypeScriptParserANTLR::FunctionDeclarationContext *functionDeclarationAST)
+        std::pair<mlir::FuncOp, FunctionPrototypeDOM::TypePtr> mlirGenFunctionPrototype(TypeScriptParserANTLR::FunctionDeclarationContext *functionDeclarationAST)
         {
             auto location = loc(functionDeclarationAST);
 
             // This is a generic function, the return type will be inferred later.
-            llvm::SmallVector<mlir::StringRef, 0> argNames;
-            llvm::SmallVector<mlir::Type, 0> argTypes;
-            if (mlir::failed(mlirGen(functionDeclarationAST->formalParameters(), argNames, argTypes)))
-            {
-                return FunctionProto(false);
-            }
+            std::vector<FunctionParamDOM::TypePtr> params = mlirGen(functionDeclarationAST->formalParameters());
 
             std::string name;
             auto *identifier = functionDeclarationAST->IdentifierName();
@@ -162,21 +149,24 @@ namespace
                 // __func+location
             }
 
+            SmallVector<mlir::Type> argTypes;
+            for (const auto &param : params)
+            {
+                argTypes.push_back(param->getType());
+            }
+
             auto func_type = builder.getFunctionType(argTypes, llvm::None);
             auto funcOp = mlir::FuncOp::create(location, StringRef(name), func_type);
 
-            FunctionProto functionProto;
-            functionProto.functionOp = funcOp;
-            functionProto.argNames = argNames;
-            functionProto.argTypes = argTypes;
-
-            return functionProto;
+            return std::make_pair(funcOp, std::make_unique<FunctionPrototypeDOM>(std::move(functionDeclarationAST), std::move(name), std::move(params)));
         }
 
         mlir::LogicalResult mlirGen(TypeScriptParserANTLR::FunctionDeclarationContext *functionDeclarationAST)
         {
-            auto functionProto = mlirGenFunctionPrototype(functionDeclarationAST);
-            auto funcOp = functionProto.functionOp;
+            SymbolTableScopeT varScope(symbolTable);
+            auto funcOpWithFuncProto = mlirGenFunctionPrototype(functionDeclarationAST);
+            auto &funcOp = funcOpWithFuncProto.first;
+            auto &funcProto = funcOpWithFuncProto.second;
             if (!funcOp)
             {
                 return mlir::failure();
@@ -185,14 +175,12 @@ namespace
             auto &entryBlock = *funcOp.addEntryBlock();
 
             // process function params
-            for (const auto nameValue : llvm::zip(functionProto.argTypes, entryBlock.getArguments()))
+            for (const auto paramPairs : llvm::zip(funcProto->getArgs(), entryBlock.getArguments()))
             {
-                /*
-                if (failed(declare(*std::get<0>(nameValue), std::get<1>(nameValue))))
+                if (failed(declare(*std::get<0>(paramPairs), std::get<1>(paramPairs))))
                 {
                     return mlir::failure();
                 }
-                */
             }
 
             builder.setInsertionPointToStart(&entryBlock);
@@ -241,6 +229,7 @@ namespace
             }
 
             theModule.push_back(funcOp);
+            theModuleDOM.getFunctionProtos().push_back(std::move(funcProto));
 
             return mlir::success();
         }
@@ -466,24 +455,25 @@ namespace
 
         mlir::Value mlirGen(TypeScriptParserANTLR::BooleanLiteralContext *booleanLiteral)
         {
+            bool result;
             if (booleanLiteral->TRUE_KEYWORD())
             {
-                return builder.create<mlir::ConstantOp>(
-                    loc(booleanLiteral),
-                    builder.getI1Type(),
-                    mlir::BoolAttr::get(true, theModule.getContext()));
+                result = true;
             }
             else if (booleanLiteral->FALSE_KEYWORD())
             {
-                return builder.create<mlir::ConstantOp>(
-                    loc(booleanLiteral),
-                    builder.getI1Type(),
-                    mlir::BoolAttr::get(false, theModule.getContext()));
+                result = false;
             }
             else
             {
                 llvm_unreachable("not implemented");
             }
+
+            return 
+                builder.create<mlir::ConstantOp>(
+                    loc(booleanLiteral),
+                    builder.getI1Type(),
+                    mlir::BoolAttr::get(result, theModule.getContext()));
         }
 
         mlir::Value mlirGen(TypeScriptParserANTLR::NumericLiteralContext *numericLiteral)
@@ -584,9 +574,28 @@ namespace
             return mlir::UnrankedMemRefType::get(builder.getI1Type(), 0);
         }
 
+        mlir::LogicalResult declare(VariableDeclarationDOM& var, mlir::Value value)
+        {
+            if (symbolTable.count(var.getName()))
+            {
+                return mlir::failure();
+            }
+
+            symbolTable.insert(var.getName(), {value, &var});
+            return mlir::success();
+        }
+
     private:
+        /// Helper conversion for a TypeScript AST location to an MLIR location.
+        mlir::Location loc(antlr4::tree::ParseTree *tree)
+        {
+            const antlr4::misc::Interval &loc = tree->getSourceInterval();
+            return builder.getFileLineColLoc(builder.getIdentifier(fileName), loc.a, loc.b);
+        }
+
         /// A "module" matches a TypeScript source file: containing a list of functions.
         mlir::ModuleOp theModule;
+        ModuleDOM theModuleDOM;
 
         /// The builder is a helper class to create IR inside a function. The builder
         /// is stateful, in particular it keeps an "insertion point": this is where
@@ -595,12 +604,7 @@ namespace
 
         mlir::StringRef fileName;
 
-        /// Helper conversion for a TypeScript AST location to an MLIR location.
-        mlir::Location loc(antlr4::tree::ParseTree *tree)
-        {
-            const antlr4::misc::Interval &loc = tree->getSourceInterval();
-            return builder.getFileLineColLoc(builder.getIdentifier(fileName), loc.a, loc.b);
-        }
+        llvm::ScopedHashTable<StringRef, VariablePairT> symbolTable;
     };
 
 } // namespace
