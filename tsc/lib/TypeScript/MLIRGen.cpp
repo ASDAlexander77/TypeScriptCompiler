@@ -387,7 +387,7 @@ namespace
 
                     // default call by name
                     auto callOp =
-                        builder.create<mlir::CallOp>(
+                        builder.create<CallOp>(
                             location,
                             calledFunc,
                             operands);

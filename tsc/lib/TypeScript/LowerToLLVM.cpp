@@ -41,6 +41,19 @@ using namespace mlir;
 namespace
 {
 
+    template < typename T, typename TOp >
+    struct OpLoweringBase : public ConversionPattern
+    {
+        explicit OpLoweringBase(MLIRContext *context)
+            : ConversionPattern(TOp::getOperationName(), 1, context) {}
+
+        LogicalResult matchAndRewrite(Operation *op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const override
+        {
+            T logic(op, operands, rewriter);
+            return logic.matchAndRewrite();
+        }
+    };     
+
     template < typename T >
     struct OpLowering : public ConversionPattern
     {
@@ -54,23 +67,16 @@ namespace
         }
     };    
 
-    template < typename T >
-    class LoweringLogic
+    class LoweringLogicBase
     {
-    public:
-        using OpTy = T;
-
-        explicit LoweringLogic(Operation *op_, ArrayRef<Value>& operands_, ConversionPatternRewriter &rewriter_) 
+    public:        
+        explicit LoweringLogicBase(Operation *op_, ArrayRef<Value>& operands_, ConversionPatternRewriter &rewriter_) 
             : op(op_), 
               operands(operands_), 
-              rewriter(rewriter_), 
-              loc(op->getLoc()), 
-              parentModule(op->getParentOfType<ModuleOp>()), 
-              context(parentModule.getContext()),
-              opTyped(cast<OpTy>(op)),
-              transformedOperands(operands)
+              rewriter(rewriter_),
+              loc(op->getLoc())
         {
-        }
+        }        
 
     protected:
         Value getOrCreateGlobalString(StringRef name, std::string value)
@@ -158,9 +164,24 @@ namespace
         Location loc;
         ModuleOp parentModule;
         MLIRContext *context;
+    };
 
+    template < typename T >
+    class LoweringLogic : public LoweringLogicBase
+    {
+    public:
+        using OpTy = T;
+
+        explicit LoweringLogic(Operation *op_, ArrayRef<Value>& operands_, ConversionPatternRewriter &rewriter_) 
+            : LoweringLogicBase(op_, operands_, rewriter_), 
+              opTyped(cast<OpTy>(op)),
+              transformed(operands)
+        {
+        }
+
+    protected:
         OpTy opTyped;
-        typename OpTy::Adaptor transformedOperands;
+        typename OpTy::Adaptor transformed;
     };
 
     class PrintOpLoweringLogic : public LoweringLogic<typescript::PrintOp>
@@ -235,7 +256,7 @@ namespace
             auto opPosition = rewriter.getInsertionPoint();
             auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
 
-            // Generate IR to call `abort`.
+            // Generate IR to call `assert`.
             auto *failureBlock = rewriter.createBlock(opBlock->getParent());
 
             auto opHash = OperationEquivalence::computeHash(op, OperationEquivalence::Flags::IgnoreOperands);
@@ -271,7 +292,7 @@ namespace
             rewriter.setInsertionPointToEnd(opBlock);
             rewriter.replaceOpWithNewOp<LLVM::CondBrOp>(
                 op,
-                transformedOperands.arg(),
+                transformed.arg(),
                 continuationBlock,
                 failureBlock);
 
@@ -285,6 +306,38 @@ namespace
         {
         }          
     };    
+
+    class CallOpLoweringLogic : public LoweringLogicBase
+    {
+    public:
+
+        explicit CallOpLoweringLogic(Operation *op_, ArrayRef<Value> &operands_, ConversionPatternRewriter &rewriter_) 
+            : LoweringLogicBase(op_, operands_, rewriter_)
+        {
+        }
+
+        LogicalResult matchAndRewrite()
+        {
+            /*
+            auto callFuncOp =
+                getOrInsertFunction(
+                    "_assert",
+                    getFunctionType(getVoidType(), {i8PtrTy, i8PtrTy, getI32Type()}));
+            */
+
+            auto calleeName = op->getAttrOfType<FlatSymbolRefAttr>("callee");
+            rewriter.create<LLVM::CallOp>(loc, op->getResultTypes(), calleeName, ValueRange(operands));
+            rewriter.eraseOp(op);
+            return success();
+        }
+    };
+
+    struct CallOpLowering : public OpLoweringBase<CallOpLoweringLogic, typescript::CallOp>
+    {
+        explicit CallOpLowering(MLIRContext *context) : OpLoweringBase<CallOpLoweringLogic, typescript::CallOp>(context)
+        {
+        }          
+    };     
 
 } // end anonymous namespace
 
@@ -333,9 +386,11 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     populateLoopToStdConversionPatterns(patterns, &getContext());
     populateStdToLLVMConversionPatterns(typeConverter, patterns);
 
-    // The only remaining operation to lower from the `typescript` dialect, is the
-    // PrintOp.
-    patterns.insert<PrintOpLowering, AssertOpLowering>(&getContext());
+    // The only remaining operation to lower from the `typescript` dialect, is the PrintOp.
+    patterns.insert<
+        PrintOpLowering, 
+        AssertOpLowering,
+        CallOpLowering>(&getContext());
 
     // We want to completely lower to LLVM, so we use a `FullConversion`. This
     // ensures that only legal operations will remain after the conversion.
