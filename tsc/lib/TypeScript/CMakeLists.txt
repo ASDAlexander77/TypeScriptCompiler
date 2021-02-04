@@ -16,6 +16,7 @@ include_directories(
 add_mlir_dialect_library(MLIRTypeScript
     TypeScriptDialect.cpp
     TypeScriptOps.cpp
+    TypeScriptTypes.cpp
     MLIRGen.cpp
     LowerToAffineLoops.cpp
     LowerToLLVM.cpp

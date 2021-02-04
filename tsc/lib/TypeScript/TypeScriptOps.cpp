@@ -6,6 +6,9 @@
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Matchers.h"
 
+#define GET_TYPEDEF_CLASSES
+#include "TypeScript/TypeScriptOpsTypes.cpp.inc"
+
 #define GET_OP_CLASSES
 #include "TypeScript/TypeScriptOps.cpp.inc"
 

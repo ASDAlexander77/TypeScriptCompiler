@@ -13,6 +13,10 @@ void TypeScriptDialect::initialize() {
 #define GET_OP_LIST
 #include "TypeScript/TypeScriptOps.cpp.inc"
       >();
+  addTypes<
+#define GET_TYPEDEF_LIST
+#include "TypeScript/TypeScriptOpsTypes.cpp.inc"
+      >();     
 }
 
 //===----------------------------------------------------------------------===//

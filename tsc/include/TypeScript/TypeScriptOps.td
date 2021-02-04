@@ -6,6 +6,8 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/CallInterfaces.td"
 
+def TypeScript_AnyType : Type<CPred<"true">, "typescript any type">;
+
 def TypeScript_IdentifierReference : TypeScript_Op<"identifier_reference", [NoSideEffect, Symbol]> {
     let arguments = (ins FlatSymbolRefAttr:$identifier);
     let results = (outs NoneType);

@@ -66,7 +66,7 @@ namespace
         {
             // We create an empty MLIR module and codegen functions one at a time and
             // add them to the module.
-            theModule = mlir::ModuleOp::create(builder.getUnknownLoc());
+            theModule = mlir::ModuleOp::create(loc(module), fileName);
             builder.setInsertionPointToStart(theModule.getBody());
 
             theModuleDOM.parseTree = module;
@@ -118,7 +118,7 @@ namespace
             for (auto &arg : formalParametersContextAST->formalParameter())
             {
                 auto name = arg->IdentifierName()->getText();
-                auto type = getType(arg, loc(arg));
+                auto type = getType(arg);
                 if (!type)
                 {
                     return params;
@@ -155,7 +155,13 @@ namespace
                 argTypes.push_back(param->getType());
             }
 
-            auto func_type = builder.getFunctionType(argTypes, llvm::None);
+            mlir::Type returnType;
+            if (auto *typeParameter = functionDeclarationAST->typeParameter())
+            {
+                returnType = getType(typeParameter);
+            }
+
+            auto func_type = (returnType) ? builder.getFunctionType(argTypes, returnType) : builder.getFunctionType(argTypes, llvm::None);
             auto funcOp = mlir::FuncOp::create(location, StringRef(name), func_type);
 
             return std::make_pair(funcOp, std::make_unique<FunctionPrototypeDOM>(functionDeclarationAST, name, std::move(params)));
@@ -593,10 +599,55 @@ namespace
             llvm_unreachable("not implemented");
         }
 
-        mlir::Type getType(TypeScriptParserANTLR::FormalParameterContext *formalParameterAST, mlir::Location loc)
+        mlir::Type getType(TypeScriptParserANTLR::FormalParameterContext *formalParameterAST)
         {
-            // TODO: finish it.
-            // return default type, pointer to any type
+            if (auto *typeParameter = formalParameterAST->typeParameter())
+            {
+                return getType(typeParameter);
+            }
+
+            return getAnyType();
+        }
+
+        mlir::Type getType(TypeScriptParserANTLR::TypeParameterContext *typeParameterAST)
+        {
+            if (auto *typeDeclaration = typeParameterAST->typeDeclaration())
+            {
+                return getType(typeDeclaration);
+            }
+
+            return getAnyType();
+        }        
+
+        mlir::Type getType(TypeScriptParserANTLR::TypeDeclarationContext *typeDeclarationAST)
+        {
+            if (auto boolean = typeDeclarationAST->BOOLEAN_KEYWORD())
+            {
+                return builder.getI1Type();
+            }
+            else if (auto boolean = typeDeclarationAST->NUMBER_KEYWORD())
+            {
+                return builder.getF32Type();
+            }
+            else if (auto boolean = typeDeclarationAST->BIGINT_KEYWORD())
+            {
+                return builder.getI64Type();
+            }
+            else if (auto boolean = typeDeclarationAST->STRING_KEYWORD())
+            {
+                return getStringType();
+            }
+
+            return getAnyType();
+        }        
+
+        mlir::Type getStringType()
+        {
+            return mlir::UnrankedMemRefType::get(builder.getI1Type(), 0);
+        }
+
+        mlir::Type getAnyType()
+        {
             return mlir::UnrankedMemRefType::get(builder.getI1Type(), 0);
         }
 
