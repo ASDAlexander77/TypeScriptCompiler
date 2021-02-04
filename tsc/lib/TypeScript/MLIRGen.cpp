@@ -4,6 +4,7 @@
 
 #include "TypeScript/DOM.h"
 
+#include "mlir/IR/Types.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -13,6 +14,7 @@
 
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/ScopedHashTable.h"
@@ -155,14 +157,18 @@ namespace
                 argTypes.push_back(param->getType());
             }
 
-            mlir::Type returnType;
+            mlir::FunctionType funcType;
             if (auto *typeParameter = functionDeclarationAST->typeParameter())
             {
-                returnType = getType(typeParameter);
+                auto returnType = getType(typeParameter);
+                funcType = builder.getFunctionType(argTypes, returnType);
+            }
+            else
+            {
+                funcType = builder.getFunctionType(argTypes, llvm::None);
             }
 
-            auto func_type = (returnType) ? builder.getFunctionType(argTypes, returnType) : builder.getFunctionType(argTypes, llvm::None);
-            auto funcOp = mlir::FuncOp::create(location, StringRef(name), func_type);
+            auto funcOp = mlir::FuncOp::create(location, StringRef(name), funcType);
 
             return std::make_pair(funcOp, std::make_unique<FunctionPrototypeDOM>(functionDeclarationAST, name, std::move(params)));
         }
@@ -235,6 +241,7 @@ namespace
             }
 
             theModule.push_back(funcOp);
+            functionMap.insert({funcOp.getName(), funcOp});
             theModuleDOM.getFunctionProtos().push_back(std::move(funcProto));
 
             return mlir::success();
@@ -369,12 +376,20 @@ namespace
                         }
                     }
 
+                    // resolve function
+                    auto calledFuncIt = functionMap.find(functionName);
+                    if (calledFuncIt == functionMap.end()) {
+                        emitError(location) << "no defined function found for '" << functionName << "'";
+                        return nullptr;
+                    }
+
+                    auto calledFunc = calledFuncIt->second;
+
                     // default call by name
                     auto callOp =
                         builder.create<mlir::CallOp>(
                             location,
-                            resultType, // result
-                            functionName,
+                            calledFunc,
                             operands);
 
                     if (hasResult)
@@ -653,12 +668,13 @@ namespace
 
         mlir::LogicalResult declare(VariableDeclarationDOM& var, mlir::Value value)
         {
-            if (symbolTable.count(var.getName()))
+            const auto &name = var.getName();
+            if (symbolTable.count(name))
             {
                 return mlir::failure();
             }
 
-            symbolTable.insert(var.getName(), {value, &var});
+            symbolTable.insert(name, {value, &var});
             return mlir::success();
         }
 
@@ -693,6 +709,8 @@ namespace
         mlir::StringRef fileName;
 
         llvm::ScopedHashTable<StringRef, VariablePairT> symbolTable;
+
+        llvm::StringMap<mlir::FuncOp> functionMap;
     };
 
 } // namespace
