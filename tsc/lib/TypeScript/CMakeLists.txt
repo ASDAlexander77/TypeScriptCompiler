@@ -29,6 +29,7 @@ add_mlir_dialect_library(MLIRTypeScript
 
     DEPENDS
     MLIRTypeScriptOpsIncGen
+    MLIRTypeScriptDefIncGen
 
     LINK_LIBS PUBLIC
     antlr4_static

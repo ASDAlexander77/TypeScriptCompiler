@@ -7,6 +7,9 @@
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 
+#define GET_TYPEDEF_CLASSES 
+#include "TypeScript/TypeScriptOpsTypes.h.inc"
+
 #define GET_OP_CLASSES
 #include "TypeScript/TypeScriptOps.h.inc"
 

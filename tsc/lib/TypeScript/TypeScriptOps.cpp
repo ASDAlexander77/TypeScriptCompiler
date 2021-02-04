@@ -1,5 +1,6 @@
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/TypeScriptDialect.h"
+#include "TypeScript/TypeScriptTypes.h"
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/OpImplementation.h"
