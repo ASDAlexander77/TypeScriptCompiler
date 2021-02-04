@@ -117,14 +117,14 @@ namespace
 
             for (auto &arg : formalParametersContextAST->formalParameter())
             {
-                auto name = StringRef(arg->IdentifierName()->getText());
+                auto name = arg->IdentifierName()->getText();
                 auto type = getType(arg, loc(arg));
                 if (!type)
                 {
                     return params;
                 }
 
-                params.push_back(std::make_unique<FunctionParamDOM>(std::move(arg), std::move(name), std::move(type)));
+                params.push_back(std::make_unique<FunctionParamDOM>(arg, name, type));
             }
 
             return params;
@@ -158,7 +158,7 @@ namespace
             auto func_type = builder.getFunctionType(argTypes, llvm::None);
             auto funcOp = mlir::FuncOp::create(location, StringRef(name), func_type);
 
-            return std::make_pair(funcOp, std::make_unique<FunctionPrototypeDOM>(std::move(functionDeclarationAST), std::move(name), std::move(params)));
+            return std::make_pair(funcOp, std::make_unique<FunctionPrototypeDOM>(functionDeclarationAST, name, std::move(params)));
         }
 
         mlir::LogicalResult mlirGen(TypeScriptParserANTLR::FunctionDeclarationContext *functionDeclarationAST)
@@ -234,11 +234,17 @@ namespace
             return mlir::success();
         }
 
-        mlir::Value mlirGen(TypeScriptParserANTLR::StatementContext *statementAST)
+        mlir::LogicalResult mlirGen(TypeScriptParserANTLR::StatementContext *statementAST)
         {
-            if (auto *expressionStatement = statementAST->expressionStatement())
+            if (auto *expression = statementAST->expression())
             {
-                return mlirGen(expressionStatement);
+                mlirGen(expression);
+                // ignore result in statement
+                return mlir::success();
+            }
+            else if (auto *returnStatement = statementAST->returnStatement())
+            {
+                return mlirGen(returnStatement);
             }
             else
             {
@@ -246,9 +252,19 @@ namespace
             }
         }
 
-        mlir::Value mlirGen(TypeScriptParserANTLR::ExpressionStatementContext *expressionStatementAST)
+        mlir::LogicalResult mlirGen(TypeScriptParserANTLR::ReturnStatementContext *returnStatementAST)
         {
-            return mlirGen(expressionStatementAST->expression());
+            if (auto *expression = returnStatementAST->expression())
+            {
+                auto expressionValue = mlirGen(expression);
+                builder.create<mlir::ReturnOp>(loc(returnStatementAST), expressionValue);
+            }
+            else
+            {
+                builder.create<mlir::ReturnOp>(loc(returnStatementAST));
+            }
+
+            return mlir::success();
         }
 
         mlir::Value mlirGen(TypeScriptParserANTLR::ExpressionContext *expressionAST)
@@ -515,7 +531,17 @@ namespace
 
         mlir::Value mlirGenIdentifierName(antlr4::tree::TerminalNode *identifierName)
         {
-            return IdentifierReference::create(loc(identifierName), identifierName->getText());
+            // resolve name
+            auto name = identifierName->getText();
+
+            auto value = resolve(name);
+            if (value)
+            {
+                return value;
+            }
+
+            // unresolved reference (for call for example)
+            return IdentifierReference::create(loc(identifierName), name);
         }
 
         mlir::Value mlirGenStringLiteral(antlr4::tree::TerminalNode *stringLiteral)
@@ -584,6 +610,17 @@ namespace
             symbolTable.insert(var.getName(), {value, &var});
             return mlir::success();
         }
+
+        mlir::Value resolve(StringRef name)
+        {
+            auto varIt = symbolTable.lookup(name);
+            if (varIt.first)
+            {
+                return varIt.first;
+            }
+
+            return nullptr;
+        }        
 
     private:
         /// Helper conversion for a TypeScript AST location to an MLIR location.

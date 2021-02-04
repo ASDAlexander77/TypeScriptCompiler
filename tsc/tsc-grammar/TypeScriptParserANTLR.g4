@@ -12,7 +12,7 @@ declaration
     : functionDeclaration ;    
 
 functionDeclaration
-    : FUNCTION_KEYWORD IdentifierName? OPENPAREN_TOKEN (formalParameters)? CLOSEPAREN_TOKEN OPENBRACE_TOKEN functionBody CLOSEBRACE_TOKEN ;
+    : FUNCTION_KEYWORD IdentifierName? OPENPAREN_TOKEN formalParameters? CLOSEPAREN_TOKEN typeParameter? OPENBRACE_TOKEN functionBody CLOSEBRACE_TOKEN ;
 
 formalParameters
     : functionRestParameter
@@ -32,7 +32,10 @@ assignmentExpression
 
 typeDeclaration
     : ANY_KEYWORD 
-    | NUMBER_KEYWORD ;    
+    | NUMBER_KEYWORD
+    | BOOLEAN_KEYWORD 
+    | STRING_KEYWORD
+    | BIGINT_KEYWORD ;    
 
 functionRestParameter
     : DOTDOTDOT_TOKEN formalParameter ;
@@ -45,10 +48,11 @@ statementListItem
     | declaration ;
 
 statement
-    : expressionStatement ;
+    : (expression 
+       | returnStatement) SEMICOLON_TOKEN ;
 
-expressionStatement
-    : expression SEMICOLON_TOKEN ;
+returnStatement
+    : RETURN_KEYWORD expression? ;
 
 expression
     : primaryExpression
