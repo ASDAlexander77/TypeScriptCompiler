@@ -74,7 +74,9 @@ namespace
             : op(op_), 
               operands(operands_), 
               rewriter(rewriter_),
-              loc(op->getLoc())
+              loc(op->getLoc()),
+              parentModule(op->getParentOfType<ModuleOp>()), 
+              context(parentModule.getContext())
         {
         }        
 
@@ -152,10 +154,22 @@ namespace
             return getPointerType(getI8Type());
         }
 
+        /*
         LLVM::LLVMFunctionType getFunctionType(mlir::Type result, mlir::ResultRange::type_range arguments, bool isVarArg = false)
         {
             return LLVM::LLVMFunctionType::get(result, arguments, isVarArg);
         }
+        */
+
+        LLVM::LLVMFunctionType getFunctionType(mlir::Type result, ArrayRef<mlir::Type> arguments, bool isVarArg = false)
+        {
+            return LLVM::LLVMFunctionType::get(result, arguments, isVarArg);
+        }
+
+        LLVM::LLVMFunctionType getFunctionType(ArrayRef<mlir::Type> arguments, bool isVarArg = false)
+        {
+            return LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(context), arguments, isVarArg);
+        }        
 
         Operation *op;
         ArrayRef<Value> &operands;
@@ -318,15 +332,9 @@ namespace
 
         LogicalResult matchAndRewrite()
         {
-            /*
-            auto callFuncOp =
-                getOrInsertFunction(
-                    "_assert",
-                    getFunctionType(getVoidType(), {i8PtrTy, i8PtrTy, getI32Type()}));
-            */
+            auto callOp = cast<typescript::CallOp>(op);
 
-            auto calleeName = op->getAttrOfType<FlatSymbolRefAttr>("callee");
-            rewriter.create<LLVM::CallOp>(loc, op->getResultTypes(), calleeName, ValueRange(operands));
+            rewriter.create<LLVM::CallOp>(loc, callOp.getCalleeType(), ValueRange(operands));
             rewriter.eraseOp(op);
             return success();
         }
@@ -354,6 +362,7 @@ namespace
         {
             registry.insert<LLVM::LLVMDialect, scf::SCFDialect>();
         }
+
         void runOnOperation() final;
     };
 } // end anonymous namespace
@@ -396,7 +405,9 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     // ensures that only legal operations will remain after the conversion.
     auto module = getOperation();
     if (failed(applyFullConversion(module, target, std::move(patterns))))
+    {
         signalPassFailure();
+    }
 }
 
 /// Create a pass for lowering operations the remaining `TypeScript` operations, as

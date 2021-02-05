@@ -22,6 +22,7 @@
 
 #include "TypeScriptLexerANTLR.h"
 #include "TypeScriptParserANTLR.h"
+#include "TypeScript/VisitorAST.h"
 
 #include <numeric>
 
@@ -70,6 +71,23 @@ namespace
             // add them to the module.
             theModule = mlir::ModuleOp::create(loc(module), fileName);
             builder.setInsertionPointToStart(theModule.getBody());
+
+            // VisitorAST
+            FilterVisitorAST<TypeScriptParserANTLR::FunctionDeclarationContext> visitorAST(
+                [&](auto* funcDecl) 
+                {
+                    auto funcOpAndFuncProto = mlirGenFunctionPrototype(funcDecl);
+                    auto funcOp = funcOpAndFuncProto.first;
+                    auto &funcProto = funcOpAndFuncProto.second;
+
+                    if (auto funcOp = theModule.lookupSymbol<mlir::FuncOp>(funcProto->getName()))
+                    {
+                        return;
+                    }
+
+                    functionMap.insert({funcOp.getName(), funcOp});
+                });
+            visitorAST.visit(module);
 
             theModuleDOM.parseTree = module;
 
@@ -354,10 +372,6 @@ namespace
                     SmallVector<mlir::Value, 0> operands;
                     mlirGen(callExpression->arguments(), operands);
 
-                    // result;
-                    auto hasResult = false;
-                    auto resultType = builder.getNoneType();
-
                     // print - internal command;
                     if (functionName.compare(StringRef("print")) == 0)
                     {
@@ -378,7 +392,8 @@ namespace
 
                     // resolve function
                     auto calledFuncIt = functionMap.find(functionName);
-                    if (calledFuncIt == functionMap.end()) {
+                    if (calledFuncIt == functionMap.end()) 
+                    {
                         emitError(location) << "no defined function found for '" << functionName << "'";
                         return nullptr;
                     }
@@ -392,7 +407,7 @@ namespace
                             calledFunc,
                             operands);
 
-                    if (hasResult)
+                    if (calledFunc.getType().getNumResults() > 0)
                     {
                         return callOp.getResult(0);
                     }

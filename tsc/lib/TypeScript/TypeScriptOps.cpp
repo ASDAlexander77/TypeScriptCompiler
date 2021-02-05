@@ -51,6 +51,7 @@ namespace
                 rewriter.eraseOp(op);
                 return success();
             }
+            
             return failure();
         }
     };

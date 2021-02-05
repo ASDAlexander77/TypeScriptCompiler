@@ -111,6 +111,7 @@ def TypeScript_CallOp : TypeScript_Op<"call",
   let assemblyFormat = [{
     $callee `(` $operands `)` attr-dict `:` functional-type($operands, results)
   }];
+
   let verifier = ?;
 }
 
