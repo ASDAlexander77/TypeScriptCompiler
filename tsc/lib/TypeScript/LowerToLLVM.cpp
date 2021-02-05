@@ -180,11 +180,7 @@ namespace
     class PrintOpLoweringLogic : public LoweringLogic<typescript::PrintOp>
     {
     public:
-
-        explicit PrintOpLoweringLogic(Operation *op_, ArrayRef<Value> &operands_, ConversionPatternRewriter &rewriter_) 
-            : LoweringLogic<typescript::PrintOp>(op_, operands_, rewriter_)
-        {
-        }
+        using LoweringLogic<typescript::PrintOp>::LoweringLogic;
 
         LogicalResult matchAndRewrite()
         {
@@ -211,19 +207,13 @@ namespace
     /// elements of the array.
     struct PrintOpLowering : public OpLowering<PrintOpLoweringLogic>
     {
-        explicit PrintOpLowering(MLIRContext *context) : OpLowering<PrintOpLoweringLogic>(context)
-        {
-        }          
+        using OpLowering<PrintOpLoweringLogic>::OpLowering;
     };
 
     class AssertOpLoweringLogic : public LoweringLogic<typescript::AssertOp>
     {
     public:
-
-        explicit AssertOpLoweringLogic(Operation *op_, ArrayRef<Value> &operands_, ConversionPatternRewriter &rewriter_) 
-            : LoweringLogic<typescript::AssertOp>(op_, operands_, rewriter_)
-        {
-        }
+        using LoweringLogic<typescript::AssertOp>::LoweringLogic;
 
         LogicalResult matchAndRewrite()
         {
@@ -295,9 +285,7 @@ namespace
 
     struct AssertOpLowering : public OpLowering<AssertOpLoweringLogic>
     {
-        explicit AssertOpLowering(MLIRContext *context) : OpLowering<AssertOpLoweringLogic>(context)
-        {
-        }          
+        using OpLowering<AssertOpLoweringLogic>::OpLowering;
     };    
 
 } // end anonymous namespace
