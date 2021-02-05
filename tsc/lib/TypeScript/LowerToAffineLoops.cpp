@@ -30,17 +30,17 @@ struct CallOpLowering : public OpRewritePattern<typescript::CallOp>
 //===----------------------------------------------------------------------===//
 
 /// This is a partial lowering to affine loops of the typescript operations that are
-/// computationally intensive (like matmul for example...) while keeping the
+/// computationally intensive (like add+mul for example...) while keeping the
 /// rest of the code in the TypeScript dialect.
 namespace
 {
-    struct TypeScriptToAffineLoweringPass
-        : public PassWrapper<TypeScriptToAffineLoweringPass, FunctionPass>
+    struct TypeScriptToAffineLoweringPass : public PassWrapper<TypeScriptToAffineLoweringPass, FunctionPass>
     {
         void getDependentDialects(DialectRegistry &registry) const override
         {
             registry.insert<AffineDialect, StandardOpsDialect>();
         }
+        
         void runOnFunction() final;
     };
 } // end anonymous namespace.
@@ -49,8 +49,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
 {
     auto function = getFunction();
 
-    // We only lower the main function as we expect that all other functions have
-    // been inlined.
+    // We only lower the main function as we expect that all other functions have been inlined.
     if (function.getName() != "main")
     {
         return;

@@ -26,8 +26,12 @@ namespace fs = std::experimental::filesystem;
 #define PCLOSE pclose
 #endif
 
-#ifndef TEST_LIBPATH
-#define TEST_LIBPATH "C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/SDK/ScopeCppSDK/vc15/VC/lib"
+#ifndef TEST_VCPATH
+#define TEST_VCPATH "C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/SDK/ScopeCppSDK/vc15/VC/lib"
+#endif
+
+#ifndef TEST_SDKPATH
+#define TEST_SDKPATH "C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/SDK/ScopeCppSDK/vc15/SDK/lib"
 #endif
 
 #ifndef TEST_EXEPATH
@@ -99,13 +103,14 @@ void createBatchFile()
 {
     std::ofstream batFile("compile.bat");
     batFile << "set FILENAME=test_run" << std::endl;
-    batFile << "set LIBPATH=" << TEST_LIBPATH << std::endl;
+    batFile << "set VCPATH=" << TEST_VCPATH << std::endl;
+    batFile << "set SDKPATH=" << TEST_SDKPATH << std::endl;
     batFile << "set EXEPATH=" << TEST_EXEPATH << std::endl;
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "%TSCEXEPATH%\\tsc.exe --emit=mlir-llvm %1 2> %FILENAME%.mlir" << std::endl;
     batFile << "%EXEPATH%\\mlir-translate.exe --mlir-to-llvmir -o=%FILENAME%.il %FILENAME%.mlir" << std::endl;
     batFile << "%EXEPATH%\\llc.exe --filetype=obj -o=%FILENAME%.o %FILENAME%.il" << std::endl;
-    batFile << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o \"%LIBPATH%\\libcmt.lib\" \"%LIBPATH%\\libvcruntime.lib\" \"%LIBPATH%\\kernel32.lib\" \"%LIBPATH%\\libucrt.lib\" \"%LIBPATH%\\uuid.lib\"" << std::endl;
+    batFile << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o \"%VCPATH%\\libcmt.lib\" \"%VCPATH%\\libvcruntime.lib\" \"%SDKPATH%\\kernel32.lib\" \"%SDKPATH%\\libucrt.lib\" \"%SDKPATH%\\uuid.lib\"" << std::endl;
     batFile.close();
 }
 
