@@ -43,7 +43,7 @@ namespace fs = std::experimental::filesystem;
 #endif
 
 #ifndef TEST_FILE
-#define TEST_FILE "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/01arguments.ts"
+#define TEST_FILE "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/00assert.ts"
 #endif
 
 bool hasEnding(std::string const &fullString, std::string const &ending)
@@ -138,7 +138,14 @@ int main(int argc, char **argv)
     createBatchFile();
     try
     {
-        testFile(TEST_FILE);
+        if (argc > 1)
+        {
+            testFile(argv[1]);
+        }
+        else
+        {
+            testFile(TEST_FILE);
+        }
     }
     catch (const std::exception &e)
     {
