@@ -13,8 +13,15 @@ include "TypeScriptDialect.td"
 // All of the types will extend this class.
 class TypeScript_Type<string name> : TypeDef<TypeScript_Dialect, name> { }
 
-def SimpleTypeA : TypeScript_Type<"SimpleA"> {
-  let mnemonic = "smpla";
+def Optional : TypeScript_Type<"Optional"> {
+  let mnemonic = "optional";
+
+  // List of type parameters.
+  let parameters = (
+    ins
+    "bool":$hasValue,
+    "::mlir::Type":$value
+  );
 }
 
 #endif // TYPESCRIPT_TYPEDEFS
