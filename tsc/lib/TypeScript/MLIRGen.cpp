@@ -41,6 +41,11 @@ using llvm::Twine;
 
 namespace
 {
+    struct GenContext
+    {
+        bool allowPartialResolve;
+    };
+
     /// Implementation of a simple MLIR emission from the TypeScript AST.
     ///
     /// This will emit operations that are specific to the TypeScript language, preserving
@@ -74,7 +79,10 @@ namespace
             // VisitorAST
             FilterVisitorAST<TypeScriptParserANTLR::FunctionDeclarationContext> visitorAST(
                 [&](auto *funcDecl) {
-                    auto funcOpAndFuncProto = mlirGenFunctionPrototype(funcDecl);
+                    GenContext genContextDecl;
+                    genContextDecl.allowPartialResolve = true;
+                    
+                    auto funcOpAndFuncProto = mlirGenFunctionPrototype(funcDecl, genContextDecl);
                     auto funcOp = funcOpAndFuncProto.first;
                     auto &funcProto = funcOpAndFuncProto.second;
 
@@ -90,9 +98,10 @@ namespace
             theModuleDOM.parseTree = module;
 
             // Process generating here
+            GenContext genContext;
             for (auto *declaration : module->declaration())
             {
-                if (failed(mlirGen(declaration)))
+                if (failed(mlirGen(declaration, genContext)))
                 {
                     return nullptr;
                 }
@@ -111,11 +120,11 @@ namespace
             return theModule;
         }
 
-        mlir::LogicalResult mlirGen(TypeScriptParserANTLR::DeclarationContext *declarationAST)
+        mlir::LogicalResult mlirGen(TypeScriptParserANTLR::DeclarationContext *declarationAST, const GenContext &genContext)
         {
             if (auto *functionDeclaration = declarationAST->functionDeclaration())
             {
-                mlirGen(functionDeclaration);
+                mlirGen(functionDeclaration, genContext);
             }
             else
             {
@@ -125,7 +134,8 @@ namespace
             return mlir::success();
         }
 
-        std::vector<std::unique_ptr<FunctionParamDOM>> mlirGen(TypeScriptParserANTLR::FormalParametersContext *formalParametersContextAST)
+        std::vector<std::unique_ptr<FunctionParamDOM>> mlirGen(TypeScriptParserANTLR::FormalParametersContext *formalParametersContextAST, 
+            const GenContext &genContext)
         {
             std::vector<std::unique_ptr<FunctionParamDOM>> params;
             if (!formalParametersContextAST)
@@ -155,7 +165,7 @@ namespace
                     auto assignmentExpression = initializer->assignmentExpression();
                     if (assignmentExpression)
                     {
-                        auto initValue = mlirGen(assignmentExpression);
+                        auto initValue = mlirGen(assignmentExpression, genContext);
                         if (initValue)
                         {
                             // TODO: set type if not provided
@@ -177,12 +187,13 @@ namespace
             return params;
         }
 
-        std::pair<mlir::FuncOp, FunctionPrototypeDOM::TypePtr> mlirGenFunctionPrototype(TypeScriptParserANTLR::FunctionDeclarationContext *functionDeclarationAST)
+        std::pair<mlir::FuncOp, FunctionPrototypeDOM::TypePtr> mlirGenFunctionPrototype(TypeScriptParserANTLR::FunctionDeclarationContext *functionDeclarationAST, 
+            const GenContext &genContext)
         {
             auto location = loc(functionDeclarationAST);
 
             // This is a generic function, the return type will be inferred later.
-            std::vector<FunctionParamDOM::TypePtr> params = mlirGen(functionDeclarationAST->formalParameters());
+            std::vector<FunctionParamDOM::TypePtr> params = mlirGen(functionDeclarationAST->formalParameters(), genContext);
 
             std::string name;
             auto *identifier = functionDeclarationAST->IdentifierName();
@@ -218,10 +229,10 @@ namespace
             return std::make_pair(funcOp, std::make_unique<FunctionPrototypeDOM>(functionDeclarationAST, name, std::move(params)));
         }
 
-        mlir::LogicalResult mlirGen(TypeScriptParserANTLR::FunctionDeclarationContext *functionDeclarationAST)
+        mlir::LogicalResult mlirGen(TypeScriptParserANTLR::FunctionDeclarationContext *functionDeclarationAST, const GenContext &genContext)
         {
             SymbolTableScopeT varScope(symbolTable);
-            auto funcOpWithFuncProto = mlirGenFunctionPrototype(functionDeclarationAST);
+            auto funcOpWithFuncProto = mlirGenFunctionPrototype(functionDeclarationAST, genContext);
             auto &funcOp = funcOpWithFuncProto.first;
             auto &funcProto = funcOpWithFuncProto.second;
             if (!funcOp)
@@ -246,11 +257,11 @@ namespace
             {
                 if (auto *statement = statementListItem->statement())
                 {
-                    mlirGen(statement);
+                    mlirGen(statement, genContext);
                 }
                 else if (auto *declaration = statementListItem->declaration())
                 {
-                    mlirGen(declaration);
+                    mlirGen(declaration, genContext);
                 }
                 else
                 {
@@ -292,17 +303,17 @@ namespace
             return mlir::success();
         }
 
-        mlir::LogicalResult mlirGen(TypeScriptParserANTLR::StatementContext *statementAST)
+        mlir::LogicalResult mlirGen(TypeScriptParserANTLR::StatementContext *statementAST, const GenContext &genContext)
         {
             if (auto *expression = statementAST->expression())
             {
-                mlirGen(expression);
+                mlirGen(expression, genContext);
                 // ignore result in statement
                 return mlir::success();
             }
             else if (auto *returnStatement = statementAST->returnStatement())
             {
-                return mlirGen(returnStatement);
+                return mlirGen(returnStatement, genContext);
             }
             else
             {
@@ -310,11 +321,11 @@ namespace
             }
         }
 
-        mlir::LogicalResult mlirGen(TypeScriptParserANTLR::ReturnStatementContext *returnStatementAST)
+        mlir::LogicalResult mlirGen(TypeScriptParserANTLR::ReturnStatementContext *returnStatementAST, const GenContext &genContext)
         {
             if (auto *expression = returnStatementAST->expression())
             {
-                auto expressionValue = mlirGen(expression);
+                auto expressionValue = mlirGen(expression, genContext);
                 builder.create<mlir::ReturnOp>(loc(returnStatementAST), expressionValue);
             }
             else
@@ -325,15 +336,15 @@ namespace
             return mlir::success();
         }
 
-        mlir::Value mlirGen(TypeScriptParserANTLR::ExpressionContext *expressionAST)
+        mlir::Value mlirGen(TypeScriptParserANTLR::ExpressionContext *expressionAST, const GenContext &genContext)
         {
             if (auto *primaryExpression = expressionAST->primaryExpression())
             {
-                return mlirGen(primaryExpression);
+                return mlirGen(primaryExpression, genContext);
             }
             else if (auto *leftHandSideExpression = expressionAST->leftHandSideExpression())
             {
-                return mlirGen(leftHandSideExpression);
+                return mlirGen(leftHandSideExpression, genContext);
             }
             else
             {
@@ -341,15 +352,15 @@ namespace
             }
         }
 
-        mlir::Value mlirGen(TypeScriptParserANTLR::PrimaryExpressionContext *primaryExpression)
+        mlir::Value mlirGen(TypeScriptParserANTLR::PrimaryExpressionContext *primaryExpression, const GenContext &genContext)
         {
             if (auto *literal = primaryExpression->literal())
             {
-                return mlirGen(literal);
+                return mlirGen(literal, genContext);
             }
             else if (auto *identifierReference = primaryExpression->identifierReference())
             {
-                return mlirGen(identifierReference);
+                return mlirGen(identifierReference, genContext);
             }
             else
             {
@@ -357,15 +368,15 @@ namespace
             }
         }
 
-        mlir::Value mlirGen(TypeScriptParserANTLR::LeftHandSideExpressionContext *leftHandSideExpression)
+        mlir::Value mlirGen(TypeScriptParserANTLR::LeftHandSideExpressionContext *leftHandSideExpression, const GenContext &genContext)
         {
             if (auto *callExpression = leftHandSideExpression->callExpression())
             {
-                return mlirGen(callExpression);
+                return mlirGen(callExpression, genContext);
             }
             else if (auto *memberExpression = leftHandSideExpression->memberExpression())
             {
-                return mlirGen(memberExpression);
+                return mlirGen(memberExpression, genContext);
             }
             else
             {
@@ -373,11 +384,11 @@ namespace
             }
         }
 
-        mlir::Value mlirGen(TypeScriptParserANTLR::AssignmentExpressionContext *assignmentExpressionContext)
+        mlir::Value mlirGen(TypeScriptParserANTLR::AssignmentExpressionContext *assignmentExpressionContext, const GenContext &genContext)
         {
             if (auto *leftHandSideExpression = assignmentExpressionContext->leftHandSideExpression())
             {
-                return mlirGen(leftHandSideExpression);
+                return mlirGen(leftHandSideExpression, genContext);
             }
             else
             {
@@ -385,7 +396,7 @@ namespace
             }
         }
 
-        mlir::Value mlirGen(TypeScriptParserANTLR::CallExpressionContext *callExpression)
+        mlir::Value mlirGen(TypeScriptParserANTLR::CallExpressionContext *callExpression, const GenContext &genContext)
         {
             auto location = loc(callExpression);
 
@@ -394,11 +405,11 @@ namespace
             // get function ref.
             if (auto *memberExpression = callExpression->memberExpression())
             {
-                result = mlirGen(memberExpression);
+                result = mlirGen(memberExpression, genContext);
             }
             else if (auto *callExpressionRecursive = callExpression->callExpression())
             {
-                result = mlirGen(callExpressionRecursive);
+                result = mlirGen(callExpressionRecursive, genContext);
             }
 
             auto definingOp = result.getDefiningOp();
@@ -413,7 +424,7 @@ namespace
 
                     // process arguments
                     SmallVector<mlir::Value, 0> operands;
-                    mlirGen(callExpression->arguments(), operands);
+                    mlirGen(callExpression->arguments(), operands, genContext);
 
                     // print - internal command;
                     if (functionName.compare(StringRef("print")) == 0
@@ -496,15 +507,15 @@ namespace
             return mlir::success();
         }
 
-        mlir::Value mlirGen(TypeScriptParserANTLR::MemberExpressionContext *memberExpression)
+        mlir::Value mlirGen(TypeScriptParserANTLR::MemberExpressionContext *memberExpression, const GenContext &genContext)
         {
             if (auto *primaryExpression = memberExpression->primaryExpression())
             {
-                return mlirGen(primaryExpression);
+                return mlirGen(primaryExpression, genContext);
             }
             else if (auto *memberExpressionRecursive = memberExpression->memberExpression())
             {
-                return mlirGen(memberExpressionRecursive);
+                return mlirGen(memberExpressionRecursive, genContext);
             }
             else
             {
@@ -512,29 +523,29 @@ namespace
             }
         }
 
-        mlir::LogicalResult mlirGen(TypeScriptParserANTLR::ArgumentsContext *arguments, SmallVector<mlir::Value, 0> &operands)
+        mlir::LogicalResult mlirGen(TypeScriptParserANTLR::ArgumentsContext *arguments, SmallVector<mlir::Value, 0> &operands, const GenContext &genContext)
         {
             for (auto &next : arguments->expression())
             {
-                operands.push_back(mlirGen(next));
+                operands.push_back(mlirGen(next, genContext));
             }
 
             return mlir::success();
         }
 
-        mlir::Value mlirGen(TypeScriptParserANTLR::LiteralContext *literal)
+        mlir::Value mlirGen(TypeScriptParserANTLR::LiteralContext *literal, const GenContext &genContext)
         {
             if (auto *nullLiteral = literal->nullLiteral())
             {
-                return mlirGen(nullLiteral);
+                return mlirGen(nullLiteral, genContext);
             }
             else if (auto *booleanLiteral = literal->booleanLiteral())
             {
-                return mlirGen(booleanLiteral);
+                return mlirGen(booleanLiteral, genContext);
             }
             else if (auto *numericLiteral = literal->numericLiteral())
             {
-                return mlirGen(numericLiteral);
+                return mlirGen(numericLiteral, genContext);
             }
             else
             {
@@ -542,12 +553,12 @@ namespace
             }
         }
 
-        mlir::Value mlirGen(TypeScriptParserANTLR::NullLiteralContext *nullLiteral)
+        mlir::Value mlirGen(TypeScriptParserANTLR::NullLiteralContext *nullLiteral, const GenContext &genContext)
         {
             llvm_unreachable("not implemented");
         }
 
-        mlir::Value mlirGen(TypeScriptParserANTLR::BooleanLiteralContext *booleanLiteral)
+        mlir::Value mlirGen(TypeScriptParserANTLR::BooleanLiteralContext *booleanLiteral, const GenContext &genContext)
         {
             bool result;
             if (booleanLiteral->TRUE_KEYWORD())
@@ -569,7 +580,7 @@ namespace
                 mlir::BoolAttr::get(result, theModule.getContext()));
         }
 
-        mlir::Value mlirGen(TypeScriptParserANTLR::NumericLiteralContext *numericLiteral)
+        mlir::Value mlirGen(TypeScriptParserANTLR::NumericLiteralContext *numericLiteral, const GenContext &genContext)
         {
             if (auto *decimalLiteral = numericLiteral->DecimalLiteral())
             {
@@ -601,7 +612,7 @@ namespace
             }
         }
 
-        mlir::Value mlirGen(TypeScriptParserANTLR::IdentifierReferenceContext *identifierReference)
+        mlir::Value mlirGen(TypeScriptParserANTLR::IdentifierReferenceContext *identifierReference, const GenContext &genContext)
         {
             return mlirGenIdentifierName(identifierReference->IdentifierName());
         }
