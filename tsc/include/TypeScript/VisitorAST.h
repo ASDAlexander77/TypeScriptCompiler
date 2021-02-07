@@ -8,10 +8,6 @@ class VisitorAST : public antlr4::tree::ParseTreeVisitor
 public:
     virtual antlrcpp::Any visit(antlr4::tree::ParseTree *tree) override
     {
-#if _DEBUG
-    std::cout << "visit >>> " << tree->getText() << std::endl;
-#endif        
-
         action(tree);
 
         visitChildren(tree);

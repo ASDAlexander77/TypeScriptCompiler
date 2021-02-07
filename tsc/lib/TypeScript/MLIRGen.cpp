@@ -79,13 +79,18 @@ namespace
             // VisitorAST
             FilterVisitorAST<TypeScriptParserANTLR::FunctionDeclarationContext> visitorAST(
                 [&](auto *funcDecl) {
-                    GenContext genContextDecl;
+                    GenContext genContextDecl = {0};
                     genContextDecl.allowPartialResolve = true;
                     
                     auto funcOpAndFuncProto = mlirGenFunctionPrototype(funcDecl, genContextDecl);
-                    auto funcOp = funcOpAndFuncProto.first;
-                    auto &funcProto = funcOpAndFuncProto.second;
+                    auto result = std::get<2>(funcOpAndFuncProto);
+                    if (result)
+                    {
+                        return;
+                    }
 
+                    auto funcOp = std::get<0>(funcOpAndFuncProto);
+                    auto &funcProto = std::get<1>(funcOpAndFuncProto);
                     if (auto funcOp = theModule.lookupSymbol<mlir::FuncOp>(funcProto->getName()))
                     {
                         return;
@@ -98,7 +103,7 @@ namespace
             theModuleDOM.parseTree = module;
 
             // Process generating here
-            GenContext genContext;
+            GenContext genContext = {0};
             for (auto *declaration : module->declaration())
             {
                 if (failed(mlirGen(declaration, genContext)))
@@ -187,13 +192,24 @@ namespace
             return params;
         }
 
-        std::pair<mlir::FuncOp, FunctionPrototypeDOM::TypePtr> mlirGenFunctionPrototype(TypeScriptParserANTLR::FunctionDeclarationContext *functionDeclarationAST, 
+        std::tuple<mlir::FuncOp, FunctionPrototypeDOM::TypePtr, bool> mlirGenFunctionPrototype(TypeScriptParserANTLR::FunctionDeclarationContext *functionDeclarationAST, 
             const GenContext &genContext)
         {
             auto location = loc(functionDeclarationAST);
 
             // This is a generic function, the return type will be inferred later.
             std::vector<FunctionParamDOM::TypePtr> params = mlirGen(functionDeclarationAST->formalParameters(), genContext);
+            SmallVector<mlir::Type> argTypes;
+            for (const auto &param : params)
+            {
+                auto paramType = param->getType();
+                if (!paramType)
+                {
+                    return std::make_tuple(mlir::FuncOp(), FunctionPrototypeDOM::TypePtr(nullptr), false);
+                }
+
+                argTypes.push_back(paramType);
+            }
 
             std::string name;
             auto *identifier = functionDeclarationAST->IdentifierName();
@@ -205,12 +221,6 @@ namespace
             {
                 // auto calculate name
                 // __func+location
-            }
-
-            SmallVector<mlir::Type> argTypes;
-            for (const auto &param : params)
-            {
-                argTypes.push_back(param->getType());
             }
 
             mlir::FunctionType funcType;
@@ -226,16 +236,18 @@ namespace
 
             auto funcOp = mlir::FuncOp::create(location, StringRef(name), funcType);
 
-            return std::make_pair(funcOp, std::make_unique<FunctionPrototypeDOM>(functionDeclarationAST, name, std::move(params)));
+            return std::make_tuple(funcOp, std::make_unique<FunctionPrototypeDOM>(functionDeclarationAST, name, std::move(params)), true);
         }
 
         mlir::LogicalResult mlirGen(TypeScriptParserANTLR::FunctionDeclarationContext *functionDeclarationAST, const GenContext &genContext)
         {
             SymbolTableScopeT varScope(symbolTable);
             auto funcOpWithFuncProto = mlirGenFunctionPrototype(functionDeclarationAST, genContext);
-            auto &funcOp = funcOpWithFuncProto.first;
-            auto &funcProto = funcOpWithFuncProto.second;
-            if (!funcOp)
+
+            auto &funcOp = std::get<0>(funcOpWithFuncProto);
+            auto &funcProto = std::get<1>(funcOpWithFuncProto);
+            auto result = std::get<2>(funcOpWithFuncProto);
+            if (!result || !funcOp)
             {
                 return mlir::failure();
             }
@@ -444,7 +456,11 @@ namespace
                     auto calledFuncIt = functionMap.find(functionName);
                     if (calledFuncIt == functionMap.end())
                     {
-                        emitError(location) << "no defined function found for '" << functionName << "'";
+                        if (!genContext.allowPartialResolve)
+                        {
+                            emitError(location) << "no defined function found for '" << functionName << "'";
+                        }
+
                         return nullptr;
                     }
 
