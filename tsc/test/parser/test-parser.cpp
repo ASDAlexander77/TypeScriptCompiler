@@ -53,7 +53,7 @@ int main(int, char **)
         testCallExpr();
         testFunctionDecl();
 
-        printParse("function main() { assert(func1(false), 'defl0'); } function func1(a: bool): bool { return a; }");
+        printParse("function main() { } function func1(a = 10) {  }");
     }
     catch(const std::exception& e)
     {

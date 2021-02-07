@@ -48,11 +48,10 @@ namespace
     /// analysis and transformation based on these high level semantics.
     class MLIRGenImpl
     {
-        using VariablePairT = std::pair<mlir::Value, VariableDeclarationDOM*>;
+        using VariablePairT = std::pair<mlir::Value, VariableDeclarationDOM *>;
         using SymbolTableScopeT = llvm::ScopedHashTableScope<StringRef, VariablePairT>;
 
     public:
-
         MLIRGenImpl(const mlir::MLIRContext &context) : builder(&const_cast<mlir::MLIRContext &>(context))
         {
             fileName = "<unknown>";
@@ -74,8 +73,7 @@ namespace
 
             // VisitorAST
             FilterVisitorAST<TypeScriptParserANTLR::FunctionDeclarationContext> visitorAST(
-                [&](auto* funcDecl) 
-                {
+                [&](auto *funcDecl) {
                     auto funcOpAndFuncProto = mlirGenFunctionPrototype(funcDecl);
                     auto funcOp = funcOpAndFuncProto.first;
                     auto &funcProto = funcOpAndFuncProto.second;
@@ -138,13 +136,42 @@ namespace
             for (auto &arg : formalParametersContextAST->formalParameter())
             {
                 auto name = arg->IdentifierName()->getText();
-                auto type = getType(arg);
-                if (!type)
+                mlir::Type type;
+                auto hasInitValue = false;
+                auto typeParameter = arg->typeParameter();
+                if (typeParameter)
                 {
-                    return params;
+                    auto type = getType(typeParameter);
+                    if (!type)
+                    {
+                        return params;
+                    }
                 }
 
-                params.push_back(std::make_unique<FunctionParamDOM>(arg, name, type));
+                // process init value
+                auto initializer = arg->initializer();
+                if (initializer)
+                {
+                    auto assignmentExpression = initializer->assignmentExpression();
+                    if (assignmentExpression)
+                    {
+                        auto initValue = mlirGen(initializer->assignmentExpression());
+                        if (initValue)
+                        {
+                            // TODO: set type if not provided
+                            hasInitValue = true;
+                            if (!type)
+                            {
+                                type = initValue.getType();
+                            }
+
+                            // remove generated node
+                            initValue.getDefiningOp()->erase();
+                        }
+                    }
+                }
+
+                params.push_back(std::make_unique<FunctionParamDOM>(arg, name, type, hasInitValue));
             }
 
             return params;
@@ -336,6 +363,22 @@ namespace
             {
                 return mlirGen(callExpression);
             }
+            else if (auto *memberExpression = leftHandSideExpression->memberExpression())
+            {
+                return mlirGen(memberExpression);
+            }
+            else
+            {
+                llvm_unreachable("unknown statement");
+            }
+        }
+
+        mlir::Value mlirGen(TypeScriptParserANTLR::AssignmentExpressionContext *assignmentExpressionContext)
+        {
+            if (auto *leftHandSideExpression = assignmentExpressionContext->leftHandSideExpression())
+            {
+                return mlirGen(leftHandSideExpression);
+            }
             else
             {
                 llvm_unreachable("unknown statement");
@@ -373,26 +416,22 @@ namespace
                     mlirGen(callExpression->arguments(), operands);
 
                     // print - internal command;
-                    if (functionName.compare(StringRef("print")) == 0)
+                    if (functionName.compare(StringRef("print")) == 0
+                        && mlir::succeeded(mlirGenPrint(location, operands)))
                     {
-                        if (mlir::succeeded(mlirGenPrint(location, operands)))
-                        {
-                            return nullptr;
-                        }
+                        return nullptr;
                     }
 
                     // assert - internal command;
-                    if (functionName.compare(StringRef("assert")) == 0 && operands.size() > 0)
+                    if (functionName.compare(StringRef("assert")) == 0 && operands.size() > 0
+                        && mlir::succeeded(mlirGenAssert(location, operands)))
                     {
-                        if (mlir::succeeded(mlirGenAssert(location, operands)))
-                        {
-                            return nullptr;
-                        }
+                        return nullptr;
                     }
 
                     // resolve function
                     auto calledFuncIt = functionMap.find(functionName);
-                    if (calledFuncIt == functionMap.end()) 
+                    if (calledFuncIt == functionMap.end())
                     {
                         emitError(location) << "no defined function found for '" << functionName << "'";
                         return nullptr;
@@ -437,11 +476,14 @@ namespace
                 auto param2 = operands[1];
                 auto definingOpParam2 = param2.getDefiningOp();
                 auto valueAttrName = StringRef("value");
-                if (definingOpParam2 && definingOpParam2->hasAttrOfType<mlir::StringAttr>(valueAttrName))
+                if (definingOpParam2)
                 {
                     auto valueAttr = definingOpParam2->getAttrOfType<mlir::StringAttr>(valueAttrName);
-                    msg = valueAttr.getValue();
-                    definingOpParam2->erase();
+                    if (valueAttr)
+                    {
+                        msg = valueAttr.getValue();
+                        definingOpParam2->erase();
+                    }
                 }
             }
 
@@ -521,11 +563,10 @@ namespace
                 llvm_unreachable("not implemented");
             }
 
-            return 
-                builder.create<mlir::ConstantOp>(
-                    loc(booleanLiteral),
-                    builder.getI1Type(),
-                    mlir::BoolAttr::get(result, theModule.getContext()));
+            return builder.create<mlir::ConstantOp>(
+                loc(booleanLiteral),
+                builder.getI1Type(),
+                mlir::BoolAttr::get(result, theModule.getContext()));
         }
 
         mlir::Value mlirGen(TypeScriptParserANTLR::NumericLiteralContext *numericLiteral)
@@ -629,16 +670,6 @@ namespace
             llvm_unreachable("not implemented");
         }
 
-        mlir::Type getType(TypeScriptParserANTLR::FormalParameterContext *formalParameterAST)
-        {
-            if (auto *typeParameter = formalParameterAST->typeParameter())
-            {
-                return getType(typeParameter);
-            }
-
-            return getAnyType();
-        }
-
         mlir::Type getType(TypeScriptParserANTLR::TypeParameterContext *typeParameterAST)
         {
             if (auto *typeDeclaration = typeParameterAST->typeDeclaration())
@@ -647,7 +678,7 @@ namespace
             }
 
             return getAnyType();
-        }        
+        }
 
         mlir::Type getType(TypeScriptParserANTLR::TypeDeclarationContext *typeDeclarationAST)
         {
@@ -669,7 +700,7 @@ namespace
             }
 
             return getAnyType();
-        }        
+        }
 
         mlir::Type getStringType()
         {
@@ -681,7 +712,7 @@ namespace
             return mlir::UnrankedMemRefType::get(builder.getI1Type(), 0);
         }
 
-        mlir::LogicalResult declare(VariableDeclarationDOM& var, mlir::Value value)
+        mlir::LogicalResult declare(VariableDeclarationDOM &var, mlir::Value value)
         {
             const auto &name = var.getName();
             if (symbolTable.count(name))
@@ -702,7 +733,7 @@ namespace
             }
 
             return nullptr;
-        }        
+        }
 
     private:
         /// Helper conversion for a TypeScript AST location to an MLIR location.
