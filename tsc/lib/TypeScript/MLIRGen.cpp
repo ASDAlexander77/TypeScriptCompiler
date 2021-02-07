@@ -155,7 +155,7 @@ namespace
                     auto assignmentExpression = initializer->assignmentExpression();
                     if (assignmentExpression)
                     {
-                        auto initValue = mlirGen(initializer->assignmentExpression());
+                        auto initValue = mlirGen(assignmentExpression);
                         if (initValue)
                         {
                             // TODO: set type if not provided
@@ -165,7 +165,7 @@ namespace
                                 type = initValue.getType();
                             }
 
-                            // remove generated node
+                            // remove generated node as we need to detect type only
                             initValue.getDefiningOp()->erase();
                         }
                     }

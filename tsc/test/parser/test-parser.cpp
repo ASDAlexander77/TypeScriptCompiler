@@ -53,7 +53,7 @@ int main(int, char **)
         testCallExpr();
         testFunctionDecl();
 
-        printParse("function main() { } function func1(a = 10) {  }");
+        printParse("function main() { } function f1(a = f2()) {  } function f2(): number { return 10; }");
     }
     catch(const std::exception& e)
     {
