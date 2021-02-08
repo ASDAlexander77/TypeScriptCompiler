@@ -77,6 +77,7 @@ namespace
             builder.setInsertionPointToStart(theModule.getBody());
 
             // VisitorAST
+            // TODO: finish recursive references 
             FilterVisitorAST<TypeScriptParserANTLR::FunctionDeclarationContext> visitorAST(
                 [&](auto *funcDecl) {
                     GenContext genContextDecl = {0};
@@ -84,7 +85,7 @@ namespace
                     
                     auto funcOpAndFuncProto = mlirGenFunctionPrototype(funcDecl, genContextDecl);
                     auto result = std::get<2>(funcOpAndFuncProto);
-                    if (result)
+                    if (!result)
                     {
                         return;
                     }
@@ -223,20 +224,54 @@ namespace
                 // __func+location
             }
 
+            auto funcProto = std::make_unique<FunctionPrototypeDOM>(functionDeclarationAST, name, std::move(params));
+
             mlir::FunctionType funcType;
             if (auto *typeParameter = functionDeclarationAST->typeParameter())
             {
                 auto returnType = getType(typeParameter);
                 funcType = builder.getFunctionType(argTypes, returnType);
             }
+            else if (auto returnType = getReturnType(functionDeclarationAST, name, argTypes, funcProto, genContext))
+            {
+                funcType = builder.getFunctionType(argTypes, returnType);
+            }
             else
             {
+                // no return type
                 funcType = builder.getFunctionType(argTypes, llvm::None);
             }
 
             auto funcOp = mlir::FuncOp::create(location, StringRef(name), funcType);
 
-            return std::make_tuple(funcOp, std::make_unique<FunctionPrototypeDOM>(functionDeclarationAST, name, std::move(params)), true);
+            return std::make_tuple(funcOp, std::move(funcProto), true);
+        }
+
+        mlir::Type getReturnType(TypeScriptParserANTLR::FunctionDeclarationContext *functionDeclarationAST, std::string name,
+            const SmallVector<mlir::Type> &argTypes, const FunctionPrototypeDOM::TypePtr &funcProto, const GenContext &genContext)
+        {
+            mlir::Type returnType;
+
+            // check if we have any return with expration
+            auto hasReturnStatementWithExpr = false;
+            FilterVisitorAST<TypeScriptParserANTLR::ReturnStatementContext> visitorAST1(
+                [&](auto *retStatement) {
+                    if (auto *expression = retStatement->expression())
+                    {
+                        hasReturnStatementWithExpr = true;
+                    }
+                });
+            visitorAST1.visit(functionDeclarationAST);
+
+            if (!hasReturnStatementWithExpr)
+            {
+                return returnType;
+            }
+
+            auto partialDeclFuncType = builder.getFunctionType(argTypes, llvm::None);
+            auto dummyFuncOp = mlir::FuncOp::create(loc(functionDeclarationAST), StringRef(name), partialDeclFuncType);
+            returnType = mlirGenFunctionBody(functionDeclarationAST, dummyFuncOp, funcProto, genContext, true);
+            return returnType;
         }
 
         mlir::LogicalResult mlirGen(TypeScriptParserANTLR::FunctionDeclarationContext *functionDeclarationAST, const GenContext &genContext)
@@ -252,6 +287,26 @@ namespace
                 return mlir::failure();
             }
 
+            auto returnType = mlirGenFunctionBody(functionDeclarationAST, funcOp, funcProto, genContext);
+
+            // set visibility index
+            if (functionDeclarationAST->IdentifierName()->getText() != "main")
+            {
+                funcOp.setPrivate();
+            }
+
+            theModule.push_back(funcOp);
+            functionMap.insert({funcOp.getName(), funcOp});
+            theModuleDOM.getFunctionProtos().push_back(std::move(funcProto));
+
+            return mlir::success();
+        }
+
+        mlir::Type mlirGenFunctionBody(TypeScriptParserANTLR::FunctionDeclarationContext *functionDeclarationAST, 
+            mlir::FuncOp funcOp, const FunctionPrototypeDOM::TypePtr& funcProto, const GenContext &genContext, bool dummyRun = false) 
+        {
+            mlir::Type returnType;
+
             auto &entryBlock = *funcOp.addEntryBlock();
 
             // process function params
@@ -259,7 +314,7 @@ namespace
             {
                 if (failed(declare(*std::get<0>(paramPairs), std::get<1>(paramPairs))))
                 {
-                    return mlir::failure();
+                    return returnType;
                 }
             }
 
@@ -290,29 +345,25 @@ namespace
 
             if (!returnOp)
             {
-                builder.create<mlir::ReturnOp>(loc(functionDeclarationAST->functionBody()));
+                returnOp = builder.create<mlir::ReturnOp>(loc(functionDeclarationAST->functionBody()));
             }
             else if (!returnOp.operands().empty())
             {
-                // Otherwise, if this return operation has an operand then add a result to
-                // the function.
-                funcOp.setType(
-                    builder.getFunctionType(
-                        funcOp.getType().getInputs(),
-                        *returnOp.operand_type_begin()));
+                // Otherwise, if this return operation has an operand then add a result to the function.
+                funcOp.setType(builder.getFunctionType(funcOp.getType().getInputs(), *returnOp.operand_type_begin()));
             }
 
-            // set visibility index
-            if (functionDeclarationAST->IdentifierName()->getText() != "main")
+            if (returnOp.getNumOperands() > 0)
             {
-                funcOp.setPrivate();
+                returnType = returnOp.getOperand(0).getType();
             }
 
-            theModule.push_back(funcOp);
-            functionMap.insert({funcOp.getName(), funcOp});
-            theModuleDOM.getFunctionProtos().push_back(std::move(funcProto));
+            if (dummyRun)
+            {
+                entryBlock.erase();
+            }
 
-            return mlir::success();
+            return returnType;
         }
 
         mlir::LogicalResult mlirGen(TypeScriptParserANTLR::StatementContext *statementAST, const GenContext &genContext)
