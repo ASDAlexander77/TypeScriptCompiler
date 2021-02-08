@@ -76,30 +76,7 @@ namespace
             theModule = mlir::ModuleOp::create(loc(module), fileName);
             builder.setInsertionPointToStart(theModule.getBody());
 
-            // VisitorAST
-            // TODO: finish recursive references 
-            FilterVisitorAST<TypeScriptParserANTLR::FunctionDeclarationContext> visitorAST(
-                [&](auto *funcDecl) {
-                    GenContext genContextDecl = {0};
-                    genContextDecl.allowPartialResolve = true;
-                    
-                    auto funcOpAndFuncProto = mlirGenFunctionPrototype(funcDecl, genContextDecl);
-                    auto result = std::get<2>(funcOpAndFuncProto);
-                    if (!result)
-                    {
-                        return;
-                    }
-
-                    auto funcOp = std::get<0>(funcOpAndFuncProto);
-                    auto &funcProto = std::get<1>(funcOpAndFuncProto);
-                    if (auto funcOp = theModule.lookupSymbol<mlir::FuncOp>(funcProto->getName()))
-                    {
-                        return;
-                    }
-
-                    functionMap.insert({funcOp.getName(), funcOp});
-                });
-            visitorAST.visit(module);
+            declareAllFunctionDeclarations(module);
 
             theModuleDOM.parseTree = module;
 
@@ -124,6 +101,51 @@ namespace
             }
 
             return theModule;
+        }
+
+        mlir::LogicalResult declareAllFunctionDeclarations(TypeScriptParserANTLR::MainContext *module)
+        {
+            auto unresolvedFunctions = -1;
+
+            // VisitorAST
+            // TODO: test recursive references 
+            do
+            {
+                auto unresolvedFunctionsCurrentRun = 0;
+                FilterVisitorAST<TypeScriptParserANTLR::FunctionDeclarationContext> visitorAST(
+                    [&](auto *funcDecl) {
+                        GenContext genContextDecl = {0};
+                        genContextDecl.allowPartialResolve = true;
+                        
+                        auto funcOpAndFuncProto = mlirGenFunctionPrototype(funcDecl, genContextDecl);
+                        auto result = std::get<2>(funcOpAndFuncProto);
+                        if (!result)
+                        {
+                            unresolvedFunctionsCurrentRun++;
+                            return;
+                        }
+
+                        auto funcOp = std::get<0>(funcOpAndFuncProto);
+                        auto &funcProto = std::get<1>(funcOpAndFuncProto);
+                        if (auto funcOp = theModule.lookupSymbol<mlir::FuncOp>(funcProto->getName()))
+                        {
+                            return;
+                        }
+
+                        functionMap.insert({funcOp.getName(), funcOp});
+                    });
+                visitorAST.visit(module);
+
+                if (unresolvedFunctionsCurrentRun == unresolvedFunctions)
+                {
+                    emitError(loc(module)) << "can't resolve function recursive references '" << fileName << "'";
+                    return mlir::failure();
+                }
+
+                unresolvedFunctions = unresolvedFunctionsCurrentRun;
+            } while (unresolvedFunctions > 0);
+
+            return mlir::success();
         }
 
         mlir::LogicalResult mlirGen(TypeScriptParserANTLR::DeclarationContext *declarationAST, const GenContext &genContext)
