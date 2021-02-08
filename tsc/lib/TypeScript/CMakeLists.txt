@@ -16,7 +16,6 @@ include_directories(
 add_mlir_dialect_library(MLIRTypeScript
     TypeScriptDialect.cpp
     TypeScriptOps.cpp
-    TypeScriptTypes.cpp
     MLIRGen.cpp
     LowerToAffineLoops.cpp
     LowerToLLVM.cpp
@@ -29,7 +28,6 @@ add_mlir_dialect_library(MLIRTypeScript
 
     DEPENDS
     MLIRTypeScriptOpsIncGen
-    MLIRTypeScriptDefIncGen
 
     LINK_LIBS PUBLIC
     antlr4_static

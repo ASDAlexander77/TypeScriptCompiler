@@ -1,11 +1,14 @@
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/TypeScriptDialect.h"
-#include "TypeScript/TypeScriptTypes.h"
 
 #include "mlir/IR/Builders.h"
-#include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Matchers.h"
+#include "mlir/IR/DialectImplementation.h"
+#include "mlir/IR/OpImplementation.h"
+#include "mlir/IR/TypeUtilities.h"
+
+#include "llvm/ADT/TypeSwitch.h"
 
 #define GET_TYPEDEF_CLASSES
 #include "TypeScript/TypeScriptOpsTypes.cpp.inc"
@@ -17,8 +20,34 @@ using namespace mlir;
 using namespace mlir::typescript;
 
 //===----------------------------------------------------------------------===//
-// xxxxOp
+// OptionalType
 //===----------------------------------------------------------------------===//
+
+Type TypeScriptDialect::parseType(DialectAsmParser &parser) const
+{
+    llvm::SMLoc typeLoc = parser.getCurrentLocation();
+    auto genType = generatedTypeParser(getContext(), parser, "optinal");
+    if (genType != Type())
+    {
+        return genType;
+    }
+
+    parser.emitError(typeLoc, "unknown type in TypeScript dialect");
+    return Type();
+}
+
+void TypeScriptDialect::printType(Type type, DialectAsmPrinter &os) const
+{
+    if (failed(generatedTypePrinter(type, os)))
+    {
+        llvm_unreachable("unexpected 'TypeScript' type kind");
+    }
+}
+
+LogicalResult OptionalType::verifyConstructionInvariants(Location loc, Type elementType)
+{
+    return success();
+}
 
 //===----------------------------------------------------------------------===//
 // IdentifierReference
@@ -51,7 +80,7 @@ namespace
                 rewriter.eraseOp(op);
                 return success();
             }
-            
+
             return failure();
         }
     };

@@ -1,5 +1,4 @@
 #include "TypeScript/TypeScriptDialect.h"
-#include "TypeScript/TypeScriptTypes.h"
 #include "TypeScript/TypeScriptOps.h"
 
 #include "mlir/IR/DialectImplementation.h"
@@ -20,9 +19,5 @@ void TypeScriptDialect::initialize()
     addTypes<
 #define GET_TYPEDEF_LIST
 #include "TypeScript/TypeScriptOpsTypes.cpp.inc"
-        >();
-    addTypes<
-#define GET_TYPEDEF_LIST
-#include "TypeScript/TypeScriptTypeDefs.cpp.inc"
         >();
 }

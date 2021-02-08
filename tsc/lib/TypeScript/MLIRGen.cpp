@@ -208,7 +208,8 @@ namespace
                             hasInitValue = true;
                             if (!type)
                             {
-                                type = initValue.getType();
+                                auto baseType = initValue.getType();
+                                type = OptionalType::get(baseType);
                             }
 
                             // remove generated node as we need to detect type only
@@ -303,6 +304,10 @@ namespace
 
             auto partialDeclFuncType = builder.getFunctionType(argTypes, llvm::None);
             auto dummyFuncOp = mlir::FuncOp::create(loc(functionDeclarationAST), StringRef(name), partialDeclFuncType);
+
+            // simulate scope
+            SymbolTableScopeT varScope(symbolTable);
+
             returnType = mlirGenFunctionBody(functionDeclarationAST, dummyFuncOp, funcProto, genContext, true);
             return returnType;
         }
