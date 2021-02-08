@@ -193,6 +193,14 @@ namespace
                     auto assignmentExpression = initializer->assignmentExpression();
                     if (assignmentExpression)
                     {
+                        // we need to add temporary block
+                        auto tempFuncType = builder.getFunctionType(llvm::None, llvm::None);
+                        auto tempFuncOp = mlir::FuncOp::create(loc(initializer), StringRef(name), tempFuncType);
+                        auto &entryBlock = *tempFuncOp.addEntryBlock();
+
+                        auto insertPoint = builder.saveInsertionPoint();
+                        builder.setInsertionPointToStart(&entryBlock);
+
                         auto initValue = mlirGen(assignmentExpression, genContext);
                         if (initValue)
                         {
@@ -206,6 +214,10 @@ namespace
                             // remove generated node as we need to detect type only
                             initValue.getDefiningOp()->erase();
                         }
+
+                        // remove temp block
+                        builder.restoreInsertionPoint(insertPoint);
+                        entryBlock.erase();
                     }
                 }
 
@@ -220,7 +232,6 @@ namespace
         {
             auto location = loc(functionDeclarationAST);
 
-            // This is a generic function, the return type will be inferred later.
             std::vector<FunctionParamDOM::TypePtr> params = mlirGen(functionDeclarationAST->formalParameters(), genContext);
             SmallVector<mlir::Type> argTypes;
             for (const auto &param : params)
