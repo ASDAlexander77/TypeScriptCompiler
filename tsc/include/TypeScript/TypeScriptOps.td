@@ -130,7 +130,7 @@ def OptionalHasValueOp : TypeScript_Op<"optional_hasvalue",
   let arguments = (ins Optional<AnyType>:$optional);
   let results = (outs I8:$hasValue);
 
-  let assemblyFormat = "$optional attr-dict `:` type($optional) `to` type($hasValue)";
+  let assemblyFormat = "$optional attr-dict `:` type($optional) `->` type($hasValue)";
 }
 
 def OptionalCreateOp : TypeScript_Op<"optional_create",
@@ -153,17 +153,17 @@ def OptionalCreateOp : TypeScript_Op<"optional_create",
   let assemblyFormat = "$value attr-dict `:` type($value) `to` type($optional)";
 }
 
-def OptionalCreateEmptyOp : TypeScript_Op<"optional_create_empty",
+def OptionalCreateEmptyOp : TypeScript_Op<"optional_undef",
     [NoSideEffect,
      TypesMatchWith<"optional element type matches value type",
-                    "value", "optional",
+                    "type", "optional",
                     "$_self.cast<OptionalType>().getElementType()">]> {
   let summary = "create empty instance of the optional type";
   let description = [{
     Example:
 
     ```mlir
-    %a = typescript.optional_create_empty : () -> optional<any>
+    %a = typescript.optional_undef : () -> optional<any>
     ```
   }];
 
@@ -190,7 +190,7 @@ def OptionalValueOp : TypeScript_Op<"optional_value",
   let arguments = (ins Optional<AnyType>:$optional);
   let results = (outs AnyType:$value);
 
-  let assemblyFormat = "$optional attr-dict `:` type($optional) `to` type($value)";
+  let assemblyFormat = "$optional attr-dict `:` type($optional) `->` type($value)";
 }
 
 #endif // TYPESCRIPT_OPS

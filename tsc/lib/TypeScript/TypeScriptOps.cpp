@@ -123,9 +123,20 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable)
     {
         if (getOperand(i).getType() != fnType.getInput(i))
         {
-            return emitOpError("operand type mismatch: expected operand type ")
-                   << fnType.getInput(i) << ", but provided "
-                   << getOperand(i).getType() << " for operand number " << i;
+            /*
+            OptionalType optType;
+            TypeSwitch<Type>(fnType.getInput(i))
+                .Case<OptionalType>([&](auto node) { optType = node; });
+
+            if (!optType || optType.getElementType() != getOperand(i).getType())
+            {
+            */
+                return emitOpError("operand type mismatch: expected operand type ")
+                    << fnType.getInput(i) << ", but provided "
+                    << getOperand(i).getType() << " for operand number " << i;
+            /*
+            }
+            */
         }
     }
 

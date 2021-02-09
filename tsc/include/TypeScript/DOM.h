@@ -69,16 +69,21 @@ public:
 
     using TypePtr = std::unique_ptr<FunctionParamDOM>;
 
-    FunctionParamDOM(tree::ParseTree *parseTree, StringRef name, mlir::Type type, bool hasInitValue = false, BaseDOM::TypePtr initVal = nullptr)
-        : hasInitValue(hasInitValue), VariableDeclarationDOM(parseTree, name, type, std::move(initVal))
+    FunctionParamDOM(tree::ParseTree *parseTree, StringRef name, mlir::Type type, bool isOptional = false, BaseDOM::TypePtr initVal = nullptr)
+        : isOptional(isOptional), VariableDeclarationDOM(parseTree, name, type, std::move(initVal))
     {
+    }
+
+    bool getIsOptional()
+    {
+        return isOptional;
     }
 
     /// LLVM style RTTI
     static bool classof(const BaseDOM *c) { return c->getKind() == Base_FunctionParam; }
 
 private:
-    bool hasInitValue;
+    bool isOptional;
 };
 
 class FunctionPrototypeDOM

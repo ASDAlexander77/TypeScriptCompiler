@@ -209,7 +209,8 @@ namespace
                             if (!type)
                             {
                                 auto baseType = initValue.getType();
-                                type = OptionalType::get(baseType);
+                                //type = OptionalType::get(baseType);
+                                type = baseType;                                
                             }
 
                             // remove generated node as we need to detect type only
@@ -235,6 +236,8 @@ namespace
 
             std::vector<FunctionParamDOM::TypePtr> params = mlirGen(functionDeclarationAST->formalParameters(), genContext);
             SmallVector<mlir::Type> argTypes;
+            auto argNumber = 0;
+            auto argOptionalFrom = -1;
             for (const auto &param : params)
             {
                 auto paramType = param->getType();
@@ -244,6 +247,12 @@ namespace
                 }
 
                 argTypes.push_back(paramType);
+                if (param->getIsOptional() && argOptionalFrom < 0)
+                {
+                    argOptionalFrom = argNumber;
+                }
+
+                argNumber++;
             }
 
             std::string name;
@@ -276,7 +285,14 @@ namespace
                 funcType = builder.getFunctionType(argTypes, llvm::None);
             }
 
-            auto funcOp = mlir::FuncOp::create(location, StringRef(name), funcType);
+            // save info about optional parameters
+            SmallVector<mlir::NamedAttribute> attrs;
+            if (argOptionalFrom >= 0)
+            {
+                attrs.push_back(builder.getNamedAttr("OptionalFrom", builder.getI8IntegerAttr(argOptionalFrom)));
+            }
+
+            auto funcOp = mlir::FuncOp::create(location, StringRef(name), funcType, ArrayRef<mlir::NamedAttribute>(attrs));
 
             return std::make_tuple(funcOp, std::move(funcProto), true);
         }
