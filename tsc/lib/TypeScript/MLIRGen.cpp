@@ -171,11 +171,34 @@ namespace
                 return params;
             }
 
-            for (auto &arg : formalParametersContextAST->formalParameter())
+            auto formalParams = formalParametersContextAST->formalParameter();
+
+                        // add extra parameter to send number of parameters
+            auto anyOptionalParam = std::find_if(formalParams.begin(), formalParams.end(), [](auto &param) { 
+                if (param->QUESTION_TOKEN())
+                {
+                    return true;
+                }
+
+                auto initializer = param->initializer();
+                if (!initializer)
+                {
+                    return false;
+                }
+
+                return !!initializer->assignmentExpression();
+            }) != formalParams.end();
+
+            if (anyOptionalParam)
+            {
+                params.push_back(std::make_unique<FunctionParamDOM>(nullptr, "__count_params", builder.getI32Type(), false));
+            }
+
+            for (auto &arg : formalParams)
             {
                 auto name = arg->IdentifierName()->getText();
                 mlir::Type type;
-                auto hasInitValue = false;
+                auto isOptional = !!arg->QUESTION_TOKEN();
                 auto typeParameter = arg->typeParameter();
                 if (typeParameter)
                 {
@@ -205,7 +228,7 @@ namespace
                         if (initValue)
                         {
                             // TODO: set type if not provided
-                            hasInitValue = true;
+                            isOptional = true;
                             if (!type)
                             {
                                 auto baseType = initValue.getType();
@@ -223,7 +246,7 @@ namespace
                     }
                 }
 
-                params.push_back(std::make_unique<FunctionParamDOM>(arg, name, type, hasInitValue));
+                params.push_back(std::make_unique<FunctionParamDOM>(arg, name, type, isOptional));
             }
 
             return params;
@@ -238,6 +261,7 @@ namespace
             SmallVector<mlir::Type> argTypes;
             auto argNumber = 0;
             auto argOptionalFrom = -1;
+
             for (const auto &param : params)
             {
                 auto paramType = param->getType();
@@ -253,12 +277,6 @@ namespace
                 }
 
                 argNumber++;
-            }
-
-            // add extra parameter to send number of parameters
-            if (argOptionalFrom >= 0)
-            {
-                argTypes.push_back(builder.getI32Type());
             }
 
             std::string name;
@@ -545,9 +563,47 @@ namespace
                     auto calleeName = definingOp->getAttrOfType<mlir::FlatSymbolRefAttr>(attrName);
                     auto functionName = calleeName.getValue();
 
+                    // resolve function
+                    auto calledFuncIt = functionMap.find(functionName);
+                    if (calledFuncIt == functionMap.end())
+                    {
+                        if (!genContext.allowPartialResolve)
+                        {
+                            emitError(location) << "no defined function found for '" << functionName << "'";
+                        }
+
+                        return nullptr;
+                    }
+
+                    auto calledFunc = calledFuncIt->second;
+
                     // process arguments
                     SmallVector<mlir::Value, 0> operands;
-                    mlirGen(callExpression->arguments(), operands, genContext);
+
+                    auto *argumentsContext = callExpression->arguments();
+                    auto opArgsCount = argumentsContext ? argumentsContext->expression().size() : 0;
+                    auto hasOptionalFrom = calledFunc.getOperation()->hasAttrOfType<mlir::IntegerAttr>("OptionalFrom");
+                    if (hasOptionalFrom)
+                    {
+                        auto constNumOfParams = builder.create<mlir::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(opArgsCount));
+                        operands.push_back(constNumOfParams);  
+                    }
+
+                    mlirGen(argumentsContext, operands, genContext);
+
+                    if (hasOptionalFrom)
+                    {
+                        auto funcArgsCount = calledFunc.getNumArguments();
+                        auto optionalFrom = funcArgsCount - opArgsCount;
+                        if (hasOptionalFrom && optionalFrom > 0)
+                        {
+                            // -1 to exclude count params
+                            for (auto i = (size_t)opArgsCount; i < funcArgsCount - 1; i++)
+                            {
+                                operands.push_back(builder.create<UndefOp>(location, calledFunc.getType().getInput(i)));
+                            }
+                        }
+                    }
 
                     // print - internal command;
                     if (functionName.compare(StringRef("print")) == 0
@@ -562,20 +618,6 @@ namespace
                     {
                         return nullptr;
                     }
-
-                    // resolve function
-                    auto calledFuncIt = functionMap.find(functionName);
-                    if (calledFuncIt == functionMap.end())
-                    {
-                        if (!genContext.allowPartialResolve)
-                        {
-                            emitError(location) << "no defined function found for '" << functionName << "'";
-                        }
-
-                        return nullptr;
-                    }
-
-                    auto calledFunc = calledFuncIt->second;
 
                     // default call by name
                     auto callOp =

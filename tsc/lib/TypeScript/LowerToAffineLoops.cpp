@@ -21,37 +21,8 @@ struct CallOpLowering : public OpRewritePattern<typescript::CallOp>
 
     LogicalResult matchAndRewrite(typescript::CallOp op, PatternRewriter &rewriter) const final
     {
-        auto fn = cast<FuncOp>(SymbolTable::lookupNearestSymbolFrom(op, op.getCallee()));
-        if (!fn)
-        {
-            return failure();
-        }
-
-        // getNumFuncArguments;
-        auto opArgs = op.getArgOperands();
-        auto funcArgsCount = fn.getType().getInputs().size();
-        auto optionalFrom = funcArgsCount - opArgs.size();
-        if (optionalFrom > 0)
-        {
-            SmallVector<Value, 0> newOpArgs(opArgs);
-            // -1 to exclude count params
-            for (auto i = (size_t)opArgs.size(); i < funcArgsCount - 1; i++)
-            {
-                newOpArgs.push_back(rewriter.create<typescript::UndefOp>(op.getLoc(), fn.getType().getInput(i)));
-            }
-
-            auto constNumOfParams = rewriter.create<mlir::ConstantOp>(op.getLoc(), rewriter.getI32Type(), rewriter.getI32IntegerAttr(opArgs.size()));
-            // TODO: uncomment it when finish
-            newOpArgs.push_back(constNumOfParams);
-
-            rewriter.replaceOpWithNewOp<mlir::CallOp>(op, op.getCallee(), op.getResultTypes(), newOpArgs);
-        }
-        else
-        {
-            // just replace
-            rewriter.replaceOpWithNewOp<mlir::CallOp>(op, op.getCallee(), op.getResultTypes(), op.getArgOperands());
-        }
-
+        // just replace
+        rewriter.replaceOpWithNewOp<mlir::CallOp>(op, op.getCallee(), op.getResultTypes(), op.getArgOperands());
         return success();
     }
 };
