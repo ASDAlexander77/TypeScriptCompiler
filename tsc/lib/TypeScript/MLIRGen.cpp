@@ -255,6 +255,12 @@ namespace
                 argNumber++;
             }
 
+            // add extra parameter to send number of parameters
+            if (argOptionalFrom >= 0)
+            {
+                argTypes.push_back(builder.getI32Type());
+            }
+
             std::string name;
             auto *identifier = functionDeclarationAST->IdentifierName();
             if (identifier)

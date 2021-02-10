@@ -286,7 +286,19 @@ namespace
     struct AssertOpLowering : public OpLowering<AssertOpLoweringLogic>
     {
         using OpLowering<AssertOpLoweringLogic>::OpLowering;
-    };    
+    };
+
+    struct UndefOpLowering : public OpRewritePattern<typescript::UndefOp>
+    {
+        using OpRewritePattern<typescript::UndefOp>::OpRewritePattern;
+
+        LogicalResult matchAndRewrite(typescript::UndefOp op, PatternRewriter &rewriter) const final
+        {
+            // just replace
+            rewriter.replaceOpWithNewOp<LLVM::UndefOp>(op, op.getType());
+            return success();
+        }
+    };        
 
 } // end anonymous namespace
 
@@ -339,7 +351,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     // The only remaining operation to lower from the `typescript` dialect, is the PrintOp.
     patterns.insert<
         PrintOpLowering, 
-        AssertOpLowering>(&getContext());
+        AssertOpLowering,
+        UndefOpLowering>(&getContext());
 
     // We want to completely lower to LLVM, so we use a `FullConversion`. This
     // ensures that only legal operations will remain after the conversion.

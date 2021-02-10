@@ -115,82 +115,32 @@ def TypeScript_CallOp : TypeScript_Op<"call",
 
   let verifier = ?;
 }
+def TypeScript_UndefOp : TypeScript_Op<"undef", []> {
+  let summary = "Make an intermediate object whose value is undefined.";
 
-def OptionalHasValueOp : TypeScript_Op<"optional_hasvalue",
-    [NoSideEffect]> {
-  let summary = "returns true if it has value";
   let description = [{
-    Example:
+    Result Type is the type of object to make.
+
+    ```
+    undef-op ::= `typescript.undef` `:` spirv-type
+    ```
+
+    #### Example:
 
     ```mlir
-    %a = typescript.optional_hasvalue %b : (optional<any>) -> any
+    %0 = typescript.undef : f32
     ```
   }];
 
-  let arguments = (ins Optional<AnyType>:$optional);
-  let results = (outs I8:$hasValue);
+  let arguments = (ins);
 
-  let assemblyFormat = "$optional attr-dict `:` type($optional) `->` type($hasValue)";
-}
+  let results = (outs
+    AnyType:$result
+  );
 
-def OptionalCreateOp : TypeScript_Op<"optional_create",
-    [NoSideEffect,
-     TypesMatchWith<"optional element type matches value type",
-                    "value", "optional",
-                    "$_self.cast<OptionalType>().getElementType()">]> {
-  let summary = "create new instance of the optional type";
-  let description = [{
-    Example:
+  let verifier = [{ return success(); }];
 
-    ```mlir
-    %a = typescript.optional_create %b : (any) -> optional<any>
-    ```
-  }];
-
-  let arguments = (ins AnyType:$value);
-  let results = (outs Optional<AnyType>:$optional);
-
-  let assemblyFormat = "$value attr-dict `:` type($value) `to` type($optional)";
-}
-
-def OptionalCreateEmptyOp : TypeScript_Op<"optional_undef",
-    [NoSideEffect,
-     TypesMatchWith<"optional element type matches value type",
-                    "type", "optional",
-                    "$_self.cast<OptionalType>().getElementType()">]> {
-  let summary = "create empty instance of the optional type";
-  let description = [{
-    Example:
-
-    ```mlir
-    %a = typescript.optional_undef : () -> optional<any>
-    ```
-  }];
-
-  let arguments = (ins TypeAttr:$type);
-  let results = (outs Optional<AnyType>:$optional);
-
-  let assemblyFormat = "attr-dict `:` type($optional)";
-}
-
-def OptionalValueOp : TypeScript_Op<"optional_value",
-    [NoSideEffect,
-     TypesMatchWith<"optional element type matches result type",
-                    "optional", "value",
-                    "$_self.cast<OptionalType>().getElementType()">]> {
-  let summary = "extracts the value of an optional type";
-  let description = [{
-    Example:
-
-    ```mlir
-    %a = typescript.optional_value %b : (optional<any>) -> i8
-    ```
-  }];
-
-  let arguments = (ins Optional<AnyType>:$optional);
-  let results = (outs AnyType:$value);
-
-  let assemblyFormat = "$optional attr-dict `:` type($optional) `->` type($value)";
+  let assemblyFormat = "attr-dict `:` type($result)";
 }
 
 #endif // TYPESCRIPT_OPS

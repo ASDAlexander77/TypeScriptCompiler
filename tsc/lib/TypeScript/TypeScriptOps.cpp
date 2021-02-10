@@ -114,12 +114,20 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable)
 
     // Verify that the operand and result types match the callee.
     auto fnType = fn.getType();
-    if (fnType.getNumInputs() != getNumOperands())
+
+    auto optionalFromValue = -1;
+    auto optionalFrom = fn->getAttrOfType<IntegerAttr>("OptionalFrom");
+    if (optionalFrom)
+    {
+        optionalFromValue = *optionalFrom.getValue().getRawData();
+    }
+
+    if (optionalFromValue == -1 && fnType.getNumInputs() != getNumOperands())
     {
         return emitOpError("incorrect number of operands for callee");
     }
 
-    for (unsigned i = 0, e = fnType.getNumInputs(); i != e; ++i)
+    for (unsigned i = 0, e = optionalFromValue == -1 ? fnType.getNumInputs() : getOperands().size(); i != e; ++i)
     {
         if (getOperand(i).getType() != fnType.getInput(i))
         {
@@ -140,7 +148,7 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable)
         }
     }
 
-    if (fnType.getNumResults() != getNumResults())
+    if (optionalFromValue == -1 && fnType.getNumResults() != getNumResults())
     {
         return emitOpError("incorrect number of results for callee");
     }
