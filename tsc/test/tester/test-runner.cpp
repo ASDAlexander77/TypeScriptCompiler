@@ -107,8 +107,7 @@ void createBatchFile()
     batFile << "set SDKPATH=" << TEST_SDKPATH << std::endl;
     batFile << "set EXEPATH=" << TEST_EXEPATH << std::endl;
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "%TSCEXEPATH%\\tsc.exe --emit=mlir-llvm %1 2> %FILENAME%.mlir" << std::endl;
-    batFile << "%EXEPATH%\\mlir-translate.exe --mlir-to-llvmir -o=%FILENAME%.il %FILENAME%.mlir" << std::endl;
+    batFile << "%TSCEXEPATH%\\tsc.exe --emit=llvm %1 2> %FILENAME%.il" << std::endl;
     batFile << "%EXEPATH%\\llc.exe --filetype=obj -o=%FILENAME%.o %FILENAME%.il" << std::endl;
     batFile << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o \"%VCPATH%\\libcmt.lib\" \"%VCPATH%\\libvcruntime.lib\" \"%SDKPATH%\\kernel32.lib\" \"%SDKPATH%\\libucrt.lib\" \"%SDKPATH%\\uuid.lib\"" << std::endl;
     batFile.close();
