@@ -81,14 +81,16 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     auto function = getFunction();
 
     // We only lower the main function as we expect that all other functions have been inlined.
-    if (function.getName() == "main")
+    if (function.getName() != "main")
     {
-        // Verify that the given main has no inputs and results.
-        if (function.getNumArguments() || function.getType().getNumResults())
-        {
-            function.emitError("expected 'main' to have 0 inputs and 0 results");
-            return signalPassFailure();
-        }
+        return;
+    }
+
+    // Verify that the given main has no inputs and results.
+    if (function.getNumArguments() || function.getType().getNumResults())
+    {
+        function.emitError("expected 'main' to have 0 inputs and 0 results");
+        return signalPassFailure();
     }
 
     // The first thing to define is the conversion target. This will define the
