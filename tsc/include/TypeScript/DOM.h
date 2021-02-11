@@ -32,6 +32,8 @@ public:
 
     BaseDOMKind getKind() const { return kind; }
 
+    tree::ParseTree *getParseTree() { return parseTree; }
+
 protected:
     tree::ParseTree *parseTree;
 

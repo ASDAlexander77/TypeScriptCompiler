@@ -3,6 +3,7 @@
 #include "TypeScript/Passes.h"
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
+#include "mlir/Dialect/SCF/SCF.h"
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Pass/Pass.h"
@@ -40,7 +41,7 @@ namespace
     {
         void getDependentDialects(DialectRegistry &registry) const override
         {
-            registry.insert<AffineDialect, StandardOpsDialect>();
+            registry.insert<AffineDialect, StandardOpsDialect, scf::SCFDialect>();
         }
 
         void runOnFunction() final;
@@ -71,7 +72,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     // We define the specific operations, or dialects, that are legal targets for
     // this lowering. In our case, we are lowering to a combination of the
     // `Affine` and `Standard` dialects.
-    target.addLegalDialect<AffineDialect, StandardOpsDialect>();
+    target.addLegalDialect<AffineDialect, StandardOpsDialect, scf::SCFDialect>();
 
     // We also define the TypeScript dialect as Illegal so that the conversion will fail
     // if any of these operations are *not* converted. Given that we actually want

@@ -13,6 +13,7 @@
 #include "mlir/IR/Verifier.h"
 
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
+#include "mlir/Dialect/SCF/SCF.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 
@@ -396,7 +397,36 @@ namespace
                 }
             }
 
+            // add default values to arguments
+
             builder.setInsertionPointToStart(&entryBlock);
+
+            //  process optional parameters
+            auto index = -1;
+            for (const auto &param : funcProto->getArgs())
+            {
+                index++;
+                if (!param->getIsOptional())
+                {
+                    continue;
+                }
+
+                auto paramInit = param->getParseTree();
+                if (!paramInit)
+                {
+                    continue;
+                }
+
+                // process init expression
+                auto location = loc(param->getParseTree());
+
+                auto indexConstant = builder.create<mlir::ConstantIndexOp>(location, index);
+                auto argValue = entryBlock.getArguments()[index];
+
+                auto condValue = builder.create<mlir::CmpIOp>(location, mlir::CmpIPredicate::ult, argValue, indexConstant);
+
+                auto ifOp = builder.create<mlir::scf::IfOp>(location, condValue, false/*withElseRegion=*/);
+            }            
 
             for (auto *statementListItem : functionDeclarationAST->functionBody()->statementListItem())
             {
