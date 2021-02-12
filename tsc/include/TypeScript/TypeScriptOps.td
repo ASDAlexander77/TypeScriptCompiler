@@ -122,7 +122,7 @@ def TypeScript_UndefOp : TypeScript_Op<"undef", []> {
     Result Type is the type of object to make.
 
     ```
-    undef-op ::= `typescript.undef` `:` spirv-type
+    undef-op ::= `typescript.undef` `:` any-type
     ```
 
     #### Example:
@@ -142,5 +142,75 @@ def TypeScript_UndefOp : TypeScript_Op<"undef", []> {
 
   let assemblyFormat = "attr-dict `:` type($result)";
 }
+
+def TypeScript_ParamOp : TypeScript_Op<"param", []> {
+  let summary = [{
+    Allocate an parameter object in memory.
+  }];
+
+  let description = [{
+
+    ```mlir
+    %0 = typescript.param : f32
+    ```
+  }];
+
+  let arguments = (ins
+    AnyType:$argValue
+  );
+
+  let results = (outs
+    AnyType:$pointer
+  );
+}
+
+def TypeScript_ParamOptionalOp : TypeScript_Op<"param_opt", []> {
+  let summary = [{
+    Allocate an parameter object in memory.
+  }];
+
+  let description = [{
+
+    ```mlir
+    %0 = typescript.param_opt : f32
+    ```
+  }];
+
+  let arguments = (ins
+    AnyType:$argValue,
+    AnyType:$defaultValue,
+    I32:$params_count,
+    OptionalAttr<I32Attr>:$paramIndex
+  );
+
+  let results = (outs
+    AnyType:$pointer
+  );
+}
+
+def TypeScript_VariableOp : TypeScript_Op<"variable", []> {
+  let summary = [{
+    Allocate an object in memory.
+  }];
+
+  let description = [{
+
+    ```mlir
+    %0 = typescript.constant ...
+
+    %1 = typescript.variable : f32
+    %2 = typescript.variable init(%0): f32
+    ```
+  }];
+
+  let arguments = (ins
+    Optional<AnyType>:$initializer
+  );
+
+  let results = (outs
+    AnyType:$pointer
+  );
+}
+
 
 #endif // TYPESCRIPT_OPS

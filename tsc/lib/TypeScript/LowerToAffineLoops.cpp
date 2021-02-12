@@ -28,6 +28,48 @@ struct CallOpLowering : public OpRewritePattern<typescript::CallOp>
     }
 };
 
+struct ParamOpLowering : public OpRewritePattern<typescript::ParamOp>
+{
+    using OpRewritePattern<typescript::ParamOp>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(typescript::ParamOp varOp, PatternRewriter &rewriter) const final
+    {
+        rewriter.replaceOpWithNewOp<mlir::AllocaOp>(varOp, varOp.getType().cast<MemRefType>());
+        return success();
+    }
+};
+
+struct ParamOptionalOpLowering : public OpRewritePattern<typescript::ParamOptionalOp>
+{
+    using OpRewritePattern<typescript::ParamOptionalOp>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(typescript::ParamOptionalOp varOp, PatternRewriter &rewriter) const final
+    {
+        rewriter.replaceOpWithNewOp<mlir::AllocaOp>(varOp, varOp.getType().cast<MemRefType>());
+        return success();
+    }
+};
+
+struct VariableOpLowering : public OpRewritePattern<typescript::VariableOp>
+{
+    using OpRewritePattern<typescript::VariableOp>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(typescript::VariableOp varOp, PatternRewriter &rewriter) const final
+    {
+        auto init = varOp.initializer();
+        if (!init)
+        {
+            rewriter.replaceOpWithNewOp<mlir::AllocaOp>(varOp, varOp.getType().cast<MemRefType>());
+            return success();
+        }
+
+        mlir::Value allocated = rewriter.create<mlir::AllocaOp>(varOp.getLoc(), varOp.getType().cast<MemRefType>());
+        rewriter.create<LLVM::StoreOp>(varOp.getLoc(), init, allocated);
+        rewriter.replaceOp(varOp, allocated);
+        return success();
+    }
+};
+
 //===----------------------------------------------------------------------===//
 // TypeScriptToAffineLoweringPass
 //===----------------------------------------------------------------------===//
@@ -53,16 +95,14 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     auto function = getFunction();
 
     // We only lower the main function as we expect that all other functions have been inlined.
-    if (function.getName() != "main")
+    if (function.getName() == "main")
     {
-        return;
-    }
-
-    // Verify that the given main has no inputs and results.
-    if (function.getNumArguments() || function.getType().getNumResults())
-    {
-        function.emitError("expected 'main' to have 0 inputs and 0 results");
-        return signalPassFailure();
+        // Verify that the given main has no inputs and results.
+        if (function.getNumArguments() || function.getType().getNumResults())
+        {
+            function.emitError("expected 'main' to have 0 inputs and 0 results");
+            return signalPassFailure();
+        }
     }
 
     // The first thing to define is the conversion target. This will define the
@@ -88,7 +128,11 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     // the set of patterns that will lower the TypeScript operations.
     OwningRewritePatternList patterns;
     patterns.insert<
-        CallOpLowering>(&getContext());
+        CallOpLowering,
+        ParamOpLowering,
+        ParamOptionalOpLowering,
+        VariableOpLowering
+    >(&getContext());
 
     // With the target and rewrite patterns defined, we can now attempt the
     // conversion. The conversion will signal failure if any of our `illegal`

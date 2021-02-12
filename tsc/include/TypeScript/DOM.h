@@ -45,24 +45,27 @@ class VariableDeclarationDOM : public BaseDOM
 {
     std::string name;
     mlir::Type type;
-    std::unique_ptr<BaseDOM> initVal;
+    tree::ParseTree *initVal;
 
 public:
 
     using TypePtr = std::unique_ptr<VariableDeclarationDOM>;
 
-    VariableDeclarationDOM(tree::ParseTree *parseTree, StringRef name, mlir::Type type, BaseDOM::TypePtr initVal = nullptr)
+    VariableDeclarationDOM(tree::ParseTree *parseTree, StringRef name, mlir::Type type, tree::ParseTree *initVal = nullptr)
         : BaseDOM(Base_VariableDeclaration, parseTree), name(name), type(std::move(type)),
-          initVal(std::move(initVal))
+          initVal(initVal)
     {
     }
 
     StringRef getName() { return name; }
-    BaseDOM *getInitVal() { return initVal.get(); }
+    tree::ParseTree *getInitVal() { return initVal; }
     const mlir::Type &getType() { return type; }
+    bool getReadWriteAccess() { return readWrite; };
+    void SetReadWriteAccess() { readWrite = true; };
 
 protected:
     tree::ParseTree *parseTree;
+    bool readWrite;
 };
 
 class FunctionParamDOM : public VariableDeclarationDOM
@@ -71,8 +74,8 @@ public:
 
     using TypePtr = std::unique_ptr<FunctionParamDOM>;
 
-    FunctionParamDOM(tree::ParseTree *parseTree, StringRef name, mlir::Type type, bool isOptional = false, BaseDOM::TypePtr initVal = nullptr)
-        : isOptional(isOptional), VariableDeclarationDOM(parseTree, name, type, std::move(initVal))
+    FunctionParamDOM(tree::ParseTree *parseTree, StringRef name, mlir::Type type, bool isOptional = false, tree::ParseTree *initVal = nullptr)
+        : isOptional(isOptional), VariableDeclarationDOM(parseTree, name, type, initVal)
     {
     }
 
