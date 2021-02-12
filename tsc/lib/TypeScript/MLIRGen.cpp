@@ -881,9 +881,15 @@ namespace
             auto name = identifierName->getText();
 
             auto value = resolve(name);
-            if (value)
+            if (value.first)
             {
-                return value;
+                // load value if memref
+                if (value.second)
+                {
+                    return builder.create<mlir::LoadOp>(value.first.getLoc(), value.first);
+                }
+
+                return value.first;
             }
 
             // unresolved reference (for call for example)
@@ -993,15 +999,15 @@ namespace
             return mlir::success();
         }
 
-        mlir::Value resolve(StringRef name)
+        std::pair<mlir::Value, bool> resolve(StringRef name)
         {
             auto varIt = symbolTable.lookup(name);
             if (varIt.first)
             {
-                return varIt.first;
+                return std::make_pair(varIt.first, varIt.second->getReadWriteAccess());
             }
 
-            return nullptr;
+            return std::make_pair(mlir::Value(), false);
         }
 
     private:
