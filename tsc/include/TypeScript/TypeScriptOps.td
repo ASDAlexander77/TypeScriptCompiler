@@ -3,9 +3,11 @@
 
 include "TypeScriptDialect.td"
 include "TypeScriptTypes.td"
-include "mlir/Interfaces/SideEffectInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/Interfaces/CallInterfaces.td"
+include "mlir/Interfaces/ControlFlowInterfaces.td"
+include "mlir/Interfaces/LoopLikeInterface.td"
+include "mlir/Interfaces/SideEffectInterfaces.td"
 
 //===----------------------------------------------------------------------===//
 // TypeScript op definitions
@@ -164,7 +166,7 @@ def TypeScript_ParamOp : TypeScript_Op<"param", []> {
   );
 }
 
-def TypeScript_ParamOptionalOp : TypeScript_Op<"param_opt", []> {
+def TypeScript_ParamOptionalOp : TypeScript_Op<"param_opt", [SingleBlockImplicitTerminator<"typescript::ParamDefaultValueOp">]> {
   let summary = [{
     Allocate an parameter object in memory.
   }];
@@ -178,7 +180,6 @@ def TypeScript_ParamOptionalOp : TypeScript_Op<"param_opt", []> {
 
   let arguments = (ins
     AnyType:$argValue,
-    AnyType:$defaultValue,
     I32:$params_count,
     OptionalAttr<I32Attr>:$paramIndex
   );
@@ -186,6 +187,23 @@ def TypeScript_ParamOptionalOp : TypeScript_Op<"param_opt", []> {
   let results = (outs
     AnyType:$pointer
   );
+
+  let regions = (region AnyRegion:$defaultValueRegion);
+
+  let extraClassDeclaration = [{
+    OpBuilder getDefaultValueBuilder(OpBuilder::Listener *listener = nullptr) {
+      Block* body = getBody(0);
+      return OpBuilder::atBlockEnd(body, listener);
+    }
+  }];
+
+}
+
+def TypeScript_ParamDefaultValueOp : TypeScript_Op<"defaultValue", [NoSideEffect, ReturnLike, Terminator,
+                               ParentOneOf<["ParamOptionalOp"]>]> {
+  let arguments = (ins Variadic<AnyType>:$results);
+  let builders = [OpBuilderDAG<(ins), [{ /* nothing to do */ }]>];
+  let verifier = ?;
 }
 
 def TypeScript_VariableOp : TypeScript_Op<"variable", []> {

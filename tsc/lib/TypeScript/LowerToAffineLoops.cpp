@@ -34,7 +34,9 @@ struct ParamOpLowering : public OpRewritePattern<typescript::ParamOp>
 
     LogicalResult matchAndRewrite(typescript::ParamOp varOp, PatternRewriter &rewriter) const final
     {
-        rewriter.replaceOpWithNewOp<mlir::AllocaOp>(varOp, varOp.getType().cast<MemRefType>());
+        mlir::Value allocated = rewriter.create<mlir::AllocaOp>(varOp.getLoc(), varOp.getType().cast<MemRefType>());
+        rewriter.create<mlir::StoreOp>(varOp.getLoc(), varOp.argValue(), allocated);
+        rewriter.replaceOp(varOp, allocated);
         return success();
     }
 };
@@ -45,7 +47,37 @@ struct ParamOptionalOpLowering : public OpRewritePattern<typescript::ParamOption
 
     LogicalResult matchAndRewrite(typescript::ParamOptionalOp varOp, PatternRewriter &rewriter) const final
     {
-        rewriter.replaceOpWithNewOp<mlir::AllocaOp>(varOp, varOp.getType().cast<MemRefType>());
+        auto location = varOp.getLoc();
+
+        mlir::Value allocated = rewriter.create<mlir::AllocaOp>(location, varOp.getType().cast<MemRefType>());
+
+        // scf.if
+        auto index = varOp.paramIndex();
+        auto indexConstant = rewriter.create<mlir::ConstantOp>(location, rewriter.getI32IntegerAttr(index.getValue()));
+        auto condValue = rewriter.create<mlir::CmpIOp>(location, mlir::CmpIPredicate::ult, varOp.params_count(), indexConstant);
+        auto ifOp = rewriter.create<mlir::scf::IfOp>(location, varOp.argValue().getType(), condValue, true);
+
+        auto sp = rewriter.saveInsertionPoint();
+
+        // then block
+        auto &thenRegion = ifOp.thenRegion();
+
+        rewriter.setInsertionPointToEnd(&thenRegion.back());
+
+        rewriter.create<mlir::scf::YieldOp>(location, varOp.argValue());
+
+        // else block
+        auto &elseRegion = ifOp.elseRegion();
+
+        rewriter.setInsertionPointToEnd(&elseRegion.back());
+
+        rewriter.create<mlir::scf::YieldOp>(location, varOp.argValue());
+
+        rewriter.restoreInsertionPoint(sp);
+
+        // save op
+        rewriter.create<mlir::StoreOp>(location, ifOp.results().front(), allocated);
+        rewriter.replaceOp(varOp, allocated);
         return success();
     }
 };

@@ -428,24 +428,35 @@ namespace
 
                     auto countArgsValue = arguments[0];
 
+                    auto paramOptionalOp = builder.create<ParamOptionalOp>(
+                        location, 
+                        mlir::MemRefType::get(ArrayRef<int64_t>(), param->getType()), 
+                        arguments[index], 
+                        countArgsValue, 
+                        builder.getI32IntegerAttr(index));
+
+                    paramValue = paramOptionalOp;
+
+                    auto *defValueBlock = new mlir::Block();
+                    paramOptionalOp.defaultValueRegion().push_back(defValueBlock);
+
+                    auto sp = builder.saveInsertionPoint();
+                    builder.setInsertionPointToStart(defValueBlock);
+
                     mlir::Value defaultValue;
-                    auto assignmentExpression = dynamic_cast<TypeScriptParserANTLR::AssignmentExpressionContext *>(param->getInitVal());
-                    if (assignmentExpression)
+                    auto assignmentExpression2 = dynamic_cast<TypeScriptParserANTLR::AssignmentExpressionContext *>(param->getInitVal());
+                    if (assignmentExpression2)
                     {
-                        defaultValue = mlirGen(assignmentExpression, genContext);
+                        defaultValue = mlirGen(assignmentExpression2, genContext);
                     }
                     else
                     {
                         llvm_unreachable("unknown statement");
-                    }
+                    }                    
 
-                    paramValue = builder.create<ParamOptionalOp>(
-                        location, 
-                        mlir::MemRefType::get(ArrayRef<int64_t>(), param->getType()), 
-                        arguments[index], 
-                        defaultValue, 
-                        countArgsValue, 
-                        builder.getI32IntegerAttr(index));
+                    builder.create<ParamDefaultValueOp>(location, defaultValue);
+
+                    builder.restoreInsertionPoint(sp);
                 }
                 else
                 {
@@ -903,7 +914,7 @@ namespace
 
             return builder.create<mlir::ConstantOp>(
                 loc(stringLiteral),
-                mlir::UnrankedTensorType::get(mlir::IntegerType::get(theModule.getContext(), 8)),
+                mlir::UnrankedTensorType::get(builder.getI1Type()),
                 builder.getStringAttr(StringRef(innerText)));
         }
 
