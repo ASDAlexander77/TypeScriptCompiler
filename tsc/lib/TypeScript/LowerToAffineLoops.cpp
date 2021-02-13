@@ -32,11 +32,11 @@ struct ParamOpLowering : public OpRewritePattern<typescript::ParamOp>
 {
     using OpRewritePattern<typescript::ParamOp>::OpRewritePattern;
 
-    LogicalResult matchAndRewrite(typescript::ParamOp varOp, PatternRewriter &rewriter) const final
+    LogicalResult matchAndRewrite(typescript::ParamOp paramOp, PatternRewriter &rewriter) const final
     {
-        mlir::Value allocated = rewriter.create<mlir::AllocaOp>(varOp.getLoc(), varOp.getType().cast<MemRefType>());
-        rewriter.create<mlir::StoreOp>(varOp.getLoc(), varOp.argValue(), allocated);
-        rewriter.replaceOp(varOp, allocated);
+        mlir::Value allocated = rewriter.create<mlir::AllocaOp>(paramOp.getLoc(), paramOp.getType().cast<MemRefType>());
+        rewriter.create<mlir::StoreOp>(paramOp.getLoc(), paramOp.argValue(), allocated);
+        rewriter.replaceOp(paramOp, allocated);
         return success();
     }
 };
@@ -45,17 +45,17 @@ struct ParamOptionalOpLowering : public OpRewritePattern<typescript::ParamOption
 {
     using OpRewritePattern<typescript::ParamOptionalOp>::OpRewritePattern;
 
-    LogicalResult matchAndRewrite(typescript::ParamOptionalOp varOp, PatternRewriter &rewriter) const final
+    LogicalResult matchAndRewrite(typescript::ParamOptionalOp paramOp, PatternRewriter &rewriter) const final
     {
-        auto location = varOp.getLoc();
+        auto location = paramOp.getLoc();
 
-        mlir::Value allocated = rewriter.create<mlir::AllocaOp>(location, varOp.getType().cast<MemRefType>());
+        mlir::Value allocated = rewriter.create<mlir::AllocaOp>(location, paramOp.getType().cast<MemRefType>());
 
         // scf.if
-        auto index = varOp.paramIndex();
+        auto index = paramOp.paramIndex();
         auto indexConstant = rewriter.create<mlir::ConstantOp>(location, rewriter.getI32IntegerAttr(index.getValue()));
-        auto condValue = rewriter.create<mlir::CmpIOp>(location, mlir::CmpIPredicate::ult, varOp.params_count(), indexConstant);
-        auto ifOp = rewriter.create<mlir::scf::IfOp>(location, varOp.argValue().getType(), condValue, true);
+        auto condValue = rewriter.create<mlir::CmpIOp>(location, mlir::CmpIPredicate::ult, paramOp.params_count(), indexConstant);
+        auto ifOp = rewriter.create<mlir::scf::IfOp>(location, paramOp.argValue().getType(), condValue, true);
 
         auto sp = rewriter.saveInsertionPoint();
 
@@ -64,23 +64,36 @@ struct ParamOptionalOpLowering : public OpRewritePattern<typescript::ParamOption
 
         rewriter.setInsertionPointToEnd(&thenRegion.back());
 
-        rewriter.create<mlir::scf::YieldOp>(location, varOp.argValue());
+        rewriter.inlineRegionBefore(paramOp.defaultValueRegion(), &ifOp.thenRegion().back());
+        rewriter.eraseBlock(&ifOp.thenRegion().back());
 
         // else block
         auto &elseRegion = ifOp.elseRegion();
 
         rewriter.setInsertionPointToEnd(&elseRegion.back());
 
-        rewriter.create<mlir::scf::YieldOp>(location, varOp.argValue());
+        rewriter.create<mlir::scf::YieldOp>(location, paramOp.argValue());
 
         rewriter.restoreInsertionPoint(sp);
 
         // save op
         rewriter.create<mlir::StoreOp>(location, ifOp.results().front(), allocated);
-        rewriter.replaceOp(varOp, allocated);
+        rewriter.replaceOp(paramOp, allocated);
         return success();
     }
 };
+
+struct ParamDefaultValueOpLowering : public OpRewritePattern<typescript::ParamDefaultValueOp>
+{
+    using OpRewritePattern<typescript::ParamDefaultValueOp>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(typescript::ParamDefaultValueOp op, PatternRewriter &rewriter) const final
+    {
+        rewriter.replaceOpWithNewOp<mlir::scf::YieldOp>(op, op.results());
+        return success();
+    }
+};
+
 
 struct VariableOpLowering : public OpRewritePattern<typescript::VariableOp>
 {
@@ -163,6 +176,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         CallOpLowering,
         ParamOpLowering,
         ParamOptionalOpLowering,
+        ParamDefaultValueOpLowering,
         VariableOpLowering
     >(&getContext());
 
