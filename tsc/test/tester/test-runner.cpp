@@ -43,7 +43,7 @@ namespace fs = std::experimental::filesystem;
 #endif
 
 #ifndef TEST_FILE
-#define TEST_FILE "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/00assert.ts"
+#define TEST_FILE "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/01arguments.ts"
 #endif
 
 bool hasEnding(std::string const &fullString, std::string const &ending)
@@ -115,6 +115,8 @@ void createBatchFile()
 
 void testFile(const char *file)
 {
+    std::cout << "Test file: " << file << std::endl;
+
     // compile
     std::stringstream ss;
     ss << "compile.bat " << file;
@@ -122,6 +124,11 @@ void testFile(const char *file)
 
     std::cout << "Compiling: " << std::endl;
     std::cout << compileResult << std::endl;
+
+    if (compileResult.find("error:") >= 0)
+    {
+        throw "compile error";
+    }
 
     ASSERT_THROW_MSG(exists("test_run.exe"), "compile error");
 
@@ -134,9 +141,10 @@ void testFile(const char *file)
 
 int main(int argc, char **argv)
 {
-    createBatchFile();
     try
     {
+        createBatchFile();
+
         if (argc > 1)
         {
             testFile(argv[1]);
@@ -149,7 +157,7 @@ int main(int argc, char **argv)
     catch (const std::exception &e)
     {
         std::cerr << e.what() << std::endl;
-        throw;
+        return 1;
     }
 
     return 0;

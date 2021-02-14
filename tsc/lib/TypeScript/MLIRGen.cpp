@@ -500,7 +500,7 @@ namespace
                 // builder.restoreInsertionPoint(sp);
             }
 
-            for (auto *statementListItem : functionDeclarationAST->functionBody()->statementListItem())
+            for (auto *statementListItem : functionDeclarationAST->functionBody()->functionBodyItem())
             {
                 if (auto *statement = statementListItem->statement())
                 {
@@ -546,15 +546,15 @@ namespace
             return returnType;
         }
 
-        mlir::LogicalResult mlirGen(TypeScriptParserANTLR::StatementContext *statementAST, const GenContext &genContext)
+        mlir::LogicalResult mlirGen(TypeScriptParserANTLR::StatementContext *statementItemAST, const GenContext &genContext)
         {
-            if (auto *expression = statementAST->expression())
+            if (auto *expressionStatement = statementItemAST->expressionStatement())
             {
-                mlirGen(expression, genContext);
+                mlirGen(expressionStatement->expression(), genContext);
                 // ignore result in statement
                 return mlir::success();
             }
-            else if (auto *returnStatement = statementAST->returnStatement())
+            else if (auto *returnStatement = statementItemAST->returnStatement())
             {
                 return mlirGen(returnStatement, genContext);
             }

@@ -27,9 +27,6 @@ typeParameter
 initializer
     : EQUALS_TOKEN assignmentExpression ;  
 
-assignmentExpression
-    : leftHandSideExpression ;   
-
 typeDeclaration
     : ANY_KEYWORD 
     | NUMBER_KEYWORD
@@ -41,22 +38,116 @@ functionRestParameter
     : DOTDOTDOT_TOKEN formalParameter ;
 
 functionBody
-    : statementListItem* ;    
+    : functionBodyItem* ;    
 
-statementListItem
-    : statement 
-    | declaration ;
+functionBodyItem
+    : statement
+    | declaration
+    ;
 
 statement
-    : (expression 
-       | returnStatement) SEMICOLON_TOKEN ;
+    : emptyStatement
+    | expressionStatement
+    | returnStatement
+    ;    
+
+emptyStatement
+    : SEMICOLON_TOKEN ;
+
+expressionStatement
+    : expression SEMICOLON_TOKEN ;
 
 returnStatement
-    : RETURN_KEYWORD expression? ;
+    : RETURN_KEYWORD expression? SEMICOLON_TOKEN ;
 
 expression
+    : assignmentExpression (COMMA_TOKEN assignmentExpression)* ;
+    
+assignmentExpression
+    : conditionalExpression ;   
+
+conditionalExpression
+    : shortCircuitExpression (QUESTION_TOKEN assignmentExpression COLON_TOKEN assignmentExpression)? ;
+
+shortCircuitExpression    
+    : logicalORExpression ;
+
+logicalORExpression
+    : logicalANDExpression ;
+
+logicalANDExpression
+    : bitwiseORExpression ;
+
+bitwiseORExpression
+    : bitwiseXORExpression ;    
+
+bitwiseXORExpression
+    : bitwiseANDExpression ;    
+
+bitwiseANDExpression
+    : equalityExpression ;
+
+equalityExpression
+    : relationalExpression 
+    | equalityExpression EQUALSEQUALS_TOKEN equalityExpression
+    ;    
+
+relationalExpression
+    : shiftExpression ;
+
+shiftExpression
+    : additiveExpression
+    ;    
+
+additiveExpression
+    : multiplicativeExpression
+    ;    
+
+multiplicativeExpression
+    : exponentiationExpression
+    ;  
+
+exponentiationExpression
+    : unaryExpression
+    ;      
+
+unaryExpression
+    : updateExpression
+    ;
+
+updateExpression
+    : leftHandSideExpression
+    ;
+
+leftHandSideExpression    
+    : newExpression
+    | callExpression
+    | optionalExpression
+    ;
+
+newExpression
+    : memberExpression
+    | NEW_KEYWORD newExpression ;
+
+callExpression
+    : memberExpression arguments
+    | callExpression arguments ;
+
+memberExpression    
     : primaryExpression
-    | leftHandSideExpression ;
+    | memberExpression DOT_TOKEN IdentifierName ;
+
+primaryExpression
+    : literal
+    | identifierReference ;
+
+optionalExpression
+    : memberExpression optionalChain
+    ;    
+
+optionalChain
+    : QUESTIONDOT_TOKEN IdentifierName
+    ;    
 
 nullLiteral
     : NULL_KEYWORD ;
@@ -82,21 +173,6 @@ numericLiteral
 identifierReference
     : IdentifierName ;
 
-leftHandSideExpression
-    : memberExpression     
-    | callExpression ;
-
 arguments
     :  OPENPAREN_TOKEN (expression (COMMA_TOKEN expression)*)? CLOSEPAREN_TOKEN ;
 
-callExpression
-    : memberExpression arguments
-    | callExpression arguments ;
-
-memberExpression    
-    : primaryExpression
-    | memberExpression DOT_TOKEN IdentifierName ;
-
-primaryExpression
-    : literal
-    | identifierReference ;
