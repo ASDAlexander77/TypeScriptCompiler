@@ -4,15 +4,66 @@ options {
 	tokenVocab = TypeScriptLexerANTLR;
 }
 
+@parser::postinclude {
+#include "typescript/AST.h"
+}
+
+@parser::context {
+#define PUSH(x, ...) push_node<x>(_localctx, __VA_ARGS__)
+}
+
+@parser::members {
+
+/* public parser declarations/members section */
+std::unique_ptr<ModuleAST> moduleAST;
+const std::unique_ptr<ModuleAST> &getModuleAST() { return moduleAST; }
+
+std::stack<std::unique_ptr<NodeAST>> stack;
+
+template <typename NodeTy, typename... Args>
+std::unique_ptr<NodeTy> make_node(antlr4::tree::ParseTree *tree, Args &&... args) 
+{
+}
+
+template <typename NodeTy, typename... Args>
+void push_node(antlr4::tree::ParseTree *tree, Args &&... args) 
+{ 
+    const antlr4::misc::Interval &loc = tree->getSourceInterval();
+    stack.push(
+        std::make_unique<NodeTy>(
+            TextRange({static_cast<int>(loc.a), static_cast<int>(loc.b)}), 
+            std::forward<Args>(args)...)); 
+};
+
+} // @parser::members
+
 // Actual grammar start.
 main
-    : declaration* EOF ;
+    : module EOF { PUSH(ModuleAST); } ;
 
-declaration
-    : functionDeclaration ;    
+module
+    : moduleItem* ;
+
+moduleItem
+    : statementListItem 
+    ;
+
+statementListItem 
+    : statement
+    | declaration
+    ;
+
+declaration 
+    : hoistableDeclaration
+    ;
+
+hoistableDeclaration
+    : functionDeclaration
+    ;    
 
 functionDeclaration
-    : FUNCTION_KEYWORD IdentifierName? OPENPAREN_TOKEN formalParameters? CLOSEPAREN_TOKEN typeParameter? OPENBRACE_TOKEN functionBody CLOSEBRACE_TOKEN ;
+    : FUNCTION_KEYWORD bindingIdentifier? OPENPAREN_TOKEN formalParameters? CLOSEPAREN_TOKEN typeParameter? OPENBRACE_TOKEN functionBody CLOSEBRACE_TOKEN 
+        { PUSH(FunctionDeclarationAST); } ;
 
 formalParameters
     : functionRestParameter
@@ -38,12 +89,13 @@ functionRestParameter
     : DOTDOTDOT_TOKEN formalParameter ;
 
 functionBody
-    : functionBodyItem* ;    
+    : functionStatementList ;    
 
-functionBodyItem
-    : statement
-    | declaration
-    ;
+functionStatementList
+    : statementList ;
+
+statementList
+    : statementListItem* ;    
 
 statement
     : emptyStatement
@@ -172,6 +224,12 @@ numericLiteral
 
 identifierReference
     : IdentifierName ;
+
+bindingIdentifier    
+    : identifier ;
+
+identifier
+    : IdentifierName ; // but not ReservedWord 
 
 arguments
     :  OPENPAREN_TOKEN (expression (COMMA_TOKEN expression)*)? CLOSEPAREN_TOKEN ;
