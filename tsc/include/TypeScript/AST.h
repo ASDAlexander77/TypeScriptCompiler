@@ -488,12 +488,15 @@ namespace typescript
 
     class IdentifierAST : public NodeAST
     {
+        std::string name;
     public:
         using TypePtr = std::shared_ptr<IdentifierAST>;
 
         // TODO: remove it when finish
-        IdentifierAST(TextRange range, ...)
-            : NodeAST(SyntaxKind::Identifier, range) {}
+        IdentifierAST(TextRange range, std::string identifier)
+            : NodeAST(SyntaxKind::Identifier, range), name(identifier) {}
+
+        const std::string& getName() const { return name; }
 
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
@@ -504,14 +507,16 @@ namespace typescript
 
     class FunctionDeclarationAST : public NodeAST
     {
-        NodeAST::TypePtr identifier;
+        IdentifierAST::TypePtr identifier;
 
     public:
         using TypePtr = std::shared_ptr<FunctionDeclarationAST>;
 
         // TODO: remove it when finish
-        FunctionDeclarationAST(TextRange range, NodeAST::TypePtr identifier)
+        FunctionDeclarationAST(TextRange range, IdentifierAST::TypePtr identifier)
             : NodeAST(SyntaxKind::FunctionDeclaration, range), identifier(identifier) {}
+
+        const IdentifierAST::TypePtr& getIdentifier() const { return identifier; }
 
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
@@ -522,16 +527,15 @@ namespace typescript
 
     class ModuleBlockAST : public NodeAST
     {
-        //std::vector<NodeAST::TypePtr> items;
+        std::vector<NodeAST::TypePtr> items;
 
     public:
         using TypePtr = std::shared_ptr<ModuleBlockAST>;
 
-        // TODO: remove it when finish
-        ModuleBlockAST(TextRange range/*, std::vector<NodeAST::TypePtr> items*/)
-            : NodeAST(SyntaxKind::Block, range)/*, items(items)*/ {}
+        ModuleBlockAST(TextRange range, std::vector<NodeAST::TypePtr> items)
+            : NodeAST(SyntaxKind::ModuleBlock, range), items(items) {}
 
-        //const std::vector<NodeAST::TypePtr>& getItems() const { return items; }
+        const std::vector<NodeAST::TypePtr>& getItems() const { return items; }
 
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
@@ -552,8 +556,8 @@ namespace typescript
         ModuleAST(TextRange range, ModuleBlockAST::TypePtr block)
             : NodeAST(SyntaxKind::ModuleDeclaration, range), block(block) {}
 
-        //auto begin() -> decltype(block.get()->getItems().begin()) { return block.get()->getItems().begin(); }
-        //auto end() -> decltype(block.get()->getItems().end()) { return block.get()->getItems().end(); }
+        auto begin() -> decltype(block.get()->getItems().begin()) { return block.get()->getItems().begin(); }
+        auto end() -> decltype(block.get()->getItems().end()) { return block.get()->getItems().end(); }
 
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 

@@ -16,6 +16,7 @@ options {
 #define GET_AS(x, y) getAsType<x>(_localctx->y())
 #define MOVE_DOWN(x) move_down(_localctx, _localctx->x())
 #define COLLECTION(x) collection(_localctx, _localctx->x())
+#define TEXT(x) _localctx->x()->toString()
 
 template<typename V>
 class ParseTreeAssoc {
@@ -43,12 +44,9 @@ protected:
 @parser::members {
 
 /* public parser declarations/members section */
-ModuleAST m;
-ModuleAST &getModuleAST() 
+ModuleAST::TypePtr getModuleAST() 
 { 
-    //auto moduleASTPtr = getAsType<ModuleAST>(main());
-    //return *moduleASTPtr.get(); 
-    return m;
+    return getAsType<ModuleAST>(main()); 
 }
 
 ParseTreeAssoc<std::shared_ptr<NodeAST>> assoc;
@@ -99,7 +97,7 @@ main
     : moduleBody EOF { NODE(ModuleAST, GET_AS(ModuleBlockAST, moduleBody)); } ;
 
 moduleBody 
-    : moduleItem* { /*NODE(ModuleBlockAST, COLLECTION(moduleItem));*/ } ;
+    : moduleItem* { NODE(ModuleBlockAST, COLLECTION(moduleItem)); } ;
 
 moduleItem
     : statementListItem { MOVE_DOWN(statementListItem); }
@@ -120,7 +118,7 @@ hoistableDeclaration
 
 functionDeclaration
     : FUNCTION_KEYWORD bindingIdentifier? OPENPAREN_TOKEN formalParameters? CLOSEPAREN_TOKEN typeParameter? OPENBRACE_TOKEN functionBody CLOSEBRACE_TOKEN 
-        { NODE(FunctionDeclarationAST, GET(bindingIdentifier)); } ;
+        { NODE(FunctionDeclarationAST, GET_AS(IdentifierAST, bindingIdentifier)); } ;
 
 formalParameters
     : functionRestParameter
@@ -283,10 +281,10 @@ identifierReference
     : IdentifierName ;
 
 bindingIdentifier    
-    : identifier ;
+    : identifier { MOVE_DOWN(identifier); } ;
 
 identifier
-    : IdentifierName ; // but not ReservedWord 
+    : IdentifierName { NODE(IdentifierAST, TEXT(IdentifierName)); } ; // but not ReservedWord 
 
 arguments
     :  OPENPAREN_TOKEN (expression (COMMA_TOKEN expression)*)? CLOSEPAREN_TOKEN ;

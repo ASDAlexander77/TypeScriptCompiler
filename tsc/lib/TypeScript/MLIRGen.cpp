@@ -70,11 +70,11 @@ namespace
 
         /// Public API: convert the AST for a TypeScript module (source file) to an MLIR
         /// Module operation.
-        mlir::ModuleOp mlirGen(ModuleAST &module)
+        mlir::ModuleOp mlirGen(ModuleAST::TypePtr module)
         {
             // We create an empty MLIR module and codegen functions one at a time and
             // add them to the module.
-            theModule = mlir::ModuleOp::create(loc(module.getLoc()), fileName);
+            theModule = mlir::ModuleOp::create(loc(module->getLoc()), fileName);
             builder.setInsertionPointToStart(theModule.getBody());
 
             declareAllFunctionDeclarations(module);
@@ -83,15 +83,13 @@ namespace
 
             // Process generating here
             GenContext genContext = {0};
-            /*
-            for (auto &statement : module)
+            for (auto &statement : *module.get())
             {
-                if (failed(mlirGenStatement(*statement.get(), genContext)))
+                if (failed(mlirGenStatement(statement, genContext)))
                 {
                     return nullptr;
                 }
             }
-            */
 
             // Verify the module after we have finished constructing it, this will check
             // the structural properties of the IR and invoke any specific verifiers we
@@ -106,24 +104,21 @@ namespace
             return theModule;
         }
 
-        mlir::LogicalResult declareAllFunctionDeclarations(ModuleAST &module)
+        mlir::LogicalResult declareAllFunctionDeclarations(ModuleAST::TypePtr module)
         {
             // TODO: finish it
             return mlir::success();
         }
 
-        mlir::LogicalResult mlirGenStatement(NodeAST &statementAST, const GenContext &genContext)
+        mlir::LogicalResult mlirGenStatement(NodeAST::TypePtr statementAST, const GenContext &genContext)
         {
             // TODO:
-            if (auto *functionDeclarationAST = llvm::dyn_cast<FunctionDeclarationAST>(&statementAST))
+            if (auto functionDeclarationAST = std::dynamic_pointer_cast<FunctionDeclarationAST>(statementAST))
             {
-                /*
-                auto func = mlirGen(*functionDeclarationAST);
-                if (!func)
+                if (failed(mlirGen(functionDeclarationAST, genContext)))
                 {
-                    return mlir::failed();
+                    return mlir::failure();
                 }
-                */
             } 
             else 
             {
@@ -287,10 +282,12 @@ namespace
 
             return params;
         }
+        */
 
-        std::tuple<mlir::FuncOp, FunctionPrototypeDOM::TypePtr, bool> mlirGenFunctionPrototype(TypeScriptParserANTLR::FunctionDeclarationContext *functionDeclarationAST,
+        std::tuple<mlir::FuncOp, FunctionPrototypeDOM::TypePtr, bool> mlirGenFunctionPrototype(FunctionDeclarationAST::TypePtr functionDeclarationAST,
                                                                                                const GenContext &genContext)
         {
+            /*
             auto location = loc(functionDeclarationAST);
 
             std::vector<FunctionParamDOM::TypePtr> params = mlirGen(functionDeclarationAST->formalParameters(), genContext);
@@ -355,8 +352,10 @@ namespace
             auto funcOp = mlir::FuncOp::create(location, StringRef(name), funcType, ArrayRef<mlir::NamedAttribute>(attrs));
 
             return std::make_tuple(funcOp, std::move(funcProto), true);
+            */
         }
 
+        /*
         mlir::Type getReturnType(TypeScriptParserANTLR::FunctionDeclarationContext *functionDeclarationAST, std::string name,
                                  const SmallVector<mlir::Type> &argTypes, const FunctionPrototypeDOM::TypePtr &funcProto, const GenContext &genContext)
         {
@@ -387,9 +386,11 @@ namespace
             returnType = mlirGenFunctionBody(functionDeclarationAST, dummyFuncOp, funcProto, genContext, true);
             return returnType;
         }
+        */
 
-        mlir::LogicalResult mlirGen(TypeScriptParserANTLR::FunctionDeclarationContext *functionDeclarationAST, const GenContext &genContext)
+        mlir::LogicalResult mlirGen(FunctionDeclarationAST::TypePtr functionDeclarationAST, const GenContext &genContext)
         {
+            /*
             SymbolTableScopeT varScope(symbolTable);
             auto funcOpWithFuncProto = mlirGenFunctionPrototype(functionDeclarationAST, genContext);
 
@@ -404,7 +405,7 @@ namespace
             auto returnType = mlirGenFunctionBody(functionDeclarationAST, funcOp, funcProto, genContext);
 
             // set visibility index
-            if (functionDeclarationAST->IdentifierName()->getText() != "main")
+            if (functionDeclarationAST->getIdentifier()->getName() != "main")
             {
                 funcOp.setPrivate();
             }
@@ -412,13 +413,15 @@ namespace
             theModule.push_back(funcOp);
             functionMap.insert({funcOp.getName(), funcOp});
             theModuleDOM.getFunctionProtos().push_back(std::move(funcProto));
+            */
 
             return mlir::success();
         }
 
-        mlir::Type mlirGenFunctionBody(TypeScriptParserANTLR::FunctionDeclarationContext *functionDeclarationAST,
-                                       mlir::FuncOp funcOp, const FunctionPrototypeDOM::TypePtr &funcProto, const GenContext &genContext, bool dummyRun = false)
+        mlir::Type mlirGenFunctionBody(FunctionDeclarationAST::TypePtr functionDeclarationAST, mlir::FuncOp funcOp, 
+            FunctionPrototypeDOM::TypePtr funcProto, const GenContext &genContext, bool dummyRun = false)
         {
+            /*
             mlir::Type returnType;
 
             auto &entryBlock = *funcOp.addEntryBlock();
@@ -550,8 +553,10 @@ namespace
             }
 
             return returnType;
+            */
         }
 
+        /*
         mlir::LogicalResult mlirGen(TypeScriptParserANTLR::StatementContext *statementItemAST, const GenContext &genContext)
         {
             if (auto *expressionStatement = statementItemAST->expressionStatement())
