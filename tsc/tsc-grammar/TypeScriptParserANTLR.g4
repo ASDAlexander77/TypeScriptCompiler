@@ -12,27 +12,27 @@ options {
 
 @parser::context {
 #define CREATE(x, ...) assign_new<x>(_localctx, __VA_ARGS__)
-#define GET(x, y) std::move(get<x>(_localctx->y()))
+#define GET(x, y) get<x>(_localctx->y())
 
 template<typename V>
 class ParseTreeAssoc {
 public:
-    V *get(antlr4::tree::ParseTree *node) {
+    V get(antlr4::tree::ParseTree *node) {
         return _annotations[node];
     }
 
-    void put(antlr4::tree::ParseTree *node, V *value) {
+    void put(antlr4::tree::ParseTree *node, V value) {
         _annotations[node] = value;
     }
 
-    V *removeFrom(antlr4::tree::ParseTree *node) {
+    V removeFrom(antlr4::tree::ParseTree *node) {
         auto value = _annotations[node];
         _annotations.erase(node);
         return value;
     }
 
 protected:
-    std::map<antlr4::tree::ParseTree *, V *> _annotations;
+    std::map<antlr4::tree::ParseTree *, V> _annotations;
 };
 
 }
@@ -41,21 +41,21 @@ protected:
 
 /* public parser declarations/members section */
 ModuleAST::TypePtr moduleAST;
-const ModuleAST::TypePtr &getModuleAST() { return moduleAST; }
+ModuleAST &getModuleAST() { return *get<ModuleAST>(main()); }
 
-ParseTreeAssoc<NodeAST> assoc;
+ParseTreeAssoc<std::shared_ptr<NodeAST>> assoc;
 
 template <typename NodeTy, typename... Args>
 void assign_new(antlr4::tree::ParseTree *tree, Args &&... args) 
 { 
     const antlr4::misc::Interval &loc = tree->getSourceInterval();
-    assoc.put(tree, std::make_unique<NodeTy>(TextRange({static_cast<int>(loc.a), static_cast<int>(loc.b)}), std::forward<Args>(args)...).get()); 
+    assoc.put(tree, std::make_shared<NodeTy>(TextRange({static_cast<int>(loc.a), static_cast<int>(loc.b)}), std::forward<Args>(args)...)); 
 };
 
 template <typename NodeTy>
 NodeTy *get(antlr4::tree::ParseTree *tree) 
 { 
-    return dynamic_cast<NodeTy *>(assoc.get(tree)); 
+    return dynamic_cast<NodeTy *>(assoc.get(tree).get()); 
 };
 
 } // @parser::members

@@ -1069,7 +1069,7 @@ namespace typescript
         typescript::TypeScriptLexerANTLR lexer(&input);
         antlr4::CommonTokenStream tokens(&lexer);
         typescript::TypeScriptParserANTLR parser(&tokens);
-        return MLIRGenImpl(context, fileName).mlirGen(*parser.getModuleAST().get());
+        return MLIRGenImpl(context, fileName).mlirGen(parser.getModuleAST());
     }
 
 } // namespace typescript
