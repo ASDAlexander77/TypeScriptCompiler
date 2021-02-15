@@ -343,7 +343,8 @@ namespace typescript
         MergeDeclarationMarker = 327,
         EndOfDeclarationMarker = 328,
         SyntheticReferenceExpression = 329,
-        Count = 330,
+        Parameters = 330,
+        Count = 331,
         FirstAssignment = 62,
         LastAssignment = 74,
         FirstCompoundAssignment = 63,
@@ -477,7 +478,7 @@ namespace typescript
 
         // TODO: remove it when finish
         BlockAST(TextRange range, std::vector<NodeAST::TypePtr> items)
-            : NodeAST(SyntaxKind::Block, range), items(std::move(items)) {}
+            : NodeAST(SyntaxKind::Block, range), items(items) {}
 
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
@@ -505,18 +506,85 @@ namespace typescript
         }            
     };
 
+    class TypeReferenceAST : public NodeAST
+    {
+        std::string typeName;
+    public:
+        using TypePtr = std::shared_ptr<TypeReferenceAST>;
+
+        // TODO: remove it when finish
+        TypeReferenceAST(TextRange range, std::string typeName)
+            : NodeAST(SyntaxKind::Identifier, range), typeName(typeName) {}
+
+        const std::string& getTypeName() const { return typeName; }
+
+        /// LLVM style RTTI
+        static bool classof(const NodeAST *N) 
+        {
+            return N->getKind() == SyntaxKind::TypeReference;
+        }            
+    };    
+
+    class ParameterDeclarationAST : public NodeAST
+    {
+        IdentifierAST::TypePtr identifier;
+        TypeReferenceAST::TypePtr type;
+        NodeAST::TypePtr initializer;
+        bool dotdotdot;
+
+    public:
+        using TypePtr = std::shared_ptr<ParameterDeclarationAST>;
+
+        // TODO: remove it when finish
+        ParameterDeclarationAST(TextRange range, IdentifierAST::TypePtr identifier, TypeReferenceAST::TypePtr type, NodeAST::TypePtr initialize)
+            : NodeAST(SyntaxKind::FunctionDeclaration, range), identifier(identifier), type(type), initializer(initializer) {}
+
+        const IdentifierAST::TypePtr& getIdentifier() const { return identifier; }
+        const TypeReferenceAST::TypePtr& getType() const { return type; }
+        const NodeAST::TypePtr& getInitializer() const { return initializer; }
+        bool getDotDotDot() { return dotdotdot; }
+        void setDotDotDot(bool val) { dotdotdot = val; }
+
+        /// LLVM style RTTI
+        static bool classof(const NodeAST *N) 
+        {
+            return N->getKind() == SyntaxKind::Parameter;
+        }
+    };
+
+    class ParametersDeclarationAST : public NodeAST
+    {
+        std::vector<ParameterDeclarationAST::TypePtr> parameters;
+
+    public:
+        using TypePtr = std::shared_ptr<ParametersDeclarationAST>;
+
+        // TODO: remove it when finish
+        ParametersDeclarationAST(TextRange range, std::vector<ParameterDeclarationAST::TypePtr> parameters)
+            : NodeAST(SyntaxKind::Parameters, range), parameters(parameters) {}
+
+        /// LLVM style RTTI
+        static bool classof(const NodeAST *N) 
+        {
+            return N->getKind() == SyntaxKind::Parameters;
+        }          
+    };
+
     class FunctionDeclarationAST : public NodeAST
     {
         IdentifierAST::TypePtr identifier;
+        ParametersDeclarationAST::TypePtr parameters;
+        TypeReferenceAST::TypePtr typeReference;
 
     public:
         using TypePtr = std::shared_ptr<FunctionDeclarationAST>;
 
         // TODO: remove it when finish
-        FunctionDeclarationAST(TextRange range, IdentifierAST::TypePtr identifier)
-            : NodeAST(SyntaxKind::FunctionDeclaration, range), identifier(identifier) {}
+        FunctionDeclarationAST(TextRange range, IdentifierAST::TypePtr identifier, ParametersDeclarationAST::TypePtr parameters, TypeReferenceAST::TypePtr typeReference)
+            : NodeAST(SyntaxKind::FunctionDeclaration, range), identifier(identifier), parameters(parameters), typeReference(typeReference) {}
 
         const IdentifierAST::TypePtr& getIdentifier() const { return identifier; }
+        const ParametersDeclarationAST::TypePtr& getParameters() const { return parameters; }
 
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 

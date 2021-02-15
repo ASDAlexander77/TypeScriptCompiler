@@ -15,7 +15,11 @@ options {
 #define GET(x) get(_localctx->x())
 #define GET_AS(x, y) getAsType<x>(_localctx->y())
 #define MOVE_DOWN(x) move_down(_localctx, _localctx->x())
-#define COLLECTION(x) collection(_localctx, _localctx->x())
+#define SET(x) set(_localctx, x)
+#define COLLECTION(x) collection(_localctx->x())
+#define COLLECTION_EXT_AS(x, y, ...) collection_ext_as<x>(_localctx->y(), __VA_ARGS__)
+#define TO_COLLECTION(x) to_collection(_localctx->x())
+#define TO_COLLECTION_AS(x, y) to_collection_as<x>(_localctx->y())
 #define TEXT(x) _localctx->x()->toString()
 
 template<typename V>
@@ -51,6 +55,11 @@ ModuleAST::TypePtr getModuleAST()
 
 ParseTreeAssoc<std::shared_ptr<NodeAST>> assoc;
 
+void set(antlr4::tree::ParseTree *tree, NodeAST::TypePtr val) 
+{ 
+    assoc.put(tree, val); 
+};
+
 template <typename NodeTy, typename... Args>
 void assign_new(antlr4::tree::ParseTree *tree, Args &&... args) 
 { 
@@ -79,7 +88,7 @@ void move_down(antlr4::tree::ParseTree *to, antlr4::tree::ParseTree *from)
 };
 
 template <typename CtxTy>
-std::vector<std::shared_ptr<NodeAST>> collection(antlr4::tree::ParseTree *tree, std::vector<CtxTy> items)
+std::vector<std::shared_ptr<NodeAST>> collection(std::vector<CtxTy> items)
 {
     std::vector<std::shared_ptr<NodeAST>> nodes;
     for (auto &item : items)
@@ -87,6 +96,55 @@ std::vector<std::shared_ptr<NodeAST>> collection(antlr4::tree::ParseTree *tree, 
         nodes.push_back(get(item));
     }
 
+    return nodes;
+};
+
+template <typename CtxTy, typename... Args>
+std::vector<std::shared_ptr<NodeAST>> collection_ext(std::vector<CtxTy> items, Args &&... args)
+{
+    std::vector<std::shared_ptr<NodeAST>> nodes;
+    for (auto &item : items)
+    {
+        nodes.push_back(get(item));
+    }
+
+    for (auto &item : {args...})
+    {
+        nodes.push_back(item);
+    }    
+
+    return nodes;
+};
+
+template <typename Ty, typename CtxTy, typename... Args>
+std::vector<std::shared_ptr<Ty>> collection_ext_as(std::vector<CtxTy> items, Args &&... args)
+{
+    std::vector<std::shared_ptr<Ty>> nodes;
+    for (auto &item : items)
+    {
+        nodes.push_back(std::dynamic_pointer_cast<Ty>(get(item)));
+    }
+
+    for (auto &item : {args...})
+    {
+        nodes.push_back(std::dynamic_pointer_cast<Ty>(item));
+    }    
+
+    return nodes;
+};
+
+std::vector<std::shared_ptr<NodeAST>> to_collection(antlr4::tree::ParseTree *val)
+{
+    std::vector<std::shared_ptr<NodeAST>> nodes;
+    nodes.push_back(get(val));
+    return nodes;
+};
+
+template <typename Ty>
+std::vector<std::shared_ptr<Ty>> to_collection_as(antlr4::tree::ParseTree *val)
+{
+    std::vector<std::shared_ptr<Ty>> nodes;
+    nodes.push_back(std::dynamic_pointer_cast<Ty>(get(val)));
     return nodes;
 };
 
@@ -118,14 +176,17 @@ hoistableDeclaration
 
 functionDeclaration
     : FUNCTION_KEYWORD bindingIdentifier? OPENPAREN_TOKEN formalParameters? CLOSEPAREN_TOKEN typeParameter? OPENBRACE_TOKEN functionBody CLOSEBRACE_TOKEN 
-        { NODE(FunctionDeclarationAST, GET_AS(IdentifierAST, bindingIdentifier)); } ;
+        { NODE(FunctionDeclarationAST, GET_AS(IdentifierAST, bindingIdentifier), GET_AS(ParametersDeclarationAST, formalParameters), GET_AS(TypeReferenceAST, typeParameter)); } ;
 
 formalParameters
-    : functionRestParameter
-    | formalParameter (COMMA_TOKEN formalParameter)* (COMMA_TOKEN functionRestParameter)? ;    
+    : functionRestParameter 
+        { NODE(ParametersDeclarationAST, TO_COLLECTION_AS(ParameterDeclarationAST, functionRestParameter)); }
+    | formalParameter (COMMA_TOKEN formalParameter)* (COMMA_TOKEN functionRestParameter)? 
+        { NODE(ParametersDeclarationAST, COLLECTION_EXT_AS(ParameterDeclarationAST, formalParameter, GET(functionRestParameter))); } ;    
 
 formalParameter
-    : IdentifierName QUESTION_TOKEN? typeParameter? initializer? ;    
+    : IdentifierName QUESTION_TOKEN? typeParameter? initializer?
+        { NODE(ParameterDeclarationAST, GET_AS(IdentifierAST, IdentifierName), GET_AS(TypeReferenceAST, typeParameter), GET(initializer)); } ;    
 
 typeParameter
     : COLON_TOKEN typeDeclaration ;    
@@ -141,7 +202,8 @@ typeDeclaration
     | BIGINT_KEYWORD ;    
 
 functionRestParameter
-    : DOTDOTDOT_TOKEN formalParameter ;
+    : DOTDOTDOT_TOKEN formalParameter 
+        { auto fp = GET_AS(ParameterDeclarationAST, formalParameter); fp->setDotDotDot(true); SET(fp); };
 
 functionBody
     : functionStatementList ;    
