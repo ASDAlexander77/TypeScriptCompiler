@@ -451,7 +451,7 @@ namespace typescript
     class NodeAST
     {
     public:
-        using TypePtr = std::unique_ptr<NodeAST>;
+        using TypePtr = std::shared_ptr<NodeAST>;
 
         NodeAST(SyntaxKind kind, TextRange range)
             : kind(kind), range(range) {}
@@ -468,22 +468,50 @@ namespace typescript
         NodeAST *parent;
     };
 
+    class BlockAST : public NodeAST
+    {
+        std::vector<NodeAST::TypePtr> items;
+
+    public:
+        using TypePtr = std::shared_ptr<BlockAST>;
+
+        // TODO: remove it when finish
+        BlockAST(TextRange range, std::vector<NodeAST::TypePtr> items)
+            : NodeAST(SyntaxKind::Block, range), items(std::move(items)) {}
+
+        /// LLVM style RTTI
+        static bool classof(const NodeAST *N) 
+        {
+            return N->getKind() == SyntaxKind::Block;
+        }               
+    };   
+
     class IdentifierAST : public NodeAST
     {
     public:
-        using TypePtr = std::unique_ptr<IdentifierAST>;
+        using TypePtr = std::shared_ptr<IdentifierAST>;
 
         // TODO: remove it when finish
         IdentifierAST(TextRange range, ...)
             : NodeAST(SyntaxKind::Identifier, range) {}
+
+        /// LLVM style RTTI
+        static bool classof(const NodeAST *N) 
+        {
+            return N->getKind() == SyntaxKind::Identifier;
+        }            
     };
 
     class FunctionDeclarationAST : public NodeAST
     {
+        NodeAST::TypePtr identifier;
+
     public:
+        using TypePtr = std::shared_ptr<FunctionDeclarationAST>;
+
         // TODO: remove it when finish
-        FunctionDeclarationAST(TextRange range, ...)
-            : NodeAST(SyntaxKind::FunctionDeclaration, range) {}
+        FunctionDeclarationAST(TextRange range, NodeAST::TypePtr identifier)
+            : NodeAST(SyntaxKind::FunctionDeclaration, range), identifier(identifier) {}
 
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
@@ -492,22 +520,46 @@ namespace typescript
         }
     };
 
-    class ModuleAST : public NodeAST
+    class ModuleBlockAST : public NodeAST
     {
-        std::vector<TypePtr> statements;
+        //std::vector<NodeAST::TypePtr> items;
 
     public:
-        using TypePtr = std::unique_ptr<ModuleAST>;
+        using TypePtr = std::shared_ptr<ModuleBlockAST>;
 
         // TODO: remove it when finish
-        ModuleAST(TextRange range)
-            : NodeAST(SyntaxKind::ModuleDeclaration, range), statements() {}
+        ModuleBlockAST(TextRange range/*, std::vector<NodeAST::TypePtr> items*/)
+            : NodeAST(SyntaxKind::Block, range)/*, items(items)*/ {}
 
-        ModuleAST(TextRange range, std::vector<std::unique_ptr<NodeAST>> statements)
-            : NodeAST(SyntaxKind::ModuleDeclaration, range), statements(std::move(statements)) {}
+        //const std::vector<NodeAST::TypePtr>& getItems() const { return items; }
 
-        auto begin() -> decltype(statements.begin()) { return statements.begin(); }
-        auto end() -> decltype(statements.end()) { return statements.end(); }
+        /// LLVM style RTTI
+        static bool classof(const NodeAST *N) 
+        {
+            return N->getKind() == SyntaxKind::ModuleBlock;
+        }               
+    };   
+
+    class ModuleAST : public NodeAST
+    {
+        ModuleBlockAST::TypePtr block;
+
+    public:
+        using TypePtr = std::shared_ptr<ModuleAST>;
+
+        ModuleAST() : NodeAST(SyntaxKind::ModuleDeclaration, TextRange()) {}        
+
+        ModuleAST(TextRange range, ModuleBlockAST::TypePtr block)
+            : NodeAST(SyntaxKind::ModuleDeclaration, range), block(block) {}
+
+        //auto begin() -> decltype(block.get()->getItems().begin()) { return block.get()->getItems().begin(); }
+        //auto end() -> decltype(block.get()->getItems().end()) { return block.get()->getItems().end(); }
+
+        /// LLVM style RTTI
+        static bool classof(const NodeAST *N) 
+        {
+            return N->getKind() == SyntaxKind::ModuleDeclaration;
+        }         
     };
 
 } // namespace typescript

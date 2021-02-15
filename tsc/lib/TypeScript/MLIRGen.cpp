@@ -83,6 +83,7 @@ namespace
 
             // Process generating here
             GenContext genContext = {0};
+            /*
             for (auto &statement : module)
             {
                 if (failed(mlirGenStatement(*statement.get(), genContext)))
@@ -90,6 +91,7 @@ namespace
                     return nullptr;
                 }
             }
+            */
 
             // Verify the module after we have finished constructing it, this will check
             // the structural properties of the IR and invoke any specific verifiers we

@@ -11,8 +11,11 @@ options {
 }
 
 @parser::context {
-#define CREATE(x, ...) assign_new<x>(_localctx, __VA_ARGS__)
-#define GET(x, y) get<x>(_localctx->y())
+#define NODE(x, ...) assign_new<x>(_localctx, __VA_ARGS__)
+#define GET(x) get(_localctx->x())
+#define GET_AS(x, y) getAsType<x>(_localctx->y())
+#define MOVE_DOWN(x) move_down(_localctx, _localctx->x())
+#define COLLECTION(x) collection(_localctx, _localctx->x())
 
 template<typename V>
 class ParseTreeAssoc {
@@ -40,8 +43,13 @@ protected:
 @parser::members {
 
 /* public parser declarations/members section */
-ModuleAST::TypePtr moduleAST;
-ModuleAST &getModuleAST() { return *get<ModuleAST>(main()); }
+ModuleAST m;
+ModuleAST &getModuleAST() 
+{ 
+    //auto moduleASTPtr = getAsType<ModuleAST>(main());
+    //return *moduleASTPtr.get(); 
+    return m;
+}
 
 ParseTreeAssoc<std::shared_ptr<NodeAST>> assoc;
 
@@ -49,44 +57,70 @@ template <typename NodeTy, typename... Args>
 void assign_new(antlr4::tree::ParseTree *tree, Args &&... args) 
 { 
     const antlr4::misc::Interval &loc = tree->getSourceInterval();
-    assoc.put(tree, std::make_shared<NodeTy>(TextRange({static_cast<int>(loc.a), static_cast<int>(loc.b)}), std::forward<Args>(args)...)); 
+    assoc.put(
+        tree, 
+        std::make_shared<NodeTy>(
+            TextRange({static_cast<int>(loc.a), static_cast<int>(loc.b)}), 
+            std::forward<Args>(args)...)); 
 };
 
 template <typename NodeTy>
-NodeTy *get(antlr4::tree::ParseTree *tree) 
+typename NodeTy::TypePtr getAsType(antlr4::tree::ParseTree *tree) 
 { 
-    return dynamic_cast<NodeTy *>(assoc.get(tree).get()); 
+    return std::dynamic_pointer_cast<NodeTy>(assoc.get(tree));
+};
+
+std::shared_ptr<NodeAST> get(antlr4::tree::ParseTree *tree) 
+{ 
+    return assoc.get(tree); 
+};
+
+void move_down(antlr4::tree::ParseTree *to, antlr4::tree::ParseTree *from) 
+{ 
+    assoc.put(to, assoc.get(from)); 
+};
+
+template <typename CtxTy>
+std::vector<std::shared_ptr<NodeAST>> collection(antlr4::tree::ParseTree *tree, std::vector<CtxTy> items)
+{
+    std::vector<std::shared_ptr<NodeAST>> nodes;
+    for (auto &item : items)
+    {
+        nodes.push_back(get(item));
+    }
+
+    return nodes;
 };
 
 } // @parser::members
 
 // Actual grammar start.
 main
-    : module EOF { CREATE(ModuleAST); } ;
+    : moduleBody EOF { NODE(ModuleAST, GET_AS(ModuleBlockAST, moduleBody)); } ;
 
-module
-    : moduleItem* ;
+moduleBody 
+    : moduleItem* { /*NODE(ModuleBlockAST, COLLECTION(moduleItem));*/ } ;
 
 moduleItem
-    : statementListItem 
+    : statementListItem { MOVE_DOWN(statementListItem); }
     ;
 
 statementListItem 
-    : statement
-    | declaration
+    : statement      { MOVE_DOWN(statement); }
+    | declaration    { MOVE_DOWN(declaration); }
     ;
 
 declaration 
-    : hoistableDeclaration
+    : hoistableDeclaration { MOVE_DOWN(hoistableDeclaration); }
     ;
 
 hoistableDeclaration
-    : functionDeclaration
+    : functionDeclaration { MOVE_DOWN(functionDeclaration); }
     ;    
 
 functionDeclaration
     : FUNCTION_KEYWORD bindingIdentifier? OPENPAREN_TOKEN formalParameters? CLOSEPAREN_TOKEN typeParameter? OPENBRACE_TOKEN functionBody CLOSEBRACE_TOKEN 
-        { CREATE(FunctionDeclarationAST, GET(IdentifierAST, bindingIdentifier)); } ;
+        { NODE(FunctionDeclarationAST, GET(bindingIdentifier)); } ;
 
 formalParameters
     : functionRestParameter
