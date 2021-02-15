@@ -195,11 +195,11 @@ initializer
     : EQUALS_TOKEN assignmentExpression { MOVE_DOWN(assignmentExpression); } ;  
 
 typeDeclaration
-    : ANY_KEYWORD       { NODE(TypeReferenceAST) }
-    | NUMBER_KEYWORD    { NODE(TypeReferenceAST) }
-    | BOOLEAN_KEYWORD   { NODE(TypeReferenceAST) }
-    | STRING_KEYWORD    { NODE(TypeReferenceAST) }
-    | BIGINT_KEYWORD    { NODE(TypeReferenceAST) } ;    
+    : ANY_KEYWORD       { NODE(TypeReferenceAST); }
+    | NUMBER_KEYWORD    { NODE(TypeReferenceAST); }
+    | BOOLEAN_KEYWORD   { NODE(TypeReferenceAST); }
+    | STRING_KEYWORD    { NODE(TypeReferenceAST); }
+    | BIGINT_KEYWORD    { NODE(TypeReferenceAST); } ;    
 
 functionRestParameter
     : DOTDOTDOT_TOKEN formalParameter 
