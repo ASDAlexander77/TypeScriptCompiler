@@ -70,22 +70,22 @@ namespace
 
         /// Public API: convert the AST for a TypeScript module (source file) to an MLIR
         /// Module operation.
-        mlir::ModuleOp mlirGen(TypeScriptParserANTLR::MainContext *module)
+        mlir::ModuleOp mlirGen(ModuleAST &module)
         {
             // We create an empty MLIR module and codegen functions one at a time and
             // add them to the module.
-            theModule = mlir::ModuleOp::create(loc(module), fileName);
+            theModule = mlir::ModuleOp::create(loc(module.getLoc()), fileName);
             builder.setInsertionPointToStart(theModule.getBody());
 
             declareAllFunctionDeclarations(module);
 
-            theModuleDOM.parseTree = module;
+            //theModuleDOM.parseTree = module;
 
             // Process generating here
             GenContext genContext = {0};
-            for (auto *declaration : module->declaration())
+            for (auto &statement : module)
             {
-                if (failed(mlirGen(declaration, genContext)))
+                if (failed(mlirGenStatement(*statement.get(), genContext)))
                 {
                     return nullptr;
                 }
@@ -104,6 +104,34 @@ namespace
             return theModule;
         }
 
+        mlir::LogicalResult declareAllFunctionDeclarations(ModuleAST &module)
+        {
+            // TODO: finish it
+            return mlir::success();
+        }
+
+        mlir::LogicalResult mlirGenStatement(NodeAST &statementAST, const GenContext &genContext)
+        {
+            // TODO:
+            if (auto *functionDeclarationAST = llvm::dyn_cast<FunctionDeclarationAST>(&statementAST))
+            {
+                /*
+                auto func = mlirGen(*functionDeclarationAST);
+                if (!func)
+                {
+                    return mlir::failed();
+                }
+                */
+            } 
+            else 
+            {
+                llvm_unreachable("unknown statement type");
+            }
+
+            return mlir::success();
+        }        
+
+        /*
         mlir::LogicalResult declareAllFunctionDeclarations(TypeScriptParserANTLR::MainContext *module)
         {
             auto unresolvedFunctions = -1;
@@ -148,7 +176,9 @@ namespace
 
             return mlir::success();
         }
+        */
 
+        /*
         mlir::LogicalResult mlirGen(TypeScriptParserANTLR::DeclarationContext *declarationAST, const GenContext &genContext)
         {
             if (auto *functionDeclaration = declarationAST->functionDeclaration())
@@ -472,32 +502,6 @@ namespace
                     param->SetReadWriteAccess();
                     declare(*param, paramValue, true);
                 }
-
-                // this is first or resolve it by "__count_params" name
-                //auto indexConstant = builder.create<mlir::ConstantIndexOp>(location, index);
-
-                // auto condValue = builder.create<mlir::CmpIOp>(location, mlir::CmpIPredicate::ult, countArgsValue, indexConstant);
-
-                // auto ifOp = builder.create<mlir::scf::IfOp>(location, condValue, false/*withElseRegion=*/);
-
-                // auto sp = builder.saveInsertionPoint();
-                // builder.setInsertionPointToStart(&ifOp.thenRegion().front());
-
-                // mlir::Value value;
-                // auto assignmentExpression = dynamic_cast<TypeScriptParserANTLR::AssignmentExpressionContext*>(paramInit);
-                // if (assignmentExpression)
-                // {
-                //     value = mlirGen(assignmentExpression, genContext);
-
-                // }
-                // else
-                // {
-                //     llvm_unreachable("unknown statement");
-                // }
-
-                // // save value into param
-
-                // builder.restoreInsertionPoint(sp);
             }
 
             for (auto *statementListItem : functionDeclarationAST->functionBody()->functionBodyItem())
@@ -987,6 +991,7 @@ namespace
 
             return getAnyType();
         }
+        */
 
         mlir::Type getStringType()
         {
@@ -1023,10 +1028,9 @@ namespace
 
     private:
         /// Helper conversion for a TypeScript AST location to an MLIR location.
-        mlir::Location loc(antlr4::tree::ParseTree *tree)
+        mlir::Location loc(const typescript::TextRange &loc)
         {
-            const antlr4::misc::Interval &loc = tree->getSourceInterval();
-            return builder.getFileLineColLoc(builder.getIdentifier(fileName), loc.a, loc.b);
+            return builder.getFileLineColLoc(builder.getIdentifier(fileName), loc.pos, loc.end);
         }
 
         /// A "module" matches a TypeScript source file: containing a list of functions.
@@ -1065,7 +1069,7 @@ namespace typescript
         typescript::TypeScriptLexerANTLR lexer(&input);
         antlr4::CommonTokenStream tokens(&lexer);
         typescript::TypeScriptParserANTLR parser(&tokens);
-        return MLIRGenImpl(context, fileName).mlirGen(parser.main());
+        return MLIRGenImpl(context, fileName).mlirGen(*parser.getModuleAST().get());
     }
 
 } // namespace typescript
