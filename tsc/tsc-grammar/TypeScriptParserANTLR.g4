@@ -189,17 +189,17 @@ formalParameter
         { NODE(ParameterDeclarationAST, GET_AS(IdentifierAST, IdentifierName), GET_AS(TypeReferenceAST, typeParameter), GET(initializer)); } ;    
 
 typeParameter
-    : COLON_TOKEN typeDeclaration ;    
+    : COLON_TOKEN typeDeclaration { MOVE_DOWN(typeDeclaration); } ;    
 
 initializer
-    : EQUALS_TOKEN assignmentExpression ;  
+    : EQUALS_TOKEN assignmentExpression { MOVE_DOWN(assignmentExpression); } ;  
 
 typeDeclaration
-    : ANY_KEYWORD 
-    | NUMBER_KEYWORD
-    | BOOLEAN_KEYWORD 
-    | STRING_KEYWORD
-    | BIGINT_KEYWORD ;    
+    : ANY_KEYWORD       { NODE(TypeReferenceAST) }
+    | NUMBER_KEYWORD    { NODE(TypeReferenceAST) }
+    | BOOLEAN_KEYWORD   { NODE(TypeReferenceAST) }
+    | STRING_KEYWORD    { NODE(TypeReferenceAST) }
+    | BIGINT_KEYWORD    { NODE(TypeReferenceAST) } ;    
 
 functionRestParameter
     : DOTDOTDOT_TOKEN formalParameter 

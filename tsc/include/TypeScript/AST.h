@@ -509,13 +509,17 @@ namespace typescript
     class TypeReferenceAST : public NodeAST
     {
         std::string typeName;
+        SyntaxKind typeKind;
     public:
         using TypePtr = std::shared_ptr<TypeReferenceAST>;
 
-        // TODO: remove it when finish
-        TypeReferenceAST(TextRange range, std::string typeName)
-            : NodeAST(SyntaxKind::Identifier, range), typeName(typeName) {}
+        TypeReferenceAST(TextRange range, SyntaxKind typeKind)
+            : NodeAST(SyntaxKind::Identifier, range), typeKind(typeKind) {}
 
+        TypeReferenceAST(TextRange range, std::string typeName)
+            : NodeAST(SyntaxKind::Identifier, range), typeKind(SyntaxKind::Unknown), typeName(typeName) {}
+
+        SyntaxKind getTypeKind() const { return typeKind; }
         const std::string& getTypeName() const { return typeName; }
 
         /// LLVM style RTTI
