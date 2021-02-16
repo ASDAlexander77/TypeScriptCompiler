@@ -64,6 +64,12 @@
                 return std::static_pointer_cast<NodeAST>(parse(_fld));    \
             }
 
+#define PASS_CHOICE_FIRST(fld)  \
+            if (auto _fld = _ctx->fld().front()) \
+            {   \
+                return std::static_pointer_cast<NodeAST>(parse(_fld));    \
+            }            
+
 #define MAKE_CHOICE_IF_TYPED(cond, ty)  \
             if (_ctx->cond()) \
             {   \
@@ -72,6 +78,12 @@
 
 #define MAKE_CHOICE_IF(cond, ty)  \
             if (_ctx->cond()) \
+            {   \
+                return std::static_pointer_cast<NodeAST>(std::make_shared<ty>(_ctx));    \
+            }                    
+
+#define MAKE_CHOICE_IF_ANY(cond, ty)  \
+            if (_ctx->cond().size() > 0) \
             {   \
                 return std::static_pointer_cast<NodeAST>(std::make_shared<ty>(_ctx));    \
             }                    
@@ -226,8 +238,8 @@ namespace typescript
     PASS_COLL(NodeAST, AssignmentExpressionContext);
 
     PASS_CHOICES(ExpressionContext)
-    //PASS_CHOICE(assignmentExpression)
-    //MAKE_CHOICE_IF(COMMA_TOKEN, CommaListExpressionAST)
+    MAKE_CHOICE_IF_ANY(COMMA_TOKEN, CommaListExpressionAST)
+    PASS_CHOICE_FIRST(assignmentExpression)
     PASS_CHOICE_END()
 
     PASS_FIELD_COLL(NodeAST, ArgumentsContext, expression)
@@ -557,8 +569,8 @@ namespace typescript
         using TypePtr = std::shared_ptr<CommaListExpressionAST>;
 
         CommaListExpressionAST(TypeScriptParserANTLR::ExpressionContext* expressionContext) 
-            : NodeAST(SyntaxKind::CommaListExpression, TextRange(expressionContext)),
-              expressions(parse(expressionContext->assignmentExpression())) {}     
+            : NodeAST(SyntaxKind::CommaListExpression, TextRange(expressionContext))/*,
+              expressions(parse(expressionContext->assignmentExpression()))*/ {}     
 
         CommaListExpressionAST(TextRange range, std::vector<NodeAST::TypePtr> expressions)
             : NodeAST(SyntaxKind::Parameters, range), expressions(expressions) {}
