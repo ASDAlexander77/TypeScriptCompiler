@@ -79,13 +79,15 @@ returnStatement
     : RETURN_KEYWORD expression? SEMICOLON_TOKEN ;
 
 expression
-    : assignmentExpression (COMMA_TOKEN assignmentExpression)* ;
+    : assignmentExpression
+    | assignmentExpression (COMMA_TOKEN assignmentExpression)* ;
     
 assignmentExpression
     : conditionalExpression ;   
 
 conditionalExpression
-    : shortCircuitExpression (QUESTION_TOKEN assignmentExpression COLON_TOKEN assignmentExpression)? ;
+    : shortCircuitExpression
+    | shortCircuitExpression QUESTION_TOKEN assignmentExpression COLON_TOKEN assignmentExpression ;
 
 shortCircuitExpression    
     : logicalORExpression ;
@@ -148,8 +150,11 @@ newExpression
     | NEW_KEYWORD newExpression ;
 
 callExpression
-    : memberExpression arguments
+    : coverCallExpressionAndAsyncArrowHead
     | callExpression arguments ;
+
+coverCallExpressionAndAsyncArrowHead
+    : memberExpression arguments ;    
 
 memberExpression    
     : primaryExpression
@@ -189,7 +194,7 @@ numericLiteral
     | HexBigIntegerLiteral ;    
 
 identifierReference
-    : IdentifierName ;
+    : identifier ;
 
 bindingIdentifier    
     : identifier ;
