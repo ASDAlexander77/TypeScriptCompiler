@@ -25,6 +25,8 @@
 #include "TypeScriptParserANTLR.h"
 #include "TypeScript/VisitorAST.h"
 
+#include "TypeScript/AST.h"
+
 #include <numeric>
 
 using namespace mlir::typescript;
@@ -66,6 +68,17 @@ namespace
         MLIRGenImpl(const mlir::MLIRContext &context, const llvm::StringRef &fileNameParam) : builder(&const_cast<mlir::MLIRContext &>(context))
         {
             fileName = fileNameParam;
+        }
+
+        mlir::ModuleOp mlirGen(TypeScriptParserANTLR::MainContext* module)
+        {
+            auto moduleAST = parse(module);
+            if (moduleAST)
+            {
+                return mlirGen(moduleAST);
+            }
+
+            return mlir::ModuleOp();
         }
 
         /// Public API: convert the AST for a TypeScript module (source file) to an MLIR
@@ -1076,7 +1089,7 @@ namespace typescript
         typescript::TypeScriptLexerANTLR lexer(&input);
         antlr4::CommonTokenStream tokens(&lexer);
         typescript::TypeScriptParserANTLR parser(&tokens);
-        return MLIRGenImpl(context, fileName).mlirGen(parser.getModuleAST());
+        return MLIRGenImpl(context, fileName).mlirGen(parser.main());
     }
 
 } // namespace typescript

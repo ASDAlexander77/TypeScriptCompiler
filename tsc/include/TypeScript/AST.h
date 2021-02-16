@@ -7,6 +7,7 @@
 #include <vector>
 #include <stack>
 
+#include "TypeScriptParserANTLR.h"
 #include "EnumsAST.h"
 
 namespace typescript
@@ -22,6 +23,133 @@ namespace typescript
             end = static_cast<int>(loc.b);
         }
     };
+
+    class NodeAST;
+    class IdentifierAST;
+    class TypeReferenceAST;
+    class ParameterDeclarationAST;
+    class ParametersDeclarationAST;
+    class FunctionDeclarationAST;
+    class ModuleBlockAST;
+    class ModuleAST;
+
+    template <typename Ty>
+    static std::vector<Ty> merge(std::vector<Ty> data, Ty item)
+    {
+        data.push_back(item);
+        return data;
+    }
+
+    // parsers
+    static std::shared_ptr<IdentifierAST> parse(TypeScriptParserANTLR::IdentifierContext* identifierContext) {
+        return identifierContext ? std::make_shared<IdentifierAST>(identifierContext) : nullptr;
+    } 
+
+    static std::shared_ptr<IdentifierAST> parse(TypeScriptParserANTLR::BindingIdentifierContext* bindingIdentifierContext) {
+        return bindingIdentifierContext ? parse(bindingIdentifierContext->identifier()) : nullptr;
+    } 
+
+    static std::shared_ptr<TypeReferenceAST> parse(TypeScriptParserANTLR::TypeDeclarationContext* typeDeclarationContext) {
+        return typeDeclarationContext ? std::make_shared<TypeReferenceAST>(typeDeclarationContext) : nullptr;
+    } 
+
+    static std::shared_ptr<TypeReferenceAST> parse(TypeScriptParserANTLR::TypeParameterContext* typeParameterContext) {
+        return typeParameterContext ? parse(typeParameterContext->typeDeclaration()) : nullptr;
+    } 
+
+    static std::shared_ptr<ParameterDeclarationAST> parse(TypeScriptParserANTLR::FormalParameterContext* formalParameterContext) {
+        return formalParameterContext ? std::make_shared<ParameterDeclarationAST>(formalParameterContext) : nullptr;
+    }  
+
+    static std::shared_ptr<ParameterDeclarationAST> parse(TypeScriptParserANTLR::FunctionRestParameterContext* functionRestParameterContext) {
+        return functionRestParameterContext ? std::make_shared<ParameterDeclarationAST>(functionRestParameterContext) : nullptr;
+    }      
+
+    static std::vector<std::shared_ptr<ParameterDeclarationAST>> parse(std::vector<TypeScriptParserANTLR::FormalParameterContext *> formalParameterItems) {
+        std::vector<std::shared_ptr<ParameterDeclarationAST>> items;
+        for (auto *item : formalParameterItems)
+        {
+            items.push_back(parse(item));
+        }
+
+        return items;
+    }    
+
+    static std::shared_ptr<ParametersDeclarationAST> parse(TypeScriptParserANTLR::FormalParametersContext* formalParameters) {
+        return formalParameters ? std::make_shared<ParametersDeclarationAST>(formalParameters) : nullptr;
+    } 
+
+    static std::shared_ptr<NodeAST> parse(TypeScriptParserANTLR::FunctionDeclarationContext* functionDeclaration) {
+        return functionDeclaration ? std::static_pointer_cast<NodeAST>(std::make_shared<FunctionDeclarationAST>(functionDeclaration)) : nullptr;
+    } 
+
+    static std::shared_ptr<NodeAST> parse(TypeScriptParserANTLR::HoistableDeclarationContext* hoistableDeclaration) {
+        if (hoistableDeclaration)
+        {
+            if (auto functionDeclaration = hoistableDeclaration->functionDeclaration())
+            {
+                return parse(functionDeclaration);
+            }
+        }
+
+        return nullptr;
+    }  
+
+    static std::shared_ptr<NodeAST> parse(TypeScriptParserANTLR::DeclarationContext* declaration) {
+        if (declaration)
+        {
+            if (auto hoistableDeclaration = declaration->hoistableDeclaration())
+            {
+                return parse(hoistableDeclaration);
+            }
+        }
+
+        return nullptr;
+    }  
+
+    static std::shared_ptr<NodeAST> parse(TypeScriptParserANTLR::StatementContext* statement) {
+        return nullptr;
+    }  
+
+
+    static std::shared_ptr<NodeAST> parse(TypeScriptParserANTLR::StatementListItemContext* statementListItem) {
+        if (statementListItem)
+        { 
+            if (auto statement = statementListItem->statement())
+            {
+                return parse(statement);
+            }
+
+            if (auto declaration = statementListItem->declaration())
+            {
+                return parse(declaration);
+            }
+        }
+
+        return nullptr;
+    }  
+
+    static std::shared_ptr<NodeAST> parse(TypeScriptParserANTLR::ModuleItemContext* moduleItem) {
+        return moduleItem ? parse(moduleItem->statementListItem()) : nullptr;
+    }          
+
+    static std::vector<std::shared_ptr<NodeAST>> parse(std::vector<TypeScriptParserANTLR::ModuleItemContext *> moduleItems) {
+        std::vector<std::shared_ptr<NodeAST>> items;
+        for (auto *item : moduleItems)
+        {
+            items.push_back(std::static_pointer_cast<NodeAST>(parse(item)));
+        }
+
+        return items;
+    }      
+
+    static std::shared_ptr<ModuleBlockAST> parse(TypeScriptParserANTLR::ModuleBodyContext* moduleBodyContext) {
+        return moduleBodyContext ? std::make_shared<ModuleBlockAST>(moduleBodyContext) : nullptr;
+    }
+
+    static std::shared_ptr<ModuleAST> parse(TypeScriptParserANTLR::MainContext* mainContext) {
+        return mainContext ? std::make_shared<ModuleAST>(mainContext) : nullptr;
+    }
 
     class NodeAST
     {
@@ -67,7 +195,10 @@ namespace typescript
     public:
         using TypePtr = std::shared_ptr<IdentifierAST>;
 
-        // TODO: remove it when finish
+        IdentifierAST(TypeScriptParserANTLR::IdentifierContext* identifierContext) 
+            : NodeAST(SyntaxKind::Identifier, TextRange(identifierContext)), 
+              name(identifierContext->IdentifierName() ? identifierContext->IdentifierName()->toString() : "") {}     
+
         IdentifierAST(TextRange range, std::string identifier)
             : NodeAST(SyntaxKind::Identifier, range), name(identifier) {}
 
@@ -87,6 +218,10 @@ namespace typescript
     public:
         using TypePtr = std::shared_ptr<TypeReferenceAST>;
 
+        TypeReferenceAST(TypeScriptParserANTLR::TypeDeclarationContext* typeDeclarationContext) 
+            : NodeAST(SyntaxKind::TypeReference, TextRange(typeDeclarationContext)), 
+              typeKind(parseKind(typeDeclarationContext)) {}   
+
         TypeReferenceAST(TextRange range, SyntaxKind typeKind)
             : NodeAST(SyntaxKind::Identifier, range), typeKind(typeKind) {}
 
@@ -100,7 +235,38 @@ namespace typescript
         static bool classof(const NodeAST *N) 
         {
             return N->getKind() == SyntaxKind::TypeReference;
-        }            
+        }           
+
+    private:
+        SyntaxKind parseKind(TypeScriptParserANTLR::TypeDeclarationContext* typeDeclarationContext)
+        {
+            if (auto anyKeyword = typeDeclarationContext->ANY_KEYWORD())
+            {
+                return SyntaxKind::AnyKeyword;
+            }
+
+            if (auto anyKeyword = typeDeclarationContext->NUMBER_KEYWORD())
+            {
+                return SyntaxKind::NumberKeyword;
+            }
+
+            if (auto anyKeyword = typeDeclarationContext->BOOLEAN_KEYWORD())
+            {
+                return SyntaxKind::BooleanKeyword;
+            }
+
+            if (auto anyKeyword = typeDeclarationContext->STRING_KEYWORD())
+            {
+                return SyntaxKind::StringKeyword;
+            }            
+
+            if (auto anyKeyword = typeDeclarationContext->BIGINT_KEYWORD())
+            {
+                return SyntaxKind::BigIntKeyword;
+            }         
+
+            llvm_unreachable("SyntaxKind is unknown");        
+        }
     };    
 
     class ParameterDeclarationAST : public NodeAST
@@ -113,7 +279,17 @@ namespace typescript
     public:
         using TypePtr = std::shared_ptr<ParameterDeclarationAST>;
 
-        // TODO: remove it when finish
+        ParameterDeclarationAST(TypeScriptParserANTLR::FormalParameterContext* formalParameterContext) 
+            : NodeAST(SyntaxKind::Parameter, TextRange(formalParameterContext)),
+              identifier(std::make_shared<IdentifierAST>(formalParameterContext->IdentifierName(), formalParameterContext->IdentifierName()->toString())),
+              type(parse(formalParameterContext->typeParameter())) {}   
+
+        ParameterDeclarationAST(TypeScriptParserANTLR::FunctionRestParameterContext* functionRestParameterContext) 
+            : ParameterDeclarationAST(functionRestParameterContext->formalParameter()) 
+        {
+            dotdotdot = true;
+        }   
+
         ParameterDeclarationAST(TextRange range, IdentifierAST::TypePtr identifier, TypeReferenceAST::TypePtr type, NodeAST::TypePtr initialize)
             : NodeAST(SyntaxKind::FunctionDeclaration, range), identifier(identifier), type(type), initializer(initializer) {}
 
@@ -137,7 +313,10 @@ namespace typescript
     public:
         using TypePtr = std::shared_ptr<ParametersDeclarationAST>;
 
-        // TODO: remove it when finish
+        ParametersDeclarationAST(TypeScriptParserANTLR::FormalParametersContext* formalParametersContext) 
+            : NodeAST(SyntaxKind::Parameters, TextRange(formalParametersContext)),
+              parameters(merge(parse(formalParametersContext->formalParameter()), parse(formalParametersContext->functionRestParameter()))) {}     
+
         ParametersDeclarationAST(TextRange range, std::vector<ParameterDeclarationAST::TypePtr> parameters)
             : NodeAST(SyntaxKind::Parameters, range), parameters(parameters) {}
 
@@ -152,14 +331,19 @@ namespace typescript
     {
         IdentifierAST::TypePtr identifier;
         ParametersDeclarationAST::TypePtr parameters;
-        TypeReferenceAST::TypePtr typeReference;
+        NodeAST::TypePtr typeParameter;
 
     public:
         using TypePtr = std::shared_ptr<FunctionDeclarationAST>;
 
-        // TODO: remove it when finish
-        FunctionDeclarationAST(TextRange range, IdentifierAST::TypePtr identifier, ParametersDeclarationAST::TypePtr parameters, TypeReferenceAST::TypePtr typeReference)
-            : NodeAST(SyntaxKind::FunctionDeclaration, range), identifier(identifier), parameters(parameters), typeReference(typeReference) {}
+        FunctionDeclarationAST(TypeScriptParserANTLR::FunctionDeclarationContext* functionDeclarationContext) 
+            : NodeAST(SyntaxKind::FunctionDeclaration, TextRange(functionDeclarationContext)), 
+              identifier(parse(functionDeclarationContext->bindingIdentifier())), 
+              parameters(parse(functionDeclarationContext->formalParameters())), 
+              typeParameter(parse(functionDeclarationContext->typeParameter())) {}     
+              
+        FunctionDeclarationAST(TextRange range, IdentifierAST::TypePtr identifier, ParametersDeclarationAST::TypePtr parameters, NodeAST::TypePtr typeParameter)
+            : NodeAST(SyntaxKind::FunctionDeclaration, range), identifier(identifier), parameters(parameters), typeParameter(typeParameter) {}
 
         const IdentifierAST::TypePtr& getIdentifier() const { return identifier; }
         const ParametersDeclarationAST::TypePtr& getParameters() const { return parameters; }
@@ -177,6 +361,10 @@ namespace typescript
 
     public:
         using TypePtr = std::shared_ptr<ModuleBlockAST>;
+
+        ModuleBlockAST(TypeScriptParserANTLR::ModuleBodyContext* moduleBodyContext) 
+            : NodeAST(SyntaxKind::ModuleBlock, TextRange(moduleBodyContext)), 
+              items(parse(moduleBodyContext->moduleItem())) {}        
 
         ModuleBlockAST(TextRange range, std::vector<NodeAST::TypePtr> items)
             : NodeAST(SyntaxKind::ModuleBlock, range), items(items) {}
@@ -198,22 +386,14 @@ namespace typescript
         using TypePtr = std::shared_ptr<ModuleAST>;
 
         ModuleAST(TypeScriptParserANTLR::MainContext* mainContext) 
-            : NodeAST(SyntaxKind::ModuleDeclaration, TextRange(mainContext)) {}
+            : NodeAST(SyntaxKind::ModuleDeclaration, TextRange(mainContext)), 
+              block(parse(mainContext->moduleBody())) {}
 
         ModuleAST(TextRange range, ModuleBlockAST::TypePtr block)
             : NodeAST(SyntaxKind::ModuleDeclaration, range), block(block) {}
 
         auto begin() -> decltype(block.get()->getItems().begin()) { return block.get()->getItems().begin(); }
         auto end() -> decltype(block.get()->getItems().end()) { return block.get()->getItems().end(); }
-
-        TypePtr parse(TypeScriptParserANTLR::MainContext* mainContext) {
-            if (mainContext)
-            {
-                return std::make_shared<ModuleAST>(mainContext);
-            }
-
-            return nullptr;
-        }
 
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
