@@ -10,6 +10,27 @@
 #include "TypeScriptParserANTLR.h"
 #include "EnumsAST.h"
 
+#define MAKE(ty, ctx)  \
+    static std::shared_ptr<ty> parse(TypeScriptParserANTLR::ctx* _ctx) { \
+        return _ctx ? std::make_shared<ty>(_ctx) : nullptr; \
+    }
+
+#define PARSE(ty, ctx, fld)  \
+    static std::shared_ptr<ty> parse(TypeScriptParserANTLR::ctx* _ctx) { \
+        return _ctx ? parse(_ctx->fld()) : nullptr;  \
+    } 
+
+#define PARSE_COLL(ty, ctx)  \
+    static std::vector<std::shared_ptr<ty>> parse(std::vector<TypeScriptParserANTLR::ctx *> _ctx) { \
+        std::vector<std::shared_ptr<ty>> items; \
+        for (auto *item : _ctx) \
+        {   \
+            items.push_back(std::static_pointer_cast<ty>(parse(item)));   \
+        }   \
+    \
+        return items;   \
+    } 
+
 namespace typescript
 {
     struct TextRange
@@ -40,55 +61,30 @@ namespace typescript
         return data;
     }
 
-    // parsers
-    static std::shared_ptr<IdentifierAST> parse(TypeScriptParserANTLR::IdentifierContext* identifierContext) {
-        return identifierContext ? std::make_shared<IdentifierAST>(identifierContext) : nullptr;
-    } 
+    MAKE(IdentifierAST, IdentifierContext)
 
-    static std::shared_ptr<IdentifierAST> parse(TypeScriptParserANTLR::BindingIdentifierContext* bindingIdentifierContext) {
-        return bindingIdentifierContext ? parse(bindingIdentifierContext->identifier()) : nullptr;
-    } 
+    PARSE(IdentifierAST, BindingIdentifierContext, identifier)
 
-    static std::shared_ptr<TypeReferenceAST> parse(TypeScriptParserANTLR::TypeDeclarationContext* typeDeclarationContext) {
-        return typeDeclarationContext ? std::make_shared<TypeReferenceAST>(typeDeclarationContext) : nullptr;
-    } 
+    MAKE(TypeReferenceAST, TypeDeclarationContext)    
 
-    static std::shared_ptr<TypeReferenceAST> parse(TypeScriptParserANTLR::TypeParameterContext* typeParameterContext) {
-        return typeParameterContext ? parse(typeParameterContext->typeDeclaration()) : nullptr;
-    } 
+    PARSE(TypeReferenceAST, TypeParameterContext, typeDeclaration)
 
-    static std::shared_ptr<ParameterDeclarationAST> parse(TypeScriptParserANTLR::FormalParameterContext* formalParameterContext) {
-        return formalParameterContext ? std::make_shared<ParameterDeclarationAST>(formalParameterContext) : nullptr;
-    }  
+    MAKE(ParameterDeclarationAST, FormalParameterContext)    
 
-    static std::shared_ptr<ParameterDeclarationAST> parse(TypeScriptParserANTLR::FunctionRestParameterContext* functionRestParameterContext) {
-        return functionRestParameterContext ? std::make_shared<ParameterDeclarationAST>(functionRestParameterContext) : nullptr;
-    }      
+    MAKE(ParameterDeclarationAST, FunctionRestParameterContext)    
 
-    static std::vector<std::shared_ptr<ParameterDeclarationAST>> parse(std::vector<TypeScriptParserANTLR::FormalParameterContext *> formalParameterItems) {
-        std::vector<std::shared_ptr<ParameterDeclarationAST>> items;
-        for (auto *item : formalParameterItems)
-        {
-            items.push_back(parse(item));
-        }
+    PARSE_COLL(ParameterDeclarationAST, FormalParameterContext)
 
-        return items;
-    }    
+    MAKE(ParametersDeclarationAST, FormalParametersContext)    
 
-    static std::shared_ptr<ParametersDeclarationAST> parse(TypeScriptParserANTLR::FormalParametersContext* formalParameters) {
-        return formalParameters ? std::make_shared<ParametersDeclarationAST>(formalParameters) : nullptr;
-    } 
-
-    static std::shared_ptr<NodeAST> parse(TypeScriptParserANTLR::FunctionDeclarationContext* functionDeclaration) {
-        return functionDeclaration ? std::static_pointer_cast<NodeAST>(std::make_shared<FunctionDeclarationAST>(functionDeclaration)) : nullptr;
-    } 
+    MAKE(FunctionDeclarationAST, FunctionDeclarationContext)    
 
     static std::shared_ptr<NodeAST> parse(TypeScriptParserANTLR::HoistableDeclarationContext* hoistableDeclaration) {
         if (hoistableDeclaration)
         {
             if (auto functionDeclaration = hoistableDeclaration->functionDeclaration())
             {
-                return parse(functionDeclaration);
+                return std::static_pointer_cast<NodeAST>(parse(functionDeclaration));
             }
         }
 
@@ -129,27 +125,13 @@ namespace typescript
         return nullptr;
     }  
 
-    static std::shared_ptr<NodeAST> parse(TypeScriptParserANTLR::ModuleItemContext* moduleItem) {
-        return moduleItem ? parse(moduleItem->statementListItem()) : nullptr;
-    }          
+    PARSE(NodeAST, ModuleItemContext, statementListItem)  
+   
+    PARSE_COLL(NodeAST, ModuleItemContext)
 
-    static std::vector<std::shared_ptr<NodeAST>> parse(std::vector<TypeScriptParserANTLR::ModuleItemContext *> moduleItems) {
-        std::vector<std::shared_ptr<NodeAST>> items;
-        for (auto *item : moduleItems)
-        {
-            items.push_back(std::static_pointer_cast<NodeAST>(parse(item)));
-        }
+    MAKE(ModuleBlockAST, ModuleBodyContext)    
 
-        return items;
-    }      
-
-    static std::shared_ptr<ModuleBlockAST> parse(TypeScriptParserANTLR::ModuleBodyContext* moduleBodyContext) {
-        return moduleBodyContext ? std::make_shared<ModuleBlockAST>(moduleBodyContext) : nullptr;
-    }
-
-    static std::shared_ptr<ModuleAST> parse(TypeScriptParserANTLR::MainContext* mainContext) {
-        return mainContext ? std::make_shared<ModuleAST>(mainContext) : nullptr;
-    }
+    MAKE(ModuleAST, MainContext)    
 
     class NodeAST
     {
