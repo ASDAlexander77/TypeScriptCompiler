@@ -121,6 +121,19 @@ namespace
             return mlir::success();
         }
 
+        mlir::LogicalResult mlirGen(BlockAST::TypePtr blockAST, const GenContext &genContext)
+        {
+            for (auto &statement : *blockAST.get())
+            {
+                if (failed(mlirGenStatement(statement, genContext)))
+                {
+                    return mlir::failure();
+                }
+            }
+
+            return mlir::success();
+        }        
+
         mlir::LogicalResult mlirGenStatement(NodeAST::TypePtr statementAST, const GenContext &genContext)
         {
             // TODO:
@@ -485,23 +498,10 @@ namespace
                 }
             }
 
-            /*
-            for (auto *statementListItem : functionDeclarationAST->functionBody()->functionBodyItem())
+            if (failed(mlirGen(functionDeclarationAST->getFunctionBody(), genContext)))
             {
-                if (auto *statement = statementListItem->statement())
-                {
-                    mlirGen(statement, genContext);
-                }
-                else if (auto *declaration = statementListItem->declaration())
-                {
-                    mlirGen(declaration, genContext);
-                }
-                else
-                {
-                    llvm_unreachable("unknown statement");
-                }
+                return returnType;
             }
-            */
 
             // add return
             mlir::ReturnOp returnOp;

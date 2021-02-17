@@ -80,7 +80,7 @@
 #define PASS_CHOICE_END()  \
         } \
         \
-        return nullptr; \
+        llvm_unreachable("AST is not implemented"); \
     } 
 
 namespace typescript
@@ -153,6 +153,7 @@ namespace typescript
 
     PASS_CHOICES(NumericLiteralContext)
     MAKE_CHOICE_IF(DecimalLiteral, NumericLiteralAST)
+    MAKE_CHOICE_IF(DecimalIntegerLiteral, NumericLiteralAST)
     PASS_CHOICE_END()    
 
     PASS_CHOICES(LiteralContext)
@@ -316,6 +317,9 @@ namespace typescript
         // TODO: remove it when finish
         BlockAST(TextRange range, std::vector<NodeAST::TypePtr> items)
             : NodeAST(SyntaxKind::Block, range), items(items) {}
+
+        auto begin() -> decltype(items.begin()) { return items.begin(); }
+        auto end() -> decltype(items.end()) { return items.end(); }    
 
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
@@ -725,6 +729,7 @@ namespace typescript
         const IdentifierAST::TypePtr& getIdentifier() const { return identifier; }
         const ParametersDeclarationAST::TypePtr& getParameters() const { return parameters; }
         const TypeReferenceAST::TypePtr& getTypeParameter() const { return typeParameter; }
+        const BlockAST::TypePtr& getFunctionBody() const { return functionBody; }
 
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
@@ -749,6 +754,9 @@ namespace typescript
 
         const std::vector<NodeAST::TypePtr>& getItems() const { return items; }
 
+        auto begin() -> decltype(items.begin()) { return items.begin(); }
+        auto end() -> decltype(items.end()) { return items.end(); }        
+
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
         {
@@ -770,8 +778,8 @@ namespace typescript
         ModuleAST(TextRange range, ModuleBlockAST::TypePtr block)
             : NodeAST(SyntaxKind::ModuleDeclaration, range), block(block) {}
 
-        auto begin() -> decltype(block.get()->getItems().begin()) { return block.get()->getItems().begin(); }
-        auto end() -> decltype(block.get()->getItems().end()) { return block.get()->getItems().end(); }
+        auto begin() -> decltype(block.get()->begin()) { return block.get()->begin(); }
+        auto end() -> decltype(block.get()->end()) { return block.get()->end(); }
 
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
