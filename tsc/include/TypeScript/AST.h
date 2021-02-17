@@ -635,6 +635,7 @@ namespace typescript
         IdentifierAST::TypePtr identifier;
         TypeReferenceAST::TypePtr type;
         NodeAST::TypePtr initializer;
+        bool isOptional;
         bool dotdotdot;
 
     public:
@@ -644,7 +645,8 @@ namespace typescript
             : NodeAST(SyntaxKind::Parameter, TextRange(formalParameterContext)),
               identifier(std::make_shared<IdentifierAST>(formalParameterContext->IdentifierName(), formalParameterContext->IdentifierName()->toString())),
               type(parse(formalParameterContext->typeParameter())),
-              initializer(parse(formalParameterContext->initializer())) {}   
+              initializer(parse(formalParameterContext->initializer())),
+              isOptional(!!formalParameterContext->QUESTION_TOKEN()) {}   
 
         ParameterDeclarationAST(TypeScriptParserANTLR::FunctionRestParameterContext* functionRestParameterContext) 
             : ParameterDeclarationAST(functionRestParameterContext->formalParameter()) 
@@ -658,7 +660,8 @@ namespace typescript
         const IdentifierAST::TypePtr& getIdentifier() const { return identifier; }
         const TypeReferenceAST::TypePtr& getType() const { return type; }
         const NodeAST::TypePtr& getInitializer() const { return initializer; }
-        bool getDotDotDot() { return dotdotdot; }
+        bool getIsOptional() const { return isOptional; }
+        bool getDotDotDot() const { return dotdotdot; }
         void setDotDotDot(bool val) { dotdotdot = val; }
 
         /// LLVM style RTTI
@@ -682,6 +685,8 @@ namespace typescript
         ParametersDeclarationAST(TextRange range, std::vector<ParameterDeclarationAST::TypePtr> parameters)
             : NodeAST(SyntaxKind::Parameters, range), parameters(parameters) {}
 
+        const std::vector<ParameterDeclarationAST::TypePtr>& getParameters() const { return parameters; }
+
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
         {
@@ -693,7 +698,7 @@ namespace typescript
     {
         IdentifierAST::TypePtr identifier;
         ParametersDeclarationAST::TypePtr parameters;
-        NodeAST::TypePtr typeParameter;
+        TypeReferenceAST::TypePtr typeParameter;
 
     public:
         using TypePtr = std::shared_ptr<FunctionDeclarationAST>;
@@ -704,11 +709,12 @@ namespace typescript
               parameters(parse(functionDeclarationContext->formalParameters())), 
               typeParameter(parse(functionDeclarationContext->typeParameter())) {}     
               
-        FunctionDeclarationAST(TextRange range, IdentifierAST::TypePtr identifier, ParametersDeclarationAST::TypePtr parameters, NodeAST::TypePtr typeParameter)
+        FunctionDeclarationAST(TextRange range, IdentifierAST::TypePtr identifier, ParametersDeclarationAST::TypePtr parameters, TypeReferenceAST::TypePtr typeParameter)
             : NodeAST(SyntaxKind::FunctionDeclaration, range), identifier(identifier), parameters(parameters), typeParameter(typeParameter) {}
 
         const IdentifierAST::TypePtr& getIdentifier() const { return identifier; }
         const ParametersDeclarationAST::TypePtr& getParameters() const { return parameters; }
+        const TypeReferenceAST::TypePtr& getTypeParameter() const { return typeParameter; }
 
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 

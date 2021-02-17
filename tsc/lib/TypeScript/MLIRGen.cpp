@@ -92,8 +92,6 @@ namespace
 
             declareAllFunctionDeclarations(module);
 
-            //theModuleDOM.parseTree = module;
-
             // Process generating here
             GenContext genContext = {0};
             for (auto &statement : *module.get())
@@ -140,6 +138,11 @@ namespace
 
             return mlir::success();
         }        
+
+        mlir::Value mlirGenExpression(NodeAST::TypePtr expressionAST, const GenContext &genContext)
+        {
+            llvm_unreachable("unknown expression type");
+        }      
 
         /*
         mlir::LogicalResult declareAllFunctionDeclarations(TypeScriptParserANTLR::MainContext *module)
@@ -188,59 +191,33 @@ namespace
         }
         */
 
-        /*
-        mlir::LogicalResult mlirGen(TypeScriptParserANTLR::DeclarationContext *declarationAST, const GenContext &genContext)
-        {
-            if (auto *functionDeclaration = declarationAST->functionDeclaration())
-            {
-                mlirGen(functionDeclaration, genContext);
-            }
-            else
-            {
-                llvm_unreachable("unknown statement");
-            }
-
-            return mlir::success();
-        }
-
-        std::vector<std::unique_ptr<FunctionParamDOM>> mlirGen(TypeScriptParserANTLR::FormalParametersContext *formalParametersContextAST,
+        std::vector<std::shared_ptr<FunctionParamDOM>> mlirGen(ParametersDeclarationAST::TypePtr parametersContextAST,
                                                                const GenContext &genContext)
         {
-            std::vector<std::unique_ptr<FunctionParamDOM>> params;
-            if (!formalParametersContextAST)
+            std::vector<std::shared_ptr<FunctionParamDOM>> params;
+            if (!parametersContextAST)
             {
                 return params;
             }
 
-            auto formalParams = formalParametersContextAST->formalParameter();
+            auto formalParams = parametersContextAST->getParameters();
 
             // add extra parameter to send number of parameters
             auto anyOptionalParam = std::find_if(formalParams.begin(), formalParams.end(), [](auto &param) {
-                                        if (param->QUESTION_TOKEN())
-                                        {
-                                            return true;
-                                        }
-
-                                        auto initializer = param->initializer();
-                                        if (!initializer)
-                                        {
-                                            return false;
-                                        }
-
-                                        return !!initializer->assignmentExpression();
+                                        return param->getIsOptional() || !!param->getInitializer();
                                     }) != formalParams.end();
 
             if (anyOptionalParam)
             {
-                params.push_back(std::make_unique<FunctionParamDOM>(nullptr, "__count_params", builder.getI32Type(), false));
+                params.push_back(std::make_shared<FunctionParamDOM>("__count_params", builder.getI32Type(), loc(parametersContextAST->getLoc()), false));
             }
 
             for (auto &arg : formalParams)
             {
-                auto name = arg->IdentifierName()->getText();
+                auto name = arg->getIdentifier()->getName();
                 mlir::Type type;
-                auto isOptional = !!arg->QUESTION_TOKEN();
-                auto typeParameter = arg->typeParameter();
+                auto isOptional = arg->getIsOptional();
+                auto typeParameter = arg->getType();
                 if (typeParameter)
                 {
                     auto type = getType(typeParameter);
@@ -251,59 +228,50 @@ namespace
                 }
 
                 // process init value
-                tree::ParseTree *initValueTree = nullptr;
-                auto initializer = arg->initializer();
+                auto initializer = arg->getInitializer();
                 if (initializer)
                 {
-                    auto assignmentExpression = initializer->assignmentExpression();
-                    if (assignmentExpression)
+                    // we need to add temporary block
+                    auto tempFuncType = builder.getFunctionType(llvm::None, llvm::None);
+                    auto tempFuncOp = mlir::FuncOp::create(loc(initializer->getLoc()), StringRef(name), tempFuncType);
+                    auto &entryBlock = *tempFuncOp.addEntryBlock();
+
+                    auto insertPoint = builder.saveInsertionPoint();
+                    builder.setInsertionPointToStart(&entryBlock);
+
+                    auto initValue = mlirGenExpression(initializer, genContext);
+                    if (initValue)
                     {
-                        initValueTree = assignmentExpression;
-
-                        // we need to add temporary block
-                        auto tempFuncType = builder.getFunctionType(llvm::None, llvm::None);
-                        auto tempFuncOp = mlir::FuncOp::create(loc(initializer), StringRef(name), tempFuncType);
-                        auto &entryBlock = *tempFuncOp.addEntryBlock();
-
-                        auto insertPoint = builder.saveInsertionPoint();
-                        builder.setInsertionPointToStart(&entryBlock);
-
-                        auto initValue = mlirGen(assignmentExpression, genContext);
-                        if (initValue)
+                        // TODO: set type if not provided
+                        isOptional = true;
+                        if (!type)
                         {
-                            // TODO: set type if not provided
-                            isOptional = true;
-                            if (!type)
-                            {
-                                auto baseType = initValue.getType();
-                                //type = OptionalType::get(baseType);
-                                type = baseType;
-                            }
-
-                            // remove generated node as we need to detect type only
-                            initValue.getDefiningOp()->erase();
+                            auto baseType = initValue.getType();
+                            //type = OptionalType::get(baseType);
+                            type = baseType;
                         }
 
-                        // remove temp block
-                        builder.restoreInsertionPoint(insertPoint);
-                        entryBlock.erase();
+                        // remove generated node as we need to detect type only
+                        initValue.getDefiningOp()->erase();
                     }
+
+                    // remove temp block
+                    builder.restoreInsertionPoint(insertPoint);
+                    entryBlock.erase();
                 }
 
-                params.push_back(std::make_unique<FunctionParamDOM>(arg, name, type, isOptional, initValueTree));
+                params.push_back(std::make_shared<FunctionParamDOM>(name, type, loc(arg->getLoc()), isOptional, initializer));
             }
 
             return params;
         }
-        */
 
-        std::tuple<mlir::FuncOp, FunctionPrototypeDOM::TypePtr, bool> mlirGenFunctionPrototype(FunctionDeclarationAST::TypePtr functionDeclarationAST,
-                                                                                               const GenContext &genContext)
+        std::tuple<mlir::FuncOp, FunctionPrototypeDOM::TypePtr, bool> mlirGenFunctionPrototype(
+            FunctionDeclarationAST::TypePtr functionDeclarationAST, const GenContext &genContext)
         {
-            /*
-            auto location = loc(functionDeclarationAST);
+            auto location = loc(functionDeclarationAST->getLoc());
 
-            std::vector<FunctionParamDOM::TypePtr> params = mlirGen(functionDeclarationAST->formalParameters(), genContext);
+            std::vector<FunctionParamDOM::TypePtr> params = mlirGen(functionDeclarationAST->getParameters(), genContext);
             SmallVector<mlir::Type> argTypes;
             auto argNumber = 0;
             auto argOptionalFrom = -1;
@@ -326,10 +294,10 @@ namespace
             }
 
             std::string name;
-            auto *identifier = functionDeclarationAST->IdentifierName();
+            auto identifier = functionDeclarationAST->getIdentifier();
             if (identifier)
             {
-                name = identifier->getText();
+                name = identifier->getName();
             }
             else
             {
@@ -337,10 +305,10 @@ namespace
                 // __func+location
             }
 
-            auto funcProto = std::make_unique<FunctionPrototypeDOM>(functionDeclarationAST, name, std::move(params));
+            auto funcProto = std::make_shared<FunctionPrototypeDOM>(name, params);
 
             mlir::FunctionType funcType;
-            if (auto *typeParameter = functionDeclarationAST->typeParameter())
+            if (auto typeParameter = functionDeclarationAST->getTypeParameter())
             {
                 auto returnType = getType(typeParameter);
                 funcType = builder.getFunctionType(argTypes, returnType);
@@ -365,17 +333,16 @@ namespace
             auto funcOp = mlir::FuncOp::create(location, StringRef(name), funcType, ArrayRef<mlir::NamedAttribute>(attrs));
 
             return std::make_tuple(funcOp, std::move(funcProto), true);
-            */
         }
 
-        /*
-        mlir::Type getReturnType(TypeScriptParserANTLR::FunctionDeclarationContext *functionDeclarationAST, std::string name,
+        mlir::Type getReturnType(FunctionDeclarationAST::TypePtr functionDeclarationAST, std::string name,
                                  const SmallVector<mlir::Type> &argTypes, const FunctionPrototypeDOM::TypePtr &funcProto, const GenContext &genContext)
         {
             mlir::Type returnType;
 
             // check if we have any return with expration
             auto hasReturnStatementWithExpr = false;
+            /*
             FilterVisitorAST<TypeScriptParserANTLR::ReturnStatementContext> visitorAST1(
                 [&](auto *retStatement) {
                     if (auto *expression = retStatement->expression())
@@ -384,6 +351,7 @@ namespace
                     }
                 });
             visitorAST1.visit(functionDeclarationAST);
+            */
 
             if (!hasReturnStatementWithExpr)
             {
@@ -391,7 +359,7 @@ namespace
             }
 
             auto partialDeclFuncType = builder.getFunctionType(argTypes, llvm::None);
-            auto dummyFuncOp = mlir::FuncOp::create(loc(functionDeclarationAST), StringRef(name), partialDeclFuncType);
+            auto dummyFuncOp = mlir::FuncOp::create(loc(functionDeclarationAST->getLoc()), StringRef(name), partialDeclFuncType);
 
             // simulate scope
             SymbolTableScopeT varScope(symbolTable);
@@ -399,11 +367,9 @@ namespace
             returnType = mlirGenFunctionBody(functionDeclarationAST, dummyFuncOp, funcProto, genContext, true);
             return returnType;
         }
-        */
 
         mlir::LogicalResult mlirGen(FunctionDeclarationAST::TypePtr functionDeclarationAST, const GenContext &genContext)
         {
-            /*
             SymbolTableScopeT varScope(symbolTable);
             auto funcOpWithFuncProto = mlirGenFunctionPrototype(functionDeclarationAST, genContext);
 
@@ -425,8 +391,6 @@ namespace
 
             theModule.push_back(funcOp);
             functionMap.insert({funcOp.getName(), funcOp});
-            theModuleDOM.getFunctionProtos().push_back(std::move(funcProto));
-            */
 
             return mlir::success();
         }
@@ -434,7 +398,6 @@ namespace
         mlir::Type mlirGenFunctionBody(FunctionDeclarationAST::TypePtr functionDeclarationAST, mlir::FuncOp funcOp, 
             FunctionPrototypeDOM::TypePtr funcProto, const GenContext &genContext, bool dummyRun = false)
         {
-            /*
             mlir::Type returnType;
 
             auto &entryBlock = *funcOp.addEntryBlock();
@@ -460,7 +423,7 @@ namespace
                 index++;
 
                 // skip __const_params, it is not real param
-                if (!param->getParseTree())
+                if (param->getName() == "__const_params")
                 {
                     continue;
                 }
@@ -469,10 +432,10 @@ namespace
 
                 // alloc all args
                 // process optional parameters
-                if (param->getIsOptional() || param->getInitVal())
+                if (param->getIsOptional() || param->hasInitValue())
                 {
                     // process init expression
-                    auto location = loc(param->getInitVal());
+                    auto location = loc(param->getInitValue()->getLoc());
 
                     auto countArgsValue = arguments[0];
 
@@ -492,10 +455,10 @@ namespace
                     builder.setInsertionPointToStart(defValueBlock);
 
                     mlir::Value defaultValue;
-                    auto assignmentExpression2 = dynamic_cast<TypeScriptParserANTLR::AssignmentExpressionContext *>(param->getInitVal());
-                    if (assignmentExpression2)
+                    auto initExpression = param->getInitValue();
+                    if (initExpression)
                     {
-                        defaultValue = mlirGen(assignmentExpression2, genContext);
+                        defaultValue = mlirGenExpression(initExpression, genContext);
                     }
                     else
                     {
@@ -509,7 +472,7 @@ namespace
                 else
                 {
                     paramValue = builder.create<ParamOp>(
-                        loc(param->getParseTree()), 
+                        param->getLoc(), 
                         mlir::MemRefType::get(ArrayRef<int64_t>(), param->getType()), 
                         arguments[index]);
                 }
@@ -522,6 +485,7 @@ namespace
                 }
             }
 
+            /*
             for (auto *statementListItem : functionDeclarationAST->functionBody()->functionBodyItem())
             {
                 if (auto *statement = statementListItem->statement())
@@ -537,6 +501,7 @@ namespace
                     llvm_unreachable("unknown statement");
                 }
             }
+            */
 
             // add return
             mlir::ReturnOp returnOp;
@@ -545,6 +510,7 @@ namespace
                 returnOp = dyn_cast<mlir::ReturnOp>(entryBlock.back());
             }
 
+            /*
             if (!returnOp)
             {
                 returnOp = builder.create<mlir::ReturnOp>(loc(functionDeclarationAST->functionBody()));
@@ -554,6 +520,7 @@ namespace
                 // Otherwise, if this return operation has an operand then add a result to the function.
                 funcOp.setType(builder.getFunctionType(funcOp.getType().getInputs(), *returnOp.operand_type_begin()));
             }
+            */
 
             if (returnOp.getNumOperands() > 0)
             {
@@ -566,7 +533,6 @@ namespace
             }
 
             return returnType;
-            */
         }
 
         /*
@@ -979,39 +945,29 @@ namespace
             // TODO:
             llvm_unreachable("not implemented");
         }
+        */
 
-        mlir::Type getType(TypeScriptParserANTLR::TypeParameterContext *typeParameterAST)
+        mlir::Type getType(TypeReferenceAST::TypePtr typeReferenceAST)
         {
-            if (auto *typeDeclaration = typeParameterAST->typeDeclaration())
-            {
-                return getType(typeDeclaration);
-            }
-
-            return getAnyType();
-        }
-
-        mlir::Type getType(TypeScriptParserANTLR::TypeDeclarationContext *typeDeclarationAST)
-        {
-            if (auto boolean = typeDeclarationAST->BOOLEAN_KEYWORD())
+            if (typeReferenceAST->getTypeKind() == SyntaxKind::BooleanKeyword)
             {
                 return builder.getI1Type();
             }
-            else if (auto boolean = typeDeclarationAST->NUMBER_KEYWORD())
+            else if (typeReferenceAST->getTypeKind() == SyntaxKind::NumberKeyword)
             {
                 return builder.getF32Type();
             }
-            else if (auto boolean = typeDeclarationAST->BIGINT_KEYWORD())
+            else if (typeReferenceAST->getTypeKind() == SyntaxKind::BigIntKeyword)
             {
                 return builder.getI64Type();
             }
-            else if (auto boolean = typeDeclarationAST->STRING_KEYWORD())
+            else if (typeReferenceAST->getTypeKind() == SyntaxKind::StringKeyword)
             {
                 return getStringType();
             }
 
             return getAnyType();
         }
-        */
 
         mlir::Type getStringType()
         {
@@ -1055,7 +1011,6 @@ namespace
 
         /// A "module" matches a TypeScript source file: containing a list of functions.
         mlir::ModuleOp theModule;
-        ModuleDOM theModuleDOM;
 
         /// The builder is a helper class to create IR inside a function. The builder
         /// is stateful, in particular it keeps an "insertion point": this is where

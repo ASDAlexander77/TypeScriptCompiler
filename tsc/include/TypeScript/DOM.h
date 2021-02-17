@@ -11,6 +11,12 @@
 
 using namespace llvm;
 using namespace antlr4;
+using namespace typescript;
+
+namespace typescript
+{
+    class NodeAST;
+}
 
 class BaseDOM
 {
@@ -22,20 +28,15 @@ public:
         Base_FunctionProto,
     };
 
-    using TypePtr = std::unique_ptr<BaseDOM>;
+    using TypePtr = std::shared_ptr<BaseDOM>;
 
-    BaseDOM(BaseDOMKind kind, tree::ParseTree *parseTree) : kind(kind), parseTree(parseTree)
+    BaseDOM(BaseDOMKind kind) : kind(kind)
     {
     }
 
     virtual ~BaseDOM() = default;
 
     BaseDOMKind getKind() const { return kind; }
-
-    tree::ParseTree *getParseTree() { return parseTree; }
-
-protected:
-    tree::ParseTree *parseTree;
 
 private:
     const BaseDOMKind kind;
@@ -45,26 +46,27 @@ class VariableDeclarationDOM : public BaseDOM
 {
     std::string name;
     mlir::Type type;
-    tree::ParseTree *initVal;
+    mlir::Location loc;
+    std::shared_ptr<NodeAST> initValue;
 
 public:
 
-    using TypePtr = std::unique_ptr<VariableDeclarationDOM>;
+    using TypePtr = std::shared_ptr<VariableDeclarationDOM>;
 
-    VariableDeclarationDOM(tree::ParseTree *parseTree, StringRef name, mlir::Type type, tree::ParseTree *initVal = nullptr)
-        : BaseDOM(Base_VariableDeclaration, parseTree), name(name), type(std::move(type)),
-          initVal(initVal)
+    VariableDeclarationDOM(StringRef name, mlir::Type type, mlir::Location loc, std::shared_ptr<NodeAST> initValue = nullptr)
+        : BaseDOM(Base_VariableDeclaration), name(name), type(type), loc(loc), initValue(initValue)
     {
     }
 
     StringRef getName() { return name; }
-    tree::ParseTree *getInitVal() { return initVal; }
     const mlir::Type &getType() { return type; }
+    const mlir::Location &getLoc() { return loc; }
+    const std::shared_ptr<NodeAST> &getInitValue() { return initValue; }
+    bool hasInitValue() { return !!initValue; }
     bool getReadWriteAccess() { return readWrite; };
     void SetReadWriteAccess() { readWrite = true; };
 
 protected:
-    tree::ParseTree *parseTree;
     bool readWrite;
 };
 
@@ -72,10 +74,10 @@ class FunctionParamDOM : public VariableDeclarationDOM
 {    
 public:
 
-    using TypePtr = std::unique_ptr<FunctionParamDOM>;
+    using TypePtr = std::shared_ptr<FunctionParamDOM>;
 
-    FunctionParamDOM(tree::ParseTree *parseTree, StringRef name, mlir::Type type, bool isOptional = false, tree::ParseTree *initVal = nullptr)
-        : isOptional(isOptional), VariableDeclarationDOM(parseTree, name, type, initVal)
+    FunctionParamDOM(StringRef name, mlir::Type type, mlir::Location loc, bool isOptional = false, std::shared_ptr<NodeAST> initValue = nullptr)
+        : isOptional(isOptional), VariableDeclarationDOM(name, type, loc, initValue)
     {
     }
 
@@ -98,33 +100,13 @@ class FunctionPrototypeDOM
 
 public:
 
-    using TypePtr = std::unique_ptr<FunctionPrototypeDOM>;
+    using TypePtr = std::shared_ptr<FunctionPrototypeDOM>;
 
-    FunctionPrototypeDOM(tree::ParseTree *parseTree, const std::string &name, std::vector<FunctionParamDOM::TypePtr> args)
-        : parseTree(parseTree), name(name), args(std::move(args))
+    FunctionPrototypeDOM(const std::string &name, std::vector<FunctionParamDOM::TypePtr> args)
+        : name(name), args(args)
     {
     }
 
     StringRef getName() const { return name; }
     ArrayRef<FunctionParamDOM::TypePtr> getArgs() { return args; }
-
-protected:
-    tree::ParseTree *parseTree;
-};
-
-class ModuleDOM
-{
-    std::vector<FunctionPrototypeDOM::TypePtr> functionProtos;
-
-public:
-
-    using TypePtr = std::unique_ptr<ModuleDOM>;
-
-    ModuleDOM()
-    {
-    }
-
-    std::vector<FunctionPrototypeDOM::TypePtr>& getFunctionProtos() { return functionProtos; }
-
-    tree::ParseTree *parseTree;
 };

@@ -134,7 +134,8 @@
             "coroutine": "cpp",
             "resumable": "cpp",
             "variant": "cpp",
-            "filesystem": "cpp"
+            "filesystem": "cpp",
+            "*.def": "cpp"
         },
 		"antlr4.generation": {
 			"mode": "external",
