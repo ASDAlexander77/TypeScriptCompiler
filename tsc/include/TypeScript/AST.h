@@ -110,6 +110,9 @@ namespace typescript
     class ConditionalExpressionAST;
     class CommaListExpressionAST;
     class CallExpressionAST;
+    class EmptyStatementAST;
+    class ExpressionStatementAST;
+    class ReturnStatementAST;
     class ParameterDeclarationAST;
     class ParametersDeclarationAST;
     class FunctionDeclarationAST;
@@ -181,8 +184,8 @@ namespace typescript
     PASS_CHOICE_END()
 
     PASS_CHOICES_TYPED(CallExpressionAST, CallExpressionContext)
-    PASS_CHOICE_TYPED(coverCallExpressionAndAsyncArrowHead)
     MAKE_CHOICE_IF_TYPED(callExpression, CallExpressionAST)
+    PASS_CHOICE_TYPED(coverCallExpressionAndAsyncArrowHead)
     PASS_CHOICE_END()    
 
     MAKE(PropertyAccessExpressionAST, OptionalExpressionContext)
@@ -257,9 +260,17 @@ namespace typescript
 
     PASS(DeclarationContext, hoistableDeclaration)
 
-    static std::shared_ptr<NodeAST> parse(TypeScriptParserANTLR::StatementContext* statement) {
-        return nullptr;
-    }  
+    MAKE(EmptyStatementAST, EmptyStatementContext) 
+
+    MAKE(ExpressionStatementAST, ExpressionStatementContext) 
+
+    MAKE(ReturnStatementAST, ReturnStatementContext)    
+
+    PASS_CHOICES(StatementContext)
+    PASS_CHOICE(emptyStatement)
+    PASS_CHOICE(expressionStatement)
+    PASS_CHOICE(returnStatement)
+    PASS_CHOICE_END()
 
     PASS_CHOICES(StatementListItemContext)
     PASS_CHOICE(statement)
@@ -641,6 +652,68 @@ namespace typescript
             return N->getKind() == SyntaxKind::CallExpression;
         }          
     };    
+
+    class EmptyStatementAST : public NodeAST
+    {
+    public:
+        using TypePtr = std::shared_ptr<EmptyStatementAST>;
+
+        EmptyStatementAST(TypeScriptParserANTLR::EmptyStatementContext* emptyStatementContext) 
+            : NodeAST(SyntaxKind::EmptyStatement, TextRange(emptyStatementContext)) {}     
+
+        EmptyStatementAST(TextRange range)
+            : NodeAST(SyntaxKind::EmptyStatement, range) {}
+
+        /// LLVM style RTTI
+        static bool classof(const NodeAST *N) 
+        {
+            return N->getKind() == SyntaxKind::EmptyStatement;
+        }               
+    };     
+
+    class ExpressionStatementAST : public NodeAST
+    {
+        NodeAST::TypePtr expression;
+    public:
+        using TypePtr = std::shared_ptr<ExpressionStatementAST>;
+
+        ExpressionStatementAST(TypeScriptParserANTLR::ExpressionStatementContext* expressionStatementContext) 
+            : NodeAST(SyntaxKind::ExpressionStatement, TextRange(expressionStatementContext)),
+              expression(parse(expressionStatementContext->expression())) {}     
+
+        ExpressionStatementAST(TextRange range)
+            : NodeAST(SyntaxKind::ExpressionStatement, range) {}
+
+        const NodeAST::TypePtr& getExpression() const { return expression; }
+
+        /// LLVM style RTTI
+        static bool classof(const NodeAST *N) 
+        {
+            return N->getKind() == SyntaxKind::ExpressionStatement;
+        }               
+    };      
+
+    class ReturnStatementAST : public NodeAST
+    {
+        NodeAST::TypePtr expression;
+    public:
+        using TypePtr = std::shared_ptr<ReturnStatementAST>;
+
+        ReturnStatementAST(TypeScriptParserANTLR::ReturnStatementContext* returnStatementContext) 
+            : NodeAST(SyntaxKind::ReturnStatement, TextRange(returnStatementContext)),
+              expression(parse(returnStatementContext->expression())) {}     
+
+        ReturnStatementAST(TextRange range)
+            : NodeAST(SyntaxKind::ReturnStatement, range) {}
+
+        const NodeAST::TypePtr& getExpression() const { return expression; }
+
+        /// LLVM style RTTI
+        static bool classof(const NodeAST *N) 
+        {
+            return N->getKind() == SyntaxKind::ReturnStatement;
+        }               
+    };         
 
     class ParameterDeclarationAST : public NodeAST
     {
