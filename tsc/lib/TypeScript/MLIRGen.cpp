@@ -108,7 +108,7 @@ namespace
             if (failed(mlir::verify(theModule)))
             {
                 // TODO: uncomment it
-                //theModule.emitError("module verification error");
+                theModule.emitError("module verification error");
                 //return nullptr;
             }
 
@@ -510,17 +510,15 @@ namespace
                 returnOp = dyn_cast<mlir::ReturnOp>(entryBlock.back());
             }
 
-            /*
             if (!returnOp)
             {
-                returnOp = builder.create<mlir::ReturnOp>(loc(functionDeclarationAST->functionBody()));
+                returnOp = builder.create<mlir::ReturnOp>(loc(functionDeclarationAST->getLoc()));
             }
             else if (!returnOp.operands().empty())
             {
                 // Otherwise, if this return operation has an operand then add a result to the function.
                 funcOp.setType(builder.getFunctionType(funcOp.getType().getInputs(), *returnOp.operand_type_begin()));
             }
-            */
 
             if (returnOp.getNumOperands() > 0)
             {

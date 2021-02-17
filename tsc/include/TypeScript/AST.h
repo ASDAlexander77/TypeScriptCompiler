@@ -20,6 +20,11 @@
         return _ctx ? std::static_pointer_cast<ty>(parse(_ctx->fld())) : nullptr;  \
     } 
 
+#define PASS_TYPED(ctx, fld)  \
+    static auto parse(TypeScriptParserANTLR::ctx* _ctx) { \
+        return _ctx ? parse(_ctx->fld()) : throw ("_ctx is null") ;  \
+    }     
+
 #define PASS_COLL(ty, ctx)  \
     static std::vector<std::shared_ptr<ty>> parse(std::vector<TypeScriptParserANTLR::ctx *> _ctx) { \
         std::vector<std::shared_ptr<ty>> items; \
@@ -109,6 +114,7 @@ namespace typescript
     };
 
     class NodeAST;
+    class BlockAST;
     class NullLiteralAST;
     class TrueLiteralAST;
     class FalseLiteralAST;
@@ -129,7 +135,11 @@ namespace typescript
     template <typename Ty>
     static std::vector<Ty> merge(std::vector<Ty> data, Ty item)
     {
-        data.push_back(item);
+        if (item)
+        {
+            data.push_back(item);
+        }
+        
         return data;        
     }
     
@@ -242,6 +252,7 @@ namespace typescript
     PASS_CHOICE_FIRST(assignmentExpression)
     PASS_CHOICE_END()
 
+// PASS_FIELD_COLL = PASS_COLL(NodeAST, ...Context) + PASS(NodeAST, ArgumentsContext, expression)
     PASS_FIELD_COLL(NodeAST, ArgumentsContext, expression)
 
     PASS(NodeAST, InitializerContext, assignmentExpression)
@@ -268,6 +279,14 @@ namespace typescript
     PASS_CHOICE(statement)
     PASS_CHOICE(declaration)
     PASS_CHOICE_END()
+
+    PASS_COLL(NodeAST, StatementListItemContext)
+
+    PASS_TYPED(StatementListContext, statementListItem)
+
+    PASS_TYPED(FunctionStatementListContext, statementList)
+
+    MAKE(BlockAST, FunctionBodyContext);
 
     PASS(NodeAST, ModuleItemContext, statementListItem)  
    
@@ -304,6 +323,10 @@ namespace typescript
 
     public:
         using TypePtr = std::shared_ptr<BlockAST>;
+
+        BlockAST(TypeScriptParserANTLR::FunctionBodyContext* functionBodyContext) 
+            : NodeAST(SyntaxKind::Block, TextRange(functionBodyContext)), 
+              items(parse(functionBodyContext->functionStatementList())) {}
 
         // TODO: remove it when finish
         BlockAST(TextRange range, std::vector<NodeAST::TypePtr> items)
@@ -699,6 +722,7 @@ namespace typescript
         IdentifierAST::TypePtr identifier;
         ParametersDeclarationAST::TypePtr parameters;
         TypeReferenceAST::TypePtr typeParameter;
+        BlockAST::TypePtr functionBody;
 
     public:
         using TypePtr = std::shared_ptr<FunctionDeclarationAST>;
@@ -707,10 +731,11 @@ namespace typescript
             : NodeAST(SyntaxKind::FunctionDeclaration, TextRange(functionDeclarationContext)), 
               identifier(parse(functionDeclarationContext->bindingIdentifier())), 
               parameters(parse(functionDeclarationContext->formalParameters())), 
-              typeParameter(parse(functionDeclarationContext->typeParameter())) {}     
+              typeParameter(parse(functionDeclarationContext->typeParameter())),
+              functionBody(parse(functionDeclarationContext->functionBody())) {}     
               
-        FunctionDeclarationAST(TextRange range, IdentifierAST::TypePtr identifier, ParametersDeclarationAST::TypePtr parameters, TypeReferenceAST::TypePtr typeParameter)
-            : NodeAST(SyntaxKind::FunctionDeclaration, range), identifier(identifier), parameters(parameters), typeParameter(typeParameter) {}
+        FunctionDeclarationAST(TextRange range, IdentifierAST::TypePtr identifier, ParametersDeclarationAST::TypePtr parameters, TypeReferenceAST::TypePtr typeParameter, BlockAST::TypePtr functionBody)
+            : NodeAST(SyntaxKind::FunctionDeclaration, range), identifier(identifier), parameters(parameters), typeParameter(typeParameter), functionBody(functionBody) {}
 
         const IdentifierAST::TypePtr& getIdentifier() const { return identifier; }
         const ParametersDeclarationAST::TypePtr& getParameters() const { return parameters; }
