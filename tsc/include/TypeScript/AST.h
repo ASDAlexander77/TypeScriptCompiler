@@ -15,31 +15,15 @@
         return _ctx ? std::make_shared<ty>(_ctx) : nullptr; \
     }
 
-#define PASS(ty, ctx, fld)  \
-    static std::shared_ptr<ty> parse(TypeScriptParserANTLR::ctx* _ctx) { \
-        return _ctx ? std::static_pointer_cast<ty>(parse(_ctx->fld())) : nullptr;  \
-    } 
-
-#define PASS_TYPED(ctx, fld)  \
+#define PASS(ctx, fld)  \
     static auto parse(TypeScriptParserANTLR::ctx* _ctx) { \
-        return _ctx ? parse(_ctx->fld()) : throw ("_ctx is null") ;  \
+        return _ctx ? parse(_ctx->fld()) : decltype(parse(_ctx->fld()))() ;  \
     }     
 
-#define PASS_COLL(ty, ctx)  \
+#define PASS_VECTOR(ty, ctx)  \
     static std::vector<std::shared_ptr<ty>> parse(std::vector<TypeScriptParserANTLR::ctx *> _ctx) { \
         std::vector<std::shared_ptr<ty>> items; \
         for (auto *item : _ctx) \
-        {   \
-            items.push_back(std::static_pointer_cast<ty>(parse(item)));   \
-        }   \
-    \
-        return items;   \
-    } 
-
-#define PASS_FIELD_COLL(ty, ctx, fld)  \
-    static std::vector<std::shared_ptr<ty>> parse(TypeScriptParserANTLR::ctx* _ctx) { \
-        std::vector<std::shared_ptr<ty>> items; \
-        for (auto *item : _ctx->fld()) \
         {   \
             items.push_back(std::static_pointer_cast<ty>(parse(item)));   \
         }   \
@@ -150,15 +134,15 @@ namespace typescript
 
     MAKE(IdentifierAST, IdentifierContext)
 
-    PASS(IdentifierAST, BindingIdentifierContext, identifier)
+    PASS(BindingIdentifierContext, identifier)
     
     MAKE(IdentifierAST, OptionalChainContext)
 
     MAKE(TypeReferenceAST, TypeDeclarationContext)
 
-    PASS(TypeReferenceAST, TypeParameterContext, typeDeclaration)
+    PASS(TypeParameterContext, typeDeclaration)
 
-    PASS(NodeAST, IdentifierReferenceContext, identifier)
+    PASS(IdentifierReferenceContext, identifier)
 
     MAKE(NullLiteralAST, NullLiteralContext)
     
@@ -208,68 +192,69 @@ namespace typescript
     PASS_CHOICE(optionalExpression)
     PASS_CHOICE_END()
 
-    PASS(NodeAST, UpdateExpressionContext, leftHandSideExpression)
+    PASS(UpdateExpressionContext, leftHandSideExpression)
 
-    PASS(NodeAST, UnaryExpressionContext, updateExpression)
+    PASS(UnaryExpressionContext, updateExpression)
 
-    PASS(NodeAST, ExponentiationExpressionContext, unaryExpression)
+    PASS(ExponentiationExpressionContext, unaryExpression)
 
-    PASS(NodeAST, MultiplicativeExpressionContext, exponentiationExpression)
+    PASS(MultiplicativeExpressionContext, exponentiationExpression)
 
-    PASS(NodeAST, AdditiveExpressionContext, multiplicativeExpression)
+    PASS(AdditiveExpressionContext, multiplicativeExpression)
 
-    PASS(NodeAST, ShiftExpressionContext, additiveExpression)
+    PASS(ShiftExpressionContext, additiveExpression)
 
-    PASS(NodeAST, RelationalExpressionContext, shiftExpression)
+    PASS(RelationalExpressionContext, shiftExpression)
 
     PASS_CHOICES(EqualityExpressionContext)
     PASS_CHOICE(relationalExpression)
     PASS_CHOICE_END()
 
-    PASS(NodeAST, BitwiseANDExpressionContext, equalityExpression)
+    PASS(BitwiseANDExpressionContext, equalityExpression)
 
-    PASS(NodeAST, BitwiseXORExpressionContext, bitwiseANDExpression)
+    PASS(BitwiseXORExpressionContext, bitwiseANDExpression)
 
-    PASS(NodeAST, BitwiseORExpressionContext, bitwiseXORExpression)
+    PASS(BitwiseORExpressionContext, bitwiseXORExpression)
 
-    PASS(NodeAST, LogicalANDExpressionContext, bitwiseORExpression)
+    PASS(LogicalANDExpressionContext, bitwiseORExpression)
 
-    PASS(NodeAST, LogicalORExpressionContext, logicalANDExpression)
+    PASS(LogicalORExpressionContext, logicalANDExpression)
 
-    PASS(NodeAST, ShortCircuitExpressionContext, logicalORExpression)
+    PASS(ShortCircuitExpressionContext, logicalORExpression)
 
     PASS_CHOICES(ConditionalExpressionContext)
     MAKE_CHOICE_IF(QUESTION_TOKEN, ConditionalExpressionAST)
     PASS_CHOICE(shortCircuitExpression)
     PASS_CHOICE_END()
 
-    PASS(NodeAST, AssignmentExpressionContext, conditionalExpression)
+    PASS(AssignmentExpressionContext, conditionalExpression)
 
-    PASS_COLL(NodeAST, AssignmentExpressionContext);
+    PASS_VECTOR(NodeAST, AssignmentExpressionContext);
 
     PASS_CHOICES(ExpressionContext)
     MAKE_CHOICE_IF_ANY(COMMA_TOKEN, CommaListExpressionAST)
     PASS_CHOICE_FIRST(assignmentExpression)
     PASS_CHOICE_END()
 
-// PASS_FIELD_COLL = PASS_COLL(NodeAST, ...Context) + PASS(NodeAST, ArgumentsContext, expression)
-    PASS_FIELD_COLL(NodeAST, ArgumentsContext, expression)
+    PASS_VECTOR(NodeAST, ExpressionContext)
 
-    PASS(NodeAST, InitializerContext, assignmentExpression)
+    PASS(ArgumentsContext, expression)
+
+    PASS(InitializerContext, assignmentExpression)
 
     MAKE(ParameterDeclarationAST, FormalParameterContext)    
 
     MAKE(ParameterDeclarationAST, FunctionRestParameterContext)    
 
-    PASS_COLL(ParameterDeclarationAST, FormalParameterContext)
+    PASS_VECTOR(ParameterDeclarationAST, FormalParameterContext)
 
     MAKE(ParametersDeclarationAST, FormalParametersContext)    
 
     MAKE(FunctionDeclarationAST, FunctionDeclarationContext)    
 
-    PASS(NodeAST, HoistableDeclarationContext, functionDeclaration)
+    PASS(HoistableDeclarationContext, functionDeclaration)
 
-    PASS(NodeAST, DeclarationContext, hoistableDeclaration)
+    PASS(DeclarationContext, hoistableDeclaration)
 
     static std::shared_ptr<NodeAST> parse(TypeScriptParserANTLR::StatementContext* statement) {
         return nullptr;
@@ -280,17 +265,17 @@ namespace typescript
     PASS_CHOICE(declaration)
     PASS_CHOICE_END()
 
-    PASS_COLL(NodeAST, StatementListItemContext)
+    PASS_VECTOR(NodeAST, StatementListItemContext)
 
-    PASS_TYPED(StatementListContext, statementListItem)
+    PASS(StatementListContext, statementListItem)
 
-    PASS_TYPED(FunctionStatementListContext, statementList)
+    PASS(FunctionStatementListContext, statementList)
 
     MAKE(BlockAST, FunctionBodyContext);
 
-    PASS(NodeAST, ModuleItemContext, statementListItem)  
+    PASS(ModuleItemContext, statementListItem)  
    
-    PASS_COLL(NodeAST, ModuleItemContext)
+    PASS_VECTOR(NodeAST, ModuleItemContext)
 
     MAKE(ModuleBlockAST, ModuleBodyContext)    
 
