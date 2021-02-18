@@ -137,25 +137,49 @@ namespace
         mlir::LogicalResult mlirGenStatement(NodeAST::TypePtr statementAST, const GenContext &genContext)
         {
             // TODO:
-            if (auto functionDeclarationAST = std::dynamic_pointer_cast<FunctionDeclarationAST>(statementAST))
+            if (statementAST->getKind() == SyntaxKind::FunctionDeclaration)
             {
-                if (failed(mlirGen(functionDeclarationAST, genContext)))
-                {
-                    return mlir::failure();
-                }
+                return mlirGen(std::dynamic_pointer_cast<FunctionDeclarationAST>(statementAST), genContext);
             } 
-            else 
+            else if (statementAST->getKind() == SyntaxKind::ExpressionStatement)
             {
-                llvm_unreachable("unknown statement type");
+                return mlirGen(std::dynamic_pointer_cast<ExpressionStatementAST>(statementAST), genContext);
+            }          
+            else if (statementAST->getKind() == SyntaxKind::ReturnStatement)
+            {
+                return mlirGen(std::dynamic_pointer_cast<ReturnStatementAST>(statementAST), genContext);
+            }
+            else if (statementAST->getKind() == SyntaxKind::EmptyStatement)
+            {
+                return mlir::success();
             }
 
-            return mlir::success();
+            llvm_unreachable("unknown statement type");
         }        
 
         mlir::Value mlirGenExpression(NodeAST::TypePtr expressionAST, const GenContext &genContext)
         {
-            llvm_unreachable("unknown expression type");
+            if (expressionAST->getKind() == SyntaxKind::NumericLiteral)
+            {
+                return mlirGen(std::dynamic_pointer_cast<NumericLiteralAST>(expressionAST), genContext);
+            }
+            else if (expressionAST->getKind() == SyntaxKind::Identifier)
+            {
+                return mlirGen(std::dynamic_pointer_cast<IdentifierAST>(expressionAST), genContext);
+            }
+            else if (expressionAST->getKind() == SyntaxKind::CallExpression)
+            {
+                return mlirGen(std::dynamic_pointer_cast<CallExpressionAST>(expressionAST), genContext);
+            }
+
+            llvm_unreachable("unknown expression");
         }      
+
+        mlir::LogicalResult mlirGen(ExpressionStatementAST::TypePtr expressionStatementAST, const GenContext &genContext)
+        {
+            mlirGenExpression(expressionStatementAST->getExpression(), genContext);
+            return mlir::success();
+        }        
 
         /*
         mlir::LogicalResult declareAllFunctionDeclarations(TypeScriptParserANTLR::MainContext *module)
@@ -533,115 +557,27 @@ namespace
             return returnType;
         }
 
-        /*
-        mlir::LogicalResult mlirGen(TypeScriptParserANTLR::StatementContext *statementItemAST, const GenContext &genContext)
+        mlir::LogicalResult mlirGen(ReturnStatementAST::TypePtr returnStatementAST, const GenContext &genContext)
         {
-            if (auto *expressionStatement = statementItemAST->expressionStatement())
+            if (auto expression = returnStatementAST->getExpression())
             {
-                mlirGen(expressionStatement->expression(), genContext);
-                // ignore result in statement
-                return mlir::success();
-            }
-            else if (auto *returnStatement = statementItemAST->returnStatement())
-            {
-                return mlirGen(returnStatement, genContext);
+                auto expressionValue = mlirGenExpression(expression, genContext);
+                builder.create<mlir::ReturnOp>(loc(returnStatementAST->getLoc()), expressionValue);
             }
             else
             {
-                llvm_unreachable("unknown statement");
-            }
-        }
-
-        mlir::LogicalResult mlirGen(TypeScriptParserANTLR::ReturnStatementContext *returnStatementAST, const GenContext &genContext)
-        {
-            if (auto *expression = returnStatementAST->expression())
-            {
-                auto expressionValue = mlirGen(expression, genContext);
-                builder.create<mlir::ReturnOp>(loc(returnStatementAST), expressionValue);
-            }
-            else
-            {
-                builder.create<mlir::ReturnOp>(loc(returnStatementAST));
+                builder.create<mlir::ReturnOp>(loc(returnStatementAST->getLoc()));
             }
 
             return mlir::success();
         }
 
-        mlir::Value mlirGen(TypeScriptParserANTLR::ExpressionContext *expressionAST, const GenContext &genContext)
+        mlir::Value mlirGen(CallExpressionAST::TypePtr callExpression, const GenContext &genContext)
         {
-            if (auto *primaryExpression = expressionAST->primaryExpression())
-            {
-                return mlirGen(primaryExpression, genContext);
-            }
-            else if (auto *leftHandSideExpression = expressionAST->leftHandSideExpression())
-            {
-                return mlirGen(leftHandSideExpression, genContext);
-            }
-            else
-            {
-                llvm_unreachable("unknown statement");
-            }
-        }
-
-        mlir::Value mlirGen(TypeScriptParserANTLR::PrimaryExpressionContext *primaryExpression, const GenContext &genContext)
-        {
-            if (auto *literal = primaryExpression->literal())
-            {
-                return mlirGen(literal, genContext);
-            }
-            else if (auto *identifierReference = primaryExpression->identifierReference())
-            {
-                return mlirGen(identifierReference, genContext);
-            }
-            else
-            {
-                llvm_unreachable("unknown statement");
-            }
-        }
-
-        mlir::Value mlirGen(TypeScriptParserANTLR::LeftHandSideExpressionContext *leftHandSideExpression, const GenContext &genContext)
-        {
-            if (auto *callExpression = leftHandSideExpression->callExpression())
-            {
-                return mlirGen(callExpression, genContext);
-            }
-            else if (auto *memberExpression = leftHandSideExpression->memberExpression())
-            {
-                return mlirGen(memberExpression, genContext);
-            }
-            else
-            {
-                llvm_unreachable("unknown statement");
-            }
-        }
-
-        mlir::Value mlirGen(TypeScriptParserANTLR::AssignmentExpressionContext *assignmentExpressionContext, const GenContext &genContext)
-        {
-            if (auto *leftHandSideExpression = assignmentExpressionContext->leftHandSideExpression())
-            {
-                return mlirGen(leftHandSideExpression, genContext);
-            }
-            else
-            {
-                llvm_unreachable("unknown statement");
-            }
-        }
-
-        mlir::Value mlirGen(TypeScriptParserANTLR::CallExpressionContext *callExpression, const GenContext &genContext)
-        {
-            auto location = loc(callExpression);
-
-            mlir::Value result;
+            auto location = loc(callExpression->getLoc());
 
             // get function ref.
-            if (auto *memberExpression = callExpression->memberExpression())
-            {
-                result = mlirGen(memberExpression, genContext);
-            }
-            else if (auto *callExpressionRecursive = callExpression->callExpression())
-            {
-                result = mlirGen(callExpressionRecursive, genContext);
-            }
+            auto result = mlirGenExpression(callExpression->getExpression(), genContext);
 
             auto definingOp = result.getDefiningOp();
             if (definingOp)
@@ -670,8 +606,8 @@ namespace
                     // process arguments
                     SmallVector<mlir::Value, 0> operands;
 
-                    auto *argumentsContext = callExpression->arguments();
-                    auto opArgsCount = argumentsContext ? argumentsContext->expression().size() : 0;
+                    auto argumentsContext = callExpression->getArguments();
+                    auto opArgsCount = argumentsContext.size();
                     auto hasOptionalFrom = calledFunc.getOperation()->hasAttrOfType<mlir::IntegerAttr>("OptionalFrom");
                     if (hasOptionalFrom)
                     {
@@ -764,120 +700,73 @@ namespace
             return mlir::success();
         }
 
-        mlir::Value mlirGen(TypeScriptParserANTLR::MemberExpressionContext *memberExpression, const GenContext &genContext)
+        mlir::LogicalResult mlirGen(std::vector<NodeAST::TypePtr> arguments, SmallVector<mlir::Value, 0> &operands, const GenContext &genContext)
         {
-            if (auto *primaryExpression = memberExpression->primaryExpression())
+            for (auto expression : arguments)
             {
-                return mlirGen(primaryExpression, genContext);
-            }
-            else if (auto *memberExpressionRecursive = memberExpression->memberExpression())
-            {
-                return mlirGen(memberExpressionRecursive, genContext);
-            }
-            else
-            {
-                return mlirGenIdentifierName(memberExpression->IdentifierName());
-            }
-        }
-
-        mlir::LogicalResult mlirGen(TypeScriptParserANTLR::ArgumentsContext *arguments, SmallVector<mlir::Value, 0> &operands, const GenContext &genContext)
-        {
-            for (auto &next : arguments->expression())
-            {
-                operands.push_back(mlirGen(next, genContext));
+                operands.push_back(mlirGenExpression(expression, genContext));
             }
 
             return mlir::success();
         }
 
-        mlir::Value mlirGen(TypeScriptParserANTLR::LiteralContext *literal, const GenContext &genContext)
-        {
-            if (auto *nullLiteral = literal->nullLiteral())
-            {
-                return mlirGen(nullLiteral, genContext);
-            }
-            else if (auto *booleanLiteral = literal->booleanLiteral())
-            {
-                return mlirGen(booleanLiteral, genContext);
-            }
-            else if (auto *numericLiteral = literal->numericLiteral())
-            {
-                return mlirGen(numericLiteral, genContext);
-            }
-            else
-            {
-                return mlirGenStringLiteral(literal->StringLiteral());
-            }
-        }
-
-        mlir::Value mlirGen(TypeScriptParserANTLR::NullLiteralContext *nullLiteral, const GenContext &genContext)
+        mlir::Value mlirGen(NullLiteralAST::TypePtr nullLiteral, const GenContext &genContext)
         {
             llvm_unreachable("not implemented");
         }
 
-        mlir::Value mlirGen(TypeScriptParserANTLR::BooleanLiteralContext *booleanLiteral, const GenContext &genContext)
+        mlir::Value mlirGen(TrueLiteralAST::TypePtr trueLiteral, const GenContext &genContext)
         {
-            bool result;
-            if (booleanLiteral->TRUE_KEYWORD())
+            return builder.create<mlir::ConstantOp>(
+                loc(trueLiteral->getLoc()),
+                builder.getI1Type(),
+                mlir::BoolAttr::get(true, theModule.getContext()));
+        }
+
+        mlir::Value mlirGen(FalseLiteralAST::TypePtr trueLiteral, const GenContext &genContext)
+        {
+            return builder.create<mlir::ConstantOp>(
+                loc(trueLiteral->getLoc()),
+                builder.getI1Type(),
+                mlir::BoolAttr::get(false, theModule.getContext()));
+        }
+
+        mlir::Value mlirGen(NumericLiteralAST::TypePtr numericLiteral, const GenContext &genContext)
+        {
+            if (numericLiteral->getIsInt())
             {
-                result = true;
+                return builder.create<mlir::ConstantOp>(
+                    loc(numericLiteral->getLoc()),
+                    builder.getI32Type(),
+                    builder.getI32IntegerAttr(numericLiteral->getIntValue()));
             }
-            else if (booleanLiteral->FALSE_KEYWORD())
+
+            if (numericLiteral->getIsFloat())
             {
-                result = false;
+                return builder.create<mlir::ConstantOp>(
+                    loc(numericLiteral->getLoc()),
+                    builder.getF32Type(),
+                    builder.getF32FloatAttr(numericLiteral->getFloatValue()));
             }
-            else
-            {
-                llvm_unreachable("not implemented");
-            }
+
+            llvm_unreachable("unknown numeric literal");
+        }
+
+        mlir::Value mlirGen(StringLiteralAST::TypePtr stringLiteral, const GenContext &genContext)
+        {
+            auto text = stringLiteral->getString();
+            auto innerText = text.substr(1, text.length() - 2);
 
             return builder.create<mlir::ConstantOp>(
-                loc(booleanLiteral),
-                builder.getI1Type(),
-                mlir::BoolAttr::get(result, theModule.getContext()));
+                loc(stringLiteral->getLoc()),
+                mlir::UnrankedTensorType::get(builder.getI1Type()),
+                builder.getStringAttr(StringRef(innerText)));
         }
 
-        mlir::Value mlirGen(TypeScriptParserANTLR::NumericLiteralContext *numericLiteral, const GenContext &genContext)
-        {
-            if (auto *decimalLiteral = numericLiteral->DecimalLiteral())
-            {
-                return mlirGenDecimalLiteral(decimalLiteral);
-            }
-            else if (auto *decimalIntegerLiteral = numericLiteral->DecimalIntegerLiteral())
-            {
-                return mlirGenDecimalIntegerLiteral(decimalIntegerLiteral);
-            }
-            else if (auto *decimalBigIntegerLiteral = numericLiteral->DecimalBigIntegerLiteral())
-            {
-                return mlirGenDecimalBigIntegerLiteral(decimalBigIntegerLiteral);
-            }
-            else if (auto *binaryBigIntegerLiteral = numericLiteral->BinaryBigIntegerLiteral())
-            {
-                return mlirGenBinaryBigIntegerLiteral(binaryBigIntegerLiteral);
-            }
-            else if (auto *octalBigIntegerLiteral = numericLiteral->OctalBigIntegerLiteral())
-            {
-                return mlirGenOctalBigIntegerLiteral(octalBigIntegerLiteral);
-            }
-            else if (auto *hexBigIntegerLiteral = numericLiteral->HexBigIntegerLiteral())
-            {
-                return mlirGenHexBigIntegerLiteral(hexBigIntegerLiteral);
-            }
-            else
-            {
-                llvm_unreachable("unknown statement");
-            }
-        }
-
-        mlir::Value mlirGen(TypeScriptParserANTLR::IdentifierReferenceContext *identifierReference, const GenContext &genContext)
-        {
-            return mlirGenIdentifierName(identifierReference->IdentifierName());
-        }
-
-        mlir::Value mlirGenIdentifierName(antlr4::tree::TerminalNode *identifierName)
+        mlir::Value mlirGen(IdentifierAST::TypePtr identifier, const GenContext &genContext)
         {
             // resolve name
-            auto name = identifierName->getText();
+            auto name = identifier->getName();
 
             auto value = resolve(name);
             if (value.first)
@@ -892,58 +781,8 @@ namespace
             }
 
             // unresolved reference (for call for example)
-            return IdentifierReference::create(loc(identifierName), name);
+            return IdentifierReference::create(loc(identifier->getLoc()), name);
         }
-
-        mlir::Value mlirGenStringLiteral(antlr4::tree::TerminalNode *stringLiteral)
-        {
-            auto text = stringLiteral->getText();
-            auto innerText = text.substr(1, text.length() - 2);
-
-            return builder.create<mlir::ConstantOp>(
-                loc(stringLiteral),
-                mlir::UnrankedTensorType::get(builder.getI1Type()),
-                builder.getStringAttr(StringRef(innerText)));
-        }
-
-        mlir::Value mlirGenDecimalLiteral(antlr4::tree::TerminalNode *decimalLiteral)
-        {
-            // TODO:
-            llvm_unreachable("not implemented");
-        }
-
-        mlir::Value mlirGenDecimalIntegerLiteral(antlr4::tree::TerminalNode *decimalIntegerLiteral)
-        {
-            return builder.create<mlir::ConstantOp>(
-                loc(decimalIntegerLiteral),
-                builder.getI32Type(),
-                builder.getI32IntegerAttr(std::stoi(decimalIntegerLiteral->getText())));
-        }
-
-        mlir::Value mlirGenDecimalBigIntegerLiteral(antlr4::tree::TerminalNode *decimalBigIntegerLiteraligIntegerLiteral)
-        {
-            // TODO:
-            llvm_unreachable("not implemented");
-        }
-
-        mlir::Value mlirGenBinaryBigIntegerLiteral(antlr4::tree::TerminalNode *binaryBigIntegerLiteral)
-        {
-            // TODO:
-            llvm_unreachable("not implemented");
-        }
-
-        mlir::Value mlirGenOctalBigIntegerLiteral(antlr4::tree::TerminalNode *octalBigIntegerLiteral)
-        {
-            // TODO:
-            llvm_unreachable("not implemented");
-        }
-
-        mlir::Value mlirGenHexBigIntegerLiteral(antlr4::tree::TerminalNode *hexBigIntegerLiteral)
-        {
-            // TODO:
-            llvm_unreachable("not implemented");
-        }
-        */
 
         mlir::Type getType(TypeReferenceAST::TypePtr typeReferenceAST)
         {

@@ -391,6 +391,8 @@ namespace typescript
     {
         long longVal;
         double doubleVal;
+        bool isInt;
+        bool isFloat;
     public:
         using TypePtr = std::shared_ptr<NumericLiteralAST>;
 
@@ -401,10 +403,18 @@ namespace typescript
         }
 
         NumericLiteralAST(TextRange range, long longVal)
-            : NodeAST(SyntaxKind::NumericLiteral, range), longVal(longVal) {}
+            : NodeAST(SyntaxKind::NumericLiteral, range), longVal(longVal), isInt(true), isFloat(false) {}
 
         NumericLiteralAST(TextRange range, double doubleVal)
-            : NodeAST(SyntaxKind::NumericLiteral, range), doubleVal(doubleVal) {}
+            : NodeAST(SyntaxKind::NumericLiteral, range), doubleVal(doubleVal), isInt(false), isFloat(true) {}
+
+        long getIntValue() const { return longVal; }
+
+        long getFloatValue() const { return doubleVal; }
+
+        bool getIsInt() const { return isInt; }
+
+        bool getIsFloat() const { return isFloat; }
 
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
@@ -417,10 +427,14 @@ namespace typescript
         {
             if (numericLiteralContext->DecimalLiteral())
             {
+                isInt = false;
+                isFloat = true;
                 doubleVal = std::stod(text(numericLiteralContext->DecimalLiteral()));
             }
             else if (numericLiteralContext->DecimalIntegerLiteral())
             {
+                isInt = false;
+                isFloat = true;
                 longVal = std::stol(text(numericLiteralContext->DecimalIntegerLiteral()));
             }
         }            
@@ -473,6 +487,8 @@ namespace typescript
 
         StringLiteralAST(TextRange range, std::string val)
             : NodeAST(SyntaxKind::StringLiteral, range), val(val) {}
+
+        const std::string &getString() const { return val; }
 
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
@@ -645,6 +661,9 @@ namespace typescript
 
         CallExpressionAST(TextRange range, NodeAST::TypePtr expression, std::vector<NodeAST::TypePtr> arguments)
             : NodeAST(SyntaxKind::Parameters, range), expression(expression), arguments(arguments) {}
+
+        const NodeAST::TypePtr& getExpression() const { return expression; }
+        const std::vector<NodeAST::TypePtr>& getArguments() const { return arguments; }
 
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
