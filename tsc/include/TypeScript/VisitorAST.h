@@ -3,20 +3,8 @@
 
 #include "AST.h"
 
-class VisitorASTBase : public VisitorAST
-{
-public:
-    virtual void visit(NodeAST *node) override
-    {
-        action(node);
-    }
-
-protected:
-    virtual void action(NodeAST *node) = 0;
-};
-
 template< typename T >
-class FilterVisitorAST: public VisitorASTBase
+class FilterVisitorAST: public VisitorAST
 {
     SyntaxKind kind;
     std::function<void (T*)> functor;
@@ -26,8 +14,7 @@ public:
     {
     }
 
-protected:
-    virtual void action(NodeAST *node) override
+    virtual void visit(NodeAST *node) override
     {
         if (node && kind == node->getKind())
         {
