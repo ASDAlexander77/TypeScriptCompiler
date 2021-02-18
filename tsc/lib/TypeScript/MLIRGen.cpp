@@ -42,6 +42,7 @@ using llvm::SmallVector;
 using llvm::StringRef;
 using llvm::Twine;
 
+#define COUNT_PARAMS_PARAMETERNAME "__count_params"
 namespace
 {
     struct GenContext
@@ -56,7 +57,7 @@ namespace
     /// analysis and transformation based on these high level semantics.
     class MLIRGenImpl
     {
-        using VariablePairT = std::pair<mlir::Value, VariableDeclarationDOM *>;
+        using VariablePairT = std::pair<mlir::Value, VariableDeclarationDOM::TypePtr>;
         using SymbolTableScopeT = llvm::ScopedHashTableScope<StringRef, VariablePairT>;
 
     public:
@@ -246,7 +247,7 @@ namespace
 
             if (anyOptionalParam)
             {
-                params.push_back(std::make_shared<FunctionParamDOM>("__count_params", builder.getI32Type(), loc(parametersContextAST->getLoc()), false));
+                params.push_back(std::make_shared<FunctionParamDOM>(COUNT_PARAMS_PARAMETERNAME, builder.getI32Type(), loc(parametersContextAST->getLoc()), false));
             }
 
             for (auto &arg : formalParams)
@@ -442,7 +443,7 @@ namespace
             // process function params
             for (const auto paramPairs : llvm::zip(funcProto->getArgs(), entryBlock.getArguments()))
             {
-                if (failed(declare(*std::get<0>(paramPairs), std::get<1>(paramPairs))))
+                if (failed(declare(std::get<0>(paramPairs), std::get<1>(paramPairs))))
                 {
                     return returnType;
                 }
@@ -460,7 +461,7 @@ namespace
                 index++;
 
                 // skip __const_params, it is not real param
-                if (param->getName() == "__const_params")
+                if (param->getName() == COUNT_PARAMS_PARAMETERNAME)
                 {
                     continue;
                 }
@@ -518,7 +519,7 @@ namespace
                 {
                     // redefine variable
                     param->SetReadWriteAccess();
-                    declare(*param, paramValue, true);
+                    declare(param, paramValue, true);
                 }
             }
 
@@ -816,15 +817,15 @@ namespace
             return mlir::UnrankedMemRefType::get(builder.getI1Type(), 0);
         }
 
-        mlir::LogicalResult declare(VariableDeclarationDOM &var, mlir::Value value, bool redeclare = false)
+        mlir::LogicalResult declare(VariableDeclarationDOM::TypePtr var, mlir::Value value, bool redeclare = false)
         {
-            const auto &name = var.getName();
+            const auto &name = var->getName();
             if (!redeclare && symbolTable.count(name))
             {
                 return mlir::failure();
             }
 
-            symbolTable.insert(name, {value, &var});
+            symbolTable.insert(name, {value, var});
             return mlir::success();
         }
 

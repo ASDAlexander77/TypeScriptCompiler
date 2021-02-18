@@ -58,12 +58,12 @@ public:
     {
     }
 
-    StringRef getName() { return name; }
-    const mlir::Type &getType() { return type; }
-    const mlir::Location &getLoc() { return loc; }
-    const std::shared_ptr<NodeAST> &getInitValue() { return initValue; }
-    bool hasInitValue() { return !!initValue; }
-    bool getReadWriteAccess() { return readWrite; };
+    StringRef getName() const { return name; }
+    const mlir::Type &getType() const { return type; }
+    const mlir::Location &getLoc() const { return loc; }
+    const std::shared_ptr<NodeAST> &getInitValue() const { return initValue; }
+    bool hasInitValue() const { return !!initValue; }
+    bool getReadWriteAccess() const { return readWrite; };
     void SetReadWriteAccess() { readWrite = true; };
 
 protected:
@@ -108,5 +108,6 @@ public:
     }
 
     StringRef getName() const { return name; }
-    ArrayRef<FunctionParamDOM::TypePtr> getArgs() { return args; }
+    // ArrayRef should not be "&" or "*"
+    ArrayRef<FunctionParamDOM::TypePtr> getArgs() const { return args; }
 };
