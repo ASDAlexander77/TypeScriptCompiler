@@ -294,6 +294,7 @@ namespace typescript
     MAKE(ModuleAST, MainContext)    
 
     // nodes
+    class VisitorAST;
     class NodeAST
     {
     public:
@@ -307,12 +308,20 @@ namespace typescript
 
         const TextRange &getLoc() { return range; }
 
+        virtual void accept(VisitorAST *visitor) = 0;
+
     protected:
         TextRange range;
         SyntaxKind kind;
         NodeFlags flags;
         NodeAST *parent;
     };
+
+    class VisitorAST {
+    public:
+        virtual ~VisitorAST() {};
+        virtual void visit(NodeAST *tree) = 0;
+    }; 
 
     class BlockAST : public NodeAST
     {
@@ -332,6 +341,17 @@ namespace typescript
         auto begin() -> decltype(items.begin()) { return items.begin(); }
         auto end() -> decltype(items.end()) { return items.end(); }    
 
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+            for (auto &item : items)
+            {
+                item->accept(visitor);
+            }
+        }
+
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
         {
@@ -347,6 +367,13 @@ namespace typescript
         // TODO: remove it when finish
         NullLiteralAST(TextRange range)
             : NodeAST(SyntaxKind::NullKeyword, range) {}
+
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+        }
 
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
@@ -364,6 +391,13 @@ namespace typescript
         TrueLiteralAST(TextRange range)
             : NodeAST(SyntaxKind::TrueKeyword, range) {}
 
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+        }
+
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
         {
@@ -379,6 +413,13 @@ namespace typescript
         // TODO: remove it when finish
         FalseLiteralAST(TextRange range)
             : NodeAST(SyntaxKind::FalseKeyword, range) {}
+
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+        }
 
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
@@ -415,6 +456,13 @@ namespace typescript
         bool getIsInt() const { return isInt; }
 
         bool getIsFloat() const { return isFloat; }
+
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+        }
 
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
@@ -455,6 +503,13 @@ namespace typescript
         BigIntLiteralAST(TextRange range, long long longVal)
             : NodeAST(SyntaxKind::BigIntLiteral, range), longVal(longVal) {}
 
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+        }
+
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
         {
@@ -490,6 +545,13 @@ namespace typescript
 
         const std::string &getString() const { return val; }
 
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+        }
+
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
         {
@@ -513,6 +575,13 @@ namespace typescript
             : NodeAST(SyntaxKind::Identifier, range), name(identifier) {}
 
         const std::string& getName() const { return name; }
+
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+        }
 
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
@@ -540,6 +609,13 @@ namespace typescript
 
         SyntaxKind getTypeKind() const { return typeKind; }
         const std::string& getTypeName() const { return typeName; }
+
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+        }
 
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
@@ -594,6 +670,14 @@ namespace typescript
         PropertyAccessExpressionAST(TextRange range, NodeAST::TypePtr memberExpression, IdentifierAST::TypePtr name)
             : NodeAST(SyntaxKind::Parameters, range), memberExpression(memberExpression), name(name) {}
 
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+            memberExpression->accept(visitor);
+        }
+
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
         {
@@ -613,6 +697,17 @@ namespace typescript
 
         CommaListExpressionAST(TextRange range, std::vector<NodeAST::TypePtr> expressions)
             : NodeAST(SyntaxKind::Parameters, range), expressions(expressions) {}
+
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+            for (auto &item : expressions)
+            {
+                item->accept(visitor);
+            }
+        }
 
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
@@ -634,6 +729,16 @@ namespace typescript
 
         ConditionalExpressionAST(TextRange range, NodeAST::TypePtr condition, NodeAST::TypePtr whenTrue, NodeAST::TypePtr whenFalse)
             : NodeAST(SyntaxKind::Parameters, range), condition(condition), whenTrue(whenTrue), whenFalse(whenFalse) {}
+
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+            condition->accept(visitor);
+            whenTrue->accept(visitor);
+            whenFalse->accept(visitor);
+        }
 
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
@@ -665,6 +770,18 @@ namespace typescript
         const NodeAST::TypePtr& getExpression() const { return expression; }
         const std::vector<NodeAST::TypePtr>& getArguments() const { return arguments; }
 
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+            expression->accept(visitor);
+            for (auto &item : arguments)
+            {
+                item->accept(visitor);
+            }
+        }
+
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
         {
@@ -682,6 +799,13 @@ namespace typescript
 
         EmptyStatementAST(TextRange range)
             : NodeAST(SyntaxKind::EmptyStatement, range) {}
+
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+        }
 
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
@@ -705,6 +829,14 @@ namespace typescript
 
         const NodeAST::TypePtr& getExpression() const { return expression; }
 
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+            expression->accept(visitor);
+        }
+
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
         {
@@ -726,6 +858,14 @@ namespace typescript
             : NodeAST(SyntaxKind::ReturnStatement, range) {}
 
         const NodeAST::TypePtr& getExpression() const { return expression; }
+
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+            if (expression) expression->accept(visitor);
+        }
 
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
@@ -768,6 +908,16 @@ namespace typescript
         bool getDotDotDot() const { return dotdotdot; }
         void setDotDotDot(bool val) { dotdotdot = val; }
 
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+            identifier->accept(visitor);
+            type->accept(visitor);
+            if (initializer) initializer->accept(visitor);
+        }
+
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
         {
@@ -790,6 +940,17 @@ namespace typescript
             : NodeAST(SyntaxKind::Parameters, range), parameters(parameters) {}
 
         const std::vector<ParameterDeclarationAST::TypePtr>& getParameters() const { return parameters; }
+
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+            for (auto &item : parameters)
+            {
+                item->accept(visitor);
+            }
+        }
 
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
@@ -823,6 +984,17 @@ namespace typescript
         const TypeReferenceAST::TypePtr& getTypeParameter() const { return typeParameter; }
         const BlockAST::TypePtr& getFunctionBody() const { return functionBody; }
 
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+            identifier->accept(visitor);
+            parameters->accept(visitor);
+            typeParameter->accept(visitor);
+            functionBody->accept(visitor);
+        }
+        
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
         {
@@ -849,6 +1021,17 @@ namespace typescript
         auto begin() -> decltype(items.begin()) { return items.begin(); }
         auto end() -> decltype(items.end()) { return items.end(); }        
 
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+            for (auto &item : items)
+            {
+                item->accept(visitor);
+            }
+        }
+
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
         {
@@ -872,6 +1055,14 @@ namespace typescript
 
         auto begin() -> decltype(block.get()->begin()) { return block.get()->begin(); }
         auto end() -> decltype(block.get()->end()) { return block.get()->end(); }
+
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+            block->accept(visitor);
+        }        
 
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 

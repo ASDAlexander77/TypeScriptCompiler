@@ -380,16 +380,15 @@ namespace
 
             // check if we have any return with expration
             auto hasReturnStatementWithExpr = false;
-            /*
             FilterVisitorAST<TypeScriptParserANTLR::ReturnStatementContext> visitorAST1(
+                SyntaxKind::ReturnStatement,
                 [&](auto *retStatement) {
                     if (auto *expression = retStatement->expression())
                     {
                         hasReturnStatementWithExpr = true;
                     }
                 });
-            visitorAST1.visit(functionDeclarationAST);
-            */
+            visitorAST1.visit(functionDeclarationAST.get());
 
             if (!hasReturnStatementWithExpr)
             {
