@@ -914,7 +914,7 @@ namespace typescript
             
             visitor->visit(this);
             identifier->accept(visitor);
-            type->accept(visitor);
+            if (type) type->accept(visitor);
             if (initializer) initializer->accept(visitor);
         }
 
@@ -990,9 +990,9 @@ namespace typescript
             
             visitor->visit(this);
             identifier->accept(visitor);
-            parameters->accept(visitor);
-            typeParameter->accept(visitor);
-            functionBody->accept(visitor);
+            if (parameters) parameters->accept(visitor);
+            if (typeParameter) typeParameter->accept(visitor);
+            if (functionBody) functionBody->accept(visitor);
         }
         
         /// LLVM style RTTI
