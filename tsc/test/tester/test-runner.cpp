@@ -43,7 +43,7 @@ namespace fs = std::experimental::filesystem;
 #endif
 
 #ifndef TEST_FILE
-#define TEST_FILE "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/01arguments.ts"
+#define TEST_FILE "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/00assert.ts"
 #endif
 
 bool hasEnding(std::string const &fullString, std::string const &ending)
@@ -102,41 +102,53 @@ int runFolder(const char *folder)
 void createBatchFile()
 {
     std::ofstream batFile("compile.bat");
-    batFile << "set FILENAME=test_run" << std::endl;
+    batFile << "set FILENAME=%1" << std::endl;
     batFile << "set VCPATH=" << TEST_VCPATH << std::endl;
     batFile << "set SDKPATH=" << TEST_SDKPATH << std::endl;
     batFile << "set EXEPATH=" << TEST_EXEPATH << std::endl;
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "%TSCEXEPATH%\\tsc.exe --emit=llvm %1 2> %FILENAME%.il" << std::endl;
+    batFile << "%TSCEXEPATH%\\tsc.exe --emit=llvm %2 2> %FILENAME%.il" << std::endl;
     batFile << "%EXEPATH%\\llc.exe --filetype=obj -o=%FILENAME%.o %FILENAME%.il" << std::endl;
     batFile << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o \"%VCPATH%\\libcmt.lib\" \"%VCPATH%\\libvcruntime.lib\" \"%SDKPATH%\\kernel32.lib\" \"%SDKPATH%\\libucrt.lib\" \"%SDKPATH%\\uuid.lib\"" << std::endl;
+    batFile << "del *.il" << std::endl;
+    batFile << "del *.o" << std::endl;
     batFile.close();
 }
 
 void testFile(const char *file)
 {
-    std::cout << "Test file: " << file << std::endl;
+    auto fileName = fs::path(file).filename();
+    auto stem = fs::path(file).stem();
+    
+    std::stringstream sfn;
+    sfn << stem << ".exe";
+    auto exeFile = sfn.str();
+
+    std::cout << "Test file: " << fileName << " path: " << file << std::endl;
 
     // compile
     std::stringstream ss;
-    ss << "compile.bat " << file;
+    ss << "compile.bat " << stem << " " << file;
     auto compileResult = exec(ss.str());
 
     std::cout << "Compiling: " << std::endl;
     std::cout << compileResult << std::endl;
 
-    if (compileResult.find("error:") >= 0)
+    auto index = compileResult.find("error:");
+    if (index != std::string::npos)
     {
         throw "compile error";
     }
 
-    ASSERT_THROW_MSG(exists("test_run.exe"), "compile error");
+    ASSERT_THROW_MSG(exists(exeFile), "compile error");
 
     // run
-    auto result = exec("test_run.exe");
+    auto result = exec(exeFile);
 
     std::cout << "Test result: " << std::endl;
     std::cout << result << std::endl;
+
+    exec("del *.exe");
 }
 
 int main(int argc, char **argv)

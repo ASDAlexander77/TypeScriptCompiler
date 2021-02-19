@@ -204,6 +204,10 @@ namespace
             {
                 return mlirGen(std::dynamic_pointer_cast<NumericLiteralAST>(expressionAST), genContext);
             }
+            else if (expressionAST->getKind() == SyntaxKind::StringLiteral)
+            {
+                return mlirGen(std::dynamic_pointer_cast<StringLiteralAST>(expressionAST), genContext);
+            }
             else if (expressionAST->getKind() == SyntaxKind::TrueKeyword)
             {
                 return mlirGen(std::dynamic_pointer_cast<TrueLiteralAST>(expressionAST), genContext);
@@ -590,6 +594,8 @@ namespace
                 {
                     auto calleeName = definingOp->getAttrOfType<mlir::FlatSymbolRefAttr>(attrName);
                     auto functionName = calleeName.getValue();
+                    auto argumentsContext = callExpression->getArguments();
+                    auto opArgsCount = argumentsContext.size();
 
                     // resolve function
                     auto calledFuncIt = functionMap.find(functionName);
@@ -597,6 +603,24 @@ namespace
                     {
                         if (!genContext.allowPartialResolve)
                         {
+                            // print - internal command;
+                            if (functionName.compare(StringRef("print")) == 0)
+                            {
+                                SmallVector<mlir::Value, 0> operands;
+                                mlirGen(argumentsContext, operands, genContext);
+                                mlir::succeeded(mlirGenPrint(location, operands));
+                                return nullptr;
+                            }
+
+                            // assert - internal command;
+                            if (functionName.compare(StringRef("assert")) == 0 && opArgsCount > 0)
+                            {
+                                SmallVector<mlir::Value, 0> operands;
+                                mlirGen(argumentsContext, operands, genContext);
+                                mlir::succeeded(mlirGenAssert(location, operands));
+                                return nullptr;
+                            }
+
                             emitError(location) << "no defined function found for '" << functionName << "'";
                         }
 
@@ -608,8 +632,6 @@ namespace
                     // process arguments
                     SmallVector<mlir::Value, 0> operands;
 
-                    auto argumentsContext = callExpression->getArguments();
-                    auto opArgsCount = argumentsContext.size();
                     auto hasOptionalFrom = calledFunc.getOperation()->hasAttrOfType<mlir::IntegerAttr>("OptionalFrom");
                     if (hasOptionalFrom)
                     {
@@ -631,18 +653,6 @@ namespace
                                 operands.push_back(builder.create<UndefOp>(location, calledFunc.getType().getInput(i)));
                             }
                         }
-                    }
-
-                    // print - internal command;
-                    if (functionName.compare(StringRef("print")) == 0 && mlir::succeeded(mlirGenPrint(location, operands)))
-                    {
-                        return nullptr;
-                    }
-
-                    // assert - internal command;
-                    if (functionName.compare(StringRef("assert")) == 0 && operands.size() > 0 && mlir::succeeded(mlirGenAssert(location, operands)))
-                    {
-                        return nullptr;
                     }
 
                     // default call by name

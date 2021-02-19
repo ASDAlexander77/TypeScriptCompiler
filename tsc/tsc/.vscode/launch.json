@@ -5,7 +5,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "(Windows) Launch",
+            "name": "(Windows) CMake current - Launch",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${command:cmake.launchTargetPath}",
@@ -14,6 +14,28 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "externalConsole": true
-        }
+        },
+        {
+            "name": "(Windows) tsc",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
+            "args": ["-emit=mlir-affine", "C:/temp/2.ts"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": true
+        },        
+        {
+            "name": "(Windows) test-runner.exe - Launch",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/../../__build/tsc/test/tester/Debug/test-runner.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": true
+        },
     ]
 }
