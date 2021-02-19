@@ -118,7 +118,47 @@ namespace
 
         mlir::LogicalResult declareAllFunctionDeclarations(ModuleAST::TypePtr module)
         {
-            // TODO: finish it
+            auto unresolvedFunctions = -1;
+
+            // VisitorAST
+            // TODO: test recursive references
+            do
+            {
+                auto unresolvedFunctionsCurrentRun = 0;
+                FilterVisitorAST<FunctionDeclarationAST> visitorAST(
+                    SyntaxKind::FunctionDeclaration,
+                    [&](auto *funcDecl) {
+                        GenContext genContextDecl = {0};
+                        genContextDecl.allowPartialResolve = true;
+
+                        auto funcOpAndFuncProto = mlirGenFunctionPrototype(funcDecl, genContextDecl);
+                        auto result = std::get<2>(funcOpAndFuncProto);
+                        if (!result)
+                        {
+                            unresolvedFunctionsCurrentRun++;
+                            return;
+                        }
+
+                        auto funcOp = std::get<0>(funcOpAndFuncProto);
+                        auto &funcProto = std::get<1>(funcOpAndFuncProto);
+                        if (auto funcOp = theModule.lookupSymbol<mlir::FuncOp>(funcProto->getName()))
+                        {
+                            return;
+                        }
+
+                        functionMap.insert({funcOp.getName(), funcOp});
+                    });
+                module->accept(&visitorAST);
+
+                if (unresolvedFunctionsCurrentRun == unresolvedFunctions)
+                {
+                    emitError(loc(module->getLoc())) << "can't resolve function recursive references '" << fileName << "'";
+                    return mlir::failure();
+                }
+
+                unresolvedFunctions = unresolvedFunctionsCurrentRun;
+            } while (unresolvedFunctions > 0);
+
             return mlir::success();
         }
 
@@ -181,53 +221,6 @@ namespace
             mlirGenExpression(expressionStatementAST->getExpression(), genContext);
             return mlir::success();
         }        
-
-        /*
-        mlir::LogicalResult declareAllFunctionDeclarations(TypeScriptParserANTLR::MainContext *module)
-        {
-            auto unresolvedFunctions = -1;
-
-            // VisitorAST
-            // TODO: test recursive references
-            do
-            {
-                auto unresolvedFunctionsCurrentRun = 0;
-                FilterVisitorAST<TypeScriptParserANTLR::FunctionDeclarationContext> visitorAST(
-                    [&](auto *funcDecl) {
-                        GenContext genContextDecl = {0};
-                        genContextDecl.allowPartialResolve = true;
-
-                        auto funcOpAndFuncProto = mlirGenFunctionPrototype(funcDecl, genContextDecl);
-                        auto result = std::get<2>(funcOpAndFuncProto);
-                        if (!result)
-                        {
-                            unresolvedFunctionsCurrentRun++;
-                            return;
-                        }
-
-                        auto funcOp = std::get<0>(funcOpAndFuncProto);
-                        auto &funcProto = std::get<1>(funcOpAndFuncProto);
-                        if (auto funcOp = theModule.lookupSymbol<mlir::FuncOp>(funcProto->getName()))
-                        {
-                            return;
-                        }
-
-                        functionMap.insert({funcOp.getName(), funcOp});
-                    });
-                visitorAST.visit(module);
-
-                if (unresolvedFunctionsCurrentRun == unresolvedFunctions)
-                {
-                    emitError(loc(module)) << "can't resolve function recursive references '" << fileName << "'";
-                    return mlir::failure();
-                }
-
-                unresolvedFunctions = unresolvedFunctionsCurrentRun;
-            } while (unresolvedFunctions > 0);
-
-            return mlir::success();
-        }
-        */
 
         std::vector<std::shared_ptr<FunctionParamDOM>> mlirGen(ParametersDeclarationAST::TypePtr parametersContextAST,
                                                                const GenContext &genContext)
@@ -305,7 +298,7 @@ namespace
         }
 
         std::tuple<mlir::FuncOp, FunctionPrototypeDOM::TypePtr, bool> mlirGenFunctionPrototype(
-            FunctionDeclarationAST::TypePtr functionDeclarationAST, const GenContext &genContext)
+            FunctionDeclarationAST *functionDeclarationAST, const GenContext &genContext)
         {
             auto location = loc(functionDeclarationAST->getLoc());
 
@@ -373,7 +366,7 @@ namespace
             return std::make_tuple(funcOp, std::move(funcProto), true);
         }
 
-        mlir::Type getReturnType(FunctionDeclarationAST::TypePtr functionDeclarationAST, std::string name,
+        mlir::Type getReturnType(FunctionDeclarationAST *functionDeclarationAST, std::string name,
                                  const SmallVector<mlir::Type> &argTypes, const FunctionPrototypeDOM::TypePtr &funcProto, const GenContext &genContext)
         {
             mlir::Type returnType;
@@ -409,7 +402,7 @@ namespace
         mlir::LogicalResult mlirGen(FunctionDeclarationAST::TypePtr functionDeclarationAST, const GenContext &genContext)
         {
             SymbolTableScopeT varScope(symbolTable);
-            auto funcOpWithFuncProto = mlirGenFunctionPrototype(functionDeclarationAST, genContext);
+            auto funcOpWithFuncProto = mlirGenFunctionPrototype(functionDeclarationAST.get(), genContext);
 
             auto &funcOp = std::get<0>(funcOpWithFuncProto);
             auto &funcProto = std::get<1>(funcOpWithFuncProto);
@@ -419,7 +412,7 @@ namespace
                 return mlir::failure();
             }
 
-            auto returnType = mlirGenFunctionBody(functionDeclarationAST, funcOp, funcProto, genContext);
+            auto returnType = mlirGenFunctionBody(functionDeclarationAST.get(), funcOp, funcProto, genContext);
 
             // set visibility index
             if (functionDeclarationAST->getIdentifier()->getName() != "main")
@@ -433,7 +426,7 @@ namespace
             return mlir::success();
         }
 
-        mlir::Type mlirGenFunctionBody(FunctionDeclarationAST::TypePtr functionDeclarationAST, mlir::FuncOp funcOp, 
+        mlir::Type mlirGenFunctionBody(FunctionDeclarationAST *functionDeclarationAST, mlir::FuncOp funcOp, 
             FunctionPrototypeDOM::TypePtr funcProto, const GenContext &genContext, bool dummyRun = false)
         {
             mlir::Type returnType;
