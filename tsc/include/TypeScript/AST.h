@@ -481,8 +481,8 @@ namespace typescript
             }
             else if (numericLiteralContext->DecimalIntegerLiteral())
             {
-                isInt = false;
-                isFloat = true;
+                isInt = true;
+                isFloat = false;
                 longVal = std::stol(text(numericLiteralContext->DecimalIntegerLiteral()));
             }
         }            

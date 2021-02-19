@@ -204,6 +204,14 @@ namespace
             {
                 return mlirGen(std::dynamic_pointer_cast<NumericLiteralAST>(expressionAST), genContext);
             }
+            else if (expressionAST->getKind() == SyntaxKind::TrueKeyword)
+            {
+                return mlirGen(std::dynamic_pointer_cast<TrueLiteralAST>(expressionAST), genContext);
+            }
+            else if (expressionAST->getKind() == SyntaxKind::FalseKeyword)
+            {
+                return mlirGen(std::dynamic_pointer_cast<FalseLiteralAST>(expressionAST), genContext);
+            }
             else if (expressionAST->getKind() == SyntaxKind::Identifier)
             {
                 return mlirGen(std::dynamic_pointer_cast<IdentifierAST>(expressionAST), genContext);
