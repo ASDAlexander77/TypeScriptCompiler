@@ -735,10 +735,10 @@ namespace
                 mlir::BoolAttr::get(true, theModule.getContext()));
         }
 
-        mlir::Value mlirGen(FalseLiteralAST::TypePtr trueLiteral, const GenContext &genContext)
+        mlir::Value mlirGen(FalseLiteralAST::TypePtr falseLiteral, const GenContext &genContext)
         {
             return builder.create<mlir::ConstantOp>(
-                loc(trueLiteral->getLoc()),
+                loc(falseLiteral->getLoc()),
                 builder.getI1Type(),
                 mlir::BoolAttr::get(false, theModule.getContext()));
         }

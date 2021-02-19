@@ -151,7 +151,7 @@ namespace typescript
     
     PASS_CHOICES(BooleanLiteralContext)
     MAKE_CHOICE_IF(TRUE_KEYWORD, TrueLiteralAST)
-    MAKE_CHOICE_IF(FALSE_KEYWORD, TrueLiteralAST)
+    MAKE_CHOICE_IF(FALSE_KEYWORD, FalseLiteralAST)
     PASS_CHOICE_END()
 
     PASS_CHOICES(NumericLiteralContext)
