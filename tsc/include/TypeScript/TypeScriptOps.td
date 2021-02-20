@@ -272,4 +272,15 @@ def TypeScript_LogicalBinaryOp : TypeScript_Op<"logical_binary", []> {
   );
 }
 
+def TypeScript_CastOp : TypeScript_Op<"cast", [NoSideEffect]> {
+  let description = [{
+    Example:
+      typescript.cast %v : i32 to f16
+  }];
+  let arguments = (ins AnyType:$in);
+  let results = (outs AnyType:$res);
+  let assemblyFormat = "$in attr-dict `:` type($in) `to` type($res)";
+  let verifier = "return ::verify(*this);";
+}
+
 #endif // TYPESCRIPT_OPS
