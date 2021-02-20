@@ -152,7 +152,7 @@ namespace
 
                 if (unresolvedFunctionsCurrentRun == unresolvedFunctions)
                 {
-                    emitError(loc(module->getLoc())) << "can't resolve function recursive references '" << fileName << "'";
+                    emitError(loc(module->getLoc())) << "can't resolve recursive references of functions'" << fileName << "'";
                     return mlir::failure();
                 }
 
@@ -267,9 +267,14 @@ namespace
                 auto typeParameter = arg->getType();
                 if (typeParameter)
                 {
-                    auto type = getType(typeParameter);
+                    type = getType(typeParameter);
                     if (!type)
                     {
+                        if (!genContext.allowPartialResolve)
+                        {
+                            emitError(loc(typeParameter->getLoc())) << "can't resolve type for parameter '" << name << "'";
+                        }
+
                         return params;
                     }
                 }
@@ -636,7 +641,7 @@ namespace
                             // print - internal command;
                             if (functionName.compare(StringRef("print")) == 0)
                             {
-                                SmallVector<mlir::Value, 0> operands;
+                                SmallVector<mlir::Value, 4> operands;
                                 mlirGen(argumentsContext, operands, genContext);
                                 mlir::succeeded(mlirGenPrint(location, operands));
                                 return nullptr;
@@ -645,7 +650,7 @@ namespace
                             // assert - internal command;
                             if (functionName.compare(StringRef("assert")) == 0 && opArgsCount > 0)
                             {
-                                SmallVector<mlir::Value, 0> operands;
+                                SmallVector<mlir::Value, 4> operands;
                                 mlirGen(argumentsContext, operands, genContext);
                                 mlir::succeeded(mlirGenAssert(location, operands));
                                 return nullptr;
@@ -660,7 +665,7 @@ namespace
                     auto calledFunc = calledFuncIt->second;
 
                     // process arguments
-                    SmallVector<mlir::Value, 0> operands;
+                    SmallVector<mlir::Value, 4> operands;
 
                     auto hasOptionalFrom = calledFunc.getOperation()->hasAttrOfType<mlir::IntegerAttr>("OptionalFrom");
                     if (hasOptionalFrom)
@@ -704,7 +709,7 @@ namespace
             return nullptr;
         }
 
-        mlir::LogicalResult mlirGenPrint(const mlir::Location &location, const SmallVector<mlir::Value, 0> &operands)
+        mlir::LogicalResult mlirGenPrint(const mlir::Location &location, const SmallVector<mlir::Value, 4> &operands)
         {
             auto printOp =
                 builder.create<PrintOp>(
@@ -714,7 +719,7 @@ namespace
             return mlir::success();
         }
 
-        mlir::LogicalResult mlirGenAssert(const mlir::Location &location, const SmallVector<mlir::Value, 0> &operands)
+        mlir::LogicalResult mlirGenAssert(const mlir::Location &location, const SmallVector<mlir::Value, 4> &operands)
         {
             auto msg = StringRef("assert");
             if (operands.size() > 1)
@@ -742,7 +747,7 @@ namespace
             return mlir::success();
         }
 
-        mlir::LogicalResult mlirGen(std::vector<NodeAST::TypePtr> arguments, SmallVector<mlir::Value, 0> &operands, const GenContext &genContext)
+        mlir::LogicalResult mlirGen(std::vector<NodeAST::TypePtr> arguments, SmallVector<mlir::Value, 4> &operands, const GenContext &genContext)
         {
             for (auto expression : arguments)
             {
