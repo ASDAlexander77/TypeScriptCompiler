@@ -224,6 +224,10 @@ namespace
             {
                 return mlirGen(std::dynamic_pointer_cast<CallExpressionAST>(expressionAST), genContext);
             }
+            else if (expressionAST->getKind() == SyntaxKind::BinaryExpression)
+            {
+                return mlirGen(std::dynamic_pointer_cast<BinaryExpressionAST>(expressionAST), genContext);
+            }
 
             llvm_unreachable("unknown expression");
         }      
@@ -574,6 +578,16 @@ namespace
             {
                 builder.create<mlir::ReturnOp>(loc(returnStatementAST->getLoc()));
             }
+
+            return mlir::success();
+        }
+
+        mlir::Value mlirGen(BinaryExpressionAST::TypePtr binaryExpressionAST, const GenContext &genContext)
+        {
+            auto leftExpressionValue = mlirGenExpression(binaryExpressionAST->getLeftExpression(), genContext);
+            auto rightExpressionValue = mlirGenExpression(binaryExpressionAST->getRightExpression(), genContext);
+
+            
 
             return mlir::success();
         }
