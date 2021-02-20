@@ -584,12 +584,28 @@ namespace
 
         mlir::Value mlirGen(BinaryExpressionAST::TypePtr binaryExpressionAST, const GenContext &genContext)
         {
+            auto opCode = binaryExpressionAST->getOpCode();
+
             auto leftExpressionValue = mlirGenExpression(binaryExpressionAST->getLeftExpression(), genContext);
             auto rightExpressionValue = mlirGenExpression(binaryExpressionAST->getRightExpression(), genContext);
 
-            
-
-            return mlir::success();
+            switch (opCode)
+            {
+                case SyntaxKind::EqualsEqualsToken:
+                    return builder.create<LogicalBinaryOp>(
+                        loc(binaryExpressionAST->getLoc()), 
+                        builder.getI1Type(),
+                        builder.getI32IntegerAttr((int)opCode), 
+                        leftExpressionValue, 
+                        rightExpressionValue);         
+                default:  
+                    return builder.create<ArithmeticBinaryOp>(
+                        loc(binaryExpressionAST->getLoc()), 
+                        leftExpressionValue.getType(),
+                        builder.getI32IntegerAttr((int)opCode), 
+                        leftExpressionValue, 
+                        rightExpressionValue);
+            }
         }
 
         mlir::Value mlirGen(CallExpressionAST::TypePtr callExpression, const GenContext &genContext)

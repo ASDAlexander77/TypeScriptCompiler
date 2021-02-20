@@ -432,4 +432,4 @@ namespace typescript
         IntrinsicIndexedElement = 2,
         IntrinsicElement = 3
     };
-}
+};

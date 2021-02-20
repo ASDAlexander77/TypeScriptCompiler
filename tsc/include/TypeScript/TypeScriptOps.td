@@ -230,5 +230,46 @@ def TypeScript_VariableOp : TypeScript_Op<"variable", []> {
   );
 }
 
+def TypeScript_ArithmeticBinaryOp : TypeScript_Op<"arithmetic_binary", []> {
+  let summary = [{
+  }];
+
+  let description = [{
+    ```mlir
+    %2 = typescript.arithmetic_binary 1, %0, %1 : f32
+    ```
+  }];
+
+  let arguments = (ins
+    I32Attr:$opCode,
+    AnyType:$operand1, 
+    AnyType:$operand2
+  );
+
+  let results = (outs
+    AnyType:$result
+  );
+}
+
+def TypeScript_LogicalBinaryOp : TypeScript_Op<"logical_binary", []> {
+  let summary = [{
+  }];
+
+  let description = [{
+    ```mlir
+    %2 = typescript.logical_binary 1, %0, %1 : i1
+    ```
+  }];
+
+  let arguments = (ins
+    I32Attr:$opCode,
+    AnyType:$operand1, 
+    AnyType:$operand2
+  );
+
+  let results = (outs
+    I1:$result
+  );
+}
 
 #endif // TYPESCRIPT_OPS

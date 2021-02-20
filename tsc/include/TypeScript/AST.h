@@ -112,6 +112,7 @@ namespace typescript
     class CallExpressionAST;
     class EmptyStatementAST;
     class ExpressionStatementAST;
+    class BinaryExpressionAST;
     class ReturnStatementAST;
     class ParameterDeclarationAST;
     class ParametersDeclarationAST;
@@ -211,6 +212,7 @@ namespace typescript
     PASS(RelationalExpressionContext, shiftExpression)
 
     PASS_CHOICES(EqualityExpressionContext)
+    MAKE_CHOICE_IF(EQUALSEQUALS_TOKEN, BinaryExpressionAST)
     PASS_CHOICE(relationalExpression)
     PASS_CHOICE_END()
 
@@ -788,6 +790,55 @@ namespace typescript
             return N->getKind() == SyntaxKind::CallExpression;
         }          
     };    
+
+    class BinaryExpressionAST : public NodeAST
+    {
+        SyntaxKind opCode;
+        NodeAST::TypePtr leftExpression;
+        NodeAST::TypePtr rightExpression;
+    public:
+        using TypePtr = std::shared_ptr<BinaryExpressionAST>;
+
+        BinaryExpressionAST(TypeScriptParserANTLR::EqualityExpressionContext* equalityExpressionContext) 
+            : NodeAST(SyntaxKind::BinaryExpression, TextRange(equalityExpressionContext)),
+              opCode(parseOpCode(equalityExpressionContext)),
+              leftExpression(parse(equalityExpressionContext->equalityExpression(0))),
+              rightExpression(parse(equalityExpressionContext->equalityExpression(1))) {}
+
+        BinaryExpressionAST(TextRange range, SyntaxKind opCode, NodeAST::TypePtr leftExpression, NodeAST::TypePtr rightExpression)
+            : NodeAST(SyntaxKind::BinaryExpression, range), opCode(opCode), leftExpression(leftExpression), rightExpression(rightExpression) {}
+
+        SyntaxKind getOpCode() const { return opCode; }
+        const NodeAST::TypePtr& getLeftExpression() const { return leftExpression; }
+        const NodeAST::TypePtr& getRightExpression() const { return rightExpression; }
+
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+            leftExpression->accept(visitor);
+            rightExpression->accept(visitor);            
+        }
+
+        /// LLVM style RTTI
+        static bool classof(const NodeAST *N) 
+        {
+            return N->getKind() == SyntaxKind::BinaryExpression;
+        }    
+    private:
+        SyntaxKind parseOpCode(TypeScriptParserANTLR::EqualityExpressionContext* equalityExpressionContext)
+        {
+            if (equalityExpressionContext->EQUALSEQUALS_TOKEN())
+            {
+                return SyntaxKind::EqualsEqualsToken;                
+            }
+            else
+            {
+                llvm_unreachable("not implemented");
+            }
+        }           
+    }; 
 
     class EmptyStatementAST : public NodeAST
     {

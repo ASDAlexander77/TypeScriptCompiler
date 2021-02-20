@@ -1,6 +1,7 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/Passes.h"
+#include "TypeScript/EnumsAST.h"
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/SCF/SCF.h"
@@ -10,46 +11,47 @@
 #include "mlir/Transforms/DialectConversion.h"
 #include "llvm/ADT/Sequence.h"
 
-using namespace mlir;
+using namespace mlir::typescript;
+using namespace typescript;
 
 //===----------------------------------------------------------------------===//
 // TypeScriptToAffine RewritePatterns
 //===----------------------------------------------------------------------===//
 
-struct CallOpLowering : public OpRewritePattern<typescript::CallOp>
+struct CallOpLowering : public mlir::OpRewritePattern<CallOp>
 {
-    using OpRewritePattern<typescript::CallOp>::OpRewritePattern;
+    using mlir::OpRewritePattern<CallOp>::OpRewritePattern;
 
-    LogicalResult matchAndRewrite(typescript::CallOp op, PatternRewriter &rewriter) const final
+    mlir::LogicalResult matchAndRewrite(CallOp op, mlir::PatternRewriter &rewriter) const final
     {
         // just replace
-        rewriter.replaceOpWithNewOp<mlir::CallOp>(op, op.getCallee(), op.getResultTypes(), op.getArgOperands());
-        return success();
+        rewriter.replaceOpWithNewOp<CallOp>(op, op.getCallee(), op.getResultTypes(), op.getArgOperands());
+        return mlir::success();
     }
 };
 
-struct ParamOpLowering : public OpRewritePattern<typescript::ParamOp>
+struct ParamOpLowering : public mlir::OpRewritePattern<ParamOp>
 {
-    using OpRewritePattern<typescript::ParamOp>::OpRewritePattern;
+    using mlir::OpRewritePattern<ParamOp>::OpRewritePattern;
 
-    LogicalResult matchAndRewrite(typescript::ParamOp paramOp, PatternRewriter &rewriter) const final
+    mlir::LogicalResult matchAndRewrite(ParamOp paramOp, mlir::PatternRewriter &rewriter) const final
     {
-        mlir::Value allocated = rewriter.create<mlir::AllocaOp>(paramOp.getLoc(), paramOp.getType().cast<MemRefType>());
+        mlir::Value allocated = rewriter.create<mlir::AllocaOp>(paramOp.getLoc(), paramOp.getType().cast<mlir::MemRefType>());
         rewriter.create<mlir::StoreOp>(paramOp.getLoc(), paramOp.argValue(), allocated);
         rewriter.replaceOp(paramOp, allocated);
-        return success();
+        return mlir::success();
     }
 };
 
-struct ParamOptionalOpLowering : public OpRewritePattern<typescript::ParamOptionalOp>
+struct ParamOptionalOpLowering : public mlir::OpRewritePattern<ParamOptionalOp>
 {
-    using OpRewritePattern<typescript::ParamOptionalOp>::OpRewritePattern;
+    using mlir::OpRewritePattern<ParamOptionalOp>::OpRewritePattern;
 
-    LogicalResult matchAndRewrite(typescript::ParamOptionalOp paramOp, PatternRewriter &rewriter) const final
+    mlir::LogicalResult matchAndRewrite(ParamOptionalOp paramOp, mlir::PatternRewriter &rewriter) const final
     {
         auto location = paramOp.getLoc();
 
-        mlir::Value allocated = rewriter.create<mlir::AllocaOp>(location, paramOp.getType().cast<MemRefType>());
+        mlir::Value allocated = rewriter.create<mlir::AllocaOp>(location, paramOp.getType().cast<mlir::MemRefType>());
 
         // scf.if
         auto index = paramOp.paramIndex();
@@ -79,39 +81,67 @@ struct ParamOptionalOpLowering : public OpRewritePattern<typescript::ParamOption
         // save op
         rewriter.create<mlir::StoreOp>(location, ifOp.results().front(), allocated);
         rewriter.replaceOp(paramOp, allocated);
-        return success();
+        return mlir::success();
     }
 };
 
-struct ParamDefaultValueOpLowering : public OpRewritePattern<typescript::ParamDefaultValueOp>
+struct ParamDefaultValueOpLowering : public mlir::OpRewritePattern<ParamDefaultValueOp>
 {
-    using OpRewritePattern<typescript::ParamDefaultValueOp>::OpRewritePattern;
+    using mlir::OpRewritePattern<ParamDefaultValueOp>::OpRewritePattern;
 
-    LogicalResult matchAndRewrite(typescript::ParamDefaultValueOp op, PatternRewriter &rewriter) const final
+    mlir::LogicalResult matchAndRewrite(ParamDefaultValueOp op, mlir::PatternRewriter &rewriter) const final
     {
         rewriter.replaceOpWithNewOp<mlir::scf::YieldOp>(op, op.results());
-        return success();
+        return mlir::success();
     }
 };
 
 
-struct VariableOpLowering : public OpRewritePattern<typescript::VariableOp>
+struct VariableOpLowering : public mlir::OpRewritePattern<VariableOp>
 {
-    using OpRewritePattern<typescript::VariableOp>::OpRewritePattern;
+    using mlir::OpRewritePattern<VariableOp>::OpRewritePattern;
 
-    LogicalResult matchAndRewrite(typescript::VariableOp varOp, PatternRewriter &rewriter) const final
+    mlir::LogicalResult matchAndRewrite(VariableOp varOp, mlir::PatternRewriter &rewriter) const final
     {
         auto init = varOp.initializer();
         if (!init)
         {
-            rewriter.replaceOpWithNewOp<mlir::AllocaOp>(varOp, varOp.getType().cast<MemRefType>());
-            return success();
+            rewriter.replaceOpWithNewOp<mlir::AllocaOp>(varOp, varOp.getType().cast<mlir::MemRefType>());
+            return mlir::success();
         }
 
-        mlir::Value allocated = rewriter.create<mlir::AllocaOp>(varOp.getLoc(), varOp.getType().cast<MemRefType>());
-        rewriter.create<LLVM::StoreOp>(varOp.getLoc(), init, allocated);
+        mlir::Value allocated = rewriter.create<mlir::AllocaOp>(varOp.getLoc(), varOp.getType().cast<mlir::MemRefType>());
+        rewriter.create<mlir::LLVM::StoreOp>(varOp.getLoc(), init, allocated);
         rewriter.replaceOp(varOp, allocated);
-        return success();
+        return mlir::success();
+    }
+};
+
+struct ArithmeticBinaryOpLowering : public mlir::OpRewritePattern<ArithmeticBinaryOp>
+{
+    using mlir::OpRewritePattern<ArithmeticBinaryOp>::OpRewritePattern;
+
+    mlir::LogicalResult matchAndRewrite(ArithmeticBinaryOp arithmeticBinaryOp, mlir::PatternRewriter &rewriter) const final
+    {
+        llvm_unreachable("not implemented");
+        return mlir::success();
+    }
+};
+
+struct LogicalBinaryOpLowering : public mlir::OpRewritePattern<LogicalBinaryOp>
+{
+    using mlir::OpRewritePattern<LogicalBinaryOp>::OpRewritePattern;
+
+    mlir::LogicalResult matchAndRewrite(LogicalBinaryOp logicalBinaryOp, mlir::PatternRewriter &rewriter) const final
+    {
+        switch ((SyntaxKind)logicalBinaryOp.opCode())
+        {
+            case SyntaxKind::EqualsEqualsToken:
+                rewriter.replaceOpWithNewOp<mlir::CmpIOp>(logicalBinaryOp, mlir::CmpIPredicate::eq, logicalBinaryOp.getOperand(0), logicalBinaryOp.getOperand(1));
+                return mlir::success(); 
+            default:
+                llvm_unreachable("not implemented");
+        }
     }
 };
 
@@ -124,11 +154,11 @@ struct VariableOpLowering : public OpRewritePattern<typescript::VariableOp>
 /// rest of the code in the TypeScript dialect.
 namespace
 {
-    struct TypeScriptToAffineLoweringPass : public PassWrapper<TypeScriptToAffineLoweringPass, FunctionPass>
+    struct TypeScriptToAffineLoweringPass : public mlir::PassWrapper<TypeScriptToAffineLoweringPass, mlir::FunctionPass>
     {
-        void getDependentDialects(DialectRegistry &registry) const override
+        void getDependentDialects(mlir::DialectRegistry &registry) const override
         {
-            registry.insert<AffineDialect, StandardOpsDialect, scf::SCFDialect>();
+            registry.insert<mlir::AffineDialect, mlir::StandardOpsDialect, mlir::scf::SCFDialect>();
         }
 
         void runOnFunction() final;
@@ -152,32 +182,34 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
 
     // The first thing to define is the conversion target. This will define the
     // final target for this lowering.
-    ConversionTarget target(getContext());
+    mlir::ConversionTarget target(getContext());
 
     // We define the specific operations, or dialects, that are legal targets for
     // this lowering. In our case, we are lowering to a combination of the
     // `Affine` and `Standard` dialects.
-    target.addLegalDialect<AffineDialect, StandardOpsDialect, scf::SCFDialect>();
+    target.addLegalDialect<mlir::AffineDialect, mlir::StandardOpsDialect, mlir::scf::SCFDialect>();
 
     // We also define the TypeScript dialect as Illegal so that the conversion will fail
     // if any of these operations are *not* converted. Given that we actually want
     // a partial lowering, we explicitly mark the TypeScript operations that don't want
     // to lower, `typescript.print`, as `legal`.
-    target.addIllegalDialect<typescript::TypeScriptDialect>();
+    target.addIllegalDialect<TypeScriptDialect>();
     target.addLegalOp<
-        typescript::PrintOp,
-        typescript::AssertOp,
-        typescript::UndefOp>();
+        PrintOp,
+        AssertOp,
+        UndefOp>();
 
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.
-    OwningRewritePatternList patterns;
+    mlir::OwningRewritePatternList patterns;
     patterns.insert<
         CallOpLowering,
         ParamOpLowering,
         ParamOptionalOpLowering,
         ParamDefaultValueOpLowering,
-        VariableOpLowering
+        VariableOpLowering,
+        ArithmeticBinaryOpLowering,
+        LogicalBinaryOpLowering
     >(&getContext());
 
     // With the target and rewrite patterns defined, we can now attempt the
@@ -191,7 +223,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
 
 /// Create a pass for lowering operations in the `Affine` and `Std` dialects,
 /// for a subset of the TypeScript IR.
-std::unique_ptr<Pass> mlir::typescript::createLowerToAffinePass()
+std::unique_ptr<mlir::Pass> mlir::typescript::createLowerToAffinePass()
 {
     return std::make_unique<TypeScriptToAffineLoweringPass>();
 }
