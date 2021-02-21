@@ -590,8 +590,17 @@ namespace
         {
             auto opCode = binaryExpressionAST->getOpCode();
 
-            auto leftExpressionValue = mlirGenExpression(binaryExpressionAST->getLeftExpression(), genContext);
-            auto rightExpressionValue = mlirGenExpression(binaryExpressionAST->getRightExpression(), genContext);
+            auto leftExpression = binaryExpressionAST->getLeftExpression();
+            auto rightExpression = binaryExpressionAST->getRightExpression();
+
+            auto leftExpressionValue = mlirGenExpression(leftExpression, genContext);
+            auto rightExpressionValue = mlirGenExpression(rightExpression, genContext);
+
+            if (leftExpressionValue.getType() != rightExpressionValue.getType())
+            {
+                auto castValue = builder.create<CastOp>(loc(rightExpression->getLoc()), leftExpressionValue.getType(), rightExpressionValue);
+                rightExpressionValue = castValue;
+            }
 
             switch (opCode)
             {

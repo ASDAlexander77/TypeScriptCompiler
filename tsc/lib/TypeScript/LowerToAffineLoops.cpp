@@ -165,10 +165,24 @@ struct LogicalBinaryOpLowering : public OpRewritePattern<ts::LogicalBinaryOp>
 
     LogicalResult matchAndRewrite(ts::LogicalBinaryOp logicalBinaryOp, PatternRewriter &rewriter) const final
     {
+        auto leftType = logicalBinaryOp.getOperand(0).getType();
+
         switch ((SyntaxKind)logicalBinaryOp.opCode())
         {
         case SyntaxKind::EqualsEqualsToken:
-            rewriter.replaceOpWithNewOp<CmpIOp>(logicalBinaryOp, CmpIPredicate::eq, logicalBinaryOp.getOperand(0), logicalBinaryOp.getOperand(1));
+            if (leftType.isIntOrIndex())
+            {
+                rewriter.replaceOpWithNewOp<CmpIOp>(logicalBinaryOp, CmpIPredicate::eq, logicalBinaryOp.getOperand(0), logicalBinaryOp.getOperand(1));
+            }
+            else if (!leftType.isIntOrIndex() && leftType.isIntOrIndexOrFloat())
+            {
+                rewriter.replaceOpWithNewOp<CmpFOp>(logicalBinaryOp, CmpFPredicate::OEQ, logicalBinaryOp.getOperand(0), logicalBinaryOp.getOperand(1));
+            }
+            else
+            {
+                llvm_unreachable("not implemented");
+            }
+
             return success();
         default:
             llvm_unreachable("not implemented");
