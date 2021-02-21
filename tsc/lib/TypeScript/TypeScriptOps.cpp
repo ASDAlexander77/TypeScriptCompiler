@@ -1,5 +1,6 @@
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/TypeScriptDialect.h"
+#include "TypeScript/Defines.h"
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/PatternMatch.h"
@@ -116,7 +117,7 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable)
     auto fnType = fn.getType();
 
     auto optionalFromValue = -1;
-    auto optionalFrom = fn->getAttrOfType<IntegerAttr>("OptionalFrom");
+    auto optionalFrom = fn->getAttrOfType<IntegerAttr>(FUNC_OPTIONAL_ATTR_NAME);
     if (optionalFrom)
     {
         optionalFromValue = *optionalFrom.getValue().getRawData();

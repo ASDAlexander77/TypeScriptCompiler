@@ -121,6 +121,33 @@ struct VariableOpLowering : public OpRewritePattern<ts::VariableOp>
     }
 };
 
+struct CastOpLowering : public OpRewritePattern<ts::CastOp>
+{
+    using OpRewritePattern<ts::CastOp>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(ts::CastOp op, PatternRewriter &rewriter) const final
+    {
+        auto in = op.in();
+        auto res = op.res();
+        auto op1 = in.getType();
+        auto op2 = res.getType();
+
+        if (op1.isInteger(32) && op2.isF32())
+        {
+            rewriter.replaceOpWithNewOp<SIToFPOp>(op, op2, in);
+            return success();
+        }
+
+        if (op2.isF32() && op1.isInteger(32))
+        {
+            rewriter.replaceOpWithNewOp<FPToSIOp>(op, op2, in);
+            return success();
+        }
+
+        llvm_unreachable("not implemented");
+    }
+};
+
 struct ArithmeticBinaryOpLowering : public OpRewritePattern<ts::ArithmeticBinaryOp>
 {
     using OpRewritePattern<ts::ArithmeticBinaryOp>::OpRewritePattern;
@@ -212,6 +239,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         ParamOptionalOpLowering,
         ParamDefaultValueOpLowering,
         VariableOpLowering,
+        CastOpLowering,
         ArithmeticBinaryOpLowering,
         LogicalBinaryOpLowering>(&getContext());
 

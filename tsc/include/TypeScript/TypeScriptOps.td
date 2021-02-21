@@ -280,7 +280,6 @@ def TypeScript_CastOp : TypeScript_Op<"cast", [NoSideEffect]> {
   let arguments = (ins AnyType:$in);
   let results = (outs AnyType:$res);
   let assemblyFormat = "$in attr-dict `:` type($in) `to` type($res)";
-  let verifier = "return ::verify(*this);";
 }
 
 #endif // TYPESCRIPT_OPS

@@ -3,6 +3,8 @@
 #include "TypeScript/TypeScriptOps.h"
 
 #include "TypeScript/DOM.h"
+#include "TypeScript/Defines.h"
+#include "TypeScript/AST.h"
 
 #include "mlir/IR/Types.h"
 #include "mlir/IR/Attributes.h"
@@ -25,8 +27,6 @@
 #include "TypeScriptParserANTLR.h"
 #include "TypeScript/VisitorAST.h"
 
-#include "TypeScript/AST.h"
-
 #include <numeric>
 
 using namespace mlir::typescript;
@@ -42,7 +42,6 @@ using llvm::SmallVector;
 using llvm::StringRef;
 using llvm::Twine;
 
-#define COUNT_PARAMS_PARAMETERNAME "__count_params"
 namespace
 {
     struct GenContext
@@ -379,7 +378,7 @@ namespace
             // save info about optional parameters
             if (argOptionalFrom >= 0)
             {
-                attrs.push_back(builder.getNamedAttr("OptionalFrom", builder.getI8IntegerAttr(argOptionalFrom)));
+                attrs.push_back(builder.getNamedAttr(FUNC_OPTIONAL_ATTR_NAME, builder.getI8IntegerAttr(argOptionalFrom)));
             }
 
             auto funcOp = mlir::FuncOp::create(location, StringRef(name), funcType, ArrayRef<mlir::NamedAttribute>(attrs));
@@ -641,7 +640,7 @@ namespace
                             // print - internal command;
                             if (functionName.compare(StringRef("print")) == 0)
                             {
-                                SmallVector<mlir::Value, 4> operands;
+                                SmallVector<mlir::Value, 4> operands;                                
                                 mlirGen(argumentsContext, operands, genContext);
                                 mlir::succeeded(mlirGenPrint(location, operands));
                                 return nullptr;
@@ -663,29 +662,30 @@ namespace
                     }
 
                     auto calledFunc = calledFuncIt->second;
+                    auto calledFuncType = calledFunc.getType();
+                    auto funcArgsCount = calledFunc.getNumArguments();
 
                     // process arguments
                     SmallVector<mlir::Value, 4> operands;
 
-                    auto hasOptionalFrom = calledFunc.getOperation()->hasAttrOfType<mlir::IntegerAttr>("OptionalFrom");
+                    auto hasOptionalFrom = calledFunc.getOperation()->hasAttrOfType<mlir::IntegerAttr>(FUNC_OPTIONAL_ATTR_NAME);
                     if (hasOptionalFrom)
                     {
                         auto constNumOfParams = builder.create<mlir::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(opArgsCount));
                         operands.push_back(constNumOfParams);
                     }
 
-                    mlirGen(argumentsContext, operands, genContext);
+                    mlirGen(argumentsContext, operands, calledFuncType, hasOptionalFrom, genContext);
 
                     if (hasOptionalFrom)
                     {
-                        auto funcArgsCount = calledFunc.getNumArguments();
                         auto optionalFrom = funcArgsCount - opArgsCount;
                         if (hasOptionalFrom && optionalFrom > 0)
                         {
                             // -1 to exclude count params
                             for (auto i = (size_t)opArgsCount; i < funcArgsCount - 1; i++)
                             {
-                                operands.push_back(builder.create<UndefOp>(location, calledFunc.getType().getInput(i)));
+                                operands.push_back(builder.create<UndefOp>(location, calledFuncType.getInput(i)));
                             }
                         }
                     }
@@ -751,7 +751,30 @@ namespace
         {
             for (auto expression : arguments)
             {
-                operands.push_back(mlirGenExpression(expression, genContext));
+                auto value = mlirGenExpression(expression, genContext);
+                operands.push_back(value);
+            }
+
+            return mlir::success();
+        }        
+
+        mlir::LogicalResult mlirGen(std::vector<NodeAST::TypePtr> arguments, SmallVector<mlir::Value, 4> &operands, mlir::FunctionType funcType, bool hasOptionalFrom, const GenContext &genContext)
+        {
+            auto i = hasOptionalFrom ? 0 : -1;
+            for (auto expression : arguments)
+            {
+                i++;
+                auto value = mlirGenExpression(expression, genContext);
+
+                if (value.getType() != funcType.getInput(i))
+                {
+                    auto castValue = builder.create<CastOp>(loc(expression->getLoc()), funcType.getInput(i), value);
+                    operands.push_back(castValue);
+                }
+                else
+                {
+                    operands.push_back(value);
+                }
             }
 
             return mlir::success();
