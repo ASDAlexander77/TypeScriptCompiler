@@ -47,6 +47,7 @@ namespace
     struct GenContext
     {
         bool allowPartialResolve;
+        mlir::Type functionReturnType;
     };
 
     /// Implementation of a simple MLIR emission from the TypeScript AST.
@@ -432,7 +433,13 @@ namespace
                 return mlir::failure();
             }
 
-            auto returnType = mlirGenFunctionBody(functionDeclarationAST.get(), funcOp, funcProto, genContext);
+            auto funcGenContext = GenContext(genContext);
+            if (funcOp.getNumResults() > 0)
+            {
+                funcGenContext.functionReturnType = funcOp.getType().getResult(0);
+            }
+
+            auto returnType = mlirGenFunctionBody(functionDeclarationAST.get(), funcOp, funcProto, funcGenContext);
 
             // set visibility index
             if (functionDeclarationAST->getIdentifier()->getName() != "main")
@@ -576,6 +583,12 @@ namespace
             if (auto expression = returnStatementAST->getExpression())
             {
                 auto expressionValue = mlirGenExpression(expression, genContext);
+                if (genContext.functionReturnType && genContext.functionReturnType != expressionValue.getType())
+                {
+                    auto castValue = builder.create<CastOp>(loc(expression->getLoc()), genContext.functionReturnType, expressionValue);
+                    expressionValue = castValue;
+                }
+
                 builder.create<mlir::ReturnOp>(loc(returnStatementAST->getLoc()), expressionValue);
             }
             else

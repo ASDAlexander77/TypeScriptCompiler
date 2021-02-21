@@ -96,7 +96,7 @@ private:
 class FunctionPrototypeDOM
 {
     std::string name;
-    std::vector<FunctionParamDOM::TypePtr> args;
+    std::vector<FunctionParamDOM::TypePtr> args;    
 
 public:
 
