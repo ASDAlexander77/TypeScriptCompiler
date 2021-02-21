@@ -685,7 +685,7 @@ namespace
                             // -1 to exclude count params
                             for (auto i = (size_t)opArgsCount; i < funcArgsCount - 1; i++)
                             {
-                                operands.push_back(builder.create<UndefOp>(location, calledFuncType.getInput(i)));
+                                operands.push_back(builder.create<UndefOp>(location, calledFuncType.getInput(i + 1)));
                             }
                         }
                     }
