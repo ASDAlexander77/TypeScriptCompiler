@@ -12,3 +12,4 @@ add_executable(test-runner test-runner.cpp)
 ######## enable testing ############
 add_test(NAME test-runner-00-assert COMMAND test-runner "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/00assert.ts")
 add_test(NAME test-runner-01-arguments COMMAND test-runner "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/01arguments.ts")
+add_test(NAME test-runner-01-arguments-2 COMMAND test-runner "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/01arguments2.ts")

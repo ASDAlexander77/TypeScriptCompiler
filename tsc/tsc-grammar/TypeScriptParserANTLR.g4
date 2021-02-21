@@ -109,7 +109,10 @@ bitwiseANDExpression
 
 equalityExpression
     : relationalExpression 
-    | equalityExpression EQUALSEQUALS_TOKEN equalityExpression
+    | equalityExpression EQUALSEQUALS_TOKEN relationalExpression
+    | equalityExpression EXCLAMATIONEQUALS_TOKEN relationalExpression
+    | equalityExpression EQUALSEQUALSEQUALS_TOKEN relationalExpression
+    | equalityExpression EXCLAMATIONEQUALSEQUALS_TOKEN relationalExpression
     ;    
 
 relationalExpression
@@ -121,6 +124,8 @@ shiftExpression
 
 additiveExpression
     : multiplicativeExpression
+    | additiveExpression PLUS_TOKEN multiplicativeExpression
+    | additiveExpression MINUS_TOKEN multiplicativeExpression
     ;    
 
 multiplicativeExpression

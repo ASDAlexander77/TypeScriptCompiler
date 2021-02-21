@@ -205,7 +205,11 @@ namespace typescript
 
     PASS(MultiplicativeExpressionContext, exponentiationExpression)
 
-    PASS(AdditiveExpressionContext, multiplicativeExpression)
+    PASS_CHOICES(AdditiveExpressionContext)
+    MAKE_CHOICE_IF(PLUS_TOKEN, BinaryExpressionAST)
+    MAKE_CHOICE_IF(MINUS_TOKEN, BinaryExpressionAST)
+    PASS_CHOICE(multiplicativeExpression)
+    PASS_CHOICE_END()
 
     PASS(ShiftExpressionContext, additiveExpression)
 
@@ -213,6 +217,9 @@ namespace typescript
 
     PASS_CHOICES(EqualityExpressionContext)
     MAKE_CHOICE_IF(EQUALSEQUALS_TOKEN, BinaryExpressionAST)
+    MAKE_CHOICE_IF(EQUALSEQUALSEQUALS_TOKEN, BinaryExpressionAST)
+    MAKE_CHOICE_IF(EQUALSEQUALS_TOKEN, BinaryExpressionAST)
+    MAKE_CHOICE_IF(EQUALSEQUALSEQUALS_TOKEN, BinaryExpressionAST)
     PASS_CHOICE(relationalExpression)
     PASS_CHOICE_END()
 
@@ -802,8 +809,14 @@ namespace typescript
         BinaryExpressionAST(TypeScriptParserANTLR::EqualityExpressionContext* equalityExpressionContext) 
             : NodeAST(SyntaxKind::BinaryExpression, TextRange(equalityExpressionContext)),
               opCode(parseOpCode(equalityExpressionContext)),
-              leftExpression(parse(equalityExpressionContext->equalityExpression(0))),
-              rightExpression(parse(equalityExpressionContext->equalityExpression(1))) {}
+              leftExpression(parse(equalityExpressionContext->equalityExpression())),
+              rightExpression(parse(equalityExpressionContext->relationalExpression())) {}
+
+        BinaryExpressionAST(TypeScriptParserANTLR::AdditiveExpressionContext* additiveExpressionContext) 
+            : NodeAST(SyntaxKind::BinaryExpression, TextRange(additiveExpressionContext)),
+              opCode(parseOpCode(additiveExpressionContext)),
+              leftExpression(parse(additiveExpressionContext->additiveExpression())),
+              rightExpression(parse(additiveExpressionContext->multiplicativeExpression())) {}
 
         BinaryExpressionAST(TextRange range, SyntaxKind opCode, NodeAST::TypePtr leftExpression, NodeAST::TypePtr rightExpression)
             : NodeAST(SyntaxKind::BinaryExpression, range), opCode(opCode), leftExpression(leftExpression), rightExpression(rightExpression) {}
@@ -833,11 +846,39 @@ namespace typescript
             {
                 return SyntaxKind::EqualsEqualsToken;                
             }
+            else if (equalityExpressionContext->EQUALSEQUALSEQUALS_TOKEN())
+            {
+                return SyntaxKind::EqualsEqualsEqualsToken;                
+            }            
+            else if (equalityExpressionContext->EXCLAMATIONEQUALS_TOKEN())
+            {
+                return SyntaxKind::ExclamationEqualsToken;                
+            }            
+            else if (equalityExpressionContext->EXCLAMATIONEQUALSEQUALS_TOKEN())
+            {
+                return SyntaxKind::ExclamationEqualsEqualsToken;                
+            }            
             else
             {
                 llvm_unreachable("not implemented");
             }
-        }           
+        }          
+
+        SyntaxKind parseOpCode(TypeScriptParserANTLR::AdditiveExpressionContext* additiveExpressionContext)
+        {
+            if (additiveExpressionContext->PLUS_TOKEN())
+            {
+                return SyntaxKind::PlusToken;                
+            }
+            else if (additiveExpressionContext->MINUS_TOKEN())
+            {
+                return SyntaxKind::MinusToken;                
+            }            
+            else
+            {
+                llvm_unreachable("not implemented");
+            }
+        }          
     }; 
 
     class EmptyStatementAST : public NodeAST
