@@ -43,7 +43,7 @@ namespace fs = std::experimental::filesystem;
 #endif
 
 #ifndef TEST_FILE
-#define TEST_FILE "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/00assert.ts"
+#define TEST_FILE "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/01arguments.ts"
 #endif
 
 bool hasEnding(std::string const &fullString, std::string const &ending)
@@ -110,8 +110,8 @@ void createBatchFile()
     batFile << "%TSCEXEPATH%\\tsc.exe --emit=llvm %2 2> %FILENAME%.il" << std::endl;
     batFile << "%EXEPATH%\\llc.exe --filetype=obj -o=%FILENAME%.o %FILENAME%.il" << std::endl;
     batFile << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o \"%VCPATH%\\libcmt.lib\" \"%VCPATH%\\libvcruntime.lib\" \"%SDKPATH%\\kernel32.lib\" \"%SDKPATH%\\libucrt.lib\" \"%SDKPATH%\\uuid.lib\"" << std::endl;
-    batFile << "del *.il" << std::endl;
-    batFile << "del *.o" << std::endl;
+    batFile << "del %FILENAME%.il" << std::endl;
+    batFile << "del %FILENAME%.o" << std::endl;
     batFile.close();
 }
 
@@ -148,7 +148,11 @@ void testFile(const char *file)
     std::cout << "Test result: " << std::endl;
     std::cout << result << std::endl;
 
-    exec("del *.exe");
+    std::stringstream mask;
+    mask << "del " << stem << ".*";
+    auto delCmd = mask.str();
+
+    exec(delCmd);
 }
 
 int main(int argc, char **argv)
