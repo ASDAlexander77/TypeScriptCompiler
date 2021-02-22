@@ -73,10 +73,10 @@ emptyStatement
     : SEMICOLON_TOKEN ;
 
 expressionStatement
-    : expression SEMICOLON_TOKEN ;
+    : expression SEMICOLON_TOKEN? ;
 
 returnStatement
-    : RETURN_KEYWORD expression? SEMICOLON_TOKEN ;
+    : RETURN_KEYWORD expression? SEMICOLON_TOKEN? ;
 
 expression
     : assignmentExpression
