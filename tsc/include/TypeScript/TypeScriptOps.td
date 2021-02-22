@@ -28,9 +28,9 @@ def TypeScript_PrintOp : TypeScript_Op<"print"> {
     The "print" builtin operation prints a given input string, and produces no results.
   }];
 
-  let arguments = (ins AnyType:$input);
+  let arguments = (ins Variadic<AnyType>:$inputs);
 
-  let assemblyFormat = "$input attr-dict `:` type($input)";
+  let assemblyFormat = "$inputs attr-dict `:` type($inputs)";
 }
 
 def TypeScript_AssertOp : TypeScript_Op<"assert"> {

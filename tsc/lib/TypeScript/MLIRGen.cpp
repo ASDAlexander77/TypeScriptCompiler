@@ -736,7 +736,7 @@ namespace
             auto printOp =
                 builder.create<PrintOp>(
                     location,
-                    operands.front());
+                    operands);
 
             return mlir::success();
         }
