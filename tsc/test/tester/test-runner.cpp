@@ -8,6 +8,7 @@
 #include <array>
 #include <iostream>
 #include <fstream>
+#include <sstream>
 
 #if __cplusplus >= 201703L
 #include <filesystem>

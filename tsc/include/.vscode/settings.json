@@ -1,4 +1,5 @@
 {
     "cmake.buildDirectory": "${workspaceRoot}/../../__build/tsc",
-    "cmake.sourceDirectory": "${workspaceFolder}/.."
+    "cmake.sourceDirectory": "${workspaceFolder}/..",
+    "cmake.configureOnOpen": false
 }
