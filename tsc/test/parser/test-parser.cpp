@@ -46,14 +46,18 @@ void testFunctionDecl()
     testParse("function defaultArgs3(x: number, y = 3) {}");
 }
 
-int main(int, char **)
+int main(int argc, char **args)
 {
     try
     {
         testCallExpr();
         testFunctionDecl();
 
-        printParse("function main() { f1(); } function f1(a = 10) { return a; }");
+        if (argc > 0)
+        {
+            std::cout << "Code: " << std::endl << args[1] << std::endl << "Output: " << std::endl;
+            printParse(args[1]);
+        }
     }
     catch(const std::exception& e)
     {

@@ -134,6 +134,9 @@ additiveExpression
 
 multiplicativeExpression
     : exponentiationExpression
+    | multiplicativeExpression ASTERISK_TOKEN exponentiationExpression
+    | multiplicativeExpression SLASH_TOKEN exponentiationExpression
+    | multiplicativeExpression PERCENT_TOKEN exponentiationExpression
     ;  
 
 exponentiationExpression
@@ -184,12 +187,16 @@ optionalChain
 nullLiteral
     : NULL_KEYWORD ;
 
+undefinedLiteral
+    : UNDEFINED_KEYWORD ;
+
 booleanLiteral
     : TRUE_KEYWORD
     | FALSE_KEYWORD ;
 
 literal
     : nullLiteral
+    | undefinedLiteral
     | booleanLiteral
     | numericLiteral
     | StringLiteral ;
@@ -200,7 +207,7 @@ numericLiteral
     | DecimalBigIntegerLiteral
     | BinaryBigIntegerLiteral
     | OctalBigIntegerLiteral
-    | HexBigIntegerLiteral ;    
+    | HexBigIntegerLiteral ;        
 
 identifierReference
     : identifier ;

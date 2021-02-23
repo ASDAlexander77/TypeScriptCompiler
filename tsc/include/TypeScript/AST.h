@@ -100,6 +100,7 @@ namespace typescript
     class NodeAST;
     class BlockAST;
     class NullLiteralAST;
+    class UndefinedLiteralAST;
     class TrueLiteralAST;
     class FalseLiteralAST;
     class NumericLiteralAST;
@@ -150,6 +151,8 @@ namespace typescript
     PASS(IdentifierReferenceContext, identifier)
 
     MAKE(NullLiteralAST, NullLiteralContext)
+
+    MAKE(UndefinedLiteralAST, UndefinedLiteralContext)
     
     PASS_CHOICES(BooleanLiteralContext)
     MAKE_CHOICE_IF(TRUE_KEYWORD, TrueLiteralAST)
@@ -163,6 +166,7 @@ namespace typescript
 
     PASS_CHOICES(LiteralContext)
     PASS_CHOICE(nullLiteral)
+    PASS_CHOICE(undefinedLiteral)
     PASS_CHOICE(booleanLiteral)
     PASS_CHOICE(numericLiteral)
     MAKE_CHOICE_IF(StringLiteral, StringLiteralAST)
@@ -204,7 +208,12 @@ namespace typescript
 
     PASS(ExponentiationExpressionContext, unaryExpression)
 
-    PASS(MultiplicativeExpressionContext, exponentiationExpression)
+    PASS_CHOICES(MultiplicativeExpressionContext)
+    MAKE_CHOICE_IF(ASTERISK_TOKEN, BinaryExpressionAST)
+    MAKE_CHOICE_IF(SLASH_TOKEN, BinaryExpressionAST)
+    MAKE_CHOICE_IF(PERCENT_TOKEN, BinaryExpressionAST)
+    PASS_CHOICE(exponentiationExpression)
+    PASS_CHOICE_END()    
 
     PASS_CHOICES(AdditiveExpressionContext)
     MAKE_CHOICE_IF(PLUS_TOKEN, BinaryExpressionAST)
@@ -394,6 +403,29 @@ namespace typescript
             return N->getKind() == SyntaxKind::NullKeyword;
         }               
     };      
+
+    class UndefinedLiteralAST : public NodeAST
+    {
+    public:
+        using TypePtr = std::shared_ptr<UndefinedLiteralAST>;
+
+        // TODO: remove it when finish
+        UndefinedLiteralAST(TextRange range)
+            : NodeAST(SyntaxKind::UndefinedKeyword, range) {}
+
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+        }
+
+        /// LLVM style RTTI
+        static bool classof(const NodeAST *N) 
+        {
+            return N->getKind() == SyntaxKind::UndefinedKeyword;
+        }               
+    };    
 
     class TrueLiteralAST : public NodeAST
     {
@@ -834,6 +866,12 @@ namespace typescript
               leftExpression(parse(additiveExpressionContext->additiveExpression())),
               rightExpression(parse(additiveExpressionContext->multiplicativeExpression())) {}
 
+        BinaryExpressionAST(TypeScriptParserANTLR::MultiplicativeExpressionContext* multiplicativeExpressionContext) 
+            : NodeAST(SyntaxKind::BinaryExpression, TextRange(multiplicativeExpressionContext)),
+              opCode(parseOpCode(multiplicativeExpressionContext)),
+              leftExpression(parse(multiplicativeExpressionContext->multiplicativeExpression())),
+              rightExpression(parse(multiplicativeExpressionContext->exponentiationExpression())) {}
+
         BinaryExpressionAST(TextRange range, SyntaxKind opCode, NodeAST::TypePtr leftExpression, NodeAST::TypePtr rightExpression)
             : NodeAST(SyntaxKind::BinaryExpression, range), opCode(opCode), leftExpression(leftExpression), rightExpression(rightExpression) {}
 
@@ -894,7 +932,27 @@ namespace typescript
             {
                 llvm_unreachable("not implemented");
             }
-        }          
+        }   
+
+        SyntaxKind parseOpCode(TypeScriptParserANTLR::MultiplicativeExpressionContext* multiplicativeExpressionContext)
+        {
+            if (multiplicativeExpressionContext->ASTERISK_TOKEN())
+            {
+                return SyntaxKind::AsteriskToken;                
+            }
+            else if (multiplicativeExpressionContext->SLASH_TOKEN())
+            {
+                return SyntaxKind::SlashToken;                
+            }            
+            else if (multiplicativeExpressionContext->PERCENT_TOKEN())
+            {
+                return SyntaxKind::PercentToken;                
+            }            
+            else
+            {
+                llvm_unreachable("not implemented");
+            }
+        }                
     }; 
 
     class EmptyStatementAST : public NodeAST
