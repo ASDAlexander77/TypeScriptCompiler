@@ -281,6 +281,7 @@ namespace typescript
     PASS_CHOICES(StatementContext)
     PASS_CHOICE(emptyStatement)
     PASS_CHOICE(expressionStatement)
+    PASS_CHOICE(ifStatement)
     PASS_CHOICE(returnStatement)
     PASS_CHOICE_END()
 
