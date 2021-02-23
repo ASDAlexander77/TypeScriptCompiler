@@ -66,6 +66,7 @@ statementList
 statement
     : emptyStatement
     | expressionStatement
+    | ifStatement
     | returnStatement
     ;    
 
@@ -74,6 +75,9 @@ emptyStatement
 
 expressionStatement
     : expression SEMICOLON_TOKEN? ;
+
+ifStatement
+    : IF_KEYWORD OPENPAREN_TOKEN expression CLOSEPAREN_TOKEN statement (ELSE_KEYWORD statement)? SEMICOLON_TOKEN? ;    
 
 returnStatement
     : RETURN_KEYWORD expression? SEMICOLON_TOKEN? ;

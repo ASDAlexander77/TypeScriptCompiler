@@ -224,7 +224,15 @@ namespace
             values.push_back(formatSpecifierCst);
             for (auto item : op->getOperands())
             {
-                values.push_back(item);
+                auto type = item.getType();
+                if (type.isIntOrIndexOrFloat() && !type.isIntOrIndex())
+                {
+                    values.push_back(rewriter.create<LLVM::FPExtOp>(loc, rewriter.getF64Type(), item));
+                }
+                else
+                {
+                    values.push_back(item);
+                }
             }
 
             // print new line

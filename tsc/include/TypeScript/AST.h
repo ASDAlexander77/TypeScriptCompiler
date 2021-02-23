@@ -113,6 +113,7 @@ namespace typescript
     class EmptyStatementAST;
     class ExpressionStatementAST;
     class BinaryExpressionAST;
+    class IfStatementAST;
     class ReturnStatementAST;
     class ParameterDeclarationAST;
     class ParametersDeclarationAST;
@@ -272,6 +273,8 @@ namespace typescript
     MAKE(EmptyStatementAST, EmptyStatementContext) 
 
     MAKE(ExpressionStatementAST, ExpressionStatementContext) 
+
+    MAKE(IfStatementAST, IfStatementContext)
 
     MAKE(ReturnStatementAST, ReturnStatementContext)    
 
@@ -739,7 +742,10 @@ namespace typescript
         using TypePtr = std::shared_ptr<ConditionalExpressionAST>;
 
         ConditionalExpressionAST(TypeScriptParserANTLR::ConditionalExpressionContext* conditionalExpressionContext) 
-            : NodeAST(SyntaxKind::ConditionalExpression, TextRange(conditionalExpressionContext)) {}     
+            : NodeAST(SyntaxKind::ConditionalExpression, TextRange(conditionalExpressionContext)),
+              condition(parse(conditionalExpressionContext->shortCircuitExpression())),
+              whenTrue(parse(conditionalExpressionContext->assignmentExpression(0))),
+              whenFalse(parse(conditionalExpressionContext->assignmentExpression(1))) {}
 
         ConditionalExpressionAST(TextRange range, NodeAST::TypePtr condition, NodeAST::TypePtr whenTrue, NodeAST::TypePtr whenFalse)
             : NodeAST(SyntaxKind::Parameters, range), condition(condition), whenTrue(whenTrue), whenFalse(whenFalse) {}
@@ -944,6 +950,44 @@ namespace typescript
             return N->getKind() == SyntaxKind::ExpressionStatement;
         }               
     };      
+
+    class IfStatementAST : public NodeAST
+    {
+        NodeAST::TypePtr condition;
+        NodeAST::TypePtr whenTrue;
+        NodeAST::TypePtr whenFalse;
+    public:
+        using TypePtr = std::shared_ptr<ConditionalExpressionAST>;
+
+        IfStatementAST(TypeScriptParserANTLR::IfStatementContext* ifStatementContext) 
+            : NodeAST(SyntaxKind::ConditionalExpression, TextRange(ifStatementContext)),
+              condition(parse(ifStatementContext->expression())),
+              whenTrue(parse(ifStatementContext->statement(0))),
+              whenFalse(parse(ifStatementContext->statement(1))) {}
+
+        IfStatementAST(TextRange range, NodeAST::TypePtr condition, NodeAST::TypePtr whenTrue, NodeAST::TypePtr whenFalse)
+            : NodeAST(SyntaxKind::Parameters, range), condition(condition), whenTrue(whenTrue), whenFalse(whenFalse) {}
+
+        const auto& getCondition() const { return condition; }
+        const auto& getWhenTrue() const { return whenTrue; }
+        const auto& getWhenFalse() const { return whenFalse; }
+
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+            condition->accept(visitor);
+            whenTrue->accept(visitor);
+            if (whenFalse) whenFalse->accept(visitor);
+        }
+
+        /// LLVM style RTTI
+        static bool classof(const NodeAST *N) 
+        {
+            return N->getKind() == SyntaxKind::IfStatement;
+        }         
+    };
 
     class ReturnStatementAST : public NodeAST
     {
