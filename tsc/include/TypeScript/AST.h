@@ -458,13 +458,13 @@ namespace typescript
         NumericLiteralAST(TextRange range, double doubleVal)
             : NodeAST(SyntaxKind::NumericLiteral, range), doubleVal(doubleVal), isInt(false), isFloat(true) {}
 
-        long getIntValue() const { return longVal; }
+        auto getIntValue() const { return longVal; }
 
-        long getFloatValue() const { return doubleVal; }
+        auto getFloatValue() const { return doubleVal; }
 
-        bool getIsInt() const { return isInt; }
+        auto getIsInt() const { return isInt; }
 
-        bool getIsFloat() const { return isFloat; }
+        auto getIsFloat() const { return isFloat; }
 
         virtual void accept(VisitorAST *visitor) override
         {
@@ -616,8 +616,8 @@ namespace typescript
         TypeReferenceAST(TextRange range, std::string typeName)
             : NodeAST(SyntaxKind::Identifier, range), typeKind(SyntaxKind::Unknown), typeName(typeName) {}
 
-        SyntaxKind getTypeKind() const { return typeKind; }
-        const std::string& getTypeName() const { return typeName; }
+        auto getTypeKind() const { return typeKind; }
+        const auto& getTypeName() const { return typeName; }
 
         virtual void accept(VisitorAST *visitor) override
         {
@@ -679,6 +679,9 @@ namespace typescript
         PropertyAccessExpressionAST(TextRange range, NodeAST::TypePtr memberExpression, IdentifierAST::TypePtr name)
             : NodeAST(SyntaxKind::Parameters, range), memberExpression(memberExpression), name(name) {}
 
+        const auto& geMemberExpression() const { return memberExpression; }
+        const auto& getName() const { return name; }
+
         virtual void accept(VisitorAST *visitor) override
         {
             if (!visitor) return;
@@ -706,6 +709,8 @@ namespace typescript
 
         CommaListExpressionAST(TextRange range, std::vector<NodeAST::TypePtr> expressions)
             : NodeAST(SyntaxKind::Parameters, range), expressions(expressions) {}
+
+        const auto& getExpressions() const { return expressions; }
 
         virtual void accept(VisitorAST *visitor) override
         {
@@ -738,6 +743,10 @@ namespace typescript
 
         ConditionalExpressionAST(TextRange range, NodeAST::TypePtr condition, NodeAST::TypePtr whenTrue, NodeAST::TypePtr whenFalse)
             : NodeAST(SyntaxKind::Parameters, range), condition(condition), whenTrue(whenTrue), whenFalse(whenFalse) {}
+
+        const auto& getCondition() const { return condition; }
+        const auto& getWhenTrue() const { return whenTrue; }
+        const auto& getWhenFalse() const { return whenFalse; }
 
         virtual void accept(VisitorAST *visitor) override
         {
@@ -776,8 +785,8 @@ namespace typescript
         CallExpressionAST(TextRange range, NodeAST::TypePtr expression, std::vector<NodeAST::TypePtr> arguments)
             : NodeAST(SyntaxKind::Parameters, range), expression(expression), arguments(arguments) {}
 
-        const NodeAST::TypePtr& getExpression() const { return expression; }
-        const std::vector<NodeAST::TypePtr>& getArguments() const { return arguments; }
+        const auto& getExpression() const { return expression; }
+        const auto& getArguments() const { return arguments; }
 
         virtual void accept(VisitorAST *visitor) override
         {
@@ -821,9 +830,9 @@ namespace typescript
         BinaryExpressionAST(TextRange range, SyntaxKind opCode, NodeAST::TypePtr leftExpression, NodeAST::TypePtr rightExpression)
             : NodeAST(SyntaxKind::BinaryExpression, range), opCode(opCode), leftExpression(leftExpression), rightExpression(rightExpression) {}
 
-        SyntaxKind getOpCode() const { return opCode; }
-        const NodeAST::TypePtr& getLeftExpression() const { return leftExpression; }
-        const NodeAST::TypePtr& getRightExpression() const { return rightExpression; }
+        auto getOpCode() const { return opCode; }
+        const auto& getLeftExpression() const { return leftExpression; }
+        const auto& getRightExpression() const { return rightExpression; }
 
         virtual void accept(VisitorAST *visitor) override
         {
@@ -919,7 +928,7 @@ namespace typescript
         ExpressionStatementAST(TextRange range)
             : NodeAST(SyntaxKind::ExpressionStatement, range) {}
 
-        const NodeAST::TypePtr& getExpression() const { return expression; }
+        const auto& getExpression() const { return expression; }
 
         virtual void accept(VisitorAST *visitor) override
         {
@@ -949,7 +958,7 @@ namespace typescript
         ReturnStatementAST(TextRange range)
             : NodeAST(SyntaxKind::ReturnStatement, range) {}
 
-        const NodeAST::TypePtr& getExpression() const { return expression; }
+        const auto& getExpression() const { return expression; }
 
         virtual void accept(VisitorAST *visitor) override
         {
@@ -993,11 +1002,11 @@ namespace typescript
         ParameterDeclarationAST(TextRange range, IdentifierAST::TypePtr identifier, TypeReferenceAST::TypePtr type, NodeAST::TypePtr initialize)
             : NodeAST(SyntaxKind::FunctionDeclaration, range), identifier(identifier), type(type), initializer(initializer) {}
 
-        const IdentifierAST::TypePtr& getIdentifier() const { return identifier; }
-        const TypeReferenceAST::TypePtr& getType() const { return type; }
-        const NodeAST::TypePtr& getInitializer() const { return initializer; }
-        bool getIsOptional() const { return isOptional; }
-        bool getDotDotDot() const { return dotdotdot; }
+        const auto& getIdentifier() const { return identifier; }
+        const auto& getType() const { return type; }
+        const auto& getInitializer() const { return initializer; }
+        auto getIsOptional() const { return isOptional; }
+        auto getDotDotDot() const { return dotdotdot; }
         void setDotDotDot(bool val) { dotdotdot = val; }
 
         virtual void accept(VisitorAST *visitor) override
@@ -1031,7 +1040,7 @@ namespace typescript
         ParametersDeclarationAST(TextRange range, std::vector<ParameterDeclarationAST::TypePtr> parameters)
             : NodeAST(SyntaxKind::Parameters, range), parameters(parameters) {}
 
-        const std::vector<ParameterDeclarationAST::TypePtr>& getParameters() const { return parameters; }
+        const auto& getParameters() const { return parameters; }
 
         virtual void accept(VisitorAST *visitor) override
         {
@@ -1071,10 +1080,10 @@ namespace typescript
         FunctionDeclarationAST(TextRange range, IdentifierAST::TypePtr identifier, ParametersDeclarationAST::TypePtr parameters, TypeReferenceAST::TypePtr typeParameter, BlockAST::TypePtr functionBody)
             : NodeAST(SyntaxKind::FunctionDeclaration, range), identifier(identifier), parameters(parameters), typeParameter(typeParameter), functionBody(functionBody) {}
 
-        const IdentifierAST::TypePtr& getIdentifier() const { return identifier; }
-        const ParametersDeclarationAST::TypePtr& getParameters() const { return parameters; }
-        const TypeReferenceAST::TypePtr& getTypeParameter() const { return typeParameter; }
-        const BlockAST::TypePtr& getFunctionBody() const { return functionBody; }
+        const auto& getIdentifier() const { return identifier; }
+        const auto& getParameters() const { return parameters; }
+        const auto& getTypeParameter() const { return typeParameter; }
+        const auto& getFunctionBody() const { return functionBody; }
 
         virtual void accept(VisitorAST *visitor) override
         {
