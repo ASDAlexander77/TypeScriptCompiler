@@ -40,12 +40,12 @@ using namespace mlir;
 
 namespace
 {
-    template < typename T, typename TOp >
-    struct OpLowering : public OpConversionPattern<TOp>
+    template < typename T>
+    struct OpLowering : public OpConversionPattern<typename T::OpTy>
     {
         using OpConversionPattern::OpConversionPattern;
 
-        LogicalResult matchAndRewrite(TOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const override
+        LogicalResult matchAndRewrite(typename T::OpTy op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const override
         {            
             T logic(getTypeConverter(), op.getOperation(), operands, rewriter);
             return logic.matchAndRewrite();
@@ -248,9 +248,9 @@ namespace
 
     /// Lowers `typescript.print` to a loop nest calling `printf` on each of the individual
     /// elements of the array.
-    struct PrintOpLowering : public OpLowering<PrintOpLoweringLogic, typescript::PrintOp>
+    struct PrintOpLowering : public OpLowering<PrintOpLoweringLogic>
     {
-        using OpLowering<PrintOpLoweringLogic, typescript::PrintOp>::OpLowering;
+        using OpLowering<PrintOpLoweringLogic>::OpLowering;
     };
 
     class AssertOpLoweringLogic : public LoweringLogic<typescript::AssertOp>
@@ -326,9 +326,9 @@ namespace
         }
     };
 
-    struct AssertOpLowering : public OpLowering<AssertOpLoweringLogic, typescript::AssertOp>
+    struct AssertOpLowering : public OpLowering<AssertOpLoweringLogic>
     {
-        using OpLowering<AssertOpLoweringLogic, typescript::AssertOp>::OpLowering;
+        using OpLowering<AssertOpLoweringLogic>::OpLowering;
     };
 
     struct NullOpLowering : public OpRewritePattern<typescript::NullOp>
@@ -360,9 +360,9 @@ namespace
 
     /// Lowers `typescript.print` to a loop nest calling `printf` on each of the individual
     /// elements of the array.
-    struct UndefOpLowering : public OpLowering<UndefOpLoweringLogic, typescript::UndefOp>
+    struct UndefOpLowering : public OpLowering<UndefOpLoweringLogic>
     {
-        using OpLowering<UndefOpLoweringLogic, typescript::UndefOp>::OpLowering;
+        using OpLowering<UndefOpLoweringLogic>::OpLowering;
     };    
 
 } // end anonymous namespace
