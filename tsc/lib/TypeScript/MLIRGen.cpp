@@ -616,33 +616,35 @@ namespace
 
         mlir::LogicalResult mlirGen(IfStatementAST::TypePtr ifStatementAST, const GenContext &genContext)
         {
-            auto condValue = mlirGenExpression(ifStatementAST->getCondition(), genContext);
+            auto location = loc(ifStatementAST->getLoc());
+
             auto hasElse = !!ifStatementAST->getWhenFalse();
-            
-            auto ifOp = builder.create<mlir::scf::IfOp>(loc(ifStatementAST->getLoc()), condValue, hasElse);
-            
+
+            // condition
+            auto condValue = mlirGenExpression(ifStatementAST->getCondition(), genContext);
+
+            auto ifOp = builder.create<mlir::scf::IfOp>(location, condValue, hasElse);
+
             auto sp = builder.saveInsertionPoint();
 
-            // when true
+            // then block
             auto &thenRegion = ifOp.thenRegion();
-            builder.setInsertionPointToEnd(&thenRegion.back());
 
-            // body when True
+            builder.setInsertionPointToStart(&thenRegion.back());
+
             mlirGenStatement(ifStatementAST->getWhenTrue(), genContext);
 
             if (hasElse)
             {
-                // when false
+                // else block
                 auto &elseRegion = ifOp.elseRegion();
-                builder.setInsertionPointToEnd(&elseRegion.back());
-                
-                // body when False
-                mlirGenStatement(ifStatementAST->getWhenTrue(), genContext);
+
+                builder.setInsertionPointToStart(&elseRegion.back());
+
+                mlirGenStatement(ifStatementAST->getWhenFalse(), genContext);
             }
 
-            // end
-            builder.restoreInsertionPoint(sp);              
-
+            builder.restoreInsertionPoint(sp);
 
             return mlir::success();
         }        

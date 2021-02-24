@@ -69,7 +69,7 @@ struct ParamOptionalOpLowering : public OpRewritePattern<ts::ParamOptionalOp>
         // then block
         auto &thenRegion = ifOp.thenRegion();
 
-        rewriter.setInsertionPointToEnd(&thenRegion.back());
+        rewriter.setInsertionPointToStart(&thenRegion.back());
 
         rewriter.inlineRegionBefore(paramOp.defaultValueRegion(), &ifOp.thenRegion().back());
         rewriter.eraseBlock(&ifOp.thenRegion().back());
@@ -77,7 +77,7 @@ struct ParamOptionalOpLowering : public OpRewritePattern<ts::ParamOptionalOp>
         // else block
         auto &elseRegion = ifOp.elseRegion();
 
-        rewriter.setInsertionPointToEnd(&elseRegion.back());
+        rewriter.setInsertionPointToStart(&elseRegion.back());
 
         rewriter.create<scf::YieldOp>(location, paramOp.argValue());
 
