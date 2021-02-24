@@ -22,6 +22,60 @@ def TypeScript_IdentifierReference : TypeScript_Op<"identifier_reference", [NoSi
     }];
 }
 
+def TypeScript_NullOp : TypeScript_Op<"null", []> {
+  let summary = "Make an intermediate object whose value is null.";
+
+  let description = [{
+    ```
+    null-op ::= `typescript.null` `:` any-type
+    ```
+
+    #### Example:
+
+    ```mlir
+    %0 = typescript.null : memref<*xi1>
+    ```
+  }];
+
+  let arguments = (ins);
+
+  let results = (outs
+    AnyMemRef:$result
+  );
+
+  let verifier = [{ return success(); }];
+
+  let assemblyFormat = "attr-dict `:` type($result)";
+}
+
+def TypeScript_UndefOp : TypeScript_Op<"undef", []> {
+  let summary = "Make an intermediate object whose value is undefined.";
+
+  let description = [{
+    Result Type is the type of object to make.
+
+    ```
+    undef-op ::= `typescript.undef` `:` any-type
+    ```
+
+    #### Example:
+
+    ```mlir
+    %0 = typescript.undef : f32
+    ```
+  }];
+
+  let arguments = (ins);
+
+  let results = (outs
+    AnyType:$result
+  );
+
+  let verifier = [{ return success(); }];
+
+  let assemblyFormat = "attr-dict `:` type($result)";
+}
+
 def TypeScript_PrintOp : TypeScript_Op<"print"> {
   let summary = "print operation";
   let description = [{
@@ -116,33 +170,6 @@ def TypeScript_CallOp : TypeScript_Op<"call",
   }];
 
   let verifier = ?;
-}
-def TypeScript_UndefOp : TypeScript_Op<"undef", []> {
-  let summary = "Make an intermediate object whose value is undefined.";
-
-  let description = [{
-    Result Type is the type of object to make.
-
-    ```
-    undef-op ::= `typescript.undef` `:` any-type
-    ```
-
-    #### Example:
-
-    ```mlir
-    %0 = typescript.undef : f32
-    ```
-  }];
-
-  let arguments = (ins);
-
-  let results = (outs
-    AnyType:$result
-  );
-
-  let verifier = [{ return success(); }];
-
-  let assemblyFormat = "attr-dict `:` type($result)";
 }
 
 def TypeScript_ParamOp : TypeScript_Op<"param", []> {

@@ -208,6 +208,14 @@ namespace
             {
                 return mlirGen(std::dynamic_pointer_cast<StringLiteralAST>(expressionAST), genContext);
             }
+            else if (expressionAST->getKind() == SyntaxKind::NullKeyword)
+            {
+                return mlirGen(std::dynamic_pointer_cast<NullLiteralAST>(expressionAST), genContext);
+            }
+            else if (expressionAST->getKind() == SyntaxKind::UndefinedKeyword)
+            {
+                return mlirGen(std::dynamic_pointer_cast<UndefinedLiteralAST>(expressionAST), genContext);
+            }
             else if (expressionAST->getKind() == SyntaxKind::TrueKeyword)
             {
                 return mlirGen(std::dynamic_pointer_cast<TrueLiteralAST>(expressionAST), genContext);
@@ -804,8 +812,17 @@ namespace
 
         mlir::Value mlirGen(NullLiteralAST::TypePtr nullLiteral, const GenContext &genContext)
         {
-            llvm_unreachable("not implemented");
+            return builder.create<NullOp>(
+                loc(nullLiteral->getLoc()),
+                getAnyType());
         }
+
+        mlir::Value mlirGen(UndefinedLiteralAST::TypePtr undefinedLiteral, const GenContext &genContext)
+        {
+            return builder.create<UndefOp>(
+                loc(undefinedLiteral->getLoc()),
+                getAnyType());
+        }        
 
         mlir::Value mlirGen(TrueLiteralAST::TypePtr trueLiteral, const GenContext &genContext)
         {

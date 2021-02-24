@@ -40,15 +40,14 @@ using namespace mlir;
 
 namespace
 {
-    template < typename T >
-    struct OpLowering : public ConversionPattern
+    template < typename T, typename TOp >
+    struct OpLowering : public OpConversionPattern<TOp>
     {
-        explicit OpLowering(MLIRContext *context)
-            : ConversionPattern(T::OpTy::getOperationName(), 1, context) {}
+        using OpConversionPattern::OpConversionPattern;
 
-        LogicalResult matchAndRewrite(Operation *op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const override
-        {
-            T logic(op, operands, rewriter);
+        LogicalResult matchAndRewrite(TOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const override
+        {            
+            T logic(getTypeConverter(), op.getOperation(), operands, rewriter);
             return logic.matchAndRewrite();
         }
     };    
@@ -56,8 +55,9 @@ namespace
     class LoweringLogicBase
     {
     public:        
-        explicit LoweringLogicBase(Operation *op_, ArrayRef<Value>& operands_, ConversionPatternRewriter &rewriter_) 
-            : op(op_), 
+        explicit LoweringLogicBase(TypeConverter *typeConverter_, Operation *op_, ArrayRef<Value>& operands_, ConversionPatternRewriter &rewriter_) 
+            : typeConverter(*typeConverter_),
+              op(op_), 
               operands(operands_), 
               rewriter(rewriter_),
               loc(op->getLoc()),
@@ -157,6 +157,7 @@ namespace
         Location loc;
         ModuleOp parentModule;
         MLIRContext *context;
+        TypeConverter &typeConverter;
     };
 
     template < typename T >
@@ -165,8 +166,8 @@ namespace
     public:
         using OpTy = T;
 
-        explicit LoweringLogic(Operation *op_, ArrayRef<Value>& operands_, ConversionPatternRewriter &rewriter_) 
-            : LoweringLogicBase(op_, operands_, rewriter_), 
+        explicit LoweringLogic(TypeConverter *typeConverter_, Operation *op_, ArrayRef<Value>& operands_, ConversionPatternRewriter &rewriter_) 
+            : LoweringLogicBase(typeConverter_, op_, operands_, rewriter_), 
               opTyped(cast<OpTy>(op)),
               transformed(operands)
         {
@@ -247,9 +248,9 @@ namespace
 
     /// Lowers `typescript.print` to a loop nest calling `printf` on each of the individual
     /// elements of the array.
-    struct PrintOpLowering : public OpLowering<PrintOpLoweringLogic>
+    struct PrintOpLowering : public OpLowering<PrintOpLoweringLogic, typescript::PrintOp>
     {
-        using OpLowering<PrintOpLoweringLogic>::OpLowering;
+        using OpLowering<PrintOpLoweringLogic, typescript::PrintOp>::OpLowering;
     };
 
     class AssertOpLoweringLogic : public LoweringLogic<typescript::AssertOp>
@@ -325,22 +326,44 @@ namespace
         }
     };
 
-    struct AssertOpLowering : public OpLowering<AssertOpLoweringLogic>
+    struct AssertOpLowering : public OpLowering<AssertOpLoweringLogic, typescript::AssertOp>
     {
-        using OpLowering<AssertOpLoweringLogic>::OpLowering;
+        using OpLowering<AssertOpLoweringLogic, typescript::AssertOp>::OpLowering;
     };
 
-    struct UndefOpLowering : public OpRewritePattern<typescript::UndefOp>
+    struct NullOpLowering : public OpRewritePattern<typescript::NullOp>
     {
-        using OpRewritePattern<typescript::UndefOp>::OpRewritePattern;
+        using OpRewritePattern<typescript::NullOp>::OpRewritePattern;
 
-        LogicalResult matchAndRewrite(typescript::UndefOp op, PatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(typescript::NullOp op, PatternRewriter &rewriter) const final
         {
             // just replace
-            rewriter.replaceOpWithNewOp<LLVM::UndefOp>(op, op.getType());
+            rewriter.replaceOpWithNewOp<LLVM::NullOp>(op, op.getType());
             return success();
         }
-    };        
+    };       
+
+    class UndefOpLoweringLogic : public LoweringLogic<typescript::UndefOp>
+    {
+    public:
+        using LoweringLogic<typescript::UndefOp>::LoweringLogic;
+
+        LogicalResult matchAndRewrite()
+        {
+            // just replace
+            auto operandType = opTyped.getType();
+            auto resultType = typeConverter.convertType(operandType);
+            rewriter.replaceOpWithNewOp<LLVM::UndefOp>(op, resultType);
+            return success();
+        }
+    };    
+
+    /// Lowers `typescript.print` to a loop nest calling `printf` on each of the individual
+    /// elements of the array.
+    struct UndefOpLowering : public OpLowering<UndefOpLoweringLogic, typescript::UndefOp>
+    {
+        using OpLowering<UndefOpLoweringLogic, typescript::UndefOp>::OpLowering;
+    };    
 
 } // end anonymous namespace
 
@@ -392,9 +415,12 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 
     // The only remaining operation to lower from the `typescript` dialect, is the PrintOp.
     patterns.insert<
+        NullOpLowering>(&getContext());
+
+    patterns.insert<
         PrintOpLowering, 
         AssertOpLowering,
-        UndefOpLowering>(&getContext());
+        UndefOpLowering>(typeConverter, &getContext());
 
     // We want to completely lower to LLVM, so we use a `FullConversion`. This
     // ensures that only legal operations will remain after the conversion.
