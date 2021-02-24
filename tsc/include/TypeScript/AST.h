@@ -1019,7 +1019,7 @@ namespace typescript
         using TypePtr = std::shared_ptr<IfStatementAST>;
 
         IfStatementAST(TypeScriptParserANTLR::IfStatementContext* ifStatementContext) 
-            : NodeAST(SyntaxKind::ConditionalExpression, TextRange(ifStatementContext)),
+            : NodeAST(SyntaxKind::IfStatement, TextRange(ifStatementContext)),
               condition(parse(ifStatementContext->expression())),
               whenTrue(parse(ifStatementContext->statement(0))),
               whenFalse(ifStatementContext->statement(1) ? parse(ifStatementContext->statement(1)) : nullptr) {}
