@@ -627,32 +627,18 @@ namespace
             // condition
             auto condValue = mlirGenExpression(ifStatementAST->getCondition(), genContext);
 
-            if (!hasElse)
+            auto ifOp = builder.create<mlir::scf::IfOp>(location, condValue, hasElse);
+
+            builder.setInsertionPointToStart(&ifOp.thenRegion().front());
+            mlirGenStatement(ifStatementAST->getWhenTrue(), genContext);
+
+            if (hasElse)
             {
-                builder.create<mlir::scf::IfOp>(location, condValue, [&](auto &opBuilder, auto loc) {
-                    auto saveBuilder = builder;
-                    builder = opBuilder;
-                    mlirGenStatement(ifStatementAST->getWhenTrue(), genContext);
-                    builder.create<mlir::scf::YieldOp>(loc);
-                    builder = saveBuilder;
-                });
+                builder.setInsertionPointToStart(&ifOp.elseRegion().front());
+                mlirGenStatement(ifStatementAST->getWhenFalse(), genContext);
             }
-            else
-            {
-                builder.create<mlir::scf::IfOp>(location, condValue, [&](auto &opBuilder, auto loc) {
-                    auto saveBuilder = builder;
-                    builder = opBuilder;
-                    mlirGenStatement(ifStatementAST->getWhenTrue(), genContext);
-                    builder.create<mlir::scf::YieldOp>(loc);
-                    builder = saveBuilder;
-                }, [&](auto &opBuilder, auto loc) {
-                    auto saveBuilder = builder;
-                    builder = opBuilder;
-                    mlirGenStatement(ifStatementAST->getWhenFalse(), genContext);
-                    builder.create<mlir::scf::YieldOp>(loc);
-                    builder = saveBuilder;
-                });
-            }
+
+            builder.setInsertionPointAfter(ifOp);
 
             return mlir::success();
         }        
