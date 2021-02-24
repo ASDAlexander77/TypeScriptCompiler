@@ -164,7 +164,7 @@ namespace
 
         mlir::LogicalResult mlirGen(BlockAST::TypePtr blockAST, const GenContext &genContext)
         {
-            for (auto &statement : *blockAST.get())
+            for (auto &statement : *blockAST)
             {
                 if (failed(mlirGenStatement(statement, genContext)))
                 {
@@ -194,6 +194,10 @@ namespace
             {
                 return mlirGen(std::dynamic_pointer_cast<ReturnStatementAST>(statementAST), genContext);
             }
+            else if (statementAST->getKind() == SyntaxKind::Block)
+            {
+                return mlirGen(std::dynamic_pointer_cast<BlockAST>(statementAST), genContext);
+            }            
             else if (statementAST->getKind() == SyntaxKind::EmptyStatement)
             {
                 return mlir::success();

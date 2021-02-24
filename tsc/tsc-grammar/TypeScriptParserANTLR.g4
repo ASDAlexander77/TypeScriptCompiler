@@ -68,7 +68,11 @@ statement
     | expressionStatement
     | ifStatement
     | returnStatement
+    | block
     ;    
+
+block
+    : OPENBRACE_TOKEN statementList CLOSEBRACE_TOKEN ;
 
 emptyStatement
     : SEMICOLON_TOKEN ;

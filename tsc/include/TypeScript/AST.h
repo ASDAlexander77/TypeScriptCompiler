@@ -287,11 +287,14 @@ namespace typescript
 
     MAKE(ReturnStatementAST, ReturnStatementContext)    
 
+    MAKE(BlockAST, BlockContext);
+
     PASS_CHOICES(StatementContext)
     PASS_CHOICE(emptyStatement)
     PASS_CHOICE(expressionStatement)
     PASS_CHOICE(ifStatement)
     PASS_CHOICE(returnStatement)
+    PASS_CHOICE(block)
     PASS_CHOICE_END()
 
     PASS_CHOICES(StatementListItemContext)
@@ -355,6 +358,10 @@ namespace typescript
         BlockAST(TypeScriptParserANTLR::FunctionBodyContext* functionBodyContext) 
             : NodeAST(SyntaxKind::Block, TextRange(functionBodyContext)), 
               items(parse(functionBodyContext->functionStatementList())) {}
+
+        BlockAST(TypeScriptParserANTLR::BlockContext* blockContext) 
+            : NodeAST(SyntaxKind::Block, TextRange(blockContext)), 
+              items(parse(blockContext->statementList())) {}
 
         // TODO: remove it when finish
         BlockAST(TextRange range, std::vector<NodeAST::TypePtr> items)
@@ -1219,8 +1226,6 @@ namespace typescript
 
         ModuleBlockAST(TextRange range, std::vector<NodeAST::TypePtr> items)
             : NodeAST(SyntaxKind::ModuleBlock, range), items(items) {}
-
-        const std::vector<NodeAST::TypePtr>& getItems() const { return items; }
 
         auto begin() -> decltype(items.begin()) { return items.begin(); }
         auto end() -> decltype(items.end()) { return items.end(); }        
