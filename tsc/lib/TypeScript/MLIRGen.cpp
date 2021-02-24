@@ -568,15 +568,15 @@ namespace
             }
 
             // add return
-            mlir::ReturnOp returnOp;
+            ReturnOp returnOp;
             if (!entryBlock.empty())
             {
-                returnOp = dyn_cast<mlir::ReturnOp>(entryBlock.back());
+                returnOp = dyn_cast<ReturnOp>(entryBlock.back());
             }
 
             if (!returnOp)
             {
-                returnOp = builder.create<mlir::ReturnOp>(loc(functionDeclarationAST->getLoc()));
+                returnOp = builder.create<ReturnOp>(loc(functionDeclarationAST->getLoc()));
             }
             else if (!returnOp.operands().empty())
             {
@@ -608,11 +608,11 @@ namespace
                     expressionValue = castValue;
                 }
 
-                builder.create<mlir::ReturnOp>(loc(returnStatementAST->getLoc()), expressionValue);
+                builder.create<ReturnOp>(loc(returnStatementAST->getLoc()), expressionValue);
             }
             else
             {
-                builder.create<mlir::ReturnOp>(loc(returnStatementAST->getLoc()));
+                builder.create<ReturnOp>(loc(returnStatementAST->getLoc()));
             }
 
             return mlir::success();

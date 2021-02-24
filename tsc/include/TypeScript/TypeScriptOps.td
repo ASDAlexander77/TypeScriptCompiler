@@ -309,4 +309,30 @@ def TypeScript_CastOp : TypeScript_Op<"cast", [NoSideEffect]> {
   let assemblyFormat = "$in attr-dict `:` type($in) `to` type($res)";
 }
 
+def TypeScript_ReturnOp : TypeScript_Op<"return", [NoSideEffect, ReturnLike, Terminator]> {
+  let description = [{
+    ```
+    return-value-op ::= `typescript.return` ssa-use `:` typescript-type
+    ```
+
+    #### Example:
+
+    ```mlir
+    typescript.return
+    typescript.return %0 : f32
+    ```
+  }];
+
+  let arguments = (ins
+    Variadic<AnyType>:$operands
+  );
+
+  let builders = [
+    OpBuilderDAG<(ins),
+    [{ build($_builder, $_state, llvm::None); }]>];
+
+  let assemblyFormat = "attr-dict ($operands^ `:` type($operands))?";
+}
+
+
 #endif // TYPESCRIPT_OPS

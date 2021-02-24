@@ -224,6 +224,17 @@ struct LogicalBinaryOpLowering : public OpRewritePattern<ts::LogicalBinaryOp>
     }
 };
 
+struct ReturnOpLowering : public OpRewritePattern<ts::ReturnOp>
+{
+    using OpRewritePattern<ts::ReturnOp>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(ts::ReturnOp op, PatternRewriter &rewriter) const final
+    {
+        rewriter.replaceOpWithNewOp<mlir::ReturnOp>(op, op.getODSOperands(0));
+        return success();
+    }
+};
+
 //===----------------------------------------------------------------------===//
 // TypeScriptToAffineLoweringPass
 //===----------------------------------------------------------------------===//
@@ -289,7 +300,8 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         VariableOpLowering,
         CastOpLowering,
         ArithmeticBinaryOpLowering,
-        LogicalBinaryOpLowering>(&getContext());
+        LogicalBinaryOpLowering,
+        ReturnOpLowering>(&getContext());
 
     // With the target and rewrite patterns defined, we can now attempt the
     // conversion. The conversion will signal failure if any of our `illegal`
