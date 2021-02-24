@@ -627,28 +627,32 @@ namespace
             // condition
             auto condValue = mlirGenExpression(ifStatementAST->getCondition(), genContext);
 
-            auto ifOp = builder.create<mlir::scf::IfOp>(location, condValue, hasElse);
-
-            auto sp = builder.saveInsertionPoint();
-
-            // then block
-            auto &thenRegion = ifOp.thenRegion();
-
-            builder.setInsertionPointToStart(&thenRegion.back());
-
-            mlirGenStatement(ifStatementAST->getWhenTrue(), genContext);
-
-            if (hasElse)
+            if (!hasElse)
             {
-                // else block
-                auto &elseRegion = ifOp.elseRegion();
-
-                builder.setInsertionPointToStart(&elseRegion.back());
-
-                mlirGenStatement(ifStatementAST->getWhenFalse(), genContext);
+                builder.create<mlir::scf::IfOp>(location, condValue, [&](auto &opBuilder, auto loc) {
+                    auto saveBuilder = builder;
+                    builder = opBuilder;
+                    mlirGenStatement(ifStatementAST->getWhenTrue(), genContext);
+                    builder.create<mlir::scf::YieldOp>(loc);
+                    builder = saveBuilder;
+                });
             }
-
-            builder.restoreInsertionPoint(sp);
+            else
+            {
+                builder.create<mlir::scf::IfOp>(location, condValue, [&](auto &opBuilder, auto loc) {
+                    auto saveBuilder = builder;
+                    builder = opBuilder;
+                    mlirGenStatement(ifStatementAST->getWhenTrue(), genContext);
+                    builder.create<mlir::scf::YieldOp>(loc);
+                    builder = saveBuilder;
+                }, [&](auto &opBuilder, auto loc) {
+                    auto saveBuilder = builder;
+                    builder = opBuilder;
+                    mlirGenStatement(ifStatementAST->getWhenFalse(), genContext);
+                    builder.create<mlir::scf::YieldOp>(loc);
+                    builder = saveBuilder;
+                });
+            }
 
             return mlir::success();
         }        
