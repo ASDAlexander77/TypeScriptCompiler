@@ -186,6 +186,10 @@ namespace
             {
                 return mlirGen(std::dynamic_pointer_cast<ExpressionStatementAST>(statementAST), genContext);
             }          
+            else if (statementAST->getKind() == SyntaxKind::IfStatement)
+            {
+                return mlirGen(std::dynamic_pointer_cast<IfStatementAST>(statementAST), genContext);
+            }
             else if (statementAST->getKind() == SyntaxKind::ReturnStatement)
             {
                 return mlirGen(std::dynamic_pointer_cast<ReturnStatementAST>(statementAST), genContext);
@@ -501,7 +505,7 @@ namespace
                 if (param->getIsOptional() || param->hasInitValue())
                 {
                     // process init expression
-                    auto location = loc(param->getInitValue()->getLoc());
+                    auto location = param->getLoc();
 
                     auto countArgsValue = arguments[0];
 
@@ -514,26 +518,29 @@ namespace
 
                     paramValue = paramOptionalOp;
 
-                    auto *defValueBlock = new mlir::Block();
-                    paramOptionalOp.defaultValueRegion().push_back(defValueBlock);
-
-                    auto sp = builder.saveInsertionPoint();
-                    builder.setInsertionPointToStart(defValueBlock);
-
-                    mlir::Value defaultValue;
-                    auto initExpression = param->getInitValue();
-                    if (initExpression)
+                    if (param->hasInitValue())
                     {
-                        defaultValue = mlirGenExpression(initExpression, genContext);
+                        auto *defValueBlock = new mlir::Block();
+                        paramOptionalOp.defaultValueRegion().push_back(defValueBlock);
+
+                        auto sp = builder.saveInsertionPoint();
+                        builder.setInsertionPointToStart(defValueBlock);
+
+                        mlir::Value defaultValue;
+                        auto initExpression = param->getInitValue();
+                        if (initExpression)
+                        {
+                            defaultValue = mlirGenExpression(initExpression, genContext);
+                        }
+                        else
+                        {
+                            llvm_unreachable("unknown statement");
+                        }                    
+
+                        builder.create<ParamDefaultValueOp>(location, defaultValue);
+
+                        builder.restoreInsertionPoint(sp);
                     }
-                    else
-                    {
-                        llvm_unreachable("unknown statement");
-                    }                    
-
-                    builder.create<ParamDefaultValueOp>(location, defaultValue);
-
-                    builder.restoreInsertionPoint(sp);
                 }
                 else
                 {
@@ -606,6 +613,39 @@ namespace
 
             return mlir::success();
         }
+
+        mlir::LogicalResult mlirGen(IfStatementAST::TypePtr ifStatementAST, const GenContext &genContext)
+        {
+            auto condValue = mlirGenExpression(ifStatementAST->getCondition(), genContext);
+            auto hasElse = !!ifStatementAST->getWhenFalse();
+            
+            auto ifOp = builder.create<mlir::scf::IfOp>(loc(ifStatementAST->getLoc()), condValue, hasElse);
+            
+            auto sp = builder.saveInsertionPoint();
+
+            // when true
+            auto &thenRegion = ifOp.thenRegion();
+            builder.setInsertionPointToEnd(&thenRegion.back());
+
+            // body when True
+            mlirGenStatement(ifStatementAST->getWhenTrue(), genContext);
+
+            if (hasElse)
+            {
+                // when false
+                auto &elseRegion = ifOp.elseRegion();
+                builder.setInsertionPointToEnd(&elseRegion.back());
+                
+                // body when False
+                mlirGenStatement(ifStatementAST->getWhenTrue(), genContext);
+            }
+
+            // end
+            builder.restoreInsertionPoint(sp);              
+
+
+            return mlir::success();
+        }        
 
         mlir::Value mlirGen(BinaryExpressionAST::TypePtr binaryExpressionAST, const GenContext &genContext)
         {

@@ -1016,13 +1016,13 @@ namespace typescript
         NodeAST::TypePtr whenTrue;
         NodeAST::TypePtr whenFalse;
     public:
-        using TypePtr = std::shared_ptr<ConditionalExpressionAST>;
+        using TypePtr = std::shared_ptr<IfStatementAST>;
 
         IfStatementAST(TypeScriptParserANTLR::IfStatementContext* ifStatementContext) 
             : NodeAST(SyntaxKind::ConditionalExpression, TextRange(ifStatementContext)),
               condition(parse(ifStatementContext->expression())),
               whenTrue(parse(ifStatementContext->statement(0))),
-              whenFalse(parse(ifStatementContext->statement(1))) {}
+              whenFalse(ifStatementContext->statement(1) ? parse(ifStatementContext->statement(1)) : nullptr) {}
 
         IfStatementAST(TextRange range, NodeAST::TypePtr condition, NodeAST::TypePtr whenTrue, NodeAST::TypePtr whenFalse)
             : NodeAST(SyntaxKind::Parameters, range), condition(condition), whenTrue(whenTrue), whenFalse(whenFalse) {}
