@@ -53,7 +53,7 @@ int main(int argc, char **args)
         testCallExpr();
         testFunctionDecl();
 
-        if (argc > 0)
+        if (argc > 1)
         {
             std::cout << "Code: " << std::endl << args[1] << std::endl << "Output: " << std::endl;
             printParse(args[1]);
