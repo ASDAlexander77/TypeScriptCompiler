@@ -1063,7 +1063,7 @@ namespace typescript
 
         ReturnStatementAST(TypeScriptParserANTLR::ReturnStatementContext* returnStatementContext) 
             : NodeAST(SyntaxKind::ReturnStatement, TextRange(returnStatementContext)),
-              expression(parse(returnStatementContext->expression())) {}     
+              expression(returnStatementContext->expression() ? parse(returnStatementContext->expression()) : nullptr) {}     
 
         ReturnStatementAST(TextRange range)
             : NodeAST(SyntaxKind::ReturnStatement, range) {}

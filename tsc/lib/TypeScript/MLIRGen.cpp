@@ -489,6 +489,9 @@ namespace
 
             builder.setInsertionPointToStart(&entryBlock);
 
+            // add exit code
+            auto entryOp = builder.create<EntryOp>(loc(functionDeclarationAST->getLoc()));
+
             auto arguments = entryBlock.getArguments();
 
             auto index = -1;
@@ -567,27 +570,8 @@ namespace
                 return returnType;
             }
 
-            // add return
-            ReturnOp returnOp;
-            if (!entryBlock.empty())
-            {
-                returnOp = dyn_cast<ReturnOp>(entryBlock.back());
-            }
-
-            if (!returnOp)
-            {
-                returnOp = builder.create<ReturnOp>(loc(functionDeclarationAST->getLoc()));
-            }
-            else if (!returnOp.operands().empty())
-            {
-                // Otherwise, if this return operation has an operand then add a result to the function.
-                funcOp.setType(builder.getFunctionType(funcOp.getType().getInputs(), *returnOp.operand_type_begin()));
-            }
-
-            if (returnOp.getNumOperands() > 0)
-            {
-                returnType = returnOp.getOperand(0).getType();
-            }
+            // add exit code
+            builder.create<ExitOp>(loc(functionDeclarationAST->getLoc()));
 
             if (dummyRun)
             {

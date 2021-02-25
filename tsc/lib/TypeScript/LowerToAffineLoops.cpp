@@ -224,13 +224,45 @@ struct LogicalBinaryOpLowering : public OpRewritePattern<ts::LogicalBinaryOp>
     }
 };
 
+struct EntryOpLowering : public OpRewritePattern<ts::EntryOp>
+{
+    using OpRewritePattern<ts::EntryOp>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(ts::EntryOp op, PatternRewriter &rewriter) const final
+    {
+        rewriter.eraseOp(op);
+        return success();
+    }
+};
+
 struct ReturnOpLowering : public OpRewritePattern<ts::ReturnOp>
 {
     using OpRewritePattern<ts::ReturnOp>::OpRewritePattern;
 
     LogicalResult matchAndRewrite(ts::ReturnOp op, PatternRewriter &rewriter) const final
     {
-        rewriter.replaceOpWithNewOp<mlir::ReturnOp>(op, op.getODSOperands(0));
+        rewriter.eraseOp(op);
+        return success();
+    }
+};
+
+struct ExitOpLowering : public OpConversionPattern<ts::ExitOp>
+{
+    using OpConversionPattern<ts::ExitOp>::OpConversionPattern;
+
+    LogicalResult matchAndRewrite(ts::ExitOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+    {
+        auto *opBlock = rewriter.getInsertionBlock();
+        auto *entryBlock = rewriter.createBlock(rewriter.getInsertionBlock());
+
+        // body of new block
+        rewriter.create<mlir::ReturnOp>(op.getLoc());
+
+        rewriter.setInsertionPointToEnd(opBlock);
+        rewriter.create<mlir::BranchOp>(op.getLoc(), opBlock);
+
+        rewriter.eraseOp(op);
+
         return success();
     }
 };
@@ -301,7 +333,9 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         CastOpLowering,
         ArithmeticBinaryOpLowering,
         LogicalBinaryOpLowering,
-        ReturnOpLowering>(&getContext());
+        EntryOpLowering,
+        ReturnOpLowering,
+        ExitOpLowering>(&getContext());
 
     // With the target and rewrite patterns defined, we can now attempt the
     // conversion. The conversion will signal failure if any of our `illegal`
