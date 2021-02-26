@@ -252,6 +252,33 @@ struct ReturnOpLowering : public OpRewritePattern<ts::ReturnOp>
 
     LogicalResult matchAndRewrite(ts::ReturnOp op, PatternRewriter &rewriter) const final
     {
+        auto funcOp = op.getOperation()->getParentOfType<FuncOp>();
+        auto *region = funcOp.getCallableRegion();
+        if (!region)
+        {
+            return failure();
+        }
+
+        auto result = std::find_if(region->begin(), region->end(), [&](auto &item) {
+            if (item.empty())
+            {
+                return false;
+            }
+
+            auto *op = &item.back();
+            //auto name = op->getName().getStringRef();
+            auto isReturn = dyn_cast<ReturnOp>(op) != nullptr;
+            return isReturn;
+        });
+
+        if (result == region->end())
+        {
+            // found block with return;
+            return failure();
+        }
+
+        rewriter.create<mlir::BranchOp>(op.getLoc(), &*result);
+
         rewriter.eraseOp(op);
         return success();
     }
@@ -288,7 +315,7 @@ struct ExitOpLowering : public OpConversionPattern<ts::ExitOp>
             }
 
             auto *op = &item.back();
-            auto name = op->getName().getStringRef();
+            //auto name = op->getName().getStringRef();
             auto isReturn = dyn_cast<ReturnOp>(op) != nullptr;
             return isReturn;
         });
