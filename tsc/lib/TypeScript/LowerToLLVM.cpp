@@ -33,6 +33,7 @@
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace mlir;
+namespace ts = mlir::typescript;
 
 //===----------------------------------------------------------------------===//
 // TypeScriptToLLVM RewritePatterns
@@ -365,6 +366,23 @@ namespace
         using OpLowering<UndefOpLoweringLogic>::OpLowering;
     };    
 
+    struct ReturnOpLowering : public OpRewritePattern<ts::ReturnOp>
+    {
+        using OpRewritePattern<ts::ReturnOp>::OpRewritePattern;
+
+        LogicalResult matchAndRewrite(ts::ReturnOp op, PatternRewriter &rewriter) const final
+        {
+            auto *opBlock = rewriter.getInsertionBlock();
+            auto opPosition = rewriter.getInsertionPoint();
+            auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
+
+            rewriter.setInsertionPointToEnd(opBlock);
+            rewriter.create<mlir::BranchOp>(op.getLoc(), continuationBlock);
+
+            rewriter.eraseOp(op);
+            return success();
+        }
+    };
 } // end anonymous namespace
 
 //===----------------------------------------------------------------------===//
@@ -415,7 +433,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 
     // The only remaining operation to lower from the `typescript` dialect, is the PrintOp.
     patterns.insert<
-        NullOpLowering>(&getContext());
+        NullOpLowering,
+        ReturnOpLowering>(&getContext());
 
     patterns.insert<
         PrintOpLowering, 

@@ -278,15 +278,16 @@ struct ReturnOpLowering : public OpRewritePattern<ts::ReturnOp>
             return failure();
         }
 
+        rewriter.create<mlir::BranchOp>(op.getLoc(), &*result);
+        */
+
         auto *opBlock = rewriter.getInsertionBlock();
         auto opPosition = rewriter.getInsertionPoint();
         auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
 
         rewriter.setInsertionPointToEnd(opBlock);
-        rewriter.create<mlir::BranchOp>(op.getLoc(), &*result);
-        */
+        rewriter.create<mlir::BranchOp>(op.getLoc(), continuationBlock);
 
-        //rewriter.create<mlir::scf::YieldOp>(op.getLoc());
         rewriter.eraseOp(op);
         return success();
     }
@@ -298,17 +299,6 @@ struct ExitOpLowering : public OpConversionPattern<ts::ExitOp>
 
     LogicalResult matchAndRewrite(ts::ExitOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
     {
-        /*
-        auto *opBlock = rewriter.getInsertionBlock();
-        auto *entryBlock = rewriter.createBlock(rewriter.getInsertionBlock());
-
-        // body of new block
-        rewriter.create<mlir::ReturnOp>(op.getLoc());
-
-        rewriter.setInsertionPointToEnd(opBlock);
-        rewriter.create<mlir::BranchOp>(op.getLoc(), opBlock);
-        */
-
         auto funcOp = op.getOperation()->getParentOfType<FuncOp>();
         auto *region = funcOp.getCallableRegion();
         if (!region)
@@ -336,7 +326,6 @@ struct ExitOpLowering : public OpConversionPattern<ts::ExitOp>
 
         rewriter.create<mlir::BranchOp>(op.getLoc(), &*result);
 
-        //rewriter.create<mlir::ReturnOp>(op.getLoc());
         rewriter.eraseOp(op);
         return success();
     }
@@ -394,7 +383,8 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     target.addLegalOp<
         ts::PrintOp,
         ts::AssertOp,
-        ts::UndefOp>();
+        ts::UndefOp,
+        ts::ReturnOp>();
 
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.
@@ -409,7 +399,6 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         ArithmeticBinaryOpLowering,
         LogicalBinaryOpLowering,
         EntryOpLowering,
-        ReturnOpLowering,
         ExitOpLowering>(&getContext());
 
     // With the target and rewrite patterns defined, we can now attempt the
