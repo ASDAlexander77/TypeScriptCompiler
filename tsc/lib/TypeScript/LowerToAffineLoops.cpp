@@ -252,6 +252,7 @@ struct ReturnOpLowering : public OpRewritePattern<ts::ReturnOp>
 
     LogicalResult matchAndRewrite(ts::ReturnOp op, PatternRewriter &rewriter) const final
     {
+        /*
         auto funcOp = op.getOperation()->getParentOfType<FuncOp>();
         auto *region = funcOp.getCallableRegion();
         if (!region)
@@ -277,8 +278,15 @@ struct ReturnOpLowering : public OpRewritePattern<ts::ReturnOp>
             return failure();
         }
 
-        rewriter.create<mlir::BranchOp>(op.getLoc(), &*result);
+        auto *opBlock = rewriter.getInsertionBlock();
+        auto opPosition = rewriter.getInsertionPoint();
+        auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
 
+        rewriter.setInsertionPointToEnd(opBlock);
+        rewriter.create<mlir::BranchOp>(op.getLoc(), &*result);
+        */
+
+        //rewriter.create<mlir::scf::YieldOp>(op.getLoc());
         rewriter.eraseOp(op);
         return success();
     }
