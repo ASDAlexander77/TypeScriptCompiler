@@ -224,66 +224,6 @@ struct LogicalBinaryOpLowering : public OpRewritePattern<ts::LogicalBinaryOp>
     }
 };
 
-struct EntryOpLowering : public OpRewritePattern<ts::EntryOp>
-{
-    using OpRewritePattern<ts::EntryOp>::OpRewritePattern;
-
-    LogicalResult matchAndRewrite(ts::EntryOp op, PatternRewriter &rewriter) const final
-    {
-        auto *opBlock = rewriter.getInsertionBlock();
-
-        auto *block = rewriter.createBlock(opBlock->getParent());
-
-        rewriter.setInsertionPointToEnd(block);
-
-        // body of new block
-        rewriter.create<mlir::ReturnOp>(op.getLoc());
-
-        rewriter.setInsertionPointToEnd(opBlock);
-
-        rewriter.eraseOp(op);
-        return success();
-    }
-};
-
-struct ExitOpLowering : public OpConversionPattern<ts::ExitOp>
-{
-    using OpConversionPattern<ts::ExitOp>::OpConversionPattern;
-
-    LogicalResult matchAndRewrite(ts::ExitOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
-    {
-        auto funcOp = op.getOperation()->getParentOfType<FuncOp>();
-        auto *region = funcOp.getCallableRegion();
-        if (!region)
-        {
-            return failure();
-        }
-
-        auto result = std::find_if(region->begin(), region->end(), [&](auto &item) {
-            if (item.empty())
-            {
-                return false;
-            }
-
-            auto *op = &item.back();
-            //auto name = op->getName().getStringRef();
-            auto isReturn = dyn_cast<ReturnOp>(op) != nullptr;
-            return isReturn;
-        });
-
-        if (result == region->end())
-        {
-            // found block with return;
-            return failure();
-        }
-
-        rewriter.create<mlir::BranchOp>(op.getLoc(), &*result);
-
-        rewriter.eraseOp(op);
-        return success();
-    }
-};
-
 //===----------------------------------------------------------------------===//
 // TypeScriptToAffineLoweringPass
 //===----------------------------------------------------------------------===//
@@ -337,7 +277,9 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         ts::PrintOp,
         ts::AssertOp,
         ts::UndefOp,
-        ts::ReturnOp>();
+        ts::EntryOp,
+        ts::ReturnOp,
+        ts::ExitOp>();
 
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.
@@ -350,9 +292,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         VariableOpLowering,
         CastOpLowering,
         ArithmeticBinaryOpLowering,
-        LogicalBinaryOpLowering,
-        EntryOpLowering,
-        ExitOpLowering>(&getContext());
+        LogicalBinaryOpLowering>(&getContext());
 
     // With the target and rewrite patterns defined, we can now attempt the
     // conversion. The conversion will signal failure if any of our `illegal`

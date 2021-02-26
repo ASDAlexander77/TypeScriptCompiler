@@ -366,6 +366,17 @@ namespace
         using OpLowering<UndefOpLoweringLogic>::OpLowering;
     };    
 
+    struct EntryOpLowering : public OpRewritePattern<ts::EntryOp>
+    {
+        using OpRewritePattern<ts::EntryOp>::OpRewritePattern;
+
+        LogicalResult matchAndRewrite(ts::EntryOp op, PatternRewriter &rewriter) const final
+        {
+            rewriter.eraseOp(op);
+            return success();
+        }
+    };
+
     struct ReturnOpLowering : public OpRewritePattern<ts::ReturnOp>
     {
         using OpRewritePattern<ts::ReturnOp>::OpRewritePattern;
@@ -386,7 +397,7 @@ namespace
 
                 auto *op = &item.back();
                 //auto name = op->getName().getStringRef();
-                auto isReturn = dyn_cast<ReturnOp>(op) != nullptr;
+                auto isReturn = dyn_cast<ts::ExitOp>(op) != nullptr;
                 return isReturn;
             });
 
@@ -396,7 +407,7 @@ namespace
                 return failure();
             }
 
-            // Split block at `assert` operation.
+            // Split block at `...` operation.
             auto *opBlock = rewriter.getInsertionBlock();
             auto opPosition = rewriter.getInsertionPoint();
             auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);            
@@ -409,6 +420,40 @@ namespace
             return success();
         }
     };
+
+    struct ExitOpLowering : public OpConversionPattern<ts::ExitOp>
+    {
+        using OpConversionPattern<ts::ExitOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(ts::ExitOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            /*
+            // Split block at `...` operation.
+            auto *opBlock = rewriter.getInsertionBlock();
+            auto opPosition = rewriter.getInsertionPoint();
+            auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);            
+
+            // body
+            rewriter.create<mlir::ReturnOp>(op.getLoc());
+
+            rewriter.setInsertionPointToEnd(opBlock);
+            rewriter.create<mlir::BranchOp>(op.getLoc(), continuationBlock);
+            */
+
+            auto *opBlock = rewriter.getInsertionBlock();
+            auto *region = opBlock->getParent();
+
+            auto *retBlock = rewriter.createBlock(region);
+            rewriter.create<mlir::ReturnOp>(op.getLoc());
+
+            rewriter.setInsertionPointToEnd(opBlock);
+            rewriter.create<mlir::BranchOp>(op.getLoc(), retBlock);
+
+            rewriter.eraseOp(op);
+            return success();
+        }
+    };
+
 } // end anonymous namespace
 
 //===----------------------------------------------------------------------===//
@@ -460,7 +505,9 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     // The only remaining operation to lower from the `typescript` dialect, is the PrintOp.
     patterns.insert<
         NullOpLowering,
-        ReturnOpLowering>(&getContext());
+        EntryOpLowering,
+        ReturnOpLowering,
+        ExitOpLowering>(&getContext());
 
     patterns.insert<
         PrintOpLowering, 
