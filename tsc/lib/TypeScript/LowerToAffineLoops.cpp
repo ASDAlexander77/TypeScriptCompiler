@@ -230,10 +230,16 @@ struct EntryOpLowering : public OpRewritePattern<ts::EntryOp>
 
     LogicalResult matchAndRewrite(ts::EntryOp op, PatternRewriter &rewriter) const final
     {
-        rewriter.createBlock(rewriter.getInsertionBlock());
+        auto *opBlock = rewriter.getInsertionBlock();
+
+        auto *block = rewriter.createBlock(opBlock->getParent());
+
+        rewriter.setInsertionPointToEnd(block);
 
         // body of new block
         rewriter.create<mlir::ReturnOp>(op.getLoc());
+
+        rewriter.setInsertionPointToEnd(opBlock);
 
         rewriter.eraseOp(op);
         return success();
