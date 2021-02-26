@@ -214,9 +214,9 @@ struct LogicalBinaryOpLowering : public OpRewritePattern<ts::LogicalBinaryOp>
         switch ((SyntaxKind)logicalBinaryOp.opCode())
         {
         case SyntaxKind::EqualsEqualsToken:
-            LogicOp<ts::LogicalBinaryOp, 
-                CmpIOp, CmpIPredicate, CmpIPredicate::eq, 
-                CmpFOp, CmpFPredicate, CmpFPredicate::OEQ>(logicalBinaryOp, rewriter);
+            LogicOp<ts::LogicalBinaryOp,
+                    CmpIOp, CmpIPredicate, CmpIPredicate::eq,
+                    CmpFOp, CmpFPredicate, CmpFPredicate::OEQ>(logicalBinaryOp, rewriter);
             return success();
         default:
             llvm_unreachable("not implemented");
@@ -230,6 +230,11 @@ struct EntryOpLowering : public OpRewritePattern<ts::EntryOp>
 
     LogicalResult matchAndRewrite(ts::EntryOp op, PatternRewriter &rewriter) const final
     {
+        rewriter.createBlock(rewriter.getInsertionBlock());
+
+        // body of new block
+        rewriter.create<mlir::ReturnOp>(op.getLoc());
+
         rewriter.eraseOp(op);
         return success();
     }
@@ -252,6 +257,7 @@ struct ExitOpLowering : public OpConversionPattern<ts::ExitOp>
 
     LogicalResult matchAndRewrite(ts::ExitOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
     {
+        /*
         auto *opBlock = rewriter.getInsertionBlock();
         auto *entryBlock = rewriter.createBlock(rewriter.getInsertionBlock());
 
@@ -260,9 +266,37 @@ struct ExitOpLowering : public OpConversionPattern<ts::ExitOp>
 
         rewriter.setInsertionPointToEnd(opBlock);
         rewriter.create<mlir::BranchOp>(op.getLoc(), opBlock);
+        */
 
+        auto funcOp = op.getOperation()->getParentOfType<FuncOp>();
+        auto *region = funcOp.getCallableRegion();
+        if (!region)
+        {
+            return failure();
+        }
+
+        auto result = std::find_if(region->begin(), region->end(), [&](auto &item) {
+            if (item.empty())
+            {
+                return false;
+            }
+
+            auto *op = &item.back();
+            auto name = op->getName().getStringRef();
+            auto isReturn = dyn_cast<ReturnOp>(op) != nullptr;
+            return isReturn;
+        });
+
+        if (result == region->end())
+        {
+            // found block with return;
+            return failure();
+        }
+
+        rewriter.create<mlir::BranchOp>(op.getLoc(), &*result);
+
+        //rewriter.create<mlir::ReturnOp>(op.getLoc());
         rewriter.eraseOp(op);
-
         return success();
     }
 };

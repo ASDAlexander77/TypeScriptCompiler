@@ -257,7 +257,7 @@ def TypeScript_VariableOp : TypeScript_Op<"variable", []> {
   );
 }
 
-def TypeScript_ArithmeticBinaryOp : TypeScript_Op<"arithmetic_binary", []> {
+def TypeScript_ArithmeticBinaryOp : TypeScript_Op<"arithmetic_binary"> {
   let summary = [{
   }];
 
@@ -278,7 +278,7 @@ def TypeScript_ArithmeticBinaryOp : TypeScript_Op<"arithmetic_binary", []> {
   );
 }
 
-def TypeScript_LogicalBinaryOp : TypeScript_Op<"logical_binary", []> {
+def TypeScript_LogicalBinaryOp : TypeScript_Op<"logical_binary"> {
   let summary = [{
   }];
 
@@ -299,7 +299,7 @@ def TypeScript_LogicalBinaryOp : TypeScript_Op<"logical_binary", []> {
   );
 }
 
-def TypeScript_CastOp : TypeScript_Op<"cast", [NoSideEffect]> {
+def TypeScript_CastOp : TypeScript_Op<"cast"> {
   let description = [{
     Example:
       typescript.cast %v : i32 to f16
@@ -309,7 +309,7 @@ def TypeScript_CastOp : TypeScript_Op<"cast", [NoSideEffect]> {
   let assemblyFormat = "$in attr-dict `:` type($in) `to` type($res)";
 }
 
-def TypeScript_ReturnOp : TypeScript_Op<"return", [NoSideEffect]> {
+def TypeScript_ReturnOp : TypeScript_Op<"return"> {
   let description = [{
     ```
     return-value-op ::= `typescript.return` ssa-use `:` typescript-type
@@ -334,7 +334,7 @@ def TypeScript_ReturnOp : TypeScript_Op<"return", [NoSideEffect]> {
   let assemblyFormat = "attr-dict ($operands^ `:` type($operands))?";
 }
 
-def TypeScript_EntryOp : TypeScript_Op<"entry", [NoSideEffect]> {
+def TypeScript_EntryOp : TypeScript_Op<"entry"> {
   let description = [{
     To prepare data for return value
 
