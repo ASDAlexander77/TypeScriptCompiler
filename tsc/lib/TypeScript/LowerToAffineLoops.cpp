@@ -246,53 +246,6 @@ struct EntryOpLowering : public OpRewritePattern<ts::EntryOp>
     }
 };
 
-struct ReturnOpLowering : public OpRewritePattern<ts::ReturnOp>
-{
-    using OpRewritePattern<ts::ReturnOp>::OpRewritePattern;
-
-    LogicalResult matchAndRewrite(ts::ReturnOp op, PatternRewriter &rewriter) const final
-    {
-        /*
-        auto funcOp = op.getOperation()->getParentOfType<FuncOp>();
-        auto *region = funcOp.getCallableRegion();
-        if (!region)
-        {
-            return failure();
-        }
-
-        auto result = std::find_if(region->begin(), region->end(), [&](auto &item) {
-            if (item.empty())
-            {
-                return false;
-            }
-
-            auto *op = &item.back();
-            //auto name = op->getName().getStringRef();
-            auto isReturn = dyn_cast<ReturnOp>(op) != nullptr;
-            return isReturn;
-        });
-
-        if (result == region->end())
-        {
-            // found block with return;
-            return failure();
-        }
-
-        rewriter.create<mlir::BranchOp>(op.getLoc(), &*result);
-        */
-
-        auto *opBlock = rewriter.getInsertionBlock();
-        auto opPosition = rewriter.getInsertionPoint();
-        auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
-
-        rewriter.setInsertionPointToEnd(opBlock);
-        rewriter.create<mlir::BranchOp>(op.getLoc(), continuationBlock);
-
-        rewriter.eraseOp(op);
-        return success();
-    }
-};
-
 struct ExitOpLowering : public OpConversionPattern<ts::ExitOp>
 {
     using OpConversionPattern<ts::ExitOp>::OpConversionPattern;
