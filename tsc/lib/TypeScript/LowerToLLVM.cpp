@@ -383,13 +383,12 @@ namespace
         }
     };
 
-    template <typename OpTy>
-    static LogicalResult ReturnRewrite(OpTy op, PatternRewriter &rewriter)
+    static mlir::Block* FindReturnBlock(PatternRewriter &rewriter)
     {
         auto *region = rewriter.getInsertionBlock()->getParent();
         if (!region)
         {
-            return failure();
+            return nullptr;
         }
 
         auto result = std::find_if(region->begin(), region->end(), [&](auto &item) {
@@ -407,14 +406,11 @@ namespace
         if (result == region->end())
         {
             // found block with return;
-            return failure();
+            return nullptr;
         }
 
-        rewriter.create<mlir::BranchOp>(op.getLoc(), &*result);
-
-        rewriter.eraseOp(op);
-        return success();
-    }        
+        return &*result; 
+    }
 
     struct ReturnOpLowering : public OpRewritePattern<ts::ReturnOp>
     {
@@ -422,7 +418,21 @@ namespace
 
         LogicalResult matchAndRewrite(ts::ReturnOp op, PatternRewriter &rewriter) const final
         {
-            return ReturnRewrite(op, rewriter);
+            auto retBlock = FindReturnBlock(rewriter);
+
+            // Split block at `assert` operation.
+            auto *opBlock = rewriter.getInsertionBlock();
+            auto opPosition = rewriter.getInsertionPoint();
+            auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);    
+
+            rewriter.setInsertionPointToEnd(opBlock);
+            //rewriter.create<mlir::BranchOp>(op.getLoc(), continuationBlock);
+            rewriter.create<mlir::BranchOp>(op.getLoc(), retBlock);
+
+            rewriter.setInsertionPointToStart(continuationBlock);        
+
+            rewriter.eraseOp(op);
+            return success();
         }
     };
 
@@ -432,7 +442,12 @@ namespace
 
         LogicalResult matchAndRewrite(ts::ExitOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            return ReturnRewrite(op, rewriter);
+            auto retBlock = FindReturnBlock(rewriter);
+
+            rewriter.create<mlir::BranchOp>(op.getLoc(), retBlock);
+
+            rewriter.eraseOp(op);
+            return success();
         }
     };
 
