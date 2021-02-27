@@ -372,6 +372,12 @@ namespace
 
         LogicalResult matchAndRewrite(ts::EntryOp op, PatternRewriter &rewriter) const final
         {
+            auto *opBlock = rewriter.getInsertionBlock();
+            auto *region = opBlock->getParent();
+
+            rewriter.createBlock(region);
+            rewriter.create<mlir::ReturnOp>(op.getLoc());
+
             rewriter.eraseOp(op);
             return success();
         }
@@ -397,7 +403,7 @@ namespace
 
                 auto *op = &item.back();
                 //auto name = op->getName().getStringRef();
-                auto isReturn = dyn_cast<ts::ExitOp>(op) != nullptr;
+                auto isReturn = dyn_cast<mlir::ReturnOp>(op) != nullptr;
                 return isReturn;
             });
 
@@ -410,7 +416,8 @@ namespace
             // Split block at `...` operation.
             auto *opBlock = rewriter.getInsertionBlock();
             auto opPosition = rewriter.getInsertionPoint();
-            auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);            
+            auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);          
+
 
             rewriter.setInsertionPointToEnd(opBlock);
             rewriter.create<mlir::BranchOp>(op.getLoc(), &*result);
@@ -427,28 +434,15 @@ namespace
 
         LogicalResult matchAndRewrite(ts::ExitOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            /*
-            // Split block at `...` operation.
             auto *opBlock = rewriter.getInsertionBlock();
             auto opPosition = rewriter.getInsertionPoint();
-            auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);            
-
-            // body
-            rewriter.create<mlir::ReturnOp>(op.getLoc());
+            auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);          
 
             rewriter.setInsertionPointToEnd(opBlock);
-            rewriter.create<mlir::BranchOp>(op.getLoc(), continuationBlock);
-            */
+            rewriter.create<LLVM::BrOp>(op.getLoc(), ValueRange(), continuationBlock);
 
-            auto *opBlock = rewriter.getInsertionBlock();
-            auto *region = opBlock->getParent();
-
-            auto *retBlock = rewriter.createBlock(region);
-            rewriter.create<mlir::ReturnOp>(op.getLoc());
-
-            rewriter.setInsertionPointToEnd(opBlock);
-            rewriter.create<mlir::BranchOp>(op.getLoc(), retBlock);
-
+            rewriter.setInsertionPointToEnd(continuationBlock);
+            rewriter.create<LLVM::ReturnOp>(op.getLoc(), ValueRange());
             rewriter.eraseOp(op);
             return success();
         }
