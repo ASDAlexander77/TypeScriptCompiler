@@ -434,15 +434,40 @@ namespace
 
         LogicalResult matchAndRewrite(ts::ExitOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
+            auto *region = rewriter.getInsertionBlock()->getParent();
+            if (!region)
+            {
+                return failure();
+            }
+
+            auto result = std::find_if(region->begin(), region->end(), [&](auto &item) {
+                if (item.empty())
+                {
+                    return false;
+                }
+
+                auto *op = &item.back();
+                //auto name = op->getName().getStringRef();
+                auto isReturn = dyn_cast<mlir::ReturnOp>(op) != nullptr;
+                return isReturn;
+            });
+
+            if (result == region->end())
+            {
+                // found block with return;
+                return failure();
+            }
+
             auto *opBlock = rewriter.getInsertionBlock();
             auto opPosition = rewriter.getInsertionPoint();
             auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);          
 
             rewriter.setInsertionPointToEnd(opBlock);
-            rewriter.create<LLVM::BrOp>(op.getLoc(), ValueRange(), continuationBlock);
+            rewriter.create<mlir::BranchOp>(op.getLoc(), &*result);
 
             rewriter.setInsertionPointToEnd(continuationBlock);
-            rewriter.create<LLVM::ReturnOp>(op.getLoc(), ValueRange());
+            rewriter.create<mlir::ReturnOp>(op.getLoc());
+
             rewriter.eraseOp(op);
             return success();
         }
