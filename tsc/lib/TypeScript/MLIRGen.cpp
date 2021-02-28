@@ -504,7 +504,10 @@ namespace
             builder.setInsertionPointToStart(&entryBlock);
 
             // add exit code
-            auto entryOp = builder.create<EntryOp>(loc(functionDeclarationAST->getLoc()), mlir::TypeAttr::get(funcProto->getReturnType()));
+            auto retType = funcProto->getReturnType();
+            auto entryOp = retType 
+                ? builder.create<EntryOp>(loc(functionDeclarationAST->getLoc()), mlir::TypeAttr::get(retType))
+                : builder.create<EntryOp>(loc(functionDeclarationAST->getLoc()), mlir::TypeAttr());
 
             auto arguments = entryBlock.getArguments();
 
@@ -585,7 +588,14 @@ namespace
             }
 
             // add exit code
-            builder.create<ExitOp>(loc(functionDeclarationAST->getLoc()));
+            if (retType)
+            {
+                builder.create<ExitOp>(loc(functionDeclarationAST->getLoc()), mlir::TypeAttr::get(retType));
+            }
+            else
+            {
+                builder.create<ExitOp>(loc(functionDeclarationAST->getLoc()), mlir::TypeAttr());
+            }
 
             if (dummyRun)
             {

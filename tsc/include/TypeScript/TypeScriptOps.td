@@ -346,7 +346,7 @@ def TypeScript_EntryOp : TypeScript_Op<"entry"> {
   }];
 
   let arguments = (ins
-    TypeAttr:$returnType
+    OptionalAttr<TypeAttr>:$returnType
   );  
 
   let assemblyFormat = "$returnType attr-dict";
@@ -364,14 +364,10 @@ def TypeScript_ExitOp : TypeScript_Op<"exit", [NoSideEffect, ReturnLike, Termina
   }];
 
   let arguments = (ins
-    Variadic<AnyType>:$operands
+    OptionalAttr<TypeAttr>:$returnType
   );
 
-  let builders = [
-    OpBuilderDAG<(ins),
-    [{ build($_builder, $_state, llvm::None); }]>];
-
-  let assemblyFormat = "attr-dict ($operands^ `:` type($operands))?";
+  let assemblyFormat = "$returnType attr-dict";
 }
 
 #endif // TYPESCRIPT_OPS
