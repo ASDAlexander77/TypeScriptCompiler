@@ -44,10 +44,16 @@ using llvm::Twine;
 
 namespace
 {
+    struct PassResult
+    {
+        mlir::Type functionReturnType;
+    };
+
     struct GenContext
     {
         bool allowPartialResolve;
         mlir::Type functionReturnType;
+        PassResult* passResult;
     };
 
     /// Implementation of a simple MLIR emission from the TypeScript AST.
@@ -432,8 +438,14 @@ namespace
             // simulate scope
             SymbolTableScopeT varScope(symbolTable);
 
-            returnType = mlirGenFunctionBody(functionDeclarationAST, dummyFuncOp, funcProto, genContext, true);
-            return returnType;
+            GenContext genContextWithPassResult(genContext);
+            genContextWithPassResult.passResult = new PassResult();
+            if (failed(mlirGenFunctionBody(functionDeclarationAST, dummyFuncOp, funcProto, genContextWithPassResult, true)))
+            {
+                return mlir::Type();
+            }
+
+            return genContextWithPassResult.passResult->functionReturnType;
         }
 
         mlir::LogicalResult mlirGen(FunctionDeclarationAST::TypePtr functionDeclarationAST, const GenContext &genContext)
@@ -469,11 +481,9 @@ namespace
             return mlir::success();
         }
 
-        mlir::Type mlirGenFunctionBody(FunctionDeclarationAST *functionDeclarationAST, mlir::FuncOp funcOp, 
+        mlir::LogicalResult mlirGenFunctionBody(FunctionDeclarationAST *functionDeclarationAST, mlir::FuncOp funcOp, 
             FunctionPrototypeDOM::TypePtr funcProto, const GenContext &genContext, bool dummyRun = false)
         {
-            mlir::Type returnType;
-
             auto &entryBlock = *funcOp.addEntryBlock();
 
             // process function params
@@ -481,7 +491,7 @@ namespace
             {
                 if (failed(declare(std::get<0>(paramPairs), std::get<1>(paramPairs))))
                 {
-                    return returnType;
+                    return mlir::failure();
                 }
             }
 
@@ -567,7 +577,7 @@ namespace
 
             if (failed(mlirGen(functionDeclarationAST->getFunctionBody(), genContext)))
             {
-                return returnType;
+                return mlir::failure();
             }
 
             // add exit code
@@ -578,7 +588,7 @@ namespace
                 entryBlock.erase();
             }
 
-            return returnType;
+            return mlir::success();
         }
 
         mlir::LogicalResult mlirGen(ReturnStatementAST::TypePtr returnStatementAST, const GenContext &genContext)
@@ -590,6 +600,12 @@ namespace
                 {
                     auto castValue = builder.create<CastOp>(loc(expression->getLoc()), genContext.functionReturnType, expressionValue);
                     expressionValue = castValue;
+                }
+
+                // record return type if not provided
+                if (genContext.passResult)
+                {
+                    genContext.passResult->functionReturnType = expressionValue.getType();
                 }
 
                 builder.create<ReturnOp>(loc(returnStatementAST->getLoc()), expressionValue);
