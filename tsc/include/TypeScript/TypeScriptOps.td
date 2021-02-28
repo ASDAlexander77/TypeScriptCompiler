@@ -345,7 +345,11 @@ def TypeScript_EntryOp : TypeScript_Op<"entry"> {
     ```
   }];
 
-  let assemblyFormat = " attr-dict ";
+  let arguments = (ins
+    TypeAttr:$returnType
+  );  
+
+  let assemblyFormat = "$returnType attr-dict";
 }
 
 def TypeScript_ExitOp : TypeScript_Op<"exit", [NoSideEffect, ReturnLike, Terminator]> {

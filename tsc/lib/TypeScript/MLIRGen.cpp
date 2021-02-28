@@ -272,9 +272,11 @@ namespace
             auto formalParams = parametersContextAST->getParameters();
 
             // add extra parameter to send number of parameters
-            auto anyOptionalParam = std::find_if(formalParams.begin(), formalParams.end(), [](auto &param) {
-                                        return param->getIsOptional() || !!param->getInitializer();
-                                    }) != formalParams.end();
+            auto anyOptionalParam = 
+                formalParams.end() != std::find_if(formalParams.begin(), formalParams.end(), [](auto &param) 
+                {
+                    return param->getIsOptional() || !!param->getInitializer();
+                });
 
             if (anyOptionalParam)
             {
@@ -385,10 +387,12 @@ namespace
             if (auto typeParameter = functionDeclarationAST->getTypeParameter())
             {
                 auto returnType = getType(typeParameter);
+                funcProto->setReturnType(returnType);
                 funcType = builder.getFunctionType(argTypes, returnType);
             }
             else if (auto returnType = getReturnType(functionDeclarationAST, name, argTypes, funcProto, genContext))
             {
+                funcProto->setReturnType(returnType);
                 funcType = builder.getFunctionType(argTypes, returnType);
             }
             else
@@ -500,7 +504,7 @@ namespace
             builder.setInsertionPointToStart(&entryBlock);
 
             // add exit code
-            auto entryOp = builder.create<EntryOp>(loc(functionDeclarationAST->getLoc()));
+            auto entryOp = builder.create<EntryOp>(loc(functionDeclarationAST->getLoc()), mlir::TypeAttr::get(funcProto->getReturnType()));
 
             auto arguments = entryBlock.getArguments();
 
@@ -689,7 +693,7 @@ namespace
             if (definingOp)
             {
                 auto opName = definingOp->getName().getStringRef();
-                auto attrName = StringRef("identifier");
+                auto attrName = StringRef(IDENTIFIER_ATTR_NAME);
                 if (definingOp->hasAttrOfType<mlir::FlatSymbolRefAttr>(attrName))
                 {
                     auto calleeName = definingOp->getAttrOfType<mlir::FlatSymbolRefAttr>(attrName);

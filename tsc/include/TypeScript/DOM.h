@@ -97,6 +97,7 @@ class FunctionPrototypeDOM
 {
     std::string name;
     std::vector<FunctionParamDOM::TypePtr> args;    
+    mlir::Type returnType;
 
 public:
 
@@ -110,4 +111,9 @@ public:
     StringRef getName() const { return name; }
     // ArrayRef should not be "&" or "*"
     ArrayRef<FunctionParamDOM::TypePtr> getArgs() const { return args; }
+    const mlir::Type &getReturnType() const { return returnType; }
+    void setReturnType(mlir::Type returnType_) 
+    {
+        returnType = returnType_;
+    }
 };
