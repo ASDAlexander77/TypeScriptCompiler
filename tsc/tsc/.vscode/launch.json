@@ -16,17 +16,6 @@
             "externalConsole": true
         },
         {
-            "name": "(Windows) tsc",
-            "type": "cppvsdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
-            "args": ["-emit=mlir-affine", "C:/temp/2.ts"],
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
-            "environment": [],
-            "externalConsole": true
-        },        
-        {
             "name": "(Windows) test-runner.exe - Launch",
             "type": "cppvsdbg",
             "request": "launch",

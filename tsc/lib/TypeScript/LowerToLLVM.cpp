@@ -372,13 +372,41 @@ namespace
 
         LogicalResult matchAndRewrite(ts::EntryOp op, PatternRewriter &rewriter) const final
         {
+            auto opTyped = ts::EntryOpAdaptor(op);
+
+            mlir::Value allocValue;
+            auto anyResult = op.getNumResults() > 0;
+            if (anyResult)
+            {
+                auto result = op.getResult(0);
+                allocValue = rewriter.create<mlir::AllocaOp>(op.getLoc(), result.getType().cast<MemRefType>());
+            }
+
+            // create return block
             auto *opBlock = rewriter.getInsertionBlock();
             auto *region = opBlock->getParent();
 
             rewriter.createBlock(region);
-            rewriter.create<mlir::ReturnOp>(op.getLoc());
 
-            rewriter.eraseOp(op);
+            if (anyResult)
+            {
+                auto loadedValue = rewriter.create<mlir::LoadOp>(op.getLoc(), allocValue);
+                rewriter.create<mlir::ReturnOp>(op.getLoc(), mlir::ValueRange{loadedValue});
+            }
+            else
+            {
+                rewriter.create<mlir::ReturnOp>(op.getLoc());
+            }
+
+            if (anyResult)
+            {
+                rewriter.replaceOp(op, allocValue);
+            }
+            else
+            {
+                rewriter.eraseOp(op);
+            }
+
             return success();
         }
     };

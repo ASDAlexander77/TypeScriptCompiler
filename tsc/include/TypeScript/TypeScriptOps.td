@@ -44,8 +44,6 @@ def TypeScript_NullOp : TypeScript_Op<"null", []> {
   );
 
   let verifier = [{ return success(); }];
-
-  let assemblyFormat = "attr-dict `:` type($result)";
 }
 
 def TypeScript_UndefOp : TypeScript_Op<"undef", []> {
@@ -72,8 +70,6 @@ def TypeScript_UndefOp : TypeScript_Op<"undef", []> {
   );
 
   let verifier = [{ return success(); }];
-
-  let assemblyFormat = "attr-dict `:` type($result)";
 }
 
 def TypeScript_PrintOp : TypeScript_Op<"print"> {
@@ -83,8 +79,6 @@ def TypeScript_PrintOp : TypeScript_Op<"print"> {
   }];
 
   let arguments = (ins Variadic<AnyType>:$inputs);
-
-  let assemblyFormat = "$inputs attr-dict `:` type($inputs)";
 }
 
 def TypeScript_AssertOp : TypeScript_Op<"assert"> {
@@ -163,10 +157,6 @@ def TypeScript_CallOp : TypeScript_Op<"call",
     {
       return (*this)->getAttrOfType<SymbolRefAttr>("callee");
     }
-  }];
-
-  let assemblyFormat = [{
-    $callee `(` $operands `)` attr-dict `:` functional-type($operands, results)
   }];
 
   let verifier = ?;
@@ -346,10 +336,11 @@ def TypeScript_EntryOp : TypeScript_Op<"entry"> {
   }];
 
   let arguments = (ins
-    OptionalAttr<TypeAttr>:$returnType
   );  
 
-  let assemblyFormat = "$returnType attr-dict";
+  let results = (outs
+    Optional<AnyType>:$pointer
+  );  
 }
 
 def TypeScript_ExitOp : TypeScript_Op<"exit", [NoSideEffect, ReturnLike, Terminator]> {
@@ -366,8 +357,6 @@ def TypeScript_ExitOp : TypeScript_Op<"exit", [NoSideEffect, ReturnLike, Termina
   let arguments = (ins
     OptionalAttr<TypeAttr>:$returnType
   );
-
-  let assemblyFormat = "$returnType attr-dict";
 }
 
 #endif // TYPESCRIPT_OPS

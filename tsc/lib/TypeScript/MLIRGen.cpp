@@ -505,9 +505,18 @@ namespace
 
             // add exit code
             auto retType = funcProto->getReturnType();
-            auto entryOp = retType 
-                ? builder.create<EntryOp>(loc(functionDeclarationAST->getLoc()), mlir::TypeAttr::get(retType))
-                : builder.create<EntryOp>(loc(functionDeclarationAST->getLoc()), mlir::TypeAttr());
+            if (retType)
+            {
+                auto location = loc(functionDeclarationAST->getLoc());
+                auto entryOp = builder.create<EntryOp>(location, mlir::MemRefType::get(ArrayRef<int64_t>(), retType));
+                auto varDecl = std::make_shared<VariableDeclarationDOM>("0return", retType, location);
+                varDecl->SetReadWriteAccess();
+                declare(varDecl, entryOp.pointer());
+            }
+            else
+            {
+                builder.create<EntryOp>(loc(functionDeclarationAST->getLoc()), mlir::Type());
+            }
 
             auto arguments = entryBlock.getArguments();
 
