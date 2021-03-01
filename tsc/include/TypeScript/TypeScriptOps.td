@@ -299,6 +299,26 @@ def TypeScript_CastOp : TypeScript_Op<"cast"> {
   let assemblyFormat = "$in attr-dict `:` type($in) `to` type($res)";
 }
 
+def TypeScript_EntryOp : TypeScript_Op<"entry", [Symbol]> {
+  let description = [{
+    To prepare data for return value
+
+    #### Example:
+
+    ```mlir
+    typescript.entry
+    ```
+  }];
+
+  let arguments = (ins
+    StrAttr:$sym_name
+  );  
+
+  let results = (outs
+    Optional<AnyType>:$pointer
+  );  
+}
+
 def TypeScript_ReturnOp : TypeScript_Op<"return"> {
   let description = [{
     ```
@@ -324,25 +344,6 @@ def TypeScript_ReturnOp : TypeScript_Op<"return"> {
   let assemblyFormat = "attr-dict ($operands^ `:` type($operands))?";
 }
 
-def TypeScript_EntryOp : TypeScript_Op<"entry"> {
-  let description = [{
-    To prepare data for return value
-
-    #### Example:
-
-    ```mlir
-    typescript.entry
-    ```
-  }];
-
-  let arguments = (ins
-  );  
-
-  let results = (outs
-    Optional<AnyType>:$pointer
-  );  
-}
-
 def TypeScript_ExitOp : TypeScript_Op<"exit", [NoSideEffect, ReturnLike, Terminator]> {
   let description = [{
     To prepare exit data for return
@@ -355,7 +356,6 @@ def TypeScript_ExitOp : TypeScript_Op<"exit", [NoSideEffect, ReturnLike, Termina
   }];
 
   let arguments = (ins
-    OptionalAttr<TypeAttr>:$returnType
   );
 }
 

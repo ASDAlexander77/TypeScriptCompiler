@@ -508,14 +508,14 @@ namespace
             if (retType)
             {
                 auto location = loc(functionDeclarationAST->getLoc());
-                auto entryOp = builder.create<EntryOp>(location, mlir::MemRefType::get(ArrayRef<int64_t>(), retType));
+                auto entryOp = builder.create<EntryOp>(location, mlir::MemRefType::get(ArrayRef<int64_t>(), retType), builder.getStringAttr("0return"));
                 auto varDecl = std::make_shared<VariableDeclarationDOM>("0return", retType, location);
                 varDecl->SetReadWriteAccess();
                 declare(varDecl, entryOp.pointer());
             }
             else
             {
-                builder.create<EntryOp>(loc(functionDeclarationAST->getLoc()), mlir::Type());
+                builder.create<EntryOp>(loc(functionDeclarationAST->getLoc()), mlir::Type(), builder.getStringAttr("0return"));
             }
 
             auto arguments = entryBlock.getArguments();
@@ -597,14 +597,7 @@ namespace
             }
 
             // add exit code
-            if (retType)
-            {
-                builder.create<ExitOp>(loc(functionDeclarationAST->getLoc()), mlir::TypeAttr::get(retType));
-            }
-            else
-            {
-                builder.create<ExitOp>(loc(functionDeclarationAST->getLoc()), mlir::TypeAttr());
-            }
+            builder.create<ExitOp>(loc(functionDeclarationAST->getLoc()));
 
             if (dummyRun)
             {

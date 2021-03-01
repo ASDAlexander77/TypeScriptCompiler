@@ -392,18 +392,11 @@ namespace
             {
                 auto loadedValue = rewriter.create<mlir::LoadOp>(op.getLoc(), allocValue);
                 rewriter.create<mlir::ReturnOp>(op.getLoc(), mlir::ValueRange{loadedValue});
-            }
-            else
-            {
-                rewriter.create<mlir::ReturnOp>(op.getLoc());
-            }
-
-            if (anyResult)
-            {
                 rewriter.replaceOp(op, allocValue);
             }
             else
             {
+                rewriter.create<mlir::ReturnOp>(op.getLoc());
                 rewriter.eraseOp(op);
             }
 
@@ -448,13 +441,28 @@ namespace
         {
             auto retBlock = FindReturnBlock(rewriter);
 
+            if (op->getNumOperands() > 0)
+            {
+                if (auto moduleOp = op->getParentOfType<ModuleOp>())
+                {
+                    if (auto entryOp = moduleOp.lookupSymbol<ts::EntryOp>("0return")) 
+                    {
+                        ts::ReturnOpAdaptor opTyped(op);
+                        rewriter.create<mlir::StoreOp>(op.getLoc(), opTyped.operands().front(), entryOp.pointer());
+                    }
+                }
+            }
+
             // Split block at `assert` operation.
             auto *opBlock = rewriter.getInsertionBlock();
             auto opPosition = rewriter.getInsertionPoint();
             auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);    
 
             rewriter.setInsertionPointToEnd(opBlock);
-            //rewriter.create<mlir::BranchOp>(op.getLoc(), continuationBlock);
+
+            // save value into return
+
+
             rewriter.create<mlir::BranchOp>(op.getLoc(), retBlock);
 
             rewriter.setInsertionPointToStart(continuationBlock);        
