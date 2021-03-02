@@ -13,6 +13,101 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 // TypeScript op definitions
 //===----------------------------------------------------------------------===//
 
+def TypeScript_FuncOp : TypeScript_Op<"func", [
+  AffineScope, AutomaticAllocationScope, CallableOpInterface, FunctionLike,
+  IsolatedFromAbove, Symbol
+]> {
+  let description = [{
+    Example:
+
+    ```mlir
+    // External function definitions.
+    typescript.func @abort()
+    ```
+  }];
+
+  let arguments = (ins SymbolNameAttr:$sym_name,
+                       TypeAttr:$type,
+                       OptionalAttr<StrAttr>:$sym_visibility);
+  let regions = (region AnyRegion:$body);
+
+  let builders = [OpBuilderDAG<(ins
+    "StringRef":$name, "FunctionType":$type,
+    CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs,
+    CArg<"ArrayRef<DictionaryAttr>", "{}">:$argAttrs)
+  >];
+  let extraClassDeclaration = [{
+    static FuncOp create(Location location, StringRef name, FunctionType type,
+                         ArrayRef<NamedAttribute> attrs = {});
+    static FuncOp create(Location location, StringRef name, FunctionType type,
+                         iterator_range<dialect_attr_iterator> attrs);
+    static FuncOp create(Location location, StringRef name, FunctionType type,
+                         ArrayRef<NamedAttribute> attrs,
+                         ArrayRef<DictionaryAttr> argAttrs);
+
+    /// Create a deep copy of this function and all of its blocks, remapping any
+    /// operands that use values outside of the function using the map that is
+    /// provided (leaving them alone if no entry is present). If the mapper
+    /// contains entries for function arguments, these arguments are not
+    /// included in the new function. Replaces references to cloned sub-values
+    /// with the corresponding value that is copied, and adds those mappings to
+    /// the mapper.
+    FuncOp clone(BlockAndValueMapping &mapper);
+    FuncOp clone();
+
+    /// Clone the internal blocks and attributes from this function into dest.
+    /// Any cloned blocks are appended to the back of dest. This function
+    /// asserts that the attributes of the current function and dest are
+    /// compatible.
+    void cloneInto(FuncOp dest, BlockAndValueMapping &mapper);
+
+    //===------------------------------------------------------------------===//
+    // CallableOpInterface
+    //===------------------------------------------------------------------===//
+
+    /// Returns the region on the current operation that is callable. This may
+    /// return null in the case of an external callable object, e.g. an external
+    /// function.
+    Region *getCallableRegion() { return isExternal() ? nullptr : &getBody(); }
+
+    /// Returns the results types that the callable region produces when
+    /// executed.
+    ArrayRef<Type> getCallableResults() { return getType().getResults(); }
+
+    //===------------------------------------------------------------------===//
+    // SymbolOpInterface Methods
+    //===------------------------------------------------------------------===//
+
+    bool isDeclaration() { return isExternal(); }
+
+  private:
+    // This trait needs access to the hooks defined below.
+    friend class OpTrait::FunctionLike<FuncOp>;
+
+    /// Returns the number of arguments. This is a hook for
+    /// OpTrait::FunctionLike.
+    unsigned getNumFuncArguments() { return getType().getInputs().size(); }
+
+    /// Returns the number of results. This is a hook for OpTrait::FunctionLike.
+    unsigned getNumFuncResults() { return getType().getResults().size(); }
+
+    /// Hook for OpTrait::FunctionLike, called after verifying that the 'type'
+    /// attribute is present and checks if it holds a function type. Ensures
+    /// getType, getNumFuncArguments, and getNumFuncResults can be called
+    /// safely.
+    LogicalResult verifyType() {
+      auto type = getTypeAttr().getValue();
+      if (!type.isa<FunctionType>())
+        return emitOpError("requires '" + getTypeAttrName() +
+                           "' attribute of function type");
+      return success();
+    }
+  }];
+  let parser = [{ return ::parseFuncOp(parser, result); }];
+  let printer = [{ return ::print(*this, p); }];
+  let verifier = [{ return ::verify(*this); }];
+}
+
 def TypeScript_IdentifierReference : TypeScript_Op<"identifier_reference", [NoSideEffect, Symbol]> {
     let arguments = (ins FlatSymbolRefAttr:$identifier);
     let results = (outs NoneType);

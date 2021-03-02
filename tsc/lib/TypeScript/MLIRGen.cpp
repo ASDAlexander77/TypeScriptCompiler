@@ -342,7 +342,7 @@ namespace
             return params;
         }
 
-        std::tuple<mlir::FuncOp, FunctionPrototypeDOM::TypePtr, bool> mlirGenFunctionPrototype(
+        std::tuple<FuncOp, FunctionPrototypeDOM::TypePtr, bool> mlirGenFunctionPrototype(
             FunctionDeclarationAST *functionDeclarationAST, const GenContext &genContext)
         {
             auto location = loc(functionDeclarationAST->getLoc());
@@ -357,7 +357,7 @@ namespace
                 auto paramType = param->getType();
                 if (!paramType)
                 {
-                    return std::make_tuple(mlir::FuncOp(), FunctionPrototypeDOM::TypePtr(nullptr), false);
+                    return std::make_tuple(FuncOp(), FunctionPrototypeDOM::TypePtr(nullptr), false);
                 }
 
                 argTypes.push_back(paramType);
@@ -408,7 +408,7 @@ namespace
                 attrs.push_back(builder.getNamedAttr(FUNC_OPTIONAL_ATTR_NAME, builder.getI8IntegerAttr(argOptionalFrom)));
             }
 
-            auto funcOp = mlir::FuncOp::create(location, StringRef(name), funcType, ArrayRef<mlir::NamedAttribute>(attrs));
+            auto funcOp = FuncOp::create(location, StringRef(name), funcType, ArrayRef<mlir::NamedAttribute>(attrs));
 
             return std::make_tuple(funcOp, std::move(funcProto), true);
         }
@@ -437,7 +437,7 @@ namespace
             }
 
             auto partialDeclFuncType = builder.getFunctionType(argTypes, llvm::None);
-            auto dummyFuncOp = mlir::FuncOp::create(loc(functionDeclarationAST->getLoc()), StringRef(name), partialDeclFuncType);
+            auto dummyFuncOp = FuncOp::create(loc(functionDeclarationAST->getLoc()), StringRef(name), partialDeclFuncType);
 
             // simulate scope
             SymbolTableScopeT varScope(symbolTable);
@@ -486,7 +486,7 @@ namespace
             return mlir::success();
         }
 
-        mlir::LogicalResult mlirGenFunctionBody(FunctionDeclarationAST *functionDeclarationAST, mlir::FuncOp funcOp, 
+        mlir::LogicalResult mlirGenFunctionBody(FunctionDeclarationAST *functionDeclarationAST, FuncOp funcOp, 
             FunctionPrototypeDOM::TypePtr funcProto, const GenContext &genContext, bool dummyRun = false)
         {
             auto &entryBlock = *funcOp.addEntryBlock();
@@ -1032,7 +1032,7 @@ namespace
 
         llvm::ScopedHashTable<StringRef, VariablePairT> symbolTable;
 
-        llvm::StringMap<mlir::FuncOp> functionMap;
+        llvm::StringMap<FuncOp> functionMap;
     };
 
 } // namespace

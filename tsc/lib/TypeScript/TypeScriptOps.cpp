@@ -8,26 +8,31 @@
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/TypeUtilities.h"
+#include "mlir/IR/FunctionImplementation.h"
 
 #include "llvm/ADT/TypeSwitch.h"
 
 #define GET_TYPEDEF_CLASSES
 #include "TypeScript/TypeScriptOpsTypes.cpp.inc"
 
+static ::mlir::ParseResult parseFuncOp(::mlir::OpAsmParser &parser, ::mlir::OperationState &result);
+static void print(::mlir::typescript::FuncOp op, ::mlir::OpAsmPrinter &p);
+static ::mlir::LogicalResult verify(::mlir::typescript::FuncOp op);
+
 #define GET_OP_CLASSES
 #include "TypeScript/TypeScriptOps.cpp.inc"
 
 using namespace mlir;
-using namespace mlir::typescript;
+namespace ts = mlir::typescript;
 
 //===----------------------------------------------------------------------===//
 // OptionalType
 //===----------------------------------------------------------------------===//
 
-Type TypeScriptDialect::parseType(DialectAsmParser &parser) const
+Type ts::TypeScriptDialect::parseType(DialectAsmParser &parser) const
 {
     llvm::SMLoc typeLoc = parser.getCurrentLocation();
-    auto genType = generatedTypeParser(getContext(), parser, "optinal");
+    auto genType = generatedTypeParser(getContext(), parser, "optional");
     if (genType != Type())
     {
         return genType;
@@ -37,7 +42,7 @@ Type TypeScriptDialect::parseType(DialectAsmParser &parser) const
     return Type();
 }
 
-void TypeScriptDialect::printType(Type type, DialectAsmPrinter &os) const
+void ts::TypeScriptDialect::printType(Type type, DialectAsmPrinter &os) const
 {
     if (failed(generatedTypePrinter(type, os)))
     {
@@ -45,8 +50,100 @@ void TypeScriptDialect::printType(Type type, DialectAsmPrinter &os) const
     }
 }
 
-LogicalResult OptionalType::verifyConstructionInvariants(Location loc, Type elementType)
+LogicalResult ts::OptionalType::verifyConstructionInvariants(Location loc, Type elementType)
 {
+    return success();
+}
+
+//===----------------------------------------------------------------------===//
+// FuncOp
+//===----------------------------------------------------------------------===//
+ts::FuncOp ts::FuncOp::create(Location location, StringRef name, FunctionType type,
+                      ArrayRef<NamedAttribute> attrs)
+{
+    OperationState state(location, ts::FuncOp::getOperationName());
+    OpBuilder builder(location->getContext());
+    ts::FuncOp::build(builder, state, name, type, attrs);
+    return cast<ts::FuncOp>(Operation::create(state));
+}
+
+ts::FuncOp ts::FuncOp::create(Location location, StringRef name, FunctionType type,
+                      iterator_range<dialect_attr_iterator> attrs)
+{
+    SmallVector<NamedAttribute, 8> attrRef(attrs);
+    return create(location, name, type, llvm::makeArrayRef(attrRef));
+}
+
+ts::FuncOp ts::FuncOp::create(Location location, StringRef name, FunctionType type,
+                      ArrayRef<NamedAttribute> attrs,
+                      ArrayRef<DictionaryAttr> argAttrs)
+{
+    auto func = create(location, name, type, attrs);
+    func.setAllArgAttrs(argAttrs);
+    return func;
+}
+
+void ts::FuncOp::build(OpBuilder &builder, OperationState &state, StringRef name,
+                   FunctionType type, ArrayRef<NamedAttribute> attrs,
+                   ArrayRef<DictionaryAttr> argAttrs)
+{
+    state.addAttribute(SymbolTable::getSymbolAttrName(),
+                       builder.getStringAttr(name));
+    state.addAttribute(getTypeAttrName(), TypeAttr::get(type));
+    state.attributes.append(attrs.begin(), attrs.end());
+    state.addRegion();
+
+    if (argAttrs.empty())
+    {
+        return;
+    }
+
+    assert(type.getNumInputs() == argAttrs.size());
+    SmallString<8> argAttrName;
+    for (unsigned i = 0, e = type.getNumInputs(); i != e; ++i)
+    {
+        if (DictionaryAttr argDict = argAttrs[i])
+        {
+            state.addAttribute(getArgAttrName(i, argAttrName), argDict);
+        }
+    }
+}
+
+ParseResult parseFuncOp(OpAsmParser &parser, OperationState &result)
+{
+    auto buildFuncType = [](Builder &builder, ArrayRef<Type> argTypes,
+                            ArrayRef<Type> results, impl::VariadicFlag,
+                            std::string &) {
+        return builder.getFunctionType(argTypes, results);
+    };
+
+    return impl::parseFunctionLikeOp(parser, result, /*allowVariadic=*/false, buildFuncType);
+}
+
+void print(ts::FuncOp op, OpAsmPrinter &p)
+{
+    FunctionType fnType = op.getType();
+    impl::printFunctionLikeOp(p, op, fnType.getInputs(), /*isVariadic=*/false, fnType.getResults());
+}
+
+LogicalResult verify(ts::FuncOp op)
+{
+    // If this function is external there is nothing to do.
+    if (op.isExternal())
+        return success();
+
+    // Verify that the argument list of the function and the arg list of the entry
+    // block line up.  The trait already verified that the number of arguments is
+    // the same between the signature and the block.
+    auto fnInputTypes = op.getType().getInputs();
+    Block &entryBlock = op.front();
+    for (unsigned i = 0, e = entryBlock.getNumArguments(); i != e; ++i)
+        if (fnInputTypes[i] != entryBlock.getArgument(i).getType())
+            return op.emitOpError("type of entry block argument #")
+                   << i << '(' << entryBlock.getArgument(i).getType()
+                   << ") must match the type of the corresponding argument in "
+                   << "function signature(" << fnInputTypes[i] << ')';
+
     return success();
 }
 
@@ -54,12 +151,12 @@ LogicalResult OptionalType::verifyConstructionInvariants(Location loc, Type elem
 // IdentifierReference
 //===----------------------------------------------------------------------===//
 
-IdentifierReference IdentifierReference::create(Location location, StringRef name)
+ts::IdentifierReference ts::IdentifierReference::create(Location location, StringRef name)
 {
-    OperationState state(location, "identifier_reference");
+    OperationState state(location, ts::IdentifierReference::getOperationName());
     OpBuilder builder(location->getContext());
-    IdentifierReference::build(builder, state, builder.getNoneType(), name);
-    return IdentifierReference(Operation::create(state));
+    ts::IdentifierReference::build(builder, state, builder.getNoneType(), name);
+    return cast<ts::IdentifierReference>(Operation::create(state));
 }
 
 //===----------------------------------------------------------------------===//
@@ -68,11 +165,11 @@ IdentifierReference IdentifierReference::create(Location location, StringRef nam
 
 namespace
 {
-    struct EraseRedundantAssertions : public OpRewritePattern<AssertOp>
+    struct EraseRedundantAssertions : public OpRewritePattern<ts::AssertOp>
     {
-        using OpRewritePattern<AssertOp>::OpRewritePattern;
+        using OpRewritePattern<ts::AssertOp>::OpRewritePattern;
 
-        LogicalResult matchAndRewrite(AssertOp op,
+        LogicalResult matchAndRewrite(ts::AssertOp op,
                                       PatternRewriter &rewriter) const override
         {
             // Erase assertion if argument is constant true.
@@ -87,7 +184,7 @@ namespace
     };
 } // namespace
 
-void AssertOp::getCanonicalizationPatterns(OwningRewritePatternList &patterns,
+void ts::AssertOp::getCanonicalizationPatterns(OwningRewritePatternList &patterns,
                                            MLIRContext *context)
 {
     patterns.insert<EraseRedundantAssertions>(context);
@@ -97,7 +194,7 @@ void AssertOp::getCanonicalizationPatterns(OwningRewritePatternList &patterns,
 // CallOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable)
+LogicalResult ts::CallOp::verifySymbolUses(SymbolTableCollection &symbolTable)
 {
     // Check that the callee attribute was specified.
     auto fnAttr = (*this)->getAttrOfType<FlatSymbolRefAttr>("callee");
@@ -106,7 +203,7 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable)
         return emitOpError("requires a 'callee' symbol reference attribute");
     }
 
-    FuncOp fn = symbolTable.lookupNearestSymbolFrom<FuncOp>(*this, fnAttr);
+    auto fn = symbolTable.lookupNearestSymbolFrom<ts::FuncOp>(*this, fnAttr);
     if (!fn)
     {
         return emitOpError() << "'" << fnAttr.getValue()
@@ -140,9 +237,9 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable)
             if (!optType || optType.getElementType() != getOperand(i).getType())
             {
             */
-                return emitOpError("operand type mismatch: expected operand type ")
-                    << fnType.getInput(i) << ", but provided "
-                    << getOperand(i).getType() << " for operand number " << i;
+            return emitOpError("operand type mismatch: expected operand type ")
+                   << fnType.getInput(i) << ", but provided "
+                   << getOperand(i).getType() << " for operand number " << i;
             /*
             }
             */
@@ -165,7 +262,7 @@ LogicalResult CallOp::verifySymbolUses(SymbolTableCollection &symbolTable)
     return success();
 }
 
-FunctionType CallOp::getCalleeType()
+FunctionType ts::CallOp::getCalleeType()
 {
     return FunctionType::get(getContext(), getOperandTypes(), getResultTypes());
 }
