@@ -299,7 +299,7 @@ def TypeScript_CastOp : TypeScript_Op<"cast"> {
   let assemblyFormat = "$in attr-dict `:` type($in) `to` type($res)";
 }
 
-def TypeScript_EntryOp : TypeScript_Op<"entry", [Symbol]> {
+def TypeScript_EntryOp : TypeScript_Op<"entry"> {
   let description = [{
     To prepare data for return value
 
@@ -311,11 +311,10 @@ def TypeScript_EntryOp : TypeScript_Op<"entry", [Symbol]> {
   }];
 
   let arguments = (ins
-    StrAttr:$sym_name
   );  
 
   let results = (outs
-    Optional<AnyType>:$pointer
+    Optional<AnyMemRef>:$pointer
   );  
 }
 
@@ -329,19 +328,30 @@ def TypeScript_ReturnOp : TypeScript_Op<"return"> {
 
     ```mlir
     typescript.return
+    ```
+  }];
+
+  let arguments = (ins
+  );
+}
+
+def TypeScript_ReturnValOp : TypeScript_Op<"returnVal"> {
+  let description = [{
+    ```
+    return-value-op ::= `typescript.returnVal` ssa-use `:` typescript-type
+    ```
+
+    #### Example:
+
+    ```mlir
     typescript.return %0 : f32
     ```
   }];
 
   let arguments = (ins
-    Variadic<AnyType>:$operands
+    AnyType:$operand,
+    AnyMemRef:$pointer
   );
-
-  let builders = [
-    OpBuilderDAG<(ins),
-    [{ build($_builder, $_state, llvm::None); }]>];
-
-  let assemblyFormat = "attr-dict ($operands^ `:` type($operands))?";
 }
 
 def TypeScript_ExitOp : TypeScript_Op<"exit", [NoSideEffect, ReturnLike, Terminator]> {

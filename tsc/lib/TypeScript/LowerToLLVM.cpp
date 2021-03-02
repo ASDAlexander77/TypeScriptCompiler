@@ -18,6 +18,7 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/Passes.h"
+#include "TypeScript/Defines.h"
 
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 #include "mlir/Conversion/SCFToStandard/SCFToStandard.h"
@@ -441,17 +442,32 @@ namespace
         {
             auto retBlock = FindReturnBlock(rewriter);
 
-            if (op->getNumOperands() > 0)
-            {
-                if (auto moduleOp = op->getParentOfType<ModuleOp>())
-                {
-                    if (auto entryOp = moduleOp.lookupSymbol<ts::EntryOp>("0return")) 
-                    {
-                        ts::ReturnOpAdaptor opTyped(op);
-                        rewriter.create<mlir::StoreOp>(op.getLoc(), opTyped.operands().front(), entryOp.pointer());
-                    }
-                }
-            }
+            // Split block at `assert` operation.
+            auto *opBlock = rewriter.getInsertionBlock();
+            auto opPosition = rewriter.getInsertionPoint();
+            auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);    
+
+            rewriter.setInsertionPointToEnd(opBlock);
+
+            rewriter.create<mlir::BranchOp>(op.getLoc(), retBlock);
+
+            rewriter.setInsertionPointToStart(continuationBlock);        
+
+            rewriter.eraseOp(op);
+            return success();
+        }
+    };
+
+    struct ReturnValOpLowering : public OpRewritePattern<ts::ReturnValOp>
+    {
+        using OpRewritePattern<ts::ReturnValOp>::OpRewritePattern;
+
+        LogicalResult matchAndRewrite(ts::ReturnValOp op, PatternRewriter &rewriter) const final
+        {
+            auto retBlock = FindReturnBlock(rewriter);
+
+            ts::ReturnValOpAdaptor opTyped(op);
+            rewriter.create<mlir::StoreOp>(op.getLoc(), opTyped.operand(), opTyped.pointer());
 
             // Split block at `assert` operation.
             auto *opBlock = rewriter.getInsertionBlock();
@@ -461,7 +477,6 @@ namespace
             rewriter.setInsertionPointToEnd(opBlock);
 
             // save value into return
-
 
             rewriter.create<mlir::BranchOp>(op.getLoc(), retBlock);
 
@@ -540,6 +555,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         NullOpLowering,
         EntryOpLowering,
         ReturnOpLowering,
+        ReturnValOpLowering,
         ExitOpLowering>(&getContext());
 
     patterns.insert<

@@ -443,6 +443,7 @@ namespace
             SymbolTableScopeT varScope(symbolTable);
 
             GenContext genContextWithPassResult(genContext);
+            genContextWithPassResult.allowPartialResolve = true;
             genContextWithPassResult.passResult = new PassResult();
             if (failed(mlirGenFunctionBody(functionDeclarationAST, dummyFuncOp, funcProto, genContextWithPassResult, true)))
             {
@@ -508,14 +509,14 @@ namespace
             if (retType)
             {
                 auto location = loc(functionDeclarationAST->getLoc());
-                auto entryOp = builder.create<EntryOp>(location, mlir::MemRefType::get(ArrayRef<int64_t>(), retType), builder.getStringAttr("0return"));
-                auto varDecl = std::make_shared<VariableDeclarationDOM>("0return", retType, location);
+                auto entryOp = builder.create<EntryOp>(location, mlir::MemRefType::get(ArrayRef<int64_t>(), retType));
+                auto varDecl = std::make_shared<VariableDeclarationDOM>(RETURN_VARIABLE_NAME, retType, location);
                 varDecl->SetReadWriteAccess();
                 declare(varDecl, entryOp.pointer());
             }
             else
             {
-                builder.create<EntryOp>(loc(functionDeclarationAST->getLoc()), mlir::Type(), builder.getStringAttr("0return"));
+                builder.create<EntryOp>(loc(functionDeclarationAST->getLoc()), mlir::Type());
             }
 
             auto arguments = entryBlock.getArguments();
@@ -609,6 +610,7 @@ namespace
 
         mlir::LogicalResult mlirGen(ReturnStatementAST::TypePtr returnStatementAST, const GenContext &genContext)
         {
+            auto location = loc(returnStatementAST->getLoc());
             if (auto expression = returnStatementAST->getExpression())
             {
                 auto expressionValue = mlirGenExpression(expression, genContext);
@@ -624,11 +626,22 @@ namespace
                     genContext.passResult->functionReturnType = expressionValue.getType();
                 }
 
-                builder.create<ReturnOp>(loc(returnStatementAST->getLoc()), expressionValue);
+                auto retVarInfo = resolve(RETURN_VARIABLE_NAME);
+                if (!retVarInfo.first)
+                {
+                    if (genContext.allowPartialResolve)
+                    {
+                        return mlir::success();
+                    }
+
+                    emitError(location) << "can't find return variable";
+                }
+
+                builder.create<ReturnValOp>(location, expressionValue, retVarInfo.first);
             }
             else
             {
-                builder.create<ReturnOp>(loc(returnStatementAST->getLoc()));
+                builder.create<ReturnOp>(location);
             }
 
             return mlir::success();
