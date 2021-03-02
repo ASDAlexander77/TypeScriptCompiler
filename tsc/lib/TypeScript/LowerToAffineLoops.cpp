@@ -269,7 +269,7 @@ struct EntryOpLowering : public OpRewritePattern<ts::EntryOp>
 /// computationally intensive (like add+mul for example...) while keeping the
 /// rest of the code in the TypeScript dialect.
 namespace
-{
+{   
     struct TypeScriptToAffineLoweringPass : public PassWrapper<TypeScriptToAffineLoweringPass, FunctionPass>
     {
         void getDependentDialects(DialectRegistry &registry) const override

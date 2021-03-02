@@ -42,31 +42,31 @@ namespace ts = mlir::typescript;
 
 namespace
 {
-    template < typename T>
+    template <typename T>
     struct OpLowering : public OpConversionPattern<typename T::OpTy>
     {
         using OpConversionPattern::OpConversionPattern;
 
         LogicalResult matchAndRewrite(typename T::OpTy op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const override
-        {            
+        {
             T logic(getTypeConverter(), op.getOperation(), operands, rewriter);
             return logic.matchAndRewrite();
         }
-    };    
+    };
 
     class LoweringLogicBase
     {
-    public:        
-        explicit LoweringLogicBase(TypeConverter *typeConverter_, Operation *op_, ArrayRef<Value>& operands_, ConversionPatternRewriter &rewriter_) 
+    public:
+        explicit LoweringLogicBase(TypeConverter *typeConverter_, Operation *op_, ArrayRef<Value> &operands_, ConversionPatternRewriter &rewriter_)
             : typeConverter(*typeConverter_),
-              op(op_), 
-              operands(operands_), 
+              op(op_),
+              operands(operands_),
               rewriter(rewriter_),
               loc(op->getLoc()),
-              parentModule(op->getParentOfType<ModuleOp>()), 
+              parentModule(op->getParentOfType<ModuleOp>()),
               context(parentModule.getContext())
         {
-        }        
+        }
 
     protected:
         Value getOrCreateGlobalString(StringRef name, std::string value)
@@ -150,7 +150,7 @@ namespace
         LLVM::LLVMFunctionType getFunctionType(ArrayRef<mlir::Type> arguments, bool isVarArg = false)
         {
             return LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(context), arguments, isVarArg);
-        }        
+        }
 
         Operation *op;
         ArrayRef<Value> &operands;
@@ -162,14 +162,14 @@ namespace
         TypeConverter &typeConverter;
     };
 
-    template < typename T >
+    template <typename T>
     class LoweringLogic : public LoweringLogicBase
     {
     public:
         using OpTy = T;
 
-        explicit LoweringLogic(TypeConverter *typeConverter_, Operation *op_, ArrayRef<Value>& operands_, ConversionPatternRewriter &rewriter_) 
-            : LoweringLogicBase(typeConverter_, op_, operands_, rewriter_), 
+        explicit LoweringLogic(TypeConverter *typeConverter_, Operation *op_, ArrayRef<Value> &operands_, ConversionPatternRewriter &rewriter_)
+            : LoweringLogicBase(typeConverter_, op_, operands_, rewriter_),
               opTyped(cast<OpTy>(op)),
               transformed(operands)
         {
@@ -208,7 +208,7 @@ namespace
                 {
                     frmt << "%d";
                 }
-                else 
+                else
                 {
                     frmt << "%s";
                 }
@@ -246,7 +246,7 @@ namespace
 
             return success();
         }
-    };    
+    };
 
     /// Lowers `typescript.print` to a loop nest calling `printf` on each of the individual
     /// elements of the array.
@@ -307,10 +307,10 @@ namespace
 
             //auto nullCst = rewriter.create<LLVM::NullOp>(loc, getI8PtrType(context));
 
-            Value lineNumberRes = 
+            Value lineNumberRes =
                 rewriter.create<LLVM::ConstantOp>(
-                    loc, 
-                    getI32Type(), 
+                    loc,
+                    getI32Type(),
                     rewriter.getI32IntegerAttr(line));
 
             rewriter.create<LLVM::CallOp>(loc, assertFuncOp, ValueRange{msgCst, fileCst, lineNumberRes});
@@ -343,7 +343,7 @@ namespace
             rewriter.replaceOpWithNewOp<LLVM::NullOp>(op, op.getType());
             return success();
         }
-    };       
+    };
 
     class UndefOpLoweringLogic : public LoweringLogic<typescript::UndefOp>
     {
@@ -358,14 +358,14 @@ namespace
             rewriter.replaceOpWithNewOp<LLVM::UndefOp>(op, resultType);
             return success();
         }
-    };    
+    };
 
     /// Lowers `typescript.print` to a loop nest calling `printf` on each of the individual
     /// elements of the array.
     struct UndefOpLowering : public OpLowering<UndefOpLoweringLogic>
     {
         using OpLowering<UndefOpLoweringLogic>::OpLowering;
-    };    
+    };
 
     struct EntryOpLowering : public OpRewritePattern<ts::EntryOp>
     {
@@ -405,7 +405,7 @@ namespace
         }
     };
 
-    static mlir::Block* FindReturnBlock(PatternRewriter &rewriter)
+    static mlir::Block *FindReturnBlock(PatternRewriter &rewriter)
     {
         auto *region = rewriter.getInsertionBlock()->getParent();
         if (!region)
@@ -431,7 +431,7 @@ namespace
             return nullptr;
         }
 
-        return &*result; 
+        return &*result;
     }
 
     struct ReturnOpLowering : public OpRewritePattern<ts::ReturnOp>
@@ -445,13 +445,13 @@ namespace
             // Split block at `assert` operation.
             auto *opBlock = rewriter.getInsertionBlock();
             auto opPosition = rewriter.getInsertionPoint();
-            auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);    
+            auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
 
             rewriter.setInsertionPointToEnd(opBlock);
 
             rewriter.create<mlir::BranchOp>(op.getLoc(), retBlock);
 
-            rewriter.setInsertionPointToStart(continuationBlock);        
+            rewriter.setInsertionPointToStart(continuationBlock);
 
             rewriter.eraseOp(op);
             return success();
@@ -472,7 +472,7 @@ namespace
             // Split block at `assert` operation.
             auto *opBlock = rewriter.getInsertionBlock();
             auto opPosition = rewriter.getInsertionPoint();
-            auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);    
+            auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
 
             rewriter.setInsertionPointToEnd(opBlock);
 
@@ -480,7 +480,7 @@ namespace
 
             rewriter.create<mlir::BranchOp>(op.getLoc(), retBlock);
 
-            rewriter.setInsertionPointToStart(continuationBlock);        
+            rewriter.setInsertionPointToStart(continuationBlock);
 
             rewriter.eraseOp(op);
             return success();
@@ -498,6 +498,52 @@ namespace
             rewriter.create<mlir::BranchOp>(op.getLoc(), retBlock);
 
             rewriter.eraseOp(op);
+            return success();
+        }
+    };
+
+    struct FuncOpLowering : public OpConversionPattern<ts::FuncOp>
+    {
+        using OpConversionPattern<ts::FuncOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(ts::FuncOp funcOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            auto &typeConverter = *getTypeConverter();
+            auto fnType = funcOp.getType();
+
+            TypeConverter::SignatureConversion signatureConverter(fnType.getNumInputs());
+            {
+                for (auto argType : enumerate(funcOp.getType().getInputs()))
+                {
+                    auto convertedType = typeConverter.convertType(argType.value());
+                    signatureConverter.addInputs(argType.index(), convertedType);
+                }
+            }
+
+            auto newFuncOp = rewriter.create<FuncOp>(
+                funcOp.getLoc(), 
+                funcOp.getName(), 
+                rewriter.getFunctionType(signatureConverter.getConvertedTypes(), 
+                llvm::None));
+            for (const auto &namedAttr : funcOp.getAttrs())
+            {
+                if (namedAttr.first == impl::getTypeAttrName() ||
+                    namedAttr.first == SymbolTable::getSymbolAttrName())
+                {                    
+                    continue;
+                }
+    
+                newFuncOp->setAttr(namedAttr.first, namedAttr.second);
+            }
+
+            rewriter.inlineRegionBefore(funcOp.getBody(), newFuncOp.getBody(), newFuncOp.end());
+            if (failed(rewriter.convertRegionTypes(&newFuncOp.getBody(), typeConverter, &signatureConverter)))
+            {
+                return failure();
+            }
+
+            rewriter.eraseOp(funcOp);
+
             return success();
         }
     };
@@ -559,9 +605,10 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         ExitOpLowering>(&getContext());
 
     patterns.insert<
-        PrintOpLowering, 
+        PrintOpLowering,
         AssertOpLowering,
-        UndefOpLowering>(typeConverter, &getContext());
+        UndefOpLowering,
+        FuncOpLowering>(typeConverter, &getContext());
 
     // We want to completely lower to LLVM, so we use a `FullConversion`. This
     // ensures that only legal operations will remain after the conversion.
