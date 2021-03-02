@@ -316,6 +316,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         ts::UndefOp,
         ts::EntryOp,
         ts::ReturnOp,
+        ts::ReturnValOp,
         ts::ExitOp>();
 
     // Now that the conversion target has been defined, we just need to provide
