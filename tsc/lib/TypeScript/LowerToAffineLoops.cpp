@@ -260,7 +260,6 @@ struct EntryOpLowering : public OpRewritePattern<ts::EntryOp>
     }
 };
 
-
 //===----------------------------------------------------------------------===//
 // TypeScriptToAffineLoweringPass
 //===----------------------------------------------------------------------===//
@@ -268,9 +267,29 @@ struct EntryOpLowering : public OpRewritePattern<ts::EntryOp>
 /// This is a partial lowering to affine loops of the typescript operations that are
 /// computationally intensive (like add+mul for example...) while keeping the
 /// rest of the code in the TypeScript dialect.
+
+class TypeScriptFunctionPass : public OperationPass<ts::FuncOp>
+{
+public:
+    using OperationPass<ts::FuncOp>::OperationPass;
+
+    /// The polymorphic API that runs the pass over the currently held function.
+    virtual void runOnFunction() = 0;
+
+    /// The polymorphic API that runs the pass over the currently held operation.
+    void runOnOperation() final
+    {
+        if (!getFunction().isExternal())
+            runOnFunction();
+    }
+
+    /// Return the current function being transformed.
+    ts::FuncOp getFunction() { return this->getOperation(); }
+};
+
 namespace
-{   
-    struct TypeScriptToAffineLoweringPass : public PassWrapper<TypeScriptToAffineLoweringPass, FunctionPass>
+{
+    struct TypeScriptToAffineLoweringPass : public PassWrapper<TypeScriptToAffineLoweringPass, TypeScriptFunctionPass>
     {
         void getDependentDialects(DialectRegistry &registry) const override
         {
@@ -317,7 +336,8 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         ts::EntryOp,
         ts::ReturnOp,
         ts::ReturnValOp,
-        ts::ExitOp>();
+        ts::ExitOp,
+        ts::FuncOp>();
 
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.

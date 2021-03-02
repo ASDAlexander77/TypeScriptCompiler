@@ -1,4 +1,5 @@
 #include "TypeScript/TypeScriptDialect.h"
+#include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/MLIRGen.h"
 #include "TypeScript/Passes.h"
 
@@ -147,7 +148,7 @@ int loadAndProcessMLIR(mlir::MLIRContext &context,
 
     if (isLoweringToAffine)
     {
-        mlir::OpPassManager &optPM = pm.nest<mlir::FuncOp>();
+        mlir::OpPassManager &optPM = pm.nest<mlir::typescript::FuncOp>();
 
         // Partially lower the TypeScript dialect with a few cleanups afterwards.
         optPM.addPass(mlir::typescript::createLowerToAffinePass());
