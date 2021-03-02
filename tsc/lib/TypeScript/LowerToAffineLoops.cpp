@@ -19,22 +19,6 @@ namespace ts = mlir::typescript;
 // TypeScriptToAffine RewritePatterns
 //===----------------------------------------------------------------------===//
 
-struct CallOpLowering : public OpRewritePattern<ts::CallOp>
-{
-    using OpRewritePattern<ts::CallOp>::OpRewritePattern;
-
-    LogicalResult matchAndRewrite(ts::CallOp op, PatternRewriter &rewriter) const final
-    {
-        // just replace
-        rewriter.replaceOpWithNewOp<CallOp>(
-            op,
-            op.getCallee(),
-            op.getResultTypes(),
-            op.getArgOperands());
-        return success();
-    }
-};
-
 struct ParamOpLowering : public OpRewritePattern<ts::ParamOp>
 {
     using OpRewritePattern<ts::ParamOp>::OpRewritePattern;
@@ -337,13 +321,13 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         ts::ReturnOp,
         ts::ReturnValOp,
         ts::ExitOp,
-        ts::FuncOp>();
+        ts::FuncOp,
+        ts::CallOp>();
 
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.
     OwningRewritePatternList patterns;
     patterns.insert<
-        CallOpLowering,
         ParamOpLowering,
         ParamOptionalOpLowering,
         ParamDefaultValueOpLowering,

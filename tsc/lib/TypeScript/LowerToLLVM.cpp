@@ -511,20 +511,24 @@ namespace
             auto &typeConverter = *getTypeConverter();
             auto fnType = funcOp.getType();
 
-            TypeConverter::SignatureConversion signatureConverter(fnType.getNumInputs());
+            TypeConverter::SignatureConversion signatureInputsConverter(fnType.getNumInputs());
+            for (auto argType : enumerate(funcOp.getType().getInputs()))
             {
-                for (auto argType : enumerate(funcOp.getType().getInputs()))
-                {
-                    auto convertedType = typeConverter.convertType(argType.value());
-                    signatureConverter.addInputs(argType.index(), convertedType);
-                }
+                auto convertedType = typeConverter.convertType(argType.value());
+                signatureInputsConverter.addInputs(argType.index(), convertedType);
+            }
+
+            TypeConverter::SignatureConversion signatureResultsConverter(fnType.getNumResults());
+            for (auto argType : enumerate(funcOp.getType().getResults()))
+            {
+                auto convertedType = typeConverter.convertType(argType.value());
+                signatureResultsConverter.addInputs(argType.index(), convertedType);
             }
 
             auto newFuncOp = rewriter.create<FuncOp>(
                 funcOp.getLoc(), 
                 funcOp.getName(), 
-                rewriter.getFunctionType(signatureConverter.getConvertedTypes(), 
-                llvm::None));
+                rewriter.getFunctionType(signatureInputsConverter.getConvertedTypes(), signatureResultsConverter.getConvertedTypes()));
             for (const auto &namedAttr : funcOp.getAttrs())
             {
                 if (namedAttr.first == impl::getTypeAttrName() ||
@@ -537,7 +541,7 @@ namespace
             }
 
             rewriter.inlineRegionBefore(funcOp.getBody(), newFuncOp.getBody(), newFuncOp.end());
-            if (failed(rewriter.convertRegionTypes(&newFuncOp.getBody(), typeConverter, &signatureConverter)))
+            if (failed(rewriter.convertRegionTypes(&newFuncOp.getBody(), typeConverter, &signatureInputsConverter)))
             {
                 return failure();
             }
@@ -548,6 +552,21 @@ namespace
         }
     };
 
+    struct CallOpLowering : public OpRewritePattern<ts::CallOp>
+    {
+        using OpRewritePattern<ts::CallOp>::OpRewritePattern;
+
+        LogicalResult matchAndRewrite(ts::CallOp op, PatternRewriter &rewriter) const final
+        {
+            // just replace
+            rewriter.replaceOpWithNewOp<CallOp>(
+                op,
+                op.getCallee(),
+                op.getResultTypes(),
+                op.getArgOperands());
+            return success();
+        }
+    };
 } // end anonymous namespace
 
 //===----------------------------------------------------------------------===//
@@ -602,7 +621,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         EntryOpLowering,
         ReturnOpLowering,
         ReturnValOpLowering,
-        ExitOpLowering>(&getContext());
+        ExitOpLowering,
+        CallOpLowering>(&getContext());
 
     patterns.insert<
         PrintOpLowering,
