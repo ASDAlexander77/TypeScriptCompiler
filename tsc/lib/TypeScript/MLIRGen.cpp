@@ -31,6 +31,7 @@
 
 using namespace mlir::typescript;
 using namespace typescript;
+namespace ts = mlir::typescript;
 
 using llvm::ArrayRef;
 using llvm::cast;

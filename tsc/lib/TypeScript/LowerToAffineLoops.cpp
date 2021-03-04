@@ -26,7 +26,12 @@ struct ParamOpLowering : public OpRewritePattern<ts::ParamOp>
     LogicalResult matchAndRewrite(ts::ParamOp paramOp, PatternRewriter &rewriter) const final
     {
         Value allocated = rewriter.create<AllocaOp>(paramOp.getLoc(), paramOp.getType().cast<MemRefType>());
-        rewriter.create<StoreOp>(paramOp.getLoc(), paramOp.argValue(), allocated);
+        auto value = paramOp.argValue();
+        if (value)
+        {
+            rewriter.create<StoreOp>(paramOp.getLoc(), value, allocated);
+        }
+
         rewriter.replaceOp(paramOp, allocated);
         return success();
     }
@@ -91,15 +96,13 @@ struct VariableOpLowering : public OpRewritePattern<ts::VariableOp>
 
     LogicalResult matchAndRewrite(ts::VariableOp varOp, PatternRewriter &rewriter) const final
     {
-        auto init = varOp.initializer();
-        if (!init)
+        Value allocated = rewriter.create<AllocaOp>(varOp.getLoc(), varOp.getType().cast<MemRefType>());
+        auto value = varOp.initializer();
+        if (value)
         {
-            rewriter.replaceOpWithNewOp<AllocaOp>(varOp, varOp.getType().cast<MemRefType>());
-            return success();
+            rewriter.create<StoreOp>(varOp.getLoc(), value, allocated);
         }
 
-        Value allocated = rewriter.create<AllocaOp>(varOp.getLoc(), varOp.getType().cast<MemRefType>());
-        rewriter.create<LLVM::StoreOp>(varOp.getLoc(), init, allocated);
         rewriter.replaceOp(varOp, allocated);
         return success();
     }

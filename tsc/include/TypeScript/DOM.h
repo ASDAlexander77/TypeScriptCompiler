@@ -54,7 +54,7 @@ public:
     using TypePtr = std::shared_ptr<VariableDeclarationDOM>;
 
     VariableDeclarationDOM(StringRef name, mlir::Type type, mlir::Location loc, std::shared_ptr<NodeAST> initValue = nullptr)
-        : BaseDOM(Base_VariableDeclaration), name(name), type(type), loc(loc), initValue(initValue)
+        : BaseDOM(Base_VariableDeclaration), name(name), type(type), loc(loc), initValue(initValue), readWrite(false)
     {
     }
 
