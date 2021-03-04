@@ -38,7 +38,7 @@ bindingList
     ;
 
 lexicalBinding
-    : bindingIdentifier typeParameter? initializer
+    : bindingIdentifier typeParameter? initializer?
 //    | bindingPattern initializer
     ;
 
@@ -105,7 +105,9 @@ expression
     | assignmentExpression (COMMA_TOKEN assignmentExpression)* ;
     
 assignmentExpression
-    : conditionalExpression ;   
+    : conditionalExpression
+    | leftHandSideExpression EQUALS_TOKEN assignmentExpression
+    ;   
 
 conditionalExpression
     : shortCircuitExpression

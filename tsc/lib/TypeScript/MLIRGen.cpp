@@ -730,6 +730,8 @@ namespace
 
         mlir::Value mlirGen(BinaryExpressionAST::TypePtr binaryExpressionAST, const GenContext &genContext)
         {
+            auto location = loc(binaryExpressionAST->getLoc());
+
             auto opCode = binaryExpressionAST->getOpCode();
 
             auto leftExpression = binaryExpressionAST->getLeftExpression();
@@ -746,16 +748,22 @@ namespace
 
             switch (opCode)
             {
+                case SyntaxKind::EqualsToken:
+                    builder.create<mlir::StoreOp>(
+                        location, 
+                        rightExpressionValue, 
+                        leftExpressionValue);
+                    return rightExpressionValue;
                 case SyntaxKind::EqualsEqualsToken:
                     return builder.create<LogicalBinaryOp>(
-                        loc(binaryExpressionAST->getLoc()), 
+                        location, 
                         builder.getI1Type(),
                         builder.getI32IntegerAttr((int)opCode), 
                         leftExpressionValue, 
                         rightExpressionValue);         
                 default:  
                     return builder.create<ArithmeticBinaryOp>(
-                        loc(binaryExpressionAST->getLoc()), 
+                        location, 
                         leftExpressionValue.getType(),
                         builder.getI32IntegerAttr((int)opCode), 
                         leftExpressionValue, 

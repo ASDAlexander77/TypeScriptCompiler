@@ -32,7 +32,7 @@ function test4()
 
 function test5()
 {
-    let i;
+    let i: number;
     i = 55;
     assert(i == 55, "Failed. 5");
 }

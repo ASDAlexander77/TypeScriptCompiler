@@ -264,7 +264,10 @@ namespace typescript
     PASS_CHOICE(shortCircuitExpression)
     PASS_CHOICE_END()
 
-    PASS(AssignmentExpressionContext, conditionalExpression)
+    PASS_CHOICES(AssignmentExpressionContext)
+    MAKE_CHOICE_IF(EQUALS_TOKEN, BinaryExpressionAST)
+    PASS_CHOICE(conditionalExpression)
+    PASS_CHOICE_END()
 
     PASS_VECTOR(NodeAST, AssignmentExpressionContext);
 
@@ -886,6 +889,12 @@ namespace typescript
     public:
         using TypePtr = std::shared_ptr<BinaryExpressionAST>;
 
+        BinaryExpressionAST(TypeScriptParserANTLR::AssignmentExpressionContext* assignmentExpressionContext) 
+            : NodeAST(SyntaxKind::BinaryExpression, TextRange(assignmentExpressionContext)),
+              opCode(parseOpCode(assignmentExpressionContext)),
+              leftExpression(parse(assignmentExpressionContext->leftHandSideExpression())),
+              rightExpression(parse(assignmentExpressionContext->assignmentExpression())) {}
+
         BinaryExpressionAST(TypeScriptParserANTLR::EqualityExpressionContext* equalityExpressionContext) 
             : NodeAST(SyntaxKind::BinaryExpression, TextRange(equalityExpressionContext)),
               opCode(parseOpCode(equalityExpressionContext)),
@@ -926,6 +935,18 @@ namespace typescript
             return N->getKind() == SyntaxKind::BinaryExpression;
         }    
     private:
+        SyntaxKind parseOpCode(TypeScriptParserANTLR::AssignmentExpressionContext* assignmentExpressionContext)
+        {
+            if (assignmentExpressionContext->EQUALS_TOKEN())
+            {
+                return SyntaxKind::EqualsToken;                
+            }
+            else
+            {
+                llvm_unreachable("not implemented");
+            }
+        }          
+
         SyntaxKind parseOpCode(TypeScriptParserANTLR::EqualityExpressionContext* equalityExpressionContext)
         {
             if (equalityExpressionContext->EQUALSEQUALS_TOKEN())
@@ -1123,7 +1144,7 @@ namespace typescript
             : NodeAST(SyntaxKind::Parameter, TextRange(lexicalBindingContext)),
               identifier(parse(lexicalBindingContext->bindingIdentifier())),
               type(parse(lexicalBindingContext->typeParameter())),
-              initializer(parse(lexicalBindingContext->initializer())) {}   
+              initializer(lexicalBindingContext->initializer() ? parse(lexicalBindingContext->initializer()) : nullptr) {}   
 
         VariableDeclarationAST(TextRange range, IdentifierAST::TypePtr identifier, TypeReferenceAST::TypePtr type, NodeAST::TypePtr initialize)
             : NodeAST(SyntaxKind::FunctionDeclaration, range), identifier(identifier), type(type), initializer(initializer) {}
