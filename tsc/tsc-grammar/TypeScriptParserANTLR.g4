@@ -22,11 +22,25 @@ statementListItem
 
 declaration 
     : hoistableDeclaration
+    | lexicalDeclaration
     ;
 
 hoistableDeclaration
     : functionDeclaration
     ;    
+
+lexicalDeclaration
+    : (CONST_KEYWORD | LET_KEYWORD | VAR_KEYWORD) bindingList
+    ;
+
+bindingList
+    : lexicalBinding (COMMA_TOKEN lexicalBinding)*
+    ;
+
+lexicalBinding
+    : bindingIdentifier typeParameter? initializer
+//    | bindingPattern initializer
+    ;
 
 functionDeclaration
     : FUNCTION_KEYWORD bindingIdentifier? OPENPAREN_TOKEN formalParameters? CLOSEPAREN_TOKEN typeParameter? OPENBRACE_TOKEN functionBody CLOSEBRACE_TOKEN ;

@@ -46,6 +46,11 @@ void testFunctionDecl()
     testParse("function defaultArgs3(x: number, y = 3) {}");
 }
 
+void testVarDecl()
+{
+    testParse("function main() { const a = 10; }");
+}
+
 int main(int argc, char **args)
 {
     try

@@ -20,6 +20,17 @@
         return _ctx ? parse(_ctx->fld()) : decltype(parse(_ctx->fld()))() ;  \
     }     
 
+#define PASS_VECTOR_TYPED(ty, ctx)  \
+    static std::vector<std::shared_ptr<ty>> parse(std::vector<TypeScriptParserANTLR::ctx *> _ctx) { \
+        std::vector<std::shared_ptr<ty>> items; \
+        for (auto *item : _ctx) \
+        {   \
+            items.push_back(parse(item));   \
+        }   \
+    \
+        return items;   \
+    } 
+
 #define PASS_VECTOR(ty, ctx)  \
     static std::vector<std::shared_ptr<ty>> parse(std::vector<TypeScriptParserANTLR::ctx *> _ctx) { \
         std::vector<std::shared_ptr<ty>> items; \
@@ -116,6 +127,9 @@ namespace typescript
     class BinaryExpressionAST;
     class IfStatementAST;
     class ReturnStatementAST;
+    class VariableDeclarationAST;
+    class VariableDeclarationListAST;
+    class VariableStatementAST;
     class ParameterDeclarationAST;
     class ParametersDeclarationAST;
     class FunctionDeclarationAST;
@@ -265,11 +279,19 @@ namespace typescript
 
     PASS(InitializerContext, assignmentExpression)
 
-    MAKE(ParameterDeclarationAST, FormalParameterContext)    
+    MAKE(VariableDeclarationAST, LexicalBindingContext)    
+    
+    PASS_VECTOR_TYPED(VariableDeclarationAST, LexicalBindingContext)    
+
+    MAKE(VariableDeclarationListAST, BindingListContext)   
+
+    MAKE(VariableStatementAST, LexicalDeclarationContext)   
+
+    MAKE(ParameterDeclarationAST, FormalParameterContext)
 
     MAKE(ParameterDeclarationAST, FunctionRestParameterContext)    
 
-    PASS_VECTOR(ParameterDeclarationAST, FormalParameterContext)
+    PASS_VECTOR_TYPED(ParameterDeclarationAST, FormalParameterContext)
 
     MAKE(ParametersDeclarationAST, FormalParametersContext)    
 
@@ -277,7 +299,10 @@ namespace typescript
 
     PASS(HoistableDeclarationContext, functionDeclaration)
 
-    PASS(DeclarationContext, hoistableDeclaration)
+    PASS_CHOICES(DeclarationContext)
+    PASS_CHOICE(hoistableDeclaration)
+    PASS_CHOICE(lexicalDeclaration)
+    PASS_CHOICE_END()
 
     MAKE(EmptyStatementAST, EmptyStatementContext) 
 
@@ -1084,6 +1109,115 @@ namespace typescript
             return N->getKind() == SyntaxKind::ReturnStatement;
         }               
     };         
+
+    class VariableDeclarationAST : public NodeAST
+    {
+        IdentifierAST::TypePtr identifier;
+        TypeReferenceAST::TypePtr type;
+        NodeAST::TypePtr initializer;
+
+    public:
+        using TypePtr = std::shared_ptr<VariableDeclarationAST>;
+
+        VariableDeclarationAST(TypeScriptParserANTLR::LexicalBindingContext* lexicalBindingContext) 
+            : NodeAST(SyntaxKind::Parameter, TextRange(lexicalBindingContext)),
+              identifier(parse(lexicalBindingContext->bindingIdentifier())),
+              type(parse(lexicalBindingContext->typeParameter())),
+              initializer(parse(lexicalBindingContext->initializer())) {}   
+
+        VariableDeclarationAST(TextRange range, IdentifierAST::TypePtr identifier, TypeReferenceAST::TypePtr type, NodeAST::TypePtr initialize)
+            : NodeAST(SyntaxKind::FunctionDeclaration, range), identifier(identifier), type(type), initializer(initializer) {}
+
+        const auto& getIdentifier() const { return identifier; }
+        const auto& getType() const { return type; }
+        const auto& getInitializer() const { return initializer; }
+
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+            identifier->accept(visitor);
+            if (type) type->accept(visitor);
+            if (initializer) initializer->accept(visitor);
+        }
+
+        /// LLVM style RTTI
+        static bool classof(const NodeAST *N) 
+        {
+            return N->getKind() == SyntaxKind::Parameter;
+        }
+    };    
+
+    class VariableDeclarationListAST : public NodeAST
+    {
+        std::vector<VariableDeclarationAST::TypePtr> variables;
+
+    public:
+        using TypePtr = std::shared_ptr<VariableDeclarationListAST>;
+
+        VariableDeclarationListAST(TypeScriptParserANTLR::BindingListContext* bindingListContext) 
+            : NodeAST(SyntaxKind::VariableDeclarationList, TextRange(bindingListContext)),
+              variables(parse(bindingListContext->lexicalBinding())) {}
+
+        VariableDeclarationListAST(TextRange range, std::vector<VariableDeclarationAST::TypePtr> variables)
+            : NodeAST(SyntaxKind::VariableDeclarationList, range), variables(variables) {}
+
+        auto begin() -> decltype(variables.begin()) { return variables.begin(); }
+        auto end() -> decltype(variables.end()) { return variables.end(); }           
+
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+            for (auto &item : variables)
+            {
+                item->accept(visitor);
+            }
+        }
+
+        /// LLVM style RTTI
+        static bool classof(const NodeAST *N) 
+        {
+            return N->getKind() == SyntaxKind::VariableDeclarationList;
+        }          
+    };
+    
+    class VariableStatementAST : public NodeAST
+    {
+        bool isConst;
+        VariableDeclarationListAST::TypePtr declarationList;
+    public:
+        using TypePtr = std::shared_ptr<VariableStatementAST>;
+
+        VariableStatementAST(TypeScriptParserANTLR::LexicalDeclarationContext* lexicalDeclarationContext) 
+            : NodeAST(SyntaxKind::VariableStatement, TextRange(lexicalDeclarationContext)),
+              isConst(lexicalDeclarationContext->CONST_KEYWORD()), declarationList(parse(lexicalDeclarationContext->bindingList())) {}
+
+        VariableStatementAST(TextRange range, VariableDeclarationListAST::TypePtr declarationList)
+            : NodeAST(SyntaxKind::VariableStatement, range), declarationList(declarationList) {}
+
+        const auto& getDeclarationList() const { return declarationList; }
+        bool getIsConst() const { return isConst; }
+
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+            for (auto &item : *declarationList)
+            {
+                item->accept(visitor);
+            }
+        }
+
+        /// LLVM style RTTI
+        static bool classof(const NodeAST *N) 
+        {
+            return N->getKind() == SyntaxKind::VariableStatement;
+        }          
+    };
 
     class ParameterDeclarationAST : public NodeAST
     {
