@@ -192,6 +192,10 @@ namespace
             {
                 return mlirGen(std::dynamic_pointer_cast<ExpressionStatementAST>(statementAST), genContext);
             }          
+            else if (statementAST->getKind() == SyntaxKind::VariableStatement)
+            {
+                return mlirGen(std::dynamic_pointer_cast<VariableStatementAST>(statementAST), genContext);
+            }          
             else if (statementAST->getKind() == SyntaxKind::IfStatement)
             {
                 return mlirGen(std::dynamic_pointer_cast<IfStatementAST>(statementAST), genContext);
@@ -257,6 +261,57 @@ namespace
         mlir::LogicalResult mlirGen(ExpressionStatementAST::TypePtr expressionStatementAST, const GenContext &genContext)
         {
             mlirGenExpression(expressionStatementAST->getExpression(), genContext);
+            return mlir::success();
+        }        
+
+        mlir::LogicalResult mlirGen(VariableStatementAST::TypePtr variableStatementAST, const GenContext &genContext)
+        {
+            auto location = loc(variableStatementAST->getLoc());
+
+            for (auto &item : *variableStatementAST->getDeclarationList())
+            {
+                mlir::Value init;
+                mlir::Type type;
+
+                auto name = item->getIdentifier()->getName();
+
+                if (item->getType())
+                {
+                    type = getType(item->getType());
+                }
+
+                if (auto initializer = item->getInitializer())
+                {
+                    init = mlirGenExpression(initializer, genContext);
+                    if (!type)
+                    {
+                        type = init.getType();
+                    }
+                    else if (type != init.getType())
+                    {
+                        auto castValue = builder.create<CastOp>(loc(initializer->getLoc()), type, init);
+                        init = castValue;
+                    }
+                }
+
+                auto varDecl = std::make_shared<VariableDeclarationDOM>(name, type, location);
+                if (variableStatementAST->getIsConst())
+                {
+                    declare(varDecl, init);
+                }
+                else
+                {
+                    varDecl->setReadWriteAccess();
+
+                    auto variableOp = builder.create<VariableOp>(
+                        location, 
+                        mlir::MemRefType::get(ArrayRef<int64_t>(), type),
+                        init);
+
+                    declare(varDecl, variableOp);                        
+                }
+            }
+
             return mlir::success();
         }        
 
@@ -511,7 +566,7 @@ namespace
                 auto location = loc(functionDeclarationAST->getLoc());
                 auto entryOp = builder.create<EntryOp>(location, mlir::MemRefType::get(ArrayRef<int64_t>(), retType));
                 auto varDecl = std::make_shared<VariableDeclarationDOM>(RETURN_VARIABLE_NAME, retType, location);
-                varDecl->SetReadWriteAccess();
+                varDecl->setReadWriteAccess();
                 declare(varDecl, entryOp.pointer());
             }
             else
@@ -587,7 +642,7 @@ namespace
                 if (paramValue)
                 {
                     // redefine variable
-                    param->SetReadWriteAccess();
+                    param->setReadWriteAccess();
                     declare(param, paramValue, true);
                 }
             }

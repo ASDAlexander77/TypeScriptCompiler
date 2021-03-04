@@ -64,7 +64,7 @@ public:
     const std::shared_ptr<NodeAST> &getInitValue() const { return initValue; }
     bool hasInitValue() const { return !!initValue; }
     bool getReadWriteAccess() const { return readWrite; };
-    void SetReadWriteAccess() { readWrite = true; };
+    void setReadWriteAccess() { readWrite = true; };
 
 protected:
     bool readWrite;
