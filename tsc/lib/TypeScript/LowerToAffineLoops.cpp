@@ -319,6 +319,8 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     target.addLegalOp<
         ts::PrintOp,
         ts::AssertOp,
+        ts::ParseIntOp,
+        ts::ParseFloatOp,
         ts::UndefOp,
         ts::EntryOp,
         ts::ReturnOp,

@@ -198,6 +198,37 @@ def TypeScript_AssertOp : TypeScript_Op<"assert"> {
   let hasCanonicalizer = 1;
 }
 
+def TypeScript_ParseIntOp : TypeScript_Op<"parseInt"> {
+  let summary = "Parse int operation";
+  let description = [{
+    Parse int operation
+
+    Example:
+
+    ```mlir
+    parseInt %b
+    ```
+  }];
+
+  let arguments = (ins AnyType:$arg);
+}
+
+def TypeScript_ParseFloatOp : TypeScript_Op<"parseFloat"> {
+  let summary = "Parse float operation";
+  let description = [{
+    Parse float operation
+
+    Example:
+
+    ```mlir
+    parseFloat %b
+    ```
+  }];
+
+  let arguments = (ins AnyType:$arg);
+}
+
+
 def TypeScript_CallOp : TypeScript_Op<"call",
     [CallOpInterface, MemRefsNormalizable,
      DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {

@@ -333,6 +333,63 @@ namespace
         using OpLowering<AssertOpLoweringLogic>::OpLowering;
     };
 
+    class ParseIntOpLoweringLogic : public LoweringLogic<typescript::ParseIntOp>
+    {
+    public:
+        using LoweringLogic<typescript::ParseIntOp>::LoweringLogic;
+
+        LogicalResult matchAndRewrite()
+        {
+            // Insert the `_assert` declaration if necessary.
+            auto i8PtrTy = getI8PtrType();
+            auto parseIntFuncOp =
+                getOrInsertFunction(
+                    "atoi",
+                    getFunctionType(rewriter.getI32Type(), {i8PtrTy}));
+
+            rewriter.replaceOpWithNewOp<LLVM::CallOp>(
+                op,
+                parseIntFuncOp,
+                op->getOperands());
+
+            return success();
+        }
+    };
+
+    struct ParseIntOpLowering : public OpLowering<ParseIntOpLoweringLogic>
+    {
+        using OpLowering<ParseIntOpLoweringLogic>::OpLowering;
+    };    
+
+
+    class ParseFloatOpLoweringLogic : public LoweringLogic<typescript::ParseFloatOp>
+    {
+    public:
+        using LoweringLogic<typescript::ParseFloatOp>::LoweringLogic;
+
+        LogicalResult matchAndRewrite()
+        {
+            // Insert the `_assert` declaration if necessary.
+            auto i8PtrTy = getI8PtrType();
+            auto parseFloatFuncOp =
+                getOrInsertFunction(
+                    "atof",
+                    getFunctionType(rewriter.getF32Type(), {i8PtrTy}));
+
+            rewriter.replaceOpWithNewOp<LLVM::CallOp>(
+                op,
+                parseFloatFuncOp,
+                op->getOperands());
+
+            return success();
+        }
+    };
+
+    struct ParseFloatOpLowering : public OpLowering<ParseFloatOpLoweringLogic>
+    {
+        using OpLowering<ParseFloatOpLoweringLogic>::OpLowering;
+    };    
+
     struct NullOpLowering : public OpRewritePattern<typescript::NullOp>
     {
         using OpRewritePattern<typescript::NullOp>::OpRewritePattern;
@@ -627,6 +684,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     patterns.insert<
         PrintOpLowering,
         AssertOpLowering,
+        ParseIntOpLowering,
+        ParseFloatOpLowering,
         UndefOpLowering,
         FuncOpLowering>(typeConverter, &getContext());
 

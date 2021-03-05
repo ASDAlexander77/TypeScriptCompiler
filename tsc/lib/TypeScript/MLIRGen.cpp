@@ -829,6 +829,23 @@ namespace
                                 return nullptr;
                             }
 
+                            // assert - internal command;
+                            if (functionName.compare(StringRef("parseInt")) == 0 && opArgsCount > 0)
+                            {
+                                SmallVector<mlir::Value, 4> operands;
+                                mlirGen(argumentsContext, operands, genContext);
+                                mlir::succeeded(mlirGenParseInt(location, operands));
+                                return nullptr;
+                            }
+
+                            if (functionName.compare(StringRef("parseFloat")) == 0 && opArgsCount > 0)
+                            {
+                                SmallVector<mlir::Value, 4> operands;
+                                mlirGen(argumentsContext, operands, genContext);
+                                mlir::succeeded(mlirGenParseFloat(location, operands));
+                                return nullptr;
+                            }
+
                             emitError(location) << "no defined function found for '" << functionName << "'";
                         }
 
@@ -917,6 +934,26 @@ namespace
                     location,
                     operands.front(),
                     mlir::StringAttr::get(msg, theModule.getContext()));
+
+            return mlir::success();
+        }
+
+        mlir::LogicalResult mlirGenParseInt(const mlir::Location &location, const SmallVector<mlir::Value, 4> &operands)
+        {
+            auto assertOp =
+                builder.create<ParseIntOp>(
+                    location,
+                    operands.front());
+
+            return mlir::success();
+        }
+
+        mlir::LogicalResult mlirGenParseFloat(const mlir::Location &location, const SmallVector<mlir::Value, 4> &operands)
+        {
+            auto assertOp =
+                builder.create<ParseFloatOp>(
+                    location,
+                    operands.front());
 
             return mlir::success();
         }
