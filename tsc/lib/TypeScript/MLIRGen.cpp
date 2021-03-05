@@ -740,20 +740,35 @@ namespace
             auto leftExpressionValue = mlirGenExpression(leftExpression, genContext);
             auto rightExpressionValue = mlirGenExpression(rightExpression, genContext);
 
+            auto rightExpressionValueBeforeCast = rightExpressionValue;
+
             if (leftExpressionValue.getType() != rightExpressionValue.getType())
             {
-                auto castValue = builder.create<CastOp>(loc(rightExpression->getLoc()), leftExpressionValue.getType(), rightExpressionValue);
-                rightExpressionValue = castValue;
+                rightExpressionValue = builder.create<CastOp>(loc(rightExpression->getLoc()), leftExpressionValue.getType(), rightExpressionValue);
             }
 
             switch (opCode)
             {
                 case SyntaxKind::EqualsToken:
-                    builder.create<mlir::StoreOp>(
-                        location, 
-                        rightExpressionValue, 
-                        leftExpressionValue);
-                    return rightExpressionValue;
+                    {
+                        auto loadOp = dyn_cast<mlir::LoadOp>(leftExpressionValue.getDefiningOp());
+                        if (loadOp)
+                        {
+                            builder.create<mlir::StoreOp>(
+                                location, 
+                                rightExpressionValue, 
+                                loadOp.memref());
+                        }
+                        else
+                        {
+                            builder.create<mlir::StoreOp>(
+                                location, 
+                                rightExpressionValue, 
+                                leftExpressionValue);
+                        }
+
+                        return rightExpressionValue;
+                    }
                 case SyntaxKind::EqualsEqualsToken:
                     return builder.create<LogicalBinaryOp>(
                         location, 

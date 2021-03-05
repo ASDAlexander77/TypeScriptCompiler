@@ -36,3 +36,10 @@ function test5()
     i = 55;
     assert(i == 55, "Failed. 5");
 }
+
+function test6()
+{
+    let i: number, j: number;
+    i = j = 66;
+    assert(i == 66, "Failed. 6");
+}
