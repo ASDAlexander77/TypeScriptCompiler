@@ -306,7 +306,7 @@ namespace
 
                     auto variableOp = builder.create<VariableOp>(
                         location, 
-                        mlir::MemRefType::get({}, type),
+                        getMemRef(type),
                         init);
 
                     declare(varDecl, variableOp);                        
@@ -565,7 +565,7 @@ namespace
             if (retType)
             {
                 auto location = loc(functionDeclarationAST->getLoc());
-                auto entryOp = builder.create<EntryOp>(location, mlir::MemRefType::get({}, retType));
+                auto entryOp = builder.create<EntryOp>(location, getMemRef(retType));
                 auto varDecl = std::make_shared<VariableDeclarationDOM>(RETURN_VARIABLE_NAME, retType, location);
                 varDecl->setReadWriteAccess();
                 declare(varDecl, entryOp.pointer());
@@ -601,7 +601,7 @@ namespace
 
                     auto paramOptionalOp = builder.create<ParamOptionalOp>(
                         location, 
-                        mlir::MemRefType::get({}, param->getType()), 
+                        getMemRef(param->getType()), 
                         arguments[index], 
                         countArgsValue, 
                         builder.getI32IntegerAttr(index));
@@ -636,7 +636,7 @@ namespace
                 {
                     paramValue = builder.create<ParamOp>(
                         param->getLoc(), 
-                        mlir::MemRefType::get({}, param->getType()), 
+                        getMemRef(param->getType()), 
                         arguments[index]);
                 }
 
@@ -1049,7 +1049,7 @@ namespace
 
             return builder.create<mlir::ConstantOp>(
                 loc(stringLiteral->getLoc()),
-                mlir::MemRefType::get({}, builder.getI1Type()),
+                getMemRef(builder.getI1Type()),
                 builder.getStringAttr(StringRef(innerText)));
         }
 
@@ -1096,14 +1096,19 @@ namespace
             return getAnyType();
         }
 
-        mlir::Type getStringType()
+        ts::StringType getStringType()
         {
-            return mlir::MemRefType::get({}, builder.getI1Type());
+            return ts::StringType::get(builder.getContext());
         }
 
         mlir::Type getAnyType()
         {
             return mlir::MemRefType::get({}, builder.getI1Type());
+        }
+
+        mlir::MemRefType getMemRef(mlir::Type elementType)
+        {
+            return mlir::MemRefType::get({}, elementType);
         }
 
         mlir::LogicalResult declare(VariableDeclarationDOM::TypePtr var, mlir::Value value, bool redeclare = false)

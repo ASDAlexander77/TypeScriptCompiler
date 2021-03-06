@@ -369,8 +369,36 @@ def TypeScript_VariableOp : TypeScript_Op<"variable", []> {
   );
 
   let results = (outs
-    AnyType:$pointer
+    TypeScript_AnyRef:$reference
   );
+}
+
+def TypeScript_StoreOp : TypeScript_Op<"store",
+      [TypesMatchWith<"type of 'value' matches element type of 'reference'",
+                     "reference", "value",
+                     "$_self.cast<RefType>().getElementType()">]> {
+  let summary = "stores the value into the reference";
+  let description = [{
+    The `store` operation stores the value into the reference storage.
+  }];
+
+  let arguments = (ins AnyType:$value,
+                       TypeScript_AnyRef:$reference);
+  let assemblyFormat = "$value `,` $reference attr-dict `:` type($reference)";
+}
+
+def TypeScript_LoadOp : TypeScript_Op<"load",
+      [TypesMatchWith<"type of 'value' matches element type of 'reference'",
+                     "reference", "result",
+                     "$_self.cast<RefType>().getElementType()">]> {
+  let summary = "loads the value from the reference type";
+  let description = [{
+    The `load` operation loads the value from the reference value.
+  }];
+
+  let arguments = (ins TypeScript_AnyRef:$reference);
+  let results = (outs AnyType:$result);
+  let assemblyFormat = "$reference attr-dict `:` type($reference)";
 }
 
 def TypeScript_ArithmeticBinaryOp : TypeScript_Op<"arithmetic_binary"> {

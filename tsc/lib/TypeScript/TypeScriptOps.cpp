@@ -32,10 +32,22 @@ namespace ts = mlir::typescript;
 Type ts::TypeScriptDialect::parseType(DialectAsmParser &parser) const
 {
     llvm::SMLoc typeLoc = parser.getCurrentLocation();
-    auto genType = generatedTypeParser(getContext(), parser, "optional");
-    if (genType != Type())
+    auto stringType = generatedTypeParser(getContext(), parser, "string");
+    if (stringType != Type())
     {
-        return genType;
+        return stringType;
+    }
+
+    auto refType = generatedTypeParser(getContext(), parser, "ref");
+    if (refType != Type())
+    {
+        return refType;
+    }
+
+    auto optionalType = generatedTypeParser(getContext(), parser, "optional");
+    if (optionalType != Type())
+    {
+        return optionalType;
     }
 
     parser.emitError(typeLoc, "unknown type in TypeScript dialect");
