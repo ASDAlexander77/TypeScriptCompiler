@@ -754,14 +754,14 @@ namespace
                         auto loadOp = dyn_cast<mlir::LoadOp>(leftExpressionValue.getDefiningOp());
                         if (loadOp)
                         {
-                            builder.create<mlir::StoreOp>(
+                            builder.create<ts::StoreOp>(
                                 location, 
                                 rightExpressionValue, 
                                 loadOp.memref());
                         }
                         else
                         {
-                            builder.create<mlir::StoreOp>(
+                            builder.create<ts::StoreOp>(
                                 location, 
                                 rightExpressionValue, 
                                 leftExpressionValue);
@@ -1064,7 +1064,7 @@ namespace
                 // load value if memref
                 if (value.second)
                 {
-                    return builder.create<mlir::LoadOp>(value.first.getLoc(), value.first);
+                    return builder.create<ts::LoadOp>(value.first.getLoc(), value.first.getType().cast<ts::RefType>().getElementType(), value.first);
                 }
 
                 return value.first;
