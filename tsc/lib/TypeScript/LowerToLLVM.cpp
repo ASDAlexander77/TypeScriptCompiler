@@ -438,7 +438,7 @@ namespace
             if (anyResult)
             {
                 auto result = op.getResult(0);
-                allocValue = rewriter.create<mlir::AllocaOp>(op.getLoc(), result.getType().cast<MemRefType>());
+                allocValue = rewriter.create<ts::VariableOp>(op.getLoc(), result.getType(), mlir::Value());
             }
 
             // create return block
@@ -449,7 +449,8 @@ namespace
 
             if (anyResult)
             {
-                auto loadedValue = rewriter.create<mlir::LoadOp>(op.getLoc(), allocValue);
+                auto result = op.getResult(0);
+                auto loadedValue = rewriter.create<ts::LoadOp>(op.getLoc(), result.getType(), allocValue);
                 rewriter.create<mlir::ReturnOp>(op.getLoc(), mlir::ValueRange{loadedValue});
                 rewriter.replaceOp(op, allocValue);
             }
@@ -524,8 +525,7 @@ namespace
         {
             auto retBlock = FindReturnBlock(rewriter);
 
-            ts::ReturnValOpAdaptor opTyped(op);
-            rewriter.create<mlir::StoreOp>(op.getLoc(), opTyped.operand(), opTyped.reference());
+            rewriter.create<ts::StoreOp>(op.getLoc(), op.operand(), op.reference());
 
             // Split block at `assert` operation.
             auto *opBlock = rewriter.getInsertionBlock();
