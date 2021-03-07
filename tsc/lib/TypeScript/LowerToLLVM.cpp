@@ -653,20 +653,30 @@ namespace
         }
     };
 
+    static Value createI32ConstantOf(Location loc, PatternRewriter &rewriter, unsigned value)
+    {
+        return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(32), rewriter.getIntegerAttr(rewriter.getI32Type(), value));
+    }
+
     struct VariableOpLowering : public OpConversionPattern<ts::VariableOp>
     {
         using OpConversionPattern<ts::VariableOp>::OpConversionPattern;
 
         LogicalResult matchAndRewrite(ts::VariableOp varOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            auto &typeConverter = *getTypeConverter();
-            auto convertedType = typeConverter.convertType(varOp.getType());
+            auto location = varOp->getLoc();
+            auto refType = varOp.getType().cast<ts::RefType>();
+            auto elementType = refType.getElementType();
 
-            Value allocated = rewriter.create<AllocaOp>(varOp.getLoc(), convertedType.cast<MemRefType>());
+            auto &typeConverter = *getTypeConverter();
+            auto convertedType = typeConverter.convertType(elementType);
+
+            auto ptr = LLVM::LLVMPointerType::get(convertedType);
+            Value allocated = rewriter.create<LLVM::AllocaOp>(varOp.getLoc(), ptr, createI32ConstantOf(location, rewriter, 1));
             auto value = varOp.initializer();
             if (value)
             {
-                rewriter.create<StoreOp>(varOp.getLoc(), value, allocated);
+                rewriter.create<LLVM::StoreOp>(varOp.getLoc(), value, allocated);
             }
 
             rewriter.replaceOp(varOp, allocated);
@@ -758,11 +768,11 @@ namespace
 
         converter.addConversion([&](ts::StringType type) {
             return LLVM::LLVMPointerType::get(IntegerType::get(m.getContext(), 8));
-        });    
+        });
 
         converter.addConversion([&](ts::RefType type) {
             return LLVM::LLVMPointerType::get(converter.convertType(type.getElementType()));
-        });    
+        });
     };
 
 } // end anonymous namespace
