@@ -83,42 +83,6 @@ struct ParamDefaultValueOpLowering : public OpRewritePattern<ts::ParamDefaultVal
     }
 };
 
-struct EntryOpLowering : public OpRewritePattern<ts::EntryOp>
-{
-    using OpRewritePattern<ts::EntryOp>::OpRewritePattern;
-
-    LogicalResult matchAndRewrite(ts::EntryOp op, PatternRewriter &rewriter) const final
-    {
-        auto opTyped = ts::EntryOpAdaptor(op);
-
-        mlir::Value allocValue;
-        auto anyResult = op.getNumResults() > 0;
-        if (anyResult)
-        {
-            auto result = op.getResult(0);
-            allocValue = rewriter.create<ts::VariableOp>(op.getLoc(), result.getType(), mlir::Value());
-        }
-
-        // create return block
-        auto *opBlock = rewriter.getInsertionBlock();
-        auto *region = opBlock->getParent();
-
-        rewriter.createBlock(region);
-        rewriter.create<mlir::ReturnOp>(op.getLoc());
-
-        if (anyResult)
-        {
-            rewriter.replaceOp(op, allocValue);
-        }
-        else
-        {
-            rewriter.eraseOp(op);
-        }
-
-        return success();
-    }
-};
-
 //===----------------------------------------------------------------------===//
 // TypeScriptToAffineLoweringPass
 //===----------------------------------------------------------------------===//

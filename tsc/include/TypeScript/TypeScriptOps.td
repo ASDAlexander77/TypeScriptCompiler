@@ -516,4 +516,16 @@ def TypeScript_ExitOp : TypeScript_Op<"exit", [NoSideEffect, ReturnLike, Termina
   );
 }
 
+def TypeScript_TerminatorOp : TypeScript_Op<"terminator", [Terminator]> {
+  let summary = "Generic terminator for entry op.";
+
+  let description = [{
+  }];
+
+  let verifier = ?;
+
+  let assemblyFormat = "attr-dict";
+}
+
+
 #endif // TYPESCRIPT_OPS
