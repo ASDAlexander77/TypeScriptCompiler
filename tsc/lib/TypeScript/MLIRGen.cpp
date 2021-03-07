@@ -1103,7 +1103,7 @@ namespace
 
         mlir::Type getAnyType()
         {
-            return mlir::MemRefType::get({}, builder.getI1Type());
+            return ts::AnyType::get(builder.getContext());
         }
 
         mlir::LogicalResult declare(VariableDeclarationDOM::TypePtr var, mlir::Value value, bool redeclare = false)

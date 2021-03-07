@@ -25,14 +25,7 @@ struct ParamOpLowering : public OpRewritePattern<ts::ParamOp>
 
     LogicalResult matchAndRewrite(ts::ParamOp paramOp, PatternRewriter &rewriter) const final
     {
-        Value allocated = rewriter.create<AllocaOp>(paramOp.getLoc(), paramOp.getType().cast<MemRefType>());
-        auto value = paramOp.argValue();
-        if (value)
-        {
-            rewriter.create<StoreOp>(paramOp.getLoc(), value, allocated);
-        }
-
-        rewriter.replaceOp(paramOp, allocated);
+        rewriter.replaceOpWithNewOp<ts::VariableOp>(paramOp, paramOp.getType(), paramOp.argValue());
         return success();
     }
 };
@@ -45,7 +38,7 @@ struct ParamOptionalOpLowering : public OpRewritePattern<ts::ParamOptionalOp>
     {
         auto location = paramOp.getLoc();
 
-        Value allocated = rewriter.create<AllocaOp>(location, paramOp.getType().cast<MemRefType>());
+        Value variable = rewriter.create<ts::VariableOp>(location, paramOp.getType(), mlir::Value());
 
         // scf.if
         auto index = paramOp.paramIndex();
@@ -73,8 +66,8 @@ struct ParamOptionalOpLowering : public OpRewritePattern<ts::ParamOptionalOp>
         rewriter.restoreInsertionPoint(sp);
 
         // save op
-        rewriter.create<StoreOp>(location, ifOp.results().front(), allocated);
-        rewriter.replaceOp(paramOp, allocated);
+        rewriter.create<ts::StoreOp>(location, ifOp.results().front(), variable);
+        rewriter.replaceOp(paramOp, variable);
         return success();
     }
 };
@@ -87,51 +80,6 @@ struct ParamDefaultValueOpLowering : public OpRewritePattern<ts::ParamDefaultVal
     {
         rewriter.replaceOpWithNewOp<scf::YieldOp>(op, op.results());
         return success();
-    }
-};
-
-struct VariableOpLowering : public OpRewritePattern<ts::VariableOp>
-{
-    using OpRewritePattern<ts::VariableOp>::OpRewritePattern;
-
-    LogicalResult matchAndRewrite(ts::VariableOp varOp, PatternRewriter &rewriter) const final
-    {
-        Value allocated = rewriter.create<AllocaOp>(varOp.getLoc(), varOp.getType().cast<MemRefType>());
-        auto value = varOp.initializer();
-        if (value)
-        {
-            rewriter.create<StoreOp>(varOp.getLoc(), value, allocated);
-        }
-
-        rewriter.replaceOp(varOp, allocated);
-        return success();
-    }
-};
-
-struct CastOpLowering : public OpRewritePattern<ts::CastOp>
-{
-    using OpRewritePattern<ts::CastOp>::OpRewritePattern;
-
-    LogicalResult matchAndRewrite(ts::CastOp op, PatternRewriter &rewriter) const final
-    {
-        auto in = op.in();
-        auto res = op.res();
-        auto op1 = in.getType();
-        auto op2 = res.getType();
-
-        if (op1.isInteger(32) && op2.isF32())
-        {
-            rewriter.replaceOpWithNewOp<SIToFPOp>(op, op2, in);
-            return success();
-        }
-
-        if (op2.isF32() && op1.isInteger(32))
-        {
-            rewriter.replaceOpWithNewOp<FPToSIOp>(op, op2, in);
-            return success();
-        }
-
-        llvm_unreachable("not implemented");
     }
 };
 
@@ -224,7 +172,7 @@ struct EntryOpLowering : public OpRewritePattern<ts::EntryOp>
         if (anyResult)
         {
             auto result = op.getResult(0);
-            allocValue = rewriter.create<AllocaOp>(op.getLoc(), result.getType().cast<MemRefType>());
+            allocValue = rewriter.create<ts::VariableOp>(op.getLoc(), result.getType(), mlir::Value());
         }
 
         // create return block
@@ -328,7 +276,9 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         ts::ReturnValOp,
         ts::ExitOp,
         ts::FuncOp,
-        ts::CallOp>();
+        ts::CallOp,
+        ts::CastOp,
+        ts::VariableOp>();
 
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.
@@ -337,8 +287,6 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         ParamOpLowering,
         ParamOptionalOpLowering,
         ParamDefaultValueOpLowering,
-        VariableOpLowering,
-        CastOpLowering,
         ArithmeticBinaryOpLowering,
         LogicalBinaryOpLowering>(&getContext());
 

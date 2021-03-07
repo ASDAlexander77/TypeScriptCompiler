@@ -128,14 +128,14 @@ def TypeScript_NullOp : TypeScript_Op<"null", []> {
     #### Example:
 
     ```mlir
-    %0 = ts.null : memref<*xi1>
+    %0 = ts.null : ts.any
     ```
   }];
 
   let arguments = (ins);
 
   let results = (outs
-    AnyMemRef:$result
+    TypeScript_Any:$result
   );
 
   let verifier = [{ return success(); }];

@@ -13,6 +13,10 @@ include "TypeScriptDialect.td"
 // All of the types will extend this class.
 class TypeScript_Type<string name> : TypeDef<TypeScript_Dialect, name> { }
 
+def TypeScript_Any : TypeScript_Type<"Any"> {
+    let mnemonic = "any";
+}
+
 def TypeScript_String : TypeScript_Type<"String"> {
     let mnemonic = "string";
 }

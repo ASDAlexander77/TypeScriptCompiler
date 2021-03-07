@@ -624,6 +624,52 @@ namespace
             return success();
         }
     };
+
+    struct CastOpLowering : public OpRewritePattern<ts::CastOp>
+    {
+        using OpRewritePattern<ts::CastOp>::OpRewritePattern;
+
+        LogicalResult matchAndRewrite(ts::CastOp op, PatternRewriter &rewriter) const final
+        {
+            auto in = op.in();
+            auto res = op.res();
+            auto op1 = in.getType();
+            auto op2 = res.getType();
+
+            if (op1.isInteger(32) && op2.isF32())
+            {
+                rewriter.replaceOpWithNewOp<SIToFPOp>(op, op2, in);
+                return success();
+            }
+
+            if (op2.isF32() && op1.isInteger(32))
+            {
+                rewriter.replaceOpWithNewOp<FPToSIOp>(op, op2, in);
+                return success();
+            }
+
+            llvm_unreachable("not implemented");
+        }
+    };
+
+    struct VariableOpLowering : public OpRewritePattern<ts::VariableOp>
+    {
+        using OpRewritePattern<ts::VariableOp>::OpRewritePattern;
+
+        LogicalResult matchAndRewrite(ts::VariableOp varOp, PatternRewriter &rewriter) const final
+        {
+            Value allocated = rewriter.create<AllocaOp>(varOp.getLoc(), varOp.getType().cast<MemRefType>());
+            auto value = varOp.initializer();
+            if (value)
+            {
+                rewriter.create<StoreOp>(varOp.getLoc(), value, allocated);
+            }
+
+            rewriter.replaceOp(varOp, allocated);
+            return success();
+        }
+    };
+
 } // end anonymous namespace
 
 //===----------------------------------------------------------------------===//
@@ -679,7 +725,9 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         ReturnOpLowering,
         ReturnValOpLowering,
         ExitOpLowering,
-        CallOpLowering>(&getContext());
+        CallOpLowering,
+        CastOpLowering,
+        VariableOpLowering>(&getContext());
 
     patterns.insert<
         PrintOpLowering,
