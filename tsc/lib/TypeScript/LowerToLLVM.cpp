@@ -44,6 +44,25 @@ namespace ts = mlir::typescript;
 
 namespace
 {
+    static LLVM::LLVMPointerType typeToPtr(mlir::Type type, mlir::TypeConverter &typeConverter)
+    {
+        auto convertedType = typeConverter.convertType(type);
+        auto ptr = LLVM::LLVMPointerType::get(convertedType);
+        return ptr;
+    }
+
+    static LLVM::LLVMPointerType referenceToPtr(mlir::Type referenceType, mlir::TypeConverter &typeConverter)
+    {
+        auto refType = referenceType.cast<ts::RefType>();
+        auto elementType = refType.getElementType();
+        return typeToPtr(elementType, typeConverter);
+    }
+
+    static Value createI32ConstantOf(Location loc, PatternRewriter &rewriter, unsigned value)
+    {
+        return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(32), rewriter.getIntegerAttr(rewriter.getI32Type(), value));
+    }
+
     template <typename T>
     struct OpLowering : public OpConversionPattern<typename T::OpTy>
     {
@@ -425,20 +444,25 @@ namespace
         using OpLowering<UndefOpLoweringLogic>::OpLowering;
     };
 
-    struct EntryOpLowering : public OpRewritePattern<ts::EntryOp>
+    struct EntryOpLowering : public OpConversionPattern<ts::EntryOp>
     {
-        using OpRewritePattern<ts::EntryOp>::OpRewritePattern;
+        using OpConversionPattern<ts::EntryOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite(ts::EntryOp op, PatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(ts::EntryOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             auto opTyped = ts::EntryOpAdaptor(op);
+            auto location = op.getLoc();
 
             mlir::Value allocValue;
             auto anyResult = op.getNumResults() > 0;
             if (anyResult)
             {
                 auto result = op.getResult(0);
-                allocValue = rewriter.create<ts::VariableOp>(op.getLoc(), result.getType(), mlir::Value());
+                allocValue = 
+                    rewriter.create<LLVM::AllocaOp>(
+                        location, 
+                        typeToPtr(result.getType(), *getTypeConverter()), 
+                        createI32ConstantOf(location, rewriter, 1));
             }
 
             // create return block
@@ -450,7 +474,11 @@ namespace
             if (anyResult)
             {
                 auto result = op.getResult(0);
-                auto loadedValue = rewriter.create<ts::LoadOp>(op.getLoc(), result.getType(), allocValue);
+                auto loadedValue = rewriter.create<LLVM::LoadOp>(
+                    op.getLoc(), 
+                    typeToPtr(result.getType(), *getTypeConverter()), 
+                    allocValue);
+
                 rewriter.create<mlir::ReturnOp>(op.getLoc(), mlir::ValueRange{loadedValue});
                 rewriter.replaceOp(op, allocValue);
             }
@@ -653,33 +681,26 @@ namespace
         }
     };
 
-    static Value createI32ConstantOf(Location loc, PatternRewriter &rewriter, unsigned value)
-    {
-        return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(32), rewriter.getIntegerAttr(rewriter.getI32Type(), value));
-    }
-
     struct VariableOpLowering : public OpConversionPattern<ts::VariableOp>
     {
         using OpConversionPattern<ts::VariableOp>::OpConversionPattern;
 
         LogicalResult matchAndRewrite(ts::VariableOp varOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            auto location = varOp->getLoc();
-            auto refType = varOp.getType().cast<ts::RefType>();
-            auto elementType = refType.getElementType();
+            auto location = varOp.getLoc();
 
-            auto &typeConverter = *getTypeConverter();
-            auto convertedType = typeConverter.convertType(elementType);
-
-            auto ptr = LLVM::LLVMPointerType::get(convertedType);
-            Value allocated = rewriter.create<LLVM::AllocaOp>(location, ptr, createI32ConstantOf(location, rewriter, 1));
+            auto allocated = 
+                rewriter.create<LLVM::AllocaOp>(
+                    location, 
+                    referenceToPtr(varOp.reference().getType(), *getTypeConverter()), 
+                    createI32ConstantOf(location, rewriter, 1));
             auto value = varOp.initializer();
             if (value)
             {
                 rewriter.create<LLVM::StoreOp>(location, value, allocated);
             }
 
-            rewriter.replaceOp(varOp, allocated);
+            rewriter.replaceOp(varOp, ValueRange{allocated});
             return success();
         }
     };
@@ -766,15 +787,10 @@ namespace
 
         LogicalResult matchAndRewrite(ts::LoadOp loadOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            auto location = loadOp->getLoc();
-            auto refType = loadOp.reference().getType().cast<ts::RefType>();
-            auto elementType = refType.getElementType();
-
-            auto &typeConverter = *getTypeConverter();
-            auto convertedType = typeConverter.convertType(elementType);
-
-            auto ptr = LLVM::LLVMPointerType::get(convertedType);
-            rewriter.replaceOpWithNewOp<LLVM::LoadOp>(loadOp, ptr, loadOp.reference());
+            rewriter.replaceOpWithNewOp<LLVM::LoadOp>(
+                loadOp, 
+                referenceToPtr(loadOp.reference().getType(), *getTypeConverter()), 
+                loadOp.reference());
             return success();
         }
     };
@@ -860,7 +876,6 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         ArithmeticBinaryOpLowering,
         CallOpLowering,
         CastOpLowering,
-        EntryOpLowering,
         ExitOpLowering,
         LogicalBinaryOpLowering,
         NullOpLowering,
@@ -870,6 +885,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 
     patterns.insert<
         AssertOpLowering,
+        EntryOpLowering,
         FuncOpLowering,
         LoadOpLowering,
         ParseFloatOpLowering,
