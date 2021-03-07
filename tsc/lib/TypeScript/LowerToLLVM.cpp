@@ -44,6 +44,12 @@ namespace ts = mlir::typescript;
 
 namespace
 {
+    static mlir::Type typeToConvertedType(mlir::Type type, mlir::TypeConverter &typeConverter)
+    {
+        auto convertedType = typeConverter.convertType(type);
+        return convertedType;
+    }
+
     static LLVM::LLVMPointerType typeToPtr(mlir::Type type, mlir::TypeConverter &typeConverter)
     {
         auto convertedType = typeConverter.convertType(type);
@@ -57,6 +63,14 @@ namespace
         auto elementType = refType.getElementType();
         return typeToPtr(elementType, typeConverter);
     }
+
+    static mlir::Type referenceToConvertedType(mlir::Type referenceType, mlir::TypeConverter &typeConverter)
+    {
+        auto refType = referenceType.cast<ts::RefType>();
+        auto elementType = refType.getElementType();
+        auto convertedType = typeConverter.convertType(elementType);
+        return convertedType;
+    }    
 
     static Value createI32ConstantOf(Location loc, PatternRewriter &rewriter, unsigned value)
     {
@@ -476,15 +490,15 @@ namespace
                 auto result = op.getResult(0);
                 auto loadedValue = rewriter.create<LLVM::LoadOp>(
                     op.getLoc(), 
-                    typeToPtr(result.getType(), *getTypeConverter()), 
+                    typeToConvertedType(result.getType(), *getTypeConverter()), 
                     allocValue);
 
-                rewriter.create<mlir::ReturnOp>(op.getLoc(), mlir::ValueRange{loadedValue});
+                rewriter.create<LLVM::ReturnOp>(op.getLoc(), mlir::ValueRange{loadedValue});
                 rewriter.replaceOp(op, allocValue);
             }
             else
             {
-                rewriter.create<mlir::ReturnOp>(op.getLoc());
+                rewriter.create<LLVM::ReturnOp>(op.getLoc(), mlir::ValueRange{});
                 rewriter.eraseOp(op);
             }
 
@@ -508,13 +522,13 @@ namespace
 
             auto *op = &item.back();
             //auto name = op->getName().getStringRef();
-            auto isReturn = dyn_cast<mlir::ReturnOp>(op) != nullptr;
+            auto isReturn = dyn_cast<LLVM::ReturnOp>(op) != nullptr;
             return isReturn;
         });
 
         if (result == region->end())
         {
-            // found block with return;
+            llvm_unreachable("return op. can't be found");
             return nullptr;
         }
 
@@ -553,7 +567,7 @@ namespace
         {
             auto retBlock = FindReturnBlock(rewriter);
 
-            rewriter.create<ts::StoreOp>(op.getLoc(), op.operand(), op.reference());
+            rewriter.create<LLVM::StoreOp>(op.getLoc(), op.operand(), op.reference());
 
             // Split block at `assert` operation.
             auto *opBlock = rewriter.getInsertionBlock();
@@ -787,10 +801,8 @@ namespace
 
         LogicalResult matchAndRewrite(ts::LoadOp loadOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            rewriter.replaceOpWithNewOp<LLVM::LoadOp>(
-                loadOp, 
-                referenceToPtr(loadOp.reference().getType(), *getTypeConverter()), 
-                loadOp.reference());
+            auto convertedType = referenceToConvertedType(loadOp.reference().getType(), *getTypeConverter());
+            rewriter.replaceOpWithNewOp<LLVM::LoadOp>(loadOp, convertedType, loadOp.reference());
             return success();
         }
     };
