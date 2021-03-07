@@ -361,8 +361,7 @@ namespace
     struct ParseIntOpLowering : public OpLowering<ParseIntOpLoweringLogic>
     {
         using OpLowering<ParseIntOpLoweringLogic>::OpLowering;
-    };    
-
+    };
 
     class ParseFloatOpLoweringLogic : public LoweringLogic<ts::ParseFloatOp>
     {
@@ -390,7 +389,7 @@ namespace
     struct ParseFloatOpLowering : public OpLowering<ParseFloatOpLoweringLogic>
     {
         using OpLowering<ParseFloatOpLoweringLogic>::OpLowering;
-    };    
+    };
 
     struct NullOpLowering : public OpRewritePattern<ts::NullOp>
     {
@@ -585,17 +584,17 @@ namespace
             }
 
             auto newFuncOp = rewriter.create<FuncOp>(
-                funcOp.getLoc(), 
-                funcOp.getName(), 
+                funcOp.getLoc(),
+                funcOp.getName(),
                 rewriter.getFunctionType(signatureInputsConverter.getConvertedTypes(), signatureResultsConverter.getConvertedTypes()));
             for (const auto &namedAttr : funcOp.getAttrs())
             {
                 if (namedAttr.first == impl::getTypeAttrName() ||
                     namedAttr.first == SymbolTable::getSymbolAttrName())
-                {                    
+                {
                     continue;
                 }
-    
+
                 newFuncOp->setAttr(namedAttr.first, namedAttr.second);
             }
 
@@ -751,6 +750,20 @@ namespace
         }
     };
 
+    static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, mlir::ModuleOp &m)
+    {
+        converter.addConversion([&](ts::AnyType type) {
+            return LLVM::LLVMPointerType::get(IntegerType::get(m.getContext(), 8));
+        });
+
+        converter.addConversion([&](ts::StringType type) {
+            return LLVM::LLVMPointerType::get(IntegerType::get(m.getContext(), 8));
+        });    
+
+        converter.addConversion([&](ts::RefType type) {
+            return LLVM::LLVMPointerType::get(converter.convertType(type.getElementType()));
+        });    
+    };
 
 } // end anonymous namespace
 
@@ -774,6 +787,8 @@ namespace
 
 void TypeScriptToLLVMLoweringPass::runOnOperation()
 {
+    auto m = getOperation();
+
     // The first thing to define is the conversion target. This will define the
     // final target for this lowering. For this lowering, we are only targeting
     // the LLVM dialect.
@@ -820,6 +835,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         UndefOpLowering,
         FuncOpLowering,
         VariableOpLowering>(typeConverter, &getContext());
+
+    populateTypeScriptConversionPatterns(typeConverter, m);
 
     // We want to completely lower to LLVM, so we use a `FullConversion`. This
     // ensures that only legal operations will remain after the conversion.
