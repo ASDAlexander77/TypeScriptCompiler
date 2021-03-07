@@ -228,35 +228,32 @@ namespace
                     "printf",
                     getFunctionType(getI32Type(), getI8PtrType(), true));
 
-            //auto formatSpecifierCst = getOrCreateGlobalString("frmt_spec", StringRef("%f \0", 4));
-            //auto newLineCst = getOrCreateGlobalString("nl", StringRef("\n\0", 2));
-
-            std::stringstream frmt;
+            std::stringstream format;
             for (auto item : op->getOperands())
             {
                 auto type = item.getType();
                 if (type.isIntOrIndexOrFloat() && !type.isIntOrIndex())
                 {
-                    frmt << "%f";
+                    format << "%f";
                 }
                 else if (type.isIntOrIndex())
                 {
-                    frmt << "%d";
+                    format << "%d";
                 }
                 else
                 {
-                    frmt << "%s";
+                    format << "%s";
                 }
             }
 
-            frmt << "\n";
+            format << "\n";
 
             auto opHash = OperationEquivalence::computeHash(op, OperationEquivalence::Flags::IgnoreOperands);
 
-            std::stringstream frmtVarName;
-            frmtVarName << "frmt_" << opHash;
+            std::stringstream formatVarName;
+            formatVarName << "frmt_" << opHash;
 
-            auto formatSpecifierCst = getOrCreateGlobalString(frmtVarName.str(), frmt.str());
+            auto formatSpecifierCst = getOrCreateGlobalString(formatVarName.str(), format.str());
 
             mlir::SmallVector<mlir::Value, 4> values;
             values.push_back(formatSpecifierCst);
