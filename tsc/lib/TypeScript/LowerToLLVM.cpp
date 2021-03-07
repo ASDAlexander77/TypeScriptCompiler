@@ -475,7 +475,7 @@ namespace
                 allocValue = 
                     rewriter.create<LLVM::AllocaOp>(
                         location, 
-                        typeToPtr(result.getType(), *getTypeConverter()), 
+                        referenceToPtr(result.getType(), *getTypeConverter()), 
                         createI32ConstantOf(location, rewriter, 1));
             }
 
@@ -487,12 +487,7 @@ namespace
 
             if (anyResult)
             {
-                auto result = op.getResult(0);
-                auto loadedValue = rewriter.create<LLVM::LoadOp>(
-                    op.getLoc(), 
-                    typeToConvertedType(result.getType(), *getTypeConverter()), 
-                    allocValue);
-
+                auto loadedValue = rewriter.create<LLVM::LoadOp>(op.getLoc(), allocValue);
                 rewriter.create<LLVM::ReturnOp>(op.getLoc(), mlir::ValueRange{loadedValue});
                 rewriter.replaceOp(op, allocValue);
             }
