@@ -672,11 +672,11 @@ namespace
             auto convertedType = typeConverter.convertType(elementType);
 
             auto ptr = LLVM::LLVMPointerType::get(convertedType);
-            Value allocated = rewriter.create<LLVM::AllocaOp>(varOp.getLoc(), ptr, createI32ConstantOf(location, rewriter, 1));
+            Value allocated = rewriter.create<LLVM::AllocaOp>(location, ptr, createI32ConstantOf(location, rewriter, 1));
             auto value = varOp.initializer();
             if (value)
             {
-                rewriter.create<LLVM::StoreOp>(varOp.getLoc(), value, allocated);
+                rewriter.create<LLVM::StoreOp>(location, value, allocated);
             }
 
             rewriter.replaceOp(varOp, allocated);
@@ -760,6 +760,36 @@ namespace
         }
     };
 
+    struct LoadOpLowering : public OpConversionPattern<ts::LoadOp>
+    {
+        using OpConversionPattern<ts::LoadOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(ts::LoadOp loadOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            auto location = loadOp->getLoc();
+            auto refType = loadOp.reference().getType().cast<ts::RefType>();
+            auto elementType = refType.getElementType();
+
+            auto &typeConverter = *getTypeConverter();
+            auto convertedType = typeConverter.convertType(elementType);
+
+            auto ptr = LLVM::LLVMPointerType::get(convertedType);
+            rewriter.replaceOpWithNewOp<LLVM::LoadOp>(loadOp, ptr, loadOp.reference());
+            return success();
+        }
+    };
+
+    struct StoreOpLowering : public OpConversionPattern<ts::StoreOp>
+    {
+        using OpConversionPattern<ts::StoreOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(ts::StoreOp storeOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            rewriter.replaceOpWithNewOp<LLVM::StoreOp>(storeOp, storeOp.value(), storeOp.reference());
+            return success();
+        }
+    };    
+
     static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, mlir::ModuleOp &m)
     {
         converter.addConversion([&](ts::AnyType type) {
@@ -827,24 +857,28 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 
     // The only remaining operation to lower from the `typescript` dialect, is the PrintOp.
     patterns.insert<
-        NullOpLowering,
-        EntryOpLowering,
-        ReturnOpLowering,
-        ReturnValOpLowering,
-        ExitOpLowering,
+        ArithmeticBinaryOpLowering,
         CallOpLowering,
         CastOpLowering,
-        ArithmeticBinaryOpLowering,
-        LogicalBinaryOpLowering>(&getContext());
+        EntryOpLowering,
+        ExitOpLowering,
+        LogicalBinaryOpLowering,
+        NullOpLowering,
+        ReturnOpLowering,
+        ReturnValOpLowering
+    >(&getContext());
 
     patterns.insert<
-        PrintOpLowering,
         AssertOpLowering,
-        ParseIntOpLowering,
-        ParseFloatOpLowering,
-        UndefOpLowering,
         FuncOpLowering,
-        VariableOpLowering>(typeConverter, &getContext());
+        LoadOpLowering,
+        ParseFloatOpLowering,
+        ParseIntOpLowering,
+        PrintOpLowering,
+        StoreOpLowering,
+        UndefOpLowering,
+        VariableOpLowering
+    >(typeConverter, &getContext());
 
     populateTypeScriptConversionPatterns(typeConverter, m);
 

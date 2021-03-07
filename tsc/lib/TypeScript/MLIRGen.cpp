@@ -751,13 +751,13 @@ namespace
             {
                 case SyntaxKind::EqualsToken:
                     {
-                        auto loadOp = dyn_cast<mlir::LoadOp>(leftExpressionValue.getDefiningOp());
+                        auto loadOp = dyn_cast<ts::LoadOp>(leftExpressionValue.getDefiningOp());
                         if (loadOp)
                         {
                             builder.create<ts::StoreOp>(
                                 location, 
                                 rightExpressionValue, 
-                                loadOp.memref());
+                                loadOp.reference());
                         }
                         else
                         {

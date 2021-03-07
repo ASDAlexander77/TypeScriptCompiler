@@ -189,20 +189,23 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     // to lower, `typescript.print`, as `legal`.
     target.addIllegalDialect<ts::TypeScriptDialect>();
     target.addLegalOp<
-        ts::PrintOp,
         ts::AssertOp,
-        ts::ParseIntOp,
-        ts::ParseFloatOp,
-        ts::UndefOp,
-        ts::NullOp,
-        ts::EntryOp,
-        ts::ReturnOp,
-        ts::ReturnValOp,
-        ts::ExitOp,
-        ts::FuncOp,
         ts::CallOp,
         ts::CastOp,
-        ts::VariableOp>();
+        ts::EntryOp,
+        ts::ExitOp,
+        ts::FuncOp,
+        ts::NullOp,
+        ts::ParseFloatOp,
+        ts::ParseIntOp,
+        ts::PrintOp,
+        ts::ReturnOp,
+        ts::ReturnValOp,
+        ts::StoreOp,
+        ts::LoadOp,
+        ts::UndefOp,
+        ts::VariableOp
+    >();
 
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.
@@ -210,7 +213,8 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     patterns.insert<
         ParamOpLowering,
         ParamOptionalOpLowering,
-        ParamDefaultValueOpLowering>(&getContext());
+        ParamDefaultValueOpLowering
+    >(&getContext());
 
     // With the target and rewrite patterns defined, we can now attempt the
     // conversion. The conversion will signal failure if any of our `illegal`
