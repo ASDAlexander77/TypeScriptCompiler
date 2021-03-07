@@ -654,13 +654,16 @@ namespace
         }
     };
 
-    struct VariableOpLowering : public OpRewritePattern<ts::VariableOp>
+    struct VariableOpLowering : public OpConversionPattern<ts::VariableOp>
     {
-        using OpRewritePattern<ts::VariableOp>::OpRewritePattern;
+        using OpConversionPattern<ts::VariableOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite(ts::VariableOp varOp, PatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(ts::VariableOp varOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            Value allocated = rewriter.create<AllocaOp>(varOp.getLoc(), varOp.getType().cast<MemRefType>());
+            auto &typeConverter = *getTypeConverter();
+            auto convertedType = typeConverter.convertType(varOp.getType());
+
+            Value allocated = rewriter.create<AllocaOp>(varOp.getLoc(), convertedType.cast<MemRefType>());
             auto value = varOp.initializer();
             if (value)
             {
@@ -806,7 +809,6 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         ExitOpLowering,
         CallOpLowering,
         CastOpLowering,
-        VariableOpLowering,
         ArithmeticBinaryOpLowering,
         LogicalBinaryOpLowering>(&getContext());
 
@@ -816,7 +818,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         ParseIntOpLowering,
         ParseFloatOpLowering,
         UndefOpLowering,
-        FuncOpLowering>(typeConverter, &getContext());
+        FuncOpLowering,
+        VariableOpLowering>(typeConverter, &getContext());
 
     // We want to completely lower to LLVM, so we use a `FullConversion`. This
     // ensures that only legal operations will remain after the conversion.
