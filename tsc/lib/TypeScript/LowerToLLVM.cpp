@@ -524,7 +524,7 @@ namespace
             auto retBlock = FindReturnBlock(rewriter);
 
             ts::ReturnValOpAdaptor opTyped(op);
-            rewriter.create<mlir::StoreOp>(op.getLoc(), opTyped.operand(), opTyped.pointer());
+            rewriter.create<mlir::StoreOp>(op.getLoc(), opTyped.operand(), opTyped.reference());
 
             // Split block at `assert` operation.
             auto *opBlock = rewriter.getInsertionBlock();

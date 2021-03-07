@@ -8,7 +8,7 @@ include "mlir/IR/OpBase.td"
 //===----------------------------------------------------------------------===//
 
 def TypeScript_Dialect : Dialect {
-    let name = "typescript";
+    let name = "ts";
     let summary = "A typescript out-of-tree MLIR dialect.";
     let description = [{
         This dialect is a typescript out-of-tree MLIR dialect.

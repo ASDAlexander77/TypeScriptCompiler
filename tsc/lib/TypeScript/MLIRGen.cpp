@@ -306,7 +306,7 @@ namespace
 
                     auto variableOp = builder.create<VariableOp>(
                         location, 
-                        getMemRef(type),
+                        ts::RefType::get(type),
                         init);
 
                     declare(varDecl, variableOp);                        
@@ -565,10 +565,10 @@ namespace
             if (retType)
             {
                 auto location = loc(functionDeclarationAST->getLoc());
-                auto entryOp = builder.create<EntryOp>(location, getMemRef(retType));
+                auto entryOp = builder.create<EntryOp>(location, ts::RefType::get(retType));
                 auto varDecl = std::make_shared<VariableDeclarationDOM>(RETURN_VARIABLE_NAME, retType, location);
                 varDecl->setReadWriteAccess();
-                declare(varDecl, entryOp.pointer());
+                declare(varDecl, entryOp.reference());
             }
             else
             {
@@ -601,7 +601,7 @@ namespace
 
                     auto paramOptionalOp = builder.create<ParamOptionalOp>(
                         location, 
-                        getMemRef(param->getType()), 
+                        ts::RefType::get(param->getType()), 
                         arguments[index], 
                         countArgsValue, 
                         builder.getI32IntegerAttr(index));
@@ -636,7 +636,7 @@ namespace
                 {
                     paramValue = builder.create<ParamOp>(
                         param->getLoc(), 
-                        getMemRef(param->getType()), 
+                        ts::RefType::get(param->getType()), 
                         arguments[index]);
                 }
 
@@ -1049,7 +1049,7 @@ namespace
 
             return builder.create<mlir::ConstantOp>(
                 loc(stringLiteral->getLoc()),
-                getMemRef(builder.getI1Type()),
+                ts::RefType::get(builder.getI1Type()),
                 builder.getStringAttr(StringRef(innerText)));
         }
 
@@ -1104,11 +1104,6 @@ namespace
         mlir::Type getAnyType()
         {
             return mlir::MemRefType::get({}, builder.getI1Type());
-        }
-
-        mlir::MemRefType getMemRef(mlir::Type elementType)
-        {
-            return mlir::MemRefType::get({}, elementType);
         }
 
         mlir::LogicalResult declare(VariableDeclarationDOM::TypePtr var, mlir::Value value, bool redeclare = false)

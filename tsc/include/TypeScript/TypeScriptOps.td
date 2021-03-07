@@ -22,7 +22,7 @@ def TypeScript_FuncOp : TypeScript_Op<"func", [
 
     ```mlir
     // External function definitions.
-    typescript.func @abort()
+    ts.func @abort()
     ```
   }];
 
@@ -122,13 +122,13 @@ def TypeScript_NullOp : TypeScript_Op<"null", []> {
 
   let description = [{
     ```
-    null-op ::= `typescript.null` `:` any-type
+    null-op ::= `ts.null` `:` any-type
     ```
 
     #### Example:
 
     ```mlir
-    %0 = typescript.null : memref<*xi1>
+    %0 = ts.null : memref<*xi1>
     ```
   }];
 
@@ -148,13 +148,13 @@ def TypeScript_UndefOp : TypeScript_Op<"undef", []> {
     Result Type is the type of object to make.
 
     ```
-    undef-op ::= `typescript.undef` `:` any-type
+    undef-op ::= `ts.undef` `:` any-type
     ```
 
     #### Example:
 
     ```mlir
-    %0 = typescript.undef : f32
+    %0 = ts.undef : f32
     ```
   }];
 
@@ -296,7 +296,7 @@ def TypeScript_ParamOp : TypeScript_Op<"param", []> {
   let description = [{
 
     ```mlir
-    %0 = typescript.param : f32
+    %0 = ts.param : f32
     ```
   }];
 
@@ -305,7 +305,7 @@ def TypeScript_ParamOp : TypeScript_Op<"param", []> {
   );
 
   let results = (outs
-    AnyType:$pointer
+    AnyType:$reference
   );
 }
 
@@ -317,7 +317,7 @@ def TypeScript_ParamOptionalOp : TypeScript_Op<"param_opt", [SingleBlockImplicit
   let description = [{
 
     ```mlir
-    %0 = typescript.param_opt : f32
+    %0 = ts.param_opt : f32
     ```
   }];
 
@@ -328,7 +328,7 @@ def TypeScript_ParamOptionalOp : TypeScript_Op<"param_opt", [SingleBlockImplicit
   );
 
   let results = (outs
-    AnyType:$pointer
+    AnyType:$reference
   );
 
   let regions = (region AnyRegion:$defaultValueRegion);
@@ -357,10 +357,10 @@ def TypeScript_VariableOp : TypeScript_Op<"variable", []> {
   let description = [{
 
     ```mlir
-    %0 = typescript.constant ...
+    %0 = ts.constant ...
 
-    %1 = typescript.variable : f32
-    %2 = typescript.variable init(%0): f32
+    %1 = ts.variable : f32
+    %2 = ts.variable init(%0): f32
     ```
   }];
 
@@ -382,8 +382,7 @@ def TypeScript_StoreOp : TypeScript_Op<"store",
     The `store` operation stores the value into the reference storage.
   }];
 
-  let arguments = (ins AnyType:$value,
-                       TypeScript_AnyRef:$reference);
+  let arguments = (ins AnyType:$value, TypeScript_AnyRef:$reference);
   let assemblyFormat = "$value `,` $reference attr-dict `:` type($reference)";
 }
 
@@ -402,12 +401,9 @@ def TypeScript_LoadOp : TypeScript_Op<"load",
 }
 
 def TypeScript_ArithmeticBinaryOp : TypeScript_Op<"arithmetic_binary"> {
-  let summary = [{
-  }];
-
   let description = [{
     ```mlir
-    %2 = typescript.arithmetic_binary 1, %0, %1 : f32
+    %2 = ts.arithmetic_binary 1, %0, %1 : f32
     ```
   }];
 
@@ -423,12 +419,9 @@ def TypeScript_ArithmeticBinaryOp : TypeScript_Op<"arithmetic_binary"> {
 }
 
 def TypeScript_LogicalBinaryOp : TypeScript_Op<"logical_binary"> {
-  let summary = [{
-  }];
-
   let description = [{
     ```mlir
-    %2 = typescript.logical_binary 1, %0, %1 : i1
+    %2 = ts.logical_binary 1, %0, %1 : i1
     ```
   }];
 
@@ -446,7 +439,7 @@ def TypeScript_LogicalBinaryOp : TypeScript_Op<"logical_binary"> {
 def TypeScript_CastOp : TypeScript_Op<"cast"> {
   let description = [{
     Example:
-      typescript.cast %v : i32 to f16
+      ts.cast %v : i32 to f16
   }];
   let arguments = (ins AnyType:$in);
   let results = (outs AnyType:$res);
@@ -460,7 +453,7 @@ def TypeScript_EntryOp : TypeScript_Op<"entry"> {
     #### Example:
 
     ```mlir
-    typescript.entry
+    ts.entry
     ```
   }];
 
@@ -468,20 +461,20 @@ def TypeScript_EntryOp : TypeScript_Op<"entry"> {
   );  
 
   let results = (outs
-    Optional<AnyMemRef>:$pointer
+    Optional<TypeScript_AnyRef>:$reference
   );  
 }
 
 def TypeScript_ReturnOp : TypeScript_Op<"return"> {
   let description = [{
     ```
-    return-value-op ::= `typescript.return` ssa-use `:` typescript-type
+    return-value-op ::= `ts.return` ssa-use `:` typescript-type
     ```
 
     #### Example:
 
     ```mlir
-    typescript.return
+    ts.return
     ```
   }];
 
@@ -492,19 +485,19 @@ def TypeScript_ReturnOp : TypeScript_Op<"return"> {
 def TypeScript_ReturnValOp : TypeScript_Op<"returnVal"> {
   let description = [{
     ```
-    return-value-op ::= `typescript.returnVal` ssa-use `:` typescript-type
+    return-value-op ::= `ts.returnVal` ssa-use `:` typescript-type
     ```
 
     #### Example:
 
     ```mlir
-    typescript.return %0 : f32
+    ts.return %0 : f32
     ```
   }];
 
   let arguments = (ins
     AnyType:$operand,
-    AnyMemRef:$pointer
+    TypeScript_AnyRef:$reference
   );
 }
 
@@ -515,7 +508,7 @@ def TypeScript_ExitOp : TypeScript_Op<"exit", [NoSideEffect, ReturnLike, Termina
     #### Example:
 
     ```mlir
-    typescript.exit
+    ts.exit
     ```
   }];
 
