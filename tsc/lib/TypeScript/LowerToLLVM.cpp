@@ -19,6 +19,7 @@
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/Passes.h"
 #include "TypeScript/Defines.h"
+#include "TypeScript/EnumsAST.h"
 
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 #include "mlir/Conversion/SCFToStandard/SCFToStandard.h"
@@ -34,6 +35,7 @@
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace mlir;
+using namespace ::typescript;
 namespace ts = mlir::typescript;
 
 //===----------------------------------------------------------------------===//
@@ -180,10 +182,10 @@ namespace
         typename OpTy::Adaptor transformed;
     };
 
-    class PrintOpLoweringLogic : public LoweringLogic<typescript::PrintOp>
+    class PrintOpLoweringLogic : public LoweringLogic<ts::PrintOp>
     {
     public:
-        using LoweringLogic<typescript::PrintOp>::LoweringLogic;
+        using LoweringLogic<ts::PrintOp>::LoweringLogic;
 
         LogicalResult matchAndRewrite()
         {
@@ -255,10 +257,10 @@ namespace
         using OpLowering<PrintOpLoweringLogic>::OpLowering;
     };
 
-    class AssertOpLoweringLogic : public LoweringLogic<typescript::AssertOp>
+    class AssertOpLoweringLogic : public LoweringLogic<ts::AssertOp>
     {
     public:
-        using LoweringLogic<typescript::AssertOp>::LoweringLogic;
+        using LoweringLogic<ts::AssertOp>::LoweringLogic;
 
         LogicalResult matchAndRewrite()
         {
@@ -333,10 +335,10 @@ namespace
         using OpLowering<AssertOpLoweringLogic>::OpLowering;
     };
 
-    class ParseIntOpLoweringLogic : public LoweringLogic<typescript::ParseIntOp>
+    class ParseIntOpLoweringLogic : public LoweringLogic<ts::ParseIntOp>
     {
     public:
-        using LoweringLogic<typescript::ParseIntOp>::LoweringLogic;
+        using LoweringLogic<ts::ParseIntOp>::LoweringLogic;
 
         LogicalResult matchAndRewrite()
         {
@@ -362,10 +364,10 @@ namespace
     };    
 
 
-    class ParseFloatOpLoweringLogic : public LoweringLogic<typescript::ParseFloatOp>
+    class ParseFloatOpLoweringLogic : public LoweringLogic<ts::ParseFloatOp>
     {
     public:
-        using LoweringLogic<typescript::ParseFloatOp>::LoweringLogic;
+        using LoweringLogic<ts::ParseFloatOp>::LoweringLogic;
 
         LogicalResult matchAndRewrite()
         {
@@ -390,11 +392,11 @@ namespace
         using OpLowering<ParseFloatOpLoweringLogic>::OpLowering;
     };    
 
-    struct NullOpLowering : public OpRewritePattern<typescript::NullOp>
+    struct NullOpLowering : public OpRewritePattern<ts::NullOp>
     {
-        using OpRewritePattern<typescript::NullOp>::OpRewritePattern;
+        using OpRewritePattern<ts::NullOp>::OpRewritePattern;
 
-        LogicalResult matchAndRewrite(typescript::NullOp op, PatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(ts::NullOp op, PatternRewriter &rewriter) const final
         {
             // just replace
             rewriter.replaceOpWithNewOp<LLVM::NullOp>(op, op.getType());
@@ -402,10 +404,10 @@ namespace
         }
     };
 
-    class UndefOpLoweringLogic : public LoweringLogic<typescript::UndefOp>
+    class UndefOpLoweringLogic : public LoweringLogic<ts::UndefOp>
     {
     public:
-        using LoweringLogic<typescript::UndefOp>::LoweringLogic;
+        using LoweringLogic<ts::UndefOp>::LoweringLogic;
 
         LogicalResult matchAndRewrite()
         {
@@ -670,6 +672,83 @@ namespace
         }
     };
 
+    template <typename BinOpTy, typename StdIOpTy, typename StdFOpTy>
+    void BinOp(BinOpTy &binOp, mlir::PatternRewriter &builder)
+    {
+        auto leftType = binOp.getOperand(0).getType();
+        if (leftType.isIntOrIndex())
+        {
+            builder.replaceOpWithNewOp<StdIOpTy>(binOp, binOp.getOperand(0), binOp.getOperand(1));
+        }
+        else if (!leftType.isIntOrIndex() && leftType.isIntOrIndexOrFloat())
+        {
+            builder.replaceOpWithNewOp<StdFOpTy>(binOp, binOp.getOperand(0), binOp.getOperand(1));
+        }
+        else
+        {
+            llvm_unreachable("not implemented");
+        }
+    }
+
+    template <typename BinOpTy, typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
+    void LogicOp(BinOpTy &binOp, mlir::PatternRewriter &builder)
+    {
+        auto leftType = binOp.getOperand(0).getType();
+        if (leftType.isIntOrIndex())
+        {
+            builder.replaceOpWithNewOp<StdIOpTy>(binOp, v1, binOp.getOperand(0), binOp.getOperand(1));
+        }
+        else if (!leftType.isIntOrIndex() && leftType.isIntOrIndexOrFloat())
+        {
+            builder.replaceOpWithNewOp<StdFOpTy>(binOp, v2, binOp.getOperand(0), binOp.getOperand(1));
+        }
+        else
+        {
+            llvm_unreachable("not implemented");
+        }
+    }
+
+    struct ArithmeticBinaryOpLowering : public OpRewritePattern<ts::ArithmeticBinaryOp>
+    {
+        using OpRewritePattern<ts::ArithmeticBinaryOp>::OpRewritePattern;
+
+        LogicalResult matchAndRewrite(ts::ArithmeticBinaryOp arithmeticBinaryOp, PatternRewriter &rewriter) const final
+        {
+            switch ((SyntaxKind)arithmeticBinaryOp.opCode())
+            {
+            case SyntaxKind::PlusToken:
+                BinOp<ts::ArithmeticBinaryOp, AddIOp, AddFOp>(arithmeticBinaryOp, rewriter);
+                return success();
+
+            case SyntaxKind::MinusToken:
+                BinOp<ts::ArithmeticBinaryOp, SubIOp, SubFOp>(arithmeticBinaryOp, rewriter);
+                return success();
+            default:
+                llvm_unreachable("not implemented");
+            }
+        }
+    };
+
+    struct LogicalBinaryOpLowering : public OpRewritePattern<ts::LogicalBinaryOp>
+    {
+        using OpRewritePattern<ts::LogicalBinaryOp>::OpRewritePattern;
+
+        LogicalResult matchAndRewrite(ts::LogicalBinaryOp logicalBinaryOp, PatternRewriter &rewriter) const final
+        {
+            switch ((SyntaxKind)logicalBinaryOp.opCode())
+            {
+            case SyntaxKind::EqualsEqualsToken:
+                LogicOp<ts::LogicalBinaryOp,
+                        CmpIOp, CmpIPredicate, CmpIPredicate::eq,
+                        CmpFOp, CmpFPredicate, CmpFPredicate::OEQ>(logicalBinaryOp, rewriter);
+                return success();
+            default:
+                llvm_unreachable("not implemented");
+            }
+        }
+    };
+
+
 } // end anonymous namespace
 
 //===----------------------------------------------------------------------===//
@@ -727,7 +806,9 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         ExitOpLowering,
         CallOpLowering,
         CastOpLowering,
-        VariableOpLowering>(&getContext());
+        VariableOpLowering,
+        ArithmeticBinaryOpLowering,
+        LogicalBinaryOpLowering>(&getContext());
 
     patterns.insert<
         PrintOpLowering,

@@ -83,82 +83,6 @@ struct ParamDefaultValueOpLowering : public OpRewritePattern<ts::ParamDefaultVal
     }
 };
 
-template <typename BinOpTy, typename StdIOpTy, typename StdFOpTy>
-void BinOp(BinOpTy &binOp, mlir::PatternRewriter &builder)
-{
-    auto leftType = binOp.getOperand(0).getType();
-    if (leftType.isIntOrIndex())
-    {
-        builder.replaceOpWithNewOp<StdIOpTy>(binOp, binOp.getOperand(0), binOp.getOperand(1));
-    }
-    else if (!leftType.isIntOrIndex() && leftType.isIntOrIndexOrFloat())
-    {
-        builder.replaceOpWithNewOp<StdFOpTy>(binOp, binOp.getOperand(0), binOp.getOperand(1));
-    }
-    else
-    {
-        llvm_unreachable("not implemented");
-    }
-}
-
-template <typename BinOpTy, typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
-void LogicOp(BinOpTy &binOp, mlir::PatternRewriter &builder)
-{
-    auto leftType = binOp.getOperand(0).getType();
-    if (leftType.isIntOrIndex())
-    {
-        builder.replaceOpWithNewOp<StdIOpTy>(binOp, v1, binOp.getOperand(0), binOp.getOperand(1));
-    }
-    else if (!leftType.isIntOrIndex() && leftType.isIntOrIndexOrFloat())
-    {
-        builder.replaceOpWithNewOp<StdFOpTy>(binOp, v2, binOp.getOperand(0), binOp.getOperand(1));
-    }
-    else
-    {
-        llvm_unreachable("not implemented");
-    }
-}
-
-struct ArithmeticBinaryOpLowering : public OpRewritePattern<ts::ArithmeticBinaryOp>
-{
-    using OpRewritePattern<ts::ArithmeticBinaryOp>::OpRewritePattern;
-
-    LogicalResult matchAndRewrite(ts::ArithmeticBinaryOp arithmeticBinaryOp, PatternRewriter &rewriter) const final
-    {
-        switch ((SyntaxKind)arithmeticBinaryOp.opCode())
-        {
-        case SyntaxKind::PlusToken:
-            BinOp<ts::ArithmeticBinaryOp, AddIOp, AddFOp>(arithmeticBinaryOp, rewriter);
-            return success();
-
-        case SyntaxKind::MinusToken:
-            BinOp<ts::ArithmeticBinaryOp, SubIOp, SubFOp>(arithmeticBinaryOp, rewriter);
-            return success();
-        default:
-            llvm_unreachable("not implemented");
-        }
-    }
-};
-
-struct LogicalBinaryOpLowering : public OpRewritePattern<ts::LogicalBinaryOp>
-{
-    using OpRewritePattern<ts::LogicalBinaryOp>::OpRewritePattern;
-
-    LogicalResult matchAndRewrite(ts::LogicalBinaryOp logicalBinaryOp, PatternRewriter &rewriter) const final
-    {
-        switch ((SyntaxKind)logicalBinaryOp.opCode())
-        {
-        case SyntaxKind::EqualsEqualsToken:
-            LogicOp<ts::LogicalBinaryOp,
-                    CmpIOp, CmpIPredicate, CmpIPredicate::eq,
-                    CmpFOp, CmpFPredicate, CmpFPredicate::OEQ>(logicalBinaryOp, rewriter);
-            return success();
-        default:
-            llvm_unreachable("not implemented");
-        }
-    }
-};
-
 struct EntryOpLowering : public OpRewritePattern<ts::EntryOp>
 {
     using OpRewritePattern<ts::EntryOp>::OpRewritePattern;
@@ -286,9 +210,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     patterns.insert<
         ParamOpLowering,
         ParamOptionalOpLowering,
-        ParamDefaultValueOpLowering,
-        ArithmeticBinaryOpLowering,
-        LogicalBinaryOpLowering>(&getContext());
+        ParamDefaultValueOpLowering>(&getContext());
 
     // With the target and rewrite patterns defined, we can now attempt the
     // conversion. The conversion will signal failure if any of our `illegal`
