@@ -683,6 +683,15 @@ namespace
                 return success();
             }
 
+            auto op1Any = op1.dyn_cast_or_null<ts::AnyType>();
+            auto op2String = op2.dyn_cast_or_null<ts::StringType>();
+            if (op1Any && op2String)
+            {
+                // TODO: convert types
+                rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(op, op2, in);
+                return success();
+            }
+
             llvm_unreachable("not implemented");
         }
     };
