@@ -211,6 +211,7 @@ def TypeScript_ParseIntOp : TypeScript_Op<"parseInt"> {
   }];
 
   let arguments = (ins AnyType:$arg);
+  let results = (outs I32:$res);
 }
 
 def TypeScript_ParseFloatOp : TypeScript_Op<"parseFloat"> {
@@ -226,6 +227,7 @@ def TypeScript_ParseFloatOp : TypeScript_Op<"parseFloat"> {
   }];
 
   let arguments = (ins AnyType:$arg);
+  let results = (outs F32:$res);
 }
 
 
