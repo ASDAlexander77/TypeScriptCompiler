@@ -167,6 +167,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         ts::ReturnOp,
         ts::ReturnValOp,
         ts::StoreOp,
+        ts::StringOp,
         ts::LoadOp,
         ts::LogicalBinaryOp,
         ts::UndefOp,

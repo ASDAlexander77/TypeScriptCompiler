@@ -1049,9 +1049,9 @@ namespace
             auto text = stringLiteral->getString();
             auto innerText = text.substr(1, text.length() - 2);
 
-            return builder.create<mlir::ConstantOp>(
+            return builder.create<ts::StringOp>(
                 loc(stringLiteral->getLoc()),
-                ts::RefType::get(builder.getI1Type()),
+                getStringType(),
                 builder.getStringAttr(StringRef(innerText)));
         }
 

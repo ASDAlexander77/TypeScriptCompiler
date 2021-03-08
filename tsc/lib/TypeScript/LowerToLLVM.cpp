@@ -191,9 +191,16 @@ namespace
                     getFunctionType(getI32Type(), getI8PtrType(), true));
 
             std::stringstream format;
+            auto count = 0;
             for (auto item : op->getOperands())
             {
                 auto type = item.getType();
+
+                if (count++ > 0)
+                {
+                    format << " ";
+                }
+
                 if (type.isIntOrIndexOrFloat() && !type.isIntOrIndex())
                 {
                     format << "%f";
@@ -202,9 +209,13 @@ namespace
                 {
                     format << "%d";
                 }
-                else
+                else if (auto s = type.dyn_cast_or_null<ts::StringType>())
                 {
                     format << "%s";
+                }
+                else
+                {
+                    format << "%d";
                 }
             }
 
@@ -393,6 +404,34 @@ namespace
             return success();
         }
     };
+
+    class StringOpLoweringLogic : public LoweringLogic<ts::StringOp>
+    {
+    public:
+        using LoweringLogic<ts::StringOp>::LoweringLogic;
+
+        LogicalResult matchAndRewrite()
+        {
+            auto opHash = OperationEquivalence::computeHash(op, OperationEquivalence::Flags::IgnoreOperands);
+
+            std::stringstream strVarName;
+            strVarName << "s_" << opHash;
+
+            std::stringstream strWithNUL;
+            strWithNUL << opTyped.txt().str();
+
+            auto txtCst = getOrCreateGlobalString(strVarName.str(), strWithNUL.str());
+
+            rewriter.replaceOp(op, txtCst);
+
+            return success();
+        }
+    };
+
+    struct StringOpLowering : public OpLowering<StringOpLoweringLogic>
+    {
+        using OpLowering<StringOpLoweringLogic>::OpLowering;
+    };    
 
     class UndefOpLowering : public OpConversionPattern<ts::UndefOp>
     {
@@ -866,6 +905,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         ParseIntOpLowering,
         PrintOpLowering,
         StoreOpLowering,
+        StringOpLowering,
         UndefOpLowering,
         VariableOpLowering
     >(typeConverter, &getContext());
