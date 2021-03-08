@@ -389,7 +389,6 @@ namespace
 
         LogicalResult matchAndRewrite(ts::NullOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            // just replace
             rewriter.replaceOpWithNewOp<LLVM::NullOp>(op, typeToConvertedType(op.getType(), *getTypeConverter()));
             return success();
         }
