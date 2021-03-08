@@ -736,9 +736,16 @@ namespace
             switch ((SyntaxKind)logicalBinaryOp.opCode())
             {
             case SyntaxKind::EqualsEqualsToken:
+            case SyntaxKind::EqualsEqualsEqualsToken:
                 LogicOp<ts::LogicalBinaryOp,
                         CmpIOp, CmpIPredicate, CmpIPredicate::eq,
                         CmpFOp, CmpFPredicate, CmpFPredicate::OEQ>(logicalBinaryOp, rewriter);
+                return success();
+            case SyntaxKind::ExclamationEqualsToken:
+            case SyntaxKind::ExclamationEqualsEqualsToken:
+                LogicOp<ts::LogicalBinaryOp,
+                        CmpIOp, CmpIPredicate, CmpIPredicate::ne,
+                        CmpFOp, CmpFPredicate, CmpFPredicate::ONE>(logicalBinaryOp, rewriter);
                 return success();
             default:
                 llvm_unreachable("not implemented");

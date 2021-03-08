@@ -749,26 +749,29 @@ namespace
             switch (opCode)
             {
             case SyntaxKind::EqualsToken:
-            {
-                auto loadOp = dyn_cast<ts::LoadOp>(leftExpressionValue.getDefiningOp());
-                if (loadOp)
                 {
-                    builder.create<ts::StoreOp>(
-                        location,
-                        rightExpressionValue,
-                        loadOp.reference());
-                }
-                else
-                {
-                    builder.create<ts::StoreOp>(
-                        location,
-                        rightExpressionValue,
-                        leftExpressionValue);
-                }
+                    auto loadOp = dyn_cast<ts::LoadOp>(leftExpressionValue.getDefiningOp());
+                    if (loadOp)
+                    {
+                        builder.create<ts::StoreOp>(
+                            location,
+                            rightExpressionValue,
+                            loadOp.reference());
+                    }
+                    else
+                    {
+                        builder.create<ts::StoreOp>(
+                            location,
+                            rightExpressionValue,
+                            leftExpressionValue);
+                    }
 
-                return rightExpressionValue;
-            }
+                    return rightExpressionValue;
+                }
             case SyntaxKind::EqualsEqualsToken:
+            case SyntaxKind::EqualsEqualsEqualsToken:
+            case SyntaxKind::ExclamationEqualsToken:
+            case SyntaxKind::ExclamationEqualsEqualsToken:
                 return builder.create<LogicalBinaryOp>(
                     location,
                     builder.getI1Type(),
