@@ -397,7 +397,7 @@ def TypeScript_LoadOp : TypeScript_Op<"load",
 
   let arguments = (ins TypeScript_AnyRef:$reference);
   let results = (outs AnyType:$result);
-  let assemblyFormat = "$reference attr-dict `:` type($reference)";
+  let assemblyFormat = "$reference attr-dict `:` type($reference) `->` type($result)";
 }
 
 def TypeScript_ArithmeticBinaryOp : TypeScript_Op<"arithmetic_binary"> {
@@ -515,17 +515,5 @@ def TypeScript_ExitOp : TypeScript_Op<"exit", [NoSideEffect, ReturnLike, Termina
   let arguments = (ins
   );
 }
-
-def TypeScript_TerminatorOp : TypeScript_Op<"terminator", [Terminator]> {
-  let summary = "Generic terminator for entry op.";
-
-  let description = [{
-  }];
-
-  let verifier = ?;
-
-  let assemblyFormat = "attr-dict";
-}
-
 
 #endif // TYPESCRIPT_OPS

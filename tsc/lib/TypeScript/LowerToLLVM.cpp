@@ -1,20 +1,3 @@
-//===----------------------------------------------------------------------===//
-//
-// This file implements full lowering of TypeScript operations to LLVM MLIR dialect.
-// 'typescript.print' is lowered to a loop nest that calls `printf` on each element of
-// the input array. The file also sets up the TypeScriptToLLVMLoweringPass. This pass
-// lowers the combination of Affine + SCF + Standard dialects to the LLVM one:
-//
-//                                Affine --
-//                                        |
-//                                        v
-//                                        Standard --> LLVM (Dialect)
-//                                        ^
-//                                        |
-//     'typescript.print' --> Loop (SCF) --
-//
-//===----------------------------------------------------------------------===//
-
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/Passes.h"
@@ -47,30 +30,9 @@ namespace
     static mlir::Type typeToConvertedType(mlir::Type type, mlir::TypeConverter &typeConverter)
     {
         auto convertedType = typeConverter.convertType(type);
+        assert(convertedType);
         return convertedType;
     }
-
-    static LLVM::LLVMPointerType typeToPtr(mlir::Type type, mlir::TypeConverter &typeConverter)
-    {
-        auto convertedType = typeConverter.convertType(type);
-        auto ptr = LLVM::LLVMPointerType::get(convertedType);
-        return ptr;
-    }
-
-    static LLVM::LLVMPointerType referenceToPtr(mlir::Type referenceType, mlir::TypeConverter &typeConverter)
-    {
-        auto refType = referenceType.cast<ts::RefType>();
-        auto elementType = refType.getElementType();
-        return typeToPtr(elementType, typeConverter);
-    }
-
-    static mlir::Type referenceToConvertedType(mlir::Type referenceType, mlir::TypeConverter &typeConverter)
-    {
-        auto refType = referenceType.cast<ts::RefType>();
-        auto elementType = refType.getElementType();
-        auto convertedType = typeConverter.convertType(elementType);
-        return convertedType;
-    }    
 
     static Value createI32ConstantOf(Location loc, PatternRewriter &rewriter, unsigned value)
     {
@@ -421,38 +383,28 @@ namespace
         using OpLowering<ParseFloatOpLoweringLogic>::OpLowering;
     };
 
-    struct NullOpLowering : public OpRewritePattern<ts::NullOp>
+    struct NullOpLowering : public OpConversionPattern<ts::NullOp>
     {
-        using OpRewritePattern<ts::NullOp>::OpRewritePattern;
+        using OpConversionPattern<ts::NullOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite(ts::NullOp op, PatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(ts::NullOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             // just replace
-            rewriter.replaceOpWithNewOp<LLVM::NullOp>(op, op.getType());
+            rewriter.replaceOpWithNewOp<LLVM::NullOp>(op, typeToConvertedType(op.getType(), *getTypeConverter()));
             return success();
         }
     };
 
-    class UndefOpLoweringLogic : public LoweringLogic<ts::UndefOp>
+    class UndefOpLowering : public OpConversionPattern<ts::UndefOp>
     {
     public:
-        using LoweringLogic<ts::UndefOp>::LoweringLogic;
+        using OpConversionPattern<ts::UndefOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite()
+        LogicalResult matchAndRewrite(ts::UndefOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            // just replace
-            auto operandType = opTyped.getType();
-            auto resultType = typeConverter.convertType(operandType);
-            rewriter.replaceOpWithNewOp<LLVM::UndefOp>(op, resultType);
+            rewriter.replaceOpWithNewOp<LLVM::UndefOp>(op, typeToConvertedType(op.getType(), *getTypeConverter()));
             return success();
         }
-    };
-
-    /// Lowers `typescript.print` to a loop nest calling `printf` on each of the individual
-    /// elements of the array.
-    struct UndefOpLowering : public OpLowering<UndefOpLoweringLogic>
-    {
-        using OpLowering<UndefOpLoweringLogic>::OpLowering;
     };
 
     struct EntryOpLowering : public OpConversionPattern<ts::EntryOp>
@@ -472,7 +424,7 @@ namespace
                 allocValue = 
                     rewriter.create<LLVM::AllocaOp>(
                         location, 
-                        referenceToPtr(result.getType(), *getTypeConverter()), 
+                        typeToConvertedType(result.getType(), *getTypeConverter()), 
                         createI32ConstantOf(location, rewriter, 1));
             }
 
@@ -687,8 +639,7 @@ namespace
             auto op2String = op2.dyn_cast_or_null<ts::StringType>();
             if (op1Any && op2String)
             {
-                // TODO: convert types
-                rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(op, op2, in);
+                rewriter.eraseOp(op);
                 return success();
             }
 
@@ -707,7 +658,7 @@ namespace
             auto allocated = 
                 rewriter.create<LLVM::AllocaOp>(
                     location, 
-                    referenceToPtr(varOp.reference().getType(), *getTypeConverter()), 
+                    typeToConvertedType(varOp.reference().getType(), *getTypeConverter()), 
                     createI32ConstantOf(location, rewriter, 1));
             auto value = varOp.initializer();
             if (value)
@@ -802,8 +753,12 @@ namespace
 
         LogicalResult matchAndRewrite(ts::LoadOp loadOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            auto convertedType = referenceToConvertedType(loadOp.reference().getType(), *getTypeConverter());
-            rewriter.replaceOpWithNewOp<LLVM::LoadOp>(loadOp, convertedType, loadOp.reference());
+            auto elementTypeConverted = typeToConvertedType(loadOp.reference().getType().cast<ts::RefType>().getElementType(), *getTypeConverter());
+
+            rewriter.replaceOpWithNewOp<LLVM::LoadOp>(
+                loadOp,
+                elementTypeConverted,
+                loadOp.reference());
             return success();
         }
     };
@@ -891,7 +846,6 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         CastOpLowering,
         ExitOpLowering,
         LogicalBinaryOpLowering,
-        NullOpLowering,
         ReturnOpLowering,
         ReturnValOpLowering
     >(&getContext());
@@ -901,6 +855,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         EntryOpLowering,
         FuncOpLowering,
         LoadOpLowering,
+        NullOpLowering,
         ParseFloatOpLowering,
         ParseIntOpLowering,
         PrintOpLowering,
