@@ -639,7 +639,7 @@ namespace
             auto op2String = op2.dyn_cast_or_null<ts::StringType>();
             if (op1Any && op2String)
             {
-                rewriter.eraseOp(op);
+                rewriter.replaceOp(op, op.in());
                 return success();
             }
 
