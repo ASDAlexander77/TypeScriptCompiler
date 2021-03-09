@@ -44,10 +44,10 @@ namespace
         return IntegerType::get(&typeConverter.getContext(), typeConverter.getPointerBitwidth(addressSpace));
     }
 
-    static ValueRange conditionalExpressionLowering(
-        Location loc, TypeRange types, Value condition,
-        function_ref<void(OpBuilder &, Location)> thenBuilder, 
-        function_ref<void(OpBuilder &, Location)> elseBuilder,
+    static Value conditionalExpressionLowering(
+        Location loc, Type type, Value condition,
+        function_ref<Value(OpBuilder &, Location)> thenBuilder, 
+        function_ref<Value(OpBuilder &, Location)> elseBuilder,
         PatternRewriter &rewriter)
     {
         // TODO: or maybe only result should have types arguments as BR to Result has values from branch?
@@ -58,30 +58,30 @@ namespace
         auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
 
         // then block
-        auto *thenBlock = rewriter.createBlock(continuationBlock, types);
-        thenBuilder(rewriter, loc);
+        auto *thenBlock = rewriter.createBlock(continuationBlock);
+        auto thenValue = thenBuilder(rewriter, loc);
 
         // else block
-        auto *elseBlock = rewriter.createBlock(continuationBlock, types);
-        elseBuilder(rewriter, loc);
+        auto *elseBlock = rewriter.createBlock(continuationBlock);
+        auto elseValue = elseBuilder(rewriter, loc);
 
         // result block
-        auto *resultBlock = rewriter.createBlock(continuationBlock, types);
+        auto *resultBlock = rewriter.createBlock(continuationBlock, TypeRange{type});
         rewriter.create<LLVM::BrOp>(
             loc,
-            resultBlock->getArguments(),
+            ValueRange{},
             continuationBlock);
 
         rewriter.setInsertionPointToEnd(thenBlock);
         rewriter.create<LLVM::BrOp>(
             loc,
-            thenBlock->getArguments(),
+            ValueRange{thenValue},
             resultBlock);
 
         rewriter.setInsertionPointToEnd(elseBlock);
         rewriter.create<LLVM::BrOp>(
             loc,
-            elseBlock->getArguments(),
+            ValueRange{elseValue},
             resultBlock);
 
         // Generate assertion test.
@@ -94,10 +94,7 @@ namespace
 
         rewriter.setInsertionPointToStart(continuationBlock);            
 
-        // should I use resultBlock->getArguments();?
-        // should I add arguments to continuationBlock?
-        //continuationBlock->addArguments(types);
-        return continuationBlock->getArguments();
+        return resultBlock->getArguments().front();
     }
 
     template <typename T>
@@ -309,29 +306,29 @@ namespace
                 }
                 else if (type.isInteger(1))
                 {
+                    /*
                     values.push_back(rewriter.create<LLVM::SelectOp>(
                         item.getLoc(), 
                         item, 
                         getOrCreateGlobalString("__true__", std::string("true")), 
                         getOrCreateGlobalString("__false__", std::string("false"))));
+                    */
 
-                    /*
                     auto valuesCond = conditionalExpressionLowering(
                         item.getLoc(), 
-                        TypeRange{ i8PtrTy }, 
+                        i8PtrTy,
                         item,
-                        [&](auto &builder, auto loc) 
+                        [&](auto &builder, auto loc)
                         {
-                            getOrCreateGlobalString("__true__", std::string("true"));
+                            return getOrCreateGlobalString("__true__", std::string("true"));
                         }, 
                         [&](auto &builder, auto loc) 
                         {
-                            getOrCreateGlobalString("__false__", std::string("false"));
+                            return getOrCreateGlobalString("__false__", std::string("false"));
                         }, 
                         rewriter);
 
-                    values.push_back(valuesCond.front());
-                    */
+                    values.push_back(valuesCond);
                 }
                 else
                 {
@@ -876,6 +873,15 @@ namespace
             case SyntaxKind::MinusToken:
                 BinOp<ts::ArithmeticBinaryOp, SubIOp, SubFOp>(arithmeticBinaryOp, rewriter);
                 return success();
+
+            case SyntaxKind::AsteriskToken:
+                BinOp<ts::ArithmeticBinaryOp, MulIOp, MulFOp>(arithmeticBinaryOp, rewriter);
+                return success();
+
+            case SyntaxKind::SlashToken:
+                BinOp<ts::ArithmeticBinaryOp, DivFOp, DivFOp>(arithmeticBinaryOp, rewriter);
+                return success();
+
             default:
                 llvm_unreachable("not implemented");
             }
