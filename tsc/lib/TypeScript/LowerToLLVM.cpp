@@ -39,6 +39,11 @@ namespace
         return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(32), rewriter.getIntegerAttr(rewriter.getI32Type(), value));
     }
 
+    static Type getIntPtrType(unsigned addressSpace, LLVMTypeConverter &typeConverter)
+    {
+        return IntegerType::get(&typeConverter.getContext(), typeConverter.getPointerBitwidth(addressSpace));
+    }
+
     static ValueRange conditionalExpressionLowering(
         Location loc, TypeRange types, Value condition,
         function_ref<void(OpBuilder &, Location)> thenBuilder, 
@@ -826,7 +831,7 @@ namespace
     }
 
     template <typename BinOpTy, typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
-    void LogicOp(BinOpTy &binOp, mlir::PatternRewriter &builder)
+    void LogicOp(BinOpTy &binOp, ConversionPatternRewriter &builder, LLVMTypeConverter& typeConverter)
     {
         auto leftType = binOp.getOperand(0).getType();
         if (leftType.isIntOrIndex())
@@ -837,18 +842,31 @@ namespace
         {
             builder.replaceOpWithNewOp<StdFOpTy>(binOp, v2, binOp.getOperand(0), binOp.getOperand(1));
         }
-        else
+        else if (leftType.dyn_cast_or_null<ts::StringType>() || leftType.dyn_cast_or_null<ts::AnyType>())
         {
+            auto left = binOp.getOperand(0);
+            auto right = binOp.getOperand(1);
+
+            auto intPtrType = getIntPtrType(0, typeConverter);
+            
+            Value leftPtrValue = builder.create<LLVM::PtrToIntOp>(binOp.getLoc(), intPtrType, left);
+            Value rightPtrValue = builder.create<LLVM::PtrToIntOp>(binOp.getLoc(), intPtrType, right);
+
+            builder.replaceOpWithNewOp<StdIOpTy>(binOp, v1, leftPtrValue, rightPtrValue);
+        }
+        else
+        {            
+            emitError(binOp.getLoc(), "Not implemented operator for type 1: '") << leftType << "'";
             llvm_unreachable("not implemented");
         }
     }
 
-    struct ArithmeticBinaryOpLowering : public OpRewritePattern<ts::ArithmeticBinaryOp>
+    struct ArithmeticBinaryOpLowering : public OpConversionPattern<ts::ArithmeticBinaryOp>
     {
-        using OpRewritePattern<ts::ArithmeticBinaryOp>::OpRewritePattern;
+        using OpConversionPattern<ts::ArithmeticBinaryOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite(ts::ArithmeticBinaryOp arithmeticBinaryOp, PatternRewriter &rewriter) const final
-        {
+        LogicalResult matchAndRewrite(ts::ArithmeticBinaryOp arithmeticBinaryOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {            
             switch ((SyntaxKind)arithmeticBinaryOp.opCode())
             {
             case SyntaxKind::PlusToken:
@@ -864,11 +882,11 @@ namespace
         }
     };
 
-    struct LogicalBinaryOpLowering : public OpRewritePattern<ts::LogicalBinaryOp>
+    struct LogicalBinaryOpLowering : public OpConversionPattern<ts::LogicalBinaryOp>
     {
-        using OpRewritePattern<ts::LogicalBinaryOp>::OpRewritePattern;
+        using OpConversionPattern<ts::LogicalBinaryOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite(ts::LogicalBinaryOp logicalBinaryOp, PatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(ts::LogicalBinaryOp logicalBinaryOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             switch ((SyntaxKind)logicalBinaryOp.opCode())
             {
@@ -876,13 +894,13 @@ namespace
             case SyntaxKind::EqualsEqualsEqualsToken:
                 LogicOp<ts::LogicalBinaryOp,
                         CmpIOp, CmpIPredicate, CmpIPredicate::eq,
-                        CmpFOp, CmpFPredicate, CmpFPredicate::OEQ>(logicalBinaryOp, rewriter);
+                        CmpFOp, CmpFPredicate, CmpFPredicate::OEQ>(logicalBinaryOp, rewriter, *(LLVMTypeConverter*)getTypeConverter());
                 return success();
             case SyntaxKind::ExclamationEqualsToken:
             case SyntaxKind::ExclamationEqualsEqualsToken:
                 LogicOp<ts::LogicalBinaryOp,
                         CmpIOp, CmpIPredicate, CmpIPredicate::ne,
-                        CmpFOp, CmpFPredicate, CmpFPredicate::ONE>(logicalBinaryOp, rewriter);
+                        CmpFOp, CmpFPredicate, CmpFPredicate::ONE>(logicalBinaryOp, rewriter, *(LLVMTypeConverter*)getTypeConverter());
                 return success();
             default:
                 llvm_unreachable("not implemented");
@@ -984,19 +1002,19 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 
     // The only remaining operation to lower from the `typescript` dialect, is the PrintOp.
     patterns.insert<
-        ArithmeticBinaryOpLowering,
         CallOpLowering,
         CastOpLowering,
         ExitOpLowering,
-        LogicalBinaryOpLowering,
         ReturnOpLowering,
         ReturnValOpLowering>(&getContext());
 
     patterns.insert<
+        ArithmeticBinaryOpLowering,
         AssertOpLowering,
         EntryOpLowering,
         FuncOpLowering,
         LoadOpLowering,
+        LogicalBinaryOpLowering,
         NullOpLowering,
         ParseFloatOpLowering,
         ParseIntOpLowering,

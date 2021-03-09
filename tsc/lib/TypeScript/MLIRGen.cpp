@@ -626,6 +626,11 @@ namespace
                             llvm_unreachable("unknown statement");
                         }
 
+                        if (param->getType() != defaultValue.getType())
+                        {
+                            defaultValue = builder.create<CastOp>(location, param->getType(), defaultValue);
+                        }
+
                         builder.create<ParamDefaultValueOp>(location, defaultValue);
 
                         builder.restoreInsertionPoint(sp);
