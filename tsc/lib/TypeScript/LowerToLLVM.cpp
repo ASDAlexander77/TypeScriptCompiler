@@ -39,6 +39,57 @@ namespace
         return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(32), rewriter.getIntegerAttr(rewriter.getI32Type(), value));
     }
 
+    static ValueRange conditionalExpressionLowering(
+        Location loc, TypeRange types, Value condition,
+        function_ref<void(OpBuilder &, Location)> thenBuilder, 
+        function_ref<void(OpBuilder &, Location)> elseBuilder,
+        PatternRewriter &rewriter)
+    {
+        // Split block at `assert` operation.
+        auto *opBlock = rewriter.getInsertionBlock();
+        auto opPosition = rewriter.getInsertionPoint();
+        auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
+
+        // then block
+        auto *thenBlock = rewriter.createBlock(continuationBlock, types);
+        thenBuilder(rewriter, loc);
+
+        // else block
+        auto *elseBlock = rewriter.createBlock(continuationBlock, types);
+        elseBuilder(rewriter, loc);
+
+        // result block
+        auto *resultBlock = rewriter.createBlock(continuationBlock, types);
+        rewriter.create<LLVM::BrOp>(
+            loc,
+            resultBlock->getArguments(),
+            continuationBlock);
+
+        rewriter.setInsertionPointToEnd(thenBlock);
+        rewriter.create<LLVM::BrOp>(
+            loc,
+            thenBlock->getArguments(),
+            resultBlock);
+
+        rewriter.setInsertionPointToEnd(elseBlock);
+        rewriter.create<LLVM::BrOp>(
+            loc,
+            elseBlock->getArguments(),
+            resultBlock);
+
+        // Generate assertion test.
+        rewriter.setInsertionPointToEnd(opBlock);
+        rewriter.create<LLVM::CondBrOp>(
+            loc,
+            condition,
+            thenBlock,
+            elseBlock);
+
+        rewriter.setInsertionPointToStart(continuationBlock);            
+
+        return continuationBlock->getArguments();
+    }
+
     template <typename T>
     struct OpLowering : public OpConversionPattern<typename T::OpTy>
     {
@@ -431,7 +482,7 @@ namespace
     struct StringOpLowering : public OpLowering<StringOpLoweringLogic>
     {
         using OpLowering<StringOpLoweringLogic>::OpLowering;
-    };    
+    };
 
     class UndefOpLowering : public OpConversionPattern<ts::UndefOp>
     {
@@ -459,10 +510,10 @@ namespace
             if (anyResult)
             {
                 auto result = op.getResult(0);
-                allocValue = 
+                allocValue =
                     rewriter.create<LLVM::AllocaOp>(
-                        location, 
-                        typeToConvertedType(result.getType(), *getTypeConverter()), 
+                        location,
+                        typeToConvertedType(result.getType(), *getTypeConverter()),
                         createI32ConstantOf(location, rewriter, 1));
             }
 
@@ -693,10 +744,10 @@ namespace
         {
             auto location = varOp.getLoc();
 
-            auto allocated = 
+            auto allocated =
                 rewriter.create<LLVM::AllocaOp>(
-                    location, 
-                    typeToConvertedType(varOp.reference().getType(), *getTypeConverter()), 
+                    location,
+                    typeToConvertedType(varOp.reference().getType(), *getTypeConverter()),
                     createI32ConstantOf(location, rewriter, 1));
             auto value = varOp.initializer();
             if (value)
@@ -817,7 +868,7 @@ namespace
             rewriter.replaceOpWithNewOp<LLVM::StoreOp>(storeOp, storeOp.value(), storeOp.reference());
             return success();
         }
-    };    
+    };
 
     static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, mlir::ModuleOp &m)
     {
@@ -892,8 +943,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         ExitOpLowering,
         LogicalBinaryOpLowering,
         ReturnOpLowering,
-        ReturnValOpLowering
-    >(&getContext());
+        ReturnValOpLowering>(&getContext());
 
     patterns.insert<
         AssertOpLowering,
@@ -907,8 +957,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         StoreOpLowering,
         StringOpLowering,
         UndefOpLowering,
-        VariableOpLowering
-    >(typeConverter, &getContext());
+        VariableOpLowering>(typeConverter, &getContext());
 
     populateTypeScriptConversionPatterns(typeConverter, m);
 
