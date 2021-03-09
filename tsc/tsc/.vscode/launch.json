@@ -20,7 +20,7 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
-            "args": ["-emit=mlir", "C:/temp/1.ts"],
+            "args": ["-emit=mlir-llvm", "C:/temp/1.ts"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],

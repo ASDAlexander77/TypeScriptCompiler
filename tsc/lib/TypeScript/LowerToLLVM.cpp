@@ -45,7 +45,9 @@ namespace
         function_ref<void(OpBuilder &, Location)> elseBuilder,
         PatternRewriter &rewriter)
     {
-        // Split block at `assert` operation.
+        // TODO: or maybe only result should have types arguments as BR to Result has values from branch?
+
+        // Split block
         auto *opBlock = rewriter.getInsertionBlock();
         auto opPosition = rewriter.getInsertionPoint();
         auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
@@ -87,6 +89,9 @@ namespace
 
         rewriter.setInsertionPointToStart(continuationBlock);            
 
+        // should I use resultBlock->getArguments();?
+        // should I add arguments to continuationBlock?
+        //continuationBlock->addArguments(types);
         return continuationBlock->getArguments();
     }
 
@@ -258,7 +263,14 @@ namespace
                 }
                 else if (type.isIntOrIndex())
                 {
-                    format << "%d";
+                    if (type.isInteger(1))
+                    {
+                        format << "%s";
+                    }
+                    else
+                    {
+                        format << "%d";
+                    }
                 }
                 else if (auto s = type.dyn_cast_or_null<ts::StringType>())
                 {
@@ -279,6 +291,8 @@ namespace
 
             auto formatSpecifierCst = getOrCreateGlobalString(formatVarName.str(), format.str());
 
+            auto i8PtrTy = getI8PtrType();
+
             mlir::SmallVector<mlir::Value, 4> values;
             values.push_back(formatSpecifierCst);
             for (auto item : op->getOperands())
@@ -287,6 +301,32 @@ namespace
                 if (type.isIntOrIndexOrFloat() && !type.isIntOrIndex())
                 {
                     values.push_back(rewriter.create<LLVM::FPExtOp>(loc, rewriter.getF64Type(), item));
+                }
+                else if (type.isInteger(1))
+                {
+                    values.push_back(rewriter.create<LLVM::SelectOp>(
+                        item.getLoc(), 
+                        item, 
+                        getOrCreateGlobalString("__true__", std::string("true")), 
+                        getOrCreateGlobalString("__false__", std::string("false"))));
+
+                    /*
+                    auto valuesCond = conditionalExpressionLowering(
+                        item.getLoc(), 
+                        TypeRange{ i8PtrTy }, 
+                        item,
+                        [&](auto &builder, auto loc) 
+                        {
+                            getOrCreateGlobalString("__true__", std::string("true"));
+                        }, 
+                        [&](auto &builder, auto loc) 
+                        {
+                            getOrCreateGlobalString("__false__", std::string("false"));
+                        }, 
+                        rewriter);
+
+                    values.push_back(valuesCond.front());
+                    */
                 }
                 else
                 {
