@@ -758,11 +758,17 @@ namespace
                 return success();
             }
 
-            if (op2.isF32() && op1.isInteger(32))
+            if (op1.isF32() && op2.isInteger(32))
             {
                 rewriter.replaceOpWithNewOp<FPToSIOp>(op, op2, in);
                 return success();
             }
+
+            if ((op1.isInteger(32) || op1.isInteger(8)) && op2.isInteger(1))
+            {
+                rewriter.replaceOpWithNewOp<TruncateIOp>(op, op2, in);
+                return success();
+            }            
 
             auto op1Any = op1.dyn_cast_or_null<ts::AnyType>();
             auto op2String = op2.dyn_cast_or_null<ts::StringType>();
@@ -772,6 +778,7 @@ namespace
                 return success();
             }
 
+            emitError(op->getLoc(), "invalid cast operator type 1: '") << op1 << "', type 2: '" << op2 << "'";
             llvm_unreachable("not implemented");
         }
     };

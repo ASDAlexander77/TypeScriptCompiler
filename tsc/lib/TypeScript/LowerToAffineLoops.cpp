@@ -38,6 +38,12 @@ struct ParamOptionalOpLowering : public OpRewritePattern<ts::ParamOptionalOp>
     {
         auto location = paramOp.getLoc();
 
+        if (paramOp.defaultValueRegion().empty())
+        {
+            rewriter.replaceOpWithNewOp<ts::VariableOp>(paramOp, paramOp.getType(), paramOp.argValue());
+            return success();            
+        }
+
         Value variable = rewriter.create<ts::VariableOp>(location, paramOp.getType(), mlir::Value());
 
         // scf.if
