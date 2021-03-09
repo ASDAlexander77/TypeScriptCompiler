@@ -534,4 +534,59 @@ def TypeScript_ExitOp : TypeScript_Op<"exit", [NoSideEffect, ReturnLike, Termina
   );
 }
 
+def TypeScript_IfOp : TypeScript_Op<"if",
+      [DeclareOpInterfaceMethods<RegionBranchOpInterface>,
+       SingleBlockImplicitTerminator<"typescript::YieldOp">, RecursiveSideEffects,
+       NoRegionArguments]> {
+  let summary = "if-then-else operation";
+
+  let arguments = (ins I1:$condition);
+  let results = (outs Variadic<AnyType>:$results);
+  let regions = (region SizedRegion<1>:$thenRegion, AnyRegion:$elseRegion);
+
+  let skipDefaultBuilders = 1;
+  let builders = [
+    OpBuilderDAG<(ins "Value":$cond, "bool":$withElseRegion)>,
+    OpBuilderDAG<(ins "TypeRange":$resultTypes, "Value":$cond,
+      "bool":$withElseRegion)>,
+    OpBuilderDAG<(ins "TypeRange":$resultTypes, "Value":$cond,
+      CArg<"function_ref<void(OpBuilder &, Location)>",
+           "buildTerminatedBody">:$thenBuilder,
+      CArg<"function_ref<void(OpBuilder &, Location)>",
+           "nullptr">:$elseBuilder)>,
+    OpBuilderDAG<(ins "Value":$cond,
+      CArg<"function_ref<void(OpBuilder &, Location)>",
+           "buildTerminatedBody">:$thenBuilder,
+      CArg<"function_ref<void(OpBuilder &, Location)>",
+           "nullptr">:$elseBuilder)>
+  ];
+
+  let extraClassDeclaration = [{
+    OpBuilder getThenBodyBuilder(OpBuilder::Listener *listener = nullptr) {
+      Block* body = getBody(0);
+      return results().empty() ? OpBuilder::atBlockTerminator(body, listener)
+                               : OpBuilder::atBlockEnd(body, listener);
+    }
+    OpBuilder getElseBodyBuilder(OpBuilder::Listener *listener = nullptr) {
+      Block* body = getBody(1);
+      return results().empty() ? OpBuilder::atBlockTerminator(body, listener)
+                               : OpBuilder::atBlockEnd(body, listener);
+    }
+  }];
+
+  let hasCanonicalizer = 1;
+}
+
+def TypeScript_YieldOp : TypeScript_Op<"yield", [NoSideEffect, ReturnLike, Terminator,
+                               ParentOneOf<["IfOp"]>]> {
+  let summary = "loop yield and termination operation";
+
+  let arguments = (ins Variadic<AnyType>:$results);
+  let builders = [OpBuilderDAG<(ins), [{ /* nothing to do */ }]>];
+  // Override default verifier, no custom verification
+  // needed.
+  let verifier = ?;
+}
+
+
 #endif // TYPESCRIPT_OPS

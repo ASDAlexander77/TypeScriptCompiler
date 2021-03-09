@@ -9,6 +9,12 @@
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 
+namespace mlir {
+    namespace typescript {
+        void buildTerminatedBody(OpBuilder &builder, Location loc);
+    } // namespace typescript
+} // namespace mlir
+
 #define GET_TYPEDEF_CLASSES 
 #include "TypeScript/TypeScriptOpsTypes.h.inc"
 
