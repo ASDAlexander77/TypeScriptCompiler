@@ -306,14 +306,13 @@ namespace
                 }
                 else if (type.isInteger(1))
                 {
-                    /*
                     values.push_back(rewriter.create<LLVM::SelectOp>(
                         item.getLoc(), 
                         item, 
                         getOrCreateGlobalString("__true__", std::string("true")), 
                         getOrCreateGlobalString("__false__", std::string("false"))));
-                    */
 
+                    /*
                     auto valuesCond = conditionalExpressionLowering(
                         item.getLoc(), 
                         i8PtrTy,
@@ -329,6 +328,7 @@ namespace
                         rewriter);
 
                     values.push_back(valuesCond);
+                    */
                 }
                 else
                 {
