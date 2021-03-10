@@ -5,18 +5,29 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "(Windows) CMake current - Launch",
+            "name": "(Windows) tsc.exe - MLIR",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${command:cmake.launchTargetPath}",
+            "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
             "args": ["-emit=mlir", "C:/temp/1.ts"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
             "externalConsole": true
-        },
+        },        
         {
-            "name": "(Windows) tsc.exe - Launch",
+            "name": "(Windows) tsc.exe - MLIR-AFFINE",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
+            "args": ["-emit=mlir-affine", "C:/temp/1.ts"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": true
+        },        
+        {
+            "name": "(Windows) tsc.exe - MLIR-LLVM",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
@@ -37,5 +48,16 @@
             "environment": [],
             "externalConsole": true
         },
-    ]
+        {
+            "name": "(Windows) CMake current - Launch",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${command:cmake.launchTargetPath}",
+            "args": ["-emit=mlir", "C:/temp/1.ts"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": true
+        }
+   ]
 }

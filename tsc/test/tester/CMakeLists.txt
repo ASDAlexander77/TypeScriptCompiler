@@ -14,4 +14,4 @@ add_test(NAME test-runner-00-assert COMMAND test-runner "C:/dev/TypeScriptCompil
 add_test(NAME test-runner-00-if_return COMMAND test-runner "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/00if_return.ts")
 add_test(NAME test-runner-00-vars COMMAND test-runner "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/00vars.ts")
 add_test(NAME test-runner-01-arguments COMMAND test-runner "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/01arguments.ts")
-#add_test(NAME test-runner-01-arguments-2 COMMAND test-runner "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/01arguments2.ts")
+add_test(NAME test-runner-02-numbers COMMAND test-runner "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/02numbers.ts")
