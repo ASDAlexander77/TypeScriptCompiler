@@ -949,6 +949,8 @@ namespace
         {
             auto loc = ifOp.getLoc();
 
+            auto &typeConverter = *getTypeConverter();
+
             // Start by splitting the block containing the 'scf.if' into two parts.
             // The part before will contain the condition, the part after will be the
             // continuation point.
@@ -963,7 +965,7 @@ namespace
             else
             {
                 continueBlock = rewriter.createBlock(remainingOpsBlock, ifOp.getResultTypes());
-                rewriter.create<BranchOp>(loc, remainingOpsBlock);
+                rewriter.create<LLVM::BrOp>(loc, ArrayRef<Value>(), remainingOpsBlock);
             }
 
             // Move blocks from the "then" region to the region containing 'scf.if',
@@ -973,9 +975,14 @@ namespace
             Operation *thenTerminator = thenRegion.back().getTerminator();
             ValueRange thenTerminatorOperands = thenTerminator->getOperands();
             rewriter.setInsertionPointToEnd(&thenRegion.back());
-            rewriter.create<BranchOp>(loc, continueBlock, thenTerminatorOperands);
+            rewriter.create<LLVM::BrOp>(loc, thenTerminatorOperands, continueBlock);
             rewriter.eraseOp(thenTerminator);
             rewriter.inlineRegionBefore(thenRegion, continueBlock);
+
+            if (failed(rewriter.convertRegionTypes(&thenRegion, typeConverter)))
+            {
+                return failure();
+            }
 
             // Move blocks from the "else" region (if present) to the region containing
             // 'scf.if', place it before the continuation block and branch to it.  It
@@ -988,13 +995,18 @@ namespace
                 Operation *elseTerminator = elseRegion.back().getTerminator();
                 ValueRange elseTerminatorOperands = elseTerminator->getOperands();
                 rewriter.setInsertionPointToEnd(&elseRegion.back());
-                rewriter.create<BranchOp>(loc, continueBlock, elseTerminatorOperands);
+                rewriter.create<LLVM::BrOp>(loc, elseTerminatorOperands, continueBlock);
                 rewriter.eraseOp(elseTerminator);
                 rewriter.inlineRegionBefore(elseRegion, continueBlock);
+
+                if (failed(rewriter.convertRegionTypes(&elseRegion, typeConverter)))
+                {
+                    return failure();
+                }
             }
 
             rewriter.setInsertionPointToEnd(condBlock);
-            rewriter.create<CondBranchOp>(
+            rewriter.create<LLVM::CondBrOp>(
                 loc, 
                 ifOp.condition(), 
                 thenBlock, /*trueArgs=*/ArrayRef<Value>(), 
