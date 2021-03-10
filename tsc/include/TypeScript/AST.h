@@ -198,9 +198,12 @@ namespace typescript
     MAKE_CHOICE_IF(StringLiteral, StringLiteralAST)
     PASS_CHOICE_END()  
 
+    MAKE(ParenthesizedExpressionAST, CoverParenthesizedExpressionAndArrowParameterListContext)
+
     PASS_CHOICES(PrimaryExpressionContext)
     PASS_CHOICE(literal)
     PASS_CHOICE(identifierReference)
+    PASS_CHOICE(coverParenthesizedExpressionAndArrowParameterList)
     PASS_CHOICE_END()    
 
     PASS_CHOICES(MemberExpressionContext)
@@ -209,8 +212,6 @@ namespace typescript
     PASS_CHOICE_END()
 
     MAKE(CallExpressionAST, CoverCallExpressionAndAsyncArrowHeadContext)
-
-    MAKE(ParenthesizedExpressionAST, CoverParenthesizedExpressionAndArrowParameterListContext)
 
     PASS_CHOICES(NewExpressionContext)
     PASS_CHOICE(memberExpression)
