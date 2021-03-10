@@ -46,7 +46,7 @@ namespace
 
     static Value conditionalExpressionLowering(
         Location loc, Type type, Value condition,
-        function_ref<Value(OpBuilder &, Location)> thenBuilder, 
+        function_ref<Value(OpBuilder &, Location)> thenBuilder,
         function_ref<Value(OpBuilder &, Location)> elseBuilder,
         PatternRewriter &rewriter)
     {
@@ -92,7 +92,7 @@ namespace
             thenBlock,
             elseBlock);
 
-        rewriter.setInsertionPointToStart(continuationBlock);            
+        rewriter.setInsertionPointToStart(continuationBlock);
 
         return resultBlock->getArguments().front();
     }
@@ -307,9 +307,9 @@ namespace
                 else if (type.isInteger(1))
                 {
                     values.push_back(rewriter.create<LLVM::SelectOp>(
-                        item.getLoc(), 
-                        item, 
-                        getOrCreateGlobalString("__true__", std::string("true")), 
+                        item.getLoc(),
+                        item,
+                        getOrCreateGlobalString("__true__", std::string("true")),
                         getOrCreateGlobalString("__false__", std::string("false"))));
 
                     /*
@@ -770,7 +770,7 @@ namespace
             {
                 rewriter.replaceOpWithNewOp<TruncateIOp>(op, op2, in);
                 return success();
-            }            
+            }
 
             auto op1Any = op1.dyn_cast_or_null<ts::AnyType>();
             auto op2String = op2.dyn_cast_or_null<ts::StringType>();
@@ -828,7 +828,7 @@ namespace
     }
 
     template <typename BinOpTy, typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
-    void LogicOp(BinOpTy &binOp, ConversionPatternRewriter &builder, LLVMTypeConverter& typeConverter)
+    void LogicOp(BinOpTy &binOp, ConversionPatternRewriter &builder, LLVMTypeConverter &typeConverter)
     {
         auto leftType = binOp.getOperand(0).getType();
         if (leftType.isIntOrIndex())
@@ -845,14 +845,14 @@ namespace
             auto right = binOp.getOperand(1);
 
             auto intPtrType = getIntPtrType(0, typeConverter);
-            
+
             Value leftPtrValue = builder.create<LLVM::PtrToIntOp>(binOp.getLoc(), intPtrType, left);
             Value rightPtrValue = builder.create<LLVM::PtrToIntOp>(binOp.getLoc(), intPtrType, right);
 
             builder.replaceOpWithNewOp<StdIOpTy>(binOp, v1, leftPtrValue, rightPtrValue);
         }
         else
-        {            
+        {
             emitError(binOp.getLoc(), "Not implemented operator for type 1: '") << leftType << "'";
             llvm_unreachable("not implemented");
         }
@@ -863,7 +863,7 @@ namespace
         using OpConversionPattern<ts::ArithmeticBinaryOp>::OpConversionPattern;
 
         LogicalResult matchAndRewrite(ts::ArithmeticBinaryOp arithmeticBinaryOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
-        {            
+        {
             switch ((SyntaxKind)arithmeticBinaryOp.opCode())
             {
             case SyntaxKind::PlusToken:
@@ -900,13 +900,13 @@ namespace
             case SyntaxKind::EqualsEqualsEqualsToken:
                 LogicOp<ts::LogicalBinaryOp,
                         CmpIOp, CmpIPredicate, CmpIPredicate::eq,
-                        CmpFOp, CmpFPredicate, CmpFPredicate::OEQ>(logicalBinaryOp, rewriter, *(LLVMTypeConverter*)getTypeConverter());
+                        CmpFOp, CmpFPredicate, CmpFPredicate::OEQ>(logicalBinaryOp, rewriter, *(LLVMTypeConverter *)getTypeConverter());
                 return success();
             case SyntaxKind::ExclamationEqualsToken:
             case SyntaxKind::ExclamationEqualsEqualsToken:
                 LogicOp<ts::LogicalBinaryOp,
                         CmpIOp, CmpIPredicate, CmpIPredicate::ne,
-                        CmpFOp, CmpFPredicate, CmpFPredicate::ONE>(logicalBinaryOp, rewriter, *(LLVMTypeConverter*)getTypeConverter());
+                        CmpFOp, CmpFPredicate, CmpFPredicate::ONE>(logicalBinaryOp, rewriter, *(LLVMTypeConverter *)getTypeConverter());
                 return success();
             default:
                 llvm_unreachable("not implemented");
@@ -941,6 +941,71 @@ namespace
         }
     };
 
+    struct IfOpLowering : public OpConversionPattern<ts::IfOp>
+    {
+        using OpConversionPattern<ts::IfOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(ts::IfOp ifOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const override
+        {
+            auto loc = ifOp.getLoc();
+
+            // Start by splitting the block containing the 'scf.if' into two parts.
+            // The part before will contain the condition, the part after will be the
+            // continuation point.
+            auto *condBlock = rewriter.getInsertionBlock();
+            auto opPosition = rewriter.getInsertionPoint();
+            auto *remainingOpsBlock = rewriter.splitBlock(condBlock, opPosition);
+            Block *continueBlock;
+            if (ifOp.getNumResults() == 0)
+            {
+                continueBlock = remainingOpsBlock;
+            }
+            else
+            {
+                continueBlock = rewriter.createBlock(remainingOpsBlock, ifOp.getResultTypes());
+                rewriter.create<BranchOp>(loc, remainingOpsBlock);
+            }
+
+            // Move blocks from the "then" region to the region containing 'scf.if',
+            // place it before the continuation block, and branch to it.
+            auto &thenRegion = ifOp.thenRegion();
+            auto *thenBlock = &thenRegion.front();
+            Operation *thenTerminator = thenRegion.back().getTerminator();
+            ValueRange thenTerminatorOperands = thenTerminator->getOperands();
+            rewriter.setInsertionPointToEnd(&thenRegion.back());
+            rewriter.create<BranchOp>(loc, continueBlock, thenTerminatorOperands);
+            rewriter.eraseOp(thenTerminator);
+            rewriter.inlineRegionBefore(thenRegion, continueBlock);
+
+            // Move blocks from the "else" region (if present) to the region containing
+            // 'scf.if', place it before the continuation block and branch to it.  It
+            // will be placed after the "then" regions.
+            auto *elseBlock = continueBlock;
+            auto &elseRegion = ifOp.elseRegion();
+            if (!elseRegion.empty())
+            {
+                elseBlock = &elseRegion.front();
+                Operation *elseTerminator = elseRegion.back().getTerminator();
+                ValueRange elseTerminatorOperands = elseTerminator->getOperands();
+                rewriter.setInsertionPointToEnd(&elseRegion.back());
+                rewriter.create<BranchOp>(loc, continueBlock, elseTerminatorOperands);
+                rewriter.eraseOp(elseTerminator);
+                rewriter.inlineRegionBefore(elseRegion, continueBlock);
+            }
+
+            rewriter.setInsertionPointToEnd(condBlock);
+            rewriter.create<CondBranchOp>(
+                loc, 
+                ifOp.condition(), 
+                thenBlock, /*trueArgs=*/ArrayRef<Value>(), 
+                elseBlock, /*falseArgs=*/ArrayRef<Value>());
+
+            // Ok, we're done!
+            rewriter.replaceOp(ifOp, continueBlock->getArguments());
+            return success();
+        }
+    };
+
     static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, mlir::ModuleOp &m)
     {
         converter.addConversion([&](ts::AnyType type) {
@@ -969,7 +1034,7 @@ namespace
     {
         void getDependentDialects(DialectRegistry &registry) const override
         {
-            registry.insert<LLVM::LLVMDialect, scf::SCFDialect>();
+            registry.insert<LLVM::LLVMDialect>();
         }
 
         void runOnOperation() final;
@@ -1019,6 +1084,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         AssertOpLowering,
         EntryOpLowering,
         FuncOpLowering,
+        IfOpLowering,
         LoadOpLowering,
         LogicalBinaryOpLowering,
         NullOpLowering,

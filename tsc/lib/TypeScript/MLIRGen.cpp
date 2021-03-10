@@ -716,7 +716,7 @@ namespace
             // condition
             auto condValue = mlirGenExpression(ifStatementAST->getCondition(), genContext);
 
-            auto ifOp = builder.create<mlir::scf::IfOp>(location, condValue, hasElse);
+            auto ifOp = builder.create<ts::IfOp>(location, condValue, hasElse);
 
             builder.setInsertionPointToStart(&ifOp.thenRegion().front());
             mlirGenStatement(ifStatementAST->getWhenTrue(), genContext);

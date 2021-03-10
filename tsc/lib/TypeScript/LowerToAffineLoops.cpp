@@ -50,7 +50,7 @@ struct ParamOptionalOpLowering : public OpRewritePattern<ts::ParamOptionalOp>
         auto index = paramOp.paramIndex();
         auto indexConstant = rewriter.create<ConstantOp>(location, rewriter.getI32IntegerAttr(index.getValue()));
         auto condValue = rewriter.create<CmpIOp>(location, CmpIPredicate::ult, paramOp.params_count(), indexConstant);
-        auto ifOp = rewriter.create<scf::IfOp>(location, paramOp.argValue().getType(), condValue, true);
+        auto ifOp = rewriter.create<ts::IfOp>(location, paramOp.argValue().getType(), condValue, true);
 
         auto sp = rewriter.saveInsertionPoint();
 
@@ -67,7 +67,7 @@ struct ParamOptionalOpLowering : public OpRewritePattern<ts::ParamOptionalOp>
 
         rewriter.setInsertionPointToStart(&elseRegion.back());
 
-        rewriter.create<scf::YieldOp>(location, paramOp.argValue());
+        rewriter.create<ts::YieldOp>(location, paramOp.argValue());
 
         rewriter.restoreInsertionPoint(sp);
 
@@ -84,7 +84,7 @@ struct ParamDefaultValueOpLowering : public OpRewritePattern<ts::ParamDefaultVal
 
     LogicalResult matchAndRewrite(ts::ParamDefaultValueOp op, PatternRewriter &rewriter) const final
     {
-        rewriter.replaceOpWithNewOp<scf::YieldOp>(op, op.results());
+        rewriter.replaceOpWithNewOp<ts::YieldOp>(op, op.results());
         return success();
     }
 };
@@ -122,7 +122,7 @@ namespace
     {
         void getDependentDialects(DialectRegistry &registry) const override
         {
-            registry.insert<AffineDialect, StandardOpsDialect, scf::SCFDialect>();
+            registry.insert<AffineDialect, StandardOpsDialect>();
         }
 
         void runOnFunction() final;
@@ -151,7 +151,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     // We define the specific operations, or dialects, that are legal targets for
     // this lowering. In our case, we are lowering to a combination of the
     // `Affine` and `Standard` dialects.
-    target.addLegalDialect<AffineDialect, StandardOpsDialect, scf::SCFDialect>();
+    target.addLegalDialect<AffineDialect, StandardOpsDialect>();
 
     // We also define the TypeScript dialect as Illegal so that the conversion will fail
     // if any of these operations are *not* converted. Given that we actually want
@@ -166,6 +166,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         ts::EntryOp,
         ts::ExitOp,
         ts::FuncOp,
+        ts::IfOp,
         ts::NullOp,
         ts::ParseFloatOp,
         ts::ParseIntOp,
@@ -177,7 +178,8 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         ts::LoadOp,
         ts::LogicalBinaryOp,
         ts::UndefOp,
-        ts::VariableOp
+        ts::VariableOp,
+        ts::YieldOp
     >();
 
     // Now that the conversion target has been defined, we just need to provide
