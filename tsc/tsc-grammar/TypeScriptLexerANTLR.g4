@@ -5,6 +5,12 @@ tokens
     // extra tokens
 }
 
+channels 
+{
+    WHITESPACE_CHANNEL,
+    COMMENTS_CHANNEL
+}
+
 /** Keywords */
 ABSTRACT_KEYWORD: 'abstract' ;
 ANY_KEYWORD: 'any' ;
@@ -158,7 +164,7 @@ USP : [\p{Space_Separator}] ;
  */
 
 WhiteSpace
-    : [\t\u000B\f \u00A0\uFEFF\p{Space_Separator}] -> skip ;
+    : [\t\u000B\f \u00A0\uFEFF\p{Space_Separator}] -> channel(WHITESPACE_CHANNEL) ;
 
 /** Line Terminators */
 /**
@@ -175,14 +181,14 @@ fragment NotLineTerminator
     : ~[\r\n\u2028\u2029] ;
 
 LineTerminatorSequence
-    : ('\r\n' | LineTerminator) -> skip ;
+    : ('\r\n' | LineTerminator) -> channel(WHITESPACE_CHANNEL) ;
 
 /** Comment */
 MultiLineComment
-    : '/*' .*? '*/' -> skip ; 
+    : '/*' .*? '*/' -> channel(COMMENTS_CHANNEL) ; 
 
 SingleLineComment
-    : '//' NotLineTerminator* -> skip ;
+    : '//' NotLineTerminator* -> channel(COMMENTS_CHANNEL) ;
 
 IdentifierName
     : IdentifierStart IdentifierPart* ;

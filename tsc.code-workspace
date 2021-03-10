@@ -1,54 +1,54 @@
 {
-	"folders": [
-		{
-			"name": "TypeScript Compiler Source (Lib)",
-			"path": "./tsc/lib"
-		},
-		{
-			"name": "TypeScript Compiler Include",
-			"path": "./tsc/include"
-		},
-		{
-			"name": "TypeScript Grammar",
-			"path": "./tsc/tsc-grammar"
-		},
-		{
-			"name": "TypeScript Compiler",
-			"path": "./tsc/tsc"
-		},
-		{
-			"name": "TypeScript Compiler Tests",
-			"path": "./tsc/test"
-		},
-		{
-			"name": "TypeScript tsc-opt",
-			"path": "./tsc/tsc-opt"
-		},
-		{
-			"name": "TypeScript tsc-translate",
-			"path": "./tsc/tsc-translate"
-		}
-	],
-	"settings": {
-		"editor.detectIndentation": false,
-		"editor.insertSpaces": true,
-		"editor.tabSize": 4,
-		"files.exclude": {
-			"**/__build": true,
-			"**/__build_*": true,
-			"**/.vs": true,
-			"**/*.csproj": true,
-			"**/*.sln": true,
-			"**/bin": true,
-			"**/build": true,
-			"**/node_modules": true,
-			"**/obj": true,
-			"**/out": true,
-			"3rdParty": true,
-			".vscode": true,
-			".vs": true
-		},
-		"files.associations": {
+    "folders": [
+        {
+            "name": "TypeScript Compiler Source (Lib)",
+            "path": "./tsc/lib"
+        },
+        {
+            "name": "TypeScript Compiler Include",
+            "path": "./tsc/include"
+        },
+        {
+            "name": "TypeScript Grammar",
+            "path": "./tsc/tsc-grammar"
+        },
+        {
+            "name": "TypeScript Compiler",
+            "path": "./tsc/tsc"
+        },
+        {
+            "name": "TypeScript Compiler Tests",
+            "path": "./tsc/test"
+        },
+        {
+            "name": "TypeScript tsc-opt",
+            "path": "./tsc/tsc-opt"
+        },
+        {
+            "name": "TypeScript tsc-translate",
+            "path": "./tsc/tsc-translate"
+        }
+    ],
+    "settings": {
+        "editor.detectIndentation": false,
+        "editor.insertSpaces": true,
+        "editor.tabSize": 4,
+        "files.exclude": {
+            "**/__build": true,
+            "**/__build_*": true,
+            "**/.vs": true,
+            "**/*.csproj": true,
+            "**/*.sln": true,
+            "**/bin": true,
+            "**/build": true,
+            "**/node_modules": true,
+            "**/obj": true,
+            "**/out": true,
+            "3rdParty": true,
+            ".vscode": true,
+            ".vs": true
+        },
+        "files.associations": {
             "memory": "cpp",
             "iterator": "cpp",
             "*.inc": "cpp",
@@ -137,13 +137,13 @@
             "filesystem": "cpp",
             "*.def": "cpp"
         },
-		"antlr4.generation": {
-			"mode": "external",
-			"language": "Cpp",
-			"visitors": true,
-			"listeners": false,
-			"outputDir": "./.antlr/generated",
-			"package": "typescript"
-		}
-	}
+        "antlr4.generation": {
+            "mode": "external",
+            "language": "Cpp",
+            "visitors": true,
+            "listeners": false,
+            "outputDir": "./.antlr/generated",
+            "package": "typescript"
+        }
+    }
 }
