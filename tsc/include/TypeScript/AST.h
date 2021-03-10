@@ -121,6 +121,11 @@ namespace typescript
     class PropertyAccessExpressionAST;
     class ConditionalExpressionAST;
     class CommaListExpressionAST;
+    class NewExpressionAST;
+    class DeleteExpressionAST;
+    class TypeOfExpressionAST;
+    class VoidExpressionAST;
+    class PrefixUnaryExpressionAST;
     class CallExpressionAST;
     class EmptyStatementAST;
     class ExpressionStatementAST;
@@ -200,7 +205,7 @@ namespace typescript
 
     PASS_CHOICES(NewExpressionContext)
     PASS_CHOICE(memberExpression)
-    //MAKE_CHOICE_IF(NEW_KEYWORD, NewExpressionAST)
+    MAKE_CHOICE_IF(NEW_KEYWORD, NewExpressionAST)
     PASS_CHOICE_END()
 
     PASS_CHOICES_TYPED(CallExpressionAST, CallExpressionContext)
@@ -218,7 +223,16 @@ namespace typescript
 
     PASS(UpdateExpressionContext, leftHandSideExpression)
 
-    PASS(UnaryExpressionContext, updateExpression)
+    PASS_CHOICES(UnaryExpressionContext)
+    MAKE_CHOICE_IF(DELETE_KEYWORD, DeleteExpressionAST)
+    MAKE_CHOICE_IF(VOID_KEYWORD, VoidExpressionAST)
+    MAKE_CHOICE_IF(TYPEOF_KEYWORD, TypeOfExpressionAST)
+    MAKE_CHOICE_IF(PLUS_TOKEN, PrefixUnaryExpressionAST)
+    MAKE_CHOICE_IF(MINUS_TOKEN, PrefixUnaryExpressionAST)
+    MAKE_CHOICE_IF(TILDE_TOKEN, PrefixUnaryExpressionAST)
+    MAKE_CHOICE_IF(EXCLAMATION_TOKEN, PrefixUnaryExpressionAST)
+    PASS_CHOICE(updateExpression)
+    PASS_CHOICE_END()
 
     PASS(ExponentiationExpressionContext, unaryExpression)
 
@@ -706,6 +720,11 @@ namespace typescript
     private:
         SyntaxKind parseKind(TypeScriptParserANTLR::TypeDeclarationContext* typeDeclarationContext)
         {
+            if (auto anyKeyword = typeDeclarationContext->VOID_KEYWORD())
+            {
+                return SyntaxKind::VoidKeyword;
+            }
+
             if (auto anyKeyword = typeDeclarationContext->ANY_KEYWORD())
             {
                 return SyntaxKind::AnyKeyword;
@@ -880,6 +899,184 @@ namespace typescript
             return N->getKind() == SyntaxKind::CallExpression;
         }          
     };    
+
+    class NewExpressionAST : public NodeAST
+    {
+        NodeAST::TypePtr expression;
+    public:
+        using TypePtr = std::shared_ptr<NewExpressionAST>;
+
+        NewExpressionAST(TypeScriptParserANTLR::NewExpressionContext* newExpressionContext) 
+            : NodeAST(SyntaxKind::NewExpression, TextRange(newExpressionContext)),
+              expression(parse(newExpressionContext->newExpression())) {}
+
+        NewExpressionAST(TextRange range, SyntaxKind opCode, NodeAST::TypePtr expression)
+            : NodeAST(SyntaxKind::NewExpression, range), expression(expression) {}
+
+        const auto& getExpression() const { return expression; }
+
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+            expression->accept(visitor);
+        }
+
+        /// LLVM style RTTI
+        static bool classof(const NodeAST *N) 
+        {
+            return N->getKind() == SyntaxKind::NewExpression;
+        }    
+    };     
+
+
+    class DeleteExpressionAST : public NodeAST
+    {
+        NodeAST::TypePtr expression;
+    public:
+        using TypePtr = std::shared_ptr<DeleteExpressionAST>;
+
+        DeleteExpressionAST(TypeScriptParserANTLR::UnaryExpressionContext* unaryExpressionContext) 
+            : NodeAST(SyntaxKind::DeleteExpression, TextRange(unaryExpressionContext)),
+              expression(parse(unaryExpressionContext->unaryExpression())) {}
+
+        DeleteExpressionAST(TextRange range, SyntaxKind opCode, NodeAST::TypePtr expression)
+            : NodeAST(SyntaxKind::DeleteExpression, range), expression(expression) {}
+
+        const auto& getExpression() const { return expression; }
+
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+            expression->accept(visitor);
+        }
+
+        /// LLVM style RTTI
+        static bool classof(const NodeAST *N) 
+        {
+            return N->getKind() == SyntaxKind::DeleteExpression;
+        }    
+    };     
+
+    class VoidExpressionAST : public NodeAST
+    {
+        NodeAST::TypePtr expression;
+    public:
+        using TypePtr = std::shared_ptr<VoidExpressionAST>;
+
+        VoidExpressionAST(TypeScriptParserANTLR::UnaryExpressionContext* unaryExpressionContext) 
+            : NodeAST(SyntaxKind::VoidExpression, TextRange(unaryExpressionContext)),
+              expression(parse(unaryExpressionContext->unaryExpression())) {}
+
+        VoidExpressionAST(TextRange range, SyntaxKind opCode, NodeAST::TypePtr expression)
+            : NodeAST(SyntaxKind::VoidExpression, range), expression(expression) {}
+
+        const auto& getExpression() const { return expression; }
+
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+            expression->accept(visitor);
+        }
+
+        /// LLVM style RTTI
+        static bool classof(const NodeAST *N) 
+        {
+            return N->getKind() == SyntaxKind::VoidExpression;
+        }    
+    };   
+
+    class TypeOfExpressionAST : public NodeAST
+    {
+        NodeAST::TypePtr expression;
+    public:
+        using TypePtr = std::shared_ptr<TypeOfExpressionAST>;
+
+        TypeOfExpressionAST(TypeScriptParserANTLR::UnaryExpressionContext* unaryExpressionContext) 
+            : NodeAST(SyntaxKind::TypeOfExpression, TextRange(unaryExpressionContext)),
+              expression(parse(unaryExpressionContext->unaryExpression())) {}
+
+        TypeOfExpressionAST(TextRange range, SyntaxKind opCode, NodeAST::TypePtr expression)
+            : NodeAST(SyntaxKind::TypeOfExpression, range), expression(expression) {}
+
+        const auto& getExpression() const { return expression; }
+
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+            expression->accept(visitor);
+        }
+
+        /// LLVM style RTTI
+        static bool classof(const NodeAST *N) 
+        {
+            return N->getKind() == SyntaxKind::TypeOfExpression;
+        }    
+    };    
+
+    class PrefixUnaryExpressionAST : public NodeAST
+    {
+        SyntaxKind opCode;
+        NodeAST::TypePtr expression;
+    public:
+        using TypePtr = std::shared_ptr<PrefixUnaryExpressionAST>;
+
+        PrefixUnaryExpressionAST(TypeScriptParserANTLR::UnaryExpressionContext* unaryExpressionContext) 
+            : NodeAST(SyntaxKind::PrefixUnaryExpression, TextRange(unaryExpressionContext)),
+              opCode(parseOpCode(unaryExpressionContext)),
+              expression(parse(unaryExpressionContext->unaryExpression())) {}
+
+        PrefixUnaryExpressionAST(TextRange range, SyntaxKind opCode, NodeAST::TypePtr expression)
+            : NodeAST(SyntaxKind::PrefixUnaryExpression, range), opCode(opCode), expression(expression) {}
+
+        auto getOpCode() const { return opCode; }
+        const auto& getExpression() const { return expression; }
+
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+            expression->accept(visitor);
+        }
+
+        /// LLVM style RTTI
+        static bool classof(const NodeAST *N) 
+        {
+            return N->getKind() == SyntaxKind::PrefixUnaryExpression;
+        }    
+    private:
+        SyntaxKind parseOpCode(TypeScriptParserANTLR::UnaryExpressionContext* unaryExpressionContext)
+        {
+            if (unaryExpressionContext->PLUS_TOKEN())
+            {
+                return SyntaxKind::PlusToken;                
+            }
+            else if (unaryExpressionContext->MINUS_TOKEN())
+            {
+                return SyntaxKind::MinusToken;                
+            }
+            else if (unaryExpressionContext->TILDE_TOKEN())
+            {
+                return SyntaxKind::TildeToken;                
+            }
+            else if (unaryExpressionContext->EXCLAMATION_TOKEN())
+            {
+                return SyntaxKind::ExclamationToken;                
+            }
+            else
+            {
+                llvm_unreachable("not implemented");
+            }
+        }          
+    }; 
 
     class BinaryExpressionAST : public NodeAST
     {

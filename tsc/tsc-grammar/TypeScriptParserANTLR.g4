@@ -63,7 +63,8 @@ typeDeclaration
     | NUMBER_KEYWORD
     | BOOLEAN_KEYWORD
     | STRING_KEYWORD
-    | BIGINT_KEYWORD ;    
+    | BIGINT_KEYWORD 
+    | VOID_KEYWORD ;    
 
 functionRestParameter
     : DOTDOTDOT_TOKEN formalParameter ;
@@ -165,6 +166,13 @@ exponentiationExpression
 
 unaryExpression
     : updateExpression
+    | DELETE_KEYWORD unaryExpression
+    | VOID_KEYWORD unaryExpression
+    | TYPEOF_KEYWORD unaryExpression
+    | PLUS_TOKEN unaryExpression
+    | MINUS_TOKEN unaryExpression
+    | TILDE_TOKEN unaryExpression
+    | EXCLAMATION_TOKEN unaryExpression
     ;
 
 updateExpression
