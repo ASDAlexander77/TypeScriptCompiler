@@ -179,10 +179,10 @@ LineTerminatorSequence
 
 /** Comment */
 MultiLineComment
-    : '/*' .*? '*/' ; 
+    : '/*' .*? '*/' -> skip ; 
 
 SingleLineComment
-    : '//' NotLineTerminator* ;
+    : '//' NotLineTerminator* -> skip ;
 
 IdentifierName
     : IdentifierStart IdentifierPart* ;
