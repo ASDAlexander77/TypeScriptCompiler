@@ -286,7 +286,7 @@ namespace
 
             format << "\n";
 
-            auto opHash = OperationEquivalence::computeHash(op, OperationEquivalence::Flags::IgnoreOperands);
+            auto opHash = std::hash<std::string>{}(format.str());
 
             std::stringstream formatVarName;
             formatVarName << "frmt_" << opHash;
@@ -385,13 +385,13 @@ namespace
             // Generate IR to call `assert`.
             auto *failureBlock = rewriter.createBlock(opBlock->getParent());
 
-            auto opHash = OperationEquivalence::computeHash(op, OperationEquivalence::Flags::IgnoreOperands);
+            std::stringstream msgWithNUL;
+            msgWithNUL << opTyped.msg().str();
+
+            auto opHash = std::hash<std::string>{}(msgWithNUL.str());
 
             std::stringstream msgVarName;
             msgVarName << "m_" << opHash;
-
-            std::stringstream msgWithNUL;
-            msgWithNUL << opTyped.msg().str();
 
             std::stringstream fileVarName;
             fileVarName << "f_" << hash_value(fileName);
@@ -505,13 +505,13 @@ namespace
 
         LogicalResult matchAndRewrite()
         {
-            auto opHash = OperationEquivalence::computeHash(op, OperationEquivalence::Flags::IgnoreOperands);
+            std::stringstream strWithNUL;
+            strWithNUL << opTyped.txt().str();
+
+            auto opHash = std::hash<std::string>{}(strWithNUL.str());
 
             std::stringstream strVarName;
             strVarName << "s_" << opHash;
-
-            std::stringstream strWithNUL;
-            strWithNUL << opTyped.txt().str();
 
             auto txtCst = getOrCreateGlobalString(strVarName.str(), strWithNUL.str());
 
@@ -1007,9 +1007,9 @@ namespace
 
             rewriter.setInsertionPointToEnd(condBlock);
             rewriter.create<LLVM::CondBrOp>(
-                loc, 
-                ifOp.condition(), 
-                thenBlock, /*trueArgs=*/ArrayRef<Value>(), 
+                loc,
+                ifOp.condition(),
+                thenBlock, /*trueArgs=*/ArrayRef<Value>(),
                 elseBlock, /*falseArgs=*/ArrayRef<Value>());
 
             // Ok, we're done!

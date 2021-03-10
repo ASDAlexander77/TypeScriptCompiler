@@ -921,17 +921,13 @@ namespace
             if (operands.size() > 1)
             {
                 auto param2 = operands[1];
-                auto definingOpParam2 = param2.getDefiningOp();
-                auto valueAttrName = StringRef("value");
-                if (definingOpParam2)
+                auto stringOp = dyn_cast_or_null<ts::StringOp>(param2.getDefiningOp());
+                if (stringOp)
                 {
-                    auto valueAttr = definingOpParam2->getAttrOfType<mlir::StringAttr>(valueAttrName);
-                    if (valueAttr)
-                    {
-                        msg = valueAttr.getValue();
-                        definingOpParam2->erase();
-                    }
+                    msg = stringOp.txtAttr().getValue();
                 }
+
+                param2.getDefiningOp()->erase();
             }
 
             auto assertOp =
