@@ -144,6 +144,8 @@
             "listeners": false,
             "outputDir": "./.antlr/generated",
             "package": "typescript"
-        }
+        },
+    	"cmake.buildDirectory": "${workspaceRoot}/../../__build/tsc",
+    	"cmake.sourceDirectory": "${workspaceFolder}/.."
     }
 }

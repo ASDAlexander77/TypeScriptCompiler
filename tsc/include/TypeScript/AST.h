@@ -163,8 +163,9 @@ namespace typescript
     PASS(BindingIdentifierContext, identifier)
 
     PASS_CHOICES(BindingPatternContext)
-    PASS_CHOICE(objectBindingPattern)
-    PASS_CHOICE(arrayBindingPattern)
+    // TODO:
+    //PASS_CHOICE(objectBindingPattern)
+    //PASS_CHOICE(arrayBindingPattern)
     PASS_CHOICE_END()
     
     MAKE(IdentifierAST, OptionalChainContext)
