@@ -39,7 +39,7 @@ bindingList
 
 lexicalBinding
     : bindingIdentifier typeParameter? initializer?
-//    | bindingPattern initializer
+    | bindingPattern initializer
     ;
 
 functionDeclaration
@@ -187,22 +187,39 @@ leftHandSideExpression
 
 newExpression
     : memberExpression
-    | NEW_KEYWORD newExpression ;
+    | NEW_KEYWORD newExpression 
+    ;
 
 callExpression
     : coverCallExpressionAndAsyncArrowHead
-    | callExpression arguments ;
+    | callExpression arguments 
+    ;
 
 coverCallExpressionAndAsyncArrowHead
-    : memberExpression arguments ;    
+    : memberExpression arguments 
+    ;    
 
 memberExpression    
     : primaryExpression
-    | memberExpression DOT_TOKEN IdentifierName ;
+    | memberExpression DOT_TOKEN IdentifierName 
+    ;
 
 primaryExpression
-    : literal
-    | identifierReference ;
+    : THIS_KEYWORD
+    | literal
+    | identifierReference 
+    | coverParenthesizedExpressionAndArrowParameterList 
+    ;
+
+coverParenthesizedExpressionAndArrowParameterList
+    : OPENPAREN_TOKEN expression CLOSEPAREN_TOKEN
+    | OPENPAREN_TOKEN expression COMMA_TOKEN CLOSEPAREN_TOKEN
+    | OPENPAREN_TOKEN CLOSEPAREN_TOKEN
+    | OPENPAREN_TOKEN DOTDOTDOT_TOKEN bindingIdentifier CLOSEPAREN_TOKEN
+    | OPENPAREN_TOKEN DOTDOTDOT_TOKEN bindingPattern CLOSEPAREN_TOKEN
+    | OPENPAREN_TOKEN expression COMMA_TOKEN DOTDOTDOT_TOKEN bindingIdentifier CLOSEPAREN_TOKEN
+    | OPENPAREN_TOKEN expression COMMA_TOKEN DOTDOTDOT_TOKEN bindingPattern CLOSEPAREN_TOKEN
+    ;
 
 optionalExpression
     : memberExpression optionalChain
@@ -241,7 +258,25 @@ identifierReference
     : identifier ;
 
 bindingIdentifier    
-    : identifier ;
+    : identifier
+    | YIELD_KEYWORD
+    | AWAIT_KEYWORD 
+    ;
+
+bindingPattern
+    : objectBindingPattern
+    | arrayBindingPattern
+    ;
+
+objectBindingPattern
+    : OPENBRACE_TOKEN CLOSEBRACE_TOKEN
+// TODO    
+    ;    
+
+arrayBindingPattern
+    : OPENBRACKET_TOKEN CLOSEBRACKET_TOKEN
+// TODO    
+    ;    
 
 identifier
     : IdentifierName ; // but not ReservedWord 

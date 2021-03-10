@@ -126,6 +126,7 @@ namespace typescript
     class TypeOfExpressionAST;
     class VoidExpressionAST;
     class PrefixUnaryExpressionAST;
+    class ParenthesizedExpressionAST;
     class CallExpressionAST;
     class EmptyStatementAST;
     class ExpressionStatementAST;
@@ -160,6 +161,11 @@ namespace typescript
     MAKE(IdentifierAST, IdentifierContext)
 
     PASS(BindingIdentifierContext, identifier)
+
+    PASS_CHOICES(BindingPatternContext)
+    PASS_CHOICE(objectBindingPattern)
+    PASS_CHOICE(arrayBindingPattern)
+    PASS_CHOICE_END()
     
     MAKE(IdentifierAST, OptionalChainContext)
 
@@ -202,6 +208,8 @@ namespace typescript
     PASS_CHOICE_END()
 
     MAKE(CallExpressionAST, CoverCallExpressionAndAsyncArrowHeadContext)
+
+    MAKE(ParenthesizedExpressionAST, CoverParenthesizedExpressionAndArrowParameterListContext)
 
     PASS_CHOICES(NewExpressionContext)
     PASS_CHOICE(memberExpression)
@@ -899,6 +907,44 @@ namespace typescript
             return N->getKind() == SyntaxKind::CallExpression;
         }          
     };    
+
+    class ParenthesizedExpressionAST : public NodeAST
+    {
+        NodeAST::TypePtr expression;
+        bool isDotDotDot;
+        NodeAST::TypePtr bindingIdentifier;
+        NodeAST::TypePtr bindingPattern;
+    public:
+        using TypePtr = std::shared_ptr<ParenthesizedExpressionAST>;
+
+        ParenthesizedExpressionAST(TypeScriptParserANTLR::CoverParenthesizedExpressionAndArrowParameterListContext* coverParenthesizedExpressionAndArrowParameterListContext) 
+            : NodeAST(SyntaxKind::ParenthesizedExpression, TextRange(coverParenthesizedExpressionAndArrowParameterListContext)),
+              expression(parse(coverParenthesizedExpressionAndArrowParameterListContext->expression())),
+              isDotDotDot(coverParenthesizedExpressionAndArrowParameterListContext->DOTDOTDOT_TOKEN()),
+              bindingIdentifier(coverParenthesizedExpressionAndArrowParameterListContext->bindingIdentifier() ? parse(coverParenthesizedExpressionAndArrowParameterListContext->bindingIdentifier()) : nullptr),
+              bindingPattern(coverParenthesizedExpressionAndArrowParameterListContext->bindingPattern() ? parse(coverParenthesizedExpressionAndArrowParameterListContext->bindingPattern()) : nullptr) {}
+
+        ParenthesizedExpressionAST(TextRange range, NodeAST::TypePtr expression)
+            : NodeAST(SyntaxKind::ParenthesizedExpression, range), expression(expression) {}
+
+        const auto& getExpression() const { return expression; }
+
+        virtual void accept(VisitorAST *visitor) override
+        {
+            if (!visitor) return;
+            
+            visitor->visit(this);
+            expression->accept(visitor);
+            if (bindingIdentifier) bindingIdentifier->accept(visitor);
+            if (bindingPattern) bindingPattern->accept(visitor);
+        }
+
+        /// LLVM style RTTI
+        static bool classof(const NodeAST *N) 
+        {
+            return N->getKind() == SyntaxKind::ParenthesizedExpression;
+        }    
+    };     
 
     class NewExpressionAST : public NodeAST
     {
