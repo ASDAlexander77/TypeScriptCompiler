@@ -4,6 +4,15 @@ options {
 	tokenVocab = TypeScriptLexerANTLR;
 }
 
+@parser::members 
+{
+    bool channelTokenEquals(size_t tokenType)
+    {
+        auto nextToken = _input->getTokenSource()->nextToken();
+        return nextToken && nextToken->getType() == tokenType;
+    }
+}
+
 // Actual grammar start.
 main
     : moduleBody EOF ;
@@ -92,14 +101,19 @@ block
 emptyStatement
     : SEMICOLON_TOKEN ;
 
+statementTerminator
+    : SEMICOLON_TOKEN
+    | {channelTokenEquals(LineTerminatorSequence)}?
+    ;
+
 expressionStatement
-    : expression (SEMICOLON_TOKEN|LineTerminatorSequence) ;
+    : expression statementTerminator ;
 
 ifStatement
-    : IF_KEYWORD OPENPAREN_TOKEN expression CLOSEPAREN_TOKEN statement (ELSE_KEYWORD statement)? ;    
+    : IF_KEYWORD OPENPAREN_TOKEN expression CLOSEPAREN_TOKEN statement (ELSE_KEYWORD statement)? ; // No need for statementTerminator as statement is teminated
 
 returnStatement
-    : RETURN_KEYWORD expression? (SEMICOLON_TOKEN|LineTerminatorSequence) ;
+    : RETURN_KEYWORD expression? statementTerminator ;
 
 expression
     : assignmentExpression
