@@ -8,10 +8,12 @@ options {
 {
     void setChannelToTokenIfEquals(size_t tokenType)
     {
-        auto prevToken = ((antlr4::BufferedTokenStream*)_input)->get(getCurrentToken()->getTokenIndex() - 1);
+        auto *bufferedTokenStream = (antlr4::BufferedTokenStream*)_input;
+        auto prevToken = bufferedTokenStream->get(getCurrentToken()->getTokenIndex() - 1);
         if (prevToken && prevToken->getType() == tokenType)
         {
             ((antlr4::WritableToken*)prevToken)->setChannel(0);
+            bufferedTokenStream->seek(bufferedTokenStream->index() - 1);
         }
     }
 
@@ -104,8 +106,7 @@ statement
     ;    
 
 testEndStatement
-    : SEMICOLON_TOKEN
-    | {token(LineTerminatorSequence);} LineTerminatorSequence
+    : {token(LineTerminatorSequence);} (SEMICOLON_TOKEN | LineTerminatorSequence)
     ;
 
 block
