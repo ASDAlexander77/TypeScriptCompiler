@@ -282,5 +282,15 @@ identifier
     : IdentifierName ; // but not ReservedWord 
 
 arguments
-    : OPENPAREN_TOKEN (expression (COMMA_TOKEN expression)*)? CLOSEPAREN_TOKEN ;
+    : OPENPAREN_TOKEN CLOSEPAREN_TOKEN  
+    | OPENPAREN_TOKEN argumentList CLOSEPAREN_TOKEN 
+    | OPENPAREN_TOKEN argumentList COMMA_TOKEN CLOSEPAREN_TOKEN 
+    ;
+
+argumentList
+    : assignmentExpression
+    | DOTDOTDOT_TOKEN assignmentExpression
+    | argumentList COMMA_TOKEN assignmentExpression
+    | argumentList COMMA_TOKEN DOTDOTDOT_TOKEN assignmentExpression
+    ;
 
