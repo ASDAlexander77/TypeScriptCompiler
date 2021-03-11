@@ -251,9 +251,9 @@ namespace
             {
                 return mlirGen(std::dynamic_pointer_cast<CallExpressionAST>(expressionAST), genContext);
             }
-            else if (expressionAST->getKind() == SyntaxKind::Argument)
+            else if (expressionAST->getKind() == SyntaxKind::SpreadElement)
             {
-                return mlirGen(std::dynamic_pointer_cast<ArgumentAST>(expressionAST), genContext);
+                return mlirGen(std::dynamic_pointer_cast<SpreadElementAST>(expressionAST), genContext);
             }
             else if (expressionAST->getKind() == SyntaxKind::BinaryExpression)
             {
@@ -797,10 +797,9 @@ namespace
             }
         }
 
-        mlir::Value mlirGen(ArgumentAST::TypePtr argument, const GenContext &genContext)
+        mlir::Value mlirGen(SpreadElementAST::TypePtr spreadElement, const GenContext &genContext)
         {
-            // TODO: process '...' )DOT DOT DOT)
-            return mlirGenExpression(argument->getExpression(), genContext);
+            return mlirGenExpression(spreadElement->getExpression(), genContext);
         }
 
         mlir::Value mlirGen(CallExpressionAST::TypePtr callExpression, const GenContext &genContext)

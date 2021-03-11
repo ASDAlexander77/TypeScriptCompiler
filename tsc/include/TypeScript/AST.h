@@ -883,40 +883,35 @@ namespace typescript
         }         
     };
 
-    class ArgumentAST : public NodeAST
+    class SpreadElementAST : public NodeAST
     {
-        SyntaxKind dotDotDot;
         NodeAST::TypePtr expression;
-
     public:
-        using TypePtr = std::shared_ptr<ArgumentAST>;
+        using TypePtr = std::shared_ptr<SpreadElementAST>;
 
+        SpreadElementAST(TypeScriptParserANTLR::ArgumentListContext* argumentListContext) 
+            : NodeAST(SyntaxKind::SpreadElement, TextRange(argumentListContext)),
+              expression(parse(argumentListContext->assignmentExpression())) {}
 
-        ArgumentAST(TypeScriptParserANTLR::ArgumentListContext* argumentListContext)
-            : NodeAST(SyntaxKind::Argument, range),
-              dotDotDot{argumentListContext->DOTDOTDOT_TOKEN() ? SyntaxKind::DotDotDotToken : SyntaxKind::Unknown}, 
-              expression{parse(argumentListContext->assignmentExpression())} {}
-
-        ArgumentAST(TextRange range, SyntaxKind dotDotDot, NodeAST::TypePtr expression) 
-            : NodeAST(SyntaxKind::Argument, range),
-              dotDotDot{dotDotDot}, expression{expression} {}     
+        SpreadElementAST(TextRange range, SyntaxKind opCode, NodeAST::TypePtr expression)
+            : NodeAST(SyntaxKind::SpreadElement, range), expression(expression) {}
 
         const auto& getExpression() const { return expression; }
 
-        void accept(VisitorAST *visitor)
+        virtual void accept(VisitorAST *visitor) override
         {
             if (!visitor) return;
+            
             visitor->visit(this);
-
             expression->accept(visitor);
         }
 
         /// LLVM style RTTI
         static bool classof(const NodeAST *N) 
         {
-            return N->getKind() == SyntaxKind::Argument;
-        }        
-    };
+            return N->getKind() == SyntaxKind::SpreadElement;
+        }    
+    };  
 
     class ArgumentListAST : public NodeAST
     {
@@ -938,7 +933,7 @@ namespace typescript
                 join(parse(argumentList));
             }
 
-            add(std::make_shared<ArgumentAST>(argumentListContext));
+            add(argumentListContext);
         }     
 
         ArgumentListAST(TextRange range, ArgumentList arguments)
@@ -970,9 +965,16 @@ namespace typescript
             }
         }
 
-        void add(ArgumentAST::TypePtr item)
+        void add(TypeScriptParserANTLR::ArgumentListContext* argumentListContext)
         {
-            arguments.push_back(item);
+            if (argumentListContext->DOTDOTDOT_TOKEN())
+            {
+                arguments.push_back(std::make_shared<SpreadElementAST>(argumentListContext));
+            }
+            else
+            {
+                arguments.push_back(parse(argumentListContext->assignmentExpression()));
+            }
         }        
     };      
 
