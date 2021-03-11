@@ -157,6 +157,12 @@ namespace typescript
     class ArgumentListAST;
 
     template <typename Ty>
+    static auto parse_if(Ty* data) -> decltype(parse(data))
+    {
+        return data ? parse(data) : nullptr;
+    }
+
+    template <typename Ty>
     static std::vector<Ty> merge(std::vector<Ty> data, Ty item)
     {
         if (item)
@@ -327,7 +333,7 @@ namespace typescript
 
     PASS(ArgumentsContext, argumentList)
 
-    PASS(InitializerContext, assignmentExpression)
+    PASS_OR_DEFAULT(InitializerContext, assignmentExpression)
 
     MAKE(VariableDeclarationAST, LexicalBindingContext)    
     
@@ -339,7 +345,7 @@ namespace typescript
 
     MAKE(ParameterDeclarationAST, FormalParameterContext)
 
-    MAKE(ParameterDeclarationAST, FunctionRestParameterContext)    
+    MAKE_OR_NULL(ParameterDeclarationAST, FunctionRestParameterContext)    
 
     PASS_VECTOR_TYPED(ParameterDeclarationAST, FormalParameterContext)
 
@@ -976,8 +982,8 @@ namespace typescript
             : NodeAST(SyntaxKind::ParenthesizedExpression, TextRange(coverParenthesizedExpressionAndArrowParameterListContext)),
               expression(parse(coverParenthesizedExpressionAndArrowParameterListContext->expression())),
               isDotDotDot(coverParenthesizedExpressionAndArrowParameterListContext->DOTDOTDOT_TOKEN()),
-              bindingIdentifier(coverParenthesizedExpressionAndArrowParameterListContext->bindingIdentifier() ? parse(coverParenthesizedExpressionAndArrowParameterListContext->bindingIdentifier()) : nullptr),
-              bindingPattern(coverParenthesizedExpressionAndArrowParameterListContext->bindingPattern() ? parse(coverParenthesizedExpressionAndArrowParameterListContext->bindingPattern()) : nullptr) {}
+              bindingIdentifier(parse(coverParenthesizedExpressionAndArrowParameterListContext->bindingIdentifier())),
+              bindingPattern(parse(coverParenthesizedExpressionAndArrowParameterListContext->bindingPattern())) {}
 
         ParenthesizedExpressionAST(TextRange range, NodeAST::TypePtr expression)
             : NodeAST(SyntaxKind::ParenthesizedExpression, range), expression(expression) {}
@@ -1373,7 +1379,7 @@ namespace typescript
             : NodeAST(SyntaxKind::IfStatement, TextRange(ifStatementContext)),
               condition(parse(ifStatementContext->expression())),
               whenTrue(parse(ifStatementContext->statement(0))),
-              whenFalse(ifStatementContext->statement(1) ? parse(ifStatementContext->statement(1)) : nullptr) {}
+              whenFalse(parse_if(ifStatementContext->statement(1))) {}
 
         IfStatementAST(TextRange range, NodeAST::TypePtr condition, NodeAST::TypePtr whenTrue, NodeAST::TypePtr whenFalse)
             : NodeAST(SyntaxKind::Parameters, range), condition(condition), whenTrue(whenTrue), whenFalse(whenFalse) {}
@@ -1407,7 +1413,7 @@ namespace typescript
 
         ReturnStatementAST(TypeScriptParserANTLR::ReturnStatementContext* returnStatementContext) 
             : NodeAST(SyntaxKind::ReturnStatement, TextRange(returnStatementContext)),
-              expression(returnStatementContext->expression() ? parse(returnStatementContext->expression()) : nullptr) {}     
+              expression(parse_if(returnStatementContext->expression())) {}     
 
         ReturnStatementAST(TextRange range)
             : NodeAST(SyntaxKind::ReturnStatement, range) {}
@@ -1442,7 +1448,7 @@ namespace typescript
             : NodeAST(SyntaxKind::Parameter, TextRange(lexicalBindingContext)),
               identifier(parse(lexicalBindingContext->bindingIdentifier())),
               type(parse(lexicalBindingContext->typeParameter())),
-              initializer(lexicalBindingContext->initializer() ? parse(lexicalBindingContext->initializer()) : nullptr) {}   
+              initializer(parse(lexicalBindingContext->initializer())) {}   
 
         VariableDeclarationAST(TextRange range, IdentifierAST::TypePtr identifier, TypeReferenceAST::TypePtr type, NodeAST::TypePtr initialize)
             : NodeAST(SyntaxKind::FunctionDeclaration, range), identifier(identifier), type(type), initializer(initializer) {}

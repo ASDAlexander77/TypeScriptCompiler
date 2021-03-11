@@ -96,7 +96,7 @@ expressionStatement
     : expression (SEMICOLON_TOKEN|LineTerminatorSequence) ;
 
 ifStatement
-    : IF_KEYWORD OPENPAREN_TOKEN expression CLOSEPAREN_TOKEN statement (ELSE_KEYWORD statement)? (SEMICOLON_TOKEN|LineTerminatorSequence) ;    
+    : IF_KEYWORD OPENPAREN_TOKEN expression CLOSEPAREN_TOKEN statement (ELSE_KEYWORD statement)? ;    
 
 returnStatement
     : RETURN_KEYWORD expression? (SEMICOLON_TOKEN|LineTerminatorSequence) ;
