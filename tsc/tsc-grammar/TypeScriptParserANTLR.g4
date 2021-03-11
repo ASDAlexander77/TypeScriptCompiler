@@ -8,7 +8,6 @@ options {
 {
     bool channelTokenEquals(size_t tokenType)
     {
-        //auto prevToken = ((antlr4::BufferedTokenStream*)_input)->getTokens()[getCurrentToken()->getTokenIndex() - 1];
         auto prevToken = ((antlr4::BufferedTokenStream*)_input)->get(getCurrentToken()->getTokenIndex() - 1);
         return prevToken && prevToken->getType() == tokenType;
     }
@@ -103,8 +102,8 @@ emptyStatement
     : SEMICOLON_TOKEN ;
 
 statementTerminator
-    : SEMICOLON_TOKEN
-    | {channelTokenEquals(LineTerminatorSequence)}?
+    : SEMICOLON_TOKEN 
+    //| {channelTokenEquals(LineTerminatorSequence)}?
     ;
 
 expressionStatement

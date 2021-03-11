@@ -165,7 +165,7 @@ USP : [\p{Space_Separator}] ;
  */
 
 WhiteSpace
-    : [\t\u000B\f \u00A0\uFEFF\p{Space_Separator}] -> channel(WHITESPACE_CHANNEL) ;
+    : [\t\u000B\f \u00A0\uFEFF\p{Space_Separator}] -> skip ;
 
 /** Line Terminators */
 /**
