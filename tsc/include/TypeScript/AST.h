@@ -185,7 +185,7 @@ namespace typescript
 
     MAKE(TypeReferenceAST, TypeDeclarationContext)
 
-    PASS(TypeParameterContext, typeDeclaration)
+    PASS_OR_DEFAULT(TypeParameterContext, typeDeclaration)
 
     PASS(IdentifierReferenceContext, identifier)
 
@@ -315,7 +315,7 @@ namespace typescript
 
     PASS_VECTOR(NodeAST, ExpressionContext)
 
-    MAKE(ArgumentListAST, ArgumentListContext)
+    MAKE_OR_NULL(ArgumentListAST, ArgumentListContext)
 
     PASS(ArgumentsContext, argumentList)
 
@@ -335,7 +335,7 @@ namespace typescript
 
     PASS_VECTOR_TYPED(ParameterDeclarationAST, FormalParameterContext)
 
-    MAKE(ParametersDeclarationAST, FormalParametersContext)    
+    MAKE_OR_NULL(ParametersDeclarationAST, FormalParametersContext)    
 
     MAKE(FunctionDeclarationAST, FunctionDeclarationContext)    
 
@@ -980,6 +980,7 @@ namespace typescript
     {
         NodeAST::TypePtr expression;
         ArgumentListAST::TypePtr argumentList;
+        static ArgumentListAST::ArgumentList defaultList;
     public:
         using TypePtr = std::shared_ptr<CallExpressionAST>;
 
@@ -997,7 +998,7 @@ namespace typescript
             : NodeAST(SyntaxKind::Parameters, range), expression(expression), argumentList(argumentList) {}
 
         const auto& getExpression() const { return expression; }
-        const auto& getArguments() const { return argumentList->getArguments(); }
+        const auto& getArguments() const { return argumentList ? argumentList->getArguments() : defaultList; }
 
         virtual void accept(VisitorAST *visitor) override
         {
@@ -1005,9 +1006,12 @@ namespace typescript
             
             visitor->visit(this);
             expression->accept(visitor);
-            for (auto &item : *argumentList)
+            if (argumentList)
             {
-                item->accept(visitor);
+                for (auto &item : *argumentList)
+                {
+                    item->accept(visitor);
+                }
             }
         }
 
@@ -1017,6 +1021,8 @@ namespace typescript
             return N->getKind() == SyntaxKind::CallExpression;
         }          
     };    
+
+    ArgumentListAST::ArgumentList CallExpressionAST::defaultList;
 
     class ParenthesizedExpressionAST : public NodeAST
     {
