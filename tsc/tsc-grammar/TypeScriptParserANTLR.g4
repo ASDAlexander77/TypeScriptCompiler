@@ -15,7 +15,7 @@ options {
 
 // Actual grammar start.
 main
-    : LineTerminatorSequence? moduleBody LineTerminatorSequence? EOF ;
+    : moduleBody EOF ;
 
 moduleBody 
     : moduleItem* ;
@@ -52,7 +52,7 @@ lexicalBinding
     ;
 
 functionDeclaration
-    : FUNCTION_KEYWORD bindingIdentifier? OPENPAREN_TOKEN formalParameters? CLOSEPAREN_TOKEN typeParameter? LineTerminatorSequence? OPENBRACE_TOKEN LineTerminatorSequence? functionBody LineTerminatorSequence? CLOSEBRACE_TOKEN ;
+    : FUNCTION_KEYWORD bindingIdentifier? OPENPAREN_TOKEN formalParameters? CLOSEPAREN_TOKEN typeParameter? OPENBRACE_TOKEN functionBody CLOSEBRACE_TOKEN ;
 
 formalParameters
     : functionRestParameter 
@@ -103,7 +103,6 @@ emptyStatement
 
 statementTerminator
     : SEMICOLON_TOKEN 
-    | LineTerminatorSequence
     ;
 
 expressionStatement
