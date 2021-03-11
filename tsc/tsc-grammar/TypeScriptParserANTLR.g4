@@ -10,7 +10,7 @@ options {
     {
         auto *bufferedTokenStream = (antlr4::BufferedTokenStream*)_input;
         auto prevToken = bufferedTokenStream->get(getCurrentToken()->getTokenIndex() - 1);
-        if (prevToken && prevToken->getType() == tokenType)
+        if (prevToken && prevToken->getType() == tokenType && prevToken->getChannel() != 0)
         {
             ((antlr4::WritableToken*)prevToken)->setChannel(0);
             bufferedTokenStream->seek(bufferedTokenStream->index() - 1);
