@@ -8,7 +8,8 @@ tokens
 channels 
 {
     WHITESPACE_CHANNEL,
-    COMMENTS_CHANNEL
+    COMMENTS_CHANNEL,
+    TERMINATOR_CHANNEL
 }
 
 /** Keywords */
@@ -181,7 +182,7 @@ fragment NotLineTerminator
     : ~[\r\n\u2028\u2029] ;
 
 LineTerminatorSequence
-    : ('\r\n' | LineTerminator) ;
+    : ('\r\n' | LineTerminator) -> channel(TERMINATOR_CHANNEL) ;
 
 /** Comment */
 MultiLineComment

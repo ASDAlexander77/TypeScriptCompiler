@@ -10,14 +10,24 @@
 #include "TypeScriptParserANTLR.h"
 #include "EnumsAST.h"
 
-#define MAKE(ty, ctx)  \
+#define MAKE_OR_NULL(ty, ctx)  \
     static std::shared_ptr<ty> parse(TypeScriptParserANTLR::ctx* _ctx) { \
         return _ctx ? std::make_shared<ty>(_ctx) : nullptr; \
     }
 
-#define PASS(ctx, fld)  \
+#define MAKE(ty, ctx)  \
+    static std::shared_ptr<ty> parse(TypeScriptParserANTLR::ctx* _ctx) { \
+        return _ctx ? std::make_shared<ty>(_ctx) : throw "null ref"; \
+    }    
+
+#define PASS_OR_DEFAULT(ctx, fld)  \
     static auto parse(TypeScriptParserANTLR::ctx* _ctx) { \
         return _ctx ? parse(_ctx->fld()) : decltype(parse(_ctx->fld()))() ;  \
+    }     
+
+#define PASS(ctx, fld)  \
+    static auto parse(TypeScriptParserANTLR::ctx* _ctx) { \
+        return _ctx ? parse(_ctx->fld()) : throw "null ref";  \
     }     
 
 #define PASS_VECTOR_TYPED(ty, ctx)  \
@@ -891,6 +901,8 @@ namespace typescript
             : NodeAST(SyntaxKind::Argument, range),
               dotDotDot{dotDotDot}, expression{expression} {}     
 
+        const auto& getExpression() const { return expression; }
+
         void accept(VisitorAST *visitor)
         {
             if (!visitor) return;
@@ -906,7 +918,7 @@ namespace typescript
         }        
     };
 
-    class ArgumentListAST
+    class ArgumentListAST : public NodeAST
     {
     public:
         using ArgumentList = ::std::vector<NodeAST::TypePtr>;
@@ -918,7 +930,8 @@ namespace typescript
         using TypePtr = std::shared_ptr<ArgumentListAST>;
 
         ArgumentListAST(TypeScriptParserANTLR::ArgumentListContext* argumentListContext) 
-            : arguments{}
+            : NodeAST(SyntaxKind::ArgumentList, TextRange(argumentListContext)),
+              arguments{}
         {
             if (auto argumentList = argumentListContext->argumentList())
             {
@@ -929,12 +942,24 @@ namespace typescript
         }     
 
         ArgumentListAST(TextRange range, ArgumentList arguments)
-            : arguments(arguments) {}
+            : NodeAST(SyntaxKind::ArgumentList, range),
+              arguments(arguments) {}
 
         const auto& getArguments() const { return arguments; }
 
         auto begin() -> decltype(arguments.begin()) { return arguments.begin(); }
         auto end() -> decltype(arguments.end()) { return arguments.end(); }
+
+        virtual void accept(VisitorAST *visitor) override
+        {
+            llvm_unreachable("should be called in CallExpressionAST");
+        }
+
+        /// LLVM style RTTI
+        static bool classof(const NodeAST *N) 
+        {
+            return N->getKind() == SyntaxKind::ArgumentList;
+        }        
 
     private:
         void join(TypePtr instance)
