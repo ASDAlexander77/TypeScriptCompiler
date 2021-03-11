@@ -8,8 +8,9 @@ options {
 {
     bool channelTokenEquals(size_t tokenType)
     {
-        auto nextToken = _input->getTokenSource()->nextToken();
-        return nextToken && nextToken->getType() == tokenType;
+        //auto prevToken = ((antlr4::BufferedTokenStream*)_input)->getTokens()[getCurrentToken()->getTokenIndex() - 1];
+        auto prevToken = ((antlr4::BufferedTokenStream*)_input)->get(getCurrentToken()->getTokenIndex() - 1);
+        return prevToken && prevToken->getType() == tokenType;
     }
 }
 
