@@ -15,7 +15,7 @@ options {
 
 // Actual grammar start.
 main
-    : moduleBody EOF ;
+    : LineTerminatorSequence? moduleBody LineTerminatorSequence? EOF ;
 
 moduleBody 
     : moduleItem* ;
@@ -52,7 +52,7 @@ lexicalBinding
     ;
 
 functionDeclaration
-    : FUNCTION_KEYWORD bindingIdentifier? OPENPAREN_TOKEN formalParameters? CLOSEPAREN_TOKEN typeParameter? OPENBRACE_TOKEN functionBody CLOSEBRACE_TOKEN ;
+    : FUNCTION_KEYWORD bindingIdentifier? OPENPAREN_TOKEN formalParameters? CLOSEPAREN_TOKEN typeParameter? LineTerminatorSequence? OPENBRACE_TOKEN LineTerminatorSequence? functionBody LineTerminatorSequence? CLOSEBRACE_TOKEN ;
 
 formalParameters
     : functionRestParameter 
@@ -103,14 +103,16 @@ emptyStatement
 
 statementTerminator
     : SEMICOLON_TOKEN 
-    //| {channelTokenEquals(LineTerminatorSequence)}?
+    | LineTerminatorSequence
     ;
 
 expressionStatement
     : expression statementTerminator ;
 
 ifStatement
-    : IF_KEYWORD OPENPAREN_TOKEN expression CLOSEPAREN_TOKEN statement (ELSE_KEYWORD statement)? ; // No need for statementTerminator as statement is teminated
+    : IF_KEYWORD OPENPAREN_TOKEN expression CLOSEPAREN_TOKEN statement ELSE_KEYWORD statement // No need for statementTerminator as statement is teminated
+    | IF_KEYWORD OPENPAREN_TOKEN expression CLOSEPAREN_TOKEN statement {getCurrentToken()->getType()!=ELSE_KEYWORD}?
+    ;
 
 returnStatement
     : RETURN_KEYWORD expression? statementTerminator ;

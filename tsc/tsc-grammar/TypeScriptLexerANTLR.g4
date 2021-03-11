@@ -182,7 +182,7 @@ fragment NotLineTerminator
     : ~[\r\n\u2028\u2029] ;
 
 LineTerminatorSequence
-    : ('\r\n' | LineTerminator)+ -> channel(TERMINATOR_CHANNEL) ;
+    : ('\r\n' | LineTerminator)+ ;
 
 /** Comment */
 MultiLineComment

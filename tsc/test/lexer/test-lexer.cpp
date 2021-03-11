@@ -1,7 +1,23 @@
 #include "helper.h"
 
-#include <vector>
+#include <cstdio>
+#include <iostream>
+#include <memory>
+#include <stdexcept>
+#include <string>
+#include <array>
+#include <iostream>
+#include <fstream>
 #include <sstream>
+
+#if __cplusplus >= 201703L
+#include <filesystem>
+namespace fs = std::filesystem;
+#else
+#define _SILENCE_EXPERIMENTAL_FILESYSTEM_DEPRECATION_WARNING
+#include <experimental/filesystem>
+namespace fs = std::experimental::filesystem;
+#endif
 
 #include "TypeScriptLexerANTLR.h"
 #include "TypeScriptParserANTLR.h"
@@ -10,26 +26,25 @@
 
 using l = typescript::TypeScriptLexerANTLR;
 
-void printTokens(const typescript::TypeScriptLexerANTLR& lexer, const std::vector<std::unique_ptr<antlr4::Token>>& tokens) 
+void printTokens(const typescript::TypeScriptLexerANTLR &lexer, const std::vector<std::unique_ptr<antlr4::Token>> &tokens)
 {
     std::cout << "Printing tokens:" << std::endl;
 
-    auto print = [&](const auto& n) 
-    { 
+    auto print = [&](const auto &n) {
         //auto* tokenPtr = n.get();
-        //std::cout << "TOKEN: type=" << tokenPtr->getType() << " text=" << tokenPtr->getText() << std::endl; 
-        std::cout << lexer.getTokenNames()[n.get()->getType()] << ": " << n.get()->getText() << " ..." << n.get()->toString() << std::endl ; 
+        //std::cout << "TOKEN: type=" << tokenPtr->getType() << " text=" << tokenPtr->getText() << std::endl;
+        std::cout << lexer.getTokenNames()[n.get()->getType()] << ": " << n.get()->getText() << " ..." << n.get()->toString() << std::endl;
     };
 
     std::for_each(tokens.cbegin(), tokens.cend(), print);
 }
 
-void printTokens(const typescript::TypeScriptLexerANTLR& lexer) 
+void printTokens(const typescript::TypeScriptLexerANTLR &lexer)
 {
-    printTokens(lexer, const_cast<typescript::TypeScriptLexerANTLR&>(lexer).getAllTokens());
+    printTokens(lexer, const_cast<typescript::TypeScriptLexerANTLR &>(lexer).getAllTokens());
 }
 
-void printTokens(const char *value) 
+void printTokens(const char *value)
 {
     antlr4::ANTLRInputStream input(value);
     typescript::TypeScriptLexerANTLR lexer(&input);
@@ -49,7 +64,7 @@ void testToken(const char *value, size_t tokenExpected)
 
     std::ostringstream stringStream;
     stringStream << "Expecting: [" << lexer.getTokenNames()[tokenExpected] << "] \"" << value << "\" but get: [" << lexer.getTokenNames()[token->getType()] << "] \"" << token->getText() << "\".";
-    auto msg = stringStream.str();    
+    auto msg = stringStream.str();
 
     ASSERT_EQUAL_MSG(token->getType(), tokenExpected, msg);
     ASSERT_THROW_MSG(token->getText().compare(value) == 0, msg);
@@ -64,13 +79,14 @@ void testToken(const char *value, std::vector<size_t> tokensExpected)
 
     printTokens(lexer, tokens);
 
-    auto index = 0;    
-    for (auto& token : tokens) {
+    auto index = 0;
+    for (auto &token : tokens)
+    {
         auto tokenExpected = tokensExpected[index];
 
         std::ostringstream stringStream;
         stringStream << "Expecting: [" << lexer.getTokenNames()[tokenExpected] << "] in \"" << value << "\" @ " << index << " but get: [" << lexer.getTokenNames()[token->getType()] << "] \"" << token->getText() << "\".";
-        auto msg = stringStream.str();    
+        auto msg = stringStream.str();
 
         ASSERT_EQUAL_MSG(token->getType(), tokenExpected, msg);
         // can't match text
@@ -117,7 +133,7 @@ void testOctalIntegerLiteral()
     T("0O45436", l::OctalIntegerLiteral);
     T("04_5436", l::OctalIntegerLiteral);
     T("0o45_436", l::OctalIntegerLiteral);
-    T("0O4543_6", l::OctalIntegerLiteral);    
+    T("0O4543_6", l::OctalIntegerLiteral);
     T("0o7777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777", l::OctalIntegerLiteral);
     T("0o7777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777777", l::OctalIntegerLiteral);
 }
@@ -145,7 +161,7 @@ void testDecimalIntegerLiteral()
     T("0123_888", l::DecimalIntegerLiteral);
     T("123", l::DecimalIntegerLiteral);
     T("-03", l::DecimalIntegerLiteral);
-    T("009", l::DecimalIntegerLiteral);    
+    T("009", l::DecimalIntegerLiteral);
 }
 
 void testDecimalLiteral()
@@ -175,10 +191,10 @@ void testOctalBigIntegerLiteral()
 void testRegex()
 {
     T("/ asdf /", l::RegularExpressionLiteral);
-    T("/**// asdf /", { l::MultiLineComment, l::RegularExpressionLiteral });
-    T("/**///**/ asdf /       // should be a comment line\r\n1", { l::MultiLineComment, l::SingleLineComment, l::LineTerminatorSequence, l::DecimalIntegerLiteral });
-    T("/**// /**/asdf /", { l::MultiLineComment, l::RegularExpressionLiteral, l::ASTERISKASTERISK_TOKEN, l::RegularExpressionLiteral });// /**/ comment, regex (/ /) power(**) regex(/ asdf /)
-    T("/**// asdf/**/ /", { l::MultiLineComment, l::RegularExpressionLiteral, l::ASTERISKASTERISK_TOKEN, l::RegularExpressionLiteral }); 
+    T("/**// asdf /", {l::MultiLineComment, l::RegularExpressionLiteral});
+    T("/**///**/ asdf /       // should be a comment line\r\n1", {l::MultiLineComment, l::SingleLineComment, l::LineTerminatorSequence, l::DecimalIntegerLiteral});
+    T("/**// /**/asdf /", {l::MultiLineComment, l::RegularExpressionLiteral, l::ASTERISKASTERISK_TOKEN, l::RegularExpressionLiteral}); // /**/ comment, regex (/ /) power(**) regex(/ asdf /)
+    T("/**// asdf/**/ /", {l::MultiLineComment, l::RegularExpressionLiteral, l::ASTERISKASTERISK_TOKEN, l::RegularExpressionLiteral});
     T("/(?:)/", l::RegularExpressionLiteral); // empty regular expression
     T("/what/", l::RegularExpressionLiteral);
     T("/\\\\\\\\/", l::RegularExpressionLiteral);
@@ -206,7 +222,7 @@ void testString()
 void testTemplateString()
 {
     T("` string template`", l::StringLiteral);
-    T("`foo ${a}`", { l::TemplateHead, l::IdentifierName, l::TemplateTail });
+    T("`foo ${a}`", {l::TemplateHead, l::IdentifierName, l::TemplateTail});
     T("`\\u0061wait`", l::StringLiteral);
     T("`\\u0079ield`", l::StringLiteral);
     T("`\\u{0076}ar`", l::StringLiteral);
@@ -230,28 +246,45 @@ void testMultiLineComments()
     T("/**\r\n * comment\r\n */", l::MultiLineComment);
 }
 
-int main(int, char **)
+int main(int argc, char **args)
 {
     try
     {
-        testNullLiteral();
-        testBooleanLiteral();
-        testBinaryIntegerLiteral();
-        testBinaryBigIntegerLiteral();
-        testOctalIntegerLiteral();
-        testOctalBigIntegerLiteral();
-        testHexIntegerLiteral();
-        testHexBigIntegerLiteral();
-        testDecimalLiteral();
-        testDecimalBigIntegerLiteral();
-        testIdentifier();
-        testString();
-        testTemplateString();
-        testSingleLineComments();
-        testMultiLineComments();
-        testRegex();
+        if (argc > 1)
+        {
+            auto file = args[1];
+            auto exists = fs::exists(file);
+            if (exists)
+            {
+                std::ifstream f(file);
+                std::string str((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+                std::cout << "Code: " << std::endl
+                          << str << std::endl
+                          << "Output: " << std::endl;
+                printTokens(str.c_str());
+            }
+        }
+        else
+        {
+            testNullLiteral();
+            testBooleanLiteral();
+            testBinaryIntegerLiteral();
+            testBinaryBigIntegerLiteral();
+            testOctalIntegerLiteral();
+            testOctalBigIntegerLiteral();
+            testHexIntegerLiteral();
+            testHexBigIntegerLiteral();
+            testDecimalLiteral();
+            testDecimalBigIntegerLiteral();
+            testIdentifier();
+            testString();
+            testTemplateString();
+            testSingleLineComments();
+            testMultiLineComments();
+            testRegex();
+        }
     }
-    catch(const std::exception& e)
+    catch (const std::exception &e)
     {
         std::cerr << e.what() << std::endl;
         throw;
