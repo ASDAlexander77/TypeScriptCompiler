@@ -288,9 +288,8 @@ arguments
     ;
 
 argumentList
-    : assignmentExpression
-    | DOTDOTDOT_TOKEN assignmentExpression
-    | argumentList COMMA_TOKEN assignmentExpression
-    | argumentList COMMA_TOKEN DOTDOTDOT_TOKEN assignmentExpression
+    : argumentListItem (COMMA_TOKEN argumentListItem)*
     ;
 
+argumentListItem
+    : DOTDOTDOT_TOKEN? assignmentExpression ;

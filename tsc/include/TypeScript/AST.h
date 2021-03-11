@@ -135,6 +135,7 @@ namespace typescript
     class DeleteExpressionAST;
     class TypeOfExpressionAST;
     class VoidExpressionAST;
+    class SpreadElementAST;
     class PrefixUnaryExpressionAST;
     class ParenthesizedExpressionAST;
     class CallExpressionAST;
@@ -315,7 +316,14 @@ namespace typescript
 
     PASS_VECTOR(NodeAST, ExpressionContext)
 
-    MAKE_OR_NULL(ArgumentListAST, ArgumentListContext)
+    PASS_CHOICES(ArgumentListItemContext)
+    MAKE_CHOICE_IF(DOTDOTDOT_TOKEN, SpreadElementAST)
+    PASS_CHOICE(assignmentExpression)
+    PASS_CHOICE_END()
+
+    PASS_VECTOR(NodeAST, ArgumentListItemContext);
+
+    PASS_OR_DEFAULT(ArgumentListContext, argumentListItem)
 
     PASS(ArgumentsContext, argumentList)
 
@@ -889,9 +897,9 @@ namespace typescript
     public:
         using TypePtr = std::shared_ptr<SpreadElementAST>;
 
-        SpreadElementAST(TypeScriptParserANTLR::ArgumentListContext* argumentListContext) 
-            : NodeAST(SyntaxKind::SpreadElement, TextRange(argumentListContext)),
-              expression(parse(argumentListContext->assignmentExpression())) {}
+        SpreadElementAST(TypeScriptParserANTLR::ArgumentListItemContext* argumentListItemContext) 
+            : NodeAST(SyntaxKind::SpreadElement, TextRange(argumentListItemContext)),
+              expression(parse(argumentListItemContext->assignmentExpression())) {}
 
         SpreadElementAST(TextRange range, SyntaxKind opCode, NodeAST::TypePtr expression)
             : NodeAST(SyntaxKind::SpreadElement, range), expression(expression) {}
@@ -913,94 +921,28 @@ namespace typescript
         }    
     };  
 
-    class ArgumentListAST : public NodeAST
-    {
-    public:
-        using ArgumentList = ::std::vector<NodeAST::TypePtr>;
-
-    private:
-        ArgumentList arguments;
-
-    public:
-        using TypePtr = std::shared_ptr<ArgumentListAST>;
-
-        ArgumentListAST(TypeScriptParserANTLR::ArgumentListContext* argumentListContext) 
-            : NodeAST(SyntaxKind::ArgumentList, TextRange(argumentListContext)),
-              arguments{}
-        {
-            if (auto argumentList = argumentListContext->argumentList())
-            {
-                join(parse(argumentList));
-            }
-
-            add(argumentListContext);
-        }     
-
-        ArgumentListAST(TextRange range, ArgumentList arguments)
-            : NodeAST(SyntaxKind::ArgumentList, range),
-              arguments(arguments) {}
-
-        const auto& getArguments() const { return arguments; }
-
-        auto begin() -> decltype(arguments.begin()) { return arguments.begin(); }
-        auto end() -> decltype(arguments.end()) { return arguments.end(); }
-
-        virtual void accept(VisitorAST *visitor) override
-        {
-            llvm_unreachable("should be called in CallExpressionAST");
-        }
-
-        /// LLVM style RTTI
-        static bool classof(const NodeAST *N) 
-        {
-            return N->getKind() == SyntaxKind::ArgumentList;
-        }        
-
-    private:
-        void join(TypePtr instance)
-        {
-            for (auto item : *instance)
-            {
-                arguments.push_back(item);
-            }
-        }
-
-        void add(TypeScriptParserANTLR::ArgumentListContext* argumentListContext)
-        {
-            if (argumentListContext->DOTDOTDOT_TOKEN())
-            {
-                arguments.push_back(std::make_shared<SpreadElementAST>(argumentListContext));
-            }
-            else
-            {
-                arguments.push_back(parse(argumentListContext->assignmentExpression()));
-            }
-        }        
-    };      
-
     class CallExpressionAST : public NodeAST
     {
         NodeAST::TypePtr expression;
-        ArgumentListAST::TypePtr argumentList;
-        static ArgumentListAST::ArgumentList defaultList;
+        std::vector<NodeAST::TypePtr> arguments;
     public:
         using TypePtr = std::shared_ptr<CallExpressionAST>;
 
         CallExpressionAST(TypeScriptParserANTLR::CallExpressionContext* callExpressionContext) 
             : NodeAST(SyntaxKind::CallExpression, TextRange(callExpressionContext)),
               expression(parse(callExpressionContext->callExpression())), 
-              argumentList(parse(callExpressionContext->arguments())) {}     
+              arguments(parse(callExpressionContext->arguments())) {}     
 
         CallExpressionAST(TypeScriptParserANTLR::CoverCallExpressionAndAsyncArrowHeadContext* coverCallExpressionAndAsyncArrowHeadContext) 
             : NodeAST(SyntaxKind::CallExpression, TextRange(coverCallExpressionAndAsyncArrowHeadContext)),
               expression(parse(coverCallExpressionAndAsyncArrowHeadContext->memberExpression())), 
-              argumentList(parse(coverCallExpressionAndAsyncArrowHeadContext->arguments())) {}     
+              arguments(parse(coverCallExpressionAndAsyncArrowHeadContext->arguments())) {}     
 
-        CallExpressionAST(TextRange range, NodeAST::TypePtr expression, ArgumentListAST::TypePtr argumentList)
-            : NodeAST(SyntaxKind::Parameters, range), expression(expression), argumentList(argumentList) {}
+        CallExpressionAST(TextRange range, NodeAST::TypePtr expression, std::vector<NodeAST::TypePtr> arguments)
+            : NodeAST(SyntaxKind::Parameters, range), expression(expression), arguments(arguments) {}
 
         const auto& getExpression() const { return expression; }
-        const auto& getArguments() const { return argumentList ? argumentList->getArguments() : defaultList; }
+        const auto& getArguments() const { return arguments; }
 
         virtual void accept(VisitorAST *visitor) override
         {
@@ -1008,12 +950,9 @@ namespace typescript
             
             visitor->visit(this);
             expression->accept(visitor);
-            if (argumentList)
+            for (auto &item : arguments)
             {
-                for (auto &item : *argumentList)
-                {
-                    item->accept(visitor);
-                }
+                item->accept(visitor);
             }
         }
 
@@ -1023,8 +962,6 @@ namespace typescript
             return N->getKind() == SyntaxKind::CallExpression;
         }          
     };    
-
-    ArgumentListAST::ArgumentList CallExpressionAST::defaultList;
 
     class ParenthesizedExpressionAST : public NodeAST
     {
