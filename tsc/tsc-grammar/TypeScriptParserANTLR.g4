@@ -6,10 +6,18 @@ options {
 
 @parser::members 
 {
-    bool channelTokenEquals(size_t tokenType)
+    void setChannelToTokenIfEquals(size_t tokenType)
     {
         auto prevToken = ((antlr4::BufferedTokenStream*)_input)->get(getCurrentToken()->getTokenIndex() - 1);
-        return prevToken && prevToken->getType() == tokenType;
+        if (prevToken && prevToken->getType() == tokenType)
+        {
+            ((antlr4::WritableToken*)prevToken)->setChannel(0);
+        }
+    }
+
+    void token(size_t tokenType)
+    {
+        setChannelToTokenIfEquals(tokenType);
     }
 }
 
@@ -89,11 +97,16 @@ statementList
 
 statement
     : emptyStatement
-    | expressionStatement
+    | expressionStatement 
     | ifStatement
     | returnStatement
     | block
     ;    
+
+testEndStatement
+    : SEMICOLON_TOKEN
+    | {token(LineTerminatorSequence);} LineTerminatorSequence
+    ;
 
 block
     : OPENBRACE_TOKEN statementList CLOSEBRACE_TOKEN ;
@@ -101,12 +114,8 @@ block
 emptyStatement
     : SEMICOLON_TOKEN ;
 
-statementTerminator
-    : SEMICOLON_TOKEN 
-    ;
-
 expressionStatement
-    : expression statementTerminator ;
+    : expression testEndStatement ;
 
 ifStatement
     : IF_KEYWORD OPENPAREN_TOKEN expression CLOSEPAREN_TOKEN statement ELSE_KEYWORD statement // No need for statementTerminator as statement is teminated
@@ -114,7 +123,7 @@ ifStatement
     ;
 
 returnStatement
-    : RETURN_KEYWORD expression? statementTerminator ;
+    : RETURN_KEYWORD expression? testEndStatement ;
 
 expression
     : assignmentExpression
@@ -227,13 +236,7 @@ primaryExpression
     ;
 
 coverParenthesizedExpressionAndArrowParameterList
-    : OPENPAREN_TOKEN expression CLOSEPAREN_TOKEN
-    | OPENPAREN_TOKEN expression COMMA_TOKEN CLOSEPAREN_TOKEN
-    | OPENPAREN_TOKEN CLOSEPAREN_TOKEN
-    | OPENPAREN_TOKEN DOTDOTDOT_TOKEN bindingIdentifier CLOSEPAREN_TOKEN
-    | OPENPAREN_TOKEN DOTDOTDOT_TOKEN bindingPattern CLOSEPAREN_TOKEN
-    | OPENPAREN_TOKEN expression COMMA_TOKEN DOTDOTDOT_TOKEN bindingIdentifier CLOSEPAREN_TOKEN
-    | OPENPAREN_TOKEN expression COMMA_TOKEN DOTDOTDOT_TOKEN bindingPattern CLOSEPAREN_TOKEN
+    : OPENPAREN_TOKEN (expression COMMA_TOKEN?)? (DOTDOTDOT_TOKEN (bindingIdentifier|bindingPattern))? CLOSEPAREN_TOKEN
     ;
 
 optionalExpression
@@ -297,9 +300,7 @@ identifier
     : IdentifierName ; // but not ReservedWord 
 
 arguments
-    : OPENPAREN_TOKEN CLOSEPAREN_TOKEN  
-    | OPENPAREN_TOKEN argumentList CLOSEPAREN_TOKEN 
-    | OPENPAREN_TOKEN argumentList COMMA_TOKEN CLOSEPAREN_TOKEN 
+    : OPENPAREN_TOKEN argumentList? COMMA_TOKEN? CLOSEPAREN_TOKEN  
     ;
 
 argumentList
