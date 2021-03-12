@@ -497,3 +497,22 @@ void ts::IfOp::getCanonicalizationPatterns(OwningRewritePatternList &results, ML
 {
     results.insert<RemoveUnusedResults, RemoveStaticCondition>(context);
 }
+
+void ts::GlobalOp::build(OpBuilder &builder, OperationState &result, Type type, bool isConstant,
+    StringRef name, Attribute value, ArrayRef<NamedAttribute> attrs)
+{
+    result.addAttribute(SymbolTable::getSymbolAttrName(), builder.getStringAttr(name));
+    result.addAttribute("type", TypeAttr::get(type));
+    if (isConstant)
+    {
+        result.addAttribute("constant", builder.getUnitAttr());
+    }
+
+    if (value)
+    {
+        result.addAttribute("value", value);
+    }
+
+    result.attributes.append(attrs.begin(), attrs.end());
+    result.addRegion();
+}

@@ -290,6 +290,21 @@ namespace
                     type = getType(item->getType());
                 }
 
+                mlir::Value init;
+                if (auto initializer = item->getInitializer())
+                {
+                    init = mlirGenExpression(initializer, genContext);
+                    if (!type)
+                    {
+                        type = init.getType();
+                    }
+                    else if (type != init.getType())
+                    {
+                        auto castValue = builder.create<CastOp>(loc(initializer->getLoc()), type, init);
+                        init = castValue;
+                    }
+                }
+
                 auto isGlobal = symbolTable.getCurScope()->getParentScope() == nullptr;
 
                 auto varDecl = std::make_shared<VariableDeclarationDOM>(name, type, location);
@@ -303,22 +318,6 @@ namespace
 
                 if (!isGlobal)
                 {
-                    // local init
-                    mlir::Value init;
-                    if (auto initializer = item->getInitializer())
-                    {
-                        init = mlirGenExpression(initializer, genContext);
-                        if (!type)
-                        {
-                            type = init.getType();
-                        }
-                        else if (type != init.getType())
-                        {
-                            auto castValue = builder.create<CastOp>(loc(initializer->getLoc()), type, init);
-                            init = castValue;
-                        }
-                    }
-
                     if (isConst)
                     {
                         declare(varDecl, init);
@@ -336,6 +335,7 @@ namespace
                 else
                 {
                     // TODO global init value
+                    init.getDefiningOp()->erase();
 
                     auto globalOp = builder.create<GlobalOp>(
                         location,
