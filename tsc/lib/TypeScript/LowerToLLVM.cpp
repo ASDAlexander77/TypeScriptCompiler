@@ -39,6 +39,11 @@ namespace
         return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(32), rewriter.getIntegerAttr(rewriter.getI32Type(), value));
     }
 
+    static Value createI1ConstantOf(Location loc, PatternRewriter &rewriter, bool value)
+    {
+        return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(1), rewriter.getIntegerAttr(rewriter.getI1Type(), value));
+    }    
+
     static Type getIntPtrType(unsigned addressSpace, LLVMTypeConverter &typeConverter)
     {
         return IntegerType::get(&typeConverter.getContext(), typeConverter.getPointerBitwidth(addressSpace));
@@ -95,6 +100,102 @@ namespace
         rewriter.setInsertionPointToStart(continuationBlock);
 
         return resultBlock->getArguments().front();
+    }
+
+    static void NegativeOp(ts::ArithmeticUnaryOp &unaryOp, mlir::PatternRewriter &builder)
+    {
+        auto oper = unaryOp.operand1();
+        auto type = oper.getType();
+        if (type.isIntOrIndex())
+        {
+            mlir::Value lhs;
+            if (type.isInteger(1))
+            {
+                lhs = createI1ConstantOf(unaryOp->getLoc(), builder, true);
+            }
+            else
+            {
+                lhs = createI32ConstantOf(unaryOp->getLoc(), builder, 0xffff);
+            }
+
+            builder.replaceOpWithNewOp<LLVM::XOrOp>(unaryOp, type, oper, lhs);
+        }
+        else if (!type.isIntOrIndex() && type.isIntOrIndexOrFloat())
+        {
+            builder.replaceOpWithNewOp<LLVM::XOrOp>(unaryOp, oper);
+        }
+        else
+        {
+            llvm_unreachable("not implemented");
+        }
+    }    
+
+    template <typename UnaryOpTy, typename StdIOpTy, typename StdFOpTy>
+    void UnaryOp(UnaryOpTy &unaryOp, mlir::PatternRewriter &builder)
+    {
+        auto oper = unaryOp.operand1();
+        auto type = oper.getType();
+        if (type.isIntOrIndex())
+        {
+            builder.replaceOpWithNewOp<StdIOpTy>(unaryOp, type, oper);
+        }
+        else if (!type.isIntOrIndex() && type.isIntOrIndexOrFloat())
+        {
+            builder.replaceOpWithNewOp<StdFOpTy>(unaryOp, type, oper);
+        }
+        else
+        {
+            llvm_unreachable("not implemented");
+        }
+    }  
+
+    template <typename BinOpTy, typename StdIOpTy, typename StdFOpTy>
+    void BinOp(BinOpTy &binOp, mlir::PatternRewriter &builder)
+    {
+        auto leftType = binOp.getOperand(0).getType();
+        if (leftType.isIntOrIndex())
+        {
+            builder.replaceOpWithNewOp<StdIOpTy>(binOp, binOp.getOperand(0), binOp.getOperand(1));
+        }
+        else if (!leftType.isIntOrIndex() && leftType.isIntOrIndexOrFloat())
+        {
+            builder.replaceOpWithNewOp<StdFOpTy>(binOp, binOp.getOperand(0), binOp.getOperand(1));
+        }
+        else
+        {
+            llvm_unreachable("not implemented");
+        }
+    }
+
+    template <typename BinOpTy, typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
+    void LogicOp(BinOpTy &binOp, ConversionPatternRewriter &builder, LLVMTypeConverter &typeConverter)
+    {
+        auto leftType = binOp.getOperand(0).getType();
+        if (leftType.isIntOrIndex())
+        {
+            builder.replaceOpWithNewOp<StdIOpTy>(binOp, v1, binOp.getOperand(0), binOp.getOperand(1));
+        }
+        else if (!leftType.isIntOrIndex() && leftType.isIntOrIndexOrFloat())
+        {
+            builder.replaceOpWithNewOp<StdFOpTy>(binOp, v2, binOp.getOperand(0), binOp.getOperand(1));
+        }
+        else if (leftType.dyn_cast_or_null<ts::StringType>() || leftType.dyn_cast_or_null<ts::AnyType>())
+        {
+            auto left = binOp.getOperand(0);
+            auto right = binOp.getOperand(1);
+
+            auto intPtrType = getIntPtrType(0, typeConverter);
+
+            Value leftPtrValue = builder.create<LLVM::PtrToIntOp>(binOp.getLoc(), intPtrType, left);
+            Value rightPtrValue = builder.create<LLVM::PtrToIntOp>(binOp.getLoc(), intPtrType, right);
+
+            builder.replaceOpWithNewOp<StdIOpTy>(binOp, v1, leftPtrValue, rightPtrValue);
+        }
+        else
+        {
+            emitError(binOp.getLoc(), "Not implemented operator for type 1: '") << leftType << "'";
+            llvm_unreachable("not implemented");
+        }
     }
 
     template <typename T>
@@ -809,24 +910,6 @@ namespace
         }
     };
 
-    template <typename UnaryOpTy, typename StdIOpTy, typename StdFOpTy>
-    void UnaryOp(UnaryOpTy &unaryOp, mlir::PatternRewriter &builder)
-    {
-        auto type = unaryOp.operand1().getType();
-        if (type.isIntOrIndex())
-        {
-            builder.replaceOpWithNewOp<StdIOpTy>(unaryOp, unaryOp.operand1());
-        }
-        else if (!type.isIntOrIndex() && type.isIntOrIndexOrFloat())
-        {
-            builder.replaceOpWithNewOp<StdFOpTy>(unaryOp, unaryOp.operand1());
-        }
-        else
-        {
-            llvm_unreachable("not implemented");
-        }
-    }    
-
     struct ArithmeticUnaryOpLowering : public OpConversionPattern<ts::ArithmeticUnaryOp>
     {
         using OpConversionPattern<ts::ArithmeticUnaryOp>::OpConversionPattern;
@@ -836,7 +919,7 @@ namespace
             switch ((SyntaxKind)arithmeticUnaryOp.opCode())
             {
             case SyntaxKind::ExclamationToken:
-                UnaryOp<ts::ArithmeticUnaryOp, XOrOp, XOrOp>(arithmeticUnaryOp, rewriter);
+                NegativeOp(arithmeticUnaryOp, rewriter);
                 return success();
 
             default:
@@ -844,55 +927,6 @@ namespace
             }
         }
     };    
-
-    template <typename BinOpTy, typename StdIOpTy, typename StdFOpTy>
-    void BinOp(BinOpTy &binOp, mlir::PatternRewriter &builder)
-    {
-        auto leftType = binOp.getOperand(0).getType();
-        if (leftType.isIntOrIndex())
-        {
-            builder.replaceOpWithNewOp<StdIOpTy>(binOp, binOp.getOperand(0), binOp.getOperand(1));
-        }
-        else if (!leftType.isIntOrIndex() && leftType.isIntOrIndexOrFloat())
-        {
-            builder.replaceOpWithNewOp<StdFOpTy>(binOp, binOp.getOperand(0), binOp.getOperand(1));
-        }
-        else
-        {
-            llvm_unreachable("not implemented");
-        }
-    }
-
-    template <typename BinOpTy, typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
-    void LogicOp(BinOpTy &binOp, ConversionPatternRewriter &builder, LLVMTypeConverter &typeConverter)
-    {
-        auto leftType = binOp.getOperand(0).getType();
-        if (leftType.isIntOrIndex())
-        {
-            builder.replaceOpWithNewOp<StdIOpTy>(binOp, v1, binOp.getOperand(0), binOp.getOperand(1));
-        }
-        else if (!leftType.isIntOrIndex() && leftType.isIntOrIndexOrFloat())
-        {
-            builder.replaceOpWithNewOp<StdFOpTy>(binOp, v2, binOp.getOperand(0), binOp.getOperand(1));
-        }
-        else if (leftType.dyn_cast_or_null<ts::StringType>() || leftType.dyn_cast_or_null<ts::AnyType>())
-        {
-            auto left = binOp.getOperand(0);
-            auto right = binOp.getOperand(1);
-
-            auto intPtrType = getIntPtrType(0, typeConverter);
-
-            Value leftPtrValue = builder.create<LLVM::PtrToIntOp>(binOp.getLoc(), intPtrType, left);
-            Value rightPtrValue = builder.create<LLVM::PtrToIntOp>(binOp.getLoc(), intPtrType, right);
-
-            builder.replaceOpWithNewOp<StdIOpTy>(binOp, v1, leftPtrValue, rightPtrValue);
-        }
-        else
-        {
-            emitError(binOp.getLoc(), "Not implemented operator for type 1: '") << leftType << "'";
-            llvm_unreachable("not implemented");
-        }
-    }
 
     struct ArithmeticBinaryOpLowering : public OpConversionPattern<ts::ArithmeticBinaryOp>
     {
