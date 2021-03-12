@@ -64,10 +64,13 @@ public:
     const std::shared_ptr<NodeAST> &getInitValue() const { return initValue; }
     bool hasInitValue() const { return !!initValue; }
     bool getReadWriteAccess() const { return readWrite; };
-    void setReadWriteAccess() { readWrite = true; };
+    void setReadWriteAccess(bool value = true) { readWrite = value; };
+    bool getIsGlobal() const { return isGlobal; };
+    void setIsGlobal(bool value = true) { isGlobal = value; };
 
 protected:
     bool readWrite;
+    bool isGlobal;
 };
 
 class FunctionParamDOM : public VariableDeclarationDOM

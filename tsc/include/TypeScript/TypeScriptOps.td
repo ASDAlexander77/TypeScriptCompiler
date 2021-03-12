@@ -605,5 +605,72 @@ def TypeScript_YieldOp : TypeScript_Op<"yield", [NoSideEffect, ReturnLike, Termi
   let verifier = ?;
 }
 
+def TypeScript_AddressOfOp : TypeScript_Op<"addressof"> {
+  let arguments = (ins FlatSymbolRefAttr:$global_name);
+  let results = (outs TypeScript_AnyRef:$reference);
+
+  let builders = [
+    OpBuilderDAG<(ins "GlobalOp":$global,
+      CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs),
+    [{
+      build($_builder, $_state, RefType::get(global.getType()), global.sym_name());
+      $_state.addAttributes(attrs);
+    }]>,
+    OpBuilderDAG<(ins "FuncOp":$func, CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs),
+    [{
+      build($_builder, $_state, RefType::get(func.getType()), func.getName());
+      $_state.addAttributes(attrs);
+    }]>
+  ];
+
+  let extraClassDeclaration = [{
+    /// Return the ts.global operation that defined the value referenced here.
+    GlobalOp getGlobal();
+
+    /// Return the ts.func operation that is referenced here.
+    FuncOp getFunction();
+  }];
+}
+
+def TypeScript_GlobalOp : TypeScript_Op<"global",
+    [IsolatedFromAbove, SingleBlockImplicitTerminator<"ReturnOp">, Symbol]> {
+  let arguments = (ins
+    TypeAttr:$type,
+    UnitAttr:$constant,
+    StrAttr:$sym_name,
+    OptionalAttr<AnyAttr>:$value
+  );
+
+  let regions = (region AnyRegion:$initializer);
+
+  let builders = [
+    OpBuilderDAG<(ins "Type":$type, "bool":$isConstant, "StringRef":$name, 
+        "Attribute":$value, CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>
+  ];
+
+  let extraClassDeclaration = [{
+    /// Return the LLVM type of the global.
+    Type getType() {
+      return type();
+    }
+    /// Return the initializer attribute if it exists, or a null attribute.
+    Attribute getValueOrNull() {
+      return value().getValueOr(Attribute());
+    }
+    /// Return the initializer region. This may be empty, but if it is not it
+    /// terminates in an `llvm.return` op with the initializer value.
+    Region &getInitializerRegion() {
+      return getOperation()->getRegion(0);
+    }
+    /// Return the initializer block. If the initializer region is empty this
+    /// is nullptr. If it is not nullptr, it terminates with an `llvm.return`
+    /// op with the initializer value.
+    Block *getInitializerBlock() {
+      return getInitializerRegion().empty() ?
+        nullptr : &getInitializerRegion().front();
+    }
+  }];
+}
+
 
 #endif // TYPESCRIPT_OPS

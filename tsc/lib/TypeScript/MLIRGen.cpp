@@ -100,6 +100,8 @@ namespace
 
             declareAllFunctionDeclarations(module);
 
+            SymbolTableScopeT varScope(symbolTable);
+
             // Process generating here
             GenContext genContext = {0};
             for (auto &statement : *module.get())
@@ -279,7 +281,6 @@ namespace
 
             for (auto &item : *variableStatementAST->getDeclarationList())
             {
-                mlir::Value init;
                 mlir::Type type;
 
                 auto name = item->getIdentifier()->getName();
@@ -289,35 +290,61 @@ namespace
                     type = getType(item->getType());
                 }
 
-                if (auto initializer = item->getInitializer())
-                {
-                    init = mlirGenExpression(initializer, genContext);
-                    if (!type)
-                    {
-                        type = init.getType();
-                    }
-                    else if (type != init.getType())
-                    {
-                        auto castValue = builder.create<CastOp>(loc(initializer->getLoc()), type, init);
-                        init = castValue;
-                    }
-                }
+                auto isGlobal = symbolTable.getCurScope()->getParentScope() == nullptr;
 
                 auto varDecl = std::make_shared<VariableDeclarationDOM>(name, type, location);
-                if (variableStatementAST->getIsConst())
+                auto isConst = variableStatementAST->getIsConst();
+                if (!isConst)
                 {
-                    declare(varDecl, init);
+                    varDecl->setReadWriteAccess();
+                }
+
+                varDecl->setIsGlobal(isGlobal);
+
+                if (!isGlobal)
+                {
+                    // local init
+                    mlir::Value init;
+                    if (auto initializer = item->getInitializer())
+                    {
+                        init = mlirGenExpression(initializer, genContext);
+                        if (!type)
+                        {
+                            type = init.getType();
+                        }
+                        else if (type != init.getType())
+                        {
+                            auto castValue = builder.create<CastOp>(loc(initializer->getLoc()), type, init);
+                            init = castValue;
+                        }
+                    }
+
+                    if (isConst)
+                    {
+                        declare(varDecl, init);
+                    }
+                    else
+                    {
+                        auto variableOp = builder.create<VariableOp>(
+                            location,
+                            ts::RefType::get(type),
+                            init);
+
+                        declare(varDecl, variableOp);
+                    }
                 }
                 else
                 {
-                    varDecl->setReadWriteAccess();
+                    // TODO global init value
 
-                    auto variableOp = builder.create<VariableOp>(
+                    auto globalOp = builder.create<GlobalOp>(
                         location,
-                        ts::RefType::get(type),
-                        init);
+                        type,
+                        isConst,
+                        StringRef(name),
+                        mlir::Attribute());
 
-                    declare(varDecl, variableOp);
+                    declare(varDecl, mlir::Value());                    
                 }
             }
 
