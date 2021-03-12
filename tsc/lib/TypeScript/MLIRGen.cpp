@@ -1139,7 +1139,9 @@ namespace
                 else if (value.second->getIsGlobal())
                 {
                     // global var
-                    return builder.create<ts::AddressOfOp>(loc(identifier->getLoc()), RefType::get(value.second->getType()), value.second->getName());
+                    auto location = loc(identifier->getLoc());
+                    auto address = builder.create<ts::AddressOfOp>(location, RefType::get(value.second->getType()), value.second->getName());
+                    return builder.create<ts::LoadOp>(location, value.second->getType(), address);
                 }
             }
 
