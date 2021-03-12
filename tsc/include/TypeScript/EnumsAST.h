@@ -1,3 +1,6 @@
+#ifndef MLIR_TYPESCRIPT_ENUMAST_H_
+#define MLIR_TYPESCRIPT_ENUMAST_H_
+
 namespace typescript
 {
     enum class SyntaxKind
@@ -435,3 +438,5 @@ namespace typescript
         IntrinsicElement = 3
     };
 };
+
+#endif // MLIR_TYPESCRIPT_ENUMAST_H_
