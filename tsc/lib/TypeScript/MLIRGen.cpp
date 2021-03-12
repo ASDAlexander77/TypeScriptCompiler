@@ -264,7 +264,7 @@ namespace
             else if (expressionAST->getKind() == SyntaxKind::PrefixUnaryExpression)
             {
                 return mlirGen(std::dynamic_pointer_cast<PrefixUnaryExpressionAST>(expressionAST), genContext);
-            }            
+            }
 
             llvm_unreachable("unknown expression");
         }
@@ -344,7 +344,7 @@ namespace
                         StringRef(name),
                         mlir::Attribute());
 
-                    declare(varDecl, mlir::Value());                    
+                    declare(varDecl, mlir::Value());
                 }
             }
 
@@ -721,8 +721,8 @@ namespace
                     genContext.passResult->functionReturnType = expressionValue.getType();
                 }
 
-                auto retVarInfo = resolve(RETURN_VARIABLE_NAME);
-                if (!retVarInfo.first)
+                auto retVarInfo = symbolTable.lookup(RETURN_VARIABLE_NAME);
+                if (retVarInfo.second)
                 {
                     if (genContext.allowPartialResolve)
                     {
@@ -784,8 +784,8 @@ namespace
                     builder.getI1Type(),
                     builder.getI32IntegerAttr((int)opCode),
                     expressionValue);
-                default:
-                    llvm_unreachable("not implemented");
+            default:
+                llvm_unreachable("not implemented");
             }
         }
 
@@ -811,25 +811,25 @@ namespace
             switch (opCode)
             {
             case SyntaxKind::EqualsToken:
+            {
+                auto loadOp = dyn_cast<ts::LoadOp>(leftExpressionValue.getDefiningOp());
+                if (loadOp)
                 {
-                    auto loadOp = dyn_cast<ts::LoadOp>(leftExpressionValue.getDefiningOp());
-                    if (loadOp)
-                    {
-                        builder.create<ts::StoreOp>(
-                            location,
-                            rightExpressionValue,
-                            loadOp.reference());
-                    }
-                    else
-                    {
-                        builder.create<ts::StoreOp>(
-                            location,
-                            rightExpressionValue,
-                            leftExpressionValue);
-                    }
-
-                    return rightExpressionValue;
+                    builder.create<ts::StoreOp>(
+                        location,
+                        rightExpressionValue,
+                        loadOp.reference());
                 }
+                else
+                {
+                    builder.create<ts::StoreOp>(
+                        location,
+                        rightExpressionValue,
+                        leftExpressionValue);
+                }
+
+                return rightExpressionValue;
+            }
             case SyntaxKind::EqualsEqualsToken:
             case SyntaxKind::EqualsEqualsEqualsToken:
             case SyntaxKind::ExclamationEqualsToken:
@@ -1123,16 +1123,24 @@ namespace
             // resolve name
             auto name = identifier->getName();
 
-            auto value = resolve(name);
-            if (value.first)
+            auto value = symbolTable.lookup(name);
+            if (value.second)
             {
-                // load value if memref
-                if (value.second)
+                if (value.first)
                 {
+                    if (!value.second->getReadWriteAccess())
+                    {
+                        return value.first;
+                    }
+
+                    // load value if memref
                     return builder.create<ts::LoadOp>(value.first.getLoc(), value.first.getType().cast<ts::RefType>().getElementType(), value.first);
                 }
-
-                return value.first;
+                else if (value.second->getIsGlobal())
+                {
+                    // global var
+                    return builder.create<ts::AddressOfOp>(loc(identifier->getLoc()), RefType::get(value.second->getType()), value.second->getName());
+                }
             }
 
             // unresolved reference (for call for example)
@@ -1181,17 +1189,6 @@ namespace
 
             symbolTable.insert(name, {value, var});
             return mlir::success();
-        }
-
-        std::pair<mlir::Value, bool> resolve(StringRef name)
-        {
-            auto varIt = symbolTable.lookup(name);
-            if (varIt.first)
-            {
-                return std::make_pair(varIt.first, varIt.second->getReadWriteAccess());
-            }
-
-            return std::make_pair(mlir::Value(), false);
         }
 
     private:
