@@ -751,12 +751,14 @@ namespace
 
             switch (opCode)
             {
-            case SyntaxKind::EqualsToken:
-                return builder.create<ts::LogicalUnaryOp>(
+            case SyntaxKind::ExclamationToken:
+                return builder.create<ts::ArithmeticUnaryOp>(
                     location,
                     builder.getI1Type(),
                     builder.getI32IntegerAttr((int)opCode),
                     expressionValue);
+                default:
+                    llvm_unreachable("not implemented");
             }
         }
 

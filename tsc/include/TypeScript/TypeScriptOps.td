@@ -453,23 +453,6 @@ def TypeScript_ArithmeticBinaryOp : TypeScript_Op<"arithmetic_binary"> {
   );
 }
 
-def TypeScript_LogicalUnaryOp : TypeScript_Op<"logical_unary"> {
-  let description = [{
-    ```mlir
-    %2 = ts.logical_unary 1, %1 : i1
-    ```
-  }];
-
-  let arguments = (ins
-    I32Attr:$opCode,
-    AnyType:$operand1
-  );
-
-  let results = (outs
-    I1:$result
-  );
-}
-
 def TypeScript_LogicalBinaryOp : TypeScript_Op<"logical_binary"> {
   let description = [{
     ```mlir

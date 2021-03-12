@@ -809,6 +809,42 @@ namespace
         }
     };
 
+    template <typename UnaryOpTy, typename StdIOpTy, typename StdFOpTy>
+    void UnaryOp(UnaryOpTy &unaryOp, mlir::PatternRewriter &builder)
+    {
+        auto type = unaryOp.operand1().getType();
+        if (type.isIntOrIndex())
+        {
+            builder.replaceOpWithNewOp<StdIOpTy>(unaryOp, unaryOp.operand1());
+        }
+        else if (!type.isIntOrIndex() && type.isIntOrIndexOrFloat())
+        {
+            builder.replaceOpWithNewOp<StdFOpTy>(unaryOp, unaryOp.operand1());
+        }
+        else
+        {
+            llvm_unreachable("not implemented");
+        }
+    }    
+
+    struct ArithmeticUnaryOpLowering : public OpConversionPattern<ts::ArithmeticUnaryOp>
+    {
+        using OpConversionPattern<ts::ArithmeticUnaryOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(ts::ArithmeticUnaryOp arithmeticUnaryOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            switch ((SyntaxKind)arithmeticUnaryOp.opCode())
+            {
+            case SyntaxKind::ExclamationToken:
+                UnaryOp<ts::ArithmeticUnaryOp, XOrOp, XOrOp>(arithmeticUnaryOp, rewriter);
+                return success();
+
+            default:
+                llvm_unreachable("not implemented");
+            }
+        }
+    };    
+
     template <typename BinOpTy, typename StdIOpTy, typename StdFOpTy>
     void BinOp(BinOpTy &binOp, mlir::PatternRewriter &builder)
     {
@@ -1093,6 +1129,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 
     patterns.insert<
         ArithmeticBinaryOpLowering,
+        ArithmeticUnaryOpLowering,
         AssertOpLowering,
         EntryOpLowering,
         FuncOpLowering,
