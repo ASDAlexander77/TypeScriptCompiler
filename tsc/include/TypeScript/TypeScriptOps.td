@@ -418,6 +418,23 @@ def TypeScript_LoadOp : TypeScript_Op<"load",
   let assemblyFormat = "$reference attr-dict `:` type($reference) `->` type($result)";
 }
 
+def TypeScript_ArithmeticUnaryOp : TypeScript_Op<"arithmetic_unary"> {
+  let description = [{
+    ```mlir
+    %2 = ts.arithmetic_unary 1, %1 : f32
+    ```
+  }];
+
+  let arguments = (ins
+    I32Attr:$opCode,
+    AnyType:$operand1
+  );
+
+  let results = (outs
+    AnyType:$result
+  );
+}
+
 def TypeScript_ArithmeticBinaryOp : TypeScript_Op<"arithmetic_binary"> {
   let description = [{
     ```mlir
@@ -433,6 +450,23 @@ def TypeScript_ArithmeticBinaryOp : TypeScript_Op<"arithmetic_binary"> {
 
   let results = (outs
     AnyType:$result
+  );
+}
+
+def TypeScript_LogicalUnaryOp : TypeScript_Op<"logical_unary"> {
+  let description = [{
+    ```mlir
+    %2 = ts.logical_unary 1, %1 : i1
+    ```
+  }];
+
+  let arguments = (ins
+    I32Attr:$opCode,
+    AnyType:$operand1
+  );
+
+  let results = (outs
+    I1:$result
   );
 }
 

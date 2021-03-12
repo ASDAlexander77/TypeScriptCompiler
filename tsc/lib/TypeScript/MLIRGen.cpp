@@ -259,6 +259,10 @@ namespace
             {
                 return mlirGen(std::dynamic_pointer_cast<BinaryExpressionAST>(expressionAST), genContext);
             }
+            else if (expressionAST->getKind() == SyntaxKind::PrefixUnaryExpression)
+            {
+                return mlirGen(std::dynamic_pointer_cast<PrefixUnaryExpressionAST>(expressionAST), genContext);
+            }            
 
             llvm_unreachable("unknown expression");
         }
@@ -736,6 +740,26 @@ namespace
             return mlir::success();
         }
 
+        mlir::Value mlirGen(PrefixUnaryExpressionAST::TypePtr prefixUnaryExpressionAST, const GenContext &genContext)
+        {
+            auto location = loc(prefixUnaryExpressionAST->getLoc());
+
+            auto opCode = prefixUnaryExpressionAST->getOpCode();
+
+            auto expression = prefixUnaryExpressionAST->getExpression();
+            auto expressionValue = mlirGenExpression(expression, genContext);
+
+            switch (opCode)
+            {
+            case SyntaxKind::EqualsToken:
+                return builder.create<ts::LogicalUnaryOp>(
+                    location,
+                    builder.getI1Type(),
+                    builder.getI32IntegerAttr((int)opCode),
+                    expressionValue);
+            }
+        }
+
         mlir::Value mlirGen(BinaryExpressionAST::TypePtr binaryExpressionAST, const GenContext &genContext)
         {
             auto location = loc(binaryExpressionAST->getLoc());
@@ -752,7 +776,7 @@ namespace
 
             if (leftExpressionValue.getType() != rightExpressionValue.getType())
             {
-                rightExpressionValue = builder.create<CastOp>(loc(rightExpression->getLoc()), leftExpressionValue.getType(), rightExpressionValue);
+                rightExpressionValue = builder.create<ts::CastOp>(loc(rightExpression->getLoc()), leftExpressionValue.getType(), rightExpressionValue);
             }
 
             switch (opCode)
@@ -781,14 +805,14 @@ namespace
             case SyntaxKind::EqualsEqualsEqualsToken:
             case SyntaxKind::ExclamationEqualsToken:
             case SyntaxKind::ExclamationEqualsEqualsToken:
-                return builder.create<LogicalBinaryOp>(
+                return builder.create<ts::LogicalBinaryOp>(
                     location,
                     builder.getI1Type(),
                     builder.getI32IntegerAttr((int)opCode),
                     leftExpressionValue,
                     rightExpressionValue);
             default:
-                return builder.create<ArithmeticBinaryOp>(
+                return builder.create<ts::ArithmeticBinaryOp>(
                     location,
                     leftExpressionValue.getType(),
                     builder.getI32IntegerAttr((int)opCode),
