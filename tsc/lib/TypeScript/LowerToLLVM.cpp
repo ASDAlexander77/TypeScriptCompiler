@@ -29,18 +29,23 @@ namespace ts = mlir::typescript;
 
 namespace
 {
-    class PrintOpLoweringLogic : public LoweringLogic<ts::PrintOp>
+    class PrintOpLowering : public OpConversionPattern<ts::PrintOp>
     {
     public:
-        using LoweringLogic<ts::PrintOp>::LoweringLogic;
+        using OpConversionPattern<ts::PrintOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite()
+        LogicalResult matchAndRewrite(ts::PrintOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
+            TypeHelper th(rewriter);
+            LLVMCodeHelper ch(op, rewriter);
+
+            auto loc = op->getLoc();
+
             // Get a symbol reference to the printf function, inserting it if necessary.
             auto printfFuncOp =
-                getOrInsertFunction(
+                ch.getOrInsertFunction(
                     "printf",
-                    getFunctionType(getI32Type(), getI8PtrType(), true));
+                    th.getFunctionType(rewriter.getI32Type(), th.getI8PtrType(), true));
 
             std::stringstream format;
             auto count = 0;
@@ -85,9 +90,9 @@ namespace
             std::stringstream formatVarName;
             formatVarName << "frmt_" << opHash;
 
-            auto formatSpecifierCst = getOrCreateGlobalString(formatVarName.str(), format.str());
+            auto formatSpecifierCst = ch.getOrCreateGlobalString(formatVarName.str(), format.str());
 
-            auto i8PtrTy = getI8PtrType();
+            auto i8PtrTy = th.getI8PtrType();
 
             mlir::SmallVector<mlir::Value, 4> values;
             values.push_back(formatSpecifierCst);
@@ -103,23 +108,21 @@ namespace
                     values.push_back(rewriter.create<LLVM::SelectOp>(
                         item.getLoc(),
                         item,
-                        getOrCreateGlobalString("__true__", std::string("true")),
-                        getOrCreateGlobalString("__false__", std::string("false"))));
+                        ch.getOrCreateGlobalString("__true__", std::string("true")),
+                        ch.getOrCreateGlobalString("__false__", std::string("false"))));
 
                     /*
-                    auto valuesCond = conditionalExpressionLowering(
-                        item.getLoc(), 
+                    auto valuesCond = ch.conditionalExpressionLowering(
                         i8PtrTy,
                         item,
                         [&](auto &builder, auto loc)
                         {
-                            return getOrCreateGlobalString("__true__", std::string("true"));
+                            return ch.getOrCreateGlobalString("__true__", std::string("true"));
                         }, 
                         [&](auto &builder, auto loc) 
                         {
-                            return getOrCreateGlobalString("__false__", std::string("false"));
-                        }, 
-                        rewriter);
+                            return ch.getOrCreateGlobalString("__false__", std::string("false"));
+                        });
 
                     values.push_back(valuesCond);
                     */
@@ -140,20 +143,18 @@ namespace
         }
     };
 
-    /// Lowers `typescript.print` to a loop nest calling `printf` on each of the individual
-    /// elements of the array.
-    struct PrintOpLowering : public OpLowering<PrintOpLoweringLogic>
-    {
-        using OpLowering<PrintOpLoweringLogic>::OpLowering;
-    };
-
-    class AssertOpLoweringLogic : public LoweringLogic<ts::AssertOp>
+    class AssertOpLowering : public OpConversionPattern<ts::AssertOp>
     {
     public:
-        using LoweringLogic<ts::AssertOp>::LoweringLogic;
+        using OpConversionPattern<ts::AssertOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite()
+        LogicalResult matchAndRewrite(ts::AssertOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
+            TypeHelper th(rewriter);
+            LLVMCodeHelper ch(op, rewriter);
+
+            auto loc = op->getLoc();
+
             auto line = 0;
             auto column = 0;
             auto fileName = StringRef("");
@@ -165,11 +166,11 @@ namespace
                 });
 
             // Insert the `_assert` declaration if necessary.
-            auto i8PtrTy = getI8PtrType();
+            auto i8PtrTy = th.getI8PtrType();
             auto assertFuncOp =
-                getOrInsertFunction(
+                ch.getOrInsertFunction(
                     "_assert",
-                    getFunctionType(getVoidType(), {i8PtrTy, i8PtrTy, getI32Type()}));
+                    th.getFunctionType(th.getVoidType(), {i8PtrTy, i8PtrTy, rewriter.getI32Type()}));
 
             // Split block at `assert` operation.
             auto *opBlock = rewriter.getInsertionBlock();
@@ -180,7 +181,7 @@ namespace
             auto *failureBlock = rewriter.createBlock(opBlock->getParent());
 
             std::stringstream msgWithNUL;
-            msgWithNUL << opTyped.msg().str();
+            msgWithNUL << op.msg().str();
 
             auto opHash = std::hash<std::string>{}(msgWithNUL.str());
 
@@ -193,16 +194,16 @@ namespace
             std::stringstream fileWithNUL;
             fileWithNUL << fileName.str();
 
-            auto msgCst = getOrCreateGlobalString(msgVarName.str(), msgWithNUL.str());
+            auto msgCst = ch.getOrCreateGlobalString(msgVarName.str(), msgWithNUL.str());
 
-            auto fileCst = getOrCreateGlobalString(fileVarName.str(), fileName.str());
+            auto fileCst = ch.getOrCreateGlobalString(fileVarName.str(), fileName.str());
 
             //auto nullCst = rewriter.create<LLVM::NullOp>(loc, getI8PtrType(context));
 
             Value lineNumberRes =
                 rewriter.create<LLVM::ConstantOp>(
                     loc,
-                    getI32Type(),
+                    rewriter.getI32Type(),
                     rewriter.getI32IntegerAttr(line));
 
             rewriter.create<LLVM::CallOp>(loc, assertFuncOp, ValueRange{msgCst, fileCst, lineNumberRes});
@@ -212,7 +213,7 @@ namespace
             rewriter.setInsertionPointToEnd(opBlock);
             rewriter.replaceOpWithNewOp<LLVM::CondBrOp>(
                 op,
-                transformed.arg(),
+                op.arg(),
                 continuationBlock,
                 failureBlock);
 
@@ -220,24 +221,22 @@ namespace
         }
     };
 
-    struct AssertOpLowering : public OpLowering<AssertOpLoweringLogic>
-    {
-        using OpLowering<AssertOpLoweringLogic>::OpLowering;
-    };
-
-    class ParseIntOpLoweringLogic : public LoweringLogic<ts::ParseIntOp>
+    class ParseIntOpLowering : public OpConversionPattern<ts::ParseIntOp>
     {
     public:
-        using LoweringLogic<ts::ParseIntOp>::LoweringLogic;
+        using OpConversionPattern<ts::ParseIntOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite()
+        LogicalResult matchAndRewrite(ts::ParseIntOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            // Insert the `_assert` declaration if necessary.
-            auto i8PtrTy = getI8PtrType();
+            TypeHelper th(rewriter);
+            LLVMCodeHelper ch(op, rewriter);
+
+            // Insert the `atoi` declaration if necessary.
+            auto i8PtrTy = th.getI8PtrType();
             auto parseIntFuncOp =
-                getOrInsertFunction(
+                ch.getOrInsertFunction(
                     "atoi",
-                    getFunctionType(rewriter.getI32Type(), {i8PtrTy}));
+                    th.getFunctionType(rewriter.getI32Type(), {i8PtrTy}));
 
             rewriter.replaceOpWithNewOp<LLVM::CallOp>(
                 op,
@@ -248,24 +247,22 @@ namespace
         }
     };
 
-    struct ParseIntOpLowering : public OpLowering<ParseIntOpLoweringLogic>
-    {
-        using OpLowering<ParseIntOpLoweringLogic>::OpLowering;
-    };
-
-    class ParseFloatOpLoweringLogic : public LoweringLogic<ts::ParseFloatOp>
+    class ParseFloatOpLowering : public OpConversionPattern<ts::ParseFloatOp>
     {
     public:
-        using LoweringLogic<ts::ParseFloatOp>::LoweringLogic;
+        using OpConversionPattern<ts::ParseFloatOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite()
+        LogicalResult matchAndRewrite(ts::ParseFloatOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            // Insert the `_assert` declaration if necessary.
-            auto i8PtrTy = getI8PtrType();
+            TypeHelper th(rewriter);
+            LLVMCodeHelper ch(op, rewriter);
+
+            // Insert the `atof` declaration if necessary.
+            auto i8PtrTy = th.getI8PtrType();
             auto parseFloatFuncOp =
-                getOrInsertFunction(
+                ch.getOrInsertFunction(
                     "atof",
-                    getFunctionType(rewriter.getF32Type(), {i8PtrTy}));
+                    th.getFunctionType(rewriter.getF32Type(), {i8PtrTy}));
 
             rewriter.replaceOpWithNewOp<LLVM::CallOp>(
                 op,
@@ -276,48 +273,41 @@ namespace
         }
     };
 
-    struct ParseFloatOpLowering : public OpLowering<ParseFloatOpLoweringLogic>
-    {
-        using OpLowering<ParseFloatOpLoweringLogic>::OpLowering;
-    };
-
     struct NullOpLowering : public OpConversionPattern<ts::NullOp>
     {
         using OpConversionPattern<ts::NullOp>::OpConversionPattern;
 
         LogicalResult matchAndRewrite(ts::NullOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            rewriter.replaceOpWithNewOp<LLVM::NullOp>(op, typeToConvertedType(op.getType(), *getTypeConverter()));
+            TypeConverterHelper tch(*getTypeConverter());
+            rewriter.replaceOpWithNewOp<LLVM::NullOp>(op, tch.typeToConvertedType(op.getType()));
             return success();
         }
     };
 
-    class StringOpLoweringLogic : public LoweringLogic<ts::StringOp>
+    class StringOpLowering : public OpConversionPattern<ts::StringOp>
     {
     public:
-        using LoweringLogic<ts::StringOp>::LoweringLogic;
+        using OpConversionPattern<ts::StringOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite()
+        LogicalResult matchAndRewrite(ts::StringOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
+            LLVMCodeHelper ch(op, rewriter);
+
             std::stringstream strWithNUL;
-            strWithNUL << opTyped.txt().str();
+            strWithNUL << op.txt().str();
 
             auto opHash = std::hash<std::string>{}(strWithNUL.str());
 
             std::stringstream strVarName;
             strVarName << "s_" << opHash;
 
-            auto txtCst = getOrCreateGlobalString(strVarName.str(), strWithNUL.str());
+            auto txtCst = ch.getOrCreateGlobalString(strVarName.str(), strWithNUL.str());
 
             rewriter.replaceOp(op, txtCst);
 
             return success();
         }
-    };
-
-    struct StringOpLowering : public OpLowering<StringOpLoweringLogic>
-    {
-        using OpLowering<StringOpLoweringLogic>::OpLowering;
     };
 
     class UndefOpLowering : public OpConversionPattern<ts::UndefOp>
@@ -327,7 +317,8 @@ namespace
 
         LogicalResult matchAndRewrite(ts::UndefOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            rewriter.replaceOpWithNewOp<LLVM::UndefOp>(op, typeToConvertedType(op.getType(), *getTypeConverter()));
+            TypeConverterHelper tch(*getTypeConverter());
+            rewriter.replaceOpWithNewOp<LLVM::UndefOp>(op, tch.typeToConvertedType(op.getType()));
             return success();
         }
     };
@@ -338,6 +329,9 @@ namespace
 
         LogicalResult matchAndRewrite(ts::EntryOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
+            CodeLogicHelper clh(op, rewriter);
+            TypeConverterHelper tch(*getTypeConverter());
+
             auto opTyped = ts::EntryOpAdaptor(op);
             auto location = op.getLoc();
 
@@ -349,8 +343,8 @@ namespace
                 allocValue =
                     rewriter.create<LLVM::AllocaOp>(
                         location,
-                        typeToConvertedType(result.getType(), *getTypeConverter()),
-                        createI32ConstantOf(location, rewriter, 1));
+                        tch.typeToConvertedType(result.getType()),
+                        clh.createI32ConstantOf(1));
             }
 
             // create return block
@@ -585,13 +579,16 @@ namespace
 
         LogicalResult matchAndRewrite(ts::VariableOp varOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
+            CodeLogicHelper clh(varOp, rewriter);
+            TypeConverterHelper tch(*getTypeConverter());
+
             auto location = varOp.getLoc();
 
             auto allocated =
                 rewriter.create<LLVM::AllocaOp>(
                     location,
-                    typeToConvertedType(varOp.reference().getType(), *getTypeConverter()),
-                    createI32ConstantOf(location, rewriter, 1));
+                    tch.typeToConvertedType(varOp.reference().getType()),
+                    clh.createI32ConstantOf(1));
             auto value = varOp.initializer();
             if (value)
             {
@@ -602,6 +599,36 @@ namespace
             return success();
         }
     };
+
+    void NegativeOp(ts::ArithmeticUnaryOp &unaryOp, mlir::PatternRewriter &builder)
+    {
+        CodeLogicHelper clh(unaryOp, builder);
+
+        auto oper = unaryOp.operand1();
+        auto type = oper.getType();
+        if (type.isIntOrIndex())
+        {
+            mlir::Value lhs;
+            if (type.isInteger(1))
+            {
+                lhs = clh.createI1ConstantOf(true);
+            }
+            else
+            {
+                lhs = clh.createI32ConstantOf(0xffff);
+            }
+
+            builder.replaceOpWithNewOp<LLVM::XOrOp>(unaryOp, type, oper, lhs);
+        }
+        else if (!type.isIntOrIndex() && type.isIntOrIndexOrFloat())
+        {
+            builder.replaceOpWithNewOp<LLVM::XOrOp>(unaryOp, oper);
+        }
+        else
+        {
+            llvm_unreachable("not implemented");
+        }
+    }            
 
     struct ArithmeticUnaryOpLowering : public OpConversionPattern<ts::ArithmeticUnaryOp>
     {
@@ -683,7 +710,9 @@ namespace
 
         LogicalResult matchAndRewrite(ts::LoadOp loadOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            auto elementTypeConverted = typeToConvertedType(loadOp.reference().getType().cast<ts::RefType>().getElementType(), *getTypeConverter());
+            TypeConverterHelper tch(*getTypeConverter());
+
+            auto elementTypeConverted = tch.typeToConvertedType(loadOp.reference().getType().cast<ts::RefType>().getElementType());
 
             rewriter.replaceOpWithNewOp<LLVM::LoadOp>(
                 loadOp,

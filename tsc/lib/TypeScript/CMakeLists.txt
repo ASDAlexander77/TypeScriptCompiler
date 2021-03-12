@@ -19,7 +19,6 @@ add_mlir_dialect_library(MLIRTypeScript
     MLIRGen.cpp
     LowerToAffineLoops.cpp
     LowerToLLVM.cpp
-    LowerToLLVMLogic.cpp
     ${ANTLR4_SRC_FILES_TypeScriptLexerANTLR}
     ${ANTLR4_SRC_FILES_TypeScriptParserANTLR}
 

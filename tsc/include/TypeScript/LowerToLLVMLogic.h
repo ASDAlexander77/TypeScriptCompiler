@@ -26,64 +26,92 @@ namespace ts = mlir::typescript;
 
 namespace typescript
 {
-    mlir::Type typeToConvertedType(mlir::Type type, mlir::TypeConverter &typeConverter);
-    
-    Value createI32ConstantOf(Location loc, PatternRewriter &rewriter, unsigned value);
-    
-    Value createI1ConstantOf(Location loc, PatternRewriter &rewriter, bool value);
-    
-    Type getIntPtrType(unsigned addressSpace, LLVMTypeConverter &typeConverter);
-    
-    Value conditionalExpressionLowering(Location loc, Type type, Value condition, 
-        function_ref<Value(OpBuilder &, Location)> thenBuilder, 
-        function_ref<Value(OpBuilder &, Location)> elseBuilder,
-        PatternRewriter &rewriter);
-
-    void NegativeOp(ts::ArithmeticUnaryOp &unaryOp, mlir::PatternRewriter &builder);
-
-    template <typename T>
-    struct OpLowering : public OpConversionPattern<typename T::OpTy>
+    class TypeHelper
     {
-        using OpConversionPattern::OpConversionPattern;
+        PatternRewriter &rewriter;
+    public:        
+        TypeHelper(PatternRewriter &rewriter) : rewriter(rewriter) {}
 
-        LogicalResult matchAndRewrite(typename T::OpTy op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const override
+        LLVM::LLVMVoidType getVoidType()
         {
-            T logic(getTypeConverter(), op.getOperation(), operands, rewriter);
-            return logic.matchAndRewrite();
+            return LLVM::LLVMVoidType::get(rewriter.getContext());
+        }
+
+        Type getI8Type()
+        {
+            return rewriter.getIntegerType(8);
+        }
+
+        LLVM::LLVMPointerType getI8PtrType()
+        {
+            return LLVM::LLVMPointerType::get(rewriter.getIntegerType(8));
+        }
+
+        LLVM::LLVMArrayType getArrayType(Type elementType, size_t size)
+        {
+            return LLVM::LLVMArrayType::get(elementType, size);
+        }
+
+        LLVM::LLVMFunctionType getFunctionType(mlir::Type result, ArrayRef<mlir::Type> arguments, bool isVarArg = false)
+        {
+            return LLVM::LLVMFunctionType::get(result, arguments, isVarArg);
+        }
+
+        LLVM::LLVMFunctionType getFunctionType(ArrayRef<mlir::Type> arguments, bool isVarArg = false)
+        {
+            return LLVM::LLVMFunctionType::get(getVoidType(), arguments, isVarArg);
         }
     };
 
-    class LoweringLogicBase
+    class TypeConverterHelper
     {
+        TypeConverter &typeConverter;
     public:
-        explicit LoweringLogicBase(TypeConverter *typeConverter_, Operation *op_, ArrayRef<Value> &operands_, ConversionPatternRewriter &rewriter_)
-            : typeConverter(*typeConverter_),
-                op(op_),
-                operands(operands_),
-                rewriter(rewriter_),
-                loc(op->getLoc()),
-                parentModule(op->getParentOfType<ModuleOp>()),
-                context(parentModule.getContext())
-        {
-        }
+        TypeConverterHelper(TypeConverter &typeConverter) : typeConverter(typeConverter) {}
 
-    protected:
-        Value getOrCreateGlobalString(StringRef name, std::string value)
+        mlir::Type typeToConvertedType(mlir::Type type)
         {
-            return getOrCreateGlobalString(name, StringRef(value.data(), value.length() + 1));
+            auto convertedType = typeConverter.convertType(type);
+            assert(convertedType);
+            return convertedType;
         }
+    };
+
+    class LLVMTypeConverterHelper
+    {
+        LLVMTypeConverter &typeConverter;
+    public:
+        LLVMTypeConverterHelper(LLVMTypeConverter &typeConverter) : typeConverter(typeConverter) {}
+
+        Type getIntPtrType(unsigned addressSpace)
+        {
+            return IntegerType::get(&typeConverter.getContext(), typeConverter.getPointerBitwidth(addressSpace));
+        }
+    };    
+
+    class LLVMCodeHelper
+    {
+        Operation *op;
+        PatternRewriter &rewriter;
+    public:        
+        LLVMCodeHelper(Operation *op, PatternRewriter &rewriter) : op(op), rewriter(rewriter) {}
 
         /// Return a value representing an access into a global string with the given
         /// name, creating the string if necessary.
         Value getOrCreateGlobalString(StringRef name, StringRef value)
         {
+            auto loc = op->getLoc();
+            auto parentModule = op->getParentOfType<ModuleOp>();
+
+            TypeHelper th(rewriter);
+
             // Create the global at the entry of the module.
             LLVM::GlobalOp global;
             if (!(global = parentModule.lookupSymbol<LLVM::GlobalOp>(name)))
             {
                 OpBuilder::InsertionGuard insertGuard(rewriter);
                 rewriter.setInsertionPointToStart(parentModule.getBody());
-                auto type = LLVM::LLVMArrayType::get(IntegerType::get(rewriter.getContext(), 8), value.size());
+                auto type = th.getArrayType(th.getI8Type(), value.size());
                 global = rewriter.create<LLVM::GlobalOp>(loc, type, true, LLVM::Linkage::Internal, name, rewriter.getStringAttr(value));
             }
 
@@ -94,89 +122,101 @@ namespace typescript
                 rewriter.getIntegerAttr(rewriter.getIndexType(), 0));
             return rewriter.create<LLVM::GEPOp>(
                 loc,
-                getI8PtrType(),
+                th.getI8PtrType(),
                 globalPtr, ArrayRef<Value>({cst0, cst0}));
+        }
+
+        Value getOrCreateGlobalString(StringRef name, std::string value, mlir::PatternRewriter &rewriter)
+        {
+            return getOrCreateGlobalString(name, StringRef(value.data(), value.length() + 1));
         }
 
         LLVM::LLVMFuncOp getOrInsertFunction(const StringRef &name, const LLVM::LLVMFunctionType &llvmFnType)
         {
+            auto parentModule = op->getParentOfType<ModuleOp>();
+
             if (auto funcOp = parentModule.lookupSymbol<LLVM::LLVMFuncOp>(name))
             {
                 return funcOp;
             }
 
+            auto loc = op->getLoc();
+
             // Insert the printf function into the body of the parent module.
             PatternRewriter::InsertionGuard insertGuard(rewriter);
             rewriter.setInsertionPointToStart(parentModule.getBody());
             return rewriter.create<LLVM::LLVMFuncOp>(loc, name, llvmFnType);
-        }
-
-        LLVM::LLVMVoidType getVoidType()
-        {
-            return LLVM::LLVMVoidType::get(context);
-        }
-
-        IntegerType getI8Type()
-        {
-            return IntegerType::get(context, 8);
-        }
-
-        IntegerType getI32Type()
-        {
-            return IntegerType::get(context, 32);
-        }
-
-        IntegerType getI64Type()
-        {
-            return IntegerType::get(context, 64);
-        }
-
-        LLVM::LLVMPointerType getPointerType(mlir::Type type)
-        {
-            return LLVM::LLVMPointerType::get(type);
-        }
-
-        LLVM::LLVMPointerType getI8PtrType()
-        {
-            return getPointerType(getI8Type());
-        }
-
-        LLVM::LLVMFunctionType getFunctionType(mlir::Type result, ArrayRef<mlir::Type> arguments, bool isVarArg = false)
-        {
-            return LLVM::LLVMFunctionType::get(result, arguments, isVarArg);
-        }
-
-        LLVM::LLVMFunctionType getFunctionType(ArrayRef<mlir::Type> arguments, bool isVarArg = false)
-        {
-            return LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(context), arguments, isVarArg);
-        }
-
-        Operation *op;
-        ArrayRef<Value> &operands;
-        ConversionPatternRewriter &rewriter;
-
-        Location loc;
-        ModuleOp parentModule;
-        MLIRContext *context;
-        TypeConverter &typeConverter;
+        }        
     };
 
-    template <typename T>
-    class LoweringLogic : public LoweringLogicBase
+    class CodeLogicHelper
     {
-    public:
-        using OpTy = T;
+        Operation *op;
+        PatternRewriter &rewriter;
+    public:        
+        CodeLogicHelper(Operation *op, PatternRewriter &rewriter) : op(op), rewriter(rewriter) {}
 
-        explicit LoweringLogic(TypeConverter *typeConverter_, Operation *op_, ArrayRef<Value> &operands_, ConversionPatternRewriter &rewriter_)
-            : LoweringLogicBase(typeConverter_, op_, operands_, rewriter_),
-                opTyped(cast<OpTy>(op)),
-                transformed(operands)
+        Value createI32ConstantOf(unsigned value)
         {
+            return rewriter.create<LLVM::ConstantOp>(op->getLoc(), rewriter.getIntegerType(32), rewriter.getIntegerAttr(rewriter.getI32Type(), value));
         }
 
-    protected:
-        OpTy opTyped;
-        typename OpTy::Adaptor transformed;
+        Value createI1ConstantOf(bool value)
+        {
+            return rewriter.create<LLVM::ConstantOp>(op->getLoc(), rewriter.getIntegerType(1), rewriter.getIntegerAttr(rewriter.getI1Type(), value));
+        }    
+
+        Value conditionalExpressionLowering(
+            Type type, Value condition,
+            function_ref<Value(OpBuilder &, Location)> thenBuilder,
+            function_ref<Value(OpBuilder &, Location)> elseBuilder)
+        {
+            auto loc = op->getLoc();
+
+            // Split block
+            auto *opBlock = rewriter.getInsertionBlock();
+            auto opPosition = rewriter.getInsertionPoint();
+            auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
+
+            // then block
+            auto *thenBlock = rewriter.createBlock(continuationBlock);
+            auto thenValue = thenBuilder(rewriter, loc);
+
+            // else block
+            auto *elseBlock = rewriter.createBlock(continuationBlock);
+            auto elseValue = elseBuilder(rewriter, loc);
+
+            // result block
+            auto *resultBlock = rewriter.createBlock(continuationBlock, TypeRange{type});
+            rewriter.create<LLVM::BrOp>(
+                loc,
+                ValueRange{},
+                continuationBlock);
+
+            rewriter.setInsertionPointToEnd(thenBlock);
+            rewriter.create<LLVM::BrOp>(
+                loc,
+                ValueRange{thenValue},
+                resultBlock);
+
+            rewriter.setInsertionPointToEnd(elseBlock);
+            rewriter.create<LLVM::BrOp>(
+                loc,
+                ValueRange{elseValue},
+                resultBlock);
+
+            // Generate assertion test.
+            rewriter.setInsertionPointToEnd(opBlock);
+            rewriter.create<LLVM::CondBrOp>(
+                loc,
+                condition,
+                thenBlock,
+                elseBlock);
+
+            rewriter.setInsertionPointToStart(continuationBlock);
+
+            return resultBlock->getArguments().front();
+        }
     };
 
     template <typename UnaryOpTy, typename StdIOpTy, typename StdFOpTy>
@@ -219,6 +259,8 @@ namespace typescript
     template <typename BinOpTy, typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
     void LogicOp(BinOpTy &binOp, ConversionPatternRewriter &builder, LLVMTypeConverter &typeConverter)
     {
+        LLVMTypeConverterHelper llvmtch(typeConverter);
+
         auto leftType = binOp.getOperand(0).getType();
         if (leftType.isIntOrIndex())
         {
@@ -233,7 +275,7 @@ namespace typescript
             auto left = binOp.getOperand(0);
             auto right = binOp.getOperand(1);
 
-            auto intPtrType = getIntPtrType(0, typeConverter);
+            auto intPtrType = llvmtch.getIntPtrType(0);
 
             Value leftPtrValue = builder.create<LLVM::PtrToIntOp>(binOp.getLoc(), intPtrType, left);
             Value rightPtrValue = builder.create<LLVM::PtrToIntOp>(binOp.getLoc(), intPtrType, right);
