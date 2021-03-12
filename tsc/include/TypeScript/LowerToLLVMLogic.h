@@ -69,7 +69,7 @@ namespace typescript
     public:
         TypeConverterHelper(TypeConverter &typeConverter) : typeConverter(typeConverter) {}
 
-        mlir::Type typeToConvertedType(mlir::Type type)
+        mlir::Type convertType(mlir::Type type)
         {
             auto convertedType = typeConverter.convertType(type);
             assert(convertedType);

@@ -280,7 +280,7 @@ namespace
         LogicalResult matchAndRewrite(ts::NullOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             TypeConverterHelper tch(*getTypeConverter());
-            rewriter.replaceOpWithNewOp<LLVM::NullOp>(op, tch.typeToConvertedType(op.getType()));
+            rewriter.replaceOpWithNewOp<LLVM::NullOp>(op, tch.convertType(op.getType()));
             return success();
         }
     };
@@ -318,7 +318,7 @@ namespace
         LogicalResult matchAndRewrite(ts::UndefOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             TypeConverterHelper tch(*getTypeConverter());
-            rewriter.replaceOpWithNewOp<LLVM::UndefOp>(op, tch.typeToConvertedType(op.getType()));
+            rewriter.replaceOpWithNewOp<LLVM::UndefOp>(op, tch.convertType(op.getType()));
             return success();
         }
     };
@@ -343,7 +343,7 @@ namespace
                 allocValue =
                     rewriter.create<LLVM::AllocaOp>(
                         location,
-                        tch.typeToConvertedType(result.getType()),
+                        tch.convertType(result.getType()),
                         clh.createI32ConstantOf(1));
             }
 
@@ -587,7 +587,7 @@ namespace
             auto allocated =
                 rewriter.create<LLVM::AllocaOp>(
                     location,
-                    tch.typeToConvertedType(varOp.reference().getType()),
+                    tch.convertType(varOp.reference().getType()),
                     clh.createI32ConstantOf(1));
             auto value = varOp.initializer();
             if (value)
@@ -712,7 +712,7 @@ namespace
         {
             TypeConverterHelper tch(*getTypeConverter());
 
-            auto elementTypeConverted = tch.typeToConvertedType(loadOp.reference().getType().cast<ts::RefType>().getElementType());
+            auto elementTypeConverted = tch.convertType(loadOp.reference().getType().cast<ts::RefType>().getElementType());
 
             rewriter.replaceOpWithNewOp<LLVM::LoadOp>(
                 loadOp,
