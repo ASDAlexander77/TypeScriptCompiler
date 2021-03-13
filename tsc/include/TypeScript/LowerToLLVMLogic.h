@@ -98,7 +98,7 @@ namespace typescript
 
         /// Return a value representing an access into a global string with the given
         /// name, creating the string if necessary.
-        Value getOrCreateGlobalString(StringRef name, StringRef value)
+        Value getOrCreateGlobalString_(StringRef name, StringRef value)
         {
             auto loc = op->getLoc();
             auto parentModule = op->getParentOfType<ModuleOp>();
@@ -126,9 +126,9 @@ namespace typescript
                 globalPtr, ArrayRef<Value>({cst0, cst0}));
         }
 
-        Value getOrCreateGlobalString(StringRef name, std::string value, mlir::PatternRewriter &rewriter)
+        Value getOrCreateGlobalString(StringRef name, std::string value)
         {
-            return getOrCreateGlobalString(name, StringRef(value.data(), value.length() + 1));
+            return getOrCreateGlobalString_(name, StringRef(value.data(), value.length() + 1));
         }
 
         LLVM::LLVMFuncOp getOrInsertFunction(const StringRef &name, const LLVM::LLVMFunctionType &llvmFnType)

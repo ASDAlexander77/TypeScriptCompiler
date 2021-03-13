@@ -1127,7 +1127,7 @@ namespace
             return builder.create<ts::StringOp>(
                 loc(stringLiteral->getLoc()),
                 getStringType(),
-                builder.getStringAttr(StringRef(innerText)));
+                builder.getStringAttr(StringRef(innerText.data(), innerText.length() + 1)));
         }
 
         mlir::Value mlirGen(IdentifierAST::TypePtr identifier, const GenContext &genContext)
