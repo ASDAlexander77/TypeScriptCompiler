@@ -159,6 +159,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     // to lower, `typescript.print`, as `legal`.
     target.addIllegalDialect<ts::TypeScriptDialect>();
     target.addLegalOp<
+        ts::AddressOfOp,
         ts::ArithmeticBinaryOp,
         ts::ArithmeticUnaryOp,
         ts::AssertOp,

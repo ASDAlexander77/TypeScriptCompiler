@@ -628,7 +628,7 @@ namespace
         {
             llvm_unreachable("not implemented");
         }
-    }            
+    }
 
     struct ArithmeticUnaryOpLowering : public OpConversionPattern<ts::ArithmeticUnaryOp>
     {
@@ -646,7 +646,7 @@ namespace
                 llvm_unreachable("not implemented");
             }
         }
-    };    
+    };
 
     struct ArithmeticBinaryOpLowering : public OpConversionPattern<ts::ArithmeticBinaryOp>
     {
@@ -711,6 +711,7 @@ namespace
         LogicalResult matchAndRewrite(ts::LoadOp loadOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             TypeConverterHelper tch(*getTypeConverter());
+            CodeLogicHelper clh(loadOp, rewriter);
 
             auto elementTypeConverted = tch.convertType(loadOp.reference().getType().cast<ts::RefType>().getElementType());
 
@@ -810,6 +811,38 @@ namespace
         }
     };
 
+    struct GlobalOpLowering : public OpConversionPattern<ts::GlobalOp>
+    {
+        using OpConversionPattern<ts::GlobalOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(ts::GlobalOp globalOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            TypeConverterHelper tch(*getTypeConverter());
+
+            rewriter.replaceOpWithNewOp<LLVM::GlobalOp>(
+                globalOp,
+                tch.convertType(globalOp.getType()),
+                globalOp.constant(),
+                LLVM::Linkage::Internal,
+                globalOp.sym_name(),
+                globalOp.value().hasValue() ? globalOp.value().getValue() : Attribute());
+            return success();
+        }
+    };
+
+    struct AddressOfOpLowering : public OpConversionPattern<ts::AddressOfOp>
+    {
+        using OpConversionPattern<ts::AddressOfOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(ts::AddressOfOp addressOfOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            TypeConverterHelper tch(*getTypeConverter());
+
+            rewriter.replaceOpWithNewOp<LLVM::AddressOfOp>(addressOfOp, tch.convertType(addressOfOp.reference().getType().cast<ts::RefType>().getElementType()), addressOfOp.global_name());
+            return success();
+        }
+    };
+
     static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, mlir::ModuleOp &m)
     {
         converter.addConversion([&](ts::AnyType type) {
@@ -884,9 +917,11 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         ReturnValOpLowering>(&getContext());
 
     patterns.insert<
+        AddressOfOpLowering,
         ArithmeticBinaryOpLowering,
         ArithmeticUnaryOpLowering,
         AssertOpLowering,
+        GlobalOpLowering,
         EntryOpLowering,
         FuncOpLowering,
         IfOpLowering,

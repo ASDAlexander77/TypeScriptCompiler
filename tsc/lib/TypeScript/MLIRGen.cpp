@@ -1141,7 +1141,8 @@ namespace
                     // global var
                     auto location = loc(identifier->getLoc());
                     auto address = builder.create<ts::AddressOfOp>(location, RefType::get(value.second->getType()), value.second->getName());
-                    return builder.create<ts::LoadOp>(location, value.second->getType(), address);
+                    //return builder.create<ts::LoadOp>(location, value.second->getType(), address);
+                    return mlir::Value();
                 }
             }
 
