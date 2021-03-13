@@ -710,10 +710,21 @@ namespace
 
         LogicalResult matchAndRewrite(ts::LoadOp loadOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
+            TypeHelper th(rewriter);
             TypeConverterHelper tch(*getTypeConverter());
             CodeLogicHelper clh(loadOp, rewriter);
 
-            auto elementTypeConverted = tch.convertType(loadOp.reference().getType().cast<ts::RefType>().getElementType());
+            auto elementType = loadOp.reference().getType().cast<ts::RefType>().getElementType();
+            auto elementTypeConverted = tch.convertType(elementType);
+
+            // if it is Array of chars then you need to return address
+            auto isStringType = elementType.dyn_cast_or_null<ts::StringType>() != nullptr;
+            auto isOperandGlobalOp = llvm::dyn_cast_or_null<ts::AddressOfOp>(loadOp.reference().getDefiningOp()) != nullptr;
+            if (isStringType && isOperandGlobalOp)
+            {
+                rewriter.replaceOp(loadOp, loadOp.reference());
+                return success();
+            }
 
             rewriter.replaceOpWithNewOp<LLVM::LoadOp>(
                 loadOp,
@@ -817,15 +828,29 @@ namespace
 
         LogicalResult matchAndRewrite(ts::GlobalOp globalOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
+            TypeHelper th(rewriter);
             TypeConverterHelper tch(*getTypeConverter());
+
+            Type type;
+            auto hasValue = globalOp.value().hasValue();
+            auto value = hasValue ? globalOp.value().getValue() : Attribute();
+            Type argType = globalOp.getType();
+            if (hasValue && argType.dyn_cast_or_null<ts::StringType>())
+            {
+                type = th.getArrayType(th.getI8Type(), value.cast<StringAttr>().getValue().size());
+            }
+            else
+            {
+                type = tch.convertType(globalOp.getType());
+            }
 
             rewriter.replaceOpWithNewOp<LLVM::GlobalOp>(
                 globalOp,
-                tch.convertType(globalOp.getType()),
+                type,
                 globalOp.constant(),
                 LLVM::Linkage::Internal,
                 globalOp.sym_name(),
-                globalOp.value().hasValue() ? globalOp.value().getValue() : Attribute());
+                value);
             return success();
         }
     };
@@ -836,11 +861,24 @@ namespace
 
         LogicalResult matchAndRewrite(ts::AddressOfOp addressOfOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
+            TypeHelper th(rewriter);            
             TypeConverterHelper tch(*getTypeConverter());
             auto parentModule = addressOfOp->getParentOfType<ModuleOp>();
 
             if (auto global = parentModule.lookupSymbol<LLVM::GlobalOp>(addressOfOp.global_name()))
             {
+                auto isConst = !!global.constantAttr();
+                auto isString = global.type().dyn_cast_or_null<LLVM::LLVMArrayType>() != nullptr;
+                if (isConst && isString)
+                {
+                    auto loc = addressOfOp->getLoc();
+                    auto globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
+                    auto cst0 = rewriter.create<LLVM::ConstantOp>(loc, IntegerType::get(rewriter.getContext(), 64), 
+                        rewriter.getIntegerAttr(rewriter.getIndexType(), 0));
+                    rewriter.replaceOpWithNewOp<LLVM::GEPOp>(addressOfOp, th.getI8PtrType(), globalPtr, ArrayRef<Value>({cst0, cst0}));
+                    return success();
+                }
+
                 rewriter.replaceOpWithNewOp<LLVM::AddressOfOp>(addressOfOp, global);
                 return success();
             }

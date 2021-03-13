@@ -334,6 +334,17 @@ namespace
                 }
                 else
                 {
+                    // get constant
+                    auto value = mlir::Attribute();
+                    if (auto constOp = dyn_cast_or_null<mlir::ConstantOp>(init.getDefiningOp()))
+                    {
+                        value = constOp.value();
+                    }
+                    else if (auto stringOp = dyn_cast_or_null<ts::StringOp>(init.getDefiningOp()))
+                    {
+                        value = stringOp.txtAttr();
+                    }
+
                     // TODO global init value
                     init.getDefiningOp()->erase();
 
@@ -342,7 +353,7 @@ namespace
                         type,
                         isConst,
                         StringRef(name),
-                        mlir::Attribute());
+                        value);
 
                     declare(varDecl, mlir::Value());
                 }
