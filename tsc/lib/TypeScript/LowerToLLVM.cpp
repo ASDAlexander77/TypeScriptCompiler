@@ -717,15 +717,6 @@ namespace
             auto elementType = loadOp.reference().getType().cast<ts::RefType>().getElementType();
             auto elementTypeConverted = tch.convertType(elementType);
 
-            // if it is Array of chars then you need to return address
-            auto isStringType = elementType.dyn_cast_or_null<ts::StringType>() != nullptr;
-            auto isOperandGlobalOp = llvm::dyn_cast_or_null<ts::AddressOfOp>(loadOp.reference().getDefiningOp()) != nullptr;
-            if (isStringType && isOperandGlobalOp)
-            {
-                rewriter.replaceOp(loadOp, loadOp.reference());
-                return success();
-            }
-
             rewriter.replaceOpWithNewOp<LLVM::LoadOp>(
                 loadOp,
                 elementTypeConverted,
@@ -867,18 +858,6 @@ namespace
 
             if (auto global = parentModule.lookupSymbol<LLVM::GlobalOp>(addressOfOp.global_name()))
             {
-                auto isConst = !!global.constantAttr();
-                auto isString = global.type().dyn_cast_or_null<LLVM::LLVMArrayType>() != nullptr;
-                if (isConst && isString)
-                {
-                    auto loc = addressOfOp->getLoc();
-                    auto globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
-                    auto cst0 = rewriter.create<LLVM::ConstantOp>(loc, IntegerType::get(rewriter.getContext(), 64), 
-                        rewriter.getIntegerAttr(rewriter.getIndexType(), 0));
-                    rewriter.replaceOpWithNewOp<LLVM::GEPOp>(addressOfOp, th.getI8PtrType(), globalPtr, ArrayRef<Value>({cst0, cst0}));
-                    return success();
-                }
-
                 rewriter.replaceOpWithNewOp<LLVM::AddressOfOp>(addressOfOp, global);
                 return success();
             }
@@ -886,6 +865,32 @@ namespace
             return failure();
         }
     };
+
+    struct AddressOfConstStringOpLowering : public OpConversionPattern<ts::AddressOfConstStringOp>
+    {
+        using OpConversionPattern<ts::AddressOfConstStringOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(ts::AddressOfConstStringOp addressOfConstStringOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            TypeHelper th(rewriter);            
+            TypeConverterHelper tch(*getTypeConverter());
+            auto parentModule = addressOfConstStringOp->getParentOfType<ModuleOp>();
+
+            if (auto global = parentModule.lookupSymbol<LLVM::GlobalOp>(addressOfConstStringOp.global_name()))
+            {
+                auto loc = addressOfConstStringOp->getLoc();
+                auto globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
+                auto cst0 = rewriter.create<LLVM::ConstantOp>(loc, IntegerType::get(rewriter.getContext(), 64), 
+                    rewriter.getIntegerAttr(rewriter.getIndexType(), 0));
+                rewriter.replaceOpWithNewOp<LLVM::GEPOp>(addressOfConstStringOp, th.getI8PtrType(), globalPtr, ArrayRef<Value>({cst0, cst0}));
+
+                return success();
+            }
+
+            return failure();
+        }
+    };
+
 
     static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, mlir::ModuleOp &m)
     {
@@ -966,6 +971,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 
     patterns.insert<
         AddressOfOpLowering,
+        AddressOfConstStringOpLowering,
         ArithmeticBinaryOpLowering,
         ArithmeticUnaryOpLowering,
         AssertOpLowering,

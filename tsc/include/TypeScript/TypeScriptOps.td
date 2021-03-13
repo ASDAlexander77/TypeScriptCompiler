@@ -632,6 +632,11 @@ def TypeScript_AddressOfOp : TypeScript_Op<"addressof"> {
   }];
 }
 
+def TypeScript_AddressOfConstStringOp : TypeScript_Op<"addressof_conststring"> {
+  let arguments = (ins FlatSymbolRefAttr:$global_name);
+  let results = (outs TypeScript_String:$instance);
+}
+
 def TypeScript_GlobalOp : TypeScript_Op<"global",
     [IsolatedFromAbove, SingleBlockImplicitTerminator<"ReturnOp">, Symbol]> {
   let arguments = (ins

@@ -160,6 +160,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     target.addIllegalDialect<ts::TypeScriptDialect>();
     target.addLegalOp<
         ts::AddressOfOp,
+        ts::AddressOfConstStringOp,
         ts::ArithmeticBinaryOp,
         ts::ArithmeticUnaryOp,
         ts::AssertOp,

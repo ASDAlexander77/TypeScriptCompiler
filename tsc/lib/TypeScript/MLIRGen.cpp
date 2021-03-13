@@ -1152,14 +1152,16 @@ namespace
                 {
                     // global var
                     auto location = loc(identifier->getLoc());
-                    auto address = builder.create<ts::AddressOfOp>(location, RefType::get(value.second->getType()), value.second->getName());
-                    auto isReadOnlyString = !value.second->getReadWriteAccess() && value.second->getType().isa<ts::StringType>();
-                    if (!isReadOnlyString)
+                    if (!value.second->getReadWriteAccess() && value.second->getType().isa<ts::StringType>())
                     {
+                        // load address of const object in global
+                        return builder.create<ts::AddressOfConstStringOp>(location, value.second->getType(), value.second->getName());
+                    }
+                    else
+                    {
+                        auto address = builder.create<ts::AddressOfOp>(location, RefType::get(value.second->getType()), value.second->getName());
                         return builder.create<ts::LoadOp>(location, value.second->getType(), address);
                     }
-
-                    return address;
                 }
             }
 
