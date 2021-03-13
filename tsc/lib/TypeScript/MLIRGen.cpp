@@ -734,7 +734,7 @@ namespace
                 }
 
                 auto retVarInfo = symbolTable.lookup(RETURN_VARIABLE_NAME);
-                if (retVarInfo.second)
+                if (!retVarInfo.second)
                 {
                     if (genContext.allowPartialResolve)
                     {
@@ -1153,7 +1153,13 @@ namespace
                     // global var
                     auto location = loc(identifier->getLoc());
                     auto address = builder.create<ts::AddressOfOp>(location, RefType::get(value.second->getType()), value.second->getName());
-                    return builder.create<ts::LoadOp>(location, value.second->getType(), address);
+                    auto isReadOnlyString = !value.second->getReadWriteAccess() && value.second->getType().isa<ts::StringType>();
+                    if (!isReadOnlyString)
+                    {
+                        return builder.create<ts::LoadOp>(location, value.second->getType(), address);
+                    }
+
+                    return address;
                 }
             }
 
