@@ -17,6 +17,10 @@ def TypeScript_Any : TypeScript_Type<"Any"> {
     let mnemonic = "any";
 }
 
+def TypeScript_Void : TypeScript_Type<"Void"> {
+    let mnemonic = "void";
+}
+
 def TypeScript_String : TypeScript_Type<"String"> {
     let mnemonic = "string";
 }

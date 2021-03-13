@@ -893,6 +893,10 @@ namespace
             return LLVM::LLVMPointerType::get(IntegerType::get(m.getContext(), 8));
         });
 
+        converter.addConversion([&](ts::VoidType type) {
+            return LLVM::LLVMVoidType::get(m.getContext());
+        });
+
         converter.addConversion([&](ts::StringType type) {
             return LLVM::LLVMPointerType::get(IntegerType::get(m.getContext(), 8));
         });

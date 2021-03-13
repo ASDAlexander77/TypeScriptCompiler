@@ -607,7 +607,8 @@ namespace
 
             // add exit code
             auto retType = funcProto->getReturnType();
-            if (retType)
+            auto hasReturn = retType && !retType.isa<ts::VoidType>();
+            if (hasReturn)
             {
                 auto location = loc(functionDeclarationAST->getLoc());
                 auto entryOp = builder.create<EntryOp>(location, ts::RefType::get(retType));
@@ -1178,10 +1179,19 @@ namespace
             {
                 return getStringType();
             }
+            else if (typeReferenceAST->getTypeKind() == SyntaxKind::VoidKeyword)
+            {
+                return getVoidType();
+            }            
 
             return getAnyType();
         }
 
+        ts::VoidType getVoidType()
+        {
+            return ts::VoidType::get(builder.getContext());
+        }
+        
         ts::StringType getStringType()
         {
             return ts::StringType::get(builder.getContext());
