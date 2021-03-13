@@ -837,9 +837,15 @@ namespace
         LogicalResult matchAndRewrite(ts::AddressOfOp addressOfOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             TypeConverterHelper tch(*getTypeConverter());
+            auto parentModule = addressOfOp->getParentOfType<ModuleOp>();
 
-            rewriter.replaceOpWithNewOp<LLVM::AddressOfOp>(addressOfOp, tch.convertType(addressOfOp.reference().getType().cast<ts::RefType>().getElementType()), addressOfOp.global_name());
-            return success();
+            if (auto global = parentModule.lookupSymbol<LLVM::GlobalOp>(addressOfOp.global_name()))
+            {
+                rewriter.replaceOpWithNewOp<LLVM::AddressOfOp>(addressOfOp, global);
+                return success();
+            }
+
+            return failure();
         }
     };
 
