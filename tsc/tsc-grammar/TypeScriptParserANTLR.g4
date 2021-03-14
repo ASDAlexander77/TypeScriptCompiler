@@ -64,6 +64,10 @@ lexicalBinding
 functionDeclaration
     : FUNCTION_KEYWORD bindingIdentifier? OPENPAREN_TOKEN formalParameters? CLOSEPAREN_TOKEN typeParameter? OPENBRACE_TOKEN functionBody CLOSEBRACE_TOKEN ;
 
+uniqueFormalParameters 
+    : formalParameters 
+    ;
+
 formalParameters
     : functionRestParameter 
     | formalParameter (COMMA_TOKEN formalParameter)* (COMMA_TOKEN functionRestParameter)? ;    
@@ -127,35 +131,47 @@ returnStatement
     : RETURN_KEYWORD expression? testEndStatement ;
 
 expression
-    : assignmentExpression
-    | assignmentExpression (COMMA_TOKEN assignmentExpression)* ;
-    
-assignmentExpression
-    : conditionalExpression
-    | leftHandSideExpression EQUALS_TOKEN assignmentExpression
+    : assignmentExpression (COMMA_TOKEN assignmentExpression)* 
     ;   
 
-conditionalExpression
-    : shortCircuitExpression
-    | shortCircuitExpression QUESTION_TOKEN assignmentExpression COLON_TOKEN assignmentExpression ;
+exponentiationExpression
+    : unaryExpression
+    | updateExpression ASTERISKASTERISK_TOKEN exponentiationExpression
+    ;      
 
-shortCircuitExpression    
-    : logicalORExpression ;
+multiplicativeExpression
+    : exponentiationExpression
+    | multiplicativeExpression multiplicativeOperator exponentiationExpression
+    ;  
 
-logicalORExpression
-    : logicalANDExpression ;
+multiplicativeOperator
+    : ASTERISK_TOKEN
+    | SLASH_TOKEN
+    | PERCENT_TOKEN
+    ;
 
-logicalANDExpression
-    : bitwiseORExpression ;
+additiveExpression
+    : multiplicativeExpression
+    | additiveExpression PLUS_TOKEN multiplicativeExpression
+    | additiveExpression MINUS_TOKEN multiplicativeExpression
+    ;    
 
-bitwiseORExpression
-    : bitwiseXORExpression ;    
+relationalExpression
+    : shiftExpression
+    | relationalExpression LESSTHAN_TOKEN shiftExpression
+    | relationalExpression GREATERTHAN_TOKEN shiftExpression
+    | relationalExpression LESSTHANEQUALS_TOKEN shiftExpression
+    | relationalExpression GREATERTHANEQUALS_TOKEN shiftExpression
+    | relationalExpression INSTANCEOF_KEYWORD shiftExpression
+    | relationalExpression IN_KEYWORD shiftExpression
+    ;
 
-bitwiseXORExpression
-    : bitwiseANDExpression ;    
-
-bitwiseANDExpression
-    : equalityExpression ;
+shiftExpression
+    : additiveExpression
+    | shiftExpression LESSTHANLESSTHAN_TOKEN additiveExpression
+    | shiftExpression GREATERTHANGREATERTHAN_TOKEN additiveExpression
+    | shiftExpression GREATERTHANGREATERTHANGREATERTHAN_TOKEN additiveExpression    
+    ;
 
 equalityExpression
     : relationalExpression 
@@ -165,29 +181,76 @@ equalityExpression
     | equalityExpression EXCLAMATIONEQUALSEQUALS_TOKEN relationalExpression
     ;    
 
-relationalExpression
-    : shiftExpression ;
+bitwiseANDExpression
+    : equalityExpression 
+    | bitwiseANDExpression AMPERSAND_TOKEN equalityExpression 
+    ;
 
-shiftExpression
-    : additiveExpression
+bitwiseXORExpression
+    : bitwiseANDExpression 
+    | bitwiseXORExpression CARET_TOKEN bitwiseANDExpression
     ;    
 
-additiveExpression
-    : multiplicativeExpression
-    | additiveExpression PLUS_TOKEN multiplicativeExpression
-    | additiveExpression MINUS_TOKEN multiplicativeExpression
+bitwiseORExpression
+    : bitwiseXORExpression 
+    | bitwiseORExpression BAR_TOKEN bitwiseXORExpression
     ;    
 
-multiplicativeExpression
-    : exponentiationExpression
-    | multiplicativeExpression ASTERISK_TOKEN exponentiationExpression
-    | multiplicativeExpression SLASH_TOKEN exponentiationExpression
-    | multiplicativeExpression PERCENT_TOKEN exponentiationExpression
-    ;  
+logicalANDExpression
+    : bitwiseORExpression 
+    | logicalANDExpression AMPERSANDAMPERSAND_TOKEN bitwiseORExpression
+    ;
 
-exponentiationExpression
-    : unaryExpression
-    ;      
+logicalORExpression
+    : logicalANDExpression 
+    | logicalORExpression BARBAR_TOKEN logicalANDExpression
+    ;
+
+coalesceExpression 
+    : coalesceExpressionHead QUESTIONQUESTION_TOKEN bitwiseORExpression
+    ;
+
+coalesceExpressionHead 
+    : coalesceExpression
+    | bitwiseORExpression
+    ;
+
+shortCircuitExpression    
+    : logicalORExpression 
+    | coalesceExpression
+    ;
+
+conditionalExpression
+    : shortCircuitExpression
+    | shortCircuitExpression QUESTION_TOKEN assignmentExpression COLON_TOKEN assignmentExpression 
+    ;
+
+assignmentExpression 
+    : conditionalExpression
+    | yieldExpression
+    | arrowFunction
+    | asyncArrowFunction
+    | leftHandSideExpression EQUALS_TOKEN assignmentExpression
+    | leftHandSideExpression assignmentOperator assignmentExpression
+    | leftHandSideExpression AMPERSANDAMPERSANDEQUALS_TOKEN assignmentExpression
+    | leftHandSideExpression BARBAREQUALS_TOKEN assignmentExpression
+    | leftHandSideExpression QUESTIONQUESTIONEQUALS_TOKEN assignmentExpression
+    ;
+
+assignmentOperator
+    : ASTERISKEQUALS_TOKEN 
+    | SLASHEQUALS_TOKEN 
+    | PERCENTEQUALS_TOKEN 
+    | PLUSEQUALS_TOKEN 
+    | MINUSEQUALS_TOKEN 
+    | LESSTHANLESSTHANEQUALS_TOKEN 
+    | GREATERTHANGREATERTHANEQUALS_TOKEN 
+    | GREATERTHANGREATERTHANGREATERTHANEQUALS_TOKEN 
+    | AMPERSANDEQUALS_TOKEN 
+    | CARETEQUALS_TOKEN 
+    | BAREQUALS_TOKEN 
+    | ASTERISKASTERISKEQUALS_TOKEN
+    ;
 
 unaryExpression
     : updateExpression
@@ -198,10 +261,15 @@ unaryExpression
     | MINUS_TOKEN unaryExpression
     | TILDE_TOKEN unaryExpression
     | EXCLAMATION_TOKEN unaryExpression
+    | awaitExpression
     ;
 
-updateExpression
+updateExpression 
     : leftHandSideExpression
+    | leftHandSideExpression PLUSPLUS_TOKEN
+    | leftHandSideExpression MINUSMINUS_TOKEN
+    | PLUSPLUS_TOKEN unaryExpression
+    | MINUSMINUS_TOKEN unaryExpression
     ;
 
 leftHandSideExpression    
@@ -209,6 +277,9 @@ leftHandSideExpression
     | callExpression
     | optionalExpression
     ;
+
+yieldExpression
+    : YIELD_KEYWORD ASTERISK_TOKEN? assignmentExpression? ;    
 
 newExpression
     : memberExpression
@@ -219,10 +290,6 @@ callExpression
     : coverCallExpressionAndAsyncArrowHead
     | callExpression arguments 
     ;
-
-coverCallExpressionAndAsyncArrowHead
-    : memberExpression arguments 
-    ;    
 
 memberExpression    
     : primaryExpression
@@ -310,3 +377,70 @@ argumentList
 
 argumentListItem
     : DOTDOTDOT_TOKEN? assignmentExpression ;
+
+propertyName 
+    : literalPropertyName
+    | computedPropertyName
+    ;
+
+literalPropertyName
+    : IdentifierName
+    | StringLiteral
+    | numericLiteral
+    ;
+
+computedPropertyName 
+    : OPENBRACKET_TOKEN assignmentExpression CLOSEBRACKET_TOKEN ;
+
+arrowFunction 
+    : arrowParameters EQUALSGREATERTHAN_TOKEN conciseBody ;
+
+arrowParameters 
+    : bindingIdentifier
+    | coverParenthesizedExpressionAndArrowParameterList
+    ;
+
+conciseBody 
+    : {_input->LA(1)->getType() != OPENBRACE_TOKEN}? expressionBody
+    | OPENBRACE_TOKEN functionBody CLOSEBRACE_TOKEN
+    ;
+
+expressionBody 
+    : assignmentExpression ;
+
+asyncFunctionDeclaration
+    : ASYNC_KEYWORD FUNCTION_KEYWORD bindingIdentifier OPENPAREN_TOKEN formalParameters CLOSEPAREN_TOKEN OPENBRACE_TOKEN asyncFunctionBody CLOSEBRACE_TOKEN
+    | ASYNC_KEYWORD FUNCTION_KEYWORD OPENPAREN_TOKEN formalParameters CLOSEPAREN_TOKEN OPENBRACE_TOKEN asyncFunctionBody CLOSEBRACE_TOKEN
+    ;
+
+asyncArrowFunction 
+    : ASYNC_KEYWORD asyncArrowBindingIdentifier EQUALSGREATERTHAN_TOKEN asyncConciseBody
+    | coverCallExpressionAndAsyncArrowHead EQUALSGREATERTHAN_TOKEN asyncConciseBody
+    ;
+
+asyncFunctionExpression 
+    : ASYNC_KEYWORD FUNCTION_KEYWORD bindingIdentifier OPENPAREN_TOKEN formalParameters CLOSEPAREN_TOKEN OPENBRACE_TOKEN asyncFunctionBody CLOSEBRACE_TOKEN 
+    ;
+
+asyncMethod 
+    : ASYNC_KEYWORD propertyName OPENPAREN_TOKEN uniqueFormalParameters CLOSEPAREN_TOKEN OPENBRACE_TOKEN asyncFunctionBody CLOSEBRACE_TOKEN
+    ;
+
+asyncFunctionBody 
+    : functionBody 
+    ;
+
+awaitExpression 
+    : AWAIT_KEYWORD unaryExpression 
+    ;
+
+asyncConciseBody 
+    : {_input->LA(1)->getType() != OPENBRACE_TOKEN}? expressionBody
+    | OPENBRACE_TOKEN asyncFunctionBody CLOSEBRACE_TOKEN
+    ;
+
+asyncArrowBindingIdentifier
+    : bindingIdentifier ;
+
+coverCallExpressionAndAsyncArrowHead 
+    : memberExpression arguments ;
