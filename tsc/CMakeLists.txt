@@ -110,4 +110,5 @@ add_subdirectory(test)
 add_subdirectory(tsc)
 add_subdirectory(tsc-opt)
 add_subdirectory(tsc-translate)
+add_subdirectory(tsc-parser)
 

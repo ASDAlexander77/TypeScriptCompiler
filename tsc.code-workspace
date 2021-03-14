@@ -27,6 +27,10 @@
         {
             "name": "TypeScript tsc-translate",
             "path": "./tsc/tsc-translate"
+        },
+        {
+            "name": "TypeScript Parser",
+            "path": "./tsc/tsc-parser"
         }
     ],
     "settings": {
