@@ -265,6 +265,10 @@ namespace
             {
                 return mlirGen(std::dynamic_pointer_cast<PrefixUnaryExpressionAST>(expressionAST), genContext);
             }
+            else if (expressionAST->getKind() == SyntaxKind::ParenthesizedExpression)
+            {
+                return mlirGen(std::dynamic_pointer_cast<ParenthesizedExpressionAST>(expressionAST), genContext);
+            }
 
             llvm_unreachable("unknown expression");
         }
@@ -799,7 +803,7 @@ namespace
             default:
                 llvm_unreachable("not implemented");
             }
-        }
+        }        
 
         mlir::Value mlirGen(BinaryExpressionAST::TypePtr binaryExpressionAST, const GenContext &genContext)
         {
@@ -865,6 +869,11 @@ namespace
         mlir::Value mlirGen(SpreadElementAST::TypePtr spreadElement, const GenContext &genContext)
         {
             return mlirGenExpression(spreadElement->getExpression(), genContext);
+        }
+
+        mlir::Value mlirGen(ParenthesizedExpressionAST::TypePtr parenthesizedExpression, const GenContext &genContext)
+        {
+            return mlirGenExpression(parenthesizedExpression->getExpression(), genContext);
         }
 
         mlir::Value mlirGen(CallExpressionAST::TypePtr callExpression, const GenContext &genContext)

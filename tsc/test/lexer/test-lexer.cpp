@@ -263,6 +263,10 @@ int main(int argc, char **args)
                           << "Output: " << std::endl;
                 printTokens(str.c_str());
             }
+            else
+            {
+                printTokens(args[1]);
+            }
         }
         else
         {

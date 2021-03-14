@@ -125,6 +125,7 @@ namespace typescript
     class TrueLiteralAST;
     class FalseLiteralAST;
     class NumericLiteralAST;
+    class BigIntLiteralAST;
     class StringLiteralAST;
     class IdentifierAST;
     class TypeReferenceAST;
@@ -205,10 +206,8 @@ namespace typescript
     MAKE_CHOICE_IF(FALSE_KEYWORD, FalseLiteralAST)
     PASS_CHOICE_END()
 
-    PASS_CHOICES(NumericLiteralContext)
-    MAKE_CHOICE_IF(DecimalLiteral, NumericLiteralAST)
-    MAKE_CHOICE_IF(DecimalIntegerLiteral, NumericLiteralAST)
-    PASS_CHOICE_END()    
+    MAKE(NumericLiteralAST, NumericLiteralContext)
+    MAKE(BigIntLiteralAST, BigIntLiteralContext)
 
     PASS_CHOICES(LiteralContext)
     PASS_CHOICE(nullLiteral)
@@ -262,9 +261,13 @@ namespace typescript
     MAKE_CHOICE_IF(TILDE_TOKEN, PrefixUnaryExpressionAST)
     MAKE_CHOICE_IF(EXCLAMATION_TOKEN, PrefixUnaryExpressionAST)
     PASS_CHOICE(updateExpression)
+    //PASS_CHOICE(awaitExpression)
     PASS_CHOICE_END()
 
-    PASS(ExponentiationExpressionContext, unaryExpression)
+    PASS_CHOICES(ExponentiationExpressionContext)
+    MAKE_CHOICE_IF(ASTERISKASTERISK_TOKEN, BinaryExpressionAST)
+    PASS_CHOICE(unaryExpression)
+    PASS_CHOICE_END()
 
     PASS_CHOICES(MultiplicativeExpressionContext)
     MAKE_CHOICE_IF(ASTERISK_TOKEN, BinaryExpressionAST)
@@ -279,9 +282,22 @@ namespace typescript
     PASS_CHOICE(multiplicativeExpression)
     PASS_CHOICE_END()
 
-    PASS(ShiftExpressionContext, additiveExpression)
+    PASS_CHOICES(ShiftExpressionContext)
+    MAKE_CHOICE_IF(LESSTHANLESSTHAN_TOKEN, BinaryExpressionAST)
+    MAKE_CHOICE_IF(GREATERTHANGREATERTHAN_TOKEN, BinaryExpressionAST)
+    MAKE_CHOICE_IF(GREATERTHANGREATERTHANGREATERTHAN_TOKEN, BinaryExpressionAST)
+    PASS_CHOICE(additiveExpression)
+    PASS_CHOICE_END()
 
-    PASS(RelationalExpressionContext, shiftExpression)
+    PASS_CHOICES(RelationalExpressionContext)
+    MAKE_CHOICE_IF(LESSTHAN_TOKEN, BinaryExpressionAST)
+    MAKE_CHOICE_IF(GREATERTHAN_TOKEN, BinaryExpressionAST)
+    MAKE_CHOICE_IF(LESSTHANEQUALS_TOKEN, BinaryExpressionAST)
+    MAKE_CHOICE_IF(GREATERTHANEQUALS_TOKEN, BinaryExpressionAST)
+    MAKE_CHOICE_IF(INSTANCEOF_KEYWORD, BinaryExpressionAST)
+    MAKE_CHOICE_IF(IN_KEYWORD, BinaryExpressionAST)
+    PASS_CHOICE(shiftExpression)
+    PASS_CHOICE_END()    
 
     PASS_CHOICES(EqualityExpressionContext)
     MAKE_CHOICE_IF(EQUALSEQUALS_TOKEN, BinaryExpressionAST)
@@ -618,6 +634,22 @@ namespace typescript
                 isFloat = false;
                 longVal = std::stol(text(numericLiteralContext->DecimalIntegerLiteral()));
             }
+            else if (numericLiteralContext->BinaryIntegerLiteral())
+            {
+                isInt = true;
+                isFloat = false;
+                longVal = std::stol(text(numericLiteralContext->BinaryIntegerLiteral()), nullptr, 2);
+            }
+            else if (numericLiteralContext->OctalIntegerLiteral())
+            {
+                isInt = true;
+                isFloat = false;
+                longVal = std::stol(text(numericLiteralContext->OctalIntegerLiteral()), nullptr, 8);
+            }
+            else
+            {
+                llvm_unreachable("not implemented");
+            }
         }            
     };    
 
@@ -627,10 +659,10 @@ namespace typescript
     public:
         using TypePtr = std::shared_ptr<BigIntLiteralAST>;
 
-        BigIntLiteralAST(TypeScriptParserANTLR::NumericLiteralContext* numericLiteralContext) 
-            : NodeAST(SyntaxKind::BigIntLiteral, TextRange(numericLiteralContext))
+        BigIntLiteralAST(TypeScriptParserANTLR::BigIntLiteralContext* bigIntLiteralContext) 
+            : NodeAST(SyntaxKind::BigIntLiteral, TextRange(bigIntLiteralContext))
         {
-            parseNode(numericLiteralContext);
+            parseNode(bigIntLiteralContext);
         }        
 
         BigIntLiteralAST(TextRange range, long long longVal)
@@ -650,11 +682,19 @@ namespace typescript
         }    
 
     private:
-        void parseNode(TypeScriptParserANTLR::NumericLiteralContext* numericLiteralContext)
+        void parseNode(TypeScriptParserANTLR::BigIntLiteralContext* bigIntLiteralContext)
         {
-            if (numericLiteralContext->DecimalBigIntegerLiteral())
+            if (bigIntLiteralContext->DecimalBigIntegerLiteral())
             {
-                longVal = std::stoll(text(numericLiteralContext->DecimalBigIntegerLiteral()));
+                longVal = std::stoll(text(bigIntLiteralContext->DecimalBigIntegerLiteral()));
+            }
+            else if (bigIntLiteralContext->BinaryBigIntegerLiteral())
+            {
+                longVal = std::stoll(text(bigIntLiteralContext->BinaryBigIntegerLiteral()), nullptr, 2);
+            }
+            else if (bigIntLiteralContext->OctalBigIntegerLiteral())
+            {
+                longVal = std::stoll(text(bigIntLiteralContext->OctalBigIntegerLiteral()), nullptr, 8);
             }
             else
             {
@@ -982,8 +1022,8 @@ namespace typescript
             : NodeAST(SyntaxKind::ParenthesizedExpression, TextRange(coverParenthesizedExpressionAndArrowParameterListContext)),
               expression(parse(coverParenthesizedExpressionAndArrowParameterListContext->expression())),
               isDotDotDot(coverParenthesizedExpressionAndArrowParameterListContext->DOTDOTDOT_TOKEN()),
-              bindingIdentifier(parse(coverParenthesizedExpressionAndArrowParameterListContext->bindingIdentifier())),
-              bindingPattern(parse(coverParenthesizedExpressionAndArrowParameterListContext->bindingPattern())) {}
+              bindingIdentifier(parse_if(coverParenthesizedExpressionAndArrowParameterListContext->bindingIdentifier())),
+              bindingPattern(parse_if(coverParenthesizedExpressionAndArrowParameterListContext->bindingPattern())) {}
 
         ParenthesizedExpressionAST(TextRange range, NodeAST::TypePtr expression)
             : NodeAST(SyntaxKind::ParenthesizedExpression, range), expression(expression) {}
@@ -1217,6 +1257,24 @@ namespace typescript
               leftExpression(parse(multiplicativeExpressionContext->multiplicativeExpression())),
               rightExpression(parse(multiplicativeExpressionContext->exponentiationExpression())) {}
 
+        BinaryExpressionAST(TypeScriptParserANTLR::ExponentiationExpressionContext* exponentiationExpressionContext) 
+            : NodeAST(SyntaxKind::BinaryExpression, TextRange(exponentiationExpressionContext)),
+              opCode(parseOpCode(exponentiationExpressionContext)),
+              leftExpression(parse(exponentiationExpressionContext->updateExpression())),
+              rightExpression(parse(exponentiationExpressionContext->exponentiationExpression())) {}
+
+        BinaryExpressionAST(TypeScriptParserANTLR::ShiftExpressionContext* shiftExpressionContext) 
+            : NodeAST(SyntaxKind::BinaryExpression, TextRange(shiftExpressionContext)),
+              opCode(parseOpCode(shiftExpressionContext)),
+              leftExpression(parse(shiftExpressionContext->additiveExpression())),
+              rightExpression(parse(shiftExpressionContext->shiftExpression())) {}
+
+        BinaryExpressionAST(TypeScriptParserANTLR::RelationalExpressionContext* relationalExpressionContext) 
+            : NodeAST(SyntaxKind::BinaryExpression, TextRange(relationalExpressionContext)),
+              opCode(parseOpCode(relationalExpressionContext)),
+              leftExpression(parse(relationalExpressionContext->shiftExpression())),
+              rightExpression(parse(relationalExpressionContext->relationalExpression())) {}
+
         BinaryExpressionAST(TextRange range, SyntaxKind opCode, NodeAST::TypePtr leftExpression, NodeAST::TypePtr rightExpression)
             : NodeAST(SyntaxKind::BinaryExpression, range), opCode(opCode), leftExpression(leftExpression), rightExpression(rightExpression) {}
 
@@ -1309,7 +1367,71 @@ namespace typescript
             {
                 llvm_unreachable("not implemented");
             }
-        }                
+        }     
+
+        SyntaxKind parseOpCode(TypeScriptParserANTLR::ExponentiationExpressionContext* exponentiationExpressionContext)
+        {
+            if (exponentiationExpressionContext->ASTERISKASTERISK_TOKEN())
+            {
+                return SyntaxKind::AsteriskAsteriskToken;                
+            }
+            else
+            {
+                llvm_unreachable("not implemented");
+            }
+        }        
+
+        SyntaxKind parseOpCode(TypeScriptParserANTLR::ShiftExpressionContext* shiftExpressionContext)
+        {
+            if (shiftExpressionContext->LESSTHANLESSTHAN_TOKEN())
+            {
+                return SyntaxKind::LessThanLessThanToken;                
+            }
+            else if (shiftExpressionContext->GREATERTHANGREATERTHAN_TOKEN())
+            {
+                return SyntaxKind::GreaterThanGreaterThanToken;                
+            }
+            else if (shiftExpressionContext->GREATERTHANGREATERTHANGREATERTHAN_TOKEN())
+            {
+                return SyntaxKind::GreaterThanGreaterThanGreaterThanToken;                
+            }
+            else
+            {
+                llvm_unreachable("not implemented");
+            }
+        }        
+
+        SyntaxKind parseOpCode(TypeScriptParserANTLR::RelationalExpressionContext* relationalExpressionContext)
+        {
+            if (relationalExpressionContext->LESSTHAN_TOKEN())
+            {
+                return SyntaxKind::LessThanToken;
+            }
+            else if (relationalExpressionContext->GREATERTHAN_TOKEN())
+            {
+                return SyntaxKind::GreaterThanToken;                
+            }
+            else if (relationalExpressionContext->LESSTHANEQUALS_TOKEN())
+            {
+                return SyntaxKind::LessThanToken;                
+            }
+            else if (relationalExpressionContext->GREATERTHANEQUALS_TOKEN())
+            {
+                return SyntaxKind::GreaterThanEqualsToken;                
+            }
+            else if (relationalExpressionContext->INSTANCEOF_KEYWORD())
+            {
+                return SyntaxKind::InstanceOfKeyword;                
+            }
+            else if (relationalExpressionContext->IN_KEYWORD())
+            {
+                return SyntaxKind::InKeyword;                
+            }
+            else
+            {
+                llvm_unreachable("not implemented");
+            }
+        }                     
     }; 
 
     class EmptyStatementAST : public NodeAST

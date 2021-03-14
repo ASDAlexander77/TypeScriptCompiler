@@ -299,10 +299,18 @@ literal
 numericLiteral 
     : DecimalLiteral
     | DecimalIntegerLiteral
-    | DecimalBigIntegerLiteral
+    | BinaryIntegerLiteral
+    | OctalIntegerLiteral
+    | HexIntegerLiteral       
+    | bigIntLiteral
+    ;        
+
+bigIntLiteral 
+    : DecimalBigIntegerLiteral
     | BinaryBigIntegerLiteral
     | OctalBigIntegerLiteral
-    | HexBigIntegerLiteral ;        
+    | HexBigIntegerLiteral
+    ;
 
 identifierReference
     : identifier ;
