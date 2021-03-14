@@ -267,7 +267,9 @@ namespace typescript
     PASS(ExponentiationExpressionContext, unaryExpression)
 
     PASS_CHOICES(MultiplicativeExpressionContext)
-    MAKE_CHOICE_IF(multiplicativeOperator, BinaryExpressionAST)
+    MAKE_CHOICE_IF(ASTERISK_TOKEN, BinaryExpressionAST)
+    MAKE_CHOICE_IF(SLASH_TOKEN, BinaryExpressionAST)
+    MAKE_CHOICE_IF(PERCENT_TOKEN, BinaryExpressionAST)
     PASS_CHOICE(exponentiationExpression)
     PASS_CHOICE_END()    
 
@@ -299,11 +301,11 @@ namespace typescript
 
     PASS(LogicalORExpressionContext, logicalANDExpression)
 
-    PASS(ShortCircuitExpressionContext, logicalORExpression)
+    PASS(CoalesceExpressionContext, logicalORExpression)
 
     PASS_CHOICES(ConditionalExpressionContext)
     MAKE_CHOICE_IF(QUESTION_TOKEN, ConditionalExpressionAST)
-    PASS_CHOICE(shortCircuitExpression)
+    PASS_CHOICE(coalesceExpression)
     PASS_CHOICE_END()
 
     PASS_CHOICES(AssignmentExpressionContext)
@@ -867,7 +869,7 @@ namespace typescript
 
         ConditionalExpressionAST(TypeScriptParserANTLR::ConditionalExpressionContext* conditionalExpressionContext) 
             : NodeAST(SyntaxKind::ConditionalExpression, TextRange(conditionalExpressionContext)),
-              condition(parse(conditionalExpressionContext->shortCircuitExpression())),
+              condition(parse(conditionalExpressionContext->conditionalExpression())),
               whenTrue(parse(conditionalExpressionContext->assignmentExpression(0))),
               whenFalse(parse(conditionalExpressionContext->assignmentExpression(1))) {}
 
@@ -1291,15 +1293,15 @@ namespace typescript
 
         SyntaxKind parseOpCode(TypeScriptParserANTLR::MultiplicativeExpressionContext* multiplicativeExpressionContext)
         {
-            if (multiplicativeExpressionContext->multiplicativeOperator()->ASTERISK_TOKEN())
+            if (multiplicativeExpressionContext->ASTERISK_TOKEN())
             {
                 return SyntaxKind::AsteriskToken;                
             }
-            else if (multiplicativeExpressionContext->multiplicativeOperator()->SLASH_TOKEN())
+            else if (multiplicativeExpressionContext->SLASH_TOKEN())
             {
                 return SyntaxKind::SlashToken;                
             }            
-            else if (multiplicativeExpressionContext->multiplicativeOperator()->PERCENT_TOKEN())
+            else if (multiplicativeExpressionContext->PERCENT_TOKEN())
             {
                 return SyntaxKind::PercentToken;                
             }            

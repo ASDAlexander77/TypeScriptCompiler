@@ -156,44 +156,27 @@ exponentiationExpression
 
 multiplicativeExpression
     : exponentiationExpression
-    | multiplicativeExpression multiplicativeOperator exponentiationExpression
+    | multiplicativeExpression (ASTERISK_TOKEN|SLASH_TOKEN|PERCENT_TOKEN) exponentiationExpression
     ;  
-
-multiplicativeOperator
-    : ASTERISK_TOKEN
-    | SLASH_TOKEN
-    | PERCENT_TOKEN
-    ;
 
 additiveExpression
     : multiplicativeExpression
-    | additiveExpression PLUS_TOKEN multiplicativeExpression
-    | additiveExpression MINUS_TOKEN multiplicativeExpression
+    | additiveExpression (PLUS_TOKEN|MINUS_TOKEN) multiplicativeExpression
     ;    
 
 relationalExpression
     : shiftExpression
-    | relationalExpression LESSTHAN_TOKEN shiftExpression
-    | relationalExpression GREATERTHAN_TOKEN shiftExpression
-    | relationalExpression LESSTHANEQUALS_TOKEN shiftExpression
-    | relationalExpression GREATERTHANEQUALS_TOKEN shiftExpression
-    | relationalExpression INSTANCEOF_KEYWORD shiftExpression
-    | relationalExpression IN_KEYWORD shiftExpression
+    | relationalExpression (LESSTHAN_TOKEN|GREATERTHAN_TOKEN|LESSTHANEQUALS_TOKEN|GREATERTHANEQUALS_TOKEN|INSTANCEOF_KEYWORD|IN_KEYWORD) shiftExpression
     ;
 
 shiftExpression
     : additiveExpression
-    | shiftExpression LESSTHANLESSTHAN_TOKEN additiveExpression
-    | shiftExpression GREATERTHANGREATERTHAN_TOKEN additiveExpression
-    | shiftExpression GREATERTHANGREATERTHANGREATERTHAN_TOKEN additiveExpression    
+    | shiftExpression (LESSTHANLESSTHAN_TOKEN|GREATERTHANGREATERTHAN_TOKEN|GREATERTHANGREATERTHANGREATERTHAN_TOKEN) additiveExpression
     ;
 
 equalityExpression
     : relationalExpression 
-    | equalityExpression EQUALSEQUALS_TOKEN relationalExpression
-    | equalityExpression EXCLAMATIONEQUALS_TOKEN relationalExpression
-    | equalityExpression EQUALSEQUALSEQUALS_TOKEN relationalExpression
-    | equalityExpression EXCLAMATIONEQUALSEQUALS_TOKEN relationalExpression
+    | equalityExpression (EQUALSEQUALS_TOKEN|EXCLAMATIONEQUALS_TOKEN|EQUALSEQUALSEQUALS_TOKEN|EXCLAMATIONEQUALSEQUALS_TOKEN) relationalExpression
     ;    
 
 bitwiseANDExpression
@@ -222,18 +205,13 @@ logicalORExpression
     ;
 
 coalesceExpression 
-    : bitwiseORExpression
+    : logicalORExpression
     | coalesceExpression QUESTIONQUESTION_TOKEN bitwiseORExpression
     ;
 
-shortCircuitExpression    
-    : logicalORExpression 
-    | coalesceExpression
-    ;
-
 conditionalExpression
-    : shortCircuitExpression
-    | shortCircuitExpression QUESTION_TOKEN assignmentExpression COLON_TOKEN assignmentExpression 
+    : coalesceExpression
+    | conditionalExpression QUESTION_TOKEN assignmentExpression COLON_TOKEN assignmentExpression 
     ;
 
 assignmentExpression 
@@ -241,46 +219,21 @@ assignmentExpression
     | yieldExpression
     | arrowFunction
     | asyncArrowFunction
-    | leftHandSideExpression EQUALS_TOKEN assignmentExpression
-    | leftHandSideExpression assignmentOperator assignmentExpression
-    | leftHandSideExpression AMPERSANDAMPERSANDEQUALS_TOKEN assignmentExpression
-    | leftHandSideExpression BARBAREQUALS_TOKEN assignmentExpression
-    | leftHandSideExpression QUESTIONQUESTIONEQUALS_TOKEN assignmentExpression
-    ;
-
-assignmentOperator
-    : ASTERISKEQUALS_TOKEN 
-    | SLASHEQUALS_TOKEN 
-    | PERCENTEQUALS_TOKEN 
-    | PLUSEQUALS_TOKEN 
-    | MINUSEQUALS_TOKEN 
-    | LESSTHANLESSTHANEQUALS_TOKEN 
-    | GREATERTHANGREATERTHANEQUALS_TOKEN 
-    | GREATERTHANGREATERTHANGREATERTHANEQUALS_TOKEN 
-    | AMPERSANDEQUALS_TOKEN 
-    | CARETEQUALS_TOKEN 
-    | BAREQUALS_TOKEN 
-    | ASTERISKASTERISKEQUALS_TOKEN
+    | leftHandSideExpression (EQUALS_TOKEN|ASTERISKEQUALS_TOKEN|SLASHEQUALS_TOKEN|PERCENTEQUALS_TOKEN|PLUSEQUALS_TOKEN|MINUSEQUALS_TOKEN
+        |LESSTHANLESSTHANEQUALS_TOKEN|GREATERTHANGREATERTHANEQUALS_TOKEN|GREATERTHANGREATERTHANGREATERTHANEQUALS_TOKEN|AMPERSANDEQUALS_TOKEN
+        |CARETEQUALS_TOKEN|BAREQUALS_TOKEN|ASTERISKASTERISKEQUALS_TOKEN|AMPERSANDAMPERSANDEQUALS_TOKEN|BARBAREQUALS_TOKEN|QUESTIONQUESTIONEQUALS_TOKEN) assignmentExpression
     ;
 
 unaryExpression
     : updateExpression
-    | DELETE_KEYWORD unaryExpression
-    | VOID_KEYWORD unaryExpression
-    | TYPEOF_KEYWORD unaryExpression
-    | PLUS_TOKEN unaryExpression
-    | MINUS_TOKEN unaryExpression
-    | TILDE_TOKEN unaryExpression
-    | EXCLAMATION_TOKEN unaryExpression
+    | (DELETE_KEYWORD|VOID_KEYWORD|TYPEOF_KEYWORD|PLUS_TOKEN|MINUS_TOKEN|TILDE_TOKEN|EXCLAMATION_TOKEN) unaryExpression
     | awaitExpression
     ;
 
 updateExpression 
     : leftHandSideExpression
-    | leftHandSideExpression PLUSPLUS_TOKEN
-    | leftHandSideExpression MINUSMINUS_TOKEN
-    | PLUSPLUS_TOKEN unaryExpression
-    | MINUSMINUS_TOKEN unaryExpression
+    | leftHandSideExpression (PLUSPLUS_TOKEN|MINUSMINUS_TOKEN)
+    | (PLUSPLUS_TOKEN|MINUSMINUS_TOKEN) unaryExpression
     ;
 
 leftHandSideExpression    
