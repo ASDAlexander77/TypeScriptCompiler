@@ -25,10 +25,12 @@ options {
 
 // Actual grammar start.
 main
-    : moduleBody EOF ;
+    : moduleBody EOF 
+    ;
 
 moduleBody 
-    : moduleItem* ;
+    : moduleItem* 
+    ;
 
 moduleItem
     : statementListItem
@@ -70,16 +72,20 @@ uniqueFormalParameters
 
 formalParameters
     : functionRestParameter 
-    | formalParameter (COMMA_TOKEN formalParameter)* (COMMA_TOKEN functionRestParameter)? ;    
+    | formalParameter (COMMA_TOKEN formalParameter)* (COMMA_TOKEN functionRestParameter)? 
+    ;    
 
 formalParameter
-    : IdentifierName QUESTION_TOKEN? typeParameter? initializer? ;    
+    : IdentifierName QUESTION_TOKEN? typeParameter? initializer? 
+    ;    
 
 typeParameter
-    : COLON_TOKEN typeDeclaration ;    
+    : COLON_TOKEN typeDeclaration 
+    ;    
 
 initializer
-    : EQUALS_TOKEN assignmentExpression ;  
+    : EQUALS_TOKEN assignmentExpression 
+    ;  
 
 typeDeclaration
     : ANY_KEYWORD
@@ -87,19 +93,24 @@ typeDeclaration
     | BOOLEAN_KEYWORD
     | STRING_KEYWORD
     | BIGINT_KEYWORD 
-    | VOID_KEYWORD ;    
+    | VOID_KEYWORD 
+    ;    
 
 functionRestParameter
-    : DOTDOTDOT_TOKEN formalParameter ;
+    : DOTDOTDOT_TOKEN formalParameter 
+    ;
 
 functionBody
-    : functionStatementList ;    
+    : functionStatementList 
+    ;    
 
 functionStatementList
-    : statementList ;
+    : statementList 
+    ;
 
 statementList
-    : statementListItem* ;    
+    : statementListItem* 
+    ;    
 
 statement
     : emptyStatement
@@ -114,13 +125,16 @@ testEndStatement
     ;
 
 block
-    : OPENBRACE_TOKEN statementList CLOSEBRACE_TOKEN ;
+    : OPENBRACE_TOKEN statementList CLOSEBRACE_TOKEN 
+    ;
 
 emptyStatement
-    : SEMICOLON_TOKEN ;
+    : SEMICOLON_TOKEN 
+    ;
 
 expressionStatement
-    : expression testEndStatement ;
+    : expression testEndStatement 
+    ;
 
 ifStatement
     : IF_KEYWORD OPENPAREN_TOKEN expression CLOSEPAREN_TOKEN statement ELSE_KEYWORD statement // No need for statementTerminator as statement is teminated
@@ -128,7 +142,8 @@ ifStatement
     ;
 
 returnStatement
-    : RETURN_KEYWORD expression? testEndStatement ;
+    : RETURN_KEYWORD expression? testEndStatement 
+    ;
 
 expression
     : assignmentExpression (COMMA_TOKEN assignmentExpression)* 
@@ -207,12 +222,8 @@ logicalORExpression
     ;
 
 coalesceExpression 
-    : coalesceExpressionHead QUESTIONQUESTION_TOKEN bitwiseORExpression
-    ;
-
-coalesceExpressionHead 
-    : coalesceExpression
-    | bitwiseORExpression
+    : bitwiseORExpression
+    | coalesceExpression QUESTIONQUESTION_TOKEN bitwiseORExpression
     ;
 
 shortCircuitExpression    
@@ -401,7 +412,7 @@ arrowParameters
     ;
 
 conciseBody 
-    : {_input->LA(1)->getType() != OPENBRACE_TOKEN}? expressionBody
+    : {_input->LA(1) != OPENBRACE_TOKEN}? expressionBody
     | OPENBRACE_TOKEN functionBody CLOSEBRACE_TOKEN
     ;
 
@@ -435,12 +446,14 @@ awaitExpression
     ;
 
 asyncConciseBody 
-    : {_input->LA(1)->getType() != OPENBRACE_TOKEN}? expressionBody
+    : {_input->LA(1) != OPENBRACE_TOKEN}? expressionBody
     | OPENBRACE_TOKEN asyncFunctionBody CLOSEBRACE_TOKEN
     ;
 
 asyncArrowBindingIdentifier
-    : bindingIdentifier ;
+    : bindingIdentifier 
+    ;
 
 coverCallExpressionAndAsyncArrowHead 
-    : memberExpression arguments ;
+    : memberExpression arguments 
+    ;
