@@ -1138,7 +1138,7 @@ namespace ts
          * Scans the given number of hexadecimal digits in the text,
          * returning -1 if the given number is unavailable.
          */
-        auto scanExactNumberOfHexDigits(int count, boolean canHaveSeparators) -> number {
+        auto scanExactNumberOfHexDigits(int count, boolean canHaveSeparators) -> int {
             auto valueString = scanHexDigits(/*minCount*/ count, /*scanAsManyAsPossible*/ false, canHaveSeparators);
             return !valueString.empty() ? std::stoi(valueString, nullptr, 16) : -1;
         }
@@ -1408,129 +1408,129 @@ namespace ts
             }
         }
 
-    //         auto scanHexadecimalEscape(numDigits: number) -> string {
-    //             auto escapedValue = scanExactNumberOfHexDigits(numDigits, /*canHaveSeparators*/ false);
+        auto scanHexadecimalEscape(numDigits: number) -> string {
+            auto escapedValue = scanExactNumberOfHexDigits(numDigits, /*canHaveSeparators*/ false);
 
-    //             if (escapedValue >= 0) {
-    //                 return String.fromCharCode(escapedValue);
-    //             }
-    //             else {
-    //                 error(Diagnostics::Hexadecimal_digit_expected);
-    //                 return "";
-    //             }
-    //         }
+            if (escapedValue >= 0) {
+                return string((char)escapedValue);
+            }
+            else {
+                error(Diagnostics::Hexadecimal_digit_expected);
+                return "";
+            }
+        }
 
-    //         auto scanExtendedUnicodeEscape() -> string {
-    //             auto escapedValueString = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ false);
-    //             auto escapedValue = escapedValueString ? std::atoi(escapedValueString, 16) : -1;
-    //             auto isInvalidExtendedEscape = false;
+        auto scanExtendedUnicodeEscape() -> string {
+            auto escapedValueString = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ false);
+            auto escapedValue = escapedValueString ? std::atoi(escapedValueString, nullptr, 16) : -1;
+            auto isInvalidExtendedEscape = false;
 
-    //             // Validate the value of the digit
-    //             if (escapedValue < 0) {
-    //                 error(Diagnostics::Hexadecimal_digit_expected);
-    //                 isInvalidExtendedEscape = true;
-    //             }
-    //             else if (escapedValue > 0x10FFFF) {
-    //                 error(Diagnostics::An_extended_Unicode_escape_value_must_be_between_0x0_and_0x10FFFF_inclusive);
-    //                 isInvalidExtendedEscape = true;
-    //             }
+            // Validate the value of the digit
+            if (escapedValue < 0) {
+                error(Diagnostics::Hexadecimal_digit_expected);
+                isInvalidExtendedEscape = true;
+            }
+            else if (escapedValue > 0x10FFFF) {
+                error(Diagnostics::An_extended_Unicode_escape_value_must_be_between_0x0_and_0x10FFFF_inclusive);
+                isInvalidExtendedEscape = true;
+            }
 
-    //             if (pos >= end) {
-    //                 error(Diagnostics::Unexpected_end_of_text);
-    //                 isInvalidExtendedEscape = true;
-    //             }
-    //             else if ((CharacterCodes)text[pos] == CharacterCodes::closeBrace) {
-    //                 // Only swallow the following character up if it's a '}'.
-    //                 pos++;
-    //             }
-    //             else {
-    //                 error(Diagnostics::Unterminated_Unicode_escape_sequence);
-    //                 isInvalidExtendedEscape = true;
-    //             }
+            if (pos >= end) {
+                error(Diagnostics::Unexpected_end_of_text);
+                isInvalidExtendedEscape = true;
+            }
+            else if ((CharacterCodes)text[pos] == CharacterCodes::closeBrace) {
+                // Only swallow the following character up if it's a '}'.
+                pos++;
+            }
+            else {
+                error(Diagnostics::Unterminated_Unicode_escape_sequence);
+                isInvalidExtendedEscape = true;
+            }
 
-    //             if (isInvalidExtendedEscape) {
-    //                 return "";
-    //             }
+            if (isInvalidExtendedEscape) {
+                return "";
+            }
 
-    //             return utf16EncodeAsString(escapedValue);
-    //         }
+            return utf16EncodeAsString(escapedValue);
+        }
 
-    //         // Current character is known to be a backslash. Check for Unicode escape of the form '\uXXXX'
-    //         // and return code point value if valid Unicode escape is found. Otherwise return -1.
-    //         auto peekUnicodeEscape() -> number {
-    //             if (pos + 5 < end && (CharacterCodes)text[pos + 1] == CharacterCodes::u) {
-    //                 auto start = pos;
-    //                 pos += 2;
-    //                 auto value = scanExactNumberOfHexDigits(4, /*canHaveSeparators*/ false);
-    //                 pos = start;
-    //                 return value;
-    //             }
-    //             return -1;
-    //         }
+        // Current character is known to be a backslash. Check for Unicode escape of the form '\uXXXX'
+        // and return code point value if valid Unicode escape is found. Otherwise return -1.
+        auto peekUnicodeEscape() -> int {
+            if (pos + 5 < end && (CharacterCodes)text[pos + 1] == CharacterCodes::u) {
+                auto start = pos;
+                pos += 2;
+                auto value = scanExactNumberOfHexDigits(4, /*canHaveSeparators*/ false);
+                pos = start;
+                return value;
+            }
+            return -1;
+        }
 
 
-    //         auto peekExtendedUnicodeEscape() -> number {
-    //             if (languageVersion >= ScriptTarget::ES2015 && codePointAt(text, pos + 1) == CharacterCodes::u && codePointAt(text, pos + 2) == CharacterCodes::openBrace) {
-    //                 auto start = pos;
-    //                 pos += 3;
-    //                 auto escapedValueString = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ false);
-    //                 auto escapedValue = escapedValueString ? std::atoi(escapedValueString, 16) : -1;
-    //                 pos = start;
-    //                 return escapedValue;
-    //             }
-    //             return -1;
-    //         }
+        auto peekExtendedUnicodeEscape() -> int {
+            if (languageVersion >= ScriptTarget::ES2015 && codePointAt(text, pos + 1) == CharacterCodes::u && codePointAt(text, pos + 2) == CharacterCodes::openBrace) {
+                auto start = pos;
+                pos += 3;
+                auto escapedValueString = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ false);
+                auto escapedValue = escapedValueString ? std::atoi(escapedValueString, nullptr, 16) : -1;
+                pos = start;
+                return escapedValue;
+            }
+            return -1;
+        }
 
-    //         auto scanIdentifierParts() -> string {
-    //             auto result = "";
-    //             auto start = pos;
-    //             while (pos < end) {
-    //                 auto ch = codePointAt(text, pos);
-    //                 if (isIdentifierPart(ch, languageVersion)) {
-    //                     pos += charSize(ch);
-    //                 }
-    //                 else if (ch == CharacterCodes::backslash) {
-    //                     ch = peekExtendedUnicodeEscape();
-    //                     if (ch >= 0 && isIdentifierPart(ch, languageVersion)) {
-    //                         pos += 3;
-    //                         tokenFlags |= TokenFlags::ExtendedUnicodeEscape;
-    //                         result += scanExtendedUnicodeEscape();
-    //                         start = pos;
-    //                         continue;
-    //                     }
-    //                     ch = peekUnicodeEscape();
-    //                     if (!(ch >= 0 && isIdentifierPart(ch, languageVersion))) {
-    //                         break;
-    //                     }
-    //                     tokenFlags |= TokenFlags::UnicodeEscape;
-    //                     result += text.substr(start, pos - start);
-    //                     result += utf16EncodeAsString(ch);
-    //                     // Valid Unicode escape is always six characters
-    //                     pos += 6;
-    //                     start = pos;
-    //                 }
-    //                 else {
-    //                     break;
-    //                 }
-    //             }
-    //             result += text.substr(start, pos - start);
-    //             return result;
-    //         }
+        auto scanIdentifierParts() -> string {
+            string result = "";
+            auto start = pos;
+            while (pos < end) {
+                auto ch = codePointAt(text, pos);
+                if (isIdentifierPart(ch, languageVersion)) {
+                    pos += charSize(ch);
+                }
+                else if (ch == CharacterCodes::backslash) {
+                    ch = peekExtendedUnicodeEscape();
+                    if (ch >= 0 && isIdentifierPart(ch, languageVersion)) {
+                        pos += 3;
+                        tokenFlags |= TokenFlags::ExtendedUnicodeEscape;
+                        result += scanExtendedUnicodeEscape();
+                        start = pos;
+                        continue;
+                    }
+                    ch = peekUnicodeEscape();
+                    if (!(ch >= 0 && isIdentifierPart(ch, languageVersion))) {
+                        break;
+                    }
+                    tokenFlags |= TokenFlags::UnicodeEscape;
+                    result += text.substr(start, pos - start);
+                    result += utf16EncodeAsString(ch);
+                    // Valid Unicode escape is always six characters
+                    pos += 6;
+                    start = pos;
+                }
+                else {
+                    break;
+                }
+            }
+            result += text.substr(start, pos - start);
+            return result;
+        }
 
-    //         auto getIdentifierToken() -> SyntaxKind::Identifier | KeywordSyntaxKind {
-    //             // Reserved words are between 2 and 12 characters long and start with a lowercase letter
-    //             auto len = tokenValue.length;
-    //             if (len >= 2 && len <= 12) {
-    //                 auto ch = tokenValue.charCodeAt(0);
-    //                 if (ch >= CharacterCodes::a && ch <= CharacterCodes::z) {
-    //                     auto keyword = textToKeyword.get(tokenValue);
-    //                     if (keyword != undefined) {
-    //                         return token = keyword;
-    //                     }
-    //                 }
-    //             }
-    //             return token = SyntaxKind::Identifier;
-    //         }
+        auto getIdentifierToken() -> SyntaxKind {
+            // Reserved words are between 2 and 12 characters long and start with a lowercase letter
+            auto len = tokenValue.size();
+            if (len >= 2 && len <= 12) {
+                auto ch = (CharacterCodes)tokenValue[0];
+                if (ch >= CharacterCodes::a && ch <= CharacterCodes::z) {
+                    auto keyword = textToKeyword.at(tokenValue);
+                    if (keyword != SyntaxKind::Unknown) {
+                        return token = keyword;
+                    }
+                }
+            }
+            return token = SyntaxKind::Identifier;
+        }
 
     //         auto scanBinaryOrOctalDigits(base: 2 | 8) -> string {
     //             auto value = "";
