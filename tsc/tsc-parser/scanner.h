@@ -1,3 +1,10 @@
+#include <iostream>
+#include <assert.h>
+
+using number = float;
+using boolean = bool;
+using string = std::string;
+
 enum class ScriptTarget : int {
     ES3 = 0,
     ES5 = 1,
@@ -579,11 +586,30 @@ enum class CharacterCodes : int {
     verticalTab = 0x0B,           // \v
 };
 
-class DiagnosticMessage
+void debug(bool cond)
 {
+    assert(cond);
+}
 
+void debug(const char* msg)
+{
+    std::cerr << msg;
+}
+
+void debug(string msg)
+{
+    std::cerr << msg.c_str();
+}
+
+class SourceFileLike {
+public:
+    string text;
+    std::vector<int> lineMap;
+    /* @internal */
+    bool hasGetPositionOfLineAndCharacter;
+    auto getPositionOfLineAndCharacter(int line, int character, bool allowEdits = true) -> number;
 };
 
-using number = float;
-using boolean = bool;
-using string = std::string;
+class DiagnosticMessage {
+
+};

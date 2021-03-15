@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include <regex>
+#include <sstream>
 
 #include "scanner.h"
 
@@ -103,6 +104,84 @@ namespace ts
         };
 
         std::map<std::string, SyntaxKind> textToToken = {
+            {"abstract", SyntaxKind::AbstractKeyword},
+            {"any", SyntaxKind::AnyKeyword},
+            {"as", SyntaxKind::AsKeyword},
+            {"asserts", SyntaxKind::AssertsKeyword},
+            {"bigint", SyntaxKind::BigIntKeyword},
+            {"boolean", SyntaxKind::BooleanKeyword},
+            {"break", SyntaxKind::BreakKeyword},
+            {"case", SyntaxKind::CaseKeyword},
+            {"catch", SyntaxKind::CatchKeyword},
+            {"class", SyntaxKind::ClassKeyword},
+            {"continue", SyntaxKind::ContinueKeyword},
+            {"const", SyntaxKind::ConstKeyword},
+            {"constructor", SyntaxKind::ConstructorKeyword},
+            {"debugger", SyntaxKind::DebuggerKeyword},
+            {"declare", SyntaxKind::DeclareKeyword},
+            {"default", SyntaxKind::DefaultKeyword},
+            {"delete", SyntaxKind::DeleteKeyword},
+            {"do", SyntaxKind::DoKeyword},
+            {"else", SyntaxKind::ElseKeyword},
+            {"enum", SyntaxKind::EnumKeyword},
+            {"export", SyntaxKind::ExportKeyword},
+            {"extends", SyntaxKind::ExtendsKeyword},
+            {"false", SyntaxKind::FalseKeyword},
+            {"finally", SyntaxKind::FinallyKeyword},
+            {"for", SyntaxKind::ForKeyword},
+            {"from", SyntaxKind::FromKeyword},
+            {"function", SyntaxKind::FunctionKeyword},
+            {"get", SyntaxKind::GetKeyword},
+            {"if", SyntaxKind::IfKeyword},
+            {"implements", SyntaxKind::ImplementsKeyword},
+            {"import", SyntaxKind::ImportKeyword},
+            {"in", SyntaxKind::InKeyword},
+            {"infer", SyntaxKind::InferKeyword},
+            {"instanceof", SyntaxKind::InstanceOfKeyword},
+            {"interface", SyntaxKind::InterfaceKeyword},
+            {"intrinsic", SyntaxKind::IntrinsicKeyword},
+            {"is", SyntaxKind::IsKeyword},
+            {"keyof", SyntaxKind::KeyOfKeyword},
+            {"let", SyntaxKind::LetKeyword},
+            {"module", SyntaxKind::ModuleKeyword},
+            {"namespace", SyntaxKind::NamespaceKeyword},
+            {"never", SyntaxKind::NeverKeyword},
+            {"new", SyntaxKind::NewKeyword},
+            {"null", SyntaxKind::NullKeyword},
+            {"number", SyntaxKind::NumberKeyword},
+            {"object", SyntaxKind::ObjectKeyword},
+            {"package", SyntaxKind::PackageKeyword},
+            {"private", SyntaxKind::PrivateKeyword},
+            {"protected", SyntaxKind::ProtectedKeyword},
+            {"public", SyntaxKind::PublicKeyword},
+            {"readonly", SyntaxKind::ReadonlyKeyword},
+            {"require", SyntaxKind::RequireKeyword},
+            {"global", SyntaxKind::GlobalKeyword},
+            {"return", SyntaxKind::ReturnKeyword},
+            {"set", SyntaxKind::SetKeyword},
+            {"static", SyntaxKind::StaticKeyword},
+            {"string", SyntaxKind::StringKeyword},
+            {"super", SyntaxKind::SuperKeyword},
+            {"switch", SyntaxKind::SwitchKeyword},
+            {"symbol", SyntaxKind::SymbolKeyword},
+            {"this", SyntaxKind::ThisKeyword},
+            {"throw", SyntaxKind::ThrowKeyword},
+            {"true", SyntaxKind::TrueKeyword},
+            {"try", SyntaxKind::TryKeyword},
+            {"type", SyntaxKind::TypeKeyword},
+            {"typeof", SyntaxKind::TypeOfKeyword},
+            {"undefined", SyntaxKind::UndefinedKeyword},
+            {"unique", SyntaxKind::UniqueKeyword},
+            {"unknown", SyntaxKind::UnknownKeyword},
+            {"var", SyntaxKind::VarKeyword},
+            {"void", SyntaxKind::VoidKeyword},
+            {"while", SyntaxKind::WhileKeyword},
+            {"with", SyntaxKind::WithKeyword},
+            {"yield", SyntaxKind::YieldKeyword},
+            {"async", SyntaxKind::AsyncKeyword},
+            {"await", SyntaxKind::AwaitKeyword},
+            {"of", SyntaxKind::OfKeyword},
+
             {"{", SyntaxKind::OpenBraceToken},
             {"}", SyntaxKind::CloseBraceToken},
             {"(", SyntaxKind::OpenParenToken},
@@ -324,47 +403,56 @@ namespace ts
             return result;
         }
 
-    //     auto getPositionOfLineAndCharacter(sourceFile: SourceFileLike, line: number, character: number) -> number;
-    //     /* @internal */
-    //     auto getPositionOfLineAndCharacter(sourceFile: SourceFileLike, line: number, character: number, allowEdits?: true) -> number; // eslint-disable-line @typescript-eslint/unified-signatures
-    //     auto getPositionOfLineAndCharacter(sourceFile: SourceFileLike, line: number, character: number, allowEdits?: true) -> number {
-    //         return sourceFile.getPositionOfLineAndCharacter ?
-    //             sourceFile.getPositionOfLineAndCharacter(line, character, allowEdits) :
-    //             computePositionOfLineAndCharacter(getLineStarts(sourceFile), line, character, sourceFile.text, allowEdits);
-    //     }
+        auto getPositionOfLineAndCharacter(SourceFileLike sourceFile, int line, int character, bool allowEdits = true) -> int {
+            return sourceFile.hasGetPositionOfLineAndCharacter ?
+                sourceFile.getPositionOfLineAndCharacter(line, character, allowEdits) :
+                computePositionOfLineAndCharacter(getLineStarts(sourceFile), line, character, sourceFile.text, allowEdits);
+        }
 
-    //     /* @internal */
-    //     auto computePositionOfLineAndCharacter(lineStarts:  number[], line: number, character: number, debugText?: string, allowEdits?: true) -> number {
-    //         if (line < 0 || line >= lineStarts.length) {
-    //             if (allowEdits) {
-    //                 // Clamp line to nearest allowable value
-    //                 line = line < 0 ? 0 : line >= lineStarts.length ? lineStarts.length - 1 : line;
-    //             }
-    //             else {
-    //                 Debug.fail(`Bad line number. Line: ${line}, lineStarts.length: ${lineStarts.length} , line map is correct? ${debugText !== undefined ? arraysEqual(lineStarts, computeLineStarts(debugText)) : "unknown"}`);
-    //             }
-    //         }
+        /* @internal */
+        auto computePositionOfLineAndCharacter(std::vector<int> lineStarts, int line, int character, string debugText, bool allowEdits = true) -> number {
+            if (line < 0 || line >= lineStarts.size()) {
+                if (allowEdits) {
+                    // Clamp line to nearest allowable value
+                    line = line < 0 ? 0 : line >= lineStarts.size() ? lineStarts.size() - 1 : line;
+                }
+                else {
+                    std::stringstream msg;
+                    msg << "Bad line number. Line: " << line << ", lineStarts.length: " << lineStarts.size() << " , line map is correct? " << (!debugText.empty() ? arraysEqual(lineStarts, computeLineStarts(debugText)) : "unknown");
+                    debug(msg.str());
+                }
+            }
 
-    //         const res = lineStarts[line] + character;
-    //         if (allowEdits) {
-    //             // Clamp to nearest allowable values to allow the underlying to be edited without crashing (accuracy is lost, instead)
-    //             // TODO: Somehow track edits between file as it was during the creation of sourcemap we have and the current file and
-    //             // apply them to the computed position to improve accuracy
-    //             return res > lineStarts[line + 1] ? lineStarts[line + 1] : typeof debugText == "string" && res > debugText.length ? debugText.length : res;
-    //         }
-    //         if (line < lineStarts.length - 1) {
-    //             Debug.assert(res < lineStarts[line + 1]);
-    //         }
-    //         else if (debugText !== undefined) {
-    //             Debug.assert(res <= debugText.length); // Allow single character overflow for trailing newline
-    //         }
-    //         return res;
-    //     }
+            auto res = lineStarts[line] + character;
+            if (allowEdits) {
+                // Clamp to nearest allowable values to allow the underlying to be edited without crashing (accuracy is lost, instead)
+                // TODO: Somehow track edits between file as it was during the creation of sourcemap we have and the current file and
+                // apply them to the computed position to improve accuracy
+                return res > lineStarts[line + 1] ? lineStarts[line + 1] : !debugText.empty() && res > debugText.length() ? debugText.length() : res;
+            }
+            if (line < lineStarts.size() - 1) {
+                debug(res < lineStarts[line + 1]);
+            }
+            else if (!debugText.empty()) {
+                debug(res <= debugText.length()); // Allow single character overflow for trailing newline
+            }
+            return res;
+        }
 
-    //     /* @internal */
-    //     auto getLineStarts(sourceFile: SourceFileLike) ->  number[] {
-    //         return sourceFile.lineMap || (sourceFile.lineMap = computeLineStarts(sourceFile.text));
-    //     }
+        /* @internal */
+        auto getLineStarts(SourceFileLike sourceFile) -> std::vector<int> {
+            if (!sourceFile.lineMap.empty())
+            {
+                return sourceFile.lineMap;
+            }
+             
+            auto lineMap = computeLineStarts(sourceFile.text);
+            for (auto &item : lineMap)
+            {
+                sourceFile.lineMap.push_back(item);
+            }
+            return sourceFile.lineMap;
+        }
 
     //     /* @internal */
     //     auto computeLineAndCharacterOfPosition(lineStarts:  number[], position: number) -> LineAndCharacter {
