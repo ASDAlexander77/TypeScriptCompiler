@@ -139,7 +139,8 @@
             "resumable": "cpp",
             "variant": "cpp",
             "filesystem": "cpp",
-            "*.def": "cpp"
+            "*.def": "cpp",
+            "regex": "cpp"
         },
         "antlr4.generation": {
             "mode": "external",
