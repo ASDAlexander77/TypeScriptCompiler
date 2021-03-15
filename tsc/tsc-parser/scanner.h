@@ -601,6 +601,21 @@ void debug(string msg)
     std::cerr << msg.c_str();
 }
 
+void debug(bool cond, string msg)
+{
+    if (!cond)
+    {
+        std::cerr << msg.c_str();
+    }
+    
+    assert(cond);
+}
+
+void error(const char* msg)
+{
+    std::cerr << msg;
+}
+
 class SourceFileLike {
 public:
     string text;
@@ -610,6 +625,14 @@ public:
     auto getPositionOfLineAndCharacter(int line, int character, bool allowEdits = true) -> number;
 };
 
-class DiagnosticMessage {
+struct LineAndCharacter {
 
+    LineAndCharacter() = default;
+
+    /** 0-based. */
+    int line;
+    /*
+        * 0-based. This value denotes the character position in line and is different from the 'column' because of tab characters.
+        */
+    int character;
 };

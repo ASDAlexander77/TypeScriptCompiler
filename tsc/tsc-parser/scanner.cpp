@@ -4,7 +4,9 @@
 #include <vector>
 #include <regex>
 #include <sstream>
+#include <algorithm>
 
+#include "diagnostics.h"
 #include "scanner.h"
 
 namespace ts 
@@ -454,284 +456,284 @@ namespace ts
             return sourceFile.lineMap;
         }
 
-    //     /* @internal */
-    //     auto computeLineAndCharacterOfPosition(lineStarts:  number[], position: number) -> LineAndCharacter {
-    //         const lineNumber = computeLineOfPosition(lineStarts, position);
-    //         return {
-    //             line: lineNumber,
-    //             character: position - lineStarts[lineNumber]
-    //         };
-    //     }
+        /* @internal */
+        auto computeLineAndCharacterOfPosition(std::vector<int> lineStarts, int position) -> LineAndCharacter {
+            auto lineNumber = computeLineOfPosition(lineStarts, position);
+            return LineAndCharacter({
+                lineNumber,
+                position - lineStarts[lineNumber]
+            });
+        }
 
-    //     /**
-    //      * @internal
-    //      * We assume the first line starts at position 0 and 'position' is non-negative.
-    //      */
-    //     auto computeLineOfPosition(lineStarts:  number[], position: number, lowerBound?: number) {
-    //         auto lineNumber = binarySearch(lineStarts, position, identity, compareValues, lowerBound);
-    //         if (lineNumber < 0) {
-    //             // If the actual position was not found,
-    //             // the binary search returns the 2's-complement of the next line start
-    //             // e.g. if the line starts at [5, 10, 23, 80] and the position requested was 20
-    //             // then the search will return -2.
-    //             //
-    //             // We want the index of the previous line start, so we subtract 1.
-    //             // Review 2's-complement if this is confusing.
-    //             lineNumber = ~lineNumber - 1;
-    //             Debug.assert(lineNumber !== -1, "position cannot precede the beginning of the file");
-    //         }
-    //         return lineNumber;
-    //     }
+        /**
+         * @internal
+         * We assume the first line starts at position 0 and 'position' is non-negative.
+         */
+        auto computeLineOfPosition(std::vector<int> lineStarts, int position, int lowerBound = 0) -> int {
+            auto lineNumber = binarySearch(lineStarts, position, identity, compareValues, lowerBound);
+            if (lineNumber < 0) {
+                // If the actual position was not found,
+                // the binary search returns the 2's-complement of the next line start
+                // e.g. if the line starts at [5, 10, 23, 80] and the position requested was 20
+                // then the search will return -2.
+                //
+                // We want the index of the previous line start, so we subtract 1.
+                // Review 2's-complement if this is confusing.
+                lineNumber = ~lineNumber - 1;
+                debug(lineNumber != -1, "position cannot precede the beginning of the file");
+            }
+            return lineNumber;
+        }
 
-    //     /** @internal */
-    //     auto getLinesBetweenPositions(sourceFile: SourceFileLike, pos1: number, pos2: number) {
-    //         if (pos1 == pos2) return 0;
-    //         const lineStarts = getLineStarts(sourceFile);
-    //         const lower = Math.min(pos1, pos2);
-    //         const isNegative = lower == pos2;
-    //         const upper = isNegative ? pos1 : pos2;
-    //         const lowerLine = computeLineOfPosition(lineStarts, lower);
-    //         const upperLine = computeLineOfPosition(lineStarts, upper, lowerLine);
-    //         return isNegative ? lowerLine - upperLine : upperLine - lowerLine;
-    //     }
+        /** @internal */
+        auto getLinesBetweenPositions(SourceFileLike sourceFile, int pos1, int pos2) {
+            if (pos1 == pos2) return 0;
+            auto lineStarts = getLineStarts(sourceFile);
+            auto lower = std::min(pos1, pos2);
+            auto isNegative = lower == pos2;
+            auto upper = isNegative ? pos1 : pos2;
+            auto lowerLine = computeLineOfPosition(lineStarts, lower);
+            auto upperLine = computeLineOfPosition(lineStarts, upper, lowerLine);
+            return isNegative ? lowerLine - upperLine : upperLine - lowerLine;
+        }
 
-    //     auto getLineAndCharacterOfPosition(sourceFile: SourceFileLike, position: number) -> LineAndCharacter {
-    //         return computeLineAndCharacterOfPosition(getLineStarts(sourceFile), position);
-    //     }
+        auto getLineAndCharacterOfPosition(SourceFileLike sourceFile, int position) -> LineAndCharacter {
+            return computeLineAndCharacterOfPosition(getLineStarts(sourceFile), position);
+        }
 
-    //     auto isWhiteSpaceLike(ch: number) -> boolean {
-    //         return isWhiteSpaceSingleLine(ch) || isLineBreak(ch);
-    //     }
+        auto isWhiteSpaceLike(CharacterCodes ch) -> boolean {
+            return isWhiteSpaceSingleLine(ch) || isLineBreak(ch);
+        }
 
-    //     /** Does not include line breaks. For that, see isWhiteSpaceLike. */
-    //     auto isWhiteSpaceSingleLine(ch: number) -> boolean {
-    //         // Note: nextLine is in the Zs space, and should be considered to be a whitespace.
-    //         // It is explicitly not a line-break as it isn't in the exact set specified by EcmaScript.
-    //         return ch == CharacterCodes::space ||
-    //             ch == CharacterCodes::tab ||
-    //             ch == CharacterCodes::verticalTab ||
-    //             ch == CharacterCodes::formFeed ||
-    //             ch == CharacterCodes::nonBreakingSpace ||
-    //             ch == CharacterCodes::nextLine ||
-    //             ch == CharacterCodes::ogham ||
-    //             ch >= CharacterCodes::enQuad && ch <= CharacterCodes::zeroWidthSpace ||
-    //             ch == CharacterCodes::narrowNoBreakSpace ||
-    //             ch == CharacterCodes::mathematicalSpace ||
-    //             ch == CharacterCodes::ideographicSpace ||
-    //             ch == CharacterCodes::byteOrderMark;
-    //     }
+        /** Does not include line breaks. For that, see isWhiteSpaceLike. */
+        auto isWhiteSpaceSingleLine(CharacterCodes ch) -> boolean {
+            // Note: nextLine is in the Zs space, and should be considered to be a whitespace.
+            // It is explicitly not a line-break as it isn't in the exact set specified by EcmaScript.
+            return ch == CharacterCodes::space ||
+                ch == CharacterCodes::tab ||
+                ch == CharacterCodes::verticalTab ||
+                ch == CharacterCodes::formFeed ||
+                ch == CharacterCodes::nonBreakingSpace ||
+                ch == CharacterCodes::nextLine ||
+                ch == CharacterCodes::ogham ||
+                ch >= CharacterCodes::enQuad && ch <= CharacterCodes::zeroWidthSpace ||
+                ch == CharacterCodes::narrowNoBreakSpace ||
+                ch == CharacterCodes::mathematicalSpace ||
+                ch == CharacterCodes::ideographicSpace ||
+                ch == CharacterCodes::byteOrderMark;
+        }
 
-    //     auto isLineBreak(ch: number) -> boolean {
-    //         // ES5 7.3:
-    //         // The ECMAScript line terminator characters are listed in Table 3.
-    //         //     Table 3: Line Terminator Characters
-    //         //     Code Unit Value     Name                    Formal Name
-    //         //     \u000A              Line Feed               <LF>
-    //         //     \u000D              Carriage Return         <CR>
-    //         //     \u2028              Line separator          <LS>
-    //         //     \u2029              Paragraph separator     <PS>
-    //         // Only the characters in Table 3 are treated as line terminators. Other new line or line
-    //         // breaking characters are treated as white space but not as line terminators.
+        auto isLineBreak(CharacterCodes ch) -> boolean {
+            // ES5 7.3:
+            // The ECMAScript line terminator characters are listed in Table 3.
+            //     Table 3: Line Terminator Characters
+            //     Code Unit Value     Name                    Formal Name
+            //     \u000A              Line Feed               <LF>
+            //     \u000D              Carriage Return         <CR>
+            //     \u2028              Line separator          <LS>
+            //     \u2029              Paragraph separator     <PS>
+            // Only the characters in Table 3 are treated as line terminators. Other new line or line
+            // breaking characters are treated as white space but not as line terminators.
 
-    //         return ch == CharacterCodes::lineFeed ||
-    //             ch == CharacterCodes::carriageReturn ||
-    //             ch == CharacterCodes::lineSeparator ||
-    //             ch == CharacterCodes::paragraphSeparator;
-    //     }
+            return ch == CharacterCodes::lineFeed ||
+                ch == CharacterCodes::carriageReturn ||
+                ch == CharacterCodes::lineSeparator ||
+                ch == CharacterCodes::paragraphSeparator;
+        }
 
-    //     auto isDigit(ch: number) -> boolean {
-    //         return ch >= CharacterCodes::_0 && ch <= CharacterCodes::_9;
-    //     }
+        auto isDigit(CharacterCodes ch) -> boolean {
+            return ch >= CharacterCodes::_0 && ch <= CharacterCodes::_9;
+        }
 
-    //     auto isHexDigit(ch: number) -> boolean {
-    //         return isDigit(ch) || ch >= CharacterCodes::A && ch <= CharacterCodes::F || ch >= CharacterCodes::a && ch <= CharacterCodes::f;
-    //     }
+        auto isHexDigit(CharacterCodes ch) -> boolean {
+            return isDigit(ch) || ch >= CharacterCodes::A && ch <= CharacterCodes::F || ch >= CharacterCodes::a && ch <= CharacterCodes::f;
+        }
 
-    //     auto isCodePoint(number code) -> boolean {
-    //         return code <= 0x10FFFF;
-    //     }
+        auto isCodePoint(int code) -> boolean {
+            return code <= 0x10FFFF;
+        }
 
-    //     /* @internal */
-    //     auto isOctalDigit(ch: number) -> boolean {
-    //         return ch >= CharacterCodes::_0 && ch <= CharacterCodes::_7;
-    //     }
+        /* @internal */
+        auto isOctalDigit(CharacterCodes ch) -> boolean {
+            return ch >= CharacterCodes::_0 && ch <= CharacterCodes::_7;
+        }
 
-    //     auto couldStartTrivia(text: string, pos: number) -> boolean {
-    //         // Keep in sync with skipTrivia
-    //         const ch = text.charCodeAt(pos);
-    //         switch (ch) {
-    //             case CharacterCodes::carriageReturn:
-    //             case CharacterCodes::lineFeed:
-    //             case CharacterCodes::tab:
-    //             case CharacterCodes::verticalTab:
-    //             case CharacterCodes::formFeed:
-    //             case CharacterCodes::space:
-    //             case CharacterCodes::slash:
-    //             // starts of normal trivia
-    //             // falls through
-    //             case CharacterCodes::lessThan:
-    //             case CharacterCodes::bar:
-    //             case CharacterCodes::equals:
-    //             case CharacterCodes::greaterThan:
-    //                 // Starts of conflict marker trivia
-    //                 return true;
-    //             case CharacterCodes::hash:
-    //                 // Only if its the beginning can we have #! trivia
-    //                 return pos == 0;
-    //             default:
-    //                 return ch > CharacterCodes::maxAsciiCharacter;
-    //         }
-    //     }
+        auto couldStartTrivia(string text, int pos) -> boolean {
+            // Keep in sync with skipTrivia
+            auto ch = (CharacterCodes)text[pos];
+            switch (ch) {
+                case CharacterCodes::carriageReturn:
+                case CharacterCodes::lineFeed:
+                case CharacterCodes::tab:
+                case CharacterCodes::verticalTab:
+                case CharacterCodes::formFeed:
+                case CharacterCodes::space:
+                case CharacterCodes::slash:
+                // starts of normal trivia
+                // falls through
+                case CharacterCodes::lessThan:
+                case CharacterCodes::bar:
+                case CharacterCodes::equals:
+                case CharacterCodes::greaterThan:
+                    // Starts of conflict marker trivia
+                    return true;
+                case CharacterCodes::hash:
+                    // Only if its the beginning can we have #! trivia
+                    return pos == 0;
+                default:
+                    return ch > CharacterCodes::maxAsciiCharacter;
+            }
+        }
 
-    //     /* @internal */
-    //     auto skipTrivia(text: string, pos: number, stopAfterLineBreak?: boolean, stopAtComments = false) -> number {
-    //         if (positionIsSynthesized(pos)) {
-    //             return pos;
-    //         }
+        /* @internal */
+        auto skipTrivia(string text, int pos, bool stopAfterLineBreak = false, bool stopAtComments = false) -> number {
+            if (positionIsSynthesized(pos)) {
+                return pos;
+            }
 
-    //         // Keep in sync with couldStartTrivia
-    //         while (true) {
-    //             const ch = text.charCodeAt(pos);
-    //             switch (ch) {
-    //                 case CharacterCodes::carriageReturn:
-    //                     if (text.charCodeAt(pos + 1) == CharacterCodes::lineFeed) {
-    //                         pos++;
-    //                     }
-    //                 // falls through
-    //                 case CharacterCodes::lineFeed:
-    //                     pos++;
-    //                     if (stopAfterLineBreak) {
-    //                         return pos;
-    //                     }
-    //                     continue;
-    //                 case CharacterCodes::tab:
-    //                 case CharacterCodes::verticalTab:
-    //                 case CharacterCodes::formFeed:
-    //                 case CharacterCodes::space:
-    //                     pos++;
-    //                     continue;
-    //                 case CharacterCodes::slash:
-    //                     if (stopAtComments) {
-    //                         break;
-    //                     }
-    //                     if (text.charCodeAt(pos + 1) == CharacterCodes::slash) {
-    //                         pos += 2;
-    //                         while (pos < text.length) {
-    //                             if (isLineBreak(text.charCodeAt(pos))) {
-    //                                 break;
-    //                             }
-    //                             pos++;
-    //                         }
-    //                         continue;
-    //                     }
-    //                     if (text.charCodeAt(pos + 1) == CharacterCodes::asterisk) {
-    //                         pos += 2;
-    //                         while (pos < text.length) {
-    //                             if (text.charCodeAt(pos) == CharacterCodes::asterisk && text.charCodeAt(pos + 1) == CharacterCodes::slash) {
-    //                                 pos += 2;
-    //                                 break;
-    //                             }
-    //                             pos++;
-    //                         }
-    //                         continue;
-    //                     }
-    //                     break;
+            // Keep in sync with couldStartTrivia
+            while (true) {
+                auto ch = (CharacterCodes)text[pos];
+                switch (ch) {
+                    case CharacterCodes::carriageReturn:
+                        if ((CharacterCodes)text[pos + 1] == CharacterCodes::lineFeed) {
+                            pos++;
+                        }
+                    // falls through
+                    case CharacterCodes::lineFeed:
+                        pos++;
+                        if (stopAfterLineBreak) {
+                            return pos;
+                        }
+                        continue;
+                    case CharacterCodes::tab:
+                    case CharacterCodes::verticalTab:
+                    case CharacterCodes::formFeed:
+                    case CharacterCodes::space:
+                        pos++;
+                        continue;
+                    case CharacterCodes::slash:
+                        if (stopAtComments) {
+                            break;
+                        }
+                        if ((CharacterCodes)text[pos + 1] == CharacterCodes::slash) {
+                            pos += 2;
+                            while (pos < text.length()) {
+                                if (isLineBreak((CharacterCodes)text[pos])) {
+                                    break;
+                                }
+                                pos++;
+                            }
+                            continue;
+                        }
+                        if ((CharacterCodes)text[pos + 1] == CharacterCodes::asterisk) {
+                            pos += 2;
+                            while (pos < text.length()) {
+                                if ((CharacterCodes)text[pos] == CharacterCodes::asterisk && (CharacterCodes)text[pos + 1] == CharacterCodes::slash) {
+                                    pos += 2;
+                                    break;
+                                }
+                                pos++;
+                            }
+                            continue;
+                        }
+                        break;
 
-    //                 case CharacterCodes::lessThan:
-    //                 case CharacterCodes::bar:
-    //                 case CharacterCodes::equals:
-    //                 case CharacterCodes::greaterThan:
-    //                     if (isConflictMarkerTrivia(text, pos)) {
-    //                         pos = scanConflictMarkerTrivia(text, pos);
-    //                         continue;
-    //                     }
-    //                     break;
+                    case CharacterCodes::lessThan:
+                    case CharacterCodes::bar:
+                    case CharacterCodes::equals:
+                    case CharacterCodes::greaterThan:
+                        if (isConflictMarkerTrivia(text, pos)) {
+                            pos = scanConflictMarkerTrivia(text, pos);
+                            continue;
+                        }
+                        break;
 
-    //                 case CharacterCodes::hash:
-    //                     if (pos == 0 && isShebangTrivia(text, pos)) {
-    //                         pos = scanShebangTrivia(text, pos);
-    //                         continue;
-    //                     }
-    //                     break;
+                    case CharacterCodes::hash:
+                        if (pos == 0 && isShebangTrivia(text, pos)) {
+                            pos = scanShebangTrivia(text, pos);
+                            continue;
+                        }
+                        break;
 
-    //                 default:
-    //                     if (ch > CharacterCodes::maxAsciiCharacter && (isWhiteSpaceLike(ch))) {
-    //                         pos++;
-    //                         continue;
-    //                     }
-    //                     break;
-    //             }
-    //             return pos;
-    //         }
-    //     }
+                    default:
+                        if (ch > CharacterCodes::maxAsciiCharacter && (isWhiteSpaceLike(ch))) {
+                            pos++;
+                            continue;
+                        }
+                        break;
+                }
+                return pos;
+            }
+        }
 
-    //     // All conflict markers consist of the same character repeated seven times.  If it is
-    //     // a <<<<<<< or >>>>>>> marker then it is also followed by a space.
-    //     const mergeConflictMarkerLength = "<<<<<<<".length;
+        // All conflict markers consist of the same character repeated seven times.  If it is
+        // a <<<<<<< or >>>>>>> marker then it is also followed by a space.
+        int mergeConflictMarkerLength = std::strlen("<<<<<<<");
 
-    //     auto isConflictMarkerTrivia(text: string, pos: number) {
-    //         Debug.assert(pos >= 0);
+        auto isConflictMarkerTrivia(string text, int pos) {
+            debug(pos >= 0);
 
-    //         // Conflict markers must be at the start of a line.
-    //         if (pos == 0 || isLineBreak(text.charCodeAt(pos - 1))) {
-    //             const ch = text.charCodeAt(pos);
+            // Conflict markers must be at the start of a line.
+            if (pos == 0 || isLineBreak((CharacterCodes)text[pos + 1])) {
+                auto ch = (CharacterCodes)text[pos];
 
-    //             if ((pos + mergeConflictMarkerLength) < text.length) {
-    //                 for (auto i = 0; i < mergeConflictMarkerLength; i++) {
-    //                     if (text.charCodeAt(pos + i) !== ch) {
-    //                         return false;
-    //                     }
-    //                 }
+                if ((pos + mergeConflictMarkerLength) < text.length()) {
+                    for (auto i = 0; i < mergeConflictMarkerLength; i++) {
+                        if ((CharacterCodes)text[pos + i] != ch) {
+                            return false;
+                        }
+                    }
 
-    //                 return ch == CharacterCodes::equals ||
-    //                     text.charCodeAt(pos + mergeConflictMarkerLength) == CharacterCodes::space;
-    //             }
-    //         }
+                    return ch == CharacterCodes::equals ||
+                        (CharacterCodes)text[pos + mergeConflictMarkerLength] == CharacterCodes::space;
+                }
+            }
 
-    //         return false;
-    //     }
+            return false;
+        }
 
-    //     auto scanConflictMarkerTrivia(text: string, pos: number, error?: (diag: DiagnosticMessage, pos?: number, len?: number) => void) {
-    //         if (error) {
-    //             error(Diagnostics.Merge_conflict_marker_encountered, pos, mergeConflictMarkerLength);
-    //         }
+        auto scanConflictMarkerTrivia(string text, int pos, std::function<void(DiagnosticMessage, int, int)> error) -> int {
+            if (error) {
+                error(Diagnostics::Merge_conflict_marker_encountered, pos, mergeConflictMarkerLength);
+            }
 
-    //         const ch = text.charCodeAt(pos);
-    //         const len = text.length;
+            auto ch = (CharacterCodes)text[pos];
+            auto len = text.length();
 
-    //         if (ch == CharacterCodes::lessThan || ch == CharacterCodes::greaterThan) {
-    //             while (pos < len && !isLineBreak(text.charCodeAt(pos))) {
-    //                 pos++;
-    //             }
-    //         }
-    //         else {
-    //             Debug.assert(ch == CharacterCodes::bar || ch == CharacterCodes::equals);
-    //             // Consume everything from the start of a ||||||| or ===== marker to the start
-    //             // of the next ===== or >>>>>>> marker.
-    //             while (pos < len) {
-    //                 const currentChar = text.charCodeAt(pos);
-    //                 if ((currentChar == CharacterCodes::equals || currentChar == CharacterCodes::greaterThan) && currentChar !== ch && isConflictMarkerTrivia(text, pos)) {
-    //                     break;
-    //                 }
+            if (ch == CharacterCodes::lessThan || ch == CharacterCodes::greaterThan) {
+                while (pos < len && !isLineBreak((CharacterCodes)text[pos])) {
+                    pos++;
+                }
+            }
+            else {
+                debug(ch == CharacterCodes::bar || ch == CharacterCodes::equals);
+                // Consume everything from the start of a ||||||| or ===== marker to the start
+                // of the next ===== or >>>>>>> marker.
+                while (pos < len) {
+                    auto currentChar = (CharacterCodes)text[pos];
+                    if ((currentChar == CharacterCodes::equals || currentChar == CharacterCodes::greaterThan) && currentChar != ch && isConflictMarkerTrivia(text, pos)) {
+                        break;
+                    }
 
-    //                 pos++;
-    //             }
-    //         }
+                    pos++;
+                }
+            }
 
-    //         return pos;
-    //     }
+            return pos;
+        }
 
     //     const shebangTriviaRegex = /^#!.*/;
 
     //     /*@internal*/
-    //     auto isShebangTrivia(text: string, pos: number) {
+    //     auto isShebangTrivia(string text, int pos) {
     //         // Shebangs check must only be done at the start of the file
-    //         Debug.assert(pos == 0);
+    //         Debug(pos == 0);
     //         return shebangTriviaRegex.test(text);
     //     }
 
     //     /*@internal*/
-    //     auto scanShebangTrivia(text: string, pos: number) {
+    //     auto scanShebangTrivia(string text, int pos) {
     //         const shebang = shebangTriviaRegex.exec(text)![0];
     //         pos = pos + shebang.length;
     //         return pos;
@@ -757,7 +759,7 @@ namespace ts
     //      * @returns If "reduce" is true, the accumulated value. If "reduce" is false, the first truthy
     //      *      return value of the callback.
     //      */
-    //     auto iterateCommentRanges<T, U>(reduce: boolean, text: string, pos: number, trailing: boolean, cb: (pos: number, end: number, kind: CommentKind, hasTrailingNewLine: boolean, state: T, memo: U) => U, state: T, initial?: U) -> U {
+    //     auto iterateCommentRanges<T, U>(reduce: boolean, string text, int pos, trailing: boolean, cb: (int pos, end: number, kind: CommentKind, hasTrailingNewLine: boolean, state: T, memo: U) => U, state: T, initial?: U) -> U {
     //         auto pendingPos!: number;
     //         auto pendingEnd!: number;
     //         auto pendingKind!: CommentKind;
@@ -773,7 +775,7 @@ namespace ts
     //             }
     //         }
     //         scan: while (pos >= 0 && pos < text.length) {
-    //             const ch = text.charCodeAt(pos);
+    //             auto ch = (CharacterCodes)text[pos];
     //             switch (ch) {
     //                 case CharacterCodes::carriageReturn:
     //                     if (text.charCodeAt(pos + 1) == CharacterCodes::lineFeed) {
@@ -807,7 +809,7 @@ namespace ts
     //                         pos += 2;
     //                         if (nextChar == CharacterCodes::slash) {
     //                             while (pos < text.length) {
-    //                                 if (isLineBreak(text.charCodeAt(pos))) {
+    //                                 if (isLineBreak((CharacterCodes)text[pos])) {
     //                                     hasTrailingNewLine = true;
     //                                     break;
     //                                 }
@@ -816,7 +818,7 @@ namespace ts
     //                         }
     //                         else {
     //                             while (pos < text.length) {
-    //                                 if (text.charCodeAt(pos) == CharacterCodes::asterisk && text.charCodeAt(pos + 1) == CharacterCodes::slash) {
+    //                                 if ((CharacterCodes)text[pos] == CharacterCodes::asterisk && text.charCodeAt(pos + 1) == CharacterCodes::slash) {
     //                                     pos += 2;
     //                                     break;
     //                                 }
@@ -862,27 +864,27 @@ namespace ts
     //         return accumulator;
     //     }
 
-    //     auto forEachLeadingCommentRange<U>(text: string, pos: number, cb: (pos: number, end: number, kind: CommentKind, hasTrailingNewLine: boolean) => U) -> U;
-    //     auto forEachLeadingCommentRange<T, U>(text: string, pos: number, cb: (pos: number, end: number, kind: CommentKind, hasTrailingNewLine: boolean, state: T) => U, state: T) -> U;
-    //     auto forEachLeadingCommentRange<T, U>(text: string, pos: number, cb: (pos: number, end: number, kind: CommentKind, hasTrailingNewLine: boolean, state: T) => U, state?: T) -> U {
+    //     auto forEachLeadingCommentRange<U>(string text, int pos, cb: (int pos, end: number, kind: CommentKind, hasTrailingNewLine: boolean) => U) -> U;
+    //     auto forEachLeadingCommentRange<T, U>(string text, int pos, cb: (int pos, end: number, kind: CommentKind, hasTrailingNewLine: boolean, state: T) => U, state: T) -> U;
+    //     auto forEachLeadingCommentRange<T, U>(string text, int pos, cb: (int pos, end: number, kind: CommentKind, hasTrailingNewLine: boolean, state: T) => U, state?: T) -> U {
     //         return iterateCommentRanges(/*reduce*/ false, text, pos, /*trailing*/ false, cb, state);
     //     }
 
-    //     auto forEachTrailingCommentRange<U>(text: string, pos: number, cb: (pos: number, end: number, kind: CommentKind, hasTrailingNewLine: boolean) => U) -> U;
-    //     auto forEachTrailingCommentRange<T, U>(text: string, pos: number, cb: (pos: number, end: number, kind: CommentKind, hasTrailingNewLine: boolean, state: T) => U, state: T) -> U;
-    //     auto forEachTrailingCommentRange<T, U>(text: string, pos: number, cb: (pos: number, end: number, kind: CommentKind, hasTrailingNewLine: boolean, state: T) => U, state?: T) -> U {
+    //     auto forEachTrailingCommentRange<U>(string text, int pos, cb: (int pos, end: number, kind: CommentKind, hasTrailingNewLine: boolean) => U) -> U;
+    //     auto forEachTrailingCommentRange<T, U>(string text, int pos, cb: (int pos, end: number, kind: CommentKind, hasTrailingNewLine: boolean, state: T) => U, state: T) -> U;
+    //     auto forEachTrailingCommentRange<T, U>(string text, int pos, cb: (int pos, end: number, kind: CommentKind, hasTrailingNewLine: boolean, state: T) => U, state?: T) -> U {
     //         return iterateCommentRanges(/*reduce*/ false, text, pos, /*trailing*/ true, cb, state);
     //     }
 
-    //     auto reduceEachLeadingCommentRange<T, U>(text: string, pos: number, cb: (pos: number, end: number, kind: CommentKind, hasTrailingNewLine: boolean, state: T, memo: U) => U, state: T, initial: U) {
+    //     auto reduceEachLeadingCommentRange<T, U>(string text, int pos, cb: (int pos, end: number, kind: CommentKind, hasTrailingNewLine: boolean, state: T, memo: U) => U, state: T, initial: U) {
     //         return iterateCommentRanges(/*reduce*/ true, text, pos, /*trailing*/ false, cb, state, initial);
     //     }
 
-    //     auto reduceEachTrailingCommentRange<T, U>(text: string, pos: number, cb: (pos: number, end: number, kind: CommentKind, hasTrailingNewLine: boolean, state: T, memo: U) => U, state: T, initial: U) {
+    //     auto reduceEachTrailingCommentRange<T, U>(string text, int pos, cb: (int pos, end: number, kind: CommentKind, hasTrailingNewLine: boolean, state: T, memo: U) => U, state: T, initial: U) {
     //         return iterateCommentRanges(/*reduce*/ true, text, pos, /*trailing*/ true, cb, state, initial);
     //     }
 
-    //     auto appendCommentRange(pos: number, end: number, kind: CommentKind, hasTrailingNewLine: boolean, _state: any, comments: CommentRange[]) {
+    //     auto appendCommentRange(int pos, end: number, kind: CommentKind, hasTrailingNewLine: boolean, _state: any, comments: CommentRange[]) {
     //         if (!comments) {
     //             comments = [];
     //         }
@@ -891,29 +893,29 @@ namespace ts
     //         return comments;
     //     }
 
-    //     auto getLeadingCommentRanges(text: string, pos: number) -> CommentRange[] {
+    //     auto getLeadingCommentRanges(string text, int pos) -> CommentRange[] {
     //         return reduceEachLeadingCommentRange(text, pos, appendCommentRange, /*state*/ undefined, /*initial*/ undefined);
     //     }
 
-    //     auto getTrailingCommentRanges(text: string, pos: number) -> CommentRange[] {
+    //     auto getTrailingCommentRanges(string text, int pos) -> CommentRange[] {
     //         return reduceEachTrailingCommentRange(text, pos, appendCommentRange, /*state*/ undefined, /*initial*/ undefined);
     //     }
 
     //     /** Optionally, get the shebang */
-    //     auto getShebang(text: string) -> string {
+    //     auto getShebang(string text) -> string {
     //         const match = shebangTriviaRegex.exec(text);
     //         if (match) {
     //             return match[0];
     //         }
     //     }
 
-    //     auto isIdentifierStart(ch: number, ScriptTarget languageVersion) -> boolean {
+    //     auto isIdentifierStart(int ch, ScriptTarget languageVersion) -> boolean {
     //         return ch >= CharacterCodes::A && ch <= CharacterCodes::Z || ch >= CharacterCodes::a && ch <= CharacterCodes::z ||
     //             ch == CharacterCodes::$ || ch == CharacterCodes::_ ||
     //             ch > CharacterCodes::maxAsciiCharacter && isUnicodeIdentifierStart(ch, languageVersion);
     //     }
 
-    //     auto isIdentifierPart(ch: number, ScriptTarget languageVersion, identifierVariant?: LanguageVariant) -> boolean {
+    //     auto isIdentifierPart(int ch, ScriptTarget languageVersion, identifierVariant?: LanguageVariant) -> boolean {
     //         return ch >= CharacterCodes::A && ch <= CharacterCodes::Z || ch >= CharacterCodes::a && ch <= CharacterCodes::z ||
     //             ch >= CharacterCodes::_0 && ch <= CharacterCodes::_9 || ch == CharacterCodes::$ || ch == CharacterCodes::_ ||
     //             // "-" and ":" are valid in JSX Identifiers
@@ -949,7 +951,7 @@ namespace ts
     //         auto text = textInitial!;
 
     //         // Current position (end position of text of current token)
-    //         auto pos: number;
+    //         auto int pos;
 
 
     //         // end of text
@@ -1043,7 +1045,7 @@ namespace ts
     //             auto isPreviousTokenSeparator = false;
     //             auto result = "";
     //             while (true) {
-    //                 const ch = text.charCodeAt(pos);
+    //                 auto ch = (CharacterCodes)text[pos];
     //                 if (ch == CharacterCodes::_) {
     //                     tokenFlags |= TokenFlags.ContainsSeparator;
     //                     if (allowSeparator) {
@@ -1052,10 +1054,10 @@ namespace ts
     //                         result += text.substring(start, pos);
     //                     }
     //                     else if (isPreviousTokenSeparator) {
-    //                         error(Diagnostics.Multiple_consecutive_numeric_separators_are_not_permitted, pos, 1);
+    //                         error(Diagnostics::Multiple_consecutive_numeric_separators_are_not_permitted, pos, 1);
     //                     }
     //                     else {
-    //                         error(Diagnostics.Numeric_separators_are_not_allowed_here, pos, 1);
+    //                         error(Diagnostics::Numeric_separators_are_not_allowed_here, pos, 1);
     //                     }
     //                     pos++;
     //                     start = pos;
@@ -1069,8 +1071,8 @@ namespace ts
     //                 }
     //                 break;
     //             }
-    //             if (text.charCodeAt(pos - 1) == CharacterCodes::_) {
-    //                 error(Diagnostics.Numeric_separators_are_not_allowed_here, pos - 1, 1);
+    //             if ((CharacterCodes)text[pos + 1] == CharacterCodes::_) {
+    //                 error(Diagnostics::Numeric_separators_are_not_allowed_here, pos - 1, 1);
     //             }
     //             return result + text.substring(start, pos);
     //         }
@@ -1080,19 +1082,19 @@ namespace ts
     //             const mainFragment = scanNumberFragment();
     //             auto decimalFragment: string;
     //             auto scientificFragment: string;
-    //             if (text.charCodeAt(pos) == CharacterCodes::dot) {
+    //             if ((CharacterCodes)text[pos] == CharacterCodes::dot) {
     //                 pos++;
     //                 decimalFragment = scanNumberFragment();
     //             }
     //             auto end = pos;
-    //             if (text.charCodeAt(pos) == CharacterCodes::E || text.charCodeAt(pos) == CharacterCodes::e) {
+    //             if ((CharacterCodes)text[pos] == CharacterCodes::E || (CharacterCodes)text[pos] == CharacterCodes::e) {
     //                 pos++;
     //                 tokenFlags |= TokenFlags.Scientific;
-    //                 if (text.charCodeAt(pos) == CharacterCodes::plus || text.charCodeAt(pos) == CharacterCodes::minus) pos++;
+    //                 if ((CharacterCodes)text[pos] == CharacterCodes::plus || (CharacterCodes)text[pos] == CharacterCodes::minus) pos++;
     //                 const preNumericPart = pos;
     //                 const finalFragment = scanNumberFragment();
     //                 if (!finalFragment) {
-    //                     error(Diagnostics.Digit_expected);
+    //                     error(Diagnostics::Digit_expected);
     //                 }
     //                 else {
     //                     scientificFragment = text.substring(end, preNumericPart) + finalFragment;
@@ -1138,21 +1140,21 @@ namespace ts
 
     //             if (length == 1 && text[identifierStart] == "n") {
     //                 if (isScientific) {
-    //                     error(Diagnostics.A_bigint_literal_cannot_use_exponential_notation, numericStart, identifierStart - numericStart + 1);
+    //                     error(Diagnostics::A_bigint_literal_cannot_use_exponential_notation, numericStart, identifierStart - numericStart + 1);
     //                 }
     //                 else {
-    //                     error(Diagnostics.A_bigint_literal_must_be_an_integer, numericStart, identifierStart - numericStart + 1);
+    //                     error(Diagnostics::A_bigint_literal_must_be_an_integer, numericStart, identifierStart - numericStart + 1);
     //                 }
     //             }
     //             else {
-    //                 error(Diagnostics.An_identifier_or_keyword_cannot_immediately_follow_a_numeric_literal, identifierStart, length);
+    //                 error(Diagnostics::An_identifier_or_keyword_cannot_immediately_follow_a_numeric_literal, identifierStart, length);
     //                 pos = identifierStart;
     //             }
     //         }
 
     //         auto scanOctalDigits() -> number {
     //             const start = pos;
-    //             while (isOctalDigit(text.charCodeAt(pos))) {
+    //             while (isOctalDigit((CharacterCodes)text[pos])) {
     //                 pos++;
     //             }
     //             return +(text.substring(start, pos));
@@ -1180,7 +1182,7 @@ namespace ts
     //             auto allowSeparator = false;
     //             auto isPreviousTokenSeparator = false;
     //             while (valueChars.length < minCount || scanAsManyAsPossible) {
-    //                 auto ch = text.charCodeAt(pos);
+    //                 auto ch = (CharacterCodes)text[pos];
     //                 if (canHaveSeparators && ch == CharacterCodes::_) {
     //                     tokenFlags |= TokenFlags.ContainsSeparator;
     //                     if (allowSeparator) {
@@ -1188,10 +1190,10 @@ namespace ts
     //                         isPreviousTokenSeparator = true;
     //                     }
     //                     else if (isPreviousTokenSeparator) {
-    //                         error(Diagnostics.Multiple_consecutive_numeric_separators_are_not_permitted, pos, 1);
+    //                         error(Diagnostics::Multiple_consecutive_numeric_separators_are_not_permitted, pos, 1);
     //                     }
     //                     else {
-    //                         error(Diagnostics.Numeric_separators_are_not_allowed_here, pos, 1);
+    //                         error(Diagnostics::Numeric_separators_are_not_allowed_here, pos, 1);
     //                     }
     //                     pos++;
     //                     continue;
@@ -1212,14 +1214,14 @@ namespace ts
     //             if (valueChars.length < minCount) {
     //                 valueChars = [];
     //             }
-    //             if (text.charCodeAt(pos - 1) == CharacterCodes::_) {
-    //                 error(Diagnostics.Numeric_separators_are_not_allowed_here, pos - 1, 1);
+    //             if ((CharacterCodes)text[pos + 1] == CharacterCodes::_) {
+    //                 error(Diagnostics::Numeric_separators_are_not_allowed_here, pos - 1, 1);
     //             }
     //             return String.fromCharCode(...valueChars);
     //         }
 
     //         auto scanString(jsxAttributeString = false) -> string {
-    //             const quote = text.charCodeAt(pos);
+    //             const quote = (CharacterCodes)text[pos];
     //             pos++;
     //             auto result = "";
     //             auto start = pos;
@@ -1227,10 +1229,10 @@ namespace ts
     //                 if (pos >= end) {
     //                     result += text.substring(start, pos);
     //                     tokenFlags |= TokenFlags.Unterminated;
-    //                     error(Diagnostics.Unterminated_string_literal);
+    //                     error(Diagnostics::Unterminated_string_literal);
     //                     break;
     //                 }
-    //                 const ch = text.charCodeAt(pos);
+    //                 auto ch = (CharacterCodes)text[pos];
     //                 if (ch == quote) {
     //                     result += text.substring(start, pos);
     //                     pos++;
@@ -1245,7 +1247,7 @@ namespace ts
     //                 if (isLineBreak(ch) && !jsxAttributeString) {
     //                     result += text.substring(start, pos);
     //                     tokenFlags |= TokenFlags.Unterminated;
-    //                     error(Diagnostics.Unterminated_string_literal);
+    //                     error(Diagnostics::Unterminated_string_literal);
     //                     break;
     //                 }
     //                 pos++;
@@ -1258,7 +1260,7 @@ namespace ts
     //          * a literal component of a TemplateExpression.
     //          */
     //         auto scanTemplateAndSetTokenValue(isTaggedTemplate: boolean) -> SyntaxKind {
-    //             const startedWithBacktick = text.charCodeAt(pos) == CharacterCodes::backtick;
+    //             const startedWithBacktick = (CharacterCodes)text[pos] == CharacterCodes::backtick;
 
     //             pos++;
     //             auto start = pos;
@@ -1269,12 +1271,12 @@ namespace ts
     //                 if (pos >= end) {
     //                     contents += text.substring(start, pos);
     //                     tokenFlags |= TokenFlags.Unterminated;
-    //                     error(Diagnostics.Unterminated_template_literal);
+    //                     error(Diagnostics::Unterminated_template_literal);
     //                     resultingToken = startedWithBacktick ? SyntaxKind::NoSubstitutionTemplateLiteral : SyntaxKind::TemplateTail;
     //                     break;
     //                 }
 
-    //                 const currChar = text.charCodeAt(pos);
+    //                 const currChar = (CharacterCodes)text[pos];
 
     //                 // '`'
     //                 if (currChar == CharacterCodes::backtick) {
@@ -1306,7 +1308,7 @@ namespace ts
     //                     contents += text.substring(start, pos);
     //                     pos++;
 
-    //                     if (pos < end && text.charCodeAt(pos) == CharacterCodes::lineFeed) {
+    //                     if (pos < end && (CharacterCodes)text[pos] == CharacterCodes::lineFeed) {
     //                         pos++;
     //                     }
 
@@ -1318,7 +1320,7 @@ namespace ts
     //                 pos++;
     //             }
 
-    //             Debug.assert(resultingToken !== undefined);
+    //             Debug(resultingToken !== undefined);
 
     //             tokenValue = contents;
     //             return resultingToken;
@@ -1328,15 +1330,15 @@ namespace ts
     //             const start = pos;
     //             pos++;
     //             if (pos >= end) {
-    //                 error(Diagnostics.Unexpected_end_of_text);
+    //                 error(Diagnostics::Unexpected_end_of_text);
     //                 return "";
     //             }
-    //             const ch = text.charCodeAt(pos);
+    //             auto ch = (CharacterCodes)text[pos];
     //             pos++;
     //             switch (ch) {
     //                 case CharacterCodes::_0:
     //                     // '\01'
-    //                     if (isTaggedTemplate && pos < end && isDigit(text.charCodeAt(pos))) {
+    //                     if (isTaggedTemplate && pos < end && isDigit((CharacterCodes)text[pos])) {
     //                         pos++;
     //                         tokenFlags |= TokenFlags.ContainsInvalidEscape;
     //                         return text.substring(start, pos);
@@ -1370,11 +1372,11 @@ namespace ts
     //                         }
     //                     }
     //                     // '\u{DDDDDDDD}'
-    //                     if (pos < end && text.charCodeAt(pos) == CharacterCodes::openBrace) {
+    //                     if (pos < end && (CharacterCodes)text[pos] == CharacterCodes::openBrace) {
     //                         pos++;
 
     //                         // '\u{'
-    //                         if (isTaggedTemplate && !isHexDigit(text.charCodeAt(pos))) {
+    //                         if (isTaggedTemplate && !isHexDigit((CharacterCodes)text[pos])) {
     //                             tokenFlags |= TokenFlags.ContainsInvalidEscape;
     //                             return text.substring(start, pos);
     //                         }
@@ -1385,7 +1387,7 @@ namespace ts
     //                             const escapedValue = escapedValueString ? parseInt(escapedValueString, 16) : -1;
 
     //                             // '\u{Not Code Point' or '\u{CodePoint'
-    //                             if (!isCodePoint(escapedValue) || text.charCodeAt(pos) !== CharacterCodes::closeBrace) {
+    //                             if (!isCodePoint(escapedValue) || (CharacterCodes)text[pos] !== CharacterCodes::closeBrace) {
     //                                 tokenFlags |= TokenFlags.ContainsInvalidEscape;
     //                                 return text.substring(start, pos);
     //                             }
@@ -1403,7 +1405,7 @@ namespace ts
 
     //                 case CharacterCodes::x:
     //                     if (isTaggedTemplate) {
-    //                         if (!isHexDigit(text.charCodeAt(pos))) {
+    //                         if (!isHexDigit((CharacterCodes)text[pos])) {
     //                             tokenFlags |= TokenFlags.ContainsInvalidEscape;
     //                             return text.substring(start, pos);
     //                         }
@@ -1419,7 +1421,7 @@ namespace ts
     //                 // when encountering a LineContinuation (i.e. a backslash and a line terminator sequence),
     //                 // the line terminator is interpreted to be "the empty code unit sequence".
     //                 case CharacterCodes::carriageReturn:
-    //                     if (pos < end && text.charCodeAt(pos) == CharacterCodes::lineFeed) {
+    //                     if (pos < end && (CharacterCodes)text[pos] == CharacterCodes::lineFeed) {
     //                         pos++;
     //                     }
     //                 // falls through
@@ -1439,7 +1441,7 @@ namespace ts
     //                 return String.fromCharCode(escapedValue);
     //             }
     //             else {
-    //                 error(Diagnostics.Hexadecimal_digit_expected);
+    //                 error(Diagnostics::Hexadecimal_digit_expected);
     //                 return "";
     //             }
     //         }
@@ -1451,24 +1453,24 @@ namespace ts
 
     //             // Validate the value of the digit
     //             if (escapedValue < 0) {
-    //                 error(Diagnostics.Hexadecimal_digit_expected);
+    //                 error(Diagnostics::Hexadecimal_digit_expected);
     //                 isInvalidExtendedEscape = true;
     //             }
     //             else if (escapedValue > 0x10FFFF) {
-    //                 error(Diagnostics.An_extended_Unicode_escape_value_must_be_between_0x0_and_0x10FFFF_inclusive);
+    //                 error(Diagnostics::An_extended_Unicode_escape_value_must_be_between_0x0_and_0x10FFFF_inclusive);
     //                 isInvalidExtendedEscape = true;
     //             }
 
     //             if (pos >= end) {
-    //                 error(Diagnostics.Unexpected_end_of_text);
+    //                 error(Diagnostics::Unexpected_end_of_text);
     //                 isInvalidExtendedEscape = true;
     //             }
-    //             else if (text.charCodeAt(pos) == CharacterCodes::closeBrace) {
+    //             else if ((CharacterCodes)text[pos] == CharacterCodes::closeBrace) {
     //                 // Only swallow the following character up if it's a '}'.
     //                 pos++;
     //             }
     //             else {
-    //                 error(Diagnostics.Unterminated_Unicode_escape_sequence);
+    //                 error(Diagnostics::Unterminated_Unicode_escape_sequence);
     //                 isInvalidExtendedEscape = true;
     //             }
 
@@ -1543,9 +1545,9 @@ namespace ts
 
     //         auto getIdentifierToken() -> SyntaxKind::Identifier | KeywordSyntaxKind {
     //             // Reserved words are between 2 and 12 characters long and start with a lowercase letter
-    //             const len = tokenValue.length;
+    //             auto len = tokenValue.length;
     //             if (len >= 2 && len <= 12) {
-    //                 const ch = tokenValue.charCodeAt(0);
+    //                 auto ch = tokenValue.charCodeAt(0);
     //                 if (ch >= CharacterCodes::a && ch <= CharacterCodes::z) {
     //                     const keyword = textToKeyword.get(tokenValue);
     //                     if (keyword !== undefined) {
@@ -1563,7 +1565,7 @@ namespace ts
     //             auto separatorAllowed = false;
     //             auto isPreviousTokenSeparator = false;
     //             while (true) {
-    //                 const ch = text.charCodeAt(pos);
+    //                 auto ch = (CharacterCodes)text[pos];
     //                 // Numeric separators are allowed anywhere within a numeric literal, except not at the beginning, or following another separator
     //                 if (ch == CharacterCodes::_) {
     //                     tokenFlags |= TokenFlags.ContainsSeparator;
@@ -1572,10 +1574,10 @@ namespace ts
     //                         isPreviousTokenSeparator = true;
     //                     }
     //                     else if (isPreviousTokenSeparator) {
-    //                         error(Diagnostics.Multiple_consecutive_numeric_separators_are_not_permitted, pos, 1);
+    //                         error(Diagnostics::Multiple_consecutive_numeric_separators_are_not_permitted, pos, 1);
     //                     }
     //                     else {
-    //                         error(Diagnostics.Numeric_separators_are_not_allowed_here, pos, 1);
+    //                         error(Diagnostics::Numeric_separators_are_not_allowed_here, pos, 1);
     //                     }
     //                     pos++;
     //                     continue;
@@ -1588,15 +1590,15 @@ namespace ts
     //                 pos++;
     //                 isPreviousTokenSeparator = false;
     //             }
-    //             if (text.charCodeAt(pos - 1) == CharacterCodes::_) {
+    //             if ((CharacterCodes)text[pos + 1] == CharacterCodes::_) {
     //                 // Literal ends with underscore - not allowed
-    //                 error(Diagnostics.Numeric_separators_are_not_allowed_here, pos - 1, 1);
+    //                 error(Diagnostics::Numeric_separators_are_not_allowed_here, pos - 1, 1);
     //             }
     //             return value;
     //         }
 
     //         auto checkBigIntSuffix() -> SyntaxKind {
-    //             if (text.charCodeAt(pos) == CharacterCodes::n) {
+    //             if ((CharacterCodes)text[pos] == CharacterCodes::n) {
     //                 tokenValue += "n";
     //                 // Use base 10 instead of base 2 or base 8 for shorter literals
     //                 if (tokenFlags & TokenFlags.BinaryOrOctalSpecifier) {
@@ -1684,7 +1686,7 @@ namespace ts
     //                             continue;
     //                         }
     //                         else {
-    //                             while (pos < end && isWhiteSpaceSingleLine(text.charCodeAt(pos))) {
+    //                             while (pos < end && isWhiteSpaceSingleLine((CharacterCodes)text[pos])) {
     //                                 pos++;
     //                             }
     //                             return token = SyntaxKind::WhitespaceTrivia;
@@ -1782,7 +1784,7 @@ namespace ts
     //                             pos += 2;
 
     //                             while (pos < end) {
-    //                                 if (isLineBreak(text.charCodeAt(pos))) {
+    //                                 if (isLineBreak((CharacterCodes)text[pos])) {
     //                                     break;
     //                                 }
     //                                 pos++;
@@ -1805,14 +1807,14 @@ namespace ts
     //                         // Multi-line comment
     //                         if (text.charCodeAt(pos + 1) == CharacterCodes::asterisk) {
     //                             pos += 2;
-    //                             if (text.charCodeAt(pos) == CharacterCodes::asterisk && text.charCodeAt(pos + 1) !== CharacterCodes::slash) {
+    //                             if ((CharacterCodes)text[pos] == CharacterCodes::asterisk && text.charCodeAt(pos + 1) !== CharacterCodes::slash) {
     //                                 tokenFlags |= TokenFlags.PrecedingJSDocComment;
     //                             }
 
     //                             auto commentClosed = false;
     //                             auto lastLineStart = tokenPos;
     //                             while (pos < end) {
-    //                                 const ch = text.charCodeAt(pos);
+    //                                 auto ch = (CharacterCodes)text[pos];
 
     //                                 if (ch == CharacterCodes::asterisk && text.charCodeAt(pos + 1) == CharacterCodes::slash) {
     //                                     pos += 2;
@@ -1831,7 +1833,7 @@ namespace ts
     //                             commentDirectives = appendIfCommentDirective(commentDirectives, text.slice(lastLineStart, pos), commentDirectiveRegExMultiLine, lastLineStart);
 
     //                             if (!commentClosed) {
-    //                                 error(Diagnostics.Asterisk_Slash_expected);
+    //                                 error(Diagnostics::Asterisk_Slash_expected);
     //                             }
 
     //                             if (skipTrivia) {
@@ -1857,7 +1859,7 @@ namespace ts
     //                             pos += 2;
     //                             tokenValue = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ true);
     //                             if (!tokenValue) {
-    //                                 error(Diagnostics.Hexadecimal_digit_expected);
+    //                                 error(Diagnostics::Hexadecimal_digit_expected);
     //                                 tokenValue = "0";
     //                             }
     //                             tokenValue = "0x" + tokenValue;
@@ -1868,7 +1870,7 @@ namespace ts
     //                             pos += 2;
     //                             tokenValue = scanBinaryOrOctalDigits(/* base */ 2);
     //                             if (!tokenValue) {
-    //                                 error(Diagnostics.Binary_digit_expected);
+    //                                 error(Diagnostics::Binary_digit_expected);
     //                                 tokenValue = "0";
     //                             }
     //                             tokenValue = "0b" + tokenValue;
@@ -1879,7 +1881,7 @@ namespace ts
     //                             pos += 2;
     //                             tokenValue = scanBinaryOrOctalDigits(/* base */ 8);
     //                             if (!tokenValue) {
-    //                                 error(Diagnostics.Octal_digit_expected);
+    //                                 error(Diagnostics::Octal_digit_expected);
     //                                 tokenValue = "0";
     //                             }
     //                             tokenValue = "0o" + tokenValue;
@@ -2050,19 +2052,19 @@ namespace ts
     //                             return token = getIdentifierToken();
     //                         }
 
-    //                         error(Diagnostics.Invalid_character);
+    //                         error(Diagnostics::Invalid_character);
     //                         pos++;
     //                         return token = SyntaxKind::Unknown;
     //                     case CharacterCodes::hash:
     //                         if (pos !== 0 && text[pos + 1] == "!") {
-    //                             error(Diagnostics.can_only_be_used_at_the_start_of_a_file);
+    //                             error(Diagnostics::can_only_be_used_at_the_start_of_a_file);
     //                             pos++;
     //                             return token = SyntaxKind::Unknown;
     //                         }
     //                         pos++;
-    //                         if (isIdentifierStart(ch = text.charCodeAt(pos), languageVersion)) {
+    //                         if (isIdentifierStart(ch = (CharacterCodes)text[pos], languageVersion)) {
     //                             pos++;
-    //                             while (pos < end && isIdentifierPart(ch = text.charCodeAt(pos), languageVersion)) pos++;
+    //                             while (pos < end && isIdentifierPart(ch = (CharacterCodes)text[pos], languageVersion)) pos++;
     //                             tokenValue = text.substring(tokenPos, pos);
     //                             if (ch == CharacterCodes::backslash) {
     //                                 tokenValue += scanIdentifierParts();
@@ -2070,7 +2072,7 @@ namespace ts
     //                         }
     //                         else {
     //                             tokenValue = "#";
-    //                             error(Diagnostics.Invalid_character);
+    //                             error(Diagnostics::Invalid_character);
     //                         }
     //                         return token = SyntaxKind::PrivateIdentifier;
     //                     default:
@@ -2087,7 +2089,7 @@ namespace ts
     //                             pos += charSize(ch);
     //                             continue;
     //                         }
-    //                         error(Diagnostics.Invalid_character);
+    //                         error(Diagnostics::Invalid_character);
     //                         pos += charSize(ch);
     //                         return token = SyntaxKind::Unknown;
     //                 }
@@ -2095,10 +2097,10 @@ namespace ts
     //         }
 
     //         auto reScanInvalidIdentifier() -> SyntaxKind {
-    //             Debug.assert(token == SyntaxKind::Unknown, "'reScanInvalidIdentifier' should only be called when the current token is 'SyntaxKind::Unknown'.");
+    //             Debug(token == SyntaxKind::Unknown, "'reScanInvalidIdentifier' should only be called when the current token is 'SyntaxKind::Unknown'.");
     //             pos = tokenPos = startPos;
     //             tokenFlags = 0;
-    //             const ch = codePointAt(text, pos);
+    //             auto ch = codePointAt(text, pos);
     //             const identifierKind = scanIdentifier(ch, ScriptTarget::ESNext);
     //             if (identifierKind) {
     //                 return token = identifierKind;
@@ -2122,7 +2124,7 @@ namespace ts
 
     //         auto reScanGreaterToken() -> SyntaxKind {
     //             if (token == SyntaxKind::GreaterThanToken) {
-    //                 if (text.charCodeAt(pos) == CharacterCodes::greaterThan) {
+    //                 if ((CharacterCodes)text[pos] == CharacterCodes::greaterThan) {
     //                     if (text.charCodeAt(pos + 1) == CharacterCodes::greaterThan) {
     //                         if (text.charCodeAt(pos + 2) == CharacterCodes::equals) {
     //                             return pos += 3, token = SyntaxKind::GreaterThanGreaterThanGreaterThanEqualsToken;
@@ -2135,7 +2137,7 @@ namespace ts
     //                     pos++;
     //                     return token = SyntaxKind::GreaterThanGreaterThanToken;
     //                 }
-    //                 if (text.charCodeAt(pos) == CharacterCodes::equals) {
+    //                 if ((CharacterCodes)text[pos] == CharacterCodes::equals) {
     //                     pos++;
     //                     return token = SyntaxKind::GreaterThanEqualsToken;
     //                 }
@@ -2144,7 +2146,7 @@ namespace ts
     //         }
 
     //         auto reScanAsteriskEqualsToken() -> SyntaxKind {
-    //             Debug.assert(token == SyntaxKind::AsteriskEqualsToken, "'reScanAsteriskEqualsToken' should only be called on a '*='");
+    //             Debug(token == SyntaxKind::AsteriskEqualsToken, "'reScanAsteriskEqualsToken' should only be called on a '*='");
     //             pos = tokenPos + 1;
     //             return token = SyntaxKind::EqualsToken;
     //         }
@@ -2159,14 +2161,14 @@ namespace ts
     //                     // regex.  Report error and return what we have so far.
     //                     if (p >= end) {
     //                         tokenFlags |= TokenFlags.Unterminated;
-    //                         error(Diagnostics.Unterminated_regular_expression_literal);
+    //                         error(Diagnostics::Unterminated_regular_expression_literal);
     //                         break;
     //                     }
 
-    //                     const ch = text.charCodeAt(p);
+    //                     auto ch = text.charCodeAt(p);
     //                     if (isLineBreak(ch)) {
     //                         tokenFlags |= TokenFlags.Unterminated;
-    //                         error(Diagnostics.Unterminated_regular_expression_literal);
+    //                         error(Diagnostics::Unterminated_regular_expression_literal);
     //                         break;
     //                     }
 
@@ -2205,7 +2207,7 @@ namespace ts
 
     //         auto appendIfCommentDirective(
     //             commentDirectives: CommentDirective[],
-    //             text: string,
+    //             string text,
     //             commentDirectiveRegEx: RegExp,
     //             lineStart: number,
     //         ) {
@@ -2223,7 +2225,7 @@ namespace ts
     //             );
     //         }
 
-    //         auto getDirectiveFromComment(text: string, commentDirectiveRegEx: RegExp) {
+    //         auto getDirectiveFromComment(string text, commentDirectiveRegEx: RegExp) {
     //             const match = commentDirectiveRegEx.exec(text);
     //             if (!match) {
     //                 return undefined;
@@ -2244,7 +2246,7 @@ namespace ts
     //          * Unconditionally back up and scan a template expression portion.
     //          */
     //         auto reScanTemplateToken(isTaggedTemplate: boolean) -> SyntaxKind {
-    //             Debug.assert(token == SyntaxKind::CloseBraceToken, "'reScanTemplateToken' should only be called on a '}'");
+    //             Debug(token == SyntaxKind::CloseBraceToken, "'reScanTemplateToken' should only be called on a '}'");
     //             pos = tokenPos;
     //             return token = scanTemplateAndSetTokenValue(isTaggedTemplate);
     //         }
@@ -2268,7 +2270,7 @@ namespace ts
     //         }
 
     //         auto reScanQuestionToken() -> SyntaxKind {
-    //             Debug.assert(token == SyntaxKind::QuestionQuestionToken, "'reScanQuestionToken' should only be called on a '??'");
+    //             Debug(token == SyntaxKind::QuestionQuestionToken, "'reScanQuestionToken' should only be called on a '??'");
     //             pos = tokenPos + 1;
     //             return token = SyntaxKind::QuestionToken;
     //         }
@@ -2280,7 +2282,7 @@ namespace ts
     //                 return token = SyntaxKind::EndOfFileToken;
     //             }
 
-    //             auto char = text.charCodeAt(pos);
+    //             auto char = (CharacterCodes)text[pos];
     //             if (char == CharacterCodes::lessThan) {
     //                 if (text.charCodeAt(pos + 1) == CharacterCodes::slash) {
     //                     pos += 2;
@@ -2302,7 +2304,7 @@ namespace ts
     //             // firstNonWhitespace = 0 to indicate that we want leading whitespace,
 
     //             while (pos < end) {
-    //                 char = text.charCodeAt(pos);
+    //                 char = (CharacterCodes)text[pos];
     //                 if (char == CharacterCodes::openBrace) {
     //                     break;
     //                 }
@@ -2314,10 +2316,10 @@ namespace ts
     //                     break;
     //                 }
     //                 if (char == CharacterCodes::greaterThan) {
-    //                     error(Diagnostics.Unexpected_token_Did_you_mean_or_gt, pos, 1);
+    //                     error(Diagnostics::Unexpected_token_Did_you_mean_or_gt, pos, 1);
     //                 }
     //                 if (char == CharacterCodes::closeBrace) {
-    //                     error(Diagnostics.Unexpected_token_Did_you_mean_or_rbrace, pos, 1);
+    //                     error(Diagnostics::Unexpected_token_Did_you_mean_or_rbrace, pos, 1);
     //                 }
 
     //                 // FirstNonWhitespace is 0, then we only see whitespaces so far. If we see a linebreak, we want to ignore that whitespaces.
@@ -2356,7 +2358,7 @@ namespace ts
     //                 // Any caller should be expecting this behavior and should only read the pos or token value after calling it.
     //                 auto namespaceSeparator = false;
     //                 while (pos < end) {
-    //                     const ch = text.charCodeAt(pos);
+    //                     auto ch = (CharacterCodes)text[pos];
     //                     if (ch == CharacterCodes::minus) {
     //                         tokenValue += "-";
     //                         pos++;
@@ -2386,7 +2388,7 @@ namespace ts
     //         auto scanJsxAttributeValue() -> SyntaxKind {
     //             startPos = pos;
 
-    //             switch (text.charCodeAt(pos)) {
+    //             switch ((CharacterCodes)text[pos]) {
     //                 case CharacterCodes::doubleQuote:
     //                 case CharacterCodes::singleQuote:
     //                     tokenValue = scanString(/*jsxAttributeString*/ true);
@@ -2409,21 +2411,21 @@ namespace ts
     //                 return token = SyntaxKind::EndOfFileToken;
     //             }
 
-    //             const ch = codePointAt(text, pos);
+    //             auto ch = codePointAt(text, pos);
     //             pos += charSize(ch);
     //             switch (ch) {
     //                 case CharacterCodes::tab:
     //                 case CharacterCodes::verticalTab:
     //                 case CharacterCodes::formFeed:
     //                 case CharacterCodes::space:
-    //                     while (pos < end && isWhiteSpaceSingleLine(text.charCodeAt(pos))) {
+    //                     while (pos < end && isWhiteSpaceSingleLine((CharacterCodes)text[pos])) {
     //                         pos++;
     //                     }
     //                     return token = SyntaxKind::WhitespaceTrivia;
     //                 case CharacterCodes::at:
     //                     return token = SyntaxKind::AtToken;
     //                 case CharacterCodes::carriageReturn:
-    //                     if (text.charCodeAt(pos) == CharacterCodes::lineFeed) {
+    //                     if ((CharacterCodes)text[pos] == CharacterCodes::lineFeed) {
     //                         pos++;
     //                     }
     //                     // falls through
@@ -2475,7 +2477,7 @@ namespace ts
 
     //             if (isIdentifierStart(ch, languageVersion)) {
     //                 auto char = ch;
-    //                 while (pos < end && isIdentifierPart(char = codePointAt(text, pos), languageVersion) || text.charCodeAt(pos) == CharacterCodes::minus) pos += charSize(char);
+    //                 while (pos < end && isIdentifierPart(char = codePointAt(text, pos), languageVersion) || (CharacterCodes)text[pos] == CharacterCodes::minus) pos += charSize(char);
     //                 tokenValue = text.substring(tokenPos, pos);
     //                 if (char == CharacterCodes::backslash) {
     //                     tokenValue += scanIdentifierParts();
@@ -2569,7 +2571,7 @@ namespace ts
     //         }
 
     //         auto setTextPos(textPos: number) {
-    //             Debug.assert(textPos >= 0);
+    //             Debug(textPos >= 0);
     //             pos = textPos;
     //             startPos = textPos;
     //             tokenPos = textPos;
@@ -2605,7 +2607,7 @@ namespace ts
     //     };
 
     //     /* @internal */
-    //     auto charSize(ch: number) {
+    //     auto charSize(int ch) {
     //         if (ch >= 0x10000) {
     //             return 2;
     //         }
@@ -2614,7 +2616,7 @@ namespace ts
 
     //     // Derived from the 10.1.1 UTF16Encoding of the ES6 Spec.
     //     auto utf16EncodeAsStringFallback(codePoint: number) {
-    //         Debug.assert(0x0 <= codePoint && codePoint <= 0x10FFFF);
+    //         Debug(0x0 <= codePoint && codePoint <= 0x10FFFF);
 
     //         if (codePoint <= 65535) {
     //             return String.fromCharCode(codePoint);
