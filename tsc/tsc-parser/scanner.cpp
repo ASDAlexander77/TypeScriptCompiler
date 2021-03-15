@@ -343,18 +343,18 @@ namespace ts
             return false;
         }
 
-        /* @internal */ auto isUnicodeIdentifierStart(number code, ScriptTarget languageVersion) {
+        /* @internal */ auto isUnicodeIdentifierStart(CharacterCodes code, ScriptTarget languageVersion) {
             return languageVersion >= ScriptTarget::ES2015 ?
-                lookupInUnicodeMap(code, unicodeESNextIdentifierStart) :
-                languageVersion == ScriptTarget::ES5 ? lookupInUnicodeMap(code, unicodeES5IdentifierStart) :
-                    lookupInUnicodeMap(code, unicodeES3IdentifierStart);
+                lookupInUnicodeMap((int)code, unicodeESNextIdentifierStart) :
+                languageVersion == ScriptTarget::ES5 ? lookupInUnicodeMap((int)code, unicodeES5IdentifierStart) :
+                    lookupInUnicodeMap((int)code, unicodeES3IdentifierStart);
         }
 
-        auto isUnicodeIdentifierPart(number code, ScriptTarget languageVersion) {
+        auto isUnicodeIdentifierPart(CharacterCodes code, ScriptTarget languageVersion) {
             return languageVersion >= ScriptTarget::ES2015 ?
-                lookupInUnicodeMap(code, unicodeESNextIdentifierPart) :
-                languageVersion == ScriptTarget::ES5 ? lookupInUnicodeMap(code, unicodeES5IdentifierPart) :
-                    lookupInUnicodeMap(code, unicodeES3IdentifierPart);
+                lookupInUnicodeMap((int)code, unicodeESNextIdentifierPart) :
+                languageVersion == ScriptTarget::ES5 ? lookupInUnicodeMap((int)code, unicodeES5IdentifierPart) :
+                    lookupInUnicodeMap((int)code, unicodeES3IdentifierPart);
         }
 
         auto makeReverseMap(std::map<string, SyntaxKind> source) -> std::vector<string> {
@@ -671,7 +671,7 @@ namespace ts
         // a <<<<<<< or >>>>>>> marker then it is also followed by a space.
         int mergeConflictMarkerLength = std::strlen("<<<<<<<");
 
-        auto isConflictMarkerTrivia(string text, int pos) {
+        auto isConflictMarkerTrivia(string text, int pos) -> boolean {
             debug(pos >= 0);
 
             // Conflict markers must be at the start of a line.
@@ -693,7 +693,7 @@ namespace ts
             return false;
         }
 
-        auto scanConflictMarkerTrivia(string text, int pos, std::function<void(DiagnosticMessage, int, int)> error) -> int {
+        auto scanConflictMarkerTrivia(string text, int pos, std::function<void(DiagnosticMessage, int, int)> error = nullptr) -> int {
             if (error) {
                 error(Diagnostics::Merge_conflict_marker_encountered, pos, mergeConflictMarkerLength);
             }
@@ -723,359 +723,332 @@ namespace ts
             return pos;
         }
 
-    //     const shebangTriviaRegex = /^#!.*/;
+        std::regex shebangTriviaRegex = std::regex("^#!.*");
 
-    //     /*@internal*/
-    //     auto isShebangTrivia(string text, int pos) {
-    //         // Shebangs check must only be done at the start of the file
-    //         Debug(pos == 0);
-    //         return shebangTriviaRegex.test(text);
-    //     }
+        /*@internal*/
+        auto isShebangTrivia(string text, int pos) -> boolean {
+            // Shebangs check must only be done at the start of the file
+            debug(pos == 0);
+            return std::regex_search(text, shebangTriviaRegex);
+        }
 
-    //     /*@internal*/
-    //     auto scanShebangTrivia(string text, int pos) {
-    //         const shebang = shebangTriviaRegex.exec(text)![0];
-    //         pos = pos + shebang.length;
-    //         return pos;
-    //     }
+        /*@internal*/
+        auto scanShebangTrivia(string text, int pos) -> int {
+            auto words_begin = std::sregex_iterator(text.begin(), text.end(), shebangTriviaRegex);
+            auto words_end = std::sregex_iterator();
+            for (auto i = words_begin; i != words_end; ++i) 
+            {
+                auto match = *i;
+                auto match_str = match.str();
+                pos = pos + match_str.size();
+                return pos;
+            }            
 
-    //     /**
-    //      * Invokes a callback for each comment range following the provided position.
-    //      *
-    //      * Single-line comment ranges include the leading double-slash characters but not the ending
-    //      * line break. Multi-line comment ranges include the leading slash-asterisk and trailing
-    //      * asterisk-slash characters.
-    //      *
-    //      * @param reduce If true, accumulates the result of calling the callback in a fashion similar
-    //      *      to reduceLeft. If false, iteration stops when the callback returns a truthy value.
-    //      * @param text The source text to scan.
-    //      * @param pos The position at which to start scanning.
-    //      * @param trailing If false, whitespace is skipped until the first line break and comments
-    //      *      between that location and the next token are returned. If true, comments occurring
-    //      *      between the given position and the next line break are returned.
-    //      * @param cb The callback to execute as each comment range is encountered.
-    //      * @param state A state value to pass to each iteration of the callback.
-    //      * @param initial An initial value to pass when accumulating results (when "reduce" is true).
-    //      * @returns If "reduce" is true, the accumulated value. If "reduce" is false, the first truthy
-    //      *      return value of the callback.
-    //      */
-    //     auto iterateCommentRanges<T, U>(reduce: boolean, string text, int pos, trailing: boolean, cb: (int pos, end: number, kind: CommentKind, hasTrailingNewLine: boolean, state: T, memo: U) => U, state: T, initial?: U) -> U {
-    //         auto pendingPos!: number;
-    //         auto pendingEnd!: number;
-    //         auto pendingKind!: CommentKind;
-    //         auto pendingHasTrailingNewLine!: boolean;
-    //         auto hasPendingCommentRange = false;
-    //         auto collecting = trailing;
-    //         auto accumulator = initial;
-    //         if (pos == 0) {
-    //             collecting = true;
-    //             const shebang = getShebang(text);
-    //             if (shebang) {
-    //                 pos = shebang.length;
-    //             }
-    //         }
-    //         scan: while (pos >= 0 && pos < text.length) {
-    //             auto ch = (CharacterCodes)text[pos];
-    //             switch (ch) {
-    //                 case CharacterCodes::carriageReturn:
-    //                     if (text.charCodeAt(pos + 1) == CharacterCodes::lineFeed) {
-    //                         pos++;
-    //                     }
-    //                 // falls through
-    //                 case CharacterCodes::lineFeed:
-    //                     pos++;
-    //                     if (trailing) {
-    //                         break scan;
-    //                     }
+            return pos;
+        }
 
-    //                     collecting = true;
-    //                     if (hasPendingCommentRange) {
-    //                         pendingHasTrailingNewLine = true;
-    //                     }
+        /**
+         * Invokes a callback for each comment range following the provided position.
+         *
+         * Single-line comment ranges include the leading double-slash characters but not the ending
+         * line break. Multi-line comment ranges include the leading slash-asterisk and trailing
+         * asterisk-slash characters.
+         *
+         * @param reduce If true, accumulates the result of calling the callback in a fashion similar
+         *      to reduceLeft. If false, iteration stops when the callback returns a truthy value.
+         * @param text The source text to scan.
+         * @param pos The position at which to start scanning.
+         * @param trailing If false, whitespace is skipped until the first line break and comments
+         *      between that location and the next token are returned. If true, comments occurring
+         *      between the given position and the next line break are returned.
+         * @param cb The callback to execute as each comment range is encountered.
+         * @param state A state value to pass to each iteration of the callback.
+         * @param initial An initial value to pass when accumulating results (when "reduce" is true).
+         * @returns If "reduce" is true, the accumulated value. If "reduce" is false, the first truthy
+         *      return value of the callback.
+         */
+        template<typename T, typename U>
+        auto iterateCommentRanges(boolean reduce, string text, int pos, boolean trailing, cb_type<T, U> cb, T state, U initial = U()) -> U {
+            auto pendingPos!: number;
+            auto pendingEnd!: number;
+            auto pendingKind!: CommentKind;
+            auto pendingHasTrailingNewLine!: boolean;
+            auto hasPendingCommentRange = false;
+            auto collecting = trailing;
+            auto accumulator = initial;
+            if (pos == 0) {
+                collecting = true;
+                auto shebang = getShebang(text);
+                if (shebang) {
+                    pos = shebang.length;
+                }
+            }
+            scan: while (pos >= 0 && pos < text.length()) {
+                auto ch = (CharacterCodes)text[pos];
+                switch (ch) {
+                    case CharacterCodes::carriageReturn:
+                        if ((CharacterCodes)text[pos + 1] == CharacterCodes::lineFeed) {
+                            pos++;
+                        }
+                    // falls through
+                    case CharacterCodes::lineFeed:
+                        pos++;
+                        if (trailing) {
+                            break scan;
+                        }
 
-    //                     continue;
-    //                 case CharacterCodes::tab:
-    //                 case CharacterCodes::verticalTab:
-    //                 case CharacterCodes::formFeed:
-    //                 case CharacterCodes::space:
-    //                     pos++;
-    //                     continue;
-    //                 case CharacterCodes::slash:
-    //                     const nextChar = text.charCodeAt(pos + 1);
-    //                     auto hasTrailingNewLine = false;
-    //                     if (nextChar == CharacterCodes::slash || nextChar == CharacterCodes::asterisk) {
-    //                         const kind = nextChar == CharacterCodes::slash ? SyntaxKind::SingleLineCommentTrivia : SyntaxKind::MultiLineCommentTrivia;
-    //                         const startPos = pos;
-    //                         pos += 2;
-    //                         if (nextChar == CharacterCodes::slash) {
-    //                             while (pos < text.length) {
-    //                                 if (isLineBreak((CharacterCodes)text[pos])) {
-    //                                     hasTrailingNewLine = true;
-    //                                     break;
-    //                                 }
-    //                                 pos++;
-    //                             }
-    //                         }
-    //                         else {
-    //                             while (pos < text.length) {
-    //                                 if ((CharacterCodes)text[pos] == CharacterCodes::asterisk && text.charCodeAt(pos + 1) == CharacterCodes::slash) {
-    //                                     pos += 2;
-    //                                     break;
-    //                                 }
-    //                                 pos++;
-    //                             }
-    //                         }
+                        collecting = true;
+                        if (hasPendingCommentRange) {
+                            pendingHasTrailingNewLine = true;
+                        }
 
-    //                         if (collecting) {
-    //                             if (hasPendingCommentRange) {
-    //                                 accumulator = cb(pendingPos, pendingEnd, pendingKind, pendingHasTrailingNewLine, state, accumulator);
-    //                                 if (!reduce && accumulator) {
-    //                                     // If we are not reducing and we have a truthy result, return it.
-    //                                     return accumulator;
-    //                                 }
-    //                             }
+                        continue;
+                    case CharacterCodes::tab:
+                    case CharacterCodes::verticalTab:
+                    case CharacterCodes::formFeed:
+                    case CharacterCodes::space:
+                        pos++;
+                        continue;
+                    case CharacterCodes::slash:
+                        const nextChar = (CharacterCodes)text[pos + 1];
+                        auto hasTrailingNewLine = false;
+                        if (nextChar == CharacterCodes::slash || nextChar == CharacterCodes::asterisk) {
+                            const kind = nextChar == CharacterCodes::slash ? SyntaxKind::SingleLineCommentTrivia : SyntaxKind::MultiLineCommentTrivia;
+                            const startPos = pos;
+                            pos += 2;
+                            if (nextChar == CharacterCodes::slash) {
+                                while (pos < text.length()) {
+                                    if (isLineBreak((CharacterCodes)text[pos])) {
+                                        hasTrailingNewLine = true;
+                                        break;
+                                    }
+                                    pos++;
+                                }
+                            }
+                            else {
+                                while (pos < text.length()) {
+                                    if ((CharacterCodes)text[pos] == CharacterCodes::asterisk && (CharacterCodes)text[pos + 1] == CharacterCodes::slash) {
+                                        pos += 2;
+                                        break;
+                                    }
+                                    pos++;
+                                }
+                            }
 
-    //                             pendingPos = startPos;
-    //                             pendingEnd = pos;
-    //                             pendingKind = kind;
-    //                             pendingHasTrailingNewLine = hasTrailingNewLine;
-    //                             hasPendingCommentRange = true;
-    //                         }
+                            if (collecting) {
+                                if (hasPendingCommentRange) {
+                                    accumulator = cb(pendingPos, pendingEnd, pendingKind, pendingHasTrailingNewLine, state, accumulator);
+                                    if (!reduce && accumulator) {
+                                        // If we are not reducing and we have a truthy result, return it.
+                                        return accumulator;
+                                    }
+                                }
 
-    //                         continue;
-    //                     }
-    //                     break scan;
-    //                 default:
-    //                     if (ch > CharacterCodes::maxAsciiCharacter && (isWhiteSpaceLike(ch))) {
-    //                         if (hasPendingCommentRange && isLineBreak(ch)) {
-    //                             pendingHasTrailingNewLine = true;
-    //                         }
-    //                         pos++;
-    //                         continue;
-    //                     }
-    //                     break scan;
-    //             }
-    //         }
+                                pendingPos = startPos;
+                                pendingEnd = pos;
+                                pendingKind = kind;
+                                pendingHasTrailingNewLine = hasTrailingNewLine;
+                                hasPendingCommentRange = true;
+                            }
 
-    //         if (hasPendingCommentRange) {
-    //             accumulator = cb(pendingPos, pendingEnd, pendingKind, pendingHasTrailingNewLine, state, accumulator);
-    //         }
+                            continue;
+                        }
+                        break scan;
+                    default:
+                        if (ch > CharacterCodes::maxAsciiCharacter && (isWhiteSpaceLike(ch))) {
+                            if (hasPendingCommentRange && isLineBreak(ch)) {
+                                pendingHasTrailingNewLine = true;
+                            }
+                            pos++;
+                            continue;
+                        }
+                        break scan;
+                }
+            }
 
-    //         return accumulator;
-    //     }
+            if (hasPendingCommentRange) {
+                accumulator = cb(pendingPos, pendingEnd, pendingKind, pendingHasTrailingNewLine, state, accumulator);
+            }
 
-    //     auto forEachLeadingCommentRange<U>(string text, int pos, cb: (int pos, end: number, kind: CommentKind, hasTrailingNewLine: boolean) => U) -> U;
-    //     auto forEachLeadingCommentRange<T, U>(string text, int pos, cb: (int pos, end: number, kind: CommentKind, hasTrailingNewLine: boolean, state: T) => U, state: T) -> U;
-    //     auto forEachLeadingCommentRange<T, U>(string text, int pos, cb: (int pos, end: number, kind: CommentKind, hasTrailingNewLine: boolean, state: T) => U, state?: T) -> U {
-    //         return iterateCommentRanges(/*reduce*/ false, text, pos, /*trailing*/ false, cb, state);
-    //     }
+            return accumulator;
+        }
 
-    //     auto forEachTrailingCommentRange<U>(string text, int pos, cb: (int pos, end: number, kind: CommentKind, hasTrailingNewLine: boolean) => U) -> U;
-    //     auto forEachTrailingCommentRange<T, U>(string text, int pos, cb: (int pos, end: number, kind: CommentKind, hasTrailingNewLine: boolean, state: T) => U, state: T) -> U;
-    //     auto forEachTrailingCommentRange<T, U>(string text, int pos, cb: (int pos, end: number, kind: CommentKind, hasTrailingNewLine: boolean, state: T) => U, state?: T) -> U {
-    //         return iterateCommentRanges(/*reduce*/ false, text, pos, /*trailing*/ true, cb, state);
-    //     }
+        template<typename T, typename U>
+        auto forEachLeadingCommentRange(string text, int pos, cb_type<T, U> cb, T state = T()) -> U {
+            return iterateCommentRanges(/*reduce*/ false, text, pos, /*trailing*/ false, cb, state);
+        }
 
-    //     auto reduceEachLeadingCommentRange<T, U>(string text, int pos, cb: (int pos, end: number, kind: CommentKind, hasTrailingNewLine: boolean, state: T, memo: U) => U, state: T, initial: U) {
-    //         return iterateCommentRanges(/*reduce*/ true, text, pos, /*trailing*/ false, cb, state, initial);
-    //     }
+        template<typename T, typename U>
+        auto forEachTrailingCommentRange(string text, int pos, cb_type<T, U> cb, T state = T()) -> U {
+            return iterateCommentRanges(/*reduce*/ false, text, pos, /*trailing*/ true, cb, state);
+        }
 
-    //     auto reduceEachTrailingCommentRange<T, U>(string text, int pos, cb: (int pos, end: number, kind: CommentKind, hasTrailingNewLine: boolean, state: T, memo: U) => U, state: T, initial: U) {
-    //         return iterateCommentRanges(/*reduce*/ true, text, pos, /*trailing*/ true, cb, state, initial);
-    //     }
+        template<typename T, typename U>
+        auto reduceEachLeadingCommentRange(string text, int pos, cb_type<T, U> cb, T state, U initial) {
+            return iterateCommentRanges(/*reduce*/ true, text, pos, /*trailing*/ false, cb, state, initial);
+        }
 
-    //     auto appendCommentRange(int pos, end: number, kind: CommentKind, hasTrailingNewLine: boolean, _state: any, comments: CommentRange[]) {
-    //         if (!comments) {
-    //             comments = [];
-    //         }
+        template<typename T, typename U>
+        auto reduceEachTrailingCommentRange(string text, int pos, cb_type<T, U> cb, T state, U initial) {
+            return iterateCommentRanges(/*reduce*/ true, text, pos, /*trailing*/ true, cb, state, initial);
+        }
 
-    //         comments.push({ kind, pos, end, hasTrailingNewLine });
-    //         return comments;
-    //     }
+        auto appendCommentRange(int pos, int end, SyntaxKind kind, boolean hasTrailingNewLine, int state, std::vector<CommentRange> comments) -> std::vector<CommentRange> {
+            comments.push_back({ kind, pos, end, hasTrailingNewLine });
+            return comments;
+        }
 
-    //     auto getLeadingCommentRanges(string text, int pos) -> CommentRange[] {
-    //         return reduceEachLeadingCommentRange(text, pos, appendCommentRange, /*state*/ undefined, /*initial*/ undefined);
-    //     }
+        auto getLeadingCommentRanges(string text, int pos) -> std::vector<CommentRange> {
+            return reduceEachLeadingCommentRange<int, std::vector<CommentRange>>(
+                text, 
+                pos, 
+                std::bind(&Scanner::appendCommentRange, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6), 
+                0, 
+                std::vector<CommentRange>());
+        }
 
-    //     auto getTrailingCommentRanges(string text, int pos) -> CommentRange[] {
-    //         return reduceEachTrailingCommentRange(text, pos, appendCommentRange, /*state*/ undefined, /*initial*/ undefined);
-    //     }
+        auto getTrailingCommentRanges(string text, int pos) -> std::vector<CommentRange> {
+            return reduceEachTrailingCommentRange<int, std::vector<CommentRange>>(
+                text, 
+                pos, 
+                std::bind(&Scanner::appendCommentRange, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6), 
+                0, 
+                std::vector<CommentRange>());
+        }
 
-    //     /** Optionally, get the shebang */
-    //     auto getShebang(string text) -> string {
-    //         const match = shebangTriviaRegex.exec(text);
-    //         if (match) {
-    //             return match[0];
-    //         }
-    //     }
+        /** Optionally, get the shebang */
+        auto getShebang(string text) -> string {
+            auto words_begin = std::sregex_iterator(text.begin(), text.end(), shebangTriviaRegex);
+            auto words_end = std::sregex_iterator();
+            for (auto i = words_begin; i != words_end; ++i) 
+            {
+                auto match = *i;
+                return match.str();
+            }            
 
-    //     auto isIdentifierStart(int ch, ScriptTarget languageVersion) -> boolean {
-    //         return ch >= CharacterCodes::A && ch <= CharacterCodes::Z || ch >= CharacterCodes::a && ch <= CharacterCodes::z ||
-    //             ch == CharacterCodes::$ || ch == CharacterCodes::_ ||
-    //             ch > CharacterCodes::maxAsciiCharacter && isUnicodeIdentifierStart(ch, languageVersion);
-    //     }
+            return "";
+        }
 
-    //     auto isIdentifierPart(int ch, ScriptTarget languageVersion, identifierVariant?: LanguageVariant) -> boolean {
-    //         return ch >= CharacterCodes::A && ch <= CharacterCodes::Z || ch >= CharacterCodes::a && ch <= CharacterCodes::z ||
-    //             ch >= CharacterCodes::_0 && ch <= CharacterCodes::_9 || ch == CharacterCodes::$ || ch == CharacterCodes::_ ||
-    //             // "-" and ":" are valid in JSX Identifiers
-    //             (identifierVariant == LanguageVariant.JSX ? (ch == CharacterCodes::minus || ch == CharacterCodes::colon) : false) ||
-    //             ch > CharacterCodes::maxAsciiCharacter && isUnicodeIdentifierPart(ch, languageVersion);
-    //     }
+        auto isIdentifierStart(CharacterCodes ch, ScriptTarget languageVersion) -> boolean {
+            return ch >= CharacterCodes::A && ch <= CharacterCodes::Z || ch >= CharacterCodes::a && ch <= CharacterCodes::z ||
+                ch == CharacterCodes::$ || ch == CharacterCodes::_ ||
+                ch > CharacterCodes::maxAsciiCharacter && isUnicodeIdentifierStart(ch, languageVersion);
+        }
 
-    //     /* @internal */
-    //     auto isIdentifierText(name: string, ScriptTarget languageVersion, identifierVariant?: LanguageVariant) -> boolean {
-    //         auto ch = codePointAt(name, 0);
-    //         if (!isIdentifierStart(ch, languageVersion)) {
-    //             return false;
-    //         }
+        auto isIdentifierPart(CharacterCodes ch, ScriptTarget languageVersion, LanguageVariant identifierVariant = LanguageVariant::Standard) -> boolean {
+            return ch >= CharacterCodes::A && ch <= CharacterCodes::Z || ch >= CharacterCodes::a && ch <= CharacterCodes::z ||
+                ch >= CharacterCodes::_0 && ch <= CharacterCodes::_9 || ch == CharacterCodes::$ || ch == CharacterCodes::_ ||
+                // "-" and ":" are valid in JSX Identifiers
+                (identifierVariant == LanguageVariant::JSX ? (ch == CharacterCodes::minus || ch == CharacterCodes::colon) : false) ||
+                ch > CharacterCodes::maxAsciiCharacter && isUnicodeIdentifierPart(ch, languageVersion);
+        }
 
-    //         for (auto i = charSize(ch); i < name.length; i += charSize(ch)) {
-    //             if (!isIdentifierPart(ch = codePointAt(name, i), languageVersion, identifierVariant)) {
-    //                 return false;
-    //             }
-    //         }
+        /* @internal */
+        auto isIdentifierText(string name, ScriptTarget languageVersion, LanguageVariant identifierVariant = LanguageVariant::Standard) -> boolean {
+            auto ch = codePointAt(name, 0);
+            if (!isIdentifierStart(ch, languageVersion)) {
+                return false;
+            }
 
-    //         return true;
-    //     }
+            for (auto i = charSize(ch); i < name.length(); i += charSize(ch)) {
+                if (!isIdentifierPart(ch = codePointAt(name, i), languageVersion, identifierVariant)) {
+                    return false;
+                }
+            }
 
-    //     // Creates a scanner over a (possibly unspecified) range of a piece of text.
-    //     auto createScanner(ScriptTarget languageVersion,
-    //         skipTrivia: boolean,
-    //         languageVariant = LanguageVariant.Standard,
-    //         textInitial?: string,
-    //         onError?: ErrorCallback,
-    //         start?: number,
-    //         length?: number) -> Scanner {
+            return true;
+        }
 
-    //         auto text = textInitial!;
+        // scanner text
+        string text;
 
-    //         // Current position (end position of text of current token)
-    //         auto int pos;
+        // Current position (end position of text of current token)
+        int pos;
 
+        // end of text
+        int end;
 
-    //         // end of text
-    //         auto end: number;
+        // Start position of whitespace before current token
+        int startPos;
 
-    //         // Start position of whitespace before current token
-    //         auto startPos: number;
+        // Start position of text of current token
+        int tokenPos;
 
-    //         // Start position of text of current token
-    //         auto tokenPos: number;
+        SyntaxKind token;
+        string tokenValue;
+        TokenFlags tokenFlags;
 
-    //         auto SyntaxKind token;
-    //         auto tokenValue!: string;
-    //         auto tokenFlags: TokenFlags;
+        std::vector<CommentDirective> commentDirectives;
+        int inJSDocType = 0;
 
-    //         auto commentDirectives: CommentDirective[];
-    //         auto inJSDocType = 0;
+        ErrorCallback onError = nullptr;
 
-    //         setText(text, start, length);
+        // Creates a scanner over a (possibly unspecified) range of a piece of text.
+        static auto createScanner(ScriptTarget languageVersion,
+            boolean skipTrivia,
+            LanguageVariant languageVariant = LanguageVariant::Standard,
+            string textInitial = "",
+            ErrorCallback onError = nullptr,
+            int start = -1,
+            int length = -1) -> Scanner {
 
-    //         const scanner: Scanner = {
-    //             getStartPos: () => startPos,
-    //             getTextPos: () => pos,
-    //             getToken: () => token,
-    //             getTokenPos: () => tokenPos,
-    //             getTokenText: () => text.substring(tokenPos, pos),
-    //             getTokenValue: () => tokenValue,
-    //             hasUnicodeEscape: () => (tokenFlags & TokenFlags.UnicodeEscape) !== 0,
-    //             hasExtendedUnicodeEscape: () => (tokenFlags & TokenFlags.ExtendedUnicodeEscape) !== 0,
-    //             hasPrecedingLineBreak: () => (tokenFlags & TokenFlags.PrecedingLineBreak) !== 0,
-    //             hasPrecedingJSDocComment: () => (tokenFlags & TokenFlags.PrecedingJSDocComment) !== 0,
-    //             isIdentifier: () => token == SyntaxKind::Identifier || token > SyntaxKind::LastReservedWord,
-    //             isReservedWord: () => token >= SyntaxKind::FirstReservedWord && token <= SyntaxKind::LastReservedWord,
-    //             isUnterminated: () => (tokenFlags & TokenFlags.Unterminated) !== 0,
-    //             getCommentDirectives: () => commentDirectives,
-    //             getNumericLiteralFlags: () => tokenFlags & TokenFlags.NumericLiteralFlags,
-    //             getTokenFlags: () => tokenFlags,
-    //             reScanGreaterToken,
-    //             reScanAsteriskEqualsToken,
-    //             reScanSlashToken,
-    //             reScanTemplateToken,
-    //             reScanTemplateHeadOrNoSubstitutionTemplate,
-    //             scanJsxIdentifier,
-    //             scanJsxAttributeValue,
-    //             reScanJsxAttributeValue,
-    //             reScanJsxToken,
-    //             reScanLessThanToken,
-    //             reScanQuestionToken,
-    //             reScanInvalidIdentifier,
-    //             scanJsxToken,
-    //             scanJsDocToken,
-    //             scan,
-    //             getText,
-    //             clearCommentDirectives,
-    //             setText,
-    //             setScriptTarget,
-    //             setLanguageVariant,
-    //             setOnError,
-    //             setTextPos,
-    //             setInJSDocType,
-    //             tryScan,
-    //             lookAhead,
-    //             scanRange,
-    //         };
+            Scanner scanner;
+            scanner.onError = onError;
+            scanner.setText(textInitial, start, length);
+            return scanner;
+        }
 
-    //         if (Debug.isDebugging) {
-    //             Object.defineProperty(scanner, "__debugShowCurrentPositionInText", {
-    //                 get: () => {
-    //                     const text = scanner.getText();
-    //                     return text.slice(0, scanner.getStartPos()) + "║" + text.slice(scanner.getStartPos());
-    //                 },
-    //             });
-    //         }
+        auto error(DiagnosticMessage message, int errPos = -1, int length = 0) -> void {
+            if (errPos < 0)
+            {
+                errPos = pos;
+            }
 
-    //         return scanner;
+            if (onError) {
+                auto oldPos = pos;
+                pos = errPos;
+                onError(message, length);
+                pos = oldPos;
+            }
+        }
 
-    //         auto error(message: DiagnosticMessage) -> void;
-    //         auto error(message: DiagnosticMessage, errPos: number, length: number) -> void;
-    //         auto error(message: DiagnosticMessage, errPos: number = pos, length?: number) -> void {
-    //             if (onError) {
-    //                 const oldPos = pos;
-    //                 pos = errPos;
-    //                 onError(message, length || 0);
-    //                 pos = oldPos;
-    //             }
-    //         }
-
-    //         auto scanNumberFragment() -> string {
-    //             auto start = pos;
-    //             auto allowSeparator = false;
-    //             auto isPreviousTokenSeparator = false;
-    //             auto result = "";
-    //             while (true) {
-    //                 auto ch = (CharacterCodes)text[pos];
-    //                 if (ch == CharacterCodes::_) {
-    //                     tokenFlags |= TokenFlags.ContainsSeparator;
-    //                     if (allowSeparator) {
-    //                         allowSeparator = false;
-    //                         isPreviousTokenSeparator = true;
-    //                         result += text.substring(start, pos);
-    //                     }
-    //                     else if (isPreviousTokenSeparator) {
-    //                         error(Diagnostics::Multiple_consecutive_numeric_separators_are_not_permitted, pos, 1);
-    //                     }
-    //                     else {
-    //                         error(Diagnostics::Numeric_separators_are_not_allowed_here, pos, 1);
-    //                     }
-    //                     pos++;
-    //                     start = pos;
-    //                     continue;
-    //                 }
-    //                 if (isDigit(ch)) {
-    //                     allowSeparator = true;
-    //                     isPreviousTokenSeparator = false;
-    //                     pos++;
-    //                     continue;
-    //                 }
-    //                 break;
-    //             }
-    //             if ((CharacterCodes)text[pos + 1] == CharacterCodes::_) {
-    //                 error(Diagnostics::Numeric_separators_are_not_allowed_here, pos - 1, 1);
-    //             }
-    //             return result + text.substring(start, pos);
-    //         }
+        auto scanNumberFragment() -> string {
+            auto start = pos;
+            auto allowSeparator = false;
+            auto isPreviousTokenSeparator = false;
+            auto result = "";
+            while (true) {
+                auto ch = (CharacterCodes)text[pos];
+                if (ch == CharacterCodes::_) {
+                    tokenFlags |= TokenFlags::ContainsSeparator;
+                    if (allowSeparator) {
+                        allowSeparator = false;
+                        isPreviousTokenSeparator = true;
+                        result += text.substr(start, pos - start);
+                    }
+                    else if (isPreviousTokenSeparator) {
+                        error(Diagnostics::Multiple_consecutive_numeric_separators_are_not_permitted, pos, 1);
+                    }
+                    else {
+                        error(Diagnostics::Numeric_separators_are_not_allowed_here, pos, 1);
+                    }
+                    pos++;
+                    start = pos;
+                    continue;
+                }
+                if (isDigit(ch)) {
+                    allowSeparator = true;
+                    isPreviousTokenSeparator = false;
+                    pos++;
+                    continue;
+                }
+                break;
+            }
+            if ((CharacterCodes)text[pos + 1] == CharacterCodes::_) {
+                error(Diagnostics::Numeric_separators_are_not_allowed_here, pos - 1, 1);
+            }
+            return result + text.substr(start, pos - start);
+        }
 
     //         auto scanNumber() -> { type: SyntaxKind, value: string } {
     //             const start = pos;
@@ -1089,7 +1062,7 @@ namespace ts
     //             auto end = pos;
     //             if ((CharacterCodes)text[pos] == CharacterCodes::E || (CharacterCodes)text[pos] == CharacterCodes::e) {
     //                 pos++;
-    //                 tokenFlags |= TokenFlags.Scientific;
+    //                 tokenFlags |= TokenFlags::Scientific;
     //                 if ((CharacterCodes)text[pos] == CharacterCodes::plus || (CharacterCodes)text[pos] == CharacterCodes::minus) pos++;
     //                 const preNumericPart = pos;
     //                 const finalFragment = scanNumberFragment();
@@ -1102,7 +1075,7 @@ namespace ts
     //                 }
     //             }
     //             auto result: string;
-    //             if (tokenFlags & TokenFlags.ContainsSeparator) {
+    //             if (tokenFlags & TokenFlags::ContainsSeparator) {
     //                 result = mainFragment;
     //                 if (decimalFragment) {
     //                     result += "." + decimalFragment;
@@ -1115,8 +1088,8 @@ namespace ts
     //                 result = text.substring(start, end); // No need to use all the fragments; no _ removal needed
     //             }
 
-    //             if (decimalFragment !== undefined || tokenFlags & TokenFlags.Scientific) {
-    //                 checkForIdentifierStartAfterNumericLiteral(start, decimalFragment == undefined && !!(tokenFlags & TokenFlags.Scientific));
+    //             if (decimalFragment !== undefined || tokenFlags & TokenFlags::Scientific) {
+    //                 checkForIdentifierStartAfterNumericLiteral(start, decimalFragment == undefined && !!(tokenFlags & TokenFlags::Scientific));
     //                 return {
     //                     type: SyntaxKind::NumericLiteral,
     //                     value: "" + +result // if value is not an integer, it can be safely coerced to a number
@@ -1184,7 +1157,7 @@ namespace ts
     //             while (valueChars.length < minCount || scanAsManyAsPossible) {
     //                 auto ch = (CharacterCodes)text[pos];
     //                 if (canHaveSeparators && ch == CharacterCodes::_) {
-    //                     tokenFlags |= TokenFlags.ContainsSeparator;
+    //                     tokenFlags |= TokenFlags::ContainsSeparator;
     //                     if (allowSeparator) {
     //                         allowSeparator = false;
     //                         isPreviousTokenSeparator = true;
@@ -1228,7 +1201,7 @@ namespace ts
     //             while (true) {
     //                 if (pos >= end) {
     //                     result += text.substring(start, pos);
-    //                     tokenFlags |= TokenFlags.Unterminated;
+    //                     tokenFlags |= TokenFlags::Unterminated;
     //                     error(Diagnostics::Unterminated_string_literal);
     //                     break;
     //                 }
@@ -1246,7 +1219,7 @@ namespace ts
     //                 }
     //                 if (isLineBreak(ch) && !jsxAttributeString) {
     //                     result += text.substring(start, pos);
-    //                     tokenFlags |= TokenFlags.Unterminated;
+    //                     tokenFlags |= TokenFlags::Unterminated;
     //                     error(Diagnostics::Unterminated_string_literal);
     //                     break;
     //                 }
@@ -1270,7 +1243,7 @@ namespace ts
     //             while (true) {
     //                 if (pos >= end) {
     //                     contents += text.substring(start, pos);
-    //                     tokenFlags |= TokenFlags.Unterminated;
+    //                     tokenFlags |= TokenFlags::Unterminated;
     //                     error(Diagnostics::Unterminated_template_literal);
     //                     resultingToken = startedWithBacktick ? SyntaxKind::NoSubstitutionTemplateLiteral : SyntaxKind::TemplateTail;
     //                     break;
@@ -1287,7 +1260,7 @@ namespace ts
     //                 }
 
     //                 // '${'
-    //                 if (currChar == CharacterCodes::$ && pos + 1 < end && text.charCodeAt(pos + 1) == CharacterCodes::openBrace) {
+    //                 if (currChar == CharacterCodes::$ && pos + 1 < end && (CharacterCodes)text[pos + 1] == CharacterCodes::openBrace) {
     //                     contents += text.substring(start, pos);
     //                     pos += 2;
     //                     resultingToken = startedWithBacktick ? SyntaxKind::TemplateHead : SyntaxKind::TemplateMiddle;
@@ -1320,7 +1293,7 @@ namespace ts
     //                 pos++;
     //             }
 
-    //             Debug(resultingToken !== undefined);
+    //             debug(resultingToken !== undefined);
 
     //             tokenValue = contents;
     //             return resultingToken;
@@ -1340,7 +1313,7 @@ namespace ts
     //                     // '\01'
     //                     if (isTaggedTemplate && pos < end && isDigit((CharacterCodes)text[pos])) {
     //                         pos++;
-    //                         tokenFlags |= TokenFlags.ContainsInvalidEscape;
+    //                         tokenFlags |= TokenFlags::ContainsInvalidEscape;
     //                         return text.substring(start, pos);
     //                     }
     //                     return "\0";
@@ -1366,7 +1339,7 @@ namespace ts
     //                         for (auto escapePos = pos; escapePos < pos + 4; escapePos++) {
     //                             if (escapePos < end && !isHexDigit(text.charCodeAt(escapePos)) && text.charCodeAt(escapePos) !== CharacterCodes::openBrace) {
     //                                 pos = escapePos;
-    //                                 tokenFlags |= TokenFlags.ContainsInvalidEscape;
+    //                                 tokenFlags |= TokenFlags::ContainsInvalidEscape;
     //                                 return text.substring(start, pos);
     //                             }
     //                         }
@@ -1377,7 +1350,7 @@ namespace ts
 
     //                         // '\u{'
     //                         if (isTaggedTemplate && !isHexDigit((CharacterCodes)text[pos])) {
-    //                             tokenFlags |= TokenFlags.ContainsInvalidEscape;
+    //                             tokenFlags |= TokenFlags::ContainsInvalidEscape;
     //                             return text.substring(start, pos);
     //                         }
 
@@ -1388,30 +1361,30 @@ namespace ts
 
     //                             // '\u{Not Code Point' or '\u{CodePoint'
     //                             if (!isCodePoint(escapedValue) || (CharacterCodes)text[pos] !== CharacterCodes::closeBrace) {
-    //                                 tokenFlags |= TokenFlags.ContainsInvalidEscape;
+    //                                 tokenFlags |= TokenFlags::ContainsInvalidEscape;
     //                                 return text.substring(start, pos);
     //                             }
     //                             else {
     //                                 pos = savePos;
     //                             }
     //                         }
-    //                         tokenFlags |= TokenFlags.ExtendedUnicodeEscape;
+    //                         tokenFlags |= TokenFlags::ExtendedUnicodeEscape;
     //                         return scanExtendedUnicodeEscape();
     //                     }
 
-    //                     tokenFlags |= TokenFlags.UnicodeEscape;
+    //                     tokenFlags |= TokenFlags::UnicodeEscape;
     //                     // '\uDDDD'
     //                     return scanHexadecimalEscape(/*numDigits*/ 4);
 
     //                 case CharacterCodes::x:
     //                     if (isTaggedTemplate) {
     //                         if (!isHexDigit((CharacterCodes)text[pos])) {
-    //                             tokenFlags |= TokenFlags.ContainsInvalidEscape;
+    //                             tokenFlags |= TokenFlags::ContainsInvalidEscape;
     //                             return text.substring(start, pos);
     //                         }
-    //                         else if (!isHexDigit(text.charCodeAt(pos + 1))) {
+    //                         else if (!isHexDigit((CharacterCodes)text[pos + 1])) {
     //                             pos++;
-    //                             tokenFlags |= TokenFlags.ContainsInvalidEscape;
+    //                             tokenFlags |= TokenFlags::ContainsInvalidEscape;
     //                             return text.substring(start, pos);
     //                         }
     //                     }
@@ -1484,7 +1457,7 @@ namespace ts
     //         // Current character is known to be a backslash. Check for Unicode escape of the form '\uXXXX'
     //         // and return code point value if valid Unicode escape is found. Otherwise return -1.
     //         auto peekUnicodeEscape() -> number {
-    //             if (pos + 5 < end && text.charCodeAt(pos + 1) == CharacterCodes::u) {
+    //             if (pos + 5 < end && (CharacterCodes)text[pos + 1] == CharacterCodes::u) {
     //                 const start = pos;
     //                 pos += 2;
     //                 const value = scanExactNumberOfHexDigits(4, /*canHaveSeparators*/ false);
@@ -1519,7 +1492,7 @@ namespace ts
     //                     ch = peekExtendedUnicodeEscape();
     //                     if (ch >= 0 && isIdentifierPart(ch, languageVersion)) {
     //                         pos += 3;
-    //                         tokenFlags |= TokenFlags.ExtendedUnicodeEscape;
+    //                         tokenFlags |= TokenFlags::ExtendedUnicodeEscape;
     //                         result += scanExtendedUnicodeEscape();
     //                         start = pos;
     //                         continue;
@@ -1528,7 +1501,7 @@ namespace ts
     //                     if (!(ch >= 0 && isIdentifierPart(ch, languageVersion))) {
     //                         break;
     //                     }
-    //                     tokenFlags |= TokenFlags.UnicodeEscape;
+    //                     tokenFlags |= TokenFlags::UnicodeEscape;
     //                     result += text.substring(start, pos);
     //                     result += utf16EncodeAsString(ch);
     //                     // Valid Unicode escape is always six characters
@@ -1568,7 +1541,7 @@ namespace ts
     //                 auto ch = (CharacterCodes)text[pos];
     //                 // Numeric separators are allowed anywhere within a numeric literal, except not at the beginning, or following another separator
     //                 if (ch == CharacterCodes::_) {
-    //                     tokenFlags |= TokenFlags.ContainsSeparator;
+    //                     tokenFlags |= TokenFlags::ContainsSeparator;
     //                     if (separatorAllowed) {
     //                         separatorAllowed = false;
     //                         isPreviousTokenSeparator = true;
@@ -1601,7 +1574,7 @@ namespace ts
     //             if ((CharacterCodes)text[pos] == CharacterCodes::n) {
     //                 tokenValue += "n";
     //                 // Use base 10 instead of base 2 or base 8 for shorter literals
-    //                 if (tokenFlags & TokenFlags.BinaryOrOctalSpecifier) {
+    //                 if (tokenFlags & TokenFlags::BinaryOrOctalSpecifier) {
     //                     tokenValue = parsePseudoBigInt(tokenValue) + "n";
     //                 }
     //                 pos++;
@@ -1609,9 +1582,9 @@ namespace ts
     //             }
     //             else { // not a bigint, so can convert to number in simplified form
     //                 // Number() may not support 0b or 0o, so use parseInt() instead
-    //                 const numericValue = tokenFlags & TokenFlags.BinarySpecifier
+    //                 const numericValue = tokenFlags & TokenFlags::BinarySpecifier
     //                     ? parseInt(tokenValue.slice(2), 2) // skip "0b"
-    //                     : tokenFlags & TokenFlags.OctalSpecifier
+    //                     : tokenFlags & TokenFlags::OctalSpecifier
     //                         ? parseInt(tokenValue.slice(2), 8) // skip "0o"
     //                         : +tokenValue;
     //                 tokenValue = "" + numericValue;
@@ -1621,7 +1594,7 @@ namespace ts
 
     //         auto scan() -> SyntaxKind {
     //             startPos = pos;
-    //             tokenFlags = TokenFlags.None;
+    //             tokenFlags = TokenFlags::None;
     //             auto asteriskSeen = false;
     //             while (true) {
     //                 tokenPos = pos;
@@ -1644,13 +1617,13 @@ namespace ts
     //                 switch (ch) {
     //                     case CharacterCodes::lineFeed:
     //                     case CharacterCodes::carriageReturn:
-    //                         tokenFlags |= TokenFlags.PrecedingLineBreak;
+    //                         tokenFlags |= TokenFlags::PrecedingLineBreak;
     //                         if (skipTrivia) {
     //                             pos++;
     //                             continue;
     //                         }
     //                         else {
-    //                             if (ch == CharacterCodes::carriageReturn && pos + 1 < end && text.charCodeAt(pos + 1) == CharacterCodes::lineFeed) {
+    //                             if (ch == CharacterCodes::carriageReturn && pos + 1 < end && (CharacterCodes)text[pos + 1] == CharacterCodes::lineFeed) {
     //                                 // consume both CR and LF
     //                                 pos += 2;
     //                             }
@@ -1692,7 +1665,7 @@ namespace ts
     //                             return token = SyntaxKind::WhitespaceTrivia;
     //                         }
     //                     case CharacterCodes::exclamation:
-    //                         if (text.charCodeAt(pos + 1) == CharacterCodes::equals) {
+    //                         if ((CharacterCodes)text[pos + 1] == CharacterCodes::equals) {
     //                             if (text.charCodeAt(pos + 2) == CharacterCodes::equals) {
     //                                 return pos += 3, token = SyntaxKind::ExclamationEqualsEqualsToken;
     //                             }
@@ -1707,19 +1680,19 @@ namespace ts
     //                     case CharacterCodes::backtick:
     //                         return token = scanTemplateAndSetTokenValue(/* isTaggedTemplate */ false);
     //                     case CharacterCodes::percent:
-    //                         if (text.charCodeAt(pos + 1) == CharacterCodes::equals) {
+    //                         if ((CharacterCodes)text[pos + 1] == CharacterCodes::equals) {
     //                             return pos += 2, token = SyntaxKind::PercentEqualsToken;
     //                         }
     //                         pos++;
     //                         return token = SyntaxKind::PercentToken;
     //                     case CharacterCodes::ampersand:
-    //                         if (text.charCodeAt(pos + 1) == CharacterCodes::ampersand) {
+    //                         if ((CharacterCodes)text[pos + 1] == CharacterCodes::ampersand) {
     //                             if (text.charCodeAt(pos + 2) == CharacterCodes::equals) {
     //                                 return pos += 3, token = SyntaxKind::AmpersandAmpersandEqualsToken;
     //                             }
     //                             return pos += 2, token = SyntaxKind::AmpersandAmpersandToken;
     //                         }
-    //                         if (text.charCodeAt(pos + 1) == CharacterCodes::equals) {
+    //                         if ((CharacterCodes)text[pos + 1] == CharacterCodes::equals) {
     //                             return pos += 2, token = SyntaxKind::AmpersandEqualsToken;
     //                         }
     //                         pos++;
@@ -1731,27 +1704,27 @@ namespace ts
     //                         pos++;
     //                         return token = SyntaxKind::CloseParenToken;
     //                     case CharacterCodes::asterisk:
-    //                         if (text.charCodeAt(pos + 1) == CharacterCodes::equals) {
+    //                         if ((CharacterCodes)text[pos + 1] == CharacterCodes::equals) {
     //                             return pos += 2, token = SyntaxKind::AsteriskEqualsToken;
     //                         }
-    //                         if (text.charCodeAt(pos + 1) == CharacterCodes::asterisk) {
+    //                         if ((CharacterCodes)text[pos + 1] == CharacterCodes::asterisk) {
     //                             if (text.charCodeAt(pos + 2) == CharacterCodes::equals) {
     //                                 return pos += 3, token = SyntaxKind::AsteriskAsteriskEqualsToken;
     //                             }
     //                             return pos += 2, token = SyntaxKind::AsteriskAsteriskToken;
     //                         }
     //                         pos++;
-    //                         if (inJSDocType && !asteriskSeen && (tokenFlags & TokenFlags.PrecedingLineBreak)) {
+    //                         if (inJSDocType && !asteriskSeen && (tokenFlags & TokenFlags::PrecedingLineBreak)) {
     //                             // decoration at the start of a JSDoc comment line
     //                             asteriskSeen = true;
     //                             continue;
     //                         }
     //                         return token = SyntaxKind::AsteriskToken;
     //                     case CharacterCodes::plus:
-    //                         if (text.charCodeAt(pos + 1) == CharacterCodes::plus) {
+    //                         if ((CharacterCodes)text[pos + 1] == CharacterCodes::plus) {
     //                             return pos += 2, token = SyntaxKind::PlusPlusToken;
     //                         }
-    //                         if (text.charCodeAt(pos + 1) == CharacterCodes::equals) {
+    //                         if ((CharacterCodes)text[pos + 1] == CharacterCodes::equals) {
     //                             return pos += 2, token = SyntaxKind::PlusEqualsToken;
     //                         }
     //                         pos++;
@@ -1760,27 +1733,27 @@ namespace ts
     //                         pos++;
     //                         return token = SyntaxKind::CommaToken;
     //                     case CharacterCodes::minus:
-    //                         if (text.charCodeAt(pos + 1) == CharacterCodes::minus) {
+    //                         if ((CharacterCodes)text[pos + 1] == CharacterCodes::minus) {
     //                             return pos += 2, token = SyntaxKind::MinusMinusToken;
     //                         }
-    //                         if (text.charCodeAt(pos + 1) == CharacterCodes::equals) {
+    //                         if ((CharacterCodes)text[pos + 1] == CharacterCodes::equals) {
     //                             return pos += 2, token = SyntaxKind::MinusEqualsToken;
     //                         }
     //                         pos++;
     //                         return token = SyntaxKind::MinusToken;
     //                     case CharacterCodes::dot:
-    //                         if (isDigit(text.charCodeAt(pos + 1))) {
+    //                         if (isDigit((CharacterCodes)text[pos + 1])) {
     //                             tokenValue = scanNumber().value;
     //                             return token = SyntaxKind::NumericLiteral;
     //                         }
-    //                         if (text.charCodeAt(pos + 1) == CharacterCodes::dot && text.charCodeAt(pos + 2) == CharacterCodes::dot) {
+    //                         if ((CharacterCodes)text[pos + 1] == CharacterCodes::dot && text.charCodeAt(pos + 2) == CharacterCodes::dot) {
     //                             return pos += 3, token = SyntaxKind::DotDotDotToken;
     //                         }
     //                         pos++;
     //                         return token = SyntaxKind::DotToken;
     //                     case CharacterCodes::slash:
     //                         // Single-line comment
-    //                         if (text.charCodeAt(pos + 1) == CharacterCodes::slash) {
+    //                         if ((CharacterCodes)text[pos + 1] == CharacterCodes::slash) {
     //                             pos += 2;
 
     //                             while (pos < end) {
@@ -1805,10 +1778,10 @@ namespace ts
     //                             }
     //                         }
     //                         // Multi-line comment
-    //                         if (text.charCodeAt(pos + 1) == CharacterCodes::asterisk) {
+    //                         if ((CharacterCodes)text[pos + 1] == CharacterCodes::asterisk) {
     //                             pos += 2;
-    //                             if ((CharacterCodes)text[pos] == CharacterCodes::asterisk && text.charCodeAt(pos + 1) !== CharacterCodes::slash) {
-    //                                 tokenFlags |= TokenFlags.PrecedingJSDocComment;
+    //                             if ((CharacterCodes)text[pos] == CharacterCodes::asterisk && (CharacterCodes)text[pos + 1] !== CharacterCodes::slash) {
+    //                                 tokenFlags |= TokenFlags::PrecedingJSDocComment;
     //                             }
 
     //                             auto commentClosed = false;
@@ -1816,7 +1789,7 @@ namespace ts
     //                             while (pos < end) {
     //                                 auto ch = (CharacterCodes)text[pos];
 
-    //                                 if (ch == CharacterCodes::asterisk && text.charCodeAt(pos + 1) == CharacterCodes::slash) {
+    //                                 if (ch == CharacterCodes::asterisk && (CharacterCodes)text[pos + 1] == CharacterCodes::slash) {
     //                                     pos += 2;
     //                                     commentClosed = true;
     //                                     break;
@@ -1826,7 +1799,7 @@ namespace ts
 
     //                                 if (isLineBreak(ch)) {
     //                                     lastLineStart = pos;
-    //                                     tokenFlags |= TokenFlags.PrecedingLineBreak;
+    //                                     tokenFlags |= TokenFlags::PrecedingLineBreak;
     //                                 }
     //                             }
 
@@ -1841,13 +1814,13 @@ namespace ts
     //                             }
     //                             else {
     //                                 if (!commentClosed) {
-    //                                     tokenFlags |= TokenFlags.Unterminated;
+    //                                     tokenFlags |= TokenFlags::Unterminated;
     //                                 }
     //                                 return token = SyntaxKind::MultiLineCommentTrivia;
     //                             }
     //                         }
 
-    //                         if (text.charCodeAt(pos + 1) == CharacterCodes::equals) {
+    //                         if ((CharacterCodes)text[pos + 1] == CharacterCodes::equals) {
     //                             return pos += 2, token = SyntaxKind::SlashEqualsToken;
     //                         }
 
@@ -1855,7 +1828,7 @@ namespace ts
     //                         return token = SyntaxKind::SlashToken;
 
     //                     case CharacterCodes::_0:
-    //                         if (pos + 2 < end && (text.charCodeAt(pos + 1) == CharacterCodes::X || text.charCodeAt(pos + 1) == CharacterCodes::x)) {
+    //                         if (pos + 2 < end && ((CharacterCodes)text[pos + 1] == CharacterCodes::X || (CharacterCodes)text[pos + 1] == CharacterCodes::x)) {
     //                             pos += 2;
     //                             tokenValue = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ true);
     //                             if (!tokenValue) {
@@ -1863,10 +1836,10 @@ namespace ts
     //                                 tokenValue = "0";
     //                             }
     //                             tokenValue = "0x" + tokenValue;
-    //                             tokenFlags |= TokenFlags.HexSpecifier;
+    //                             tokenFlags |= TokenFlags::HexSpecifier;
     //                             return token = checkBigIntSuffix();
     //                         }
-    //                         else if (pos + 2 < end && (text.charCodeAt(pos + 1) == CharacterCodes::B || text.charCodeAt(pos + 1) == CharacterCodes::b)) {
+    //                         else if (pos + 2 < end && ((CharacterCodes)text[pos + 1] == CharacterCodes::B || (CharacterCodes)text[pos + 1] == CharacterCodes::b)) {
     //                             pos += 2;
     //                             tokenValue = scanBinaryOrOctalDigits(/* base */ 2);
     //                             if (!tokenValue) {
@@ -1874,10 +1847,10 @@ namespace ts
     //                                 tokenValue = "0";
     //                             }
     //                             tokenValue = "0b" + tokenValue;
-    //                             tokenFlags |= TokenFlags.BinarySpecifier;
+    //                             tokenFlags |= TokenFlags::BinarySpecifier;
     //                             return token = checkBigIntSuffix();
     //                         }
-    //                         else if (pos + 2 < end && (text.charCodeAt(pos + 1) == CharacterCodes::O || text.charCodeAt(pos + 1) == CharacterCodes::o)) {
+    //                         else if (pos + 2 < end && ((CharacterCodes)text[pos + 1] == CharacterCodes::O || (CharacterCodes)text[pos + 1] == CharacterCodes::o)) {
     //                             pos += 2;
     //                             tokenValue = scanBinaryOrOctalDigits(/* base */ 8);
     //                             if (!tokenValue) {
@@ -1885,13 +1858,13 @@ namespace ts
     //                                 tokenValue = "0";
     //                             }
     //                             tokenValue = "0o" + tokenValue;
-    //                             tokenFlags |= TokenFlags.OctalSpecifier;
+    //                             tokenFlags |= TokenFlags::OctalSpecifier;
     //                             return token = checkBigIntSuffix();
     //                         }
     //                         // Try to parse as an octal
-    //                         if (pos + 1 < end && isOctalDigit(text.charCodeAt(pos + 1))) {
+    //                         if (pos + 1 < end && isOctalDigit((CharacterCodes)text[pos + 1])) {
     //                             tokenValue = "" + scanOctalDigits();
-    //                             tokenFlags |= TokenFlags.Octal;
+    //                             tokenFlags |= TokenFlags::Octal;
     //                             return token = SyntaxKind::NumericLiteral;
     //                         }
     //                     // This fall-through is a deviation from the EcmaScript grammar. The grammar says that a leading zero
@@ -1926,17 +1899,17 @@ namespace ts
     //                             }
     //                         }
 
-    //                         if (text.charCodeAt(pos + 1) == CharacterCodes::lessThan) {
+    //                         if ((CharacterCodes)text[pos + 1] == CharacterCodes::lessThan) {
     //                             if (text.charCodeAt(pos + 2) == CharacterCodes::equals) {
     //                                 return pos += 3, token = SyntaxKind::LessThanLessThanEqualsToken;
     //                             }
     //                             return pos += 2, token = SyntaxKind::LessThanLessThanToken;
     //                         }
-    //                         if (text.charCodeAt(pos + 1) == CharacterCodes::equals) {
+    //                         if ((CharacterCodes)text[pos + 1] == CharacterCodes::equals) {
     //                             return pos += 2, token = SyntaxKind::LessThanEqualsToken;
     //                         }
     //                         if (languageVariant == LanguageVariant.JSX &&
-    //                             text.charCodeAt(pos + 1) == CharacterCodes::slash &&
+    //                             (CharacterCodes)text[pos + 1] == CharacterCodes::slash &&
     //                             text.charCodeAt(pos + 2) !== CharacterCodes::asterisk) {
     //                             return pos += 2, token = SyntaxKind::LessThanSlashToken;
     //                         }
@@ -1953,13 +1926,13 @@ namespace ts
     //                             }
     //                         }
 
-    //                         if (text.charCodeAt(pos + 1) == CharacterCodes::equals) {
+    //                         if ((CharacterCodes)text[pos + 1] == CharacterCodes::equals) {
     //                             if (text.charCodeAt(pos + 2) == CharacterCodes::equals) {
     //                                 return pos += 3, token = SyntaxKind::EqualsEqualsEqualsToken;
     //                             }
     //                             return pos += 2, token = SyntaxKind::EqualsEqualsToken;
     //                         }
-    //                         if (text.charCodeAt(pos + 1) == CharacterCodes::greaterThan) {
+    //                         if ((CharacterCodes)text[pos + 1] == CharacterCodes::greaterThan) {
     //                             return pos += 2, token = SyntaxKind::EqualsGreaterThanToken;
     //                         }
     //                         pos++;
@@ -1978,10 +1951,10 @@ namespace ts
     //                         pos++;
     //                         return token = SyntaxKind::GreaterThanToken;
     //                     case CharacterCodes::question:
-    //                         if (text.charCodeAt(pos + 1) == CharacterCodes::dot && !isDigit(text.charCodeAt(pos + 2))) {
+    //                         if ((CharacterCodes)text[pos + 1] == CharacterCodes::dot && !isDigit(text.charCodeAt(pos + 2))) {
     //                             return pos += 2, token = SyntaxKind::QuestionDotToken;
     //                         }
-    //                         if (text.charCodeAt(pos + 1) == CharacterCodes::question) {
+    //                         if ((CharacterCodes)text[pos + 1] == CharacterCodes::question) {
     //                             if (text.charCodeAt(pos + 2) == CharacterCodes::equals) {
     //                                 return pos += 3, token = SyntaxKind::QuestionQuestionEqualsToken;
     //                             }
@@ -1996,7 +1969,7 @@ namespace ts
     //                         pos++;
     //                         return token = SyntaxKind::CloseBracketToken;
     //                     case CharacterCodes::caret:
-    //                         if (text.charCodeAt(pos + 1) == CharacterCodes::equals) {
+    //                         if ((CharacterCodes)text[pos + 1] == CharacterCodes::equals) {
     //                             return pos += 2, token = SyntaxKind::CaretEqualsToken;
     //                         }
     //                         pos++;
@@ -2015,13 +1988,13 @@ namespace ts
     //                             }
     //                         }
 
-    //                         if (text.charCodeAt(pos + 1) == CharacterCodes::bar) {
+    //                         if ((CharacterCodes)text[pos + 1] == CharacterCodes::bar) {
     //                             if (text.charCodeAt(pos + 2) == CharacterCodes::equals) {
     //                                 return pos += 3, token = SyntaxKind::BarBarEqualsToken;
     //                             }
     //                             return pos += 2, token = SyntaxKind::BarBarToken;
     //                         }
-    //                         if (text.charCodeAt(pos + 1) == CharacterCodes::equals) {
+    //                         if ((CharacterCodes)text[pos + 1] == CharacterCodes::equals) {
     //                             return pos += 2, token = SyntaxKind::BarEqualsToken;
     //                         }
     //                         pos++;
@@ -2039,7 +2012,7 @@ namespace ts
     //                         const extendedCookedChar = peekExtendedUnicodeEscape();
     //                         if (extendedCookedChar >= 0 && isIdentifierStart(extendedCookedChar, languageVersion)) {
     //                             pos += 3;
-    //                             tokenFlags |= TokenFlags.ExtendedUnicodeEscape;
+    //                             tokenFlags |= TokenFlags::ExtendedUnicodeEscape;
     //                             tokenValue = scanExtendedUnicodeEscape() + scanIdentifierParts();
     //                             return token = getIdentifierToken();
     //                         }
@@ -2047,7 +2020,7 @@ namespace ts
     //                         const cookedChar = peekUnicodeEscape();
     //                         if (cookedChar >= 0 && isIdentifierStart(cookedChar, languageVersion)) {
     //                             pos += 6;
-    //                             tokenFlags |= TokenFlags.UnicodeEscape;
+    //                             tokenFlags |= TokenFlags::UnicodeEscape;
     //                             tokenValue = String.fromCharCode(cookedChar) + scanIdentifierParts();
     //                             return token = getIdentifierToken();
     //                         }
@@ -2085,7 +2058,7 @@ namespace ts
     //                             continue;
     //                         }
     //                         else if (isLineBreak(ch)) {
-    //                             tokenFlags |= TokenFlags.PrecedingLineBreak;
+    //                             tokenFlags |= TokenFlags::PrecedingLineBreak;
     //                             pos += charSize(ch);
     //                             continue;
     //                         }
@@ -2097,7 +2070,7 @@ namespace ts
     //         }
 
     //         auto reScanInvalidIdentifier() -> SyntaxKind {
-    //             Debug(token == SyntaxKind::Unknown, "'reScanInvalidIdentifier' should only be called when the current token is 'SyntaxKind::Unknown'.");
+    //             debug(token == SyntaxKind::Unknown, "'reScanInvalidIdentifier' should only be called when the current token is 'SyntaxKind::Unknown'.");
     //             pos = tokenPos = startPos;
     //             tokenFlags = 0;
     //             auto ch = codePointAt(text, pos);
@@ -2125,13 +2098,13 @@ namespace ts
     //         auto reScanGreaterToken() -> SyntaxKind {
     //             if (token == SyntaxKind::GreaterThanToken) {
     //                 if ((CharacterCodes)text[pos] == CharacterCodes::greaterThan) {
-    //                     if (text.charCodeAt(pos + 1) == CharacterCodes::greaterThan) {
+    //                     if ((CharacterCodes)text[pos + 1] == CharacterCodes::greaterThan) {
     //                         if (text.charCodeAt(pos + 2) == CharacterCodes::equals) {
     //                             return pos += 3, token = SyntaxKind::GreaterThanGreaterThanGreaterThanEqualsToken;
     //                         }
     //                         return pos += 2, token = SyntaxKind::GreaterThanGreaterThanGreaterThanToken;
     //                     }
-    //                     if (text.charCodeAt(pos + 1) == CharacterCodes::equals) {
+    //                     if ((CharacterCodes)text[pos + 1] == CharacterCodes::equals) {
     //                         return pos += 2, token = SyntaxKind::GreaterThanGreaterThanEqualsToken;
     //                     }
     //                     pos++;
@@ -2146,7 +2119,7 @@ namespace ts
     //         }
 
     //         auto reScanAsteriskEqualsToken() -> SyntaxKind {
-    //             Debug(token == SyntaxKind::AsteriskEqualsToken, "'reScanAsteriskEqualsToken' should only be called on a '*='");
+    //             debug(token == SyntaxKind::AsteriskEqualsToken, "'reScanAsteriskEqualsToken' should only be called on a '*='");
     //             pos = tokenPos + 1;
     //             return token = SyntaxKind::EqualsToken;
     //         }
@@ -2160,14 +2133,14 @@ namespace ts
     //                     // If we reach the end of a file, or hit a newline, then this is an unterminated
     //                     // regex.  Report error and return what we have so far.
     //                     if (p >= end) {
-    //                         tokenFlags |= TokenFlags.Unterminated;
+    //                         tokenFlags |= TokenFlags::Unterminated;
     //                         error(Diagnostics::Unterminated_regular_expression_literal);
     //                         break;
     //                     }
 
     //                     auto ch = text.charCodeAt(p);
     //                     if (isLineBreak(ch)) {
-    //                         tokenFlags |= TokenFlags.Unterminated;
+    //                         tokenFlags |= TokenFlags::Unterminated;
     //                         error(Diagnostics::Unterminated_regular_expression_literal);
     //                         break;
     //                     }
@@ -2246,7 +2219,7 @@ namespace ts
     //          * Unconditionally back up and scan a template expression portion.
     //          */
     //         auto reScanTemplateToken(isTaggedTemplate: boolean) -> SyntaxKind {
-    //             Debug(token == SyntaxKind::CloseBraceToken, "'reScanTemplateToken' should only be called on a '}'");
+    //             debug(token == SyntaxKind::CloseBraceToken, "'reScanTemplateToken' should only be called on a '}'");
     //             pos = tokenPos;
     //             return token = scanTemplateAndSetTokenValue(isTaggedTemplate);
     //         }
@@ -2270,7 +2243,7 @@ namespace ts
     //         }
 
     //         auto reScanQuestionToken() -> SyntaxKind {
-    //             Debug(token == SyntaxKind::QuestionQuestionToken, "'reScanQuestionToken' should only be called on a '??'");
+    //             debug(token == SyntaxKind::QuestionQuestionToken, "'reScanQuestionToken' should only be called on a '??'");
     //             pos = tokenPos + 1;
     //             return token = SyntaxKind::QuestionToken;
     //         }
@@ -2284,7 +2257,7 @@ namespace ts
 
     //             auto char = (CharacterCodes)text[pos];
     //             if (char == CharacterCodes::lessThan) {
-    //                 if (text.charCodeAt(pos + 1) == CharacterCodes::slash) {
+    //                 if ((CharacterCodes)text[pos + 1] == CharacterCodes::slash) {
     //                     pos += 2;
     //                     return token = SyntaxKind::LessThanSlashToken;
     //                 }
@@ -2406,7 +2379,7 @@ namespace ts
 
     //         auto scanJsDocToken() -> JSDocSyntaxKind {
     //             startPos = tokenPos = pos;
-    //             tokenFlags = TokenFlags.None;
+    //             tokenFlags = TokenFlags::None;
     //             if (pos >= end) {
     //                 return token = SyntaxKind::EndOfFileToken;
     //             }
@@ -2430,7 +2403,7 @@ namespace ts
     //                     }
     //                     // falls through
     //                 case CharacterCodes::lineFeed:
-    //                     tokenFlags |= TokenFlags.PrecedingLineBreak;
+    //                     tokenFlags |= TokenFlags::PrecedingLineBreak;
     //                     return token = SyntaxKind::NewLineTrivia;
     //                 case CharacterCodes::asterisk:
     //                     return token = SyntaxKind::AsteriskToken;
@@ -2459,7 +2432,7 @@ namespace ts
     //                     const extendedCookedChar = peekExtendedUnicodeEscape();
     //                     if (extendedCookedChar >= 0 && isIdentifierStart(extendedCookedChar, languageVersion)) {
     //                         pos += 3;
-    //                         tokenFlags |= TokenFlags.ExtendedUnicodeEscape;
+    //                         tokenFlags |= TokenFlags::ExtendedUnicodeEscape;
     //                         tokenValue = scanExtendedUnicodeEscape() + scanIdentifierParts();
     //                         return token = getIdentifierToken();
     //                     }
@@ -2467,7 +2440,7 @@ namespace ts
     //                     const cookedChar = peekUnicodeEscape();
     //                     if (cookedChar >= 0 && isIdentifierStart(cookedChar, languageVersion)) {
     //                         pos += 6;
-    //                         tokenFlags |= TokenFlags.UnicodeEscape;
+    //                         tokenFlags |= TokenFlags::UnicodeEscape;
     //                         tokenValue = String.fromCharCode(cookedChar) + scanIdentifierParts();
     //                         return token = getIdentifierToken();
     //                     }
@@ -2571,13 +2544,13 @@ namespace ts
     //         }
 
     //         auto setTextPos(textPos: number) {
-    //             Debug(textPos >= 0);
+    //             debug(textPos >= 0);
     //             pos = textPos;
     //             startPos = textPos;
     //             tokenPos = textPos;
     //             token = SyntaxKind::Unknown;
     //             tokenValue = undefined!;
-    //             tokenFlags = TokenFlags.None;
+    //             tokenFlags = TokenFlags::None;
     //         }
 
     //         auto setInJSDocType(inType: boolean) {
@@ -2616,7 +2589,7 @@ namespace ts
 
     //     // Derived from the 10.1.1 UTF16Encoding of the ES6 Spec.
     //     auto utf16EncodeAsStringFallback(codePoint: number) {
-    //         Debug(0x0 <= codePoint && codePoint <= 0x10FFFF);
+    //         debug(0x0 <= codePoint && codePoint <= 0x10FFFF);
 
     //         if (codePoint <= 65535) {
     //             return String.fromCharCode(codePoint);

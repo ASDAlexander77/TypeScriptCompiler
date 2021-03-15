@@ -20,6 +20,52 @@ enum class ScriptTarget : int {
     Latest = ESNext,
 };
 
+enum class  TokenFlags : int {
+    None = 0,
+    /* @internal */
+    PrecedingLineBreak = 1 << 0,
+    /* @internal */
+    PrecedingJSDocComment = 1 << 1,
+    /* @internal */
+    Unterminated = 1 << 2,
+    /* @internal */
+    ExtendedUnicodeEscape = 1 << 3,
+    Scientific = 1 << 4,        // e.g. `10e2`
+    Octal = 1 << 5,             // e.g. `0777`
+    HexSpecifier = 1 << 6,      // e.g. `0x00000000`
+    BinarySpecifier = 1 << 7,   // e.g. `0b0110010000000000`
+    OctalSpecifier = 1 << 8,    // e.g. `0o777`
+    /* @internal */
+    ContainsSeparator = 1 << 9, // e.g. `0b1100_0101`
+    /* @internal */
+    UnicodeEscape = 1 << 10,
+    /* @internal */
+    ContainsInvalidEscape = 1 << 11,    // e.g. `\uhello`
+    /* @internal */
+    BinaryOrOctalSpecifier = BinarySpecifier | OctalSpecifier,
+    /* @internal */
+    NumericLiteralFlags = Scientific | Octal | HexSpecifier | BinaryOrOctalSpecifier | ContainsSeparator,
+    /* @internal */
+    TemplateLiteralLikeFlags = ContainsInvalidEscape,
+};
+
+enum class CommentDirectiveType : int {
+    ExpectError,
+    Ignore
+};
+
+struct TextRange {
+    TextRange() = default;
+    int pos;
+    int end;
+};
+
+struct CommentDirective {
+    CommentDirective() = default;
+    TextRange range;
+    CommentDirectiveType type;
+};
+
 enum class LanguageVariant : int {
     Standard,
     JSX
@@ -636,3 +682,15 @@ struct LineAndCharacter {
         */
     int character;
 };
+
+struct CommentRange {
+    CommentRange() = default;
+
+    SyntaxKind kind;
+    int pos;
+    int end;
+    boolean hasTrailingNewLine;
+};
+
+template <typename T, typename U>
+using cb_type = std::function<U(int, int, SyntaxKind, boolean, T, U)>;
