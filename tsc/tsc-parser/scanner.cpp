@@ -201,7 +201,7 @@ namespace ts
             {"==", SyntaxKind::EqualsEqualsToken},
             {"!=", SyntaxKind::ExclamationEqualsToken},
             {"===", SyntaxKind::EqualsEqualsEqualsToken},
-            {"!==", SyntaxKind::ExclamationEqualsEqualsToken},
+            {"!=", SyntaxKind::ExclamationEqualsEqualsToken},
             {"=>", SyntaxKind::EqualsGreaterThanToken},
             {"+", SyntaxKind::PlusToken},
             {"-", SyntaxKind::MinusToken},
@@ -810,11 +810,11 @@ namespace ts
                         pos++;
                         continue;
                     case CharacterCodes::slash:
-                        const nextChar = (CharacterCodes)text[pos + 1];
+                        auto nextChar = (CharacterCodes)text[pos + 1];
                         auto hasTrailingNewLine = false;
                         if (nextChar == CharacterCodes::slash || nextChar == CharacterCodes::asterisk) {
-                            const kind = nextChar == CharacterCodes::slash ? SyntaxKind::SingleLineCommentTrivia : SyntaxKind::MultiLineCommentTrivia;
-                            const startPos = pos;
+                            auto kind = nextChar == CharacterCodes::slash ? SyntaxKind::SingleLineCommentTrivia : SyntaxKind::MultiLineCommentTrivia;
+                            auto startPos = pos;
                             pos += 2;
                             if (nextChar == CharacterCodes::slash) {
                                 while (pos < text.length()) {
@@ -1016,7 +1016,7 @@ namespace ts
             auto start = pos;
             auto allowSeparator = false;
             auto isPreviousTokenSeparator = false;
-            auto result = "";
+            auto result = string();
             while (true) {
                 auto ch = (CharacterCodes)text[pos];
                 if (ch == CharacterCodes::_) {
@@ -1050,365 +1050,366 @@ namespace ts
             return result + text.substr(start, pos - start);
         }
 
-    //         auto scanNumber() -> { type: SyntaxKind, value: string } {
-    //             const start = pos;
-    //             const mainFragment = scanNumberFragment();
-    //             auto decimalFragment: string;
-    //             auto scientificFragment: string;
-    //             if ((CharacterCodes)text[pos] == CharacterCodes::dot) {
-    //                 pos++;
-    //                 decimalFragment = scanNumberFragment();
-    //             }
-    //             auto end = pos;
-    //             if ((CharacterCodes)text[pos] == CharacterCodes::E || (CharacterCodes)text[pos] == CharacterCodes::e) {
-    //                 pos++;
-    //                 tokenFlags |= TokenFlags::Scientific;
-    //                 if ((CharacterCodes)text[pos] == CharacterCodes::plus || (CharacterCodes)text[pos] == CharacterCodes::minus) pos++;
-    //                 const preNumericPart = pos;
-    //                 const finalFragment = scanNumberFragment();
-    //                 if (!finalFragment) {
-    //                     error(Diagnostics::Digit_expected);
-    //                 }
-    //                 else {
-    //                     scientificFragment = text.substring(end, preNumericPart) + finalFragment;
-    //                     end = pos;
-    //                 }
-    //             }
-    //             auto result: string;
-    //             if (tokenFlags & TokenFlags::ContainsSeparator) {
-    //                 result = mainFragment;
-    //                 if (decimalFragment) {
-    //                     result += "." + decimalFragment;
-    //                 }
-    //                 if (scientificFragment) {
-    //                     result += scientificFragment;
-    //                 }
-    //             }
-    //             else {
-    //                 result = text.substring(start, end); // No need to use all the fragments; no _ removal needed
-    //             }
+        auto scanNumber() -> ScanResult {
+            auto start = pos;
+            auto mainFragment = scanNumberFragment();
+            string decimalFragment;
+            string scientificFragment;
+            if ((CharacterCodes)text[pos] == CharacterCodes::dot) {
+                pos++;
+                decimalFragment = scanNumberFragment();
+            }
+            auto end = pos;
+            if ((CharacterCodes)text[pos] == CharacterCodes::E || (CharacterCodes)text[pos] == CharacterCodes::e) {
+                pos++;
+                tokenFlags |= TokenFlags::Scientific;
+                if ((CharacterCodes)text[pos] == CharacterCodes::plus || (CharacterCodes)text[pos] == CharacterCodes::minus) pos++;
+                auto preNumericPart = pos;
+                auto finalFragment = scanNumberFragment();
+                if (finalFragment.empty()) {
+                    error(Diagnostics::Digit_expected);
+                }
+                else {
+                    scientificFragment = text.substr(end, preNumericPart - end) + finalFragment;
+                    end = pos;
+                }
+            }
+            string result;
+            if (!!(tokenFlags & TokenFlags::ContainsSeparator)) {
+                result = mainFragment;
+                if (!decimalFragment.empty()) {
+                    result += "." + decimalFragment;
+                }
+                if (!scientificFragment.empty()) {
+                    result += scientificFragment;
+                }
+            }
+            else {
+                result = text.substr(start, end - start); // No need to use all the fragments; no _ removal needed
+            }
 
-    //             if (decimalFragment !== undefined || tokenFlags & TokenFlags::Scientific) {
-    //                 checkForIdentifierStartAfterNumericLiteral(start, decimalFragment == undefined && !!(tokenFlags & TokenFlags::Scientific));
-    //                 return {
-    //                     type: SyntaxKind::NumericLiteral,
-    //                     value: "" + +result // if value is not an integer, it can be safely coerced to a number
-    //                 };
-    //             }
-    //             else {
-    //                 tokenValue = result;
-    //                 const type = checkBigIntSuffix(); // if value is an integer, check whether it is a bigint
-    //                 checkForIdentifierStartAfterNumericLiteral(start);
-    //                 return { type, value: tokenValue };
-    //             }
-    //         }
+            if (!decimalFragment.empty() || !!(tokenFlags & TokenFlags::Scientific)) {
+                checkForIdentifierStartAfterNumericLiteral(start, decimalFragment.empty() && !!(tokenFlags & TokenFlags::Scientific));
+                return {
+                    SyntaxKind::NumericLiteral,
+                    // TODO: review: "" + (+result)
+                    result // if value is not an integer, it can be safely coerced to a number
+                };
+            }
+            else {
+                tokenValue = result;
+                auto type = checkBigIntSuffix(); // if value is an integer, check whether it is a bigint
+                checkForIdentifierStartAfterNumericLiteral(start);
+                return { type, tokenValue };
+            }
+        }
 
-    //         auto checkForIdentifierStartAfterNumericLiteral(numericStart: number, isScientific?: boolean) {
-    //             if (!isIdentifierStart(codePointAt(text, pos), languageVersion)) {
-    //                 return;
-    //             }
+        auto checkForIdentifierStartAfterNumericLiteral(number numericStart, bool isScientific = false) {
+            if (!isIdentifierStart(codePointAt(text, pos), languageVersion)) {
+                return;
+            }
 
-    //             const identifierStart = pos;
-    //             const { length } = scanIdentifierParts();
+            auto identifierStart = pos;
+            auto { length } = scanIdentifierParts();
 
-    //             if (length == 1 && text[identifierStart] == "n") {
-    //                 if (isScientific) {
-    //                     error(Diagnostics::A_bigint_literal_cannot_use_exponential_notation, numericStart, identifierStart - numericStart + 1);
-    //                 }
-    //                 else {
-    //                     error(Diagnostics::A_bigint_literal_must_be_an_integer, numericStart, identifierStart - numericStart + 1);
-    //                 }
-    //             }
-    //             else {
-    //                 error(Diagnostics::An_identifier_or_keyword_cannot_immediately_follow_a_numeric_literal, identifierStart, length);
-    //                 pos = identifierStart;
-    //             }
-    //         }
+            if (length == 1 && text[identifierStart] == "n") {
+                if (isScientific) {
+                    error(Diagnostics::A_bigint_literal_cannot_use_exponential_notation, numericStart, identifierStart - numericStart + 1);
+                }
+                else {
+                    error(Diagnostics::A_bigint_literal_must_be_an_integer, numericStart, identifierStart - numericStart + 1);
+                }
+            }
+            else {
+                error(Diagnostics::An_identifier_or_keyword_cannot_immediately_follow_a_numeric_literal, identifierStart, length);
+                pos = identifierStart;
+            }
+        }
 
-    //         auto scanOctalDigits() -> number {
-    //             const start = pos;
-    //             while (isOctalDigit((CharacterCodes)text[pos])) {
-    //                 pos++;
-    //             }
-    //             return +(text.substring(start, pos));
-    //         }
+        auto scanOctalDigits() -> number {
+            auto start = pos;
+            while (isOctalDigit((CharacterCodes)text[pos])) {
+                pos++;
+            }
+            return +std::stod((text.substr(start, pos - start)));
+        }
 
-    //         /**
-    //          * Scans the given number of hexadecimal digits in the text,
-    //          * returning -1 if the given number is unavailable.
-    //          */
-    //         auto scanExactNumberOfHexDigits(count: number, canHaveSeparators: boolean) -> number {
-    //             const valueString = scanHexDigits(/*minCount*/ count, /*scanAsManyAsPossible*/ false, canHaveSeparators);
-    //             return valueString ? parseInt(valueString, 16) : -1;
-    //         }
+        /**
+         * Scans the given number of hexadecimal digits in the text,
+         * returning -1 if the given number is unavailable.
+         */
+        auto scanExactNumberOfHexDigits(int count, boolean canHaveSeparators) -> number {
+            auto valueString = scanHexDigits(/*minCount*/ count, /*scanAsManyAsPossible*/ false, canHaveSeparators);
+            return !valueString.empty() ? std::stoi(valueString, nullptr, 16) : -1;
+        }
 
-    //         /**
-    //          * Scans as many hexadecimal digits as are available in the text,
-    //          * returning "" if the given number of digits was unavailable.
-    //          */
-    //         auto scanMinimumNumberOfHexDigits(count: number, canHaveSeparators: boolean) -> string {
-    //             return scanHexDigits(/*minCount*/ count, /*scanAsManyAsPossible*/ true, canHaveSeparators);
-    //         }
+        /**
+         * Scans as many hexadecimal digits as are available in the text,
+         * returning "" if the given number of digits was unavailable.
+         */
+        auto scanMinimumNumberOfHexDigits(int count, boolean canHaveSeparators) -> string {
+            return scanHexDigits(/*minCount*/ count, /*scanAsManyAsPossible*/ true, canHaveSeparators);
+        }
 
-    //         auto scanHexDigits(minCount: number, scanAsManyAsPossible: boolean, canHaveSeparators: boolean) -> string {
-    //             auto valueChars: number[] = [];
-    //             auto allowSeparator = false;
-    //             auto isPreviousTokenSeparator = false;
-    //             while (valueChars.length < minCount || scanAsManyAsPossible) {
-    //                 auto ch = (CharacterCodes)text[pos];
-    //                 if (canHaveSeparators && ch == CharacterCodes::_) {
-    //                     tokenFlags |= TokenFlags::ContainsSeparator;
-    //                     if (allowSeparator) {
-    //                         allowSeparator = false;
-    //                         isPreviousTokenSeparator = true;
-    //                     }
-    //                     else if (isPreviousTokenSeparator) {
-    //                         error(Diagnostics::Multiple_consecutive_numeric_separators_are_not_permitted, pos, 1);
-    //                     }
-    //                     else {
-    //                         error(Diagnostics::Numeric_separators_are_not_allowed_here, pos, 1);
-    //                     }
-    //                     pos++;
-    //                     continue;
-    //                 }
-    //                 allowSeparator = canHaveSeparators;
-    //                 if (ch >= CharacterCodes::A && ch <= CharacterCodes::F) {
-    //                     ch += CharacterCodes::a - CharacterCodes::A; // standardize hex literals to lowercase
-    //                 }
-    //                 else if (!((ch >= CharacterCodes::_0 && ch <= CharacterCodes::_9) ||
-    //                     (ch >= CharacterCodes::a && ch <= CharacterCodes::f)
-    //                 )) {
-    //                     break;
-    //                 }
-    //                 valueChars.push(ch);
-    //                 pos++;
-    //                 isPreviousTokenSeparator = false;
-    //             }
-    //             if (valueChars.length < minCount) {
-    //                 valueChars = [];
-    //             }
-    //             if ((CharacterCodes)text[pos + 1] == CharacterCodes::_) {
-    //                 error(Diagnostics::Numeric_separators_are_not_allowed_here, pos - 1, 1);
-    //             }
-    //             return String.fromCharCode(...valueChars);
-    //         }
+        auto scanHexDigits(int minCount, boolean scanAsManyAsPossible, boolean canHaveSeparators) -> string {
+            std::vector<char> valueChars;
+            auto allowSeparator = false;
+            auto isPreviousTokenSeparator = false;
+            while (valueChars.size() < minCount || scanAsManyAsPossible) {
+                auto ch = (CharacterCodes)text[pos];
+                if (canHaveSeparators && ch == CharacterCodes::_) {
+                    tokenFlags |= TokenFlags::ContainsSeparator;
+                    if (allowSeparator) {
+                        allowSeparator = false;
+                        isPreviousTokenSeparator = true;
+                    }
+                    else if (isPreviousTokenSeparator) {
+                        error(Diagnostics::Multiple_consecutive_numeric_separators_are_not_permitted, pos, 1);
+                    }
+                    else {
+                        error(Diagnostics::Numeric_separators_are_not_allowed_here, pos, 1);
+                    }
+                    pos++;
+                    continue;
+                }
+                allowSeparator = canHaveSeparators;
+                if (ch >= CharacterCodes::A && ch <= CharacterCodes::F) {
+                    ch += CharacterCodes::a - CharacterCodes::A; // standardize hex literals to lowercase
+                }
+                else if (!((ch >= CharacterCodes::_0 && ch <= CharacterCodes::_9) ||
+                    (ch >= CharacterCodes::a && ch <= CharacterCodes::f)
+                )) {
+                    break;
+                }
+                valueChars.push_back(ch);
+                pos++;
+                isPreviousTokenSeparator = false;
+            }
+            if (valueChars.size() < minCount) {
+                valueChars.clear();
+            }
+            if ((CharacterCodes)text[pos + 1] == CharacterCodes::_) {
+                error(Diagnostics::Numeric_separators_are_not_allowed_here, pos - 1, 1);
+            }
+            return std::string(valueChars.begin(), valueChars.end());
+        }
 
-    //         auto scanString(jsxAttributeString = false) -> string {
-    //             const quote = (CharacterCodes)text[pos];
-    //             pos++;
-    //             auto result = "";
-    //             auto start = pos;
-    //             while (true) {
-    //                 if (pos >= end) {
-    //                     result += text.substring(start, pos);
-    //                     tokenFlags |= TokenFlags::Unterminated;
-    //                     error(Diagnostics::Unterminated_string_literal);
-    //                     break;
-    //                 }
-    //                 auto ch = (CharacterCodes)text[pos];
-    //                 if (ch == quote) {
-    //                     result += text.substring(start, pos);
-    //                     pos++;
-    //                     break;
-    //                 }
-    //                 if (ch == CharacterCodes::backslash && !jsxAttributeString) {
-    //                     result += text.substring(start, pos);
-    //                     result += scanEscapeSequence();
-    //                     start = pos;
-    //                     continue;
-    //                 }
-    //                 if (isLineBreak(ch) && !jsxAttributeString) {
-    //                     result += text.substring(start, pos);
-    //                     tokenFlags |= TokenFlags::Unterminated;
-    //                     error(Diagnostics::Unterminated_string_literal);
-    //                     break;
-    //                 }
-    //                 pos++;
-    //             }
-    //             return result;
-    //         }
+        auto scanString(boolean jsxAttributeString = false) -> string {
+            auto quote = (CharacterCodes)text[pos];
+            pos++;
+            string result;
+            auto start = pos;
+            while (true) {
+                if (pos >= end) {
+                    result += text.substr(start, pos - start);
+                    tokenFlags |= TokenFlags::Unterminated;
+                    error(Diagnostics::Unterminated_string_literal);
+                    break;
+                }
+                auto ch = (CharacterCodes)text[pos];
+                if (ch == quote) {
+                    result += text.substr(start, pos - start);
+                    pos++;
+                    break;
+                }
+                if (ch == CharacterCodes::backslash && !jsxAttributeString) {
+                    result += text.substr(start, pos - start);
+                    result += scanEscapeSequence();
+                    start = pos;
+                    continue;
+                }
+                if (isLineBreak(ch) && !jsxAttributeString) {
+                    result += text.substr(start, pos - start);
+                    tokenFlags |= TokenFlags::Unterminated;
+                    error(Diagnostics::Unterminated_string_literal);
+                    break;
+                }
+                pos++;
+            }
+            return result;
+        }
 
-    //         /**
-    //          * Sets the current 'tokenValue' and returns a NoSubstitutionTemplateLiteral or
-    //          * a literal component of a TemplateExpression.
-    //          */
-    //         auto scanTemplateAndSetTokenValue(isTaggedTemplate: boolean) -> SyntaxKind {
-    //             const startedWithBacktick = (CharacterCodes)text[pos] == CharacterCodes::backtick;
+        /**
+         * Sets the current 'tokenValue' and returns a NoSubstitutionTemplateLiteral or
+         * a literal component of a TemplateExpression.
+         */
+        auto scanTemplateAndSetTokenValue(boolean isTaggedTemplate) -> SyntaxKind {
+            auto startedWithBacktick = (CharacterCodes)text[pos] == CharacterCodes::backtick;
 
-    //             pos++;
-    //             auto start = pos;
-    //             auto contents = "";
-    //             auto resultingSyntaxKind token;
+            pos++;
+            auto start = pos;
+            string contents = "";
+            SyntaxKind resultingToken;
 
-    //             while (true) {
-    //                 if (pos >= end) {
-    //                     contents += text.substring(start, pos);
-    //                     tokenFlags |= TokenFlags::Unterminated;
-    //                     error(Diagnostics::Unterminated_template_literal);
-    //                     resultingToken = startedWithBacktick ? SyntaxKind::NoSubstitutionTemplateLiteral : SyntaxKind::TemplateTail;
-    //                     break;
-    //                 }
+            while (true) {
+                if (pos >= end) {
+                    contents += text.substr(start, pos - start);
+                    tokenFlags |= TokenFlags::Unterminated;
+                    error(Diagnostics::Unterminated_template_literal);
+                    resultingToken = startedWithBacktick ? SyntaxKind::NoSubstitutionTemplateLiteral : SyntaxKind::TemplateTail;
+                    break;
+                }
 
-    //                 const currChar = (CharacterCodes)text[pos];
+                auto currChar = (CharacterCodes)text[pos];
 
-    //                 // '`'
-    //                 if (currChar == CharacterCodes::backtick) {
-    //                     contents += text.substring(start, pos);
-    //                     pos++;
-    //                     resultingToken = startedWithBacktick ? SyntaxKind::NoSubstitutionTemplateLiteral : SyntaxKind::TemplateTail;
-    //                     break;
-    //                 }
+                // '`'
+                if (currChar == CharacterCodes::backtick) {
+                    contents += text.substr(start, pos - start);
+                    pos++;
+                    resultingToken = startedWithBacktick ? SyntaxKind::NoSubstitutionTemplateLiteral : SyntaxKind::TemplateTail;
+                    break;
+                }
 
-    //                 // '${'
-    //                 if (currChar == CharacterCodes::$ && pos + 1 < end && (CharacterCodes)text[pos + 1] == CharacterCodes::openBrace) {
-    //                     contents += text.substring(start, pos);
-    //                     pos += 2;
-    //                     resultingToken = startedWithBacktick ? SyntaxKind::TemplateHead : SyntaxKind::TemplateMiddle;
-    //                     break;
-    //                 }
+                // '${'
+                if (currChar == CharacterCodes::$ && pos + 1 < end && (CharacterCodes)text[pos + 1] == CharacterCodes::openBrace) {
+                    contents += text.substr(start, pos - start);
+                    pos += 2;
+                    resultingToken = startedWithBacktick ? SyntaxKind::TemplateHead : SyntaxKind::TemplateMiddle;
+                    break;
+                }
 
-    //                 // Escape character
-    //                 if (currChar == CharacterCodes::backslash) {
-    //                     contents += text.substring(start, pos);
-    //                     contents += scanEscapeSequence(isTaggedTemplate);
-    //                     start = pos;
-    //                     continue;
-    //                 }
+                // Escape character
+                if (currChar == CharacterCodes::backslash) {
+                    contents += text.substr(start, pos - start);
+                    contents += scanEscapeSequence(isTaggedTemplate);
+                    start = pos;
+                    continue;
+                }
 
-    //                 // Speculated ECMAScript 6 Spec 11.8.6.1:
-    //                 // <CR><LF> and <CR> LineTerminatorSequences are normalized to <LF> for Template Values
-    //                 if (currChar == CharacterCodes::carriageReturn) {
-    //                     contents += text.substring(start, pos);
-    //                     pos++;
+                // Speculated ECMAScript 6 Spec 11.8.6.1:
+                // <CR><LF> and <CR> LineTerminatorSequences are normalized to <LF> for Template Values
+                if (currChar == CharacterCodes::carriageReturn) {
+                    contents += text.substr(start, pos - start);
+                    pos++;
 
-    //                     if (pos < end && (CharacterCodes)text[pos] == CharacterCodes::lineFeed) {
-    //                         pos++;
-    //                     }
+                    if (pos < end && (CharacterCodes)text[pos] == CharacterCodes::lineFeed) {
+                        pos++;
+                    }
 
-    //                     contents += "\n";
-    //                     start = pos;
-    //                     continue;
-    //                 }
+                    contents += "\n";
+                    start = pos;
+                    continue;
+                }
 
-    //                 pos++;
-    //             }
+                pos++;
+            }
 
-    //             debug(resultingToken !== undefined);
+            debug(resultingToken != SyntaxKind::Unknown);
 
-    //             tokenValue = contents;
-    //             return resultingToken;
-    //         }
+            tokenValue = contents;
+            return resultingToken;
+        }
 
-    //         auto scanEscapeSequence(isTaggedTemplate?: boolean) -> string {
-    //             const start = pos;
-    //             pos++;
-    //             if (pos >= end) {
-    //                 error(Diagnostics::Unexpected_end_of_text);
-    //                 return "";
-    //             }
-    //             auto ch = (CharacterCodes)text[pos];
-    //             pos++;
-    //             switch (ch) {
-    //                 case CharacterCodes::_0:
-    //                     // '\01'
-    //                     if (isTaggedTemplate && pos < end && isDigit((CharacterCodes)text[pos])) {
-    //                         pos++;
-    //                         tokenFlags |= TokenFlags::ContainsInvalidEscape;
-    //                         return text.substring(start, pos);
-    //                     }
-    //                     return "\0";
-    //                 case CharacterCodes::b:
-    //                     return "\b";
-    //                 case CharacterCodes::t:
-    //                     return "\t";
-    //                 case CharacterCodes::n:
-    //                     return "\n";
-    //                 case CharacterCodes::v:
-    //                     return "\v";
-    //                 case CharacterCodes::f:
-    //                     return "\f";
-    //                 case CharacterCodes::r:
-    //                     return "\r";
-    //                 case CharacterCodes::singleQuote:
-    //                     return "\'";
-    //                 case CharacterCodes::doubleQuote:
-    //                     return "\"";
-    //                 case CharacterCodes::u:
-    //                     if (isTaggedTemplate) {
-    //                         // '\u' or '\u0' or '\u00' or '\u000'
-    //                         for (auto escapePos = pos; escapePos < pos + 4; escapePos++) {
-    //                             if (escapePos < end && !isHexDigit(text.charCodeAt(escapePos)) && text.charCodeAt(escapePos) !== CharacterCodes::openBrace) {
-    //                                 pos = escapePos;
-    //                                 tokenFlags |= TokenFlags::ContainsInvalidEscape;
-    //                                 return text.substring(start, pos);
-    //                             }
-    //                         }
-    //                     }
-    //                     // '\u{DDDDDDDD}'
-    //                     if (pos < end && (CharacterCodes)text[pos] == CharacterCodes::openBrace) {
-    //                         pos++;
+        auto scanEscapeSequence(boolean isTaggedTemplate = false) -> string {
+            auto start = pos;
+            pos++;
+            if (pos >= end) {
+                error(Diagnostics::Unexpected_end_of_text);
+                return "";
+            }
+            auto ch = (CharacterCodes)text[pos];
+            pos++;
+            switch (ch) {
+                case CharacterCodes::_0:
+                    // '\01'
+                    if (isTaggedTemplate && pos < end && isDigit((CharacterCodes)text[pos])) {
+                        pos++;
+                        tokenFlags |= TokenFlags::ContainsInvalidEscape;
+                        return text.substr(start, pos - start);
+                    }
+                    return "\0";
+                case CharacterCodes::b:
+                    return "\b";
+                case CharacterCodes::t:
+                    return "\t";
+                case CharacterCodes::n:
+                    return "\n";
+                case CharacterCodes::v:
+                    return "\v";
+                case CharacterCodes::f:
+                    return "\f";
+                case CharacterCodes::r:
+                    return "\r";
+                case CharacterCodes::singleQuote:
+                    return "\'";
+                case CharacterCodes::doubleQuote:
+                    return "\"";
+                case CharacterCodes::u:
+                    if (isTaggedTemplate) {
+                        // '\u' or '\u0' or '\u00' or '\u000'
+                        for (auto escapePos = pos; escapePos < pos + 4; escapePos++) {
+                            if (escapePos < end && !isHexDigit((CharacterCodes)text[escapePos]) && (CharacterCodes)text[escapePos] != CharacterCodes::openBrace) {
+                                pos = escapePos;
+                                tokenFlags |= TokenFlags::ContainsInvalidEscape;
+                                return text.substr(start, pos - start);
+                            }
+                        }
+                    }
+                    // '\u{DDDDDDDD}'
+                    if (pos < end && (CharacterCodes)text[pos] == CharacterCodes::openBrace) {
+                        pos++;
 
-    //                         // '\u{'
-    //                         if (isTaggedTemplate && !isHexDigit((CharacterCodes)text[pos])) {
-    //                             tokenFlags |= TokenFlags::ContainsInvalidEscape;
-    //                             return text.substring(start, pos);
-    //                         }
+                        // '\u{'
+                        if (isTaggedTemplate && !isHexDigit((CharacterCodes)text[pos])) {
+                            tokenFlags |= TokenFlags::ContainsInvalidEscape;
+                            return text.substr(start, pos - start);
+                        }
 
-    //                         if (isTaggedTemplate) {
-    //                             const savePos = pos;
-    //                             const escapedValueString = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ false);
-    //                             const escapedValue = escapedValueString ? parseInt(escapedValueString, 16) : -1;
+                        if (isTaggedTemplate) {
+                            auto savePos = pos;
+                            auto escapedValueString = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ false);
+                            auto escapedValue = !escapedValueString.empty() ? std::atoi(escapedValueString, nullptr, 16) : -1;
 
-    //                             // '\u{Not Code Point' or '\u{CodePoint'
-    //                             if (!isCodePoint(escapedValue) || (CharacterCodes)text[pos] !== CharacterCodes::closeBrace) {
-    //                                 tokenFlags |= TokenFlags::ContainsInvalidEscape;
-    //                                 return text.substring(start, pos);
-    //                             }
-    //                             else {
-    //                                 pos = savePos;
-    //                             }
-    //                         }
-    //                         tokenFlags |= TokenFlags::ExtendedUnicodeEscape;
-    //                         return scanExtendedUnicodeEscape();
-    //                     }
+                            // '\u{Not Code Point' or '\u{CodePoint'
+                            if (!isCodePoint(escapedValue) || (CharacterCodes)text[pos] != CharacterCodes::closeBrace) {
+                                tokenFlags |= TokenFlags::ContainsInvalidEscape;
+                                return text.substr(start, pos - start);
+                            }
+                            else {
+                                pos = savePos;
+                            }
+                        }
+                        tokenFlags |= TokenFlags::ExtendedUnicodeEscape;
+                        return scanExtendedUnicodeEscape();
+                    }
 
-    //                     tokenFlags |= TokenFlags::UnicodeEscape;
-    //                     // '\uDDDD'
-    //                     return scanHexadecimalEscape(/*numDigits*/ 4);
+                    tokenFlags |= TokenFlags::UnicodeEscape;
+                    // '\uDDDD'
+                    return scanHexadecimalEscape(/*numDigits*/ 4);
 
-    //                 case CharacterCodes::x:
-    //                     if (isTaggedTemplate) {
-    //                         if (!isHexDigit((CharacterCodes)text[pos])) {
-    //                             tokenFlags |= TokenFlags::ContainsInvalidEscape;
-    //                             return text.substring(start, pos);
-    //                         }
-    //                         else if (!isHexDigit((CharacterCodes)text[pos + 1])) {
-    //                             pos++;
-    //                             tokenFlags |= TokenFlags::ContainsInvalidEscape;
-    //                             return text.substring(start, pos);
-    //                         }
-    //                     }
-    //                     // '\xDD'
-    //                     return scanHexadecimalEscape(/*numDigits*/ 2);
+                case CharacterCodes::x:
+                    if (isTaggedTemplate) {
+                        if (!isHexDigit((CharacterCodes)text[pos])) {
+                            tokenFlags |= TokenFlags::ContainsInvalidEscape;
+                            return text.substr(start, pos - start);
+                        }
+                        else if (!isHexDigit((CharacterCodes)text[pos + 1])) {
+                            pos++;
+                            tokenFlags |= TokenFlags::ContainsInvalidEscape;
+                            return text.substr(start, pos - start);
+                        }
+                    }
+                    // '\xDD'
+                    return scanHexadecimalEscape(/*numDigits*/ 2);
 
-    //                 // when encountering a LineContinuation (i.e. a backslash and a line terminator sequence),
-    //                 // the line terminator is interpreted to be "the empty code unit sequence".
-    //                 case CharacterCodes::carriageReturn:
-    //                     if (pos < end && (CharacterCodes)text[pos] == CharacterCodes::lineFeed) {
-    //                         pos++;
-    //                     }
-    //                 // falls through
-    //                 case CharacterCodes::lineFeed:
-    //                 case CharacterCodes::lineSeparator:
-    //                 case CharacterCodes::paragraphSeparator:
-    //                     return "";
-    //                 default:
-    //                     return String.fromCharCode(ch);
-    //             }
-    //         }
+                // when encountering a LineContinuation (i.e. a backslash and a line terminator sequence),
+                // the line terminator is interpreted to be "the empty code unit sequence".
+                case CharacterCodes::carriageReturn:
+                    if (pos < end && (CharacterCodes)text[pos] == CharacterCodes::lineFeed) {
+                        pos++;
+                    }
+                // falls through
+                case CharacterCodes::lineFeed:
+                case CharacterCodes::lineSeparator:
+                case CharacterCodes::paragraphSeparator:
+                    return "";
+                default:
+                    return string((char)ch);
+            }
+        }
 
     //         auto scanHexadecimalEscape(numDigits: number) -> string {
-    //             const escapedValue = scanExactNumberOfHexDigits(numDigits, /*canHaveSeparators*/ false);
+    //             auto escapedValue = scanExactNumberOfHexDigits(numDigits, /*canHaveSeparators*/ false);
 
     //             if (escapedValue >= 0) {
     //                 return String.fromCharCode(escapedValue);
@@ -1420,8 +1421,8 @@ namespace ts
     //         }
 
     //         auto scanExtendedUnicodeEscape() -> string {
-    //             const escapedValueString = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ false);
-    //             const escapedValue = escapedValueString ? parseInt(escapedValueString, 16) : -1;
+    //             auto escapedValueString = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ false);
+    //             auto escapedValue = escapedValueString ? std::atoi(escapedValueString, 16) : -1;
     //             auto isInvalidExtendedEscape = false;
 
     //             // Validate the value of the digit
@@ -1458,9 +1459,9 @@ namespace ts
     //         // and return code point value if valid Unicode escape is found. Otherwise return -1.
     //         auto peekUnicodeEscape() -> number {
     //             if (pos + 5 < end && (CharacterCodes)text[pos + 1] == CharacterCodes::u) {
-    //                 const start = pos;
+    //                 auto start = pos;
     //                 pos += 2;
-    //                 const value = scanExactNumberOfHexDigits(4, /*canHaveSeparators*/ false);
+    //                 auto value = scanExactNumberOfHexDigits(4, /*canHaveSeparators*/ false);
     //                 pos = start;
     //                 return value;
     //             }
@@ -1470,10 +1471,10 @@ namespace ts
 
     //         auto peekExtendedUnicodeEscape() -> number {
     //             if (languageVersion >= ScriptTarget::ES2015 && codePointAt(text, pos + 1) == CharacterCodes::u && codePointAt(text, pos + 2) == CharacterCodes::openBrace) {
-    //                 const start = pos;
+    //                 auto start = pos;
     //                 pos += 3;
-    //                 const escapedValueString = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ false);
-    //                 const escapedValue = escapedValueString ? parseInt(escapedValueString, 16) : -1;
+    //                 auto escapedValueString = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ false);
+    //                 auto escapedValue = escapedValueString ? std::atoi(escapedValueString, 16) : -1;
     //                 pos = start;
     //                 return escapedValue;
     //             }
@@ -1502,7 +1503,7 @@ namespace ts
     //                         break;
     //                     }
     //                     tokenFlags |= TokenFlags::UnicodeEscape;
-    //                     result += text.substring(start, pos);
+    //                     result += text.substr(start, pos - start);
     //                     result += utf16EncodeAsString(ch);
     //                     // Valid Unicode escape is always six characters
     //                     pos += 6;
@@ -1512,7 +1513,7 @@ namespace ts
     //                     break;
     //                 }
     //             }
-    //             result += text.substring(start, pos);
+    //             result += text.substr(start, pos - start);
     //             return result;
     //         }
 
@@ -1522,8 +1523,8 @@ namespace ts
     //             if (len >= 2 && len <= 12) {
     //                 auto ch = tokenValue.charCodeAt(0);
     //                 if (ch >= CharacterCodes::a && ch <= CharacterCodes::z) {
-    //                     const keyword = textToKeyword.get(tokenValue);
-    //                     if (keyword !== undefined) {
+    //                     auto keyword = textToKeyword.get(tokenValue);
+    //                     if (keyword != undefined) {
     //                         return token = keyword;
     //                     }
     //                 }
@@ -1581,11 +1582,11 @@ namespace ts
     //                 return SyntaxKind::BigIntLiteral;
     //             }
     //             else { // not a bigint, so can convert to number in simplified form
-    //                 // Number() may not support 0b or 0o, so use parseInt() instead
-    //                 const numericValue = tokenFlags & TokenFlags::BinarySpecifier
-    //                     ? parseInt(tokenValue.slice(2), 2) // skip "0b"
+    //                 // Number() may not support 0b or 0o, so use std::atoi() instead
+    //                 auto numericValue = tokenFlags & TokenFlags::BinarySpecifier
+    //                     ? std::atoi(tokenValue.slice(2), 2) // skip "0b"
     //                     : tokenFlags & TokenFlags::OctalSpecifier
-    //                         ? parseInt(tokenValue.slice(2), 8) // skip "0o"
+    //                         ? std::atoi(tokenValue.slice(2), 8) // skip "0o"
     //                         : +tokenValue;
     //                 tokenValue = "" + numericValue;
     //                 return SyntaxKind::NumericLiteral;
@@ -1780,7 +1781,7 @@ namespace ts
     //                         // Multi-line comment
     //                         if ((CharacterCodes)text[pos + 1] == CharacterCodes::asterisk) {
     //                             pos += 2;
-    //                             if ((CharacterCodes)text[pos] == CharacterCodes::asterisk && (CharacterCodes)text[pos + 1] !== CharacterCodes::slash) {
+    //                             if ((CharacterCodes)text[pos] == CharacterCodes::asterisk && (CharacterCodes)text[pos + 1] != CharacterCodes::slash) {
     //                                 tokenFlags |= TokenFlags::PrecedingJSDocComment;
     //                             }
 
@@ -1910,7 +1911,7 @@ namespace ts
     //                         }
     //                         if (languageVariant == LanguageVariant.JSX &&
     //                             (CharacterCodes)text[pos + 1] == CharacterCodes::slash &&
-    //                             text.charCodeAt(pos + 2) !== CharacterCodes::asterisk) {
+    //                             text.charCodeAt(pos + 2) != CharacterCodes::asterisk) {
     //                             return pos += 2, token = SyntaxKind::LessThanSlashToken;
     //                         }
     //                         pos++;
@@ -2009,7 +2010,7 @@ namespace ts
     //                         pos++;
     //                         return token = SyntaxKind::AtToken;
     //                     case CharacterCodes::backslash:
-    //                         const extendedCookedChar = peekExtendedUnicodeEscape();
+    //                         auto extendedCookedChar = peekExtendedUnicodeEscape();
     //                         if (extendedCookedChar >= 0 && isIdentifierStart(extendedCookedChar, languageVersion)) {
     //                             pos += 3;
     //                             tokenFlags |= TokenFlags::ExtendedUnicodeEscape;
@@ -2017,7 +2018,7 @@ namespace ts
     //                             return token = getIdentifierToken();
     //                         }
 
-    //                         const cookedChar = peekUnicodeEscape();
+    //                         auto cookedChar = peekUnicodeEscape();
     //                         if (cookedChar >= 0 && isIdentifierStart(cookedChar, languageVersion)) {
     //                             pos += 6;
     //                             tokenFlags |= TokenFlags::UnicodeEscape;
@@ -2029,7 +2030,7 @@ namespace ts
     //                         pos++;
     //                         return token = SyntaxKind::Unknown;
     //                     case CharacterCodes::hash:
-    //                         if (pos !== 0 && text[pos + 1] == "!") {
+    //                         if (pos != 0 && text[pos + 1] == "!") {
     //                             error(Diagnostics::can_only_be_used_at_the_start_of_a_file);
     //                             pos++;
     //                             return token = SyntaxKind::Unknown;
@@ -2049,7 +2050,7 @@ namespace ts
     //                         }
     //                         return token = SyntaxKind::PrivateIdentifier;
     //                     default:
-    //                         const identifierKind = scanIdentifier(ch, languageVersion);
+    //                         auto identifierKind = scanIdentifier(ch, languageVersion);
     //                         if (identifierKind) {
     //                             return token = identifierKind;
     //                         }
@@ -2074,7 +2075,7 @@ namespace ts
     //             pos = tokenPos = startPos;
     //             tokenFlags = 0;
     //             auto ch = codePointAt(text, pos);
-    //             const identifierKind = scanIdentifier(ch, ScriptTarget::ESNext);
+    //             auto identifierKind = scanIdentifier(ch, ScriptTarget::ESNext);
     //             if (identifierKind) {
     //                 return token = identifierKind;
     //             }
@@ -2184,7 +2185,7 @@ namespace ts
     //             commentDirectiveRegEx: RegExp,
     //             lineStart: number,
     //         ) {
-    //             const type = getDirectiveFromComment(text, commentDirectiveRegEx);
+    //             auto type = getDirectiveFromComment(text, commentDirectiveRegEx);
     //             if (type == undefined) {
     //                 return commentDirectives;
     //             }
@@ -2199,7 +2200,7 @@ namespace ts
     //         }
 
     //         auto getDirectiveFromComment(string text, commentDirectiveRegEx: RegExp) {
-    //             const match = commentDirectiveRegEx.exec(text);
+    //             auto match = commentDirectiveRegEx.exec(text);
     //             if (!match) {
     //                 return undefined;
     //             }
@@ -2343,7 +2344,7 @@ namespace ts
     //                         namespaceSeparator = true;
     //                         continue;
     //                     }
-    //                     const oldPos = pos;
+    //                     auto oldPos = pos;
     //                     tokenValue += scanIdentifierParts(); // reuse `scanIdentifierParts` so unicode escapes are handled
     //                     if (pos == oldPos) {
     //                         break;
@@ -2429,7 +2430,7 @@ namespace ts
     //                     return token = SyntaxKind::BacktickToken;
     //                 case CharacterCodes::backslash:
     //                     pos--;
-    //                     const extendedCookedChar = peekExtendedUnicodeEscape();
+    //                     auto extendedCookedChar = peekExtendedUnicodeEscape();
     //                     if (extendedCookedChar >= 0 && isIdentifierStart(extendedCookedChar, languageVersion)) {
     //                         pos += 3;
     //                         tokenFlags |= TokenFlags::ExtendedUnicodeEscape;
@@ -2437,7 +2438,7 @@ namespace ts
     //                         return token = getIdentifierToken();
     //                     }
 
-    //                     const cookedChar = peekUnicodeEscape();
+    //                     auto cookedChar = peekUnicodeEscape();
     //                     if (cookedChar >= 0 && isIdentifierStart(cookedChar, languageVersion)) {
     //                         pos += 6;
     //                         tokenFlags |= TokenFlags::UnicodeEscape;
@@ -2463,13 +2464,13 @@ namespace ts
     //         }
 
     //         auto speculationHelper<T>(callback: () => T, isLookahead: boolean) -> T {
-    //             const savePos = pos;
-    //             const saveStartPos = startPos;
-    //             const saveTokenPos = tokenPos;
-    //             const saveToken = token;
-    //             const saveTokenValue = tokenValue;
-    //             const saveTokenFlags = tokenFlags;
-    //             const result = callback();
+    //             auto savePos = pos;
+    //             auto saveStartPos = startPos;
+    //             auto saveTokenPos = tokenPos;
+    //             auto saveToken = token;
+    //             auto saveTokenValue = tokenValue;
+    //             auto saveTokenFlags = tokenFlags;
+    //             auto result = callback();
 
     //             // If our callback returned something 'falsy' or we're just looking ahead,
     //             // then unconditionally restore us to where we were.
@@ -2485,17 +2486,17 @@ namespace ts
     //         }
 
     //         auto scanRange<T>(start: number, length: number, callback: () => T) -> T {
-    //             const saveEnd = end;
-    //             const savePos = pos;
-    //             const saveStartPos = startPos;
-    //             const saveTokenPos = tokenPos;
-    //             const saveToken = token;
-    //             const saveTokenValue = tokenValue;
-    //             const saveTokenFlags = tokenFlags;
-    //             const saveErrorExpectations = commentDirectives;
+    //             auto saveEnd = end;
+    //             auto savePos = pos;
+    //             auto saveStartPos = startPos;
+    //             auto saveTokenPos = tokenPos;
+    //             auto saveToken = token;
+    //             auto saveTokenValue = tokenValue;
+    //             auto saveTokenFlags = tokenFlags;
+    //             auto saveErrorExpectations = commentDirectives;
 
     //             setText(text, start, length);
-    //             const result = callback();
+    //             auto result = callback();
 
     //             end = saveEnd;
     //             pos = savePos;
@@ -2559,18 +2560,18 @@ namespace ts
     //     }
 
     //     /* @internal */
-    //     const codePointAt: (s: string, i: number) => number = (String.prototype as any).codePointAt ? (s, i) => (s as any).codePointAt(i) : auto codePointAt(str, i) -> number {
+    //     auto codePointAt: (s: string, i: number) => number = (String.prototype as any).codePointAt ? (s, i) => (s as any).codePointAt(i) : auto codePointAt(str, i) -> number {
     //         // from https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/codePointAt
-    //         const size = str.length;
+    //         auto size = str.length;
     //         // Account for out-of-bounds indices:
     //         if (i < 0 || i >= size) {
     //             return undefined!; // String.codePointAt returns `undefined` for OOB indexes
     //         }
     //         // Get the first code unit
-    //         const first = str.charCodeAt(i);
+    //         auto first = str.charCodeAt(i);
     //         // check if it’s the start of a surrogate pair
     //         if (first >= 0xD800 && first <= 0xDBFF && size > i + 1) { // high surrogate and there is a next code unit
-    //             const second = str.charCodeAt(i + 1);
+    //             auto second = str.charCodeAt(i + 1);
     //             if (second >= 0xDC00 && second <= 0xDFFF) { // low surrogate
     //                 // https://mathiasbynens.be/notes/javascript-encoding#surrogate-formulae
     //                 return (first - 0xD800) * 0x400 + second - 0xDC00 + 0x10000;
@@ -2595,13 +2596,13 @@ namespace ts
     //             return String.fromCharCode(codePoint);
     //         }
 
-    //         const codeUnit1 = Math.floor((codePoint - 65536) / 1024) + 0xD800;
-    //         const codeUnit2 = ((codePoint - 65536) % 1024) + 0xDC00;
+    //         auto codeUnit1 = Math.floor((codePoint - 65536) / 1024) + 0xD800;
+    //         auto codeUnit2 = ((codePoint - 65536) % 1024) + 0xDC00;
 
     //         return String.fromCharCode(codeUnit1, codeUnit2);
     //     }
 
-    //     const utf16EncodeAsStringWorker: (codePoint: number) => string = (String as any).fromCodePoint ? codePoint => (String as any).fromCodePoint(codePoint) : utf16EncodeAsStringFallback;
+    //     auto utf16EncodeAsStringWorker: (codePoint: number) => string = (String as any).fromCodePoint ? codePoint => (String as any).fromCodePoint(codePoint) : utf16EncodeAsStringFallback;
 
     //     /* @internal */
     //     auto utf16EncodeAsString(codePoint: number) {

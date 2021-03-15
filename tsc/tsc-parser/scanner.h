@@ -49,6 +49,23 @@ enum class  TokenFlags : int {
     TemplateLiteralLikeFlags = ContainsInvalidEscape,
 };
 
+TokenFlags& operator |= (TokenFlags& lhv, TokenFlags rhv)
+{
+    lhv = (TokenFlags) ((int) lhv | (int)rhv);
+    return lhv;
+}
+
+TokenFlags operator & (TokenFlags lhv, TokenFlags rhv)
+{
+    lhv = (TokenFlags) ((int) lhv & (int)rhv);
+    return lhv;
+}
+
+bool operator ! (TokenFlags lhv)
+{
+    return (int)lhv > 0;
+}
+
 enum class CommentDirectiveType : int {
     ExpectError,
     Ignore
@@ -690,6 +707,13 @@ struct CommentRange {
     int pos;
     int end;
     boolean hasTrailingNewLine;
+};
+
+struct ScanResult {
+    ScanResult() = default;
+
+    SyntaxKind kind;
+    string value;
 };
 
 template <typename T, typename U>
