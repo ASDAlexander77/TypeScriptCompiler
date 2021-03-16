@@ -49,6 +49,17 @@
             "externalConsole": true
         },
         {
+            "name": "(Windows) test-new-parser.exe - Launch",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/../../__build/tsc/test/tester/Debug/test-new-parser.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": true
+        },        
+        {
             "name": "(Windows) CMake current - Launch",
             "type": "cppvsdbg",
             "request": "launch",
