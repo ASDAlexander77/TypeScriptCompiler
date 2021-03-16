@@ -5,6 +5,8 @@
 #include <regex>
 #include <cstdint>
 
+#pragma warning( disable : 4062 )
+
 using boolean = bool;
 using number = int;
 using string = std::wstring;

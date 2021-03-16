@@ -2016,7 +2016,7 @@ namespace ts
                             commentDirectiveRegExSingleLine,
                             tokenPos);
 
-                        if (skipTrivia)
+                        if (_skipTrivia)
                         {
                             continue;
                         }
@@ -2056,14 +2056,14 @@ namespace ts
                             }
                         }
 
-                        commentDirectives = appendIfCommentDirective(commentDirectives, text.slice(lastLineStart, pos), commentDirectiveRegExMultiLine, lastLineStart);
+                        commentDirectives = appendIfCommentDirective(commentDirectives, text.substr(lastLineStart, pos-lastLineStart), commentDirectiveRegExMultiLine, lastLineStart);
 
                         if (!commentClosed)
                         {
                             error(Diagnostics::Asterisk_Slash_expected);
                         }
 
-                        if (skipTrivia)
+                        if (_skipTrivia)
                         {
                             continue;
                         }
@@ -2090,12 +2090,12 @@ namespace ts
                     {
                         pos += 2;
                         tokenValue = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ true);
-                        if (!tokenValue)
+                        if (tokenValue.empty())
                         {
                             error(Diagnostics::Hexadecimal_digit_expected);
-                            tokenValue = "0";
+                            tokenValue = S("0");
                         }
-                        tokenValue = "0x" + tokenValue;
+                        tokenValue = S("0x") + tokenValue;
                         tokenFlags |= TokenFlags::HexSpecifier;
                         return token = checkBigIntSuffix();
                     }
@@ -2103,12 +2103,12 @@ namespace ts
                     {
                         pos += 2;
                         tokenValue = scanBinaryOrOctalDigits(/* base */ 2);
-                        if (!tokenValue)
+                        if (tokenValue.empty())
                         {
                             error(Diagnostics::Binary_digit_expected);
-                            tokenValue = "0";
+                            tokenValue = S("0");
                         }
-                        tokenValue = "0b" + tokenValue;
+                        tokenValue = S("0b") + tokenValue;
                         tokenFlags |= TokenFlags::BinarySpecifier;
                         return token = checkBigIntSuffix();
                     }
@@ -2116,12 +2116,12 @@ namespace ts
                     {
                         pos += 2;
                         tokenValue = scanBinaryOrOctalDigits(/* base */ 8);
-                        if (!tokenValue)
+                        if (tokenValue.empty())
                         {
                             error(Diagnostics::Octal_digit_expected);
-                            tokenValue = "0";
+                            tokenValue = S("0");
                         }
-                        tokenValue = "0o" + tokenValue;
+                        tokenValue = S("0o") + tokenValue;
                         tokenFlags |= TokenFlags::OctalSpecifier;
                         return token = checkBigIntSuffix();
                     }
@@ -2145,7 +2145,9 @@ namespace ts
                 case CharacterCodes::_7:
                 case CharacterCodes::_8:
                 case CharacterCodes::_9:
-                    auto {token, tokenValue} = scanNumber();
+                    auto res = scanNumber();
+                    token = res.kind;
+                    tokenValue = res.value;
                     return token;
                 case CharacterCodes::colon:
                     pos++;
@@ -2156,8 +2158,8 @@ namespace ts
                 case CharacterCodes::lessThan:
                     if (isConflictMarkerTrivia(text, pos))
                     {
-                        pos = scanConflictMarkerTrivia(text, pos, error);
-                        if (skipTrivia)
+                        pos = scanConflictMarkerTrivia(text, pos, std::bind(&Scanner::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+                        if (_skipTrivia)
                         {
                             continue;
                         }
@@ -2190,8 +2192,8 @@ namespace ts
                 case CharacterCodes::equals:
                     if (isConflictMarkerTrivia(text, pos))
                     {
-                        pos = scanConflictMarkerTrivia(text, pos, error);
-                        if (skipTrivia)
+                        pos = scanConflictMarkerTrivia(text, pos, std::bind(&Scanner::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+                        if (_skipTrivia)
                         {
                             continue;
                         }
@@ -2218,8 +2220,8 @@ namespace ts
                 case CharacterCodes::greaterThan:
                     if (isConflictMarkerTrivia(text, pos))
                     {
-                        pos = scanConflictMarkerTrivia(text, pos, error);
-                        if (skipTrivia)
+                        pos = scanConflictMarkerTrivia(text, pos, std::bind(&Scanner::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+                        if (_skipTrivia)
                         {
                             continue;
                         }
@@ -2265,8 +2267,8 @@ namespace ts
                 case CharacterCodes::bar:
                     if (isConflictMarkerTrivia(text, pos))
                     {
-                        pos = scanConflictMarkerTrivia(text, pos, error);
-                        if (skipTrivia)
+                        pos = scanConflictMarkerTrivia(text, pos, std::bind(&Scanner::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+                        if (_skipTrivia)
                         {
                             continue;
                         }
@@ -2301,7 +2303,7 @@ namespace ts
                     return token = SyntaxKind::AtToken;
                 case CharacterCodes::backslash:
                     auto extendedCookedChar = peekExtendedUnicodeEscape();
-                    if (extendedCookedChar >= 0 && isIdentifierStart(extendedCookedChar, languageVersion))
+                    if (extendedCookedChar >= CharacterCodes::nullCharacter && isIdentifierStart(extendedCookedChar, languageVersion))
                     {
                         pos += 3;
                         tokenFlags |= TokenFlags::ExtendedUnicodeEscape;
@@ -2507,8 +2509,8 @@ namespace ts
         auto appendIfCommentDirective(
             std::vector<CommentDirective> commentDirectives,
             string text,
-            std::regex commentDirectiveRegEx,
-            number lineStart)
+            regex commentDirectiveRegEx,
+            number lineStart) -> std::vector<CommentDirective>
         {
             auto type = getDirectiveFromComment(text, commentDirectiveRegEx);
             if (type == CommentDirectiveType::Undefined)
@@ -2904,7 +2906,7 @@ namespace ts
 
         auto clearCommentDirectives()
         {
-            commentDirectives = undefined;
+            commentDirectives.clear();
         }
 
         auto setText(string newText, number start, number length) -> void
