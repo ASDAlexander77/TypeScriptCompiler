@@ -831,10 +831,10 @@ namespace ts
         template <typename T, typename U>
         auto iterateCommentRanges(boolean reduce, string text, number pos, boolean trailing, cb_type<T, U> cb, T state, U initial = U()) -> U
         {
-            auto pendingPos ! : number;
-            auto pendingEnd ! : number;
-            auto pendingKind ! : CommentKind;
-            auto pendingHasTrailingNewLine ! : boolean;
+            number pendingPos;
+            number pendingEnd;
+            SyntaxKind pendingKind;
+            boolean pendingHasTrailingNewLine;
             auto hasPendingCommentRange = false;
             auto collecting = trailing;
             auto accumulator = initial;
@@ -842,12 +842,12 @@ namespace ts
             {
                 collecting = true;
                 auto shebang = getShebang(text);
-                if (shebang)
+                if (!shebang.empty())
                 {
-                    pos = shebang.length;
+                    pos = shebang.length();
                 }
             }
-        scan:
+
             while (pos >= 0 && pos < text.length())
             {
                 auto ch = (CharacterCodes)text[pos];
@@ -863,7 +863,7 @@ namespace ts
                     pos++;
                     if (trailing)
                     {
-                        break scan;
+                        goto scan;
                     }
 
                     collecting = true;
@@ -880,6 +880,7 @@ namespace ts
                     pos++;
                     continue;
                 case CharacterCodes::slash:
+                {
                     auto nextChar = (CharacterCodes)text[pos + 1];
                     auto hasTrailingNewLine = false;
                     if (nextChar == CharacterCodes::slash || nextChar == CharacterCodes::asterisk)
@@ -917,7 +918,7 @@ namespace ts
                             if (hasPendingCommentRange)
                             {
                                 accumulator = cb(pendingPos, pendingEnd, pendingKind, pendingHasTrailingNewLine, state, accumulator);
-                                if (!reduce && accumulator)
+                                if (!reduce && !!accumulator)
                                 {
                                     // If we are not reducing and we have a truthy result, return it.
                                     return accumulator;
@@ -933,7 +934,8 @@ namespace ts
 
                         continue;
                     }
-                    break scan;
+                    goto scan;
+                }
                 default:
                     if (ch > CharacterCodes::maxAsciiCharacter && (isWhiteSpaceLike(ch)))
                     {
@@ -944,9 +946,10 @@ namespace ts
                         pos++;
                         continue;
                     }
-                    break scan;
+                    goto scan;
                 }
             }
+            scan:
 
             if (hasPendingCommentRange)
             {
@@ -1644,7 +1647,7 @@ namespace ts
 
         // Current character is known to be a backslash. Check for Unicode escape of the form '\uXXXX'
         // and return code point value if valid Unicode escape is found. Otherwise return -1.
-        auto peekUnicodeEscape() -> number
+        auto peekUnicodeEscape() -> CharacterCodes
         {
             if (pos + 5 < end && (CharacterCodes)text[pos + 1] == CharacterCodes::u)
             {
@@ -1652,12 +1655,12 @@ namespace ts
                 pos += 2;
                 auto value = scanExactNumberOfHexDigits(4, /*canHaveSeparators*/ false);
                 pos = start;
-                return value;
+                return (CharacterCodes)value;
             }
-            return -1;
+            return CharacterCodes::outOfBoundary;
         }
 
-        auto peekExtendedUnicodeEscape() -> number
+        auto peekExtendedUnicodeEscape() -> CharacterCodes
         {
             if (languageVersion >= ScriptTarget::ES2015 && (CharacterCodes)codePointAt(text, pos + 1) == CharacterCodes::u && (CharacterCodes)codePointAt(text, pos + 2) == CharacterCodes::openBrace)
             {
@@ -1666,9 +1669,9 @@ namespace ts
                 auto escapedValueString = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ false);
                 auto escapedValue = !escapedValueString.empty() ? to_number_base(escapedValueString, 16) : -1;
                 pos = start;
-                return escapedValue;
+                return (CharacterCodes)escapedValue;
             }
-            return -1;
+            return CharacterCodes::outOfBoundary;
         }
 
         auto scanIdentifierParts() -> string
@@ -2145,10 +2148,12 @@ namespace ts
                 case CharacterCodes::_7:
                 case CharacterCodes::_8:
                 case CharacterCodes::_9:
+                {
                     auto res = scanNumber();
                     token = res.kind;
                     tokenValue = res.value;
                     return token;
+                }
                 case CharacterCodes::colon:
                     pos++;
                     return token = SyntaxKind::ColonToken;
@@ -2302,6 +2307,7 @@ namespace ts
                     pos++;
                     return token = SyntaxKind::AtToken;
                 case CharacterCodes::backslash:
+                {
                     auto extendedCookedChar = peekExtendedUnicodeEscape();
                     if (extendedCookedChar >= CharacterCodes::nullCharacter && isIdentifierStart(extendedCookedChar, languageVersion))
                     {
@@ -2312,7 +2318,7 @@ namespace ts
                     }
 
                     auto cookedChar = (CharacterCodes)peekUnicodeEscape();
-                    if (cookedChar >= 0 && isIdentifierStart(cookedChar, languageVersion))
+                    if (cookedChar >= CharacterCodes::nullCharacter && isIdentifierStart(cookedChar, languageVersion))
                     {
                         pos += 6;
                         tokenFlags |= TokenFlags::UnicodeEscape;
@@ -2323,6 +2329,7 @@ namespace ts
                     error(Diagnostics::Invalid_character);
                     pos++;
                     return token = SyntaxKind::Unknown;
+                }
                 case CharacterCodes::hash:
                     if (pos != 0 && text[pos + 1] == S('!'))
                     {
@@ -2350,7 +2357,7 @@ namespace ts
                     return token = SyntaxKind::PrivateIdentifier;
                 default:
                     auto identifierKind = scanIdentifier(ch, languageVersion);
-                    if (identifierKind)
+                    if (!!identifierKind)
                     {
                         return token = identifierKind;
                     }
@@ -2376,10 +2383,10 @@ namespace ts
         {
             debug(token == SyntaxKind::Unknown, S("'reScanInvalidIdentifier' should only be called when the current token is 'SyntaxKind::Unknown'."));
             pos = tokenPos = startPos;
-            tokenFlags = 0;
+            tokenFlags = TokenFlags::None;
             auto ch = codePointAt(text, pos);
             auto identifierKind = scanIdentifier(ch, ScriptTarget::ESNext);
-            if (identifierKind)
+            if (!!identifierKind)
             {
                 return token = identifierKind;
             }
@@ -2387,21 +2394,23 @@ namespace ts
             return token; // Still `SyntaKind.Unknown`
         }
 
-        auto scanIdentifier(number startCharacter, ScriptTarget languageVersion)
+        auto scanIdentifier(CharacterCodes startCharacter, ScriptTarget languageVersion) -> SyntaxKind
         {
-            auto ch = (CharacterCodes)startCharacter;
+            auto ch = startCharacter;
             if (isIdentifierStart(ch, languageVersion))
             {
                 pos += charSize(ch);
                 while (pos < end && isIdentifierPart(ch = codePointAt(text, pos), languageVersion))
                     pos += charSize(ch);
-                tokenValue = text.substring(tokenPos, pos);
+                tokenValue = text.substr(tokenPos, pos-tokenPos);
                 if (ch == CharacterCodes::backslash)
                 {
                     tokenValue += scanIdentifierParts();
                 }
                 return getIdentifierToken();
             }
+
+            return SyntaxKind::Unknown;
         }
 
         auto reScanGreaterToken() -> SyntaxKind
@@ -2525,7 +2534,7 @@ namespace ts
             return commentDirectives;
         }
 
-        auto getDirectiveFromComment(string text, std::regex commentDirectiveRegEx) -> CommentDirectiveType
+        auto getDirectiveFromComment(string text, regex commentDirectiveRegEx) -> CommentDirectiveType
         {
             auto words_begin = sregex_iterator(text.begin(), text.end(), commentDirectiveRegEx);
             auto words_end = sregex_iterator();
@@ -2538,7 +2547,7 @@ namespace ts
             {
                 auto match = *i;
                 auto match_str = match.str();
-                if (match_str == "ts-expect-error")
+                if (match_str == S("ts-expect-error"))
                     return CommentDirectiveType::ExpectError;
 
                 return CommentDirectiveType::Ignore;
@@ -2630,7 +2639,7 @@ namespace ts
                 {
                     if (isConflictMarkerTrivia(text, pos))
                     {
-                        pos = scanConflictMarkerTrivia(text, pos, error);
+                        pos = scanConflictMarkerTrivia(text, pos, std::bind(&Scanner::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
                         return token = SyntaxKind::ConflictMarkerTrivia;
                     }
                     break;
@@ -2668,7 +2677,7 @@ namespace ts
                 pos++;
             }
 
-            tokenValue = text.substring(startPos, pos);
+            tokenValue = text.substr(startPos, pos-startPos);
 
             return firstNonWhitespace == -1 ? SyntaxKind::JsxTextAllWhiteSpaces : SyntaxKind::JsxText;
         }
@@ -2689,13 +2698,13 @@ namespace ts
                     auto ch = (CharacterCodes)text[pos];
                     if (ch == CharacterCodes::minus)
                     {
-                        tokenValue += "-";
+                        tokenValue += S("-");
                         pos++;
                         continue;
                     }
                     else if (ch == CharacterCodes::colon && !namespaceSeparator)
                     {
-                        tokenValue += ":";
+                        tokenValue += S(":");
                         pos++;
                         namespaceSeparator = true;
                         continue;
@@ -2708,9 +2717,9 @@ namespace ts
                     }
                 }
                 // Do not include a trailing namespace separator in the token, since this is against the spec.
-                if (tokenValue.slice(-1) == ":")
+                if (tokenValue.substr(-1) == S(":"))
                 {
-                    tokenValue = tokenValue.slice(0, -1);
+                    tokenValue = tokenValue.substr(0, -1);
                     pos--;
                 }
             }
@@ -2797,7 +2806,7 @@ namespace ts
             case CharacterCodes::backslash:
                 pos--;
                 auto extendedCookedChar = peekExtendedUnicodeEscape();
-                if (extendedCookedChar >= 0 && isIdentifierStart(extendedCookedChar, languageVersion))
+                if (extendedCookedChar >= CharacterCodes::nullCharacter && isIdentifierStart(extendedCookedChar, languageVersion))
                 {
                     pos += 3;
                     tokenFlags |= TokenFlags::ExtendedUnicodeEscape;
@@ -2806,11 +2815,11 @@ namespace ts
                 }
 
                 auto cookedChar = peekUnicodeEscape();
-                if (cookedChar >= 0 && isIdentifierStart(cookedChar, languageVersion))
+                if (cookedChar >= CharacterCodes::nullCharacter && isIdentifierStart(cookedChar, languageVersion))
                 {
                     pos += 6;
                     tokenFlags |= TokenFlags::UnicodeEscape;
-                    tokenValue = String.fromCharCode(cookedChar) + scanIdentifierParts();
+                    tokenValue = string(1, (char_t)cookedChar) + scanIdentifierParts();
                     return token = getIdentifierToken();
                 }
                 pos++;
@@ -2822,7 +2831,7 @@ namespace ts
                 auto char_ = ch;
                 while (pos < end && isIdentifierPart(char_ = codePointAt(text, pos), languageVersion) || (CharacterCodes)text[pos] == CharacterCodes::minus)
                     pos += charSize(char_);
-                tokenValue = text.substring(tokenPos, pos);
+                tokenValue = text.substr(tokenPos, pos-tokenPos);
                 if (char_ == CharacterCodes::backslash)
                 {
                     tokenValue += scanIdentifierParts();
@@ -2931,7 +2940,7 @@ namespace ts
             languageVariant = variant;
         }
 
-        auto setTextPos(number textPos)
+        auto setTextPos(number textPos) -> void
         {
             debug(textPos >= 0);
             pos = textPos;
@@ -2983,6 +2992,8 @@ namespace ts
         {
             debug(0x0 <= codePoint && codePoint <= 0x10FFFF);
 
+            // TODO: review code
+            /*
             if (codePoint <= 65535)
             {
                 return string(1, (char_t)codePoint);
@@ -2993,6 +3004,9 @@ namespace ts
 
             // unit code
             return string({codeUnit1, codeUnit2});
+            */
+
+           return string(1, (char_t)codePoint);
         }
 
         /* @internal */

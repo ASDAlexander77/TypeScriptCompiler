@@ -64,23 +64,6 @@ enum class  TokenFlags : number {
     TemplateLiteralLikeFlags = ContainsInvalidEscape,
 };
 
-TokenFlags& operator|=(TokenFlags& lhv, TokenFlags rhv)
-{
-    lhv = (TokenFlags) ((number) lhv | (number)rhv);
-    return lhv;
-}
-
-TokenFlags operator&(TokenFlags lhv, TokenFlags rhv)
-{
-    lhv = (TokenFlags) ((number) lhv & (number)rhv);
-    return lhv;
-}
-
-bool operator!(TokenFlags lhv)
-{
-    return (number)lhv > 0;
-}
-
 enum class CommentDirectiveType : number {
     Undefined,
     ExpectError,
@@ -667,6 +650,34 @@ enum class CharacterCodes : number {
     verticalTab = 0x0B,           // \v
 };
 
+TokenFlags& operator|=(TokenFlags& lhv, TokenFlags rhv)
+{
+    lhv = (TokenFlags) ((number) lhv | (number)rhv);
+    return lhv;
+}
+
+TokenFlags operator&(TokenFlags lhv, TokenFlags rhv)
+{
+    lhv = (TokenFlags) ((number) lhv & (number)rhv);
+    return lhv;
+}
+
+bool operator!(TokenFlags lhv)
+{
+    return (number)lhv == 0;
+}
+
+bool operator!(SyntaxKind lhv)
+{
+    return (number)lhv == 0;
+}
+
+template <typename T>
+bool operator!(const std::vector<T>& values)
+{
+    return values.empty();
+}
+
 void debug(bool cond)
 {
     assert(cond);
@@ -748,13 +759,13 @@ template <typename T>
 using Comparer = std::function<Comparison(T, T)>;
 
 template <typename T>
-auto identity(T x) -> T { return x; }
+auto identity(T x, number i) -> T { return x; }
 
 template <typename T>
 auto compareComparableValues(T a, T b) {
     return a == b ? Comparison::EqualTo :
-        a < b ? Comparison.LessThan :
-        Comparison.GreaterThan;
+        a < b ? Comparison::LessThan :
+        Comparison::GreaterThan;
 }
 
 template <typename T>
@@ -763,21 +774,21 @@ auto compareValues(T a, T b) -> Comparison {
 }
 
 template <typename T, typename U>
-auto binarySearch(const std::vector<T> &array, T value, std::function<U(T)> keySelector, Comparer<U> keyComparer, number offset = 0) -> number {
-    return binarySearchKey<T, U>(array, keySelector(value), keySelector, keyComparer, offset);
+auto binarySearch(const std::vector<T> &array, T value, std::function<U(T, number)> keySelector, Comparer<U> keyComparer, number offset = 0) -> number {
+    return binarySearchKey<T, U>(array, keySelector(value, -1), keySelector, keyComparer, offset);
 }
 
 template <typename T, typename U>
 auto binarySearchKey(const std::vector<T> &array, U key, std::function<U(T, number)> keySelector, Comparer<U> keyComparer, number offset = 0) -> number {
-    if (!some(array)) {
+    if (!array) {
         return -1;
     }
 
     auto low = offset;
     auto high = array.size() - 1;
     while (low <= high) {
-        const middle = low + ((high - low) >> 1);
-        const midKey = keySelector(array[middle], middle);
+        auto middle = low + ((high - low) >> 1);
+        auto midKey = keySelector(array[middle], middle);
         switch (keyComparer(midKey, key)) {
             case Comparison::LessThan:
                 low = middle + 1;
