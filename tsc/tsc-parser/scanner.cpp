@@ -433,7 +433,7 @@ namespace ts
                 else
                 {
                     sstream msg;
-                    msg << "Bad line number. Line: " << line << "), lineStarts.length: " << lineStarts.size() << " , line map is correct? " << (!debugText.empty() ? arraysEqual(lineStarts, computeLineStarts(debugText)) : "unknown");
+                    msg << S("Bad line number. Line: ") << line << S("), lineStarts.length: ") << lineStarts.size() << S(" , line map is correct? ") << (!debugText.empty() ? arraysEqual(lineStarts, computeLineStarts(debugText)) : S("unknown"));
                     debug(msg.str());
                 }
             }
@@ -1217,7 +1217,7 @@ namespace ts
                 checkForIdentifierStartAfterNumericLiteral(start, decimalFragment.empty() && !!(tokenFlags & TokenFlags::Scientific));
                 return {
                     SyntaxKind::NumericLiteral,
-                    // TODO: review: "" + (+result)
+                    // TODO: review: S("") + (+result)
                     result // if value is not an integer, it can be safely coerced to a number
                 };
             }
@@ -1280,7 +1280,7 @@ namespace ts
 
         /**
          * Scans as many hexadecimal digits as are available in the text,
-         * returning "" if the given number of digits was unavailable.
+         * returning S("") if the given number of digits was unavailable.
          */
         auto scanMinimumNumberOfHexDigits(number count, boolean canHaveSeparators) -> string
         {
@@ -1579,7 +1579,7 @@ namespace ts
             case CharacterCodes::paragraphSeparator:
                 return S("");
             default:
-                return string((char_t)ch);
+                return string(1, (char_t)ch);
             }
         }
 
@@ -1589,7 +1589,7 @@ namespace ts
 
             if (escapedValue >= 0)
             {
-                return string((char_t)escapedValue);
+                return string(1, (char_t)escapedValue);
             }
             else
             {
@@ -1601,7 +1601,7 @@ namespace ts
         auto scanExtendedUnicodeEscape() -> string
         {
             auto escapedValueString = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ false);
-            auto escapedValue = escapedValueString ? stoi(escapedValueString, 16) : -1;
+            auto escapedValue = !escapedValueString.empty() ? stoi(escapedValueString, 16) : -1;
             auto isInvalidExtendedEscape = false;
 
             // Validate the value of the digit
@@ -1637,7 +1637,7 @@ namespace ts
                 return S("");
             }
 
-            return utf16EncodeAsString(escapedValue);
+            return utf16EncodeAsString((CharacterCodes)escapedValue);
         }
 
         // Current character is known to be a backslash. Check for Unicode escape of the form '\uXXXX'
@@ -1657,12 +1657,12 @@ namespace ts
 
         auto peekExtendedUnicodeEscape() -> number
         {
-            if (languageVersion >= ScriptTarget::ES2015 && codePointAt(text, pos + 1) == CharacterCodes::u && codePointAt(text, pos + 2) == CharacterCodes::openBrace)
+            if (languageVersion >= ScriptTarget::ES2015 && (CharacterCodes)codePointAt(text, pos + 1) == CharacterCodes::u && (CharacterCodes)codePointAt(text, pos + 2) == CharacterCodes::openBrace)
             {
                 auto start = pos;
                 pos += 3;
                 auto escapedValueString = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ false);
-                auto escapedValue = escapedValueString ? stoi(escapedValueString, 16) : -1;
+                auto escapedValue = !escapedValueString.empty() ? stoi(escapedValueString, 16) : -1;
                 pos = start;
                 return escapedValue;
             }
@@ -1675,15 +1675,15 @@ namespace ts
             auto start = pos;
             while (pos < end)
             {
-                auto ch = codePointAt(text, pos);
+                auto ch = (CharacterCodes)codePointAt(text, pos);
                 if (isIdentifierPart(ch, languageVersion))
                 {
                     pos += charSize(ch);
                 }
                 else if (ch == CharacterCodes::backslash)
                 {
-                    ch = peekExtendedUnicodeEscape();
-                    if (ch >= 0 && isIdentifierPart(ch, languageVersion))
+                    ch = (CharacterCodes)peekExtendedUnicodeEscape();
+                    if (ch >= CharacterCodes::nullCharacter && isIdentifierPart(ch, languageVersion))
                     {
                         pos += 3;
                         tokenFlags |= TokenFlags::ExtendedUnicodeEscape;
@@ -1691,8 +1691,8 @@ namespace ts
                         start = pos;
                         continue;
                     }
-                    ch = peekUnicodeEscape();
-                    if (!(ch >= 0 && isIdentifierPart(ch, languageVersion)))
+                    ch = (CharacterCodes)peekUnicodeEscape();
+                    if (!(ch >= CharacterCodes::nullCharacter && isIdentifierPart(ch, languageVersion)))
                     {
                         break;
                     }
@@ -1762,7 +1762,7 @@ namespace ts
                     continue;
                 }
                 separatorAllowed = true;
-                if (!isDigit(ch) || ch - CharacterCodes::_0 >= base)
+                if (!isDigit(ch) || ((number)ch - (number)CharacterCodes::_0) >= base)
                 {
                     break;
                 }
@@ -1782,11 +1782,11 @@ namespace ts
         {
             if ((CharacterCodes)text[pos] == CharacterCodes::n)
             {
-                tokenValue += "n";
+                tokenValue += S("n");
                 // Use base 10 instead of base 2 or base 8 for shorter literals
-                if (tokenFlags & TokenFlags::BinaryOrOctalSpecifier)
+                if (!!(tokenFlags & TokenFlags::BinaryOrOctalSpecifier))
                 {
-                    tokenValue = parsePseudoBigInt(tokenValue) + "n";
+                    tokenValue = parsePseudoBigInt(tokenValue) + S("n");
                 }
                 pos++;
                 return SyntaxKind::BigIntLiteral;
@@ -1799,7 +1799,7 @@ namespace ts
                                     : tokenFlags & TokenFlags::OctalSpecifier
                                         ? stoi(tokenValue.slice(2), 8) // skip "0o"
                                         : +tokenValue;
-                tokenValue = "" + numericValue;
+                tokenValue = S("") + numericValue;
                 return SyntaxKind::NumericLiteral;
             }
         }
@@ -1816,7 +1816,7 @@ namespace ts
                 {
                     return token = SyntaxKind::EndOfFileToken;
                 }
-                auto ch = codePointAt(text, pos);
+                auto ch = (CharacterCodes)codePointAt(text, pos);
 
                 // Special handling for shebang
                 if (ch == CharacterCodes::hash && pos == 0 && isShebangTrivia(text, pos))
@@ -2126,7 +2126,7 @@ namespace ts
                     // Try to parse as an octal
                     if (pos + 1 < end && isOctalDigit((CharacterCodes)text[pos + 1]))
                     {
-                        tokenValue = "" + scanOctalDigits();
+                        tokenValue = S("") + scanOctalDigits();
                         tokenFlags |= TokenFlags::Octal;
                         return token = SyntaxKind::NumericLiteral;
                     }
@@ -2307,12 +2307,12 @@ namespace ts
                         return token = getIdentifierToken();
                     }
 
-                    auto cookedChar = peekUnicodeEscape();
+                    auto cookedChar = (CharacterCodes)peekUnicodeEscape();
                     if (cookedChar >= 0 && isIdentifierStart(cookedChar, languageVersion))
                     {
                         pos += 6;
                         tokenFlags |= TokenFlags::UnicodeEscape;
-                        tokenValue = string((char_t)cookedChar) + scanIdentifierParts();
+                        tokenValue = string(1, (char_t)cookedChar) + scanIdentifierParts();
                         return token = getIdentifierToken();
                     }
 
@@ -2320,7 +2320,7 @@ namespace ts
                     pos++;
                     return token = SyntaxKind::Unknown;
                 case CharacterCodes::hash:
-                    if (pos != 0 && text[pos + 1] == "!")
+                    if (pos != 0 && text[pos + 1] == S('!'))
                     {
                         error(Diagnostics::can_only_be_used_at_the_start_of_a_file);
                         pos++;
@@ -2332,7 +2332,7 @@ namespace ts
                         pos++;
                         while (pos < end && isIdentifierPart(ch = (CharacterCodes)text[pos], languageVersion))
                             pos++;
-                        tokenValue = text.substring(tokenPos, pos);
+                        tokenValue = text.substr(tokenPos, pos-tokenPos);
                         if (ch == CharacterCodes::backslash)
                         {
                             tokenValue += scanIdentifierParts();
@@ -2340,7 +2340,7 @@ namespace ts
                     }
                     else
                     {
-                        tokenValue = "#";
+                        tokenValue = S("#");
                         error(Diagnostics::Invalid_character);
                     }
                     return token = SyntaxKind::PrivateIdentifier;
@@ -2370,7 +2370,7 @@ namespace ts
 
         auto reScanInvalidIdentifier() -> SyntaxKind
         {
-            debug(token == SyntaxKind::Unknown, "'reScanInvalidIdentifier' should only be called when the current token is 'SyntaxKind::Unknown'.");
+            debug(token == SyntaxKind::Unknown, S("'reScanInvalidIdentifier' should only be called when the current token is 'SyntaxKind::Unknown'."));
             pos = tokenPos = startPos;
             tokenFlags = 0;
             auto ch = codePointAt(text, pos);
@@ -2432,7 +2432,7 @@ namespace ts
 
         auto reScanAsteriskEqualsToken() -> SyntaxKind
         {
-            debug(token == SyntaxKind::AsteriskEqualsToken, "'reScanAsteriskEqualsToken' should only be called on a '*='");
+            debug(token == SyntaxKind::AsteriskEqualsToken, S("'reScanAsteriskEqualsToken' should only be called on a '*='"));
             pos = tokenPos + 1;
             return token = SyntaxKind::EqualsToken;
         }
@@ -2548,7 +2548,7 @@ namespace ts
          */
         auto reScanTemplateToken(boolean isTaggedTemplate) -> SyntaxKind
         {
-            debug(token == SyntaxKind::CloseBraceToken, "'reScanTemplateToken' should only be called on a '}'");
+            debug(token == SyntaxKind::CloseBraceToken, S("'reScanTemplateToken' should only be called on a '}'"));
             pos = tokenPos;
             return token = scanTemplateAndSetTokenValue(isTaggedTemplate);
         }
@@ -2577,7 +2577,7 @@ namespace ts
 
         auto reScanQuestionToken() -> SyntaxKind
         {
-            debug(token == SyntaxKind::QuestionQuestionToken, "'reScanQuestionToken' should only be called on a '??'");
+            debug(token == SyntaxKind::QuestionQuestionToken, S("'reScanQuestionToken' should only be called on a '??'"));
             pos = tokenPos + 1;
             return token = SyntaxKind::QuestionToken;
         }
@@ -2934,7 +2934,7 @@ namespace ts
             startPos = textPos;
             tokenPos = textPos;
             token = SyntaxKind::Unknown;
-            tokenValue = undefined !;
+            tokenValue = nullptr;
             tokenFlags = TokenFlags::None;
         }
 
@@ -2944,14 +2944,14 @@ namespace ts
         }
 
         /* @internal */
-        auto codePointAt(string str, number i) -> number
+        auto codePointAt(string str, number i) -> CharacterCodes
         {
             // from https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/codePointAt
             auto size = str.length();
             // Account for out-of-bounds indices:
             if (i < 0 || i >= size)
             {
-                return -1; // String.codePointAt returns `-1` for OOB indexes
+                return CharacterCodes::outOfBoundary; // String.codePointAt returns `-1` for OOB indexes
             }
             // Get the first code unit
             auto first = str[i];
@@ -2962,20 +2962,16 @@ namespace ts
                 if (second >= 0xDC00 && second <= 0xDFFF)
                 { // low surrogate
                     // https://mathiasbynens.be/notes/javascript-encoding#surrogate-formulae
-                    return (first - 0xD800) * 0x400 + second - 0xDC00 + 0x10000;
+                    return (CharacterCodes) ((first - 0xD800) * 0x400 + second - 0xDC00 + 0x10000);
                 }
             }
-            return first;
+            return (CharacterCodes)first;
         };
 
         /* @internal */
-        auto charSize(number ch) -> number
+        auto charSize(CharacterCodes ch) -> number
         {
-            if (ch >= 0x10000)
-            {
-                return 2;
-            }
-            return 1;
+            return (ch >= CharacterCodes::_2bytes) ? 2 : 1;
         }
 
         // Derived from the 10.1.1 UTF16Encoding of the ES6 Spec.
@@ -2985,20 +2981,20 @@ namespace ts
 
             if (codePoint <= 65535)
             {
-                return string((char_t)codePoint);
+                return string(1, (char_t)codePoint);
             }
 
-            auto codeUnit1 = Math.floor((codePoint - 65536) / 1024) + 0xD800;
+            auto codeUnit1 = (number)((codePoint - 65536) / 1024) + 0xD800;
             auto codeUnit2 = ((codePoint - 65536) % 1024) + 0xDC00;
 
             // unit code
-            return string(codeUnit1, codeUnit2);
+            return string({codeUnit1, codeUnit2});
         }
 
         /* @internal */
-        auto utf16EncodeAsString(number codePoint)
+        auto utf16EncodeAsString(CharacterCodes codePoint) -> string
         {
-            return utf16EncodeAsStringFallback(codePoint);
+            return utf16EncodeAsStringFallback((number)codePoint);
         }
     };
 }

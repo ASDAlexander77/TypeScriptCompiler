@@ -526,6 +526,7 @@ enum class SyntaxKind : number {
 };
 
 enum class CharacterCodes : number {
+    outOfBoundary = -1,
     nullCharacter = 0,
     maxAsciiCharacter = 0x7F,
 
@@ -554,6 +555,7 @@ enum class CharacterCodes : number {
     ideographicSpace = 0x3000,
     mathematicalSpace = 0x205F,
     ogham = 0x1680,
+    _2bytes = 0x10000,
 
     _ = 0x5F,
     $ = 0x24,
