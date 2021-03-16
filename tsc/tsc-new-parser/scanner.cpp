@@ -350,20 +350,20 @@ namespace ts
                                                                                                                                                                : lookupInUnicodeMap((number)code, unicodeES3IdentifierPart);
         }
 
-        auto makeReverseMap(std::map<string, SyntaxKind> source) -> std::vector<string>
+        auto makeReverseMap(std::map<string, SyntaxKind> source) -> std::map<SyntaxKind, string>
         {
-            std::vector<string> result = {};
+            std::map<SyntaxKind, string> result;
             for (auto &item : source)
             {
-                result[(number)item.second] = item.first;
+                result[item.second] = item.first;
             };
             return result;
         }
 
-        std::vector<string> tokenStrings = makeReverseMap(textToToken);
+        std::map<SyntaxKind, string> tokenStrings = makeReverseMap(textToToken);
         auto tokenToString(SyntaxKind t) -> string
         {
-            return tokenStrings[(number)t];
+            return tokenStrings[t];
         }
 
         /* @internal */
