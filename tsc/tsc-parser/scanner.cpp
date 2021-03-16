@@ -1047,7 +1047,7 @@ namespace ts
 
             for (auto i = charSize(ch); i < name.length(); i += charSize(ch))
             {
-                if (!isIdentifierPart(ch = codePointAt(name, i), languageVersion, identifierVariant))
+                if (!isIdentifierPart((CharacterCodes)(ch = codePointAt(name, i)), languageVersion, identifierVariant))
                 {
                     return false;
                 }
@@ -1055,6 +1055,10 @@ namespace ts
 
             return true;
         }
+
+        ScriptTarget languageVersion;
+
+        LanguageVariant languageVariant;
 
         // scanner text
         string text;
@@ -1091,6 +1095,8 @@ namespace ts
         {
 
             Scanner scanner;
+            scanner.languageVersion = languageVersion;
+            scanner.languageVariant = languageVariant;
             scanner.onError = onError;
             scanner.setText(textInitial, start, length);
             return scanner;
@@ -1194,7 +1200,7 @@ namespace ts
                 result = mainFragment;
                 if (!decimalFragment.empty())
                 {
-                    result += "." + decimalFragment;
+                    result += S(".") + decimalFragment;
                 }
                 if (!scientificFragment.empty())
                 {
@@ -1224,17 +1230,17 @@ namespace ts
             }
         }
 
-        auto checkForIdentifierStartAfterNumericLiteral(number numericStart, bool isScientific = false)
+        auto checkForIdentifierStartAfterNumericLiteral(number numericStart, bool isScientific = false) -> void
         {
-            if (!isIdentifierStart(codePointAt(text, pos), languageVersion))
+            if (!isIdentifierStart((CharacterCodes)codePointAt(text, pos), languageVersion))
             {
                 return;
             }
 
             auto identifierStart = pos;
-            auto {length} = scanIdentifierParts();
+            auto length = scanIdentifierParts().length();
 
-            if (length == 1 && text[identifierStart] == "n")
+            if (length == 1 && text[identifierStart] == S('n'))
             {
                 if (isScientific)
                 {
@@ -1269,7 +1275,7 @@ namespace ts
         auto scanExactNumberOfHexDigits(number count, boolean canHaveSeparators) -> number
         {
             auto valueString = scanHexDigits(/*minCount*/ count, /*scanAsManyAsPossible*/ false, canHaveSeparators);
-            return !valueString.empty() ? std::stoi(valueString, nullptr, 16) : -1;
+            return !valueString.empty() ? stoi(valueString, 16) : -1;
         }
 
         /**
@@ -1311,14 +1317,14 @@ namespace ts
                 allowSeparator = canHaveSeparators;
                 if (ch >= CharacterCodes::A && ch <= CharacterCodes::F)
                 {
-                    ch += CharacterCodes::a - CharacterCodes::A; // standardize hex literals to lowercase
+                    ch = (CharacterCodes) ((number)ch + ((number)CharacterCodes::a - (number)CharacterCodes::A)); // standardize hex literals to lowercase
                 }
                 else if (!((ch >= CharacterCodes::_0 && ch <= CharacterCodes::_9) ||
                            (ch >= CharacterCodes::a && ch <= CharacterCodes::f)))
                 {
                     break;
                 }
-                valueChars.push_back(ch);
+                valueChars.push_back((char_t)ch);
                 pos++;
                 isPreviousTokenSeparator = false;
             }
@@ -1330,7 +1336,7 @@ namespace ts
             {
                 error(Diagnostics::Numeric_separators_are_not_allowed_here, pos - 1, 1);
             }
-            return std::string(valueChars.begin(), valueChars.end());
+            return string(valueChars.begin(), valueChars.end());
         }
 
         auto scanString(boolean jsxAttributeString = false) -> string
@@ -1384,7 +1390,7 @@ namespace ts
 
             pos++;
             auto start = pos;
-            string contents = "";
+            string contents = S("");
             SyntaxKind resultingToken;
 
             while (true)
@@ -1439,7 +1445,7 @@ namespace ts
                         pos++;
                     }
 
-                    contents += "\n";
+                    contents += S("\n");
                     start = pos;
                     continue;
                 }
@@ -1460,7 +1466,7 @@ namespace ts
             if (pos >= end)
             {
                 error(Diagnostics::Unexpected_end_of_text);
-                return "";
+                return S("");
             }
             auto ch = (CharacterCodes)text[pos];
             pos++;
@@ -1474,23 +1480,23 @@ namespace ts
                     tokenFlags |= TokenFlags::ContainsInvalidEscape;
                     return text.substr(start, pos - start);
                 }
-                return "\0";
+                return S("\0");
             case CharacterCodes::b:
-                return "\b";
+                return S("\b");
             case CharacterCodes::t:
-                return "\t";
+                return S("\t");
             case CharacterCodes::n:
-                return "\n";
+                return S("\n");
             case CharacterCodes::v:
-                return "\v";
+                return S("\v");
             case CharacterCodes::f:
-                return "\f";
+                return S("\f");
             case CharacterCodes::r:
-                return "\r";
+                return S("\r");
             case CharacterCodes::singleQuote:
-                return "\'";
+                return S("\'");
             case CharacterCodes::doubleQuote:
-                return "\"";
+                return S("\"");
             case CharacterCodes::u:
                 if (isTaggedTemplate)
                 {
@@ -1521,7 +1527,7 @@ namespace ts
                     {
                         auto savePos = pos;
                         auto escapedValueString = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ false);
-                        auto escapedValue = !escapedValueString.empty() ? std::atoi(escapedValueString, nullptr, 16) : -1;
+                        auto escapedValue = !escapedValueString.empty() ? stoi(escapedValueString, 16) : -1;
 
                         // '\u{Not Code Point' or '\u{CodePoint'
                         if (!isCodePoint(escapedValue) || (CharacterCodes)text[pos] != CharacterCodes::closeBrace)
@@ -1571,7 +1577,7 @@ namespace ts
             case CharacterCodes::lineFeed:
             case CharacterCodes::lineSeparator:
             case CharacterCodes::paragraphSeparator:
-                return "";
+                return S("");
             default:
                 return string((char_t)ch);
             }
@@ -1588,14 +1594,14 @@ namespace ts
             else
             {
                 error(Diagnostics::Hexadecimal_digit_expected);
-                return "";
+                return S("");
             }
         }
 
         auto scanExtendedUnicodeEscape() -> string
         {
             auto escapedValueString = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ false);
-            auto escapedValue = escapedValueString ? std::atoi(escapedValueString, nullptr, 16) : -1;
+            auto escapedValue = escapedValueString ? stoi(escapedValueString, 16) : -1;
             auto isInvalidExtendedEscape = false;
 
             // Validate the value of the digit
@@ -1628,7 +1634,7 @@ namespace ts
 
             if (isInvalidExtendedEscape)
             {
-                return "";
+                return S("");
             }
 
             return utf16EncodeAsString(escapedValue);
@@ -1656,7 +1662,7 @@ namespace ts
                 auto start = pos;
                 pos += 3;
                 auto escapedValueString = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ false);
-                auto escapedValue = escapedValueString ? std::atoi(escapedValueString, nullptr, 16) : -1;
+                auto escapedValue = escapedValueString ? stoi(escapedValueString, 16) : -1;
                 pos = start;
                 return escapedValue;
             }
@@ -1665,7 +1671,7 @@ namespace ts
 
         auto scanIdentifierParts() -> string
         {
-            string result = "";
+            string result = S("");
             auto start = pos;
             while (pos < end)
             {
@@ -1727,7 +1733,7 @@ namespace ts
 
         auto scanBinaryOrOctalDigits(number base) -> string
         {
-            auto value = "";
+            auto value = S("");
             // For counting number of digits; Valid binaryIntegerLiteral must have at least one binary digit following B or b.
             // Similarly valid octalIntegerLiteral must have at least one octal digit following o or O.
             auto separatorAllowed = false;
@@ -1787,11 +1793,11 @@ namespace ts
             }
             else
             { // not a bigint, so can convert to number in simplified form
-                // Number() may not support 0b or 0o, so use std::atoi() instead
+                // Number() may not support 0b or 0o, so use stoi() instead
                 auto numericValue = tokenFlags & TokenFlags::BinarySpecifier
-                                        ? std::atoi(tokenValue.slice(2), nullptr, 2) // skip "0b"
+                                        ? stoi(tokenValue.slice(2), 2) // skip "0b"
                                     : tokenFlags & TokenFlags::OctalSpecifier
-                                        ? std::atoi(tokenValue.slice(2), nullptr, 8) // skip "0o"
+                                        ? stoi(tokenValue.slice(2), 8) // skip "0o"
                                         : +tokenValue;
                 tokenValue = "" + numericValue;
                 return SyntaxKind::NumericLiteral;
@@ -2899,7 +2905,7 @@ namespace ts
             commentDirectives = undefined;
         }
 
-        auto setText(string newText, number start, number length)
+        auto setText(string newText, number start, number length) -> void
         {
             text = newText;
             end = length > 0 ? text.length() : start + length;

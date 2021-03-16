@@ -11,6 +11,9 @@ using char_t = wchar_t;
 using sstream = std::wstringstream;
 using regex = std::wregex;
 using sregex_iterator = std::wsregex_iterator;
+
+#define atoi(x) std::atoi(x)
+#define stoi(x, y) std::stoull(x, nullptr, y)
 #define S(x) L##x
 
 enum class ScriptTarget : number {
@@ -57,19 +60,19 @@ enum class  TokenFlags : number {
     TemplateLiteralLikeFlags = ContainsInvalidEscape,
 };
 
-TokenFlags& operator |= (TokenFlags& lhv, TokenFlags rhv)
+TokenFlags& operator|=(TokenFlags& lhv, TokenFlags rhv)
 {
     lhv = (TokenFlags) ((number) lhv | (number)rhv);
     return lhv;
 }
 
-TokenFlags operator & (TokenFlags lhv, TokenFlags rhv)
+TokenFlags operator&(TokenFlags lhv, TokenFlags rhv)
 {
     lhv = (TokenFlags) ((number) lhv & (number)rhv);
     return lhv;
 }
 
-bool operator ! (TokenFlags lhv)
+bool operator!(TokenFlags lhv)
 {
     return (number)lhv > 0;
 }
