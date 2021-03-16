@@ -1,9 +1,19 @@
+#ifndef SCANNER_H
+#define SCANNER_H
+
 #include <assert.h>
 #include <iostream>
 #include <vector>
 #include <algorithm>
 #include <regex>
 #include <cstdint>
+#include <functional>
+#include <map>
+#include <string>
+#include <sstream>
+#include <algorithm>
+
+#include "diagnostics.h"
 
 #pragma warning( disable : 4062 )
 
@@ -650,24 +660,24 @@ enum class CharacterCodes : number {
     verticalTab = 0x0B,           // \v
 };
 
-TokenFlags& operator|=(TokenFlags& lhv, TokenFlags rhv)
+static TokenFlags& operator|=(TokenFlags& lhv, TokenFlags rhv)
 {
     lhv = (TokenFlags) ((number) lhv | (number)rhv);
     return lhv;
 }
 
-TokenFlags operator&(TokenFlags lhv, TokenFlags rhv)
+static TokenFlags operator&(TokenFlags lhv, TokenFlags rhv)
 {
     lhv = (TokenFlags) ((number) lhv & (number)rhv);
     return lhv;
 }
 
-bool operator!(TokenFlags lhv)
+static bool operator!(TokenFlags lhv)
 {
     return (number)lhv == 0;
 }
 
-bool operator!(SyntaxKind lhv)
+static bool operator!(SyntaxKind lhv)
 {
     return (number)lhv == 0;
 }
@@ -678,17 +688,17 @@ bool operator!(const std::vector<T>& values)
     return values.empty();
 }
 
-void debug(bool cond)
+static void debug(bool cond)
 {
     assert(cond);
 }
 
-void debug(string msg)
+static void debug(string msg)
 {
     std::wcerr << msg.c_str();
 }
 
-void debug(bool cond, string msg)
+static void debug(bool cond, string msg)
 {
     if (!cond)
     {
@@ -698,7 +708,7 @@ void debug(bool cond, string msg)
     assert(cond);
 }
 
-void error(string msg)
+static void error(string msg)
 {
     std::wcerr << msg;
 }
@@ -804,13 +814,13 @@ auto binarySearchKey(const std::vector<T> &array, U key, std::function<U(T, numb
     return ~low;
 }
 
-auto positionIsSynthesized(number pos) -> boolean {
+static auto positionIsSynthesized(number pos) -> boolean {
     // This is a fast way of testing the following conditions:
     //  pos === undefined || pos === null || isNaN(pos) || pos < 0;
     return !(pos >= 0);
 }
 
-auto parsePseudoBigInt(string stringValue) -> string {
+static auto parsePseudoBigInt(string stringValue) -> string {
     number log2Base;
     switch ((CharacterCodes)stringValue[1]) { // "x" in "0x123"
         case CharacterCodes::b:
@@ -876,3 +886,25 @@ auto parsePseudoBigInt(string stringValue) -> string {
     }
     return base10Value;
 }
+
+namespace ts
+{
+    class ScannerImpl;
+
+    class Scanner
+    {
+        ScannerImpl* impl;
+    public:
+        Scanner(ScriptTarget languageVersion,
+                            boolean skipTrivia,
+                            LanguageVariant languageVariant = LanguageVariant::Standard,
+                            string textInitial = S(""),
+                            ErrorCallback onError = nullptr,
+                            number start = -1,
+                            number length = -1);
+
+        ~Scanner();
+    };
+}
+
+#endif // SCANNER_H

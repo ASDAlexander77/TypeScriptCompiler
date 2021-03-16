@@ -1,15 +1,8 @@
-#include <functional>
-#include <map>
-#include <string>
-#include <sstream>
-#include <algorithm>
-
-#include "diagnostics.h"
 #include "scanner.h"
 
 namespace ts
 {
-    class Scanner
+    class ScannerImpl
     {
         /* @internal */
         auto tokenIsIdentifierOrKeyword(SyntaxKind token) -> boolean
@@ -994,7 +987,7 @@ namespace ts
             return reduceEachLeadingCommentRange<number, std::vector<CommentRange>>(
                 text,
                 pos,
-                std::bind(&Scanner::appendCommentRange, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6),
+                std::bind(&ScannerImpl::appendCommentRange, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6),
                 0,
                 std::vector<CommentRange>());
         }
@@ -1004,7 +997,7 @@ namespace ts
             return reduceEachTrailingCommentRange<number, std::vector<CommentRange>>(
                 text,
                 pos,
-                std::bind(&Scanner::appendCommentRange, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6),
+                std::bind(&ScannerImpl::appendCommentRange, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, std::placeholders::_4, std::placeholders::_5, std::placeholders::_6),
                 0,
                 std::vector<CommentRange>());
         }
@@ -1089,6 +1082,7 @@ namespace ts
 
         ErrorCallback onError = nullptr;
 
+public:
         // Creates a scanner over a (possibly unspecified) range of a piece of text.
         static auto createScanner(ScriptTarget languageVersion,
                                   boolean skipTrivia,
@@ -1096,18 +1090,19 @@ namespace ts
                                   string textInitial = S(""),
                                   ErrorCallback onError = nullptr,
                                   number start = -1,
-                                  number length = -1) -> Scanner
+                                  number length = -1) -> ScannerImpl*
         {
 
-            Scanner scanner;
-            scanner.languageVersion = languageVersion;
-            scanner._skipTrivia = skipTrivia;
-            scanner.languageVariant = languageVariant;
-            scanner.onError = onError;
-            scanner.setText(textInitial, start, length);
+            auto scanner = new ScannerImpl();
+            scanner->languageVersion = languageVersion;
+            scanner->_skipTrivia = skipTrivia;
+            scanner->languageVariant = languageVariant;
+            scanner->onError = onError;
+            scanner->setText(textInitial, start, length);
             return scanner;
         }
 
+private:
         auto error(DiagnosticMessage message, number errPos = -1, number length = 0) -> void
         {
             if (errPos < 0)
@@ -2163,7 +2158,7 @@ namespace ts
                 case CharacterCodes::lessThan:
                     if (isConflictMarkerTrivia(text, pos))
                     {
-                        pos = scanConflictMarkerTrivia(text, pos, std::bind(&Scanner::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+                        pos = scanConflictMarkerTrivia(text, pos, std::bind(&ScannerImpl::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
                         if (_skipTrivia)
                         {
                             continue;
@@ -2197,7 +2192,7 @@ namespace ts
                 case CharacterCodes::equals:
                     if (isConflictMarkerTrivia(text, pos))
                     {
-                        pos = scanConflictMarkerTrivia(text, pos, std::bind(&Scanner::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+                        pos = scanConflictMarkerTrivia(text, pos, std::bind(&ScannerImpl::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
                         if (_skipTrivia)
                         {
                             continue;
@@ -2225,7 +2220,7 @@ namespace ts
                 case CharacterCodes::greaterThan:
                     if (isConflictMarkerTrivia(text, pos))
                     {
-                        pos = scanConflictMarkerTrivia(text, pos, std::bind(&Scanner::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+                        pos = scanConflictMarkerTrivia(text, pos, std::bind(&ScannerImpl::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
                         if (_skipTrivia)
                         {
                             continue;
@@ -2272,7 +2267,7 @@ namespace ts
                 case CharacterCodes::bar:
                     if (isConflictMarkerTrivia(text, pos))
                     {
-                        pos = scanConflictMarkerTrivia(text, pos, std::bind(&Scanner::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+                        pos = scanConflictMarkerTrivia(text, pos, std::bind(&ScannerImpl::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
                         if (_skipTrivia)
                         {
                             continue;
@@ -2639,7 +2634,7 @@ namespace ts
                 {
                     if (isConflictMarkerTrivia(text, pos))
                     {
-                        pos = scanConflictMarkerTrivia(text, pos, std::bind(&Scanner::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
+                        pos = scanConflictMarkerTrivia(text, pos, std::bind(&ScannerImpl::error, this, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3));
                         return token = SyntaxKind::ConflictMarkerTrivia;
                     }
                     break;
@@ -3015,4 +3010,20 @@ namespace ts
             return utf16EncodeAsStringFallback((number)codePoint);
         }
     };
+
+    Scanner::Scanner(ScriptTarget languageVersion,
+                                boolean skipTrivia,
+                                LanguageVariant languageVariant,
+                                string textInitial,
+                                ErrorCallback onError,
+                                number start,
+                                number length)
+    {
+        impl = ScannerImpl::createScanner(languageVersion, skipTrivia, languageVariant, textInitial, onError, start, length);        
+    }
+
+    Scanner::~Scanner()
+    {
+        delete impl;
+    }    
 }
