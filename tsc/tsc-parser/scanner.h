@@ -1,11 +1,19 @@
-#include <iostream>
 #include <assert.h>
+#include <iostream>
+#include <vector>
+#include <algorithm>
+#include <regex>
 
-using number = float;
 using boolean = bool;
-using string = std::string;
+using number = int;
+using string = std::wstring;
+using char_t = wchar_t;
+using sstream = std::wstringstream;
+using regex = std::wregex;
+using sregex_iterator = std::wsregex_iterator;
+#define S(x) L##x
 
-enum class ScriptTarget : int {
+enum class ScriptTarget : number {
     ES3 = 0,
     ES5 = 1,
     ES2015 = 2,
@@ -20,7 +28,7 @@ enum class ScriptTarget : int {
     Latest = ESNext,
 };
 
-enum class  TokenFlags : int {
+enum class  TokenFlags : number {
     None = 0,
     /* @internal */
     PrecedingLineBreak = 1 << 0,
@@ -51,30 +59,31 @@ enum class  TokenFlags : int {
 
 TokenFlags& operator |= (TokenFlags& lhv, TokenFlags rhv)
 {
-    lhv = (TokenFlags) ((int) lhv | (int)rhv);
+    lhv = (TokenFlags) ((number) lhv | (number)rhv);
     return lhv;
 }
 
 TokenFlags operator & (TokenFlags lhv, TokenFlags rhv)
 {
-    lhv = (TokenFlags) ((int) lhv & (int)rhv);
+    lhv = (TokenFlags) ((number) lhv & (number)rhv);
     return lhv;
 }
 
 bool operator ! (TokenFlags lhv)
 {
-    return (int)lhv > 0;
+    return (number)lhv > 0;
 }
 
-enum class CommentDirectiveType : int {
+enum class CommentDirectiveType : number {
+    Undefined,
     ExpectError,
     Ignore
 };
 
 struct TextRange {
     TextRange() = default;
-    int pos;
-    int end;
+    number pos;
+    number end;
 };
 
 struct CommentDirective {
@@ -83,12 +92,12 @@ struct CommentDirective {
     CommentDirectiveType type;
 };
 
-enum class LanguageVariant : int {
+enum class LanguageVariant : number {
     Standard,
     JSX
 };
 
-enum class SyntaxKind : int {
+enum class SyntaxKind : number {
     Unknown,
     EndOfFileToken,
     SingleLineCommentTrivia,
@@ -513,7 +522,7 @@ enum class SyntaxKind : int {
     /* @internal */ LastContextualKeyword = OfKeyword,
 };
 
-enum class CharacterCodes : int {
+enum class CharacterCodes : number {
     nullCharacter = 0,
     maxAsciiCharacter = 0x7F,
 
@@ -654,38 +663,33 @@ void debug(bool cond)
     assert(cond);
 }
 
-void debug(const char* msg)
-{
-    std::cerr << msg;
-}
-
 void debug(string msg)
 {
-    std::cerr << msg.c_str();
+    std::wcerr << msg.c_str();
 }
 
 void debug(bool cond, string msg)
 {
     if (!cond)
     {
-        std::cerr << msg.c_str();
+        std::wcerr << msg.c_str();
     }
     
     assert(cond);
 }
 
-void error(const char* msg)
+void error(string msg)
 {
-    std::cerr << msg;
+    std::wcerr << msg;
 }
 
 class SourceFileLike {
 public:
     string text;
-    std::vector<int> lineMap;
+    std::vector<number> lineMap;
     /* @internal */
     bool hasGetPositionOfLineAndCharacter;
-    auto getPositionOfLineAndCharacter(int line, int character, bool allowEdits = true) -> number;
+    auto getPositionOfLineAndCharacter(number line, number character, bool allowEdits = true) -> number;
 };
 
 struct LineAndCharacter {
@@ -693,19 +697,19 @@ struct LineAndCharacter {
     LineAndCharacter() = default;
 
     /** 0-based. */
-    int line;
+    number line;
     /*
         * 0-based. This value denotes the character position in line and is different from the 'column' because of tab characters.
         */
-    int character;
+    number character;
 };
 
 struct CommentRange {
     CommentRange() = default;
 
     SyntaxKind kind;
-    int pos;
-    int end;
+    number pos;
+    number end;
     boolean hasTrailingNewLine;
 };
 
@@ -717,4 +721,71 @@ struct ScanResult {
 };
 
 template <typename T, typename U>
-using cb_type = std::function<U(int, int, SyntaxKind, boolean, T, U)>;
+using cb_type = std::function<U(number, number, SyntaxKind, boolean, T, U)>;
+
+using ErrorCallback = std::function<void(DiagnosticMessage, number)>;
+
+template <typename T>
+auto arraysEqual(const std::vector<T> &a, const std::vector<T> &b) -> boolean {
+    return std::equal(a.begin(), a.end(), b.begin());
+}
+
+enum class Comparison : number {
+    LessThan    = -1,
+    EqualTo     = 0,
+    GreaterThan = 1
+};
+template <typename T>
+using Comparer = std::function<Comparison(T, T)>;
+
+template <typename T>
+auto identity(T x) -> T { return x; }
+
+template <typename T>
+auto compareComparableValues(T a, T b) {
+    return a == b ? Comparison::EqualTo :
+        a < b ? Comparison.LessThan :
+        Comparison.GreaterThan;
+}
+
+template <typename T>
+auto compareValues(T a, T b) -> Comparison {
+    return compareComparableValues(a, b);
+}
+
+template <typename T, typename U>
+auto binarySearch(const std::vector<T> &array, T value, std::function<U(T)> keySelector, Comparer<U> keyComparer, number offset = 0) -> number {
+    return binarySearchKey<T, U>(array, keySelector(value), keySelector, keyComparer, offset);
+}
+
+template <typename T, typename U>
+auto binarySearchKey(const std::vector<T> &array, U key, std::function<U(T, number)> keySelector, Comparer<U> keyComparer, number offset = 0) -> number {
+    if (!some(array)) {
+        return -1;
+    }
+
+    auto low = offset;
+    auto high = array.size() - 1;
+    while (low <= high) {
+        const middle = low + ((high - low) >> 1);
+        const midKey = keySelector(array[middle], middle);
+        switch (keyComparer(midKey, key)) {
+            case Comparison::LessThan:
+                low = middle + 1;
+                break;
+            case Comparison::EqualTo:
+                return middle;
+            case Comparison::GreaterThan:
+                high = middle - 1;
+                break;
+        }
+    }
+
+    return ~low;
+}
+
+auto positionIsSynthesized(number pos) -> boolean {
+    // This is a fast way of testing the following conditions:
+    //  pos === undefined || pos === null || isNaN(pos) || pos < 0;
+    return !(pos >= 0);
+}
