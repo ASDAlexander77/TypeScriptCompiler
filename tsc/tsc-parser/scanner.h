@@ -3,6 +3,7 @@
 #include <vector>
 #include <algorithm>
 #include <regex>
+#include <cstdint>
 
 using boolean = bool;
 using number = int;
@@ -12,9 +13,10 @@ using sstream = std::wstringstream;
 using regex = std::wregex;
 using sregex_iterator = std::wsregex_iterator;
 
-#define atoi(x) std::atoi(x)
-#define stoi(x, y) std::stoull(x, nullptr, y)
+#define to_number_base(x, y) std::stoull(x, nullptr, y)
 #define S(x) L##x
+#define to_string(x) std::to_wstring(x)
+#define to_number(x) std::stoi(x)
 
 enum class ScriptTarget : number {
     ES3 = 0,
@@ -793,4 +795,71 @@ auto positionIsSynthesized(number pos) -> boolean {
     // This is a fast way of testing the following conditions:
     //  pos === undefined || pos === null || isNaN(pos) || pos < 0;
     return !(pos >= 0);
+}
+
+auto parsePseudoBigInt(string stringValue) -> string {
+    number log2Base;
+    switch ((CharacterCodes)stringValue[1]) { // "x" in "0x123"
+        case CharacterCodes::b:
+        case CharacterCodes::B: // 0b or 0B
+            log2Base = 1;
+            break;
+        case CharacterCodes::o:
+        case CharacterCodes::O: // 0o or 0O
+            log2Base = 3;
+            break;
+        case CharacterCodes::x:
+        case CharacterCodes::X: // 0x or 0X
+            log2Base = 4;
+            break;
+        default: // already in decimal; omit trailing "n"
+            auto nIndex = stringValue.length() - 1;
+            // Skip leading 0s
+            auto nonZeroStart = 0;
+            while ((CharacterCodes)stringValue[nonZeroStart] == CharacterCodes::_0) {
+                nonZeroStart++;
+            }
+            return nonZeroStart > nIndex ? stringValue.substr(nonZeroStart, nIndex-nonZeroStart) : S("0");
+    }
+
+    // Omit leading "0b", "0o", or "0x", and trailing "n"
+    auto startIndex = 2;
+    auto endIndex = stringValue.length() - 1;
+    auto bitsNeeded = (endIndex - startIndex) * log2Base;
+    // Stores the value specified by the string as a LE array of 16-bit integers
+    // using Uint16 instead of Uint32 so combining steps can use bitwise operators
+    std::vector<uint16_t> segments((bitsNeeded >> 4) + (bitsNeeded & 15 ? 1 : 0));
+    // Add the digits, one at a time
+    for (int i = endIndex - 1, bitOffset = 0; i >= startIndex; i--, bitOffset += log2Base) {
+        auto segment = bitOffset >> 4;
+        auto digitChar = (number)stringValue[i];
+        // Find character range: 0-9 < A-F < a-f
+        auto digit = digitChar <= (number)CharacterCodes::_9
+            ? digitChar - (number)CharacterCodes::_0
+            : 10 + digitChar - (digitChar <= (number)CharacterCodes::F ? (number)CharacterCodes::A : (number)CharacterCodes::a);
+        auto shiftedDigit = digit << (bitOffset & 15);
+        segments[segment] |= shiftedDigit;
+        auto residual = shiftedDigit >> 16;
+        if (residual) segments[segment + 1] |= residual; // overflows segment
+    }
+    // Repeatedly divide segments by 10 and add remainder to base10Value
+    auto base10Value = string(S(""));
+    auto firstNonzeroSegment = segments.size() - 1;
+    auto segmentsRemaining = true;
+    while (segmentsRemaining) {
+        auto mod10 = 0;
+        segmentsRemaining = false;
+        for (auto segment = firstNonzeroSegment; segment >= 0; segment--) {
+            auto newSegment = mod10 << 16 | segments[segment];
+            auto segmentValue = (newSegment / 10) | 0;
+            segments[segment] = segmentValue;
+            mod10 = newSegment - segmentValue * 10;
+            if (segmentValue && !segmentsRemaining) {
+                firstNonzeroSegment = segment;
+                segmentsRemaining = true;
+            }
+        }
+        base10Value = to_string(mod10) + base10Value;
+    }
+    return base10Value;
 }

@@ -1058,6 +1058,8 @@ namespace ts
 
         ScriptTarget languageVersion;
 
+        boolean _skipTrivia;
+
         LanguageVariant languageVariant;
 
         // scanner text
@@ -1096,6 +1098,7 @@ namespace ts
 
             Scanner scanner;
             scanner.languageVersion = languageVersion;
+            scanner._skipTrivia = skipTrivia;
             scanner.languageVariant = languageVariant;
             scanner.onError = onError;
             scanner.setText(textInitial, start, length);
@@ -1217,8 +1220,7 @@ namespace ts
                 checkForIdentifierStartAfterNumericLiteral(start, decimalFragment.empty() && !!(tokenFlags & TokenFlags::Scientific));
                 return {
                     SyntaxKind::NumericLiteral,
-                    // TODO: review: S("") + (+result)
-                    result // if value is not an integer, it can be safely coerced to a number
+                    to_string(+to_number(result)) // if value is not an integer, it can be safely coerced to a number
                 };
             }
             else
@@ -1275,7 +1277,7 @@ namespace ts
         auto scanExactNumberOfHexDigits(number count, boolean canHaveSeparators) -> number
         {
             auto valueString = scanHexDigits(/*minCount*/ count, /*scanAsManyAsPossible*/ false, canHaveSeparators);
-            return !valueString.empty() ? stoi(valueString, 16) : -1;
+            return !valueString.empty() ? to_number_base(valueString, 16) : -1;
         }
 
         /**
@@ -1527,7 +1529,7 @@ namespace ts
                     {
                         auto savePos = pos;
                         auto escapedValueString = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ false);
-                        auto escapedValue = !escapedValueString.empty() ? stoi(escapedValueString, 16) : -1;
+                        auto escapedValue = !escapedValueString.empty() ? to_number_base(escapedValueString, 16) : -1;
 
                         // '\u{Not Code Point' or '\u{CodePoint'
                         if (!isCodePoint(escapedValue) || (CharacterCodes)text[pos] != CharacterCodes::closeBrace)
@@ -1601,7 +1603,7 @@ namespace ts
         auto scanExtendedUnicodeEscape() -> string
         {
             auto escapedValueString = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ false);
-            auto escapedValue = !escapedValueString.empty() ? stoi(escapedValueString, 16) : -1;
+            auto escapedValue = !escapedValueString.empty() ? to_number_base(escapedValueString, 16) : -1;
             auto isInvalidExtendedEscape = false;
 
             // Validate the value of the digit
@@ -1662,7 +1664,7 @@ namespace ts
                 auto start = pos;
                 pos += 3;
                 auto escapedValueString = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ false);
-                auto escapedValue = !escapedValueString.empty() ? stoi(escapedValueString, 16) : -1;
+                auto escapedValue = !escapedValueString.empty() ? to_number_base(escapedValueString, 16) : -1;
                 pos = start;
                 return escapedValue;
             }
@@ -1794,11 +1796,11 @@ namespace ts
             else
             { // not a bigint, so can convert to number in simplified form
                 // Number() may not support 0b or 0o, so use stoi() instead
-                auto numericValue = tokenFlags & TokenFlags::BinarySpecifier
-                                        ? stoi(tokenValue.slice(2), 2) // skip "0b"
-                                    : tokenFlags & TokenFlags::OctalSpecifier
-                                        ? stoi(tokenValue.slice(2), 8) // skip "0o"
-                                        : +tokenValue;
+                auto numericValue = !!(tokenFlags & TokenFlags::BinarySpecifier)
+                                        ? to_string(to_number_base(tokenValue.substr(2), 2)) // skip "0b"
+                                    : !!(tokenFlags & TokenFlags::OctalSpecifier)
+                                        ? to_string(to_number_base(tokenValue.substr(2), 8)) // skip "0o"
+                                        : to_string(+to_number(tokenValue));
                 tokenValue = S("") + numericValue;
                 return SyntaxKind::NumericLiteral;
             }
@@ -1822,7 +1824,7 @@ namespace ts
                 if (ch == CharacterCodes::hash && pos == 0 && isShebangTrivia(text, pos))
                 {
                     pos = scanShebangTrivia(text, pos);
-                    if (skipTrivia)
+                    if (_skipTrivia)
                     {
                         continue;
                     }
@@ -1837,7 +1839,7 @@ namespace ts
                 case CharacterCodes::lineFeed:
                 case CharacterCodes::carriageReturn:
                     tokenFlags |= TokenFlags::PrecedingLineBreak;
-                    if (skipTrivia)
+                    if (_skipTrivia)
                     {
                         pos++;
                         continue;
@@ -1877,7 +1879,7 @@ namespace ts
                 case CharacterCodes::mathematicalSpace:
                 case CharacterCodes::ideographicSpace:
                 case CharacterCodes::byteOrderMark:
-                    if (skipTrivia)
+                    if (_skipTrivia)
                     {
                         pos++;
                         continue;
@@ -1949,7 +1951,7 @@ namespace ts
                         return pos += 2, token = SyntaxKind::AsteriskAsteriskToken;
                     }
                     pos++;
-                    if (inJSDocType && !asteriskSeen && (tokenFlags & TokenFlags::PrecedingLineBreak))
+                    if (inJSDocType && !asteriskSeen && !!(tokenFlags & TokenFlags::PrecedingLineBreak))
                     {
                         // decoration at the start of a JSDoc comment line
                         asteriskSeen = true;
@@ -2010,7 +2012,7 @@ namespace ts
 
                         commentDirectives = appendIfCommentDirective(
                             commentDirectives,
-                            text.slice(tokenPos, pos),
+                            text.substr(tokenPos, pos-tokenPos),
                             commentDirectiveRegExSingleLine,
                             tokenPos);
 
