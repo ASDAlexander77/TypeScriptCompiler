@@ -1089,7 +1089,7 @@ public:
                                   LanguageVariant languageVariant = LanguageVariant::Standard,
                                   string textInitial = S(""),
                                   ErrorCallback onError = nullptr,
-                                  number start = -1,
+                                  number start = 0,
                                   number length = -1) -> ScannerImpl*
         {
 
@@ -1804,6 +1804,7 @@ private:
             }
         }
 
+    public:
         auto scan() -> SyntaxKind
         {
             startPos = pos;
@@ -2374,6 +2375,7 @@ private:
             }
         }
 
+    private:
         auto reScanInvalidIdentifier() -> SyntaxKind
         {
             debug(token == SyntaxKind::Unknown, S("'reScanInvalidIdentifier' should only be called when the current token is 'SyntaxKind::Unknown'."));
@@ -2916,7 +2918,7 @@ private:
         auto setText(string newText, number start, number length) -> void
         {
             text = newText;
-            end = length > 0 ? text.length() : start + length;
+            end = length <= 0 ? text.length() : start + length;
             setTextPos(start);
         }
 
@@ -2942,7 +2944,7 @@ private:
             startPos = textPos;
             tokenPos = textPos;
             token = SyntaxKind::Unknown;
-            tokenValue = nullptr;
+            tokenValue = S("");
             tokenFlags = TokenFlags::None;
         }
 
@@ -3020,6 +3022,11 @@ private:
                                 number length)
     {
         impl = ScannerImpl::createScanner(languageVersion, skipTrivia, languageVariant, textInitial, onError, start, length);        
+    }
+
+    auto Scanner::scan() -> SyntaxKind
+    {
+        return impl->scan();
     }
 
     Scanner::~Scanner()

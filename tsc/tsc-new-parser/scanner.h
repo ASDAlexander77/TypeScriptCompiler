@@ -900,8 +900,10 @@ namespace ts
                             LanguageVariant languageVariant = LanguageVariant::Standard,
                             string textInitial = S(""),
                             ErrorCallback onError = nullptr,
-                            number start = -1,
+                            number start = 0,
                             number length = -1);
+
+        auto scan() -> SyntaxKind;
 
         ~Scanner();
     };
