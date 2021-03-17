@@ -53,7 +53,7 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/../../__build/tsc/tsc-new-parser/Debug/tsc-new-parser.exe",
-            "args": ["G:/Dev/TypeScript/tests/cases/compiler/bigIntWithTargetES3.ts"],
+            "args": ["G:/Dev/TypeScript/tests/cases/compiler/bom-utf16be.ts"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
