@@ -5,7 +5,8 @@
   "version": "1.0.0",
   "description": "",
   "scripts": {
-    "run": "ts-node scannertree.ts -- G:/Dev/TypeScript/tests/cases/compiler/2dArrays.ts"
+    "match": "ts-node match.ts G:/Dev/TypeScript/tests/cases/compiler",
+    "scan": "ts-node scannertree.ts G:/Dev/TypeScript/tests/cases/compiler/2dArrays.ts"
   },
   "private": true,
   "dependencies": {

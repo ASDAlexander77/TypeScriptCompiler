@@ -912,7 +912,7 @@ static auto parsePseudoBigInt(string stringValue) -> string {
     }
     // Repeatedly divide segments by 10 and add remainder to base10Value
     auto base10Value = string(S(""));
-    auto firstNonzeroSegment = segments.size() - 1;
+    int firstNonzeroSegment = segments.size() - 1;
     auto segmentsRemaining = true;
     while (segmentsRemaining) {
         auto mod10 = 0;

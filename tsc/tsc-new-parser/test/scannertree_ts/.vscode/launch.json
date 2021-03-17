@@ -28,6 +28,20 @@
                 "<node_internals>/**"
             ],
             "type": "pwa-node"
-        }
+        },
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Launch TS-Node - match",
+            "runtimeExecutable": "ts-node",
+            "program": "${workspaceFolder}/match.ts",
+            "cwd": "${workspaceFolder}",
+            "args": [
+            ],
+            "sourceMaps": true,
+            "outFiles": [
+            ],
+            "protocol": "inspector"
+        },        
     ]
 }
