@@ -667,41 +667,41 @@ enum class CharacterCodes : number {
 
 struct safe_string
 {
-    string *value;
+    string value;
 
-    safe_string () : value{nullptr} {}
+    safe_string () : value{S("")} {}
 
-    safe_string (string &value) : value{&value} {}
+    safe_string (string value) : value{value} {}
 
     safe_string& operator=(string& value_)
     {
-        value = &value_;
+        value = value_;
         return *this;
     }
 
     CharacterCodes operator [](number index)
     {
-        if (value->length() > index)
+        if (value.length() > index)
         {
             return CharacterCodes::outOfBoundary;
         }
 
-        return (CharacterCodes) value->operator[](index);
+        return (CharacterCodes) value[index];
     }
 
     auto substring(number from, number to) -> string
     {
-        return value->substr(from, to - from);
+        return value.substr(from, to - from);
     }
 
     auto length() -> number
     {
-        return value->length();
+        return value.length();
     }
 
     operator string&()
     {
-        return *value;
+        return value;
     }
 };
 
