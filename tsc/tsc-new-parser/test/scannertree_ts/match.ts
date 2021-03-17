@@ -431,16 +431,7 @@ enum SyntaxKindMapped2
 
     function printTree(filePath)
     {
-        let data;
-        try {
-            fs.statSync(filePath);
-            data = fs.readFileSync(filePath);
-        }
-        catch (e) {
-            return "";
-        }
-
-        const dataStr = "" + data;
+        const dataStr = ts.sys.readFile(filePath);
         const scanner = ts.createScanner(ts.ScriptTarget.Latest, true, ts.LanguageVariant.Standard, dataStr);
 
         let result = "";
