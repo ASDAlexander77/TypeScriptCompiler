@@ -8,7 +8,7 @@ int main()
     while (token != SyntaxKind::EndOfFileToken)
     {
         token = scanner.scan();
-        std::wcout << (int)token << S("(") << scanner.tokenPos() << S(")=") << scanner.tokenToString(token) << S(" ") << scanner.tokenValue() << std::endl;
+        std::wcout << scanner.syntaxKindString(token) << "(" << (int)token << S(") @") << scanner.tokenPos() << S(" '") << scanner.tokenToString(token) << "':" << scanner.tokenValue() << std::endl;
     }
 
     return 0;

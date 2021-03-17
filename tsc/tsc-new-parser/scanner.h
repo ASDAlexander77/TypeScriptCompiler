@@ -909,6 +909,7 @@ namespace ts
         auto tokenValue() -> string;
         auto tokenFlags() -> TokenFlags;
         auto tokenToString(SyntaxKind) -> string;
+        auto syntaxKindString(SyntaxKind) -> string;
 
         ~Scanner();
     };
