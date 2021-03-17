@@ -424,7 +424,9 @@ enum SyntaxKindMapped2
 	LastJSDocNode = SyntaxKindMapped.JSDocPropertyTag,
 	FirstJSDocTagNode = SyntaxKindMapped.JSDocTag,
 	LastJSDocTagNode = SyntaxKindMapped.JSDocPropertyTag,
-};
+    FirstContextualKeyword = SyntaxKindMapped.AbstractKeyword,
+    LastContextualKeyword = SyntaxKindMapped.OfKeyword
+	};
 
 let data;
 try {
@@ -435,11 +437,12 @@ catch (e) {
 	data = process.argv[2];
 }
 
-const scanner = ts.createScanner(ts.ScriptTarget.Latest, true, ts.LanguageVariant.Standard, "" + data);
+const dataStr = "" + data;
+const scanner = ts.createScanner(ts.ScriptTarget.Latest, true, ts.LanguageVariant.Standard, dataStr);
 
 let token = ts.SyntaxKind.Unknown;
 while (token != ts.SyntaxKind.EndOfFileToken) {
 	token = scanner.scan();
 	const strToken = ts.SyntaxKind[token];
-	console.log(SyntaxKindMapped[strToken] || SyntaxKindMapped2[strToken], "@", scanner.getTokenPos(), scanner.getTokenText());
+	console.log(SyntaxKindMapped[strToken] || SyntaxKindMapped2[strToken], scanner.getTokenText());
 }

@@ -4,9 +4,8 @@
   "main": "__out/scannertree.js",
   "version": "1.0.0",
   "description": "",
-  "type": "module",
   "scripts": {
-    "run": "ts-node scannertree.ts file.ts"
+    "run": "ts-node scannertree.ts -- G:/Dev/TypeScript/tests/cases/compiler/2dArrays.ts"
   },
   "private": true,
   "dependencies": {

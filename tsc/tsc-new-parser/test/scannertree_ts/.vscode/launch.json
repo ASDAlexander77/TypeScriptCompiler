@@ -12,7 +12,7 @@
             "program": "${workspaceFolder}/scannertree.ts",
             "cwd": "${workspaceFolder}",
             "args": [
-                "function main() {}"
+                "abstract class A {}"
             ],
             "sourceMaps": true,
             "outFiles": [
@@ -22,7 +22,7 @@
         },
         {
             "name": "Launch Program - match",
-            "program": "${workspaceFolder}/match.js",
+            "program": "${workspaceFolder}/match.mjs",
             "request": "launch",
             "skipFiles": [
                 "<node_internals>/**"
