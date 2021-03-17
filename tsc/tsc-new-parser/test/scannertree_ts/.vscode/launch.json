@@ -12,7 +12,7 @@
             "program": "${workspaceFolder}/scannertree.ts",
             "cwd": "${workspaceFolder}",
             "args": [
-                "abstract class A {}"
+                "a = 1"
             ],
             "sourceMaps": true,
             "outFiles": [

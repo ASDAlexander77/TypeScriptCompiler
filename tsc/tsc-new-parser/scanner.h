@@ -552,6 +552,11 @@ enum class CharacterCodes : number {
     ideographicSpace = 0x3000,
     mathematicalSpace = 0x205F,
     ogham = 0x1680,
+
+    _startOfSurrogate = 0xD800,
+    _endOfSurrogate = 0xDBFF,
+    _startOfSurrogateLow = 0xDC00,
+    _endOfSurrogateLow = 0xDFFF,
     _2bytes = 0x10000,
 
     _ = 0x5F,
@@ -658,6 +663,46 @@ enum class CharacterCodes : number {
     byteOrderMark = 0xFEFF,
     tab = 0x09,                   // \t
     verticalTab = 0x0B,           // \v
+};
+
+struct safe_string
+{
+    string *value;
+
+    safe_string () : value{nullptr} {}
+
+    safe_string (string &value) : value{&value} {}
+
+    safe_string& operator=(string& value_)
+    {
+        value = &value_;
+        return *this;
+    }
+
+    CharacterCodes operator [](number index)
+    {
+        if (value->length() > index)
+        {
+            return CharacterCodes::outOfBoundary;
+        }
+
+        return (CharacterCodes) value->operator[](index);
+    }
+
+    auto substring(number from, number to) -> string
+    {
+        return value->substr(from, to - from);
+    }
+
+    auto length() -> number
+    {
+        return value->length();
+    }
+
+    operator string&()
+    {
+        return *value;
+    }
 };
 
 static TokenFlags& operator|=(TokenFlags& lhv, TokenFlags rhv)

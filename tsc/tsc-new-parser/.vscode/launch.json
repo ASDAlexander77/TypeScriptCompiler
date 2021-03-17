@@ -53,7 +53,7 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/../../__build/tsc/tsc-new-parser/Debug/tsc-new-parser.exe",
-            "args": [],
+            "args": ["1"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],

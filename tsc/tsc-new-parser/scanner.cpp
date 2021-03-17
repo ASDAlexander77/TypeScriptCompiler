@@ -4,6 +4,10 @@ namespace ts
 {
     class ScannerImpl
     {
+    public:
+        ScannerImpl() = default;
+
+    private:
         /* @internal */
         auto tokenIsIdentifierOrKeyword(SyntaxKind token) -> boolean
         {
@@ -724,19 +728,19 @@ private:
         }
 
         /* @internal */
-        auto computeLineStarts(string text) -> std::vector<number>
+        auto computeLineStarts(safe_string text) -> std::vector<number>
         {
             std::vector<number> result;
             auto pos = 0;
             auto lineStart = 0;
             while (pos < text.length())
             {
-                auto ch = (CharacterCodes)text[pos];
+                auto ch = text[pos];
                 pos++;
                 switch (ch)
                 {
                 case CharacterCodes::carriageReturn:
-                    if ((CharacterCodes)text[pos] == CharacterCodes::lineFeed)
+                    if (text[pos] == CharacterCodes::lineFeed)
                     {
                         pos++;
                     }
@@ -931,10 +935,10 @@ private:
             return ch >= CharacterCodes::_0 && ch <= CharacterCodes::_7;
         }
 
-        auto couldStartTrivia(string text, number pos) -> boolean
+        auto couldStartTrivia(safe_string text, number pos) -> boolean
         {
             // Keep in sync with skipTrivia
-            auto ch = (CharacterCodes)text[pos];
+            auto ch = text[pos];
             switch (ch)
             {
             case CharacterCodes::carriageReturn:
@@ -961,7 +965,7 @@ private:
         }
 
         /* @internal */
-        auto skipTrivia(string text, number pos, bool stopAfterLineBreak = false, bool stopAtComments = false) -> number
+        auto skipTrivia(safe_string text, number pos, bool stopAfterLineBreak = false, bool stopAtComments = false) -> number
         {
             if (positionIsSynthesized(pos))
             {
@@ -971,11 +975,11 @@ private:
             // Keep in sync with couldStartTrivia
             while (true)
             {
-                auto ch = (CharacterCodes)text[pos];
+                auto ch = text[pos];
                 switch (ch)
                 {
                 case CharacterCodes::carriageReturn:
-                    if ((CharacterCodes)text[pos + 1] == CharacterCodes::lineFeed)
+                    if (text[pos + 1] == CharacterCodes::lineFeed)
                     {
                         pos++;
                     }
@@ -998,12 +1002,12 @@ private:
                     {
                         break;
                     }
-                    if ((CharacterCodes)text[pos + 1] == CharacterCodes::slash)
+                    if (text[pos + 1] == CharacterCodes::slash)
                     {
                         pos += 2;
                         while (pos < text.length())
                         {
-                            if (isLineBreak((CharacterCodes)text[pos]))
+                            if (isLineBreak(text[pos]))
                             {
                                 break;
                             }
@@ -1011,12 +1015,12 @@ private:
                         }
                         continue;
                     }
-                    if ((CharacterCodes)text[pos + 1] == CharacterCodes::asterisk)
+                    if (text[pos + 1] == CharacterCodes::asterisk)
                     {
                         pos += 2;
                         while (pos < text.length())
                         {
-                            if ((CharacterCodes)text[pos] == CharacterCodes::asterisk && (CharacterCodes)text[pos + 1] == CharacterCodes::slash)
+                            if (text[pos] == CharacterCodes::asterisk && text[pos + 1] == CharacterCodes::slash)
                             {
                                 pos += 2;
                                 break;
@@ -1062,46 +1066,46 @@ private:
         // a <<<<<<< or >>>>>>> marker then it is also followed by a space.
         number mergeConflictMarkerLength = std::strlen("<<<<<<<");
 
-        auto isConflictMarkerTrivia(string text, number pos) -> boolean
+        auto isConflictMarkerTrivia(safe_string text, number pos) -> boolean
         {
             debug(pos >= 0);
 
             // Conflict markers must be at the start of a line.
-            if (pos == 0 || isLineBreak((CharacterCodes)text[pos + 1]))
+            if (pos == 0 || isLineBreak(text[pos + 1]))
             {
-                auto ch = (CharacterCodes)text[pos];
+                auto ch = text[pos];
 
                 if ((pos + mergeConflictMarkerLength) < text.length())
                 {
                     for (auto i = 0; i < mergeConflictMarkerLength; i++)
                     {
-                        if ((CharacterCodes)text[pos + i] != ch)
+                        if (text[pos + i] != ch)
                         {
                             return false;
                         }
                     }
 
                     return ch == CharacterCodes::equals ||
-                           (CharacterCodes)text[pos + mergeConflictMarkerLength] == CharacterCodes::space;
+                           text[pos + mergeConflictMarkerLength] == CharacterCodes::space;
                 }
             }
 
             return false;
         }
 
-        auto scanConflictMarkerTrivia(string text, number pos, std::function<void(DiagnosticMessage, number, number)> error = nullptr) -> number
+        auto scanConflictMarkerTrivia(safe_string text, number pos, std::function<void(DiagnosticMessage, number, number)> error = nullptr) -> number
         {
             if (error)
             {
                 error(Diagnostics::Merge_conflict_marker_encountered, pos, mergeConflictMarkerLength);
             }
 
-            auto ch = (CharacterCodes)text[pos];
+            auto ch = text[pos];
             auto len = text.length();
 
             if (ch == CharacterCodes::lessThan || ch == CharacterCodes::greaterThan)
             {
-                while (pos < len && !isLineBreak((CharacterCodes)text[pos]))
+                while (pos < len && !isLineBreak(text[pos]))
                 {
                     pos++;
                 }
@@ -1113,7 +1117,7 @@ private:
                 // of the next ===== or >>>>>>> marker.
                 while (pos < len)
                 {
-                    auto currentChar = (CharacterCodes)text[pos];
+                    auto currentChar = text[pos];
                     if ((currentChar == CharacterCodes::equals || currentChar == CharacterCodes::greaterThan) && currentChar != ch && isConflictMarkerTrivia(text, pos))
                     {
                         break;
@@ -1173,7 +1177,7 @@ private:
          *      return value of the callback.
          */
         template <typename T, typename U>
-        auto iterateCommentRanges(boolean reduce, string text, number pos, boolean trailing, cb_type<T, U> cb, T state, U initial = U()) -> U
+        auto iterateCommentRanges(boolean reduce, safe_string text, number pos, boolean trailing, cb_type<T, U> cb, T state, U initial = U()) -> U
         {
             number pendingPos;
             number pendingEnd;
@@ -1194,11 +1198,11 @@ private:
 
             while (pos >= 0 && pos < text.length())
             {
-                auto ch = (CharacterCodes)text[pos];
+                auto ch = text[pos];
                 switch (ch)
                 {
                 case CharacterCodes::carriageReturn:
-                    if ((CharacterCodes)text[pos + 1] == CharacterCodes::lineFeed)
+                    if (text[pos + 1] == CharacterCodes::lineFeed)
                     {
                         pos++;
                     }
@@ -1225,7 +1229,7 @@ private:
                     continue;
                 case CharacterCodes::slash:
                 {
-                    auto nextChar = (CharacterCodes)text[pos + 1];
+                    auto nextChar = text[pos + 1];
                     auto hasTrailingNewLine = false;
                     if (nextChar == CharacterCodes::slash || nextChar == CharacterCodes::asterisk)
                     {
@@ -1236,7 +1240,7 @@ private:
                         {
                             while (pos < text.length())
                             {
-                                if (isLineBreak((CharacterCodes)text[pos]))
+                                if (isLineBreak(text[pos]))
                                 {
                                     hasTrailingNewLine = true;
                                     break;
@@ -1248,7 +1252,7 @@ private:
                         {
                             while (pos < text.length())
                             {
-                                if ((CharacterCodes)text[pos] == CharacterCodes::asterisk && (CharacterCodes)text[pos + 1] == CharacterCodes::slash)
+                                if (text[pos] == CharacterCodes::asterisk && text[pos + 1] == CharacterCodes::slash)
                                 {
                                     pos += 2;
                                     break;
@@ -1387,14 +1391,14 @@ private:
         auto isIdentifierText(string name, ScriptTarget languageVersion, LanguageVariant identifierVariant = LanguageVariant::Standard) -> boolean
         {
             auto ch = codePointAt(name, 0);
-            if (!isIdentifierStart((CharacterCodes)ch, languageVersion))
+            if (!isIdentifierStart(ch, languageVersion))
             {
                 return false;
             }
 
             for (auto i = charSize(ch); i < name.length(); i += charSize(ch))
             {
-                if (!isIdentifierPart((CharacterCodes)(ch = codePointAt(name, i)), languageVersion, identifierVariant))
+                if (!isIdentifierPart((ch = codePointAt(name, i)), languageVersion, identifierVariant))
                 {
                     return false;
                 }
@@ -1411,7 +1415,7 @@ private:
 
 public:
         // scanner text
-        string text;
+        safe_string text;
 
         // Current position (end position of text of current token)
         number pos;
@@ -1480,7 +1484,7 @@ private:
             auto result = string();
             while (true)
             {
-                auto ch = (CharacterCodes)text[pos];
+                auto ch = text[pos];
                 if (ch == CharacterCodes::_)
                 {
                     tokenFlags |= TokenFlags::ContainsSeparator;
@@ -1488,7 +1492,7 @@ private:
                     {
                         allowSeparator = false;
                         isPreviousTokenSeparator = true;
-                        result += text.substr(start, pos - start);
+                        result += text.substring(start, pos);
                     }
                     else if (isPreviousTokenSeparator)
                     {
@@ -1511,11 +1515,11 @@ private:
                 }
                 break;
             }
-            if ((CharacterCodes)text[pos + 1] == CharacterCodes::_)
+            if (text[pos + 1] == CharacterCodes::_)
             {
                 error(Diagnostics::Numeric_separators_are_not_allowed_here, pos - 1, 1);
             }
-            return result + text.substr(start, pos - start);
+            return result + text.substring(start, pos);
         }
 
         auto scanNumber() -> ScanResult
@@ -1524,17 +1528,17 @@ private:
             auto mainFragment = scanNumberFragment();
             string decimalFragment;
             string scientificFragment;
-            if ((CharacterCodes)text[pos] == CharacterCodes::dot)
+            if (text[pos] == CharacterCodes::dot)
             {
                 pos++;
                 decimalFragment = scanNumberFragment();
             }
             auto end = pos;
-            if ((CharacterCodes)text[pos] == CharacterCodes::E || (CharacterCodes)text[pos] == CharacterCodes::e)
+            if (text[pos] == CharacterCodes::E || text[pos] == CharacterCodes::e)
             {
                 pos++;
                 tokenFlags |= TokenFlags::Scientific;
-                if ((CharacterCodes)text[pos] == CharacterCodes::plus || (CharacterCodes)text[pos] == CharacterCodes::minus)
+                if (text[pos] == CharacterCodes::plus || text[pos] == CharacterCodes::minus)
                     pos++;
                 auto preNumericPart = pos;
                 auto finalFragment = scanNumberFragment();
@@ -1544,7 +1548,7 @@ private:
                 }
                 else
                 {
-                    scientificFragment = text.substr(end, preNumericPart - end) + finalFragment;
+                    scientificFragment = text.substring(end, preNumericPart) + finalFragment;
                     end = pos;
                 }
             }
@@ -1563,7 +1567,7 @@ private:
             }
             else
             {
-                result = text.substr(start, end - start); // No need to use all the fragments; no _ removal needed
+                result = text.substring(start, end); // No need to use all the fragments; no _ removal needed
             }
 
             if (!decimalFragment.empty() || !!(tokenFlags & TokenFlags::Scientific))
@@ -1585,7 +1589,7 @@ private:
 
         auto checkForIdentifierStartAfterNumericLiteral(number numericStart, bool isScientific = false) -> void
         {
-            if (!isIdentifierStart((CharacterCodes)codePointAt(text, pos), languageVersion))
+            if (!isIdentifierStart(codePointAt(text, pos), languageVersion))
             {
                 return;
             }
@@ -1593,7 +1597,7 @@ private:
             auto identifierStart = pos;
             auto length = scanIdentifierParts().length();
 
-            if (length == 1 && text[identifierStart] == S('n'))
+            if (length == 1 && text[identifierStart] == CharacterCodes::n)
             {
                 if (isScientific)
                 {
@@ -1614,11 +1618,11 @@ private:
         auto scanOctalDigits() -> number
         {
             auto start = pos;
-            while (isOctalDigit((CharacterCodes)text[pos]))
+            while (isOctalDigit(text[pos]))
             {
                 pos++;
             }
-            return +std::stod((text.substr(start, pos - start)));
+            return +std::stod((text.substring(start, pos)));
         }
 
         /**
@@ -1647,7 +1651,7 @@ private:
             auto isPreviousTokenSeparator = false;
             while (valueChars.size() < minCount || scanAsManyAsPossible)
             {
-                auto ch = (CharacterCodes)text[pos];
+                auto ch = text[pos];
                 if (canHaveSeparators && ch == CharacterCodes::_)
                 {
                     tokenFlags |= TokenFlags::ContainsSeparator;
@@ -1685,7 +1689,7 @@ private:
             {
                 valueChars.clear();
             }
-            if ((CharacterCodes)text[pos + 1] == CharacterCodes::_)
+            if (text[pos + 1] == CharacterCodes::_)
             {
                 error(Diagnostics::Numeric_separators_are_not_allowed_here, pos - 1, 1);
             }
@@ -1694,7 +1698,7 @@ private:
 
         auto scanString(boolean jsxAttributeString = false) -> string
         {
-            auto quote = (CharacterCodes)text[pos];
+            auto quote = text[pos];
             pos++;
             string result;
             auto start = pos;
@@ -1702,28 +1706,28 @@ private:
             {
                 if (pos >= end)
                 {
-                    result += text.substr(start, pos - start);
+                    result += text.substring(start, pos);
                     tokenFlags |= TokenFlags::Unterminated;
                     error(Diagnostics::Unterminated_string_literal);
                     break;
                 }
-                auto ch = (CharacterCodes)text[pos];
+                auto ch = text[pos];
                 if (ch == quote)
                 {
-                    result += text.substr(start, pos - start);
+                    result += text.substring(start, pos);
                     pos++;
                     break;
                 }
                 if (ch == CharacterCodes::backslash && !jsxAttributeString)
                 {
-                    result += text.substr(start, pos - start);
+                    result += text.substring(start, pos);
                     result += scanEscapeSequence();
                     start = pos;
                     continue;
                 }
                 if (isLineBreak(ch) && !jsxAttributeString)
                 {
-                    result += text.substr(start, pos - start);
+                    result += text.substring(start, pos);
                     tokenFlags |= TokenFlags::Unterminated;
                     error(Diagnostics::Unterminated_string_literal);
                     break;
@@ -1739,7 +1743,7 @@ private:
          */
         auto scanTemplateAndSetTokenValue(boolean isTaggedTemplate) -> SyntaxKind
         {
-            auto startedWithBacktick = (CharacterCodes)text[pos] == CharacterCodes::backtick;
+            auto startedWithBacktick = text[pos] == CharacterCodes::backtick;
 
             pos++;
             auto start = pos;
@@ -1750,28 +1754,28 @@ private:
             {
                 if (pos >= end)
                 {
-                    contents += text.substr(start, pos - start);
+                    contents += text.substring(start, pos);
                     tokenFlags |= TokenFlags::Unterminated;
                     error(Diagnostics::Unterminated_template_literal);
                     resultingToken = startedWithBacktick ? SyntaxKind::NoSubstitutionTemplateLiteral : SyntaxKind::TemplateTail;
                     break;
                 }
 
-                auto currChar = (CharacterCodes)text[pos];
+                auto currChar = text[pos];
 
                 // '`'
                 if (currChar == CharacterCodes::backtick)
                 {
-                    contents += text.substr(start, pos - start);
+                    contents += text.substring(start, pos);
                     pos++;
                     resultingToken = startedWithBacktick ? SyntaxKind::NoSubstitutionTemplateLiteral : SyntaxKind::TemplateTail;
                     break;
                 }
 
                 // '${'
-                if (currChar == CharacterCodes::$ && pos + 1 < end && (CharacterCodes)text[pos + 1] == CharacterCodes::openBrace)
+                if (currChar == CharacterCodes::$ && pos + 1 < end && text[pos + 1] == CharacterCodes::openBrace)
                 {
-                    contents += text.substr(start, pos - start);
+                    contents += text.substring(start, pos);
                     pos += 2;
                     resultingToken = startedWithBacktick ? SyntaxKind::TemplateHead : SyntaxKind::TemplateMiddle;
                     break;
@@ -1780,7 +1784,7 @@ private:
                 // Escape character
                 if (currChar == CharacterCodes::backslash)
                 {
-                    contents += text.substr(start, pos - start);
+                    contents += text.substring(start, pos);
                     contents += scanEscapeSequence(isTaggedTemplate);
                     start = pos;
                     continue;
@@ -1790,10 +1794,10 @@ private:
                 // <CR><LF> and <CR> LineTerminatorSequences are normalized to <LF> for Template Values
                 if (currChar == CharacterCodes::carriageReturn)
                 {
-                    contents += text.substr(start, pos - start);
+                    contents += text.substring(start, pos);
                     pos++;
 
-                    if (pos < end && (CharacterCodes)text[pos] == CharacterCodes::lineFeed)
+                    if (pos < end && text[pos] == CharacterCodes::lineFeed)
                     {
                         pos++;
                     }
@@ -1821,17 +1825,17 @@ private:
                 error(Diagnostics::Unexpected_end_of_text);
                 return S("");
             }
-            auto ch = (CharacterCodes)text[pos];
+            auto ch = text[pos];
             pos++;
             switch (ch)
             {
             case CharacterCodes::_0:
                 // '\01'
-                if (isTaggedTemplate && pos < end && isDigit((CharacterCodes)text[pos]))
+                if (isTaggedTemplate && pos < end && isDigit(text[pos]))
                 {
                     pos++;
                     tokenFlags |= TokenFlags::ContainsInvalidEscape;
-                    return text.substr(start, pos - start);
+                    return text.substring(start, pos);
                 }
                 return S("\0");
             case CharacterCodes::b:
@@ -1856,24 +1860,24 @@ private:
                     // '\u' or '\u0' or '\u00' or '\u000'
                     for (auto escapePos = pos; escapePos < pos + 4; escapePos++)
                     {
-                        if (escapePos < end && !isHexDigit((CharacterCodes)text[escapePos]) && (CharacterCodes)text[escapePos] != CharacterCodes::openBrace)
+                        if (escapePos < end && !isHexDigit(text[escapePos]) && text[escapePos] != CharacterCodes::openBrace)
                         {
                             pos = escapePos;
                             tokenFlags |= TokenFlags::ContainsInvalidEscape;
-                            return text.substr(start, pos - start);
+                            return text.substring(start, pos);
                         }
                     }
                 }
                 // '\u{DDDDDDDD}'
-                if (pos < end && (CharacterCodes)text[pos] == CharacterCodes::openBrace)
+                if (pos < end && text[pos] == CharacterCodes::openBrace)
                 {
                     pos++;
 
                     // '\u{'
-                    if (isTaggedTemplate && !isHexDigit((CharacterCodes)text[pos]))
+                    if (isTaggedTemplate && !isHexDigit(text[pos]))
                     {
                         tokenFlags |= TokenFlags::ContainsInvalidEscape;
-                        return text.substr(start, pos - start);
+                        return text.substring(start, pos);
                     }
 
                     if (isTaggedTemplate)
@@ -1883,10 +1887,10 @@ private:
                         auto escapedValue = !escapedValueString.empty() ? to_number_base(escapedValueString, 16) : -1;
 
                         // '\u{Not Code Point' or '\u{CodePoint'
-                        if (!isCodePoint(escapedValue) || (CharacterCodes)text[pos] != CharacterCodes::closeBrace)
+                        if (!isCodePoint(escapedValue) || text[pos] != CharacterCodes::closeBrace)
                         {
                             tokenFlags |= TokenFlags::ContainsInvalidEscape;
-                            return text.substr(start, pos - start);
+                            return text.substring(start, pos);
                         }
                         else
                         {
@@ -1904,16 +1908,16 @@ private:
             case CharacterCodes::x:
                 if (isTaggedTemplate)
                 {
-                    if (!isHexDigit((CharacterCodes)text[pos]))
+                    if (!isHexDigit(text[pos]))
                     {
                         tokenFlags |= TokenFlags::ContainsInvalidEscape;
-                        return text.substr(start, pos - start);
+                        return text.substring(start, pos);
                     }
-                    else if (!isHexDigit((CharacterCodes)text[pos + 1]))
+                    else if (!isHexDigit(text[pos + 1]))
                     {
                         pos++;
                         tokenFlags |= TokenFlags::ContainsInvalidEscape;
-                        return text.substr(start, pos - start);
+                        return text.substring(start, pos);
                     }
                 }
                 // '\xDD'
@@ -1922,7 +1926,7 @@ private:
             // when encountering a LineContinuation (i.e. a backslash and a line terminator sequence),
             // the line terminator is interpreted to be "the empty code unit sequence".
             case CharacterCodes::carriageReturn:
-                if (pos < end && (CharacterCodes)text[pos] == CharacterCodes::lineFeed)
+                if (pos < end && text[pos] == CharacterCodes::lineFeed)
                 {
                     pos++;
                 }
@@ -1974,7 +1978,7 @@ private:
                 error(Diagnostics::Unexpected_end_of_text);
                 isInvalidExtendedEscape = true;
             }
-            else if ((CharacterCodes)text[pos] == CharacterCodes::closeBrace)
+            else if (text[pos] == CharacterCodes::closeBrace)
             {
                 // Only swallow the following character up if it's a '}'.
                 pos++;
@@ -1990,34 +1994,34 @@ private:
                 return S("");
             }
 
-            return utf16EncodeAsString((CharacterCodes)escapedValue);
+            return utf16EncodeAsString((CharacterCodes) escapedValue);
         }
 
         // Current character is known to be a backslash. Check for Unicode escape of the form '\uXXXX'
         // and return code point value if valid Unicode escape is found. Otherwise return -1.
         auto peekUnicodeEscape() -> CharacterCodes
         {
-            if (pos + 5 < end && (CharacterCodes)text[pos + 1] == CharacterCodes::u)
+            if (pos + 5 < end && text[pos + 1] == CharacterCodes::u)
             {
                 auto start = pos;
                 pos += 2;
                 auto value = scanExactNumberOfHexDigits(4, /*canHaveSeparators*/ false);
                 pos = start;
-                return (CharacterCodes)value;
+                return (CharacterCodes) value;
             }
             return CharacterCodes::outOfBoundary;
         }
 
         auto peekExtendedUnicodeEscape() -> CharacterCodes
         {
-            if (languageVersion >= ScriptTarget::ES2015 && (CharacterCodes)codePointAt(text, pos + 1) == CharacterCodes::u && (CharacterCodes)codePointAt(text, pos + 2) == CharacterCodes::openBrace)
+            if (languageVersion >= ScriptTarget::ES2015 && codePointAt(text, pos + 1) == CharacterCodes::u && codePointAt(text, pos + 2) == CharacterCodes::openBrace)
             {
                 auto start = pos;
                 pos += 3;
                 auto escapedValueString = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ false);
                 auto escapedValue = !escapedValueString.empty() ? to_number_base(escapedValueString, 16) : -1;
                 pos = start;
-                return (CharacterCodes)escapedValue;
+                return (CharacterCodes) escapedValue;
             }
             return CharacterCodes::outOfBoundary;
         }
@@ -2028,14 +2032,14 @@ private:
             auto start = pos;
             while (pos < end)
             {
-                auto ch = (CharacterCodes)codePointAt(text, pos);
+                auto ch = codePointAt(text, pos);
                 if (isIdentifierPart(ch, languageVersion))
                 {
                     pos += charSize(ch);
                 }
                 else if (ch == CharacterCodes::backslash)
                 {
-                    ch = (CharacterCodes)peekExtendedUnicodeEscape();
+                    ch = peekExtendedUnicodeEscape();
                     if (ch >= CharacterCodes::nullCharacter && isIdentifierPart(ch, languageVersion))
                     {
                         pos += 3;
@@ -2044,13 +2048,13 @@ private:
                         start = pos;
                         continue;
                     }
-                    ch = (CharacterCodes)peekUnicodeEscape();
+                    ch = peekUnicodeEscape();
                     if (!(ch >= CharacterCodes::nullCharacter && isIdentifierPart(ch, languageVersion)))
                     {
                         break;
                     }
                     tokenFlags |= TokenFlags::UnicodeEscape;
-                    result += text.substr(start, pos - start);
+                    result += text.substring(start, pos);
                     result += utf16EncodeAsString(ch);
                     // Valid Unicode escape is always six characters
                     pos += 6;
@@ -2061,7 +2065,7 @@ private:
                     break;
                 }
             }
-            result += text.substr(start, pos - start);
+            result += text.substring(start, pos);
             return result;
         }
 
@@ -2071,7 +2075,7 @@ private:
             auto len = tokenValue.size();
             if (len >= 2 && len <= 12)
             {
-                auto ch = (CharacterCodes)tokenValue[0];
+                auto ch = (CharacterCodes) tokenValue[0];
                 if (ch >= CharacterCodes::a && ch <= CharacterCodes::z)
                 {
                     auto keyword = textToKeyword[tokenValue];
@@ -2093,7 +2097,7 @@ private:
             auto isPreviousTokenSeparator = false;
             while (true)
             {
-                auto ch = (CharacterCodes)text[pos];
+                auto ch = text[pos];
                 // Numeric separators are allowed anywhere within a numeric literal, except not at the beginning, or following another separator
                 if (ch == CharacterCodes::_)
                 {
@@ -2119,11 +2123,11 @@ private:
                 {
                     break;
                 }
-                value += text[pos];
+                value += (char_t) text[pos];
                 pos++;
                 isPreviousTokenSeparator = false;
             }
-            if ((CharacterCodes)text[pos + 1] == CharacterCodes::_)
+            if (text[pos + 1] == CharacterCodes::_)
             {
                 // Literal ends with underscore - not allowed
                 error(Diagnostics::Numeric_separators_are_not_allowed_here, pos - 1, 1);
@@ -2133,7 +2137,7 @@ private:
 
         auto checkBigIntSuffix() -> SyntaxKind
         {
-            if ((CharacterCodes)text[pos] == CharacterCodes::n)
+            if (text[pos] == CharacterCodes::n)
             {
                 tokenValue += S("n");
                 // Use base 10 instead of base 2 or base 8 for shorter literals
@@ -2170,7 +2174,7 @@ private:
                 {
                     return token = SyntaxKind::EndOfFileToken;
                 }
-                auto ch = (CharacterCodes)codePointAt(text, pos);
+                auto ch = codePointAt(text, pos);
 
                 // Special handling for shebang
                 if (ch == CharacterCodes::hash && pos == 0 && isShebangTrivia(text, pos))
@@ -2198,7 +2202,7 @@ private:
                     }
                     else
                     {
-                        if (ch == CharacterCodes::carriageReturn && pos + 1 < end && (CharacterCodes)text[pos + 1] == CharacterCodes::lineFeed)
+                        if (ch == CharacterCodes::carriageReturn && pos + 1 < end && text[pos + 1] == CharacterCodes::lineFeed)
                         {
                             // consume both CR and LF
                             pos += 2;
@@ -2238,16 +2242,16 @@ private:
                     }
                     else
                     {
-                        while (pos < end && isWhiteSpaceSingleLine((CharacterCodes)text[pos]))
+                        while (pos < end && isWhiteSpaceSingleLine(text[pos]))
                         {
                             pos++;
                         }
                         return token = SyntaxKind::WhitespaceTrivia;
                     }
                 case CharacterCodes::exclamation:
-                    if ((CharacterCodes)text[pos + 1] == CharacterCodes::equals)
+                    if (text[pos + 1] == CharacterCodes::equals)
                     {
-                        if ((CharacterCodes)text[pos + 2] == CharacterCodes::equals)
+                        if (text[pos + 2] == CharacterCodes::equals)
                         {
                             return pos += 3, token = SyntaxKind::ExclamationEqualsEqualsToken;
                         }
@@ -2262,22 +2266,22 @@ private:
                 case CharacterCodes::backtick:
                     return token = scanTemplateAndSetTokenValue(/* isTaggedTemplate */ false);
                 case CharacterCodes::percent:
-                    if ((CharacterCodes)text[pos + 1] == CharacterCodes::equals)
+                    if (text[pos + 1] == CharacterCodes::equals)
                     {
                         return pos += 2, token = SyntaxKind::PercentEqualsToken;
                     }
                     pos++;
                     return token = SyntaxKind::PercentToken;
                 case CharacterCodes::ampersand:
-                    if ((CharacterCodes)text[pos + 1] == CharacterCodes::ampersand)
+                    if (text[pos + 1] == CharacterCodes::ampersand)
                     {
-                        if ((CharacterCodes)text[pos + 2] == CharacterCodes::equals)
+                        if (text[pos + 2] == CharacterCodes::equals)
                         {
                             return pos += 3, token = SyntaxKind::AmpersandAmpersandEqualsToken;
                         }
                         return pos += 2, token = SyntaxKind::AmpersandAmpersandToken;
                     }
-                    if ((CharacterCodes)text[pos + 1] == CharacterCodes::equals)
+                    if (text[pos + 1] == CharacterCodes::equals)
                     {
                         return pos += 2, token = SyntaxKind::AmpersandEqualsToken;
                     }
@@ -2290,13 +2294,13 @@ private:
                     pos++;
                     return token = SyntaxKind::CloseParenToken;
                 case CharacterCodes::asterisk:
-                    if ((CharacterCodes)text[pos + 1] == CharacterCodes::equals)
+                    if (text[pos + 1] == CharacterCodes::equals)
                     {
                         return pos += 2, token = SyntaxKind::AsteriskEqualsToken;
                     }
-                    if ((CharacterCodes)text[pos + 1] == CharacterCodes::asterisk)
+                    if (text[pos + 1] == CharacterCodes::asterisk)
                     {
-                        if ((CharacterCodes)text[pos + 2] == CharacterCodes::equals)
+                        if (text[pos + 2] == CharacterCodes::equals)
                         {
                             return pos += 3, token = SyntaxKind::AsteriskAsteriskEqualsToken;
                         }
@@ -2311,11 +2315,11 @@ private:
                     }
                     return token = SyntaxKind::AsteriskToken;
                 case CharacterCodes::plus:
-                    if ((CharacterCodes)text[pos + 1] == CharacterCodes::plus)
+                    if (text[pos + 1] == CharacterCodes::plus)
                     {
                         return pos += 2, token = SyntaxKind::PlusPlusToken;
                     }
-                    if ((CharacterCodes)text[pos + 1] == CharacterCodes::equals)
+                    if (text[pos + 1] == CharacterCodes::equals)
                     {
                         return pos += 2, token = SyntaxKind::PlusEqualsToken;
                     }
@@ -2325,23 +2329,23 @@ private:
                     pos++;
                     return token = SyntaxKind::CommaToken;
                 case CharacterCodes::minus:
-                    if ((CharacterCodes)text[pos + 1] == CharacterCodes::minus)
+                    if (text[pos + 1] == CharacterCodes::minus)
                     {
                         return pos += 2, token = SyntaxKind::MinusMinusToken;
                     }
-                    if ((CharacterCodes)text[pos + 1] == CharacterCodes::equals)
+                    if (text[pos + 1] == CharacterCodes::equals)
                     {
                         return pos += 2, token = SyntaxKind::MinusEqualsToken;
                     }
                     pos++;
                     return token = SyntaxKind::MinusToken;
                 case CharacterCodes::dot:
-                    if (isDigit((CharacterCodes)text[pos + 1]))
+                    if (isDigit(text[pos + 1]))
                     {
                         tokenValue = scanNumber().value;
                         return token = SyntaxKind::NumericLiteral;
                     }
-                    if ((CharacterCodes)text[pos + 1] == CharacterCodes::dot && (CharacterCodes)text[pos + 2] == CharacterCodes::dot)
+                    if (text[pos + 1] == CharacterCodes::dot && text[pos + 2] == CharacterCodes::dot)
                     {
                         return pos += 3, token = SyntaxKind::DotDotDotToken;
                     }
@@ -2349,13 +2353,13 @@ private:
                     return token = SyntaxKind::DotToken;
                 case CharacterCodes::slash:
                     // Single-line comment
-                    if ((CharacterCodes)text[pos + 1] == CharacterCodes::slash)
+                    if (text[pos + 1] == CharacterCodes::slash)
                     {
                         pos += 2;
 
                         while (pos < end)
                         {
-                            if (isLineBreak((CharacterCodes)text[pos]))
+                            if (isLineBreak(text[pos]))
                             {
                                 break;
                             }
@@ -2364,7 +2368,7 @@ private:
 
                         commentDirectives = appendIfCommentDirective(
                             commentDirectives,
-                            text.substr(tokenPos, pos-tokenPos),
+                            text.substring(tokenPos, pos),
                             commentDirectiveRegExSingleLine,
                             tokenPos);
 
@@ -2378,10 +2382,10 @@ private:
                         }
                     }
                     // Multi-line comment
-                    if ((CharacterCodes)text[pos + 1] == CharacterCodes::asterisk)
+                    if (text[pos + 1] == CharacterCodes::asterisk)
                     {
                         pos += 2;
-                        if ((CharacterCodes)text[pos] == CharacterCodes::asterisk && (CharacterCodes)text[pos + 1] != CharacterCodes::slash)
+                        if (text[pos] == CharacterCodes::asterisk && text[pos + 1] != CharacterCodes::slash)
                         {
                             tokenFlags |= TokenFlags::PrecedingJSDocComment;
                         }
@@ -2390,9 +2394,9 @@ private:
                         auto lastLineStart = tokenPos;
                         while (pos < end)
                         {
-                            auto ch = (CharacterCodes)text[pos];
+                            auto ch = text[pos];
 
-                            if (ch == CharacterCodes::asterisk && (CharacterCodes)text[pos + 1] == CharacterCodes::slash)
+                            if (ch == CharacterCodes::asterisk && text[pos + 1] == CharacterCodes::slash)
                             {
                                 pos += 2;
                                 commentClosed = true;
@@ -2408,7 +2412,7 @@ private:
                             }
                         }
 
-                        commentDirectives = appendIfCommentDirective(commentDirectives, text.substr(lastLineStart, pos-lastLineStart), commentDirectiveRegExMultiLine, lastLineStart);
+                        commentDirectives = appendIfCommentDirective(commentDirectives, text.substring(lastLineStart, pos), commentDirectiveRegExMultiLine, lastLineStart);
 
                         if (!commentClosed)
                         {
@@ -2429,7 +2433,7 @@ private:
                         }
                     }
 
-                    if ((CharacterCodes)text[pos + 1] == CharacterCodes::equals)
+                    if (text[pos + 1] == CharacterCodes::equals)
                     {
                         return pos += 2, token = SyntaxKind::SlashEqualsToken;
                     }
@@ -2438,7 +2442,7 @@ private:
                     return token = SyntaxKind::SlashToken;
 
                 case CharacterCodes::_0:
-                    if (pos + 2 < end && ((CharacterCodes)text[pos + 1] == CharacterCodes::X || (CharacterCodes)text[pos + 1] == CharacterCodes::x))
+                    if (pos + 2 < end && (text[pos + 1] == CharacterCodes::X || text[pos + 1] == CharacterCodes::x))
                     {
                         pos += 2;
                         tokenValue = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ true);
@@ -2451,7 +2455,7 @@ private:
                         tokenFlags |= TokenFlags::HexSpecifier;
                         return token = checkBigIntSuffix();
                     }
-                    else if (pos + 2 < end && ((CharacterCodes)text[pos + 1] == CharacterCodes::B || (CharacterCodes)text[pos + 1] == CharacterCodes::b))
+                    else if (pos + 2 < end && (text[pos + 1] == CharacterCodes::B || text[pos + 1] == CharacterCodes::b))
                     {
                         pos += 2;
                         tokenValue = scanBinaryOrOctalDigits(/* base */ 2);
@@ -2464,7 +2468,7 @@ private:
                         tokenFlags |= TokenFlags::BinarySpecifier;
                         return token = checkBigIntSuffix();
                     }
-                    else if (pos + 2 < end && ((CharacterCodes)text[pos + 1] == CharacterCodes::O || (CharacterCodes)text[pos + 1] == CharacterCodes::o))
+                    else if (pos + 2 < end && (text[pos + 1] == CharacterCodes::O || text[pos + 1] == CharacterCodes::o))
                     {
                         pos += 2;
                         tokenValue = scanBinaryOrOctalDigits(/* base */ 8);
@@ -2478,7 +2482,7 @@ private:
                         return token = checkBigIntSuffix();
                     }
                     // Try to parse as an octal
-                    if (pos + 1 < end && isOctalDigit((CharacterCodes)text[pos + 1]))
+                    if (pos + 1 < end && isOctalDigit(text[pos + 1]))
                     {
                         tokenValue = S("") + scanOctalDigits();
                         tokenFlags |= TokenFlags::Octal;
@@ -2523,21 +2527,21 @@ private:
                         }
                     }
 
-                    if ((CharacterCodes)text[pos + 1] == CharacterCodes::lessThan)
+                    if (text[pos + 1] == CharacterCodes::lessThan)
                     {
-                        if ((CharacterCodes)text[pos + 2] == CharacterCodes::equals)
+                        if (text[pos + 2] == CharacterCodes::equals)
                         {
                             return pos += 3, token = SyntaxKind::LessThanLessThanEqualsToken;
                         }
                         return pos += 2, token = SyntaxKind::LessThanLessThanToken;
                     }
-                    if ((CharacterCodes)text[pos + 1] == CharacterCodes::equals)
+                    if (text[pos + 1] == CharacterCodes::equals)
                     {
                         return pos += 2, token = SyntaxKind::LessThanEqualsToken;
                     }
                     if (languageVariant == LanguageVariant::JSX &&
-                        (CharacterCodes)text[pos + 1] == CharacterCodes::slash &&
-                        (CharacterCodes)text[pos + 2] != CharacterCodes::asterisk)
+                        text[pos + 1] == CharacterCodes::slash &&
+                        text[pos + 2] != CharacterCodes::asterisk)
                     {
                         return pos += 2, token = SyntaxKind::LessThanSlashToken;
                     }
@@ -2557,15 +2561,15 @@ private:
                         }
                     }
 
-                    if ((CharacterCodes)text[pos + 1] == CharacterCodes::equals)
+                    if (text[pos + 1] == CharacterCodes::equals)
                     {
-                        if ((CharacterCodes)text[pos + 2] == CharacterCodes::equals)
+                        if (text[pos + 2] == CharacterCodes::equals)
                         {
                             return pos += 3, token = SyntaxKind::EqualsEqualsEqualsToken;
                         }
                         return pos += 2, token = SyntaxKind::EqualsEqualsToken;
                     }
-                    if ((CharacterCodes)text[pos + 1] == CharacterCodes::greaterThan)
+                    if (text[pos + 1] == CharacterCodes::greaterThan)
                     {
                         return pos += 2, token = SyntaxKind::EqualsGreaterThanToken;
                     }
@@ -2588,13 +2592,13 @@ private:
                     pos++;
                     return token = SyntaxKind::GreaterThanToken;
                 case CharacterCodes::question:
-                    if ((CharacterCodes)text[pos + 1] == CharacterCodes::dot && !isDigit((CharacterCodes)text[pos + 2]))
+                    if (text[pos + 1] == CharacterCodes::dot && !isDigit(text[pos + 2]))
                     {
                         return pos += 2, token = SyntaxKind::QuestionDotToken;
                     }
-                    if ((CharacterCodes)text[pos + 1] == CharacterCodes::question)
+                    if (text[pos + 1] == CharacterCodes::question)
                     {
-                        if ((CharacterCodes)text[pos + 2] == CharacterCodes::equals)
+                        if (text[pos + 2] == CharacterCodes::equals)
                         {
                             return pos += 3, token = SyntaxKind::QuestionQuestionEqualsToken;
                         }
@@ -2609,7 +2613,7 @@ private:
                     pos++;
                     return token = SyntaxKind::CloseBracketToken;
                 case CharacterCodes::caret:
-                    if ((CharacterCodes)text[pos + 1] == CharacterCodes::equals)
+                    if (text[pos + 1] == CharacterCodes::equals)
                     {
                         return pos += 2, token = SyntaxKind::CaretEqualsToken;
                     }
@@ -2632,15 +2636,15 @@ private:
                         }
                     }
 
-                    if ((CharacterCodes)text[pos + 1] == CharacterCodes::bar)
+                    if (text[pos + 1] == CharacterCodes::bar)
                     {
-                        if ((CharacterCodes)text[pos + 2] == CharacterCodes::equals)
+                        if (text[pos + 2] == CharacterCodes::equals)
                         {
                             return pos += 3, token = SyntaxKind::BarBarEqualsToken;
                         }
                         return pos += 2, token = SyntaxKind::BarBarToken;
                     }
-                    if ((CharacterCodes)text[pos + 1] == CharacterCodes::equals)
+                    if (text[pos + 1] == CharacterCodes::equals)
                     {
                         return pos += 2, token = SyntaxKind::BarEqualsToken;
                     }
@@ -2666,7 +2670,7 @@ private:
                         return token = getIdentifierToken();
                     }
 
-                    auto cookedChar = (CharacterCodes)peekUnicodeEscape();
+                    auto cookedChar = peekUnicodeEscape();
                     if (cookedChar >= CharacterCodes::nullCharacter && isIdentifierStart(cookedChar, languageVersion))
                     {
                         pos += 6;
@@ -2680,19 +2684,19 @@ private:
                     return token = SyntaxKind::Unknown;
                 }
                 case CharacterCodes::hash:
-                    if (pos != 0 && text[pos + 1] == S('!'))
+                    if (pos != 0 && text[pos + 1] == CharacterCodes::exclamation)
                     {
                         error(Diagnostics::can_only_be_used_at_the_start_of_a_file);
                         pos++;
                         return token = SyntaxKind::Unknown;
                     }
                     pos++;
-                    if (isIdentifierStart(ch = (CharacterCodes)text[pos], languageVersion))
+                    if (isIdentifierStart(ch = text[pos], languageVersion))
                     {
                         pos++;
-                        while (pos < end && isIdentifierPart(ch = (CharacterCodes)text[pos], languageVersion))
+                        while (pos < end && isIdentifierPart(ch = text[pos], languageVersion))
                             pos++;
-                        tokenValue = text.substr(tokenPos, pos-tokenPos);
+                        tokenValue = text.substring(tokenPos, pos);
                         if (ch == CharacterCodes::backslash)
                         {
                             tokenValue += scanIdentifierParts();
@@ -2752,7 +2756,7 @@ private:
                 pos += charSize(ch);
                 while (pos < end && isIdentifierPart(ch = codePointAt(text, pos), languageVersion))
                     pos += charSize(ch);
-                tokenValue = text.substr(tokenPos, pos-tokenPos);
+                tokenValue = text.substring(tokenPos, pos);
                 if (ch == CharacterCodes::backslash)
                 {
                     tokenValue += scanIdentifierParts();
@@ -2767,24 +2771,24 @@ private:
         {
             if (token == SyntaxKind::GreaterThanToken)
             {
-                if ((CharacterCodes)text[pos] == CharacterCodes::greaterThan)
+                if (text[pos] == CharacterCodes::greaterThan)
                 {
-                    if ((CharacterCodes)text[pos + 1] == CharacterCodes::greaterThan)
+                    if (text[pos + 1] == CharacterCodes::greaterThan)
                     {
-                        if ((CharacterCodes)text[pos + 2] == CharacterCodes::equals)
+                        if (text[pos + 2] == CharacterCodes::equals)
                         {
                             return pos += 3, token = SyntaxKind::GreaterThanGreaterThanGreaterThanEqualsToken;
                         }
                         return pos += 2, token = SyntaxKind::GreaterThanGreaterThanGreaterThanToken;
                     }
-                    if ((CharacterCodes)text[pos + 1] == CharacterCodes::equals)
+                    if (text[pos + 1] == CharacterCodes::equals)
                     {
                         return pos += 2, token = SyntaxKind::GreaterThanGreaterThanEqualsToken;
                     }
                     pos++;
                     return token = SyntaxKind::GreaterThanGreaterThanToken;
                 }
-                if ((CharacterCodes)text[pos] == CharacterCodes::equals)
+                if (text[pos] == CharacterCodes::equals)
                 {
                     pos++;
                     return token = SyntaxKind::GreaterThanEqualsToken;
@@ -2818,7 +2822,7 @@ private:
                         break;
                     }
 
-                    auto ch = (CharacterCodes)text[p];
+                    auto ch = text[p];
                     if (isLineBreak(ch))
                     {
                         tokenFlags |= TokenFlags::Unterminated;
@@ -2854,12 +2858,12 @@ private:
                     p++;
                 }
 
-                while (p < end && isIdentifierPart((CharacterCodes)text[p], languageVersion))
+                while (p < end && isIdentifierPart(text[p], languageVersion))
                 {
                     p++;
                 }
                 pos = p;
-                tokenValue = text.substr(tokenPos, pos - tokenPos);
+                tokenValue = text.substring(tokenPos, pos);
                 token = SyntaxKind::RegularExpressionLiteral;
             }
             return token;
@@ -2954,10 +2958,10 @@ private:
                 return token = SyntaxKind::EndOfFileToken;
             }
 
-            auto char_ = (CharacterCodes)text[pos];
+            auto char_ = text[pos];
             if (char_ == CharacterCodes::lessThan)
             {
-                if ((CharacterCodes)text[pos + 1] == CharacterCodes::slash)
+                if (text[pos + 1] == CharacterCodes::slash)
                 {
                     pos += 2;
                     return token = SyntaxKind::LessThanSlashToken;
@@ -2980,7 +2984,7 @@ private:
 
             while (pos < end)
             {
-                char_ = (CharacterCodes)text[pos];
+                char_ = text[pos];
                 if (char_ == CharacterCodes::openBrace)
                 {
                     break;
@@ -3027,7 +3031,7 @@ private:
                 pos++;
             }
 
-            tokenValue = text.substr(startPos, pos-startPos);
+            tokenValue = text.substring(startPos, pos);
 
             return firstNonWhitespace == -1 ? SyntaxKind::JsxTextAllWhiteSpaces : SyntaxKind::JsxText;
         }
@@ -3045,7 +3049,7 @@ private:
                 auto namespaceSeparator = false;
                 while (pos < end)
                 {
-                    auto ch = (CharacterCodes)text[pos];
+                    auto ch = text[pos];
                     if (ch == CharacterCodes::minus)
                     {
                         tokenValue += S("-");
@@ -3080,7 +3084,7 @@ private:
         {
             startPos = pos;
 
-            switch ((CharacterCodes)text[pos])
+            switch (text[pos])
             {
             case CharacterCodes::doubleQuote:
             case CharacterCodes::singleQuote:
@@ -3115,7 +3119,7 @@ private:
             case CharacterCodes::verticalTab:
             case CharacterCodes::formFeed:
             case CharacterCodes::space:
-                while (pos < end && isWhiteSpaceSingleLine((CharacterCodes)text[pos]))
+                while (pos < end && isWhiteSpaceSingleLine(text[pos]))
                 {
                     pos++;
                 }
@@ -3123,7 +3127,7 @@ private:
             case CharacterCodes::at:
                 return token = SyntaxKind::AtToken;
             case CharacterCodes::carriageReturn:
-                if ((CharacterCodes)text[pos] == CharacterCodes::lineFeed)
+                if (text[pos] == CharacterCodes::lineFeed)
                 {
                     pos++;
                 }
@@ -3179,9 +3183,9 @@ private:
             if (isIdentifierStart(ch, languageVersion))
             {
                 auto char_ = ch;
-                while (pos < end && isIdentifierPart(char_ = codePointAt(text, pos), languageVersion) || (CharacterCodes)text[pos] == CharacterCodes::minus)
+                while (pos < end && isIdentifierPart(char_ = codePointAt(text, pos), languageVersion) || text[pos] == CharacterCodes::minus)
                     pos += charSize(char_);
-                tokenValue = text.substr(tokenPos, pos-tokenPos);
+                tokenValue = text.substring(tokenPos, pos);
                 if (char_ == CharacterCodes::backslash)
                 {
                     tokenValue += scanIdentifierParts();
@@ -3307,7 +3311,7 @@ private:
         }
 
         /* @internal */
-        auto codePointAt(string str, number i) -> CharacterCodes
+        auto codePointAt(safe_string str, number i) -> CharacterCodes
         {
             // from https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/codePointAt
             auto size = str.length();
@@ -3319,16 +3323,16 @@ private:
             // Get the first code unit
             auto first = str[i];
             // check if it’s the start of a surrogate pair
-            if (first >= 0xD800 && first <= 0xDBFF && size > i + 1)
+            if (first >= CharacterCodes::_startOfSurrogate && first <= CharacterCodes::_endOfSurrogate && size > i + 1)
             { // high surrogate and there is a next code unit
                 auto second = str[i + 1];
-                if (second >= 0xDC00 && second <= 0xDFFF)
+                if (second >= CharacterCodes::_startOfSurrogateLow && second <= CharacterCodes::_endOfSurrogateLow)
                 { // low surrogate
                     // https://mathiasbynens.be/notes/javascript-encoding#surrogate-formulae
-                    return (CharacterCodes) ((first - 0xD800) * 0x400 + second - 0xDC00 + 0x10000);
+                    return (CharacterCodes) (((number)first - (number)CharacterCodes::_startOfSurrogate) * 0x400 + (number)second - (number)CharacterCodes::_startOfSurrogateLow + (number)CharacterCodes::_2bytes);
                 }
             }
-            return (CharacterCodes)first;
+            return first;
         };
 
         /* @internal */
@@ -3404,7 +3408,7 @@ private:
     
     auto Scanner::getTokenText() -> string
     {
-        return impl->text.substr(impl->tokenPos, impl->pos-impl->tokenPos);
+        return impl->text.substring(impl->tokenPos, impl->pos);
     } 
 
     auto Scanner::getTokenValue() -> string
