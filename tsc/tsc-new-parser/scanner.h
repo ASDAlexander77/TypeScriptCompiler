@@ -904,6 +904,11 @@ namespace ts
                             number length = -1);
 
         auto scan() -> SyntaxKind;
+        auto token() -> SyntaxKind;
+        auto tokenPos() -> number;
+        auto tokenValue() -> string;
+        auto tokenFlags() -> TokenFlags;
+        auto tokenToString(SyntaxKind) -> string;
 
         ~Scanner();
     };

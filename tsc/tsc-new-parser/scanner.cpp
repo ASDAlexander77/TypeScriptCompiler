@@ -174,7 +174,7 @@ namespace ts
             {S("await"), SyntaxKind::AwaitKeyword},
             {S("of"), SyntaxKind::OfKeyword},
 
-            {S("{S("), SyntaxKind::OpenBraceToken},
+            {S("{"), SyntaxKind::OpenBraceToken},
             {S("}"), SyntaxKind::CloseBraceToken},
             {S("("), SyntaxKind::OpenParenToken},
             {S(")"), SyntaxKind::CloseParenToken},
@@ -361,11 +361,13 @@ namespace ts
         }
 
         std::map<SyntaxKind, string> tokenStrings = makeReverseMap(textToToken);
+public:        
         auto tokenToString(SyntaxKind t) -> string
         {
             return tokenStrings[t];
         }
 
+private:
         /* @internal */
         auto stringToToken(string s) -> SyntaxKind
         {
@@ -1070,6 +1072,7 @@ namespace ts
         // Start position of whitespace before current token
         number startPos;
 
+public:
         // Start position of text of current token
         number tokenPos;
 
@@ -1077,6 +1080,7 @@ namespace ts
         string tokenValue;
         TokenFlags tokenFlags;
 
+private:
         std::vector<CommentDirective> commentDirectives;
         number inJSDocType = 0;
 
@@ -3028,6 +3032,31 @@ private:
     {
         return impl->scan();
     }
+
+    auto Scanner::tokenToString(SyntaxKind t) -> string
+    {
+        return impl->tokenToString(t);
+    }    
+
+    auto Scanner::token() -> SyntaxKind
+    {
+        return impl->token;
+    }      
+
+    auto Scanner::tokenPos() -> number
+    {
+        return impl->tokenPos;
+    }  
+
+    auto Scanner::tokenValue() -> string
+    {
+        return impl->tokenValue;
+    }     
+
+    auto Scanner::tokenFlags() -> TokenFlags
+    {
+        return impl->tokenFlags;
+    }    
 
     Scanner::~Scanner()
     {
