@@ -681,7 +681,7 @@ struct safe_string
 
     CharacterCodes operator [](number index)
     {
-        if (value.length() > index)
+        if (index >= value.length())
         {
             return CharacterCodes::outOfBoundary;
         }

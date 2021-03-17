@@ -935,7 +935,7 @@ private:
             return ch >= CharacterCodes::_0 && ch <= CharacterCodes::_7;
         }
 
-        auto couldStartTrivia(safe_string text, number pos) -> boolean
+        auto couldStartTrivia(safe_string &text, number pos) -> boolean
         {
             // Keep in sync with skipTrivia
             auto ch = text[pos];
@@ -965,7 +965,7 @@ private:
         }
 
         /* @internal */
-        auto skipTrivia(safe_string text, number pos, bool stopAfterLineBreak = false, bool stopAtComments = false) -> number
+        auto skipTrivia(safe_string &text, number pos, bool stopAfterLineBreak = false, bool stopAtComments = false) -> number
         {
             if (positionIsSynthesized(pos))
             {
@@ -1066,7 +1066,7 @@ private:
         // a <<<<<<< or >>>>>>> marker then it is also followed by a space.
         number mergeConflictMarkerLength = std::strlen("<<<<<<<");
 
-        auto isConflictMarkerTrivia(safe_string text, number pos) -> boolean
+        auto isConflictMarkerTrivia(safe_string &text, number pos) -> boolean
         {
             debug(pos >= 0);
 
@@ -1093,7 +1093,7 @@ private:
             return false;
         }
 
-        auto scanConflictMarkerTrivia(safe_string text, number pos, std::function<void(DiagnosticMessage, number, number)> error = nullptr) -> number
+        auto scanConflictMarkerTrivia(safe_string &text, number pos, std::function<void(DiagnosticMessage, number, number)> error = nullptr) -> number
         {
             if (error)
             {
@@ -1133,7 +1133,7 @@ private:
         regex shebangTriviaRegex = regex(S("^#!.*"));
 
         /*@internal*/
-        auto isShebangTrivia(string text, number pos) -> boolean
+        auto isShebangTrivia(string &text, number pos) -> boolean
         {
             // Shebangs check must only be done at the start of the file
             debug(pos == 0);
@@ -1141,7 +1141,7 @@ private:
         }
 
         /*@internal*/
-        auto scanShebangTrivia(string text, number pos) -> number
+        auto scanShebangTrivia(string &text, number pos) -> number
         {
             auto words_begin = sregex_iterator(text.begin(), text.end(), shebangTriviaRegex);
             auto words_end = sregex_iterator();
@@ -1308,25 +1308,25 @@ private:
         }
 
         template <typename T, typename U>
-        auto forEachLeadingCommentRange(string text, number pos, cb_type<T, U> cb, T state = T()) -> U
+        auto forEachLeadingCommentRange(string &text, number pos, cb_type<T, U> cb, T state = T()) -> U
         {
             return iterateCommentRanges(/*reduce*/ false, text, pos, /*trailing*/ false, cb, state);
         }
 
         template <typename T, typename U>
-        auto forEachTrailingCommentRange(string text, number pos, cb_type<T, U> cb, T state = T()) -> U
+        auto forEachTrailingCommentRange(string &text, number pos, cb_type<T, U> cb, T state = T()) -> U
         {
             return iterateCommentRanges(/*reduce*/ false, text, pos, /*trailing*/ true, cb, state);
         }
 
         template <typename T, typename U>
-        auto reduceEachLeadingCommentRange(string text, number pos, cb_type<T, U> cb, T state, U initial)
+        auto reduceEachLeadingCommentRange(string &text, number pos, cb_type<T, U> cb, T state, U initial)
         {
             return iterateCommentRanges(/*reduce*/ true, text, pos, /*trailing*/ false, cb, state, initial);
         }
 
         template <typename T, typename U>
-        auto reduceEachTrailingCommentRange(string text, number pos, cb_type<T, U> cb, T state, U initial)
+        auto reduceEachTrailingCommentRange(string &text, number pos, cb_type<T, U> cb, T state, U initial)
         {
             return iterateCommentRanges(/*reduce*/ true, text, pos, /*trailing*/ true, cb, state, initial);
         }
@@ -1337,7 +1337,7 @@ private:
             return comments;
         }
 
-        auto getLeadingCommentRanges(string text, number pos) -> std::vector<CommentRange>
+        auto getLeadingCommentRanges(string &text, number pos) -> std::vector<CommentRange>
         {
             return reduceEachLeadingCommentRange<number, std::vector<CommentRange>>(
                 text,
@@ -1347,7 +1347,7 @@ private:
                 std::vector<CommentRange>());
         }
 
-        auto getTrailingCommentRanges(string text, number pos) -> std::vector<CommentRange>
+        auto getTrailingCommentRanges(string &text, number pos) -> std::vector<CommentRange>
         {
             return reduceEachTrailingCommentRange<number, std::vector<CommentRange>>(
                 text,
@@ -1358,7 +1358,7 @@ private:
         }
 
         /** Optionally, get the shebang */
-        auto getShebang(string text) -> string
+        auto getShebang(string &text) -> string
         {
             auto words_begin = sregex_iterator(text.begin(), text.end(), shebangTriviaRegex);
             auto words_end = sregex_iterator();
@@ -1388,7 +1388,7 @@ private:
         }
 
         /* @internal */
-        auto isIdentifierText(string name, ScriptTarget languageVersion, LanguageVariant identifierVariant = LanguageVariant::Standard) -> boolean
+        auto isIdentifierText(safe_string &name, ScriptTarget languageVersion, LanguageVariant identifierVariant = LanguageVariant::Standard) -> boolean
         {
             auto ch = codePointAt(name, 0);
             if (!isIdentifierStart(ch, languageVersion))
@@ -2888,7 +2888,7 @@ private:
             return commentDirectives;
         }
 
-        auto getDirectiveFromComment(string text, regex commentDirectiveRegEx) -> CommentDirectiveType
+        auto getDirectiveFromComment(string &text, regex commentDirectiveRegEx) -> CommentDirectiveType
         {
             auto words_begin = sregex_iterator(text.begin(), text.end(), commentDirectiveRegEx);
             auto words_end = sregex_iterator();
@@ -3311,7 +3311,7 @@ private:
         }
 
         /* @internal */
-        auto codePointAt(safe_string str, number i) -> CharacterCodes
+        auto codePointAt(safe_string &str, number i) -> CharacterCodes
         {
             // from https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/codePointAt
             auto size = str.length();
