@@ -431,7 +431,7 @@ enum SyntaxKindMapped2
 let data;
 try {
 	fs.statSync(process.argv[2]);
-	data = fs.readFileSync(process.argv[2]);
+	data = ts.sys.readFile(process.argv[2]);
 }
 catch (e) {
 	data = process.argv[2];
