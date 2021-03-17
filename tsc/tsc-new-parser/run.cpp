@@ -50,7 +50,10 @@ int main(int argc, char** args)
         auto exists = fs::exists(file);
         if (exists)
         {
+            typedef std::codecvt_utf8_utf16<wchar_t, 0x10ffff, std::codecvt_mode::consume_header> conv;
             std::wifstream f(file);
+            std::locale loc(f.getloc(), new conv());
+            f.imbue(loc);
             string str((std::istreambuf_iterator<char_t>(f)), std::istreambuf_iterator<char_t>());
             printScanner(str.c_str());
         }
