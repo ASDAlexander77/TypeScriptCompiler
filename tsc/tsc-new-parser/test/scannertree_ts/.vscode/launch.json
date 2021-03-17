@@ -7,7 +7,7 @@
         {
             "type": "node",
             "request": "launch",
-            "name": "Launch TS-Node",
+            "name": "Launch TS-Node - scannertree",
             "runtimeExecutable": "ts-node",
             "program": "${workspaceFolder}/scannertree.ts",
             "cwd": "${workspaceFolder}",
@@ -20,6 +20,14 @@
             ],
             "protocol": "inspector"
         },
-
+        {
+            "name": "Launch Program - match",
+            "program": "${workspaceFolder}/match.js",
+            "request": "launch",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "type": "pwa-node"
+        }
     ]
 }

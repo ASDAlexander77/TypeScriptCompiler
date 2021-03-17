@@ -4,6 +4,7 @@
   "main": "__out/scannertree.js",
   "version": "1.0.0",
   "description": "",
+  "type": "module",
   "scripts": {
     "run": "ts-node scannertree.ts file.ts"
   },
