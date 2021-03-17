@@ -1409,6 +1409,7 @@ private:
 
         LanguageVariant languageVariant;
 
+public:
         // scanner text
         string text;
 
@@ -1421,7 +1422,6 @@ private:
         // Start position of whitespace before current token
         number startPos;
 
-public:
         // Start position of text of current token
         number tokenPos;
 
@@ -3392,25 +3392,25 @@ private:
         return impl->syntaxKindString(t);
     }    
 
-    auto Scanner::token() -> SyntaxKind
+    auto Scanner::getToken() -> SyntaxKind
     {
         return impl->token;
     }      
 
-    auto Scanner::tokenPos() -> number
+    auto Scanner::getTokenPos() -> number
     {
         return impl->tokenPos;
     }  
+    
+    auto Scanner::getTokenText() -> string
+    {
+        return impl->text.substr(impl->tokenPos, impl->pos-impl->tokenPos);
+    } 
 
-    auto Scanner::tokenValue() -> string
+    auto Scanner::getTokenValue() -> string
     {
         return impl->tokenValue;
     }     
-
-    auto Scanner::tokenFlags() -> TokenFlags
-    {
-        return impl->tokenFlags;
-    }    
 
     Scanner::~Scanner()
     {
