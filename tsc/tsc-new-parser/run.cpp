@@ -10,6 +10,7 @@
 #include <locale>
 #include <codecvt>
 #include <string>
+#include <io.h>
 
 #if __cplusplus >= 201703L
 #include <filesystem>
@@ -31,7 +32,8 @@ void printScanner(const wchar_t *str)
     {
         token = scanner.scan();
         //std::wcout << scanner.syntaxKindString(token) << "(" << (int)token << S(") @") << scanner.getTokenPos() << S(" '") << scanner.tokenToString(token) << "':" << scanner.getTokenText() << std::endl;
-        std::wcout << (number)token << " " << scanner.getTokenText() << std::endl;
+        //std::wcout << (number)token << S(" ") << scanner.getTokenText() << std::endl;
+        wprintf(S("%d %s\n"), (number)token, scanner.getTokenText().c_str());
     }
 }
 

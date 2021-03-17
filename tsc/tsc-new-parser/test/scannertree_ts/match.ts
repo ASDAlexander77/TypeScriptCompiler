@@ -452,6 +452,11 @@ try {
 	for (const file of files) {
 		//const data = await fs.readFile(fld + "/" + file);
 
+		if (file == "collisionCodeGenModuleWithUnicodeNames.ts")
+		{
+			continue;
+		}
+
 		//console.log("... file data: " + data);
 		console.log("printing file TS ... read file: " + file);
 		const output1 = printTree(fld + "/" + file);

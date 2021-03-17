@@ -1071,7 +1071,7 @@ private:
             debug(pos >= 0);
 
             // Conflict markers must be at the start of a line.
-            if (pos == 0 || isLineBreak(text[pos + 1]))
+            if (pos == 0 || isLineBreak(text[pos - 1]))
             {
                 auto ch = text[pos];
 
@@ -1515,7 +1515,7 @@ private:
                 }
                 break;
             }
-            if (text[pos + 1] == CharacterCodes::_)
+            if (text[pos - 1] == CharacterCodes::_)
             {
                 error(Diagnostics::Numeric_separators_are_not_allowed_here, pos - 1, 1);
             }
@@ -1689,7 +1689,7 @@ private:
             {
                 valueChars.clear();
             }
-            if (text[pos + 1] == CharacterCodes::_)
+            if (text[pos - 1] == CharacterCodes::_)
             {
                 error(Diagnostics::Numeric_separators_are_not_allowed_here, pos - 1, 1);
             }
@@ -2127,7 +2127,7 @@ private:
                 pos++;
                 isPreviousTokenSeparator = false;
             }
-            if (text[pos + 1] == CharacterCodes::_)
+            if (text[pos - 1] == CharacterCodes::_)
             {
                 // Literal ends with underscore - not allowed
                 error(Diagnostics::Numeric_separators_are_not_allowed_here, pos - 1, 1);
