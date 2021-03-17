@@ -1,0 +1,25 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Launch TS-Node",
+            "runtimeExecutable": "ts-node",
+            "program": "${workspaceFolder}/scannertree.ts",
+            "cwd": "${workspaceFolder}",
+            "args": [
+                "function main() {}"
+            ],
+            "sourceMaps": true,
+            "outFiles": [
+              "${workspaceRoot}/*.js"
+            ],
+            "protocol": "inspector"
+        },
+
+    ]
+}

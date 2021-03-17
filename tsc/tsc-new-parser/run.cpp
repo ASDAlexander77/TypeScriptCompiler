@@ -38,7 +38,7 @@ void printScanner(const wchar_t* str)
 auto wtoc(char* in)
 {
     std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
-    std::wstring wide = converter.from_bytes(in);
+    auto wide = converter.from_bytes(in);
     return wide;
 }
 
