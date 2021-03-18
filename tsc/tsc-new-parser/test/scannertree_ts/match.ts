@@ -454,7 +454,12 @@ try {
             || file == "constructorWithIncompleteTypeAnnotation.ts"
             || file == "extendedUnicodePlaneIdentifiers.ts"
             || file == "extendedUnicodePlaneIdentifiersJSDoc.ts"
-            || file == "fileWithNextLine1.ts") {
+            || file == "fileWithNextLine1.ts"
+            || file == "parseErrorInHeritageClause1.ts"
+            || file == "sourceMap-LineBreaks.ts"
+            || file == "unicodeIdentifierName2.ts"
+            || file == "unicodeIdentifierNames.ts"
+            || file == "unicodeStringLiteral.ts") {
             continue;
         }
 
