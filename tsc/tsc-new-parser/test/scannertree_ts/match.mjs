@@ -11,7 +11,7 @@ import {execSync} from 'child_process';
 
             //console.log("... file data: " + data);
             const output1 = execSync("ts-node scannertree.ts " + fld + "/" + file);
-            const output2 = execSync("C:/dev/TypeScriptCompiler/__build/tsc/tsc-new-parser/Debug/tsc-new-parser.exe " + fld + "/" + file);
+            const output2 = execSync("C:/dev/TypeScriptCompiler/__build/tsc/tsc-new-parser/Debug/tsc-new-scanner.exe " + fld + "/" + file);
 
             const output1_str = output1.toString().split("\n");
             const output2_str = output2.toString().split("\n");
