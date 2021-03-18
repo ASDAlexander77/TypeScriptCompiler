@@ -1368,7 +1368,7 @@ private:
                 return match.str();
             }
 
-            return S("");
+            return string();
         }
 
         auto isIdentifierStart(CharacterCodes ch, ScriptTarget languageVersion) -> boolean
@@ -1444,7 +1444,7 @@ public:
         static auto createScanner(ScriptTarget languageVersion,
                                   boolean skipTrivia,
                                   LanguageVariant languageVariant = LanguageVariant::Standard,
-                                  string textInitial = S(""),
+                                  string textInitial = string(),
                                   ErrorCallback onError = nullptr,
                                   number start = 0,
                                   number length = -1) -> ScannerImpl*
@@ -1575,7 +1575,7 @@ private:
                 checkForIdentifierStartAfterNumericLiteral(start, decimalFragment.empty() && !!(tokenFlags & TokenFlags::Scientific));
                 return {
                     SyntaxKind::NumericLiteral,
-                    to_string(+to_number(result)) // if value is not an integer, it can be safely coerced to a number
+                    to_string(+to_float(result)) // if value is not an integer, it can be safely coerced to a number
                 };
             }
             else
@@ -1637,7 +1637,7 @@ private:
 
         /**
          * Scans as many hexadecimal digits as are available in the text,
-         * returning S("") if the given number of digits was unavailable.
+         * returning string() if the given number of digits was unavailable.
          */
         auto scanMinimumNumberOfHexDigits(number count, boolean canHaveSeparators) -> string
         {
@@ -1747,7 +1747,7 @@ private:
 
             pos++;
             auto start = pos;
-            string contents = S("");
+            string contents;
             SyntaxKind resultingToken;
 
             while (true)
@@ -1823,7 +1823,7 @@ private:
             if (pos >= end)
             {
                 error(Diagnostics::Unexpected_end_of_text);
-                return S("");
+                return string();
             }
             auto ch = text[pos];
             pos++;
@@ -1934,7 +1934,7 @@ private:
             case CharacterCodes::lineFeed:
             case CharacterCodes::lineSeparator:
             case CharacterCodes::paragraphSeparator:
-                return S("");
+                return string();
             default:
                 return string(1, (char_t)ch);
             }
@@ -1951,7 +1951,7 @@ private:
             else
             {
                 error(Diagnostics::Hexadecimal_digit_expected);
-                return S("");
+                return string();
             }
         }
 
@@ -1991,7 +1991,7 @@ private:
 
             if (isInvalidExtendedEscape)
             {
-                return S("");
+                return string();
             }
 
             return utf16EncodeAsString((CharacterCodes) escapedValue);
@@ -2028,7 +2028,7 @@ private:
 
         auto scanIdentifierParts() -> string
         {
-            string result = S("");
+            string result;
             auto start = pos;
             while (pos < end)
             {
@@ -2090,7 +2090,7 @@ private:
 
         auto scanBinaryOrOctalDigits(number base) -> string
         {
-            auto value = S("");
+            string value;
             // For counting number of digits; Valid binaryIntegerLiteral must have at least one binary digit following B or b.
             // Similarly valid octalIntegerLiteral must have at least one octal digit following o or O.
             auto separatorAllowed = false;
@@ -2152,11 +2152,11 @@ private:
             { // not a bigint, so can convert to number in simplified form
                 // Number() may not support 0b or 0o, so use stoi() instead
                 auto numericValue = !!(tokenFlags & TokenFlags::BinarySpecifier)
-                                        ? to_string(to_number_base(tokenValue.substr(2), 2)) // skip "0b"
-                                    : !!(tokenFlags & TokenFlags::OctalSpecifier)
-                                        ? to_string(to_number_base(tokenValue.substr(2), 8)) // skip "0o"
-                                        : to_string(+to_number(tokenValue));
-                tokenValue = S("") + numericValue;
+                                        ? to_string(to_bignumber_base(tokenValue.substr(2), 2)) // skip "0b"
+                                        : !!(tokenFlags & TokenFlags::OctalSpecifier)
+                                            ? to_string(to_bignumber_base(tokenValue.substr(2), 8)) // skip "0o"
+                                            : to_string(+to_bignumber(tokenValue));
+                tokenValue = numericValue;
                 return SyntaxKind::NumericLiteral;
             }
         }
@@ -2484,7 +2484,7 @@ private:
                     // Try to parse as an octal
                     if (pos + 1 < end && isOctalDigit(text[pos + 1]))
                     {
-                        tokenValue = S("") + scanOctalDigits();
+                        tokenValue = to_string(scanOctalDigits());
                         tokenFlags |= TokenFlags::Octal;
                         return token = SyntaxKind::NumericLiteral;
                     }
@@ -3301,7 +3301,7 @@ private:
             startPos = textPos;
             tokenPos = textPos;
             token = SyntaxKind::Unknown;
-            tokenValue = S("");
+            tokenValue = string();
             tokenFlags = TokenFlags::None;
         }
 

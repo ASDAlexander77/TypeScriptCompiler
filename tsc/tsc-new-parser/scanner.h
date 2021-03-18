@@ -25,10 +25,14 @@ using sstream = std::wstringstream;
 using regex = std::wregex;
 using sregex_iterator = std::wsregex_iterator;
 
-#define to_number_base(x, y) std::stoull(x, nullptr, y)
+#define to_number_base(x, y) std::stoi(x, nullptr, y)
 #define S(x) L##x
 #define to_string(x) std::to_wstring(x)
 #define to_number(x) std::stoi(x)
+#define to_integer(x) std::stoi(x)
+#define to_float(x) std::stod(x)
+#define to_bignumber_base(x, y) std::stoll(x, nullptr, y)
+#define to_bignumber(x) std::stoll(x)
 
 enum class ScriptTarget : number {
     ES3 = 0,
