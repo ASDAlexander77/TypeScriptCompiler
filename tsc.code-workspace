@@ -31,6 +31,10 @@
         {
             "name": "TypeScript New Parser",
             "path": "./tsc/tsc-new-parser"
+        },
+        {
+            "name": "TypeScript New Parser - Tester",
+            "path": "./tsc/tsc-new-parser/test/scannertree_ts"
         }
     ],
     "settings": {

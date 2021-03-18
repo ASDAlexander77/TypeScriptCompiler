@@ -53,7 +53,7 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/../../__build/tsc/tsc-new-parser/Debug/tsc-new-parser.exe",
-            "args": ["G:/Dev/TypeScript/tests/cases/compiler/conflictMarkerDiff3Trivia1.ts"],
+            "args": ["G:/Dev/TypeScript/tests/cases/compiler/numericUnderscoredSeparator.ts"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],

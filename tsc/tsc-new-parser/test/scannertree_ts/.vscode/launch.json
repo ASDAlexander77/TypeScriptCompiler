@@ -12,7 +12,7 @@
             "program": "${workspaceFolder}/scannertree.ts",
             "cwd": "${workspaceFolder}",
             "args": [
-                "a = 1"
+                "G:/Dev/TypeScript/tests/cases/compiler/error___.ts"
             ],
             "sourceMaps": true,
             "outFiles": [

@@ -107,7 +107,7 @@ string readFile(std::string file)
 
     std::wifstream f(file);
 
-    if (enc == ENCODING_UTF8)
+    if (enc == ENCODING_ASCII || enc == ENCODING_UTF8)
     {
         typedef std::codecvt_utf8_utf16<wchar_t, 0x10ffff, std::codecvt_mode::consume_header> conv;
         std::locale loc(f.getloc(), new conv());
