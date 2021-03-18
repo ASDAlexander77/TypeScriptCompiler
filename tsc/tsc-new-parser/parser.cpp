@@ -16,7 +16,7 @@ namespace ts {
     }
 
     template<typename T>
-    auto visitNodes(NodeFuncT<T> cbNode, NodeArrayFuncT<T> cbNodes, NodeArray nodes) -> T {
+    auto visitNodes(NodeFuncT<T> cbNode, NodeArrayFuncT<T> cbNodes, /*NodeArray*/Node nodes) -> T {
         if (nodes) {
             if (cbNodes) {
                 return cbNodes(nodes);
@@ -29,6 +29,21 @@ namespace ts {
             }
         }
     }
+
+    template<typename T>
+    auto visitNodes(NodeFuncT<T> cbNode, NodeArrayFuncT<T> cbNodes, NodeArray nodes) -> T {
+        if (nodes) {
+            if (cbNodes) {
+                return cbNodes(nodes);
+            }
+            for (auto node : nodes) {
+                auto result = cbNode(node);
+                if (result) {
+                    return result;
+                }
+            }
+        }
+    }    
 
     /*@internal*/
     auto isJSDocLikeText(safe_string text, number start) {
@@ -62,7 +77,7 @@ namespace ts {
             case SyntaxKind::TypeParameter:
                 return visitNode(cbNode, node.as<TypeParameterDeclaration>().name) ||
                     visitNode(cbNode, node.as<TypeParameterDeclaration>().constraint) ||
-                    visitNode(cbNode, node.as<TypeParameterDeclaration>().default) ||
+                    visitNode(cbNode, node.as<TypeParameterDeclaration>()._default) ||
                     visitNode(cbNode, node.as<TypeParameterDeclaration>().expression);
             case SyntaxKind::ShorthandPropertyAssignment:
                 return visitNodes(cbNode, cbNodes, node.decorators) ||
@@ -176,8 +191,9 @@ namespace ts {
                     visitNode(cbNode, node.as<ImportTypeNode>().qualifier) ||
                     visitNodes(cbNode, cbNodes, node.as<ImportTypeNode>().typeArguments);
             case SyntaxKind::ParenthesizedType:
+                return visitNode(cbNode, node.as<ParenthesizedTypeNode>().type);
             case SyntaxKind::TypeOperator:
-                return visitNode(cbNode, (<ParenthesizedTypeNode | TypeOperatorNode>node).type);
+                return visitNode(cbNode, node.as<TypeOperatorNode>().type);
             case SyntaxKind::IndexedAccessType:
                 return visitNode(cbNode, node.as<IndexedAccessTypeNode>().objectType) ||
                     visitNode(cbNode, node.as<IndexedAccessTypeNode>().indexType);
@@ -219,7 +235,7 @@ namespace ts {
                 return visitNode(cbNode, node.as<TaggedTemplateExpression>().tag) ||
                     visitNode(cbNode, node.as<TaggedTemplateExpression>().questionDotToken) ||
                     visitNodes(cbNode, cbNodes, node.as<TaggedTemplateExpression>().typeArguments) ||
-                    visitNode(cbNode, node.as<TaggedTemplateExpression>().template);
+                    visitNode(cbNode, node.as<TaggedTemplateExpression>()._template);
             case SyntaxKind::TypeAssertionExpression:
                 return visitNode(cbNode, node.as<TypeAssertion>().type) ||
                     visitNode(cbNode, node.as<TypeAssertion>().expression);
@@ -483,10 +499,10 @@ namespace ts {
                 return visitNode(cbNode, node.as<JSDocTag>().tagName);
             case SyntaxKind::JSDocImplementsTag:
                 return visitNode(cbNode, node.as<JSDocTag>().tagName) ||
-                    visitNode(cbNode, node.as<JSDocImplementsTag>().class);
+                    visitNode(cbNode, node.as<JSDocImplementsTag>()._class);
             case SyntaxKind::JSDocAugmentsTag:
                 return visitNode(cbNode, node.as<JSDocTag>().tagName) ||
-                    visitNode(cbNode, node.as<JSDocAugmentsTag>().class);
+                    visitNode(cbNode, node.as<JSDocAugmentsTag>()._class);
             case SyntaxKind::JSDocTemplateTag:
                 return visitNode(cbNode, node.as<JSDocTag>().tagName) ||
                     visitNode(cbNode, node.as<JSDocTemplateTag>().constraint) ||
@@ -494,7 +510,7 @@ namespace ts {
             case SyntaxKind::JSDocTypedefTag:
                 return visitNode(cbNode, node.as<JSDocTag>().tagName) ||
                     (node.as<JSDocTypedefTag>().typeExpression &&
-                        node.as<JSDocTypedefTag>().typeExpression!.kind == SyntaxKind::JSDocTypeExpression
+                        node.as<JSDocTypedefTag>().typeExpression.kind == SyntaxKind::JSDocTypeExpression
                         ? visitNode(cbNode, node.as<JSDocTypedefTag>().typeExpression) ||
                             visitNode(cbNode, node.as<JSDocTypedefTag>().fullName)
                         : visitNode(cbNode, node.as<JSDocTypedefTag>().fullName) ||
@@ -590,14 +606,13 @@ namespace ts {
     auto gatherPossibleChildren(Node node) -> NodeArray {
         NodeArray children;
 
-        auto addWorkItem = [&](auto n) {
+        auto addWorkItem = [&](auto n) -> Node {
             children.emplace(children.begin(), n);
-            return nullptr;
+            return Node();
         };
 
-        forEachChild<void*>(node, addWorkItem, addWorkItem); // By using a stack above and `unshift` here, we emulate a depth-first preorder traversal
+        forEachChild<Node>(node, addWorkItem, addWorkItem); // By using a stack above and `unshift` here, we emulate a depth-first preorder traversal
         return children;
-
     }
 
     // auto createSourceFile(string fileName, string sourceText, ScriptTarget languageVersion, setParentNodes = false, ScriptKind scriptKind) -> SourceFile {

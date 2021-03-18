@@ -3,6 +3,8 @@
 
 #include "scanner.h"
 
+struct Node;
+
 typedef std::vector<Node> NodeArray;
 
 template <typename T>
@@ -54,7 +56,7 @@ struct Node
 
     Node operator||(Node rhs)
     {
-        if (*this)
+        if (operator bool())
         {
             return *this;
         }
@@ -71,8 +73,9 @@ struct QualifiedName
 
 struct TypeParameterDeclaration
 {
+    Node name;
     Node constraint;
-    Node default;
+    Node _default;
     Node expression;
 };
 
@@ -146,9 +149,29 @@ struct SignatureDeclaration
     Node type;
 };
 
+struct FunctionLikeDeclaration
+{
+    Node asteriskToken;
+    Node name;
+    Node questionToken;
+    Node exclamationToken;
+    Node typeParameters;
+    Node parameters;
+    Node type;
+    Node equalsGreaterThanToken;
+    Node body;
+};
+
+struct ArrowFunction
+{
+    Node equalsGreaterThanToken;
+};
+
+
 struct TypeReferenceNode
 {
     Node typeArguments;
+    Node typeName;
 };
 
 struct TypePredicateNode
@@ -314,7 +337,7 @@ struct VoidExpression
 
 struct PrefixUnaryExpression
 {
-    Node expression;
+    Node operand;
 };
 
 struct YieldExpression
@@ -366,6 +389,11 @@ struct ConditionalExpression
 };
 
 struct SpreadElement
+{
+    Node expression;
+};
+
+struct PartiallyEmittedExpression
 {
     Node expression;
 };
@@ -425,12 +453,14 @@ struct ForStatement
 
 struct ForInStatement
 {
+    Node initializer;
     Node expression;
     Node statement;
 };
 
 struct ForOfStatement
 {
+    Node awaitModifier;
     Node initializer;
     Node expression;
     Node statement;
@@ -519,6 +549,14 @@ struct InterfaceDeclaration
     Node members;
 };
 
+struct ClassDeclaration
+{
+    Node name;
+    Node typeParameters;
+    Node heritageClauses;
+    Node members;
+};
+
 struct TypeAliasDeclaration
 {
     Node name;
@@ -548,6 +586,12 @@ struct ImportEqualsDeclaration
 {
     Node name;
     Node moduleReference;
+};
+
+struct ImportDeclaration
+{
+    Node importClause;
+    Node moduleSpecifier;
 };
 
 struct ImportClause
@@ -611,12 +655,6 @@ struct TemplateLiteralTypeNode
     Node templateSpans;
 };
 
-struct TemplateLiteralTypeNode
-{
-    Node head;
-    Node templateSpans;
-};
-
 struct TemplateLiteralTypeSpan
 {
     Node type;
@@ -658,9 +696,9 @@ struct JsxElement
 
 struct JsxFragment
 {
-    Node openingElement;
+    Node openingFragment;
     Node children;
-    Node closingElement;
+    Node closingFragment;
 };
 
 struct JsxOpeningLikeElement
@@ -746,6 +784,7 @@ struct JSDoc
 struct JSDocSeeTag
 {
     Node tagName;
+    Node name;
 };
 
 struct JSDocNameReference
@@ -763,7 +802,6 @@ struct JSDocPropertyLikeTag
     Node isNameFirst;
     Node name;
     Node typeExpression;
-    Node isNameFirst;
 };
 
 struct JSDocImplementsTag
