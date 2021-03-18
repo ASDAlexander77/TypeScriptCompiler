@@ -53,7 +53,7 @@ namespace ts {
     template<typename T>
     auto forEachChild(Node node, NodeFuncT<T> cbNode, NodeArrayFuncT<T> cbNodes = nullptr) -> T {
         if (!node || node.kind <= SyntaxKind::LastToken) {
-            return;
+            return T();
         }
         switch (node.kind) {
             case SyntaxKind::QualifiedName:
@@ -533,68 +533,72 @@ namespace ts {
         }
     }
 
-    // /** @internal */
-    // /**
-    //  * Invokes a callback for each child of the given node. The 'cbNode' callback is invoked for all child nodes
-    //  * stored in properties. If a 'cbNodes' callback is specified, it is invoked for embedded arrays; additionally,
-    //  * unlike `forEachChild`, embedded arrays are flattened and the 'cbNode' callback is invoked for each element.
-    //  *  If a callback returns a truthy value, iteration stops and that value is returned. Otherwise, undefined is returned.
-    //  *
-    //  * @param node a given node to visit its children
-    //  * @param cbNode a callback to be invoked for all child nodes
-    //  * @param cbNodes a callback to be invoked for embedded array
-    //  *
-    //  * @remarks Unlike `forEachChild`, `forEachChildRecursively` handles recursively invoking the traversal on each child node found,
-    //  * and while doing so, handles traversing the structure without relying on the callstack to encode the tree structure.
-    //  */
-    // auto forEachChildRecursively<T>(Node rootNode, cbNode: (Node node, Node parent) => T | "skip", cbNodes?: (NodeArray<Node> nodes, Node parent) => T | "skip") -> T {
-    //     auto queue: (Node | NodeArray<Node>)[] = gatherPossibleChildren(rootNode);
-    //     auto Node[] = [] parents; // tracks parent references for elements in queue
-    //     while (parents.length < queue.length) {
-    //         parents.push(rootNode);
-    //     }
-    //     while (queue.length != 0) {
-    //         auto current = queue.pop()!;
-    //         auto parent = parents.pop()!;
-    //         if (isArray(current)) {
-    //             if (cbNodes) {
-    //                 auto res = cbNodes(current, parent);
-    //                 if (res) {
-    //                     if (res == "skip") continue;
-    //                     return res;
-    //                 }
-    //             }
-    //             for (let i = current.length - 1; i >= 0; --i) {
-    //                 queue.push(current[i]);
-    //                 parents.push(parent);
-    //             }
-    //         }
-    //         else {
-    //             auto res = cbNode(current, parent);
-    //             if (res) {
-    //                 if (res == "skip") continue;
-    //                 return res;
-    //             }
-    //             if (current.kind >= SyntaxKind::FirstNode) {
-    //                 // add children in reverse order to the queue, so popping gives the first child
-    //                 for (auto child of gatherPossibleChildren(current)) {
-    //                     queue.push(child);
-    //                     parents.push(current);
-    //                 }
-    //             }
-    //         }
-    //     }
-    // }
+    /** @internal */
+    /**
+     * Invokes a callback for each child of the given node. The 'cbNode' callback is invoked for all child nodes
+     * stored in properties. If a 'cbNodes' callback is specified, it is invoked for embedded arrays; additionally,
+     * unlike `forEachChild`, embedded arrays are flattened and the 'cbNode' callback is invoked for each element.
+     *  If a callback returns a truthy value, iteration stops and that value is returned. Otherwise, undefined is returned.
+     *
+     * @param node a given node to visit its children
+     * @param cbNode a callback to be invoked for all child nodes
+     * @param cbNodes a callback to be invoked for embedded array
+     *
+     * @remarks Unlike `forEachChild`, `forEachChildRecursively` handles recursively invoking the traversal on each child node found,
+     * and while doing so, handles traversing the structure without relying on the callstack to encode the tree structure.
+     */
+    template <typename T>
+    auto forEachChildRecursively(Node rootNode, NodeWithParentFuncT<T> cbNode, NodeWithParentArrayFuncT<T> cbNodes = nullptr) -> T {
+        auto queue = gatherPossibleChildren(rootNode);
+        NodeArray parents; // tracks parent references for elements in queue
+        while (parents.length < queue.length) {
+            parents.push_back(rootNode);
+        }
+        while (queue.length != 0) {
+            auto current = queue.pop()!;
+            auto parent = parents.pop()!;
+            if (isArray(current)) {
+                if (cbNodes) {
+                    auto res = cbNodes(current, parent);
+                    if (res) {
+                        if (res == "skip") continue;
+                        return res;
+                    }
+                }
+                for (int i = current.length - 1; i >= 0; --i) {
+                    queue.push_back(current[i]);
+                    parents.push_back(parent);
+                }
+            }
+            else {
+                auto res = cbNode(current, parent);
+                if (res) {
+                    if (res == "skip") continue;
+                    return res;
+                }
+                if (current.kind >= SyntaxKind::FirstNode) {
+                    // add children in reverse order to the queue, so popping gives the first child
+                    for (auto child : gatherPossibleChildren(current)) {
+                        queue.push_back(child);
+                        parents.push_back(current);
+                    }
+                }
+            }
+        }
+    }
 
-    // auto gatherPossibleChildren(Node node) {
-    //     auto children: (Node | NodeArray<Node>)[] = [];
-    //     forEachChild(node, addWorkItem, addWorkItem); // By using a stack above and `unshift` here, we emulate a depth-first preorder traversal
-    //     return children;
+    auto gatherPossibleChildren(Node node) -> NodeArray {
+        NodeArray children;
 
-    //     auto addWorkItem(Node n | NodeArray<Node>) {
-    //         children.unshift(n);
-    //     }
-    // }
+        auto addWorkItem = [&](auto n) {
+            children.emplace(children.begin(), n);
+            return nullptr;
+        };
+
+        forEachChild<void*>(node, addWorkItem, addWorkItem); // By using a stack above and `unshift` here, we emulate a depth-first preorder traversal
+        return children;
+
+    }
 
     // auto createSourceFile(string fileName, string sourceText, ScriptTarget languageVersion, setParentNodes = false, ScriptKind scriptKind) -> SourceFile {
     //     tracing?.push(tracing.Phase.Parse, "createSourceFile", { fileName path }, /*separateBeginAndEnd*/ true);
