@@ -26,6 +26,8 @@ using NodeWithParentArrayFuncT = std::function<T(NodeArray<T>, Node)>;
 
 typedef std::function<Node(SyntaxKind, number, number)> NodeCreateFunc;
 
+typedef std::function<void(number, number, DiagnosticMessage)> PragmaDiagnosticReporter;
+
 struct undefined_t
 {
 };
@@ -353,7 +355,14 @@ static NodeFlags operator |(NodeFlags lhs, NodeFlags rhs)
     return (NodeFlags) ((number) lhs | (number) rhs);
 }
 
+static NodeFlags& operator|=(NodeFlags& lhv, NodeFlags rhv)
+{
+    lhv = (NodeFlags) ((number) lhv | (number)rhv);
+    return lhv;
+}
+
 enum class ParsingContext {
+    Unknown,
     SourceElements,            // Elements in source file
     BlockStatements,           // Statements in block
     SwitchClauses,             // Clauses in switch statement
@@ -423,8 +432,11 @@ struct Diagnostic : DiagnosticRelatedInformation {
 struct DiagnosticWithDetachedLocation : Diagnostic {
 };
 
-struct Node
+struct Node : TextRange
 {
+    Node() = default;
+    Node(SyntaxKind kind, number start, number end) : kind(kind), TextRange{start, end} {};
+
     SyntaxKind kind;
     NodeFlags flags;
     NodeArray<Node> decorators;
@@ -1441,5 +1453,33 @@ static auto attachFileToDiagnostics(std::vector<DiagnosticWithDetachedLocation> 
     return diagnosticsWithLocation;
 }
 
+inline auto normalizePath(string path) -> string {
+    // TODO: finish it
+    return path;
+}
+
+inline auto getLanguageVariant(ScriptKind scriptKind) -> LanguageVariant {
+    // .tsx and .jsx files are treated as jsx language variant.
+    return scriptKind == ScriptKind::TSX || scriptKind == ScriptKind::JSX || scriptKind == ScriptKind::JS || scriptKind == ScriptKind::JSON ? LanguageVariant::JSX : LanguageVariant::Standard;
+}
+
+inline auto  endsWith(string str, string suffix) -> boolean {
+    auto expectedPos = str.length() - suffix.length();
+    return expectedPos >= 0 && str.find(suffix, expectedPos) == expectedPos;
+}
+
+inline auto fileExtensionIs(string path, string extension) -> boolean {
+    return path.length() > extension.length() && endsWith(path, extension);
+}
+
+namespace Extension {
+    static const string Ts = S(".ts");
+    static const string Tsx = S(".tsx");
+    static const string Dts = S(".d.ts");
+    static const string Js = S(".js");
+    static const string Jsx = S(".jsx");
+    static const string Json = S(".json");
+    static const string TsBuildInfo = S(".tsbuildinfo");
+};
 
 #endif // PARSER_H

@@ -3275,7 +3275,7 @@ private:
         auto setText(string newText, number start, number length) -> void
         {
             text = newText;
-            end = length <= 0 ? text.length() : start + length;
+            end = length == -1 ? text.length() : start + length;
             setTextPos(start);
         }
 
@@ -3381,6 +3381,26 @@ private:
         impl = ScannerImpl::createScanner(languageVersion, skipTrivia, languageVariant, textInitial, onError, start, length);        
     }
 
+    auto Scanner::setText(string text, number start, number length) -> SyntaxKind
+    {
+        return impl->setText(text, start, length);
+    }
+
+    auto setOnError(ErrorCallback errorCallback) -> void
+    {
+        impl->setOnError(errorCallback);
+    }
+
+    auto setScriptTarget(ScriptTarget scriptTarget) -> void
+    {
+        impl->setScriptTarget(scriptTarget);
+    }
+
+    auto setLanguageVariant(LanguageVariant variant) -> void
+    {
+        impl->setScriptTarget(variant);
+    }    
+
     auto Scanner::scan() -> SyntaxKind
     {
         return impl->scan();
@@ -3415,6 +3435,11 @@ private:
     {
         return impl->tokenValue;
     }     
+
+    auto Scanner::clearCommentDirectives() -> void
+    {
+        return impl->clearCommentDirectives();
+    }
 
     Scanner::~Scanner()
     {

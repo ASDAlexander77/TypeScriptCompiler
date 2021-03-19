@@ -944,14 +944,12 @@ namespace ts
     {
         ScannerImpl* impl;
     public:
-        Scanner(ScriptTarget languageVersion,
-                            boolean skipTrivia,
-                            LanguageVariant languageVariant = LanguageVariant::Standard,
-                            string textInitial = S(""),
-                            ErrorCallback onError = nullptr,
-                            number start = 0,
-                            number length = -1);
+        Scanner(ScriptTarget, boolean, LanguageVariant = LanguageVariant::Standard, string = string(), ErrorCallback = nullptr, number = 0, number = -1);
 
+        auto setText(string, number = 0, number = -1) -> void;
+        auto setOnError(ErrorCallback) -> void;
+        auto setScriptTarget(ScriptTarget) -> void;
+        auto setLanguageVariant(LanguageVariant) -> void;
         auto scan() -> SyntaxKind;
         auto getToken() -> SyntaxKind;
         auto getTokenPos() -> number;
@@ -959,6 +957,7 @@ namespace ts
         auto getTokenValue() -> string;
         auto tokenToString(SyntaxKind) -> string;
         auto syntaxKindString(SyntaxKind) -> string;
+        auto clearCommentDirectives() -> void;
 
         ~Scanner();
     };

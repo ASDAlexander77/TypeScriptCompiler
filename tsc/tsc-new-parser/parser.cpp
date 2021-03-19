@@ -610,6 +610,11 @@ namespace ts {
             return children;
         }
 
+        /** @internal */
+        auto isDeclarationFileName(string fileName) -> boolean {
+            return fileExtensionIs(fileName, Extension::Dts);
+        }
+
         namespace IncrementalParser {
 
             struct IncrementalElement : TextRange {
@@ -669,7 +674,7 @@ namespace ts {
 
             ParsingContext parsingContext;
 
-            Undefined<std::vector<number>> notParenthesizedArrow;
+            std::vector<number> notParenthesizedArrow;
 
             // Flags that dictate what parsing context we're in.  For example:
             // Whether or not we are in strict parsing mode.  All that changes in strict parsing mode is
@@ -900,11 +905,21 @@ namespace ts {
             }
 
             auto initializeState(string _fileName, string _sourceText, ScriptTarget _languageVersion, Undefined<IncrementalParser::SyntaxCursor> _syntaxCursor, ScriptKind _scriptKind) -> void {
-                NodeConstructor = objectAllocator.getNodeConstructor();
-                TokenConstructor = objectAllocator.getTokenConstructor();
-                IdentifierConstructor = objectAllocator.getIdentifierConstructor();
-                PrivateIdentifierConstructor = objectAllocator.getPrivateIdentifierConstructor();
-                SourceFileConstructor = objectAllocator.getSourceFileConstructor();
+                NodeConstructor = [] (SyntaxKind kind, number start, number end) {
+                    return Node(kind, start, end);
+                };
+                TokenConstructor = [] (SyntaxKind kind, number start, number end) {
+                    return Node(kind, start, end);
+                };
+                IdentifierConstructor = [] (SyntaxKind kind, number start, number end) {
+                    return Node(kind, start, end);
+                };
+                PrivateIdentifierConstructor = [] (SyntaxKind kind, number start, number end) {
+                    return Node(kind, start, end);
+                };
+                SourceFileConstructor = [] (SyntaxKind kind, number start, number end) {
+                    return Node(kind, start, end);
+                };
 
                 fileName = normalizePath(_fileName);
                 sourceText = _sourceText;
@@ -913,13 +928,13 @@ namespace ts {
                 scriptKind = _scriptKind;
                 languageVariant = getLanguageVariant(_scriptKind);
 
-                parseDiagnostics = [];
-                parsingContext = 0;
-                identifiers = new Map<string, string>();
-                privateIdentifiers = new Map<string, string>();
+                parseDiagnostics.clear();
+                parsingContext = ParsingContext::Unknown;
+                identifiers.clear();
+                privateIdentifiers.clear();
                 identifierCount = 0;
                 nodeCount = 0;
-                sourceFlags = 0;
+                sourceFlags = NodeFlags::None;
                 topLevel = true;
 
                 switch (scriptKind) {
@@ -938,7 +953,7 @@ namespace ts {
 
                 // Initialize and prime the scanner before parsing the source elements.
                 scanner.setText(sourceText);
-                scanner.setOnError(scanError);
+                scanner.setOnError(std::bind(&Parser::scanError, this, std::placeholders::_1, std::placeholders::_2));
                 scanner.setScriptTarget(languageVersion);
                 scanner.setLanguageVariant(languageVariant);
             }
@@ -947,20 +962,20 @@ namespace ts {
                 // Clear out the text the scanner is pointing at, so it doesn't keep anything alive unnecessarily.
                 scanner.clearCommentDirectives();
                 scanner.setText(string());
-                scanner.setOnError(undefined);
+                scanner.setOnError(nullptr);
 
                 // Clear any data.  We don't want to accidentally hold onto it for too long.
-                sourceText = undefined!;
-                languageVersion = undefined!;
+                sourceText = string();
+                languageVersion = ScriptTarget::ES3;
                 syntaxCursor = undefined;
-                scriptKind = undefined!;
-                languageVariant = undefined!;
-                sourceFlags = 0;
-                parseDiagnostics = undefined!;
-                jsDocDiagnostics = undefined!;
-                parsingContext = 0;
-                identifiers = undefined!;
-                notParenthesizedArrow = undefined!;
+                scriptKind = ScriptKind::Unknown;
+                languageVariant = LanguageVariant::Standard;
+                sourceFlags = NodeFlags::None;
+                parseDiagnostics.clear();
+                jsDocDiagnostics.clear();
+                parsingContext = ParsingContext::Unknown;
+                identifiers.clear();
+                notParenthesizedArrow.clear();
                 topLevel = true;
             }
 
@@ -975,15 +990,15 @@ namespace ts {
                 // Prime the scanner.
                 nextToken();
 
-                auto statements = parseList(ParsingContext.SourceElements, parseStatement);
+                auto statements = parseList<Statement>(ParsingContext::SourceElements, std::bind(&Parser::parseStatement, this));
                 Debug::_assert(token() == SyntaxKind::EndOfFileToken);
                 auto endOfFileToken = addJSDocComment(parseTokenNode<EndOfFileToken>());
 
                 auto sourceFile = createSourceFile(fileName, languageVersion, scriptKind, isDeclarationFile, statements, endOfFileToken, sourceFlags);
 
                 // A member of ReadonlyArray<T> isn't assignable to a member of T[] (and prevents a direct cast) - but this is where we set up those members so they can be in the future
-                processCommentPragmas(sourceFile as {} as PragmaContext, sourceText);
-                processPragmasIntoFields(sourceFile as {} as PragmaContext, reportPragmaDiagnostic);
+                processCommentPragmas(sourceFile, sourceText);
+                processPragmasIntoFields(sourceFile, reportPragmaDiagnostic);
 
                 sourceFile.commentDirectives = scanner.getCommentDirectives();
                 sourceFile.nodeCount = nodeCount;
@@ -1058,7 +1073,7 @@ namespace ts {
 
                         while (token() != SyntaxKind::EndOfFileToken) {
                             auto startPos = scanner.getStartPos();
-                            auto statement = parseListElement(ParsingContext.SourceElements, parseStatement);
+                            auto statement = parseListElement(ParsingContext::SourceElements, parseStatement);
                             statements.push(statement);
                             if (startPos == scanner.getStartPos()) {
                                 nextToken();
@@ -1812,9 +1827,9 @@ namespace ts {
                 }
 
                 switch (parsingContext) {
-                    case ParsingContext.SourceElements:
-                    case ParsingContext.BlockStatements:
-                    case ParsingContext.SwitchClauseStatements:
+                    case ParsingContext::SourceElements:
+                    case ParsingContext::BlockStatements:
+                    case ParsingContext::SwitchClauseStatements:
                         // If we're in error recovery, then we don't want to treat ';' as an empty statement.
                         // The problem is that ';' can show up in far too many contexts, and if we see one
                         // and assume it's a statement, then we may bail out inappropriately from whatever
@@ -1822,21 +1837,21 @@ namespace ts {
                         // we really don't want to assume the class is over and we're on a statement in the
                         // outer module.  We just want to consume and move on.
                         return !(token() == SyntaxKind::SemicolonToken && inErrorRecovery) && isStartOfStatement();
-                    case ParsingContext.SwitchClauses:
+                    case ParsingContext::SwitchClauses:
                         return token() == SyntaxKind::CaseKeyword || token() == SyntaxKind::DefaultKeyword;
-                    case ParsingContext.TypeMembers:
+                    case ParsingContext::TypeMembers:
                         return lookAhead(isTypeMemberStart);
-                    case ParsingContext.ClassMembers:
+                    case ParsingContext::ClassMembers:
                         // We allow semicolons as class elements (as specified by ES6) as long as we're
                         // not in error recovery.  If we're in error recovery, we don't want an errant
                         // semicolon to be treated as a class member (since they're almost always used
                         // for statements.
                         return lookAhead(isClassMemberStart) || (token() == SyntaxKind::SemicolonToken && !inErrorRecovery);
-                    case ParsingContext.EnumMembers:
+                    case ParsingContext::EnumMembers:
                         // Include open bracket computed properties. This technically also lets in indexers,
                         // which would be a candidate for improved error reporting.
                         return token() == SyntaxKind::OpenBracketToken || isLiteralPropertyName();
-                    case ParsingContext.ObjectLiteralMembers:
+                    case ParsingContext::ObjectLiteralMembers:
                         switch (token()) {
                             case SyntaxKind::OpenBracketToken:
                             case SyntaxKind::AsteriskToken:
@@ -1846,11 +1861,11 @@ namespace ts {
                             default:
                                 return isLiteralPropertyName();
                         }
-                    case ParsingContext.RestProperties:
+                    case ParsingContext::RestProperties:
                         return isLiteralPropertyName();
-                    case ParsingContext.ObjectBindingElements:
+                    case ParsingContext::ObjectBindingElements:
                         return token() == SyntaxKind::OpenBracketToken || token() == SyntaxKind::DotDotDotToken || isLiteralPropertyName();
-                    case ParsingContext.HeritageClauseElement:
+                    case ParsingContext::HeritageClauseElement:
                         // If we see `{ ... }` then only consume it as an expression if it is followed by `,` or `{`
                         // That way we won't consume the body of a class in its heritage clause.
                         if (token() == SyntaxKind::OpenBraceToken) {
@@ -1866,35 +1881,35 @@ namespace ts {
                             // element during recovery.
                             return isIdentifier() && !isHeritageClauseExtendsOrImplementsKeyword();
                         }
-                    case ParsingContext.VariableDeclarations:
+                    case ParsingContext::VariableDeclarations:
                         return isBindingIdentifierOrPrivateIdentifierOrPattern();
-                    case ParsingContext.ArrayBindingElements:
+                    case ParsingContext::ArrayBindingElements:
                         return token() == SyntaxKind::CommaToken || token() == SyntaxKind::DotDotDotToken || isBindingIdentifierOrPrivateIdentifierOrPattern();
-                    case ParsingContext.TypeParameters:
+                    case ParsingContext::TypeParameters:
                         return isIdentifier();
-                    case ParsingContext.ArrayLiteralMembers:
+                    case ParsingContext::ArrayLiteralMembers:
                         switch (token()) {
                             case SyntaxKind::CommaToken:
                             case SyntaxKind::DotToken: // Not an array literal member, but don't want to close the array (see `tests/cases/fourslash/completionsDotInArrayLiteralInObjectLiteral.ts`)
                                 return true;
                         }
                         // falls through
-                    case ParsingContext.ArgumentExpressions:
+                    case ParsingContext::ArgumentExpressions:
                         return token() == SyntaxKind::DotDotDotToken || isStartOfExpression();
-                    case ParsingContext.Parameters:
+                    case ParsingContext::Parameters:
                         return isStartOfParameter(/*isJSDocParameter*/ false);
-                    case ParsingContext.JSDocParameters:
+                    case ParsingContext::JSDocParameters:
                         return isStartOfParameter(/*isJSDocParameter*/ true);
-                    case ParsingContext.TypeArguments:
-                    case ParsingContext.TupleElementTypes:
+                    case ParsingContext::TypeArguments:
+                    case ParsingContext::TupleElementTypes:
                         return token() == SyntaxKind::CommaToken || isStartOfType();
-                    case ParsingContext.HeritageClauses:
+                    case ParsingContext::HeritageClauses:
                         return isHeritageClause();
-                    case ParsingContext.ImportOrExportSpecifiers:
+                    case ParsingContext::ImportOrExportSpecifiers:
                         return tokenIsIdentifierOrKeyword(token());
-                    case ParsingContext.JsxAttributes:
+                    case ParsingContext::JsxAttributes:
                         return tokenIsIdentifierOrKeyword(token()) || token() == SyntaxKind::OpenBraceToken;
-                    case ParsingContext.JsxChildren:
+                    case ParsingContext::JsxChildren:
                         return true;
                 }
 
@@ -1962,44 +1977,44 @@ namespace ts {
                 }
 
                 switch (kind) {
-                    case ParsingContext.BlockStatements:
-                    case ParsingContext.SwitchClauses:
-                    case ParsingContext.TypeMembers:
-                    case ParsingContext.ClassMembers:
-                    case ParsingContext.EnumMembers:
-                    case ParsingContext.ObjectLiteralMembers:
-                    case ParsingContext.ObjectBindingElements:
-                    case ParsingContext.ImportOrExportSpecifiers:
+                    case ParsingContext::BlockStatements:
+                    case ParsingContext::SwitchClauses:
+                    case ParsingContext::TypeMembers:
+                    case ParsingContext::ClassMembers:
+                    case ParsingContext::EnumMembers:
+                    case ParsingContext::ObjectLiteralMembers:
+                    case ParsingContext::ObjectBindingElements:
+                    case ParsingContext::ImportOrExportSpecifiers:
                         return token() == SyntaxKind::CloseBraceToken;
-                    case ParsingContext.SwitchClauseStatements:
+                    case ParsingContext::SwitchClauseStatements:
                         return token() == SyntaxKind::CloseBraceToken || token() == SyntaxKind::CaseKeyword || token() == SyntaxKind::DefaultKeyword;
-                    case ParsingContext.HeritageClauseElement:
+                    case ParsingContext::HeritageClauseElement:
                         return token() == SyntaxKind::OpenBraceToken || token() == SyntaxKind::ExtendsKeyword || token() == SyntaxKind::ImplementsKeyword;
-                    case ParsingContext.VariableDeclarations:
+                    case ParsingContext::VariableDeclarations:
                         return isVariableDeclaratorListTerminator();
-                    case ParsingContext.TypeParameters:
+                    case ParsingContext::TypeParameters:
                         // Tokens other than '>' are here for better error recovery
                         return token() == SyntaxKind::GreaterThanToken || token() == SyntaxKind::OpenParenToken || token() == SyntaxKind::OpenBraceToken || token() == SyntaxKind::ExtendsKeyword || token() == SyntaxKind::ImplementsKeyword;
-                    case ParsingContext.ArgumentExpressions:
+                    case ParsingContext::ArgumentExpressions:
                         // Tokens other than ')' are here for better error recovery
                         return token() == SyntaxKind::CloseParenToken || token() == SyntaxKind::SemicolonToken;
-                    case ParsingContext.ArrayLiteralMembers:
-                    case ParsingContext.TupleElementTypes:
-                    case ParsingContext.ArrayBindingElements:
+                    case ParsingContext::ArrayLiteralMembers:
+                    case ParsingContext::TupleElementTypes:
+                    case ParsingContext::ArrayBindingElements:
                         return token() == SyntaxKind::CloseBracketToken;
-                    case ParsingContext.JSDocParameters:
-                    case ParsingContext.Parameters:
-                    case ParsingContext.RestProperties:
+                    case ParsingContext::JSDocParameters:
+                    case ParsingContext::Parameters:
+                    case ParsingContext::RestProperties:
                         // Tokens other than ')' and ']' (the latter for index signatures) are here for better error recovery
                         return token() == SyntaxKind::CloseParenToken || token() == SyntaxKind::CloseBracketToken /*|| token == SyntaxKind::OpenBraceToken*/;
-                    case ParsingContext.TypeArguments:
+                    case ParsingContext::TypeArguments:
                         // All other tokens should cause the type-argument to terminate except comma token
                         return token() != SyntaxKind::CommaToken;
-                    case ParsingContext.HeritageClauses:
+                    case ParsingContext::HeritageClauses:
                         return token() == SyntaxKind::OpenBraceToken || token() == SyntaxKind::CloseBraceToken;
-                    case ParsingContext.JsxAttributes:
+                    case ParsingContext::JsxAttributes:
                         return token() == SyntaxKind::GreaterThanToken || token() == SyntaxKind::SlashToken;
-                    case ParsingContext.JsxChildren:
+                    case ParsingContext::JsxChildren:
                         return token() == SyntaxKind::LessThanToken && lookAhead(nextTokenIsSlash);
                     default:
                         return false;
@@ -2033,7 +2048,7 @@ namespace ts {
 
             // True if positioned at element or terminator of the current list or any enclosing list
             auto isInSomeParsingContext() -> boolean {
-                for (auto kind = 0; kind < ParsingContext.Count; kind++) {
+                for (auto kind = 0; kind < ParsingContext::Count; kind++) {
                     if (parsingContext & (1 << kind)) {
                         if (isListElement(kind, /*inErrorRecovery*/ true) || isListTerminator(kind)) {
                             return true;
@@ -2046,10 +2061,10 @@ namespace ts {
 
             // Parses a list of elements
             template <typename T>
-            auto parseList(ParsingContext kind, std::function <T()> parseElement) -> NodeArray<T> {
+            auto parseList(ParsingContext kind, std::function<T()> parseElement) -> Node {
                 auto saveParsingContext = parsingContext;
                 parsingContext |= 1 << kind;
-                auto list = [];
+                Node list;
                 auto listPos = getNodePos();
 
                 while (!isListTerminator(kind)) {
@@ -2142,16 +2157,16 @@ namespace ts {
 
             auto isReusableParsingContext(ParsingContext parsingContext) -> boolean {
                 switch (parsingContext) {
-                    case ParsingContext.ClassMembers:
-                    case ParsingContext.SwitchClauses:
-                    case ParsingContext.SourceElements:
-                    case ParsingContext.BlockStatements:
-                    case ParsingContext.SwitchClauseStatements:
-                    case ParsingContext.EnumMembers:
-                    case ParsingContext.TypeMembers:
-                    case ParsingContext.VariableDeclarations:
-                    case ParsingContext.JSDocParameters:
-                    case ParsingContext.Parameters:
+                    case ParsingContext::ClassMembers:
+                    case ParsingContext::SwitchClauses:
+                    case ParsingContext::SourceElements:
+                    case ParsingContext::BlockStatements:
+                    case ParsingContext::SwitchClauseStatements:
+                    case ParsingContext::EnumMembers:
+                    case ParsingContext::TypeMembers:
+                    case ParsingContext::VariableDeclarations:
+                    case ParsingContext::JSDocParameters:
+                    case ParsingContext::Parameters:
                         return true;
                 }
                 return false;
@@ -2159,28 +2174,28 @@ namespace ts {
 
             auto canReuseNode(Node node, ParsingContext parsingContext) -> boolean {
                 switch (parsingContext) {
-                    case ParsingContext.ClassMembers:
+                    case ParsingContext::ClassMembers:
                         return isReusableClassMember(node);
 
-                    case ParsingContext.SwitchClauses:
+                    case ParsingContext::SwitchClauses:
                         return isReusableSwitchClause(node);
 
-                    case ParsingContext.SourceElements:
-                    case ParsingContext.BlockStatements:
-                    case ParsingContext.SwitchClauseStatements:
+                    case ParsingContext::SourceElements:
+                    case ParsingContext::BlockStatements:
+                    case ParsingContext::SwitchClauseStatements:
                         return isReusableStatement(node);
 
-                    case ParsingContext.EnumMembers:
+                    case ParsingContext::EnumMembers:
                         return isReusableEnumMember(node);
 
-                    case ParsingContext.TypeMembers:
+                    case ParsingContext::TypeMembers:
                         return isReusableTypeMember(node);
 
-                    case ParsingContext.VariableDeclarations:
+                    case ParsingContext::VariableDeclarations:
                         return isReusableVariableDeclaration(node);
 
-                    case ParsingContext.JSDocParameters:
-                    case ParsingContext.Parameters:
+                    case ParsingContext::JSDocParameters:
+                    case ParsingContext::Parameters:
                         return isReusableParameter(node);
 
                     // Any other lists we do not care about reusing nodes in.  But feel free to add if
@@ -2189,17 +2204,17 @@ namespace ts {
                     // parser reached while looking ahead might be in the edited range (see the example
                     // in canReuseVariableDeclaratorNode for a good case of this).
 
-                    // case ParsingContext.HeritageClauses:
+                    // case ParsingContext::HeritageClauses:
                     // This would probably be safe to reuse.  There is no speculative parsing with
                     // heritage clauses.
 
-                    // case ParsingContext.TypeParameters:
+                    // case ParsingContext::TypeParameters:
                     // This would probably be safe to reuse.  There is no speculative parsing with
                     // type parameters.  Note that that's because type *parameters* only occur in
                     // unambiguous *type* contexts.  While type *arguments* occur in very ambiguous
                     // *expression* contexts.
 
-                    // case ParsingContext.TupleElementTypes:
+                    // case ParsingContext::TupleElementTypes:
                     // This would probably be safe to reuse.  There is no speculative parsing with
                     // tuple types.
 
@@ -2208,28 +2223,28 @@ namespace ts {
                     // produced from speculative parsing a < as a type argument list), we only have
                     // the types because speculative parsing succeeded.  Thus, the lookahead never
                     // went past the end of the list and rewound.
-                    // case ParsingContext.TypeArguments:
+                    // case ParsingContext::TypeArguments:
 
                     // these Note are almost certainly not safe to ever reuse.  Expressions commonly
                     // need a large amount of lookahead, and we should not reuse them as they may
                     // have actually intersected the edit.
-                    // case ParsingContext.ArgumentExpressions:
+                    // case ParsingContext::ArgumentExpressions:
 
                     // This is not safe to reuse for the same reason as the 'AssignmentExpression'
                     // cases.  i.e. a property assignment may end with an expression, and thus might
                     // have lookahead far beyond it's old node.
-                    // case ParsingContext.ObjectLiteralMembers:
+                    // case ParsingContext::ObjectLiteralMembers:
 
                     // This is probably not safe to reuse.  There can be speculative parsing with
                     // type names in a heritage clause.  There can be generic names in the type
                     // name list, and there can be left hand side expressions (which can have type
                     // arguments.)
-                    // case ParsingContext.HeritageClauseElement:
+                    // case ParsingContext::HeritageClauseElement:
 
                     // Perhaps safe to reuse, but it's unlikely we'd see more than a dozen attributes
                     // on any given element. Same for children.
-                    // case ParsingContext.JsxAttributes:
-                    // case ParsingContext.JsxChildren:
+                    // case ParsingContext::JsxAttributes:
+                    // case ParsingContext::JsxChildren:
 
                 }
 
@@ -2377,33 +2392,33 @@ namespace ts {
 
             auto parsingContextErrors(ParsingContext context) {
                 switch (context) {
-                    case ParsingContext.return SourceElements parseErrorAtCurrentToken(Diagnostics::Declaration_or_statement_expected);
-                    case ParsingContext.return BlockStatements parseErrorAtCurrentToken(Diagnostics::Declaration_or_statement_expected);
-                    case ParsingContext.return SwitchClauses parseErrorAtCurrentToken(Diagnostics::case_or_default_expected);
-                    case ParsingContext.return SwitchClauseStatements parseErrorAtCurrentToken(Diagnostics::Statement_expected);
-                    case ParsingContext.RestProperties: // fallthrough
-                    case ParsingContext.return TypeMembers parseErrorAtCurrentToken(Diagnostics::Property_or_signature_expected);
-                    case ParsingContext.return ClassMembers parseErrorAtCurrentToken(Diagnostics::Unexpected_token_A_constructor_method_accessor_or_property_was_expected);
-                    case ParsingContext.return EnumMembers parseErrorAtCurrentToken(Diagnostics::Enum_member_expected);
-                    case ParsingContext.return HeritageClauseElement parseErrorAtCurrentToken(Diagnostics::Expression_expected);
-                    case ParsingContext.VariableDeclarations:
+                    case ParsingContext::return SourceElements parseErrorAtCurrentToken(Diagnostics::Declaration_or_statement_expected);
+                    case ParsingContext::return BlockStatements parseErrorAtCurrentToken(Diagnostics::Declaration_or_statement_expected);
+                    case ParsingContext::return SwitchClauses parseErrorAtCurrentToken(Diagnostics::case_or_default_expected);
+                    case ParsingContext::return SwitchClauseStatements parseErrorAtCurrentToken(Diagnostics::Statement_expected);
+                    case ParsingContext::RestProperties: // fallthrough
+                    case ParsingContext::return TypeMembers parseErrorAtCurrentToken(Diagnostics::Property_or_signature_expected);
+                    case ParsingContext::return ClassMembers parseErrorAtCurrentToken(Diagnostics::Unexpected_token_A_constructor_method_accessor_or_property_was_expected);
+                    case ParsingContext::return EnumMembers parseErrorAtCurrentToken(Diagnostics::Enum_member_expected);
+                    case ParsingContext::return HeritageClauseElement parseErrorAtCurrentToken(Diagnostics::Expression_expected);
+                    case ParsingContext::VariableDeclarations:
                         return isKeyword(token())
                             ? parseErrorAtCurrentToken(Diagnostics::_0_is_not_allowed_as_a_variable_declaration_name, tokenToString(token()))
                             : parseErrorAtCurrentToken(Diagnostics::Variable_declaration_expected);
-                    case ParsingContext.return ObjectBindingElements parseErrorAtCurrentToken(Diagnostics::Property_destructuring_pattern_expected);
-                    case ParsingContext.return ArrayBindingElements parseErrorAtCurrentToken(Diagnostics::Array_element_destructuring_pattern_expected);
-                    case ParsingContext.return ArgumentExpressions parseErrorAtCurrentToken(Diagnostics::Argument_expression_expected);
-                    case ParsingContext.return ObjectLiteralMembers parseErrorAtCurrentToken(Diagnostics::Property_assignment_expected);
-                    case ParsingContext.return ArrayLiteralMembers parseErrorAtCurrentToken(Diagnostics::Expression_or_comma_expected);
-                    case ParsingContext.return JSDocParameters parseErrorAtCurrentToken(Diagnostics::Parameter_declaration_expected);
-                    case ParsingContext.return Parameters parseErrorAtCurrentToken(Diagnostics::Parameter_declaration_expected);
-                    case ParsingContext.return TypeParameters parseErrorAtCurrentToken(Diagnostics::Type_parameter_declaration_expected);
-                    case ParsingContext.return TypeArguments parseErrorAtCurrentToken(Diagnostics::Type_argument_expected);
-                    case ParsingContext.return TupleElementTypes parseErrorAtCurrentToken(Diagnostics::Type_expected);
-                    case ParsingContext.return HeritageClauses parseErrorAtCurrentToken(Diagnostics::Unexpected_token_expected);
-                    case ParsingContext.return ImportOrExportSpecifiers parseErrorAtCurrentToken(Diagnostics::Identifier_expected);
-                    case ParsingContext.return JsxAttributes parseErrorAtCurrentToken(Diagnostics::Identifier_expected);
-                    case ParsingContext.return JsxChildren parseErrorAtCurrentToken(Diagnostics::Identifier_expected);
+                    case ParsingContext::return ObjectBindingElements parseErrorAtCurrentToken(Diagnostics::Property_destructuring_pattern_expected);
+                    case ParsingContext::return ArrayBindingElements parseErrorAtCurrentToken(Diagnostics::Array_element_destructuring_pattern_expected);
+                    case ParsingContext::return ArgumentExpressions parseErrorAtCurrentToken(Diagnostics::Argument_expression_expected);
+                    case ParsingContext::return ObjectLiteralMembers parseErrorAtCurrentToken(Diagnostics::Property_assignment_expected);
+                    case ParsingContext::return ArrayLiteralMembers parseErrorAtCurrentToken(Diagnostics::Expression_or_comma_expected);
+                    case ParsingContext::return JSDocParameters parseErrorAtCurrentToken(Diagnostics::Parameter_declaration_expected);
+                    case ParsingContext::return Parameters parseErrorAtCurrentToken(Diagnostics::Parameter_declaration_expected);
+                    case ParsingContext::return TypeParameters parseErrorAtCurrentToken(Diagnostics::Type_parameter_declaration_expected);
+                    case ParsingContext::return TypeArguments parseErrorAtCurrentToken(Diagnostics::Type_argument_expected);
+                    case ParsingContext::return TupleElementTypes parseErrorAtCurrentToken(Diagnostics::Type_expected);
+                    case ParsingContext::return HeritageClauses parseErrorAtCurrentToken(Diagnostics::Unexpected_token_expected);
+                    case ParsingContext::return ImportOrExportSpecifiers parseErrorAtCurrentToken(Diagnostics::Identifier_expected);
+                    case ParsingContext::return JsxAttributes parseErrorAtCurrentToken(Diagnostics::Identifier_expected);
+                    case ParsingContext::return JsxChildren parseErrorAtCurrentToken(Diagnostics::Identifier_expected);
                     return default [undefined!]; // GH TODO#18217 `Debug::_assertNever default(context);`
                 }
             }
@@ -2475,7 +2490,7 @@ namespace ts {
             }
 
             auto getExpectedCommaDiagnostic(ParsingContext kind) {
-                return kind == ParsingContext.EnumMembers ? Diagnostics::An_enum_member_name_must_be_followed_by_a_or : undefined;
+                return kind == ParsingContext::EnumMembers ? Diagnostics::An_enum_member_name_must_be_followed_by_a_or : undefined;
             }
 
             template <typename T> 
@@ -2709,7 +2724,7 @@ namespace ts {
 
             auto parseTypeArgumentsOfTypeReference() {
                 if (!scanner.hasPrecedingLineBreak() && reScanLessThanToken() == SyntaxKind::LessThanToken) {
-                    return parseBracketedList(ParsingContext.TypeArguments, parseType, SyntaxKind::LessThanToken, SyntaxKind::GreaterThanToken);
+                    return parseBracketedList(ParsingContext::TypeArguments, parseType, SyntaxKind::LessThanToken, SyntaxKind::GreaterThanToken);
                 }
             }
 
@@ -2900,7 +2915,7 @@ namespace ts {
 
             auto parseTypeParameters() -> NodeArray<TypeParameterDeclaration> {
                 if (token() == SyntaxKind::LessThanToken) {
-                    return parseBracketedList(ParsingContext.TypeParameters, parseTypeParameter, SyntaxKind::LessThanToken, SyntaxKind::GreaterThanToken);
+                    return parseBracketedList(ParsingContext::TypeParameters, parseTypeParameter, SyntaxKind::LessThanToken, SyntaxKind::GreaterThanToken);
                 }
             }
 
@@ -3025,8 +3040,8 @@ namespace ts {
                 setAwaitContext(!!(flags & SignatureFlags.Await));
 
                 auto parameters = flags & SignatureFlags.JSDoc ?
-                    parseDelimitedList(ParsingContext.JSDocParameters, parseJSDocParameter) :
-                    parseDelimitedList(ParsingContext.Parameters, savedAwaitContext ? parseParameterInOuterAwaitContext : parseParameter);
+                    parseDelimitedList(ParsingContext::JSDocParameters, parseJSDocParameter) :
+                    parseDelimitedList(ParsingContext::Parameters, savedAwaitContext ? parseParameterInOuterAwaitContext : parseParameter);
 
                 setYieldContext(savedYieldContext);
                 setAwaitContext(savedAwaitContext);
@@ -3145,7 +3160,7 @@ namespace ts {
             }
 
             auto parseIndexSignatureDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers) -> IndexSignatureDeclaration {
-                auto parameters = parseBracketedList(ParsingContext.Parameters, parseParameter, SyntaxKind::OpenBracketToken, SyntaxKind::CloseBracketToken);
+                auto parameters = parseBracketedList(ParsingContext::Parameters, parseParameter, SyntaxKind::OpenBracketToken, SyntaxKind::CloseBracketToken);
                 auto type = parseTypeAnnotation();
                 parseTypeMemberSemicolon();
                 auto node = factory.createIndexSignature(decorators, modifiers, parameters, type);
@@ -3252,7 +3267,7 @@ namespace ts {
             auto parseObjectTypeMembers() -> NodeArray<TypeElement> {
                 auto NodeArray<TypeElement> members;
                 if (parseExpected(SyntaxKind::OpenBraceToken)) {
-                    members = parseList(ParsingContext.TypeMembers, parseTypeMember);
+                    members = parseList(ParsingContext::TypeMembers, parseTypeMember);
                     parseExpected(SyntaxKind::CloseBraceToken);
                 }
                 else {
@@ -3353,7 +3368,7 @@ namespace ts {
                 auto pos = getNodePos();
                 return finishNode(
                     factory.createTupleTypeNode(
-                        parseBracketedList(ParsingContext.TupleElementTypes, parseTupleElementNameOrTupleElementType, SyntaxKind::OpenBracketToken, SyntaxKind::CloseBracketToken)
+                        parseBracketedList(ParsingContext::TupleElementTypes, parseTupleElementNameOrTupleElementType, SyntaxKind::OpenBracketToken, SyntaxKind::CloseBracketToken)
                     ),
                     pos
                 );
@@ -4898,7 +4913,7 @@ namespace ts {
                 auto list = [];
                 auto listPos = getNodePos();
                 auto saveParsingContext = parsingContext;
-                parsingContext |= 1 << ParsingContext.JsxChildren;
+                parsingContext |= 1 << ParsingContext::JsxChildren;
 
                 while (true) {
                     auto child = parseJsxChild(openingTag, currentToken = scanner.reScanJsxToken());
@@ -4912,7 +4927,7 @@ namespace ts {
 
             auto parseJsxAttributes() -> JsxAttributes {
                 auto pos = getNodePos();
-                return finishNode(factory.createJsxAttributes(parseList(ParsingContext.JsxAttributes, parseJsxAttribute)), pos);
+                return finishNode(factory.createJsxAttributes(parseList(ParsingContext::JsxAttributes, parseJsxAttribute)), pos);
             }
 
             auto parseJsxOpeningOrSelfClosingElementOrOpeningFragment(boolean inExpressionContext) -> Node {
@@ -5233,7 +5248,7 @@ namespace ts {
 
             auto parseArgumentList() {
                 parseExpected(SyntaxKind::OpenParenToken);
-                auto result = parseDelimitedList(ParsingContext.ArgumentExpressions, parseArgumentExpression);
+                auto result = parseDelimitedList(ParsingContext::ArgumentExpressions, parseArgumentExpression);
                 parseExpected(SyntaxKind::CloseParenToken);
                 return result;
             }
@@ -5249,7 +5264,7 @@ namespace ts {
                 }
                 nextToken();
 
-                auto typeArguments = parseDelimitedList(ParsingContext.TypeArguments, parseType);
+                auto typeArguments = parseDelimitedList(ParsingContext::TypeArguments, parseType);
                 if (!parseExpected(SyntaxKind::GreaterThanToken)) {
                     // If it doesn't have the closing `>` then it's definitely not an type argument list.
                     return undefined;
@@ -5382,7 +5397,7 @@ namespace ts {
                 auto pos = getNodePos();
                 parseExpected(SyntaxKind::OpenBracketToken);
                 auto multiLine = scanner.hasPrecedingLineBreak();
-                auto elements = parseDelimitedList(ParsingContext.ArrayLiteralMembers, parseArgumentOrArrayLiteralElement);
+                auto elements = parseDelimitedList(ParsingContext::ArrayLiteralMembers, parseArgumentOrArrayLiteralElement);
                 parseExpected(SyntaxKind::CloseBracketToken);
                 return finishNode(factory.createArrayLiteralExpression(elements, multiLine), pos);
             }
@@ -5451,7 +5466,7 @@ namespace ts {
                 auto openBracePosition = scanner.getTokenPos();
                 parseExpected(SyntaxKind::OpenBraceToken);
                 auto multiLine = scanner.hasPrecedingLineBreak();
-                auto properties = parseDelimitedList(ParsingContext.ObjectLiteralMembers, parseObjectLiteralElement, /*considerSemicolonAsDelimiter*/ true);
+                auto properties = parseDelimitedList(ParsingContext::ObjectLiteralMembers, parseObjectLiteralElement, /*considerSemicolonAsDelimiter*/ true);
                 if (!parseExpected(SyntaxKind::CloseBraceToken)) {
                     auto lastError = lastOrUndefined(parseDiagnostics);
                     if (lastError && lastError.code == Diagnostics::_0_expected.code) {
@@ -5544,7 +5559,7 @@ namespace ts {
                 auto openBracePosition = scanner.getTokenPos();
                 if (parseExpected(SyntaxKind::OpenBraceToken, diagnosticMessage) || ignoreMissingOpenBrace) {
                     auto multiLine = scanner.hasPrecedingLineBreak();
-                    auto statements = parseList(ParsingContext.BlockStatements, parseStatement);
+                    auto statements = parseList(ParsingContext::BlockStatements, parseStatement);
                     if (!parseExpected(SyntaxKind::CloseBraceToken)) {
                         auto lastError = lastOrUndefined(parseDiagnostics);
                         if (lastError && lastError.code == Diagnostics::_0_expected.code) {
@@ -5715,7 +5730,7 @@ namespace ts {
                 parseExpected(SyntaxKind::CaseKeyword);
                 auto expression = allowInAnd(parseExpression);
                 parseExpected(SyntaxKind::ColonToken);
-                auto statements = parseList(ParsingContext.SwitchClauseStatements, parseStatement);
+                auto statements = parseList(ParsingContext::SwitchClauseStatements, parseStatement);
                 return finishNode(factory.createCaseClause(expression, statements), pos);
             }
 
@@ -5723,7 +5738,7 @@ namespace ts {
                 auto pos = getNodePos();
                 parseExpected(SyntaxKind::DefaultKeyword);
                 parseExpected(SyntaxKind::ColonToken);
-                auto statements = parseList(ParsingContext.SwitchClauseStatements, parseStatement);
+                auto statements = parseList(ParsingContext::SwitchClauseStatements, parseStatement);
                 return finishNode(factory.createDefaultClause(statements), pos);
             }
 
@@ -5734,7 +5749,7 @@ namespace ts {
             auto parseCaseBlock() -> CaseBlock {
                 auto pos = getNodePos();
                 parseExpected(SyntaxKind::OpenBraceToken);
-                auto clauses = parseList(ParsingContext.SwitchClauses, parseCaseOrDefaultClause);
+                auto clauses = parseList(ParsingContext::SwitchClauses, parseCaseOrDefaultClause);
                 parseExpected(SyntaxKind::CloseBraceToken);
                 return finishNode(factory.createCaseBlock(clauses), pos);
             }
@@ -6223,7 +6238,7 @@ namespace ts {
             auto parseObjectBindingPattern() -> ObjectBindingPattern {
                 auto pos = getNodePos();
                 parseExpected(SyntaxKind::OpenBraceToken);
-                auto elements = parseDelimitedList(ParsingContext.ObjectBindingElements, parseObjectBindingElement);
+                auto elements = parseDelimitedList(ParsingContext::ObjectBindingElements, parseObjectBindingElement);
                 parseExpected(SyntaxKind::CloseBraceToken);
                 return finishNode(factory.createObjectBindingPattern(elements), pos);
             }
@@ -6231,7 +6246,7 @@ namespace ts {
             auto parseArrayBindingPattern() -> ArrayBindingPattern {
                 auto pos = getNodePos();
                 parseExpected(SyntaxKind::OpenBracketToken);
-                auto elements = parseDelimitedList(ParsingContext.ArrayBindingElements, parseArrayBindingElement);
+                auto elements = parseDelimitedList(ParsingContext::ArrayBindingElements, parseArrayBindingElement);
                 parseExpected(SyntaxKind::CloseBracketToken);
                 return finishNode(factory.createArrayBindingPattern(elements), pos);
             }
@@ -6308,7 +6323,7 @@ namespace ts {
                     auto savedDisallowIn = inDisallowInContext();
                     setDisallowInContext(inForStatementInitializer);
 
-                    declarations = parseDelimitedList(ParsingContext.VariableDeclarations,
+                    declarations = parseDelimitedList(ParsingContext::VariableDeclarations,
                         inForStatementInitializer ? parseVariableDeclaration : parseVariableDeclarationAllowExclamation);
 
                     setDisallowInContext(savedDisallowIn);
@@ -6718,7 +6733,7 @@ namespace ts {
                 //      ClassHeritage[?Yield,?Await]opt { ClassBody[?Yield,?Await]opt }
 
                 if (isHeritageClause()) {
-                    return parseList(ParsingContext.HeritageClauses, parseHeritageClause);
+                    return parseList(ParsingContext::HeritageClauses, parseHeritageClause);
                 }
 
                 return undefined;
@@ -6729,7 +6744,7 @@ namespace ts {
                 auto tok = token();
                 Debug::_assert(tok == SyntaxKind::ExtendsKeyword || tok == SyntaxKind::ImplementsKeyword); // isListElement() should ensure this.
                 nextToken();
-                auto types = parseDelimitedList(ParsingContext.HeritageClauseElement, parseExpressionWithTypeArguments);
+                auto types = parseDelimitedList(ParsingContext::HeritageClauseElement, parseExpressionWithTypeArguments);
                 return finishNode(factory.createHeritageClause(tok, types), pos);
             }
 
@@ -6742,7 +6757,7 @@ namespace ts {
 
             auto tryParseTypeArguments() -> NodeArray<TypeNode> {
                 return token() == SyntaxKind::LessThanToken ?
-                    parseBracketedList(ParsingContext.TypeArguments, parseType, SyntaxKind::LessThanToken, SyntaxKind::GreaterThanToken) : undefined;
+                    parseBracketedList(ParsingContext::TypeArguments, parseType, SyntaxKind::LessThanToken, SyntaxKind::GreaterThanToken) : undefined;
             }
 
             auto isHeritageClause() -> boolean {
@@ -6750,7 +6765,7 @@ namespace ts {
             }
 
             auto parseClassMembers() -> NodeArray<ClassElement> {
-                return parseList(ParsingContext.ClassMembers, parseClassElement);
+                return parseList(ParsingContext::ClassMembers, parseClassElement);
             }
 
             auto parseInterfaceDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers) -> InterfaceDeclaration {
@@ -6791,7 +6806,7 @@ namespace ts {
                 auto name = parseIdentifier();
                 auto members;
                 if (parseExpected(SyntaxKind::OpenBraceToken)) {
-                    members = doOutsideOfYieldAndAwaitContext(() => parseDelimitedList(ParsingContext.EnumMembers, parseEnumMember));
+                    members = doOutsideOfYieldAndAwaitContext(() => parseDelimitedList(ParsingContext::EnumMembers, parseEnumMember));
                     parseExpected(SyntaxKind::CloseBraceToken);
                 }
                 else {
@@ -6805,7 +6820,7 @@ namespace ts {
                 auto pos = getNodePos();
                 auto statements;
                 if (parseExpected(SyntaxKind::OpenBraceToken)) {
-                    statements = parseList(ParsingContext.BlockStatements, parseStatement);
+                    statements = parseList(ParsingContext::BlockStatements, parseStatement);
                     parseExpected(SyntaxKind::CloseBraceToken);
                 }
                 else {
@@ -7023,8 +7038,8 @@ namespace ts {
                 //  ImportSpecifier
                 //  ImportsList, ImportSpecifier
                 auto node = kind == SyntaxKind::NamedImports
-                    ? factory.createNamedImports(parseBracketedList(ParsingContext.ImportOrExportSpecifiers, parseImportSpecifier, SyntaxKind::OpenBraceToken, SyntaxKind::CloseBraceToken))
-                    : factory.createNamedExports(parseBracketedList(ParsingContext.ImportOrExportSpecifiers, parseExportSpecifier, SyntaxKind::OpenBraceToken, SyntaxKind::CloseBraceToken));
+                    ? factory.createNamedImports(parseBracketedList(ParsingContext::ImportOrExportSpecifiers, parseImportSpecifier, SyntaxKind::OpenBraceToken, SyntaxKind::CloseBraceToken))
+                    : factory.createNamedExports(parseBracketedList(ParsingContext::ImportOrExportSpecifiers, parseExportSpecifier, SyntaxKind::OpenBraceToken, SyntaxKind::CloseBraceToken));
                 return finishNode(node, pos);
             }
 
@@ -8763,27 +8778,9 @@ namespace ts {
             return Parser::JSDocParser::parseJSDocTypeExpressionForTests(content, start, length);
         }
 
-        /** @internal */
-        auto isDeclarationFileName(string fileName) -> boolean {
-            return fileExtensionIs(fileName, Extension.Dts);
-        }
-
         /*@internal*/
-        interface PragmaContext {
-            ScriptTarget languageVersion;
-            PragmaMap pragmas;
-            CheckJsDirective checkJsDirective;
-            std::vector<FileReference> referencedFiles;
-            std::vector<FileReference> typeReferenceDirectives;
-            std::vector<FileReference> libReferenceDirectives;
-            std::vector<AmdDependency> amdDependencies;
-            boolean hasNoDefaultLib;
-            string moduleName;
-        }
-
-        /*@internal*/
-        auto processCommentPragmas(PragmaContext context, string sourceText) -> void {
-            auto std::vector<PragmaPseudoMapEntry> = [] pragmas;
+        auto processCommentPragmas(SourceFile context, string sourceText) -> void {
+            auto std::vector<PragmaPseudoMapEntry> pragmas;
 
             for (auto range of getLeadingCommentRanges(sourceText, 0) || emptyArray) {
                 auto comment = sourceText.substring(range.pos, range.end);
@@ -8807,10 +8804,7 @@ namespace ts {
         }
 
         /*@internal*/
-        type PragmaDiagnosticReporter = (number pos, number length, DiagnosticMessage message) => void;
-
-        /*@internal*/
-        auto processPragmasIntoFields(PragmaContext context, PragmaDiagnosticReporter reportDiagnostic) -> void {
+        auto processPragmasIntoFields(SourceFile context, PragmaDiagnosticReporter reportDiagnostic) -> void {
             context.checkJsDirective = undefined;
             context.referencedFiles = [];
             context.typeReferenceDirectives = [];
