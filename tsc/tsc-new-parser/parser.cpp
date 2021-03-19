@@ -1053,7 +1053,7 @@ namespace ts {
                 return hasJSDoc ? addJSDocComment(node) : node;
             }
 
-            let hasDeprecatedTag = false;
+            auto hasDeprecatedTag = false;
             auto addJSDocComment<T extends HasJSDoc>(T node) -> T {
                 Debug::assert(!node.jsDoc); // Should only be called once per node
                 auto jsDoc = mapDefined(getJSDocCommentRanges(node, sourceText), comment => JSDocParser.parseJSDocComment(node, comment.pos, comment.end - comment.pos));
@@ -1075,8 +1075,8 @@ namespace ts {
 
                 parseDiagnostics = [];
 
-                let pos = 0;
-                let start = findNextStatementWithAwait(sourceFile.statements, 0);
+                auto pos = 0;
+                auto start = findNextStatementWithAwait(sourceFile.statements, 0);
                 while (start != -1) {
                     // append all statements between pos and start
                     auto prevStatement = sourceFile.statements[pos];
@@ -1147,7 +1147,7 @@ namespace ts {
                 }
 
                 auto findNextStatementWithAwait(NodeArray<Statement> statements, number start) {
-                    for (let i = start; i < statements.size(); i++) {
+                    for (auto i = start; i < statements.size(); i++) {
                         if (containsPossibleTopLevelAwait(statements[i])) {
                             return i;
                         }
@@ -1156,7 +1156,7 @@ namespace ts {
                 }
 
                 auto findNextStatementWithoutAwait(NodeArray<Statement> statements, number start) {
-                    for (let i = start; i < statements.size(); i++) {
+                    for (auto i = start; i < statements.size(); i++) {
                         if (!containsPossibleTopLevelAwait(statements[i])) {
                             return i;
                         }
@@ -1185,7 +1185,7 @@ namespace ts {
             auto createSourceFile(string fileName, ScriptTarget languageVersion, ScriptKind scriptKind, boolean isDeclarationFile, readonly statements Statement[], EndOfFileToken endOfFileToken, NodeFlags flags) -> SourceFile {
                 // code from createNode is inlined here so createNode won't have to deal with special case of creating source files
                 // this is quite rare comparing to other nodes and createNode should be as fast as possible
-                let sourceFile = factory.createSourceFile(statements, endOfFileToken, flags);
+                auto sourceFile = factory.createSourceFile(statements, endOfFileToken, flags);
                 setTextRangePosWidth(sourceFile, 0, sourceText.size());
                 setExternalModuleIndicator(sourceFile);
 
@@ -1651,7 +1651,7 @@ namespace ts {
             }
 
             auto internIdentifier(string text) -> string {
-                let identifier = identifiers.get(text);
+                auto identifier = identifiers.get(text);
                 if (identifier == undefined) {
                     identifiers.set(text, identifier = text);
                 }
@@ -1748,7 +1748,7 @@ namespace ts {
             }
 
             auto internPrivateIdentifier(string text) -> string {
-                let privateIdentifier = privateIdentifiers.get(text);
+                auto privateIdentifier = privateIdentifiers.get(text);
                 if (privateIdentifier == undefined) {
                     privateIdentifiers.set(text, privateIdentifier = text);
                 }
@@ -2062,7 +2062,7 @@ namespace ts {
 
             // True if positioned at element or terminator of the current list or any enclosing list
             auto isInSomeParsingContext() -> boolean {
-                for (let kind = 0; kind < ParsingContext.Count; kind++) {
+                for (auto kind = 0; kind < ParsingContext.Count; kind++) {
                     if (parsingContext & (1 << kind)) {
                         if (isListElement(kind, /*inErrorRecovery*/ true) || isListTerminator(kind)) {
                             return true;
@@ -2365,12 +2365,12 @@ namespace ts {
 
                 // Very subtle incremental parsing bug.  Consider the following code:
                 //
-                //      let v = new List < A, B
+                //      auto v = new List < A, B
                 //
                 // This is actually legal code.  It's a list of variable declarators "v = new List<A"
                 // on one side and "B" on the other. If you then change that to:
                 //
-                //      let v = new List < A, B >()
+                //      auto v = new List < A, B >()
                 //
                 // then we have a problem.  "v = new List<A" doesn't intersect the change range, so we
                 // start reparsing at "B" and we completely fail to handle this properly.
@@ -2442,7 +2442,7 @@ namespace ts {
                 auto list = [];
                 auto listPos = getNodePos();
 
-                let commaStart = -1; // Meaning the previous token was not a comma
+                auto commaStart = -1; // Meaning the previous token was not a comma
                 while (true) {
                     if (isListElement(kind, /*inErrorRecovery*/ false)) {
                         auto startPos = scanner.getStartPos();
@@ -2530,8 +2530,8 @@ namespace ts {
 
             auto parseEntityName(boolean allowReservedWords, DiagnosticMessage diagnosticMessage) -> EntityName {
                 auto pos = getNodePos();
-                let EntityName entity = allowReservedWords ? parseIdentifierName(diagnosticMessage) : parseIdentifier(diagnosticMessage);
-                let dotPos = getNodePos();
+                auto EntityName entity = allowReservedWords ? parseIdentifierName(diagnosticMessage) : parseIdentifier(diagnosticMessage);
+                auto dotPos = getNodePos();
                 while (parseOptional(SyntaxKind::DotToken)) {
                     if (token() == SyntaxKind::LessThanToken) {
                         // the entity is part of a JSDoc-style generic, so record the trailing dot for later error reporting
@@ -2596,7 +2596,7 @@ namespace ts {
             auto parseTemplateSpans(boolean isTaggedTemplate) {
                 auto pos = getNodePos();
                 auto list = [];
-                let TemplateSpan node;
+                auto TemplateSpan node;
                 do {
                     node = parseTemplateSpan(isTaggedTemplate);
                     list.push(node);
@@ -2630,7 +2630,7 @@ namespace ts {
             auto parseTemplateTypeSpans() {
                 auto pos = getNodePos();
                 auto list = [];
-                let TemplateLiteralTypeSpan node;
+                auto TemplateLiteralTypeSpan node;
                 do {
                     node = parseTemplateTypeSpan();
                     list.push(node);
@@ -2829,7 +2829,7 @@ namespace ts {
 
             auto parseJSDocParameter() -> ParameterDeclaration {
                 auto pos = getNodePos();
-                let Identifier name;
+                auto Identifier name;
                 if (token() == SyntaxKind::ThisKeyword || token() == SyntaxKind::NewKeyword) {
                     name = parseIdentifierName();
                     parseExpected(SyntaxKind::ColonToken);
@@ -2872,7 +2872,7 @@ namespace ts {
                 }
 
                 auto hasDotDotDot = parseOptional(SyntaxKind::DotDotDotToken);
-                let type = parseTypeOrTypePredicate();
+                auto type = parseTypeOrTypePredicate();
                 scanner.setInJSDocType(false);
                 if (hasDotDotDot) {
                     type = finishNode(factory.createJSDocVariadicType(type), pos);
@@ -2893,8 +2893,8 @@ namespace ts {
             auto parseTypeParameter() -> TypeParameterDeclaration {
                 auto pos = getNodePos();
                 auto name = parseIdentifier();
-                let TypeNode constraint;
-                let Expression expression;
+                auto TypeNode constraint;
+                auto Expression expression;
                 if (parseOptional(SyntaxKind::ExtendsKeyword)) {
                     // It's not uncommon for people to write improper constraints to a generic.  If the
                     // user writes a constraint that is an expression and not an actual type, then parse
@@ -3180,7 +3180,7 @@ namespace ts {
             auto parsePropertyOrMethodSignature(number pos, boolean hasJSDoc, NodeArray<Modifier> modifiers) -> PropertySignature | MethodSignature {
                 auto name = parsePropertyName();
                 auto questionToken = parseOptionalToken(SyntaxKind::QuestionToken);
-                let PropertySignature node | MethodSignature;
+                auto PropertySignature node | MethodSignature;
                 if (token() == SyntaxKind::OpenParenToken || token() == SyntaxKind::LessThanToken) {
                     // Method signatures don't exist in expression contexts.  So they have neither
                     // [Yield] nor [Await]
@@ -3206,7 +3206,7 @@ namespace ts {
                 if (token() == SyntaxKind::OpenParenToken || token() == SyntaxKind::LessThanToken) {
                     return true;
                 }
-                let idToken = false;
+                auto idToken = false;
                 // Eat up all modifiers, but hold on to the last one in case it is actually an identifier
                 while (isModifierKind(token())) {
                     idToken = true;
@@ -3275,7 +3275,7 @@ namespace ts {
             }
 
             auto parseObjectTypeMembers() -> NodeArray<TypeElement> {
-                let NodeArray<TypeElement> members;
+                auto NodeArray<TypeElement> members;
                 if (parseExpected(SyntaxKind::OpenBraceToken)) {
                     members = parseList(ParsingContext.TypeMembers, parseTypeMember);
                     parseExpected(SyntaxKind::CloseBraceToken);
@@ -3309,7 +3309,7 @@ namespace ts {
             auto parseMappedType() {
                 auto pos = getNodePos();
                 parseExpected(SyntaxKind::OpenBraceToken);
-                let ReadonlyKeyword readonlyToken | PlusToken | MinusToken;
+                auto ReadonlyKeyword readonlyToken | PlusToken | MinusToken;
                 if (token() == SyntaxKind::ReadonlyKeyword || token() == SyntaxKind::PlusToken || token() == SyntaxKind::MinusToken) {
                     readonlyToken = parseTokenNode<ReadonlyKeyword | PlusToken | MinusToken>();
                     if (readonlyToken.kind != SyntaxKind::ReadonlyKeyword) {
@@ -3320,7 +3320,7 @@ namespace ts {
                 auto typeParameter = parseMappedTypeParameter();
                 auto nameType = parseOptional(SyntaxKind::AsKeyword) ? parseType() : undefined;
                 parseExpected(SyntaxKind::CloseBracketToken);
-                let QuestionToken questionToken | PlusToken | MinusToken;
+                auto QuestionToken questionToken | PlusToken | MinusToken;
                 if (token() == SyntaxKind::QuestionToken || token() == SyntaxKind::PlusToken || token() == SyntaxKind::MinusToken) {
                     questionToken = parseTokenNode<QuestionToken | PlusToken | MinusToken>();
                     if (questionToken.kind != SyntaxKind::QuestionToken) {
@@ -3393,7 +3393,7 @@ namespace ts {
             }
 
             auto parseModifiersForConstructorType() -> NodeArray<Modifier> {
-                let NodeArray<Modifier> modifiers;
+                auto NodeArray<Modifier> modifiers;
                 if (token() == SyntaxKind::AbstractKeyword) {
                     auto pos = getNodePos();
                     nextToken();
@@ -3428,7 +3428,7 @@ namespace ts {
                 if (negative) {
                     nextToken();
                 }
-                let BooleanLiteral expression | NullLiteral | LiteralExpression | PrefixUnaryExpression =
+                auto BooleanLiteral expression | NullLiteral | LiteralExpression | PrefixUnaryExpression =
                     token() == SyntaxKind::TrueKeyword || token() == SyntaxKind::FalseKeyword || token() == SyntaxKind::NullKeyword ?
                         parseTokenNode<BooleanLiteral | NullLiteral>() :
                         parseLiteralLikeNode(token()) as LiteralExpression;
@@ -3590,7 +3590,7 @@ namespace ts {
 
             auto parsePostfixTypeOrHigher() -> TypeNode {
                 auto pos = getNodePos();
-                let type = parseNonArrayType();
+                auto type = parseNonArrayType();
                 while (!scanner.hasPrecedingLineBreak()) {
                     switch (token()) {
                         case SyntaxKind::ExclamationToken:
@@ -3669,7 +3669,7 @@ namespace ts {
                 // try to parse them gracefully and issue a helpful message.
                 if (isStartOfFunctionTypeOrConstructorType()) {
                     auto type = parseFunctionOrConstructorType();
-                    let DiagnosticMessage diagnostic;
+                    auto DiagnosticMessage diagnostic;
                     if (isFunctionTypeNode(type)) {
                         diagnostic = isInUnionType
                             ? Diagnostics::Function_type_notation_must_be_parenthesized_when_used_in_a_union_type
@@ -3695,7 +3695,7 @@ namespace ts {
                 auto pos = getNodePos();
                 auto isUnionType = operator == SyntaxKind::BarToken;
                 auto hasLeadingOperator = parseOptional(operator);
-                let type = hasLeadingOperator && parseFunctionOrConstructorTypeToError(isUnionType)
+                auto type = hasLeadingOperator && parseFunctionOrConstructorTypeToError(isUnionType)
                     || parseConstituentType();
                 if (token() == operator || hasLeadingOperator) {
                     auto types = [type];
@@ -3921,8 +3921,8 @@ namespace ts {
                 }
 
                 auto pos = getNodePos();
-                let expr = parseAssignmentExpressionOrHigher();
-                let BinaryOperatorToken operatorToken;
+                auto expr = parseAssignmentExpressionOrHigher();
+                auto BinaryOperatorToken operatorToken;
                 while ((operatorToken = parseOptionalToken(SyntaxKind::CommaToken))) {
                     expr = makeBinaryExpression(expr, operatorToken, parseAssignmentExpressionOrHigher(), pos);
                 }
@@ -4303,7 +4303,7 @@ namespace ts {
                 // close paren.
                 auto typeParameters = parseTypeParameters();
 
-                let NodeArray<ParameterDeclaration> parameters;
+                auto NodeArray<ParameterDeclaration> parameters;
                 if (!parseExpected(SyntaxKind::OpenParenToken)) {
                     if (!allowAmbiguity) {
                         return undefined;
@@ -4365,7 +4365,7 @@ namespace ts {
                     // user meant to supply a block. For example, if the user wrote:
                     //
                     //  a =>
-                    //      let v = 0;
+                    //      auto v = 0;
                     //  }
                     //
                     // they may be missing an open brace.  Check to see if that's the case so we can
@@ -4394,7 +4394,7 @@ namespace ts {
 
                 // we Note explicitly 'allowIn' in the whenTrue part of the condition expression, and
                 // we do not that for the 'whenFalse' part.
-                let colonToken;
+                auto colonToken;
                 return finishNode(
                     factory.createConditionalExpression(
                         leftOperand,
@@ -4730,7 +4730,7 @@ namespace ts {
                 // 3)we have a MemberExpression which either completes the LeftHandSideExpression,
                 // or starts the beginning of the first four CallExpression productions.
                 auto pos = getNodePos();
-                let MemberExpression expression;
+                auto MemberExpression expression;
                 if (token() == SyntaxKind::ImportKeyword) {
                     if (lookAhead(nextTokenIsOpenParenOrLessThan)) {
                         // We don't want to eagerly consume all import keyword as import call expression so we look ahead to find "("
@@ -4840,7 +4840,7 @@ namespace ts {
             auto parseJsxElementOrSelfClosingElementOrFragment(boolean inExpressionContext, number topInvalidNodePosition) -> JsxElement | JsxSelfClosingElement | JsxFragment {
                 auto pos = getNodePos();
                 auto opening = parseJsxOpeningOrSelfClosingElementOrOpeningFragment(inExpressionContext);
-                let JsxElement result | JsxSelfClosingElement | JsxFragment;
+                auto JsxElement result | JsxSelfClosingElement | JsxFragment;
                 if (opening.kind == SyntaxKind::JsxOpeningElement) {
                     auto children = parseJsxChildren(opening);
                     auto closingElement = parseJsxClosingElement(inExpressionContext);
@@ -4955,7 +4955,7 @@ namespace ts {
                 auto typeArguments = (contextFlags & NodeFlags::JavaScriptFile) == 0 ? tryParseTypeArguments() : undefined;
                 auto attributes = parseJsxAttributes();
 
-                let JsxOpeningLikeElement node;
+                auto JsxOpeningLikeElement node;
 
                 if (token() == SyntaxKind::GreaterThanToken) {
                     // Closing tag, so scan the immediately-following text with the JSX scanning instead
@@ -4987,7 +4987,7 @@ namespace ts {
                 //      primaryExpression in the form of an identifier and "this" keyword
                 // We can't just simply use parseLeftHandSideExpressionOrHigher because then we will start consider class,auto etc as a keyword
                 // We only want to consider "this" as a primaryExpression
-                let JsxTagNameExpression expression = token() == SyntaxKind::ThisKeyword ?
+                auto JsxTagNameExpression expression = token() == SyntaxKind::ThisKeyword ?
                     parseTokenNode<ThisExpression>() : parseIdentifierName();
                 while (parseOptional(SyntaxKind::DotToken)) {
                     expression = finishNode(factory.createPropertyAccessExpression(expression, parseRightSideOfDot(/*allowIdentifierNames*/ true, /*allowPrivateIdentifiers*/ false)), pos) as JsxTagNamePropertyAccess;
@@ -5001,8 +5001,8 @@ namespace ts {
                     return undefined;
                 }
 
-                let DotDotDotToken dotDotDotToken;
-                let Expression expression;
+                auto DotDotDotToken dotDotDotToken;
+                auto Expression expression;
                 if (token() != SyntaxKind::CloseBraceToken) {
                     dotDotDotToken = parseOptionalToken(SyntaxKind::DotDotDotToken);
                     // Only an AssignmentExpression is valid here per the JSX spec,
@@ -5106,7 +5106,7 @@ namespace ts {
                 }
                 // check for an optional chain in a non-null expression
                 if (isNonNullExpression(node)) {
-                    let expr = node.expression;
+                    auto expr = node.expression;
                     while (isNonNullExpression(expr) && !(expr.flags & NodeFlags::OptionalChain)) {
                         expr = expr.expression;
                     }
@@ -5135,7 +5135,7 @@ namespace ts {
             }
 
             auto parseElementAccessExpressionRest(number pos, LeftHandSideExpression expression, QuestionDotToken questionDotToken) {
-                let Expression argumentExpression;
+                auto Expression argumentExpression;
                 if (token() == SyntaxKind::CloseBracketToken) {
                     argumentExpression = createMissingNode(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ true, Diagnostics::An_element_access_expression_should_take_an_argument);
                 }
@@ -5157,8 +5157,8 @@ namespace ts {
 
             auto parseMemberExpressionRest(number pos, LeftHandSideExpression expression, boolean allowOptionalChain) -> MemberExpression {
                 while (true) {
-                    let QuestionDotToken questionDotToken;
-                    let isPropertyAccess = false;
+                    auto QuestionDotToken questionDotToken;
+                    auto isPropertyAccess = false;
                     if (allowOptionalChain && isStartOfOptionalPropertyOrElementAccessChain()) {
                         questionDotToken = parseExpectedToken(SyntaxKind::QuestionDotToken);
                         isPropertyAccess = tokenIsIdentifierOrKeyword(token());
@@ -5448,7 +5448,7 @@ namespace ts {
                 // CoverInitializedName[Yield] :
                 //     IdentifierReference[?Yield] Initializer[In, ?Yield]
                 // this is necessary because ObjectLiteral productions are also used to cover grammar for ObjectAssignmentPattern
-                let Mutable node<ShorthandPropertyAssignment | PropertyAssignment>;
+                auto Mutable node<ShorthandPropertyAssignment | PropertyAssignment>;
                 auto isShorthandPropertyAssignment = tokenIsIdentifier && (token() != SyntaxKind::ColonToken);
                 if (isShorthandPropertyAssignment) {
                     auto equalsToken = parseOptionalToken(SyntaxKind::EqualsToken);
@@ -5539,8 +5539,8 @@ namespace ts {
                 }
 
                 auto expressionPos = getNodePos();
-                let MemberExpression expression = parsePrimaryExpression();
-                let typeArguments;
+                auto MemberExpression expression = parsePrimaryExpression();
+                auto typeArguments;
                 while (true) {
                     expression = parseMemberExpressionRest(expressionPos, expression, /*allowOptionalChain*/ false);
                     typeArguments = tryParse(parseTypeArgumentsInExpression);
@@ -5553,7 +5553,7 @@ namespace ts {
                     break;
                 }
 
-                let NodeArray<Expression> argumentsArray;
+                auto NodeArray<Expression> argumentsArray;
                 if (token() == SyntaxKind::OpenParenToken) {
                     argumentsArray = parseArgumentList();
                 }
@@ -5667,7 +5667,7 @@ namespace ts {
                 auto awaitToken = parseOptionalToken(SyntaxKind::AwaitKeyword);
                 parseExpected(SyntaxKind::OpenParenToken);
 
-                let initializer!: VariableDeclarationList | Expression;
+                auto initializer!: VariableDeclarationList | Expression;
                 if (token() != SyntaxKind::SemicolonToken) {
                     if (token() == SyntaxKind::VarKeyword || token() == SyntaxKind::LetKeyword || token() == SyntaxKind::ConstKeyword) {
                         initializer = parseVariableDeclarationList(/*inForStatementInitializer*/ true);
@@ -5677,7 +5677,7 @@ namespace ts {
                     }
                 }
 
-                let IterationStatement node;
+                auto IterationStatement node;
                 if (awaitToken ? parseExpected(SyntaxKind::OfKeyword) : parseOptional(SyntaxKind::OfKeyword)) {
                     auto expression = allowInAnd(parseAssignmentExpressionOrHigher);
                     parseExpected(SyntaxKind::CloseParenToken);
@@ -5786,7 +5786,7 @@ namespace ts {
                 // directly as that might consume an expression on the following line.
                 // Instead, we create a "missing" identifier, but don't report an error. The actual error
                 // will be reported in the grammar walker.
-                let expression = scanner.hasPrecedingLineBreak() ? undefined : allowInAnd(parseExpression);
+                auto expression = scanner.hasPrecedingLineBreak() ? undefined : allowInAnd(parseExpression);
                 if (expression == undefined) {
                     identifierCount++;
                     expression = finishNode(factory.createIdentifier(string()), getNodePos());
@@ -5805,7 +5805,7 @@ namespace ts {
 
                 // If we don't have a catch clause, then we must have a finally clause.  Try to parse
                 // one out no matter what.
-                let Block finallyBlock;
+                auto Block finallyBlock;
                 if (!catchClause || token() == SyntaxKind::FinallyKeyword) {
                     parseExpected(SyntaxKind::FinallyKeyword);
                     finallyBlock = parseBlock(/*ignoreMissingOpenBrace*/ false);
@@ -5818,7 +5818,7 @@ namespace ts {
                 auto pos = getNodePos();
                 parseExpected(SyntaxKind::CatchKeyword);
 
-                let variableDeclaration;
+                auto variableDeclaration;
                 if (parseOptional(SyntaxKind::OpenParenToken)) {
                     variableDeclaration = parseVariableDeclaration();
                     parseExpected(SyntaxKind::CloseParenToken);
@@ -5844,8 +5844,8 @@ namespace ts {
                 // out an expression, seeing if it is identifier and then seeing if it is followed by
                 // a colon.
                 auto pos = getNodePos();
-                let hasJSDoc = hasPrecedingJSDocComment();
-                let ExpressionStatement node | LabeledStatement;
+                auto hasJSDoc = hasPrecedingJSDocComment();
+                auto ExpressionStatement node | LabeledStatement;
                 auto hasParen = token() == SyntaxKind::OpenParenToken;
                 auto expression = allowInAnd(parseExpression);
                 if (ts.isIdentifier(expression) && parseOptional(SyntaxKind::ColonToken)) {
@@ -5943,7 +5943,7 @@ namespace ts {
                             return token() == SyntaxKind::StringLiteral || token() == SyntaxKind::AsteriskToken ||
                                 token() == SyntaxKind::OpenBraceToken || tokenIsIdentifierOrKeyword(token());
                         case SyntaxKind::ExportKeyword:
-                            let currentToken = nextToken();
+                            auto currentToken = nextToken();
                             if (currentToken == SyntaxKind::TypeKeyword) {
                                 currentToken = lookAhead(nextToken);
                             }
@@ -6231,8 +6231,8 @@ namespace ts {
                 auto pos = getNodePos();
                 auto dotDotDotToken = parseOptionalToken(SyntaxKind::DotDotDotToken);
                 auto tokenIsIdentifier = isBindingIdentifier();
-                let PropertyName propertyName = parsePropertyName();
-                let BindingName name;
+                auto PropertyName propertyName = parsePropertyName();
+                auto BindingName name;
                 if (tokenIsIdentifier && token() != SyntaxKind::ColonToken) {
                     name = <Identifier>propertyName;
                     propertyName = undefined;
@@ -6286,7 +6286,7 @@ namespace ts {
                 auto pos = getNodePos();
                 auto hasJSDoc = hasPrecedingJSDocComment();
                 auto name = parseIdentifierOrPattern(Diagnostics::Private_identifiers_are_not_allowed_in_variable_declarations);
-                let ExclamationToken exclamationToken;
+                auto ExclamationToken exclamationToken;
                 if (allowExclamation && name.kind == SyntaxKind::Identifier &&
                     token() == SyntaxKind::ExclamationToken && !scanner.hasPrecedingLineBreak()) {
                     exclamationToken = parseTokenNode<Token<SyntaxKind::ExclamationToken>>();
@@ -6300,7 +6300,7 @@ namespace ts {
             auto parseVariableDeclarationList(boolean inForStatementInitializer) -> VariableDeclarationList {
                 auto pos = getNodePos();
 
-                let NodeFlags flags = 0;
+                auto NodeFlags flags = 0;
                 switch (token()) {
                     case SyntaxKind::VarKeyword:
                         break;
@@ -6318,14 +6318,14 @@ namespace ts {
 
                 // The user may have written the following:
                 //
-                //    for (let of X) { }
+                //    for (auto of X) { }
                 //
                 // In this case, we want to parse an empty declaration list, and then parse 'of'
                 // as a keyword. The reason this is not automatic is that 'of' is a valid identifier.
                 // So we need to look ahead to determine if 'of' should be treated as a keyword in
                 // this context.
                 // The checker will then give an error that there is an empty declaration list.
-                let declarations;
+                auto declarations;
                 if (token() == SyntaxKind::OfKeyword && lookAhead(canFollowContextualOfKeyword)) {
                     declarations = createMissingList<VariableDeclaration>();
                 }
@@ -6484,7 +6484,7 @@ namespace ts {
             }
 
             auto isClassMemberStart() -> boolean {
-                let SyntaxKind idToken;
+                auto SyntaxKind idToken;
 
                 if (token() == SyntaxKind::AtToken) {
                     return true;
@@ -6576,7 +6576,7 @@ namespace ts {
 
             auto parseDecorators() -> NodeArray<Decorator> {
                 auto pos = getNodePos();
-                let list, decorator;
+                auto list, decorator;
                 while (decorator = tryParseDecorator()) {
                     list = append(list, decorator);
                 }
@@ -6612,7 +6612,7 @@ namespace ts {
              */
             auto parseModifiers(boolean permitInvalidConstAsModifier) -> NodeArray<Modifier> {
                 auto pos = getNodePos();
-                let list, modifier;
+                auto list, modifier;
                 while (modifier = tryParseModifier(permitInvalidConstAsModifier)) {
                     list = append(list, modifier);
                 }
@@ -6620,7 +6620,7 @@ namespace ts {
             }
 
             auto parseModifiersForArrowFunction() -> NodeArray<Modifier> {
-                let NodeArray<Modifier> modifiers;
+                auto NodeArray<Modifier> modifiers;
                 if (token() == SyntaxKind::AsyncKeyword) {
                     auto pos = getNodePos();
                     nextToken();
@@ -6706,7 +6706,7 @@ namespace ts {
                 if (some(modifiers, isExportModifier)) setAwaitContext(/*value*/ true);
                 auto heritageClauses = parseHeritageClauses();
 
-                let members;
+                auto members;
                 if (parseExpected(SyntaxKind::OpenBraceToken)) {
                     // ClassTail[Yield,Await] : (Modified) See 14.5
                     //      ClassHeritage[?Yield,?Await]opt { ClassBody[?Yield,?Await]opt }
@@ -6814,7 +6814,7 @@ namespace ts {
             auto parseEnumDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers) -> EnumDeclaration {
                 parseExpected(SyntaxKind::EnumKeyword);
                 auto name = parseIdentifier();
-                let members;
+                auto members;
                 if (parseExpected(SyntaxKind::OpenBraceToken)) {
                     members = doOutsideOfYieldAndAwaitContext(() => parseDelimitedList(ParsingContext.EnumMembers, parseEnumMember));
                     parseExpected(SyntaxKind::CloseBraceToken);
@@ -6828,7 +6828,7 @@ namespace ts {
 
             auto parseModuleBlock() -> ModuleBlock {
                 auto pos = getNodePos();
-                let statements;
+                auto statements;
                 if (parseExpected(SyntaxKind::OpenBraceToken)) {
                     statements = parseList(ParsingContext.BlockStatements, parseStatement);
                     parseExpected(SyntaxKind::CloseBraceToken);
@@ -6852,8 +6852,8 @@ namespace ts {
             }
 
             auto parseAmbientExternalModuleDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers) -> ModuleDeclaration {
-                let NodeFlags flags = 0;
-                let name;
+                auto NodeFlags flags = 0;
+                auto name;
                 if (token() == SyntaxKind::GlobalKeyword) {
                     // parse 'global' as name of global scope augmentation
                     name = parseIdentifier();
@@ -6863,7 +6863,7 @@ namespace ts {
                     name = <StringLiteral>parseLiteralNode();
                     name.text = internIdentifier(name.text);
                 }
-                let ModuleBlock body;
+                auto ModuleBlock body;
                 if (token() == SyntaxKind::OpenBraceToken) {
                     body = parseModuleBlock();
                 }
@@ -6875,7 +6875,7 @@ namespace ts {
             }
 
             auto parseModuleDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers) -> ModuleDeclaration {
-                let NodeFlags flags = 0;
+                auto NodeFlags flags = 0;
                 if (token() == SyntaxKind::GlobalKeyword) {
                     // global augmentation
                     return parseAmbientExternalModuleDeclaration(pos, hasJSDoc, decorators, modifiers);
@@ -6923,12 +6923,12 @@ namespace ts {
                 auto afterImportPos = scanner.getStartPos();
 
                 // We don't parse the identifier here in await context, instead we will report a grammar error in the checker.
-                let Identifier identifier;
+                auto Identifier identifier;
                 if (isIdentifier()) {
                     identifier = parseIdentifier();
                 }
 
-                let isTypeOnly = false;
+                auto isTypeOnly = false;
                 if (token() != SyntaxKind::FromKeyword &&
                     identifier?.escapedText == "type" &&
                     (isIdentifier() || tokenAfterImportDefinitelyProducesImportDeclaration())
@@ -6944,7 +6944,7 @@ namespace ts {
                 // ImportDeclaration:
                 //  import ImportClause from ModuleSpecifier ;
                 //  import ModuleSpecifier;
-                let ImportClause importClause;
+                auto ImportClause importClause;
                 if (identifier || // import id
                     token() == SyntaxKind::AsteriskToken || // import *
                     token() == SyntaxKind::OpenBraceToken    // import {
@@ -6988,7 +6988,7 @@ namespace ts {
 
                 // If there was no default import or if there is comma token after default import
                 // parse namespace or named imports
-                let NamespaceImport namedBindings | NamedImports;
+                auto NamespaceImport namedBindings | NamedImports;
                 if (!identifier ||
                     parseOptional(SyntaxKind::CommaToken)) {
                     namedBindings = token() == SyntaxKind::AsteriskToken ? parseNamespaceImport() : parseNamedImportsOrExports(SyntaxKind::NamedImports);
@@ -7071,12 +7071,12 @@ namespace ts {
                 // ExportSpecifier:
                 //   IdentifierName
                 //   IdentifierName as IdentifierName
-                let checkIdentifierIsKeyword = isKeyword(token()) && !isIdentifier();
-                let checkIdentifierStart = scanner.getTokenPos();
-                let checkIdentifierEnd = scanner.getTextPos();
+                auto checkIdentifierIsKeyword = isKeyword(token()) && !isIdentifier();
+                auto checkIdentifierStart = scanner.getTokenPos();
+                auto checkIdentifierEnd = scanner.getTextPos();
                 auto identifierName = parseIdentifierName();
-                let Identifier propertyName;
-                let Identifier name;
+                auto Identifier propertyName;
+                auto Identifier name;
                 if (token() == SyntaxKind::AsKeyword) {
                     propertyName = identifierName;
                     parseExpected(SyntaxKind::AsKeyword);
@@ -7104,8 +7104,8 @@ namespace ts {
             auto parseExportDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers) -> ExportDeclaration {
                 auto savedAwaitContext = inAwaitContext();
                 setAwaitContext(/*value*/ true);
-                let NamedExportBindings exportClause;
-                let Expression moduleSpecifier;
+                auto NamedExportBindings exportClause;
+                auto Expression moduleSpecifier;
                 auto isTypeOnly = parseOptional(SyntaxKind::TypeKeyword);
                 auto namespaceExportPos = getNodePos();
                 if (parseOptional(SyntaxKind::AsteriskToken)) {
@@ -7134,7 +7134,7 @@ namespace ts {
             auto parseExportAssignment(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers) -> ExportAssignment {
                 auto savedAwaitContext = inAwaitContext();
                 setAwaitContext(/*value*/ true);
-                let boolean isExportEquals;
+                auto boolean isExportEquals;
                 if (parseOptional(SyntaxKind::EqualsToken)) {
                     isExportEquals = true;
                 }
@@ -7320,20 +7320,20 @@ namespace ts {
                         return undefined;
                     }
 
-                    let JSDocTag[] tags;
-                    let number tagsPos;
-                    let number tagsEnd;
+                    auto JSDocTag[] tags;
+                    auto number tagsPos;
+                    auto number tagsEnd;
                     auto string[] = [] comments;
 
                     // + 3 for leading /**, - 5 in total for /** */
                     return scanner.scanRange(start + 3, length - 5, () => {
                         // Initially we can parse out a tag.  We also have seen a starting asterisk.
                         // This is so that /** * @type */ doesn't parse.
-                        let state = JSDocState.SawAsterisk;
-                        let number margin;
+                        auto state = JSDocState.SawAsterisk;
+                        auto number margin;
                         // + 4 for leading '/** '
                         // + 1 because the last index of \n is always one index before the first character in the line and coincidentally, if there is no \n before start, it is -1, which is also one index before the first character
-                        let indent = start - (content.lastIndexOf("\n", start) + 1) + 4;
+                        auto indent = start - (content.lastIndexOf("\n", start) + 1) + 4;
                         auto pushComment(string text) {
                             if (!margin) {
                                 margin = indent;
@@ -7459,9 +7459,9 @@ namespace ts {
                             }
                         }
 
-                        let precedingLineBreak = scanner.hasPrecedingLineBreak();
-                        let seenLineBreak = false;
-                        let indentText = string();
+                        auto precedingLineBreak = scanner.hasPrecedingLineBreak();
+                        auto seenLineBreak = false;
+                        auto indentText = string();
                         while ((precedingLineBreak && token() == SyntaxKind::AsteriskToken) || token() == SyntaxKind::WhitespaceTrivia || token() == SyntaxKind::NewLineTrivia) {
                             indentText += scanner.getTokenText();
                             if (token() == SyntaxKind::NewLineTrivia) {
@@ -7485,7 +7485,7 @@ namespace ts {
                         auto tagName = parseJSDocIdentifierName(/*message*/ undefined);
                         auto indentText = skipWhitespaceOrAsterisk();
 
-                        let JSDocTag tag;
+                        auto JSDocTag tag;
                         switch (tagName.escapedText) {
                             case "author":
                                 tag = parseAuthorTag(start, tagName, margin, indentText);
@@ -7563,9 +7563,9 @@ namespace ts {
 
                     auto parseTagComments(number indent, string initialMargin) -> string {
                         auto string[] = [] comments;
-                        let state = JSDocState.BeginningOfLine;
-                        let previousWhitespace = true;
-                        let number margin;
+                        auto state = JSDocState.BeginningOfLine;
+                        auto previousWhitespace = true;
+                        auto number margin;
                         auto pushComment(string text) {
                             if (!margin) {
                                 margin = indent;
@@ -7580,7 +7580,7 @@ namespace ts {
                             }
                             state = JSDocState.SawAsterisk;
                         }
-                        let tok = token() as JSDocSyntaxKind;
+                        auto tok = token() as JSDocSyntaxKind;
                         while loop (true) {
                             switch (tok) {
                                 case SyntaxKind::NewLineTrivia:
@@ -7718,8 +7718,8 @@ namespace ts {
                     }
 
                     auto parseParameterOrPropertyTag(number start, Identifier tagName, PropertyLikeParse target, number indent) -> JSDocParameterTag | JSDocPropertyTag {
-                        let typeExpression = tryParseTypeExpression();
-                        let isNameFirst = !typeExpression;
+                        auto typeExpression = tryParseTypeExpression();
+                        auto isNameFirst = !typeExpression;
                         skipWhitespaceOrAsterisk();
 
                         auto { name, isBracketed } = parseBracketNameInPropertyAndParamTag();
@@ -7745,8 +7745,8 @@ namespace ts {
                     auto parseNestedTypeLiteral(JSDocTypeExpression typeExpression, EntityName name, PropertyLikeParse target, number indent) {
                         if (typeExpression && isObjectOrObjectArrayTypeReference(typeExpression.type)) {
                             auto pos = getNodePos();
-                            let JSDocPropertyLikeTag child | JSDocTypeTag | false;
-                            let JSDocPropertyLikeTag[] children;
+                            auto JSDocPropertyLikeTag child | JSDocTypeTag | false;
+                            auto JSDocPropertyLikeTag[] children;
                             while (child = tryParse(() => parseChildParameterOrPropertyTag(target, indent, name))) {
                                 if (child.kind == SyntaxKind::JSDocParameterTag || child.kind == SyntaxKind::JSDocPropertyTag) {
                                     children = append(children, child);
@@ -7794,8 +7794,8 @@ namespace ts {
 
                     auto parseAuthorNameAndEmail() -> string {
                         auto string[] = [] comments;
-                        let inEmail = false;
-                        let token = scanner.getToken();
+                        auto inEmail = false;
+                        auto token = scanner.getToken();
                         while (token != SyntaxKind::EndOfFileToken && token != SyntaxKind::NewLineTrivia) {
                             if (token == SyntaxKind::LessThanToken) {
                                 inEmail = true;
@@ -7842,7 +7842,7 @@ namespace ts {
 
                     auto parsePropertyAccessEntityNameExpression() {
                         auto pos = getNodePos();
-                        let Identifier node | PropertyAccessEntityNameExpression = parseJSDocIdentifierName();
+                        auto Identifier node | PropertyAccessEntityNameExpression = parseJSDocIdentifierName();
                         while (parseOptional(SyntaxKind::DotToken)) {
                             auto name = parseJSDocIdentifierName();
                             node = finishNode(factory.createPropertyAccessExpression(node, name), pos) as PropertyAccessEntityNameExpression;
@@ -7870,19 +7870,19 @@ namespace ts {
                     }
 
                     auto parseTypedefTag(number start, Identifier tagName, number indent, string indentText) -> JSDocTypedefTag {
-                        let JSDocTypeExpression typeExpression | JSDocTypeLiteral = tryParseTypeExpression();
+                        auto JSDocTypeExpression typeExpression | JSDocTypeLiteral = tryParseTypeExpression();
                         skipWhitespaceOrAsterisk();
 
                         auto fullName = parseJSDocTypeNameWithNamespace();
                         skipWhitespace();
-                        let comment = parseTagComments(indent);
+                        auto comment = parseTagComments(indent);
 
-                        let number end;
+                        auto number end;
                         if (!typeExpression || isObjectOrObjectArrayTypeReference(typeExpression.type)) {
-                            let JSDocTypeTag child | JSDocPropertyTag | false;
-                            let JSDocTypeTag childTypeTag;
-                            let JSDocPropertyTag[] jsDocPropertyTags;
-                            let hasChildren = false;
+                            auto JSDocTypeTag child | JSDocPropertyTag | false;
+                            auto JSDocTypeTag childTypeTag;
+                            auto JSDocPropertyTag[] jsDocPropertyTags;
+                            auto hasChildren = false;
                             while (child = tryParse(() => parseChildPropertyTag(indent))) {
                                 hasChildren = true;
                                 if (child.kind == SyntaxKind::JSDocTypeTag) {
@@ -7955,8 +7955,8 @@ namespace ts {
 
                     auto parseCallbackTagParameters(number indent) {
                         auto pos = getNodePos();
-                        let JSDocParameterTag child | false;
-                        let parameters;
+                        auto JSDocParameterTag child | false;
+                        auto parameters;
                         while (child = tryParse(() => parseChildParameterOrPropertyTag(PropertyLikeParse.CallbackParameter, indent) as JSDocParameterTag)) {
                             parameters = append(parameters, child);
                         }
@@ -7966,7 +7966,7 @@ namespace ts {
                     auto parseCallbackTag(number start, Identifier tagName, number indent, string indentText) -> JSDocCallbackTag {
                         auto fullName = parseJSDocTypeNameWithNamespace();
                         skipWhitespace();
-                        let comment = parseTagComments(indent);
+                        auto comment = parseTagComments(indent);
                         auto parameters = parseCallbackTagParameters(indent);
                         auto returnTag = tryParse(() => {
                             if (parseOptionalJsdoc(SyntaxKind::AtToken)) {
@@ -8002,8 +8002,8 @@ namespace ts {
                     }
 
                     auto parseChildParameterOrPropertyTag(PropertyLikeParse target, number indent, EntityName name) -> JSDocTypeTag | JSDocPropertyTag | JSDocParameterTag | false {
-                        let canParseTag = true;
-                        let seenAsterisk = false;
+                        auto canParseTag = true;
+                        auto seenAsterisk = false;
                         while (true) {
                             switch (nextTokenJSDoc()) {
                                 case SyntaxKind::AtToken:
@@ -8044,7 +8044,7 @@ namespace ts {
 
                         auto tagName = parseJSDocIdentifierName();
                         skipWhitespace();
-                        let PropertyLikeParse t;
+                        auto PropertyLikeParse t;
                         switch (tagName.escapedText) {
                             case "type":
                                 return target == PropertyLikeParse.Property && parseTypeTag(start, tagName);
@@ -8116,7 +8116,7 @@ namespace ts {
                     }
 
                     auto parseJSDocEntityName() -> EntityName {
-                        let EntityName entity = parseJSDocIdentifierName();
+                        auto EntityName entity = parseJSDocIdentifierName();
                         if (parseOptional(SyntaxKind::OpenBracketToken)) {
                             parseExpected(SyntaxKind::CloseBracketToken);
                             // Note that y[] is accepted as an entity name, but the postfix brackets are not saved for checking.
@@ -8253,8 +8253,8 @@ namespace ts {
                 boolean aggressiveChecks
             ) -> CommentDirective[] {
                 if (!oldDirectives) return newDirectives;
-                let CommentDirective[] commentDirectives;
-                let addedNewlyScannedDirectives = false;
+                auto CommentDirective[] commentDirectives;
+                auto addedNewlyScannedDirectives = false;
                 for (auto directive of oldDirectives) {
                     auto { range, type } = directive;
                     // Range before the change
@@ -8301,7 +8301,7 @@ namespace ts {
                 return;
 
                 auto visitNode(IncrementalNode node) {
-                    let text = string();
+                    auto text = string();
                     if (aggressiveChecks && shouldCheckNode(node)) {
                         text = oldText.substring(node.pos, node.end);
                     }
@@ -8424,7 +8424,7 @@ namespace ts {
 
             auto checkNodePositions(Node node, boolean aggressiveChecks) {
                 if (aggressiveChecks) {
-                    let pos = node.pos;
+                    auto pos = node.pos;
                     auto visitNode = (Node child) => {
                         Debug::assert(child.pos >= pos);
                         pos = child.end;
@@ -8528,12 +8528,12 @@ namespace ts {
                 // that the prior token sees that change.
                 auto maxLookahead = 1;
 
-                let start = changeRange.span.start;
+                auto start = changeRange.span.start;
 
                 // the first iteration aligns us with the change start. subsequent iteration move us to
                 // the left by maxLookahead tokens.  We only need to do this as long as we're not at the
                 // start of the tree.
-                for (let i = 0; start > 0 && i <= maxLookahead; i++) {
+                for (auto i = 0; start > 0 && i <= maxLookahead; i++) {
                     auto nearestNode = findNearestNodeStartingBeforeOrAtPosition(sourceFile, start);
                     Debug::assert(nearestNode.pos <= start);
                     auto position = nearestNode.pos;
@@ -8548,8 +8548,8 @@ namespace ts {
             }
 
             auto findNearestNodeStartingBeforeOrAtPosition(SourceFile sourceFile, number position) -> Node {
-                let Node bestResult = sourceFile;
-                let Node lastNodeEntirelyBeforePosition;
+                auto Node bestResult = sourceFile;
+                auto Node lastNodeEntirelyBeforePosition;
 
                 forEachChild(sourceFile, visit);
 
@@ -8672,12 +8672,12 @@ namespace ts {
             }
 
             auto createSyntaxCursor(SourceFile sourceFile) -> SyntaxCursor {
-                let NodeArray<Node> currentArray = sourceFile.statements;
-                let currentArrayIndex = 0;
+                auto NodeArray<Node> currentArray = sourceFile.statements;
+                auto currentArrayIndex = 0;
 
                 Debug::assert(currentArrayIndex < currentArray.size());
-                let current = currentArray[currentArrayIndex];
-                let lastQueriedPosition = InvalidPosition.Value;
+                auto current = currentArray[currentArrayIndex];
+                auto lastQueriedPosition = InvalidPosition.Value;
 
                 return {
                     currentNode(number position) {
@@ -8744,7 +8744,7 @@ namespace ts {
                         if (position >= array.pos && position < array.end) {
                             // position was in this array.  Search through this array to see if we find a
                             // viable element.
-                            for (let i = 0; i < array.size(); i++) {
+                            for (auto i = 0; i < array.size(); i++) {
                                 auto child = array[i];
                                 if (child) {
                                     if (child.pos == position) {
@@ -8961,7 +8961,7 @@ namespace ts {
 
             if (range.kind == SyntaxKind::MultiLineCommentTrivia) {
                 auto multiLinePragmaRegEx = /\s*@(\S+)\s*(.*)\s*$/gim; // Defined inline since it uses the "g" flag, which keeps a persistent index (for iterating)
-                let RegExpExecArray multiLineMatch | null;
+                auto RegExpExecArray multiLineMatch | null;
                 while (multiLineMatch = multiLinePragmaRegEx.exec(text)) {
                     addPragmaForMatch(pragmas, range, PragmaKindFlags.MultiLine, multiLineMatch);
                 }
@@ -8987,7 +8987,7 @@ namespace ts {
             if (!pragma.args) return {};
             auto args = text.split(/\s+/);
             auto argMap: {[string index]: string} = {};
-            for (let i = 0; i < pragma.args.size(); i++) {
+            for (auto i = 0; i < pragma.args.size(); i++) {
                 auto argument = pragma.args[i];
                 if (!args[i] && !argument.optional) {
                     return "fail";
