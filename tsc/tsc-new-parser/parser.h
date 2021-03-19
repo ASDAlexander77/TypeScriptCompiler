@@ -8,6 +8,9 @@ struct Node;
 template <typename T>
 using NodeArray = std::vector<T>;
 
+typedef SyntaxKind Modifier;
+typedef NodeArray<Modifier> ModifiersArray;
+
 template <typename T>
 using NodeFuncT = std::function<T(Node)>;
 
@@ -22,10 +25,18 @@ using NodeWithParentArrayFuncT = std::function<T(NodeArray<T>, Node)>;
 
 typedef std::function<Node(SyntaxKind, number, number)> NodeCreateFunc;
 
+struct undefined
+{
+};
+
 template <typename T>
 struct Undefined
 {
     Undefined() : _hasValue(false)
+    {
+    }
+
+    Undefined(undefined) : _hasValue(false)
     {
     }
 
@@ -141,6 +152,200 @@ enum class NodeFlags {
     /* @internal */ PermanentlySetIncrementalFlags = PossiblyContainsDynamicImport | PossiblyContainsImportMeta,
 };
 
+enum class OperatorPrecedence : number {
+    // Expression:
+    //     AssignmentExpression
+    //     Expression `,` AssignmentExpression
+    Comma,
+
+    // NOTE: `Spread` is higher than `Comma` due to how it is parsed in |ElementList|
+    // SpreadElement:
+    //     `...` AssignmentExpression
+    Spread,
+
+    // AssignmentExpression:
+    //     ConditionalExpression
+    //     YieldExpression
+    //     ArrowFunction
+    //     AsyncArrowFunction
+    //     LeftHandSideExpression `=` AssignmentExpression
+    //     LeftHandSideExpression AssignmentOperator AssignmentExpression
+    //
+    // NOTE: AssignmentExpression is broken down into several precedences due to the requirements
+    //       of the parenthesizer rules.
+
+    // AssignmentExpression: YieldExpression
+    // YieldExpression:
+    //     `yield`
+    //     `yield` AssignmentExpression
+    //     `yield` `*` AssignmentExpression
+    Yield,
+
+    // AssignmentExpression: LeftHandSideExpression `=` AssignmentExpression
+    // AssignmentExpression: LeftHandSideExpression AssignmentOperator AssignmentExpression
+    // AssignmentOperator: one of
+    //     `*=` `/=` `%=` `+=` `-=` `<<=` `>>=` `>>>=` `&=` `^=` `|=` `**=`
+    Assignment,
+
+    // NOTE: `Conditional` is considered higher than `Assignment` here, but in reality they have
+    //       the same precedence.
+    // AssignmentExpression: ConditionalExpression
+    // ConditionalExpression:
+    //     ShortCircuitExpression
+    //     ShortCircuitExpression `?` AssignmentExpression `:` AssignmentExpression
+    // ShortCircuitExpression:
+    //     LogicalORExpression
+    //     CoalesceExpression
+    Conditional,
+
+    // CoalesceExpression:
+    //     CoalesceExpressionHead `??` BitwiseORExpression
+    // CoalesceExpressionHead:
+    //     CoalesceExpression
+    //     BitwiseORExpression
+    Coalesce = Conditional, // NOTE: This is wrong
+
+    // LogicalORExpression:
+    //     LogicalANDExpression
+    //     LogicalORExpression `||` LogicalANDExpression
+    LogicalOR,
+
+    // LogicalANDExpression:
+    //     BitwiseORExpression
+    //     LogicalANDExprerssion `&&` BitwiseORExpression
+    LogicalAND,
+
+    // BitwiseORExpression:
+    //     BitwiseXORExpression
+    //     BitwiseORExpression `^` BitwiseXORExpression
+    BitwiseOR,
+
+    // BitwiseXORExpression:
+    //     BitwiseANDExpression
+    //     BitwiseXORExpression `^` BitwiseANDExpression
+    BitwiseXOR,
+
+    // BitwiseANDExpression:
+    //     EqualityExpression
+    //     BitwiseANDExpression `^` EqualityExpression
+    BitwiseAND,
+
+    // EqualityExpression:
+    //     RelationalExpression
+    //     EqualityExpression `==` RelationalExpression
+    //     EqualityExpression `!=` RelationalExpression
+    //     EqualityExpression `===` RelationalExpression
+    //     EqualityExpression `!==` RelationalExpression
+    Equality,
+
+    // RelationalExpression:
+    //     ShiftExpression
+    //     RelationalExpression `<` ShiftExpression
+    //     RelationalExpression `>` ShiftExpression
+    //     RelationalExpression `<=` ShiftExpression
+    //     RelationalExpression `>=` ShiftExpression
+    //     RelationalExpression `instanceof` ShiftExpression
+    //     RelationalExpression `in` ShiftExpression
+    //     [+TypeScript] RelationalExpression `as` Type
+    Relational,
+
+    // ShiftExpression:
+    //     AdditiveExpression
+    //     ShiftExpression `<<` AdditiveExpression
+    //     ShiftExpression `>>` AdditiveExpression
+    //     ShiftExpression `>>>` AdditiveExpression
+    Shift,
+
+    // AdditiveExpression:
+    //     MultiplicativeExpression
+    //     AdditiveExpression `+` MultiplicativeExpression
+    //     AdditiveExpression `-` MultiplicativeExpression
+    Additive,
+
+    // MultiplicativeExpression:
+    //     ExponentiationExpression
+    //     MultiplicativeExpression MultiplicativeOperator ExponentiationExpression
+    // MultiplicativeOperator: one of `*`, `/`, `%`
+    Multiplicative,
+
+    // ExponentiationExpression:
+    //     UnaryExpression
+    //     UpdateExpression `**` ExponentiationExpression
+    Exponentiation,
+
+    // UnaryExpression:
+    //     UpdateExpression
+    //     `delete` UnaryExpression
+    //     `void` UnaryExpression
+    //     `typeof` UnaryExpression
+    //     `+` UnaryExpression
+    //     `-` UnaryExpression
+    //     `~` UnaryExpression
+    //     `!` UnaryExpression
+    //     AwaitExpression
+    // UpdateExpression:            // TODO: Do we need to investigate the precedence here?
+    //     `++` UnaryExpression
+    //     `--` UnaryExpression
+    Unary,
+
+
+    // UpdateExpression:
+    //     LeftHandSideExpression
+    //     LeftHandSideExpression `++`
+    //     LeftHandSideExpression `--`
+    Update,
+
+    // LeftHandSideExpression:
+    //     NewExpression
+    //     CallExpression
+    // NewExpression:
+    //     MemberExpression
+    //     `new` NewExpression
+    LeftHandSide,
+
+    // CallExpression:
+    //     CoverCallExpressionAndAsyncArrowHead
+    //     SuperCall
+    //     ImportCall
+    //     CallExpression Arguments
+    //     CallExpression `[` Expression `]`
+    //     CallExpression `.` IdentifierName
+    //     CallExpression TemplateLiteral
+    // MemberExpression:
+    //     PrimaryExpression
+    //     MemberExpression `[` Expression `]`
+    //     MemberExpression `.` IdentifierName
+    //     MemberExpression TemplateLiteral
+    //     SuperProperty
+    //     MetaProperty
+    //     `new` MemberExpression Arguments
+    Member,
+
+    // TODO: JSXElement?
+    // PrimaryExpression:
+    //     `this`
+    //     IdentifierReference
+    //     Literal
+    //     ArrayLiteral
+    //     ObjectLiteral
+    //     FunctionExpression
+    //     ClassExpression
+    //     GeneratorExpression
+    //     AsyncFunctionExpression
+    //     AsyncGeneratorExpression
+    //     RegularExpressionLiteral
+    //     TemplateLiteral
+    //     CoverParenthesizedExpressionAndArrowParameterList
+    Primary,
+
+    Highest = Primary,
+    Lowest = Comma,
+    // -1 is lower than all other precedences. Returning it will cause binary expression
+    // parsing to stop.
+    Invalid = -1,
+};
+
+
 NodeFlags operator |(NodeFlags lhs, NodeFlags rhs)
 {
     return (NodeFlags) ((number) lhs | (number) rhs);
@@ -206,7 +411,7 @@ struct Node
     SyntaxKind kind;
 
     NodeArray<Node> decorators;
-    NodeArray<Node> modifiers;
+    ModifiersArray modifiers;
 
     bool isArray;
     NodeArray<Node> children;
@@ -255,7 +460,75 @@ static auto isArray(Node &node) -> boolean
     return node.isArray;
 }
 
+typedef Node Identifier;
+
+typedef Node PropertyName;
+
+typedef Node PrivateIdentifier;
+
+typedef Node ThisTypeNode;
+
+typedef Node LiteralLikeNode;
+
+typedef Node LiteralExpression;
+
 typedef Node EntityName;
+
+typedef Node Expression;
+
+typedef Node IndexSignatureDeclaration;
+
+typedef Node TypeElement;
+
+typedef Node BinaryOperatorToken;
+
+typedef Node UnaryExpression;
+
+typedef Node UpdateExpression;
+
+typedef Node LeftHandSideExpression;
+
+typedef Node MemberExpression;
+
+typedef Node JsxText;
+
+typedef Node JsxChild;
+
+typedef Node JsxTagNameExpression;
+
+typedef Node JsxClosingFragment;
+
+typedef Node QuestionDotToken;
+
+typedef Node PrimaryExpression;
+
+typedef Node ObjectLiteralElementLike;
+
+typedef Node FunctionExpression;
+
+typedef Node Statement;
+
+typedef Node CaseOrDefaultClause;
+
+typedef Node ArrayBindingElement;
+
+typedef Node ObjectBindingPattern;
+
+typedef Node ArrayBindingPattern;
+
+typedef Node FunctionDeclaration;
+
+typedef Node ConstructorDeclaration;
+
+typedef Node MethodDeclaration;
+
+typedef Node AccessorDeclaration;
+
+typedef Node ClassElement;
+
+typedef Node ClassExpression;
+
+typedef Node ModuleBlock;
 
 struct QualifiedName
 {
@@ -381,6 +654,10 @@ struct TypeQueryNode
 struct TypeLiteralNode
 {
     Node members;
+};
+
+struct TypeNode
+{
 };
 
 struct ArrayTypeNode
@@ -866,6 +1143,18 @@ struct TemplateSpan
     Node literal;
 };
 
+struct TemplateHead
+{
+};
+
+struct TemplateMiddle
+{
+};
+
+struct TemplateTail
+{
+};
+
 struct TemplateLiteralTypeNode
 {
     Node head;
@@ -1081,6 +1370,26 @@ struct JSDocTypeLiteral
     Node jsDocPropertyTags;
 };
 
+struct DiagnosticRelatedInformation {
+    DiagnosticCategory category;
+    int code;
+    SourceFile file;
+    int start;
+    int length;
+    string messageText;
+};
+
+struct Diagnostic : DiagnosticRelatedInformation {
+    string source;
+    std::vector<DiagnosticRelatedInformation> relatedInformation;
+    int skippedOn;
+};
+
+struct NodeWithDiagnostics
+{ 
+    Node node;
+    std::vector<Diagnostic> diagnostics;
+};
 
 template <typename T, typename U>
 auto forEach(std::vector<T> array, std::function<U(T, number)> callback = nullptr) -> U {

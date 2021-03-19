@@ -803,7 +803,7 @@ namespace ts {
 
             auto parseIsolatedEntityName(string content, ScriptTarget languageVersion) -> EntityName {
                 // Choice of `isDeclarationFile` should be arbitrary
-                initializeState(string(), content, languageVersion, Undefined<IncrementalParser::SyntaxCursor>(), ScriptKind::JS);
+                initializeState(string(), content, languageVersion, undefined, ScriptKind::JS);
                 // Prime the scanner.
                 nextToken();
                 auto entityName = parseEntityName(/*allowReservedWords*/ true);
@@ -812,7 +812,7 @@ namespace ts {
                 return isInvalid ? entityName : Node();
             }
 
-            auto parseJsonText(string fileName, string sourceText, ScriptTarget languageVersion = ScriptTarget::ES2015, IncrementalParser::SyntaxCursor syntaxCursor, boolean setParentNodes = false) -> JsonSourceFile {
+            auto parseJsonText(string fileName, string sourceText, ScriptTarget languageVersion = ScriptTarget::ES2015, Undefined<IncrementalParser::SyntaxCursor> syntaxCursor = undefined(), boolean setParentNodes = false) -> JsonSourceFile {
                 initializeState(fileName, sourceText, languageVersion, syntaxCursor, ScriptKind::JSON);
                 sourceFlags = contextFlags;
 
@@ -980,7 +980,7 @@ namespace ts {
 
                 auto sourceFile = createSourceFile(fileName, languageVersion, scriptKind, isDeclarationFile, statements, endOfFileToken, sourceFlags);
 
-                // A member of ReadonlyArray<T> isn't assignable to a member of T[] (and prevents a direct cast) - but this is where we set up those members so they can be readonly in the future
+                // A member of ReadonlyArray<T> isn't assignable to a member of T[] (and prevents a direct cast) - but this is where we set up those members so they can be in the future
                 processCommentPragmas(sourceFile as {} as PragmaContext, sourceText);
                 processPragmasIntoFields(sourceFile as {} as PragmaContext, reportPragmaDiagnostic);
 
@@ -1004,12 +1004,14 @@ namespace ts {
                 }
             }
 
-            auto withJSDoc<T extends HasJSDoc>(T node, boolean hasJSDoc) -> T {
+            template <typename T>
+            auto withJSDoc(T node, boolean hasJSDoc) -> T {
                 return hasJSDoc ? addJSDocComment(node) : node;
             }
 
-            auto hasDeprecatedTag = false;
-            auto addJSDocComment<T extends HasJSDoc>(T node) -> T {
+            boolean hasDeprecatedTag = false;
+            template <typename T>
+            auto addJSDocComment(T node) -> T {
                 Debug::_assert(!node.jsDoc); // Should only be called once per node
                 auto jsDoc = mapDefined(getJSDocCommentRanges(node, sourceText), comment => JSDocParser::parseJSDocComment(node, comment.pos, comment.end - comment.pos));
                 if (jsDoc.size()) node.jsDoc = jsDoc;
@@ -1137,7 +1139,7 @@ namespace ts {
                 setParentRecursive(rootNode, /*incremental*/ true);
             }
 
-            auto createSourceFile(string fileName, ScriptTarget languageVersion, ScriptKind scriptKind, boolean isDeclarationFile, readonly statements std::vector<Statement>, EndOfFileToken endOfFileToken, NodeFlags flags) -> SourceFile {
+            auto createSourceFile(string fileName, ScriptTarget languageVersion, ScriptKind scriptKind, boolean isDeclarationFile, std::vector<Node> statements, Node endOfFileToken, NodeFlags flags) -> SourceFile {
                 // code from createNode is inlined here so createNode won't have to deal with special case of creating source files
                 // this is quite rare comparing to other nodes and createNode should be as fast as possible
                 auto sourceFile = factory.createSourceFile(statements, endOfFileToken, flags);
@@ -1186,7 +1188,8 @@ namespace ts {
                 setContextFlag(val, NodeFlags::AwaitContext);
             }
 
-            auto doOutsideOfContext<T>(NodeFlags context, func: () => T) -> T {
+            template<typename T>
+            auto doOutsideOfContext(NodeFlags context, std::function<T()> func) -> T {
                 // contextFlagsToClear will contain only the context flags that are
                 // currently set that we need to temporarily clear
                 // We don't just blindly reset to the previous flags to ensure
@@ -1207,7 +1210,8 @@ namespace ts {
                 return func();
             }
 
-            auto doInsideOfContext<T>(NodeFlags context, func: () => T) -> T {
+            template<typename T>
+            auto doInsideOfContext(NodeFlags context, std::function<T()> func) -> T {
                 // contextFlagsToSet will contain only the context flags that
                 // are not currently set that we need to temporarily enable.
                 // We don't just blindly reset to the previous flags to ensure
@@ -1228,35 +1232,43 @@ namespace ts {
                 return func();
             }
 
-            auto allowInAnd<T>(func: () => T) -> T {
+            template<typename T>
+            auto allowInAnd(std::function<T()> func) -> T {
                 return doOutsideOfContext(NodeFlags::DisallowInContext, func);
             }
 
-            auto disallowInAnd<T>(func: () => T) -> T {
+            template<typename T>
+            auto disallowInAnd(std::function<T()> func) -> T {
                 return doInsideOfContext(NodeFlags::DisallowInContext, func);
             }
 
-            auto doInYieldContext<T>(func: () => T) -> T {
+            template<typename T>
+            auto doInYieldContext(std::function<T()> func) -> T {
                 return doInsideOfContext(NodeFlags::YieldContext, func);
             }
 
-            auto doInDecoratorContext<T>(func: () => T) -> T {
+            template<typename T>
+            auto doInDecoratorContext(std::function<T()> func) -> T {
                 return doInsideOfContext(NodeFlags::DecoratorContext, func);
             }
 
-            auto doInAwaitContext<T>(func: () => T) -> T {
+            template<typename T>
+            auto doInAwaitContext(std::function<T()> func) -> T {
                 return doInsideOfContext(NodeFlags::AwaitContext, func);
             }
 
-            auto doOutsideOfAwaitContext<T>(func: () => T) -> T {
+            template<typename T>
+            auto doOutsideOfAwaitContext(std::function<T()> func) -> T {
                 return doOutsideOfContext(NodeFlags::AwaitContext, func);
             }
 
-            auto doInYieldAndAwaitContext<T>(func: () => T) -> T {
+            template<typename T>
+            auto doInYieldAndAwaitContext(std::function<T()> func) -> T {
                 return doInsideOfContext(NodeFlags::YieldContext | NodeFlags::AwaitContext, func);
             }
-
-            auto doOutsideOfYieldAndAwaitContext<T>(func: () => T) -> T {
+            
+            template<typename T>
+            auto doOutsideOfYieldAndAwaitContext(std::function<T()> func) -> T {
                 return doOutsideOfContext(NodeFlags::YieldContext | NodeFlags::AwaitContext, func);
             }
 
@@ -1280,11 +1292,13 @@ namespace ts {
                 return inContext(NodeFlags::AwaitContext);
             }
 
-            auto parseErrorAtCurrentToken(DiagnosticMessage message, any arg0) -> void {
+            template<typename T>
+            auto parseErrorAtCurrentToken(DiagnosticMessage message, T arg0) -> void {
                 parseErrorAt(scanner.getTokenPos(), scanner.getTextPos(), message, arg0);
             }
 
-            auto parseErrorAtPosition(number start, number length, DiagnosticMessage message, any arg0) -> void {
+            template<typename T>
+            auto parseErrorAtPosition(number start, number length, DiagnosticMessage message, T arg0) -> void {
                 // Don't report another error if it would just be at the same position as the last error.
                 auto lastError = lastOrUndefined(parseDiagnostics);
                 if (!lastError || start != lastError.start) {
@@ -1296,11 +1310,13 @@ namespace ts {
                 parseErrorBeforeNextFinishedNode = true;
             }
 
-            auto parseErrorAt(number start, number end, DiagnosticMessage message, any arg0) -> void {
+            template<typename T>
+            auto parseErrorAt(number start, number end, DiagnosticMessage message, T arg0) -> void {
                 parseErrorAtPosition(start, end - start, message, arg0);
             }
 
-            auto parseErrorAtRange(TextRange range, DiagnosticMessage message, any arg0) -> void {
+            template<typename T>
+            auto parseErrorAtRange(TextRange range, DiagnosticMessage message, T arg0) -> void {
                 parseErrorAt(range.pos, range.end, message, arg0);
             }
 
@@ -1330,7 +1346,8 @@ namespace ts {
                 return currentToken = scanner.scan();
             }
 
-            auto nextTokenAnd<T>(func: () => T) -> T {
+            template<typename T>
+            auto nextTokenAnd(std::function<T()> func) -> T {
                 nextToken();
                 return func();
             }
@@ -1344,7 +1361,7 @@ namespace ts {
                 return nextTokenWithoutCheck();
             }
 
-            auto nextTokenJSDoc() -> JSDocSyntaxKind {
+            auto nextTokenJSDoc() -> SyntaxKind {
                 return currentToken = scanner.scanJsDocToken();
             }
 
@@ -1380,7 +1397,8 @@ namespace ts {
                 return currentToken = scanner.scanJsxAttributeValue();
             }
 
-            auto speculationHelper<T>(callback: () => T, SpeculationKind speculationKind) -> T {
+            template<typename T>
+            auto speculationHelper(std::function<T()> callback, SpeculationKind speculationKind) -> T {
                 // Keep track of the state we'll need to rollback to if lookahead fails (or if the
                 // caller asked us to always reset our state).
                 auto saveToken = currentToken;
@@ -1419,7 +1437,8 @@ namespace ts {
              * was in immediately prior to invoking the callback.  The result of invoking the callback
              * is returned from this function.
              */
-            auto lookAhead<T>(callback: () => T) -> T {
+            template <typename T> 
+            auto lookAhead(std::function<T()> callback) -> T {
                 return speculationHelper(callback, SpeculationKind.Lookahead);
             }
 
@@ -1428,7 +1447,8 @@ namespace ts {
              * callback returns something truthy, then the parser state is not rolled back.  The result
              * of invoking the callback is returned from this function.
              */
-            auto tryParse<T>(callback: () => T) -> T {
+            template <typename T> 
+            auto tryParse(std::function<T()> callback) -> T {
                 return speculationHelper(callback, SpeculationKind.TryParse);
             }
 
@@ -1460,7 +1480,7 @@ namespace ts {
                 return token() > SyntaxKind::LastReservedWord;
             }
 
-            auto parseExpected(SyntaxKind kind, DiagnosticMessage diagnosticMessage, shouldAdvance = true) -> boolean {
+            auto parseExpected(SyntaxKind kind, DiagnosticMessage diagnosticMessage, boolean shouldAdvance = true) -> boolean {
                 if (token() == kind) {
                     if (shouldAdvance) {
                         nextToken();
@@ -1478,7 +1498,7 @@ namespace ts {
                 return false;
             }
 
-            auto parseExpectedJSDoc(JSDocSyntaxKind kind) {
+            auto parseExpectedJSDoc(SyntaxKind kind) {
                 if (token() == kind) {
                     nextTokenJSDoc();
                     return true;
@@ -1495,46 +1515,45 @@ namespace ts {
                 return false;
             }
 
-            auto parseOptionalToken<TKind extends SyntaxKind>(TKind t) -> Token<TKind>;
             auto parseOptionalToken(SyntaxKind t) -> Node {
                 if (token() == t) {
                     return parseTokenNode();
                 }
-                return undefined;
+                return Node();
             }
 
-            auto parseOptionalTokenJSDoc<TKind extends JSDocSyntaxKind>(TKind t) -> Token<TKind>;
-            auto parseOptionalTokenJSDoc(JSDocSyntaxKind t) -> Node {
+            auto parseOptionalTokenJSDoc(SyntaxKind t) -> Node {
                 if (token() == t) {
                     return parseTokenNodeJSDoc();
                 }
-                return undefined;
+                return Node();
             }
 
-            auto parseExpectedToken<TKind extends SyntaxKind>(TKind t, DiagnosticMessage diagnosticMessage, any arg0) -> Token<TKind>;
-            auto parseExpectedToken(SyntaxKind t, DiagnosticMessage diagnosticMessage, any arg0) -> Node {
+            template <typename T>
+            auto parseExpectedToken(SyntaxKind t, DiagnosticMessage diagnosticMessage, T arg0) -> Node {
                 return parseOptionalToken(t) ||
                     createMissingNode(t, /*reportAtCurrentPosition*/ false, diagnosticMessage || Diagnostics::_0_expected, arg0 || tokenToString(t));
             }
 
-            auto parseExpectedTokenJSDoc<TKind extends JSDocSyntaxKind>(TKind t) -> Token<TKind>;
-            auto parseExpectedTokenJSDoc(JSDocSyntaxKind t) -> Node {
+            auto parseExpectedTokenJSDoc(SyntaxKind t) -> Node {
                 return parseOptionalTokenJSDoc(t) ||
                     createMissingNode(t, /*reportAtCurrentPosition*/ false, Diagnostics::_0_expected, tokenToString(t));
             }
 
-            auto parseTokenNode<T extends Node>() -> T {
+            template <typename T>
+            auto parseTokenNode() -> T {
                 auto pos = getNodePos();
                 auto kind = token();
                 nextToken();
-                return <T>finishNode(factory.createToken(kind), pos);
+                return finishNode(factory.createToken(kind), pos).as<T>();
             }
 
-            auto parseTokenNodeJSDoc<T extends Node>() -> T {
+            template <typename T>
+            auto parseTokenNodeJSDoc() -> T {
                 auto pos = getNodePos();
                 auto kind = token();
                 nextTokenJSDoc();
-                return <T>finishNode(factory.createToken(kind), pos);
+                return finishNode(factory.createToken(kind), pos).as<T>();
             }
 
             auto canParseSemicolon() {
@@ -1561,16 +1580,18 @@ namespace ts {
                 }
             }
 
-            auto createNodeArray<T extends Node>(std::vector<T> elements, number pos, number end, boolean hasTrailingComma) -> NodeArray<T> {
+            template <typename T>
+            auto createNodeArray(std::vector<T> elements, number pos, number end, boolean hasTrailingComma) -> NodeArray<T> {
                 auto array = factory.createNodeArray(elements, hasTrailingComma);
                 setTextRangePosEnd(array, pos, end ?? scanner.getStartPos());
                 return array;
             }
 
-            auto finishNode<T extends Node>(T node, number pos, number end) -> T {
-                setTextRangePosEnd(node, pos, end ?? scanner.getStartPos());
+            template <typename T>
+            auto finishNode(T node, number pos, number end) -> T {
+                setTextRangePosEnd(node, pos, end >= 0 ? end : scanner.getStartPos());
                 if (contextFlags) {
-                    (node as Mutable<T>).flags |= contextFlags;
+                    node.flags |= contextFlags;
                 }
 
                 // Keep track on the node if we encountered an error while parsing it.  If we did, then
@@ -1578,15 +1599,14 @@ namespace ts {
                 // flag so that we don't mark any subsequent nodes.
                 if (parseErrorBeforeNextFinishedNode) {
                     parseErrorBeforeNextFinishedNode = false;
-                    (node as Mutable<T>).flags |= NodeFlags::ThisNodeHasError;
+                    node.flags |= NodeFlags::ThisNodeHasError;
                 }
 
                 return node;
             }
 
-            auto createMissingNode<T extends Node>(T["kind"] kind, false reportAtCurrentPosition, DiagnosticMessage diagnosticMessage, any arg0) -> T;
-            auto createMissingNode<T extends Node>(T["kind"] kind, boolean reportAtCurrentPosition, DiagnosticMessage diagnosticMessage, any arg0) -> T;
-            auto createMissingNode<T extends Node>(T["kind"] kind, boolean reportAtCurrentPosition, DiagnosticMessage diagnosticMessage, any arg0) -> T {
+            template <typename T>
+            auto createMissingNode(SyntaxKind kind, boolean reportAtCurrentPosition, DiagnosticMessage diagnosticMessage, T arg0) -> T {
                 if (reportAtCurrentPosition) {
                     parseErrorAtPosition(scanner.getStartPos(), 0, diagnosticMessage, arg0);
                 }
@@ -2029,7 +2049,8 @@ namespace ts {
             }
 
             // Parses a list of elements
-            auto parseList<T extends Node>(ParsingContext kind, parseElement: () => T) -> NodeArray<T> {
+            template <typename T>
+            auto parseList(ParsingContext kind, std::function <T()> parseElement) -> NodeArray<T> {
                 auto saveParsingContext = parsingContext;
                 parsingContext |= 1 << kind;
                 auto list = [];
@@ -2052,7 +2073,8 @@ namespace ts {
                 return createNodeArray(list, listPos);
             }
 
-            auto parseListElement<T extends Node>(ParsingContext parsingContext, parseElement: () => T) -> T {
+            template <typename T> 
+            auto parseListElement(ParsingContext parsingContext, std::function <T()> parseElement) -> T {
                 auto node = currentNode(parsingContext);
                 if (node) {
                     return <T>consumeNode(node);
@@ -2391,7 +2413,8 @@ namespace ts {
             }
 
             // Parses a comma-delimited list of elements
-            auto parseDelimitedList<T extends Node>(ParsingContext kind, parseElement: () => T, boolean considerSemicolonAsDelimiter) -> NodeArray<T> {
+            template <typename T> 
+            auto parseDelimitedList(ParsingContext kind, std::function <T()> parseElement, boolean considerSemicolonAsDelimiter) -> NodeArray<T> {
                 auto saveParsingContext = parsingContext;
                 parsingContext |= 1 << kind;
                 auto list = [];
@@ -2459,11 +2482,13 @@ namespace ts {
                 return kind == ParsingContext.EnumMembers ? Diagnostics::An_enum_member_name_must_be_followed_by_a_or : undefined;
             }
 
-            interface MissingList<T extends Node> extends NodeArray<T> {
-                true isMissingList;
-            }
+            template <typename T> 
+            struct MissingList : NodeArray<T> {
+                boolean isMissingList = true;
+            };
 
-            auto createMissingList<T extends Node>() -> MissingList<T> {
+            template <typename T> 
+            auto createMissingList() -> MissingList<T> {
                 auto list = createNodeArray<T>([], getNodePos()) as MissingList<T>;
                 list.isMissingList = true;
                 return list;
@@ -2473,7 +2498,8 @@ namespace ts {
                 return !!(arr as MissingList<Node>).isMissingList;
             }
 
-            auto parseBracketedList<T extends Node>(ParsingContext kind, parseElement: () => T, SyntaxKind open, SyntaxKind close) -> NodeArray<T> {
+            template <typename T>
+            auto parseBracketedList(ParsingContext kind, std::function <T()> parseElement, SyntaxKind open, SyntaxKind close) -> NodeArray<T> {
                 if (parseExpected(open)) {
                     auto result = parseDelimitedList(kind, parseElement);
                     parseExpected(close);
@@ -2509,7 +2535,7 @@ namespace ts {
                 return finishNode(factory.createQualifiedName(entity, name), entity.pos);
             }
 
-            auto parseRightSideOfDot(boolean allowIdentifierNames, boolean allowPrivateIdentifiers) -> Identifier | PrivateIdentifier {
+            auto parseRightSideOfDot(boolean allowIdentifierNames, boolean allowPrivateIdentifiers) -> Node {
                 // Technically a keyword is valid here as all identifiers and keywords are identifier names.
                 // However, often we'll encounter this in error situations when the identifier or keyword
                 // is actually starting another valid construct.
@@ -2640,13 +2666,13 @@ namespace ts {
                 return <TemplateHead>fragment;
             }
 
-            auto parseTemplateMiddleOrTemplateTail() -> TemplateMiddle | TemplateTail {
+            auto parseTemplateMiddleOrTemplateTail() -> Node {
                 auto fragment = parseLiteralLikeNode(token());
                 Debug::_assert(fragment.kind == SyntaxKind::TemplateMiddle || fragment.kind == SyntaxKind::TemplateTail, "Template fragment has wrong token kind");
-                return <TemplateMiddle | TemplateTail>fragment;
+                return fragment;
             }
 
-            auto getTemplateLiteralRawText(TemplateLiteralToken["kind"] kind) {
+            auto getTemplateLiteralRawText(SyntaxKind kind) -> string {
                 auto isLast = kind == SyntaxKind::NoSubstitutionTemplateLiteral || kind == SyntaxKind::TemplateTail;
                 auto tokenText = scanner.getTokenText();
                 return tokenText.substring(1, tokenText.size() - (scanner.isUnterminated() ? 0 : isLast ? 1 : 2));
@@ -2730,7 +2756,7 @@ namespace ts {
                 return finishNode(factory.createThisTypeNode(), pos);
             }
 
-            auto parseJSDocAllType() -> JSDocAllType | JSDocOptionalType {
+            auto parseJSDocAllType() -> Node {
                 auto pos = getNodePos();
                 nextToken();
                 return finishNode(factory.createJSDocAllType(), pos);
@@ -2742,7 +2768,7 @@ namespace ts {
                 return finishNode(factory.createJSDocNonNullableType(parseNonArrayType()), pos);
             }
 
-            auto parseJSDocUnknownOrNullableType() -> JSDocUnknownType | JSDocNullableType {
+            auto parseJSDocUnknownOrNullableType() -> Node {
                 auto pos = getNodePos();
                 // skip the ?
                 nextToken();
@@ -2770,7 +2796,7 @@ namespace ts {
                 }
             }
 
-            auto parseJSDocFunctionType() -> JSDocFunctionType | TypeReferenceNode {
+            auto parseJSDocFunctionType() -> Node {
                 auto pos = getNodePos();
                 auto hasJSDoc = hasPrecedingJSDocComment();
                 if (lookAhead(nextTokenIsOpenParen)) {
@@ -2959,15 +2985,13 @@ namespace ts {
                 return node;
             }
 
-            auto parseReturnType(SyntaxKind::EqualsGreaterThanToken returnToken, boolean isType) -> TypeNode;
-            auto parseReturnType(SyntaxKind::ColonToken returnToken | SyntaxKind::EqualsGreaterThanToken, boolean isType) -> TypeNode;
-            auto parseReturnType(SyntaxKind::ColonToken returnToken | SyntaxKind::EqualsGreaterThanToken, boolean isType) {
+            auto parseReturnType(SyntaxKind returnToken, boolean isType) -> TypeNode {
                 if (shouldParseReturnType(returnToken, isType)) {
                     return parseTypeOrTypePredicate();
                 }
             }
 
-            auto shouldParseReturnType(SyntaxKind::ColonToken returnToken | SyntaxKind::EqualsGreaterThanToken, boolean isType) -> boolean {
+            auto shouldParseReturnType(SyntaxKind returnToken, boolean isType) -> boolean {
                 if (returnToken == SyntaxKind::EqualsGreaterThanToken) {
                     parseExpected(returnToken);
                     return true;
@@ -3048,7 +3072,7 @@ namespace ts {
                 parseSemicolon();
             }
 
-            auto parseSignatureMember(SyntaxKind::CallSignature kind | SyntaxKind::ConstructSignature) -> CallSignatureDeclaration | ConstructSignatureDeclaration {
+            auto parseSignatureMember(SyntaxKind kind) -> Node {
                 auto pos = getNodePos();
                 auto hasJSDoc = hasPrecedingJSDocComment();
                 if (kind == SyntaxKind::ConstructSignature) {
@@ -3132,7 +3156,7 @@ namespace ts {
                 return withJSDoc(finishNode(node, pos), hasJSDoc);
             }
 
-            auto parsePropertyOrMethodSignature(number pos, boolean hasJSDoc, NodeArray<Modifier> modifiers) -> PropertySignature | MethodSignature {
+            auto parsePropertyOrMethodSignature(number pos, boolean hasJSDoc, NodeArray<Modifier> modifiers) -> Node {
                 auto name = parsePropertyName();
                 auto questionToken = parseOptionalToken(SyntaxKind::QuestionToken);
                 auto PropertySignature node | MethodSignature;
@@ -3579,10 +3603,10 @@ namespace ts {
                 return type;
             }
 
-            auto parseTypeOperator(SyntaxKind::KeyOfKeyword operator | SyntaxKind::UniqueKeyword | SyntaxKind::ReadonlyKeyword) {
+            auto parseTypeOperator(SyntaxKind operator_) {
                 auto pos = getNodePos();
-                parseExpected(operator);
-                return finishNode(factory.createTypeOperatorNode(operator, parseTypeOperatorOrHigher()), pos);
+                parseExpected(operator_);
+                return finishNode(factory.createTypeOperatorNode(operator_, parseTypeOperatorOrHigher()), pos);
             }
 
             auto parseTypeParameterOfInferType() {
@@ -3643,18 +3667,18 @@ namespace ts {
             }
 
             auto parseUnionOrIntersectionType(
-                SyntaxKind::BarToken operator | SyntaxKind::AmpersandToken,
-                parseConstituentType: () => TypeNode,
-                createTypeNode: (NodeArray<TypeNode> types) => UnionOrIntersectionTypeNode
+                SyntaxKind operator_,
+                std::function<TypeNode()> parseConstituentType,
+                std::function<UnionOrIntersectionTypeNode(NodeArray<TypeNode>)> createTypeNode
             ) -> TypeNode {
                 auto pos = getNodePos();
-                auto isUnionType = operator == SyntaxKind::BarToken;
-                auto hasLeadingOperator = parseOptional(operator);
+                auto isUnionType = operator_ == SyntaxKind::BarToken;
+                auto hasLeadingOperator = parseOptional(operator_);
                 auto type = hasLeadingOperator && parseFunctionOrConstructorTypeToError(isUnionType)
                     || parseConstituentType();
-                if (token() == operator || hasLeadingOperator) {
+                if (token() == operator_ || hasLeadingOperator) {
                     auto types = [type];
-                    while (parseOptional(operator)) {
+                    while (parseOptional(operator_)) {
                         types.push(parseFunctionOrConstructorTypeToError(isUnionType) || parseConstituentType());
                     }
                     type = finishNode(createTypeNode(createNodeArray(types, pos)), pos);
@@ -4304,7 +4328,7 @@ namespace ts {
                 return withJSDoc(finishNode(node, pos), hasJSDoc);
             }
 
-            auto parseArrowFunctionExpressionBody(boolean isAsync) -> Block | Expression {
+            auto parseArrowFunctionExpressionBody(boolean isAsync) -> Node {
                 if (token() == SyntaxKind::OpenBraceToken) {
                     return parseFunctionBlock(isAsync ? SignatureFlags.Await : SignatureFlags.None);
                 }
@@ -4499,7 +4523,7 @@ namespace ts {
              *      2) UpdateExpression[?Yield] ** ExponentiationExpression[?Yield]
              *
              */
-            auto parseUnaryExpressionOrHigher() -> UnaryExpression | BinaryExpression {
+            auto parseUnaryExpressionOrHigher() -> Node {
                 /**
                  * ES7 UpdateExpression:
                  *      1) LeftHandSideExpression[?Yield]
@@ -4792,7 +4816,7 @@ namespace ts {
                 return finishNode(factory.createPropertyAccessExpression(expression, parseRightSideOfDot(/*allowIdentifierNames*/ true, /*allowPrivateIdentifiers*/ true)), pos);
             }
 
-            auto parseJsxElementOrSelfClosingElementOrFragment(boolean inExpressionContext, number topInvalidNodePosition) -> JsxElement | JsxSelfClosingElement | JsxFragment {
+            auto parseJsxElementOrSelfClosingElementOrFragment(boolean inExpressionContext, number topInvalidNodePosition) -> Node {
                 auto pos = getNodePos();
                 auto opening = parseJsxOpeningOrSelfClosingElementOrOpeningFragment(inExpressionContext);
                 auto JsxElement result | JsxSelfClosingElement | JsxFragment;
@@ -4843,7 +4867,7 @@ namespace ts {
                 return finishNode(node, pos);
             }
 
-            auto parseJsxChild(JsxOpeningElement openingTag | JsxOpeningFragment, JsxTokenSyntaxKind token) -> JsxChild {
+            auto parseJsxChild(SyntaxKind token) -> JsxChild {
                 switch (token) {
                     case SyntaxKind::EndOfFileToken:
                         // If we hit EOF, issue the error at the tag that lacks the closing element
@@ -4874,7 +4898,7 @@ namespace ts {
                 }
             }
 
-            auto parseJsxChildren(JsxOpeningElement openingTag | JsxOpeningFragment) -> NodeArray<JsxChild> {
+            auto parseJsxChildren(Node openingTag) -> NodeArray<JsxChild> {
                 auto list = [];
                 auto listPos = getNodePos();
                 auto saveParsingContext = parsingContext;
@@ -4895,7 +4919,7 @@ namespace ts {
                 return finishNode(factory.createJsxAttributes(parseList(ParsingContext.JsxAttributes, parseJsxAttribute)), pos);
             }
 
-            auto parseJsxOpeningOrSelfClosingElementOrOpeningFragment(boolean inExpressionContext) -> JsxOpeningElement | JsxSelfClosingElement | JsxOpeningFragment {
+            auto parseJsxOpeningOrSelfClosingElementOrOpeningFragment(boolean inExpressionContext) -> Node {
                 auto pos = getNodePos();
 
                 parseExpected(SyntaxKind::LessThanToken);
@@ -4977,7 +5001,7 @@ namespace ts {
                 return finishNode(factory.createJsxExpression(dotDotDotToken, expression), pos);
             }
 
-            auto parseJsxAttribute() -> JsxAttribute | JsxSpreadAttribute {
+            auto parseJsxAttribute() -> Node {
                 if (token() == SyntaxKind::OpenBraceToken) {
                     return parseJsxSpreadAttribute();
                 }
@@ -5485,7 +5509,7 @@ namespace ts {
                 return isBindingIdentifier() ? parseBindingIdentifier() : undefined;
             }
 
-            auto parseNewExpressionOrNewDotTarget() -> NewExpression | MetaProperty {
+            auto parseNewExpressionOrNewDotTarget() -> Node {
                 auto pos = getNodePos();
                 parseExpected(SyntaxKind::NewKeyword);
                 if (parseOptional(SyntaxKind::DotToken)) {
@@ -5794,7 +5818,7 @@ namespace ts {
                 return finishNode(factory.createDebuggerStatement(), pos);
             }
 
-            auto parseExpressionOrLabeledStatement() -> ExpressionStatement | LabeledStatement {
+            auto parseExpressionOrLabeledStatement() -> Node {
                 // Avoiding having to do the lookahead for a labeled statement by just trying to parse
                 // out an expression, seeing if it is identifier and then seeing if it is followed by
                 // a colon.
@@ -6223,7 +6247,7 @@ namespace ts {
                     || isBindingIdentifier();
             }
 
-            auto parseIdentifierOrPattern(DiagnosticMessage privateIdentifierDiagnosticMessage) -> Identifier | BindingPattern {
+            auto parseIdentifierOrPattern(DiagnosticMessage privateIdentifierDiagnosticMessage) -> Node {
                 if (token() == SyntaxKind::OpenBracketToken) {
                     return parseArrayBindingPattern();
                 }
@@ -6362,10 +6386,10 @@ namespace ts {
                 boolean hasJSDoc,
                 NodeArray<Decorator> decorators,
                 NodeArray<Modifier> modifiers,
-                AsteriskToken asteriskToken,
+                SyntaxKind asteriskToken,
                 PropertyName name,
-                QuestionToken questionToken,
-                ExclamationToken exclamationToken,
+                SyntaxKind questionToken,
+                SyntaxKind exclamationToken,
                 DiagnosticMessage diagnosticMessage
             ) -> MethodDeclaration {
                 auto isGenerator = asteriskToken ? SignatureFlags.Yield : SignatureFlags.None;
@@ -6396,7 +6420,7 @@ namespace ts {
                 NodeArray<Decorator> decorators,
                 NodeArray<Modifier> modifiers,
                 PropertyName name,
-                QuestionToken questionToken
+                SyntaxKind questionToken
             ) -> PropertyDeclaration {
                 auto exclamationToken = !questionToken && !scanner.hasPrecedingLineBreak() ? parseOptionalToken(SyntaxKind::ExclamationToken) : undefined;
                 auto type = parseTypeAnnotation();
@@ -6411,7 +6435,7 @@ namespace ts {
                 boolean hasJSDoc,
                 NodeArray<Decorator> decorators,
                 NodeArray<Modifier> modifiers
-            ) -> PropertyDeclaration | MethodDeclaration {
+            ) -> Node {
                 auto asteriskToken = parseOptionalToken(SyntaxKind::AsteriskToken);
                 auto name = parsePropertyName();
                 // this Note is not legal as per the grammar.  But we allow it in the parser and
@@ -6423,7 +6447,7 @@ namespace ts {
                 return parsePropertyDeclaration(pos, hasJSDoc, decorators, modifiers, name, questionToken);
             }
 
-            auto parseAccessorDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers, AccessorDeclaration["kind"] kind) -> AccessorDeclaration {
+            auto parseAccessorDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers, SyntaxKind kind) -> AccessorDeclaration {
                 auto name = parsePropertyName();
                 auto typeParameters = parseTypeParameters();
                 auto parameters = parseParameters(SignatureFlags.None);
@@ -6652,7 +6676,7 @@ namespace ts {
                 return <ClassDeclaration>parseClassDeclarationOrExpression(pos, hasJSDoc, decorators, modifiers, SyntaxKind::ClassDeclaration);
             }
 
-            auto parseClassDeclarationOrExpression(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers, ClassLikeDeclaration["kind"] kind) -> ClassLikeDeclaration {
+            auto parseClassDeclarationOrExpression(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers, SyntaxKind kind) -> ClassLikeDeclaration {
                 auto savedAwaitContext = inAwaitContext();
                 parseExpected(SyntaxKind::ClassKeyword);
                 // We don't parse the name here in await context, instead we will report a grammar error in the checker.
@@ -6872,7 +6896,7 @@ namespace ts {
                 return withJSDoc(finishNode(node, pos), hasJSDoc);
             }
 
-            auto parseImportDeclarationOrImportEqualsDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers) -> ImportEqualsDeclaration | ImportDeclaration {
+            auto parseImportDeclarationOrImportEqualsDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers) -> Node {
                 parseExpected(SyntaxKind::ImportKeyword);
 
                 auto afterImportPos = scanner.getStartPos();
@@ -6991,8 +7015,6 @@ namespace ts {
                 return finishNode(factory.createNamespaceImport(name), pos);
             }
 
-            auto parseNamedImportsOrExports(SyntaxKind::NamedImports kind) -> NamedImports;
-            auto parseNamedImportsOrExports(SyntaxKind::NamedExports kind) -> NamedExports;
             auto parseNamedImportsOrExports(SyntaxKind kind) -> NamedImportsOrExports {
                 auto pos = getNodePos();
 
@@ -7138,973 +7160,941 @@ namespace ts {
                 return isMetaProperty(node) && node.keywordToken == SyntaxKind::ImportKeyword && node.name.escapedText == "meta";
             }
 
-            auto enum ParsingContext {
-                SourceElements,            // Elements in source file
-                BlockStatements,           // Statements in block
-                SwitchClauses,             // Clauses in switch statement
-                SwitchClauseStatements,    // Statements in switch clause
-                TypeMembers,               // Members in interface or type literal
-                ClassMembers,              // Members in class declaration
-                EnumMembers,               // Members in enum declaration
-                HeritageClauseElement,     // Elements in a heritage clause
-                VariableDeclarations,      // Variable declarations in variable statement
-                ObjectBindingElements,     // Binding elements in object binding list
-                ArrayBindingElements,      // Binding elements in array binding list
-                ArgumentExpressions,       // Expressions in argument list
-                ObjectLiteralMembers,      // Members in object literal
-                JsxAttributes,             // Attributes in jsx element
-                JsxChildren,               // Things between opening and closing JSX tags
-                ArrayLiteralMembers,       // Members in array literal
-                Parameters,                // Parameters in parameter list
-                JSDocParameters,           // JSDoc parameters in parameter list of JSDoc auto type
-                RestProperties,            // Property names in a rest type list
-                TypeParameters,            // Type parameters in type parameter list
-                TypeArguments,             // Type arguments in type argument list
-                TupleElementTypes,         // Element types in tuple element type list
-                HeritageClauses,           // Heritage clauses for a class or interface declaration.
-                ImportOrExportSpecifiers,  // Named import clause's import specifier list
-                Count                      // Number of parsing contexts
+            // [[[ namespace JSDocParser ]]]
+
+            auto parseJSDocTypeExpressionForTests(string content, number start, number length) -> Undefined<NodeWithDiagnostics> {
+                initializeState("file.js", content, ScriptTarget::Latest, /*_syntaxCursor:*/ undefined, ScriptKind::JS);
+                scanner.setText(content, start, length);
+                currentToken = scanner.scan();
+                auto jsDocTypeExpression = parseJSDocTypeExpression();
+
+                auto sourceFile = createSourceFile("file.js", ScriptTarget::Latest, ScriptKind::JS, /*isDeclarationFile*/ false, [], factory.createToken(SyntaxKind::EndOfFileToken), NodeFlags::None);
+                auto diagnostics = attachFileToDiagnostics(parseDiagnostics, sourceFile);
+                if (jsDocDiagnostics) {
+                    sourceFile.jsDocDiagnostics = attachFileToDiagnostics(jsDocDiagnostics, sourceFile);
+                }
+
+                clearState();
+
+                return jsDocTypeExpression ? NodeWithDiagnostics{ jsDocTypeExpression, diagnostics } : undefined;
             }
 
-            auto enum Tristate {
-                False,
-                True,
-                Unknown
+            // Parses out a JSDoc type expression.
+            auto parseJSDocTypeExpression(boolean mayOmitBraces) -> JSDocTypeExpression {
+                auto pos = getNodePos();
+                auto hasBrace = (mayOmitBraces ? parseOptional : parseExpected)(SyntaxKind::OpenBraceToken);
+                auto type = doInsideOfContext(NodeFlags::JSDoc, parseJSDocType);
+                if (!mayOmitBraces || hasBrace) {
+                    parseExpectedJSDoc(SyntaxKind::CloseBraceToken);
+                }
+
+                auto result = factory.createJSDocTypeExpression(type);
+                fixupParentReferences(result);
+                return finishNode(result, pos);
             }
 
-            namespace JSDocParser {
-                auto parseJSDocTypeExpressionForTests(string content, number start, number length) -> { JSDocTypeExpression jsDocTypeExpression, std::vector<Diagnostic> diagnostics } {
-                    initializeState("file.js", content, ScriptTarget::Latest, /*_syntaxCursor:*/ undefined, ScriptKind::JS);
-                    scanner.setText(content, start, length);
-                    currentToken = scanner.scan();
-                    auto jsDocTypeExpression = parseJSDocTypeExpression();
+            auto parseJSDocNameReference() -> JSDocNameReference {
+                auto pos = getNodePos();
+                auto hasBrace = parseOptional(SyntaxKind::OpenBraceToken);
+                auto entityName = parseEntityName(/* allowReservedWords*/ false);
+                if (hasBrace) {
+                    parseExpectedJSDoc(SyntaxKind::CloseBraceToken);
+                }
 
-                    auto sourceFile = createSourceFile("file.js", ScriptTarget::Latest, ScriptKind::JS, /*isDeclarationFile*/ false, [], factory.createToken(SyntaxKind::EndOfFileToken), NodeFlags::None);
-                    auto diagnostics = attachFileToDiagnostics(parseDiagnostics, sourceFile);
-                    if (jsDocDiagnostics) {
-                        sourceFile.jsDocDiagnostics = attachFileToDiagnostics(jsDocDiagnostics, sourceFile);
+                auto result = factory.createJSDocNameReference(entityName);
+                fixupParentReferences(result);
+                return finishNode(result, pos);
+            }
+
+            auto parseIsolatedJSDocComment(string content, number start, number length) -> Undefined<NodeWithDiagnostics> {
+                initializeState(string(), content, ScriptTarget::Latest, /*_syntaxCursor:*/ undefined, ScriptKind::JS);
+                auto jsDoc = doInsideOfContext(NodeFlags::JSDoc, () => parseJSDocCommentWorker(start, length));
+
+                auto sourceFile = <SourceFile>{ LanguageVariant.Standard languageVariant, content text };
+                auto diagnostics = attachFileToDiagnostics(parseDiagnostics, sourceFile);
+                clearState();
+
+                return jsDoc ? NodeWithDiagnostics{ jsDoc, diagnostics } : undefined;
+            }
+
+            auto parseJSDocComment(SyntaxKind parent, number start, number length) -> JSDoc {
+                auto saveToken = currentToken;
+                auto saveParseDiagnosticsLength = parseDiagnostics::size();
+                auto saveParseErrorBeforeNextFinishedNode = parseErrorBeforeNextFinishedNode;
+
+                auto comment = doInsideOfContext(NodeFlags::JSDoc, () => parseJSDocCommentWorker(start, length));
+                setParent(comment, parent);
+
+                if (contextFlags & NodeFlags::JavaScriptFile) {
+                    if (!jsDocDiagnostics) {
+                        jsDocDiagnostics = [];
                     }
+                    jsDocDiagnostics::push(...parseDiagnostics);
+                }
+                currentToken = saveToken;
+                parseDiagnostics::size() = saveParseDiagnosticsLength;
+                parseErrorBeforeNextFinishedNode = saveParseErrorBeforeNextFinishedNode;
+                return comment;
+            }
 
-                    clearState();
+            enum class JSDocState : number {
+                BeginningOfLine,
+                SawAsterisk,
+                SavingComments,
+                SavingBackticks, // Only NOTE used when parsing tag comments
+            };
 
-                    return jsDocTypeExpression ? { jsDocTypeExpression, diagnostics } : undefined;
+            enum class PropertyLikeParse : number {
+                Property = 1 << 0,
+                Parameter = 1 << 1,
+                CallbackParameter = 1 << 2,
+            };
+
+            auto parseJSDocCommentWorker(number start = 0, number length = -1) -> JSDoc {
+                auto content = sourceText;
+                auto end = length == -1 ? content.size() : start + length;
+                length = end - start;
+
+                Debug::_assert(start >= 0);
+                Debug::_assert(start <= end);
+                Debug::_assert(end <= content.size());
+
+                // Check for /** (JSDoc opening part)
+                if (!isJSDocLikeText(content, start)) {
+                    return undefined;
                 }
 
-                // Parses out a JSDoc type expression.
-                auto parseJSDocTypeExpression(boolean mayOmitBraces) -> JSDocTypeExpression {
-                    auto pos = getNodePos();
-                    auto hasBrace = (mayOmitBraces ? parseOptional : parseExpected)(SyntaxKind::OpenBraceToken);
-                    auto type = doInsideOfContext(NodeFlags::JSDoc, parseJSDocType);
-                    if (!mayOmitBraces || hasBrace) {
-                        parseExpectedJSDoc(SyntaxKind::CloseBraceToken);
-                    }
+                auto std::vector<JSDocTag> tags;
+                auto number tagsPos;
+                auto number tagsEnd;
+                auto std::vector<string> = [] comments;
 
-                    auto result = factory.createJSDocTypeExpression(type);
-                    fixupParentReferences(result);
-                    return finishNode(result, pos);
-                }
-
-                auto parseJSDocNameReference() -> JSDocNameReference {
-                    auto pos = getNodePos();
-                    auto hasBrace = parseOptional(SyntaxKind::OpenBraceToken);
-                    auto entityName = parseEntityName(/* allowReservedWords*/ false);
-                    if (hasBrace) {
-                        parseExpectedJSDoc(SyntaxKind::CloseBraceToken);
-                    }
-
-                    auto result = factory.createJSDocNameReference(entityName);
-                    fixupParentReferences(result);
-                    return finishNode(result, pos);
-                }
-
-                auto parseIsolatedJSDocComment(string content, number start, number length) -> { JSDoc jsDoc, std::vector<Diagnostic> diagnostics } {
-                    initializeState(string(), content, ScriptTarget::Latest, /*_syntaxCursor:*/ undefined, ScriptKind::JS);
-                    auto jsDoc = doInsideOfContext(NodeFlags::JSDoc, () => parseJSDocCommentWorker(start, length));
-
-                    auto sourceFile = <SourceFile>{ LanguageVariant.Standard languageVariant, content text };
-                    auto diagnostics = attachFileToDiagnostics(parseDiagnostics, sourceFile);
-                    clearState();
-
-                    return jsDoc ? { jsDoc, diagnostics } : undefined;
-                }
-
-                auto parseJSDocComment(HasJSDoc parent, number start, number length) -> JSDoc {
-                    auto saveToken = currentToken;
-                    auto saveParseDiagnosticsLength = parseDiagnostics::size();
-                    auto saveParseErrorBeforeNextFinishedNode = parseErrorBeforeNextFinishedNode;
-
-                    auto comment = doInsideOfContext(NodeFlags::JSDoc, () => parseJSDocCommentWorker(start, length));
-                    setParent(comment, parent);
-
-                    if (contextFlags & NodeFlags::JavaScriptFile) {
-                        if (!jsDocDiagnostics) {
-                            jsDocDiagnostics = [];
+                // + 3 for leading /**, - 5 in total for /** */
+                return scanner.scanRange(start + 3, length - 5, () => {
+                    // Initially we can parse out a tag.  We also have seen a starting asterisk.
+                    // This is so that /** * @type */ doesn't parse.
+                    auto state = JSDocState.SawAsterisk;
+                    auto number margin;
+                    // + 4 for leading '/** '
+                    // + 1 because the last index of \n is always one index before the first character in the line and coincidentally, if there is no \n before start, it is -1, which is also one index before the first character
+                    auto indent = start - (content.lastIndexOf("\n", start) + 1) + 4;
+                    auto pushComment(string text) {
+                        if (!margin) {
+                            margin = indent;
                         }
-                        jsDocDiagnostics::push(...parseDiagnostics);
-                    }
-                    currentToken = saveToken;
-                    parseDiagnostics::size() = saveParseDiagnosticsLength;
-                    parseErrorBeforeNextFinishedNode = saveParseErrorBeforeNextFinishedNode;
-                    return comment;
-                }
-
-                auto enum JSDocState {
-                    BeginningOfLine,
-                    SawAsterisk,
-                    SavingComments,
-                    SavingBackticks, // Only NOTE used when parsing tag comments
-                }
-
-                auto enum PropertyLikeParse {
-                    Property = 1 << 0,
-                    Parameter = 1 << 1,
-                    CallbackParameter = 1 << 2,
-                }
-
-                auto parseJSDocCommentWorker(start = 0, number length) -> JSDoc {
-                    auto content = sourceText;
-                    auto end = length == undefined ? content.size() : start + length;
-                    length = end - start;
-
-                    Debug::_assert(start >= 0);
-                    Debug::_assert(start <= end);
-                    Debug::_assert(end <= content.size());
-
-                    // Check for /** (JSDoc opening part)
-                    if (!isJSDocLikeText(content, start)) {
-                        return undefined;
+                        comments.push(text);
+                        indent += text.size();
                     }
 
-                    auto std::vector<JSDocTag> tags;
-                    auto number tagsPos;
-                    auto number tagsEnd;
-                    auto std::vector<string> = [] comments;
-
-                    // + 3 for leading /**, - 5 in total for /** */
-                    return scanner.scanRange(start + 3, length - 5, () => {
-                        // Initially we can parse out a tag.  We also have seen a starting asterisk.
-                        // This is so that /** * @type */ doesn't parse.
-                        auto state = JSDocState.SawAsterisk;
-                        auto number margin;
-                        // + 4 for leading '/** '
-                        // + 1 because the last index of \n is always one index before the first character in the line and coincidentally, if there is no \n before start, it is -1, which is also one index before the first character
-                        auto indent = start - (content.lastIndexOf("\n", start) + 1) + 4;
-                        auto pushComment(string text) {
-                            if (!margin) {
-                                margin = indent;
-                            }
-                            comments.push(text);
-                            indent += text.size();
-                        }
-
-                        nextTokenJSDoc();
-                        while (parseOptionalJsdoc(SyntaxKind::WhitespaceTrivia));
-                        if (parseOptionalJsdoc(SyntaxKind::NewLineTrivia)) {
-                            state = JSDocState.BeginningOfLine;
-                            indent = 0;
-                        }
-                        while loop (true) {
-                            switch (token()) {
-                                case SyntaxKind::AtToken:
-                                    if (state == JSDocState.BeginningOfLine || state == JSDocState.SawAsterisk) {
-                                        removeTrailingWhitespace(comments);
-                                        addTag(parseTag(indent));
-                                        // According NOTE to usejsdoc.org, a tag goes to end of line, except the last tag.
-                                        // Real-world comments may break this rule, so "BeginningOfLine" will not be a real line beginning
-                                        // for malformed examples like `/** @param {string} x @returns {number} the length */`
-                                        state = JSDocState.BeginningOfLine;
-                                        margin = undefined;
-                                    }
-                                    else {
-                                        pushComment(scanner.getTokenText());
-                                    }
-                                    break;
-                                case SyntaxKind::NewLineTrivia:
-                                    comments.push(scanner.getTokenText());
+                    nextTokenJSDoc();
+                    while (parseOptionalJsdoc(SyntaxKind::WhitespaceTrivia));
+                    if (parseOptionalJsdoc(SyntaxKind::NewLineTrivia)) {
+                        state = JSDocState.BeginningOfLine;
+                        indent = 0;
+                    }
+                    while loop (true) {
+                        switch (token()) {
+                            case SyntaxKind::AtToken:
+                                if (state == JSDocState.BeginningOfLine || state == JSDocState.SawAsterisk) {
+                                    removeTrailingWhitespace(comments);
+                                    addTag(parseTag(indent));
+                                    // According NOTE to usejsdoc.org, a tag goes to end of line, except the last tag.
+                                    // Real-world comments may break this rule, so "BeginningOfLine" will not be a real line beginning
+                                    // for malformed examples like `/** @param {string} x @returns {number} the length */`
                                     state = JSDocState.BeginningOfLine;
-                                    indent = 0;
+                                    margin = undefined;
+                                }
+                                else {
+                                    pushComment(scanner.getTokenText());
+                                }
+                                break;
+                            case SyntaxKind::NewLineTrivia:
+                                comments.push(scanner.getTokenText());
+                                state = JSDocState.BeginningOfLine;
+                                indent = 0;
+                                break;
+                            case SyntaxKind::AsteriskToken:
+                                auto asterisk = scanner.getTokenText();
+                                if (state == JSDocState.SawAsterisk || state == JSDocState.SavingComments) {
+                                    // If we've already seen an asterisk, then we can no longer parse a tag on this line
+                                    state = JSDocState.SavingComments;
+                                    pushComment(asterisk);
+                                }
+                                else {
+                                    // Ignore the first asterisk on a line
+                                    state = JSDocState.SawAsterisk;
+                                    indent += asterisk.size();
+                                }
+                                break;
+                            case SyntaxKind::WhitespaceTrivia:
+                                // only collect whitespace if we're already saving comments or have just crossed the comment indent margin
+                                auto whitespace = scanner.getTokenText();
+                                if (state == JSDocState.SavingComments) {
+                                    comments.push(whitespace);
+                                }
+                                else if (margin != undefined && indent + whitespace.size() > margin) {
+                                    comments.push(whitespace.slice(margin - indent));
+                                }
+                                indent += whitespace.size();
+                                break;
+                            case SyntaxKind::EndOfFileToken:
+                                break loop;
+                            default:
+                                // Anything else is doc comment text. We just save it. Because it
+                                // wasn't a tag, we can no longer parse a tag on this line until we hit the next
+                                // line break.
+                                state = JSDocState.SavingComments;
+                                pushComment(scanner.getTokenText());
+                                break;
+                        }
+                        nextTokenJSDoc();
+                    }
+                    removeLeadingNewlines(comments);
+                    removeTrailingWhitespace(comments);
+                    return createJSDocComment();
+                });
+
+                auto removeLeadingNewlines(std::vector<string> comments) {
+                    while (comments.size() && (comments[0] == "\n" || comments[0] == "\r")) {
+                        comments.shift();
+                    }
+                }
+
+                auto removeTrailingWhitespace(std::vector<string> comments) {
+                    while (comments.size() && comments[comments.size() - 1].trim() == string()) {
+                        comments.pop();
+                    }
+                }
+
+                auto createJSDocComment() -> JSDoc {
+                    auto comment = comments.size() ? comments.join(string()) : undefined;
+                    auto tagsArray = tags && createNodeArray(tags, tagsPos, tagsEnd);
+                    return finishNode(factory.createJSDocComment(comment, tagsArray), start, end);
+                }
+
+                auto isNextNonwhitespaceTokenEndOfFile() -> boolean {
+                    // We must use infinite lookahead, as there could be any number of newlines :(
+                    while (true) {
+                        nextTokenJSDoc();
+                        if (token() == SyntaxKind::EndOfFileToken) {
+                            return true;
+                        }
+                        if (!(token() == SyntaxKind::WhitespaceTrivia || token() == SyntaxKind::NewLineTrivia)) {
+                            return false;
+                        }
+                    }
+                }
+
+                auto skipWhitespace() -> void {
+                    if (token() == SyntaxKind::WhitespaceTrivia || token() == SyntaxKind::NewLineTrivia) {
+                        if (lookAhead(isNextNonwhitespaceTokenEndOfFile)) {
+                            return; // Don't skip whitespace prior to EoF (or end of comment) - that shouldn't be included in any node's range
+                        }
+                    }
+                    while (token() == SyntaxKind::WhitespaceTrivia || token() == SyntaxKind::NewLineTrivia) {
+                        nextTokenJSDoc();
+                    }
+                }
+
+                auto skipWhitespaceOrAsterisk() -> string {
+                    if (token() == SyntaxKind::WhitespaceTrivia || token() == SyntaxKind::NewLineTrivia) {
+                        if (lookAhead(isNextNonwhitespaceTokenEndOfFile)) {
+                            return string(); // Don't skip whitespace prior to EoF (or end of comment) - that shouldn't be included in any node's range
+                        }
+                    }
+
+                    auto precedingLineBreak = scanner.hasPrecedingLineBreak();
+                    auto seenLineBreak = false;
+                    auto indentText = string();
+                    while ((precedingLineBreak && token() == SyntaxKind::AsteriskToken) || token() == SyntaxKind::WhitespaceTrivia || token() == SyntaxKind::NewLineTrivia) {
+                        indentText += scanner.getTokenText();
+                        if (token() == SyntaxKind::NewLineTrivia) {
+                            precedingLineBreak = true;
+                            seenLineBreak = true;
+                            indentText = string();
+                        }
+                        else if (token() == SyntaxKind::AsteriskToken) {
+                            precedingLineBreak = false;
+                        }
+                        nextTokenJSDoc();
+                    }
+                    return seenLineBreak ? indentText : string();
+                }
+
+                auto parseTag(number margin) {
+                    Debug::_assert(token() == SyntaxKind::AtToken);
+                    auto start = scanner.getTokenPos();
+                    nextTokenJSDoc();
+
+                    auto tagName = parseJSDocIdentifierName(/*message*/ undefined);
+                    auto indentText = skipWhitespaceOrAsterisk();
+
+                    auto JSDocTag tag;
+                    switch (tagName.escapedText) {
+                        case "author":
+                            tag = parseAuthorTag(start, tagName, margin, indentText);
+                            break;
+                        case "implements":
+                            tag = parseImplementsTag(start, tagName, margin, indentText);
+                            break;
+                        case "augments":
+                        case "extends":
+                            tag = parseAugmentsTag(start, tagName, margin, indentText);
+                            break;
+                        case "class":
+                        case "constructor":
+                            tag = parseSimpleTag(start, factory.createJSDocClassTag, tagName, margin, indentText);
+                            break;
+                        case "public":
+                            tag = parseSimpleTag(start, factory.createJSDocPublicTag, tagName, margin, indentText);
+                            break;
+                        case "private":
+                            tag = parseSimpleTag(start, factory.createJSDocPrivateTag, tagName, margin, indentText);
+                            break;
+                        case "protected":
+                            tag = parseSimpleTag(start, factory.createJSDocProtectedTag, tagName, margin, indentText);
+                            break;
+                        case "readonly":
+                            tag = parseSimpleTag(start, factory.createJSDocReadonlyTag, tagName, margin, indentText);
+                            break;
+                        case "deprecated":
+                            hasDeprecatedTag = true;
+                            tag = parseSimpleTag(start, factory.createJSDocDeprecatedTag, tagName, margin, indentText);
+                            break;
+                        case "this":
+                            tag = parseThisTag(start, tagName, margin, indentText);
+                            break;
+                        case "enum":
+                            tag = parseEnumTag(start, tagName, margin, indentText);
+                            break;
+                        case "arg":
+                        case "argument":
+                        case "param":
+                            return parseParameterOrPropertyTag(start, tagName, PropertyLikeParse.Parameter, margin);
+                        case "return":
+                        case "returns":
+                            tag = parseReturnTag(start, tagName, margin, indentText);
+                            break;
+                        case "template":
+                            tag = parseTemplateTag(start, tagName, margin, indentText);
+                            break;
+                        case "type":
+                            tag = parseTypeTag(start, tagName, margin, indentText);
+                            break;
+                        case "typedef":
+                            tag = parseTypedefTag(start, tagName, margin, indentText);
+                            break;
+                        case "callback":
+                            tag = parseCallbackTag(start, tagName, margin, indentText);
+                            break;
+                        case "see":
+                            tag = parseSeeTag(start, tagName, margin, indentText);
+                            break;
+                        default:
+                            tag = parseUnknownTag(start, tagName, margin, indentText);
+                            break;
+                    }
+                    return tag;
+                }
+
+                auto parseTrailingTagComments(number pos, number end, number margin, string indentText) {
+                    // some tags, like typedef and callback, have already parsed their comments earlier
+                    if (!indentText) {
+                        margin += end - pos;
+                    }
+                    return parseTagComments(margin, indentText.slice(margin));
+                }
+
+                auto parseTagComments(number indent, string initialMargin) -> string {
+                    auto std::vector<string> = [] comments;
+                    auto state = JSDocState.BeginningOfLine;
+                    auto previousWhitespace = true;
+                    auto number margin;
+                    auto pushComment(string text) {
+                        if (!margin) {
+                            margin = indent;
+                        }
+                        comments.push(text);
+                        indent += text.size();
+                    }
+                    if (initialMargin != undefined) {
+                        // jump straight to saving comments if there is some initial indentation
+                        if (initialMargin != string()) {
+                            pushComment(initialMargin);
+                        }
+                        state = JSDocState.SawAsterisk;
+                    }
+                    auto tok = token() as SyntaxKind;
+                    while loop (true) {
+                        switch (tok) {
+                            case SyntaxKind::NewLineTrivia:
+                                state = JSDocState.BeginningOfLine;
+                                // don't use pushComment here because we want to keep the margin unchanged
+                                comments.push(scanner.getTokenText());
+                                indent = 0;
+                                break;
+                            case SyntaxKind::AtToken:
+                                if (state == JSDocState.SavingBackticks || !previousWhitespace && state == JSDocState.SavingComments) {
+                                    // @ doesn't start a new tag inside ``, and inside a comment, only after whitespace
+                                    comments.push(scanner.getTokenText());
                                     break;
-                                case SyntaxKind::AsteriskToken:
-                                    auto asterisk = scanner.getTokenText();
-                                    if (state == JSDocState.SawAsterisk || state == JSDocState.SavingComments) {
-                                        // If we've already seen an asterisk, then we can no longer parse a tag on this line
-                                        state = JSDocState.SavingComments;
-                                        pushComment(asterisk);
-                                    }
-                                    else {
-                                        // Ignore the first asterisk on a line
-                                        state = JSDocState.SawAsterisk;
-                                        indent += asterisk.size();
-                                    }
-                                    break;
-                                case SyntaxKind::WhitespaceTrivia:
-                                    // only collect whitespace if we're already saving comments or have just crossed the comment indent margin
+                                }
+                                scanner.setTextPos(scanner.getTextPos() - 1);
+                                // falls through
+                            case SyntaxKind::EndOfFileToken:
+                                // Done
+                                break loop;
+                            case SyntaxKind::WhitespaceTrivia:
+                                if (state == JSDocState.SavingComments || state == JSDocState.SavingBackticks) {
+                                    pushComment(scanner.getTokenText());
+                                }
+                                else {
                                     auto whitespace = scanner.getTokenText();
-                                    if (state == JSDocState.SavingComments) {
-                                        comments.push(whitespace);
-                                    }
-                                    else if (margin != undefined && indent + whitespace.size() > margin) {
+                                    // if the whitespace crosses the margin, take only the whitespace that passes the margin
+                                    if (margin != undefined && indent + whitespace.size() > margin) {
                                         comments.push(whitespace.slice(margin - indent));
                                     }
                                     indent += whitespace.size();
-                                    break;
-                                case SyntaxKind::EndOfFileToken:
-                                    break loop;
-                                default:
-                                    // Anything else is doc comment text. We just save it. Because it
-                                    // wasn't a tag, we can no longer parse a tag on this line until we hit the next
-                                    // line break.
-                                    state = JSDocState.SavingComments;
-                                    pushComment(scanner.getTokenText());
-                                    break;
-                            }
-                            nextTokenJSDoc();
-                        }
-                        removeLeadingNewlines(comments);
-                        removeTrailingWhitespace(comments);
-                        return createJSDocComment();
-                    });
-
-                    auto removeLeadingNewlines(std::vector<string> comments) {
-                        while (comments.size() && (comments[0] == "\n" || comments[0] == "\r")) {
-                            comments.shift();
-                        }
-                    }
-
-                    auto removeTrailingWhitespace(std::vector<string> comments) {
-                        while (comments.size() && comments[comments.size() - 1].trim() == string()) {
-                            comments.pop();
-                        }
-                    }
-
-                    auto createJSDocComment() -> JSDoc {
-                        auto comment = comments.size() ? comments.join(string()) : undefined;
-                        auto tagsArray = tags && createNodeArray(tags, tagsPos, tagsEnd);
-                        return finishNode(factory.createJSDocComment(comment, tagsArray), start, end);
-                    }
-
-                    auto isNextNonwhitespaceTokenEndOfFile() -> boolean {
-                        // We must use infinite lookahead, as there could be any number of newlines :(
-                        while (true) {
-                            nextTokenJSDoc();
-                            if (token() == SyntaxKind::EndOfFileToken) {
-                                return true;
-                            }
-                            if (!(token() == SyntaxKind::WhitespaceTrivia || token() == SyntaxKind::NewLineTrivia)) {
-                                return false;
-                            }
-                        }
-                    }
-
-                    auto skipWhitespace() -> void {
-                        if (token() == SyntaxKind::WhitespaceTrivia || token() == SyntaxKind::NewLineTrivia) {
-                            if (lookAhead(isNextNonwhitespaceTokenEndOfFile)) {
-                                return; // Don't skip whitespace prior to EoF (or end of comment) - that shouldn't be included in any node's range
-                            }
-                        }
-                        while (token() == SyntaxKind::WhitespaceTrivia || token() == SyntaxKind::NewLineTrivia) {
-                            nextTokenJSDoc();
-                        }
-                    }
-
-                    auto skipWhitespaceOrAsterisk() -> string {
-                        if (token() == SyntaxKind::WhitespaceTrivia || token() == SyntaxKind::NewLineTrivia) {
-                            if (lookAhead(isNextNonwhitespaceTokenEndOfFile)) {
-                                return string(); // Don't skip whitespace prior to EoF (or end of comment) - that shouldn't be included in any node's range
-                            }
-                        }
-
-                        auto precedingLineBreak = scanner.hasPrecedingLineBreak();
-                        auto seenLineBreak = false;
-                        auto indentText = string();
-                        while ((precedingLineBreak && token() == SyntaxKind::AsteriskToken) || token() == SyntaxKind::WhitespaceTrivia || token() == SyntaxKind::NewLineTrivia) {
-                            indentText += scanner.getTokenText();
-                            if (token() == SyntaxKind::NewLineTrivia) {
-                                precedingLineBreak = true;
-                                seenLineBreak = true;
-                                indentText = string();
-                            }
-                            else if (token() == SyntaxKind::AsteriskToken) {
-                                precedingLineBreak = false;
-                            }
-                            nextTokenJSDoc();
-                        }
-                        return seenLineBreak ? indentText : string();
-                    }
-
-                    auto parseTag(number margin) {
-                        Debug::_assert(token() == SyntaxKind::AtToken);
-                        auto start = scanner.getTokenPos();
-                        nextTokenJSDoc();
-
-                        auto tagName = parseJSDocIdentifierName(/*message*/ undefined);
-                        auto indentText = skipWhitespaceOrAsterisk();
-
-                        auto JSDocTag tag;
-                        switch (tagName.escapedText) {
-                            case "author":
-                                tag = parseAuthorTag(start, tagName, margin, indentText);
-                                break;
-                            case "implements":
-                                tag = parseImplementsTag(start, tagName, margin, indentText);
-                                break;
-                            case "augments":
-                            case "extends":
-                                tag = parseAugmentsTag(start, tagName, margin, indentText);
-                                break;
-                            case "class":
-                            case "constructor":
-                                tag = parseSimpleTag(start, factory.createJSDocClassTag, tagName, margin, indentText);
-                                break;
-                            case "public":
-                                tag = parseSimpleTag(start, factory.createJSDocPublicTag, tagName, margin, indentText);
-                                break;
-                            case "private":
-                                tag = parseSimpleTag(start, factory.createJSDocPrivateTag, tagName, margin, indentText);
-                                break;
-                            case "protected":
-                                tag = parseSimpleTag(start, factory.createJSDocProtectedTag, tagName, margin, indentText);
-                                break;
-                            case "readonly":
-                                tag = parseSimpleTag(start, factory.createJSDocReadonlyTag, tagName, margin, indentText);
-                                break;
-                            case "deprecated":
-                                hasDeprecatedTag = true;
-                                tag = parseSimpleTag(start, factory.createJSDocDeprecatedTag, tagName, margin, indentText);
-                                break;
-                            case "this":
-                                tag = parseThisTag(start, tagName, margin, indentText);
-                                break;
-                            case "enum":
-                                tag = parseEnumTag(start, tagName, margin, indentText);
-                                break;
-                            case "arg":
-                            case "argument":
-                            case "param":
-                                return parseParameterOrPropertyTag(start, tagName, PropertyLikeParse.Parameter, margin);
-                            case "return":
-                            case "returns":
-                                tag = parseReturnTag(start, tagName, margin, indentText);
-                                break;
-                            case "template":
-                                tag = parseTemplateTag(start, tagName, margin, indentText);
-                                break;
-                            case "type":
-                                tag = parseTypeTag(start, tagName, margin, indentText);
-                                break;
-                            case "typedef":
-                                tag = parseTypedefTag(start, tagName, margin, indentText);
-                                break;
-                            case "callback":
-                                tag = parseCallbackTag(start, tagName, margin, indentText);
-                                break;
-                            case "see":
-                                tag = parseSeeTag(start, tagName, margin, indentText);
-                                break;
-                            default:
-                                tag = parseUnknownTag(start, tagName, margin, indentText);
-                                break;
-                        }
-                        return tag;
-                    }
-
-                    auto parseTrailingTagComments(number pos, number end, number margin, string indentText) {
-                        // some tags, like typedef and callback, have already parsed their comments earlier
-                        if (!indentText) {
-                            margin += end - pos;
-                        }
-                        return parseTagComments(margin, indentText.slice(margin));
-                    }
-
-                    auto parseTagComments(number indent, string initialMargin) -> string {
-                        auto std::vector<string> = [] comments;
-                        auto state = JSDocState.BeginningOfLine;
-                        auto previousWhitespace = true;
-                        auto number margin;
-                        auto pushComment(string text) {
-                            if (!margin) {
-                                margin = indent;
-                            }
-                            comments.push(text);
-                            indent += text.size();
-                        }
-                        if (initialMargin != undefined) {
-                            // jump straight to saving comments if there is some initial indentation
-                            if (initialMargin != string()) {
-                                pushComment(initialMargin);
-                            }
-                            state = JSDocState.SawAsterisk;
-                        }
-                        auto tok = token() as JSDocSyntaxKind;
-                        while loop (true) {
-                            switch (tok) {
-                                case SyntaxKind::NewLineTrivia:
-                                    state = JSDocState.BeginningOfLine;
-                                    // don't use pushComment here because we want to keep the margin unchanged
-                                    comments.push(scanner.getTokenText());
-                                    indent = 0;
-                                    break;
-                                case SyntaxKind::AtToken:
-                                    if (state == JSDocState.SavingBackticks || !previousWhitespace && state == JSDocState.SavingComments) {
-                                        // @ doesn't start a new tag inside ``, and inside a comment, only after whitespace
-                                        comments.push(scanner.getTokenText());
-                                        break;
-                                    }
-                                    scanner.setTextPos(scanner.getTextPos() - 1);
-                                    // falls through
-                                case SyntaxKind::EndOfFileToken:
-                                    // Done
-                                    break loop;
-                                case SyntaxKind::WhitespaceTrivia:
-                                    if (state == JSDocState.SavingComments || state == JSDocState.SavingBackticks) {
-                                        pushComment(scanner.getTokenText());
-                                    }
-                                    else {
-                                        auto whitespace = scanner.getTokenText();
-                                        // if the whitespace crosses the margin, take only the whitespace that passes the margin
-                                        if (margin != undefined && indent + whitespace.size() > margin) {
-                                            comments.push(whitespace.slice(margin - indent));
-                                        }
-                                        indent += whitespace.size();
-                                    }
-                                    break;
-                                case SyntaxKind::OpenBraceToken:
-                                    state = JSDocState.SavingComments;
-                                    if (lookAhead(() => nextTokenJSDoc() == SyntaxKind::AtToken && tokenIsIdentifierOrKeyword(nextTokenJSDoc()) && scanner.getTokenText() == "link")) {
-                                        pushComment(scanner.getTokenText());
-                                        nextTokenJSDoc();
-                                        pushComment(scanner.getTokenText());
-                                        nextTokenJSDoc();
-                                    }
-                                    pushComment(scanner.getTokenText());
-                                    break;
-                                case SyntaxKind::BacktickToken:
-                                    if (state == JSDocState.SavingBackticks) {
-                                        state = JSDocState.SavingComments;
-                                    }
-                                    else {
-                                        state = JSDocState.SavingBackticks;
-                                    }
-                                    pushComment(scanner.getTokenText());
-                                    break;
-                                case SyntaxKind::AsteriskToken:
-                                    if (state == JSDocState.BeginningOfLine) {
-                                        // leading asterisks start recording on the *next* (non-whitespace) token
-                                        state = JSDocState.SawAsterisk;
-                                        indent += 1;
-                                        break;
-                                    }
-                                    // record the * as a comment
-                                    // falls through
-                                default:
-                                    if (state != JSDocState.SavingBackticks) {
-                                        state = JSDocState.SavingComments; // leading identifiers start recording as well
-                                    }
-                                    pushComment(scanner.getTokenText());
-                                    break;
-                            }
-                            previousWhitespace = token() == SyntaxKind::WhitespaceTrivia;
-                            tok = nextTokenJSDoc();
-                        }
-
-                        removeLeadingNewlines(comments);
-                        removeTrailingWhitespace(comments);
-                        return comments.size() == 0 ? undefined : comments.join(string());
-                    }
-
-                    auto parseUnknownTag(number start, Identifier tagName, number indent, string indentText) {
-                        auto end = getNodePos();
-                        return finishNode(factory.createJSDocUnknownTag(tagName, parseTrailingTagComments(start, end, indent, indentText)), start, end);
-                    }
-
-                    auto addTag(JSDocTag tag) -> void {
-                        if (!tag) {
-                            return;
-                        }
-                        if (!tags) {
-                            tags = [tag];
-                            tagsPos = tag.pos;
-                        }
-                        else {
-                            tags.push(tag);
-                        }
-                        tagsEnd = tag.end;
-                    }
-
-                    auto tryParseTypeExpression() -> JSDocTypeExpression {
-                        skipWhitespaceOrAsterisk();
-                        return token() == SyntaxKind::OpenBraceToken ? parseJSDocTypeExpression() : undefined;
-                    }
-
-                    auto parseBracketNameInPropertyAndParamTag() -> { EntityName name, boolean isBracketed } {
-                        // Looking for something like '[foo]', 'foo', '[foo.bar]' or 'foo.bar'
-                        auto isBracketed = parseOptionalJsdoc(SyntaxKind::OpenBracketToken);
-                        if (isBracketed) {
-                            skipWhitespace();
-                        }
-                        // a markdown-quoted name: `arg` is not legal jsdoc, but occurs in the wild
-                        auto isBackquoted = parseOptionalJsdoc(SyntaxKind::BacktickToken);
-                        auto name = parseJSDocEntityName();
-                        if (isBackquoted) {
-                            parseExpectedTokenJSDoc(SyntaxKind::BacktickToken);
-                        }
-                        if (isBracketed) {
-                            skipWhitespace();
-                            // May have an optional default, e.g. '[foo = 42]'
-                            if (parseOptionalToken(SyntaxKind::EqualsToken)) {
-                                parseExpression();
-                            }
-
-                            parseExpected(SyntaxKind::CloseBracketToken);
-                        }
-
-                        return { name, isBracketed };
-                    }
-
-                    auto isObjectOrObjectArrayTypeReference(TypeNode node) -> boolean {
-                        switch (node.kind) {
-                            case SyntaxKind::ObjectKeyword:
-                                return true;
-                            case SyntaxKind::ArrayType:
-                                return isObjectOrObjectArrayTypeReference(node.as<ArrayTypeNode>().elementType);
-                            default:
-                                return isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) && node.typeName.escapedText == "Object" && !node.typeArguments;
-                        }
-                    }
-
-                    auto parseParameterOrPropertyTag(number start, Identifier tagName, PropertyLikeParse target, number indent) -> JSDocParameterTag | JSDocPropertyTag {
-                        auto typeExpression = tryParseTypeExpression();
-                        auto isNameFirst = !typeExpression;
-                        skipWhitespaceOrAsterisk();
-
-                        auto { name, isBracketed } = parseBracketNameInPropertyAndParamTag();
-                        auto indentText = skipWhitespaceOrAsterisk();
-
-                        if (isNameFirst) {
-                            typeExpression = tryParseTypeExpression();
-                        }
-
-                        auto comment = parseTrailingTagComments(start, getNodePos(), indent, indentText);
-
-                        auto nestedTypeLiteral = target != PropertyLikeParse.CallbackParameter && parseNestedTypeLiteral(typeExpression, name, target, indent);
-                        if (nestedTypeLiteral) {
-                            typeExpression = nestedTypeLiteral;
-                            isNameFirst = true;
-                        }
-                        auto result = target == PropertyLikeParse.Property
-                            ? factory.createJSDocPropertyTag(tagName, name, isBracketed, typeExpression, isNameFirst, comment)
-                            : factory.createJSDocParameterTag(tagName, name, isBracketed, typeExpression, isNameFirst, comment);
-                        return finishNode(result, start);
-                    }
-
-                    auto parseNestedTypeLiteral(JSDocTypeExpression typeExpression, EntityName name, PropertyLikeParse target, number indent) {
-                        if (typeExpression && isObjectOrObjectArrayTypeReference(typeExpression.type)) {
-                            auto pos = getNodePos();
-                            auto JSDocPropertyLikeTag child | JSDocTypeTag | false;
-                            auto std::vector<JSDocPropertyLikeTag> children;
-                            while (child = tryParse(() => parseChildParameterOrPropertyTag(target, indent, name))) {
-                                if (child.kind == SyntaxKind::JSDocParameterTag || child.kind == SyntaxKind::JSDocPropertyTag) {
-                                    children = append(children, child);
                                 }
-                            }
-                            if (children) {
-                                auto literal = finishNode(factory.createJSDocTypeLiteral(children, typeExpression.type.kind == SyntaxKind::ArrayType), pos);
-                                return finishNode(factory.createJSDocTypeExpression(literal), pos);
-                            }
-                        }
-                    }
-
-                    auto parseReturnTag(number start, Identifier tagName, number indent, string indentText) -> JSDocReturnTag {
-                        if (some(tags, isJSDocReturnTag)) {
-                            parseErrorAt(tagName.pos, scanner.getTokenPos(), Diagnostics::_0_tag_already_specified, tagName.escapedText);
-                        }
-
-                        auto typeExpression = tryParseTypeExpression();
-                        auto end = getNodePos();
-                        return finishNode(factory.createJSDocReturnTag(tagName, typeExpression, parseTrailingTagComments(start, end, indent, indentText)), start, end);
-                    }
-
-                    auto parseTypeTag(number start, Identifier tagName, number indent, string indentText) -> JSDocTypeTag {
-                        if (some(tags, isJSDocTypeTag)) {
-                            parseErrorAt(tagName.pos, scanner.getTokenPos(), Diagnostics::_0_tag_already_specified, tagName.escapedText);
-                        }
-
-                        auto typeExpression = parseJSDocTypeExpression(/*mayOmitBraces*/ true);
-                        auto end = getNodePos();
-                        auto comments = indent != undefined && indentText != undefined ? parseTrailingTagComments(start, end, indent, indentText) : undefined;
-                        return finishNode(factory.createJSDocTypeTag(tagName, typeExpression, comments), start, end);
-                    }
-
-                    auto parseSeeTag(number start, Identifier tagName, number indent, string indentText) -> JSDocSeeTag {
-                        auto nameExpression = parseJSDocNameReference();
-                        auto end = getNodePos();
-                        auto comments = indent != undefined && indentText != undefined ? parseTrailingTagComments(start, end, indent, indentText) : undefined;
-                        return finishNode(factory.createJSDocSeeTag(tagName, nameExpression, comments), start, end);
-                    }
-
-                    auto parseAuthorTag(number start, Identifier tagName, number indent, string indentText) -> JSDocAuthorTag {
-                        auto comments = parseAuthorNameAndEmail() + (parseTrailingTagComments(start, end, indent, indentText) || string());
-                        return finishNode(factory.createJSDocAuthorTag(tagName, comments || undefined), start);
-                    }
-
-                    auto parseAuthorNameAndEmail() -> string {
-                        auto std::vector<string> = [] comments;
-                        auto inEmail = false;
-                        auto token = scanner.getToken();
-                        while (token != SyntaxKind::EndOfFileToken && token != SyntaxKind::NewLineTrivia) {
-                            if (token == SyntaxKind::LessThanToken) {
-                                inEmail = true;
-                            }
-                            else if (token == SyntaxKind::AtToken && !inEmail) {
                                 break;
-                            }
-                            else if (token == SyntaxKind::GreaterThanToken && inEmail) {
-                                comments.push(scanner.getTokenText());
-                                scanner.setTextPos(scanner.getTokenPos() + 1);
+                            case SyntaxKind::OpenBraceToken:
+                                state = JSDocState.SavingComments;
+                                if (lookAhead(() => nextTokenJSDoc() == SyntaxKind::AtToken && tokenIsIdentifierOrKeyword(nextTokenJSDoc()) && scanner.getTokenText() == "link")) {
+                                    pushComment(scanner.getTokenText());
+                                    nextTokenJSDoc();
+                                    pushComment(scanner.getTokenText());
+                                    nextTokenJSDoc();
+                                }
+                                pushComment(scanner.getTokenText());
                                 break;
-                            }
-                            comments.push(scanner.getTokenText());
-                            token = nextTokenJSDoc();
-                        }
-
-                        return comments.join(string());
-                    }
-
-                    auto parseImplementsTag(number start, Identifier tagName, number margin, string indentText) -> JSDocImplementsTag {
-                        auto className = parseExpressionWithTypeArgumentsForAugments();
-                        auto end = getNodePos();
-                        return finishNode(factory.createJSDocImplementsTag(tagName, className, parseTrailingTagComments(start, end, margin, indentText)), start, end);
-                    }
-
-                    auto parseAugmentsTag(number start, Identifier tagName, number margin, string indentText) -> JSDocAugmentsTag {
-                        auto className = parseExpressionWithTypeArgumentsForAugments();
-                        auto end = getNodePos();
-                        return finishNode(factory.createJSDocAugmentsTag(tagName, className, parseTrailingTagComments(start, end, margin, indentText)), start, end);
-                    }
-
-                    auto parseExpressionWithTypeArgumentsForAugments() -> ExpressionWithTypeArguments & { Identifier expression | PropertyAccessEntityNameExpression } {
-                        auto usedBrace = parseOptional(SyntaxKind::OpenBraceToken);
-                        auto pos = getNodePos();
-                        auto expression = parsePropertyAccessEntityNameExpression();
-                        auto typeArguments = tryParseTypeArguments();
-                        auto node = factory.createExpressionWithTypeArguments(expression, typeArguments) as ExpressionWithTypeArguments & { Identifier expression | PropertyAccessEntityNameExpression };
-                        auto res = finishNode(node, pos);
-                        if (usedBrace) {
-                            parseExpected(SyntaxKind::CloseBraceToken);
-                        }
-                        return res;
-                    }
-
-                    auto parsePropertyAccessEntityNameExpression() {
-                        auto pos = getNodePos();
-                        auto Identifier node | PropertyAccessEntityNameExpression = parseJSDocIdentifierName();
-                        while (parseOptional(SyntaxKind::DotToken)) {
-                            auto name = parseJSDocIdentifierName();
-                            node = finishNode(factory.createPropertyAccessExpression(node, name), pos) as PropertyAccessEntityNameExpression;
-                        }
-                        return node;
-                    }
-
-                    auto parseSimpleTag(number start, createTag: (Identifier tagName, string comment) => JSDocTag, Identifier tagName, number margin, string indentText) -> JSDocTag {
-                        auto end = getNodePos();
-                        return finishNode(createTag(tagName, parseTrailingTagComments(start, end, margin, indentText)), start, end);
-                    }
-
-                    auto parseThisTag(number start, Identifier tagName, number margin, string indentText) -> JSDocThisTag {
-                        auto typeExpression = parseJSDocTypeExpression(/*mayOmitBraces*/ true);
-                        skipWhitespace();
-                        auto end = getNodePos();
-                        return finishNode(factory.createJSDocThisTag(tagName, typeExpression, parseTrailingTagComments(start, end, margin, indentText)), start, end);
-                    }
-
-                    auto parseEnumTag(number start, Identifier tagName, number margin, string indentText) -> JSDocEnumTag {
-                        auto typeExpression = parseJSDocTypeExpression(/*mayOmitBraces*/ true);
-                        skipWhitespace();
-                        auto end = getNodePos();
-                        return finishNode(factory.createJSDocEnumTag(tagName, typeExpression, parseTrailingTagComments(start, end, margin, indentText)), start, end);
-                    }
-
-                    auto parseTypedefTag(number start, Identifier tagName, number indent, string indentText) -> JSDocTypedefTag {
-                        auto JSDocTypeExpression typeExpression | JSDocTypeLiteral = tryParseTypeExpression();
-                        skipWhitespaceOrAsterisk();
-
-                        auto fullName = parseJSDocTypeNameWithNamespace();
-                        skipWhitespace();
-                        auto comment = parseTagComments(indent);
-
-                        auto number end;
-                        if (!typeExpression || isObjectOrObjectArrayTypeReference(typeExpression.type)) {
-                            auto JSDocTypeTag child | JSDocPropertyTag | false;
-                            auto JSDocTypeTag childTypeTag;
-                            auto std::vector<JSDocPropertyTag> jsDocPropertyTags;
-                            auto hasChildren = false;
-                            while (child = tryParse(() => parseChildPropertyTag(indent))) {
-                                hasChildren = true;
-                                if (child.kind == SyntaxKind::JSDocTypeTag) {
-                                    if (childTypeTag) {
-                                        parseErrorAtCurrentToken(Diagnostics::A_JSDoc_typedef_comment_may_not_contain_multiple_type_tags);
-                                        auto lastError = lastOrUndefined(parseDiagnostics);
-                                        if (lastError) {
-                                            addRelatedInfo(
-                                                lastError,
-                                                createDetachedDiagnostic(fileName, 0, 0, Diagnostics::The_tag_was_first_specified_here)
-                                            );
-                                        }
-                                        break;
-                                    }
-                                    else {
-                                        childTypeTag = child;
-                                    }
+                            case SyntaxKind::BacktickToken:
+                                if (state == JSDocState.SavingBackticks) {
+                                    state = JSDocState.SavingComments;
                                 }
                                 else {
-                                    jsDocPropertyTags = append(jsDocPropertyTags, child);
+                                    state = JSDocState.SavingBackticks;
                                 }
-                            }
-                            if (hasChildren) {
-                                auto isArrayType = typeExpression && typeExpression.type.kind == SyntaxKind::ArrayType;
-                                auto jsdocTypeLiteral = factory.createJSDocTypeLiteral(jsDocPropertyTags, isArrayType);
-                                typeExpression = childTypeTag && childTypeTag.typeExpression && !isObjectOrObjectArrayTypeReference(childTypeTag.typeExpression.type) ?
-                                    childTypeTag.typeExpression :
-                                    finishNode(jsdocTypeLiteral, start);
-                                end = typeExpression.end;
-                            }
-                        }
-
-                        // Only include the characters between the name end and the next token if a comment was actually parsed out - otherwise it's just whitespace
-                        end = end || comment != undefined ?
-                            getNodePos() :
-                            (fullName ?? typeExpression ?? tagName).end;
-
-                        if (!comment) {
-                            comment = parseTrailingTagComments(start, end, indent, indentText);
-                        }
-
-                        auto typedefTag = factory.createJSDocTypedefTag(tagName, typeExpression, fullName, comment);
-                        return finishNode(typedefTag, start, end);
-                    }
-
-                    auto parseJSDocTypeNameWithNamespace(boolean nested) {
-                        auto pos = scanner.getTokenPos();
-                        if (!tokenIsIdentifierOrKeyword(token())) {
-                            return undefined;
-                        }
-                        auto typeNameOrNamespaceName = parseJSDocIdentifierName();
-                        if (parseOptional(SyntaxKind::DotToken)) {
-                            auto body = parseJSDocTypeNameWithNamespace(/*nested*/ true);
-                            auto jsDocNamespaceNode = factory.createModuleDeclaration(
-                                /*decorators*/ undefined,
-                                /*modifiers*/ undefined,
-                                typeNameOrNamespaceName,
-                                body,
-                                nested ? NodeFlags::NestedNamespace : undefined
-                            ) as JSDocNamespaceDeclaration;
-                            return finishNode(jsDocNamespaceNode, pos);
-                        }
-
-                        if (nested) {
-                            typeNameOrNamespaceName.isInJSDocNamespace = true;
-                        }
-                        return typeNameOrNamespaceName;
-                    }
-
-
-                    auto parseCallbackTagParameters(number indent) {
-                        auto pos = getNodePos();
-                        auto JSDocParameterTag child | false;
-                        auto parameters;
-                        while (child = tryParse(() => parseChildParameterOrPropertyTag(PropertyLikeParse.CallbackParameter, indent) as JSDocParameterTag)) {
-                            parameters = append(parameters, child);
-                        }
-                        return createNodeArray(parameters || [], pos);
-                    }
-
-                    auto parseCallbackTag(number start, Identifier tagName, number indent, string indentText) -> JSDocCallbackTag {
-                        auto fullName = parseJSDocTypeNameWithNamespace();
-                        skipWhitespace();
-                        auto comment = parseTagComments(indent);
-                        auto parameters = parseCallbackTagParameters(indent);
-                        auto returnTag = tryParse(() => {
-                            if (parseOptionalJsdoc(SyntaxKind::AtToken)) {
-                                auto tag = parseTag(indent);
-                                if (tag && tag.kind == SyntaxKind::JSDocReturnTag) {
-                                    return tag as JSDocReturnTag;
+                                pushComment(scanner.getTokenText());
+                                break;
+                            case SyntaxKind::AsteriskToken:
+                                if (state == JSDocState.BeginningOfLine) {
+                                    // leading asterisks start recording on the *next* (non-whitespace) token
+                                    state = JSDocState.SawAsterisk;
+                                    indent += 1;
+                                    break;
                                 }
-                            }
-                        });
-                        auto typeExpression = finishNode(factory.createJSDocSignature(/*typeParameters*/ undefined, parameters, returnTag), start);
-                        auto end = getNodePos();
-                        if (!comment) {
-                            comment = parseTrailingTagComments(start, end, indent, indentText);
-                        }
-                        return finishNode(factory.createJSDocCallbackTag(tagName, typeExpression, fullName, comment), start, end);
-                    }
-
-                    auto escapedTextsEqual(EntityName a, EntityName b) -> boolean {
-                        while (!ts.isIdentifier(a) || !ts.isIdentifier(b)) {
-                            if (!ts.isIdentifier(a) && !ts.isIdentifier(b) && a.right.escapedText == b.right.escapedText) {
-                                a = a.left;
-                                b = b.left;
-                            }
-                            else {
-                                return false;
-                            }
-                        }
-                        return a.escapedText == b.escapedText;
-                    }
-
-                    auto parseChildPropertyTag(number indent) {
-                        return parseChildParameterOrPropertyTag(PropertyLikeParse.Property, indent) as JSDocTypeTag | JSDocPropertyTag | false;
-                    }
-
-                    auto parseChildParameterOrPropertyTag(PropertyLikeParse target, number indent, EntityName name) -> JSDocTypeTag | JSDocPropertyTag | JSDocParameterTag | false {
-                        auto canParseTag = true;
-                        auto seenAsterisk = false;
-                        while (true) {
-                            switch (nextTokenJSDoc()) {
-                                case SyntaxKind::AtToken:
-                                    if (canParseTag) {
-                                        auto child = tryParseChildTag(target, indent);
-                                        if (child && (child.kind == SyntaxKind::JSDocParameterTag || child.kind == SyntaxKind::JSDocPropertyTag) &&
-                                            target != PropertyLikeParse.CallbackParameter &&
-                                            name && (ts.isIdentifier(child.name) || !escapedTextsEqual(name, child.name.left))) {
-                                            return false;
-                                        }
-                                        return child;
-                                    }
-                                    seenAsterisk = false;
-                                    break;
-                                case SyntaxKind::NewLineTrivia:
-                                    canParseTag = true;
-                                    seenAsterisk = false;
-                                    break;
-                                case SyntaxKind::AsteriskToken:
-                                    if (seenAsterisk) {
-                                        canParseTag = false;
-                                    }
-                                    seenAsterisk = true;
-                                    break;
-                                case SyntaxKind::Identifier:
-                                    canParseTag = false;
-                                    break;
-                                case SyntaxKind::EndOfFileToken:
-                                    return false;
-                            }
-                        }
-                    }
-
-                    auto tryParseChildTag(PropertyLikeParse target, number indent) -> JSDocTypeTag | JSDocPropertyTag | JSDocParameterTag | false {
-                        Debug::_assert(token() == SyntaxKind::AtToken);
-                        auto start = scanner.getStartPos();
-                        nextTokenJSDoc();
-
-                        auto tagName = parseJSDocIdentifierName();
-                        skipWhitespace();
-                        auto PropertyLikeParse t;
-                        switch (tagName.escapedText) {
-                            case "type":
-                                return target == PropertyLikeParse.Property && parseTypeTag(start, tagName);
-                            case "prop":
-                            case "property":
-                                t = PropertyLikeParse.Property;
-                                break;
-                            case "arg":
-                            case "argument":
-                            case "param":
-                                t = PropertyLikeParse.Parameter | PropertyLikeParse.CallbackParameter;
-                                break;
+                                // record the * as a comment
+                                // falls through
                             default:
-                                return false;
+                                if (state != JSDocState.SavingBackticks) {
+                                    state = JSDocState.SavingComments; // leading identifiers start recording as well
+                                }
+                                pushComment(scanner.getTokenText());
+                                break;
                         }
-                        if (!(target & t)) {
-                            return false;
+                        previousWhitespace = token() == SyntaxKind::WhitespaceTrivia;
+                        tok = nextTokenJSDoc();
+                    }
+
+                    removeLeadingNewlines(comments);
+                    removeTrailingWhitespace(comments);
+                    return comments.size() == 0 ? undefined : comments.join(string());
+                }
+
+                auto parseUnknownTag(number start, Identifier tagName, number indent, string indentText) {
+                    auto end = getNodePos();
+                    return finishNode(factory.createJSDocUnknownTag(tagName, parseTrailingTagComments(start, end, indent, indentText)), start, end);
+                }
+
+                auto addTag(JSDocTag tag) -> void {
+                    if (!tag) {
+                        return;
+                    }
+                    if (!tags) {
+                        tags = [tag];
+                        tagsPos = tag.pos;
+                    }
+                    else {
+                        tags.push(tag);
+                    }
+                    tagsEnd = tag.end;
+                }
+
+                auto tryParseTypeExpression() -> JSDocTypeExpression {
+                    skipWhitespaceOrAsterisk();
+                    return token() == SyntaxKind::OpenBraceToken ? parseJSDocTypeExpression() : undefined;
+                }
+
+                auto parseBracketNameInPropertyAndParamTag() -> { EntityName name, boolean isBracketed } {
+                    // Looking for something like '[foo]', 'foo', '[foo.bar]' or 'foo.bar'
+                    auto isBracketed = parseOptionalJsdoc(SyntaxKind::OpenBracketToken);
+                    if (isBracketed) {
+                        skipWhitespace();
+                    }
+                    // a markdown-quoted name: `arg` is not legal jsdoc, but occurs in the wild
+                    auto isBackquoted = parseOptionalJsdoc(SyntaxKind::BacktickToken);
+                    auto name = parseJSDocEntityName();
+                    if (isBackquoted) {
+                        parseExpectedTokenJSDoc(SyntaxKind::BacktickToken);
+                    }
+                    if (isBracketed) {
+                        skipWhitespace();
+                        // May have an optional default, e.g. '[foo = 42]'
+                        if (parseOptionalToken(SyntaxKind::EqualsToken)) {
+                            parseExpression();
                         }
-                        return parseParameterOrPropertyTag(start, tagName, target, indent);
+
+                        parseExpected(SyntaxKind::CloseBracketToken);
                     }
 
-                    auto parseTemplateTagTypeParameter() {
-                        auto typeParameterPos = getNodePos();
-                        auto name = parseJSDocIdentifierName(Diagnostics::Unexpected_token_A_type_parameter_name_was_expected_without_curly_braces);
-                        if (nodeIsMissing(name)) {
-                            return undefined;
-                        }
-                        return finishNode(factory.createTypeParameterDeclaration(name, /*constraint*/ undefined, /*defaultType*/ undefined), typeParameterPos);
-                    }
+                    return { name, isBracketed };
+                }
 
-                    auto parseTemplateTagTypeParameters() {
-                        auto pos = getNodePos();
-                        auto typeParameters = [];
-                        do {
-                            skipWhitespace();
-                            auto node = parseTemplateTagTypeParameter();
-                            if (node != undefined) {
-                                typeParameters.push(node);
-                            }
-                            skipWhitespaceOrAsterisk();
-                        } while (parseOptionalJsdoc(SyntaxKind::CommaToken));
-                        return createNodeArray(typeParameters, pos);
-                    }
-
-                    auto parseTemplateTag(number start, Identifier tagName, number indent, string indentText) -> JSDocTemplateTag {
-                        // The template tag looks like one of the following:
-                        //   @template T,U,V
-                        //   @template {Constraint} T
-                        //
-                        // According to the [closure docs](https://github.com/google/closure-compiler/wiki/Generic-Types#multiple-bounded-template-types) ->
-                        //   > Multiple bounded generics cannot be declared on the same line. For the sake of clarity, if multiple templates share the same
-                        //   > type bound they must be declared on separate lines.
-                        //
-                        // Determine TODO whether we should enforce this in the checker.
-                        // Consider TODO moving the `constraint` to the first type parameter as we could then remove `getEffectiveConstraintOfTypeParameter`.
-                        // Consider TODO only parsing a single type parameter if there is a constraint.
-                        auto constraint = token() == SyntaxKind::OpenBraceToken ? parseJSDocTypeExpression() : undefined;
-                        auto typeParameters = parseTemplateTagTypeParameters();
-                        auto end = getNodePos();
-                        return finishNode(factory.createJSDocTemplateTag(tagName, constraint, typeParameters, parseTrailingTagComments(start, end, indent, indentText)), start, end);
-                    }
-
-                    auto parseOptionalJsdoc(JSDocSyntaxKind t) -> boolean {
-                        if (token() == t) {
-                            nextTokenJSDoc();
+                auto isObjectOrObjectArrayTypeReference(TypeNode node) -> boolean {
+                    switch (node.kind) {
+                        case SyntaxKind::ObjectKeyword:
                             return true;
-                        }
-                        return false;
-                    }
-
-                    auto parseJSDocEntityName() -> EntityName {
-                        auto EntityName entity = parseJSDocIdentifierName();
-                        if (parseOptional(SyntaxKind::OpenBracketToken)) {
-                            parseExpected(SyntaxKind::CloseBracketToken);
-                            // Note that y[] is accepted as an entity name, but the postfix brackets are not saved for checking.
-                            // Technically usejsdoc.org requires them for specifying a property of a type equivalent to Array<{ ... x}>
-                            // but it's not worth it to enforce that restriction.
-                        }
-                        while (parseOptional(SyntaxKind::DotToken)) {
-                            auto name = parseJSDocIdentifierName();
-                            if (parseOptional(SyntaxKind::OpenBracketToken)) {
-                                parseExpected(SyntaxKind::CloseBracketToken);
-                            }
-                            entity = createQualifiedName(entity, name);
-                        }
-                        return entity;
-                    }
-
-                    auto parseJSDocIdentifierName(DiagnosticMessage message) -> Identifier {
-                        if (!tokenIsIdentifierOrKeyword(token())) {
-                            return createMissingNode<Identifier>(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ !message, message || Diagnostics::Identifier_expected);
-                        }
-
-                        identifierCount++;
-                        auto pos = scanner.getTokenPos();
-                        auto end = scanner.getTextPos();
-                        auto originalKeywordKind = token();
-                        auto text = internIdentifier(scanner.getTokenValue());
-                        auto result = finishNode(factory.createIdentifier(text, /*typeArguments*/ undefined, originalKeywordKind), pos, end);
-                        nextTokenJSDoc();
-                        return result;
+                        case SyntaxKind::ArrayType:
+                            return isObjectOrObjectArrayTypeReference(node.as<ArrayTypeNode>().elementType);
+                        default:
+                            return isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) && node.typeName.escapedText == "Object" && !node.typeArguments;
                     }
                 }
+
+                auto parseParameterOrPropertyTag(number start, Identifier tagName, PropertyLikeParse target, number indent) -> JSDocParameterTag | JSDocPropertyTag {
+                    auto typeExpression = tryParseTypeExpression();
+                    auto isNameFirst = !typeExpression;
+                    skipWhitespaceOrAsterisk();
+
+                    auto { name, isBracketed } = parseBracketNameInPropertyAndParamTag();
+                    auto indentText = skipWhitespaceOrAsterisk();
+
+                    if (isNameFirst) {
+                        typeExpression = tryParseTypeExpression();
+                    }
+
+                    auto comment = parseTrailingTagComments(start, getNodePos(), indent, indentText);
+
+                    auto nestedTypeLiteral = target != PropertyLikeParse.CallbackParameter && parseNestedTypeLiteral(typeExpression, name, target, indent);
+                    if (nestedTypeLiteral) {
+                        typeExpression = nestedTypeLiteral;
+                        isNameFirst = true;
+                    }
+                    auto result = target == PropertyLikeParse.Property
+                        ? factory.createJSDocPropertyTag(tagName, name, isBracketed, typeExpression, isNameFirst, comment)
+                        : factory.createJSDocParameterTag(tagName, name, isBracketed, typeExpression, isNameFirst, comment);
+                    return finishNode(result, start);
+                }
+
+                auto parseNestedTypeLiteral(JSDocTypeExpression typeExpression, EntityName name, PropertyLikeParse target, number indent) {
+                    if (typeExpression && isObjectOrObjectArrayTypeReference(typeExpression.type)) {
+                        auto pos = getNodePos();
+                        auto JSDocPropertyLikeTag child | JSDocTypeTag | false;
+                        auto std::vector<JSDocPropertyLikeTag> children;
+                        while (child = tryParse(() => parseChildParameterOrPropertyTag(target, indent, name))) {
+                            if (child.kind == SyntaxKind::JSDocParameterTag || child.kind == SyntaxKind::JSDocPropertyTag) {
+                                children = append(children, child);
+                            }
+                        }
+                        if (children) {
+                            auto literal = finishNode(factory.createJSDocTypeLiteral(children, typeExpression.type.kind == SyntaxKind::ArrayType), pos);
+                            return finishNode(factory.createJSDocTypeExpression(literal), pos);
+                        }
+                    }
+                }
+
+                auto parseReturnTag(number start, Identifier tagName, number indent, string indentText) -> JSDocReturnTag {
+                    if (some(tags, isJSDocReturnTag)) {
+                        parseErrorAt(tagName.pos, scanner.getTokenPos(), Diagnostics::_0_tag_already_specified, tagName.escapedText);
+                    }
+
+                    auto typeExpression = tryParseTypeExpression();
+                    auto end = getNodePos();
+                    return finishNode(factory.createJSDocReturnTag(tagName, typeExpression, parseTrailingTagComments(start, end, indent, indentText)), start, end);
+                }
+
+                auto parseTypeTag(number start, Identifier tagName, number indent, string indentText) -> JSDocTypeTag {
+                    if (some(tags, isJSDocTypeTag)) {
+                        parseErrorAt(tagName.pos, scanner.getTokenPos(), Diagnostics::_0_tag_already_specified, tagName.escapedText);
+                    }
+
+                    auto typeExpression = parseJSDocTypeExpression(/*mayOmitBraces*/ true);
+                    auto end = getNodePos();
+                    auto comments = indent != undefined && indentText != undefined ? parseTrailingTagComments(start, end, indent, indentText) : undefined;
+                    return finishNode(factory.createJSDocTypeTag(tagName, typeExpression, comments), start, end);
+                }
+
+                auto parseSeeTag(number start, Identifier tagName, number indent, string indentText) -> JSDocSeeTag {
+                    auto nameExpression = parseJSDocNameReference();
+                    auto end = getNodePos();
+                    auto comments = indent != undefined && indentText != undefined ? parseTrailingTagComments(start, end, indent, indentText) : undefined;
+                    return finishNode(factory.createJSDocSeeTag(tagName, nameExpression, comments), start, end);
+                }
+
+                auto parseAuthorTag(number start, Identifier tagName, number indent, string indentText) -> JSDocAuthorTag {
+                    auto comments = parseAuthorNameAndEmail() + (parseTrailingTagComments(start, end, indent, indentText) || string());
+                    return finishNode(factory.createJSDocAuthorTag(tagName, comments || undefined), start);
+                }
+
+                auto parseAuthorNameAndEmail() -> string {
+                    auto std::vector<string> = [] comments;
+                    auto inEmail = false;
+                    auto token = scanner.getToken();
+                    while (token != SyntaxKind::EndOfFileToken && token != SyntaxKind::NewLineTrivia) {
+                        if (token == SyntaxKind::LessThanToken) {
+                            inEmail = true;
+                        }
+                        else if (token == SyntaxKind::AtToken && !inEmail) {
+                            break;
+                        }
+                        else if (token == SyntaxKind::GreaterThanToken && inEmail) {
+                            comments.push(scanner.getTokenText());
+                            scanner.setTextPos(scanner.getTokenPos() + 1);
+                            break;
+                        }
+                        comments.push(scanner.getTokenText());
+                        token = nextTokenJSDoc();
+                    }
+
+                    return comments.join(string());
+                }
+
+                auto parseImplementsTag(number start, Identifier tagName, number margin, string indentText) -> JSDocImplementsTag {
+                    auto className = parseExpressionWithTypeArgumentsForAugments();
+                    auto end = getNodePos();
+                    return finishNode(factory.createJSDocImplementsTag(tagName, className, parseTrailingTagComments(start, end, margin, indentText)), start, end);
+                }
+
+                auto parseAugmentsTag(number start, Identifier tagName, number margin, string indentText) -> JSDocAugmentsTag {
+                    auto className = parseExpressionWithTypeArgumentsForAugments();
+                    auto end = getNodePos();
+                    return finishNode(factory.createJSDocAugmentsTag(tagName, className, parseTrailingTagComments(start, end, margin, indentText)), start, end);
+                }
+
+                auto parseExpressionWithTypeArgumentsForAugments() -> ExpressionWithTypeArguments & { Identifier expression | PropertyAccessEntityNameExpression } {
+                    auto usedBrace = parseOptional(SyntaxKind::OpenBraceToken);
+                    auto pos = getNodePos();
+                    auto expression = parsePropertyAccessEntityNameExpression();
+                    auto typeArguments = tryParseTypeArguments();
+                    auto node = factory.createExpressionWithTypeArguments(expression, typeArguments) as ExpressionWithTypeArguments & { Identifier expression | PropertyAccessEntityNameExpression };
+                    auto res = finishNode(node, pos);
+                    if (usedBrace) {
+                        parseExpected(SyntaxKind::CloseBraceToken);
+                    }
+                    return res;
+                }
+
+                auto parsePropertyAccessEntityNameExpression() {
+                    auto pos = getNodePos();
+                    auto Identifier node | PropertyAccessEntityNameExpression = parseJSDocIdentifierName();
+                    while (parseOptional(SyntaxKind::DotToken)) {
+                        auto name = parseJSDocIdentifierName();
+                        node = finishNode(factory.createPropertyAccessExpression(node, name), pos) as PropertyAccessEntityNameExpression;
+                    }
+                    return node;
+                }
+
+                auto parseSimpleTag(number start, createTag: (Identifier tagName, string comment) => JSDocTag, Identifier tagName, number margin, string indentText) -> JSDocTag {
+                    auto end = getNodePos();
+                    return finishNode(createTag(tagName, parseTrailingTagComments(start, end, margin, indentText)), start, end);
+                }
+
+                auto parseThisTag(number start, Identifier tagName, number margin, string indentText) -> JSDocThisTag {
+                    auto typeExpression = parseJSDocTypeExpression(/*mayOmitBraces*/ true);
+                    skipWhitespace();
+                    auto end = getNodePos();
+                    return finishNode(factory.createJSDocThisTag(tagName, typeExpression, parseTrailingTagComments(start, end, margin, indentText)), start, end);
+                }
+
+                auto parseEnumTag(number start, Identifier tagName, number margin, string indentText) -> JSDocEnumTag {
+                    auto typeExpression = parseJSDocTypeExpression(/*mayOmitBraces*/ true);
+                    skipWhitespace();
+                    auto end = getNodePos();
+                    return finishNode(factory.createJSDocEnumTag(tagName, typeExpression, parseTrailingTagComments(start, end, margin, indentText)), start, end);
+                }
+
+                auto parseTypedefTag(number start, Identifier tagName, number indent, string indentText) -> JSDocTypedefTag {
+                    auto JSDocTypeExpression typeExpression | JSDocTypeLiteral = tryParseTypeExpression();
+                    skipWhitespaceOrAsterisk();
+
+                    auto fullName = parseJSDocTypeNameWithNamespace();
+                    skipWhitespace();
+                    auto comment = parseTagComments(indent);
+
+                    auto number end;
+                    if (!typeExpression || isObjectOrObjectArrayTypeReference(typeExpression.type)) {
+                        auto JSDocTypeTag child | JSDocPropertyTag | false;
+                        auto JSDocTypeTag childTypeTag;
+                        auto std::vector<JSDocPropertyTag> jsDocPropertyTags;
+                        auto hasChildren = false;
+                        while (child = tryParse(() => parseChildPropertyTag(indent))) {
+                            hasChildren = true;
+                            if (child.kind == SyntaxKind::JSDocTypeTag) {
+                                if (childTypeTag) {
+                                    parseErrorAtCurrentToken(Diagnostics::A_JSDoc_typedef_comment_may_not_contain_multiple_type_tags);
+                                    auto lastError = lastOrUndefined(parseDiagnostics);
+                                    if (lastError) {
+                                        addRelatedInfo(
+                                            lastError,
+                                            createDetachedDiagnostic(fileName, 0, 0, Diagnostics::The_tag_was_first_specified_here)
+                                        );
+                                    }
+                                    break;
+                                }
+                                else {
+                                    childTypeTag = child;
+                                }
+                            }
+                            else {
+                                jsDocPropertyTags = append(jsDocPropertyTags, child);
+                            }
+                        }
+                        if (hasChildren) {
+                            auto isArrayType = typeExpression && typeExpression.type.kind == SyntaxKind::ArrayType;
+                            auto jsdocTypeLiteral = factory.createJSDocTypeLiteral(jsDocPropertyTags, isArrayType);
+                            typeExpression = childTypeTag && childTypeTag.typeExpression && !isObjectOrObjectArrayTypeReference(childTypeTag.typeExpression.type) ?
+                                childTypeTag.typeExpression :
+                                finishNode(jsdocTypeLiteral, start);
+                            end = typeExpression.end;
+                        }
+                    }
+
+                    // Only include the characters between the name end and the next token if a comment was actually parsed out - otherwise it's just whitespace
+                    end = end || comment != undefined ?
+                        getNodePos() :
+                        (fullName ?? typeExpression ?? tagName).end;
+
+                    if (!comment) {
+                        comment = parseTrailingTagComments(start, end, indent, indentText);
+                    }
+
+                    auto typedefTag = factory.createJSDocTypedefTag(tagName, typeExpression, fullName, comment);
+                    return finishNode(typedefTag, start, end);
+                }
+
+                auto parseJSDocTypeNameWithNamespace(boolean nested) {
+                    auto pos = scanner.getTokenPos();
+                    if (!tokenIsIdentifierOrKeyword(token())) {
+                        return undefined;
+                    }
+                    auto typeNameOrNamespaceName = parseJSDocIdentifierName();
+                    if (parseOptional(SyntaxKind::DotToken)) {
+                        auto body = parseJSDocTypeNameWithNamespace(/*nested*/ true);
+                        auto jsDocNamespaceNode = factory.createModuleDeclaration(
+                            /*decorators*/ undefined,
+                            /*modifiers*/ undefined,
+                            typeNameOrNamespaceName,
+                            body,
+                            nested ? NodeFlags::NestedNamespace : undefined
+                        ) as JSDocNamespaceDeclaration;
+                        return finishNode(jsDocNamespaceNode, pos);
+                    }
+
+                    if (nested) {
+                        typeNameOrNamespaceName.isInJSDocNamespace = true;
+                    }
+                    return typeNameOrNamespaceName;
+                }
+
+
+                auto parseCallbackTagParameters(number indent) {
+                    auto pos = getNodePos();
+                    auto JSDocParameterTag child | false;
+                    auto parameters;
+                    while (child = tryParse(() => parseChildParameterOrPropertyTag(PropertyLikeParse.CallbackParameter, indent) as JSDocParameterTag)) {
+                        parameters = append(parameters, child);
+                    }
+                    return createNodeArray(parameters || [], pos);
+                }
+
+                auto parseCallbackTag(number start, Identifier tagName, number indent, string indentText) -> JSDocCallbackTag {
+                    auto fullName = parseJSDocTypeNameWithNamespace();
+                    skipWhitespace();
+                    auto comment = parseTagComments(indent);
+                    auto parameters = parseCallbackTagParameters(indent);
+                    auto returnTag = tryParse(() => {
+                        if (parseOptionalJsdoc(SyntaxKind::AtToken)) {
+                            auto tag = parseTag(indent);
+                            if (tag && tag.kind == SyntaxKind::JSDocReturnTag) {
+                                return tag as JSDocReturnTag;
+                            }
+                        }
+                    });
+                    auto typeExpression = finishNode(factory.createJSDocSignature(/*typeParameters*/ undefined, parameters, returnTag), start);
+                    auto end = getNodePos();
+                    if (!comment) {
+                        comment = parseTrailingTagComments(start, end, indent, indentText);
+                    }
+                    return finishNode(factory.createJSDocCallbackTag(tagName, typeExpression, fullName, comment), start, end);
+                }
+
+                auto escapedTextsEqual(EntityName a, EntityName b) -> boolean {
+                    while (!ts.isIdentifier(a) || !ts.isIdentifier(b)) {
+                        if (!ts.isIdentifier(a) && !ts.isIdentifier(b) && a.right.escapedText == b.right.escapedText) {
+                            a = a.left;
+                            b = b.left;
+                        }
+                        else {
+                            return false;
+                        }
+                    }
+                    return a.escapedText == b.escapedText;
+                }
+
+                auto parseChildPropertyTag(number indent) {
+                    return parseChildParameterOrPropertyTag(PropertyLikeParse.Property, indent) as JSDocTypeTag | JSDocPropertyTag | false;
+                }
+
+                auto parseChildParameterOrPropertyTag(PropertyLikeParse target, number indent, EntityName name) -> JSDocTypeTag | JSDocPropertyTag | JSDocParameterTag | false {
+                    auto canParseTag = true;
+                    auto seenAsterisk = false;
+                    while (true) {
+                        switch (nextTokenJSDoc()) {
+                            case SyntaxKind::AtToken:
+                                if (canParseTag) {
+                                    auto child = tryParseChildTag(target, indent);
+                                    if (child && (child.kind == SyntaxKind::JSDocParameterTag || child.kind == SyntaxKind::JSDocPropertyTag) &&
+                                        target != PropertyLikeParse.CallbackParameter &&
+                                        name && (ts.isIdentifier(child.name) || !escapedTextsEqual(name, child.name.left))) {
+                                        return false;
+                                    }
+                                    return child;
+                                }
+                                seenAsterisk = false;
+                                break;
+                            case SyntaxKind::NewLineTrivia:
+                                canParseTag = true;
+                                seenAsterisk = false;
+                                break;
+                            case SyntaxKind::AsteriskToken:
+                                if (seenAsterisk) {
+                                    canParseTag = false;
+                                }
+                                seenAsterisk = true;
+                                break;
+                            case SyntaxKind::Identifier:
+                                canParseTag = false;
+                                break;
+                            case SyntaxKind::EndOfFileToken:
+                                return false;
+                        }
+                    }
+                }
+
+                auto tryParseChildTag(PropertyLikeParse target, number indent) -> JSDocTypeTag | JSDocPropertyTag | JSDocParameterTag | false {
+                    Debug::_assert(token() == SyntaxKind::AtToken);
+                    auto start = scanner.getStartPos();
+                    nextTokenJSDoc();
+
+                    auto tagName = parseJSDocIdentifierName();
+                    skipWhitespace();
+                    auto PropertyLikeParse t;
+                    switch (tagName.escapedText) {
+                        case "type":
+                            return target == PropertyLikeParse.Property && parseTypeTag(start, tagName);
+                        case "prop":
+                        case "property":
+                            t = PropertyLikeParse.Property;
+                            break;
+                        case "arg":
+                        case "argument":
+                        case "param":
+                            t = PropertyLikeParse.Parameter | PropertyLikeParse.CallbackParameter;
+                            break;
+                        default:
+                            return false;
+                    }
+                    if (!(target & t)) {
+                        return false;
+                    }
+                    return parseParameterOrPropertyTag(start, tagName, target, indent);
+                }
+
+                auto parseTemplateTagTypeParameter() {
+                    auto typeParameterPos = getNodePos();
+                    auto name = parseJSDocIdentifierName(Diagnostics::Unexpected_token_A_type_parameter_name_was_expected_without_curly_braces);
+                    if (nodeIsMissing(name)) {
+                        return undefined;
+                    }
+                    return finishNode(factory.createTypeParameterDeclaration(name, /*constraint*/ undefined, /*defaultType*/ undefined), typeParameterPos);
+                }
+
+                auto parseTemplateTagTypeParameters() {
+                    auto pos = getNodePos();
+                    auto typeParameters = [];
+                    do {
+                        skipWhitespace();
+                        auto node = parseTemplateTagTypeParameter();
+                        if (node != undefined) {
+                            typeParameters.push(node);
+                        }
+                        skipWhitespaceOrAsterisk();
+                    } while (parseOptionalJsdoc(SyntaxKind::CommaToken));
+                    return createNodeArray(typeParameters, pos);
+                }
+
+                auto parseTemplateTag(number start, Identifier tagName, number indent, string indentText) -> JSDocTemplateTag {
+                    // The template tag looks like one of the following:
+                    //   @template T,U,V
+                    //   @template {Constraint} T
+                    //
+                    // According to the [closure docs](https://github.com/google/closure-compiler/wiki/Generic-Types#multiple-bounded-template-types) ->
+                    //   > Multiple bounded generics cannot be declared on the same line. For the sake of clarity, if multiple templates share the same
+                    //   > type bound they must be declared on separate lines.
+                    //
+                    // Determine TODO whether we should enforce this in the checker.
+                    // Consider TODO moving the `constraint` to the first type parameter as we could then remove `getEffectiveConstraintOfTypeParameter`.
+                    // Consider TODO only parsing a single type parameter if there is a constraint.
+                    auto constraint = token() == SyntaxKind::OpenBraceToken ? parseJSDocTypeExpression() : undefined;
+                    auto typeParameters = parseTemplateTagTypeParameters();
+                    auto end = getNodePos();
+                    return finishNode(factory.createJSDocTemplateTag(tagName, constraint, typeParameters, parseTrailingTagComments(start, end, indent, indentText)), start, end);
+                }
+
+                auto parseOptionalJsdoc(SyntaxKind t) -> boolean {
+                    if (token() == t) {
+                        nextTokenJSDoc();
+                        return true;
+                    }
+                    return false;
+                }
+
+                auto parseJSDocEntityName() -> EntityName {
+                    auto EntityName entity = parseJSDocIdentifierName();
+                    if (parseOptional(SyntaxKind::OpenBracketToken)) {
+                        parseExpected(SyntaxKind::CloseBracketToken);
+                        // Note that y[] is accepted as an entity name, but the postfix brackets are not saved for checking.
+                        // Technically usejsdoc.org requires them for specifying a property of a type equivalent to Array<{ ... x}>
+                        // but it's not worth it to enforce that restriction.
+                    }
+                    while (parseOptional(SyntaxKind::DotToken)) {
+                        auto name = parseJSDocIdentifierName();
+                        if (parseOptional(SyntaxKind::OpenBracketToken)) {
+                            parseExpected(SyntaxKind::CloseBracketToken);
+                        }
+                        entity = createQualifiedName(entity, name);
+                    }
+                    return entity;
+                }
+
+                auto parseJSDocIdentifierName(DiagnosticMessage message) -> Identifier {
+                    if (!tokenIsIdentifierOrKeyword(token())) {
+                        return createMissingNode<Identifier>(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ !message, message || Diagnostics::Identifier_expected);
+                    }
+
+                    identifierCount++;
+                    auto pos = scanner.getTokenPos();
+                    auto end = scanner.getTextPos();
+                    auto originalKeywordKind = token();
+                    auto text = internIdentifier(scanner.getTokenValue());
+                    auto result = finishNode(factory.createIdentifier(text, /*typeArguments*/ undefined, originalKeywordKind), pos, end);
+                    nextTokenJSDoc();
+                    return result;
+                }
             }
-        }
+
+            // End JSDoc namespace
+        };
 
         namespace IncrementalParser {
             auto updateSourceFile(SourceFile sourceFile, string newText, TextChangeRange textChangeRange, boolean aggressiveChecks) -> SourceFile {
@@ -8119,7 +8109,7 @@ namespace ts {
                 if (sourceFile.statements.size() == 0) {
                     // If we don't have any statements in the current source file, then there's no real
                     // way to incrementally parse.  So just do a full parse instead.
-                    return Parser::parseSourceFile(sourceFile.fileName, newText, sourceFile.languageVersion, Undefined<IncrementalParser::SyntaxCursor>(), /*setParentNodes*/ true, sourceFile.scriptKind);
+                    return Parser::parseSourceFile(sourceFile.fileName, newText, sourceFile.languageVersion, undefined, /*setParentNodes*/ true, sourceFile.scriptKind);
                 }
 
                 // Make sure we're not trying to incrementally update a source file more than once.  Once
@@ -8715,10 +8705,10 @@ namespace ts {
         auto createSourceFile(string fileName, string sourceText, ScriptTarget languageVersion, boolean setParentNodes = false, ScriptKind scriptKind = ScriptKind::Unknown) -> SourceFile {
             SourceFile result;
             if (languageVersion == ScriptTarget::JSON) {
-                result = Parser::parseSourceFile(fileName, sourceText, languageVersion, Undefined<IncrementalParser::SyntaxCursor>() /*syntaxCursor*/, setParentNodes, ScriptKind::JSON);
+                result = Parser::parseSourceFile(fileName, sourceText, languageVersion, undefined /*syntaxCursor*/, setParentNodes, ScriptKind::JSON);
             }
             else {
-                result = Parser::parseSourceFile(fileName, sourceText, languageVersion, Undefined<IncrementalParser::SyntaxCursor>() /*syntaxCursor*/, setParentNodes, scriptKind);
+                result = Parser::parseSourceFile(fileName, sourceText, languageVersion, undefined /*syntaxCursor*/, setParentNodes, scriptKind);
             }
 
             return result;
