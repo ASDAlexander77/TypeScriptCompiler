@@ -1,6 +1,5 @@
 #include "parser.h"
 #include "nodeFactory.h"
-#include "debug.h"
 
 namespace ts {
 
@@ -762,11 +761,11 @@ namespace ts {
             Parser() : 
                 scanner(ScriptTarget::Latest, /*skipTrivia*/ true), 
                 baseNodeFactory{ 
-                    [&](ScriptKind kind) { return countNode(SourceFileConstructor(kind, /*pos*/ 0, /*end*/ 0)); }
-                    [&](ScriptKind kind) { return countNode(IdentifierConstructor(kind, /*pos*/ 0, /*end*/ 0)); }
-                    [&](ScriptKind kind) { return countNode(PrivateIdentifierConstructor(kind, /*pos*/ 0, /*end*/ 0)); }
-                    [&](ScriptKind kind) { return countNode(TokenConstructor(kind, /*pos*/ 0, /*end*/ 0)); }
-                    [&](ScriptKind kind) { return countNode(NodeConstructor(kind, /*pos*/ 0, /*end*/ 0)); }
+                    [&](SyntaxKind kind) { return countNode(SourceFileConstructor(kind, /*pos*/ 0, /*end*/ 0)); },
+                    [&](SyntaxKind kind) { return countNode(IdentifierConstructor(kind, /*pos*/ 0, /*end*/ 0)); },
+                    [&](SyntaxKind kind) { return countNode(PrivateIdentifierConstructor(kind, /*pos*/ 0, /*end*/ 0)); },
+                    [&](SyntaxKind kind) { return countNode(TokenConstructor(kind, /*pos*/ 0, /*end*/ 0)); },
+                    [&](SyntaxKind kind) { return countNode(NodeConstructor(kind, /*pos*/ 0, /*end*/ 0)); }
                 },
                 factory(NodeFactoryFlags::NoParenthesizerRules | NodeFactoryFlags::NoNodeConverters | NodeFactoryFlags::NoOriginalNode, baseNodeFactory)
             {
@@ -784,7 +783,7 @@ namespace ts {
                     // TODO: review if we need it
                     //convertToObjectWorker(result, result.statements[0].expression, result.parseDiagnostics, /*returnValue*/ false, /*knownRootOptions*/ undefined, /*jsonConversionNotifier*/ undefined);
                     result.referencedFiles.clear();
-                    result.typeReferenceDirective.clear();
+                    result.typeReferenceDirectives.clear();
                     result.libReferenceDirectives.clear();
                     result.amdDependencies.clear();
                     result.hasNoDefaultLib = false;
@@ -807,12 +806,12 @@ namespace ts {
                 // Prime the scanner.
                 nextToken();
                 auto entityName = parseEntityName(/*allowReservedWords*/ true);
-                auto isInvalid = token() == SyntaxKind::EndOfFileToken && !parseDiagnostics::size();
+                auto isInvalid = token() == SyntaxKind::EndOfFileToken && !parseDiagnostics.size();
                 clearState();
                 return isInvalid ? entityName : Node();
             }
 
-            auto parseJsonText(string fileName, string sourceText, ScriptTarget languageVersion = ScriptTarget::ES2015, Undefined<IncrementalParser::SyntaxCursor> syntaxCursor = undefined(), boolean setParentNodes = false) -> JsonSourceFile {
+            auto parseJsonText(string fileName, string sourceText, ScriptTarget languageVersion = ScriptTarget::ES2015, Undefined<IncrementalParser::SyntaxCursor> syntaxCursor = undefined, boolean setParentNodes = false) -> JsonSourceFile {
                 initializeState(fileName, sourceText, languageVersion, syntaxCursor, ScriptKind::JSON);
                 sourceFlags = contextFlags;
 
@@ -821,7 +820,7 @@ namespace ts {
                 auto pos = getNodePos();
                 Node statements, endOfFileToken;
                 if (token() == SyntaxKind::EndOfFileToken) {
-                    statements = createNodeArray(NodeArray(), pos, pos);
+                    statements = createNodeArray(Node(), pos, pos);
                     endOfFileToken = parseTokenNode<EndOfFileToken>();
                 }
                 else {
@@ -840,7 +839,7 @@ namespace ts {
                                 expression = parseTokenNode<BooleanLiteral, NullLiteral>();
                                 break;
                             case SyntaxKind::MinusToken:
-                                if (lookAhead([&]() { return nextToken() == SyntaxKind::NumericLiteral && nextToken() != SyntaxKind::ColonToken; })) {
+                                if (lookAhead<boolean>([&]() { return nextToken() == SyntaxKind::NumericLiteral && nextToken() != SyntaxKind::ColonToken; })) {
                                     expression = parsePrefixUnaryExpression();
                                 }
                                 else {
@@ -849,7 +848,7 @@ namespace ts {
                                 break;
                             case SyntaxKind::NumericLiteral:
                             case SyntaxKind::StringLiteral:
-                                if (lookAhead([&]() { return nextToken() != SyntaxKind::ColonToken; })) {
+                                if (lookAhead<boolean>([&]() { return nextToken() != SyntaxKind::ColonToken; })) {
                                     expression = parseLiteralNode();
                                     break;
                                 }
@@ -888,17 +887,19 @@ namespace ts {
                 sourceFile.nodeCount = nodeCount;
                 sourceFile.identifierCount = identifierCount;
                 sourceFile.identifiers = identifiers;
-                sourceFile.parseDiagnostics = attachFileToDiagnostics(parseDiagnostics, sourceFile);
-                if (jsDocDiagnostics) {
-                    sourceFile.jsDocDiagnostics = attachFileToDiagnostics(jsDocDiagnostics, sourceFile);
+                //sourceFile.parseDiagnostics = attachFileToDiagnostics(parseDiagnostics, sourceFile);
+                sourceFile.parseDiagnostics = parseDiagnostics;
+                if (!jsDocDiagnostics.empty()) {
+                    //sourceFile.jsDocDiagnostics = attachFileToDiagnostics(jsDocDiagnostics, sourceFile);
+                    sourceFile.jsDocDiagnostics = jsDocDiagnostics;
                 }
 
-                auto result = sourceFile.as<JsonSourceFile>();
+                auto result = JsonSourceFile(sourceFile);
                 clearState();
                 return result;
             }
 
-            auto initializeState(string _fileName, string _sourceText, ScriptTarget _languageVersion, IncrementalParser::SyntaxCursor _syntaxCursor, ScriptKind _scriptKind) {
+            auto initializeState(string _fileName, string _sourceText, ScriptTarget _languageVersion, Undefined<IncrementalParser::SyntaxCursor> _syntaxCursor, ScriptKind _scriptKind) -> void {
                 NodeConstructor = objectAllocator.getNodeConstructor();
                 TokenConstructor = objectAllocator.getTokenConstructor();
                 IdentifierConstructor = objectAllocator.getIdentifierConstructor();
@@ -942,7 +943,7 @@ namespace ts {
                 scanner.setLanguageVariant(languageVariant);
             }
 
-            auto clearState() {
+            auto clearState() -> void {
                 // Clear out the text the scanner is pointing at, so it doesn't keep anything alive unnecessarily.
                 scanner.clearCommentDirectives();
                 scanner.setText(string());
@@ -1131,7 +1132,7 @@ namespace ts {
 
             }
 
-            auto fixupParentReferences(Node rootNode) {
+            auto fixupParentReferences(Node rootNode) -> void {
                 // normally parent references are set during binding. However, for clients that only need
                 // a syntax tree, and no semantic features, then the binding process is an unnecessary
                 // overhead.  This functions allows us to set all the parents, without all the expense of
@@ -1139,7 +1140,7 @@ namespace ts {
                 setParentRecursive(rootNode, /*incremental*/ true);
             }
 
-            auto createSourceFile(string fileName, ScriptTarget languageVersion, ScriptKind scriptKind, boolean isDeclarationFile, std::vector<Node> statements, Node endOfFileToken, NodeFlags flags) -> SourceFile {
+            auto createSourceFile(string fileName, ScriptTarget languageVersion, ScriptKind scriptKind, boolean isDeclarationFile, Node statements, Node endOfFileToken, NodeFlags flags) -> SourceFile {
                 // code from createNode is inlined here so createNode won't have to deal with special case of creating source files
                 // this is quite rare comparing to other nodes and createNode should be as fast as possible
                 auto sourceFile = factory.createSourceFile(statements, endOfFileToken, flags);
@@ -1292,13 +1293,11 @@ namespace ts {
                 return inContext(NodeFlags::AwaitContext);
             }
 
-            template<typename T>
-            auto parseErrorAtCurrentToken(DiagnosticMessage message, T arg0) -> void {
+            auto parseErrorAtCurrentToken(DiagnosticMessage message, string arg0 = string()) -> void {
                 parseErrorAt(scanner.getTokenPos(), scanner.getTextPos(), message, arg0);
             }
 
-            template<typename T>
-            auto parseErrorAtPosition(number start, number length, DiagnosticMessage message, T arg0) -> void {
+            auto parseErrorAtPosition(number start, number length, DiagnosticMessage message, string arg0) -> void {
                 // Don't report another error if it would just be at the same position as the last error.
                 auto lastError = lastOrUndefined(parseDiagnostics);
                 if (!lastError || start != lastError.start) {
@@ -1439,7 +1438,7 @@ namespace ts {
              */
             template <typename T> 
             auto lookAhead(std::function<T()> callback) -> T {
-                return speculationHelper(callback, SpeculationKind.Lookahead);
+                return speculationHelper<T>(callback, SpeculationKind.Lookahead);
             }
 
             /** Invokes the provided callback.  If the callback returns something falsy, then it restores
@@ -1449,7 +1448,7 @@ namespace ts {
              */
             template <typename T> 
             auto tryParse(std::function<T()> callback) -> T {
-                return speculationHelper(callback, SpeculationKind.TryParse);
+                return speculationHelper<T>(callback, SpeculationKind.TryParse);
             }
 
             auto isBindingIdentifier() -> boolean {
@@ -1529,31 +1528,30 @@ namespace ts {
                 return Node();
             }
 
-            template <typename T>
-            auto parseExpectedToken(SyntaxKind t, DiagnosticMessage diagnosticMessage, T arg0) -> Node {
+            auto parseExpectedToken(SyntaxKind t, DiagnosticMessage diagnosticMessage) -> Node {
                 return parseOptionalToken(t) ||
-                    createMissingNode(t, /*reportAtCurrentPosition*/ false, diagnosticMessage || Diagnostics::_0_expected, arg0 || tokenToString(t));
-            }
+                    createMissingNode(t, /*reportAtCurrentPosition*/ false, diagnosticMessage);
+            }            
 
             auto parseExpectedTokenJSDoc(SyntaxKind t) -> Node {
                 return parseOptionalTokenJSDoc(t) ||
                     createMissingNode(t, /*reportAtCurrentPosition*/ false, Diagnostics::_0_expected, tokenToString(t));
             }
 
-            template <typename T>
-            auto parseTokenNode() -> T {
+            template <typename ... T>
+            auto parseTokenNode() -> Node {
                 auto pos = getNodePos();
                 auto kind = token();
                 nextToken();
-                return finishNode(factory.createToken(kind), pos).as<T>();
+                return finishNode(factory.createToken(kind), pos);
             }
 
             template <typename T>
-            auto parseTokenNodeJSDoc() -> T {
+            auto parseTokenNodeJSDoc() -> Node {
                 auto pos = getNodePos();
                 auto kind = token();
                 nextTokenJSDoc();
-                return finishNode(factory.createToken(kind), pos).as<T>();
+                return finishNode(factory.createToken(kind), pos);
             }
 
             auto canParseSemicolon() {
@@ -1580,16 +1578,14 @@ namespace ts {
                 }
             }
 
-            template <typename T>
-            auto createNodeArray(std::vector<T> elements, number pos, number end, boolean hasTrailingComma) -> NodeArray<T> {
+            auto createNodeArray(Node elements, number pos, number end = -1, boolean hasTrailingComma = false) -> Node {
                 auto array = factory.createNodeArray(elements, hasTrailingComma);
-                setTextRangePosEnd(array, pos, end ?? scanner.getStartPos());
+                setTextRangePosEnd(array, pos, end != -1 ? end : scanner.getStartPos());
                 return array;
             }
 
-            template <typename T>
-            auto finishNode(T node, number pos, number end) -> T {
-                setTextRangePosEnd(node, pos, end >= 0 ? end : scanner.getStartPos());
+            auto finishNode(Node node, number pos, number end = -1) -> Node {
+                setTextRangePosEnd(node, pos, end != -1 ? end : scanner.getStartPos());
                 if (contextFlags) {
                     node.flags |= contextFlags;
                 }
@@ -2509,7 +2505,7 @@ namespace ts {
                 return createMissingList<T>();
             }
 
-            auto parseEntityName(boolean allowReservedWords, DiagnosticMessage diagnosticMessage) -> EntityName {
+            auto parseEntityName(boolean allowReservedWords, Undefined<DiagnosticMessage> diagnosticMessage = undefined) -> EntityName {
                 auto pos = getNodePos();
                 auto EntityName entity = allowReservedWords ? parseIdentifierName(diagnosticMessage) : parseIdentifier(diagnosticMessage);
                 auto dotPos = getNodePos();
@@ -4477,22 +4473,22 @@ namespace ts {
                 return finishNode(factory.createAsExpression(left, right), left.pos);
             }
 
-            auto parsePrefixUnaryExpression() {
+            auto parsePrefixUnaryExpression() -> Node {
                 auto pos = getNodePos();
                 return finishNode(factory.createPrefixUnaryExpression(<PrefixUnaryOperator>token(), nextTokenAnd(parseSimpleUnaryExpression)), pos);
             }
 
-            auto parseDeleteExpression() {
+            auto parseDeleteExpression() -> Node {
                 auto pos = getNodePos();
                 return finishNode(factory.createDeleteExpression(nextTokenAnd(parseSimpleUnaryExpression)), pos);
             }
 
-            auto parseTypeOfExpression() {
+            auto parseTypeOfExpression() -> Node {
                 auto pos = getNodePos();
                 return finishNode(factory.createTypeOfExpression(nextTokenAnd(parseSimpleUnaryExpression)), pos);
             }
 
-            auto parseVoidExpression() {
+            auto parseVoidExpression() -> Node {
                 auto pos = getNodePos();
                 return finishNode(factory.createVoidExpression(nextTokenAnd(parseSimpleUnaryExpression)), pos);
             }
@@ -4510,7 +4506,7 @@ namespace ts {
                 return false;
             }
 
-            auto parseAwaitExpression() {
+            auto parseAwaitExpression() -> Node {
                 auto pos = getNodePos();
                 return finishNode(factory.createAwaitExpression(nextTokenAnd(parseSimpleUnaryExpression)), pos);
             }
@@ -5382,7 +5378,7 @@ namespace ts {
                 return doOutsideOfContext(disallowInAndDecoratorContext, parseArgumentOrArrayLiteralElement);
             }
 
-            auto parseArrayLiteralExpression() -> ArrayLiteralExpression {
+            auto parseArrayLiteralExpression() -> Node {
                 auto pos = getNodePos();
                 parseExpected(SyntaxKind::OpenBracketToken);
                 auto multiLine = scanner.hasPrecedingLineBreak();
@@ -5450,7 +5446,7 @@ namespace ts {
                 return withJSDoc(finishNode(node, pos), hasJSDoc);
             }
 
-            auto parseObjectLiteralExpression() -> ObjectLiteralExpression {
+            auto parseObjectLiteralExpression() -> Node {
                 auto pos = getNodePos();
                 auto openBracePosition = scanner.getTokenPos();
                 parseExpected(SyntaxKind::OpenBraceToken);

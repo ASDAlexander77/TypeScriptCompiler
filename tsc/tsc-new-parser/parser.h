@@ -2,6 +2,7 @@
 #define PARSER_H
 
 #include "scanner.h"
+#include "debug.h"
 
 struct Node;
 
@@ -25,9 +26,11 @@ using NodeWithParentArrayFuncT = std::function<T(NodeArray<T>, Node)>;
 
 typedef std::function<Node(SyntaxKind, number, number)> NodeCreateFunc;
 
-struct undefined
+struct undefined_t
 {
 };
+
+static undefined_t undefined;
 
 template <typename T>
 struct Undefined
@@ -36,7 +39,7 @@ struct Undefined
     {
     }
 
-    Undefined(undefined) : _hasValue(false)
+    Undefined(undefined_t) : _hasValue(false)
     {
     }
 
@@ -345,8 +348,7 @@ enum class OperatorPrecedence : number {
     Invalid = -1,
 };
 
-
-NodeFlags operator |(NodeFlags lhs, NodeFlags rhs)
+static NodeFlags operator |(NodeFlags lhs, NodeFlags rhs)
 {
     return (NodeFlags) ((number) lhs | (number) rhs);
 }
@@ -394,22 +396,37 @@ struct FileReference : TextSpan {
     string fileName;
 };
 
+struct AmdDependency {
+    string path;
+    string name;
+};
+
 struct TextChangeRange {
     TextSpan span;
     number newLength;
 };
 
-struct DiagnosticWithDetachedLocation {
-    string file;
+struct DiagnosticRelatedInformation {
+    DiagnosticCategory category;
     string fileName;
+    number code;
     number start;
     number length;
+    string messageText;
+};
+
+struct Diagnostic : DiagnosticRelatedInformation {
+    std::vector<string> reportsUnnecessary;
+    std::vector<DiagnosticRelatedInformation> relatedInformation;
+};
+
+struct DiagnosticWithDetachedLocation : Diagnostic {
 };
 
 struct Node
 {
     SyntaxKind kind;
-
+    NodeFlags flags;
     NodeArray<Node> decorators;
     ModifiersArray modifiers;
 
@@ -431,6 +448,12 @@ struct Node
     operator bool()
     {
         return this->kind != SyntaxKind::Unknown;
+    }
+
+    auto operator=(NodeArray<Node> values) -> Node&
+     {
+        children = values;
+        return *this;
     }
 
     auto operator||(Node rhs) -> Node
@@ -460,75 +483,11 @@ static auto isArray(Node &node) -> boolean
     return node.isArray;
 }
 
-typedef Node Identifier;
-
-typedef Node PropertyName;
-
-typedef Node PrivateIdentifier;
-
-typedef Node ThisTypeNode;
-
-typedef Node LiteralLikeNode;
-
-typedef Node LiteralExpression;
-
-typedef Node EntityName;
-
-typedef Node Expression;
-
-typedef Node IndexSignatureDeclaration;
-
-typedef Node TypeElement;
-
-typedef Node BinaryOperatorToken;
-
-typedef Node UnaryExpression;
-
-typedef Node UpdateExpression;
-
-typedef Node LeftHandSideExpression;
-
-typedef Node MemberExpression;
-
-typedef Node JsxText;
-
-typedef Node JsxChild;
-
-typedef Node JsxTagNameExpression;
-
-typedef Node JsxClosingFragment;
-
-typedef Node QuestionDotToken;
-
-typedef Node PrimaryExpression;
-
-typedef Node ObjectLiteralElementLike;
-
-typedef Node FunctionExpression;
-
-typedef Node Statement;
-
-typedef Node CaseOrDefaultClause;
-
-typedef Node ArrayBindingElement;
-
-typedef Node ObjectBindingPattern;
-
-typedef Node ArrayBindingPattern;
-
-typedef Node FunctionDeclaration;
-
-typedef Node ConstructorDeclaration;
-
-typedef Node MethodDeclaration;
-
-typedef Node AccessorDeclaration;
-
-typedef Node ClassElement;
-
-typedef Node ClassExpression;
-
-typedef Node ModuleBlock;
+typedef Node Identifier, PropertyName, PrivateIdentifier, ThisTypeNode, LiteralLikeNode, LiteralExpression, EntityName, Expression, IndexSignatureDeclaration,
+    TypeElement, BinaryOperatorToken, UnaryExpression, UpdateExpression, LeftHandSideExpression, MemberExpression, JsxText, JsxChild, JsxTagNameExpression,
+    JsxClosingFragment, QuestionDotToken, PrimaryExpression, ObjectLiteralElementLike, FunctionExpression, Statement, CaseOrDefaultClause, ArrayBindingElement,
+    ObjectBindingPattern, ArrayBindingPattern, FunctionDeclaration, ConstructorDeclaration, MethodDeclaration, AccessorDeclaration, ClassElement, ClassExpression,
+    ModuleBlock, EndOfFileToken, BooleanLiteral, NullLiteral;
 
 struct QualifiedName
 {
@@ -874,6 +833,8 @@ struct Block
 
 struct SourceFile
 {
+    Node root;
+
     Node statements;
     Node endOfFileToken;
     Node externalModuleIndicator;
@@ -884,6 +845,7 @@ struct SourceFile
     std::vector<FileReference> typeReferenceDirectives;
     std::vector<FileReference> libReferenceDirectives;
     std::vector<FileReference> languageVariant;
+    std::vector<AmdDependency> amdDependencies;
     boolean isDeclarationFile;
 
     std::map<string, string> renamedDependencies;
@@ -891,17 +853,29 @@ struct SourceFile
     ScriptTarget languageVersion;
 
     std::map<string, string> pragmas;
+
+    // stats
+    string fileName;
+    string text;
+    number nodeCount;
+    number identifierCount;
+    std::map<string, string> identifiers;
+
+    std::vector<DiagnosticWithDetachedLocation> parseDiagnostics;
+    std::vector<DiagnosticWithDetachedLocation> jsDocDiagnostics;
+
+    bool operator !()
+    {
+        return !root;
+    }    
+
+    operator Node&()
+    {
+        return root;
+    }
 };
 
-struct JsonSourceFile
-{
-    NodeFlags flags;
-
-    Node statements;
-    Node endOfFileToken;
-    Node externalModuleIndicator;
-    Node commonJsModuleIndicator;
-};
+typedef SourceFile JsonSourceFile;
 
 struct VariableStatement
 {
@@ -1370,19 +1344,8 @@ struct JSDocTypeLiteral
     Node jsDocPropertyTags;
 };
 
-struct DiagnosticRelatedInformation {
-    DiagnosticCategory category;
-    int code;
+struct DiagnosticWithLocation : Diagnostic {
     SourceFile file;
-    int start;
-    int length;
-    string messageText;
-};
-
-struct Diagnostic : DiagnosticRelatedInformation {
-    string source;
-    std::vector<DiagnosticRelatedInformation> relatedInformation;
-    int skippedOn;
 };
 
 struct NodeWithDiagnostics
@@ -1403,6 +1366,79 @@ auto forEach(std::vector<T> array, std::function<U(T, number)> callback = nullpt
     }
 
     return U();
+}
+
+static auto getScriptKindFromFileName(string fileName) -> ScriptKind
+{
+    auto ext = fileName.substr(fileName.find(S('.')));
+    std::transform(ext.begin(), ext.end(), ext.begin(), [](char_t c){ return std::tolower(c); });
+    if (ext == S("js"))
+        return ScriptKind::JS;
+    if (ext == S("jsx"))
+        return ScriptKind::JSX;
+    if (ext == S("ts"))
+        return ScriptKind::TS;
+    if (ext == S("tsx"))
+        return ScriptKind::TSX;
+    if (ext == S("json"))
+        return ScriptKind::JSON;
+    return ScriptKind::Unknown;
+}
+
+static auto ensureScriptKind(string fileName, ScriptKind scriptKind = ScriptKind::Unknown) -> ScriptKind {
+    // Using scriptKind as a condition handles both:
+    // - 'scriptKind' is unspecified and thus it is `undefined`
+    // - 'scriptKind' is set and it is `Unknown` (0)
+    // If the 'scriptKind' is 'undefined' or 'Unknown' then we attempt
+    // to get the ScriptKind from the file name. If it cannot be resolved
+    // from the file name then the default 'TS' script kind is returned.
+    return scriptKind != ScriptKind::Unknown ? scriptKind : scriptKind = getScriptKindFromFileName(fileName), scriptKind != ScriptKind::Unknown ? scriptKind : ScriptKind::TS;
+}
+
+static auto isDiagnosticWithDetachedLocation(DiagnosticRelatedInformation diagnostic) -> boolean {
+    return diagnostic.start != -1
+        && diagnostic.length != -1
+        && diagnostic.fileName != S("");
+}
+
+template <typename T>
+auto attachFileToDiagnostic(T diagnostic, SourceFile file) -> DiagnosticWithLocation {
+    auto fileName = file.fileName;
+    auto length = file.text.length();
+    Debug::assertEqual(diagnostic.fileName, fileName);
+    Debug::assertLessThanOrEqual(diagnostic.start, length);
+    Debug::assertLessThanOrEqual(diagnostic.start + diagnostic.length, length);
+    DiagnosticWithLocation diagnosticWithLocation;
+    diagnosticWithLocation.file = file;
+    diagnosticWithLocation.start = diagnostic.start;
+    diagnosticWithLocation.length = diagnostic.length;
+    diagnosticWithLocation.messageText = diagnostic.messageText;
+    diagnosticWithLocation.category = diagnostic.category;
+    diagnosticWithLocation.code = diagnostic.code;
+    diagnosticWithLocation.reportsUnnecessary = diagnostic.reportsUnnecessary;
+
+    if (!diagnostic.relatedInformation.empty()) {
+        for (auto &related : diagnostic.relatedInformation) {
+            if (isDiagnosticWithDetachedLocation(related) && related.fileName == fileName) {
+                Debug::assertLessThanOrEqual(related.start, length);
+                Debug::assertLessThanOrEqual(related.start + related.length, length);
+                diagnosticWithLocation.relatedInformation.push_back(attachFileToDiagnostic(related, file));
+            }
+            else {
+                diagnosticWithLocation.relatedInformation.push_back(related);
+            }
+        }
+    }
+
+    return diagnosticWithLocation;
+}
+
+static auto attachFileToDiagnostics(std::vector<DiagnosticWithDetachedLocation> diagnostics, SourceFile file) -> std::vector<DiagnosticWithLocation> {
+    std::vector<DiagnosticWithLocation> diagnosticsWithLocation;
+    for (auto &diagnostic : diagnostics) {
+        diagnosticsWithLocation.push_back(attachFileToDiagnostic(diagnostic, file));
+    }
+    return diagnosticsWithLocation;
 }
 
 

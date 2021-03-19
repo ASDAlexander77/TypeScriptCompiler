@@ -19,6 +19,17 @@ struct Debug
         return currentAssertionLevel >= level;
     }
 
+    template <typename T>
+    static auto assertEqual(T &l, T &r) -> void
+    {
+        assert(l == r);
+    }
+
+    static auto assertLessThanOrEqual(number l, number r) -> void
+    {
+        assert(l <= r);
+    }
+
     static void _assert(boolean cond)
     {
         assert(cond);
@@ -39,6 +50,30 @@ struct Debug
         assert(cond);
     }
 
+    auto fail(string message = string()) -> void {
+        //debugger;
+        string msg = S("Debug Failure.");
+        if (!message.empty())
+        {
+            msg += message;
+        }
+
+        throw msg;
+    }
+
+    template<typename T>
+    auto assertIsDefined(T value, string message = string()) -> T {
+        // eslint-disable-next-line no-null/no-null
+        if (value == undefined || value == nullptr) {
+            fail(message);
+        }
+    }
+
+    template<typename T>
+    static auto checkDefined(T value, string message = string()) -> T {
+        assertIsDefined(value, message);
+        return value;
+    }
 };
 
 #endif // DEBUG_H
