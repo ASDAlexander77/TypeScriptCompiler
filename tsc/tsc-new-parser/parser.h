@@ -1482,4 +1482,9 @@ namespace Extension {
     static const string TsBuildInfo = S(".tsbuildinfo");
 };
 
+namespace ts
+{
+    auto processCommentPragmas(SourceFile context, string sourceText) -> void;
+}
+
 #endif // PARSER_H
