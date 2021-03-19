@@ -5,7 +5,8 @@
 
 struct Node;
 
-typedef std::vector<Node> NodeArray;
+template <typename T>
+using NodeArray = std::vector<T>;
 
 template <typename T>
 using NodeFuncT = std::function<T(Node)>;
@@ -14,10 +15,10 @@ template <typename T>
 using NodeWithParentFuncT = std::function<T(Node, Node)>;
 
 template <typename T>
-using NodeArrayFuncT = std::function<T(NodeArray)>;
+using NodeArrayFuncT = std::function<T(NodeArray<T>)>;
 
 template <typename T>
-using NodeWithParentArrayFuncT = std::function<T(NodeArray, Node)>;
+using NodeWithParentArrayFuncT = std::function<T(NodeArray<T>, Node)>;
 
 typedef std::function<Node(SyntaxKind, number, number)> NodeCreateFunc;
 
@@ -204,11 +205,11 @@ struct Node
 {
     SyntaxKind kind;
 
-    NodeArray decorators;
-    NodeArray modifiers;
+    NodeArray<Node> decorators;
+    NodeArray<Node> modifiers;
 
     bool isArray;
-    NodeArray children;
+    NodeArray<Node> children;
 
     template <typename T> 
     auto as() -> T
@@ -235,6 +236,11 @@ struct Node
         }
 
         return rhs;
+    }
+
+    auto size() -> number
+    {
+        return children.size();
     }
 
     auto push(Node node) -> void

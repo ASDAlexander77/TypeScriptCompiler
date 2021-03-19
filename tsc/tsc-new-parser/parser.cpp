@@ -1,5 +1,6 @@
 #include "parser.h"
 #include "nodeFactory.h"
+#include "debug.h"
 
 namespace ts {
 
@@ -26,7 +27,7 @@ namespace ts {
         }
 
         template<typename T>
-        auto visitNodes(NodeFuncT<T> cbNode, NodeArrayFuncT<T> cbNodes, NodeArray nodes) -> T {
+        auto visitNodes(NodeFuncT<T> cbNode, NodeArrayFuncT<T> cbNodes, NodeArray<T> nodes) -> T {
             if (nodes) {
                 if (cbNodes) {
                     return cbNodes(nodes);
@@ -598,8 +599,8 @@ namespace ts {
             }
         }
 
-        auto gatherPossibleChildren(Node node) -> NodeArray {
-            NodeArray children;
+        auto gatherPossibleChildren(Node node) -> NodeArray<Node> {
+            NodeArray<Node> children;
 
             auto addWorkItem = [&](auto n) -> Node {
                 children.emplace(children.begin(), n);
@@ -610,69 +611,29 @@ namespace ts {
             return children;
         }
 
-        auto createSourceFile(string fileName, string sourceText, ScriptTarget languageVersion, boolean setParentNodes = false, ScriptKind scriptKind = ScriptKind::Unknown) -> SourceFile {
-            SourceFile result;
-            if (languageVersion == ScriptTarget::JSON) {
-                result = Parser::parseSourceFile(fileName, sourceText, languageVersion, Undefined<IncrementalParser::SyntaxCursor>() /*syntaxCursor*/, setParentNodes, ScriptKind::JSON);
-            }
-            else {
-                result = Parser::parseSourceFile(fileName, sourceText, languageVersion, Undefined<IncrementalParser::SyntaxCursor>() /*syntaxCursor*/, setParentNodes, scriptKind);
-            }
+        namespace IncrementalParser {
 
-            return result;
-        }
+            struct IncrementalElement : TextRange {
+                Node parent;
+                boolean intersectsChange;
+                number length;
+                std::vector<Node> _children;
+            };
 
-        auto parseIsolatedEntityName(string text, ScriptTarget languageVersion) -> EntityName {
-            return Parser::parseIsolatedEntityName(text, languageVersion);
-        }
+            struct IncrementalNode : Node, IncrementalElement {
+                boolean hasBeenIncrementallyParsed;
+            };
 
-        /**
-         * Parse json text into SyntaxTree and return node and parse errors if any
-         * @param fileName
-         * @param sourceText
-         */
-        auto parseJsonText(string fileName, string sourceText) -> JsonSourceFile {
-            return Parser::parseJsonText(fileName, sourceText);
-        }
+            struct IncrementalNodeArray : NodeArray<IncrementalNode>, IncrementalElement {
+                number length;
+            };
 
-        // See also `isExternalOrCommonJsModule` in utilities.ts
-        auto isExternalModule(SourceFile file) -> boolean {
-            return !!file.externalModuleIndicator;
-        }
-
-        // Produces a new SourceFile for the 'newText' provided. The 'textChangeRange' parameter
-        // indicates what changed between the 'text' that this SourceFile has and the 'newText'.
-        // The SourceFile will be created with the compiler attempting to reuse as many nodes from
-        // this file as possible.
-        //
-        // this Note auto mutates nodes from this SourceFile. That means any existing nodes
-        // from this SourceFile that are being held onto may change as a result (including
-        // becoming detached from any SourceFile).  It is recommended that this SourceFile not
-        // be used once 'update' is called on it.
-        auto updateSourceFile(SourceFile sourceFile, string newText, TextChangeRange textChangeRange, boolean aggressiveChecks = false) -> SourceFile {
-            auto newSourceFile = IncrementalParser::updateSourceFile(sourceFile, newText, textChangeRange, aggressiveChecks);
-            // Because new source file node is created, it may not have the flag PossiblyContainDynamicImport. This is the case if there is no new edit to add dynamic import.
-            // We will manually port the flag to the new source file.
-            newSourceFile.flags |= (sourceFile.flags & NodeFlags::PermanentlySetIncrementalFlags);
-            return newSourceFile;
-        }
-
-        /* @internal */
-        auto parseIsolatedJSDocComment(string content, number start, number length) {
-            auto result = Parser::JSDocParser::parseIsolatedJSDocComment(content, start, length);
-            if (result && result.jsDoc) {
-                // because the jsDocComment was parsed out of the source file, it might
-                // not be covered by the fixupParentReferences.
-                Parser::fixupParentReferences(result.jsDoc);
-            }
-
-            return result;
-        }
-
-        /* @internal */
-        // Exposed only for testing.
-        auto parseJSDocTypeExpressionForTests(string content, number start, number length) {
-            return Parser::JSDocParser::parseJSDocTypeExpressionForTests(content, start, length);
+            // Allows finding nodes in the source file at a certain position in an efficient manner.
+            // The implementation takes advantage of the calling pattern it knows the parser will
+            // make in order to optimize finding nodes as quickly as possible.
+            struct SyntaxCursor {
+                auto currentNode(number position) -> IncrementalNode;
+            };
         }
 
         // Implement the parser as a singleton module.  We do this for perf reasons because creating
@@ -793,18 +754,6 @@ namespace ts {
 
             // Rather than using `createBaseNodeFactory` here, we establish a `BaseNodeFactory` that closes over the
             // constructors above, which are reset each time `initializeState` is called.
-            struct BaseNodeFactory {
-                Parser *parser;
-
-                BaseNodeFactory(Parser *parser) : parser{parser} {}
-
-                Node createBaseSourceFileNode(ScriptKind kind) { return parser->countNode(parser->SourceFileConstructor(kind, /*pos*/ 0, /*end*/ 0)); }
-                Node createBaseIdentifierNode(ScriptKind kind) { return parser->countNode(parser->IdentifierConstructor(kind, /*pos*/ 0, /*end*/ 0)); }
-                Node createBasePrivateIdentifierNode(ScriptKind kind) { return parser->countNode(parser->PrivateIdentifierConstructor(kind, /*pos*/ 0, /*end*/ 0)); }
-                Node createBaseTokenNode(ScriptKind kind) { return parser->countNode(parser->TokenConstructor(kind, /*pos*/ 0, /*end*/ 0)); }
-                Node createBaseNode(ScriptKind kind) { return parser->countNode(parser->NodeConstructor(kind, /*pos*/ 0, /*end*/ 0)); }
-            };
-
             BaseNodeFactory baseNodeFactory;
             NodeFactory factory;
 
@@ -812,7 +761,13 @@ namespace ts {
             // up by avoiding the cost of creating/compiling scanners over and over again.
             Parser() : 
                 scanner(ScriptTarget::Latest, /*skipTrivia*/ true), 
-                baseNodeFactory(this),
+                baseNodeFactory{ 
+                    [&](ScriptKind kind) { return countNode(SourceFileConstructor(kind, /*pos*/ 0, /*end*/ 0)); }
+                    [&](ScriptKind kind) { return countNode(IdentifierConstructor(kind, /*pos*/ 0, /*end*/ 0)); }
+                    [&](ScriptKind kind) { return countNode(PrivateIdentifierConstructor(kind, /*pos*/ 0, /*end*/ 0)); }
+                    [&](ScriptKind kind) { return countNode(TokenConstructor(kind, /*pos*/ 0, /*end*/ 0)); }
+                    [&](ScriptKind kind) { return countNode(NodeConstructor(kind, /*pos*/ 0, /*end*/ 0)); }
+                },
                 factory(NodeFactoryFlags::NoParenthesizerRules | NodeFactoryFlags::NoNodeConverters | NodeFactoryFlags::NoOriginalNode, baseNodeFactory)
             {
             }
@@ -1020,7 +975,7 @@ namespace ts {
                 nextToken();
 
                 auto statements = parseList(ParsingContext.SourceElements, parseStatement);
-                Debug::assert(token() == SyntaxKind::EndOfFileToken);
+                Debug::_assert(token() == SyntaxKind::EndOfFileToken);
                 auto endOfFileToken = addJSDocComment(parseTokenNode<EndOfFileToken>());
 
                 auto sourceFile = createSourceFile(fileName, languageVersion, scriptKind, isDeclarationFile, statements, endOfFileToken, sourceFlags);
@@ -1055,8 +1010,8 @@ namespace ts {
 
             auto hasDeprecatedTag = false;
             auto addJSDocComment<T extends HasJSDoc>(T node) -> T {
-                Debug::assert(!node.jsDoc); // Should only be called once per node
-                auto jsDoc = mapDefined(getJSDocCommentRanges(node, sourceText), comment => JSDocParser.parseJSDocComment(node, comment.pos, comment.end - comment.pos));
+                Debug::_assert(!node.jsDoc); // Should only be called once per node
+                auto jsDoc = mapDefined(getJSDocCommentRanges(node, sourceText), comment => JSDocParser::parseJSDocComment(node, comment.pos, comment.end - comment.pos));
                 if (jsDoc.size()) node.jsDoc = jsDoc;
                 if (hasDeprecatedTag) {
                     hasDeprecatedTag = false;
@@ -1070,7 +1025,7 @@ namespace ts {
                 auto baseSyntaxCursor = IncrementalParser::createSyntaxCursor(sourceFile);
                 syntaxCursor = { currentNode };
 
-                auto Statement[] = [] statements;
+                auto std::vector<Statement> = [] statements;
                 auto savedParseDiagnostics = parseDiagnostics;
 
                 parseDiagnostics = [];
@@ -1182,7 +1137,7 @@ namespace ts {
                 setParentRecursive(rootNode, /*incremental*/ true);
             }
 
-            auto createSourceFile(string fileName, ScriptTarget languageVersion, ScriptKind scriptKind, boolean isDeclarationFile, readonly statements Statement[], EndOfFileToken endOfFileToken, NodeFlags flags) -> SourceFile {
+            auto createSourceFile(string fileName, ScriptTarget languageVersion, ScriptKind scriptKind, boolean isDeclarationFile, readonly statements std::vector<Statement>, EndOfFileToken endOfFileToken, NodeFlags flags) -> SourceFile {
                 // code from createNode is inlined here so createNode won't have to deal with special case of creating source files
                 // this is quite rare comparing to other nodes and createNode should be as fast as possible
                 auto sourceFile = factory.createSourceFile(statements, endOfFileToken, flags);
@@ -1434,7 +1389,7 @@ namespace ts {
 
                 // it Note is not actually necessary to save/restore the context flags here.  That's
                 // because the saving/restoring of these flags happens naturally through the recursive
-                // descent nature of our parser.  However, we still store this here just so we can
+                // descent nature of our Parser::  However, we still store this here just so we can
                 // assert that invariant holds.
                 auto saveContextFlags = contextFlags;
 
@@ -1445,7 +1400,7 @@ namespace ts {
                     ? scanner.lookAhead(callback)
                     : scanner.tryScan(callback);
 
-                Debug::assert(saveContextFlags == contextFlags);
+                Debug::_assert(saveContextFlags == contextFlags);
 
                 // If our callback returned something 'falsy' or we're just looking ahead,
                 // then unconditionally restore us to where we were.
@@ -1606,7 +1561,7 @@ namespace ts {
                 }
             }
 
-            auto createNodeArray<T extends Node>(T[] elements, number pos, number end, boolean hasTrailingComma) -> NodeArray<T> {
+            auto createNodeArray<T extends Node>(std::vector<T> elements, number pos, number end, boolean hasTrailingComma) -> NodeArray<T> {
                 auto array = factory.createNodeArray(elements, hasTrailingComma);
                 setTextRangePosEnd(array, pos, end ?? scanner.getStartPos());
                 return array;
@@ -1678,7 +1633,7 @@ namespace ts {
                 }
 
                 if (token() == SyntaxKind::Unknown && scanner.tryScan(() => scanner.reScanInvalidIdentifier() == SyntaxKind::Identifier)) {
-                    // Scanner has already recorded an 'Invalid character' error, so no need to add another from the parser.
+                    // Scanner has already recorded an 'Invalid character' error, so no need to add another from the Parser::
                     return createIdentifier(/*isIdentifier*/ true);
                 }
 
@@ -1931,7 +1886,7 @@ namespace ts {
             }
 
             auto isValidHeritageClauseObjectLiteral() {
-                Debug::assert(token() == SyntaxKind::OpenBraceToken);
+                Debug::_assert(token() == SyntaxKind::OpenBraceToken);
                 if (nextToken() == SyntaxKind::CloseBraceToken) {
                     // if we see "extends {}" then only treat the {} as what we're extending (and not
                     // the class body) if we have:
@@ -2431,7 +2386,7 @@ namespace ts {
                     case ParsingContext.return ImportOrExportSpecifiers parseErrorAtCurrentToken(Diagnostics::Identifier_expected);
                     case ParsingContext.return JsxAttributes parseErrorAtCurrentToken(Diagnostics::Identifier_expected);
                     case ParsingContext.return JsxChildren parseErrorAtCurrentToken(Diagnostics::Identifier_expected);
-                    return default [undefined!]; // GH TODO#18217 `Debug::assertNever default(context);`
+                    return default [undefined!]; // GH TODO#18217 `Debug::_assertNever default(context);`
                 }
             }
 
@@ -2681,13 +2636,13 @@ namespace ts {
                     reScanTemplateHeadOrNoSubstitutionTemplate();
                 }
                 auto fragment = parseLiteralLikeNode(token());
-                Debug::assert(fragment.kind == SyntaxKind::TemplateHead, "Template head has wrong token kind");
+                Debug::_assert(fragment.kind == SyntaxKind::TemplateHead, "Template head has wrong token kind");
                 return <TemplateHead>fragment;
             }
 
             auto parseTemplateMiddleOrTemplateTail() -> TemplateMiddle | TemplateTail {
                 auto fragment = parseLiteralLikeNode(token());
-                Debug::assert(fragment.kind == SyntaxKind::TemplateMiddle || fragment.kind == SyntaxKind::TemplateTail, "Template fragment has wrong token kind");
+                Debug::_assert(fragment.kind == SyntaxKind::TemplateMiddle || fragment.kind == SyntaxKind::TemplateTail, "Template fragment has wrong token kind");
                 return <TemplateMiddle | TemplateTail>fragment;
             }
 
@@ -4063,7 +4018,7 @@ namespace ts {
             }
 
             auto parseSimpleArrowFunctionExpression(number pos, Identifier identifier, NodeArray<Modifier> asyncModifier) -> ArrowFunction {
-                Debug::assert(token() == SyntaxKind::EqualsGreaterThanToken, "parseSimpleArrowFunctionExpression should only have been called if we had a =>");
+                Debug::_assert(token() == SyntaxKind::EqualsGreaterThanToken, "parseSimpleArrowFunctionExpression should only have been called if we had a =>");
                 auto parameter = factory.createParameterDeclaration(
                     /*decorators*/ undefined,
                     /*modifiers*/ undefined,
@@ -4201,7 +4156,7 @@ namespace ts {
                     return Tristate.False;
                 }
                 else {
-                    Debug::assert(first == SyntaxKind::LessThanToken);
+                    Debug::_assert(first == SyntaxKind::LessThanToken);
 
                     // If we have "<" not followed by an identifier,
                     // then this definitely is not an arrow function.
@@ -4687,7 +4642,7 @@ namespace ts {
 
                 auto expression = parseLeftHandSideExpressionOrHigher();
 
-                Debug::assert(isLeftHandSideExpression(expression));
+                Debug::_assert(isLeftHandSideExpression(expression));
                 if ((token() == SyntaxKind::PlusPlusToken || token() == SyntaxKind::MinusMinusToken) && !scanner.hasPrecedingLineBreak()) {
                     auto operator = <PostfixUnaryOperator>token();
                     nextToken();
@@ -4855,7 +4810,7 @@ namespace ts {
                     result = finishNode(factory.createJsxFragment(opening, parseJsxChildren(opening), parseJsxClosingFragment(inExpressionContext)), pos);
                 }
                 else {
-                    Debug::assert(opening.kind == SyntaxKind::JsxSelfClosingElement);
+                    Debug::_assert(opening.kind == SyntaxKind::JsxSelfClosingElement);
                     // Nothing else to do for self-closing elements
                     result = opening;
                 }
@@ -4915,7 +4870,7 @@ namespace ts {
                     case SyntaxKind::LessThanToken:
                         return parseJsxElementOrSelfClosingElementOrFragment(/*inExpressionContext*/ false);
                     default:
-                        return Debug::assertNever(token);
+                        return Debug::_assertNever(token);
                 }
             }
 
@@ -5545,7 +5500,7 @@ namespace ts {
                     expression = parseMemberExpressionRest(expressionPos, expression, /*allowOptionalChain*/ false);
                     typeArguments = tryParse(parseTypeArgumentsInExpression);
                     if (isTemplateStartOfTaggedTemplate()) {
-                        Debug::assert(!!typeArguments,
+                        Debug::_assert(!!typeArguments,
                             "Expected a type argument list; all plain tagged template starts should be consumed in 'parseMemberExpressionRest'");
                         expression = parseTaggedTemplateRest(expressionPos, expression, /*optionalChain*/ undefined, typeArguments);
                         typeArguments = undefined;
@@ -6752,7 +6707,7 @@ namespace ts {
             auto parseHeritageClause() -> HeritageClause {
                 auto pos = getNodePos();
                 auto tok = token();
-                Debug::assert(tok == SyntaxKind::ExtendsKeyword || tok == SyntaxKind::ImplementsKeyword); // isListElement() should ensure this.
+                Debug::_assert(tok == SyntaxKind::ExtendsKeyword || tok == SyntaxKind::ImplementsKeyword); // isListElement() should ensure this.
                 nextToken();
                 auto types = parseDelimitedList(ParsingContext.HeritageClauseElement, parseExpressionWithTypeArguments);
                 return finishNode(factory.createHeritageClause(tok, types), pos);
@@ -7218,7 +7173,7 @@ namespace ts {
             }
 
             namespace JSDocParser {
-                auto parseJSDocTypeExpressionForTests(string content, number start, number length) -> { JSDocTypeExpression jsDocTypeExpression, Diagnostic[] diagnostics } {
+                auto parseJSDocTypeExpressionForTests(string content, number start, number length) -> { JSDocTypeExpression jsDocTypeExpression, std::vector<Diagnostic> diagnostics } {
                     initializeState("file.js", content, ScriptTarget::Latest, /*_syntaxCursor:*/ undefined, ScriptKind::JS);
                     scanner.setText(content, start, length);
                     currentToken = scanner.scan();
@@ -7262,7 +7217,7 @@ namespace ts {
                     return finishNode(result, pos);
                 }
 
-                auto parseIsolatedJSDocComment(string content, number start, number length) -> { JSDoc jsDoc, Diagnostic[] diagnostics } {
+                auto parseIsolatedJSDocComment(string content, number start, number length) -> { JSDoc jsDoc, std::vector<Diagnostic> diagnostics } {
                     initializeState(string(), content, ScriptTarget::Latest, /*_syntaxCursor:*/ undefined, ScriptKind::JS);
                     auto jsDoc = doInsideOfContext(NodeFlags::JSDoc, () => parseJSDocCommentWorker(start, length));
 
@@ -7311,19 +7266,19 @@ namespace ts {
                     auto end = length == undefined ? content.size() : start + length;
                     length = end - start;
 
-                    Debug::assert(start >= 0);
-                    Debug::assert(start <= end);
-                    Debug::assert(end <= content.size());
+                    Debug::_assert(start >= 0);
+                    Debug::_assert(start <= end);
+                    Debug::_assert(end <= content.size());
 
                     // Check for /** (JSDoc opening part)
                     if (!isJSDocLikeText(content, start)) {
                         return undefined;
                     }
 
-                    auto JSDocTag[] tags;
+                    auto std::vector<JSDocTag> tags;
                     auto number tagsPos;
                     auto number tagsEnd;
-                    auto string[] = [] comments;
+                    auto std::vector<string> = [] comments;
 
                     // + 3 for leading /**, - 5 in total for /** */
                     return scanner.scanRange(start + 3, length - 5, () => {
@@ -7410,13 +7365,13 @@ namespace ts {
                         return createJSDocComment();
                     });
 
-                    auto removeLeadingNewlines(string[] comments) {
+                    auto removeLeadingNewlines(std::vector<string> comments) {
                         while (comments.size() && (comments[0] == "\n" || comments[0] == "\r")) {
                             comments.shift();
                         }
                     }
 
-                    auto removeTrailingWhitespace(string[] comments) {
+                    auto removeTrailingWhitespace(std::vector<string> comments) {
                         while (comments.size() && comments[comments.size() - 1].trim() == string()) {
                             comments.pop();
                         }
@@ -7478,7 +7433,7 @@ namespace ts {
                     }
 
                     auto parseTag(number margin) {
-                        Debug::assert(token() == SyntaxKind::AtToken);
+                        Debug::_assert(token() == SyntaxKind::AtToken);
                         auto start = scanner.getTokenPos();
                         nextTokenJSDoc();
 
@@ -7562,7 +7517,7 @@ namespace ts {
                     }
 
                     auto parseTagComments(number indent, string initialMargin) -> string {
-                        auto string[] = [] comments;
+                        auto std::vector<string> = [] comments;
                         auto state = JSDocState.BeginningOfLine;
                         auto previousWhitespace = true;
                         auto number margin;
@@ -7746,7 +7701,7 @@ namespace ts {
                         if (typeExpression && isObjectOrObjectArrayTypeReference(typeExpression.type)) {
                             auto pos = getNodePos();
                             auto JSDocPropertyLikeTag child | JSDocTypeTag | false;
-                            auto JSDocPropertyLikeTag[] children;
+                            auto std::vector<JSDocPropertyLikeTag> children;
                             while (child = tryParse(() => parseChildParameterOrPropertyTag(target, indent, name))) {
                                 if (child.kind == SyntaxKind::JSDocParameterTag || child.kind == SyntaxKind::JSDocPropertyTag) {
                                     children = append(children, child);
@@ -7793,7 +7748,7 @@ namespace ts {
                     }
 
                     auto parseAuthorNameAndEmail() -> string {
-                        auto string[] = [] comments;
+                        auto std::vector<string> = [] comments;
                         auto inEmail = false;
                         auto token = scanner.getToken();
                         while (token != SyntaxKind::EndOfFileToken && token != SyntaxKind::NewLineTrivia) {
@@ -7881,7 +7836,7 @@ namespace ts {
                         if (!typeExpression || isObjectOrObjectArrayTypeReference(typeExpression.type)) {
                             auto JSDocTypeTag child | JSDocPropertyTag | false;
                             auto JSDocTypeTag childTypeTag;
-                            auto JSDocPropertyTag[] jsDocPropertyTags;
+                            auto std::vector<JSDocPropertyTag> jsDocPropertyTags;
                             auto hasChildren = false;
                             while (child = tryParse(() => parseChildPropertyTag(indent))) {
                                 hasChildren = true;
@@ -8038,7 +7993,7 @@ namespace ts {
                     }
 
                     auto tryParseChildTag(PropertyLikeParse target, number indent) -> JSDocTypeTag | JSDocPropertyTag | JSDocParameterTag | false {
-                        Debug::assert(token() == SyntaxKind::AtToken);
+                        Debug::_assert(token() == SyntaxKind::AtToken);
                         auto start = scanner.getStartPos();
                         nextTokenJSDoc();
 
@@ -8153,7 +8108,7 @@ namespace ts {
 
         namespace IncrementalParser {
             auto updateSourceFile(SourceFile sourceFile, string newText, TextChangeRange textChangeRange, boolean aggressiveChecks) -> SourceFile {
-                aggressiveChecks = aggressiveChecks || Debug::shouldAssert(AssertionLevel.Aggressive);
+                aggressiveChecks = aggressiveChecks || Debug::shouldAssert(AssertionLevel::Aggressive);
 
                 checkChangeRange(sourceFile, newText, textChangeRange, aggressiveChecks);
                 if (textChangeRangeIsUnchanged(textChangeRange)) {
@@ -8164,7 +8119,7 @@ namespace ts {
                 if (sourceFile.statements.size() == 0) {
                     // If we don't have any statements in the current source file, then there's no real
                     // way to incrementally parse.  So just do a full parse instead.
-                    return Parser.parseSourceFile(sourceFile.fileName, newText, sourceFile.languageVersion, Undefined<IncrementalParser::SyntaxCursor>(), /*setParentNodes*/ true, sourceFile.scriptKind);
+                    return Parser::parseSourceFile(sourceFile.fileName, newText, sourceFile.languageVersion, Undefined<IncrementalParser::SyntaxCursor>(), /*setParentNodes*/ true, sourceFile.scriptKind);
                 }
 
                 // Make sure we're not trying to incrementally update a source file more than once.  Once
@@ -8174,9 +8129,9 @@ namespace ts {
                 // tree and give them new positions and parents.  From that point on, trusting the old
                 // tree at all is not possible as far too much of it may violate invariants.
                 auto incrementalSourceFile = <IncrementalNode><Node>sourceFile;
-                Debug::assert(!incrementalSourceFile.hasBeenIncrementallyParsed);
+                Debug::_assert(!incrementalSourceFile.hasBeenIncrementallyParsed);
                 incrementalSourceFile.hasBeenIncrementallyParsed = true;
-                Parser.fixupParentReferences(incrementalSourceFile);
+                Parser::fixupParentReferences(incrementalSourceFile);
                 auto oldText = sourceFile.text;
                 auto syntaxCursor = createSyntaxCursor(sourceFile);
 
@@ -8187,9 +8142,9 @@ namespace ts {
 
                 // Ensure that extending the affected range only moved the start of the change range
                 // earlier in the file.
-                Debug::assert(changeRange.span.start <= textChangeRange.span.start);
-                Debug::assert(textSpanEnd(changeRange.span) == textSpanEnd(textChangeRange.span));
-                Debug::assert(textSpanEnd(textChangeRangeNewSpan(changeRange)) == textSpanEnd(textChangeRangeNewSpan(textChangeRange)));
+                Debug::_assert(changeRange.span.start <= textChangeRange.span.start);
+                Debug::_assert(textSpanEnd(changeRange.span) == textSpanEnd(textChangeRange.span));
+                Debug::_assert(textSpanEnd(textChangeRangeNewSpan(changeRange)) == textSpanEnd(textChangeRangeNewSpan(textChangeRange)));
 
                 // The is the amount the nodes after the edit range need to be adjusted.  It can be
                 // positive (if the edit added characters), negative (if the edit deleted characters)
@@ -8228,7 +8183,7 @@ namespace ts {
                 // inconsistent tree.  Setting the parents on the new tree should be very fast.  We
                 // will immediately bail out of walking any subtrees when we can see that their parents
                 // are already correct.
-                auto result = Parser.parseSourceFile(sourceFile.fileName, newText, sourceFile.languageVersion, syntaxCursor, /*setParentNodes*/ true, sourceFile.scriptKind);
+                auto result = Parser::parseSourceFile(sourceFile.fileName, newText, sourceFile.languageVersion, syntaxCursor, /*setParentNodes*/ true, sourceFile.scriptKind);
                 result.commentDirectives = getNewCommentDirectives(
                     sourceFile.commentDirectives,
                     result.commentDirectives,
@@ -8243,18 +8198,30 @@ namespace ts {
             }
 
             auto getNewCommentDirectives(
-                CommentDirective[] oldDirectives,
-                CommentDirective[] newDirectives,
+                std::vector<CommentDirective> oldDirectives,
+                std::vector<CommentDirective> newDirectives,
                 number changeStart,
                 number changeRangeOldEnd,
                 number delta,
-                string oldText,
-                string newText,
+                safe_string oldText,
+                safe_string newText,
                 boolean aggressiveChecks
-            ) -> CommentDirective[] {
+            ) -> std::vector<CommentDirective> {
                 if (!oldDirectives) return newDirectives;
-                auto CommentDirective[] commentDirectives;
+                auto std::vector<CommentDirective> commentDirectives;
                 auto addedNewlyScannedDirectives = false;
+
+                auto addNewlyScannedDirectives = [&]() {
+                    if (addedNewlyScannedDirectives) return;
+                    addedNewlyScannedDirectives = true;
+                    if (!commentDirectives) {
+                        commentDirectives = newDirectives;
+                    }
+                    else if (newDirectives) {
+                        commentDirectives.push(...newDirectives);
+                    }
+                };
+
                 for (auto directive of oldDirectives) {
                     auto { range, type } = directive;
                     // Range before the change
@@ -8271,24 +8238,13 @@ namespace ts {
                         };
                         commentDirectives = append(commentDirectives, updatedDirective);
                         if (aggressiveChecks) {
-                            Debug::assert(oldText.substring(range.pos, range.end) == newText.substring(updatedDirective.range.pos, updatedDirective.range.end));
+                            Debug::_assert(oldText.substring(range.pos, range.end) == newText.substring(updatedDirective.range.pos, updatedDirective.range.end));
                         }
                     }
                     // Ignore ranges that fall in change range
                 }
                 addNewlyScannedDirectives();
                 return commentDirectives;
-
-                auto addNewlyScannedDirectives() {
-                    if (addedNewlyScannedDirectives) return;
-                    addedNewlyScannedDirectives = true;
-                    if (!commentDirectives) {
-                        commentDirectives = newDirectives;
-                    }
-                    else if (newDirectives) {
-                        commentDirectives.push(...newDirectives);
-                    }
-                }
             }
 
             auto moveElementEntirelyPastChangeRange(IncrementalElement element, boolean isArray, number delta, string oldText, string newText, boolean aggressiveChecks) {
@@ -8315,7 +8271,7 @@ namespace ts {
                     setTextRangePosEnd(node, node.pos + delta, node.end + delta);
 
                     if (aggressiveChecks && shouldCheckNode(node)) {
-                        Debug::assert(text == newText.substring(node.pos, node.end));
+                        Debug::_assert(text == newText.substring(node.pos, node.end));
                     }
 
                     forEachChild(node, visitNode, visitArray);
@@ -8349,9 +8305,9 @@ namespace ts {
             }
 
             auto adjustIntersectingElement(IncrementalElement element, number changeStart, number changeRangeOldEnd, number changeRangeNewEnd, number delta) {
-                Debug::assert(element.end >= changeStart, "Adjusting an element that was entirely before the change range");
-                Debug::assert(element.pos <= changeRangeOldEnd, "Adjusting an element that was entirely after the change range");
-                Debug::assert(element.pos <= element.end);
+                Debug::_assert(element.end >= changeStart, "Adjusting an element that was entirely before the change range");
+                Debug::_assert(element.pos <= changeRangeOldEnd, "Adjusting an element that was entirely after the change range");
+                Debug::_assert(element.pos <= element.end);
 
                 // We have an element that intersects the change range in some way.  It may have its
                 // start, or its end (or both) in the changed range.  We want to adjust any part
@@ -8413,10 +8369,10 @@ namespace ts {
                     // possible. Or Move backward to the new-end if it's in the 'Y' range.
                     Math.min(element.end, changeRangeNewEnd);
 
-                Debug::assert(pos <= end);
+                Debug::_assert(pos <= end);
                 if (element.parent) {
-                    Debug::assertGreaterThanOrEqual(pos, element.parent.pos);
-                    Debug::assertLessThanOrEqual(end, element.parent.end);
+                    Debug::_assertGreaterThanOrEqual(pos, element.parent.pos);
+                    Debug::_assertLessThanOrEqual(end, element.parent.end);
                 }
 
                 setTextRangePosEnd(element, pos, end);
@@ -8426,7 +8382,7 @@ namespace ts {
                 if (aggressiveChecks) {
                     auto pos = node.pos;
                     auto visitNode = (Node child) => {
-                        Debug::assert(child.pos >= pos);
+                        Debug::_assert(child.pos >= pos);
                         pos = child.end;
                     };
                     if (hasJSDocNodes(node)) {
@@ -8435,7 +8391,7 @@ namespace ts {
                         }
                     }
                     forEachChild(node, visitNode);
-                    Debug::assert(pos <= node.end);
+                    Debug::_assert(pos <= node.end);
                 }
             }
 
@@ -8453,7 +8409,7 @@ namespace ts {
                 return;
 
                 auto visitNode(IncrementalNode child) {
-                    Debug::assert(child.pos <= child.end);
+                    Debug::_assert(child.pos <= child.end);
                     if (child.pos > changeRangeOldEnd) {
                         // Node is entirely past the change range.  We need to move both its pos and
                         // end, forward or backward appropriately.
@@ -8482,11 +8438,11 @@ namespace ts {
                     }
 
                     // Otherwise, the node is entirely before the change range.  No need to do anything with it.
-                    Debug::assert(fullEnd < changeStart);
+                    Debug::_assert(fullEnd < changeStart);
                 }
 
                 auto visitArray(IncrementalNodeArray array) {
-                    Debug::assert(array.pos <= array.end);
+                    Debug::_assert(array.pos <= array.end);
                     if (array.pos > changeRangeOldEnd) {
                         // Array is entirely after the change range.  We need to move it, and move any of
                         // its children.
@@ -8511,7 +8467,7 @@ namespace ts {
                     }
 
                     // Otherwise, the array is entirely before the change range.  No need to do anything with it.
-                    Debug::assert(fullEnd < changeStart);
+                    Debug::_assert(fullEnd < changeStart);
                 }
             }
 
@@ -8535,7 +8491,7 @@ namespace ts {
                 // start of the tree.
                 for (auto i = 0; start > 0 && i <= maxLookahead; i++) {
                     auto nearestNode = findNearestNodeStartingBeforeOrAtPosition(sourceFile, start);
-                    Debug::assert(nearestNode.pos <= start);
+                    Debug::_assert(nearestNode.pos <= start);
                     auto position = nearestNode.pos;
 
                     start = Math.max(0, position - 1);
@@ -8605,7 +8561,7 @@ namespace ts {
                             return true;
                         }
                         else {
-                            Debug::assert(child.end <= position);
+                            Debug::_assert(child.end <= position);
                             // The child ends entirely before this position.  Say you have the following
                             // (where $ is the position)
                             //
@@ -8623,7 +8579,7 @@ namespace ts {
                         }
                     }
                     else {
-                        Debug::assert(child.pos > position);
+                        Debug::_assert(child.pos > position);
                         // We're now at a node that is entirely past the position we're searching for.
                         // This node (and all following nodes) could never contribute to the result,
                         // so just skip them by returning 'true' here.
@@ -8632,50 +8588,28 @@ namespace ts {
                 }
             }
 
-            auto checkChangeRange(SourceFile sourceFile, string newText, TextChangeRange textChangeRange, boolean aggressiveChecks) {
+            static auto checkChangeRange(SourceFile sourceFile, string newText, TextChangeRange textChangeRange, boolean aggressiveChecks) {
                 auto oldText = sourceFile.text;
                 if (textChangeRange) {
-                    Debug::assert((oldText.size() - textChangeRange.span.size() + textChangeRange.newLength) == newText.size());
+                    Debug::_assert((oldText.size() - textChangeRange.span.size() + textChangeRange.newLength) == newText.size());
 
-                    if (aggressiveChecks || Debug::shouldAssert(AssertionLevel.VeryAggressive)) {
+                    if (aggressiveChecks || Debug::shouldAssert(AssertionLevel::VeryAggressive)) {
                         auto oldTextPrefix = oldText.substr(0, textChangeRange.span.start);
                         auto newTextPrefix = newText.substr(0, textChangeRange.span.start);
-                        Debug::assert(oldTextPrefix == newTextPrefix);
+                        Debug::_assert(oldTextPrefix == newTextPrefix);
 
                         auto oldTextSuffix = oldText.substring(textSpanEnd(textChangeRange.span), oldText.size());
                         auto newTextSuffix = newText.substring(textSpanEnd(textChangeRangeNewSpan(textChangeRange)), newText.size());
-                        Debug::assert(oldTextSuffix == newTextSuffix);
+                        Debug::_assert(oldTextSuffix == newTextSuffix);
                     }
                 }
-            }
-
-            interface IncrementalElement extends ReadonlyTextRange {
-                readonly Node parent;
-                boolean intersectsChange;
-                number length;
-                Node[] _children;
-            }
-
-            interface IncrementalNode extends Node, IncrementalElement {
-                boolean hasBeenIncrementallyParsed;
-            }
-
-            interface IncrementalNodeArray extends NodeArray<IncrementalNode>, IncrementalElement {
-                number length;
-            }
-
-            // Allows finding nodes in the source file at a certain position in an efficient manner.
-            // The implementation takes advantage of the calling pattern it knows the parser will
-            // make in order to optimize finding nodes as quickly as possible.
-            interface SyntaxCursor {
-                currentNode(number position) -> IncrementalNode;
             }
 
             auto createSyntaxCursor(SourceFile sourceFile) -> SyntaxCursor {
                 auto NodeArray<Node> currentArray = sourceFile.statements;
                 auto currentArrayIndex = 0;
 
-                Debug::assert(currentArrayIndex < currentArray.size());
+                Debug::_assert(currentArrayIndex < currentArray.size());
                 auto current = currentArray[currentArrayIndex];
                 auto lastQueriedPosition = InvalidPosition.Value;
 
@@ -8709,7 +8643,7 @@ namespace ts {
                         lastQueriedPosition = position;
 
                         // Either we don'd have a node, or we have a node at the position being asked for.
-                        Debug::assert(!current || current.pos == position);
+                        Debug::_assert(!current || current.pos == position);
                         return <IncrementalNode>current;
                     }
                 };
@@ -8772,9 +8706,75 @@ namespace ts {
                 }
             }
 
-            auto enum InvalidPosition {
+            enum class InvalidPosition : number {
                 Value = -1
+            };
+        };
+
+
+        auto createSourceFile(string fileName, string sourceText, ScriptTarget languageVersion, boolean setParentNodes = false, ScriptKind scriptKind = ScriptKind::Unknown) -> SourceFile {
+            SourceFile result;
+            if (languageVersion == ScriptTarget::JSON) {
+                result = Parser::parseSourceFile(fileName, sourceText, languageVersion, Undefined<IncrementalParser::SyntaxCursor>() /*syntaxCursor*/, setParentNodes, ScriptKind::JSON);
             }
+            else {
+                result = Parser::parseSourceFile(fileName, sourceText, languageVersion, Undefined<IncrementalParser::SyntaxCursor>() /*syntaxCursor*/, setParentNodes, scriptKind);
+            }
+
+            return result;
+        }
+
+        auto parseIsolatedEntityName(string text, ScriptTarget languageVersion) -> EntityName {
+            return Parser::parseIsolatedEntityName(text, languageVersion);
+        }
+
+        /**
+         * Parse json text into SyntaxTree and return node and parse errors if any
+         * @param fileName
+         * @param sourceText
+         */
+        auto parseJsonText(string fileName, string sourceText) -> JsonSourceFile {
+            return Parser::parseJsonText(fileName, sourceText);
+        }
+
+        // See also `isExternalOrCommonJsModule` in utilities.ts
+        auto isExternalModule(SourceFile file) -> boolean {
+            return !!file.externalModuleIndicator;
+        }
+
+        // Produces a new SourceFile for the 'newText' provided. The 'textChangeRange' parameter
+        // indicates what changed between the 'text' that this SourceFile has and the 'newText'.
+        // The SourceFile will be created with the compiler attempting to reuse as many nodes from
+        // this file as possible.
+        //
+        // this Note auto mutates nodes from this SourceFile. That means any existing nodes
+        // from this SourceFile that are being held onto may change as a result (including
+        // becoming detached from any SourceFile).  It is recommended that this SourceFile not
+        // be used once 'update' is called on it.
+        auto updateSourceFile(SourceFile sourceFile, string newText, TextChangeRange textChangeRange, boolean aggressiveChecks = false) -> SourceFile {
+            auto newSourceFile = IncrementalParser::updateSourceFile(sourceFile, newText, textChangeRange, aggressiveChecks);
+            // Because new source file node is created, it may not have the flag PossiblyContainDynamicImport. This is the case if there is no new edit to add dynamic import.
+            // We will manually port the flag to the new source file.
+            newSourceFile.flags |= (sourceFile.flags & NodeFlags::PermanentlySetIncrementalFlags);
+            return newSourceFile;
+        }
+
+        /* @internal */
+        auto parseIsolatedJSDocComment(string content, number start, number length) {
+            auto result = Parser::JSDocParser::parseIsolatedJSDocComment(content, start, length);
+            if (result && result.jsDoc) {
+                // because the jsDocComment was parsed out of the source file, it might
+                // not be covered by the fixupParentReferences.
+                Parser::fixupParentReferences(result.jsDoc);
+            }
+
+            return result;
+        }
+
+        /* @internal */
+        // Exposed only for testing.
+        auto parseJSDocTypeExpressionForTests(string content, number start, number length) {
+            return Parser::JSDocParser::parseJSDocTypeExpressionForTests(content, start, length);
         }
 
         /** @internal */
@@ -8787,17 +8787,17 @@ namespace ts {
             ScriptTarget languageVersion;
             PragmaMap pragmas;
             CheckJsDirective checkJsDirective;
-            FileReference[] referencedFiles;
-            FileReference[] typeReferenceDirectives;
-            FileReference[] libReferenceDirectives;
-            AmdDependency[] amdDependencies;
+            std::vector<FileReference> referencedFiles;
+            std::vector<FileReference> typeReferenceDirectives;
+            std::vector<FileReference> libReferenceDirectives;
+            std::vector<AmdDependency> amdDependencies;
             boolean hasNoDefaultLib;
             string moduleName;
         }
 
         /*@internal*/
         auto processCommentPragmas(PragmaContext context, string sourceText) -> void {
-            auto PragmaPseudoMapEntry[] = [] pragmas;
+            auto std::vector<PragmaPseudoMapEntry> = [] pragmas;
 
             for (auto range of getLeadingCommentRanges(sourceText, 0) || emptyArray) {
                 auto comment = sourceText.substring(range.pos, range.end);
@@ -8916,7 +8916,7 @@ namespace ts {
 
         auto tripleSlashXMLCommentStartRegEx = /^\/\/\/\s*<(\S+)\s.*?\/>/im;
         auto singleLinePragmaRegEx = /^\/\/\/?\s*@(\S+)\s*(.*)\s*$/im;
-        auto extractPragmas(PragmaPseudoMapEntry[] pragmas, CommentRange range, string text) {
+        auto extractPragmas(std::vector<PragmaPseudoMapEntry> pragmas, CommentRange range, string text) {
             auto tripleSlash = range.kind == SyntaxKind::SingleLineCommentTrivia && tripleSlashXMLCommentStartRegEx.exec(text);
             if (tripleSlash) {
                 auto name = tripleSlash[1].toLowerCase() as keyof PragmaPseudoMap; // Technically unsafe cast, but we do it so the below check to make it safe typechecks
@@ -8968,7 +8968,7 @@ namespace ts {
             }
         }
 
-        auto addPragmaForMatch(PragmaPseudoMapEntry[] pragmas, CommentRange range, PragmaKindFlags kind, RegExpExecArray match) {
+        auto addPragmaForMatch(std::vector<PragmaPseudoMapEntry> pragmas, CommentRange range, PragmaKindFlags kind, RegExpExecArray match) {
             if (!match) return;
             auto name = match[1].toLowerCase() as keyof PragmaPseudoMap; // Technically unsafe cast, but we do it so they below check to make it safe typechecks
             auto pragma = commentPragmas[name] as PragmaDefinition;
