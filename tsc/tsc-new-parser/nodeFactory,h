@@ -1,0 +1,9 @@
+#ifndef NODEFACTORY_H
+#define NODEFACTORY_H
+
+class NodeFactory
+{
+public:
+};
+
+#endif // NODEFACTORY_H

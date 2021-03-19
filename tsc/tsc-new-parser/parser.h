@@ -21,6 +21,36 @@ using NodeWithParentArrayFuncT = std::function<T(NodeArray, Node)>;
 
 typedef std::function<Node(SyntaxKind, number, number)> NodeCreateFunc;
 
+template <typename T>
+struct Undefined
+{
+    Undefined() : _hasValue(false)
+    {
+    }
+
+    Undefined(T value) : _hasValue(true), _value(value)
+    {
+    }
+
+    boolean _hasValue;
+    T _value;
+
+    operator bool()
+    {
+        if (!_hasValue)
+        {
+            return false;
+        }
+
+        return !!_value;
+    }
+
+    bool hasValue()
+    {
+        return _hasValue;
+    }
+};
+
 enum class SignatureFlags : number {
     None = 0,
     Yield = 1 << 0,
@@ -36,6 +66,140 @@ enum class SpeculationKind : number {
     Reparse
 };
 
+enum class ScriptKind : number {
+    Unknown = 0,
+    JS = 1,
+    JSX = 2,
+    TS = 3,
+    TSX = 4,
+    External = 5,
+    JSON = 6,
+    /**
+     * Used on extensions that doesn't define the ScriptKind but the content defines it.
+     * Deferred extensions are going to be included in all project contexts.
+     */
+    Deferred = 7
+};
+
+enum class NodeFlags {
+    None               = 0,
+    Let                = 1 << 0,  // Variable declaration
+    Const              = 1 << 1,  // Variable declaration
+    NestedNamespace    = 1 << 2,  // Namespace declaration
+    Synthesized        = 1 << 3,  // Node was synthesized during transformation
+    Namespace          = 1 << 4,  // Namespace declaration
+    OptionalChain      = 1 << 5,  // Chained MemberExpression rooted to a pseudo-OptionalExpression
+    ExportContext      = 1 << 6,  // Export context (initialized by binding)
+    ContainsThis       = 1 << 7,  // Interface contains references to "this"
+    HasImplicitReturn  = 1 << 8,  // If function implicitly returns on one of codepaths (initialized by binding)
+    HasExplicitReturn  = 1 << 9,  // If function has explicit reachable return on one of codepaths (initialized by binding)
+    GlobalAugmentation = 1 << 10,  // Set if module declaration is an augmentation for the global scope
+    HasAsyncFunctions  = 1 << 11, // If the file has async functions (initialized by binding)
+    DisallowInContext  = 1 << 12, // If node was parsed in a context where 'in-expressions' are not allowed
+    YieldContext       = 1 << 13, // If node was parsed in the 'yield' context created when parsing a generator
+    DecoratorContext   = 1 << 14, // If node was parsed as part of a decorator
+    AwaitContext       = 1 << 15, // If node was parsed in the 'await' context created when parsing an async function
+    ThisNodeHasError   = 1 << 16, // If the parser encountered an error when parsing the code that created this node
+    JavaScriptFile     = 1 << 17, // If node was parsed in a JavaScript
+    ThisNodeOrAnySubNodesHasError = 1 << 18, // If this node or any of its children had an error
+    HasAggregatedChildData = 1 << 19, // If we've computed data from children and cached it in this node
+
+    // These flags will be set when the parser encounters a dynamic import expression or 'import.meta' to avoid
+    // walking the tree if the flags are not set. However, these flags are just a approximation
+    // (hence why it's named "PossiblyContainsDynamicImport") because once set, the flags never get cleared.
+    // During editing, if a dynamic import is removed, incremental parsing will *NOT* clear this flag.
+    // This means that the tree will always be traversed during module resolution, or when looking for external module indicators.
+    // However, the removal operation should not occur often and in the case of the
+    // removal, it is likely that users will add the import anyway.
+    // The advantage of this approach is its simplicity. For the case of batch compilation,
+    // we guarantee that users won't have to pay the price of walking the tree if a dynamic import isn't used.
+    /* @internal */ PossiblyContainsDynamicImport = 1 << 20,
+    /* @internal */ PossiblyContainsImportMeta    = 1 << 21,
+
+    JSDoc                                         = 1 << 22, // If node was parsed inside jsdoc
+    /* @internal */ Ambient                       = 1 << 23, // If node was inside an ambient context -- a declaration file, or inside something with the `declare` modifier.
+    /* @internal */ InWithStatement               = 1 << 24, // If any ancestor of node was the `statement` of a WithStatement (not the `expression`)
+    JsonFile                                      = 1 << 25, // If node was parsed in a Json
+    /* @internal */ TypeCached                    = 1 << 26, // If a type was cached for node at any point
+    /* @internal */ Deprecated                    = 1 << 27, // If has '@deprecated' JSDoc tag
+
+    BlockScoped = Let | Const,
+
+    ReachabilityCheckFlags = HasImplicitReturn | HasExplicitReturn,
+    ReachabilityAndEmitFlags = ReachabilityCheckFlags | HasAsyncFunctions,
+
+    // Parsing context flags
+    ContextFlags = DisallowInContext | YieldContext | DecoratorContext | AwaitContext | JavaScriptFile | InWithStatement | Ambient,
+
+    // Exclude these flags when parsing a Type
+    TypeExcludesFlags = YieldContext | AwaitContext,
+
+    // Represents all flags that are potentially set once and
+    // never cleared on SourceFiles which get re-used in between incremental parses.
+    // See the comment above on `PossiblyContainsDynamicImport` and `PossiblyContainsImportMeta`.
+    /* @internal */ PermanentlySetIncrementalFlags = PossiblyContainsDynamicImport | PossiblyContainsImportMeta,
+};
+
+NodeFlags operator |(NodeFlags lhs, NodeFlags rhs)
+{
+    return (NodeFlags) ((number) lhs | (number) rhs);
+}
+
+enum class ParsingContext {
+    SourceElements,            // Elements in source file
+    BlockStatements,           // Statements in block
+    SwitchClauses,             // Clauses in switch statement
+    SwitchClauseStatements,    // Statements in switch clause
+    TypeMembers,               // Members in interface or type literal
+    ClassMembers,              // Members in class declaration
+    EnumMembers,               // Members in enum declaration
+    HeritageClauseElement,     // Elements in a heritage clause
+    VariableDeclarations,      // Variable declarations in variable statement
+    ObjectBindingElements,     // Binding elements in object binding list
+    ArrayBindingElements,      // Binding elements in array binding list
+    ArgumentExpressions,       // Expressions in argument list
+    ObjectLiteralMembers,      // Members in object literal
+    JsxAttributes,             // Attributes in jsx element
+    JsxChildren,               // Things between opening and closing JSX tags
+    ArrayLiteralMembers,       // Members in array literal
+    Parameters,                // Parameters in parameter list
+    JSDocParameters,           // JSDoc parameters in parameter list of JSDoc function type
+    RestProperties,            // Property names in a rest type list
+    TypeParameters,            // Type parameters in type parameter list
+    TypeArguments,             // Type arguments in type argument list
+    TupleElementTypes,         // Element types in tuple element type list
+    HeritageClauses,           // Heritage clauses for a class or interface declaration.
+    ImportOrExportSpecifiers,  // Named import clause's import specifier list
+    Count                      // Number of parsing contexts
+};
+
+enum class Tristate {
+    False,
+    True,
+    Unknown
+};
+
+struct TextSpan {
+    number start;
+    number length;
+};
+
+struct FileReference : TextSpan {
+    string fileName;
+};
+
+struct TextChangeRange {
+    TextSpan span;
+    number newLength;
+};
+
+struct DiagnosticWithDetachedLocation {
+    string file;
+    string fileName;
+    number start;
+    number length;
+};
+
 struct Node
 {
     SyntaxKind kind;
@@ -43,18 +207,27 @@ struct Node
     NodeArray decorators;
     NodeArray modifiers;
 
+    bool isArray;
+    NodeArray children;
+
     template <typename T> 
     auto as() -> T
     {
         return T();
     }
 
+    template <typename T> 
+    auto asMutable() -> T&
+    {
+        return T();
+    }    
+
     operator bool()
     {
         return this->kind != SyntaxKind::Unknown;
     }
 
-    Node operator||(Node rhs)
+    auto operator||(Node rhs) -> Node
     {
         if (operator bool())
         {
@@ -63,7 +236,20 @@ struct Node
 
         return rhs;
     }
+
+    auto push(Node node) -> void
+    {
+        isArray = true;
+        children.push_back(node);
+    }
 };
+
+static auto isArray(Node &node) -> boolean
+{
+    return node.isArray;
+}
+
+typedef Node EntityName;
 
 struct QualifiedName
 {
@@ -407,6 +593,31 @@ struct SourceFile
 {
     Node statements;
     Node endOfFileToken;
+    Node externalModuleIndicator;
+    Node commonJsModuleIndicator;
+
+    // extra fields
+    std::vector<FileReference> referencedFiles;
+    std::vector<FileReference> typeReferenceDirectives;
+    std::vector<FileReference> libReferenceDirectives;
+    std::vector<FileReference> languageVariant;
+    boolean isDeclarationFile;
+
+    std::map<string, string> renamedDependencies;
+    boolean hasNoDefaultLib;
+    ScriptTarget languageVersion;
+
+    std::map<string, string> pragmas;
+};
+
+struct JsonSourceFile
+{
+    NodeFlags flags;
+
+    Node statements;
+    Node endOfFileToken;
+    Node externalModuleIndicator;
+    Node commonJsModuleIndicator;
 };
 
 struct VariableStatement
@@ -863,5 +1074,21 @@ struct JSDocTypeLiteral
 {
     Node jsDocPropertyTags;
 };
+
+
+template <typename T, typename U>
+auto forEach(std::vector<T> array, std::function<U(T, number)> callback = nullptr) -> U {
+    if (!array.empty()) {
+        for (let i = 0; i < array.size(); i++) {
+            auto result = callback(array[i], i);
+            if (result) {
+                return result;
+            }
+        }
+    }
+
+    return U();
+}
+
 
 #endif // PARSER_H
