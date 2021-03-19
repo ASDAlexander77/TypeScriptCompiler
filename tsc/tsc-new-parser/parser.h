@@ -867,6 +867,7 @@ struct SourceFile
     std::map<string, string> pragmas;
 
     // stats
+    std::vector<CommentDirective> commentDirectives;
     string fileName;
     string text;
     number nodeCount;
@@ -1453,6 +1454,43 @@ static auto attachFileToDiagnostics(std::vector<DiagnosticWithDetachedLocation> 
     return diagnosticsWithLocation;
 }
 
+static auto  assertDiagnosticLocation(SourceFile file, number start, number length) {
+    Debug::assertGreaterThanOrEqual(start, 0);
+    Debug::assertGreaterThanOrEqual(length, 0);
+
+    if (!!file) {
+        Debug::assertLessThanOrEqual(start, file.text.length());
+        Debug::assertLessThanOrEqual(start + length, file.text.length());
+    }
+}
+
+static auto getLocaleSpecificMessage(DiagnosticMessage message) -> string {
+    return string(message.message);
+}
+
+static auto createDetachedDiagnostic(string fileName, number start, number length, DiagnosticMessage message) -> DiagnosticWithDetachedLocation {
+    assertDiagnosticLocation(/*file*/ SourceFile(), start, length);
+    auto text = getLocaleSpecificMessage(message);
+
+    /*
+    if (arguments.length > 4) {
+        text = formatStringFromArgs(text, arguments, 4);
+    }
+    */
+
+    DiagnosticWithDetachedLocation diagnosticWithDetachedLocation;
+    diagnosticWithDetachedLocation.start = start;
+    diagnosticWithDetachedLocation.length = length;
+
+    diagnosticWithDetachedLocation.messageText = text;
+    diagnosticWithDetachedLocation.category = message.category;
+    diagnosticWithDetachedLocation.code = message.code;
+    //diagnosticWithDetachedLocation.reportsUnnecessary = message.reportsUnnecessary;
+    diagnosticWithDetachedLocation.fileName = fileName;
+
+    return diagnosticWithDetachedLocation;
+}
+
 inline auto normalizePath(string path) -> string {
     // TODO: finish it
     return path;
@@ -1485,6 +1523,36 @@ namespace Extension {
 namespace ts
 {
     auto processCommentPragmas(SourceFile context, string sourceText) -> void;
+    auto processPragmasIntoFields(SourceFile context, PragmaDiagnosticReporter reportDiagnostic) -> void;
+
+    namespace IncrementalParser {
+
+        struct IncrementalElement : TextRange {
+            Node parent;
+            boolean intersectsChange;
+            number length;
+            std::vector<Node> _children;
+        };
+
+        struct IncrementalNode : Node, IncrementalElement {
+            boolean hasBeenIncrementallyParsed;
+        };
+
+        struct IncrementalNodeArray : NodeArray<IncrementalNode>, IncrementalElement {
+            number length;
+        };
+
+        // Allows finding nodes in the source file at a certain position in an efficient manner.
+        // The implementation takes advantage of the calling pattern it knows the parser will
+        // make in order to optimize finding nodes as quickly as possible.
+        struct SyntaxCursor {
+            SyntaxCursor() = default;
+
+            std::function<Node(ParsingContext)> currentNode;
+        };
+
+        auto createSyntaxCursor(SourceFile sourceFile) -> SyntaxCursor;
+    }
 }
 
 #endif // PARSER_H

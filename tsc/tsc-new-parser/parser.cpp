@@ -615,31 +615,6 @@ namespace ts {
             return fileExtensionIs(fileName, Extension::Dts);
         }
 
-        namespace IncrementalParser {
-
-            struct IncrementalElement : TextRange {
-                Node parent;
-                boolean intersectsChange;
-                number length;
-                std::vector<Node> _children;
-            };
-
-            struct IncrementalNode : Node, IncrementalElement {
-                boolean hasBeenIncrementallyParsed;
-            };
-
-            struct IncrementalNodeArray : NodeArray<IncrementalNode>, IncrementalElement {
-                number length;
-            };
-
-            // Allows finding nodes in the source file at a certain position in an efficient manner.
-            // The implementation takes advantage of the calling pattern it knows the parser will
-            // make in order to optimize finding nodes as quickly as possible.
-            struct SyntaxCursor {
-                auto currentNode(number position) -> IncrementalNode;
-            };
-        }
-
         // Implement the parser as a singleton module.  We do this for perf reasons because creating
         // parser instances can actually be expensive enough to impact us on projects with many source
         // files.
@@ -998,15 +973,21 @@ namespace ts {
 
                 // A member of ReadonlyArray<T> isn't assignable to a member of T[] (and prevents a direct cast) - but this is where we set up those members so they can be in the future
                 processCommentPragmas(sourceFile, sourceText);
+
+                auto reportPragmaDiagnostic = [&](number pos, number end, DiagnosticMessage diagnostic) -> void {
+                    parseDiagnostics.push_back(createDetachedDiagnostic(fileName, pos, end, diagnostic));
+                };
                 processPragmasIntoFields(sourceFile, reportPragmaDiagnostic);
 
                 sourceFile.commentDirectives = scanner.getCommentDirectives();
                 sourceFile.nodeCount = nodeCount;
                 sourceFile.identifierCount = identifierCount;
                 sourceFile.identifiers = identifiers;
-                sourceFile.parseDiagnostics = attachFileToDiagnostics(parseDiagnostics, sourceFile);
-                if (jsDocDiagnostics) {
-                    sourceFile.jsDocDiagnostics = attachFileToDiagnostics(jsDocDiagnostics, sourceFile);
+                //sourceFile.parseDiagnostics = attachFileToDiagnostics(parseDiagnostics, sourceFile);
+                sourceFile.parseDiagnostics = parseDiagnostics;
+                if (!jsDocDiagnostics.empty()) {
+                    //sourceFile.jsDocDiagnostics = attachFileToDiagnostics(jsDocDiagnostics, sourceFile);
+                    sourceFile.jsDocDiagnostics = jsDocDiagnostics;
                 }
 
                 if (setParentNodes) {
@@ -1014,10 +995,6 @@ namespace ts {
                 }
 
                 return sourceFile;
-
-                auto reportPragmaDiagnostic(number pos, number end, DiagnosticMessage diagnostic) {
-                    parseDiagnostics::push(createDetachedDiagnostic(fileName, pos, end, diagnostic));
-                }
             }
 
             template <typename T>
@@ -1033,7 +1010,7 @@ namespace ts {
                 if (jsDoc.size()) node.jsDoc = jsDoc;
                 if (hasDeprecatedTag) {
                     hasDeprecatedTag = false;
-                    (node as Mutable<T>).flags |= NodeFlags::Deprecated;
+                    node.flags |= NodeFlags::Deprecated;
                 }
                 return node;
             }
@@ -1041,9 +1018,9 @@ namespace ts {
             auto reparseTopLevelAwait(SourceFile sourceFile) {
                 auto savedSyntaxCursor = syntaxCursor;
                 auto baseSyntaxCursor = IncrementalParser::createSyntaxCursor(sourceFile);
-                syntaxCursor = { currentNode };
+                syntaxCursor = IncrementalParser::SyntaxCursor{ std::bind(&Parser::currentNode, this, std::placeholders::_1) };
 
-                auto std::vector<Statement> = [] statements;
+                std::vector<Statement> statements;
                 auto savedParseDiagnostics = parseDiagnostics;
 
                 parseDiagnostics = [];

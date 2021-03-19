@@ -3267,6 +3267,11 @@ private:
             return text;
         }
 
+        auto getCommentDirectives() -> std::vector<CommentDirective>
+        {
+            return commentDirectives;
+        }
+
         auto clearCommentDirectives()
         {
             commentDirectives.clear();
@@ -3386,17 +3391,17 @@ private:
         return impl->setText(text, start, length);
     }
 
-    auto setOnError(ErrorCallback errorCallback) -> void
+    auto Scanner::setOnError(ErrorCallback errorCallback) -> void
     {
         impl->setOnError(errorCallback);
     }
 
-    auto setScriptTarget(ScriptTarget scriptTarget) -> void
+    auto Scanner::setScriptTarget(ScriptTarget scriptTarget) -> void
     {
         impl->setScriptTarget(scriptTarget);
     }
 
-    auto setLanguageVariant(LanguageVariant variant) -> void
+    auto Scanner::setLanguageVariant(LanguageVariant variant) -> void
     {
         impl->setScriptTarget(variant);
     }    
@@ -3435,6 +3440,11 @@ private:
     {
         return impl->tokenValue;
     }     
+
+    auto Scanner::getCommentDirectives() -> std::vector<CommentDirective>
+    {
+        return impl->getCommentDirectives();
+    }
 
     auto Scanner::clearCommentDirectives() -> void
     {

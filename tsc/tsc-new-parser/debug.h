@@ -25,6 +25,11 @@ struct Debug
         assert(l == r);
     }
 
+    static auto assertGreaterThanOrEqual(number l, number r) -> void
+    {
+        assert(l >= r);
+    }
+
     static auto assertLessThanOrEqual(number l, number r) -> void
     {
         assert(l <= r);
