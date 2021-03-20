@@ -235,4 +235,8 @@ auto setParentRecursive(T rootNode, boolean incremental) -> T {
     return rootNode;
 }
 
+auto isKeyword(SyntaxKind token) -> boolean {
+    return SyntaxKind::FirstKeyword <= token && token <= SyntaxKind::LastKeyword;
+}
+
 #endif // UTILITIES_H

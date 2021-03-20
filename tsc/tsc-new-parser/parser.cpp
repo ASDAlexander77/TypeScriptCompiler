@@ -1291,7 +1291,7 @@ namespace ts {
                 parseErrorAt(scanner.getTokenPos(), scanner.getTextPos(), message, arg0);
             }
 
-            auto parseErrorAtPosition(number start, number length, DiagnosticMessage message, string arg0) -> void {
+            auto parseErrorAtPosition(number start, number length, DiagnosticMessage message, string arg0 = string()) -> void {
                 // Don't report another error if it would just be at the same position as the last error.
                 auto lastError = lastOrUndefined(parseDiagnostics);
                 if (!lastError || start != lastError.start) {

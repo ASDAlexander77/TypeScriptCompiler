@@ -3462,7 +3462,27 @@ private:
 
     auto Scanner::clearCommentDirectives() -> void
     {
-        return impl->clearCommentDirectives();
+        impl->clearCommentDirectives();
+    }
+
+    auto Scanner::hasUnicodeEscape() -> boolean
+    {
+        return (impl->tokenFlags & TokenFlags::hasUnicodeEscape) != 0;
+    }
+
+    auto Scanner::hasExtendedUnicodeEscape() -> boolean
+    {
+        return (impl->tokenFlags & TokenFlags::hasExtendedUnicodeEscape) != 0;
+    }
+
+    auto Scanner::hasPrecedingLineBreak() -> boolean
+    {
+        return (impl->tokenFlags & TokenFlags::hasPrecedingLineBreak) != 0;
+    }
+
+    auto Scanner::hasPrecedingJSDocComment() -> boolean
+    {
+        return (impl->tokenFlags & TokenFlags::PrecedingJSDocComment) != 0;
     }
 
     Scanner::~Scanner()

@@ -844,6 +844,10 @@ namespace ts
         auto setTextPos(number textPos) -> void;
         auto getCommentDirectives() -> std::vector<CommentDirective>;
         auto clearCommentDirectives() -> void;
+        auto hasUnicodeEscape() -> boolean;
+        auto hasExtendedUnicodeEscape() -> boolean;
+        auto hasPrecedingLineBreak() -> boolean;
+        auto hasPrecedingJSDocComment() -> boolean;
 
         ~Scanner();
     };
