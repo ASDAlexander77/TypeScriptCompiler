@@ -2,6 +2,7 @@
 #define TYPES_H
 
 #include "config.h"
+#include "undefined.h"
 
 struct DiagnosticMessage
 {
@@ -33,6 +34,10 @@ struct TextChangeRange {
 };
 
 struct DiagnosticRelatedInformation {
+    DiagnosticRelatedInformation() = default;
+    
+    DiagnosticRelatedInformation(undefined_t) : category(DiagnosticCategory::Undefined) {}
+
     DiagnosticCategory category;
     string fileName;
     number code;
@@ -47,6 +52,7 @@ struct Diagnostic : DiagnosticRelatedInformation {
 };
 
 struct DiagnosticWithDetachedLocation : Diagnostic {
+
 };
 
 

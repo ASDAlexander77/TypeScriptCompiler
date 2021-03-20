@@ -1,5 +1,6 @@
 #include "parser.h"
 #include "nodeFactory.h"
+#include "core.h"
 #include "utilities.h"
 
 namespace ts {
@@ -1068,8 +1069,8 @@ namespace ts {
                     pos = findNextStatementWithoutAwait(sourceFile.statements, start);
 
                     // append all diagnostics associated with the copied range
-                    auto diagnosticStart = findIndex<DiagnosticWithDetachedLocation>(savedParseDiagnostics, [&](auto diagnostic, number index) { return diagnostic.start >= prevStatement.pos; });
-                    auto diagnosticEnd = diagnosticStart >= 0 ? findIndex<DiagnosticWithDetachedLocation>(savedParseDiagnostics, [&](auto diagnostic, number index) { return diagnostic.start >= nextStatement.pos, diagnosticStart; }) : -1;
+                    auto diagnosticStart = findIndex(savedParseDiagnostics, [&](auto diagnostic, number index) { return diagnostic.start >= prevStatement.pos; });
+                    auto diagnosticEnd = diagnosticStart >= 0 ? findIndex(savedParseDiagnostics, [&](auto diagnostic, number index) { return diagnostic.start >= nextStatement.pos, diagnosticStart; }) : -1;
                     if (diagnosticStart >= 0) {
                         addRange(parseDiagnostics, savedParseDiagnostics, diagnosticStart, diagnosticEnd >= 0 ? diagnosticEnd : -1);
                     }
@@ -1115,7 +1116,7 @@ namespace ts {
                     addRange(statements, sourceFile.statements, pos);
 
                     // append all diagnostics associated with the copied range
-                    auto diagnosticStart = findIndex<DiagnosticWithDetachedLocation>(savedParseDiagnostics, [&](auto diagnostic, number index) { return diagnostic.start >= prevStatement.pos; });
+                    auto diagnosticStart = findIndex(savedParseDiagnostics, [&](auto diagnostic, number index) { return diagnostic.start >= prevStatement.pos; });
                     if (diagnosticStart >= 0) {
                         addRange(parseDiagnostics, savedParseDiagnostics, diagnosticStart);
                     }
@@ -1294,7 +1295,7 @@ namespace ts {
                 // Don't report another error if it would just be at the same position as the last error.
                 auto lastError = lastOrUndefined(parseDiagnostics);
                 if (!lastError || start != lastError.start) {
-                    parseDiagnostics::push_back(createDetachedDiagnostic(fileName, start, length, message, arg0));
+                    parseDiagnostics.push_back(createDetachedDiagnostic(fileName, start, length, message, arg0));
                 }
 
                 // Mark that we've encountered an error.  We'll set an appropriate bit on the next
@@ -8789,7 +8790,7 @@ namespace ts {
             context.libReferenceDirectives = [];
             context.amdDependencies = [];
             context.hasNoDefaultLib = false;
-            context.pragmas!.forEach((entryOrList, key) => { // GH TODO#18217
+            context.pragmas.forEach((entryOrList, key) => { // GH TODO#18217
                 // The TODO below should be strongly type-guarded and not need casts/explicit annotations, since entryOrList is related to
                 // key and key is constrained to a union; but it's not (see GH#21483 for at least partial fix) :(
                 switch (key) {

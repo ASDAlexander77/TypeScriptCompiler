@@ -1,6 +1,7 @@
 #ifndef PARSER_H
 #define PARSER_H
 
+#include "undefined.h"
 #include "enums.h"
 #include "types.h"
 #include "scanner.h"

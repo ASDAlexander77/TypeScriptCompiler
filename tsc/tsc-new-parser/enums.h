@@ -5,6 +5,7 @@
 
 enum class DiagnosticCategory : int
 {
+    Undefined,
     Warning,
     Error,
     Suggestion,
