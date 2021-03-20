@@ -350,9 +350,19 @@ enum class OperatorPrecedence : number {
     Invalid = -1,
 };
 
+static bool operator !(NodeFlags lhs)
+{
+    return (number)lhs == 0;
+}
+
 static NodeFlags operator |(NodeFlags lhs, NodeFlags rhs)
 {
     return (NodeFlags) ((number) lhs | (number) rhs);
+}
+
+static NodeFlags operator &(NodeFlags lhs, NodeFlags rhs)
+{
+    return (NodeFlags) ((number) lhs & (number) rhs);
 }
 
 static NodeFlags& operator|=(NodeFlags& lhv, NodeFlags rhv)
@@ -361,7 +371,7 @@ static NodeFlags& operator|=(NodeFlags& lhv, NodeFlags rhv)
     return lhv;
 }
 
-enum class ParsingContext {
+enum class ParsingContext : number {
     Unknown,
     SourceElements,            // Elements in source file
     BlockStatements,           // Statements in block
@@ -390,7 +400,100 @@ enum class ParsingContext {
     Count                      // Number of parsing contexts
 };
 
-enum class Tristate {
+enum class TransformFlags : number {
+    None = 0,
+
+    // Facts
+    // - Flags used to indicate that a node or subtree contains syntax that requires transformation.
+    ContainsTypeScript = 1 << 0,
+    ContainsJsx = 1 << 1,
+    ContainsESNext = 1 << 2,
+    ContainsES2021 = 1 << 3,
+    ContainsES2020 = 1 << 4,
+    ContainsES2019 = 1 << 5,
+    ContainsES2018 = 1 << 6,
+    ContainsES2017 = 1 << 7,
+    ContainsES2016 = 1 << 8,
+    ContainsES2015 = 1 << 9,
+    ContainsGenerator = 1 << 10,
+    ContainsDestructuringAssignment = 1 << 11,
+
+    // Markers
+    // - Flags used to indicate that a subtree contains a specific transformation.
+    ContainsTypeScriptClassSyntax = 1 << 12, // Decorators, Property Initializers, Parameter Property Initializers
+    ContainsLexicalThis = 1 << 13,
+    ContainsRestOrSpread = 1 << 14,
+    ContainsObjectRestOrSpread = 1 << 15,
+    ContainsComputedPropertyName = 1 << 16,
+    ContainsBlockScopedBinding = 1 << 17,
+    ContainsBindingPattern = 1 << 18,
+    ContainsYield = 1 << 19,
+    ContainsAwait = 1 << 20,
+    ContainsHoistedDeclarationOrCompletion = 1 << 21,
+    ContainsDynamicImport = 1 << 22,
+    ContainsClassFields = 1 << 23,
+    ContainsPossibleTopLevelAwait = 1 << 24,
+
+    // Please leave this as 1 << 29.
+    // It is the maximum bit we can set before we outgrow the size of a v8 small integer (SMI) on an x86 system.
+    // It is a good reminder of how much room we have left
+    HasComputedFlags = 1 << 29, // Transform flags have been computed.
+
+    // Assertions
+    // - Bitmasks that are used to assert facts about the syntax of a node and its subtree.
+    AssertTypeScript = ContainsTypeScript,
+    AssertJsx = ContainsJsx,
+    AssertESNext = ContainsESNext,
+    AssertES2021 = ContainsES2021,
+    AssertES2020 = ContainsES2020,
+    AssertES2019 = ContainsES2019,
+    AssertES2018 = ContainsES2018,
+    AssertES2017 = ContainsES2017,
+    AssertES2016 = ContainsES2016,
+    AssertES2015 = ContainsES2015,
+    AssertGenerator = ContainsGenerator,
+    AssertDestructuringAssignment = ContainsDestructuringAssignment,
+
+    // Scope Exclusions
+    // - Bitmasks that exclude flags from propagating out of a specific context
+    //   into the subtree flags of their container.
+    OuterExpressionExcludes = HasComputedFlags,
+    PropertyAccessExcludes = OuterExpressionExcludes,
+    NodeExcludes = PropertyAccessExcludes,
+    ArrowFunctionExcludes = NodeExcludes | ContainsTypeScriptClassSyntax | ContainsBlockScopedBinding | ContainsYield | ContainsAwait | ContainsHoistedDeclarationOrCompletion | ContainsBindingPattern | ContainsObjectRestOrSpread | ContainsPossibleTopLevelAwait,
+    FunctionExcludes = NodeExcludes | ContainsTypeScriptClassSyntax | ContainsLexicalThis | ContainsBlockScopedBinding | ContainsYield | ContainsAwait | ContainsHoistedDeclarationOrCompletion | ContainsBindingPattern | ContainsObjectRestOrSpread | ContainsPossibleTopLevelAwait,
+    ConstructorExcludes = NodeExcludes | ContainsLexicalThis | ContainsBlockScopedBinding | ContainsYield | ContainsAwait | ContainsHoistedDeclarationOrCompletion | ContainsBindingPattern | ContainsObjectRestOrSpread | ContainsPossibleTopLevelAwait,
+    MethodOrAccessorExcludes = NodeExcludes | ContainsLexicalThis | ContainsBlockScopedBinding | ContainsYield | ContainsAwait | ContainsHoistedDeclarationOrCompletion | ContainsBindingPattern | ContainsObjectRestOrSpread,
+    PropertyExcludes = NodeExcludes | ContainsLexicalThis,
+    ClassExcludes = NodeExcludes | ContainsTypeScriptClassSyntax | ContainsComputedPropertyName,
+    ModuleExcludes = NodeExcludes | ContainsTypeScriptClassSyntax | ContainsLexicalThis | ContainsBlockScopedBinding | ContainsHoistedDeclarationOrCompletion | ContainsPossibleTopLevelAwait,
+    TypeExcludes = ~ContainsTypeScript,
+    ObjectLiteralExcludes = NodeExcludes | ContainsTypeScriptClassSyntax | ContainsComputedPropertyName | ContainsObjectRestOrSpread,
+    ArrayLiteralOrCallOrNewExcludes = NodeExcludes | ContainsRestOrSpread,
+    VariableDeclarationListExcludes = NodeExcludes | ContainsBindingPattern | ContainsObjectRestOrSpread,
+    ParameterExcludes = NodeExcludes,
+    CatchClauseExcludes = NodeExcludes | ContainsObjectRestOrSpread,
+    BindingPatternExcludes = NodeExcludes | ContainsRestOrSpread,
+
+    // Propagating flags
+    // - Bitmasks for flags that should propagate from a child
+    PropertyNamePropagatingFlags = ContainsLexicalThis,
+
+    // Masks
+    // - Additional bitmasks
+};
+
+static bool operator !(TransformFlags lhs)
+{
+    return (number)lhs == 0;
+}
+
+static TransformFlags operator &(TransformFlags lhs, TransformFlags rhs)
+{
+    return (TransformFlags) ((number) lhs & (number) rhs);
+}
+
+enum class Tristate : number {
     False,
     True,
     Unknown
@@ -439,6 +542,7 @@ struct Node : TextRange
 
     SyntaxKind kind;
     NodeFlags flags;
+    TransformFlags transformFlags;
     NodeArray<Node> decorators;
     ModifiersArray modifiers;
 
@@ -483,11 +587,21 @@ struct Node : TextRange
         return children.size();
     }
 
-    auto push(Node node) -> void
+    auto operator[](number i) const -> Node
+    {
+        return children[i];
+    }    
+
+    auto operator[](number i) -> Node&
+    {
+        return children[i];
+    }    
+
+    auto push_back(Node node) -> void
     {
         isArray = true;
         children.push_back(node);
-    }
+    }    
 };
 
 static auto isArray(Node &node) -> boolean
@@ -843,9 +957,11 @@ struct Block
     Node statements;
 };
 
-struct SourceFile
+struct SourceFile : TextRange
 {
     Node root;
+    NodeFlags flags;
+    TransformFlags transformFlags;    
 
     Node statements;
     Node endOfFileToken;
@@ -1381,6 +1497,34 @@ auto forEach(std::vector<T> array, std::function<U(T, number)> callback = nullpt
     return U();
 }
 
+template <typename T>
+auto toOffset(T array, number offset) -> number {
+    return offset < 0 ? array.size() + offset : offset;
+}
+
+template <typename T, typename U>
+auto addRange(T to, U from, number start = -1, number end = -1) -> T {
+    start = start == -1 ? 0 : toOffset(from, start);
+    end = end == -1 ? from.size() : toOffset(from, end);
+    for (auto i = start; i < end && i < from.size(); i++) {
+        if (from[i] != undefined) {
+            to.push_back(from[i]);
+        }
+    }
+
+    return to;
+}
+
+template <typename T>
+auto findIndex(std::vector<T> array, std::function<boolean(T, number)> predicate, number startIndex = 0) -> number {
+    for (auto i = startIndex; i < array.size(); i++) {
+        if (predicate(array[i], i)) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 static auto getScriptKindFromFileName(string fileName) -> ScriptKind
 {
     auto ext = fileName.substr(fileName.find(S('.')));
@@ -1510,6 +1654,62 @@ inline auto fileExtensionIs(string path, string extension) -> boolean {
     return path.length() > extension.length() && endsWith(path, extension);
 }
 
+template <typename T>
+inline auto setTextRangePos(T range, number pos) {
+    range.pos = pos;
+    return range;
+}
+
+template <typename T>
+inline auto setTextRangeEnd(T range, number end) -> T {
+    range.end = end;
+    return range;
+}
+
+template <typename T>
+inline auto setTextRangePosEnd(T range, number pos, number end) {
+    return setTextRangeEnd(setTextRangePos(range, pos), end);
+}
+
+template <typename T>
+inline auto setTextRangePosWidth(T range, number pos, number width) {
+    return setTextRangePosEnd(range, pos, pos + width);
+}
+
+template <typename T>
+inline auto setTextRange(T range, TextRange location) -> T {
+    return location ? setTextRangePosEnd(range, location.pos, location.end) : range;
+}
+
+template <typename T>
+auto setParentRecursive(T rootNode, boolean incremental) -> T {
+
+    auto bindParentToChildIgnoringJSDoc = [&](Node child, Node parent) -> boolean /*true is skip*/ {
+        if (incremental && child.parent === parent) {
+            return true;
+        }
+        setParent(child, parent);
+        return false;
+    }
+
+    auto bindJSDoc = [&](Node child) {
+        if (hasJSDocNodes(child)) {
+            for (const doc : child.jsDoc) {
+                bindParentToChildIgnoringJSDoc(doc, child);
+                forEachChildRecursively(doc, bindParentToChildIgnoringJSDoc);
+            }
+        }
+    }
+
+    auto bindParentToChild = [&](Node child, Node parent) {
+        return bindParentToChildIgnoringJSDoc(child, parent) || bindJSDoc(child);
+    }
+
+    if (!rootNode) return rootNode;
+    forEachChildRecursively(rootNode, isJSDocNode(rootNode) ? bindParentToChildIgnoringJSDoc : bindParentToChild);
+    return rootNode;
+}
+
 namespace Extension {
     static const string Ts = S(".ts");
     static const string Tsx = S(".tsx");
@@ -1524,6 +1724,7 @@ namespace ts
 {
     auto processCommentPragmas(SourceFile context, string sourceText) -> void;
     auto processPragmasIntoFields(SourceFile context, PragmaDiagnosticReporter reportDiagnostic) -> void;
+    auto isExternalModule(SourceFile file) -> boolean;
 
     namespace IncrementalParser {
 
@@ -1548,7 +1749,7 @@ namespace ts
         struct SyntaxCursor {
             SyntaxCursor() = default;
 
-            std::function<Node(ParsingContext)> currentNode;
+            std::function<IncrementalNode(number)> currentNode;
         };
 
         auto createSyntaxCursor(SourceFile sourceFile) -> SyntaxCursor;

@@ -840,7 +840,7 @@ namespace ts {
 
                         // Error collect recovery multiple top-level expressions
                         if (expressions) {
-                            expressions.push(expression);
+                            expressions.push_back(expression);
                         }
                         else {
                             expressions = expression;
@@ -1015,15 +1015,47 @@ namespace ts {
                 return node;
             }
 
-            auto reparseTopLevelAwait(SourceFile sourceFile) {
+            auto reparseTopLevelAwait(SourceFile sourceFile) -> Node {
                 auto savedSyntaxCursor = syntaxCursor;
                 auto baseSyntaxCursor = IncrementalParser::createSyntaxCursor(sourceFile);
-                syntaxCursor = IncrementalParser::SyntaxCursor{ std::bind(&Parser::currentNode, this, std::placeholders::_1) };
 
-                std::vector<Statement> statements;
+                auto containsPossibleTopLevelAwait = [](Node node) {
+                    return !(node.flags & NodeFlags::AwaitContext)
+                        && !!(node.transformFlags & TransformFlags::ContainsPossibleTopLevelAwait);
+                };
+
+                auto findNextStatementWithAwait = [&](Node statements, number start) {
+                    for (auto i = start; i < statements.size(); i++) {
+                        if (containsPossibleTopLevelAwait(statements[i])) {
+                            return i;
+                        }
+                    }
+                    return -1;
+                };
+
+                auto findNextStatementWithoutAwait = [&](Node statements, number start) {
+                    for (auto i = start; i < statements.size(); i++) {
+                        if (!containsPossibleTopLevelAwait(statements[i])) {
+                            return i;
+                        }
+                    }
+                    return -1;
+                };
+
+                auto currentNode = [&](number position) {
+                    auto node = baseSyntaxCursor.currentNode(position);
+                    if (topLevel && node && containsPossibleTopLevelAwait(node)) {
+                        node.intersectsChange = true;
+                    }
+                    return node;
+                };
+
+                syntaxCursor = IncrementalParser::SyntaxCursor{ currentNode };
+
+                Node statements;
                 auto savedParseDiagnostics = parseDiagnostics;
 
-                parseDiagnostics = [];
+                parseDiagnostics.clear();
 
                 auto pos = 0;
                 auto start = findNextStatementWithAwait(sourceFile.statements, 0);
@@ -1035,14 +1067,14 @@ namespace ts {
                     pos = findNextStatementWithoutAwait(sourceFile.statements, start);
 
                     // append all diagnostics associated with the copied range
-                    auto diagnosticStart = findIndex(savedParseDiagnostics, diagnostic => diagnostic.start >= prevStatement.pos);
-                    auto diagnosticEnd = diagnosticStart >= 0 ? findIndex(savedParseDiagnostics, diagnostic => diagnostic.start >= nextStatement.pos, diagnosticStart) : -1;
+                    auto diagnosticStart = findIndex<DiagnosticWithDetachedLocation>(savedParseDiagnostics, [&](auto diagnostic, number index) { return diagnostic.start >= prevStatement.pos; });
+                    auto diagnosticEnd = diagnosticStart >= 0 ? findIndex<DiagnosticWithDetachedLocation>(savedParseDiagnostics, [&](auto diagnostic, number index) { return diagnostic.start >= nextStatement.pos, diagnosticStart; }) : -1;
                     if (diagnosticStart >= 0) {
-                        addRange(parseDiagnostics, savedParseDiagnostics, diagnosticStart, diagnosticEnd >= 0 ? diagnosticEnd : undefined);
+                        addRange(parseDiagnostics, savedParseDiagnostics, diagnosticStart, diagnosticEnd >= 0 ? diagnosticEnd : -1);
                     }
 
                     // reparse all statements between start and pos. We skip existing diagnostics for the same range and allow the parser to generate new ones.
-                    speculationHelper(() => {
+                    speculationHelper<void>([&] () {
                         auto savedContextFlags = contextFlags;
                         contextFlags |= NodeFlags::AwaitContext;
                         scanner.setTextPos(nextStatement.pos);
@@ -1050,8 +1082,8 @@ namespace ts {
 
                         while (token() != SyntaxKind::EndOfFileToken) {
                             auto startPos = scanner.getStartPos();
-                            auto statement = parseListElement(ParsingContext::SourceElements, parseStatement);
-                            statements.push(statement);
+                            auto statement = parseListElement<Statement>(ParsingContext::SourceElements, std::bind(&Parser::parseStatement, this));
+                            statements.push_back(statement);
                             if (startPos == scanner.getStartPos()) {
                                 nextToken();
                             }
@@ -1070,7 +1102,7 @@ namespace ts {
                         }
 
                         contextFlags = savedContextFlags;
-                    }, SpeculationKind.Reparse);
+                    }, SpeculationKind::Reparse);
 
                     // find the next statement containing an `await`
                     start = pos >= 0 ? findNextStatementWithAwait(sourceFile.statements, pos) : -1;
@@ -1082,7 +1114,7 @@ namespace ts {
                     addRange(statements, sourceFile.statements, pos);
 
                     // append all diagnostics associated with the copied range
-                    auto diagnosticStart = findIndex(savedParseDiagnostics, diagnostic => diagnostic.start >= prevStatement.pos);
+                    auto diagnosticStart = findIndex<DiagnosticWithDetachedLocation>(savedParseDiagnostics, [&](auto diagnostic, number index) { return diagnostic.start >= prevStatement.pos; });
                     if (diagnosticStart >= 0) {
                         addRange(parseDiagnostics, savedParseDiagnostics, diagnosticStart);
                     }
@@ -1090,38 +1122,6 @@ namespace ts {
 
                 syntaxCursor = savedSyntaxCursor;
                 return factory.updateSourceFile(sourceFile, setTextRange(factory.createNodeArray(statements), sourceFile.statements));
-
-                auto containsPossibleTopLevelAwait(Node node) {
-                    return !(node.flags & NodeFlags::AwaitContext)
-                        && !!(node.transformFlags & TransformFlags.ContainsPossibleTopLevelAwait);
-                }
-
-                auto findNextStatementWithAwait(NodeArray<Statement> statements, number start) {
-                    for (auto i = start; i < statements.size(); i++) {
-                        if (containsPossibleTopLevelAwait(statements[i])) {
-                            return i;
-                        }
-                    }
-                    return -1;
-                }
-
-                auto findNextStatementWithoutAwait(NodeArray<Statement> statements, number start) {
-                    for (auto i = start; i < statements.size(); i++) {
-                        if (!containsPossibleTopLevelAwait(statements[i])) {
-                            return i;
-                        }
-                    }
-                    return -1;
-                }
-
-                auto currentNode(number position) {
-                    auto node = baseSyntaxCursor.currentNode(position);
-                    if (topLevel && node && containsPossibleTopLevelAwait(node)) {
-                        node.intersectsChange = true;
-                    }
-                    return node;
-                }
-
             }
 
             auto fixupParentReferences(Node rootNode) -> void {
@@ -1140,7 +1140,7 @@ namespace ts {
                 setExternalModuleIndicator(sourceFile);
 
                 // If we parsed this as an external module, it may contain top-level await
-                if (!isDeclarationFile && isExternalModule(sourceFile) && sourceFile.transformFlags & TransformFlags.ContainsPossibleTopLevelAwait) {
+                if (!isDeclarationFile && isExternalModule(sourceFile) && !!(sourceFile.transformFlags & TransformFlags::ContainsPossibleTopLevelAwait)) {
                     sourceFile = reparseTopLevelAwait(sourceFile);
                 }
 
@@ -1293,7 +1293,7 @@ namespace ts {
                 // Don't report another error if it would just be at the same position as the last error.
                 auto lastError = lastOrUndefined(parseDiagnostics);
                 if (!lastError || start != lastError.start) {
-                    parseDiagnostics::push(createDetachedDiagnostic(fileName, start, length, message, arg0));
+                    parseDiagnostics::push_back(createDetachedDiagnostic(fileName, start, length, message, arg0));
                 }
 
                 // Mark that we've encountered an error.  We'll set an appropriate bit on the next
@@ -1405,7 +1405,7 @@ namespace ts {
                 // If we're only looking ahead, then tell the scanner to only lookahead as well.
                 // Otherwise, if we're actually speculatively parsing, then tell the scanner to do the
                 // same.
-                auto result = speculationKind != SpeculationKind.TryParse
+                auto result = speculationKind != SpeculationKind::TryParse
                     ? scanner.lookAhead(callback)
                     : scanner.tryScan(callback);
 
@@ -1413,9 +1413,9 @@ namespace ts {
 
                 // If our callback returned something 'falsy' or we're just looking ahead,
                 // then unconditionally restore us to where we were.
-                if (!result || speculationKind != SpeculationKind.TryParse) {
+                if (!result || speculationKind != SpeculationKind::TryParse) {
                     currentToken = saveToken;
-                    if (speculationKind != SpeculationKind.Reparse) {
+                    if (speculationKind != SpeculationKind::Reparse) {
                         parseDiagnostics::size() = saveParseDiagnosticsLength;
                     }
                     parseErrorBeforeNextFinishedNode = saveParseErrorBeforeNextFinishedNode;
@@ -1430,7 +1430,7 @@ namespace ts {
              */
             template <typename T> 
             auto lookAhead(std::function<T()> callback) -> T {
-                return speculationHelper<T>(callback, SpeculationKind.Lookahead);
+                return speculationHelper<T>(callback, SpeculationKind::Lookahead);
             }
 
             /** Invokes the provided callback.  If the callback returns something falsy, then it restores
@@ -1440,7 +1440,7 @@ namespace ts {
              */
             template <typename T> 
             auto tryParse(std::function<T()> callback) -> T {
-                return speculationHelper<T>(callback, SpeculationKind.TryParse);
+                return speculationHelper<T>(callback, SpeculationKind::TryParse);
             }
 
             auto isBindingIdentifier() -> boolean {
@@ -2047,7 +2047,7 @@ namespace ts {
                 while (!isListTerminator(kind)) {
                     if (isListElement(kind, /*inErrorRecovery*/ false)) {
                         auto element = parseListElement(kind, parseElement);
-                        list.push(element);
+                        list.push_back(element);
 
                         continue;
                     }
@@ -2412,7 +2412,7 @@ namespace ts {
                 while (true) {
                     if (isListElement(kind, /*inErrorRecovery*/ false)) {
                         auto startPos = scanner.getStartPos();
-                        list.push(parseListElement(kind, parseElement));
+                        list.push_back(parseListElement(kind, parseElement));
                         commaStart = scanner.getTokenPos();
 
                         if (parseOptional(SyntaxKind::CommaToken)) {
@@ -2568,7 +2568,7 @@ namespace ts {
                 auto TemplateSpan node;
                 do {
                     node = parseTemplateSpan(isTaggedTemplate);
-                    list.push(node);
+                    list.push_back(node);
                 }
                 while (node.literal.kind == SyntaxKind::TemplateMiddle);
                 return createNodeArray(list, pos);
@@ -2602,7 +2602,7 @@ namespace ts {
                 auto TemplateLiteralTypeSpan node;
                 do {
                     node = parseTemplateTypeSpan();
-                    list.push(node);
+                    list.push_back(node);
                 }
                 while (node.literal.kind == SyntaxKind::TemplateMiddle);
                 return createNodeArray(list, pos);
@@ -3667,7 +3667,7 @@ namespace ts {
                 if (token() == operator_ || hasLeadingOperator) {
                     auto types = [type];
                     while (parseOptional(operator_)) {
-                        types.push(parseFunctionOrConstructorTypeToError(isUnionType) || parseConstituentType());
+                        types.push_back(parseFunctionOrConstructorTypeToError(isUnionType) || parseConstituentType());
                     }
                     type = finishNode(createTypeNode(createNodeArray(types, pos)), pos);
                 }
@@ -4895,7 +4895,7 @@ namespace ts {
                 while (true) {
                     auto child = parseJsxChild(openingTag, currentToken = scanner.reScanJsxToken());
                     if (!child) break;
-                    list.push(child);
+                    list.push_back(child);
                 }
 
                 parsingContext = saveParsingContext;
@@ -7113,7 +7113,7 @@ namespace ts {
                 return withJSDoc(finishNode(node, pos), hasJSDoc);
             }
 
-            auto setExternalModuleIndicator(SourceFile sourceFile) {
+            auto setExternalModuleIndicator(SourceFile sourceFile) -> void {
                 // Try to use the first top-level import/when available, then
                 // fall back to looking for an 'import.meta' somewhere in the tree if necessary.
                 sourceFile.externalModuleIndicator =
@@ -7217,7 +7217,7 @@ namespace ts {
                     if (!jsDocDiagnostics) {
                         jsDocDiagnostics = [];
                     }
-                    jsDocDiagnostics::push(...parseDiagnostics);
+                    jsDocDiagnostics::push_back(...parseDiagnostics);
                 }
                 currentToken = saveToken;
                 parseDiagnostics::size() = saveParseDiagnosticsLength;
@@ -7270,7 +7270,7 @@ namespace ts {
                         if (!margin) {
                             margin = indent;
                         }
-                        comments.push(text);
+                        comments.push_back(text);
                         indent += text.size();
                     }
 
@@ -7297,7 +7297,7 @@ namespace ts {
                                 }
                                 break;
                             case SyntaxKind::NewLineTrivia:
-                                comments.push(scanner.getTokenText());
+                                comments.push_back(scanner.getTokenText());
                                 state = JSDocState.BeginningOfLine;
                                 indent = 0;
                                 break;

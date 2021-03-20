@@ -43,6 +43,12 @@ public:
     Node createArrayLiteralExpression(Node);
 
     Node createExpressionStatement(Node);
+
+    Node updateSourceFile(SourceFile, Node);
+
+    Node createNodeArray(Node);
+
+    SourceFile createSourceFile(Node statements, Node endOfFileToken, NodeFlags flags);
 };
 
 #endif // NODEFACTORY_H

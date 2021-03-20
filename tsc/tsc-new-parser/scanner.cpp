@@ -3267,6 +3267,7 @@ private:
             return text;
         }
 
+public:
         auto getCommentDirectives() -> std::vector<CommentDirective>
         {
             return commentDirectives;
@@ -3310,6 +3311,7 @@ private:
             tokenFlags = TokenFlags::None;
         }
 
+private:
         auto setInJSDocType(boolean inType)
         {
             inJSDocType += inType ? 1 : -1;
@@ -3386,7 +3388,7 @@ private:
         impl = ScannerImpl::createScanner(languageVersion, skipTrivia, languageVariant, textInitial, onError, start, length);        
     }
 
-    auto Scanner::setText(string text, number start, number length) -> SyntaxKind
+    auto Scanner::setText(string text, number start, number length) -> void
     {
         return impl->setText(text, start, length);
     }
@@ -3403,7 +3405,7 @@ private:
 
     auto Scanner::setLanguageVariant(LanguageVariant variant) -> void
     {
-        impl->setScriptTarget(variant);
+        impl->setLanguageVariant(variant);
     }    
 
     auto Scanner::scan() -> SyntaxKind
@@ -3426,6 +3428,11 @@ private:
         return impl->token;
     }      
 
+    auto Scanner::getStartPos() -> number
+    {
+        return impl->startPos;
+    }  
+
     auto Scanner::getTokenPos() -> number
     {
         return impl->tokenPos;
@@ -3445,6 +3452,11 @@ private:
     {
         return impl->getCommentDirectives();
     }
+
+    auto Scanner::setTextPos(number textPos) -> void
+    {
+        impl->setTextPos(textPos);
+    }    
 
     auto Scanner::clearCommentDirectives() -> void
     {

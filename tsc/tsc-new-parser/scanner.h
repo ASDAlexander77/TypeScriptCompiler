@@ -934,11 +934,13 @@ namespace ts
         auto setLanguageVariant(LanguageVariant) -> void;
         auto scan() -> SyntaxKind;
         auto getToken() -> SyntaxKind;
+        auto getStartPos() -> number;
         auto getTokenPos() -> number;
         auto getTokenText() -> string;
         auto getTokenValue() -> string;
         auto tokenToString(SyntaxKind) -> string;
         auto syntaxKindString(SyntaxKind) -> string;
+        auto setTextPos(number textPos) -> void;
         auto getCommentDirectives() -> std::vector<CommentDirective>;
         auto clearCommentDirectives() -> void;
 
