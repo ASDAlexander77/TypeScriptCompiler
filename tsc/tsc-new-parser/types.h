@@ -14,6 +14,18 @@ struct DiagnosticMessage
     string message;
 };
 
+struct TextRange {
+    TextRange() = default;
+    number pos;
+    number end;
+};
+
+struct CommentDirective {
+    CommentDirective() = default;
+    TextRange range;
+    CommentDirectiveType type;
+};
+
 struct TextSpan {
     number start;
     number length;
@@ -44,6 +56,11 @@ struct DiagnosticRelatedInformation {
     number start;
     number length;
     string messageText;
+
+    inline boolean operator !()
+    {
+        return category == DiagnosticCategory::Undefined;
+    }
 };
 
 struct Diagnostic : DiagnosticRelatedInformation {

@@ -1,4 +1,6 @@
 #include "scanner.h"
+#include "core.h"
+#include "utilities.h"
 
 namespace ts
 {

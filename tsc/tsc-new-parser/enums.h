@@ -3,6 +3,32 @@
 
 #include "config.h"
 
+enum class ScriptTarget : number {
+    ES3 = 0,
+    ES5 = 1,
+    ES2015 = 2,
+    ES2016 = 3,
+    ES2017 = 4,
+    ES2018 = 5,
+    ES2019 = 6,
+    ES2020 = 7,
+    ES2021 = 8,
+    ESNext = 99,
+    JSON = 100,
+    Latest = ESNext,
+};
+
+enum class CommentDirectiveType : number {
+    Undefined,
+    ExpectError,
+    Ignore
+};
+
+enum class LanguageVariant : number {
+    Standard,
+    JSX
+};
+
 enum class DiagnosticCategory : int
 {
     Undefined,
@@ -452,6 +478,12 @@ enum class Tristate : number {
     False,
     True,
     Unknown
+};
+
+enum class Comparison : number {
+    LessThan    = -1,
+    EqualTo     = 0,
+    GreaterThan = 1
 };
 
 #endif // ENUMS_H

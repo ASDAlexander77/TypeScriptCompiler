@@ -51,4 +51,56 @@ auto lastOrUndefined(T array) -> decltype(array[0]) {
     return array.size() == 0 ? decltype(array[0])(undefined)/*undefined*/ : array[array.size() - 1];
 }
 
+
+template <typename T>
+auto arraysEqual(const std::vector<T> &a, const std::vector<T> &b) -> boolean {
+    return std::equal(a.begin(), a.end(), b.begin());
+}
+
+template <typename T>
+auto compareComparableValues(T a, T b) {
+    return a == b ? Comparison::EqualTo :
+        a < b ? Comparison::LessThan :
+        Comparison::GreaterThan;
+}
+
+template <typename T>
+auto compareValues(T a, T b) -> Comparison {
+    return compareComparableValues(a, b);
+}
+
+template <typename T>
+using Comparer = std::function<Comparison(T, T)>;
+
+template <typename T, typename U>
+auto binarySearch(const std::vector<T> &array, T value, std::function<U(T, number)> keySelector, Comparer<U> keyComparer, number offset = 0) -> number {
+    return binarySearchKey<T, U>(array, keySelector(value, -1), keySelector, keyComparer, offset);
+}
+
+template <typename T, typename U>
+auto binarySearchKey(const std::vector<T> &array, U key, std::function<U(T, number)> keySelector, Comparer<U> keyComparer, number offset = 0) -> number {
+    if (!array) {
+        return -1;
+    }
+
+    auto low = offset;
+    auto high = array.size() - 1;
+    while (low <= high) {
+        auto middle = low + ((high - low) >> 1);
+        auto midKey = keySelector(array[middle], middle);
+        switch (keyComparer(midKey, key)) {
+            case Comparison::LessThan:
+                low = middle + 1;
+                break;
+            case Comparison::EqualTo:
+                return middle;
+            case Comparison::GreaterThan:
+                high = middle - 1;
+                break;
+        }
+    }
+
+    return ~low;
+}
+
 #endif // CORE_H

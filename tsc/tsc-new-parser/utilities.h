@@ -10,7 +10,23 @@
 #include "types.h"
 #include "parser.h"
 
-static auto getScriptKindFromFileName(string fileName) -> ScriptKind
+namespace Extension {
+    static const string Ts = S(".ts");
+    static const string Tsx = S(".tsx");
+    static const string Dts = S(".d.ts");
+    static const string Js = S(".js");
+    static const string Jsx = S(".jsx");
+    static const string Json = S(".json");
+    static const string TsBuildInfo = S(".tsbuildinfo");
+};
+
+inline auto positionIsSynthesized(number pos) -> boolean {
+    // This is a fast way of testing the following conditions:
+    //  pos === undefined || pos === null || isNaN(pos) || pos < 0;
+    return !(pos >= 0);
+}
+
+inline auto getScriptKindFromFileName(string fileName) -> ScriptKind
 {
     auto ext = fileName.substr(fileName.find(S('.')));
     std::transform(ext.begin(), ext.end(), ext.begin(), [](char_t c){ return std::tolower(c); });
@@ -107,17 +123,41 @@ static auto createDetachedDiagnostic(string fileName, number start, number lengt
     }
     */
 
-    DiagnosticWithDetachedLocation diagnosticWithDetachedLocation;
-    diagnosticWithDetachedLocation.start = start;
-    diagnosticWithDetachedLocation.length = length;
+    DiagnosticWithDetachedLocation d;
+    d.start = start;
+    d.length = length;
 
-    diagnosticWithDetachedLocation.messageText = text;
-    diagnosticWithDetachedLocation.category = message.category;
-    diagnosticWithDetachedLocation.code = message.code;
+    d.messageText = text;
+    d.category = message.category;
+    d.code = message.code;
     //diagnosticWithDetachedLocation.reportsUnnecessary = message.reportsUnnecessary;
-    diagnosticWithDetachedLocation.fileName = fileName;
+    d.fileName = fileName;
 
-    return diagnosticWithDetachedLocation;
+    return d;
+}
+
+static auto createDetachedDiagnostic(string fileName, number start, number length, DiagnosticMessage message, string arg0, ...) -> DiagnosticWithDetachedLocation {
+    assertDiagnosticLocation(/*file*/ SourceFile(), start, length);
+    auto text = getLocaleSpecificMessage(message);
+
+    // TODO:
+    /*
+    if (arguments.length > 4) {
+        text = formatStringFromArgs(text, arguments, 4);
+    }
+    */
+
+    DiagnosticWithDetachedLocation d;
+    d.start = start;
+    d.length = length;
+
+    d.messageText = text;
+    d.category = message.category;
+    d.code = message.code;
+    //diagnosticWithDetachedLocation.reportsUnnecessary = message.reportsUnnecessary;
+    d.fileName = fileName;
+
+    return d;
 }
 
 inline auto normalizePath(string path) -> string {
@@ -194,16 +234,5 @@ auto setParentRecursive(T rootNode, boolean incremental) -> T {
     forEachChildRecursively(rootNode, isJSDocNode(rootNode) ? bindParentToChildIgnoringJSDoc : bindParentToChild);
     return rootNode;
 }
-
-namespace Extension {
-    static const string Ts = S(".ts");
-    static const string Tsx = S(".tsx");
-    static const string Dts = S(".d.ts");
-    static const string Js = S(".js");
-    static const string Jsx = S(".jsx");
-    static const string Json = S(".json");
-    static const string TsBuildInfo = S(".tsbuildinfo");
-};
-
 
 #endif // UTILITIES_H

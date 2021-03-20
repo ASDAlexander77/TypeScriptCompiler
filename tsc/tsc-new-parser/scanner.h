@@ -16,21 +16,6 @@
 #include "config.h"
 #include "diagnostics.h"
 
-enum class ScriptTarget : number {
-    ES3 = 0,
-    ES5 = 1,
-    ES2015 = 2,
-    ES2016 = 3,
-    ES2017 = 4,
-    ES2018 = 5,
-    ES2019 = 6,
-    ES2020 = 7,
-    ES2021 = 8,
-    ESNext = 99,
-    JSON = 100,
-    Latest = ESNext,
-};
-
 enum class  TokenFlags : number {
     None = 0,
     /* @internal */
@@ -58,29 +43,6 @@ enum class  TokenFlags : number {
     NumericLiteralFlags = Scientific | Octal | HexSpecifier | BinaryOrOctalSpecifier | ContainsSeparator,
     /* @internal */
     TemplateLiteralLikeFlags = ContainsInvalidEscape,
-};
-
-enum class CommentDirectiveType : number {
-    Undefined,
-    ExpectError,
-    Ignore
-};
-
-struct TextRange {
-    TextRange() = default;
-    number pos;
-    number end;
-};
-
-struct CommentDirective {
-    CommentDirective() = default;
-    TextRange range;
-    CommentDirectiveType type;
-};
-
-enum class LanguageVariant : number {
-    Standard,
-    JSX
 };
 
 enum class SyntaxKind : number {
@@ -787,69 +749,7 @@ using cb_type = std::function<U(number, number, SyntaxKind, boolean, T, U)>;
 using ErrorCallback = std::function<void(DiagnosticMessage, number)>;
 
 template <typename T>
-auto arraysEqual(const std::vector<T> &a, const std::vector<T> &b) -> boolean {
-    return std::equal(a.begin(), a.end(), b.begin());
-}
-
-enum class Comparison : number {
-    LessThan    = -1,
-    EqualTo     = 0,
-    GreaterThan = 1
-};
-template <typename T>
-using Comparer = std::function<Comparison(T, T)>;
-
-template <typename T>
 auto identity(T x, number i) -> T { return x; }
-
-template <typename T>
-auto compareComparableValues(T a, T b) {
-    return a == b ? Comparison::EqualTo :
-        a < b ? Comparison::LessThan :
-        Comparison::GreaterThan;
-}
-
-template <typename T>
-auto compareValues(T a, T b) -> Comparison {
-    return compareComparableValues(a, b);
-}
-
-template <typename T, typename U>
-auto binarySearch(const std::vector<T> &array, T value, std::function<U(T, number)> keySelector, Comparer<U> keyComparer, number offset = 0) -> number {
-    return binarySearchKey<T, U>(array, keySelector(value, -1), keySelector, keyComparer, offset);
-}
-
-template <typename T, typename U>
-auto binarySearchKey(const std::vector<T> &array, U key, std::function<U(T, number)> keySelector, Comparer<U> keyComparer, number offset = 0) -> number {
-    if (!array) {
-        return -1;
-    }
-
-    auto low = offset;
-    auto high = array.size() - 1;
-    while (low <= high) {
-        auto middle = low + ((high - low) >> 1);
-        auto midKey = keySelector(array[middle], middle);
-        switch (keyComparer(midKey, key)) {
-            case Comparison::LessThan:
-                low = middle + 1;
-                break;
-            case Comparison::EqualTo:
-                return middle;
-            case Comparison::GreaterThan:
-                high = middle - 1;
-                break;
-        }
-    }
-
-    return ~low;
-}
-
-static auto positionIsSynthesized(number pos) -> boolean {
-    // This is a fast way of testing the following conditions:
-    //  pos === undefined || pos === null || isNaN(pos) || pos < 0;
-    return !(pos >= 0);
-}
 
 static auto parsePseudoBigInt(string stringValue) -> string {
     number log2Base;
