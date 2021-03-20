@@ -1,22 +1,6 @@
 #include "config.h"
-
-enum class DiagnosticCategory : int
-{
-    Warning,
-    Error,
-    Suggestion,
-    Message
-};
-
-struct DiagnosticMessage
-{
-    DiagnosticMessage() = default;
-
-    int code;
-    DiagnosticCategory category;
-    string label;
-    string message;
-};
+#include "enums.h"
+#include "types.h"
 
 namespace Diagnostics
 {

@@ -1,6 +1,10 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+#include <string>
+#include <regex>
+#include <functional>
+
 #pragma warning( disable : 4062 )
 
 using boolean = bool;

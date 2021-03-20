@@ -934,6 +934,7 @@ namespace ts
         auto setLanguageVariant(LanguageVariant) -> void;
         auto scan() -> SyntaxKind;
         auto getToken() -> SyntaxKind;
+        auto getTextPos() -> number;
         auto getStartPos() -> number;
         auto getTokenPos() -> number;
         auto getTokenText() -> string;

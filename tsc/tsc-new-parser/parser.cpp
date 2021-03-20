@@ -1,5 +1,6 @@
 #include "parser.h"
 #include "nodeFactory.h"
+#include "utilities.h"
 
 namespace ts {
 
@@ -1015,7 +1016,7 @@ namespace ts {
                 return node;
             }
 
-            auto reparseTopLevelAwait(SourceFile sourceFile) -> Node {
+            auto reparseTopLevelAwait(SourceFile sourceFile) -> SourceFile {
                 auto savedSyntaxCursor = syntaxCursor;
                 auto baseSyntaxCursor = IncrementalParser::createSyntaxCursor(sourceFile);
 
@@ -1145,8 +1146,8 @@ namespace ts {
                 }
 
                 sourceFile.text = sourceText;
-                sourceFile.bindDiagnostics = [];
-                sourceFile.bindSuggestionDiagnostics = undefined;
+                sourceFile.bindDiagnostics.clear();
+                sourceFile.bindSuggestionDiagnostics.clear();
                 sourceFile.languageVersion = languageVersion;
                 sourceFile.fileName = fileName;
                 sourceFile.languageVariant = getLanguageVariant(scriptKind);
@@ -1266,7 +1267,7 @@ namespace ts {
             }
 
             auto inContext(NodeFlags flags) {
-                return (contextFlags & flags) != 0;
+                return (contextFlags & flags) != NodeFlags::None;
             }
 
             auto inYieldContext() {

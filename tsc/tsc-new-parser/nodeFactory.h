@@ -44,7 +44,7 @@ public:
 
     Node createExpressionStatement(Node);
 
-    Node updateSourceFile(SourceFile, Node);
+    SourceFile updateSourceFile(SourceFile, Node);
 
     Node createNodeArray(Node);
 
