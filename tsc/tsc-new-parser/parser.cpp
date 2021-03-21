@@ -617,7 +617,7 @@ namespace ts {
             return fileExtensionIs(fileName, Extension::Dts);
         }
 
-        // Implement the parser as a singleton module.  We do this for perf reasons because creating
+        // Implement the parser.as<a>() singleton module.  We do this for perf reasons because creating
         // parser instances can actually be expensive enough to impact us on projects with many source
         // files.
         class Parser {
@@ -669,7 +669,7 @@ namespace ts {
             //
             // An important thing about these context concepts.  By default they are effectively inherited
             // while parsing through every grammar production.  i.e. if you don't change them, then when
-            // you parse a sub-production, it will have the same context values as the parent production.
+            // you parse a sub-production, it will have the same context values.as<the>() parent production.
             // This is great most of the time.  After all, consider all the 'expression' grammar productions
             // and how nearly all of them pass along the 'in' and 'yield' context values:
             //
@@ -718,10 +718,10 @@ namespace ts {
             //    only occurs in the 'abortParsingListOrMoveToNextToken' auto when the parser
             //    decides to skip the token.
             //
-            // In all of these cases, we want to mark the next node as having had an error before it.
+            // In all of these cases, we want to mark the next node.as<having>() had an error before it.
             // With this mark, we can know in incremental settings if this node can be reused, or if
             // we have to reparse it.  If we don't keep this information around, we may just reuse the
-            // node.  in that event we would then not produce the same errors as we did before, causing
+            // node.  in that event we would then not produce the same errors.as<we>() did before, causing
             // significant confusion problems.
             //
             // it Note is necessary that this value be saved/restored during speculative/lookahead
@@ -1136,12 +1136,12 @@ namespace ts {
 
             auto createSourceFile(string fileName, ScriptTarget languageVersion, ScriptKind scriptKind, boolean isDeclarationFile, Node statements, Node endOfFileToken, NodeFlags flags) -> SourceFile {
                 // code from createNode is inlined here so createNode won't have to deal with special case of creating source files
-                // this is quite rare comparing to other nodes and createNode should be as fast as possible
+                // this is quite rare comparing to other nodes and createNode should be.as<fast>().as<possible>()
                 auto sourceFile = factory.createSourceFile(statements, endOfFileToken, flags);
                 setTextRangePosWidth(sourceFile, 0, sourceText.size());
                 setExternalModuleIndicator(sourceFile);
 
-                // If we parsed this as an external module, it may contain top-level await
+                // If we parsed this.as<an>() external module, it may contain top-level await
                 if (!isDeclarationFile && isExternalModule(sourceFile) && !!(sourceFile.transformFlags & TransformFlags::ContainsPossibleTopLevelAwait)) {
                     sourceFile = reparseTopLevelAwait(sourceFile);
                 }
@@ -1201,7 +1201,7 @@ namespace ts {
                     return result;
                 }
 
-                // no need to do anything special as we are not in any of the requested contexts
+                // no need to do anything special.as<we>() are not in any of the requested contexts
                 return func();
             }
 
@@ -1223,7 +1223,7 @@ namespace ts {
                     return result;
                 }
 
-                // no need to do anything special as we are already in all of the requested contexts
+                // no need to do anything special.as<we>() are already in all of the requested contexts
                 return func();
             }
 
@@ -1292,7 +1292,7 @@ namespace ts {
             }
 
             auto parseErrorAtPosition(number start, number length, DiagnosticMessage message, string arg0 = string()) -> void {
-                // Don't report another error if it would just be at the same position as the last error.
+                // Don't report another error if it would just be at the same position.as<the>() last error.
                 auto lastError = lastOrUndefined(parseDiagnostics);
                 if (!lastError || start != lastError.start) {
                     parseDiagnostics.push_back(createDetachedDiagnostic(fileName, start, length, message, arg0));
@@ -1408,7 +1408,7 @@ namespace ts {
                 // assert that invariant holds.
                 auto saveContextFlags = contextFlags;
 
-                // If we're only looking ahead, then tell the scanner to only lookahead as well.
+                // If we're only looking ahead, then tell the scanner to only lookahead.as<well>().
                 // Otherwise, if we're actually speculatively parsing, then tell the scanner to do the
                 // same.
                 auto result = speculationKind != SpeculationKind::TryParse
@@ -1668,7 +1668,7 @@ namespace ts {
                 return createIdentifier(isBindingIdentifier(), /*diagnosticMessage*/ DiagnosticMessage(), privateIdentifierDiagnosticMessage);
             }
 
-            auto parseIdentifier(DiagnosticMessage diagnosticMessage, DiagnosticMessage privateIdentifierDiagnosticMessage) -> Identifier {
+            auto parseIdentifier(DiagnosticMessage diagnosticMessage = DiagnosticMessage(), DiagnosticMessage privateIdentifierDiagnosticMessage = DiagnosticMessage()) -> Identifier {
                 return createIdentifier(isIdentifier(), diagnosticMessage, privateIdentifierDiagnosticMessage);
             }
 
@@ -1812,7 +1812,7 @@ namespace ts {
                     case ParsingContext::SourceElements:
                     case ParsingContext::BlockStatements:
                     case ParsingContext::SwitchClauseStatements:
-                        // If we're in error recovery, then we don't want to treat ';' as an empty statement.
+                        // If we're in error recovery, then we don't want to treat ';'.as<an>() empty statement.
                         // The problem is that ';' can show up in far too many contexts, and if we see one
                         // and assume it's a statement, then we may bail out inappropriately from whatever
                         // we're parsing.  For example, if we have a semicolon in the middle of a class, then
@@ -1824,9 +1824,9 @@ namespace ts {
                     case ParsingContext::TypeMembers:
                         return lookAhead<boolean>(std::bind(&Parser::isTypeMemberStart, this));
                     case ParsingContext::ClassMembers:
-                        // We allow semicolons as class elements (as specified by ES6) as long as we're
+                        // We allow semicolons.as<class>() elements (as specified by ES6).as<long>().as<we>()'re
                         // not in error recovery.  If we're in error recovery, we don't want an errant
-                        // semicolon to be treated as a class member (since they're almost always used
+                        // semicolon to be treated.as<a>() class member (since they're almost always used
                         // for statements.
                         return lookAhead<boolean>(std::bind(&Parser::isClassMemberStart, this)) || (token() == SyntaxKind::SemicolonToken && !inErrorRecovery);
                     case ParsingContext::EnumMembers:
@@ -1848,7 +1848,7 @@ namespace ts {
                     case ParsingContext::ObjectBindingElements:
                         return token() == SyntaxKind::OpenBracketToken || token() == SyntaxKind::DotDotDotToken || isLiteralPropertyName();
                     case ParsingContext::HeritageClauseElement:
-                        // If we see `{ ... }` then only consume it as an expression if it is followed by `,` or `{`
+                        // If we see `{ ... }` then only consume it.as<an>() expression if it is followed by `,` or `{`
                         // That way we won't consume the body of a class in its heritage clause.
                         if (token() == SyntaxKind::OpenBraceToken) {
                             return lookAhead<boolean>(std::bind(&Parser::isValidHeritageClauseObjectLiteral, this));
@@ -1859,7 +1859,7 @@ namespace ts {
                         }
                         else {
                             // If we're in error recovery we tighten up what we're willing to match.
-                            // That way we don't treat something like "this" as a valid heritage clause
+                            // That way we don't treat something like "this".as<a>() valid heritage clause
                             // element during recovery.
                             return isIdentifier() && !isHeritageClauseExtendsOrImplementsKeyword();
                         }
@@ -1901,7 +1901,7 @@ namespace ts {
             auto isValidHeritageClauseObjectLiteral() -> boolean {
                 Debug::_assert(token() == SyntaxKind::OpenBraceToken);
                 if (nextToken() == SyntaxKind::CloseBraceToken) {
-                    // if we see "extends {}" then only treat the {} as what we're extending (and not
+                    // if we see "extends {}" then only treat the {}.as<what>() we're extending (and not
                     // the class body) if we have:
                     //
                     //      extends {} {
@@ -2070,7 +2070,7 @@ namespace ts {
             auto parseListElement(ParsingContext parsingContext, std::function <T()> parseElement) -> T {
                 auto node = currentNode(parsingContext);
                 if (node) {
-                    return <T>consumeNode(node);
+                    return consumeNode(node).as<T>().as<T>();
                 }
 
                 return parseElement();
@@ -2081,10 +2081,10 @@ namespace ts {
                 //
                 // If there is an outstanding parse error that we've encountered, but not attached to
                 // some node, then we cannot get a node from the old source tree.  This is because we
-                // want to mark the next node we encounter as being unusable.
+                // want to mark the next node we encounter.as<being>() unusable.
                 //
                 // This Note may be too conservative.  Perhaps we could reuse the node and set the bit
-                // on it (or its leftmost child) as having the error.  For now though, being conservative
+                // on it (or its leftmost child).as<having>() the error.  For now though, being conservative
                 // is nice and likely won't ever affect perf.
                 if (!syntaxCursor || !isReusableParsingContext(parsingContext) || parseErrorBeforeNextFinishedNode) {
                     return undefined;
@@ -2103,14 +2103,14 @@ namespace ts {
                 // We can only reuse a node if it was parsed under the same strict mode that we're
                 // currently in.  i.e. if we originally parsed a node in non-strict mode, but then
                 // the user added 'using strict' at the top of the file, then we can't use that node
-                // again as the presence of strict mode may cause us to parse the tokens in the file
+                // again.as<the>() presence of strict mode may cause us to parse the tokens in the file
                 // differently.
                 //
                 // we Note *can* reuse tokens when the strict mode changes.  That's because tokens
                 // are unaffected by strict mode.  It's just the parser will decide what to do with it
                 // differently depending on what mode it is in.
                 //
-                // This also applies to all our other context flags as well.
+                // This also applies to all our other context flags.as<well>().
                 auto nodeContextFlags = node.flags & NodeFlags::ContextFlags;
                 if (nodeContextFlags != contextFlags) {
                     return undefined;
@@ -2202,17 +2202,17 @@ namespace ts {
 
                     // Technically, type argument list types are probably safe to reuse.  While
                     // speculative parsing is involved with them (since type argument lists are only
-                    // produced from speculative parsing a < as a type argument list), we only have
+                    // produced from speculative parsing a <.as<a>() type argument list), we only have
                     // the types because speculative parsing succeeded.  Thus, the lookahead never
                     // went past the end of the list and rewound.
                     // case ParsingContext::TypeArguments:
 
                     // these Note are almost certainly not safe to ever reuse.  Expressions commonly
-                    // need a large amount of lookahead, and we should not reuse them as they may
+                    // need a large amount of lookahead, and we should not reuse them.as<they>() may
                     // have actually intersected the edit.
                     // case ParsingContext::ArgumentExpressions:
 
-                    // This is not safe to reuse for the same reason as the 'AssignmentExpression'
+                    // This is not safe to reuse for the same reason.as<the>() 'AssignmentExpression'
                     // cases.  i.e. a property assignment may end with an expression, and thus might
                     // have lookahead far beyond it's old node.
                     // case ParsingContext::ObjectLiteralMembers:
@@ -2443,10 +2443,10 @@ namespace ts {
                             nextToken();
                         }
                         if (startPos == scanner.getStartPos()) {
-                            // What we're parsing isn't actually remotely recognizable as a element and we've consumed no tokens whatsoever
+                            // What we're parsing isn't actually remotely recognizable.as<a>() element and we've consumed no tokens whatsoever
                             // Consume a token to advance the parser in some way and avoid an infinite loop
                             // This can happen when we're speculatively parsing parenthesized expressions which we think may be arrow functions,
-                            // or when a modifier keyword which is disallowed as a parameter name (ie, `static` in strict mode) is supplied
+                            // or when a modifier keyword which is disallowed.as<a>() parameter name (ie, `static` in strict mode) is supplied
                             nextToken();
                         }
                         continue;
@@ -2480,7 +2480,7 @@ namespace ts {
 
             template <typename T> 
             auto createMissingList() -> MissingList<T> {
-                auto list = createNodeArray<T>([], getNodePos()) as MissingList<T>;
+                auto list = createNodeArray<T>([], getNodePos()).as<MissingList>()<T>;
                 list.isMissingList = true;
                 return list;
             }
@@ -2500,9 +2500,9 @@ namespace ts {
                 return createMissingList<T>();
             }
 
-            auto parseEntityName(boolean allowReservedWords, Undefined<DiagnosticMessage> diagnosticMessage = undefined) -> EntityName {
+            auto parseEntityName(boolean allowReservedWords, Undefined<DiagnosticMessage> diagnosticMessage = undefined) -> Node {
                 auto pos = getNodePos();
-                auto EntityName entity = allowReservedWords ? parseIdentifierName(diagnosticMessage) : parseIdentifier(diagnosticMessage);
+                auto entity = allowReservedWords ? parseIdentifierName(diagnosticMessage) : parseIdentifier(diagnosticMessage);
                 auto dotPos = getNodePos();
                 while (parseOptional(SyntaxKind::DotToken)) {
                     if (token() == SyntaxKind::LessThanToken) {
@@ -2514,7 +2514,7 @@ namespace ts {
                     entity = finishNode(
                         factory.createQualifiedName(
                             entity,
-                            parseRightSideOfDot(allowReservedWords, /* allowPrivateIdentifiers */ false) as Identifier
+                            parseRightSideOfDot(allowReservedWords, /* allowPrivateIdentifiers */ false).as<Identifier>()
                         ),
                         pos
                     );
@@ -2523,11 +2523,11 @@ namespace ts {
             }
 
             auto createQualifiedName(EntityName entity, Identifier name) -> QualifiedName {
-                return finishNode(factory.createQualifiedName(entity, name), entity.pos);
+                return finishNode(factory.createQualifiedName(entity, name), entity.pos).as<QualifiedName>();
             }
 
             auto parseRightSideOfDot(boolean allowIdentifierNames, boolean allowPrivateIdentifiers) -> Node {
-                // Technically a keyword is valid here as all identifiers and keywords are identifier names.
+                // Technically a keyword is valid here.as<all>() identifiers and keywords are identifier names.
                 // However, often we'll encounter this in error situations when the identifier or keyword
                 // is actually starting another valid construct.
                 //
@@ -2567,8 +2567,8 @@ namespace ts {
 
             auto parseTemplateSpans(boolean isTaggedTemplate) {
                 auto pos = getNodePos();
-                auto list = [];
-                auto TemplateSpan node;
+                Node list;
+                TemplateSpan node;
                 do {
                     node = parseTemplateSpan(isTaggedTemplate);
                     list.push_back(node);
@@ -2654,7 +2654,7 @@ namespace ts {
                 }
                 auto fragment = parseLiteralLikeNode(token());
                 Debug::_assert(fragment.kind == SyntaxKind::TemplateHead, "Template head has wrong token kind");
-                return <TemplateHead>fragment;
+                return fragment.as<TemplateHead>();
             }
 
             auto parseTemplateMiddleOrTemplateTail() -> Node {
@@ -2676,7 +2676,7 @@ namespace ts {
                     // Octal literals are not allowed in strict mode or ES5
                     // Note that theoretically the following condition would hold true literals like 009,
                     // which is not octal. But because of how the scanner separates the tokens, we would
-                    // never get a token like this. Instead, we would get 00 and 9 as two separate tokens.
+                    // never get a token like this. Instead, we would get 00 and 9.as<two>() separate tokens.
                     // We also do not need to check for negatives because any prefix operator would be part of a
                     // parent unary expression.
                     kind == SyntaxKind::NumericLiteral ? factory.createNumericLiteral(scanner.getTokenValue(), scanner.getNumericLiteralFlags()) :
@@ -2726,7 +2726,7 @@ namespace ts {
                         return nodeIsMissing(node.as<TypeReferenceNode>().typeName);
                     case SyntaxKind::FunctionType:
                     case SyntaxKind::ConstructorType: {
-                        auto { parameters, type } = node as FunctionOrConstructorTypeNode;
+                        auto { parameters, type } = node.as<FunctionOrConstructorTypeNode>();
                         return isMissingList(parameters) || typeHasArrowFunctionBlockingParseError(type);
                     }
                     case SyntaxKind::ParenthesizedType:
@@ -2870,7 +2870,7 @@ namespace ts {
                 if (parseOptional(SyntaxKind::ExtendsKeyword)) {
                     // It's not uncommon for people to write improper constraints to a generic.  If the
                     // user writes a constraint that is an expression and not an actual type, then parse
-                    // it out as an expression (so we can recover well), but report that a type is needed
+                    // it out.as<an>() expression (so we can recover well), but report that a type is needed
                     // instead.
                     if (isStartOfType() || !isStartOfExpression()) {
                         constraint = parseType();
@@ -2882,7 +2882,7 @@ namespace ts {
                         //
                         //      <T extends string()>
                         //
-                        // We do *not* want to consume the `>` as we're consuming the expression for string().
+                        // We do *not* want to consume the `>`.as<we>()'re consuming the expression for string().
                         expression = parseUnaryExpressionOrHigher();
                     }
                 }
@@ -3134,7 +3134,7 @@ namespace ts {
                 }
 
                 // If any of the following tokens are after the question mark, it cannot
-                // be a conditional expression, so treat it as an indexer.
+                // be a conditional expression, so treat it.as<an>() indexer.
                 nextToken();
                 return token() == SyntaxKind::ColonToken || token() == SyntaxKind::CommaToken || token() == SyntaxKind::CloseBracketToken;
             }
@@ -3312,7 +3312,7 @@ namespace ts {
                 if (isJSDocNullableType(type) && type.pos == type.type.pos) {
                     auto node = factory.createOptionalTypeNode(type.type);
                     setTextRange(node, type);
-                    (node as Mutable<Node>).flags = type.flags;
+                    (node.as<Mutable>()<Node>).flags = type.flags;
                     return node;
                 }
                 return type;
@@ -3384,7 +3384,7 @@ namespace ts {
                 auto node = isConstructorType
                     ? factory.createConstructorTypeNode(modifiers, typeParameters, parameters, type)
                     : factory.createFunctionTypeNode(typeParameters, parameters, type);
-                if (!isConstructorType) (node as Mutable<Node>).modifiers = modifiers;
+                if (!isConstructorType) (node.as<Mutable>()<Node>).modifiers = modifiers;
                 return withJSDoc(finishNode(node, pos), hasJSDoc);
             }
 
@@ -3401,7 +3401,7 @@ namespace ts {
                 auto BooleanLiteral expression | NullLiteral | LiteralExpression | PrefixUnaryExpression =
                     token() == SyntaxKind::TrueKeyword || token() == SyntaxKind::FalseKeyword || token() == SyntaxKind::NullKeyword ?
                         parseTokenNode<BooleanLiteral | NullLiteral>() :
-                        parseLiteralLikeNode(token()) as LiteralExpression;
+                        parseLiteralLikeNode(token()).as<LiteralExpression>();
                 if (negative) {
                     expression = finishNode(factory.createPrefixUnaryExpression(SyntaxKind::MinusToken, expression), pos);
                 }
@@ -3443,7 +3443,7 @@ namespace ts {
                     case SyntaxKind::UndefinedKeyword:
                     case SyntaxKind::NeverKeyword:
                     case SyntaxKind::ObjectKeyword:
-                        // If these are followed by a dot, then parse these out as a dotted type reference instead.
+                        // If these are followed by a dot, then parse these out.as<a>() dotted type reference instead.
                         return tryParse<boolean>(std::bind(&Parser::parseKeywordAndNoDot, this)) || parseTypeReference();
                     case SyntaxKind::AsteriskEqualsToken:
                         // If there is '*=', treat it as * followed by postfix =
@@ -3452,7 +3452,7 @@ namespace ts {
                     case SyntaxKind::AsteriskToken:
                         return parseJSDocAllType();
                     case SyntaxKind::QuestionQuestionToken:
-                        // If there is '??', treat it as prefix-'?' in JSDoc type.
+                        // If there is '??', treat it.as<prefix>()-'?' in JSDoc type.
                         scanner.reScanQuestionToken();
                         // falls through
                     case SyntaxKind::QuestionToken:
@@ -3884,7 +3884,7 @@ namespace ts {
                 //      AssignmentExpression[in]
                 //      Expression[in] , AssignmentExpression[in]
 
-                // clear the decorator context when parsing Expression, as it should be unambiguous when parsing a decorator
+                // clear the decorator context when parsing Expression,.as<it>() should be unambiguous when parsing a decorator
                 auto saveDecoratorContext = inDecoratorContext();
                 if (saveDecoratorContext) {
                     setDecoratorContext(/*val*/ false);
@@ -3916,7 +3916,7 @@ namespace ts {
                 //      5) AsyncArrowFunctionExpression[in,yield,await]
                 //      6) [+Yield] YieldExpression[?In]
                 //
-                // for Note ease of implementation we treat productions '2' and '3' as the same thing.
+                // for Note ease of implementation we treat productions '2' and '3'.as<the>() same thing.
                 // (i.e. they're both BinaryExpressions with an assignment operator in it).
 
                 // First, do the simple check if we have a YieldExpression (production '6').
@@ -3956,7 +3956,7 @@ namespace ts {
                 // parameter ('x => ...') above. We handle it here by checking if the parsed expression was a single
                 // identifier and the current token is an arrow.
                 if (expr.kind == SyntaxKind::Identifier && token() == SyntaxKind::EqualsGreaterThanToken) {
-                    return parseSimpleArrowFunctionExpression(pos, <Identifier>expr, /*asyncModifier*/ undefined);
+                    return parseSimpleArrowFunctionExpression(pos, expr.as<Identifier>(), /*asyncModifier*/ undefined);
                 }
 
                 // Now see if we might be in cases '2' or '3'.
@@ -3987,13 +3987,13 @@ namespace ts {
                     // a 'yield expr'.  We can then report an error later that they are only
                     // allowed in generator expressions.
                     //
-                    // for example, if we see 'yield(foo)', then we'll have to treat that as an
+                    // for example, if we see 'yield(foo)', then we'll have to treat that.as<an>()
                     // invocation expression of something called 'yield'.  However, if we have
-                    // 'yield foo' then that is not legal as a normal expression, so we can
-                    // definitely recognize this as a yield expression.
+                    // 'yield foo' then that is not legal.as<a>() normal expression, so we can
+                    // definitely recognize this.as<a>() yield expression.
                     //
                     // for now we just check if the next token is an identifier.  More heuristics
-                    // can be added here later as necessary.  We just need to make sure that we
+                    // can be added here later.as<necessary>().  We just need to make sure that we
                     // don't accidentally consume something legal.
                     return lookAhead<boolean>(std::bind(&Parser::nextTokenIsIdentifierOrKeywordOrLiteralOnSameLine, this));
                 }
@@ -4026,7 +4026,7 @@ namespace ts {
                     );
                 }
                 else {
-                    // if the next token is not on the same line as yield.  or we don't have an '*' or
+                    // if the next token is not on the same line.as<yield>().  or we don't have an '*' or
                     // the start of an expression, then this is just a simple "yield" expression.
                     return finishNode(factory.createYieldExpression(/*asteriskToken*/ undefined, /*expression*/ undefined), pos);
                 }
@@ -4079,7 +4079,7 @@ namespace ts {
 
                 if (token() == SyntaxKind::EqualsGreaterThanToken) {
                     // ERROR RECOVERY TWEAK:
-                    // If we see a standalone => try to parse it as an arrow auto expression as that's
+                    // If we see a standalone => try to parse it.as<an>() arrow auto expression.as<that>()'s
                     // likely what the user intended to write.
                     return Tristate.True;
                 }
@@ -4135,7 +4135,7 @@ namespace ts {
                     }
 
                     // Check for "(xxx yyy", where xxx is a modifier and yyy is an identifier. This
-                    // isn't actually allowed, but we want to treat it as a lambda so we can provide
+                    // isn't actually allowed, but we want to treat it.as<a>() lambda so we can provide
                     // a good error message.
                     if (isModifierKind(second) && second != SyntaxKind::AsyncKeyword && lookAhead<boolean>(std::bind(&Parser::nextTokenIsIdentifier, this))) {
                         return Tristate.True;
@@ -4232,7 +4232,7 @@ namespace ts {
                         auto pos = getNodePos();
                         auto asyncModifier = parseModifiersForArrowFunction();
                         auto expr = parseBinaryExpressionOrHigher(OperatorPrecedence.Lowest);
-                        return parseSimpleArrowFunctionExpression(pos, <Identifier>expr, asyncModifier);
+                        return parseSimpleArrowFunctionExpression(pos, expr.as<Identifier>(), asyncModifier);
                     }
                 }
                 return undefined;
@@ -4295,9 +4295,9 @@ namespace ts {
                 // Parsing a signature isn't enough.
                 // Parenthesized arrow signatures often look like other valid expressions.
                 // For instance:
-                //  - "(x = 10)" is an assignment expression parsed as a signature with a default parameter value.
-                //  - "(x,y)" is a comma expression parsed as a signature with two parameters.
-                //  - "a ? (b) -> c" will have "(b) ->" parsed as a signature with a return type annotation.
+                //  - "(x = 10)" is an assignment expression parsed.as<a>() signature with a default parameter value.
+                //  - "(x,y)" is a comma expression parsed.as<a>() signature with two parameters.
+                //  - "a ? (b) -> c" will have "(b) ->" parsed.as<a>() signature with a return type annotation.
                 //  - "a ? (b) -> function() {}" will too, since function() is a valid JSDoc auto type.
                 //
                 // So we need just a bit of lookahead to ensure that it can only be a signature.
@@ -4399,25 +4399,25 @@ namespace ts {
 
                     // Check the precedence to see if we should "take" this operator
                     // - For left associative operator (all operator but **), consume the operator,
-                    //   recursively call the auto below, and parse binaryExpression as a rightOperand
+                    //   recursively call the auto below, and parse binaryExpression.as<a>() rightOperand
                     //   of the caller if the new precedence of the operator is greater then or equal to the current precedence.
                     //   For example:
                     //      a - b - c;
-                    //            ^token; leftOperand = b. Return b to the caller as a rightOperand
+                    //            ^token; leftOperand = b. Return b to the caller.as<a>() rightOperand
                     //      a * b - c
-                    //            ^token; leftOperand = b. Return b to the caller as a rightOperand
+                    //            ^token; leftOperand = b. Return b to the caller.as<a>() rightOperand
                     //      a - b * c;
-                    //            ^token; leftOperand = b. Return b * c to the caller as a rightOperand
+                    //            ^token; leftOperand = b. Return b * c to the caller.as<a>() rightOperand
                     // - For right associative operator (**), consume the operator, recursively call the function
-                    //   and parse binaryExpression as a rightOperand of the caller if the new precedence of
+                    //   and parse binaryExpression.as<a>() rightOperand of the caller if the new precedence of
                     //   the operator is strictly grater than the current precedence
                     //   For example:
                     //      a ** b ** c;
-                    //             ^^token; leftOperand = b. Return b ** c to the caller as a rightOperand
+                    //             ^^token; leftOperand = b. Return b ** c to the caller.as<a>() rightOperand
                     //      a - b ** c;
-                    //            ^^token; leftOperand = b. Return b ** c to the caller as a rightOperand
+                    //            ^^token; leftOperand = b. Return b ** c to the caller.as<a>() rightOperand
                     //      a ** b - c
-                    //             ^token; leftOperand = b. Return b to the caller as a rightOperand
+                    //             ^token; leftOperand = b. Return b to the caller.as<a>() rightOperand
                     auto consumeCurrentOperator = token() == SyntaxKind::AsteriskAsteriskToken ?
                         newPrecedence >= precedence :
                         newPrecedence > precedence;
@@ -4434,7 +4434,7 @@ namespace ts {
                         // Make sure we *do* perform ASI for constructs like this:
                         //    var x = foo
                         //    as (Bar)
-                        // This should be parsed as an initialized variable, followed
+                        // This should be parsed.as<an>() initialized variable, followed
                         // by a auto call to 'as' with the argument 'Bar'
                         if (scanner.hasPrecedingLineBreak()) {
                             break;
@@ -4470,7 +4470,7 @@ namespace ts {
 
             auto parsePrefixUnaryExpression() -> Node {
                 auto pos = getNodePos();
-                return finishNode(factory.createPrefixUnaryExpression(<PrefixUnaryOperator>token(), nextTokenAnd(parseSimpleUnaryExpression)), pos);
+                return finishNode(factory.createPrefixUnaryExpression(token().as<PrefixUnaryOperator>(), nextTokenAnd(parseSimpleUnaryExpression)), pos);
             }
 
             auto parseDeleteExpression() -> Node {
@@ -4643,12 +4643,12 @@ namespace ts {
              *      3) LeftHandSideExpression[?yield] [[no LineTerminator here]]--
              *      4) ++LeftHandSideExpression[?yield]
              *      5) --LeftHandSideExpression[?yield]
-             * In TypeScript (2), (3) are parsed as PostfixUnaryExpression. (4), (5) are parsed as PrefixUnaryExpression
+             * In TypeScript (2), (3) are parsed.as<PostfixUnaryExpression>(). (4), (5) are parsed.as<PrefixUnaryExpression>()
              */
             auto parseUpdateExpression() -> UpdateExpression {
                 if (token() == SyntaxKind::PlusPlusToken || token() == SyntaxKind::MinusMinusToken) {
                     auto pos = getNodePos();
-                    return finishNode(factory.createPrefixUnaryExpression(<PrefixUnaryOperator>token(), nextTokenAnd(parseLeftHandSideExpressionOrHigher)), pos);
+                    return finishNode(factory.createPrefixUnaryExpression(token().as<PrefixUnaryOperator>(), nextTokenAnd(parseLeftHandSideExpressionOrHigher)), pos);
                 }
                 else if (languageVariant == LanguageVariant::JSX && token() == SyntaxKind::LessThanToken && lookAhead<boolean>(std::bind(&Parser::nextTokenIsIdentifierOrKeywordOrGreaterThan, this))) {
                     // JSXElement is part of primaryExpression
@@ -4659,7 +4659,7 @@ namespace ts {
 
                 Debug::_assert(isLeftHandSideExpression(expression));
                 if ((token() == SyntaxKind::PlusPlusToken || token() == SyntaxKind::MinusMinusToken) && !scanner.hasPrecedingLineBreak()) {
-                    auto operator = <PostfixUnaryOperator>token();
+                    auto operator = token().as<PostfixUnaryOperator>();
                     nextToken();
                     return finishNode(factory.createPostfixUnaryExpression(expression, operator), expression.pos);
                 }
@@ -4703,10 +4703,10 @@ namespace ts {
                 auto MemberExpression expression;
                 if (token() == SyntaxKind::ImportKeyword) {
                     if (lookAhead<boolean>(std::bind(&Parser::nextTokenIsOpenParenOrLessThan, this))) {
-                        // We don't want to eagerly consume all import keyword as import call expression so we look ahead to find "("
+                        // We don't want to eagerly consume all import keyword.as<import>() call expression so we look ahead to find "("
                         // For example:
                         //      var foo3 = require("subfolder
-                        //      import * as foo1 from "module-from-node
+                        //      import *.as<foo1>() from "module-from-node
                         // We want this import to be a statement rather than import call expression
                         sourceFlags |= NodeFlags::PossiblyContainsDynamicImport;
                         expression = parseTokenNode<PrimaryExpression>();
@@ -4765,13 +4765,13 @@ namespace ts {
                 //
                 // If you see: "new Foo()"
                 //
-                // Then that could be treated as a single ObjectCreationExpression, or it could be
-                // treated as the invocation of "new Foo".  We disambiguate that in code (to match
+                // Then that could be treated.as<a>() single ObjectCreationExpression, or it could be
+                // treated.as<the>() invocation of "new Foo".  We disambiguate that in code (to match
                 // the original grammar) by making sure that if we see an ObjectCreationExpression
-                // we always consume arguments if they are there. So we treat "new Foo()" as an
-                // object creation only, and not at all as an invocation.  Another way to think
+                // we always consume arguments if they are there. So we treat "new Foo()".as<an>()
+                // object creation only, and not at all.as<an>() invocation.  Another way to think
                 // about this is that for every "new" that we see, we will consume an argument list if
-                // it is there as part of the *associated* object creation node.  Any additional
+                // it is there.as<part>() of the *associated* object creation node.  Any additional
                 // argument lists we see, will become invocation expressions.
                 //
                 // Because there are no other places in the grammar now that refer to FunctionExpression
@@ -4831,8 +4831,8 @@ namespace ts {
                 }
 
                 // If the user writes the invalid code '<div></div><div></div>' in an expression context (i.e. not wrapped in
-                // an enclosing tag), we'll naively try to parse   ^ this as a 'less than' operator and the remainder of the tag
-                // as garbage, which will cause the formatter to badly mangle the JSX. Perform a speculative parse of a JSX
+                // an enclosing tag), we'll naively try to parse   ^ this.as<a>() 'less than' operator and the remainder of the tag
+                //.as<garbage>(), which will cause the formatter to badly mangle the JSX. Perform a speculative parse of a JSX
                 // element if we see a < token so that we can wrap it in a synthetic binary expression so the formatter
                 // does less damage and we can report a better error.
                 // Since JSX elements are invalid < operands anyway, this lookahead parse will only occur in error scenarios
@@ -4844,7 +4844,7 @@ namespace ts {
                         auto operatorToken = createMissingNode(SyntaxKind::CommaToken, /*reportAtCurrentPosition*/ false);
                         setTextRangePosWidth(operatorToken, invalidElement.pos, 0);
                         parseErrorAt(skipTrivia(sourceText, topBadPos), invalidElement.end, Diagnostics::JSX_expressions_must_have_one_parent_element);
-                        return <JsxElement><Node>finishNode(factory.createBinaryExpression(result, operatorToken as Token<SyntaxKind::CommaToken>, invalidElement), pos);
+                        return <JsxElement><Node>finishNode(factory.createBinaryExpression(result, operatorToken.as<Token>()<SyntaxKind::CommaToken>, invalidElement), pos);
                     }
                 }
 
@@ -4929,7 +4929,7 @@ namespace ts {
 
                 if (token() == SyntaxKind::GreaterThanToken) {
                     // Closing tag, so scan the immediately-following text with the JSX scanning instead
-                    // of regular scanning to avoid treating illegal characters (e.g. '#') as immediate
+                    // of regular scanning to avoid treating illegal characters (e.g. '#').as<immediate>()
                     // scanning errors
                     scanJsxText();
                     node = factory.createJsxOpeningElement(tagName, typeArguments, attributes);
@@ -4955,12 +4955,12 @@ namespace ts {
                 // JsxElement can have name in the form of
                 //      propertyAccessExpression
                 //      primaryExpression in the form of an identifier and "this" keyword
-                // We can't just simply use parseLeftHandSideExpressionOrHigher because then we will start consider class,auto etc as a keyword
-                // We only want to consider "this" as a primaryExpression
+                // We can't just simply use parseLeftHandSideExpressionOrHigher because then we will start consider class,auto etc.as<a>() keyword
+                // We only want to consider "this".as<a>() primaryExpression
                 auto JsxTagNameExpression expression = token() == SyntaxKind::ThisKeyword ?
                     parseTokenNode<ThisExpression>() : parseIdentifierName();
                 while (parseOptional(SyntaxKind::DotToken)) {
-                    expression = finishNode(factory.createPropertyAccessExpression(expression, parseRightSideOfDot(/*allowIdentifierNames*/ true, /*allowPrivateIdentifiers*/ false)), pos) as JsxTagNamePropertyAccess;
+                    expression = finishNode(factory.createPropertyAccessExpression(expression, parseRightSideOfDot(/*allowIdentifierNames*/ true, /*allowPrivateIdentifiers*/ false)), pos).as<JsxTagNamePropertyAccess>();
                 }
                 return expression;
             }
@@ -5003,7 +5003,7 @@ namespace ts {
                     factory.createJsxAttribute(
                         parseIdentifierName(),
                         token() != SyntaxKind::EqualsToken ? undefined :
-                        scanJsxAttributeValue() == SyntaxKind::StringLiteral ? parseLiteralNode() as StringLiteral :
+                        scanJsxAttributeValue() == SyntaxKind::StringLiteral ? parseLiteralNode().as<StringLiteral>() :
                         parseJsxExpression(/*inExpressionContext*/ true)
                     ),
                     pos
@@ -5083,7 +5083,7 @@ namespace ts {
                     if (expr.flags & NodeFlags::OptionalChain) {
                         // this is part of an optional chain. Walk down from `node` to `expression` and set the flag.
                         while (isNonNullExpression(node)) {
-                            (node as Mutable<NonNullExpression>).flags |= NodeFlags::OptionalChain;
+                            (node.as<Mutable>()<NonNullExpression>).flags |= NodeFlags::OptionalChain;
                             node = node.expression;
                         }
                         return true;
@@ -5148,7 +5148,7 @@ namespace ts {
                         continue;
                     }
 
-                    // when in the [Decorator] context, we do not parse ElementAccess as it could be part of a ComputedPropertyName
+                    // when in the [Decorator] context, we do not parse ElementAccess.as<it>() could be part of a ComputedPropertyName
                     if ((questionDotToken || !inDecoratorContext()) && parseOptional(SyntaxKind::OpenBracketToken)) {
                         expression = parseElementAccessExpressionRest(pos, expression, questionDotToken);
                         continue;
@@ -5159,7 +5159,7 @@ namespace ts {
                         continue;
                     }
 
-                    return <MemberExpression>expression;
+                    return expression.as<MemberExpression>();
                 }
             }
 
@@ -5172,11 +5172,11 @@ namespace ts {
                     tag,
                     typeArguments,
                     token() == SyntaxKind::NoSubstitutionTemplateLiteral ?
-                        (reScanTemplateHeadOrNoSubstitutionTemplate(), parseLiteralNode() as NoSubstitutionTemplateLiteral) :
+                        (reScanTemplateHeadOrNoSubstitutionTemplate(), parseLiteralNode().as<NoSubstitutionTemplateLiteral>()) :
                         parseTemplateExpression(/*isTaggedTemplate*/ true)
                 );
                 if (questionDotToken || tag.flags & NodeFlags::OptionalChain) {
-                    (tagExpression as Mutable<Node>).flags |= NodeFlags::OptionalChain;
+                    (tagExpression.as<Mutable>()<Node>).flags |= NodeFlags::OptionalChain;
                 }
                 tagExpression.questionDotToken = questionDotToken;
                 return finishNode(tagExpression, pos);
@@ -5250,7 +5250,7 @@ namespace ts {
                     return undefined;
                 }
 
-                // If we have a '<', then only parse this as a argument list if the type arguments
+                // If we have a '<', then only parse this.as<a>() argument list if the type arguments
                 // are complete and we have an open paren.  if we don't, rewind and return nothing.
                 return typeArguments && canFollowTypeArgumentsInExpression()
                     ? typeArguments
@@ -5263,7 +5263,7 @@ namespace ts {
                     case SyntaxKind::NoSubstitutionTemplateLiteral:  // foo<T> `...`
                     case SyntaxKind::TemplateHead:                   // foo<T> `...${100}...`
                     // these are the only tokens can legally follow a type argument
-                    // list. So we definitely want to treat them as type arg lists.
+                    // list. So we definitely want to treat them.as<type>() arg lists.
                     // falls through
                     case SyntaxKind::DotToken:                       // foo<x>.
                     case SyntaxKind::CloseParenToken:                // foo<x>)
@@ -5285,17 +5285,17 @@ namespace ts {
                     case SyntaxKind::EndOfFileToken:                 // foo<x>
                         // these cases can't legally follow a type arg list.  However, they're not legal
                         // expressions either.  The user is probably in the middle of a generic type. So
-                        // treat it as such.
+                        // treat it.as<such>().
                         return true;
 
                     case SyntaxKind::CommaToken:                     // foo<x>,
                     case SyntaxKind::OpenBraceToken:                 // foo<x> {
-                    // We don't want to treat these as type arguments.  Otherwise we'll parse this
-                    // as an invocation expression.  Instead, we want to parse out the expression
+                    // We don't want to treat these.as<type>() arguments.  Otherwise we'll parse this
+                    //.as<an>() invocation expression.  Instead, we want to parse out the expression
                     // in isolation from the type arguments.
                     // falls through
                     default:
-                        // Anything else treat as an expression.
+                        // Anything else treat.as<an>() expression.
                         return false;
                 }
             }
@@ -5414,7 +5414,7 @@ namespace ts {
                 }
 
                 // check if it is short-hand property assignment or normal property assignment
-                // if NOTE token is EqualsToken it is interpreted as CoverInitializedName production
+                // if NOTE token is EqualsToken it is interpreted.as<CoverInitializedName>() production
                 // CoverInitializedName[Yield] :
                 //     IdentifierReference[?Yield] Initializer[In, ?Yield]
                 // this is necessary because ObjectLiteral productions are also used to cover grammar for ObjectAssignmentPattern
@@ -5423,9 +5423,9 @@ namespace ts {
                 if (isShorthandPropertyAssignment) {
                     auto equalsToken = parseOptionalToken(SyntaxKind::EqualsToken);
                     auto objectAssignmentInitializer = equalsToken ? allowInAnd(parseAssignmentExpressionOrHigher) : undefined;
-                    node = factory.createShorthandPropertyAssignment(name as Identifier, objectAssignmentInitializer);
+                    node = factory.createShorthandPropertyAssignment(name.as<Identifier>(), objectAssignmentInitializer);
                     // Save equals token for error reporting.
-                    // TODO(rbuckton) -> Consider manufacturing this when we need to report an error as it is otherwise not useful.
+                    // TODO(rbuckton) -> Consider manufacturing this when we need to report an error.as<it>() is otherwise not useful.
                     node.equalsToken = equalsToken;
                 }
                 else {
@@ -5753,7 +5753,7 @@ namespace ts {
 
                 // Because of automatic semicolon insertion, we need to report error if this
                 // throw could be terminated with a semicolon.  we Note can't call 'parseExpression'
-                // directly as that might consume an expression on the following line.
+                // directly.as<that>() might consume an expression on the following line.
                 // Instead, we create a "missing" identifier, but don't report an error. The actual error
                 // will be reported in the grammar walker.
                 auto expression = scanner.hasPrecedingLineBreak() ? undefined : allowInAnd(parseExpression);
@@ -5874,7 +5874,7 @@ namespace ts {
                         //    namespace
                         //    n
                         //
-                        // as the identifier 'namespace' on one line followed by the identifier 'n' on another.
+                        //.as<the>() identifier 'namespace' on one line followed by the identifier 'n' on another.
                         // We need to look one token ahead to see if it permissible to try parsing a declaration.
                         //
                         // *Note*: 'interface' is actually a strict mode reserved word. So while
@@ -6105,7 +6105,7 @@ namespace ts {
                 auto modifiers = parseModifiers();
                 if (isAmbient) {
                     for (auto m of modifiers!) {
-                        (m as Mutable<Node>).flags |= NodeFlags::Ambient;
+                        (m.as<Mutable>()<Node>).flags |= NodeFlags::Ambient;
                     }
                     return doInsideOfContext(NodeFlags::Ambient, () => parseDeclarationWorker(pos, hasJSDoc, decorators, modifiers));
                 }
@@ -6118,7 +6118,7 @@ namespace ts {
                 return doInsideOfContext(NodeFlags::Ambient, () => {
                     auto node = currentNode(parsingContext);
                     if (node) {
-                        return consumeNode(node) as Statement;
+                        return consumeNode(node).as<Statement>();
                     }
                 });
             }
@@ -6204,7 +6204,7 @@ namespace ts {
                 auto PropertyName propertyName = parsePropertyName();
                 auto BindingName name;
                 if (tokenIsIdentifier && token() != SyntaxKind::ColonToken) {
-                    name = <Identifier>propertyName;
+                    name = propertyName.as<Identifier>();
                     propertyName = undefined;
                 }
                 else {
@@ -6291,8 +6291,8 @@ namespace ts {
                 //    for (auto of X) { }
                 //
                 // In this case, we want to parse an empty declaration list, and then parse 'of'
-                // as a keyword. The reason this is not automatic is that 'of' is a valid identifier.
-                // So we need to look ahead to determine if 'of' should be treated as a keyword in
+                //.as<a>() keyword. The reason this is not automatic is that 'of' is a valid identifier.
+                // So we need to look ahead to determine if 'of' should be treated.as<a>() keyword in
                 // this context.
                 // The checker will then give an error that there is an empty declaration list.
                 auto declarations;
@@ -6429,7 +6429,7 @@ namespace ts {
             ) -> Node {
                 auto asteriskToken = parseOptionalToken(SyntaxKind::AsteriskToken);
                 auto name = parsePropertyName();
-                // this Note is not legal as per the grammar.  But we allow it in the parser and
+                // this Note is not legal.as<per>() the grammar.  But we allow it in the parser and
                 // report an error in the grammar checker.
                 auto questionToken = parseOptionalToken(SyntaxKind::QuestionToken);
                 if (asteriskToken || token() == SyntaxKind::OpenParenToken || token() == SyntaxKind::LessThanToken) {
@@ -6449,7 +6449,7 @@ namespace ts {
                     : factory.createSetAccessorDeclaration(decorators, modifiers, name, parameters, body);
                 // Keep track of `typeParameters` (for both) and `type` (for setters) if they were parsed those indicate grammar errors
                 node.typeParameters = typeParameters;
-                if (type && node.kind == SyntaxKind::SetAccessor) (node as Mutable<SetAccessorDeclaration>).type = type;
+                if (type && node.kind == SyntaxKind::SetAccessor) (node.as<Mutable>()<SetAccessorDeclaration>).type = type;
                 return withJSDoc(finishNode(node, pos), hasJSDoc);
             }
 
@@ -6500,7 +6500,7 @@ namespace ts {
                     }
 
                     // If it *is* a keyword, but not an accessor, check a little farther along
-                    // to see if it should actually be parsed as a class member.
+                    // to see if it should actually be parsed.as<a>() class member.
                     switch (token()) {
                         case SyntaxKind::OpenParenToken:     // Method declaration
                         case SyntaxKind::LessThanToken:      // Generic Method declaration
@@ -6570,12 +6570,12 @@ namespace ts {
                     }
                 }
 
-                return finishNode(factory.createToken(kind as Modifier["kind"]), pos);
+                return finishNode(factory.createToken(kind.as<Modifier>()["kind"]), pos);
             }
 
             /*
-             * There are situations in which a modifier like 'const' will appear unexpectedly, such as on a class member.
-             * In those situations, if we are entirely sure that 'const' is not valid on its own (such as when ASI takes effect
+             * There are situations in which a modifier like 'const' will appear unexpectedly, such.as<on>() a class member.
+             * In those situations, if we are entirely sure that 'const' is not valid on its own (such.as<when>() ASI takes effect
              * and turns it into a standalone declaration), then it is better to parse it and report an error later.
              *
              * In such situations, 'permitInvalidConstAsModifier' should be set to true.
@@ -6640,7 +6640,7 @@ namespace ts {
                     auto isAmbient = some(modifiers, isDeclareModifier);
                     if (isAmbient) {
                         for (auto m of modifiers!) {
-                            (m as Mutable<Node>).flags |= NodeFlags::Ambient;
+                            (m.as<Mutable>()<Node>).flags |= NodeFlags::Ambient;
                         }
                         return doInsideOfContext(NodeFlags::Ambient, () => parsePropertyOrMethodDeclaration(pos, hasJSDoc, decorators, modifiers));
                     }
@@ -6650,7 +6650,7 @@ namespace ts {
                 }
 
                 if (decorators || modifiers) {
-                    // treat this as a property declaration with a missing name.
+                    // treat this.as<a>() property declaration with a missing name.
                     auto name = createMissingNode<Identifier>(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ true, Diagnostics::Declaration_expected);
                     return parsePropertyDeclaration(pos, hasJSDoc, decorators, modifiers, name, /*questionToken*/ undefined);
                 }
@@ -6769,7 +6769,7 @@ namespace ts {
                 return withJSDoc(finishNode(node, pos), hasJSDoc);
             }
 
-            // In an ambient declaration, the grammar only allows integer literals as initializers.
+            // In an ambient declaration, the grammar only allows integer literals.as<initializers>().
             // In a non-ambient declaration, the grammar allows uninitialized members only in a
             // ConstantEnumMemberSection, which starts at the beginning of an enum declaration
             // or any time an integer literal initializer is encountered.
@@ -6822,18 +6822,18 @@ namespace ts {
             }
 
             auto parseAmbientExternalModuleDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers) -> ModuleDeclaration {
-                auto NodeFlags flags = 0;
-                auto name;
+                auto flags = NodeFlags::None;
+                Node name;
                 if (token() == SyntaxKind::GlobalKeyword) {
-                    // parse 'global' as name of global scope augmentation
+                    // parse 'global'.as<name>() of global scope augmentation
                     name = parseIdentifier();
                     flags |= NodeFlags::GlobalAugmentation;
                 }
                 else {
-                    name = <StringLiteral>parseLiteralNode();
+                    name = parseLiteralNode().as<StringLiteral>();
                     name.text = internIdentifier(name.text);
                 }
-                auto ModuleBlock body;
+                ModuleBlock body;
                 if (token() == SyntaxKind::OpenBraceToken) {
                     body = parseModuleBlock();
                 }
@@ -6998,7 +6998,7 @@ namespace ts {
 
             auto parseNamespaceImport() -> NamespaceImport {
                 // NameSpaceImport:
-                //  * as ImportedBinding
+                //  *.as<ImportedBinding>()
                 auto pos = getNodePos();
                 parseExpected(SyntaxKind::AsteriskToken);
                 parseExpected(SyntaxKind::AsKeyword);
@@ -7024,21 +7024,21 @@ namespace ts {
             }
 
             auto parseExportSpecifier() {
-                return parseImportOrExportSpecifier(SyntaxKind::ExportSpecifier) as ExportSpecifier;
+                return parseImportOrExportSpecifier(SyntaxKind::ExportSpecifier).as<ExportSpecifier>();
             }
 
             auto parseImportSpecifier() {
-                return parseImportOrExportSpecifier(SyntaxKind::ImportSpecifier) as ImportSpecifier;
+                return parseImportOrExportSpecifier(SyntaxKind::ImportSpecifier).as<ImportSpecifier>();
             }
 
             auto parseImportOrExportSpecifier(SyntaxKind kind) -> ImportOrExportSpecifier {
                 auto pos = getNodePos();
                 // ImportSpecifier:
                 //   BindingIdentifier
-                //   IdentifierName as BindingIdentifier
+                //   IdentifierName.as<BindingIdentifier>()
                 // ExportSpecifier:
                 //   IdentifierName
-                //   IdentifierName as IdentifierName
+                //   IdentifierName.as<IdentifierName>()
                 auto checkIdentifierIsKeyword = isKeyword(token()) && !isIdentifier();
                 auto checkIdentifierStart = scanner.getTokenPos();
                 auto checkIdentifierEnd = scanner.getTextPos();
@@ -7086,7 +7086,7 @@ namespace ts {
                 else {
                     exportClause = parseNamedImportsOrExports(SyntaxKind::NamedExports);
                     // It is not uncommon to accidentally omit the 'from' keyword. Additionally, in editing scenarios,
-                    // the 'from' keyword can be parsed as a named when the clause is unterminated (i.e. `{ from "moduleName";`)
+                    // the 'from' keyword can be parsed.as<a>() named when the clause is unterminated (i.e. `{ from "moduleName";`)
                     // If we don't have a 'from' keyword, see if we have a string literal such that ASI won't take effect.
                     if (token() == SyntaxKind::FromKeyword || (token() == SyntaxKind::StringLiteral && !scanner.hasPrecedingLineBreak())) {
                         parseExpected(SyntaxKind::FromKeyword);
@@ -7364,7 +7364,7 @@ namespace ts {
                 }
 
                 auto isNextNonwhitespaceTokenEndOfFile() -> boolean {
-                    // We must use infinite lookahead, as there could be any number of newlines :(
+                    // We must use infinite lookahead,.as<there>() could be any number of newlines :(
                     while (true) {
                         nextTokenJSDoc();
                         if (token() == SyntaxKind::EndOfFileToken) {
@@ -7515,7 +7515,7 @@ namespace ts {
                         }
                         state = JSDocState.SawAsterisk;
                     }
-                    auto tok = token() as SyntaxKind;
+                    auto tok = token().as<SyntaxKind>();
                     while loop (true) {
                         switch (tok) {
                             case SyntaxKind::NewLineTrivia:
@@ -7574,11 +7574,11 @@ namespace ts {
                                     indent += 1;
                                     break;
                                 }
-                                // record the * as a comment
+                                // record the *.as<a>() comment
                                 // falls through
                             default:
                                 if (state != JSDocState.SavingBackticks) {
-                                    state = JSDocState.SavingComments; // leading identifiers start recording as well
+                                    state = JSDocState.SavingComments; // leading identifiers start recording.as<well>()
                                 }
                                 pushComment(scanner.getTokenText());
                                 break;
@@ -7767,7 +7767,7 @@ namespace ts {
                     auto pos = getNodePos();
                     auto expression = parsePropertyAccessEntityNameExpression();
                     auto typeArguments = tryParseTypeArguments();
-                    auto node = factory.createExpressionWithTypeArguments(expression, typeArguments) as ExpressionWithTypeArguments & { Identifier expression | PropertyAccessEntityNameExpression };
+                    auto node = factory.createExpressionWithTypeArguments(expression, typeArguments).as<ExpressionWithTypeArguments>() & { Identifier expression | PropertyAccessEntityNameExpression };
                     auto res = finishNode(node, pos);
                     if (usedBrace) {
                         parseExpected(SyntaxKind::CloseBraceToken);
@@ -7780,7 +7780,7 @@ namespace ts {
                     auto Identifier node | PropertyAccessEntityNameExpression = parseJSDocIdentifierName();
                     while (parseOptional(SyntaxKind::DotToken)) {
                         auto name = parseJSDocIdentifierName();
-                        node = finishNode(factory.createPropertyAccessExpression(node, name), pos) as PropertyAccessEntityNameExpression;
+                        node = finishNode(factory.createPropertyAccessExpression(node, name), pos).as<PropertyAccessEntityNameExpression>();
                     }
                     return node;
                 }
@@ -7877,7 +7877,7 @@ namespace ts {
                             typeNameOrNamespaceName,
                             body,
                             nested ? NodeFlags::NestedNamespace : undefined
-                        ) as JSDocNamespaceDeclaration;
+                        ).as<JSDocNamespaceDeclaration>();
                         return finishNode(jsDocNamespaceNode, pos);
                     }
 
@@ -7892,7 +7892,7 @@ namespace ts {
                     auto pos = getNodePos();
                     auto JSDocParameterTag child | false;
                     auto parameters;
-                    while (child = tryParse(() => parseChildParameterOrPropertyTag(PropertyLikeParse.CallbackParameter, indent) as JSDocParameterTag)) {
+                    while (child = tryParse(() => parseChildParameterOrPropertyTag(PropertyLikeParse.CallbackParameter, indent).as<JSDocParameterTag>())) {
                         parameters = append(parameters, child);
                     }
                     return createNodeArray(parameters || [], pos);
@@ -7907,7 +7907,7 @@ namespace ts {
                         if (parseOptionalJsdoc(SyntaxKind::AtToken)) {
                             auto tag = parseTag(indent);
                             if (tag && tag.kind == SyntaxKind::JSDocReturnTag) {
-                                return tag as JSDocReturnTag;
+                                return tag.as<JSDocReturnTag>();
                             }
                         }
                     });
@@ -7933,7 +7933,7 @@ namespace ts {
                 }
 
                 auto parseChildPropertyTag(number indent) {
-                    return parseChildParameterOrPropertyTag(PropertyLikeParse.Property, indent) as JSDocTypeTag | JSDocPropertyTag | false;
+                    return parseChildParameterOrPropertyTag(PropertyLikeParse.Property, indent).as<JSDocTypeTag>() | JSDocPropertyTag | false;
                 }
 
                 auto parseChildParameterOrPropertyTag(PropertyLikeParse target, number indent, EntityName name) -> JSDocTypeTag | JSDocPropertyTag | JSDocParameterTag | false {
@@ -8034,7 +8034,7 @@ namespace ts {
                     //   > type bound they must be declared on separate lines.
                     //
                     // Determine TODO whether we should enforce this in the checker.
-                    // Consider TODO moving the `constraint` to the first type parameter as we could then remove `getEffectiveConstraintOfTypeParameter`.
+                    // Consider TODO moving the `constraint` to the first type parameter.as<we>() could then remove `getEffectiveConstraintOfTypeParameter`.
                     // Consider TODO only parsing a single type parameter if there is a constraint.
                     auto constraint = token() == SyntaxKind::OpenBraceToken ? parseJSDocTypeExpression() : undefined;
                     auto typeParameters = parseTemplateTagTypeParameters();
@@ -8054,7 +8054,7 @@ namespace ts {
                     auto EntityName entity = parseJSDocIdentifierName();
                     if (parseOptional(SyntaxKind::OpenBracketToken)) {
                         parseExpected(SyntaxKind::CloseBracketToken);
-                        // Note that y[] is accepted as an entity name, but the postfix brackets are not saved for checking.
+                        // Note that y[] is accepted.as<an>() entity name, but the postfix brackets are not saved for checking.
                         // Technically usejsdoc.org requires them for specifying a property of a type equivalent to Array<{ ... x}>
                         // but it's not worth it to enforce that restriction.
                     }
@@ -8108,8 +8108,8 @@ namespace ts {
                 //
                 // This is because we do incremental parsing in-place.  i.e. we take nodes from the old
                 // tree and give them new positions and parents.  From that point on, trusting the old
-                // tree at all is not possible as far too much of it may violate invariants.
-                auto incrementalSourceFile = <IncrementalNode><Node>sourceFile;
+                // tree at all is not possible.as<far>() too much of it may violate invariants.
+                auto incrementalSourceFile = <IncrementalNode>sourceFile.as<Node>();
                 Debug::_assert(!incrementalSourceFile.hasBeenIncrementallyParsed);
                 incrementalSourceFile.hasBeenIncrementallyParsed = true;
                 Parser::fixupParentReferences(incrementalSourceFile);
@@ -8142,9 +8142,9 @@ namespace ts {
                 // it very easy to determine if we can reuse a node.  If the node's position is at where
                 // we are in the text, then we can reuse it.  Otherwise we can't.  If the node's position
                 // is ahead of us, then we'll need to rescan tokens.  If the node's position is behind
-                // us, then we'll need to skip it or crumble it as appropriate
+                // us, then we'll need to skip it or crumble it.as<appropriate>()
                 //
-                // We will also adjust the positions of nodes that intersect the change range as well.
+                // We will also adjust the positions of nodes that intersect the change range.as<well>().
                 // By doing this, we ensure that all the positions in the old tree are consistent, not
                 // just the positions of nodes entirely before/after the change range.  By being
                 // consistent, we can then easily map from positions to nodes in the old tree easily.
@@ -8230,10 +8230,10 @@ namespace ts {
 
             auto moveElementEntirelyPastChangeRange(IncrementalElement element, boolean isArray, number delta, string oldText, string newText, boolean aggressiveChecks) {
                 if (isArray) {
-                    visitArray(<IncrementalNodeArray>element);
+                    visitArray(element.as<IncrementalNodeArray>());
                 }
                 else {
-                    visitNode(<IncrementalNode>element);
+                    visitNode(element.as<IncrementalNode>());
                 }
                 return;
 
@@ -8258,7 +8258,7 @@ namespace ts {
                     forEachChild(node, visitNode, visitArray);
                     if (hasJSDocNodes(node)) {
                         for (auto jsDocComment of node.jsDoc!) {
-                            visitNode(<IncrementalNode><Node>jsDocComment);
+                            visitNode(<IncrementalNode>jsDocComment.as<Node>());
                         }
                     }
                     checkNodePositions(node, aggressiveChecks);
@@ -8411,7 +8411,7 @@ namespace ts {
                         forEachChild(child, visitNode, visitArray);
                         if (hasJSDocNodes(child)) {
                             for (auto jsDocComment of child.jsDoc!) {
-                                visitNode(<IncrementalNode><Node>jsDocComment);
+                                visitNode(<IncrementalNode>jsDocComment.as<Node>());
                             }
                         }
                         checkNodePositions(child, aggressiveChecks);
@@ -8468,7 +8468,7 @@ namespace ts {
                 auto start = changeRange.span.start;
 
                 // the first iteration aligns us with the change start. subsequent iteration move us to
-                // the left by maxLookahead tokens.  We only need to do this as long as we're not at the
+                // the left by maxLookahead tokens.  We only need to do this.as<long>().as<we>()'re not at the
                 // start of the tree.
                 for (auto i = 0; start > 0 && i <= maxLookahead; i++) {
                     auto nearestNode = findNearestNodeStartingBeforeOrAtPosition(sourceFile, start);
@@ -8533,7 +8533,7 @@ namespace ts {
                         // recurse into this child to see if we can find something better.
                         if (position < child.end) {
                             // The nearest node is either this child, or one of the children inside
-                            // of it.  We've already marked this child as the best so far.  Recurse
+                            // of it.  We've already marked this child.as<the>() best so far.  Recurse
                             // in case one of the children is better.
                             forEachChild(child, visit);
 
@@ -8617,7 +8617,7 @@ namespace ts {
                         }
 
                         // Cache this query so that we don't do any extra work if the parser calls back
-                        // into us.  this Note is very common as the parser will make pairs of calls like
+                        // into us.  this Note is very common.as<the>() parser will make pairs of calls like
                         // 'isListElement -> parseListElement'.  If we were unable to find a node when
                         // called with 'isListElement', we don't want to redo the work when parseListElement
                         // is called immediately after.
@@ -8625,7 +8625,7 @@ namespace ts {
 
                         // Either we don'd have a node, or we have a node at the position being asked for.
                         Debug::_assert(!current || current.pos == position);
-                        return <IncrementalNode>current;
+                        return current.as<IncrementalNode>();
                     }
                 };
 
@@ -8725,11 +8725,11 @@ namespace ts {
 
         // Produces a new SourceFile for the 'newText' provided. The 'textChangeRange' parameter
         // indicates what changed between the 'text' that this SourceFile has and the 'newText'.
-        // The SourceFile will be created with the compiler attempting to reuse as many nodes from
-        // this file as possible.
+        // The SourceFile will be created with the compiler attempting to reuse.as<many>() nodes from
+        // this file.as<possible>().
         //
         // this Note auto mutates nodes from this SourceFile. That means any existing nodes
-        // from this SourceFile that are being held onto may change as a result (including
+        // from this SourceFile that are being held onto may change.as<a>() result (including
         // becoming detached from any SourceFile).  It is recommended that this SourceFile not
         // be used once 'update' is called on it.
         auto updateSourceFile(SourceFile sourceFile, string newText, TextChangeRange textChangeRange, boolean aggressiveChecks = false) -> SourceFile {
@@ -8767,7 +8767,7 @@ namespace ts {
                 extractPragmas(pragmas, range, comment);
             }
 
-            context.pragmas = new Map() as PragmaMap;
+            context.pragmas = new Map().as<PragmaMap>();
             for (auto pragma of pragmas) {
                 if (context.pragmas.has(pragma.name)) {
                     auto currentValue = context.pragmas.at(pragma.name);
@@ -8799,7 +8799,7 @@ namespace ts {
                         auto referencedFiles = context.referencedFiles;
                         auto typeReferenceDirectives = context.typeReferenceDirectives;
                         auto libReferenceDirectives = context.libReferenceDirectives;
-                        forEach(toArray(entryOrList) as PragmaPseudoMap["reference"][], arg => {
+                        forEach(toArray(entryOrList).as<PragmaPseudoMap>()["reference"][], arg => {
                             auto { types, lib, path } = arg.arguments;
                             if (arg.arguments["no-default-lib"]) {
                                 context.hasNoDefaultLib = true;
@@ -8821,7 +8821,7 @@ namespace ts {
                     }
                     case "amd-dependency": {
                         context.amdDependencies = map(
-                            toArray(entryOrList) as PragmaPseudoMap["amd-dependency"][],
+                            toArray(entryOrList).as<PragmaPseudoMap>()["amd-dependency"][],
                             x => ({ x.arguments.name name, x.arguments.path path }));
                         break;
                     }
@@ -8832,11 +8832,11 @@ namespace ts {
                                     // It TODO's probably fine to issue this diagnostic on all instances of the pragma
                                     reportDiagnostic(entry.range.pos, entry.range.end - entry.range.pos, Diagnostics::An_AMD_module_cannot_have_multiple_name_assignments);
                                 }
-                                context.moduleName = (entry as PragmaPseudoMap["amd-module"]).arguments.name;
+                                context.moduleName = (entry.as<PragmaPseudoMap>()["amd-module"]).arguments.name;
                             }
                         }
                         else {
-                            context.moduleName = (entryOrList as PragmaPseudoMap["amd-module"]).arguments.name;
+                            context.moduleName = (entryOrList.as<PragmaPseudoMap>()["amd-module"]).arguments.name;
                         }
                         break;
                     }
@@ -8879,8 +8879,8 @@ namespace ts {
         auto extractPragmas(std::vector<PragmaPseudoMapEntry> pragmas, CommentRange range, string text) {
             auto tripleSlash = range.kind == SyntaxKind::SingleLineCommentTrivia && tripleSlashXMLCommentStartRegEx.exec(text);
             if (tripleSlash) {
-                auto name = tripleSlash[1].toLowerCase() as keyof PragmaPseudoMap; // Technically unsafe cast, but we do it so the below check to make it safe typechecks
-                auto pragma = commentPragmas[name] as PragmaDefinition;
+                auto name = tripleSlash[1].toLowerCase().as<keyof>() PragmaPseudoMap; // Technically unsafe cast, but we do it so the below check to make it safe typechecks
+                auto pragma = commentPragmas[name].as<PragmaDefinition>();
                 if (!pragma || !(pragma.kind! & PragmaKindFlags.TripleSlashXML)) {
                     return;
                 }
@@ -8906,10 +8906,10 @@ namespace ts {
                             }
                         }
                     }
-                    pragmas.push({ name, args: { argument arguments, range } } as PragmaPseudoMapEntry);
+                    pragmas.push({ name, args: { argument arguments, range } }.as<PragmaPseudoMapEntry>());
                 }
                 else {
-                    pragmas.push({ name, args: { arguments: {}, range } } as PragmaPseudoMapEntry);
+                    pragmas.push({ name, args: { arguments: {}, range } }.as<PragmaPseudoMapEntry>());
                 }
                 return;
             }
@@ -8930,15 +8930,15 @@ namespace ts {
 
         auto addPragmaForMatch(std::vector<PragmaPseudoMapEntry> pragmas, CommentRange range, PragmaKindFlags kind, RegExpExecArray match) {
             if (!match) return;
-            auto name = match[1].toLowerCase() as keyof PragmaPseudoMap; // Technically unsafe cast, but we do it so they below check to make it safe typechecks
-            auto pragma = commentPragmas[name] as PragmaDefinition;
+            auto name = match[1].toLowerCase().as<keyof>() PragmaPseudoMap; // Technically unsafe cast, but we do it so they below check to make it safe typechecks
+            auto pragma = commentPragmas[name].as<PragmaDefinition>();
             if (!pragma || !(pragma.kind! & kind)) {
                 return;
             }
             auto args = match[2]; // Split on spaces and match up positionally with definition
             auto argument = getNamedPragmaArguments(pragma, args);
             if (argument == "fail") return; // Missing required argument, fail to parse it
-            pragmas.push({ name, args: { argument arguments, range } } as PragmaPseudoMapEntry);
+            pragmas.push({ name, args: { argument arguments, range } }.as<PragmaPseudoMapEntry>());
             return;
         }
 
@@ -8967,7 +8967,7 @@ namespace ts {
             }
 
             if (lhs.kind == SyntaxKind::Identifier) {
-                return lhs.escapedText == (<Identifier>rhs).escapedText;
+                return lhs.escapedText == (rhs.as<Identifier>()).escapedText;
             }
 
             if (lhs.kind == SyntaxKind::ThisKeyword) {
@@ -8976,9 +8976,9 @@ namespace ts {
 
             // If we are at this statement then we must have PropertyAccessExpression and because tag name in Jsx element can only
             // take forms of JsxTagNameExpression which includes an identifier, "this" expression, or another propertyAccessExpression
-            // it is safe to case the expression property as such. See parseJsxElementName for how we parse tag name in Jsx element
-            return (<PropertyAccessExpression>lhs).name.escapedText == (<PropertyAccessExpression>rhs).name.escapedText &&
-                tagNamesAreEquivalent((<PropertyAccessExpression>lhs).expression as JsxTagNameExpression, (<PropertyAccessExpression>rhs).expression as JsxTagNameExpression);
+            // it is safe to case the expression property.as<such>(). See parseJsxElementName for how we parse tag name in Jsx element
+            return (lhs.as<PropertyAccessExpression>()).name.escapedText == (rhs.as<PropertyAccessExpression>()).name.escapedText &&
+                tagNamesAreEquivalent((<PropertyAccessExpression>lhs).expression.as<JsxTagNameExpression>(), (<PropertyAccessExpression>rhs).expression.as<JsxTagNameExpression>());
         }
 
     } // namespace

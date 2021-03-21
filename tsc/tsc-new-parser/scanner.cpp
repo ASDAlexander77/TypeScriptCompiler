@@ -9,7 +9,6 @@ namespace ts
     public:
         ScannerImpl() = default;
 
-    private:
         /* @internal */
         auto tokenIsIdentifierOrKeyword(SyntaxKind token) -> boolean
         {
@@ -22,6 +21,7 @@ namespace ts
             return token == SyntaxKind::GreaterThanToken || tokenIsIdentifierOrKeyword(token);
         }
 
+    private:
         std::map<string, SyntaxKind> textToKeyword = {
             {S("abstract"), SyntaxKind::AbstractKeyword},
             {S("any"), SyntaxKind::AnyKeyword},

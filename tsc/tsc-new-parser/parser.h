@@ -72,6 +72,7 @@ struct Node : TextRange
     TransformFlags transformFlags;
     NodeArray<Node> decorators;
     ModifiersArray modifiers;
+    number jsdocDotPos;
 
     bool isArray;
     NodeArray<Node> children;

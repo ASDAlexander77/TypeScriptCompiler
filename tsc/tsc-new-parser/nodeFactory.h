@@ -66,6 +66,10 @@ public:
     Node createComputedPropertyName(Node expression);
 
     Node createPrivateIdentifier(string name);
+
+    Node createQualifiedName(Node left, string right);
+
+    Node createQualifiedName(Node left, Identifier right);
 };
 
 #endif // NODEFACTORY_H
