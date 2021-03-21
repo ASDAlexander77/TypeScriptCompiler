@@ -243,4 +243,38 @@ inline auto isTemplateLiteralKind(SyntaxKind kind) -> boolean {
     return SyntaxKind::FirstTemplateToken <= kind && kind <= SyntaxKind::LastTemplateToken;
 }
 
+inline auto isModifierKind(SyntaxKind token) -> boolean {
+    switch (token) {
+        case SyntaxKind::AbstractKeyword:
+        case SyntaxKind::AsyncKeyword:
+        case SyntaxKind::ConstKeyword:
+        case SyntaxKind::DeclareKeyword:
+        case SyntaxKind::DefaultKeyword:
+        case SyntaxKind::ExportKeyword:
+        case SyntaxKind::PublicKeyword:
+        case SyntaxKind::PrivateKeyword:
+        case SyntaxKind::ProtectedKeyword:
+        case SyntaxKind::ReadonlyKeyword:
+        case SyntaxKind::StaticKeyword:
+            return true;
+    }
+    return false;
+}
+
+inline auto nodeIsMissing(Node node) -> boolean {
+    if (node == undefined) {
+        return true;
+    }
+
+    return node.pos == node.end && node.pos >= 0 && node.kind != SyntaxKind::EndOfFileToken;
+}
+
+inline auto nodeIsPresent(Node node) -> boolean {
+    return !nodeIsMissing(node);
+}
+
+inline auto containsParseError(Node node) -> boolean {
+    return (node.flags & NodeFlags::ThisNodeOrAnySubNodesHasError) != NodeFlags::None;
+}
+
 #endif // UTILITIES_H

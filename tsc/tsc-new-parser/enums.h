@@ -384,6 +384,8 @@ enum class ParsingContext : number {
     Count                      // Number of parsing contexts
 };
 
+ENUM_OPS(ParsingContext)
+
 enum class TransformFlags : number {
     None = 0,
 

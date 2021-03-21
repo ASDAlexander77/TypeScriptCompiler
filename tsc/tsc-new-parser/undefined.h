@@ -35,6 +35,11 @@ struct Undefined
         return !!_value;
     }
 
+    operator T&()
+    {
+        return _value;
+    }
+
     bool hasValue()
     {
         return _hasValue;

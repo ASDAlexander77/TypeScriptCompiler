@@ -861,6 +861,8 @@ namespace ts
         auto scanJsxToken() -> SyntaxKind;
         auto scanJsxAttributeValue() -> SyntaxKind;
         auto reScanInvalidIdentifier() -> SyntaxKind;
+        auto tokenIsIdentifierOrKeyword(SyntaxKind token) -> boolean;
+        auto tokenIsIdentifierOrKeywordOrGreaterThan(SyntaxKind token) -> boolean;
 
         template <typename T>
         auto tryScan(std::function<T()> callback) -> T

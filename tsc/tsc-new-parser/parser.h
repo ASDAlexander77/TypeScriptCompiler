@@ -10,16 +10,46 @@
 struct Node;
 
 template <typename T>
-using NodeArray = std::vector<T>;
-
-typedef SyntaxKind Modifier;
-typedef NodeArray<Modifier> ModifiersArray;
-
-template <typename T>
 using NodeFuncT = std::function<T(Node)>;
 
 template <typename T>
 using NodeWithParentFuncT = std::function<T(Node, Node)>;
+
+typedef std::function<Node(SyntaxKind, number, number)> NodeCreateFunc;
+
+typedef std::function<void(number, number, DiagnosticMessage)> PragmaDiagnosticReporter;
+
+typedef SyntaxKind Modifier;
+
+struct Node;
+
+template <typename T>
+struct NodeArray
+{
+    NodeArray() = default;
+
+    std::vector<T> items;
+    boolean isMissingList;
+
+    inline auto operator [](size_t i) const -> T
+    {
+        return items[i];
+    }
+
+    inline auto operator [](size_t i) -> T&
+    {
+        return items[i];
+    }
+
+    inline auto size() -> size_t {
+        return items.size();
+    }
+
+    auto push_back(Node node) -> void
+    {
+        items.push_back(node);
+    }       
+};
 
 template <typename T>
 using NodeArrayFuncT = std::function<T(NodeArray<T>)>;
@@ -27,9 +57,7 @@ using NodeArrayFuncT = std::function<T(NodeArray<T>)>;
 template <typename T>
 using NodeWithParentArrayFuncT = std::function<T(NodeArray<T>, Node)>;
 
-typedef std::function<Node(SyntaxKind, number, number)> NodeCreateFunc;
-
-typedef std::function<void(number, number, DiagnosticMessage)> PragmaDiagnosticReporter;
+typedef NodeArray<Modifier> ModifiersArray;
 
 struct Node : TextRange
 {
@@ -39,6 +67,8 @@ struct Node : TextRange
 
     SyntaxKind kind;
     NodeFlags flags;
+    SyntaxKind originalKeywordKind;
+    string text;
     TransformFlags transformFlags;
     NodeArray<Node> decorators;
     ModifiersArray modifiers;
@@ -99,6 +129,11 @@ struct Node : TextRange
         isArray = true;
         children.push_back(node);
     }    
+
+    auto operator==(undefined_t)
+    {
+        return !(bool)*this;
+    }
 };
 
 static auto isArray(Node &node) -> boolean
@@ -109,13 +144,18 @@ static auto isArray(Node &node) -> boolean
 typedef Node Identifier, PropertyName, PrivateIdentifier, ThisTypeNode, LiteralLikeNode, LiteralExpression, EntityName, Expression, IndexSignatureDeclaration,
     TypeElement, BinaryOperatorToken, UnaryExpression, UpdateExpression, LeftHandSideExpression, MemberExpression, JsxText, JsxChild, JsxTagNameExpression,
     JsxClosingFragment, QuestionDotToken, PrimaryExpression, ObjectLiteralElementLike, FunctionExpression, Statement, CaseOrDefaultClause, ArrayBindingElement,
-    ObjectBindingPattern, ArrayBindingPattern, FunctionDeclaration, ConstructorDeclaration, MethodDeclaration, AccessorDeclaration, ClassElement, ClassExpression,
+    ObjectBindingPattern, ArrayBindingPattern, FunctionDeclaration, ConstructorDeclaration, AccessorDeclaration, ClassElement, ClassExpression,
     ModuleBlock, EndOfFileToken, BooleanLiteral, NullLiteral;
 
 struct QualifiedName
 {
     Node left;
     Node right;
+};
+
+struct MethodDeclaration
+{
+    Node name;
 };
 
 struct TypeParameterDeclaration
@@ -770,7 +810,7 @@ struct TemplateLiteralTypeSpan
     Node literal;
 };
 
-struct ComputedPropertyName
+struct ComputedPropertyName : PropertyName
 {
     Node expression;
 };
@@ -971,6 +1011,11 @@ struct JSDocSignature
 struct JSDocTypeLiteral
 {
     Node jsDocPropertyTags;
+};
+
+struct JSDocContainer
+{
+    Node jsDocCache;
 };
 
 struct DiagnosticWithLocation : Diagnostic {

@@ -55,7 +55,7 @@ struct Debug
         assert(cond);
     }
 
-    auto fail(string message = string()) -> void {
+    static auto fail(string message = string()) -> void {
         //debugger;
         string msg = S("Debug Failure.");
         if (!message.empty())

@@ -7,6 +7,8 @@
 struct DiagnosticMessage
 {
     DiagnosticMessage() = default;
+    DiagnosticMessage(int code, DiagnosticCategory category, string label, string message) : code(code), category(category), label(label), message(message) {};
+    DiagnosticMessage(undefined_t) : category{DiagnosticCategory::Undefined} {}
 
     int code;
     DiagnosticCategory category;

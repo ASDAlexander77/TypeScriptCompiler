@@ -2769,6 +2769,7 @@ private:
             return SyntaxKind::Unknown;
         }
 
+    public:
         auto reScanGreaterToken() -> SyntaxKind
         {
             if (token == SyntaxKind::GreaterThanToken)
@@ -2871,6 +2872,7 @@ private:
             return token;
         }
 
+    private:
         auto appendIfCommentDirective(
             std::vector<CommentDirective> commentDirectives,
             string text,
@@ -2912,6 +2914,7 @@ private:
             return CommentDirectiveType::Undefined;
         }
 
+    public:
         /**
          * Unconditionally back up and scan a template expression portion.
          */
@@ -3104,6 +3107,7 @@ private:
             return scanJsxAttributeValue();
         }
 
+public:
         auto scanJsDocToken() -> SyntaxKind
         {
             startPos = tokenPos = pos;
@@ -3200,6 +3204,7 @@ private:
             }
         }
 
+private:
         template <typename T>
         auto speculationHelper(std::function<T()> callback, boolean isLookahead) -> T
         {
@@ -3548,6 +3553,16 @@ private:
     auto Scanner::reScanInvalidIdentifier() -> SyntaxKind
     {
         return impl->reScanInvalidIdentifier();
+    }
+
+    auto Scanner::tokenIsIdentifierOrKeyword(SyntaxKind token) -> boolean
+    {
+        return impl->tokenIsIdentifierOrKeyword(token);
+    }
+
+    auto Scanner::tokenIsIdentifierOrKeywordOrGreaterThan(SyntaxKind token) -> boolean
+    {
+        return impl->tokenIsIdentifierOrKeywordOrGreaterThan(token);
     }
 
     Scanner::~Scanner()

@@ -62,6 +62,10 @@ public:
     Node createStringLiteral(string text, boolean isSingleQuote = false, boolean hasExtendedUnicodeEscape = false);
 
     Node createMissingDeclaration();
+
+    Node createComputedPropertyName(Node expression);
+
+    Node createPrivateIdentifier(string name);
 };
 
 #endif // NODEFACTORY_H
