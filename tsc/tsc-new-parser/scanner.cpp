@@ -3467,22 +3467,82 @@ private:
 
     auto Scanner::hasUnicodeEscape() -> boolean
     {
-        return (impl->tokenFlags & TokenFlags::hasUnicodeEscape) != 0;
+        return (impl->tokenFlags & TokenFlags::UnicodeEscape) != TokenFlags::None;
     }
 
     auto Scanner::hasExtendedUnicodeEscape() -> boolean
     {
-        return (impl->tokenFlags & TokenFlags::hasExtendedUnicodeEscape) != 0;
+        return (impl->tokenFlags & TokenFlags::ExtendedUnicodeEscape) != TokenFlags::None;
     }
 
     auto Scanner::hasPrecedingLineBreak() -> boolean
     {
-        return (impl->tokenFlags & TokenFlags::hasPrecedingLineBreak) != 0;
+        return (impl->tokenFlags & TokenFlags::PrecedingLineBreak) != TokenFlags::None;
     }
 
     auto Scanner::hasPrecedingJSDocComment() -> boolean
     {
-        return (impl->tokenFlags & TokenFlags::PrecedingJSDocComment) != 0;
+        return (impl->tokenFlags & TokenFlags::PrecedingJSDocComment) != TokenFlags::None;
+    }
+
+    auto Scanner::isIdentifier() -> boolean
+    {
+        return impl->token == SyntaxKind::Identifier || impl->token > SyntaxKind::LastReservedWord;
+    }
+
+    auto Scanner::isReservedWord() -> boolean
+    {
+        return impl->token >= SyntaxKind::FirstReservedWord && impl->token <= SyntaxKind::LastReservedWord;
+    }
+
+    auto Scanner::isUnterminated() -> boolean
+    {
+        return (impl->tokenFlags & TokenFlags::Unterminated) != TokenFlags::None;
+    }
+
+    auto Scanner::scanJsDocToken() -> SyntaxKind
+    {
+        return impl->scanJsDocToken();
+    }
+
+    auto Scanner::reScanGreaterToken() -> SyntaxKind
+    {
+        return impl->reScanGreaterToken();
+    }
+
+    auto Scanner::reScanSlashToken() -> SyntaxKind
+    {
+        return impl->reScanSlashToken();
+    }
+
+    auto Scanner::reScanTemplateToken(boolean isTaggedTemplate) -> SyntaxKind
+    {
+        return impl->reScanTemplateToken(isTaggedTemplate);
+    }
+
+    auto Scanner::reScanTemplateHeadOrNoSubstitutionTemplate() -> SyntaxKind
+    {
+        return impl->reScanTemplateHeadOrNoSubstitutionTemplate();
+    }
+
+    auto Scanner::reScanLessThanToken() -> SyntaxKind
+    {
+        return impl->reScanLessThanToken();
+    }
+
+    auto Scanner::scanJsxIdentifier() -> SyntaxKind
+    {
+        return impl->scanJsxIdentifier();
+    }
+
+    auto Scanner::scanJsxToken() -> SyntaxKind
+    {
+        return impl->scanJsxToken();
+    }
+
+    auto Scanner::scanJsxAttributeValue() -> SyntaxKind
+    {
+        return impl->scanJsxAttributeValue();
     }
 
     Scanner::~Scanner()

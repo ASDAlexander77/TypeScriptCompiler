@@ -1,6 +1,7 @@
 #ifndef NODEFACTORY_H
 #define NODEFACTORY_H
 
+#include "enums.h"
 #include "scanner.h"
 
 typedef std::function<Node(SyntaxKind)> NodeCreate;
@@ -46,9 +47,21 @@ public:
 
     SourceFile updateSourceFile(SourceFile, Node);
 
-    Node createNodeArray(Node);
+    Node createNodeArray(Node, boolean hasTrailingComma = false);
 
     SourceFile createSourceFile(Node statements, Node endOfFileToken, NodeFlags flags);
+
+    Node createToken(SyntaxKind kind);
+
+    Node createIdentifier(string text, Node typeArguments = undefined, SyntaxKind originalKeywordKind = SyntaxKind::Unknown);
+
+    Node createTemplateLiteralLikeNode(SyntaxKind kind = SyntaxKind::Unknown, string = string(), string = string(), TokenFlags templateFlags = TokenFlags::None);
+
+    Node createNumericLiteral(string value = string(), TokenFlags numericLiteralFlags = TokenFlags::NumericLiteralFlags);
+
+    Node createStringLiteral(string text, boolean isSingleQuote = false, boolean hasExtendedUnicodeEscape = false);
+
+    Node createMissingDeclaration();
 };
 
 #endif // NODEFACTORY_H

@@ -3,6 +3,39 @@
 
 #include "config.h"
 
+#define ENUM_OPS(x) \
+inline bool operator !(x lhs)   \
+{   \
+    return (number)lhs == 0;    \
+}   \
+    \
+inline x operator |(x lhs, x rhs)   \
+{   \
+    return (x) ((number) lhs | (number) rhs);   \
+}   \
+    \
+inline x operator &(x lhs, x rhs)   \
+{   \
+    return (x) ((number) lhs & (number) rhs);   \
+}   \
+    \
+inline x operator ~(x rhs)  \
+{   \
+    return (x) (~(number) rhs); \
+}   \
+    \
+inline x& operator|=(x& lhv, x rhv) \
+{   \
+    lhv = (x) ((number) lhv | (number)rhv); \
+    return lhv; \
+}   \
+    \
+inline x& operator&=(x& lhv, x rhv) \
+{   \
+    lhv = (x) ((number) lhv & (number)rhv); \
+    return lhv; \
+}
+
 enum class ScriptTarget : number {
     ES3 = 0,
     ES5 = 1,
@@ -127,37 +160,7 @@ enum class NodeFlags : number {
     /* @internal */ PermanentlySetIncrementalFlags = PossiblyContainsDynamicImport | PossiblyContainsImportMeta,
 };
 
-inline bool operator !(NodeFlags lhs)
-{
-    return (number)lhs == 0;
-}
-
-inline NodeFlags operator |(NodeFlags lhs, NodeFlags rhs)
-{
-    return (NodeFlags) ((number) lhs | (number) rhs);
-}
-
-inline NodeFlags operator &(NodeFlags lhs, NodeFlags rhs)
-{
-    return (NodeFlags) ((number) lhs & (number) rhs);
-}
-
-inline NodeFlags operator ~(NodeFlags rhs)
-{
-    return (NodeFlags) (~(number) rhs);
-}
-
-inline NodeFlags& operator|=(NodeFlags& lhv, NodeFlags rhv)
-{
-    lhv = (NodeFlags) ((number) lhv | (number)rhv);
-    return lhv;
-}
-
-inline NodeFlags& operator&=(NodeFlags& lhv, NodeFlags rhv)
-{
-    lhv = (NodeFlags) ((number) lhv & (number)rhv);
-    return lhv;
-}
+ENUM_OPS(NodeFlags)
 
 enum class OperatorPrecedence : number {
     // Expression:
@@ -464,15 +467,7 @@ enum class TransformFlags : number {
     // - Additional bitmasks
 };
 
-inline bool operator !(TransformFlags lhs)
-{
-    return (number)lhs == 0;
-}
-
-inline TransformFlags operator &(TransformFlags lhs, TransformFlags rhs)
-{
-    return (TransformFlags) ((number) lhs & (number) rhs);
-}
+ENUM_OPS(TransformFlags)
 
 enum class Tristate : number {
     False,

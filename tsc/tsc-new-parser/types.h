@@ -12,6 +12,11 @@ struct DiagnosticMessage
     DiagnosticCategory category;
     string label;
     string message;
+
+    bool operator !()
+    {
+        return category == DiagnosticCategory::Undefined;
+    }
 };
 
 struct TextRange {

@@ -848,6 +848,18 @@ namespace ts
         auto hasExtendedUnicodeEscape() -> boolean;
         auto hasPrecedingLineBreak() -> boolean;
         auto hasPrecedingJSDocComment() -> boolean;
+        auto isIdentifier() -> boolean;
+        auto isReservedWord() -> boolean;
+        auto isUnterminated() -> boolean;
+        auto scanJsDocToken() -> SyntaxKind;
+        auto reScanGreaterToken() -> SyntaxKind;
+        auto reScanSlashToken() -> SyntaxKind;
+        auto reScanTemplateToken(boolean isTaggedTemplate) -> SyntaxKind;
+        auto reScanTemplateHeadOrNoSubstitutionTemplate() -> SyntaxKind;
+        auto reScanLessThanToken() -> SyntaxKind;
+        auto scanJsxIdentifier() -> SyntaxKind;
+        auto scanJsxToken() -> SyntaxKind;
+        auto scanJsxAttributeValue() -> SyntaxKind;
 
         ~Scanner();
     };

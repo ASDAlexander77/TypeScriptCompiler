@@ -35,6 +35,7 @@ struct Node : TextRange
 {
     Node() = default;
     Node(SyntaxKind kind, number start, number end) : kind(kind), TextRange{start, end} {};
+    Node(undefined_t) : kind(SyntaxKind::Unknown) {};
 
     SyntaxKind kind;
     NodeFlags flags;

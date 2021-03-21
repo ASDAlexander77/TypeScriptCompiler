@@ -235,8 +235,12 @@ auto setParentRecursive(T rootNode, boolean incremental) -> T {
     return rootNode;
 }
 
-auto isKeyword(SyntaxKind token) -> boolean {
+inline auto isKeyword(SyntaxKind token) -> boolean {
     return SyntaxKind::FirstKeyword <= token && token <= SyntaxKind::LastKeyword;
+}
+
+inline auto isTemplateLiteralKind(SyntaxKind kind) -> boolean {
+    return SyntaxKind::FirstTemplateToken <= kind && kind <= SyntaxKind::LastTemplateToken;
 }
 
 #endif // UTILITIES_H

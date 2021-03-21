@@ -1303,6 +1303,10 @@ namespace ts {
                 parseErrorBeforeNextFinishedNode = true;
             }
 
+            auto parseErrorAt(number start, number end, DiagnosticMessage message) -> void {
+                parseErrorAtPosition(start, end - start, message);
+            }
+
             template<typename T>
             auto parseErrorAt(number start, number end, DiagnosticMessage message, T arg0) -> void {
                 parseErrorAtPosition(start, end - start, message, arg0);
@@ -1473,7 +1477,7 @@ namespace ts {
                 return token() > SyntaxKind::LastReservedWord;
             }
 
-            auto parseExpected(SyntaxKind kind, DiagnosticMessage diagnosticMessage, boolean shouldAdvance = true) -> boolean {
+            auto parseExpected(SyntaxKind kind, DiagnosticMessage diagnosticMessage = DiagnosticMessage(), boolean shouldAdvance = true) -> boolean {
                 if (token() == kind) {
                     if (shouldAdvance) {
                         nextToken();
@@ -1482,11 +1486,11 @@ namespace ts {
                 }
 
                 // Report specific message if provided with one.  Otherwise, report generic fallback message.
-                if (diagnosticMessage) {
+                if (!!diagnosticMessage) {
                     parseErrorAtCurrentToken(diagnosticMessage);
                 }
                 else {
-                    parseErrorAtCurrentToken(Diagnostics::_0_expected, tokenToString(kind));
+                    parseErrorAtCurrentToken(Diagnostics::_0_expected, scanner.tokenToString(kind));
                 }
                 return false;
             }
@@ -1496,7 +1500,7 @@ namespace ts {
                     nextTokenJSDoc();
                     return true;
                 }
-                parseErrorAtCurrentToken(Diagnostics::_0_expected, tokenToString(kind));
+                parseErrorAtCurrentToken(Diagnostics::_0_expected, scanner.tokenToString(kind));
                 return false;
             }
 
@@ -1529,7 +1533,7 @@ namespace ts {
 
             auto parseExpectedTokenJSDoc(SyntaxKind t) -> Node {
                 return parseOptionalTokenJSDoc(t) ||
-                    createMissingNode(t, /*reportAtCurrentPosition*/ false, Diagnostics::_0_expected, tokenToString(t));
+                    createMissingNode(t, /*reportAtCurrentPosition*/ false, Diagnostics::_0_expected, scanner.tokenToString(t));
             }
 
             template <typename ... T>
@@ -1540,7 +1544,6 @@ namespace ts {
                 return finishNode(factory.createToken(kind), pos);
             }
 
-            template <typename T>
             auto parseTokenNodeJSDoc() -> Node {
                 auto pos = getNodePos();
                 auto kind = token();
@@ -1580,7 +1583,7 @@ namespace ts {
 
             auto finishNode(Node node, number pos, number end = -1) -> Node {
                 setTextRangePosEnd(node, pos, end != -1 ? end : scanner.getStartPos());
-                if (contextFlags) {
+                if (!!contextFlags) {
                     node.flags |= contextFlags;
                 }
 
@@ -1595,24 +1598,23 @@ namespace ts {
                 return node;
             }
 
-            template <typename T>
-            auto createMissingNode(SyntaxKind kind, boolean reportAtCurrentPosition, DiagnosticMessage diagnosticMessage, T arg0) -> T {
+            auto createMissingNode(SyntaxKind kind, boolean reportAtCurrentPosition, DiagnosticMessage diagnosticMessage, string arg0 = string()) -> Node {
                 if (reportAtCurrentPosition) {
                     parseErrorAtPosition(scanner.getStartPos(), 0, diagnosticMessage, arg0);
                 }
-                else if (diagnosticMessage) {
+                else if (!!diagnosticMessage) {
                     parseErrorAtCurrentToken(diagnosticMessage, arg0);
                 }
 
                 auto pos = getNodePos();
                 auto result =
-                    kind == SyntaxKind::Identifier ? factory.createIdentifier(string(), /*typeArguments*/ undefined, /*originalKeywordKind*/ undefined) :
-                    isTemplateLiteralKind(kind) ? factory.createTemplateLiteralLikeNode(kind, string(), string(), /*templateFlags*/ undefined) :
-                    kind == SyntaxKind::NumericLiteral ? factory.createNumericLiteral(string(), /*numericLiteralFlags*/ undefined) :
-                    kind == SyntaxKind::StringLiteral ? factory.createStringLiteral(string(), /*isSingleQuote*/ undefined) :
+                    kind == SyntaxKind::Identifier ? factory.createIdentifier(string()) :
+                    isTemplateLiteralKind(kind) ? factory.createTemplateLiteralLikeNode(kind, string(), string(), /*templateFlags*/ TokenFlags::None) :
+                    kind == SyntaxKind::NumericLiteral ? factory.createNumericLiteral(string(), /*numericLiteralFlags*/ TokenFlags::None) :
+                    kind == SyntaxKind::StringLiteral ? factory.createStringLiteral(string(), /*isSingleQuote*/ false) :
                     kind == SyntaxKind::MissingDeclaration ? factory.createMissingDeclaration() :
                     factory.createToken(kind);
-                return finishNode(result, pos) as T;
+                return finishNode(result, pos);
             }
 
             auto internIdentifier(string text) -> string {
@@ -2382,7 +2384,7 @@ namespace ts {
                     case ParsingContext::return HeritageClauseElement parseErrorAtCurrentToken(Diagnostics::Expression_expected);
                     case ParsingContext::VariableDeclarations:
                         return isKeyword(token())
-                            ? parseErrorAtCurrentToken(Diagnostics::_0_is_not_allowed_as_a_variable_declaration_name, tokenToString(token()))
+                            ? parseErrorAtCurrentToken(Diagnostics::_0_is_not_allowed_as_a_variable_declaration_name, scanner.tokenToString(token()))
                             : parseErrorAtCurrentToken(Diagnostics::Variable_declaration_expected);
                     case ParsingContext::return ObjectBindingElements parseErrorAtCurrentToken(Diagnostics::Property_destructuring_pattern_expected);
                     case ParsingContext::return ArrayBindingElements parseErrorAtCurrentToken(Diagnostics::Array_element_destructuring_pattern_expected);
@@ -2628,7 +2630,7 @@ namespace ts {
                 }
                 else {
                     // TODO(rbuckton) -> Do we need to call `parseExpectedToken` or can we just call `createMissingNode` directly?
-                    return <TemplateTail>parseExpectedToken(SyntaxKind::TemplateTail, Diagnostics::_0_expected, tokenToString(SyntaxKind::CloseBraceToken));
+                    return <TemplateTail>parseExpectedToken(SyntaxKind::TemplateTail, Diagnostics::_0_expected, scanner.tokenToString(SyntaxKind::CloseBraceToken));
                 }
             }
 
@@ -2991,7 +2993,7 @@ namespace ts {
                 }
                 else if (isType && token() == SyntaxKind::EqualsGreaterThanToken) {
                     // This is easy to get backward, especially in type contexts, so parse the type anyway
-                    parseErrorAtCurrentToken(Diagnostics::_0_expected, tokenToString(SyntaxKind::ColonToken));
+                    parseErrorAtCurrentToken(Diagnostics::_0_expected, scanner.tokenToString(SyntaxKind::ColonToken));
                     nextToken();
                     return true;
                 }
@@ -4372,7 +4374,7 @@ namespace ts {
                         colonToken = parseExpectedToken(SyntaxKind::ColonToken),
                         nodeIsPresent(colonToken)
                             ? parseAssignmentExpressionOrHigher()
-                            : createMissingNode(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ false, Diagnostics::_0_expected, tokenToString(SyntaxKind::ColonToken))
+                            : createMissingNode(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ false, Diagnostics::_0_expected, scanner.tokenToString(SyntaxKind::ColonToken))
                     ),
                     pos
                 );
@@ -4550,7 +4552,7 @@ namespace ts {
                         parseErrorAt(pos, end, Diagnostics::A_type_assertion_expression_is_not_allowed_in_the_left_hand_side_of_an_exponentiation_expression_Consider_enclosing_the_expression_in_parentheses);
                     }
                     else {
-                        parseErrorAt(pos, end, Diagnostics::An_unary_expression_with_the_0_operator_is_not_allowed_in_the_left_hand_side_of_an_exponentiation_expression_Consider_enclosing_the_expression_in_parentheses, tokenToString(unaryOperator));
+                        parseErrorAt(pos, end, Diagnostics::An_unary_expression_with_the_0_operator_is_not_allowed_in_the_left_hand_side_of_an_exponentiation_expression_Consider_enclosing_the_expression_in_parentheses, scanner.tokenToString(unaryOperator));
                     }
                 }
                 return simpleUnaryExpression;
