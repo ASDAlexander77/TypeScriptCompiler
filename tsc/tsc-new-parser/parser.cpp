@@ -1598,6 +1598,7 @@ namespace ts {
                 return node;
             }
 
+            template <typename T = Node>
             auto createMissingNode(SyntaxKind kind, boolean reportAtCurrentPosition, DiagnosticMessage diagnosticMessage, string arg0 = string()) -> Node {
                 if (reportAtCurrentPosition) {
                     parseErrorAtPosition(scanner.getStartPos(), 0, diagnosticMessage, arg0);
@@ -1618,9 +1619,9 @@ namespace ts {
             }
 
             auto internIdentifier(string text) -> string {
-                auto identifier = identifiers.get(text);
-                if (identifier == undefined) {
-                    identifiers.set(text, identifier = text);
+                auto identifier = identifiers.at(text);
+                if (!identifier.empty()) {
+                    identifiers[text] = (identifier = text);
                 }
                 return identifier;
             }
@@ -1628,7 +1629,7 @@ namespace ts {
             // An identifier that starts with two underscores has an extra underscore character prepended to it to avoid issues
             // with magic property names like '__proto__'. The 'identifiers' object is used to share a single string instance for
             // each identifier in order to reduce memory consumption.
-            auto createIdentifier(boolean isIdentifier, DiagnosticMessage diagnosticMessage, DiagnosticMessage privateIdentifierDiagnosticMessage) -> Identifier {
+            auto createIdentifier(boolean isIdentifier, DiagnosticMessage diagnosticMessage = DiagnosticMessage(), DiagnosticMessage privateIdentifierDiagnosticMessage = DiagnosticMessage()) -> Identifier {
                 if (isIdentifier) {
                     identifierCount++;
                     auto pos = getNodePos();
@@ -1640,11 +1641,11 @@ namespace ts {
                 }
 
                 if (token() == SyntaxKind::PrivateIdentifier) {
-                    parseErrorAtCurrentToken(privateIdentifierDiagnosticMessage || Diagnostics::Private_identifiers_are_not_allowed_outside_class_bodies);
+                    parseErrorAtCurrentToken(!!privateIdentifierDiagnosticMessage ? privateIdentifierDiagnosticMessage : Diagnostics::Private_identifiers_are_not_allowed_outside_class_bodies);
                     return createIdentifier(/*isIdentifier*/ true);
                 }
 
-                if (token() == SyntaxKind::Unknown && scanner.tryScan(() => scanner.reScanInvalidIdentifier() == SyntaxKind::Identifier)) {
+                if (token() == SyntaxKind::Unknown && scanner.tryScan<boolean>([&]() { return scanner.reScanInvalidIdentifier() == SyntaxKind::Identifier; })) {
                     // Scanner has already recorded an 'Invalid character' error, so no need to add another from the Parser::
                     return createIdentifier(/*isIdentifier*/ true);
                 }

@@ -2734,7 +2734,6 @@ private:
             }
         }
 
-    private:
         auto reScanInvalidIdentifier() -> SyntaxKind
         {
             debug(token == SyntaxKind::Unknown, S("'reScanInvalidIdentifier' should only be called when the current token is 'SyntaxKind::Unknown'."));
@@ -2750,6 +2749,7 @@ private:
             return token; // Still `SyntaKind.Unknown`
         }
 
+    private:
         auto scanIdentifier(CharacterCodes startCharacter, ScriptTarget languageVersion) -> SyntaxKind
         {
             auto ch = startCharacter;
@@ -3543,6 +3543,11 @@ private:
     auto Scanner::scanJsxAttributeValue() -> SyntaxKind
     {
         return impl->scanJsxAttributeValue();
+    }
+
+    auto Scanner::reScanInvalidIdentifier() -> SyntaxKind
+    {
+        return impl->reScanInvalidIdentifier();
     }
 
     Scanner::~Scanner()
