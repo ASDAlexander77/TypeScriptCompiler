@@ -104,8 +104,8 @@ static auto  assertDiagnosticLocation(SourceFile file, number start, number leng
     Debug::assertGreaterThanOrEqual(length, 0);
 
     if (!!file) {
-        Debug::assertLessThanOrEqual(start, file.text.length());
-        Debug::assertLessThanOrEqual(start + length, file.text.length());
+        Debug::assertLessThanOrEqual(start, file->text.length());
+        Debug::assertLessThanOrEqual(start + length, file->text.length());
     }
 }
 

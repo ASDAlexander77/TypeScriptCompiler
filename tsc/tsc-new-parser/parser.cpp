@@ -764,12 +764,12 @@ namespace ts {
                     auto result = parseJsonText(fileName, sourceText, languageVersion, syntaxCursor, setParentNodes);
                     // TODO: review if we need it
                     //convertToObjectWorker(result, result.statements[0].expression, result.parseDiagnostics, /*returnValue*/ false, /*knownRootOptions*/ undefined, /*jsonConversionNotifier*/ undefined);
-                    result.referencedFiles.clear();
-                    result.typeReferenceDirectives.clear();
-                    result.libReferenceDirectives.clear();
-                    result.amdDependencies.clear();
-                    result.hasNoDefaultLib = false;
-                    result.pragmas.clear();
+                    result->referencedFiles.clear();
+                    result->typeReferenceDirectives.clear();
+                    result->libReferenceDirectives.clear();
+                    result->amdDependencies.clear();
+                    result->hasNoDefaultLib = false;
+                    result->pragmas.clear();
                     return result;
                 }
 
@@ -866,14 +866,14 @@ namespace ts {
                     fixupParentReferences(sourceFile);
                 }
 
-                sourceFile.nodeCount = nodeCount;
-                sourceFile.identifierCount = identifierCount;
-                sourceFile.identifiers = identifiers;
+                sourceFile->nodeCount = nodeCount;
+                sourceFile->identifierCount = identifierCount;
+                sourceFile->identifiers = identifiers;
                 //sourceFile.parseDiagnostics = attachFileToDiagnostics(parseDiagnostics, sourceFile);
-                sourceFile.parseDiagnostics = parseDiagnostics;
+                sourceFile->parseDiagnostics = parseDiagnostics;
                 if (!jsDocDiagnostics.empty()) {
                     //sourceFile.jsDocDiagnostics = attachFileToDiagnostics(jsDocDiagnostics, sourceFile);
-                    sourceFile.jsDocDiagnostics = jsDocDiagnostics;
+                    sourceFile->jsDocDiagnostics = jsDocDiagnostics;
                 }
 
                 auto result = JsonSourceFile(sourceFile);
@@ -981,15 +981,15 @@ namespace ts {
                 };
                 processPragmasIntoFields(sourceFile, reportPragmaDiagnostic);
 
-                sourceFile.commentDirectives = scanner.getCommentDirectives();
-                sourceFile.nodeCount = nodeCount;
-                sourceFile.identifierCount = identifierCount;
-                sourceFile.identifiers = identifiers;
+                sourceFile->commentDirectives = scanner.getCommentDirectives();
+                sourceFile->nodeCount = nodeCount;
+                sourceFile->identifierCount = identifierCount;
+                sourceFile->identifiers = identifiers;
                 //sourceFile.parseDiagnostics = attachFileToDiagnostics(parseDiagnostics, sourceFile);
-                sourceFile.parseDiagnostics = parseDiagnostics;
+                sourceFile->parseDiagnostics = parseDiagnostics;
                 if (!jsDocDiagnostics.empty()) {
                     //sourceFile.jsDocDiagnostics = attachFileToDiagnostics(jsDocDiagnostics, sourceFile);
-                    sourceFile.jsDocDiagnostics = jsDocDiagnostics;
+                    sourceFile->jsDocDiagnostics = jsDocDiagnostics;
                 }
 
                 if (setParentNodes) {
@@ -1146,14 +1146,14 @@ namespace ts {
                     sourceFile = reparseTopLevelAwait(sourceFile);
                 }
 
-                sourceFile.text = sourceText;
-                sourceFile.bindDiagnostics.clear();
-                sourceFile.bindSuggestionDiagnostics.clear();
-                sourceFile.languageVersion = languageVersion;
-                sourceFile.fileName = fileName;
-                sourceFile.languageVariant = getLanguageVariant(scriptKind);
-                sourceFile.isDeclarationFile = isDeclarationFile;
-                sourceFile.scriptKind = scriptKind;
+                sourceFile->text = sourceText;
+                sourceFile->bindDiagnostics.clear();
+                sourceFile->bindSuggestionDiagnostics.clear();
+                sourceFile->languageVersion = languageVersion;
+                sourceFile->fileName = fileName;
+                sourceFile->languageVariant = getLanguageVariant(scriptKind);
+                sourceFile->isDeclarationFile = isDeclarationFile;
+                sourceFile->scriptKind = scriptKind;
 
                 return sourceFile;
             }

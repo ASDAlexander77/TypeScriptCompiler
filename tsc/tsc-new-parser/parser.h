@@ -71,7 +71,12 @@ typedef NodeArray<Modifier> ModifiersArray;
 #define CLASS_CUSTOM_NODE_BASE(x, b, extNode) struct x : b { \
     x() {}  \
     x(undefined_t) {} \
-    x(Node node) : b(node) { node.data = std::make_shared<extNode>(*node.data); }
+    x(Node node) : b(node) { node.data = std::make_shared<extNode>(*node.data); }   \
+    \
+    extNode* operator->()  \
+    {   \
+        return static_cast<extNode*>(node.operator->());   \
+    }
 
 #define CLASS_CUSTOM_NODE(x, extNd) CLASS_CUSTOM_NODE_BASE(x, BaseNode, extNd)    
 
@@ -207,8 +212,7 @@ typedef Node Identifier, PropertyName, PrivateIdentifier, ThisTypeNode, LiteralL
     ObjectBindingPattern, ArrayBindingPattern, FunctionDeclaration, ConstructorDeclaration, AccessorDeclaration, ClassElement, ClassExpression,
     ModuleBlock, EndOfFileToken, BooleanLiteral, NullLiteral;
 
-struct QualifiedName
-{
+CLASS_NODE(QualifiedName)
     Node left;
     Node right;
 };
@@ -503,13 +507,6 @@ CLASS_NODE(Block)
 struct SourceFileNodeData : NodeData
 {   
     using NodeData::NodeData;
-};
-
-CLASS_CUSTOM_NODE(SourceFile, SourceFileNodeData)
-    Node statements;
-    Node endOfFileToken;
-    Node externalModuleIndicator;
-    Node commonJsModuleIndicator;
 
     // extra fields
     std::vector<FileReference> referencedFiles;
@@ -538,6 +535,13 @@ CLASS_CUSTOM_NODE(SourceFile, SourceFileNodeData)
     std::vector<DiagnosticWithDetachedLocation> bindDiagnostics;
     std::vector<DiagnosticWithDetachedLocation> bindSuggestionDiagnostics;
     std::vector<DiagnosticWithDetachedLocation> jsDocDiagnostics;
+};
+
+CLASS_CUSTOM_NODE(SourceFile, SourceFileNodeData)
+    Node statements;
+    Node endOfFileToken;
+    Node externalModuleIndicator;
+    Node commonJsModuleIndicator;
 };
 
 typedef SourceFile JsonSourceFile;
