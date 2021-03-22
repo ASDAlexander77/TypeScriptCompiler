@@ -2732,7 +2732,7 @@ namespace ts {
                         return isMissingList(parameters) || typeHasArrowFunctionBlockingParseError(type);
                     }
                     case SyntaxKind::ParenthesizedType:
-                        return typeHasArrowFunctionBlockingParseError(node.as<ParenthesizedTypeNode>().type);
+                        return typeHasArrowFunctionBlockingParseError(node.as<ParenthesizedTypeNode>()->type);
                     default:
                         return false;
                 }
@@ -2740,7 +2740,7 @@ namespace ts {
 
             auto parseThisTypePredicate(ThisTypeNode lhs) -> TypePredicateNode {
                 nextToken();
-                return finishNode(factory.createTypePredicateNode(/*assertsModifier*/ undefined, lhs, parseType()), lhs.pos);
+                return finishNode(factory.createTypePredicateNode(/*assertsModifier*/ undefined, lhs, parseType()), lhs->pos);
             }
 
             auto parseThisTypeNode() -> ThisTypeNode {

@@ -133,6 +133,11 @@ struct Node
         return (bool)data;
     }
 
+    operator NodeArray<Node>()
+    {
+        return data->children;
+    }
+
     auto operator=(NodeArray<Node> values) -> Node&
     {
         data->kind = SyntaxKind::ArrayType;
@@ -336,6 +341,7 @@ CLASS_DATA(TypeLiteralNode)
 CLASS_DATA_END(TypeLiteralNode)
 
 CLASS_DATA(TypeNode)
+    Node type;
 CLASS_DATA_END(TypeNode)
 
 CLASS_DATA(ArrayTypeNode)
@@ -943,6 +949,7 @@ CLASS_DATA_END(LiteralLikeNode)
 
 CLASS_DATA(FunctionOrConstructorTypeNode)
     TypeNode type;
+    Node parameters;
 CLASS_DATA_END(FunctionOrConstructorTypeNode)
 
 typedef FunctionOrConstructorTypeNode FunctionTypeNode;
