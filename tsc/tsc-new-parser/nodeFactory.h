@@ -76,6 +76,8 @@ public:
     Node createTemplateLiteralType(Node type, Node literal);
 
     Node createTemplateLiteralTypeSpan(Node type, Node literal);
+
+    Node createTemplateSpan(Expression expression, Node literal);
 };
 
 #endif // NODEFACTORY_H

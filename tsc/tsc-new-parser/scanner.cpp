@@ -3565,6 +3565,16 @@ private:
         return impl->tokenIsIdentifierOrKeywordOrGreaterThan(token);
     }
 
+    auto Scanner::getTokenFlags() -> TokenFlags
+    {
+        return impl->tokenFlags;
+    }
+
+    auto Scanner::getNumericLiteralFlags() -> TokenFlags
+    {
+        return impl->tokenFlags & TokenFlags::NumericLiteralFlags;
+    }
+
     Scanner::~Scanner()
     {
         delete impl;

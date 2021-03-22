@@ -7,6 +7,8 @@
 #include "scanner.h"
 #include "debug.h"
 
+#include <memory>
+
 struct Node;
 
 template <typename T>
@@ -61,12 +63,22 @@ typedef NodeArray<Modifier> ModifiersArray;
 
 #define CLASS_NODE_BASE(x, b) struct x : b { \
     x() {}  \
+    x(undefined_t) {} \
     x(Node node) : b(node) {}
 
 #define CLASS_NODE(x) CLASS_NODE_BASE(x, BaseNode)
 
+#define CLASS_CUSTOM_NODE_BASE(x, b, extNode) struct x : b { \
+    x() {}  \
+    x(undefined_t) {} \
+    x(Node node) : b(node) { node.data = std::make_shared<extNode>(*node.data); }
+
+#define CLASS_CUSTOM_NODE(x, extNd) CLASS_CUSTOM_NODE_BASE(x, BaseNode, extNd)    
+
 struct NodeData : TextRange
 {   
+    NodeData() = default;
+
     NodeFlags flags;
     string text;
     TransformFlags transformFlags;
@@ -488,7 +500,12 @@ CLASS_NODE(Block)
     Node statements;
 };
 
-CLASS_NODE(SourceFile)
+struct SourceFileNodeData : NodeData
+{   
+    using NodeData::NodeData;
+};
+
+CLASS_CUSTOM_NODE(SourceFile, SourceFileNodeData)
     Node statements;
     Node endOfFileToken;
     Node externalModuleIndicator;

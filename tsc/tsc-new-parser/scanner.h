@@ -863,6 +863,8 @@ namespace ts
         auto reScanInvalidIdentifier() -> SyntaxKind;
         auto tokenIsIdentifierOrKeyword(SyntaxKind token) -> boolean;
         auto tokenIsIdentifierOrKeywordOrGreaterThan(SyntaxKind token) -> boolean;
+        auto getTokenFlags() -> TokenFlags;
+        auto getNumericLiteralFlags() -> TokenFlags;
 
         template <typename T>
         auto tryScan(std::function<T()> callback) -> T

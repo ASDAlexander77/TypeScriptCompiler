@@ -2653,26 +2653,26 @@ namespace ts {
                     reScanTemplateHeadOrNoSubstitutionTemplate();
                 }
                 auto fragment = parseLiteralLikeNode(token());
-                Debug::_assert(fragment.kind == SyntaxKind::TemplateHead, "Template head has wrong token kind");
+                Debug::_assert(fragment.kind == SyntaxKind::TemplateHead, S("Template head has wrong token kind"));
                 return fragment.as<TemplateHead>();
             }
 
             auto parseTemplateMiddleOrTemplateTail() -> Node {
                 auto fragment = parseLiteralLikeNode(token());
-                Debug::_assert(fragment.kind == SyntaxKind::TemplateMiddle || fragment.kind == SyntaxKind::TemplateTail, "Template fragment has wrong token kind");
+                Debug::_assert(fragment.kind == SyntaxKind::TemplateMiddle || fragment.kind == SyntaxKind::TemplateTail, S("Template fragment has wrong token kind"));
                 return fragment;
             }
 
             auto getTemplateLiteralRawText(SyntaxKind kind) -> string {
                 auto isLast = kind == SyntaxKind::NoSubstitutionTemplateLiteral || kind == SyntaxKind::TemplateTail;
                 auto tokenText = scanner.getTokenText();
-                return tokenText.substring(1, tokenText.size() - (scanner.isUnterminated() ? 0 : isLast ? 1 : 2));
+                return safe_string(tokenText).substring(1, tokenText.size() - (scanner.isUnterminated() ? 0 : isLast ? 1 : 2));
             }
 
             auto parseLiteralLikeNode(SyntaxKind kind) -> LiteralLikeNode {
                 auto pos = getNodePos();
                 auto node =
-                    isTemplateLiteralKind(kind) ? factory.createTemplateLiteralLikeNode(kind, scanner.getTokenValue(), getTemplateLiteralRawText(kind), scanner.getTokenFlags() & TokenFlags.TemplateLiteralLikeFlags) :
+                    isTemplateLiteralKind(kind) ? factory.createTemplateLiteralLikeNode(kind, scanner.getTokenValue(), getTemplateLiteralRawText(kind), scanner.getTokenFlags() & TokenFlags::TemplateLiteralLikeFlags) :
                     // Octal literals are not allowed in strict mode or ES5
                     // Note that theoretically the following condition would hold true literals like 009,
                     // which is not octal. But because of how the scanner separates the tokens, we would
@@ -2680,7 +2680,7 @@ namespace ts {
                     // We also do not need to check for negatives because any prefix operator would be part of a
                     // parent unary expression.
                     kind == SyntaxKind::NumericLiteral ? factory.createNumericLiteral(scanner.getTokenValue(), scanner.getNumericLiteralFlags()) :
-                    kind == SyntaxKind::StringLiteral ? factory.createStringLiteral(scanner.getTokenValue(), /*isSingleQuote*/ undefined, scanner.hasExtendedUnicodeEscape()) :
+                    kind == SyntaxKind::StringLiteral ? factory.createStringLiteral(scanner.getTokenValue(), /*isSingleQuote*/ /*undefined*/false, scanner.hasExtendedUnicodeEscape()) :
                     isLiteralKind(kind) ? factory.createLiteralLikeNode(kind, scanner.getTokenValue()) :
                     Debug::fail();
 
