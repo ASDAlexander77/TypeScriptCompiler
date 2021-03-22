@@ -105,13 +105,13 @@ struct Node
     template <typename T> 
     auto as() -> T
     {
-        return T();
+        return T(*this);
     }
 
     template <typename T> 
-    auto asMutable() -> T&
+    auto asMutable() -> T
     {
-        return T();
+        return T(*this);
     }    
 
     operator bool()

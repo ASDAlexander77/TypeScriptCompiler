@@ -1526,9 +1526,9 @@ namespace ts {
                 return Node();
             }
 
-            auto parseExpectedToken(SyntaxKind t, DiagnosticMessage diagnosticMessage) -> Node {
+            auto parseExpectedToken(SyntaxKind t, DiagnosticMessage diagnosticMessage = DiagnosticMessage(), string arg0 = string()) -> Node {
                 return parseOptionalToken(t) ||
-                    createMissingNode(t, /*reportAtCurrentPosition*/ false, diagnosticMessage);
+                    createMissingNode(t, /*reportAtCurrentPosition*/ false, diagnosticMessage, arg0);
             }            
 
             auto parseExpectedTokenJSDoc(SyntaxKind t) -> Node {
@@ -2622,14 +2622,14 @@ namespace ts {
                 );
             }
 
-            auto parseLiteralOfTemplateSpan(boolean isTaggedTemplate) {
+            auto parseLiteralOfTemplateSpan(boolean isTaggedTemplate) -> Node {
                 if (token() == SyntaxKind::CloseBraceToken) {
                     reScanTemplateToken(isTaggedTemplate);
                     return parseTemplateMiddleOrTemplateTail();
                 }
                 else {
                     // TODO(rbuckton) -> Do we need to call `parseExpectedToken` or can we just call `createMissingNode` directly?
-                    return <TemplateTail>parseExpectedToken(SyntaxKind::TemplateTail, Diagnostics::_0_expected, scanner.tokenToString(SyntaxKind::CloseBraceToken));
+                    return parseExpectedToken(SyntaxKind::TemplateTail, Diagnostics::_0_expected, scanner.tokenToString(SyntaxKind::CloseBraceToken));
                 }
             }
 
@@ -2637,7 +2637,7 @@ namespace ts {
                 auto pos = getNodePos();
                 return finishNode(
                     factory.createTemplateSpan(
-                        allowInAnd(parseExpression),
+                        allowInAnd<Expression>(std::bind(&Parser::parseExpression, this)),
                         parseLiteralOfTemplateSpan(isTaggedTemplate)
                     ),
                     pos
@@ -2801,7 +2801,7 @@ namespace ts {
 
             auto parseJSDocParameter() -> ParameterDeclaration {
                 auto pos = getNodePos();
-                auto Identifier name;
+                Identifier name;
                 if (token() == SyntaxKind::ThisKeyword || token() == SyntaxKind::NewKeyword) {
                     name = parseIdentifierName();
                     parseExpected(SyntaxKind::ColonToken);
@@ -5110,7 +5110,7 @@ namespace ts {
                     argumentExpression = createMissingNode(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ true, Diagnostics::An_element_access_expression_should_take_an_argument);
                 }
                 else {
-                    auto argument = allowInAnd(parseExpression);
+                    auto argument = allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
                     if (isStringOrNumericLiteralLike(argument)) {
                         argument.text = internIdentifier(argument.text);
                     }
@@ -5351,7 +5351,7 @@ namespace ts {
                 auto pos = getNodePos();
                 auto hasJSDoc = hasPrecedingJSDocComment();
                 parseExpected(SyntaxKind::OpenParenToken);
-                auto expression = allowInAnd(parseExpression);
+                auto expression = allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
                 parseExpected(SyntaxKind::CloseParenToken);
                 return withJSDoc(finishNode(factory.createParenthesizedExpression(expression), pos), hasJSDoc);
             }
@@ -5422,7 +5422,7 @@ namespace ts {
                 auto isShorthandPropertyAssignment = tokenIsIdentifier && (token() != SyntaxKind::ColonToken);
                 if (isShorthandPropertyAssignment) {
                     auto equalsToken = parseOptionalToken(SyntaxKind::EqualsToken);
-                    auto objectAssignmentInitializer = equalsToken ? allowInAnd(parseAssignmentExpressionOrHigher) : undefined;
+                    auto objectAssignmentInitializer = equalsToken ? allowInAnd<Expression>(std::bind(&Parser::parseAssignmentExpressionOrHigher, this)) : undefined;
                     node = factory.createShorthandPropertyAssignment(name.as<Identifier>(), objectAssignmentInitializer);
                     // Save equals token for error reporting.
                     // TODO(rbuckton) -> Consider manufacturing this when we need to report an error.as<it>() is otherwise not useful.
@@ -5430,7 +5430,7 @@ namespace ts {
                 }
                 else {
                     parseExpected(SyntaxKind::ColonToken);
-                    auto initializer = allowInAnd(parseAssignmentExpressionOrHigher);
+                    auto initializer = allowInAnd<Expression>(std::bind(&Parser::parseAssignmentExpressionOrHigher, this));
                     node = factory.createPropertyAssignment(name, initializer);
                 }
                 // Decorators, Modifiers, questionToken, and exclamationToken are not supported by property assignments and are reported in the grammar checker
@@ -5479,8 +5479,8 @@ namespace ts {
                 auto isAsync = some(modifiers, isAsyncModifier) ? SignatureFlags.Await : SignatureFlags.None;
                 auto name =
                     isGenerator && isAsync ? doInYieldAndAwaitContext(parseOptionalBindingIdentifier) :
-                    isGenerator ? doInYieldContext(parseOptionalBindingIdentifier) :
-                    isAsync ? doInAwaitContext(parseOptionalBindingIdentifier) :
+                    isGenerator ? doInYieldContext<Identifier>(std::bind(&Parser::parseOptionalBindingIdentifier, this)) :
+                    isAsync ? doInAwaitContext<Identifier>(std::bind(&Parser::parseOptionalBindingIdentifier, this)) :
                     parseOptionalBindingIdentifier();
 
                 auto typeParameters = parseTypeParameters();
@@ -5597,7 +5597,7 @@ namespace ts {
                 auto pos = getNodePos();
                 parseExpected(SyntaxKind::IfKeyword);
                 parseExpected(SyntaxKind::OpenParenToken);
-                auto expression = allowInAnd(parseExpression);
+                auto expression = allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
                 parseExpected(SyntaxKind::CloseParenToken);
                 auto thenStatement = parseStatement();
                 auto elseStatement = parseOptional(SyntaxKind::ElseKeyword) ? parseStatement() : undefined;
@@ -5610,7 +5610,7 @@ namespace ts {
                 auto statement = parseStatement();
                 parseExpected(SyntaxKind::WhileKeyword);
                 parseExpected(SyntaxKind::OpenParenToken);
-                auto expression = allowInAnd(parseExpression);
+                auto expression = allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
                 parseExpected(SyntaxKind::CloseParenToken);
 
                 // https From://mail.mozilla.org/pipermail/es-discuss/2011-August/016188.html
@@ -5625,7 +5625,7 @@ namespace ts {
                 auto pos = getNodePos();
                 parseExpected(SyntaxKind::WhileKeyword);
                 parseExpected(SyntaxKind::OpenParenToken);
-                auto expression = allowInAnd(parseExpression);
+                auto expression = allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
                 parseExpected(SyntaxKind::CloseParenToken);
                 auto statement = parseStatement();
                 return finishNode(factory.createWhileStatement(expression, statement), pos);
@@ -5643,29 +5643,29 @@ namespace ts {
                         initializer = parseVariableDeclarationList(/*inForStatementInitializer*/ true);
                     }
                     else {
-                        initializer = disallowInAnd(parseExpression);
+                        initializer = disallowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
                     }
                 }
 
                 auto IterationStatement node;
                 if (awaitToken ? parseExpected(SyntaxKind::OfKeyword) : parseOptional(SyntaxKind::OfKeyword)) {
-                    auto expression = allowInAnd(parseAssignmentExpressionOrHigher);
+                    auto expression = allowInAnd<Expression>(std::bind(&Parser::parseAssignmentExpressionOrHigher, this));
                     parseExpected(SyntaxKind::CloseParenToken);
                     node = factory.createForOfStatement(awaitToken, initializer, expression, parseStatement());
                 }
                 else if (parseOptional(SyntaxKind::InKeyword)) {
-                    auto expression = allowInAnd(parseExpression);
+                    auto expression = allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
                     parseExpected(SyntaxKind::CloseParenToken);
                     node = factory.createForInStatement(initializer, expression, parseStatement());
                 }
                 else {
                     parseExpected(SyntaxKind::SemicolonToken);
                     auto condition = token() != SyntaxKind::SemicolonToken && token() != SyntaxKind::CloseParenToken
-                        ? allowInAnd(parseExpression)
+                        ? allowInAnd<Expression>(std::bind(&Parser::parseExpression, this))
                         : undefined;
                     parseExpected(SyntaxKind::SemicolonToken);
                     auto incrementor = token() != SyntaxKind::CloseParenToken
-                        ? allowInAnd(parseExpression)
+                        ? allowInAnd<Expression>(std::bind(&Parser::parseExpression, this))
                         : undefined;
                     parseExpected(SyntaxKind::CloseParenToken);
                     node = factory.createForStatement(initializer, condition, incrementor, parseStatement());
@@ -5690,7 +5690,7 @@ namespace ts {
             auto parseReturnStatement() -> ReturnStatement {
                 auto pos = getNodePos();
                 parseExpected(SyntaxKind::ReturnKeyword);
-                auto expression = canParseSemicolon() ? undefined : allowInAnd(parseExpression);
+                auto expression = canParseSemicolon() ? undefined : allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
                 parseSemicolon();
                 return finishNode(factory.createReturnStatement(expression), pos);
             }
@@ -5699,7 +5699,7 @@ namespace ts {
                 auto pos = getNodePos();
                 parseExpected(SyntaxKind::WithKeyword);
                 parseExpected(SyntaxKind::OpenParenToken);
-                auto expression = allowInAnd(parseExpression);
+                auto expression = allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
                 parseExpected(SyntaxKind::CloseParenToken);
                 auto statement = doInsideOfContext(NodeFlags::InWithStatement, parseStatement);
                 return finishNode(factory.createWithStatement(expression, statement), pos);
@@ -5708,7 +5708,7 @@ namespace ts {
             auto parseCaseClause() -> CaseClause {
                 auto pos = getNodePos();
                 parseExpected(SyntaxKind::CaseKeyword);
-                auto expression = allowInAnd(parseExpression);
+                auto expression = allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
                 parseExpected(SyntaxKind::ColonToken);
                 auto statements = parseList(ParsingContext::SwitchClauseStatements, parseStatement);
                 return finishNode(factory.createCaseClause(expression, statements), pos);
@@ -5738,7 +5738,7 @@ namespace ts {
                 auto pos = getNodePos();
                 parseExpected(SyntaxKind::SwitchKeyword);
                 parseExpected(SyntaxKind::OpenParenToken);
-                auto expression = allowInAnd(parseExpression);
+                auto expression = allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
                 parseExpected(SyntaxKind::CloseParenToken);
                 auto caseBlock = parseCaseBlock();
                 return finishNode(factory.createSwitchStatement(expression, caseBlock), pos);
@@ -5756,7 +5756,7 @@ namespace ts {
                 // directly.as<that>() might consume an expression on the following line.
                 // Instead, we create a "missing" identifier, but don't report an error. The actual error
                 // will be reported in the grammar walker.
-                auto expression = scanner.hasPrecedingLineBreak() ? undefined : allowInAnd(parseExpression);
+                auto expression = scanner.hasPrecedingLineBreak() ? undefined : allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
                 if (expression == undefined) {
                     identifierCount++;
                     expression = finishNode(factory.createIdentifier(string()), getNodePos());
@@ -5817,7 +5817,7 @@ namespace ts {
                 auto hasJSDoc = hasPrecedingJSDocComment();
                 auto ExpressionStatement node | LabeledStatement;
                 auto hasParen = token() == SyntaxKind::OpenParenToken;
-                auto expression = allowInAnd(parseExpression);
+                auto expression = allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
                 if (ts.isIdentifier(expression) && parseOptional(SyntaxKind::ColonToken)) {
                     node = factory.createLabeledStatement(expression, parseStatement());
                 }
@@ -6777,7 +6777,7 @@ namespace ts {
                 auto pos = getNodePos();
                 auto hasJSDoc = hasPrecedingJSDocComment();
                 auto name = parsePropertyName();
-                auto initializer = allowInAnd(parseInitializer);
+                auto initializer = allowInAnd<Expression>(std::bind(&Parser::parseInitializer, this));
                 return withJSDoc(finishNode(factory.createEnumMember(name, initializer), pos), hasJSDoc);
             }
 
