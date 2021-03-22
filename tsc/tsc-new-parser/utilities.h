@@ -181,13 +181,13 @@ inline auto fileExtensionIs(string path, string extension) -> boolean {
 
 template <typename T>
 inline auto setTextRangePos(T range, number pos) {
-    range.pos = pos;
+    range->pos = pos;
     return range;
 }
 
 template <typename T>
 inline auto setTextRangeEnd(T range, number end) -> T {
-    range.end = end;
+    range->end = end;
     return range;
 }
 
@@ -266,7 +266,7 @@ inline auto nodeIsMissing(Node node) -> boolean {
         return true;
     }
 
-    return node.pos == node.end && node.pos >= 0 && node.kind != SyntaxKind::EndOfFileToken;
+    return node->pos == node->end && node->pos >= 0 && node.kind != SyntaxKind::EndOfFileToken;
 }
 
 inline auto nodeIsPresent(Node node) -> boolean {
@@ -274,7 +274,7 @@ inline auto nodeIsPresent(Node node) -> boolean {
 }
 
 inline auto containsParseError(Node node) -> boolean {
-    return (node.flags & NodeFlags::ThisNodeOrAnySubNodesHasError) != NodeFlags::None;
+    return (node->flags & NodeFlags::ThisNodeOrAnySubNodesHasError) != NodeFlags::None;
 }
 
 #endif // UTILITIES_H

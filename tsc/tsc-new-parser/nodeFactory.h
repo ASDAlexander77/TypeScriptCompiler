@@ -70,6 +70,12 @@ public:
     Node createQualifiedName(Node left, string right);
 
     Node createQualifiedName(Node left, Identifier right);
+
+    Node createTemplateExpression(TemplateHead head, Node /*NodeArray<TemplateSpan>*/ templateSpans);
+
+    Node createTemplateLiteralType(Node type, Node literal);
+
+    Node createTemplateLiteralTypeSpan(Node type, Node literal);
 };
 
 #endif // NODEFACTORY_H

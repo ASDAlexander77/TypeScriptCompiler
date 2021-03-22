@@ -59,23 +59,48 @@ using NodeWithParentArrayFuncT = std::function<T(NodeArray<T>, Node)>;
 
 typedef NodeArray<Modifier> ModifiersArray;
 
-struct Node : TextRange
-{
-    Node() = default;
-    Node(SyntaxKind kind, number start, number end) : kind(kind), TextRange{start, end} {};
-    Node(undefined_t) : kind(SyntaxKind::Unknown) {};
+#define CLASS_NODE_BASE(x, b) struct x : b { \
+    x() {}  \
+    x(Node node) : b(node) {}
 
-    SyntaxKind kind;
+#define CLASS_NODE(x) CLASS_NODE_BASE(x, BaseNode)
+
+struct NodeData : TextRange
+{   
     NodeFlags flags;
-    SyntaxKind originalKeywordKind;
     string text;
     TransformFlags transformFlags;
     NodeArray<Node> decorators;
     ModifiersArray modifiers;
+    SyntaxKind originalKeywordKind;
     number jsdocDotPos;
 
     bool isArray;
     NodeArray<Node> children;
+
+    NodeData(number start, number end) : TextRange{start, end} {};
+
+    virtual ~NodeData() {}
+};
+
+struct Node
+{
+    SyntaxKind kind;
+    std::shared_ptr<NodeData> data;
+
+    Node() : kind(SyntaxKind::Unknown) {};
+    Node(SyntaxKind kind, number start, number end) : kind(kind), data(std::make_shared<NodeData>(start, end)) {};
+    Node(undefined_t) : kind(SyntaxKind::Unknown) {};
+
+    NodeData* operator->()
+    {
+        return data.get();
+    }
+
+    operator TextRange()
+    {
+        return *(TextRange*)data.get();
+    }
 
     template <typename T> 
     auto as() -> T
@@ -96,7 +121,7 @@ struct Node : TextRange
 
     auto operator=(NodeArray<Node> values) -> Node&
      {
-        children = values;
+        data->children = values;
         return *this;
     }
 
@@ -112,23 +137,23 @@ struct Node : TextRange
 
     auto size() -> number
     {
-        return children.size();
+        return data->children.size();
     }
 
     auto operator[](number i) const -> Node
     {
-        return children[i];
+        return data->children[i];
     }    
 
     auto operator[](number i) -> Node&
     {
-        return children[i];
+        return data->children[i];
     }    
 
     auto push_back(Node node) -> void
     {
-        isArray = true;
-        children.push_back(node);
+        data->isArray = true;
+        data->children.push_back(node);
     }    
 
     auto operator==(undefined_t)
@@ -137,9 +162,31 @@ struct Node : TextRange
     }
 };
 
+struct BaseNode
+{
+    Node node;
+    BaseNode() : node(Node()) {}
+    BaseNode(Node node) : node(node) {}
+
+    operator Node()
+    {
+        return Node();
+    }
+
+    bool operator !()
+    {
+        return !node;
+    }
+
+    NodeData* operator->()
+    {
+        return node.operator->();
+    }    
+};
+
 static auto isArray(Node &node) -> boolean
 {
-    return node.isArray;
+    return node.data->isArray;
 }
 
 typedef Node Identifier, PropertyName, PrivateIdentifier, ThisTypeNode, LiteralLikeNode, LiteralExpression, EntityName, Expression, IndexSignatureDeclaration,
@@ -154,21 +201,18 @@ struct QualifiedName
     Node right;
 };
 
-struct MethodDeclaration
-{
+CLASS_NODE(MethodDeclaration)
     Node name;
 };
 
-struct TypeParameterDeclaration
-{
+CLASS_NODE(TypeParameterDeclaration)
     Node name;
     Node constraint;
     Node _default;
     Node expression;
 };
 
-struct ShorthandPropertyAssignment
-{
+CLASS_NODE(ShorthandPropertyAssignment)
     Node name;
     Node questionToken;
     Node exclamationToken;
@@ -176,13 +220,11 @@ struct ShorthandPropertyAssignment
     Node objectAssignmentInitializer;
 };
 
-struct SpreadAssignment
-{
+CLASS_NODE(SpreadAssignment)
     Node expression;
 };
 
-struct ParameterDeclaration
-{
+CLASS_NODE(ParameterDeclaration)
     Node dotDotDotToken;
     Node name;
     Node questionToken;
@@ -190,8 +232,7 @@ struct ParameterDeclaration
     Node initializer;
 };
 
-struct PropertyDeclaration
-{
+CLASS_NODE(PropertyDeclaration)
     Node name;
     Node questionToken;
     Node exclamationToken;
@@ -199,46 +240,40 @@ struct PropertyDeclaration
     Node initializer;
 };
 
-struct PropertySignature
-{
+CLASS_NODE(PropertySignature)
     Node name;
     Node questionToken;
     Node type;
     Node initializer;
 };
 
-struct PropertyAssignment
-{
+CLASS_NODE(PropertyAssignment)
     Node name;
     Node questionToken;
     Node initializer;
 };
 
-struct VariableDeclaration
-{
+CLASS_NODE(VariableDeclaration)
     Node name;
     Node exclamationToken;
     Node type;
     Node initializer;
 };
 
-struct BindingElement
-{
+CLASS_NODE(BindingElement)
     Node dotDotDotToken;
     Node propertyName;
     Node name;
     Node initializer;
 };
 
-struct SignatureDeclaration
-{
+CLASS_NODE(SignatureDeclaration)
     Node typeParameters;
     Node parameters;
     Node type;
 };
 
-struct FunctionLikeDeclaration
-{
+CLASS_NODE(FunctionLikeDeclaration)
     Node asteriskToken;
     Node name;
     Node questionToken;
@@ -250,92 +285,76 @@ struct FunctionLikeDeclaration
     Node body;
 };
 
-struct ArrowFunction
-{
+CLASS_NODE(ArrowFunction)
     Node equalsGreaterThanToken;
 };
 
 
-struct TypeReferenceNode
-{
+CLASS_NODE(TypeReferenceNode)
     Node typeArguments;
     Node typeName;
 };
 
-struct TypePredicateNode
-{
+CLASS_NODE(TypePredicateNode)
     Node assertsModifier;
     Node parameterName;
     Node type;
 };
 
-struct TypeQueryNode
-{
+CLASS_NODE(TypeQueryNode)
     Node exprName;
 };
 
-struct TypeLiteralNode
-{
+CLASS_NODE(TypeLiteralNode)
     Node members;
 };
 
-struct TypeNode
-{
+CLASS_NODE(TypeNode)
 };
 
-struct ArrayTypeNode
-{
+CLASS_NODE(ArrayTypeNode)
     Node elementType;
 };
 
-struct TupleTypeNode
-{
+CLASS_NODE(TupleTypeNode)
     Node elements;
 };
 
-struct UnionOrIntersectionTypeNode
-{
+CLASS_NODE(UnionOrIntersectionTypeNode)
     Node types;
 };
 
-struct ConditionalTypeNode
-{
+CLASS_NODE(ConditionalTypeNode)
     Node checkType;
     Node extendsType;
     Node trueType;
     Node falseType;
 };
 
-struct InferTypeNode
-{
+CLASS_NODE(InferTypeNode)
     Node typeParameter;
 };
 
-struct ImportTypeNode
-{
+CLASS_NODE(ImportTypeNode)
     Node argument;
     Node qualifier;
     Node typeArguments;
 };
 
-struct ParenthesizedTypeNode
-{
+CLASS_NODE(ParenthesizedTypeNode)
     Node type;
 };
 
-struct TypeOperatorNode
-{
+CLASS_NODE(TypeOperatorNode)
     Node type;
 };
 
-struct IndexedAccessTypeNode
-{
+CLASS_NODE(IndexedAccessTypeNode)
     Node objectType;
     Node indexType;
 };
 
-struct MappedTypeNode
-{
+CLASS_NODE(MappedTypeNode)
     Node readonlyToken;
     Node typeParameter;
     Node nameType;
@@ -343,136 +362,113 @@ struct MappedTypeNode
     Node type;
 };
 
-struct LiteralTypeNode
-{
+CLASS_NODE(LiteralTypeNode)
     Node literal;
 };
 
-struct NamedTupleMember
-{
+CLASS_NODE(NamedTupleMember)
     Node dotDotDotToken;
     Node name;
     Node questionToken;
     Node type;
 };
 
-struct BindingPattern
-{
+CLASS_NODE(BindingPattern)
     Node elements;
 };
 
-struct ArrayLiteralExpression
-{
+CLASS_NODE(ArrayLiteralExpression)
     Node elements;
 };
 
-struct ObjectLiteralExpression
-{
+CLASS_NODE(ObjectLiteralExpression)
     Node properties;
 };
 
-struct PropertyAccessExpression
-{
+CLASS_NODE(PropertyAccessExpression)
     Node expression;
     Node questionDotToken;
     Node name;
 };
 
-struct ElementAccessExpression
-{
+CLASS_NODE(ElementAccessExpression)
     Node expression;
     Node questionDotToken;
     Node argumentExpression;
 };
 
-struct CallExpression
-{
+CLASS_NODE(CallExpression)
     Node expression;
     Node questionDotToken;
     Node typeArguments;
     Node arguments;
 };
 
-struct TaggedTemplateExpression
-{
+CLASS_NODE(TaggedTemplateExpression)
     Node tag;
     Node questionDotToken;
     Node typeArguments;
     Node _template;
 };
 
-struct TypeAssertion
-{
+CLASS_NODE(TypeAssertion)
     Node type;
     Node expression;
 };
 
-struct ParenthesizedExpression
-{
+CLASS_NODE(ParenthesizedExpression)
     Node expression;
 };
 
-struct DeleteExpression
-{
+CLASS_NODE(DeleteExpression)
     Node expression;
 };
 
-struct TypeOfExpression
-{
+CLASS_NODE(TypeOfExpression)
     Node expression;
 };
 
-struct VoidExpression
-{
+CLASS_NODE(VoidExpression)
     Node expression;
 };
 
-struct PrefixUnaryExpression
-{
+CLASS_NODE(PrefixUnaryExpression)
     Node operand;
 };
 
-struct YieldExpression
-{
+CLASS_NODE(YieldExpression)
     Node asteriskToken;
     Node expression;
 };
 
-struct AwaitExpression
-{
+CLASS_NODE(AwaitExpression)
     Node expression;
 };
 
-struct PostfixUnaryExpression
-{
+CLASS_NODE(PostfixUnaryExpression)
     Node operand;
 };
 
-struct BinaryExpression
-{
+CLASS_NODE(BinaryExpression)
     Node left;
     Node operatorToken;
     Node right;
 };
 
-struct AsExpression
-{
+CLASS_NODE(AsExpression)
     Node expression;
     Node type;
 };
 
-struct NonNullExpression
-{
+CLASS_NODE(NonNullExpression)
     Node expression;
 };
 
-struct MetaProperty
-{
+CLASS_NODE(MetaProperty)
     Node name;
 };
 
-struct ConditionalExpression
-{
+CLASS_NODE(ConditionalExpression)
     Node condition;
     Node questionToken;
     Node whenTrue;
@@ -480,27 +476,19 @@ struct ConditionalExpression
     Node whenFalse;
 };
 
-struct SpreadElement
-{
+CLASS_NODE(SpreadElement)
     Node expression;
 };
 
-struct PartiallyEmittedExpression
-{
+CLASS_NODE(PartiallyEmittedExpression)
     Node expression;
 };
 
-struct Block
-{
+CLASS_NODE(Block)
     Node statements;
 };
 
-struct SourceFile : TextRange
-{
-    Node root;
-    NodeFlags flags;
-    TransformFlags transformFlags;    
-
+CLASS_NODE(SourceFile)
     Node statements;
     Node endOfFileToken;
     Node externalModuleIndicator;
@@ -533,489 +521,396 @@ struct SourceFile : TextRange
     std::vector<DiagnosticWithDetachedLocation> bindDiagnostics;
     std::vector<DiagnosticWithDetachedLocation> bindSuggestionDiagnostics;
     std::vector<DiagnosticWithDetachedLocation> jsDocDiagnostics;
-
-    bool operator !()
-    {
-        return !root;
-    }    
-
-    operator Node&()
-    {
-        return root;
-    }
 };
 
 typedef SourceFile JsonSourceFile;
 
-struct VariableStatement
-{
+CLASS_NODE(VariableStatement)
     Node declarationList;
 };
 
-struct VariableDeclarationList
-{
+CLASS_NODE(VariableDeclarationList)
     Node declarations;
 };
 
-struct ExpressionStatement
-{
+CLASS_NODE(ExpressionStatement)
     Node expression;
 };
 
-struct IfStatement
-{
+CLASS_NODE(IfStatement)
     Node expression;
     Node thenStatement;
     Node elseStatement;
 };
 
-struct DoStatement
-{
+CLASS_NODE(DoStatement)
     Node statement;
     Node expression;
 };
 
-struct WhileStatement
-{
+CLASS_NODE(WhileStatement)
     Node expression;
     Node statement;
 };
 
-struct ForStatement
-{
+CLASS_NODE(ForStatement)
     Node initializer;
     Node condition;
     Node incrementor;
     Node statement;
 };
 
-struct ForInStatement
-{
+CLASS_NODE(ForInStatement)
     Node initializer;
     Node expression;
     Node statement;
 };
 
-struct ForOfStatement
-{
+CLASS_NODE(ForOfStatement)
     Node awaitModifier;
     Node initializer;
     Node expression;
     Node statement;
 };
 
-struct BreakOrContinueStatement
-{
+CLASS_NODE(BreakOrContinueStatement)
     Node label;
 };
 
-struct ReturnStatement
-{
+CLASS_NODE(ReturnStatement)
     Node expression;
 };
 
-struct WithStatement
-{
+CLASS_NODE(WithStatement)
     Node expression;
     Node statement;
 };
 
-struct SwitchStatement
-{
+CLASS_NODE(SwitchStatement)
     Node expression;
     Node caseBlock;
 };
 
-struct CaseBlock
-{
+CLASS_NODE(CaseBlock)
     Node clauses;
 };
 
-struct CaseClause
-{
+CLASS_NODE(CaseClause)
     Node expression;
     Node statements;
 };
 
-struct DefaultClause
-{
+CLASS_NODE(DefaultClause)
     Node statements;
 };
 
-struct LabeledStatement
-{
+CLASS_NODE(LabeledStatement)
     Node label;
     Node statement;
 };
 
-struct ThrowStatement
-{
+CLASS_NODE(ThrowStatement)
     Node expression;
 };
 
-struct TryStatement
-{
+CLASS_NODE(TryStatement)
     Node tryBlock;
     Node catchClause;
     Node finallyBlock;
 };
 
-struct CatchClause
-{
+CLASS_NODE(CatchClause)
     Node variableDeclaration;
     Node block;
 };
 
-struct Decorator
-{
+CLASS_NODE(Decorator)
     Node expression;
 };
 
-struct ClassLikeDeclaration
-{
+CLASS_NODE(ClassLikeDeclaration)
     Node name;
     Node typeParameters;
     Node heritageClauses;
     Node members;
 };
 
-struct InterfaceDeclaration
-{
+CLASS_NODE(InterfaceDeclaration)
     Node name;
     Node typeParameters;
     Node heritageClauses;
     Node members;
 };
 
-struct ClassDeclaration
-{
+CLASS_NODE(ClassDeclaration)
     Node name;
     Node typeParameters;
     Node heritageClauses;
     Node members;
 };
 
-struct TypeAliasDeclaration
-{
+CLASS_NODE(TypeAliasDeclaration)
     Node name;
     Node typeParameters;
     Node type;
 };
 
-struct EnumDeclaration
-{
+CLASS_NODE(EnumDeclaration)
     Node name;
     Node members;
 };
 
-struct EnumMember
-{
+CLASS_NODE(EnumMember)
     Node name;
     Node initializer;
 };
 
-struct ModuleDeclaration
-{
+CLASS_NODE(ModuleDeclaration)
     Node name;
     Node body;
 };
 
-struct ImportEqualsDeclaration
-{
+CLASS_NODE(ImportEqualsDeclaration)
     Node name;
     Node moduleReference;
 };
 
-struct ImportDeclaration
-{
+CLASS_NODE(ImportDeclaration)
     Node importClause;
     Node moduleSpecifier;
 };
 
-struct ImportClause
-{
+CLASS_NODE(ImportClause)
     Node name;
     Node namedBindings;
 };
 
-struct NamespaceExportDeclaration
-{
+CLASS_NODE(NamespaceExportDeclaration)
     Node name;
 };
 
-struct NamespaceImport
-{
+CLASS_NODE(NamespaceImport)
     Node name;
 };
 
-struct NamespaceExport
-{
+CLASS_NODE(NamespaceExport)
     Node name;
 };
 
-struct NamedImportsOrExports
-{
+CLASS_NODE(NamedImportsOrExports)
     Node elements;
 };
 
-struct ExportDeclaration
-{
+CLASS_NODE(ExportDeclaration)
     Node exportClause;
     Node moduleSpecifier;
 };
 
-struct ImportOrExportSpecifier
-{
+CLASS_NODE(ImportOrExportSpecifier)
     Node propertyName;
     Node name;
 };
 
-struct ExportAssignment
-{
+CLASS_NODE(ExportAssignment)
     Node expression;
 };
 
-struct TemplateExpression
-{
+CLASS_NODE(TemplateExpression)
     Node head;
     Node templateSpans;
 };
 
-struct TemplateSpan
-{
+CLASS_NODE(TemplateSpan)
     Node expression;
     Node literal;
 };
 
-struct TemplateHead
-{
+CLASS_NODE(TemplateHead)
 };
 
-struct TemplateMiddle
-{
+CLASS_NODE(TemplateMiddle)
 };
 
-struct TemplateTail
-{
+CLASS_NODE(TemplateTail)
 };
 
-struct TemplateLiteralTypeNode
-{
+CLASS_NODE(TemplateLiteralTypeNode)
     Node head;
     Node templateSpans;
 };
 
-struct TemplateLiteralTypeSpan
-{
+CLASS_NODE(TemplateLiteralTypeSpan)
     Node type;
     Node literal;
 };
 
-struct ComputedPropertyName : PropertyName
-{
+CLASS_NODE_BASE(ComputedPropertyName, PropertyName)
     Node expression;
 };
 
-struct HeritageClause
-{
+CLASS_NODE(HeritageClause)
     Node types;
 };
 
-struct ExpressionWithTypeArguments
-{
+CLASS_NODE(ExpressionWithTypeArguments)
     Node expression;
     Node typeArguments;
 };
 
-struct ExternalModuleReference
-{
+CLASS_NODE(ExternalModuleReference)
     Node expression;
 };
 
-struct CommaListExpression
-{
+CLASS_NODE(CommaListExpression)
     Node elements;
 };
 
-struct JsxElement
-{
+CLASS_NODE(JsxElement)
     Node openingElement;
     Node children;
     Node closingElement;
 };
 
-struct JsxFragment
-{
+CLASS_NODE(JsxFragment)
     Node openingFragment;
     Node children;
     Node closingFragment;
 };
 
-struct JsxOpeningLikeElement
-{
+CLASS_NODE(JsxOpeningLikeElement)
     Node tagName;
     Node typeArguments;
     Node attributes;
 };
 
-struct JsxAttributes
-{
+CLASS_NODE(JsxAttributes)
     Node properties;
 };
 
-struct JsxAttribute
-{
+CLASS_NODE(JsxAttribute)
     Node name;
     Node initializer;
 };
 
-struct JsxSpreadAttribute
-{
+CLASS_NODE(JsxSpreadAttribute)
     Node expression;
 };
 
-struct JsxExpression
-{
+CLASS_NODE(JsxExpression)
     Node dotDotDotToken;
     Node expression;
 };
 
-struct JsxClosingElement
-{
+CLASS_NODE(JsxClosingElement)
     Node tagName;
 };
 
-struct OptionalTypeNode
-{
+CLASS_NODE(OptionalTypeNode)
     Node type;
 };
 
-struct RestTypeNode
-{
+CLASS_NODE(RestTypeNode)
     Node type;
 };
 
-struct JSDocTypeExpression
-{
+CLASS_NODE(JSDocTypeExpression)
     Node type;
 };
 
-struct JSDocNonNullableTypeNode
-{
+CLASS_NODE(JSDocNonNullableTypeNode)
     Node type;
 };
 
-struct JSDocNullableTypeNode
-{
+CLASS_NODE(JSDocNullableTypeNode)
     Node type;
 };
 
-struct JSDocOptionalTypeNode
-{
+CLASS_NODE(JSDocOptionalTypeNode)
     Node type;
 };
 
-struct JSDocVariadicTypeNode
-{
+CLASS_NODE(JSDocVariadicTypeNode)
     Node type;
 };
 
-struct JSDocFunctionType
-{
+CLASS_NODE(JSDocFunctionType)
     Node parameters;
     Node type;
 };
 
-struct JSDoc
-{
+CLASS_NODE(JSDoc)
     Node tags;
 };
 
-struct JSDocSeeTag
-{
+CLASS_NODE(JSDocSeeTag)
     Node tagName;
     Node name;
 };
 
-struct JSDocNameReference
-{
+CLASS_NODE(JSDocNameReference)
     Node name;
 };
 
-struct JSDocTag
-{
+CLASS_NODE(JSDocTag)
     Node tagName;
 };
 
-struct JSDocPropertyLikeTag
-{
+CLASS_NODE(JSDocPropertyLikeTag)
     Node isNameFirst;
     Node name;
     Node typeExpression;
 };
 
-struct JSDocImplementsTag
-{
+CLASS_NODE(JSDocImplementsTag)
     Node _class;
 };
 
-struct JSDocAugmentsTag
-{
+CLASS_NODE(JSDocAugmentsTag)
     Node _class;
 };
 
-struct JSDocTemplateTag
-{
+CLASS_NODE(JSDocTemplateTag)
     Node constraint;
     Node typeParameters;
 };
 
-struct JSDocTypedefTag
-{
+CLASS_NODE(JSDocTypedefTag)
     Node typeExpression;
     Node fullName;
 };
 
-struct JSDocCallbackTag
-{
+CLASS_NODE(JSDocCallbackTag)
     Node fullName;
     Node typeExpression;
 };
 
-struct JSDocReturnTag
-{
+CLASS_NODE(JSDocReturnTag)
     Node typeExpression;
 };
 
-struct JSDocTypeTag
-{
+CLASS_NODE(JSDocTypeTag)
     Node typeExpression;
 };
 
-struct JSDocThisTag
-{
+CLASS_NODE(JSDocThisTag)
     Node typeExpression;
 };
 
-struct JSDocEnumTag
-{
+CLASS_NODE(JSDocEnumTag)
     Node typeExpression;
 };
 
-struct JSDocSignature
-{
+CLASS_NODE(JSDocSignature)
     Node typeParameters;
     Node parameters;
     Node type;
 };
 
-struct JSDocTypeLiteral
-{
+CLASS_NODE(JSDocTypeLiteral)
     Node jsDocPropertyTags;
 };
 
-struct JSDocContainer
-{
+CLASS_NODE(JSDocContainer)
     Node jsDocCache;
 };
 

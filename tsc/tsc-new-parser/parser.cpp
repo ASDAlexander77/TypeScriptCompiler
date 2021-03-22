@@ -1012,7 +1012,7 @@ namespace ts {
                 if (jsDoc.size()) node.jsDoc = jsDoc;
                 if (hasDeprecatedTag) {
                     hasDeprecatedTag = false;
-                    node.flags |= NodeFlags::Deprecated;
+                    node->flags |= NodeFlags::Deprecated;
                 }
                 return node;
             }
@@ -1022,8 +1022,8 @@ namespace ts {
                 auto baseSyntaxCursor = IncrementalParser::createSyntaxCursor(sourceFile);
 
                 auto containsPossibleTopLevelAwait = [](Node node) {
-                    return !(node.flags & NodeFlags::AwaitContext)
-                        && !!(node.transformFlags & TransformFlags::ContainsPossibleTopLevelAwait);
+                    return !(node->flags & NodeFlags::AwaitContext)
+                        && !!(node->transformFlags & TransformFlags::ContainsPossibleTopLevelAwait);
                 };
 
                 auto findNextStatementWithAwait = [&](Node statements, number start) {
@@ -1069,8 +1069,8 @@ namespace ts {
                     pos = findNextStatementWithoutAwait(sourceFile.statements, start);
 
                     // append all diagnostics associated with the copied range
-                    auto diagnosticStart = findIndex(savedParseDiagnostics, [&](auto diagnostic, number index) { return diagnostic.start >= prevStatement.pos; });
-                    auto diagnosticEnd = diagnosticStart >= 0 ? findIndex(savedParseDiagnostics, [&](auto diagnostic, number index) { return diagnostic.start >= nextStatement.pos, diagnosticStart; }) : -1;
+                    auto diagnosticStart = findIndex(savedParseDiagnostics, [&](auto diagnostic, number index) { return diagnostic.start >= prevStatement->pos; });
+                    auto diagnosticEnd = diagnosticStart >= 0 ? findIndex(savedParseDiagnostics, [&](auto diagnostic, number index) { return diagnostic.start >= nextStatement->pos, diagnosticStart; }) : -1;
                     if (diagnosticStart >= 0) {
                         addRange(parseDiagnostics, savedParseDiagnostics, diagnosticStart, diagnosticEnd >= 0 ? diagnosticEnd : -1);
                     }
@@ -1079,7 +1079,7 @@ namespace ts {
                     speculationHelper<void>([&] () {
                         auto savedContextFlags = contextFlags;
                         contextFlags |= NodeFlags::AwaitContext;
-                        scanner.setTextPos(nextStatement.pos);
+                        scanner.setTextPos(nextStatement->pos);
                         nextToken();
 
                         while (token() != SyntaxKind::EndOfFileToken) {
@@ -1092,11 +1092,11 @@ namespace ts {
 
                             if (pos >= 0) {
                                 auto nonAwaitStatement = sourceFile.statements[pos];
-                                if (statement.end == nonAwaitStatement.pos) {
+                                if (statement->end == nonAwaitStatement->pos) {
                                     // done reparsing this section
                                     break;
                                 }
-                                if (statement.end > nonAwaitStatement.pos) {
+                                if (statement->end > nonAwaitStatement->pos) {
                                     // we ate into the next statement, so we must reparse it.
                                     pos = findNextStatementWithoutAwait(sourceFile.statements, pos + 1);
                                 }
@@ -1116,7 +1116,7 @@ namespace ts {
                     addRange(statements, sourceFile.statements, pos);
 
                     // append all diagnostics associated with the copied range
-                    auto diagnosticStart = findIndex(savedParseDiagnostics, [&](auto diagnostic, number index) { return diagnostic.start >= prevStatement.pos; });
+                    auto diagnosticStart = findIndex(savedParseDiagnostics, [&](auto diagnostic, number index) { return diagnostic.start >= prevStatement->pos; });
                     if (diagnosticStart >= 0) {
                         addRange(parseDiagnostics, savedParseDiagnostics, diagnosticStart);
                     }
@@ -1142,7 +1142,7 @@ namespace ts {
                 setExternalModuleIndicator(sourceFile);
 
                 // If we parsed this.as<an>() external module, it may contain top-level await
-                if (!isDeclarationFile && isExternalModule(sourceFile) && !!(sourceFile.transformFlags & TransformFlags::ContainsPossibleTopLevelAwait)) {
+                if (!isDeclarationFile && isExternalModule(sourceFile) && !!(sourceFile->transformFlags & TransformFlags::ContainsPossibleTopLevelAwait)) {
                     sourceFile = reparseTopLevelAwait(sourceFile);
                 }
 
@@ -1584,7 +1584,7 @@ namespace ts {
             auto finishNode(Node node, number pos, number end = -1) -> Node {
                 setTextRangePosEnd(node, pos, end != -1 ? end : scanner.getStartPos());
                 if (!!contextFlags) {
-                    node.flags |= contextFlags;
+                    node->flags |= contextFlags;
                 }
 
                 // Keep track on the node if we encountered an error while parsing it.  If we did, then
@@ -1592,7 +1592,7 @@ namespace ts {
                 // flag so that we don't mark any subsequent nodes.
                 if (parseErrorBeforeNextFinishedNode) {
                     parseErrorBeforeNextFinishedNode = false;
-                    node.flags |= NodeFlags::ThisNodeHasError;
+                    node->flags |= NodeFlags::ThisNodeHasError;
                 }
 
                 return node;
@@ -1685,7 +1685,7 @@ namespace ts {
             auto parsePropertyNameWorker(boolean allowComputedPropertyNames) -> Node {
                 if (token() == SyntaxKind::StringLiteral || token() == SyntaxKind::NumericLiteral) {
                     auto node = parseLiteralNode();
-                    node.text = internIdentifier(node.text);
+                    node->text = internIdentifier(node->text);
                     return node;
                 }
                 if (allowComputedPropertyNames && token() == SyntaxKind::OpenBracketToken) {
@@ -2111,7 +2111,7 @@ namespace ts {
                 // differently depending on what mode it is in.
                 //
                 // This also applies to all our other context flags.as<well>().
-                auto nodeContextFlags = node.flags & NodeFlags::ContextFlags;
+                auto nodeContextFlags = node->flags & NodeFlags::ContextFlags;
                 if (nodeContextFlags != contextFlags) {
                     return undefined;
                 }
@@ -2132,7 +2132,7 @@ namespace ts {
 
             auto consumeNode(Node node) {
                 // Move the scanner so it is after the node we just consumed.
-                scanner.setTextPos(node.end);
+                scanner.setTextPos(node->end);
                 nextToken();
                 return node;
             }
@@ -2249,7 +2249,7 @@ namespace ts {
                             // into an actual .ConstructorDeclaration.
                             auto methodDeclaration = node.as<MethodDeclaration>();
                             auto nameIsConstructor = methodDeclaration.name.kind == SyntaxKind::Identifier &&
-                                methodDeclaration.name.originalKeywordKind == SyntaxKind::ConstructorKeyword;
+                                methodDeclaration.name->originalKeywordKind == SyntaxKind::ConstructorKeyword;
 
                             return !nameIsConstructor;
                     }
@@ -2507,7 +2507,7 @@ namespace ts {
                 while (parseOptional(SyntaxKind::DotToken)) {
                     if (token() == SyntaxKind::LessThanToken) {
                         // the entity is part of a JSDoc-style generic, so record the trailing dot for later error reporting
-                        entity.jsdocDotPos = dotPos;
+                        entity->jsdocDotPos = dotPos;
                         break;
                     }
                     dotPos = getNodePos();
@@ -2523,7 +2523,7 @@ namespace ts {
             }
 
             auto createQualifiedName(EntityName entity, Identifier name) -> QualifiedName {
-                return finishNode(factory.createQualifiedName(entity, name), entity.pos).as<QualifiedName>();
+                return finishNode(factory.createQualifiedName(entity, name), entity->pos).as<QualifiedName>();
             }
 
             auto parseRightSideOfDot(boolean allowIdentifierNames, boolean allowPrivateIdentifiers) -> Node {
@@ -2565,7 +2565,7 @@ namespace ts {
                 return allowIdentifierNames ? parseIdentifierName() : parseIdentifier();
             }
 
-            auto parseTemplateSpans(boolean isTaggedTemplate) {
+            auto parseTemplateSpans(boolean isTaggedTemplate) -> Node {
                 auto pos = getNodePos();
                 Node list;
                 TemplateSpan node;
@@ -2599,10 +2599,10 @@ namespace ts {
                 );
             }
 
-            auto parseTemplateTypeSpans() {
+            auto parseTemplateTypeSpans() -> Node {
                 auto pos = getNodePos();
-                auto list = [];
-                auto TemplateLiteralTypeSpan node;
+                Node list;
+                TemplateLiteralTypeSpan node;
                 do {
                     node = parseTemplateTypeSpan();
                     list.push_back(node);
@@ -2645,7 +2645,7 @@ namespace ts {
             }
 
             auto parseLiteralNode() -> LiteralExpression {
-                return <LiteralExpression>parseLiteralLikeNode(token());
+                return parseLiteralLikeNode(token()).as<LiteralExpression>();
             }
 
             auto parseTemplateHead(boolean isTaggedTemplate) -> TemplateHead {
@@ -5071,7 +5071,7 @@ namespace ts {
             }
 
             auto tryReparseOptionalChain(Expression node) {
-                if (node.flags & NodeFlags::OptionalChain) {
+                if (node->flags & NodeFlags::OptionalChain) {
                     return true;
                 }
                 // check for an optional chain in a non-null expression
@@ -8240,7 +8240,7 @@ namespace ts {
                 auto visitNode(IncrementalNode node) {
                     auto text = string();
                     if (aggressiveChecks && shouldCheckNode(node)) {
-                        text = oldText.substring(node.pos, node.end);
+                        text = oldText.substring(node->pos, node->end);
                     }
 
                     // Ditch any existing LS children we may have created.  This way we can avoid
@@ -8249,10 +8249,10 @@ namespace ts {
                         node._children = undefined;
                     }
 
-                    setTextRangePosEnd(node, node.pos + delta, node.end + delta);
+                    setTextRangePosEnd(node, node->pos + delta, node->end + delta);
 
                     if (aggressiveChecks && shouldCheckNode(node)) {
-                        Debug::_assert(text == newText.substring(node.pos, node.end));
+                        Debug::_assert(text == newText.substring(node->pos, node->end));
                     }
 
                     forEachChild(node, visitNode, visitArray);
@@ -8361,7 +8361,7 @@ namespace ts {
 
             auto checkNodePositions(Node node, boolean aggressiveChecks) {
                 if (aggressiveChecks) {
-                    auto pos = node.pos;
+                    auto pos = node->pos;
                     auto visitNode = (Node child) => {
                         Debug::_assert(child.pos >= pos);
                         pos = child.end;
@@ -8372,7 +8372,7 @@ namespace ts {
                         }
                     }
                     forEachChild(node, visitNode);
-                    Debug::_assert(pos <= node.end);
+                    Debug::_assert(pos <= node->end);
                 }
             }
 
@@ -8643,7 +8643,7 @@ namespace ts {
                     return;
 
                     auto visitNode(Node node) {
-                        if (position >= node.pos && position < node.end) {
+                        if (position >= node->pos && position < node->end) {
                             // Position was within this node.  Keep searching deeper to find the node.
                             forEachChild(node, visitNode, visitArray);
 
