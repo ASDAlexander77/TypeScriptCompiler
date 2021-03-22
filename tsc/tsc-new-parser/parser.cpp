@@ -869,10 +869,10 @@ namespace ts {
                 sourceFile->nodeCount = nodeCount;
                 sourceFile->identifierCount = identifierCount;
                 sourceFile->identifiers = identifiers;
-                //sourceFile.parseDiagnostics = attachFileToDiagnostics(parseDiagnostics, sourceFile);
+                //sourceFile->parseDiagnostics = attachFileToDiagnostics(parseDiagnostics, sourceFile);
                 sourceFile->parseDiagnostics = parseDiagnostics;
                 if (!jsDocDiagnostics.empty()) {
-                    //sourceFile.jsDocDiagnostics = attachFileToDiagnostics(jsDocDiagnostics, sourceFile);
+                    //sourceFile->jsDocDiagnostics = attachFileToDiagnostics(jsDocDiagnostics, sourceFile);
                     sourceFile->jsDocDiagnostics = jsDocDiagnostics;
                 }
 
@@ -985,10 +985,10 @@ namespace ts {
                 sourceFile->nodeCount = nodeCount;
                 sourceFile->identifierCount = identifierCount;
                 sourceFile->identifiers = identifiers;
-                //sourceFile.parseDiagnostics = attachFileToDiagnostics(parseDiagnostics, sourceFile);
+                //sourceFile->parseDiagnostics = attachFileToDiagnostics(parseDiagnostics, sourceFile);
                 sourceFile->parseDiagnostics = parseDiagnostics;
                 if (!jsDocDiagnostics.empty()) {
-                    //sourceFile.jsDocDiagnostics = attachFileToDiagnostics(jsDocDiagnostics, sourceFile);
+                    //sourceFile->jsDocDiagnostics = attachFileToDiagnostics(jsDocDiagnostics, sourceFile);
                     sourceFile->jsDocDiagnostics = jsDocDiagnostics;
                 }
 
@@ -1060,13 +1060,13 @@ namespace ts {
                 parseDiagnostics.clear();
 
                 auto pos = 0;
-                auto start = findNextStatementWithAwait(sourceFile.statements, 0);
+                auto start = findNextStatementWithAwait(sourceFile->statements, 0);
                 while (start != -1) {
                     // append all statements between pos and start
-                    auto prevStatement = sourceFile.statements[pos];
-                    auto nextStatement = sourceFile.statements[start];
-                    addRange(statements, sourceFile.statements, pos, start);
-                    pos = findNextStatementWithoutAwait(sourceFile.statements, start);
+                    auto prevStatement = sourceFile->statements[pos];
+                    auto nextStatement = sourceFile->statements[start];
+                    addRange(statements, sourceFile->statements, pos, start);
+                    pos = findNextStatementWithoutAwait(sourceFile->statements, start);
 
                     // append all diagnostics associated with the copied range
                     auto diagnosticStart = findIndex(savedParseDiagnostics, [&](auto diagnostic, number index) { return diagnostic.start >= prevStatement->pos; });
@@ -1091,14 +1091,14 @@ namespace ts {
                             }
 
                             if (pos >= 0) {
-                                auto nonAwaitStatement = sourceFile.statements[pos];
+                                auto nonAwaitStatement = sourceFile->statements[pos];
                                 if (statement->end == nonAwaitStatement->pos) {
                                     // done reparsing this section
                                     break;
                                 }
                                 if (statement->end > nonAwaitStatement->pos) {
                                     // we ate into the next statement, so we must reparse it.
-                                    pos = findNextStatementWithoutAwait(sourceFile.statements, pos + 1);
+                                    pos = findNextStatementWithoutAwait(sourceFile->statements, pos + 1);
                                 }
                             }
                         }
@@ -1107,13 +1107,13 @@ namespace ts {
                     }, SpeculationKind::Reparse);
 
                     // find the next statement containing an `await`
-                    start = pos >= 0 ? findNextStatementWithAwait(sourceFile.statements, pos) : -1;
+                    start = pos >= 0 ? findNextStatementWithAwait(sourceFile->statements, pos) : -1;
                 }
 
                 // append all statements between pos and the end of the list
                 if (pos >= 0) {
-                    auto prevStatement = sourceFile.statements[pos];
-                    addRange(statements, sourceFile.statements, pos);
+                    auto prevStatement = sourceFile->statements[pos];
+                    addRange(statements, sourceFile->statements, pos);
 
                     // append all diagnostics associated with the copied range
                     auto diagnosticStart = findIndex(savedParseDiagnostics, [&](auto diagnostic, number index) { return diagnostic.start >= prevStatement->pos; });
@@ -1123,7 +1123,7 @@ namespace ts {
                 }
 
                 syntaxCursor = savedSyntaxCursor;
-                return factory.updateSourceFile(sourceFile, setTextRange(factory.createNodeArray(statements), sourceFile.statements));
+                return factory.updateSourceFile(sourceFile, setTextRange(factory.createNodeArray(statements), sourceFile->statements));
             }
 
             auto fixupParentReferences(Node rootNode) -> void {
@@ -2122,9 +2122,9 @@ namespace ts {
                     return undefined;
                 }
 
-                if (node.as<JSDocContainer>().jsDocCache) {
+                if (node.as<JSDocContainer>()->jsDocCache) {
                     // jsDocCache may include tags from parent nodes, which might have been modified.
-                    node.as<JSDocContainer>().jsDocCache = undefined;
+                    node.as<JSDocContainer>()->jsDocCache = undefined;
                 }
 
                 return node;
@@ -2248,8 +2248,8 @@ namespace ts {
                             // may have a method calls "constructor(...)" and we must reparse that
                             // into an actual .ConstructorDeclaration.
                             auto methodDeclaration = node.as<MethodDeclaration>();
-                            auto nameIsConstructor = methodDeclaration.name->kind == SyntaxKind::Identifier &&
-                                methodDeclaration.name->originalKeywordKind == SyntaxKind::ConstructorKeyword;
+                            auto nameIsConstructor = methodDeclaration->name->kind == SyntaxKind::Identifier &&
+                                methodDeclaration->name->originalKeywordKind == SyntaxKind::ConstructorKeyword;
 
                             return !nameIsConstructor;
                     }
@@ -2348,7 +2348,7 @@ namespace ts {
                 // In order to prevent this, we do not allow a variable declarator to be reused if it
                 // has an initializer.
                 auto variableDeclarator = node.as<VariableDeclaration>();
-                return variableDeclarator.initializer == undefined;
+                return variableDeclarator->initializer == undefined;
             }
 
             auto isReusableParameter(Node node) -> boolean  {
@@ -2358,7 +2358,7 @@ namespace ts {
 
                 // See the comment in isReusableVariableDeclaration for why we do this.
                 auto parameter = node.as<ParameterDeclaration>();
-                return parameter.initializer == undefined;
+                return parameter->initializer == undefined;
             }
 
             // Returns true if we should abort parsing.
@@ -2573,7 +2573,7 @@ namespace ts {
                     node = parseTemplateSpan(isTaggedTemplate);
                     list.push_back(node);
                 }
-                while (node.literal->kind == SyntaxKind::TemplateMiddle);
+                while (node->literal->kind == SyntaxKind::TemplateMiddle);
                 return createNodeArray(list, pos);
             }
 
@@ -2607,7 +2607,7 @@ namespace ts {
                     node = parseTemplateTypeSpan();
                     list.push_back(node);
                 }
-                while (node.literal->kind == SyntaxKind::TemplateMiddle);
+                while (node->literal->kind == SyntaxKind::TemplateMiddle);
                 return createNodeArray(list, pos);
             }
 
@@ -2723,10 +2723,12 @@ namespace ts {
             auto typeHasArrowFunctionBlockingParseError(TypeNode node) -> boolean {
                 switch (node->kind) {
                     case SyntaxKind::TypeReference:
-                        return nodeIsMissing(node.as<TypeReferenceNode>().typeName);
+                        return nodeIsMissing(node.as<TypeReferenceNode>()->typeName);
                     case SyntaxKind::FunctionType:
                     case SyntaxKind::ConstructorType: {
-                        auto { parameters, type } = node.as<FunctionOrConstructorTypeNode>();
+                        auto res = node.as<FunctionOrConstructorTypeNode>();
+                        auto parameters = res->parameters;
+                        auto type = res->type;
                         return isMissingList(parameters) || typeHasArrowFunctionBlockingParseError(type);
                     }
                     case SyntaxKind::ParenthesizedType:
@@ -7119,8 +7121,8 @@ namespace ts {
             auto setExternalModuleIndicator(SourceFile sourceFile) -> void {
                 // Try to use the first top-level import/when available, then
                 // fall back to looking for an 'import.meta' somewhere in the tree if necessary.
-                sourceFile.externalModuleIndicator =
-                        forEach(sourceFile.statements, isAnExternalModuleIndicatorNode) ||
+                sourceFile->externalModuleIndicator =
+                        forEach(sourceFile->statements, isAnExternalModuleIndicatorNode) ||
                         getImportMetaIfNecessary(sourceFile);
             }
 
@@ -7133,7 +7135,7 @@ namespace ts {
             }
 
             auto getImportMetaIfNecessary(SourceFile sourceFile) {
-                return sourceFile.flags & NodeFlags::PossiblyContainsImportMeta ?
+                return sourceFile->flags & NodeFlags::PossiblyContainsImportMeta ?
                     walkTreeForExternalModuleIndicators(sourceFile) :
                     undefined;
             }
@@ -7162,7 +7164,7 @@ namespace ts {
                 auto sourceFile = createSourceFile("file.js", ScriptTarget::Latest, ScriptKind::JS, /*isDeclarationFile*/ false, [], factory.createToken(SyntaxKind::EndOfFileToken), NodeFlags::None);
                 auto diagnostics = attachFileToDiagnostics(parseDiagnostics, sourceFile);
                 if (jsDocDiagnostics) {
-                    sourceFile.jsDocDiagnostics = attachFileToDiagnostics(jsDocDiagnostics, sourceFile);
+                    sourceFile->jsDocDiagnostics = attachFileToDiagnostics(jsDocDiagnostics, sourceFile);
                 }
 
                 clearState();
@@ -8097,10 +8099,10 @@ namespace ts {
                     return sourceFile;
                 }
 
-                if (sourceFile.statements.size() == 0) {
+                if (sourceFile->statements.size() == 0) {
                     // If we don't have any statements in the current source file, then there's no real
                     // way to incrementally parse.  So just do a full parse instead.
-                    return Parser::parseSourceFile(sourceFile.fileName, newText, sourceFile.languageVersion, undefined, /*setParentNodes*/ true, sourceFile.scriptKind);
+                    return Parser::parseSourceFile(sourceFile->fileName, newText, sourceFile->languageVersion, undefined, /*setParentNodes*/ true, sourceFile->scriptKind);
                 }
 
                 // Make sure we're not trying to incrementally update a source file more than once.  Once
@@ -8109,11 +8111,11 @@ namespace ts {
                 // This is because we do incremental parsing in-place.  i.e. we take nodes from the old
                 // tree and give them new positions and parents.  From that point on, trusting the old
                 // tree at all is not possible.as<far>() too much of it may violate invariants.
-                auto incrementalSourceFile = <IncrementalNode>sourceFile.as<Node>();
+                auto incrementalSourceFile = <IncrementalNode>sourceFile->as<Node>();
                 Debug::_assert(!incrementalSourceFile.hasBeenIncrementallyParsed);
                 incrementalSourceFile.hasBeenIncrementallyParsed = true;
                 Parser::fixupParentReferences(incrementalSourceFile);
-                auto oldText = sourceFile.text;
+                auto oldText = sourceFile->text;
                 auto syntaxCursor = createSyntaxCursor(sourceFile);
 
                 // Make the actual change larger so that we know to reparse anything whose lookahead
@@ -8164,9 +8166,9 @@ namespace ts {
                 // inconsistent tree.  Setting the parents on the new tree should be very fast.  We
                 // will immediately bail out of walking any subtrees when we can see that their parents
                 // are already correct.
-                auto result = Parser::parseSourceFile(sourceFile.fileName, newText, sourceFile.languageVersion, syntaxCursor, /*setParentNodes*/ true, sourceFile.scriptKind);
+                auto result = Parser::parseSourceFile(sourceFile->fileName, newText, sourceFile->languageVersion, syntaxCursor, /*setParentNodes*/ true, sourceFile->scriptKind);
                 result.commentDirectives = getNewCommentDirectives(
-                    sourceFile.commentDirectives,
+                    sourceFile->commentDirectives,
                     result.commentDirectives,
                     changeRange.span.start,
                     textSpanEnd(changeRange.span),
@@ -8570,7 +8572,7 @@ namespace ts {
             }
 
             static auto checkChangeRange(SourceFile sourceFile, string newText, TextChangeRange textChangeRange, boolean aggressiveChecks) {
-                auto oldText = sourceFile.text;
+                auto oldText = sourceFile->text;
                 if (textChangeRange) {
                     Debug::_assert((oldText.size() - textChangeRange.span.size() + textChangeRange.newLength) == newText.size());
 
@@ -8587,7 +8589,7 @@ namespace ts {
             }
 
             auto createSyntaxCursor(SourceFile sourceFile) -> SyntaxCursor {
-                auto NodeArray<Node> currentArray = sourceFile.statements;
+                auto NodeArray<Node> currentArray = sourceFile->statements;
                 auto currentArrayIndex = 0;
 
                 Debug::_assert(currentArrayIndex < currentArray.size());
@@ -8736,7 +8738,7 @@ namespace ts {
             auto newSourceFile = IncrementalParser::updateSourceFile(sourceFile, newText, textChangeRange, aggressiveChecks);
             // Because new source file node is created, it may not have the flag PossiblyContainDynamicImport. This is the case if there is no new edit to add dynamic import.
             // We will manually port the flag to the new source file.
-            newSourceFile.flags |= (sourceFile.flags & NodeFlags::PermanentlySetIncrementalFlags);
+            newSourceFile.flags |= (sourceFile->flags & NodeFlags::PermanentlySetIncrementalFlags);
             return newSourceFile;
         }
 
