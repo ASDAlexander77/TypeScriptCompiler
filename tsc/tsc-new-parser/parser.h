@@ -84,6 +84,7 @@ struct NodeData : TextRange
 {   
     NodeData() = default;
 
+    SyntaxKind kind;
     NodeFlags flags;
     string text;
     TransformFlags transformFlags;
@@ -92,7 +93,6 @@ struct NodeData : TextRange
     SyntaxKind originalKeywordKind;
     number jsdocDotPos;
 
-    bool isArray;
     NodeArray<Node> children;
 
     NodeData(number start, number end) : TextRange{start, end} {};
@@ -102,12 +102,12 @@ struct NodeData : TextRange
 
 struct Node
 {
-    SyntaxKind kind;
     std::shared_ptr<NodeData> data;
 
-    Node() : kind(SyntaxKind::Unknown) {};
-    Node(SyntaxKind kind, number start, number end) : kind(kind), data(std::make_shared<NodeData>(start, end)) {};
-    Node(undefined_t) : kind(SyntaxKind::Unknown) {};
+    Node() {};
+    Node(undefined_t) {};
+    Node(SyntaxKind kind, number start, number end) : data(std::make_shared<NodeData>(kind, start, end)) {};
+    Node(NodeArray<Node> values) : data(std::make_shared<NodeData>(SyntaxKind::ArrayType, -1, -1)) { data->children = values; };
 
     NodeData* operator->()
     {
@@ -133,11 +133,12 @@ struct Node
 
     operator bool()
     {
-        return this->kind != SyntaxKind::Unknown;
+        return (bool)data;
     }
 
     auto operator=(NodeArray<Node> values) -> Node&
-     {
+    {
+        data->kind = SyntaxKind::ArrayType;
         data->children = values;
         return *this;
     }
@@ -169,13 +170,13 @@ struct Node
 
     auto push_back(Node node) -> void
     {
-        data->isArray = true;
+        data->kind = SyntaxKind::ArrayType;
         data->children.push_back(node);
     }    
 
     auto operator==(undefined_t)
     {
-        return !(bool)*this;
+        return !data;
     }
 };
 
@@ -199,14 +200,26 @@ struct BaseNode
     {
         return node.operator->();
     }    
+
+    template <typename T> 
+    auto as() -> T
+    {
+        return T(node);
+    }
+
+    template <typename T> 
+    auto asMutable() -> T
+    {
+        return T(node);
+    }       
 };
 
 static auto isArray(Node &node) -> boolean
 {
-    return node.data->isArray;
+    return node.data->kind == SyntaxKind::ArrayType;
 }
 
-typedef Node Identifier, PropertyName, PrivateIdentifier, ThisTypeNode, LiteralLikeNode, LiteralExpression, EntityName, Expression, IndexSignatureDeclaration,
+typedef Node Identifier, PropertyName, PrivateIdentifier, ThisTypeNode, LiteralExpression, EntityName, Expression, IndexSignatureDeclaration,
     TypeElement, BinaryOperatorToken, UnaryExpression, UpdateExpression, LeftHandSideExpression, MemberExpression, JsxText, JsxChild, JsxTagNameExpression,
     JsxClosingFragment, QuestionDotToken, PrimaryExpression, ObjectLiteralElementLike, FunctionExpression, Statement, CaseOrDefaultClause, ArrayBindingElement,
     ObjectBindingPattern, ArrayBindingPattern, FunctionDeclaration, ConstructorDeclaration, AccessorDeclaration, ClassElement, ClassExpression,
@@ -933,6 +946,19 @@ CLASS_NODE(JSDocTypeLiteral)
 
 CLASS_NODE(JSDocContainer)
     Node jsDocCache;
+};
+
+struct LiteralLikeNodeData : NodeData
+{   
+    using NodeData::NodeData;
+
+    // extra fields
+    string text;
+    boolean isUnterminated;
+    boolean hasExtendedUnicodeEscape;
+};
+
+CLASS_CUSTOM_NODE(LiteralLikeNode, LiteralLikeNodeData)
 };
 
 struct DiagnosticWithLocation : Diagnostic {

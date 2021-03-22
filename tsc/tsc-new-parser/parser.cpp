@@ -64,10 +64,10 @@ namespace ts {
          */
         template<typename T>
         auto forEachChild(Node node, NodeFuncT<T> cbNode, NodeArrayFuncT<T> cbNodes = nullptr) -> T {
-            if (!node || node.kind <= SyntaxKind::LastToken) {
+            if (!node || node->kind <= SyntaxKind::LastToken) {
                 return T();
             }
-            switch (node.kind) {
+            switch (node->kind) {
                 case SyntaxKind::QualifiedName:
                     return visitNode(cbNode, node.as<QualifiedName>().left) ||
                         visitNode(cbNode, node.as<QualifiedName>().right);
@@ -507,7 +507,7 @@ namespace ts {
                 case SyntaxKind::JSDocTypedefTag:
                     return visitNode(cbNode, node.as<JSDocTag>().tagName) ||
                         (node.as<JSDocTypedefTag>().typeExpression &&
-                            node.as<JSDocTypedefTag>().typeExpression.kind == SyntaxKind::JSDocTypeExpression
+                            node.as<JSDocTypedefTag>().typeExpression->kind == SyntaxKind::JSDocTypeExpression
                             ? visitNode(cbNode, node.as<JSDocTypedefTag>().typeExpression) ||
                                 visitNode(cbNode, node.as<JSDocTypedefTag>().fullName)
                             : visitNode(cbNode, node.as<JSDocTypedefTag>().fullName) ||
@@ -589,7 +589,7 @@ namespace ts {
                         if (res == "skip") continue;
                         return res;
                     }
-                    if (current.kind >= SyntaxKind::FirstNode) {
+                    if (current->kind >= SyntaxKind::FirstNode) {
                         // add children in reverse order to the queue, so popping gives the first child
                         for (auto child : gatherPossibleChildren(current)) {
                             queue.push_back(child);
@@ -1895,7 +1895,7 @@ namespace ts {
                         return true;
                 }
 
-                return Debug::fail(S("Non-exhaustive case in 'isListElement'.")), false;
+                return Debug::fail<boolean>(S("Non-exhaustive case in 'isListElement'."));
             }
 
             auto isValidHeritageClauseObjectLiteral() -> boolean {
@@ -2235,7 +2235,7 @@ namespace ts {
 
             auto isReusableClassMember(Node node) -> boolean {
                 if (node) {
-                    switch (node.kind) {
+                    switch (node->kind) {
                         case SyntaxKind::Constructor:
                         case SyntaxKind::IndexSignature:
                         case SyntaxKind::GetAccessor:
@@ -2248,7 +2248,7 @@ namespace ts {
                             // may have a method calls "constructor(...)" and we must reparse that
                             // into an actual .ConstructorDeclaration.
                             auto methodDeclaration = node.as<MethodDeclaration>();
-                            auto nameIsConstructor = methodDeclaration.name.kind == SyntaxKind::Identifier &&
+                            auto nameIsConstructor = methodDeclaration.name->kind == SyntaxKind::Identifier &&
                                 methodDeclaration.name->originalKeywordKind == SyntaxKind::ConstructorKeyword;
 
                             return !nameIsConstructor;
@@ -2260,7 +2260,7 @@ namespace ts {
 
             auto isReusableSwitchClause(Node node) -> boolean  {
                 if (node) {
-                    switch (node.kind) {
+                    switch (node->kind) {
                         case SyntaxKind::CaseClause:
                         case SyntaxKind::DefaultClause:
                             return true;
@@ -2272,7 +2272,7 @@ namespace ts {
 
             auto isReusableStatement(Node node) -> boolean  {
                 if (node) {
-                    switch (node.kind) {
+                    switch (node->kind) {
                         case SyntaxKind::FunctionDeclaration:
                         case SyntaxKind::VariableStatement:
                         case SyntaxKind::Block:
@@ -2310,12 +2310,12 @@ namespace ts {
             }
 
             auto isReusableEnumMember(Node node) -> boolean  {
-                return node.kind == SyntaxKind::EnumMember;
+                return node->kind == SyntaxKind::EnumMember;
             }
 
             auto isReusableTypeMember(Node node) -> boolean  {
                 if (node) {
-                    switch (node.kind) {
+                    switch (node->kind) {
                         case SyntaxKind::ConstructSignature:
                         case SyntaxKind::MethodSignature:
                         case SyntaxKind::IndexSignature:
@@ -2329,7 +2329,7 @@ namespace ts {
             }
 
             auto isReusableVariableDeclaration(Node node) -> boolean  {
-                if (node.kind != SyntaxKind::VariableDeclaration) {
+                if (node->kind != SyntaxKind::VariableDeclaration) {
                     return false;
                 }
 
@@ -2352,7 +2352,7 @@ namespace ts {
             }
 
             auto isReusableParameter(Node node) -> boolean  {
-                if (node.kind != SyntaxKind::Parameter) {
+                if (node->kind != SyntaxKind::Parameter) {
                     return false;
                 }
 
@@ -2480,7 +2480,7 @@ namespace ts {
 
             template <typename T> 
             auto createMissingList() -> MissingList<T> {
-                auto list = createNodeArray<T>([], getNodePos()).as<MissingList>()<T>;
+                auto list = createNodeArray<T>(Node(), getNodePos()).as<MissingList>()<T>;
                 list.isMissingList = true;
                 return list;
             }
@@ -2573,7 +2573,7 @@ namespace ts {
                     node = parseTemplateSpan(isTaggedTemplate);
                     list.push_back(node);
                 }
-                while (node.literal.kind == SyntaxKind::TemplateMiddle);
+                while (node.literal->kind == SyntaxKind::TemplateMiddle);
                 return createNodeArray(list, pos);
             }
 
@@ -2607,7 +2607,7 @@ namespace ts {
                     node = parseTemplateTypeSpan();
                     list.push_back(node);
                 }
-                while (node.literal.kind == SyntaxKind::TemplateMiddle);
+                while (node.literal->kind == SyntaxKind::TemplateMiddle);
                 return createNodeArray(list, pos);
             }
 
@@ -2653,13 +2653,13 @@ namespace ts {
                     reScanTemplateHeadOrNoSubstitutionTemplate();
                 }
                 auto fragment = parseLiteralLikeNode(token());
-                Debug::_assert(fragment.kind == SyntaxKind::TemplateHead, S("Template head has wrong token kind"));
+                Debug::_assert(fragment->kind == SyntaxKind::TemplateHead, S("Template head has wrong token kind"));
                 return fragment.as<TemplateHead>();
             }
 
             auto parseTemplateMiddleOrTemplateTail() -> Node {
                 auto fragment = parseLiteralLikeNode(token());
-                Debug::_assert(fragment.kind == SyntaxKind::TemplateMiddle || fragment.kind == SyntaxKind::TemplateTail, S("Template fragment has wrong token kind"));
+                Debug::_assert(fragment->kind == SyntaxKind::TemplateMiddle || fragment->kind == SyntaxKind::TemplateTail, S("Template fragment has wrong token kind"));
                 return fragment;
             }
 
@@ -2671,7 +2671,7 @@ namespace ts {
 
             auto parseLiteralLikeNode(SyntaxKind kind) -> LiteralLikeNode {
                 auto pos = getNodePos();
-                auto node =
+                LiteralLikeNode node =
                     isTemplateLiteralKind(kind) ? factory.createTemplateLiteralLikeNode(kind, scanner.getTokenValue(), getTemplateLiteralRawText(kind), scanner.getTokenFlags() & TokenFlags::TemplateLiteralLikeFlags) :
                     // Octal literals are not allowed in strict mode or ES5
                     // Note that theoretically the following condition would hold true literals like 009,
@@ -2682,14 +2682,14 @@ namespace ts {
                     kind == SyntaxKind::NumericLiteral ? factory.createNumericLiteral(scanner.getTokenValue(), scanner.getNumericLiteralFlags()) :
                     kind == SyntaxKind::StringLiteral ? factory.createStringLiteral(scanner.getTokenValue(), /*isSingleQuote*/ /*undefined*/false, scanner.hasExtendedUnicodeEscape()) :
                     isLiteralKind(kind) ? factory.createLiteralLikeNode(kind, scanner.getTokenValue()) :
-                    Debug::fail();
+                    Debug::fail<Node>();
 
                 if (scanner.hasExtendedUnicodeEscape()) {
-                    node.hasExtendedUnicodeEscape = true;
+                    node->hasExtendedUnicodeEscape = true;
                 }
 
                 if (scanner.isUnterminated()) {
-                    node.isUnterminated = true;
+                    node->isUnterminated = true;
                 }
 
                 nextToken();
@@ -2698,13 +2698,13 @@ namespace ts {
 
             // TYPES
 
-            auto parseEntityNameOfTypeReference() {
+            auto parseEntityNameOfTypeReference() -> Node {
                 return parseEntityName(/*allowReservedWords*/ true, Diagnostics::Type_expected);
             }
 
-            auto parseTypeArgumentsOfTypeReference() {
+            auto parseTypeArgumentsOfTypeReference() -> Node {
                 if (!scanner.hasPrecedingLineBreak() && reScanLessThanToken() == SyntaxKind::LessThanToken) {
-                    return parseBracketedList(ParsingContext::TypeArguments, parseType, SyntaxKind::LessThanToken, SyntaxKind::GreaterThanToken);
+                    return parseBracketedList</*Type*/Node>(ParsingContext::TypeArguments, std::bind(&Parser::parseType, this), SyntaxKind::LessThanToken, SyntaxKind::GreaterThanToken);
                 }
             }
 
@@ -2721,7 +2721,7 @@ namespace ts {
 
             // If true, we should abort parsing an error function.
             auto typeHasArrowFunctionBlockingParseError(TypeNode node) -> boolean {
-                switch (node.kind) {
+                switch (node->kind) {
                     case SyntaxKind::TypeReference:
                         return nodeIsMissing(node.as<TypeReferenceNode>().typeName);
                     case SyntaxKind::FunctionType:
@@ -3282,7 +3282,7 @@ namespace ts {
                 auto ReadonlyKeyword readonlyToken | PlusToken | MinusToken;
                 if (token() == SyntaxKind::ReadonlyKeyword || token() == SyntaxKind::PlusToken || token() == SyntaxKind::MinusToken) {
                     readonlyToken = parseTokenNode<ReadonlyKeyword | PlusToken | MinusToken>();
-                    if (readonlyToken.kind != SyntaxKind::ReadonlyKeyword) {
+                    if (readonlyToken->kind != SyntaxKind::ReadonlyKeyword) {
                         parseExpected(SyntaxKind::ReadonlyKeyword);
                     }
                 }
@@ -3293,7 +3293,7 @@ namespace ts {
                 auto QuestionToken questionToken | PlusToken | MinusToken;
                 if (token() == SyntaxKind::QuestionToken || token() == SyntaxKind::PlusToken || token() == SyntaxKind::MinusToken) {
                     questionToken = parseTokenNode<QuestionToken | PlusToken | MinusToken>();
-                    if (questionToken.kind != SyntaxKind::QuestionToken) {
+                    if (questionToken->kind != SyntaxKind::QuestionToken) {
                         parseExpected(SyntaxKind::QuestionToken);
                     }
                 }
@@ -3955,7 +3955,7 @@ namespace ts {
                 // To avoid a look-ahead, we did not handle the case of an arrow auto with a single un-parenthesized
                 // parameter ('x => ...') above. We handle it here by checking if the parsed expression was a single
                 // identifier and the current token is an arrow.
-                if (expr.kind == SyntaxKind::Identifier && token() == SyntaxKind::EqualsGreaterThanToken) {
+                if (expr->kind == SyntaxKind::Identifier && token() == SyntaxKind::EqualsGreaterThanToken) {
                     return parseSimpleArrowFunctionExpression(pos, expr.as<Identifier>(), /*asyncModifier*/ undefined);
                 }
 
@@ -4251,7 +4251,7 @@ namespace ts {
                     }
                     // Check for un-parenthesized AsyncArrowFunction
                     auto expr = parseBinaryExpressionOrHigher(OperatorPrecedence.Lowest);
-                    if (!scanner.hasPrecedingLineBreak() && expr.kind == SyntaxKind::Identifier && token() == SyntaxKind::EqualsGreaterThanToken) {
+                    if (!scanner.hasPrecedingLineBreak() && expr->kind == SyntaxKind::Identifier && token() == SyntaxKind::EqualsGreaterThanToken) {
                         return Tristate.True;
                     }
                 }
@@ -4547,7 +4547,7 @@ namespace ts {
                 if (token() == SyntaxKind::AsteriskAsteriskToken) {
                     auto pos = skipTrivia(sourceText, simpleUnaryExpression.pos);
                     auto { end } = simpleUnaryExpression;
-                    if (simpleUnaryExpression.kind == SyntaxKind::TypeAssertionExpression) {
+                    if (simpleUnaryExpression->kind == SyntaxKind::TypeAssertionExpression) {
                         parseErrorAt(pos, end, Diagnostics::A_type_assertion_expression_is_not_allowed_in_the_left_hand_side_of_an_exponentiation_expression_Consider_enclosing_the_expression_in_parentheses);
                     }
                     else {
@@ -4811,7 +4811,7 @@ namespace ts {
                 auto pos = getNodePos();
                 auto opening = parseJsxOpeningOrSelfClosingElementOrOpeningFragment(inExpressionContext);
                 auto JsxElement result | JsxSelfClosingElement | JsxFragment;
-                if (opening.kind == SyntaxKind::JsxOpeningElement) {
+                if (opening->kind == SyntaxKind::JsxOpeningElement) {
                     auto children = parseJsxChildren(opening);
                     auto closingElement = parseJsxClosingElement(inExpressionContext);
 
@@ -4821,11 +4821,11 @@ namespace ts {
 
                     result = finishNode(factory.createJsxElement(opening, children, closingElement), pos);
                 }
-                else if (opening.kind == SyntaxKind::JsxOpeningFragment) {
+                else if (opening->kind == SyntaxKind::JsxOpeningFragment) {
                     result = finishNode(factory.createJsxFragment(opening, parseJsxChildren(opening), parseJsxClosingFragment(inExpressionContext)), pos);
                 }
                 else {
-                    Debug::_assert(opening.kind == SyntaxKind::JsxSelfClosingElement);
+                    Debug::_assert(opening->kind == SyntaxKind::JsxSelfClosingElement);
                     // Nothing else to do for self-closing elements
                     result = opening;
                 }
@@ -6081,7 +6081,7 @@ namespace ts {
             }
 
             auto isDeclareModifier(Modifier modifier) {
-                return modifier.kind == SyntaxKind::DeclareKeyword;
+                return modifier->kind == SyntaxKind::DeclareKeyword;
             }
 
             auto parseDeclaration() -> Statement {
@@ -6257,7 +6257,7 @@ namespace ts {
                 auto hasJSDoc = hasPrecedingJSDocComment();
                 auto name = parseIdentifierOrPattern(Diagnostics::Private_identifiers_are_not_allowed_in_variable_declarations);
                 auto ExclamationToken exclamationToken;
-                if (allowExclamation && name.kind == SyntaxKind::Identifier &&
+                if (allowExclamation && name->kind == SyntaxKind::Identifier &&
                     token() == SyntaxKind::ExclamationToken && !scanner.hasPrecedingLineBreak()) {
                     exclamationToken = parseTokenNode<Token<SyntaxKind::ExclamationToken>>();
                 }
@@ -6449,7 +6449,7 @@ namespace ts {
                     : factory.createSetAccessorDeclaration(decorators, modifiers, name, parameters, body);
                 // Keep track of `typeParameters` (for both) and `type` (for setters) if they were parsed those indicate grammar errors
                 node.typeParameters = typeParameters;
-                if (type && node.kind == SyntaxKind::SetAccessor) (node.as<Mutable>()<SetAccessorDeclaration>).type = type;
+                if (type && node->kind == SyntaxKind::SetAccessor) (node.as<Mutable>()<SetAccessorDeclaration>).type = type;
                 return withJSDoc(finishNode(node, pos), hasJSDoc);
             }
 
@@ -7144,7 +7144,7 @@ namespace ts {
 
             /** Do not use hasModifier inside the parser; it relies on parent pointers. Use this instead. */
             auto hasModifierOfKind(Node node, SyntaxKind kind) {
-                return some(node.modifiers, m => m.kind == kind);
+                return some(node.modifiers, m => m->kind == kind);
             }
 
             auto isImportMeta(Node node) -> boolean {
@@ -7642,7 +7642,7 @@ namespace ts {
                 }
 
                 auto isObjectOrObjectArrayTypeReference(TypeNode node) -> boolean {
-                    switch (node.kind) {
+                    switch (node->kind) {
                         case SyntaxKind::ObjectKeyword:
                             return true;
                         case SyntaxKind::ArrayType:
@@ -7683,12 +7683,12 @@ namespace ts {
                         auto JSDocPropertyLikeTag child | JSDocTypeTag | false;
                         auto std::vector<JSDocPropertyLikeTag> children;
                         while (child = tryParse(() => parseChildParameterOrPropertyTag(target, indent, name))) {
-                            if (child.kind == SyntaxKind::JSDocParameterTag || child.kind == SyntaxKind::JSDocPropertyTag) {
+                            if (child->kind == SyntaxKind::JSDocParameterTag || child->kind == SyntaxKind::JSDocPropertyTag) {
                                 children = append(children, child);
                             }
                         }
                         if (children) {
-                            auto literal = finishNode(factory.createJSDocTypeLiteral(children, typeExpression.type.kind == SyntaxKind::ArrayType), pos);
+                            auto literal = finishNode(factory.createJSDocTypeLiteral(children, typeExpression.type->kind == SyntaxKind::ArrayType), pos);
                             return finishNode(factory.createJSDocTypeExpression(literal), pos);
                         }
                     }
@@ -7820,7 +7820,7 @@ namespace ts {
                         auto hasChildren = false;
                         while (child = tryParse(() => parseChildPropertyTag(indent))) {
                             hasChildren = true;
-                            if (child.kind == SyntaxKind::JSDocTypeTag) {
+                            if (child->kind == SyntaxKind::JSDocTypeTag) {
                                 if (childTypeTag) {
                                     parseErrorAtCurrentToken(Diagnostics::A_JSDoc_typedef_comment_may_not_contain_multiple_type_tags);
                                     auto lastError = lastOrUndefined(parseDiagnostics);
@@ -7841,7 +7841,7 @@ namespace ts {
                             }
                         }
                         if (hasChildren) {
-                            auto isArrayType = typeExpression && typeExpression.type.kind == SyntaxKind::ArrayType;
+                            auto isArrayType = typeExpression && typeExpression.type->kind == SyntaxKind::ArrayType;
                             auto jsdocTypeLiteral = factory.createJSDocTypeLiteral(jsDocPropertyTags, isArrayType);
                             typeExpression = childTypeTag && childTypeTag.typeExpression && !isObjectOrObjectArrayTypeReference(childTypeTag.typeExpression.type) ?
                                 childTypeTag.typeExpression :
@@ -7906,7 +7906,7 @@ namespace ts {
                     auto returnTag = tryParse(() => {
                         if (parseOptionalJsdoc(SyntaxKind::AtToken)) {
                             auto tag = parseTag(indent);
-                            if (tag && tag.kind == SyntaxKind::JSDocReturnTag) {
+                            if (tag && tag->kind == SyntaxKind::JSDocReturnTag) {
                                 return tag.as<JSDocReturnTag>();
                             }
                         }
@@ -7944,7 +7944,7 @@ namespace ts {
                             case SyntaxKind::AtToken:
                                 if (canParseTag) {
                                     auto child = tryParseChildTag(target, indent);
-                                    if (child && (child.kind == SyntaxKind::JSDocParameterTag || child.kind == SyntaxKind::JSDocPropertyTag) &&
+                                    if (child && (child->kind == SyntaxKind::JSDocParameterTag || child->kind == SyntaxKind::JSDocPropertyTag) &&
                                         target != PropertyLikeParse.CallbackParameter &&
                                         name && (ts.isIdentifier(child.name) || !escapedTextsEqual(name, child.name.left))) {
                                         return false;
@@ -8275,7 +8275,7 @@ namespace ts {
             }
 
             auto shouldCheckNode(Node node) {
-                switch (node.kind) {
+                switch (node->kind) {
                     case SyntaxKind::StringLiteral:
                     case SyntaxKind::NumericLiteral:
                     case SyntaxKind::Identifier:
@@ -8877,11 +8877,11 @@ namespace ts {
         auto tripleSlashXMLCommentStartRegEx = /^\/\/\/\s*<(\S+)\s.*?\/>/im;
         auto singleLinePragmaRegEx = /^\/\/\/?\s*@(\S+)\s*(.*)\s*$/im;
         auto extractPragmas(std::vector<PragmaPseudoMapEntry> pragmas, CommentRange range, string text) {
-            auto tripleSlash = range.kind == SyntaxKind::SingleLineCommentTrivia && tripleSlashXMLCommentStartRegEx.exec(text);
+            auto tripleSlash = range->kind == SyntaxKind::SingleLineCommentTrivia && tripleSlashXMLCommentStartRegEx.exec(text);
             if (tripleSlash) {
                 auto name = tripleSlash[1].toLowerCase().as<keyof>() PragmaPseudoMap; // Technically unsafe cast, but we do it so the below check to make it safe typechecks
                 auto pragma = commentPragmas[name].as<PragmaDefinition>();
-                if (!pragma || !(pragma.kind! & PragmaKindFlags.TripleSlashXML)) {
+                if (!pragma || !(pragma->kind! & PragmaKindFlags.TripleSlashXML)) {
                     return;
                 }
                 if (pragma.args) {
@@ -8914,12 +8914,12 @@ namespace ts {
                 return;
             }
 
-            auto singleLine = range.kind == SyntaxKind::SingleLineCommentTrivia && singleLinePragmaRegEx.exec(text);
+            auto singleLine = range->kind == SyntaxKind::SingleLineCommentTrivia && singleLinePragmaRegEx.exec(text);
             if (singleLine) {
                 return addPragmaForMatch(pragmas, range, PragmaKindFlags.SingleLine, singleLine);
             }
 
-            if (range.kind == SyntaxKind::MultiLineCommentTrivia) {
+            if (range->kind == SyntaxKind::MultiLineCommentTrivia) {
                 auto multiLinePragmaRegEx = /\s*@(\S+)\s*(.*)\s*$/gim; // Defined inline since it uses the "g" flag, which keeps a persistent index (for iterating)
                 auto RegExpExecArray multiLineMatch | null;
                 while (multiLineMatch = multiLinePragmaRegEx.exec(text)) {
@@ -8932,7 +8932,7 @@ namespace ts {
             if (!match) return;
             auto name = match[1].toLowerCase().as<keyof>() PragmaPseudoMap; // Technically unsafe cast, but we do it so they below check to make it safe typechecks
             auto pragma = commentPragmas[name].as<PragmaDefinition>();
-            if (!pragma || !(pragma.kind! & kind)) {
+            if (!pragma || !(pragma->kind! & kind)) {
                 return;
             }
             auto args = match[2]; // Split on spaces and match up positionally with definition
@@ -8962,15 +8962,15 @@ namespace ts {
 
         /** @internal */
         auto tagNamesAreEquivalent(JsxTagNameExpression lhs, JsxTagNameExpression rhs) -> boolean {
-            if (lhs.kind != rhs.kind) {
+            if (lhs->kind != rhs->kind) {
                 return false;
             }
 
-            if (lhs.kind == SyntaxKind::Identifier) {
+            if (lhs->kind == SyntaxKind::Identifier) {
                 return lhs.escapedText == (rhs.as<Identifier>()).escapedText;
             }
 
-            if (lhs.kind == SyntaxKind::ThisKeyword) {
+            if (lhs->kind == SyntaxKind::ThisKeyword) {
                 return true;
             }
 

@@ -55,7 +55,8 @@ struct Debug
         assert(cond);
     }
 
-    static auto fail(string message = string()) -> void {
+    template <typename T>
+    static auto fail(string message = string()) -> T {
         //debugger;
         string msg = S("Debug Failure.");
         if (!message.empty())

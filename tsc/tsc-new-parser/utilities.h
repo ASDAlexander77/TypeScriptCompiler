@@ -266,7 +266,7 @@ inline auto nodeIsMissing(Node node) -> boolean {
         return true;
     }
 
-    return node->pos == node->end && node->pos >= 0 && node.kind != SyntaxKind::EndOfFileToken;
+    return node->pos == node->end && node->pos >= 0 && node->kind != SyntaxKind::EndOfFileToken;
 }
 
 inline auto nodeIsPresent(Node node) -> boolean {
@@ -275,6 +275,10 @@ inline auto nodeIsPresent(Node node) -> boolean {
 
 inline auto containsParseError(Node node) -> boolean {
     return (node->flags & NodeFlags::ThisNodeOrAnySubNodesHasError) != NodeFlags::None;
+}
+
+inline auto isLiteralKind(SyntaxKind kind) -> boolean {
+    return SyntaxKind::FirstLiteralToken <= kind && kind <= SyntaxKind::LastLiteralToken;
 }
 
 #endif // UTILITIES_H

@@ -78,6 +78,12 @@ public:
     Node createTemplateLiteralTypeSpan(Node type, Node literal);
 
     Node createTemplateSpan(Expression expression, Node literal);
+
+    Node createLiteralLikeNode(SyntaxKind kind, string text);
+
+    TypeReferenceNode createTypeReferenceNode(string typeName, Node typeArguments);
+
+    TypeReferenceNode createTypeReferenceNode(/*EntityName*/Node typeName, Node typeArguments);
 };
 
 #endif // NODEFACTORY_H
