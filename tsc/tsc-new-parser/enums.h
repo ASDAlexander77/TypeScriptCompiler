@@ -80,6 +80,8 @@ enum class SignatureFlags : number {
     JSDoc = 1 << 5,
 };
 
+ENUM_OPS(SignatureFlags)
+
 enum class SpeculationKind : number {
     TryParse,
     Lookahead,

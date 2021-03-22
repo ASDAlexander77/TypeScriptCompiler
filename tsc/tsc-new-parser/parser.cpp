@@ -853,9 +853,9 @@ namespace ts {
                     }
 
                     auto expression = isArray(expressions) ? finishNode(factory.createArrayLiteralExpression(expressions), pos) : Debug::checkDefined(expressions);
-                    auto statement = factory.createExpressionStatement(expression);
+                    auto statement = factory.createExpressionStatement(expression).as<JsonObjectExpressionStatement>();
                     finishNode(statement, pos);
-                    statements = createNodeArray(statement, pos);
+                    statements = createNodeArray(NodeArray<Statement>(statement), pos);
                     endOfFileToken = parseExpectedToken(SyntaxKind::EndOfFileToken, Diagnostics::Unexpected_token);
                 }
 
@@ -1575,7 +1575,7 @@ namespace ts {
                 }
             }
 
-            auto createNodeArray(Node elements, number pos, number end = -1, boolean hasTrailingComma = false) -> Node {
+            auto createNodeArray(NodeArray<Node> elements, number pos, number end = -1, boolean hasTrailingComma = false) -> NodeArray<Node> {
                 auto array = factory.createNodeArray(elements, hasTrailingComma);
                 setTextRangePosEnd(array, pos, end != -1 ? end : scanner.getStartPos());
                 return array;
@@ -2740,7 +2740,7 @@ namespace ts {
 
             auto parseThisTypePredicate(ThisTypeNode lhs) -> TypePredicateNode {
                 nextToken();
-                return finishNode(factory.createTypePredicateNode(/*assertsModifier*/ undefined, lhs, parseType()), lhs->pos);
+                return finishNode(factory.createTypePredicateNode(/*assertsModifier*/SyntaxKind::Unknown, lhs, parseType()), lhs->pos);
             }
 
             auto parseThisTypeNode() -> ThisTypeNode {
@@ -2794,7 +2794,7 @@ namespace ts {
                 auto hasJSDoc = hasPrecedingJSDocComment();
                 if (lookAhead<boolean>(std::bind(&Parser::nextTokenIsOpenParen, this))) {
                     nextToken();
-                    auto parameters = parseParameters(SignatureFlags.Type | SignatureFlags.JSDoc);
+                    auto parameters = parseParameters(SignatureFlags::Type | SignatureFlags::JSDoc);
                     auto type = parseReturnType(SyntaxKind::ColonToken, /*isType*/ false);
                     return withJSDoc(finishNode(factory.createJSDocFunctionType(parameters, type), pos), hasJSDoc);
                 }
@@ -3018,10 +3018,10 @@ namespace ts {
                 auto savedYieldContext = inYieldContext();
                 auto savedAwaitContext = inAwaitContext();
 
-                setYieldContext(!!(flags & SignatureFlags.Yield));
-                setAwaitContext(!!(flags & SignatureFlags.Await));
+                setYieldContext(!!(flags & SignatureFlags::Yield));
+                setAwaitContext(!!(flags & SignatureFlags::Await));
 
-                auto parameters = flags & SignatureFlags.JSDoc ?
+                auto parameters = flags & SignatureFlags::JSDoc ?
                     parseDelimitedList(ParsingContext::JSDocParameters, parseJSDocParameter) :
                     parseDelimitedList(ParsingContext::Parameters, savedAwaitContext ? parseParameterInOuterAwaitContext : parseParameter);
 
@@ -3073,7 +3073,7 @@ namespace ts {
                 }
 
                 auto typeParameters = parseTypeParameters();
-                auto parameters = parseParameters(SignatureFlags.Type);
+                auto parameters = parseParameters(SignatureFlags::Type);
                 auto type = parseReturnType(SyntaxKind::ColonToken, /*isType*/ true);
                 parseTypeMemberSemicolon();
                 auto node = kind == SyntaxKind::CallSignature
@@ -3157,7 +3157,7 @@ namespace ts {
                     // Method signatures don't exist in expression contexts.  So they have neither
                     // [Yield] nor [Await]
                     auto typeParameters = parseTypeParameters();
-                    auto parameters = parseParameters(SignatureFlags.Type);
+                    auto parameters = parseParameters(SignatureFlags::Type);
                     auto type = parseReturnType(SyntaxKind::ColonToken, /*isType*/ true);
                     node = factory.createMethodSignature(modifiers, name, questionToken, typeParameters, parameters, type);
                 }
@@ -3381,7 +3381,7 @@ namespace ts {
                 auto modifiers = parseModifiersForConstructorType();
                 auto isConstructorType = parseOptional(SyntaxKind::NewKeyword);
                 auto typeParameters = parseTypeParameters();
-                auto parameters = parseParameters(SignatureFlags.Type);
+                auto parameters = parseParameters(SignatureFlags::Type);
                 auto type = parseReturnType(SyntaxKind::EqualsGreaterThanToken, /*isType*/ false);
                 auto node = isConstructorType
                     ? factory.createConstructorTypeNode(modifiers, typeParameters, parameters, type)
@@ -4265,7 +4265,7 @@ namespace ts {
                 auto pos = getNodePos();
                 auto hasJSDoc = hasPrecedingJSDocComment();
                 auto modifiers = parseModifiersForArrowFunction();
-                auto isAsync = some(modifiers, isAsyncModifier) ? SignatureFlags.Await : SignatureFlags.None;
+                auto isAsync = some(modifiers, isAsyncModifier) ? SignatureFlags::Await : SignatureFlags::None;
                 // Arrow functions are never generators.
                 //
                 // If we're speculatively parsing a signature for a parenthesized arrow function, then
@@ -4323,7 +4323,7 @@ namespace ts {
 
             auto parseArrowFunctionExpressionBody(boolean isAsync) -> Node {
                 if (token() == SyntaxKind::OpenBraceToken) {
-                    return parseFunctionBlock(isAsync ? SignatureFlags.Await : SignatureFlags.None);
+                    return parseFunctionBlock(isAsync ? SignatureFlags::Await : SignatureFlags::None);
                 }
 
                 if (token() != SyntaxKind::SemicolonToken &&
@@ -4345,7 +4345,7 @@ namespace ts {
                     // up preemptively closing the containing construct.
                     //
                     // even Note when 'IgnoreMissingOpenBrace' is passed, parseBody will still error.
-                    return parseFunctionBlock(SignatureFlags.IgnoreMissingOpenBrace | (isAsync ? SignatureFlags.Await : SignatureFlags.None));
+                    return parseFunctionBlock(SignatureFlags::IgnoreMissingOpenBrace | (isAsync ? SignatureFlags::Await : SignatureFlags::None));
                 }
 
                 auto savedTopLevel = topLevel;
@@ -5477,8 +5477,8 @@ namespace ts {
                 auto modifiers = parseModifiers();
                 parseExpected(SyntaxKind::FunctionKeyword);
                 auto asteriskToken = parseOptionalToken(SyntaxKind::AsteriskToken);
-                auto isGenerator = asteriskToken ? SignatureFlags.Yield : SignatureFlags.None;
-                auto isAsync = some(modifiers, isAsyncModifier) ? SignatureFlags.Await : SignatureFlags.None;
+                auto isGenerator = asteriskToken ? SignatureFlags::Yield : SignatureFlags::None;
+                auto isAsync = some(modifiers, isAsyncModifier) ? SignatureFlags::Await : SignatureFlags::None;
                 auto name =
                     isGenerator && isAsync ? doInYieldAndAwaitContext(parseOptionalBindingIdentifier) :
                     isGenerator ? doInYieldContext<Identifier>(std::bind(&Parser::parseOptionalBindingIdentifier, this)) :
@@ -5561,10 +5561,10 @@ namespace ts {
 
             auto parseFunctionBlock(SignatureFlags flags, DiagnosticMessage diagnosticMessage) -> Block {
                 auto savedYieldContext = inYieldContext();
-                setYieldContext(!!(flags & SignatureFlags.Yield));
+                setYieldContext(!!(flags & SignatureFlags::Yield));
 
                 auto savedAwaitContext = inAwaitContext();
-                setAwaitContext(!!(flags & SignatureFlags.Await));
+                setAwaitContext(!!(flags & SignatureFlags::Await));
 
                 auto savedTopLevel = topLevel;
                 topLevel = false;
@@ -5576,7 +5576,7 @@ namespace ts {
                     setDecoratorContext(/*val*/ false);
                 }
 
-                auto block = parseBlock(!!(flags & SignatureFlags.IgnoreMissingOpenBrace), diagnosticMessage);
+                auto block = parseBlock(!!(flags & SignatureFlags::IgnoreMissingOpenBrace), diagnosticMessage);
 
                 if (saveDecoratorContext) {
                     setDecoratorContext(/*val*/ true);
@@ -6334,8 +6334,8 @@ namespace ts {
                 auto asteriskToken = parseOptionalToken(SyntaxKind::AsteriskToken);
                 // We don't parse the name here in await context, instead we will report a grammar error in the checker.
                 auto name = modifierFlags & ModifierFlags.Default ? parseOptionalBindingIdentifier() : parseBindingIdentifier();
-                auto isGenerator = asteriskToken ? SignatureFlags.Yield : SignatureFlags.None;
-                auto isAsync = modifierFlags & ModifierFlags.Async ? SignatureFlags.Await : SignatureFlags.None;
+                auto isGenerator = asteriskToken ? SignatureFlags::Yield : SignatureFlags::None;
+                auto isAsync = modifierFlags & ModifierFlags.Async ? SignatureFlags::Await : SignatureFlags::None;
                 auto typeParameters = parseTypeParameters();
                 if (modifierFlags & ModifierFlags.Export) setAwaitContext(/*value*/ true);
                 auto parameters = parseParameters(isGenerator | isAsync);
@@ -6362,9 +6362,9 @@ namespace ts {
                 return tryParse(() => {
                     if (parseConstructorName()) {
                         auto typeParameters = parseTypeParameters();
-                        auto parameters = parseParameters(SignatureFlags.None);
+                        auto parameters = parseParameters(SignatureFlags::None);
                         auto type = parseReturnType(SyntaxKind::ColonToken, /*isType*/ false);
-                        auto body = parseFunctionBlockOrSemicolon(SignatureFlags.None, Diagnostics::or_expected);
+                        auto body = parseFunctionBlockOrSemicolon(SignatureFlags::None, Diagnostics::or_expected);
                         auto node = factory.createConstructorDeclaration(decorators, modifiers, parameters, body);
                         // Attach `typeParameters` and `type` if they exist so that we can report them in the grammar checker.
                         node.typeParameters = typeParameters;
@@ -6385,8 +6385,8 @@ namespace ts {
                 SyntaxKind exclamationToken,
                 DiagnosticMessage diagnosticMessage
             ) -> MethodDeclaration {
-                auto isGenerator = asteriskToken ? SignatureFlags.Yield : SignatureFlags.None;
-                auto isAsync = some(modifiers, isAsyncModifier) ? SignatureFlags.Await : SignatureFlags.None;
+                auto isGenerator = asteriskToken ? SignatureFlags::Yield : SignatureFlags::None;
+                auto isAsync = some(modifiers, isAsyncModifier) ? SignatureFlags::Await : SignatureFlags::None;
                 auto typeParameters = parseTypeParameters();
                 auto parameters = parseParameters(isGenerator | isAsync);
                 auto type = parseReturnType(SyntaxKind::ColonToken, /*isType*/ false);
@@ -6443,9 +6443,9 @@ namespace ts {
             auto parseAccessorDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers, SyntaxKind kind) -> AccessorDeclaration {
                 auto name = parsePropertyName();
                 auto typeParameters = parseTypeParameters();
-                auto parameters = parseParameters(SignatureFlags.None);
+                auto parameters = parseParameters(SignatureFlags::None);
                 auto type = parseReturnType(SyntaxKind::ColonToken, /*isType*/ false);
-                auto body = parseFunctionBlockOrSemicolon(SignatureFlags.None);
+                auto body = parseFunctionBlockOrSemicolon(SignatureFlags::None);
                 auto node = kind == SyntaxKind::GetAccessor
                     ? factory.createGetAccessorDeclaration(decorators, modifiers, name, parameters, type, body)
                     : factory.createSetAccessorDeclaration(decorators, modifiers, name, parameters, body);

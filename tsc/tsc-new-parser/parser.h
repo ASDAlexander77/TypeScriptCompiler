@@ -29,6 +29,7 @@ template <typename T>
 struct NodeArray
 {
     NodeArray() = default;
+    NodeArray(std::initializer_list<T> il) : items(il) {}
 
     std::vector<T> items;
     boolean isMissingList;
@@ -61,7 +62,7 @@ using NodeWithParentArrayFuncT = std::function<T(NodeArray<T>, Node)>;
 
 typedef NodeArray<Modifier> ModifiersArray;
 
-#define CLASS_DATA_BASE(x, b) struct x##Data : b##Data { using NodeData::NodeData;
+#define CLASS_DATA_BASE(x, b) struct x##Data : b##Data { using b##Data::b##Data;
 
 #define CLASS_DATA(x) CLASS_DATA_BASE(x, Node)
 
@@ -104,7 +105,8 @@ struct Node
     Node() {};
     Node(undefined_t) {};
     Node(SyntaxKind kind, number start, number end) : data(std::make_shared<NodeData>(kind, start, end)) {};
-    Node(NodeArray<Node> values) : data(std::make_shared<NodeData>(SyntaxKind::ArrayType, -1, -1)) { data->children = values; };
+    template <typename T>
+    Node(NodeArray<T> values) : data(std::make_shared<NodeData>(SyntaxKind::ArrayType, -1, -1)) { data->children = (NodeArray<Node>) values; };
 
     NodeData* operator->()
     {
@@ -225,7 +227,12 @@ typedef Node Identifier, PropertyName, PrivateIdentifier, ThisTypeNode, LiteralE
     TypeElement, BinaryOperatorToken, UnaryExpression, UpdateExpression, LeftHandSideExpression, MemberExpression, JsxText, JsxChild, JsxTagNameExpression,
     JsxClosingFragment, QuestionDotToken, PrimaryExpression, ObjectLiteralElementLike, FunctionExpression, Statement, CaseOrDefaultClause, ArrayBindingElement,
     ObjectBindingPattern, ArrayBindingPattern, FunctionDeclaration, ConstructorDeclaration, AccessorDeclaration, ClassElement, ClassExpression,
-    ModuleBlock, EndOfFileToken, BooleanLiteral, NullLiteral;
+    ModuleBlock, EndOfFileToken, BooleanLiteral, NullLiteral, SuperExpression, ThisExpression, TrueLiteral, FalseLiteral, NumericLiteral, BigIntLiteral,
+    PseudoBigInt, StringLiteral, PropertyNameLiteral, RegularExpressionLiteral, MissingDeclaration, LiteralToken, JsonObjectExpressionStatement;
+
+typedef Node JSDocAllType, JSDocUnknownType, JSDocNonNullableType, JSDocNullableType, JSDocOptionalType, JSDocVariadicType, JSDocNamepathType,
+    JSDocAuthorTag, JSDocClassTag, JSDocPublicTag, JSDocPrivateTag, JSDocProtectedTag, JSDocReadonlyTag, JSDocUnknownTag, JSDocDeprecatedTag,
+    JSDocParameterTag, JSDocPropertyTag; 
 
 CLASS_DATA(QualifiedName)
     Node left;
@@ -946,6 +953,12 @@ CLASS_DATA(LiteralLikeNode)
     boolean isUnterminated;
     boolean hasExtendedUnicodeEscape;
 CLASS_DATA_END(LiteralLikeNode)
+
+CLASS_DATA_BASE(TemplateLiteralLikeNode, LiteralLikeNode)
+    string rawText;
+    /* @internal */
+    TokenFlags templateFlags;
+CLASS_DATA_END(TemplateLiteralLikeNode)
 
 CLASS_DATA(FunctionOrConstructorTypeNode)
     TypeNode type;
