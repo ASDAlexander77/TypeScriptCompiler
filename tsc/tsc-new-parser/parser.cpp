@@ -3311,10 +3311,10 @@ namespace ts {
                     return finishNode(factory.createRestTypeNode(parseType()), pos);
                 }
                 auto type = parseType();
-                if (isJSDocNullableType(type) && type.pos == type.type.pos) {
-                    auto node = factory.createOptionalTypeNode(type.type);
+                if (isJSDocNullableType(type) && type->pos == type->type->pos) {
+                    auto node = factory.createOptionalTypeNode(type->type);
                     setTextRange(node, type);
-                    (node.as<Mutable>()<Node>).flags = type.flags;
+                    node->flags = type->flags;
                     return node;
                 }
                 return type;
@@ -3365,12 +3365,12 @@ namespace ts {
             }
 
             auto parseModifiersForConstructorType() -> NodeArray<Modifier> {
-                auto NodeArray<Modifier> modifiers;
+                ModifiersArray modifiers;
                 if (token() == SyntaxKind::AbstractKeyword) {
                     auto pos = getNodePos();
                     nextToken();
                     auto modifier = finishNode(factory.createToken(SyntaxKind::AbstractKeyword), pos);
-                    modifiers = createNodeArray<Modifier>([modifier], pos);
+                    modifiers = createNodeArray<Modifier>(ModifiersArray(modifier), pos);
                 }
                 return modifiers;
             }
@@ -3386,7 +3386,7 @@ namespace ts {
                 auto node = isConstructorType
                     ? factory.createConstructorTypeNode(modifiers, typeParameters, parameters, type)
                     : factory.createFunctionTypeNode(typeParameters, parameters, type);
-                if (!isConstructorType) (node.as<Mutable>()<Node>).modifiers = modifiers;
+                if (!isConstructorType) node->modifiers = modifiers;
                 return withJSDoc(finishNode(node, pos), hasJSDoc);
             }
 
@@ -5085,7 +5085,7 @@ namespace ts {
                     if (expr.flags & NodeFlags::OptionalChain) {
                         // this is part of an optional chain. Walk down from `node` to `expression` and set the flag.
                         while (isNonNullExpression(node)) {
-                            (node.as<Mutable>()<NonNullExpression>).flags |= NodeFlags::OptionalChain;
+                            (node.asMutable<NonNullExpression>()).flags |= NodeFlags::OptionalChain;
                             node = node->expression;
                         }
                         return true;
@@ -5178,7 +5178,7 @@ namespace ts {
                         parseTemplateExpression(/*isTaggedTemplate*/ true)
                 );
                 if (questionDotToken || tag.flags & NodeFlags::OptionalChain) {
-                    (tagExpression.as<Mutable>()<Node>).flags |= NodeFlags::OptionalChain;
+                    (tagExpression.asMutable<Node>()).flags |= NodeFlags::OptionalChain;
                 }
                 tagExpression.questionDotToken = questionDotToken;
                 return finishNode(tagExpression, pos);
@@ -6107,7 +6107,7 @@ namespace ts {
                 auto modifiers = parseModifiers();
                 if (isAmbient) {
                     for (auto m of modifiers!) {
-                        (m.as<Mutable>()<Node>).flags |= NodeFlags::Ambient;
+                        (m.asMutable<Node>()).flags |= NodeFlags::Ambient;
                     }
                     return doInsideOfContext(NodeFlags::Ambient, () => parseDeclarationWorker(pos, hasJSDoc, decorators, modifiers));
                 }
@@ -6451,7 +6451,7 @@ namespace ts {
                     : factory.createSetAccessorDeclaration(decorators, modifiers, name, parameters, body);
                 // Keep track of `typeParameters` (for both) and `type` (for setters) if they were parsed those indicate grammar errors
                 node->typeParameters = typeParameters;
-                if (type && node->kind == SyntaxKind::SetAccessor) (node.as<Mutable>()<SetAccessorDeclaration>).type = type;
+                if (type && node->kind == SyntaxKind::SetAccessor) (node.asMutable<SetAccessorDeclaration>()).type = type;
                 return withJSDoc(finishNode(node, pos), hasJSDoc);
             }
 
@@ -6642,7 +6642,7 @@ namespace ts {
                     auto isAmbient = some(modifiers, isDeclareModifier);
                     if (isAmbient) {
                         for (auto m of modifiers!) {
-                            (m.as<Mutable>()<Node>).flags |= NodeFlags::Ambient;
+                            (m.asMutable<Node>()).flags |= NodeFlags::Ambient;
                         }
                         return doInsideOfContext(NodeFlags::Ambient, () => parsePropertyOrMethodDeclaration(pos, hasJSDoc, decorators, modifiers));
                     }
