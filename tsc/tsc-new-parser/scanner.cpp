@@ -3580,12 +3580,12 @@ private:
         impl->setInJSDocType(inType);
     }
 
-    auto reScanAsteriskEqualsToken() -> void
+    auto Scanner::reScanAsteriskEqualsToken() -> void
     {
         impl->reScanAsteriskEqualsToken();
     }
 
-    auto reScanQuestionToken() -> void
+    auto Scanner::reScanQuestionToken() -> void
     {
         impl->reScanAsteriskEqualsToken();
     }

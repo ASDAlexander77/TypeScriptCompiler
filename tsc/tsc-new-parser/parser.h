@@ -94,6 +94,10 @@ typedef NodeArray<Modifier> ModifiersArray;
         {                                   \
             return *(TextRange*)node.data.get(); \
         }                                   \
+        inline operator SyntaxKind()        \
+        {                                   \
+            return node.data->kind;         \
+        }                                   \
     };  
 
 struct NodeData : TextRange
@@ -156,6 +160,11 @@ struct Node
     operator NodeArray<Node>()
     {
         return data->children;
+    }
+    
+    inline operator SyntaxKind()
+    {
+        return data->kind;
     }
 
     auto operator=(undefined_t) -> Node&
@@ -227,7 +236,7 @@ struct BaseNode
 
     inline bool operator !()
     {
-        return !node;
+        return !static_cast<bool>(node);
     }
 
     inline NodeData* operator->()
@@ -237,7 +246,7 @@ struct BaseNode
 
     auto operator||(Node rhs) -> Node
     {
-        if (!!node)
+        if (static_cast<bool>(node))
         {
             return *this;
         }

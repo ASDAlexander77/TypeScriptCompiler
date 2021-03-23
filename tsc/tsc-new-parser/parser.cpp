@@ -1308,6 +1308,10 @@ namespace ts {
                 parseErrorAtPosition(start, end - start, message);
             }
 
+            auto parseErrorAtRange(TextRange range, DiagnosticMessage message) -> void {
+                parseErrorAt(range.pos, range.end, message);
+            }
+
             template<typename T>
             auto parseErrorAt(number start, number end, DiagnosticMessage message, T arg0) -> void {
                 parseErrorAtPosition(start, end - start, message, arg0);
@@ -3628,7 +3632,7 @@ namespace ts {
                 return finishNode(factory.createInferTypeNode(parseTypeParameterOfInferType()), pos);
             }
 
-            auto parseTypeOperatorOrHigher() -> TypeNode {
+            auto parseTypeOperatorOrHigher() -> /*TypeNode*/Node {
                 auto _operator = token();
                 switch (_operator) {
                     case SyntaxKind::KeyOfKeyword:
@@ -3675,10 +3679,11 @@ namespace ts {
                 auto pos = getNodePos();
                 auto isUnionType = operator_ == SyntaxKind::BarToken;
                 auto hasLeadingOperator = parseOptional(operator_);
-                auto type = (hasLeadingOperator ? parseFunctionOrConstructorTypeToError(isUnionType) : undefined)
+                Node type = (hasLeadingOperator ? parseFunctionOrConstructorTypeToError(isUnionType) : undefined)
                     || parseConstituentType();
                 if (token() == operator_ || hasLeadingOperator) {
-                    auto types = [type];
+                    NodeArray<TypeNode> types;
+                    types.push_back(type.as<TypeNode>());
                     while (parseOptional(operator_)) {
                         types.push_back(parseFunctionOrConstructorTypeToError(isUnionType) || parseConstituentType());
                     }
@@ -3688,11 +3693,11 @@ namespace ts {
             }
 
             auto parseIntersectionTypeOrHigher() -> TypeNode {
-                return parseUnionOrIntersectionType(SyntaxKind::AmpersandToken, parseTypeOperatorOrHigher, factory.createIntersectionTypeNode);
+                return parseUnionOrIntersectionType(SyntaxKind::AmpersandToken, std::bind(&Parser::parseTypeOperatorOrHigher, this), std::bind(&NodeFactory::createIntersectionTypeNode, factory, std::placeholders::_1));
             }
 
             auto parseUnionTypeOrHigher() -> TypeNode {
-                return parseUnionOrIntersectionType(SyntaxKind::BarToken, parseIntersectionTypeOrHigher, factory.createUnionTypeNode);
+                return parseUnionOrIntersectionType(SyntaxKind::BarToken, std::bind(&Parser::parseIntersectionTypeOrHigher, this), std::bind(&NodeFactory::createUnionTypeNode, factory, std::placeholders::_1));
             }
 
             auto nextTokenIsNewKeyword() -> boolean {
@@ -3722,14 +3727,14 @@ namespace ts {
                 }
                 if (token() == SyntaxKind::OpenBracketToken || token() == SyntaxKind::OpenBraceToken) {
                     // Return true if we can parse an array or object binding pattern with no errors
-                    auto previousErrorCount = parseDiagnostics::size();
+                    auto previousErrorCount = parseDiagnostics.size();
                     parseIdentifierOrPattern();
-                    return previousErrorCount == parseDiagnostics::size();
+                    return previousErrorCount == parseDiagnostics.size();
                 }
                 return false;
             }
 
-            auto isUnambiguouslyStartOfFunctionType() {
+            auto isUnambiguouslyStartOfFunctionType() -> boolean {
                 nextToken();
                 if (token() == SyntaxKind::CloseParenToken || token() == SyntaxKind::DotDotDotToken) {
                     // ( )
@@ -3760,17 +3765,17 @@ namespace ts {
 
             auto parseTypeOrTypePredicate() -> TypeNode {
                 auto pos = getNodePos();
-                auto typePredicateVariable = isIdentifier() && tryParse<boolean>(std::bind(&Parser::parseTypePredicatePrefix, this));
+                auto typePredicateVariable = isIdentifier() ? tryParse<Identifier>(std::bind(&Parser::parseTypePredicatePrefix, this)) : Node();
                 auto type = parseType();
                 if (typePredicateVariable) {
-                    return finishNode(factory.createTypePredicateNode(/*assertsModifier*/ undefined, typePredicateVariable, type), pos);
+                    return finishNode(factory.createTypePredicateNode(/*assertsModifier*/ SyntaxKind::Unknown, typePredicateVariable, type), pos);
                 }
                 else {
                     return type;
                 }
             }
 
-            auto parseTypePredicatePrefix() {
+            auto parseTypePredicatePrefix() -> Identifier {
                 auto id = parseIdentifier();
                 if (token() == SyntaxKind::IsKeyword && !scanner.hasPrecedingLineBreak()) {
                     nextToken();
@@ -3789,7 +3794,11 @@ namespace ts {
             auto parseType() -> TypeNode {
                 // The rules about 'yield' only apply to actual code/expression contexts.  They don't
                 // apply to 'type' contexts.  So we disable these parameters here before moving on.
-                return doOutsideOfContext(NodeFlags::TypeExcludesFlags, parseTypeWorker);
+                return doOutsideOfContext<TypeNode>(NodeFlags::TypeExcludesFlags, std::bind((TypeNode(Parser::*)())&Parser::parseTypeWorker, this));
+            }
+
+            auto parseTypeWorker() -> TypeNode {
+                return  parseTypeWorker(false);
             }
 
             auto parseTypeWorker(boolean noConditionalTypes) -> TypeNode {
@@ -3902,7 +3911,7 @@ namespace ts {
 
                 auto pos = getNodePos();
                 auto expr = parseAssignmentExpressionOrHigher();
-                auto BinaryOperatorToken operatorToken;
+                BinaryOperatorToken operatorToken;
                 while ((operatorToken = parseOptionalToken(SyntaxKind::CommaToken))) {
                     expr = makeBinaryExpression(expr, operatorToken, parseAssignmentExpressionOrHigher(), pos);
                 }
@@ -3960,7 +3969,7 @@ namespace ts {
                 // binary expression here, so we pass in the 'lowest' precedence here so that it matches
                 // and consumes anything.
                 auto pos = getNodePos();
-                auto expr = parseBinaryExpressionOrHigher(OperatorPrecedence.Lowest);
+                auto expr = parseBinaryExpressionOrHigher(OperatorPrecedence::Lowest);
 
                 // To avoid a look-ahead, we did not handle the case of an arrow auto with a single un-parenthesized
                 // parameter ('x => ...') above. We handle it here by checking if the parsed expression was a single
@@ -4241,7 +4250,7 @@ namespace ts {
                     if (lookAhead<Tristate>(std::bind(&Parser::isUnParenthesizedAsyncArrowFunctionWorker, this)) == Tristate::True) {
                         auto pos = getNodePos();
                         auto asyncModifier = parseModifiersForArrowFunction();
-                        auto expr = parseBinaryExpressionOrHigher(OperatorPrecedence.Lowest);
+                        auto expr = parseBinaryExpressionOrHigher(OperatorPrecedence::Lowest);
                         return parseSimpleArrowFunctionExpression(pos, expr.as<Identifier>(), asyncModifier);
                     }
                 }
@@ -4260,7 +4269,7 @@ namespace ts {
                         return Tristate::False;
                     }
                     // Check for un-parenthesized AsyncArrowFunction
-                    auto expr = parseBinaryExpressionOrHigher(OperatorPrecedence.Lowest);
+                    auto expr = parseBinaryExpressionOrHigher(OperatorPrecedence::Lowest);
                     if (!scanner.hasPrecedingLineBreak() && expr->kind == SyntaxKind::Identifier && token() == SyntaxKind::EqualsGreaterThanToken) {
                         return Tristate.True;
                     }
@@ -4462,7 +4471,7 @@ namespace ts {
                 return leftOperand;
             }
 
-            auto isBinaryOperator() {
+            auto isBinaryOperator() -> boolean {
                 if (inDisallowInContext() && token() == SyntaxKind::InKeyword) {
                     return false;
                 }
@@ -6248,7 +6257,7 @@ namespace ts {
                     || isBindingIdentifier();
             }
 
-            auto parseIdentifierOrPattern(DiagnosticMessage privateIdentifierDiagnosticMessage) -> Node {
+            auto parseIdentifierOrPattern(DiagnosticMessage privateIdentifierDiagnosticMessage = DiagnosticMessage()) -> Node {
                 if (token() == SyntaxKind::OpenBracketToken) {
                     return parseArrayBindingPattern();
                 }
