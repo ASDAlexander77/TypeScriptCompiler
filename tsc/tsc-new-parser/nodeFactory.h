@@ -142,6 +142,10 @@ public:
 
     TypeLiteralNode createTypeLiteralNode(/*TypeElement[]*/Node members);
 
+    MappedTypeNode createMappedTypeNode(Node readonlyToken, TypeParameterDeclaration typeParameter, TypeNode nameType, Node questionToken, TypeNode type);
+
+    RestTypeNode createRestTypeNode(TypeNode type);
+
     //
     // JSDoc
     //
