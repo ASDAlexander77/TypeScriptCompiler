@@ -1,5 +1,6 @@
 #include "parser.h"
 #include "nodeFactory.h"
+#include "nodeTest.h"
 #include "core.h"
 #include "utilities.h"
 
@@ -1581,6 +1582,13 @@ namespace ts {
                 return array;
             }
 
+            template <typename T>
+            auto createNodeArray(NodeArray<T> elements, number pos, number end = -1, boolean hasTrailingComma = false) -> NodeArray<T> {
+                auto array = factory.createNodeArray(elements, hasTrailingComma);
+                setTextRangePosEnd(array, pos, end != -1 ? end : scanner.getStartPos());
+                return array;
+            }
+
             auto finishNode(Node node, number pos, number end = -1) -> Node {
                 setTextRangePosEnd(node, pos, end != -1 ? end : scanner.getStartPos());
                 if (!!contextFlags) {
@@ -2565,9 +2573,9 @@ namespace ts {
                 return allowIdentifierNames ? parseIdentifierName() : parseIdentifier();
             }
 
-            auto parseTemplateSpans(boolean isTaggedTemplate) -> Node {
+            auto parseTemplateSpans(boolean isTaggedTemplate) -> NodeArray<TemplateSpan> {
                 auto pos = getNodePos();
-                Node list;
+                NodeArray<TemplateSpan> list;
                 TemplateSpan node;
                 do {
                     node = parseTemplateSpan(isTaggedTemplate);
@@ -2599,9 +2607,9 @@ namespace ts {
                 );
             }
 
-            auto parseTemplateTypeSpans() -> Node {
+            auto parseTemplateTypeSpans() -> NodeArray<TemplateLiteralTypeSpan> {
                 auto pos = getNodePos();
-                Node list;
+                NodeArray<TemplateLiteralTypeSpan> list;
                 TemplateLiteralTypeSpan node;
                 do {
                     node = parseTemplateTypeSpan();
@@ -2702,9 +2710,9 @@ namespace ts {
                 return parseEntityName(/*allowReservedWords*/ true, Diagnostics::Type_expected);
             }
 
-            auto parseTypeArgumentsOfTypeReference() -> Node {
+            auto parseTypeArgumentsOfTypeReference() -> NodeArray<TypeNode> {
                 if (!scanner.hasPrecedingLineBreak() && reScanLessThanToken() == SyntaxKind::LessThanToken) {
-                    return parseBracketedList</*Type*/Node>(ParsingContext::TypeArguments, std::bind(&Parser::parseType, this), SyntaxKind::LessThanToken, SyntaxKind::GreaterThanToken);
+                    return parseBracketedList<TypeNode>(ParsingContext::TypeArguments, std::bind(&Parser::parseType, this), SyntaxKind::LessThanToken, SyntaxKind::GreaterThanToken);
                 }
             }
 
@@ -3305,7 +3313,7 @@ namespace ts {
                 return finishNode(factory.createMappedTypeNode(readonlyToken, typeParameter, nameType, questionToken, type), pos);
             }
 
-            auto parseTupleElementType() {
+            auto parseTupleElementType() -> TypeNode {
                 auto pos = getNodePos();
                 if (parseOptional(SyntaxKind::DotDotDotToken)) {
                     return finishNode(factory.createRestTypeNode(parseType()), pos);
@@ -3400,9 +3408,9 @@ namespace ts {
                 if (negative) {
                     nextToken();
                 }
-                auto BooleanLiteral expression | NullLiteral | LiteralExpression | PrefixUnaryExpression =
+                Node expression =
                     token() == SyntaxKind::TrueKeyword || token() == SyntaxKind::FalseKeyword || token() == SyntaxKind::NullKeyword ?
-                        parseTokenNode<BooleanLiteral | NullLiteral>() :
+                        parseTokenNode<BooleanLiteral, NullLiteral>() :
                         parseLiteralLikeNode(token()).as<LiteralExpression>();
                 if (negative) {
                     expression = finishNode(factory.createPrefixUnaryExpression(SyntaxKind::MinusToken, expression), pos);
@@ -3446,7 +3454,7 @@ namespace ts {
                     case SyntaxKind::NeverKeyword:
                     case SyntaxKind::ObjectKeyword:
                         // If these are followed by a dot, then parse these out.as<a>() dotted type reference instead.
-                        return tryParse<boolean>(std::bind(&Parser::parseKeywordAndNoDot, this)) || parseTypeReference();
+                        return tryParse<TypeNode>(std::bind(&Parser::parseKeywordAndNoDot, this)) || parseTypeReference();
                     case SyntaxKind::AsteriskEqualsToken:
                         // If there is '*=', treat it as * followed by postfix =
                         scanner.reScanAsteriskEqualsToken();

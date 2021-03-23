@@ -27,7 +27,8 @@ public:
 
     /* @internal */ //ParenthesizerRules parenthesizer;
     /* @internal */ //NodeConverters converters;
-    template <typename T> auto createNodeArray(NodeArray<T> elements = undefined, boolean hasTrailingComma = false) -> NodeArray<T>;
+    auto createNodeArray(Node elements = undefined, boolean hasTrailingComma = false) -> Node;
+    template <typename T> auto createNodeArray(NodeArray<T> elements, boolean hasTrailingComma = false) -> NodeArray<T>;
 
     //
     // Literals
@@ -163,9 +164,9 @@ public:
     //
 
     auto createKeywordTypeNode(SyntaxKind kind) -> Node;
-    auto createTypePredicateNode(AssertsKeyword assertsModifier, string parameterName, TypeNode type) -> TypePredicateNode;
-    auto createTypePredicateNode(AssertsKeyword assertsModifier, Node parameterName, TypeNode type) -> TypePredicateNode;
-    auto updateTypePredicateNode(TypePredicateNode node, AssertsKeyword assertsModifier, Node parameterName, TypeNode type) -> TypePredicateNode;
+    auto createTypePredicateNode(SyntaxKind assertsModifier, string parameterName, TypeNode type) -> TypePredicateNode;
+    auto createTypePredicateNode(SyntaxKind assertsModifier, Node parameterName, TypeNode type) -> TypePredicateNode;
+    auto updateTypePredicateNode(TypePredicateNode node, SyntaxKind assertsModifier, Node parameterName, TypeNode type) -> TypePredicateNode;
     auto createTypeReferenceNode(string typeName, NodeArray<TypeNode> typeArguments = undefined) -> TypeReferenceNode;
     auto createTypeReferenceNode(EntityName typeName, NodeArray<TypeNode> typeArguments = undefined) -> TypeReferenceNode;
     auto updateTypeReferenceNode(TypeReferenceNode node, EntityName typeName, NodeArray<TypeNode> typeArguments) -> TypeReferenceNode;

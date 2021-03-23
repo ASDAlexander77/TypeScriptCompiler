@@ -21,13 +21,13 @@ typedef std::function<Node(SyntaxKind, number, number)> NodeCreateFunc;
 
 typedef std::function<void(number, number, DiagnosticMessage)> PragmaDiagnosticReporter;
 
-typedef SyntaxKind Modifier;
-
 struct Node;
 
 template <typename T>
 struct NodeArray
 {
+    TextRange range;
+
     NodeArray() = default;
     NodeArray(std::initializer_list<T> il) : items(il) {}
     NodeArray(undefined_t) : items() {}
@@ -57,6 +57,11 @@ struct NodeArray
     {
         items.push_back(node);
     }       
+
+    TextRange* operator ->()
+    {
+        return &range;
+    }
 };
 
 template <typename T>
@@ -67,7 +72,9 @@ using NodeWithParentArrayFuncT = std::function<T(NodeArray<T>, Node)>;
 
 struct Decorator;
 typedef NodeArray<Decorator> DecoratorsArray;
+typedef Node Modifier;
 typedef NodeArray<Modifier> ModifiersArray;
+
 
 #define CLASS_DATA_BASE(x, b) struct x##Data : b##Data { using b##Data::b##Data;
 
@@ -83,7 +90,11 @@ typedef NodeArray<Modifier> ModifiersArray;
         {                                   \
             return static_cast<x##Data*>(node.operator->());   \
         }                                   \
-    };
+        operator TextRange()                \
+        {                                   \
+            return *(TextRange*)node.data.get(); \
+        }                                   \
+    };  
 
 struct NodeData : TextRange
 {   
@@ -93,7 +104,7 @@ struct NodeData : TextRange
     NodeFlags flags;
     string text;
     TransformFlags transformFlags;
-    NodeArray<Node> decorators;
+    DecoratorsArray decorators;
     ModifiersArray modifiers;
     SyntaxKind originalKeywordKind;
     number jsdocDotPos;
@@ -204,17 +215,22 @@ struct BaseNode
     BaseNode() : node(Node()) {}
     BaseNode(Node node) : node(node) {}
 
-    operator Node()
+    inline operator Node()
     {
-        return Node();
+        return node;
     }
 
-    bool operator !()
+    inline operator SyntaxKind()
+    {
+        return node->kind;
+    }
+
+    inline bool operator !()
     {
         return !node;
     }
 
-    NodeData* operator->()
+    inline NodeData* operator->()
     {
         return node.operator->();
     }    
@@ -237,13 +253,15 @@ static auto isArray(Node &node) -> boolean
     return node.data->kind == SyntaxKind::Array;
 }
 
+typedef SyntaxKind PrefixUnaryOperator;
+
 typedef Node Identifier, PropertyName, PrivateIdentifier, LiteralExpression, EntityName, Expression, IndexSignatureDeclaration,
     TypeElement, UnaryExpression, UpdateExpression, LeftHandSideExpression, MemberExpression, JsxText, JsxChild, JsxTagNameExpression,
     JsxClosingFragment, PrimaryExpression, FunctionExpression, Statement, CaseOrDefaultClause, ArrayBindingElement,
     ObjectBindingPattern, ArrayBindingPattern, FunctionDeclaration, ConstructorDeclaration, AccessorDeclaration, ClassElement, ClassExpression,
     ModuleBlock, SuperExpression, ThisExpression, PseudoBigInt, MissingDeclaration, JsonObjectExpressionStatement, BindingName,
     CallSignatureDeclaration, MethodSignature, GetAccessorDeclaration, SetAccessorDeclaration, ConstructSignatureDeclaration, IndexSignatureDeclaration,
-    MemberName, PropertyAccessChain, ElementAccessChain, CallChain, NewExpression, ConciseBody, PrefixUnaryOperator,
+    MemberName, PropertyAccessChain, ElementAccessChain, CallChain, NewExpression, ConciseBody,
     Expression, PostfixUnaryOperator, OmittedExpression, NonNullChain, SemicolonClassElement, EmptyStatement, ForInitializer, ContinueStatement, 
     BreakStatement, DebuggerStatement, ModuleName, ModuleBody, ModuleReference, NamedImportBindings, ImportSpecifier, NamedImports,
     NamedExportBindings, ExportSpecifier, NamedExports, DestructuringAssignment, PropertyDescriptorAttributes, CallBinding, Declaration;
@@ -278,6 +296,7 @@ using Push = Node;
 
 template<typename T>
 using VisitResult = Node;
+
 
 CLASS_DATA(QualifiedName)
     Node left;
@@ -884,33 +903,7 @@ CLASS_DATA(JsxClosingElement)
     Node tagName;
 CLASS_DATA_END(JsxClosingElement)
 
-CLASS_DATA(OptionalTypeNode)
-    Node type;
-CLASS_DATA_END(OptionalTypeNode)
-
-CLASS_DATA(RestTypeNode)
-    Node type;
-CLASS_DATA_END(RestTypeNode)
-
-CLASS_DATA(JSDocTypeExpression)
-    Node type;
-CLASS_DATA_END(JSDocTypeExpression)
-
-CLASS_DATA(JSDocNonNullableTypeNode)
-    Node type;
-CLASS_DATA_END(JSDocNonNullableTypeNode)
-
-CLASS_DATA(JSDocNullableTypeNode)
-    Node type;
-CLASS_DATA_END(JSDocNullableTypeNode)
-
-CLASS_DATA(JSDocOptionalTypeNode)
-    Node type;
-CLASS_DATA_END(JSDocOptionalTypeNode)
-
-CLASS_DATA(JSDocVariadicTypeNode)
-    Node type;
-CLASS_DATA_END(JSDocVariadicTypeNode)
+typedef TypeNode OptionalTypeNode, RestTypeNode, JSDocTypeExpression, JSDocNonNullableTypeNode, JSDocNullableTypeNode, JSDocOptionalTypeNode, JSDocVariadicTypeNode;
 
 CLASS_DATA(JSDocFunctionType)
     Node parameters;
