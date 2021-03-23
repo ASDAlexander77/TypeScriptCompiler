@@ -387,7 +387,8 @@ public:
     auto createNamespaceExportDeclaration(string name) -> NamespaceExportDeclaration;
     auto createNamespaceExportDeclaration(Identifier name) -> NamespaceExportDeclaration;
     auto updateNamespaceExportDeclaration(NamespaceExportDeclaration node, Identifier name) -> NamespaceExportDeclaration;
-    auto createImportEqualsDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, boolean isTypeOnly, string | Identifier name, ModuleReference moduleReference) -> ImportEqualsDeclaration;
+    auto createImportEqualsDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, boolean isTypeOnly, string name, ModuleReference moduleReference) -> ImportEqualsDeclaration;
+    auto createImportEqualsDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, boolean isTypeOnly, Identifier name, ModuleReference moduleReference) -> ImportEqualsDeclaration;
     auto updateImportEqualsDeclaration(ImportEqualsDeclaration node, DecoratorsArray decorators, ModifiersArray modifiers, boolean isTypeOnly, Identifier name, ModuleReference moduleReference) -> ImportEqualsDeclaration;
     auto createImportDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, ImportClause importClause, Expression moduleSpecifier) -> ImportDeclaration;
     auto updateImportDeclaration(ImportDeclaration node, DecoratorsArray decorators, ModifiersArray modifiers, ImportClause importClause, Expression moduleSpecifier) -> ImportDeclaration;
@@ -407,7 +408,8 @@ public:
     auto updateExportDeclaration(ExportDeclaration node, DecoratorsArray decorators, ModifiersArray modifiers, boolean isTypeOnly, NamedExportBindings exportClause, Expression moduleSpecifier) -> ExportDeclaration;
     auto createNamedExports(NodeArray<ExportSpecifier> elements) -> NamedExports;
     auto updateNamedExports(NamedExports node, NodeArray<ExportSpecifier> elements) -> NamedExports;
-    auto createExportSpecifier(string | Identifier propertyName, string | Identifier name) -> ExportSpecifier;
+    auto createExportSpecifier(string propertyName, string name) -> ExportSpecifier;
+    auto createExportSpecifier(Identifier propertyName, Identifier name) -> ExportSpecifier;
     auto updateExportSpecifier(ExportSpecifier node, Identifier propertyName, Identifier name) -> ExportSpecifier;
     /* @internal*/ auto createMissingDeclaration() -> MissingDeclaration;
 
@@ -444,47 +446,47 @@ public:
     auto updateJSDocTypeLiteral(JSDocTypeLiteral node, NodeArray<JSDocPropertyLikeTag> jsDocPropertyTags, boolean isArrayType) -> JSDocTypeLiteral;
     auto createJSDocSignature(NodeArray<JSDocTemplateTag> typeParameters, NodeArray<JSDocParameterTag> parameters, JSDocReturnTag type = undefined) -> JSDocSignature;
     auto updateJSDocSignature(JSDocSignature node, NodeArray<JSDocTemplateTag> typeParameters, NodeArray<JSDocParameterTag> parameters, JSDocReturnTag type) -> JSDocSignature;
-    auto createJSDocTemplateTag(Identifier tagName, JSDocTypeExpression constraint, NodeArray<TypeParameterDeclaration> typeParameters, string comment = undefined) -> JSDocTemplateTag;
+    auto createJSDocTemplateTag(Identifier tagName, JSDocTypeExpression constraint, NodeArray<TypeParameterDeclaration> typeParameters, string comment = string()) -> JSDocTemplateTag;
     auto updateJSDocTemplateTag(JSDocTemplateTag node, Identifier tagName, JSDocTypeExpression constraint, NodeArray<TypeParameterDeclaration> typeParameters, string comment) -> JSDocTemplateTag;
-    auto createJSDocTypedefTag(Identifier tagName, JSDocTypeExpression typeExpression = undefined | JSDocTypeLiteral, Identifier fullName = undefined | JSDocNamespaceDeclaration, string comment = undefined) -> JSDocTypedefTag;
-    auto updateJSDocTypedefTag(JSDocTypedefTag node, Identifier tagName, JSDocTypeExpression | JSDocTypeLiteral typeExpression, Identifier | JSDocNamespaceDeclaration fullName, string comment) -> JSDocTypedefTag;
-    auto createJSDocParameterTag(Identifier tagName, EntityName name, boolean isBracketed, JSDocTypeExpression typeExpression = undefined, boolean isNameFirst = false, string comment = undefined) -> JSDocParameterTag;
+    auto createJSDocTypedefTag(Identifier tagName, JSDocTypeExpression typeExpression = undefined | JSDocTypeLiteral, /*Identifier | JSDocNamespaceDeclaration*/Node fullName = undefined, string comment = string()) -> JSDocTypedefTag;
+    auto updateJSDocTypedefTag(JSDocTypedefTag node, Identifier tagName, /*JSDocTypeExpression | JSDocTypeLiteral*/Node typeExpression, /*Identifier | JSDocNamespaceDeclaration*/Node fullName, string comment) -> JSDocTypedefTag;
+    auto createJSDocParameterTag(Identifier tagName, EntityName name, boolean isBracketed, JSDocTypeExpression typeExpression = undefined, boolean isNameFirst = false, string comment = string()) -> JSDocParameterTag;
     auto updateJSDocParameterTag(JSDocParameterTag node, Identifier tagName, EntityName name, boolean isBracketed, JSDocTypeExpression typeExpression, boolean isNameFirst, string comment) -> JSDocParameterTag;
-    auto createJSDocPropertyTag(Identifier tagName, EntityName name, boolean isBracketed, JSDocTypeExpression typeExpression = undefined, boolean isNameFirst = false, string comment = undefined) -> JSDocPropertyTag;
+    auto createJSDocPropertyTag(Identifier tagName, EntityName name, boolean isBracketed, JSDocTypeExpression typeExpression = undefined, boolean isNameFirst = false, string comment = string()) -> JSDocPropertyTag;
     auto updateJSDocPropertyTag(JSDocPropertyTag node, Identifier tagName, EntityName name, boolean isBracketed, JSDocTypeExpression typeExpression, boolean isNameFirst, string comment) -> JSDocPropertyTag;
-    auto createJSDocTypeTag(Identifier tagName, JSDocTypeExpression typeExpression, string comment = undefined) -> JSDocTypeTag;
+    auto createJSDocTypeTag(Identifier tagName, JSDocTypeExpression typeExpression, string comment = string()) -> JSDocTypeTag;
     auto updateJSDocTypeTag(JSDocTypeTag node, Identifier tagName, JSDocTypeExpression typeExpression, string comment) -> JSDocTypeTag;
-    auto createJSDocSeeTag(Identifier tagName, JSDocNameReference nameExpression, string comment = undefined) -> JSDocSeeTag;
-    auto updateJSDocSeeTag(JSDocSeeTag node, Identifier tagName, JSDocNameReference nameExpression, string comment = undefined) -> JSDocSeeTag;
-    auto createJSDocReturnTag(Identifier tagName, JSDocTypeExpression typeExpression = undefined, string comment = undefined) -> JSDocReturnTag;
+    auto createJSDocSeeTag(Identifier tagName, JSDocNameReference nameExpression, string comment = string()) -> JSDocSeeTag;
+    auto updateJSDocSeeTag(JSDocSeeTag node, Identifier tagName, JSDocNameReference nameExpression, string comment = string()) -> JSDocSeeTag;
+    auto createJSDocReturnTag(Identifier tagName, JSDocTypeExpression typeExpression = undefined, string comment = string()) -> JSDocReturnTag;
     auto updateJSDocReturnTag(JSDocReturnTag node, Identifier tagName, JSDocTypeExpression typeExpression, string comment) -> JSDocReturnTag;
-    auto createJSDocThisTag(Identifier tagName, JSDocTypeExpression typeExpression, string comment = undefined) -> JSDocThisTag;
+    auto createJSDocThisTag(Identifier tagName, JSDocTypeExpression typeExpression, string comment = string()) -> JSDocThisTag;
     auto updateJSDocThisTag(JSDocThisTag node, Identifier tagName, JSDocTypeExpression typeExpression, string comment) -> JSDocThisTag;
-    auto createJSDocEnumTag(Identifier tagName, JSDocTypeExpression typeExpression, string comment = undefined) -> JSDocEnumTag;
+    auto createJSDocEnumTag(Identifier tagName, JSDocTypeExpression typeExpression, string comment = string()) -> JSDocEnumTag;
     auto updateJSDocEnumTag(JSDocEnumTag node, Identifier tagName, JSDocTypeExpression typeExpression, string comment) -> JSDocEnumTag;
-    auto createJSDocCallbackTag(Identifier tagName, JSDocSignature typeExpression, Identifier fullName = undefined | JSDocNamespaceDeclaration, string comment = undefined) -> JSDocCallbackTag;
-    auto updateJSDocCallbackTag(JSDocCallbackTag node, Identifier tagName, JSDocSignature typeExpression, Identifier | JSDocNamespaceDeclaration fullName, string comment) -> JSDocCallbackTag;
-    auto createJSDocAugmentsTag(Identifier tagName, JSDocAugmentsTag className["class"], string comment = undefined) -> JSDocAugmentsTag;
-    auto updateJSDocAugmentsTag(JSDocAugmentsTag node, Identifier tagName, JSDocAugmentsTag className["class"], string comment) -> JSDocAugmentsTag;
-    auto createJSDocImplementsTag(Identifier tagName, JSDocImplementsTag className["class"], string comment = undefined) -> JSDocImplementsTag;
-    auto updateJSDocImplementsTag(JSDocImplementsTag node, Identifier tagName, JSDocImplementsTag className["class"], string comment) -> JSDocImplementsTag;
-    auto createJSDocAuthorTag(Identifier tagName, string comment = undefined) -> JSDocAuthorTag;
+    auto createJSDocCallbackTag(Identifier tagName, JSDocSignature typeExpression, /*Identifier | JSDocNamespaceDeclaration*/Node fullName, string comment = string()) -> JSDocCallbackTag;
+    auto updateJSDocCallbackTag(JSDocCallbackTag node, Identifier tagName, JSDocSignature typeExpression, /*Identifier | JSDocNamespaceDeclaration*/Node fullName, string comment) -> JSDocCallbackTag;
+    auto createJSDocAugmentsTag(Identifier tagName, JSDocAugmentsTag className, string comment = string()) -> JSDocAugmentsTag;
+    auto updateJSDocAugmentsTag(JSDocAugmentsTag node, Identifier tagName, JSDocAugmentsTag className, string comment) -> JSDocAugmentsTag;
+    auto createJSDocImplementsTag(Identifier tagName, JSDocImplementsTag className, string comment = string()) -> JSDocImplementsTag;
+    auto updateJSDocImplementsTag(JSDocImplementsTag node, Identifier tagName, JSDocImplementsTag className, string comment) -> JSDocImplementsTag;
+    auto createJSDocAuthorTag(Identifier tagName, string comment = string()) -> JSDocAuthorTag;
     auto updateJSDocAuthorTag(JSDocAuthorTag node, Identifier tagName, string comment) -> JSDocAuthorTag;
-    auto createJSDocClassTag(Identifier tagName, string comment = undefined) -> JSDocClassTag;
+    auto createJSDocClassTag(Identifier tagName, string comment = string()) -> JSDocClassTag;
     auto updateJSDocClassTag(JSDocClassTag node, Identifier tagName, string comment) -> JSDocClassTag;
-    auto createJSDocPublicTag(Identifier tagName, string comment = undefined) -> JSDocPublicTag;
+    auto createJSDocPublicTag(Identifier tagName, string comment = string()) -> JSDocPublicTag;
     auto updateJSDocPublicTag(JSDocPublicTag node, Identifier tagName, string comment) -> JSDocPublicTag;
-    auto createJSDocPrivateTag(Identifier tagName, string comment = undefined) -> JSDocPrivateTag;
+    auto createJSDocPrivateTag(Identifier tagName, string comment = string()) -> JSDocPrivateTag;
     auto updateJSDocPrivateTag(JSDocPrivateTag node, Identifier tagName, string comment) -> JSDocPrivateTag;
-    auto createJSDocProtectedTag(Identifier tagName, string comment = undefined) -> JSDocProtectedTag;
+    auto createJSDocProtectedTag(Identifier tagName, string comment = string()) -> JSDocProtectedTag;
     auto updateJSDocProtectedTag(JSDocProtectedTag node, Identifier tagName, string comment) -> JSDocProtectedTag;
-    auto createJSDocReadonlyTag(Identifier tagName, string comment = undefined) -> JSDocReadonlyTag;
+    auto createJSDocReadonlyTag(Identifier tagName, string comment = string()) -> JSDocReadonlyTag;
     auto updateJSDocReadonlyTag(JSDocReadonlyTag node, Identifier tagName, string comment) -> JSDocReadonlyTag;
-    auto createJSDocUnknownTag(Identifier tagName, string comment = undefined) -> JSDocUnknownTag;
+    auto createJSDocUnknownTag(Identifier tagName, string comment = string()) -> JSDocUnknownTag;
     auto updateJSDocUnknownTag(JSDocUnknownTag node, Identifier tagName, string comment) -> JSDocUnknownTag;
-    auto createJSDocDeprecatedTag(Identifier tagName, string comment = undefined) -> JSDocDeprecatedTag;
-    auto updateJSDocDeprecatedTag(JSDocDeprecatedTag node, Identifier tagName, string comment = undefined) -> JSDocDeprecatedTag;
-    auto createJSDocComment(string comment = undefined, NodeArray<JSDocTag> tags = undefined) -> JSDoc;
+    auto createJSDocDeprecatedTag(Identifier tagName, string comment = string()) -> JSDocDeprecatedTag;
+    auto updateJSDocDeprecatedTag(JSDocDeprecatedTag node, Identifier tagName, string comment = string()) -> JSDocDeprecatedTag;
+    auto createJSDocComment(string comment = string(), NodeArray<JSDocTag> tags = undefined) -> JSDoc;
     auto updateJSDocComment(JSDoc node, string comment, NodeArray<JSDocTag> tags) -> JSDoc;
 
     //
@@ -505,8 +507,8 @@ public:
     auto createJsxOpeningFragment() -> JsxOpeningFragment;
     auto createJsxJsxClosingFragment() -> JsxClosingFragment;
     auto updateJsxFragment(JsxFragment node, JsxOpeningFragment openingFragment, NodeArray<JsxChild> children, JsxClosingFragment closingFragment) -> JsxFragment;
-    auto createJsxAttribute(Identifier name, StringLiteral | JsxExpression initializer) -> JsxAttribute;
-    auto updateJsxAttribute(JsxAttribute node, Identifier name, StringLiteral | JsxExpression initializer) -> JsxAttribute;
+    auto createJsxAttribute(Identifier name, /*StringLiteral | JsxExpression*/Node initializer) -> JsxAttribute;
+    auto updateJsxAttribute(JsxAttribute node, Identifier name, /*StringLiteral | JsxExpression*/Node initializer) -> JsxAttribute;
     auto createJsxAttributes(NodeArray<JsxAttributeLike> properties) -> JsxAttributes;
     auto updateJsxAttributes(JsxAttributes node, NodeArray<JsxAttributeLike> properties) -> JsxAttributes;
     auto createJsxSpreadAttribute(Expression expression) -> JsxSpreadAttribute;
@@ -522,18 +524,21 @@ public:
     auto updateCaseClause(CaseClause node, Expression expression, NodeArray<Statement> statements) -> CaseClause;
     auto createDefaultClause(NodeArray<Statement> statements) -> DefaultClause;
     auto updateDefaultClause(DefaultClause node, NodeArray<Statement> statements) -> DefaultClause;
-    auto createHeritageClause(HeritageClause token["token"], NodeArray<ExpressionWithTypeArguments> types) -> HeritageClause;
+    auto createHeritageClause(HeritageClause token, NodeArray<ExpressionWithTypeArguments> types) -> HeritageClause;
     auto updateHeritageClause(HeritageClause node, NodeArray<ExpressionWithTypeArguments> types) -> HeritageClause;
-    auto createCatchClause(string | VariableDeclaration variableDeclaration, Block block) -> CatchClause;
+    auto createCatchClause(string variableDeclaration, Block block) -> CatchClause;
+    auto createCatchClause(VariableDeclaration variableDeclaration, Block block) -> CatchClause;
     auto updateCatchClause(CatchClause node, VariableDeclaration variableDeclaration, Block block) -> CatchClause;
 
     //
     // Property assignments
     //
 
-    auto createPropertyAssignment(string | PropertyName name, Expression initializer) -> PropertyAssignment;
+    auto createPropertyAssignment(string name, Expression initializer) -> PropertyAssignment;
+    auto createPropertyAssignment(PropertyName name, Expression initializer) -> PropertyAssignment;
     auto updatePropertyAssignment(PropertyAssignment node, PropertyName name, Expression initializer) -> PropertyAssignment;
-    auto createShorthandPropertyAssignment(string | Identifier name, Expression objectAssignmentInitializer = undefined) -> ShorthandPropertyAssignment;
+    auto createShorthandPropertyAssignment(string name, Expression objectAssignmentInitializer = undefined) -> ShorthandPropertyAssignment;
+    auto createShorthandPropertyAssignment(Identifier name, Expression objectAssignmentInitializer = undefined) -> ShorthandPropertyAssignment;
     auto updateShorthandPropertyAssignment(ShorthandPropertyAssignment node, Identifier name, Expression objectAssignmentInitializer) -> ShorthandPropertyAssignment;
     auto createSpreadAssignment(Expression expression) -> SpreadAssignment;
     auto updateSpreadAssignment(SpreadAssignment node, Expression expression) -> SpreadAssignment;
@@ -542,7 +547,8 @@ public:
     // Enum
     //
 
-    auto createEnumMember(string | PropertyName name, Expression initializer = undefined) -> EnumMember;
+    auto createEnumMember(string name, Expression initializer = undefined) -> EnumMember;
+    auto createEnumMember(PropertyName name, Expression initializer = undefined) -> EnumMember;
     auto updateEnumMember(EnumMember node, PropertyName name, Expression initializer) -> EnumMember;
 
     //
@@ -556,13 +562,13 @@ public:
     /* @internal */ auto createUnparsedPrologue(string data = undefined) -> UnparsedPrologue;
     /* @internal */ auto createUnparsedPrepend(string data, NodeArray<UnparsedSourceText> texts) -> UnparsedPrepend;
     /* @internal */ auto createUnparsedTextLike(string data, boolean internal) -> UnparsedTextLike;
-    /* @internal */ auto createUnparsedSyntheticReference(BundleFileHasNoDefaultLib | BundleFileReference section) -> UnparsedSyntheticReference;
+    /* @internal */ auto createUnparsedSyntheticReference(/*BundleFileHasNoDefaultLib | BundleFileReference*/Node section) -> UnparsedSyntheticReference;
     /* @internal */ auto createInputFiles() -> InputFiles;
 
     //
     // Synthetic Nodes
     //
-    /* @internal */ auto createSyntheticExpression(Type type, boolean isSpread = false, ParameterDeclaration tupleNameSource = undefined | NamedTupleMember) -> SyntheticExpression;
+    /* @internal */ auto createSyntheticExpression(SignatureFlags type, boolean isSpread = false, /*NamedTupleMember | ParameterDeclaration*/Node tupleNameSource = undefined) -> SyntheticExpression;
     /* @internal */ auto createSyntaxList(NodeArray<Node> children) -> SyntaxList;
 
     //
@@ -586,8 +592,7 @@ public:
     //
 
     auto createComma(Expression left, Expression right) -> BinaryExpression;
-    auto createAssignment(ObjectLiteralExpression | ArrayLiteralExpression left, Expression right) -> DestructuringAssignment;
-    auto createAssignment(Expression left, Expression right) -> AssignmentExpression<EqualsToken>;
+    auto createAssignment(Expression left, Expression right) -> /*DestructuringAssignment | AssignmentExpression<EqualsToken>*/Node;
     auto createLogicalOr(Expression left, Expression right) -> BinaryExpression;
     auto createLogicalAnd(Expression left, Expression right) -> BinaryExpression;
     auto createBitwiseOr(Expression left, Expression right) -> BinaryExpression;
@@ -633,15 +638,18 @@ public:
     auto createExportDefault(Expression expression) -> ExportAssignment;
     auto createExternalModuleExport(Identifier exportName) -> ExportDeclaration;
 
-    /* @internal */ auto createTypeCheck(Expression value, TypeOfTag tag) -> Expression;
-    /* @internal */ auto createMethodCall(Expression object, string | Identifier methodName, NodeArray<Expression> argumentsList) -> CallExpression;
+    /* @internal */ auto createTypeCheck(Expression value, string tag) -> Expression;
+    /* @internal */ auto createMethodCall(Expression object, string methodName, NodeArray<Expression> argumentsList) -> CallExpression;
+    /* @internal */ auto createMethodCall(Expression object, Identifier methodName, NodeArray<Expression> argumentsList) -> CallExpression;
     /* @internal */ auto createGlobalMethodCall(string globalObjectName, string globalMethodName, NodeArray<Expression> argumentsList) -> CallExpression;
     /* @internal */ auto createFunctionBindCall(Expression target, Expression thisArg, NodeArray<Expression> argumentsList) -> CallExpression;
     /* @internal */ auto createFunctionCallCall(Expression target, Expression thisArg, NodeArray<Expression> argumentsList) -> CallExpression;
     /* @internal */ auto createFunctionApplyCall(Expression target, Expression thisArg, Expression argumentsExpression) -> CallExpression;
-    /* @internal */ auto createObjectDefinePropertyCall(Expression target, string | Expression propertyName, Expression attributes) -> CallExpression;
+    /* @internal */ auto createObjectDefinePropertyCall(Expression target, string propertyName, Expression attributes) -> CallExpression;
+    /* @internal */ auto createObjectDefinePropertyCall(Expression target, Expression propertyName, Expression attributes) -> CallExpression;
     /* @internal */ auto createPropertyDescriptor(PropertyDescriptorAttributes attributes, boolean singleLine = false) -> ObjectLiteralExpression;
-    /* @internal */ auto createArraySliceCall(Expression array, number start = undefined | Expression) -> CallExpression;
+    /* @internal */ auto createArraySliceCall(Expression array, number start) -> CallExpression;
+    /* @internal */ auto createArraySliceCall(Expression array, Expression start = undefined) -> CallExpression;
     /* @internal */ auto createArrayConcatCall(Expression array, NodeArray<Expression> values) -> CallExpression;
     /* @internal */ auto createCallBinding(Expression expression, std::function<void(Identifier)> recordTempVariable, ScriptTarget languageVersion = undefined, boolean cacheIdentifiers = false) -> CallBinding;
     /* @internal */ auto inlineExpressions(NodeArray<Expression> expressions) -> Expression;
@@ -707,7 +715,7 @@ public:
      * @param allowComments A value indicating whether comments may be emitted for the name.
      * @param allowSourceMaps A value indicating whether source maps may be emitted for the name.
      */
-    /* @internal */ auto getExternalModuleOrNamespaceExportName(Identifier ns, Declaration node, boolean allowComments = false, boolean allowSourceMaps = false) -> Identifier | PropertyAccessExpression;
+    /* @internal */ auto getExternalModuleOrNamespaceExportName(Identifier ns, Declaration node, boolean allowComments = false, boolean allowSourceMaps = false) -> /*Identifier | PropertyAccessExpression*/Node;
 
     //
     // Utilities
@@ -723,14 +731,14 @@ public:
      * @param ensureUseStrict boolean determining whether the function need to add prologue-directives
      * @param visitor Optional callback used to visit any custom prologue directives.
      */
-    /* @internal */ auto copyPrologue(NodeArray<Statement> source, Push target<Statement>, boolean ensureUseStrict = false, std::function<VisitResult<Node>(Node)> visitor = nullptr) -> number;
+    /* @internal */ auto copyPrologue(NodeArray<Statement> source, Push<Statement> target, boolean ensureUseStrict = false, std::function<VisitResult<Node>(Node)> visitor = nullptr) -> number;
     /**
      * Copies only the standard (string-expression) prologue-directives into the target statement-array.
      * @param source origin statements array
      * @param target result statements array
      * @param ensureUseStrict boolean determining whether the function need to add prologue-directives
      */
-    /* @internal */ auto copyStandardPrologue(NodeArray<Statement> source, Push target<Statement>, boolean ensureUseStrict = false) -> number;
+    /* @internal */ auto copyStandardPrologue(NodeArray<Statement> source, Push<Statement> target, boolean ensureUseStrict = false) -> number;
     /**
      * Copies only the custom prologue-directives into target statement-array.
      * @param source origin statements array
@@ -738,8 +746,7 @@ public:
      * @param statementOffset The offset at which to begin the copy.
      * @param visitor Optional callback used to visit any custom prologue directives.
      */
-    /* @internal */ auto copyCustomPrologue(NodeArray<Statement> source, Push target<Statement>, number statementOffset, std::function<VisitResult<Node>(Node)> visitor = nullptr, std::function<boolean(Node)> filter = nullptr) -> number;
-    /* @internal */ auto copyCustomPrologue(NodeArray<Statement> source, Push target<Statement>, number statementOffset, std::function<VisitResult<Node>(Node)> visitor = nullptr, std::function<boolean(Node)> filter = nullptr) -> number;
+    /* @internal */ auto copyCustomPrologue(NodeArray<Statement> source, Push<Statement> target, number statementOffset, std::function<VisitResult<Node>(Node)> visitor = nullptr, std::function<boolean(Node)> filter = nullptr) -> number;
     /* @internal */ auto ensureUseStrict(NodeArray<Statement> statements) -> NodeArray<Statement>;
     /* @internal */ auto liftToBlock(NodeArray<Node> nodes) -> Statement;
     /**
@@ -749,7 +756,7 @@ public:
     /**
      * Appends generated lexical declarations to an array of statements.
      */
-    /* @internal */ auto mergeLexicalEnvironment(NodeArray<Statement> statements, NodeArray<Statement> declarations) -> Statement[];
+    /* @internal */ auto mergeLexicalEnvironment(NodeArray<Statement> statements, NodeArray<Statement> declarations) -> NodeArray<Statement>;
     /**
      * Creates a shallow, memberwise clone of a node.
      * - The result will have its `original` pointer set to `node`.

@@ -245,7 +245,8 @@ typedef Node Identifier, PropertyName, PrivateIdentifier, LiteralExpression, Ent
     CallSignatureDeclaration, MethodSignature, GetAccessorDeclaration, SetAccessorDeclaration, ConstructSignatureDeclaration, IndexSignatureDeclaration,
     MemberName, PropertyAccessChain, ElementAccessChain, CallChain, NewExpression, ConciseBody, PrefixUnaryOperator,
     Expression, PostfixUnaryOperator, OmittedExpression, NonNullChain, SemicolonClassElement, EmptyStatement, ForInitializer, ContinueStatement, 
-    BreakStatement, DebuggerStatement, ModuleName, ModuleBody;
+    BreakStatement, DebuggerStatement, ModuleName, ModuleBody, ModuleReference, NamedImportBindings, ImportSpecifier, NamedImports,
+    NamedExportBindings, ExportSpecifier, NamedExports, DestructuringAssignment, PropertyDescriptorAttributes, CallBinding, Declaration;
 
 typedef Node FalseLiteral, TrueLiteral, NullLiteral, BooleanLiteral, NumericLiteral, BigIntLiteral, StringLiteral, PropertyNameLiteral, RegularExpressionLiteral, 
     ObjectLiteralElementLike, TemplateLiteral, NoSubstitutionTemplateLiteral;
@@ -253,13 +254,30 @@ typedef Node FalseLiteral, TrueLiteral, NullLiteral, BooleanLiteral, NumericLite
 typedef Node ThisTypeNode, UnionTypeNode, IntersectionTypeNode;
 
 typedef Node BinaryOperatorToken, QuestionDotToken, EndOfFileToken, LiteralToken, DotDotDotToken, QuestionToken, PlusToken, MinusToken,
-    AsteriskToken, EqualsGreaterThanToken, ColonToken, ExclamationToken;
+    AsteriskToken, EqualsGreaterThanToken, ColonToken, ExclamationToken, EqualsToken;
 
 typedef Node ReadonlyKeyword, AssertsKeyword, AwaitKeyword;
 
 typedef Node JSDocAllType, JSDocUnknownType, JSDocNonNullableType, JSDocNullableType, JSDocOptionalType, JSDocVariadicType, JSDocNamepathType,
     JSDocAuthorTag, JSDocClassTag, JSDocPublicTag, JSDocPrivateTag, JSDocProtectedTag, JSDocReadonlyTag, JSDocUnknownTag, JSDocDeprecatedTag,
     JSDocParameterTag, JSDocPropertyTag; 
+
+typedef Node JsxOpeningElement, JsxSelfClosingElement, JsxOpeningFragment, JsxAttributeLike;
+
+typedef Node UnparsedPrologue, UnparsedSyntheticReference, UnparsedSourceText, UnparsedSource, UnparsedPrepend, UnparsedTextLike, InputFiles;
+
+typedef Node SyntheticExpression, SyntaxList, NotEmittedStatement, EndOfDeclarationMarker, SyntheticReferenceExpression, MergeDeclarationMarker, Bundle;
+
+typedef Node OuterExpressionKinds, PrologueDirective;
+
+template<typename T>
+using AssignmentExpression = Node;
+
+template<typename T>
+using Push = Node;
+
+template<typename T>
+using VisitResult = Node;
 
 CLASS_DATA(QualifiedName)
     Node left;
