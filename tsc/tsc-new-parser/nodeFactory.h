@@ -50,8 +50,8 @@ public:
     // Literals
     //
 
-    auto createNumericLiteral(value: string | number, TokenFlags numericLiteralFlags = (TokenFlags)0) -> NumericLiteral;
-    auto createBigIntLiteral(value: string | PseudoBigInt) -> BigIntLiteral;
+    auto createNumericLiteral(string | number value, TokenFlags numericLiteralFlags = (TokenFlags)0) -> NumericLiteral;
+    auto createBigIntLiteral(string | PseudoBigInt value) -> BigIntLiteral;
     auto createStringLiteral(text: string, boolean isSingleQuote = false) -> StringLiteral;
     /* @internal*/ auto createStringLiteral(text: string, boolean isSingleQuote = false, boolean hasExtendedUnicodeEscape = false) -> StringLiteral; // eslint-disable-line @typescript-eslint/unified-signatures
     auto createStringLiteralFromNode(sourceNode: PropertyNameLiteral, boolean isSingleQuote = false) -> StringLiteral;
@@ -63,7 +63,7 @@ public:
 
     auto createIdentifier(text: string) -> Identifier;
     /* @internal */ auto createIdentifier(text: string, NodeArray</*TypeNode | TypeParameterDeclaration*/Node> typeArguments = undefined, SyntaxKind originalKeywordKind = SyntaxKind::Unknown) -> Identifier; // eslint-disable-line @typescript-eslint/unified-signatures
-    /* @internal */ auto updateIdentifier(node: Identifier, typeArguments: NodeArray</*TypeNode | TypeParameterDeclaration*/Node>) -> Identifier;
+    /* @internal */ auto updateIdentifier(node: Identifier, NodeArray</*TypeNode | TypeParameterDeclaration*/Node> typeArguments) -> Identifier;
 
     /**
      * Create a unique temporary variable.
@@ -119,7 +119,7 @@ public:
     // Names
     //
 
-    auto createQualifiedName(left: EntityName, right: string | Identifier) -> QualifiedName;
+    auto createQualifiedName(left: EntityName, string | Identifier right) -> QualifiedName;
     auto updateQualifiedName(node: QualifiedName, left: EntityName, right: Identifier) -> QualifiedName;
     auto createComputedPropertyName(expression: Expression) -> ComputedPropertyName;
     auto updateComputedPropertyName(node: ComputedPropertyName, expression: Expression) -> ComputedPropertyName;
@@ -128,10 +128,10 @@ public:
     // Signature elements
     //
 
-    auto createTypeParameterDeclaration(name: string | Identifier, constraint?: TypeNode, defaultType?: TypeNode) -> TypeParameterDeclaration;
+    auto createTypeParameterDeclaration(string | Identifier name, constraint?: TypeNode, defaultType?: TypeNode) -> TypeParameterDeclaration;
     auto updateTypeParameterDeclaration(node: TypeParameterDeclaration, name: Identifier, constraint: TypeNode, defaultType: TypeNode) -> TypeParameterDeclaration;
-    auto createParameterDeclaration(decorators: DecoratorsArray, modifiers: ModifiersArray, dotDotDotToken: DotDotDotToken, name: string | BindingName, questionToken?: QuestionToken, type?: TypeNode, initializer?: Expression) -> ParameterDeclaration;
-    auto updateParameterDeclaration(node: ParameterDeclaration, decorators: DecoratorsArray, modifiers: ModifiersArray, dotDotDotToken: DotDotDotToken, name: string | BindingName, questionToken: QuestionToken, type: TypeNode, initializer: Expression) -> ParameterDeclaration;
+    auto createParameterDeclaration(decorators: DecoratorsArray, modifiers: ModifiersArray, dotDotDotToken: DotDotDotToken, string | BindingName name, questionToken?: QuestionToken, type?: TypeNode, initializer?: Expression) -> ParameterDeclaration;
+    auto updateParameterDeclaration(node: ParameterDeclaration, decorators: DecoratorsArray, modifiers: ModifiersArray, dotDotDotToken: DotDotDotToken, string | BindingName name, questionToken: QuestionToken, type: TypeNode, initializer: Expression) -> ParameterDeclaration;
     auto createDecorator(expression: Expression) -> Decorator;
     auto updateDecorator(node: Decorator, expression: Expression) -> Decorator;
 
@@ -139,51 +139,51 @@ public:
     // Type Elements
     //
 
-    auto createPropertySignature(modifiers: ModifiersArray, name: PropertyName | string, questionToken: QuestionToken, type: TypeNode) -> PropertySignature;
+    auto createPropertySignature(modifiers: ModifiersArray, PropertyName | string name, questionToken: QuestionToken, type: TypeNode) -> PropertySignature;
     auto updatePropertySignature(node: PropertySignature, modifiers: ModifiersArray, name: PropertyName, questionToken: QuestionToken, type: TypeNode) -> PropertySignature;
-    auto createPropertyDeclaration(decorators: DecoratorsArray, modifiers: ModifiersArray, name: string | PropertyName, questionOrExclamationToken: QuestionToken | ExclamationToken, type: TypeNode, initializer: Expression) -> PropertyDeclaration;
-    auto updatePropertyDeclaration(node: PropertyDeclaration, decorators: DecoratorsArray, modifiers: ModifiersArray, name: string | PropertyName, questionOrExclamationToken: QuestionToken | ExclamationToken, type: TypeNode, initializer: Expression) -> PropertyDeclaration;
-    auto createMethodSignature(modifiers: ModifiersArray, name: string | PropertyName, questionToken: QuestionToken, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, type: TypeNode) -> MethodSignature;
-    auto updateMethodSignature(node: MethodSignature, modifiers: ModifiersArray, name: PropertyName, questionToken: QuestionToken, typeParameters: NodeArray<TypeParameterDeclaration>, parameters: NodeArray<ParameterDeclaration>, type: TypeNode) -> MethodSignature;
-    auto createMethodDeclaration(decorators: DecoratorsArray, modifiers: ModifiersArray, asteriskToken: AsteriskToken, name: string | PropertyName, questionToken: QuestionToken, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, type: TypeNode, body: Block) -> MethodDeclaration;
+    auto createPropertyDeclaration(decorators: DecoratorsArray, modifiers: ModifiersArray, string | PropertyName name, QuestionToken | ExclamationToken questionOrExclamationToken, type: TypeNode, initializer: Expression) -> PropertyDeclaration;
+    auto updatePropertyDeclaration(node: PropertyDeclaration, decorators: DecoratorsArray, modifiers: ModifiersArray, string | PropertyName name, QuestionToken | ExclamationToken questionOrExclamationToken, type: TypeNode, initializer: Expression) -> PropertyDeclaration;
+    auto createMethodSignature(modifiers: ModifiersArray, string | PropertyName name, questionToken: QuestionToken, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, type: TypeNode) -> MethodSignature;
+    auto updateMethodSignature(node: MethodSignature, modifiers: ModifiersArray, name: PropertyName, questionToken: QuestionToken, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, type: TypeNode) -> MethodSignature;
+    auto createMethodDeclaration(decorators: DecoratorsArray, modifiers: ModifiersArray, asteriskToken: AsteriskToken, string | PropertyName name, questionToken: QuestionToken, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, type: TypeNode, body: Block) -> MethodDeclaration;
     auto updateMethodDeclaration(node: MethodDeclaration, decorators: DecoratorsArray, modifiers: ModifiersArray, asteriskToken: AsteriskToken, name: PropertyName, questionToken: QuestionToken, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, type: TypeNode, body: Block) -> MethodDeclaration;
     auto createConstructorDeclaration(decorators: DecoratorsArray, modifiers: ModifiersArray, NodeArray<ParameterDeclaration> parameters, body: Block) -> ConstructorDeclaration;
     auto updateConstructorDeclaration(node: ConstructorDeclaration, decorators: DecoratorsArray, modifiers: ModifiersArray, NodeArray<ParameterDeclaration> parameters, body: Block) -> ConstructorDeclaration;
-    auto createGetAccessorDeclaration(decorators: DecoratorsArray, modifiers: ModifiersArray, name: string | PropertyName, NodeArray<ParameterDeclaration> parameters, type: TypeNode, body: Block) -> GetAccessorDeclaration;
+    auto createGetAccessorDeclaration(decorators: DecoratorsArray, modifiers: ModifiersArray, string | PropertyName name, NodeArray<ParameterDeclaration> parameters, type: TypeNode, body: Block) -> GetAccessorDeclaration;
     auto updateGetAccessorDeclaration(node: GetAccessorDeclaration, decorators: DecoratorsArray, modifiers: ModifiersArray, name: PropertyName, NodeArray<ParameterDeclaration> parameters, type: TypeNode, body: Block) -> GetAccessorDeclaration;
-    auto createSetAccessorDeclaration(decorators: DecoratorsArray, modifiers: ModifiersArray, name: string | PropertyName, NodeArray<ParameterDeclaration> parameters, body: Block) -> SetAccessorDeclaration;
+    auto createSetAccessorDeclaration(decorators: DecoratorsArray, modifiers: ModifiersArray, string | PropertyName name, NodeArray<ParameterDeclaration> parameters, body: Block) -> SetAccessorDeclaration;
     auto updateSetAccessorDeclaration(node: SetAccessorDeclaration, decorators: DecoratorsArray, modifiers: ModifiersArray, name: PropertyName, NodeArray<ParameterDeclaration> parameters, body: Block) -> SetAccessorDeclaration;
     auto createCallSignature(NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, type: TypeNode) -> CallSignatureDeclaration;
-    auto updateCallSignature(node: CallSignatureDeclaration, typeParameters: NodeArray<TypeParameterDeclaration>, parameters: NodeArray<ParameterDeclaration>, type: TypeNode) -> CallSignatureDeclaration;
+    auto updateCallSignature(node: CallSignatureDeclaration, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, type: TypeNode) -> CallSignatureDeclaration;
     auto createConstructSignature(NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, type: TypeNode) -> ConstructSignatureDeclaration;
-    auto updateConstructSignature(node: ConstructSignatureDeclaration, typeParameters: NodeArray<TypeParameterDeclaration>, parameters: NodeArray<ParameterDeclaration>, type: TypeNode) -> ConstructSignatureDeclaration;
+    auto updateConstructSignature(node: ConstructSignatureDeclaration, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, type: TypeNode) -> ConstructSignatureDeclaration;
     auto createIndexSignature(decorators: DecoratorsArray, modifiers: ModifiersArray, NodeArray<ParameterDeclaration> parameters, type: TypeNode) -> IndexSignatureDeclaration;
     /* @internal */ auto createIndexSignature(decorators: DecoratorsArray, modifiers: ModifiersArray, NodeArray<ParameterDeclaration> parameters, type: TypeNode) -> IndexSignatureDeclaration; // eslint-disable-line @typescript-eslint/unified-signatures
     auto updateIndexSignature(node: IndexSignatureDeclaration, decorators: DecoratorsArray, modifiers: ModifiersArray, NodeArray<ParameterDeclaration> parameters, type: TypeNode) -> IndexSignatureDeclaration;
-    auto createTemplateLiteralTypeSpan(type: TypeNode, literal: TemplateMiddle | TemplateTail) -> TemplateLiteralTypeSpan;
-    auto updateTemplateLiteralTypeSpan(node: TemplateLiteralTypeSpan, type: TypeNode, literal: TemplateMiddle | TemplateTail) -> TemplateLiteralTypeSpan;
+    auto createTemplateLiteralTypeSpan(type: TypeNode, TemplateMiddle | TemplateTail literal) -> TemplateLiteralTypeSpan;
+    auto updateTemplateLiteralTypeSpan(node: TemplateLiteralTypeSpan, type: TypeNode, TemplateMiddle | TemplateTail literal) -> TemplateLiteralTypeSpan;
 
     //
     // Types
     //
 
     auto createKeywordTypeNode(SyntaxKind kind) -> Node;
-    auto createTypePredicateNode(assertsModifier: AssertsKeyword, parameterName: Identifier | ThisTypeNode | string, type: TypeNode) -> TypePredicateNode;
-    auto updateTypePredicateNode(node: TypePredicateNode, assertsModifier: AssertsKeyword, parameterName: Identifier | ThisTypeNode, type: TypeNode) -> TypePredicateNode;
-    auto createTypeReferenceNode(typeName: string | EntityName, NodeArray<TypeNode> typeArguments = undefined) -> TypeReferenceNode;
-    auto updateTypeReferenceNode(node: TypeReferenceNode, typeName: EntityName, typeArguments: NodeArray<TypeNode>) -> TypeReferenceNode;
+    auto createTypePredicateNode(assertsModifier: AssertsKeyword, Identifier | ThisTypeNode | string parameterName, type: TypeNode) -> TypePredicateNode;
+    auto updateTypePredicateNode(node: TypePredicateNode, assertsModifier: AssertsKeyword, Identifier | ThisTypeNode parameterName, type: TypeNode) -> TypePredicateNode;
+    auto createTypeReferenceNode(string | EntityName typeName, NodeArray<TypeNode> typeArguments = undefined) -> TypeReferenceNode;
+    auto updateTypeReferenceNode(node: TypeReferenceNode, typeName: EntityName, NodeArray<TypeNode> typeArguments) -> TypeReferenceNode;
     auto createFunctionTypeNode(NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, type: TypeNode) -> FunctionTypeNode;
-    auto updateFunctionTypeNode(node: FunctionTypeNode, typeParameters: NodeArray<TypeParameterDeclaration>, parameters: NodeArray<ParameterDeclaration>, type: TypeNode) -> FunctionTypeNode;
+    auto updateFunctionTypeNode(node: FunctionTypeNode, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, type: TypeNode) -> FunctionTypeNode;
     auto createConstructorTypeNode(modifiers: ModifiersArray, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, type: TypeNode) -> ConstructorTypeNode;
     /** @deprecated */
     auto createConstructorTypeNode(NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, type: TypeNode) -> ConstructorTypeNode;
-    auto updateConstructorTypeNode(node: ConstructorTypeNode, modifiers: ModifiersArray, typeParameters: NodeArray<TypeParameterDeclaration>, parameters: NodeArray<ParameterDeclaration>, type: TypeNode) -> ConstructorTypeNode;
+    auto updateConstructorTypeNode(node: ConstructorTypeNode, modifiers: ModifiersArray, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, type: TypeNode) -> ConstructorTypeNode;
     /** @deprecated */
-    auto updateConstructorTypeNode(node: ConstructorTypeNode, typeParameters: NodeArray<TypeParameterDeclaration>, parameters: NodeArray<ParameterDeclaration>, type: TypeNode) -> ConstructorTypeNode;
+    auto updateConstructorTypeNode(node: ConstructorTypeNode, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, type: TypeNode) -> ConstructorTypeNode;
     auto createTypeQueryNode(exprName: EntityName) -> TypeQueryNode;
     auto updateTypeQueryNode(node: TypeQueryNode, exprName: EntityName) -> TypeQueryNode;
     auto createTypeLiteralNode(NodeArray<TypeElement> members) -> TypeLiteralNode;
-    auto updateTypeLiteralNode(node: TypeLiteralNode, members: NodeArray<TypeElement>) -> TypeLiteralNode;
+    auto updateTypeLiteralNode(node: TypeLiteralNode, NodeArray<TypeElement> members) -> TypeLiteralNode;
     auto createArrayTypeNode(elementType: TypeNode) -> ArrayTypeNode;
     auto updateArrayTypeNode(node: ArrayTypeNode, elementType: TypeNode) -> ArrayTypeNode;
     auto createTupleTypeNode(elements: /*TypeNode | NamedTupleMember*/Node[]) -> TupleTypeNode;
@@ -195,9 +195,9 @@ public:
     auto createRestTypeNode(type: TypeNode) -> RestTypeNode;
     auto updateRestTypeNode(node: RestTypeNode, type: TypeNode) -> RestTypeNode;
     auto createUnionTypeNode(NodeArray<TypeNode> types) -> UnionTypeNode;
-    auto updateUnionTypeNode(node: UnionTypeNode, types: NodeArray<TypeNode>) -> UnionTypeNode;
+    auto updateUnionTypeNode(node: UnionTypeNode, NodeArray<TypeNode> types) -> UnionTypeNode;
     auto createIntersectionTypeNode(NodeArray<TypeNode> types) -> IntersectionTypeNode;
-    auto updateIntersectionTypeNode(node: IntersectionTypeNode, types: NodeArray<TypeNode>) -> IntersectionTypeNode;
+    auto updateIntersectionTypeNode(node: IntersectionTypeNode, NodeArray<TypeNode> types) -> IntersectionTypeNode;
     auto createConditionalTypeNode(checkType: TypeNode, extendsType: TypeNode, trueType: TypeNode, falseType: TypeNode) -> ConditionalTypeNode;
     auto updateConditionalTypeNode(node: ConditionalTypeNode, checkType: TypeNode, extendsType: TypeNode, trueType: TypeNode, falseType: TypeNode) -> ConditionalTypeNode;
     auto createInferTypeNode(typeParameter: TypeParameterDeclaration) -> InferTypeNode;
@@ -211,8 +211,8 @@ public:
     auto updateTypeOperatorNode(node: TypeOperatorNode, type: TypeNode) -> TypeOperatorNode;
     auto createIndexedAccessTypeNode(objectType: TypeNode, indexType: TypeNode) -> IndexedAccessTypeNode;
     auto updateIndexedAccessTypeNode(node: IndexedAccessTypeNode, objectType: TypeNode, indexType: TypeNode) -> IndexedAccessTypeNode;
-    auto createMappedTypeNode(readonlyToken:Keyword | PlusToken | MinusToken, typeParameter: TypeParameterDeclaration, nameType: TypeNode, questionToken: QuestionToken | PlusToken | MinusToken, type: TypeNode) -> MappedTypeNode;
-    auto updateMappedTypeNode(node: MappedTypeNode,Token:Keyword | PlusToken | MinusToken, typeParameter: TypeParameterDeclaration, nameType: TypeNode, questionToken: QuestionToken | PlusToken | MinusToken, type: TypeNode) -> MappedTypeNode;
+    auto createMappedTypeNode(readonlyToken:Keyword | PlusToken | MinusToken, typeParameter: TypeParameterDeclaration, nameType: TypeNode, QuestionToken | PlusToken | MinusToken questionToken, type: TypeNode) -> MappedTypeNode;
+    auto updateMappedTypeNode(node: MappedTypeNode,Token:Keyword | PlusToken | MinusToken, typeParameter: TypeParameterDeclaration, nameType: TypeNode, QuestionToken | PlusToken | MinusToken questionToken, type: TypeNode) -> MappedTypeNode;
     auto createLiteralTypeNode(literal: LiteralTypeNode["literal"]) -> LiteralTypeNode;
     auto updateLiteralTypeNode(node: LiteralTypeNode, literal: LiteralTypeNode["literal"]) -> LiteralTypeNode;
     auto createTemplateLiteralType(head: TemplateHead, NodeArray<TemplateLiteralTypeSpan> templateSpans) -> TemplateLiteralTypeNode;
@@ -226,7 +226,7 @@ public:
     auto updateObjectBindingPattern(node: ObjectBindingPattern, NodeArray<BindingElement> elements) -> ObjectBindingPattern;
     auto createArrayBindingPattern(NodeArray<ArrayBindingElement> elements) -> ArrayBindingPattern;
     auto updateArrayBindingPattern(node: ArrayBindingPattern, NodeArray<ArrayBindingElement> elements) -> ArrayBindingPattern;
-    auto createBindingElement(dotDotDotToken: DotDotDotToken, propertyName: string | PropertyName, name: string | BindingName, initializer?: Expression) -> BindingElement;
+    auto createBindingElement(dotDotDotToken: DotDotDotToken, string | PropertyName propertyName, string | BindingName name, initializer?: Expression) -> BindingElement;
     auto updateBindingElement(node: BindingElement, dotDotDotToken: DotDotDotToken, propertyName: PropertyName, name: BindingName, initializer: Expression) -> BindingElement;
 
     //
@@ -237,13 +237,13 @@ public:
     auto updateArrayLiteralExpression(node: ArrayLiteralExpression, NodeArray<Expression> elements) -> ArrayLiteralExpression;
     auto createObjectLiteralExpression(NodeArray<ObjectLiteralElementLike> properties = undefined, boolean multiLine = false) -> ObjectLiteralExpression;
     auto updateObjectLiteralExpression(node: ObjectLiteralExpression, NodeArray<ObjectLiteralElementLike> properties) -> ObjectLiteralExpression;
-    auto createPropertyAccessExpression(expression: Expression, name: string | MemberName) -> PropertyAccessExpression;
+    auto createPropertyAccessExpression(expression: Expression, string | MemberName name) -> PropertyAccessExpression;
     auto updatePropertyAccessExpression(node: PropertyAccessExpression, expression: Expression, name: MemberName) -> PropertyAccessExpression;
-    auto createPropertyAccessChain(expression: Expression, questionDotToken: QuestionDotToken, name: string | MemberName) -> PropertyAccessChain;
+    auto createPropertyAccessChain(expression: Expression, questionDotToken: QuestionDotToken, string | MemberName name) -> PropertyAccessChain;
     auto updatePropertyAccessChain(node: PropertyAccessChain, expression: Expression, questionDotToken: QuestionDotToken, name: MemberName) -> PropertyAccessChain;
-    auto createElementAccessExpression(expression: Expression, index: number | Expression) -> ElementAccessExpression;
+    auto createElementAccessExpression(expression: Expression, number | Expression index) -> ElementAccessExpression;
     auto updateElementAccessExpression(node: ElementAccessExpression, expression: Expression, argumentExpression: Expression) -> ElementAccessExpression;
-    auto createElementAccessChain(expression: Expression, questionDotToken: QuestionDotToken, index: number | Expression) -> ElementAccessChain;
+    auto createElementAccessChain(expression: Expression, questionDotToken: QuestionDotToken, number | Expression index) -> ElementAccessChain;
     auto updateElementAccessChain(node: ElementAccessChain, expression: Expression, questionDotToken: QuestionDotToken, argumentExpression: Expression) -> ElementAccessChain;
     auto createCallExpression(expression: Expression, NodeArray<TypeNode> typeArguments, NodeArray<Expression> argumentsArray) -> CallExpression;
     auto updateCallExpression(node: CallExpression, expression: Expression, NodeArray<TypeNode> typeArguments, NodeArray<Expression> argumentsArray) -> CallExpression;
@@ -257,7 +257,7 @@ public:
     auto updateTypeAssertion(node: TypeAssertion, type: TypeNode, expression: Expression) -> TypeAssertion;
     auto createParenthesizedExpression(expression: Expression) -> ParenthesizedExpression;
     auto updateParenthesizedExpression(node: ParenthesizedExpression, expression: Expression) -> ParenthesizedExpression;
-    auto createFunctionExpression(modifiers: ModifiersArray, asteriskToken: AsteriskToken, name: string | Identifier, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, type: TypeNode, body: Block) -> FunctionExpression;
+    auto createFunctionExpression(modifiers: ModifiersArray, asteriskToken: AsteriskToken, string | Identifier name, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, type: TypeNode, body: Block) -> FunctionExpression;
     auto updateFunctionExpression(node: FunctionExpression, modifiers: ModifiersArray, asteriskToken: AsteriskToken, name: Identifier, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, type: TypeNode, body: Block) -> FunctionExpression;
     auto createArrowFunction(modifiers: ModifiersArray, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, type: TypeNode, equalsGreaterThanToken: EqualsGreaterThanToken, body: ConciseBody) -> ArrowFunction;
     auto updateArrowFunction(node: ArrowFunction, modifiers: ModifiersArray, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, type: TypeNode, equalsGreaterThanToken: EqualsGreaterThanToken, body: ConciseBody) -> ArrowFunction;
@@ -273,8 +273,8 @@ public:
     auto updatePrefixUnaryExpression(node: PrefixUnaryExpression, operand: Expression) -> PrefixUnaryExpression;
     auto createPostfixUnaryExpression(operand: Expression, operator: PostfixUnaryOperator) -> PostfixUnaryExpression;
     auto updatePostfixUnaryExpression(node: PostfixUnaryExpression, operand: Expression) -> PostfixUnaryExpression;
-    auto createBinaryExpression(left: Expression, operator: BinaryOperator | BinaryOperatorToken, right: Expression) -> BinaryExpression;
-    auto updateBinaryExpression(node: BinaryExpression, left: Expression, operator: BinaryOperator | BinaryOperatorToken, right: Expression) -> BinaryExpression;
+    auto createBinaryExpression(left: Expression, BinaryOperator | BinaryOperatorToken operator, right: Expression) -> BinaryExpression;
+    auto updateBinaryExpression(node: BinaryExpression, left: Expression, BinaryOperator | BinaryOperatorToken operator, right: Expression) -> BinaryExpression;
     auto createConditionalExpression(condition: Expression, questionToken: QuestionToken, whenTrue: Expression, colonToken: ColonToken, whenFalse: Expression) -> ConditionalExpression;
     auto updateConditionalExpression(node: ConditionalExpression, condition: Expression, questionToken: QuestionToken, whenTrue: Expression, colonToken: ColonToken, whenFalse: Expression) -> ConditionalExpression;
     auto createTemplateExpression(head: TemplateHead, NodeArray<TemplateSpan> templateSpans) -> TemplateExpression;
@@ -295,7 +295,7 @@ public:
     auto updateYieldExpression(node: YieldExpression, asteriskToken: AsteriskToken, expression: Expression) -> YieldExpression;
     auto createSpreadElement(expression: Expression) -> SpreadElement;
     auto updateSpreadElement(node: SpreadElement, expression: Expression) -> SpreadElement;
-    auto createClassExpression(decorators: DecoratorsArray, modifiers: ModifiersArray, name: string | Identifier, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<HeritageClause> heritageClauses, NodeArray<ClassElement> members) -> ClassExpression;
+    auto createClassExpression(decorators: DecoratorsArray, modifiers: ModifiersArray, string | Identifier name, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<HeritageClause> heritageClauses, NodeArray<ClassElement> members) -> ClassExpression;
     auto updateClassExpression(node: ClassExpression, decorators: DecoratorsArray, modifiers: ModifiersArray, name: Identifier, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<HeritageClause> heritageClauses, NodeArray<ClassElement> members) -> ClassExpression;
     auto createOmittedExpression() -> OmittedExpression;
     auto createExpressionWithTypeArguments(expression: Expression, NodeArray<TypeNode> typeArguments) -> ExpressionWithTypeArguments;
@@ -313,8 +313,8 @@ public:
     // Misc
     //
 
-    auto createTemplateSpan(expression: Expression, literal: TemplateMiddle | TemplateTail) -> TemplateSpan;
-    auto updateTemplateSpan(node: TemplateSpan, expression: Expression, literal: TemplateMiddle | TemplateTail) -> TemplateSpan;
+    auto createTemplateSpan(expression: Expression, TemplateMiddle | TemplateTail literal) -> TemplateSpan;
+    auto updateTemplateSpan(node: TemplateSpan, expression: Expression, TemplateMiddle | TemplateTail literal) -> TemplateSpan;
     auto createSemicolonClassElement() -> SemicolonClassElement;
 
     //
@@ -323,7 +323,7 @@ public:
 
     auto createBlock(NodeArray<Statement> statements, boolean multiLine = false) -> Block;
     auto updateBlock(node: Block, NodeArray<Statement> statements) -> Block;
-    auto createVariableStatement(modifiers: ModifiersArray, declarationList: VariableDeclarationList | VariableDeclaration[]) -> VariableStatement;
+    auto createVariableStatement(modifiers: ModifiersArray, VariableDeclarationList | VariableDeclaration declarationList[]) -> VariableStatement;
     auto updateVariableStatement(node: VariableStatement, modifiers: ModifiersArray, declarationList: VariableDeclarationList) -> VariableStatement;
     auto createEmptyStatement() -> EmptyStatement;
     auto createExpressionStatement(expression: Expression) -> ExpressionStatement;
@@ -350,26 +350,26 @@ public:
     auto updateWithStatement(node: WithStatement, expression: Expression, statement: Statement) -> WithStatement;
     auto createSwitchStatement(expression: Expression, caseBlock: CaseBlock) -> SwitchStatement;
     auto updateSwitchStatement(node: SwitchStatement, expression: Expression, caseBlock: CaseBlock) -> SwitchStatement;
-    auto createLabeledStatement(label: string | Identifier, statement: Statement) -> LabeledStatement;
+    auto createLabeledStatement(string | Identifier label, statement: Statement) -> LabeledStatement;
     auto updateLabeledStatement(node: LabeledStatement, label: Identifier, statement: Statement) -> LabeledStatement;
     auto createThrowStatement(expression: Expression) -> ThrowStatement;
     auto updateThrowStatement(node: ThrowStatement, expression: Expression) -> ThrowStatement;
     auto createTryStatement(tryBlock: Block, catchClause: CatchClause, finallyBlock: Block) -> TryStatement;
     auto updateTryStatement(node: TryStatement, tryBlock: Block, catchClause: CatchClause, finallyBlock: Block) -> TryStatement;
     auto createDebuggerStatement() -> DebuggerStatement;
-    auto createVariableDeclaration(name: string | BindingName, exclamationToken?: ExclamationToken, type?: TypeNode, initializer?: Expression) -> VariableDeclaration;
+    auto createVariableDeclaration(string | BindingName name, exclamationToken?: ExclamationToken, type?: TypeNode, initializer?: Expression) -> VariableDeclaration;
     auto updateVariableDeclaration(node: VariableDeclaration, name: BindingName, exclamationToken: ExclamationToken, type: TypeNode, initializer: Expression) -> VariableDeclaration;
     auto createVariableDeclarationList(NodeArray<VariableDeclaration> declarations, NodeFlags flags = (NodeFlags)0) -> VariableDeclarationList;
     auto updateVariableDeclarationList(node: VariableDeclarationList, NodeArray<VariableDeclaration> declarations) -> VariableDeclarationList;
-    auto createFunctionDeclaration(decorators: DecoratorsArray, modifiers: ModifiersArray, asteriskToken: AsteriskToken, name: string | Identifier, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, type: TypeNode, body: Block) -> FunctionDeclaration;
+    auto createFunctionDeclaration(decorators: DecoratorsArray, modifiers: ModifiersArray, asteriskToken: AsteriskToken, string | Identifier name, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, type: TypeNode, body: Block) -> FunctionDeclaration;
     auto updateFunctionDeclaration(node: FunctionDeclaration, decorators: DecoratorsArray, modifiers: ModifiersArray, asteriskToken: AsteriskToken, name: Identifier, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, type: TypeNode, body: Block) -> FunctionDeclaration;
-    auto createClassDeclaration(decorators: DecoratorsArray, modifiers: ModifiersArray, name: string | Identifier, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<HeritageClause> heritageClauses, NodeArray<ClassElement> members) -> ClassDeclaration;
+    auto createClassDeclaration(decorators: DecoratorsArray, modifiers: ModifiersArray, string | Identifier name, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<HeritageClause> heritageClauses, NodeArray<ClassElement> members) -> ClassDeclaration;
     auto updateClassDeclaration(node: ClassDeclaration, decorators: DecoratorsArray, modifiers: ModifiersArray, name: Identifier, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<HeritageClause> heritageClauses, NodeArray<ClassElement> members) -> ClassDeclaration;
-    auto createInterfaceDeclaration(decorators: DecoratorsArray, modifiers: ModifiersArray, name: string | Identifier, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<HeritageClause> heritageClauses, NodeArray<TypeElement> members) -> InterfaceDeclaration;
+    auto createInterfaceDeclaration(decorators: DecoratorsArray, modifiers: ModifiersArray, string | Identifier name, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<HeritageClause> heritageClauses, NodeArray<TypeElement> members) -> InterfaceDeclaration;
     auto updateInterfaceDeclaration(node: InterfaceDeclaration, decorators: DecoratorsArray, modifiers: ModifiersArray, name: Identifier, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<HeritageClause> heritageClauses, NodeArray<TypeElement> members) -> InterfaceDeclaration;
-    auto createTypeAliasDeclaration(decorators: DecoratorsArray, modifiers: ModifiersArray, name: string | Identifier, NodeArray<TypeParameterDeclaration> typeParameters, type: TypeNode) -> TypeAliasDeclaration;
+    auto createTypeAliasDeclaration(decorators: DecoratorsArray, modifiers: ModifiersArray, string | Identifier name, NodeArray<TypeParameterDeclaration> typeParameters, type: TypeNode) -> TypeAliasDeclaration;
     auto updateTypeAliasDeclaration(node: TypeAliasDeclaration, decorators: DecoratorsArray, modifiers: ModifiersArray, name: Identifier, NodeArray<TypeParameterDeclaration> typeParameters, type: TypeNode) -> TypeAliasDeclaration;
-    auto createEnumDeclaration(decorators: DecoratorsArray, modifiers: ModifiersArray, name: string | Identifier, NodeArray<EnumMember> members) -> EnumDeclaration;
+    auto createEnumDeclaration(decorators: DecoratorsArray, modifiers: ModifiersArray, string | Identifier name, NodeArray<EnumMember> members) -> EnumDeclaration;
     auto updateEnumDeclaration(node: EnumDeclaration, decorators: DecoratorsArray, modifiers: ModifiersArray, name: Identifier, NodeArray<EnumMember> members) -> EnumDeclaration;
     auto createModuleDeclaration(decorators: DecoratorsArray, modifiers: ModifiersArray, name: ModuleName, body: ModuleBody, NodeFlags flags = (NodeFlags)0) -> ModuleDeclaration;
     auto updateModuleDeclaration(node: ModuleDeclaration, decorators: DecoratorsArray, modifiers: ModifiersArray, name: ModuleName, body: ModuleBody) -> ModuleDeclaration;
@@ -377,9 +377,9 @@ public:
     auto updateModuleBlock(node: ModuleBlock, NodeArray<Statement> statements) -> ModuleBlock;
     auto createCaseBlock(NodeArray<CaseOrDefaultClause> clauses) -> CaseBlock;
     auto updateCaseBlock(node: CaseBlock, NodeArray<CaseOrDefaultClause> clauses) -> CaseBlock;
-    auto createNamespaceExportDeclaration(name: string | Identifier) -> NamespaceExportDeclaration;
+    auto createNamespaceExportDeclaration(string | Identifier name) -> NamespaceExportDeclaration;
     auto updateNamespaceExportDeclaration(node: NamespaceExportDeclaration, name: Identifier) -> NamespaceExportDeclaration;
-    auto createImportEqualsDeclaration(decorators: DecoratorsArray, modifiers: ModifiersArray, isTypeOnly: boolean, name: string | Identifier, moduleReference: ModuleReference) -> ImportEqualsDeclaration;
+    auto createImportEqualsDeclaration(decorators: DecoratorsArray, modifiers: ModifiersArray, isTypeOnly: boolean, string | Identifier name, moduleReference: ModuleReference) -> ImportEqualsDeclaration;
     auto updateImportEqualsDeclaration(node: ImportEqualsDeclaration, decorators: DecoratorsArray, modifiers: ModifiersArray, isTypeOnly: boolean, name: Identifier, moduleReference: ModuleReference) -> ImportEqualsDeclaration;
     auto createImportDeclaration(decorators: DecoratorsArray, modifiers: ModifiersArray, importClause: ImportClause, moduleSpecifier: Expression) -> ImportDeclaration;
     auto updateImportDeclaration(node: ImportDeclaration, decorators: DecoratorsArray, modifiers: ModifiersArray, importClause: ImportClause, moduleSpecifier: Expression) -> ImportDeclaration;
@@ -399,7 +399,7 @@ public:
     auto updateExportDeclaration(node: ExportDeclaration, decorators: DecoratorsArray, modifiers: ModifiersArray, isTypeOnly: boolean, exportClause: NamedExportBindings, moduleSpecifier: Expression) -> ExportDeclaration;
     auto createNamedExports(NodeArray<ExportSpecifier> elements) -> NamedExports;
     auto updateNamedExports(node: NamedExports, NodeArray<ExportSpecifier> elements) -> NamedExports;
-    auto createExportSpecifier(propertyName: string | Identifier, name: string | Identifier) -> ExportSpecifier;
+    auto createExportSpecifier(string | Identifier propertyName, string | Identifier name) -> ExportSpecifier;
     auto updateExportSpecifier(node: ExportSpecifier, propertyName: Identifier, name: Identifier) -> ExportSpecifier;
     /* @internal*/ auto createMissingDeclaration() -> MissingDeclaration;
 
@@ -439,7 +439,7 @@ public:
     auto createJSDocTemplateTag(tagName: Identifier, constraint: JSDocTypeExpression, NodeArray<TypeParameterDeclaration> typeParameters, comment?: string) -> JSDocTemplateTag;
     auto updateJSDocTemplateTag(node: JSDocTemplateTag, tagName: Identifier, constraint: JSDocTypeExpression, NodeArray<TypeParameterDeclaration> typeParameters, comment: string) -> JSDocTemplateTag;
     auto createJSDocTypedefTag(tagName: Identifier, typeExpression?: JSDocTypeExpression | JSDocTypeLiteral, fullName?: Identifier | JSDocNamespaceDeclaration, comment?: string) -> JSDocTypedefTag;
-    auto updateJSDocTypedefTag(node: JSDocTypedefTag, tagName: Identifier, typeExpression: JSDocTypeExpression | JSDocTypeLiteral, fullName: Identifier | JSDocNamespaceDeclaration, comment: string) -> JSDocTypedefTag;
+    auto updateJSDocTypedefTag(node: JSDocTypedefTag, tagName: Identifier, JSDocTypeExpression | JSDocTypeLiteral typeExpression, Identifier | JSDocNamespaceDeclaration fullName, comment: string) -> JSDocTypedefTag;
     auto createJSDocParameterTag(tagName: Identifier, name: EntityName, isBracketed: boolean, typeExpression?: JSDocTypeExpression, boolean isNameFirst = false, comment?: string) -> JSDocParameterTag;
     auto updateJSDocParameterTag(node: JSDocParameterTag, tagName: Identifier, name: EntityName, isBracketed: boolean, typeExpression: JSDocTypeExpression, isNameFirst: boolean, comment: string) -> JSDocParameterTag;
     auto createJSDocPropertyTag(tagName: Identifier, name: EntityName, isBracketed: boolean, typeExpression?: JSDocTypeExpression, boolean isNameFirst = false, comment?: string) -> JSDocPropertyTag;
@@ -455,7 +455,7 @@ public:
     auto createJSDocEnumTag(tagName: Identifier, typeExpression: JSDocTypeExpression, comment?: string) -> JSDocEnumTag;
     auto updateJSDocEnumTag(node: JSDocEnumTag, tagName: Identifier, typeExpression: JSDocTypeExpression, comment: string) -> JSDocEnumTag;
     auto createJSDocCallbackTag(tagName: Identifier, typeExpression: JSDocSignature, fullName?: Identifier | JSDocNamespaceDeclaration, comment?: string) -> JSDocCallbackTag;
-    auto updateJSDocCallbackTag(node: JSDocCallbackTag, tagName: Identifier, typeExpression: JSDocSignature, fullName: Identifier | JSDocNamespaceDeclaration, comment: string) -> JSDocCallbackTag;
+    auto updateJSDocCallbackTag(node: JSDocCallbackTag, tagName: Identifier, typeExpression: JSDocSignature, Identifier | JSDocNamespaceDeclaration fullName, comment: string) -> JSDocCallbackTag;
     auto createJSDocAugmentsTag(tagName: Identifier, className: JSDocAugmentsTag["class"], comment?: string) -> JSDocAugmentsTag;
     auto updateJSDocAugmentsTag(node: JSDocAugmentsTag, tagName: Identifier, className: JSDocAugmentsTag["class"], comment: string) -> JSDocAugmentsTag;
     auto createJSDocImplementsTag(tagName: Identifier, className: JSDocImplementsTag["class"], comment?: string) -> JSDocImplementsTag;
@@ -497,8 +497,8 @@ public:
     auto createJsxOpeningFragment() -> JsxOpeningFragment;
     auto createJsxJsxClosingFragment() -> JsxClosingFragment;
     auto updateJsxFragment(node: JsxFragment, openingFragment: JsxOpeningFragment, NodeArray<JsxChild> children, closingFragment: JsxClosingFragment) -> JsxFragment;
-    auto createJsxAttribute(name: Identifier, initializer: StringLiteral | JsxExpression) -> JsxAttribute;
-    auto updateJsxAttribute(node: JsxAttribute, name: Identifier, initializer: StringLiteral | JsxExpression) -> JsxAttribute;
+    auto createJsxAttribute(name: Identifier, StringLiteral | JsxExpression initializer) -> JsxAttribute;
+    auto updateJsxAttribute(node: JsxAttribute, name: Identifier, StringLiteral | JsxExpression initializer) -> JsxAttribute;
     auto createJsxAttributes(NodeArray<JsxAttributeLike> properties) -> JsxAttributes;
     auto updateJsxAttributes(node: JsxAttributes, NodeArray<JsxAttributeLike> properties) -> JsxAttributes;
     auto createJsxSpreadAttribute(expression: Expression) -> JsxSpreadAttribute;
@@ -516,16 +516,16 @@ public:
     auto updateDefaultClause(node: DefaultClause, NodeArray<Statement> statements) -> DefaultClause;
     auto createHeritageClause(token: HeritageClause["token"], NodeArray<ExpressionWithTypeArguments> types) -> HeritageClause;
     auto updateHeritageClause(node: HeritageClause, NodeArray<ExpressionWithTypeArguments> types) -> HeritageClause;
-    auto createCatchClause(variableDeclaration: string | VariableDeclaration, block: Block) -> CatchClause;
+    auto createCatchClause(string | VariableDeclaration variableDeclaration, block: Block) -> CatchClause;
     auto updateCatchClause(node: CatchClause, variableDeclaration: VariableDeclaration, block: Block) -> CatchClause;
 
     //
     // Property assignments
     //
 
-    auto createPropertyAssignment(name: string | PropertyName, initializer: Expression) -> PropertyAssignment;
+    auto createPropertyAssignment(string | PropertyName name, initializer: Expression) -> PropertyAssignment;
     auto updatePropertyAssignment(node: PropertyAssignment, name: PropertyName, initializer: Expression) -> PropertyAssignment;
-    auto createShorthandPropertyAssignment(name: string | Identifier, objectAssignmentInitializer?: Expression) -> ShorthandPropertyAssignment;
+    auto createShorthandPropertyAssignment(string | Identifier name, objectAssignmentInitializer?: Expression) -> ShorthandPropertyAssignment;
     auto updateShorthandPropertyAssignment(node: ShorthandPropertyAssignment, name: Identifier, objectAssignmentInitializer: Expression) -> ShorthandPropertyAssignment;
     auto createSpreadAssignment(expression: Expression) -> SpreadAssignment;
     auto updateSpreadAssignment(node: SpreadAssignment, expression: Expression) -> SpreadAssignment;
@@ -534,7 +534,7 @@ public:
     // Enum
     //
 
-    auto createEnumMember(name: string | PropertyName, initializer?: Expression) -> EnumMember;
+    auto createEnumMember(string | PropertyName name, initializer?: Expression) -> EnumMember;
     auto updateEnumMember(node: EnumMember, name: PropertyName, initializer: Expression) -> EnumMember;
 
     //
@@ -548,7 +548,7 @@ public:
     /* @internal */ auto createUnparsedPrologue(data?: string) -> UnparsedPrologue;
     /* @internal */ auto createUnparsedPrepend(data: string, NodeArray<UnparsedSourceText> texts) -> UnparsedPrepend;
     /* @internal */ auto createUnparsedTextLike(data: string, internal: boolean) -> UnparsedTextLike;
-    /* @internal */ auto createUnparsedSyntheticReference(section: BundleFileHasNoDefaultLib | BundleFileReference) -> UnparsedSyntheticReference;
+    /* @internal */ auto createUnparsedSyntheticReference(BundleFileHasNoDefaultLib | BundleFileReference section) -> UnparsedSyntheticReference;
     /* @internal */ auto createInputFiles() -> InputFiles;
 
     //
@@ -578,7 +578,7 @@ public:
     //
 
     auto createComma(left: Expression, right: Expression) -> BinaryExpression;
-    auto createAssignment(left: ObjectLiteralExpression | ArrayLiteralExpression, right: Expression) -> DestructuringAssignment;
+    auto createAssignment(ObjectLiteralExpression | ArrayLiteralExpression left, right: Expression) -> DestructuringAssignment;
     auto createAssignment(left: Expression, right: Expression) -> AssignmentExpression<EqualsToken>;
     auto createLogicalOr(left: Expression, right: Expression) -> BinaryExpression;
     auto createLogicalAnd(left: Expression, right: Expression) -> BinaryExpression;
@@ -626,12 +626,12 @@ public:
     auto createExternalModuleExport(exportName: Identifier) -> ExportDeclaration;
 
     /* @internal */ auto createTypeCheck(value: Expression, tag: TypeOfTag) -> Expression;
-    /* @internal */ auto createMethodCall(object: Expression, methodName: string | Identifier, NodeArray<Expression> argumentsList) -> CallExpression;
+    /* @internal */ auto createMethodCall(object: Expression, string | Identifier methodName, NodeArray<Expression> argumentsList) -> CallExpression;
     /* @internal */ auto createGlobalMethodCall(globalObjectName: string, globalMethodName: string, NodeArray<Expression> argumentsList) -> CallExpression;
     /* @internal */ auto createFunctionBindCall(target: Expression, thisArg: Expression, NodeArray<Expression> argumentsList) -> CallExpression;
     /* @internal */ auto createFunctionCallCall(target: Expression, thisArg: Expression, NodeArray<Expression> argumentsList) -> CallExpression;
     /* @internal */ auto createFunctionApplyCall(target: Expression, thisArg: Expression, argumentsExpression: Expression) -> CallExpression;
-    /* @internal */ auto createObjectDefinePropertyCall(target: Expression, propertyName: string | Expression, attributes: Expression) -> CallExpression;
+    /* @internal */ auto createObjectDefinePropertyCall(target: Expression, string | Expression propertyName, attributes: Expression) -> CallExpression;
     /* @internal */ auto createPropertyDescriptor(attributes: PropertyDescriptorAttributes, boolean singleLine = false) -> ObjectLiteralExpression;
     /* @internal */ auto createArraySliceCall(array: Expression, start?: number | Expression) -> CallExpression;
     /* @internal */ auto createArrayConcatCall(array: Expression, NodeArray<Expression> values) -> CallExpression;
@@ -732,12 +732,12 @@ public:
      */
     /* @internal */ auto copyCustomPrologue(NodeArray<Statement> source, target: Push<Statement>, statementOffset: number, std::function<VisitResult<Node>(Node)> visitor = nullptr, std::function<boolean(Node)> filter = nullptr) -> number;
     /* @internal */ auto copyCustomPrologue(NodeArray<Statement> source, target: Push<Statement>, statementOffset: number, std::function<VisitResult<Node>(Node)> visitor = nullptr, std::function<boolean(Node)> filter = nullptr) -> number;
-    /* @internal */ auto ensureUseStrict(statements: NodeArray<Statement>) -> NodeArray<Statement>;
+    /* @internal */ auto ensureUseStrict(NodeArray<Statement> statements) -> NodeArray<Statement>;
     /* @internal */ auto liftToBlock(NodeArray<Node> nodes) -> Statement;
     /**
      * Merges generated lexical declarations into a new statement list.
      */
-    /* @internal */ auto mergeLexicalEnvironment(statements: NodeArray<Statement>, NodeArray<Statement> declarations) -> NodeArray<Statement>;
+    /* @internal */ auto mergeLexicalEnvironment(NodeArray<Statement> statements, NodeArray<Statement> declarations) -> NodeArray<Statement>;
     /**
      * Appends generated lexical declarations to an array of statements.
      */
@@ -749,7 +749,7 @@ public:
      * - *DO NOT USE THIS* if a more appropriate function is available.
      */
     /* @internal */ template <typename T/*extends Node*/> auto cloneNode(node: T) -> T;
-    /* @internal */ template <typename T/*extends HasModifiers*/> auto updateModifiers(node: T, modifiers: ModifiersArray | ModifierFlags) -> T;
+    /* @internal */ template <typename T/*extends HasModifiers*/> auto updateModifiers(node: T, ModifiersArray | ModifierFlags modifiers) -> T;
 };
 
 #endif // NODEFACTORY_H
