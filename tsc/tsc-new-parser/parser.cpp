@@ -3403,7 +3403,7 @@ namespace ts {
                 return token() == SyntaxKind::DotToken ? undefined : node;
             }
 
-            auto parseLiteralTypeNode(boolean negative) -> LiteralTypeNode {
+            auto parseLiteralTypeNode(boolean negative = false) -> LiteralTypeNode {
                 auto pos = getNodePos();
                 if (negative) {
                     nextToken();
@@ -3441,7 +3441,7 @@ namespace ts {
                 return token() == SyntaxKind::NumericLiteral || token() == SyntaxKind::BigIntLiteral;
             }
 
-            auto parseNonArrayType() -> TypeNode {
+            auto parseNonArrayType() -> /*TypeNode*/Node {
                 switch (token()) {
                     case SyntaxKind::AnyKeyword:
                     case SyntaxKind::UnknownKeyword:
@@ -3480,7 +3480,7 @@ namespace ts {
                     case SyntaxKind::NullKeyword:
                         return parseLiteralTypeNode();
                     case SyntaxKind::MinusToken:
-                        return lookAhead<boolean>(std::bind(&Parser::nextTokenIsNumericOrBigIntLiteral, this)) ? parseLiteralTypeNode(/*negative*/ true) : parseTypeReference();
+                        return lookAhead<boolean>(std::bind(&Parser::nextTokenIsNumericOrBigIntLiteral, this)) ? parseLiteralTypeNode(/*negative*/ true).as<Node>() : parseTypeReference().as<Node>();
                     case SyntaxKind::VoidKeyword:
                         return parseTokenNode<TypeNode>();
                     case SyntaxKind::ThisKeyword: {
@@ -3493,7 +3493,7 @@ namespace ts {
                         }
                     }
                     case SyntaxKind::TypeOfKeyword:
-                        return lookAhead<boolean>(std::bind(&Parser::isStartOfTypeOfImportType, this)) ? parseImportType() : parseTypeQuery();
+                        return lookAhead<boolean>(std::bind(&Parser::isStartOfTypeOfImportType, this)) ? parseImportType().as<Node>() : parseTypeQuery().as<Node>();
                     case SyntaxKind::OpenBraceToken:
                         return lookAhead<boolean>(std::bind(&Parser::isStartOfMappedType, this)) ? parseMappedType() : parseTypeLiteral();
                     case SyntaxKind::OpenBracketToken:
@@ -3503,7 +3503,7 @@ namespace ts {
                     case SyntaxKind::ImportKeyword:
                         return parseImportType();
                     case SyntaxKind::AssertsKeyword:
-                        return lookAhead<boolean>(std::bind(&Parser::nextTokenIsIdentifierOrKeywordOnSameLine, this)) ? parseAssertsTypePredicate() : parseTypeReference();
+                        return lookAhead<boolean>(std::bind(&Parser::nextTokenIsIdentifierOrKeywordOnSameLine, this)) ? parseAssertsTypePredicate().as<Node>() : parseTypeReference().as<Node>();
                     case SyntaxKind::TemplateHead:
                         return parseTemplateType();
                     default:
@@ -3563,7 +3563,7 @@ namespace ts {
                 }
             }
 
-            auto isStartOfParenthesizedOrFunctionType() {
+            auto isStartOfParenthesizedOrFunctionType() -> boolean {
                 nextToken();
                 return token() == SyntaxKind::CloseParenToken || isStartOfParameter(/*isJSDocParameter*/ false) || isStartOfType();
             }
@@ -3604,7 +3604,7 @@ namespace ts {
                 return type;
             }
 
-            auto parseTypeOperator(SyntaxKind operator_) {
+            auto parseTypeOperator(SyntaxKind operator_) -> TypeNode {
                 auto pos = getNodePos();
                 parseExpected(operator_);
                 return finishNode(factory.createTypeOperatorNode(operator_, parseTypeOperatorOrHigher()), pos);
@@ -3629,12 +3629,12 @@ namespace ts {
             }
 
             auto parseTypeOperatorOrHigher() -> TypeNode {
-                auto operator = token();
-                switch (operator) {
+                auto _operator = token();
+                switch (_operator) {
                     case SyntaxKind::KeyOfKeyword:
                     case SyntaxKind::UniqueKeyword:
                     case SyntaxKind::ReadonlyKeyword:
-                        return parseTypeOperator(operator);
+                        return parseTypeOperator(_operator);
                     case SyntaxKind::InferKeyword:
                         return parseInferType();
                 }
@@ -3649,7 +3649,7 @@ namespace ts {
                 // try to parse them gracefully and issue a helpful message.
                 if (isStartOfFunctionTypeOrConstructorType()) {
                     auto type = parseFunctionOrConstructorType();
-                    auto DiagnosticMessage diagnostic;
+                    DiagnosticMessage diagnostic;
                     if (isFunctionTypeNode(type)) {
                         diagnostic = isInUnionType
                             ? Diagnostics::Function_type_notation_must_be_parenthesized_when_used_in_a_union_type
@@ -3675,7 +3675,7 @@ namespace ts {
                 auto pos = getNodePos();
                 auto isUnionType = operator_ == SyntaxKind::BarToken;
                 auto hasLeadingOperator = parseOptional(operator_);
-                auto type = hasLeadingOperator && parseFunctionOrConstructorTypeToError(isUnionType)
+                auto type = (hasLeadingOperator ? parseFunctionOrConstructorTypeToError(isUnionType) : undefined)
                     || parseConstituentType();
                 if (token() == operator_ || hasLeadingOperator) {
                     auto types = [type];

@@ -869,6 +869,8 @@ namespace ts
         auto getTokenFlags() -> TokenFlags;
         auto getNumericLiteralFlags() -> TokenFlags;
         auto setInJSDocType(boolean inType) -> void;
+        auto reScanAsteriskEqualsToken() -> void;
+        auto reScanQuestionToken() -> void;
 
         template <typename T>
         auto tryScan(std::function<T()> callback) -> T

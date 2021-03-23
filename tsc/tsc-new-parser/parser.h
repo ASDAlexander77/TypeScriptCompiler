@@ -235,6 +235,16 @@ struct BaseNode
         return node.operator->();
     }    
 
+    auto operator||(Node rhs) -> Node
+    {
+        if (!!node)
+        {
+            return *this;
+        }
+
+        return rhs;
+    }
+
     template <typename T> 
     auto as() -> T
     {
@@ -245,7 +255,7 @@ struct BaseNode
     auto asMutable() -> T
     {
         return T(node);
-    }       
+    }          
 };
 
 static auto isArray(Node &node) -> boolean
