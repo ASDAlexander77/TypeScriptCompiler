@@ -19,6 +19,40 @@ auto forEach(std::vector<T> array, std::function<U(T, number)> callback = nullpt
 }
 
 template <typename T>
+auto some(std::vector<T> array, std::function<boolean(T)> predicate = nullptr) -> boolean {
+    if (!array.empty()) {
+        if (predicate) {
+            for (const v : array) {
+                if (predicate(v)) {
+                    return true;
+                }
+            }
+        }
+        else {
+            return array.size() > 0;
+        }
+    }
+    return false;
+}
+
+template <typename T>
+auto some(T array, std::function<boolean(decltype(array[0]))> predicate = nullptr) -> boolean {
+    if (!array.empty()) {
+        if (predicate) {
+            for (const v : array) {
+                if (predicate(v)) {
+                    return true;
+                }
+            }
+        }
+        else {
+            return array.size() > 0;
+        }
+    }
+    return false;
+}
+
+template <typename T>
 auto toOffset(T array, number offset) -> number {
     return offset < 0 ? array.size() + offset : offset;
 }

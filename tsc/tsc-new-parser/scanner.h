@@ -865,6 +865,7 @@ namespace ts
         auto tokenIsIdentifierOrKeywordOrGreaterThan(SyntaxKind token) -> boolean;
         auto getTokenFlags() -> TokenFlags;
         auto getNumericLiteralFlags() -> TokenFlags;
+        auto setInJSDocType(boolean inType) -> void;
 
         template <typename T>
         auto tryScan(std::function<T()> callback) -> T

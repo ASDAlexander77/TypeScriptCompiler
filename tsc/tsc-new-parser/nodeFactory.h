@@ -47,7 +47,8 @@ public:
 
     SourceFile createSourceFile(Node statements, EndOfFileToken endOfFileToken, NodeFlags flags);
 
-    SourceFile updateSourceFile(SourceFile node, Node statements, boolean isDeclarationFile = false, std::vector<FileReference> referencedFiles = std::vector<FileReference>(), std::vector<FileReference> typeReferences = std::vector<FileReference>(), boolean hasNoDefaultLib = false, std::vector<FileReference> libReferences = std::vector<FileReference>());
+    SourceFile updateSourceFile(SourceFile node, Node statements, boolean isDeclarationFile = false, std::vector<FileReference> referencedFiles = std::vector<FileReference>(), 
+        std::vector<FileReference> typeReferences = std::vector<FileReference>(), boolean hasNoDefaultLib = false, std::vector<FileReference> libReferences = std::vector<FileReference>());
 
     Node createNodeArray(Node, boolean hasTrailingComma = false);
 
@@ -110,6 +111,36 @@ public:
     TypePredicateNode createTypePredicateNode(SyntaxKind assertsModifier, Node parameterName, TypeNode type);
 
     ThisTypeNode createThisTypeNode();
+
+    Expression createParameterDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, 
+        DotDotDotToken dotDotDotToken, string name, QuestionToken questionToken = undefined, TypeNode type = undefined, Expression initializer = undefined);
+
+    Expression createParameterDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, 
+        DotDotDotToken dotDotDotToken, BindingName name, QuestionToken questionToken = undefined, TypeNode type = undefined, Expression initializer = undefined);
+
+    TypeQueryNode createTypeQueryNode(EntityName exprName);
+
+    TypeParameterDeclaration createTypeParameterDeclaration(string name, TypeNode constraint = undefined, TypeNode defaultType = undefined);
+
+    TypeParameterDeclaration createTypeParameterDeclaration(Identifier name, TypeNode constraint = undefined, TypeNode defaultType = undefined);
+
+    CallSignatureDeclaration createCallSignature(/*TypeParameterDeclaration[]*/Node typeParameters, /*ParameterDeclaration[]*/Node parameters, TypeNode type);
+
+    CallSignatureDeclaration createConstructSignature(/*TypeParameterDeclaration[]*/Node typeParameters, /*ParameterDeclaration[]*/Node parameters, TypeNode type);
+
+    IndexSignatureDeclaration createIndexSignature(DecoratorsArray decorators, ModifiersArray modifiers, /*ParameterDeclaration[]*/Node parameters, TypeNode type);
+
+    MethodSignature createMethodSignature(ModifiersArray modifiers, string name, QuestionToken questionToken, /*TypeParameterDeclaration[]*/Node typeParameters,
+            /*ParameterDeclaration[]*/Node parameters, TypeNode type);
+
+    MethodSignature createMethodSignature(ModifiersArray modifiers, PropertyName name, QuestionToken questionToken, /*TypeParameterDeclaration[]*/Node typeParameters,
+            /*ParameterDeclaration[]*/Node parameters, TypeNode type);
+
+    PropertySignature createPropertySignature(ModifiersArray modifiers, string name, QuestionToken questionToken, TypeNode type);
+
+    PropertySignature createPropertySignature(ModifiersArray modifiers, PropertyName name, QuestionToken questionToken, TypeNode type);
+
+    TypeLiteralNode createTypeLiteralNode(/*TypeElement[]*/Node members);
 
     //
     // JSDoc

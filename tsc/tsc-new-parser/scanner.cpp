@@ -3318,12 +3318,12 @@ public:
             tokenFlags = TokenFlags::None;
         }
 
-private:
-        auto setInJSDocType(boolean inType)
+        auto setInJSDocType(boolean inType) -> void
         {
             inJSDocType += inType ? 1 : -1;
         }
 
+private:
         /* @internal */
         auto codePointAt(safe_string &str, number i) -> CharacterCodes
         {
@@ -3573,6 +3573,11 @@ private:
     auto Scanner::getNumericLiteralFlags() -> TokenFlags
     {
         return impl->tokenFlags & TokenFlags::NumericLiteralFlags;
+    }
+
+    auto Scanner::setInJSDocType(boolean inType) -> void
+    {
+        impl->setInJSDocType(inType);
     }
 
     Scanner::~Scanner()

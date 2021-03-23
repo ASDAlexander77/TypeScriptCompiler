@@ -30,6 +30,7 @@ struct NodeArray
 {
     NodeArray() = default;
     NodeArray(std::initializer_list<T> il) : items(il) {}
+    NodeArray(undefined_t) : items() {}
 
     std::vector<T> items;
     boolean isMissingList;
@@ -42,6 +43,10 @@ struct NodeArray
     inline auto operator [](size_t i) -> T&
     {
         return items[i];
+    }
+
+    inline auto clear() -> void {
+        return items.clear();
     }
 
     inline auto size() -> size_t {
@@ -60,6 +65,8 @@ using NodeArrayFuncT = std::function<T(NodeArray<T>)>;
 template <typename T>
 using NodeWithParentArrayFuncT = std::function<T(NodeArray<T>, Node)>;
 
+struct Decorator;
+typedef NodeArray<Decorator> DecoratorsArray;
 typedef NodeArray<Modifier> ModifiersArray;
 
 #define CLASS_DATA_BASE(x, b) struct x##Data : b##Data { using b##Data::b##Data;
@@ -139,6 +146,13 @@ struct Node
     {
         return data->children;
     }
+
+    auto operator=(undefined_t) -> Node&
+    {
+        data->kind = SyntaxKind::Unknown;
+        data->children.clear();
+        return *this;
+    }    
 
     auto operator=(NodeArray<Node> values) -> Node&
     {
@@ -224,11 +238,16 @@ static auto isArray(Node &node) -> boolean
 }
 
 typedef Node Identifier, PropertyName, PrivateIdentifier, ThisTypeNode, LiteralExpression, EntityName, Expression, IndexSignatureDeclaration,
-    TypeElement, BinaryOperatorToken, UnaryExpression, UpdateExpression, LeftHandSideExpression, MemberExpression, JsxText, JsxChild, JsxTagNameExpression,
-    JsxClosingFragment, QuestionDotToken, PrimaryExpression, ObjectLiteralElementLike, FunctionExpression, Statement, CaseOrDefaultClause, ArrayBindingElement,
+    TypeElement, UnaryExpression, UpdateExpression, LeftHandSideExpression, MemberExpression, JsxText, JsxChild, JsxTagNameExpression,
+    JsxClosingFragment, PrimaryExpression, ObjectLiteralElementLike, FunctionExpression, Statement, CaseOrDefaultClause, ArrayBindingElement,
     ObjectBindingPattern, ArrayBindingPattern, FunctionDeclaration, ConstructorDeclaration, AccessorDeclaration, ClassElement, ClassExpression,
-    ModuleBlock, EndOfFileToken, BooleanLiteral, NullLiteral, SuperExpression, ThisExpression, TrueLiteral, FalseLiteral, NumericLiteral, BigIntLiteral,
-    PseudoBigInt, StringLiteral, PropertyNameLiteral, RegularExpressionLiteral, MissingDeclaration, LiteralToken, JsonObjectExpressionStatement;
+    ModuleBlock, BooleanLiteral, NullLiteral, SuperExpression, ThisExpression, TrueLiteral, FalseLiteral, NumericLiteral, BigIntLiteral,
+    PseudoBigInt, StringLiteral, PropertyNameLiteral, RegularExpressionLiteral, MissingDeclaration, JsonObjectExpressionStatement, BindingName,
+    CallSignatureDeclaration, MethodSignature;
+
+typedef Node BinaryOperatorToken, QuestionDotToken, EndOfFileToken, LiteralToken, DotDotDotToken, QuestionToken, PlusToken, MinusToken;
+
+typedef Node ReadonlyKeyword;
 
 typedef Node JSDocAllType, JSDocUnknownType, JSDocNonNullableType, JSDocNullableType, JSDocOptionalType, JSDocVariadicType, JSDocNamepathType,
     JSDocAuthorTag, JSDocClassTag, JSDocPublicTag, JSDocPrivateTag, JSDocProtectedTag, JSDocReadonlyTag, JSDocUnknownTag, JSDocDeprecatedTag,

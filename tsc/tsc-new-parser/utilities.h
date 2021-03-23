@@ -281,4 +281,9 @@ inline auto isLiteralKind(SyntaxKind kind) -> boolean {
     return SyntaxKind::FirstLiteralToken <= kind && kind <= SyntaxKind::LastLiteralToken;
 }
 
+inline auto getFullWidth(Node node) -> number {
+    return node->end - node->pos;
+}
+
+
 #endif // UTILITIES_H
