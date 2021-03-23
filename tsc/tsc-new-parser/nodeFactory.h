@@ -23,7 +23,7 @@ class NodeFactory
     BaseNodeFactory baseNodeFactory;
 
 public:
-    NodeFactory(NodeFactoryFlags nodeFactoryFlags, BaseNodeFactory baseNodeFactory) : auto nodeFactoryFlags(nodeFactoryFlags), auto baseNodeFactory(baseNodeFactory) {}
+    NodeFactory(NodeFactoryFlags nodeFactoryFlags, BaseNodeFactory baseNodeFactory) : nodeFactoryFlags(nodeFactoryFlags), baseNodeFactory(baseNodeFactory) {}
 
     /* @internal */ //ParenthesizerRules parenthesizer;
     /* @internal */ //NodeConverters converters;
@@ -282,10 +282,10 @@ public:
     auto updateConditionalExpression(ConditionalExpression node, Expression condition, QuestionToken questionToken, Expression whenTrue, ColonToken colonToken, Expression whenFalse) -> ConditionalExpression;
     auto createTemplateExpression(TemplateHead head, NodeArray<TemplateSpan> templateSpans) -> TemplateExpression;
     auto updateTemplateExpression(TemplateExpression node, TemplateHead head, NodeArray<TemplateSpan> templateSpans) -> TemplateExpression;
-    auto createTemplateHead(string text, string rawText = undefined, TokenFlags templateFlags = TokenFlags::None) -> TemplateHead;
-    auto createTemplateMiddle(string text, string rawText = undefined, TokenFlags templateFlags = TokenFlags::None) -> TemplateMiddle;
-    auto createTemplateTail(string text, string rawText = undefined, TokenFlags templateFlags = TokenFlags::None) -> TemplateTail;
-    auto createNoSubstitutionTemplateLiteral(string text, string rawText = undefined) -> NoSubstitutionTemplateLiteral;
+    auto createTemplateHead(string text, string rawText = string(), TokenFlags templateFlags = TokenFlags::None) -> TemplateHead;
+    auto createTemplateMiddle(string text, string rawText = string(), TokenFlags templateFlags = TokenFlags::None) -> TemplateMiddle;
+    auto createTemplateTail(string text, string rawText = string(), TokenFlags templateFlags = TokenFlags::None) -> TemplateTail;
+    auto createNoSubstitutionTemplateLiteral(string text, string rawText = string()) -> NoSubstitutionTemplateLiteral;
     /* @internal */ auto createLiteralLikeNode(SyntaxKind kind, string text) -> LiteralToken;
     /* @internal */ auto createTemplateLiteralLikeNode(SyntaxKind kind, string text, string rawText, TokenFlags templateFlags) -> TemplateLiteralLikeNode;
     auto createYieldExpression(AsteriskToken asteriskToken, Expression expression) -> YieldExpression;
@@ -448,7 +448,7 @@ public:
     auto updateJSDocSignature(JSDocSignature node, NodeArray<JSDocTemplateTag> typeParameters, NodeArray<JSDocParameterTag> parameters, JSDocReturnTag type) -> JSDocSignature;
     auto createJSDocTemplateTag(Identifier tagName, JSDocTypeExpression constraint, NodeArray<TypeParameterDeclaration> typeParameters, string comment = string()) -> JSDocTemplateTag;
     auto updateJSDocTemplateTag(JSDocTemplateTag node, Identifier tagName, JSDocTypeExpression constraint, NodeArray<TypeParameterDeclaration> typeParameters, string comment) -> JSDocTemplateTag;
-    auto createJSDocTypedefTag(Identifier tagName, JSDocTypeExpression typeExpression = undefined | JSDocTypeLiteral, /*Identifier | JSDocNamespaceDeclaration*/Node fullName = undefined, string comment = string()) -> JSDocTypedefTag;
+    auto createJSDocTypedefTag(Identifier tagName, /*JSDocTypeExpression | JSDocTypeLiteral*/Node typeExpression = undefined, /*Identifier | JSDocNamespaceDeclaration*/Node fullName = undefined, string comment = string()) -> JSDocTypedefTag;
     auto updateJSDocTypedefTag(JSDocTypedefTag node, Identifier tagName, /*JSDocTypeExpression | JSDocTypeLiteral*/Node typeExpression, /*Identifier | JSDocNamespaceDeclaration*/Node fullName, string comment) -> JSDocTypedefTag;
     auto createJSDocParameterTag(Identifier tagName, EntityName name, boolean isBracketed, JSDocTypeExpression typeExpression = undefined, boolean isNameFirst = false, string comment = string()) -> JSDocParameterTag;
     auto updateJSDocParameterTag(JSDocParameterTag node, Identifier tagName, EntityName name, boolean isBracketed, JSDocTypeExpression typeExpression, boolean isNameFirst, string comment) -> JSDocParameterTag;
@@ -559,7 +559,7 @@ public:
     auto updateSourceFile(SourceFile node, NodeArray<Statement> statements, boolean isDeclarationFile = false, NodeArray<FileReference> referencedFiles = undefined, NodeArray<FileReference> typeReferences = undefined, boolean hasNoDefaultLib = false, NodeArray<FileReference> libReferences = undefined) -> SourceFile;
 
     /* @internal */ auto createUnparsedSource(NodeArray<UnparsedPrologue> prologues, NodeArray<UnparsedSyntheticReference> syntheticReferences, NodeArray<UnparsedSourceText> texts) -> UnparsedSource;
-    /* @internal */ auto createUnparsedPrologue(string data = undefined) -> UnparsedPrologue;
+    /* @internal */ auto createUnparsedPrologue(string data = string()) -> UnparsedPrologue;
     /* @internal */ auto createUnparsedPrepend(string data, NodeArray<UnparsedSourceText> texts) -> UnparsedPrepend;
     /* @internal */ auto createUnparsedTextLike(string data, boolean internal) -> UnparsedTextLike;
     /* @internal */ auto createUnparsedSyntheticReference(/*BundleFileHasNoDefaultLib | BundleFileReference*/Node section) -> UnparsedSyntheticReference;
@@ -651,7 +651,7 @@ public:
     /* @internal */ auto createArraySliceCall(Expression array, number start) -> CallExpression;
     /* @internal */ auto createArraySliceCall(Expression array, Expression start = undefined) -> CallExpression;
     /* @internal */ auto createArrayConcatCall(Expression array, NodeArray<Expression> values) -> CallExpression;
-    /* @internal */ auto createCallBinding(Expression expression, std::function<void(Identifier)> recordTempVariable, ScriptTarget languageVersion = undefined, boolean cacheIdentifiers = false) -> CallBinding;
+    /* @internal */ auto createCallBinding(Expression expression, std::function<void(Identifier)> recordTempVariable, ScriptTarget languageVersion = (ScriptTarget)0, boolean cacheIdentifiers = false) -> CallBinding;
     /* @internal */ auto inlineExpressions(NodeArray<Expression> expressions) -> Expression;
     /**
      * Gets the internal name of a declaration. This is primarily used for declarations that can be
@@ -754,17 +754,14 @@ public:
      */
     /* @internal */ auto mergeLexicalEnvironment(NodeArray<Statement> statements, NodeArray<Statement> declarations) -> NodeArray<Statement>;
     /**
-     * Appends generated lexical declarations to an array of statements.
-     */
-    /* @internal */ auto mergeLexicalEnvironment(NodeArray<Statement> statements, NodeArray<Statement> declarations) -> NodeArray<Statement>;
-    /**
      * Creates a shallow, memberwise clone of a node.
      * - The result will have its `original` pointer set to `node`.
      * - The result will have its `pos` and `end` set to `-1`.
      * - *DO NOT USE THIS* if a more appropriate function is available.
      */
     /* @internal */ template <typename T/*extends Node*/> auto cloneNode(T node) -> T;
-    /* @internal */ template <typename T/*extends HasModifiers*/> auto updateModifiers(T node, ModifiersArray | ModifierFlags modifiers) -> T;
+    /* @internal */ template <typename T/*extends HasModifiers*/> auto updateModifiers(T node, ModifierFlags modifiers) -> T;
+    /* @internal */ template <typename T/*extends HasModifiers*/> auto updateModifiers(T node, ModifiersArray modifiers) -> T;
 };
 
 #endif // NODEFACTORY_H
