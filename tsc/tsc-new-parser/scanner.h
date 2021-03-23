@@ -434,6 +434,9 @@ enum class SyntaxKind : number {
     // Enum value count
     Count,
 
+    // Array type
+    /* @internal */ Array,
+
     // Markers
     FirstAssignment = EqualsToken,
     LastAssignment = CaretEqualsToken,

@@ -113,7 +113,7 @@ struct Node
     Node(undefined_t) {};
     Node(SyntaxKind kind, number start, number end) : data(std::make_shared<NodeData>(kind, start, end)) {};
     template <typename T>
-    Node(NodeArray<T> values) : data(std::make_shared<NodeData>(SyntaxKind::ArrayType, -1, -1)) { data->children = (NodeArray<Node>) values; };
+    Node(NodeArray<T> values) : data(std::make_shared<NodeData>(SyntaxKind::Array, -1, -1)) { data->children = (NodeArray<Node>) values; };
 
     NodeData* operator->()
     {
@@ -234,20 +234,28 @@ struct BaseNode
 
 static auto isArray(Node &node) -> boolean
 {
-    return node.data->kind == SyntaxKind::ArrayType;
+    return node.data->kind == SyntaxKind::Array;
 }
 
-typedef Node Identifier, PropertyName, PrivateIdentifier, ThisTypeNode, LiteralExpression, EntityName, Expression, IndexSignatureDeclaration,
+typedef Node Identifier, PropertyName, PrivateIdentifier, LiteralExpression, EntityName, Expression, IndexSignatureDeclaration,
     TypeElement, UnaryExpression, UpdateExpression, LeftHandSideExpression, MemberExpression, JsxText, JsxChild, JsxTagNameExpression,
-    JsxClosingFragment, PrimaryExpression, ObjectLiteralElementLike, FunctionExpression, Statement, CaseOrDefaultClause, ArrayBindingElement,
+    JsxClosingFragment, PrimaryExpression, FunctionExpression, Statement, CaseOrDefaultClause, ArrayBindingElement,
     ObjectBindingPattern, ArrayBindingPattern, FunctionDeclaration, ConstructorDeclaration, AccessorDeclaration, ClassElement, ClassExpression,
-    ModuleBlock, BooleanLiteral, NullLiteral, SuperExpression, ThisExpression, TrueLiteral, FalseLiteral, NumericLiteral, BigIntLiteral,
-    PseudoBigInt, StringLiteral, PropertyNameLiteral, RegularExpressionLiteral, MissingDeclaration, JsonObjectExpressionStatement, BindingName,
-    CallSignatureDeclaration, MethodSignature;
+    ModuleBlock, SuperExpression, ThisExpression, PseudoBigInt, MissingDeclaration, JsonObjectExpressionStatement, BindingName,
+    CallSignatureDeclaration, MethodSignature, GetAccessorDeclaration, SetAccessorDeclaration, ConstructSignatureDeclaration, IndexSignatureDeclaration,
+    MemberName, PropertyAccessChain, ElementAccessChain, CallChain, NewExpression, ConciseBody, PrefixUnaryOperator,
+    Expression, PostfixUnaryOperator, OmittedExpression, NonNullChain, SemicolonClassElement, EmptyStatement, ForInitializer, ContinueStatement, 
+    BreakStatement, DebuggerStatement, ModuleName, ModuleBody;
 
-typedef Node BinaryOperatorToken, QuestionDotToken, EndOfFileToken, LiteralToken, DotDotDotToken, QuestionToken, PlusToken, MinusToken;
+typedef Node FalseLiteral, TrueLiteral, NullLiteral, BooleanLiteral, NumericLiteral, BigIntLiteral, StringLiteral, PropertyNameLiteral, RegularExpressionLiteral, 
+    ObjectLiteralElementLike, TemplateLiteral, NoSubstitutionTemplateLiteral;
 
-typedef Node ReadonlyKeyword;
+typedef Node ThisTypeNode, UnionTypeNode, IntersectionTypeNode;
+
+typedef Node BinaryOperatorToken, QuestionDotToken, EndOfFileToken, LiteralToken, DotDotDotToken, QuestionToken, PlusToken, MinusToken,
+    AsteriskToken, EqualsGreaterThanToken, ColonToken, ExclamationToken;
+
+typedef Node ReadonlyKeyword, AssertsKeyword, AwaitKeyword;
 
 typedef Node JSDocAllType, JSDocUnknownType, JSDocNonNullableType, JSDocNullableType, JSDocOptionalType, JSDocVariadicType, JSDocNamepathType,
     JSDocAuthorTag, JSDocClassTag, JSDocPublicTag, JSDocPrivateTag, JSDocProtectedTag, JSDocReadonlyTag, JSDocUnknownTag, JSDocDeprecatedTag,
