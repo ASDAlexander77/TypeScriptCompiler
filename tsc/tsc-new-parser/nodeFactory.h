@@ -44,7 +44,7 @@ public:
 
     /* @internal */ parenthesizer: ParenthesizerRules;
     /* @internal */ converters: NodeConverters;
-    createNodeArray<T>(elements?: T[], boolean hasTrailingComma = false) -> NodeArray<T>;
+    template <typename T> createNodeArray(elements?: T[], boolean hasTrailingComma = false) -> NodeArray<T>;
 
     //
     // Literals
@@ -122,7 +122,7 @@ public:
     // Modifiers
     //
 
-    createModifier<T extends ModifierSyntaxKind>(kind: T) -> ModifierToken<T>;
+    template <typename T/*extends ModifierSyntaxKind*/> createModifier(kind: T) -> ModifierToken<T>;
     createModifiersFromModifierFlags(flags: ModifierFlags) -> Modifier[];
 
     //
@@ -758,8 +758,8 @@ public:
      * - The result will have its `pos` and `end` set to `-1`.
      * - *DO NOT USE THIS* if a more appropriate function is available.
      */
-    /* @internal */ cloneNode<T extends Node>(node: T) -> T;
-    /* @internal */ updateModifiers<T extends HasModifiers>(node: T, modifiers: Modifier[] | ModifierFlags) -> T;
+    /* @internal */ template <typename T/*extends Node*/> cloneNode(node: T) -> T;
+    /* @internal */ template <typename T/*extends HasModifiers*/> updateModifiers(node: T, modifiers: Modifier[] | ModifierFlags) -> T;
 };
 
 #endif // NODEFACTORY_H
