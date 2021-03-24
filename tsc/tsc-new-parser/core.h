@@ -5,6 +5,18 @@
 #include "undefined.h"
 
 template <typename T, typename U>
+auto copy(std::vector<T> &to_vector, const std::vector<U> &from_vector) -> void
+{
+    std::copy(from_vector.begin(), from_vector.end(), std::back_inserter(to_vector));    
+}
+
+template <typename T, typename U>
+auto copy(T &to_vector, const U &from_vector) -> void
+{
+    std::copy(from_vector.begin(), from_vector.end(), std::back_inserter(to_vector));    
+}
+
+template <typename T, typename U>
 auto forEach(std::vector<T> array, std::function<U(T, number)> callback = nullptr) -> U {
     if (!array.empty()) {
         for (let i = 0; i < array.size(); i++) {

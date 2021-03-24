@@ -589,4 +589,22 @@ inline auto isClassMemberModifier(SyntaxKind idToken) -> boolean {
     return isParameterPropertyModifier(idToken) || idToken == SyntaxKind::StaticKeyword;
 }
 
+template <typename T>
+inline auto  setParent(T child, SyntaxKind parent) -> T {
+    if (!!child && !!parent) {
+        (child as Mutable<T>)->parentKind = parent;
+    }
+
+    return child;
+}
+
+template <typename T>
+inline auto  setParent(T child, T parent) -> T {
+    if (!!child && !!parent) {
+        (child as Mutable<T>)->parent = parent;
+    }
+
+    return child;
+}
+
 #endif // UTILITIES_H

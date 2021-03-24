@@ -158,6 +158,7 @@ struct NodeData : TextRange
     DecoratorsArray decorators;
     ModifiersArray modifiers;
     SyntaxKind originalKeywordKind;
+    SyntaxKind parentKind;
     NodeHolder parent;
     number jsdocDotPos;
 
@@ -1107,14 +1108,14 @@ typedef AccessorDeclaration GetAccessorDeclaration, SetAccessorDeclaration;
 typedef FunctionOrConstructorTypeNode FunctionTypeNode;
 typedef FunctionOrConstructorTypeNode ConstructorTypeNode;
 
-struct DiagnosticWithLocation : Diagnostic {
-    SourceFile file;
-};
-
-struct NodeWithDiagnostics
-{ 
+CLASS_DATA(NodeWithDiagnostics)
     Node node;
-    std::vector<Diagnostic> diagnostics;
+    NodeArray<Diagnostic> diagnostics;
+CLASS_DATA_END(NodeWithDiagnostics)
+
+
+struct DiagnosticWithLocation : DiagnosticWithDetachedLocation {
+    SourceFile file;
 };
 
 namespace ts

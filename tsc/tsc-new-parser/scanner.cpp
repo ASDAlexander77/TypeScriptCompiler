@@ -3206,7 +3206,7 @@ public:
             }
         }
 
-private:
+    private:
         template <typename T>
         auto speculationHelper(std::function<T()> callback, boolean isLookahead) -> T
         {
@@ -3232,6 +3232,7 @@ private:
             return result;
         }
 
+    public:
         template <typename T>
         auto scanRange(number start, number length, std::function<T()> callback) -> T
         {
@@ -3259,6 +3260,7 @@ private:
             return result;
         }
 
+    private:
         template <typename T>
         auto lookAhead(std::function<T()> callback) -> T
         {

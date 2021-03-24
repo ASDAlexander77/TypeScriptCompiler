@@ -7184,7 +7184,7 @@ namespace ts {
 
             // [[[ namespace JSDocParser ]]]
 
-            auto parseJSDocTypeExpressionForTests(string content, number start, number length) -> Undefined<NodeWithDiagnostics> {
+            auto parseJSDocTypeExpressionForTests(string content, number start, number length) -> NodeWithDiagnostics {
                 initializeState(S("file.js"), content, ScriptTarget::Latest, /*_syntaxCursor:*/ undefined, ScriptKind::JS);
                 scanner.setText(content, start, length);
                 currentToken = scanner.scan();
@@ -7193,18 +7193,25 @@ namespace ts {
                 auto sourceFile = createSourceFile(S("file.js"), ScriptTarget::Latest, ScriptKind::JS, /*isDeclarationFile*/ false, NodeArray<Statement>(), factory.createToken(SyntaxKind::EndOfFileToken), NodeFlags::None);
                 auto diagnostics = attachFileToDiagnostics(parseDiagnostics, sourceFile);
                 if (!!jsDocDiagnostics) {
-                    sourceFile->jsDocDiagnostics = attachFileToDiagnostics(jsDocDiagnostics, sourceFile);
+                    copy<DiagnosticWithDetachedLocation, DiagnosticWithLocation>(sourceFile->jsDocDiagnostics, attachFileToDiagnostics(jsDocDiagnostics, sourceFile));
                 }
 
                 clearState();
 
-                return !!jsDocTypeExpression ? NodeWithDiagnostics{ jsDocTypeExpression, diagnostics } : undefined;
+                if (!!jsDocTypeExpression)
+                {
+                    NodeWithDiagnostics nodeWithDiagnostics;
+                    nodeWithDiagnostics->node = jsDocTypeExpression;
+                    copy(nodeWithDiagnostics->diagnostics, diagnostics); 
+                }
+
+                return undefined;
             }
 
             // Parses out a JSDoc type expression.
-            auto parseJSDocTypeExpression(boolean mayOmitBraces) -> JSDocTypeExpression {
+            auto parseJSDocTypeExpression(boolean mayOmitBraces = false) -> JSDocTypeExpression {
                 auto pos = getNodePos();
-                auto hasBrace = (mayOmitBraces ? parseOptional : parseExpected)(SyntaxKind::OpenBraceToken);
+                auto hasBrace = mayOmitBraces ? parseOptional(SyntaxKind::OpenBraceToken) : parseExpected(SyntaxKind::OpenBraceToken);
                 auto type = doInsideOfContext<TypeNode>(NodeFlags::JSDoc, std::bind(&Parser::parseJSDocType, this));
                 if (!mayOmitBraces || hasBrace) {
                     parseExpectedJSDoc(SyntaxKind::CloseBraceToken);
@@ -7228,33 +7235,43 @@ namespace ts {
                 return finishNode(result, pos);
             }
 
-            auto parseIsolatedJSDocComment(string content, number start, number length) -> Undefined<NodeWithDiagnostics> {
+            auto parseIsolatedJSDocComment(string content, number start, number length) -> NodeWithDiagnostics {
                 initializeState(string(), content, ScriptTarget::Latest, /*_syntaxCursor:*/ undefined, ScriptKind::JS);
                 auto jsDoc = doInsideOfContext<JSDoc>(NodeFlags::JSDoc, [&]() { return parseJSDocCommentWorker(start, length); });
 
-                auto sourceFile = <SourceFile>{ LanguageVariant::Standard languageVariant, content text };
+                auto sourceFile = SourceFile();
+                sourceFile->text = content;
+                sourceFile->languageVariant = LanguageVariant::Standard;
                 auto diagnostics = attachFileToDiagnostics(parseDiagnostics, sourceFile);
                 clearState();
 
-                return jsDoc ? NodeWithDiagnostics{ jsDoc, diagnostics } : undefined;
+                if (!!jsDoc)
+                {
+                    auto nodeWithDiagnostics = NodeWithDiagnostics();
+                    nodeWithDiagnostics->node = jsDoc;
+                    copy(nodeWithDiagnostics->diagnostics, diagnostics);
+                }
+
+                return undefined;
             }
 
             auto parseJSDocComment(SyntaxKind parent, number start, number length) -> JSDoc {
                 auto saveToken = currentToken;
-                auto saveParseDiagnosticsLength = parseDiagnostics::size();
+                auto saveParseDiagnosticsLength = parseDiagnostics.size();
                 auto saveParseErrorBeforeNextFinishedNode = parseErrorBeforeNextFinishedNode;
 
                 auto comment = doInsideOfContext<JSDoc>(NodeFlags::JSDoc, [&]() { return parseJSDocCommentWorker(start, length); });
                 setParent(comment, parent);
 
-                if (contextFlags & NodeFlags::JavaScriptFile) {
-                    if (!jsDocDiagnostics) {
-                        jsDocDiagnostics = [];
+                if (!!(contextFlags & NodeFlags::JavaScriptFile)) {
+                    if (!jsDocDiagnostics.empty()) {
+                        jsDocDiagnostics.clear();
                     }
-                    jsDocDiagnostics::push_back(...parseDiagnostics);
+                    copy(jsDocDiagnostics, parseDiagnostics);
                 }
                 currentToken = saveToken;
-                parseDiagnostics::size() = saveParseDiagnosticsLength;
+                // TODO: does it make any sense
+                //parseDiagnostics->length = saveParseDiagnosticsLength;
                 parseErrorBeforeNextFinishedNode = saveParseErrorBeforeNextFinishedNode;
                 return comment;
             }
@@ -7296,7 +7313,7 @@ namespace ts {
                     // Initially we can parse out a tag.  We also have seen a starting asterisk.
                     // This is so that /** * @type */ doesn't parse.
                     auto state = JSDocState::SawAsterisk;
-                    auto number margin;
+                    number margin;
                     // + 4 for leading '/** '
                     // + 1 because the last index of \n is always one index before the first character in the line and coincidentally, if there is no \n before start, it is -1, which is also one index before the first character
                     auto indent = start - (content.lastIndexOf(S("\n"), start) + 1) + 4;
