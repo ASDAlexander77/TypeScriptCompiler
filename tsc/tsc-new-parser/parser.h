@@ -77,6 +77,16 @@ struct NodeArray
     {
         return items.size() != 0;
     }        
+
+    auto begin() -> decltype(items.begin())
+    {
+        return items.begin();
+    }
+
+    auto end() -> decltype(items.end())
+    {
+        return items.end();
+    }
 };
 
 template <typename T>

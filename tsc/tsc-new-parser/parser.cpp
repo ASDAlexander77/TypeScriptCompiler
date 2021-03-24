@@ -1676,7 +1676,7 @@ namespace ts {
                 return createMissingNode<Identifier>(SyntaxKind::Identifier, reportAtCurrentPosition, !!diagnosticMessage ? diagnosticMessage : defaultMessage, msgArg);
             }
 
-            auto parseBindingIdentifier(DiagnosticMessage privateIdentifierDiagnosticMessage) {
+            auto parseBindingIdentifier(DiagnosticMessage privateIdentifierDiagnosticMessage = DiagnosticMessage()) {
                 return createIdentifier(isBindingIdentifier(), /*diagnosticMessage*/ DiagnosticMessage(), privateIdentifierDiagnosticMessage);
             }
 
@@ -5500,9 +5500,9 @@ namespace ts {
                 auto isGenerator = asteriskToken ? SignatureFlags::Yield : SignatureFlags::None;
                 auto isAsync = some(modifiers, isAsyncModifier) ? SignatureFlags::Await : SignatureFlags::None;
                 auto name =
-                    isGenerator && isAsync ? doInYieldAndAwaitContext(parseOptionalBindingIdentifier) :
-                    isGenerator ? doInYieldContext<Identifier>(std::bind(&Parser::parseOptionalBindingIdentifier, this)) :
-                    isAsync ? doInAwaitContext<Identifier>(std::bind(&Parser::parseOptionalBindingIdentifier, this)) :
+                    !!isGenerator && !!isAsync ? doInYieldAndAwaitContext<Identifier>(std::bind(&Parser::parseOptionalBindingIdentifier, this)) :
+                    !!isGenerator ? doInYieldContext<Identifier>(std::bind(&Parser::parseOptionalBindingIdentifier, this)) :
+                    !!isAsync ? doInAwaitContext<Identifier>(std::bind(&Parser::parseOptionalBindingIdentifier, this)) :
                     parseOptionalBindingIdentifier();
 
                 auto typeParameters = parseTypeParameters();
@@ -5531,32 +5531,32 @@ namespace ts {
                 }
 
                 auto expressionPos = getNodePos();
-                auto MemberExpression expression = parsePrimaryExpression();
-                auto typeArguments;
+                auto expression = parsePrimaryExpression();
+                NodeArray<TypeNode> typeArguments;
                 while (true) {
                     expression = parseMemberExpressionRest(expressionPos, expression, /*allowOptionalChain*/ false);
-                    typeArguments = tryParse<boolean>(std::bind(&Parser::parseTypeArgumentsInExpression, this));
+                    typeArguments = tryParse<NodeArray<TypeNode> >(std::bind(&Parser::parseTypeArgumentsInExpression, this));
                     if (isTemplateStartOfTaggedTemplate()) {
                         Debug::_assert(!!typeArguments,
-                            "Expected a type argument list; all plain tagged template starts should be consumed in 'parseMemberExpressionRest'");
+                            S("Expected a type argument list; all plain tagged template starts should be consumed in 'parseMemberExpressionRest'"));
                         expression = parseTaggedTemplateRest(expressionPos, expression, /*optionalChain*/ undefined, typeArguments);
                         typeArguments = undefined;
                     }
                     break;
                 }
 
-                auto NodeArray<Expression> argumentsArray;
+                NodeArray<Expression> argumentsArray;
                 if (token() == SyntaxKind::OpenParenToken) {
                     argumentsArray = parseArgumentList();
                 }
-                else if (typeArguments) {
+                else if (!!typeArguments) {
                     parseErrorAt(pos, scanner.getStartPos(), Diagnostics::A_new_expression_with_type_arguments_must_always_be_followed_by_a_parenthesized_argument_list);
                 }
                 return finishNode(factory.createNewExpression(expression, typeArguments, argumentsArray), pos);
             }
 
             // STATEMENTS
-            auto parseBlock(boolean ignoreMissingOpenBrace, DiagnosticMessage diagnosticMessage) -> Block {
+            auto parseBlock(boolean ignoreMissingOpenBrace, DiagnosticMessage diagnosticMessage = DiagnosticMessage()) -> Block {
                 auto pos = getNodePos();
                 auto openBracePosition = scanner.getTokenPos();
                 if (parseExpected(SyntaxKind::OpenBraceToken, diagnosticMessage) || ignoreMissingOpenBrace) {
@@ -5564,7 +5564,7 @@ namespace ts {
                     auto statements = parseList<Statement>(ParsingContext::BlockStatements, std::bind(&Parser::parseStatement, this));
                     if (!parseExpected(SyntaxKind::CloseBraceToken)) {
                         auto lastError = lastOrUndefined(parseDiagnostics);
-                        if (lastError && lastError.code == Diagnostics::_0_expected.code) {
+                        if (!!lastError && lastError.code == Diagnostics::_0_expected.code) {
                             addRelatedInfo(
                                 lastError,
                                 createDetachedDiagnostic(fileName, openBracePosition, 1, Diagnostics::The_parser_expected_to_find_a_to_match_the_token_here)
@@ -5575,7 +5575,7 @@ namespace ts {
                 }
                 else {
                     auto statements = createMissingList<Statement>();
-                    return finishNode(factory.createBlock(statements, /*multiLine*/ undefined), pos);
+                    return finishNode(factory.createBlock(statements, /*multiLine*/ false), pos);
                 }
             }
 
@@ -5659,7 +5659,7 @@ namespace ts {
                 auto awaitToken = parseOptionalToken(SyntaxKind::AwaitKeyword);
                 parseExpected(SyntaxKind::OpenParenToken);
 
-                auto initializer!: VariableDeclarationList | Expression;
+                Node initializer;
                 if (token() != SyntaxKind::SemicolonToken) {
                     if (token() == SyntaxKind::VarKeyword || token() == SyntaxKind::LetKeyword || token() == SyntaxKind::ConstKeyword) {
                         initializer = parseVariableDeclarationList(/*inForStatementInitializer*/ true);
@@ -5669,7 +5669,7 @@ namespace ts {
                     }
                 }
 
-                auto IterationStatement node;
+                Node node;
                 if (awaitToken ? parseExpected(SyntaxKind::OfKeyword) : parseOptional(SyntaxKind::OfKeyword)) {
                     auto expression = allowInAnd<Expression>(std::bind(&Parser::parseAssignmentExpressionOrHigher, this));
                     parseExpected(SyntaxKind::CloseParenToken);
@@ -5723,7 +5723,7 @@ namespace ts {
                 parseExpected(SyntaxKind::OpenParenToken);
                 auto expression = allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
                 parseExpected(SyntaxKind::CloseParenToken);
-                auto statement = doInsideOfContext(NodeFlags::InWithStatement, parseStatement);
+                auto statement = doInsideOfContext<Statement>(NodeFlags::InWithStatement, std::bind(&Parser::parseStatement, this));
                 return finishNode(factory.createWithStatement(expression, statement), pos);
             }
 
@@ -5745,7 +5745,7 @@ namespace ts {
             }
 
             auto parseCaseOrDefaultClause() -> CaseOrDefaultClause {
-                return token() == SyntaxKind::CaseKeyword ? parseCaseClause() : parseDefaultClause();
+                return token() == SyntaxKind::CaseKeyword ? parseCaseClause() : (CaseOrDefaultClause)parseDefaultClause();
             }
 
             auto parseCaseBlock() -> CaseBlock {
@@ -5797,7 +5797,7 @@ namespace ts {
 
                 // If we don't have a catch clause, then we must have a finally clause.  Try to parse
                 // one out no matter what.
-                auto Block finallyBlock;
+                Block finallyBlock;
                 if (!catchClause || token() == SyntaxKind::FinallyKeyword) {
                     parseExpected(SyntaxKind::FinallyKeyword);
                     finallyBlock = parseBlock(/*ignoreMissingOpenBrace*/ false);
@@ -5810,7 +5810,7 @@ namespace ts {
                 auto pos = getNodePos();
                 parseExpected(SyntaxKind::CatchKeyword);
 
-                auto variableDeclaration;
+                VariableDeclaration variableDeclaration;
                 if (parseOptional(SyntaxKind::OpenParenToken)) {
                     variableDeclaration = parseVariableDeclaration();
                     parseExpected(SyntaxKind::CloseParenToken);
@@ -5837,10 +5837,10 @@ namespace ts {
                 // a colon.
                 auto pos = getNodePos();
                 auto hasJSDoc = hasPrecedingJSDocComment();
-                auto ExpressionStatement node | LabeledStatement;
+                Node node;
                 auto hasParen = token() == SyntaxKind::OpenParenToken;
                 auto expression = allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
-                if (ts.isIdentifier(expression) && parseOptional(SyntaxKind::ColonToken)) {
+                if (ts::isIdentifier(expression) && parseOptional(SyntaxKind::ColonToken)) {
                     node = factory.createLabeledStatement(expression, parseStatement());
                 }
                 else {
@@ -5935,9 +5935,10 @@ namespace ts {
                             return token() == SyntaxKind::StringLiteral || token() == SyntaxKind::AsteriskToken ||
                                 token() == SyntaxKind::OpenBraceToken || scanner.tokenIsIdentifierOrKeyword(token());
                         case SyntaxKind::ExportKeyword:
+                        {
                             auto currentToken = nextToken();
                             if (currentToken == SyntaxKind::TypeKeyword) {
-                                currentToken = lookAhead<boolean>(std::bind(&Parser::nextToken, this));
+                                currentToken = lookAhead<SyntaxKind>(std::bind(&Parser::nextToken, this));
                             }
                             if (currentToken == SyntaxKind::EqualsToken || currentToken == SyntaxKind::AsteriskToken ||
                                 currentToken == SyntaxKind::OpenBraceToken || currentToken == SyntaxKind::DefaultKeyword ||
@@ -5945,7 +5946,7 @@ namespace ts {
                                 return true;
                             }
                             continue;
-
+                        }
                         case SyntaxKind::StaticKeyword:
                             nextToken();
                             continue;
@@ -6113,7 +6114,7 @@ namespace ts {
                 // `parseListElement` attempted to get the reused node at this position,
                 // but the ambient context flag was not yet set, so the node appeared
                 // not reusable in that context.
-                auto isAmbient = some(lookAhead(() => (parseDecorators(), parseModifiers())), isDeclareModifier);
+                auto isAmbient = some(lookAhead<NodeArray<Modifier> >([&]() { parseDecorators(); return parseModifiers(); }), std::bind(&Parser::isDeclareModifier, this, std::placeholders::_1));
                 if (isAmbient) {
                     auto node = tryReuseAmbientDeclaration();
                     if (node) {
@@ -6126,10 +6127,10 @@ namespace ts {
                 auto decorators = parseDecorators();
                 auto modifiers = parseModifiers();
                 if (isAmbient) {
-                    for (auto m of modifiers!) {
+                    for (auto &m : modifiers) {
                         (m.asMutable<Node>())->flags |= NodeFlags::Ambient;
                     }
-                    return doInsideOfContext(NodeFlags::Ambient, () => parseDeclarationWorker(pos, hasJSDoc, decorators, modifiers));
+                    return doInsideOfContext<Statement>(NodeFlags::Ambient, [&]() { return parseDeclarationWorker(pos, hasJSDoc, decorators, modifiers); });
                 }
                 else {
                     return parseDeclarationWorker(pos, hasJSDoc, decorators, modifiers);
@@ -6137,7 +6138,7 @@ namespace ts {
             }
 
             auto tryReuseAmbientDeclaration() -> Statement {
-                return doInsideOfContext(NodeFlags::Ambient, () => {
+                return doInsideOfContext<Statement>(NodeFlags::Ambient, [&]() {
                     auto node = currentNode(parsingContext);
                     if (node) {
                         return consumeNode(node).as<Statement>();
@@ -6184,15 +6185,15 @@ namespace ts {
                             // would follow. For recovery and error reporting purposes, return an incomplete declaration.
                             auto missing = createMissingNode<MissingDeclaration>(SyntaxKind::MissingDeclaration, /*reportAtCurrentPosition*/ true, Diagnostics::Declaration_expected);
                             setTextRangePos(missing, pos);
-                            missing.decorators = decorators;
-                            missing.modifiers = modifiers;
+                            missing->decorators = decorators;
+                            missing->modifiers = modifiers;
                             return missing;
                         }
                         return undefined; // GH TODO#18217
                 }
             }
 
-            auto nextTokenIsIdentifierOrStringLiteralOnSameLine() {
+            auto nextTokenIsIdentifierOrStringLiteralOnSameLine() -> boolean {
                 nextToken();
                 return !scanner.hasPrecedingLineBreak() && (isIdentifier() || token() == SyntaxKind::StringLiteral);
             }
@@ -6274,7 +6275,7 @@ namespace ts {
                 return parseVariableDeclaration(/*allowExclamation*/ true);
             }
 
-            auto parseVariableDeclaration(boolean allowExclamation) -> VariableDeclaration {
+            auto parseVariableDeclaration(boolean allowExclamation = false) -> VariableDeclaration {
                 auto pos = getNodePos();
                 auto hasJSDoc = hasPrecedingJSDocComment();
                 auto name = parseIdentifierOrPattern(Diagnostics::Private_identifiers_are_not_allowed_in_variable_declarations);

@@ -162,7 +162,7 @@ static auto createDetachedDiagnostic(string fileName, number start, number lengt
     d.messageText = text;
     d.category = message.category;
     d.code = message.code;
-    //diagnosticWithDetachedLocation.reportsUnnecessary = message.reportsUnnecessary;
+    //d.reportsUnnecessary = message.reportsUnnecessary;
     d.fileName = fileName;
 
     return d;
@@ -496,7 +496,7 @@ static auto findAncestor(Node node, std::function<boolean(Node)> callback) -> No
 }
 
 static auto isJSDocTypeExpressionOrChild(Node node) -> boolean {
-    return !!findAncestor(node, [](Node n) { return isJSDocTypeExpression(n); });
+    return !!findAncestor(node, [](Node n) { return ts::isJSDocTypeExpression(n); });
 }
 
 static auto getTextOfNodeFromSourceText(safe_string sourceText, Node node, boolean includeTrivia = false, ts::Scanner* scanner = nullptr) -> string {
@@ -520,7 +520,7 @@ static auto isStringLiteralLike(Node node) -> boolean {
 }
 
 static auto isStringOrNumericLiteralLike(Node node) -> boolean {
-    return isStringLiteralLike(node) || isNumericLiteral(node);
+    return isStringLiteralLike(node) || ts::isNumericLiteral(node);
 }
 
 template <typename T>
@@ -536,6 +536,20 @@ static auto addRelatedInfo(T diagnostic, std::vector<DiagnosticRelatedInformatio
     {
         diagnostic.relatedInformation.push_back(item);
     }
+
+    return diagnostic;
+}
+
+template <typename T>
+static auto addRelatedInfo(T diagnostic, DiagnosticRelatedInformation relatedInformation) -> T {
+    if (!relatedInformation) {
+        return diagnostic;
+    }
+    if (diagnostic.relatedInformation.size() > 0) {
+        diagnostic.relatedInformation.clear();
+    }
+    Debug::_assert(diagnostic.relatedInformation.size() != 0, S("Diagnostic had empty array singleton for related info, but is still being constructed!"));
+    diagnostic.relatedInformation.push_back(relatedInformation);
 
     return diagnostic;
 }

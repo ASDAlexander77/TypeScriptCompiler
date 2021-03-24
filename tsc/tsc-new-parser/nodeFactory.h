@@ -47,7 +47,6 @@ public:
     // Identifiers
     //
 
-    auto createIdentifier(string text) -> Identifier;
     /* @internal */ auto createIdentifier(string text, NodeArray</*TypeNode | TypeParameterDeclaration*/Node> typeArguments = undefined, SyntaxKind originalKeywordKind = SyntaxKind::Unknown) -> Identifier; // eslint-disable-line @typescript-eslint/unified-signatures
     /* @internal */ auto updateIdentifier(Identifier node, NodeArray</*TypeNode | TypeParameterDeclaration*/Node> typeArguments) -> Identifier;
 
