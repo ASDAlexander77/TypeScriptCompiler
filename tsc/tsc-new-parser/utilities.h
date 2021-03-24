@@ -63,11 +63,28 @@ inline auto isDiagnosticWithDetachedLocation(DiagnosticRelatedInformation diagno
     return diagnostic.start != -1 && diagnostic.length != -1 && diagnostic.fileName != S("");
 }
 
-template <typename T>
-auto attachFileToDiagnostic(T diagnostic, SourceFile file) -> DiagnosticWithLocation
+auto attachFileToDiagnostic(DiagnosticRelatedInformation diagnostic, SourceFile file) -> DiagnosticWithLocation
 {
-    auto fileName = file.fileName;
-    auto length = file.text.length();
+    auto fileName = file->fileName;
+    auto length = file->text.length();
+    Debug::assertEqual(diagnostic.fileName, fileName);
+    Debug::assertLessThanOrEqual(diagnostic.start, length);
+    Debug::assertLessThanOrEqual(diagnostic.start + diagnostic.length, length);
+    DiagnosticWithLocation diagnosticWithLocation;
+    diagnosticWithLocation.file = file;
+    diagnosticWithLocation.start = diagnostic.start;
+    diagnosticWithLocation.length = diagnostic.length;
+    diagnosticWithLocation.messageText = diagnostic.messageText;
+    diagnosticWithLocation.category = diagnostic.category;
+    diagnosticWithLocation.code = diagnostic.code;
+
+    return diagnosticWithLocation;
+}
+
+auto attachFileToDiagnostic(Diagnostic diagnostic, SourceFile file) -> DiagnosticWithLocation
+{
+    auto fileName = file->fileName;
+    auto length = file->text.length();
     Debug::assertEqual(diagnostic.fileName, fileName);
     Debug::assertLessThanOrEqual(diagnostic.start, length);
     Debug::assertLessThanOrEqual(diagnostic.start + diagnostic.length, length);

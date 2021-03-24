@@ -8896,8 +8896,8 @@ namespace ts {
             return result;
         }
 
-        auto tripleSlashXMLCommentStartRegEx = /^\/\/\/\s*<(\S+)\s.*?\/>/im;
-        auto singleLinePragmaRegEx = /^\/\/\/?\s*@(\S+)\s*(.*)\s*$/im;
+        auto tripleSlashXMLCommentStartRegEx = regex(S("^\\/\\/\\/\\s*<(\\S+)\\s.*?\\/>"), std::regex_constants::extended|std::regex_constants::icase);
+        auto singleLinePragmaRegEx = regex(S("^\\/\\/\\/?\\s*@(\\S+)\\s*(.*)\\s*$"), std::regex_constants::extended|std::regex_constants::icase);
         auto extractPragmas(std::vector<PragmaPseudoMapEntry> pragmas, CommentRange range, string text) {
             auto tripleSlash = range->kind == SyntaxKind::SingleLineCommentTrivia && tripleSlashXMLCommentStartRegEx.exec(text);
             if (tripleSlash) {
@@ -8942,7 +8942,7 @@ namespace ts {
             }
 
             if (range->kind == SyntaxKind::MultiLineCommentTrivia) {
-                auto multiLinePragmaRegEx = /\s*@(\S+)\s*(.*)\s*$/gim; // Defined inline since it uses the "g" flag, which keeps a persistent index (for iterating)
+                auto multiLinePragmaRegEx = regex(S("\\s*@(\\S+)\\s*(.*)\\s*$"), std::regex_constants::extended|std::regex_constants::icase); // Defined inline since it uses the "g" flag, which keeps a persistent index (for iterating)
                 auto RegExpExecArray multiLineMatch | null;
                 while (multiLineMatch = multiLinePragmaRegEx.exec(text)) {
                     addPragmaForMatch(pragmas, range, PragmaKindFlags.MultiLine, multiLineMatch);
@@ -8964,10 +8964,10 @@ namespace ts {
             return;
         }
 
-        auto getNamedPragmaArguments(PragmaDefinition pragma, string text) -> {[string index]: string} | "fail" {
+        auto getNamedPragmaArguments(PragmaDefinition pragma, string text) -> std::map<string, string> {
             if (!text) return {};
             if (!pragma.args) return {};
-            auto args = text.split(/\s+/);
+            auto args = text.split(regex(S("\\s+")));
             auto argMap: {[string index]: string} = {};
             for (auto i = 0; i < pragma.args.size(); i++) {
                 auto argument = pragma.args[i];
