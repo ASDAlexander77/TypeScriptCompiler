@@ -445,7 +445,7 @@ namespace ts {
                         visitNode(cbNode, node.as<JsxFragment>().closingFragment);
                 case SyntaxKind::JsxSelfClosingElement:
                 case SyntaxKind::JsxOpeningElement:
-                    return visitNode(cbNode, node.as<JsxOpeningLikeElement>().tagName) ||
+                    return visitNode(cbNode, node.as<JsxOpeningLikeElement>()->tagName) ||
                         visitNodes(cbNode, cbNodes, node.as<JsxOpeningLikeElement>().typeArguments) ||
                         visitNode(cbNode, node.as<JsxOpeningLikeElement>().attributes);
                 case SyntaxKind::JsxAttributes:
@@ -459,7 +459,7 @@ namespace ts {
                     return visitNode(cbNode, node.as<JsxExpression>().dotDotDotToken) ||
                         visitNode(cbNode, node.as<JsxExpression>().expression);
                 case SyntaxKind::JsxClosingElement:
-                    return visitNode(cbNode, node.as<JsxClosingElement>().tagName);
+                    return visitNode(cbNode, node.as<JsxClosingElement>()->tagName);
 
                 case SyntaxKind::OptionalType:
                     return visitNode(cbNode, node.as<OptionalTypeNode>().type);
@@ -481,32 +481,32 @@ namespace ts {
                 case SyntaxKind::JSDocComment:
                     return visitNodes(cbNode, cbNodes, node.as<JSDoc>().tags);
                 case SyntaxKind::JSDocSeeTag:
-                    return visitNode(cbNode, node.as<JSDocSeeTag>().tagName) ||
+                    return visitNode(cbNode, node.as<JSDocSeeTag>()->tagName) ||
                         visitNode(cbNode, node.as<JSDocSeeTag>().name);
                 case SyntaxKind::JSDocNameReference:
                     return visitNode(cbNode, node.as<JSDocNameReference>().name);
                 case SyntaxKind::JSDocParameterTag:
                 case SyntaxKind::JSDocPropertyTag:
-                    return visitNode(cbNode, node.as<JSDocTag>().tagName) ||
+                    return visitNode(cbNode, node.as<JSDocTag>()->tagName) ||
                         (node.as<JSDocPropertyLikeTag>().isNameFirst
                             ? visitNode(cbNode, node.as<JSDocPropertyLikeTag>().name) ||
                                 visitNode(cbNode, node.as<JSDocPropertyLikeTag>().typeExpression)
                             : visitNode(cbNode, node.as<JSDocPropertyLikeTag>().typeExpression) ||
                                 visitNode(cbNode, node.as<JSDocPropertyLikeTag>().name));
                 case SyntaxKind::JSDocAuthorTag:
-                    return visitNode(cbNode, node.as<JSDocTag>().tagName);
+                    return visitNode(cbNode, node.as<JSDocTag>()->tagName);
                 case SyntaxKind::JSDocImplementsTag:
-                    return visitNode(cbNode, node.as<JSDocTag>().tagName) ||
+                    return visitNode(cbNode, node.as<JSDocTag>()->tagName) ||
                         visitNode(cbNode, node.as<JSDocImplementsTag>()._class);
                 case SyntaxKind::JSDocAugmentsTag:
-                    return visitNode(cbNode, node.as<JSDocTag>().tagName) ||
+                    return visitNode(cbNode, node.as<JSDocTag>()->tagName) ||
                         visitNode(cbNode, node.as<JSDocAugmentsTag>()._class);
                 case SyntaxKind::JSDocTemplateTag:
-                    return visitNode(cbNode, node.as<JSDocTag>().tagName) ||
+                    return visitNode(cbNode, node.as<JSDocTag>()->tagName) ||
                         visitNode(cbNode, node.as<JSDocTemplateTag>().constraint) ||
                         visitNodes(cbNode, cbNodes, node.as<JSDocTemplateTag>().typeParameters);
                 case SyntaxKind::JSDocTypedefTag:
-                    return visitNode(cbNode, node.as<JSDocTag>().tagName) ||
+                    return visitNode(cbNode, node.as<JSDocTag>()->tagName) ||
                         (node.as<JSDocTypedefTag>().typeExpression &&
                             node.as<JSDocTypedefTag>().typeExpression->kind == SyntaxKind::JSDocTypeExpression
                             ? visitNode(cbNode, node.as<JSDocTypedefTag>().typeExpression) ||
@@ -514,20 +514,20 @@ namespace ts {
                             : visitNode(cbNode, node.as<JSDocTypedefTag>().fullName) ||
                                 visitNode(cbNode, node.as<JSDocTypedefTag>().typeExpression));
                 case SyntaxKind::JSDocCallbackTag:
-                    return visitNode(cbNode, node.as<JSDocTag>().tagName) ||
+                    return visitNode(cbNode, node.as<JSDocTag>()->tagName) ||
                         visitNode(cbNode, node.as<JSDocCallbackTag>().fullName) ||
                         visitNode(cbNode, node.as<JSDocCallbackTag>().typeExpression);
                 case SyntaxKind::JSDocReturnTag:
-                    return visitNode(cbNode, node.as<JSDocTag>().tagName) ||
+                    return visitNode(cbNode, node.as<JSDocTag>()->tagName) ||
                         visitNode(cbNode, node.as<JSDocReturnTag>().typeExpression);
                 case SyntaxKind::JSDocTypeTag:
-                    return visitNode(cbNode, node.as<JSDocTag>().tagName) ||
+                    return visitNode(cbNode, node.as<JSDocTag>()->tagName) ||
                         visitNode(cbNode, node.as<JSDocTypeTag>().typeExpression);
                 case SyntaxKind::JSDocThisTag:
-                    return visitNode(cbNode, node.as<JSDocTag>().tagName) ||
+                    return visitNode(cbNode, node.as<JSDocTag>()->tagName) ||
                         visitNode(cbNode, node.as<JSDocThisTag>().typeExpression);
                 case SyntaxKind::JSDocEnumTag:
-                    return visitNode(cbNode, node.as<JSDocTag>().tagName) ||
+                    return visitNode(cbNode, node.as<JSDocTag>()->tagName) ||
                         visitNode(cbNode, node.as<JSDocEnumTag>().typeExpression);
                 case SyntaxKind::JSDocSignature:
                     return forEach(node.as<JSDocSignature>().typeParameters, cbNode) ||
@@ -541,7 +541,7 @@ namespace ts {
                 case SyntaxKind::JSDocPrivateTag:
                 case SyntaxKind::JSDocProtectedTag:
                 case SyntaxKind::JSDocReadonlyTag:
-                    return visitNode(cbNode, node.as<JSDocTag>().tagName);
+                    return visitNode(cbNode, node.as<JSDocTag>()->tagName);
                 case SyntaxKind::PartiallyEmittedExpression:
                     return visitNode(cbNode, node.as<PartiallyEmittedExpression>().expression);
             }
@@ -1611,7 +1611,7 @@ namespace ts {
             }
 
             template <typename T = Node>
-            auto createMissingNode(SyntaxKind kind, boolean reportAtCurrentPosition, DiagnosticMessage diagnosticMessage, string arg0 = string()) -> Node {
+            auto createMissingNode(SyntaxKind kind, boolean reportAtCurrentPosition, DiagnosticMessage diagnosticMessage = DiagnosticMessage(), string arg0 = string()) -> Node {
                 if (reportAtCurrentPosition) {
                     parseErrorAtPosition(scanner.getStartPos(), 0, diagnosticMessage, arg0);
                 }
@@ -3682,8 +3682,7 @@ namespace ts {
                 Node type = (hasLeadingOperator ? parseFunctionOrConstructorTypeToError(isUnionType) : undefined)
                     || parseConstituentType();
                 if (token() == operator_ || hasLeadingOperator) {
-                    NodeArray<TypeNode> types;
-                    types.push_back(type.as<TypeNode>());
+                    auto types = NodeArray<TypeNode>({type});
                     while (parseOptional(operator_)) {
                         types.push_back(parseFunctionOrConstructorTypeToError(isUnionType) || parseConstituentType());
                     }
@@ -4052,7 +4051,7 @@ namespace ts {
             }
 
             auto parseSimpleArrowFunctionExpression(number pos, Identifier identifier, NodeArray<Modifier> asyncModifier) -> ArrowFunction {
-                Debug::_assert(token() == SyntaxKind::EqualsGreaterThanToken, "parseSimpleArrowFunctionExpression should only have been called if we had a =>");
+                Debug::_assert(token() == SyntaxKind::EqualsGreaterThanToken, S("parseSimpleArrowFunctionExpression should only have been called if we had a =>"));
                 auto parameter = factory.createParameterDeclaration(
                     /*decorators*/ undefined,
                     /*modifiers*/ undefined,
@@ -4062,9 +4061,9 @@ namespace ts {
                     /*type*/ undefined,
                     /*initializer*/ undefined
                 );
-                finishNode(parameter, identifier.pos);
+                finishNode(parameter, identifier->pos);
 
-                auto parameters = createNodeArray<ParameterDeclaration>([parameter], parameter.pos, parameter.end);
+                auto parameters = createNodeArray<ParameterDeclaration>(NodeArray<ParameterDeclaration>({parameter}), parameter->pos, parameter->end);
                 auto equalsGreaterThanToken = parseExpectedToken(SyntaxKind::EqualsGreaterThanToken);
                 auto body = parseArrowFunctionExpressionBody(/*isAsync*/ !!asyncModifier);
                 auto node = factory.createArrowFunction(asyncModifier, /*typeParameters*/ undefined, parameters, /*type*/ undefined, equalsGreaterThanToken, body);
@@ -4073,7 +4072,7 @@ namespace ts {
 
             auto tryParseParenthesizedArrowFunctionExpression() -> Expression {
                 auto triState = isParenthesizedArrowFunctionExpression();
-                if (triState == Tristate.False) {
+                if (triState == Tristate::False) {
                     // It's definitely not a parenthesized arrow auto expression.
                     return undefined;
                 }
@@ -4082,9 +4081,9 @@ namespace ts {
                 // following => or { token. Otherwise, we *might* have an arrow function.  Try to parse
                 // it out, but don't allow any ambiguity, and return 'undefined' if this could be an
                 // expression instead.
-                return triState == Tristate.True ?
+                return triState == Tristate::True ?
                     parseParenthesizedArrowFunctionExpression(/*allowAmbiguity*/ true) :
-                    tryParse<boolean>(std::bind(&Parser::parsePossibleParenthesizedArrowFunctionExpression, this));
+                    tryParse<ArrowFunction>(std::bind(&Parser::parsePossibleParenthesizedArrowFunctionExpression, this));
             }
 
             //  True        -> We definitely expect a parenthesized arrow auto here.
@@ -4093,27 +4092,27 @@ namespace ts {
             //                 Speculatively look ahead to be sure, and rollback if not.
             auto isParenthesizedArrowFunctionExpression() -> Tristate {
                 if (token() == SyntaxKind::OpenParenToken || token() == SyntaxKind::LessThanToken || token() == SyntaxKind::AsyncKeyword) {
-                    return lookAhead<boolean>(std::bind(&Parser::isParenthesizedArrowFunctionExpressionWorker, this));
+                    return lookAhead<Tristate>(std::bind(&Parser::isParenthesizedArrowFunctionExpressionWorker, this));
                 }
 
                 if (token() == SyntaxKind::EqualsGreaterThanToken) {
                     // ERROR RECOVERY TWEAK:
                     // If we see a standalone => try to parse it.as<an>() arrow auto expression.as<that>()'s
                     // likely what the user intended to write.
-                    return Tristate.True;
+                    return Tristate::True;
                 }
                 // Definitely not a parenthesized arrow function.
-                return Tristate.False;
+                return Tristate::False;
             }
 
-            auto isParenthesizedArrowFunctionExpressionWorker() {
+            auto isParenthesizedArrowFunctionExpressionWorker() -> Tristate {
                 if (token() == SyntaxKind::AsyncKeyword) {
                     nextToken();
                     if (scanner.hasPrecedingLineBreak()) {
-                        return Tristate.False;
+                        return Tristate::False;
                     }
                     if (token() != SyntaxKind::OpenParenToken && token() != SyntaxKind::LessThanToken) {
-                        return Tristate.False;
+                        return Tristate::False;
                     }
                 }
 
@@ -4131,9 +4130,9 @@ namespace ts {
                             case SyntaxKind::EqualsGreaterThanToken:
                             case SyntaxKind::ColonToken:
                             case SyntaxKind::OpenBraceToken:
-                                return Tristate.True;
+                                return Tristate::True;
                             default:
-                                return Tristate.False;
+                                return Tristate::False;
                         }
                     }
 
@@ -4144,50 +4143,50 @@ namespace ts {
                     //      ([ x ])
                     //      ({ x })
                     if (second == SyntaxKind::OpenBracketToken || second == SyntaxKind::OpenBraceToken) {
-                        return Tristate.Unknown;
+                        return Tristate::Unknown;
                     }
 
                     // Simple case: "(..."
                     // This is an arrow auto with a rest parameter.
                     if (second == SyntaxKind::DotDotDotToken) {
-                        return Tristate.True;
+                        return Tristate::True;
                     }
 
                     // Check for "(xxx yyy", where xxx is a modifier and yyy is an identifier. This
                     // isn't actually allowed, but we want to treat it.as<a>() lambda so we can provide
                     // a good error message.
                     if (isModifierKind(second) && second != SyntaxKind::AsyncKeyword && lookAhead<boolean>(std::bind(&Parser::nextTokenIsIdentifier, this))) {
-                        return Tristate.True;
+                        return Tristate::True;
                     }
 
                     // If we had "(" followed by something that's not an identifier,
                     // then this definitely doesn't look like a lambda.  "this" is not
                     // valid, but we want to parse it and then give a semantic error.
                     if (!isIdentifier() && second != SyntaxKind::ThisKeyword) {
-                        return Tristate.False;
+                        return Tristate::False;
                     }
 
                     switch (nextToken()) {
                         case SyntaxKind::ColonToken:
                             // If we have something like "(a:", then we must have a
                             // type-annotated parameter in an arrow auto expression.
-                            return Tristate.True;
+                            return Tristate::True;
                         case SyntaxKind::QuestionToken:
                             nextToken();
                             // If we have "(a?:" or "(a?," or "(a?=" or "(a?)" then it is definitely a lambda.
                             if (token() == SyntaxKind::ColonToken || token() == SyntaxKind::CommaToken || token() == SyntaxKind::EqualsToken || token() == SyntaxKind::CloseParenToken) {
-                                return Tristate.True;
+                                return Tristate::True;
                             }
                             // Otherwise it is definitely not a lambda.
-                            return Tristate.False;
+                            return Tristate::False;
                         case SyntaxKind::CommaToken:
                         case SyntaxKind::EqualsToken:
                         case SyntaxKind::CloseParenToken:
                             // If we have "(a," or "(a=" or "(a)" this *could* be an arrow function
-                            return Tristate.Unknown;
+                            return Tristate::Unknown;
                     }
                     // It is definitely not an arrow function
-                    return Tristate.False;
+                    return Tristate::False;
                 }
                 else {
                     Debug::_assert(first == SyntaxKind::LessThanToken);
@@ -4195,12 +4194,12 @@ namespace ts {
                     // If we have "<" not followed by an identifier,
                     // then this definitely is not an arrow function.
                     if (!isIdentifier()) {
-                        return Tristate.False;
+                        return Tristate::False;
                     }
 
                     // JSX overrides
                     if (languageVariant == LanguageVariant::JSX) {
-                        auto isArrowFunctionInJsx = lookAhead(() => {
+                        auto isArrowFunctionInJsx = lookAhead<boolean>([&]() {
                             auto third = nextToken();
                             if (third == SyntaxKind::ExtendsKeyword) {
                                 auto fourth = nextToken();
@@ -4219,26 +4218,26 @@ namespace ts {
                         });
 
                         if (isArrowFunctionInJsx) {
-                            return Tristate.True;
+                            return Tristate::True;
                         }
 
-                        return Tristate.False;
+                        return Tristate::False;
                     }
 
                     // This *could* be a parenthesized arrow function.
-                    return Tristate.Unknown;
+                    return Tristate::Unknown;
                 }
             }
 
             auto parsePossibleParenthesizedArrowFunctionExpression() -> ArrowFunction {
                 auto tokenPos = scanner.getTokenPos();
-                if (notParenthesizedArrow?.has(tokenPos)) {
+                if (std::find(notParenthesizedArrow.begin(), notParenthesizedArrow.end(), tokenPos) != notParenthesizedArrow.begin()) {
                     return undefined;
                 }
 
                 auto result = parseParenthesizedArrowFunctionExpression(/*allowAmbiguity*/ false);
                 if (!result) {
-                    (notParenthesizedArrow || (notParenthesizedArrow = new Set())).add(tokenPos);
+                    notParenthesizedArrow.push_back(tokenPos);
                 }
 
                 return result;
@@ -4271,11 +4270,11 @@ namespace ts {
                     // Check for un-parenthesized AsyncArrowFunction
                     auto expr = parseBinaryExpressionOrHigher(OperatorPrecedence::Lowest);
                     if (!scanner.hasPrecedingLineBreak() && expr->kind == SyntaxKind::Identifier && token() == SyntaxKind::EqualsGreaterThanToken) {
-                        return Tristate.True;
+                        return Tristate::True;
                     }
                 }
 
-                return Tristate.False;
+                return Tristate::False;
             }
 
             auto parseParenthesizedArrowFunctionExpression(boolean allowAmbiguity) -> ArrowFunction {
@@ -4292,7 +4291,7 @@ namespace ts {
                 // close paren.
                 auto typeParameters = parseTypeParameters();
 
-                auto NodeArray<ParameterDeclaration> parameters;
+                NodeArray<ParameterDeclaration> parameters;
                 if (!parseExpected(SyntaxKind::OpenParenToken)) {
                     if (!allowAmbiguity) {
                         return undefined;
@@ -4307,7 +4306,7 @@ namespace ts {
                 }
 
                 auto type = parseReturnType(SyntaxKind::ColonToken, /*isType*/ false);
-                if (type && !allowAmbiguity && typeHasArrowFunctionBlockingParseError(type)) {
+                if (!!type && !allowAmbiguity && typeHasArrowFunctionBlockingParseError(type)) {
                     return undefined;
                 }
 
@@ -4320,7 +4319,7 @@ namespace ts {
                 //  - "a ? (b) -> function() {}" will too, since function() is a valid JSDoc auto type.
                 //
                 // So we need just a bit of lookahead to ensure that it can only be a signature.
-                auto hasJSDocFunctionType = type && isJSDocFunctionType(type);
+                auto hasJSDocFunctionType = !!type && isJSDocFunctionType(type);
                 if (!allowAmbiguity && token() != SyntaxKind::EqualsGreaterThanToken && (hasJSDocFunctionType || token() != SyntaxKind::OpenBraceToken)) {
                     // Returning undefined here will cause our caller to rewind to where we started from.
                         return undefined;
@@ -4368,8 +4367,8 @@ namespace ts {
                 auto savedTopLevel = topLevel;
                 topLevel = false;
                 auto node = isAsync
-                    ? doInAwaitContext(parseAssignmentExpressionOrHigher)
-                    : doOutsideOfAwaitContext(parseAssignmentExpressionOrHigher);
+                    ? doInAwaitContext<Expression>(std::bind(&Parser::parseAssignmentExpressionOrHigher, this))
+                    : doOutsideOfAwaitContext<Expression>(std::bind(&Parser::parseAssignmentExpressionOrHigher, this));
                 topLevel = savedTopLevel;
                 return node;
             }
@@ -4383,12 +4382,12 @@ namespace ts {
 
                 // we Note explicitly 'allowIn' in the whenTrue part of the condition expression, and
                 // we do not that for the 'whenFalse' part.
-                auto colonToken;
+                Node colonToken;
                 return finishNode(
                     factory.createConditionalExpression(
                         leftOperand,
                         questionToken,
-                        doOutsideOfContext(disallowInAndDecoratorContext, parseAssignmentExpressionOrHigher),
+                        doOutsideOfContext<Expression>(disallowInAndDecoratorContext, std::bind(&Parser::parseAssignmentExpressionOrHigher, this)),
                         colonToken = parseExpectedToken(SyntaxKind::ColonToken),
                         nodeIsPresent(colonToken)
                             ? parseAssignmentExpressionOrHigher()
@@ -4476,7 +4475,7 @@ namespace ts {
                     return false;
                 }
 
-                return getBinaryOperatorPrecedence(token()) > 0;
+                return getBinaryOperatorPrecedence(token()) > (OperatorPrecedence)0;
             }
 
             auto makeBinaryExpression(Expression left, BinaryOperatorToken operatorToken, Expression right, number pos) -> BinaryExpression {
@@ -4484,27 +4483,27 @@ namespace ts {
             }
 
             auto makeAsExpression(Expression left, TypeNode right) -> AsExpression {
-                return finishNode(factory.createAsExpression(left, right), left.pos);
+                return finishNode(factory.createAsExpression(left, right), left->pos);
             }
 
             auto parsePrefixUnaryExpression() -> Node {
                 auto pos = getNodePos();
-                return finishNode(factory.createPrefixUnaryExpression(token().as<PrefixUnaryOperator>(), nextTokenAnd(parseSimpleUnaryExpression)), pos);
+                return finishNode(factory.createPrefixUnaryExpression(token(), nextTokenAnd<UnaryExpression>(std::bind(&Parser::parseSimpleUnaryExpression, this))), pos);
             }
 
             auto parseDeleteExpression() -> Node {
                 auto pos = getNodePos();
-                return finishNode(factory.createDeleteExpression(nextTokenAnd(parseSimpleUnaryExpression)), pos);
+                return finishNode(factory.createDeleteExpression(nextTokenAnd<UnaryExpression>(std::bind(&Parser::parseSimpleUnaryExpression, this))), pos);
             }
 
             auto parseTypeOfExpression() -> Node {
                 auto pos = getNodePos();
-                return finishNode(factory.createTypeOfExpression(nextTokenAnd(parseSimpleUnaryExpression)), pos);
+                return finishNode(factory.createTypeOfExpression(nextTokenAnd<UnaryExpression>(std::bind(&Parser::parseSimpleUnaryExpression, this))), pos);
             }
 
             auto parseVoidExpression() -> Node {
                 auto pos = getNodePos();
-                return finishNode(factory.createVoidExpression(nextTokenAnd(parseSimpleUnaryExpression)), pos);
+                return finishNode(factory.createVoidExpression(nextTokenAnd<UnaryExpression>(std::bind(&Parser::parseSimpleUnaryExpression, this))), pos);
             }
 
             auto isAwaitExpression() -> boolean {
@@ -4514,7 +4513,7 @@ namespace ts {
                     }
 
                     // here we are using similar heuristics as 'isYieldExpression'
-                    return lookAhead(std::bind(&Parser::nextTokenIsIdentifierOrKeywordOrLiteralOnSameLine, this));
+                    return lookAhead<boolean>(std::bind(&Parser::nextTokenIsIdentifierOrKeywordOrLiteralOnSameLine, this));
                 }
 
                 return false;
@@ -4522,7 +4521,7 @@ namespace ts {
 
             auto parseAwaitExpression() -> Node {
                 auto pos = getNodePos();
-                return finishNode(factory.createAwaitExpression(nextTokenAnd(parseSimpleUnaryExpression)), pos);
+                return finishNode(factory.createAwaitExpression(nextTokenAnd<UnaryExpression>(std::bind(&Parser::parseSimpleUnaryExpression, this))), pos);
             }
 
             /**
@@ -4546,7 +4545,7 @@ namespace ts {
                     auto pos = getNodePos();
                     auto updateExpression = parseUpdateExpression();
                     return token() == SyntaxKind::AsteriskAsteriskToken ?
-                        <BinaryExpression>parseBinaryExpressionRest(getBinaryOperatorPrecedence(token()), updateExpression, pos) :
+                        parseBinaryExpressionRest(getBinaryOperatorPrecedence(token()), updateExpression, pos) :
                         updateExpression;
                 }
 
@@ -4564,8 +4563,9 @@ namespace ts {
                 auto unaryOperator = token();
                 auto simpleUnaryExpression = parseSimpleUnaryExpression();
                 if (token() == SyntaxKind::AsteriskAsteriskToken) {
-                    auto pos = skipTrivia(sourceText, simpleUnaryExpression.pos);
-                    auto { end } = simpleUnaryExpression;
+                    auto safe_sourceText = safe_string(sourceText);
+                    auto pos = scanner.skipTrivia(safe_sourceText, simpleUnaryExpression->pos);
+                    auto end = simpleUnaryExpression->end;
                     if (simpleUnaryExpression->kind == SyntaxKind::TypeAssertionExpression) {
                         parseErrorAt(pos, end, Diagnostics::A_type_assertion_expression_is_not_allowed_in_the_left_hand_side_of_an_exponentiation_expression_Consider_enclosing_the_expression_in_parentheses);
                     }
@@ -4667,7 +4667,7 @@ namespace ts {
             auto parseUpdateExpression() -> UpdateExpression {
                 if (token() == SyntaxKind::PlusPlusToken || token() == SyntaxKind::MinusMinusToken) {
                     auto pos = getNodePos();
-                    return finishNode(factory.createPrefixUnaryExpression(token().as<PrefixUnaryOperator>(), nextTokenAnd(parseLeftHandSideExpressionOrHigher)), pos);
+                    return finishNode(factory.createPrefixUnaryExpression(token(), nextTokenAnd<LeftHandSideExpression>(std::bind(&Parser::parseLeftHandSideExpressionOrHigher, this))), pos);
                 }
                 else if (languageVariant == LanguageVariant::JSX && token() == SyntaxKind::LessThanToken && lookAhead<boolean>(std::bind(&Parser::nextTokenIsIdentifierOrKeywordOrGreaterThan, this))) {
                     // JSXElement is part of primaryExpression
@@ -4678,9 +4678,9 @@ namespace ts {
 
                 Debug::_assert(isLeftHandSideExpression(expression));
                 if ((token() == SyntaxKind::PlusPlusToken || token() == SyntaxKind::MinusMinusToken) && !scanner.hasPrecedingLineBreak()) {
-                    auto operator = token().as<PostfixUnaryOperator>();
+                    auto _operator = token();
                     nextToken();
-                    return finishNode(factory.createPostfixUnaryExpression(expression, operator), expression.pos);
+                    return finishNode(factory.createPostfixUnaryExpression(expression, _operator), expression->pos);
                 }
 
                 return expression;
@@ -4719,7 +4719,7 @@ namespace ts {
                 // 3)we have a MemberExpression which either completes the LeftHandSideExpression,
                 // or starts the beginning of the first four CallExpression productions.
                 auto pos = getNodePos();
-                auto MemberExpression expression;
+                MemberExpression expression;
                 if (token() == SyntaxKind::ImportKeyword) {
                     if (lookAhead<boolean>(std::bind(&Parser::nextTokenIsOpenParenOrLessThan, this))) {
                         // We don't want to eagerly consume all import keyword.as<import>() call expression so we look ahead to find "("
@@ -4809,7 +4809,7 @@ namespace ts {
                 auto expression = parseTokenNode<PrimaryExpression>();
                 if (token() == SyntaxKind::LessThanToken) {
                     auto startPos = getNodePos();
-                    auto typeArguments = tryParse<boolean>(std::bind(&Parser::parseTypeArgumentsInExpression, this));
+                    auto typeArguments = tryParse<NodeArray<TypeNode> >(std::bind(&Parser::parseTypeArgumentsInExpression, this));
                     if (typeArguments != undefined) {
                         parseErrorAt(startPos, getNodePos(), Diagnostics::super_may_not_use_type_arguments);
                     }
@@ -4826,16 +4826,16 @@ namespace ts {
                 return finishNode(factory.createPropertyAccessExpression(expression, parseRightSideOfDot(/*allowIdentifierNames*/ true, /*allowPrivateIdentifiers*/ true)), pos);
             }
 
-            auto parseJsxElementOrSelfClosingElementOrFragment(boolean inExpressionContext, number topInvalidNodePosition) -> Node {
+            auto parseJsxElementOrSelfClosingElementOrFragment(boolean inExpressionContext, number topInvalidNodePosition = -1) -> Node {
                 auto pos = getNodePos();
                 auto opening = parseJsxOpeningOrSelfClosingElementOrOpeningFragment(inExpressionContext);
-                auto JsxElement result | JsxSelfClosingElement | JsxFragment;
+                Node result;
                 if (opening->kind == SyntaxKind::JsxOpeningElement) {
                     auto children = parseJsxChildren(opening);
                     auto closingElement = parseJsxClosingElement(inExpressionContext);
 
-                    if (!tagNamesAreEquivalent(opening.tagName, closingElement.tagName)) {
-                        parseErrorAtRange(closingElement, Diagnostics::Expected_corresponding_JSX_closing_tag_for_0, getTextOfNodeFromSourceText(sourceText, opening.tagName));
+                    if (!tagNamesAreEquivalent(opening.as<JsxOpeningElement>()->tagName.as<JsxTagNameExpression>(), closingElement->tagName.as<JsxTagNameExpression>())) {
+                        parseErrorAtRange(closingElement, Diagnostics::Expected_corresponding_JSX_closing_tag_for_0, getTextOfNodeFromSourceText(sourceText, opening.as<JsxOpeningElement>()->tagName));
                     }
 
                     result = finishNode(factory.createJsxElement(opening, children, closingElement), pos);
@@ -4857,13 +4857,14 @@ namespace ts {
                 // Since JSX elements are invalid < operands anyway, this lookahead parse will only occur in error scenarios
                 // of one sort or another.
                 if (inExpressionContext && token() == SyntaxKind::LessThanToken) {
-                    auto topBadPos = typeof topInvalidNodePosition == "undefined" ? result.pos : topInvalidNodePosition;
-                    auto invalidElement = tryParse(() => parseJsxElementOrSelfClosingElementOrFragment(/*inExpressionContext*/ true, topBadPos));
+                    auto topBadPos = topInvalidNodePosition == -1 ? result->pos : topInvalidNodePosition;
+                    auto invalidElement = tryParse<Node>([&]() { return parseJsxElementOrSelfClosingElementOrFragment(/*inExpressionContext*/ true, topBadPos); });
                     if (invalidElement) {
                         auto operatorToken = createMissingNode(SyntaxKind::CommaToken, /*reportAtCurrentPosition*/ false);
-                        setTextRangePosWidth(operatorToken, invalidElement.pos, 0);
-                        parseErrorAt(skipTrivia(sourceText, topBadPos), invalidElement.end, Diagnostics::JSX_expressions_must_have_one_parent_element);
-                        return <JsxElement><Node>finishNode(factory.createBinaryExpression(result, operatorToken.as<Token>()<SyntaxKind::CommaToken>, invalidElement), pos);
+                        setTextRangePosWidth(operatorToken, invalidElement->pos, 0);
+                        auto safe_str = safe_string(sourceText);
+                        parseErrorAt(scanner.skipTrivia(safe_str, topBadPos), invalidElement->end, Diagnostics::JSX_expressions_must_have_one_parent_element);
+                        return finishNode(factory.createBinaryExpression(result, operatorToken, invalidElement), pos);
                     }
                 }
 
@@ -4877,7 +4878,7 @@ namespace ts {
                 return finishNode(node, pos);
             }
 
-            auto parseJsxChild(SyntaxKind token) -> JsxChild {
+            auto parseJsxChild(Node openingTag, SyntaxKind token) -> JsxChild {
                 switch (token) {
                     case SyntaxKind::EndOfFileToken:
                         // If we hit EOF, issue the error at the tag that lacks the closing element
@@ -4888,9 +4889,10 @@ namespace ts {
                         else {
                             // We want the error span to cover only 'Foo.Bar' in < Foo.Bar >
                             // or to cover only 'Foo' in < Foo >
-                            auto tag = openingTag.tagName;
-                            auto start = skipTrivia(sourceText, tag.pos);
-                            parseErrorAt(start, tag.end, Diagnostics::JSX_element_0_has_no_corresponding_closing_tag, getTextOfNodeFromSourceText(sourceText, openingTag.tagName));
+                            auto tag = openingTag.as<JsxOpeningElement>()->tagName;
+                            auto safe_str = safe_string(sourceText);
+                            auto start = scanner.skipTrivia(safe_str, tag->pos);
+                            parseErrorAt(start, tag->end, Diagnostics::JSX_element_0_has_no_corresponding_closing_tag, getTextOfNodeFromSourceText(sourceText, openingTag.as<JsxOpeningElement>()->tagName));
                         }
                         return undefined;
                     case SyntaxKind::LessThanSlashToken:
@@ -4904,15 +4906,15 @@ namespace ts {
                     case SyntaxKind::LessThanToken:
                         return parseJsxElementOrSelfClosingElementOrFragment(/*inExpressionContext*/ false);
                     default:
-                        return Debug::_assertNever(token);
+                        return Debug::_assertNever(/*token*/Node());
                 }
             }
 
             auto parseJsxChildren(Node openingTag) -> NodeArray<JsxChild> {
-                auto list = [];
+                NodeArray<JsxChild> list;
                 auto listPos = getNodePos();
                 auto saveParsingContext = parsingContext;
-                parsingContext |= 1 << ParsingContext::JsxChildren;
+                parsingContext |= (ParsingContext) (1 << (number)ParsingContext::JsxChildren);
 
                 while (true) {
                     auto child = parseJsxChild(openingTag, currentToken = scanner.reScanJsxToken());
@@ -4941,10 +4943,10 @@ namespace ts {
                 }
 
                 auto tagName = parseJsxElementName();
-                auto typeArguments = (contextFlags & NodeFlags::JavaScriptFile) == 0 ? tryParseTypeArguments() : undefined;
+                auto typeArguments = (contextFlags & NodeFlags::JavaScriptFile) == NodeFlags::None ? tryParseTypeArguments() : undefined;
                 auto attributes = parseJsxAttributes();
 
-                auto JsxOpeningLikeElement node;
+                JsxOpeningLikeElement node;
 
                 if (token() == SyntaxKind::GreaterThanToken) {
                     // Closing tag, so scan the immediately-following text with the JSX scanning instead
@@ -4976,7 +4978,7 @@ namespace ts {
                 //      primaryExpression in the form of an identifier and "this" keyword
                 // We can't just simply use parseLeftHandSideExpressionOrHigher because then we will start consider class,auto etc.as<a>() keyword
                 // We only want to consider "this".as<a>() primaryExpression
-                auto JsxTagNameExpression expression = token() == SyntaxKind::ThisKeyword ?
+                JsxTagNameExpression expression = token() == SyntaxKind::ThisKeyword ?
                     parseTokenNode<ThisExpression>() : parseIdentifierName();
                 while (parseOptional(SyntaxKind::DotToken)) {
                     expression = finishNode(factory.createPropertyAccessExpression(expression, parseRightSideOfDot(/*allowIdentifierNames*/ true, /*allowPrivateIdentifiers*/ false)), pos).as<JsxTagNamePropertyAccess>();
@@ -4990,8 +4992,8 @@ namespace ts {
                     return undefined;
                 }
 
-                auto DotDotDotToken dotDotDotToken;
-                auto Expression expression;
+                Node dotDotDotToken;
+                Expression expression;
                 if (token() != SyntaxKind::CloseBraceToken) {
                     dotDotDotToken = parseOptionalToken(SyntaxKind::DotDotDotToken);
                     // Only an AssignmentExpression is valid here per the JSX spec,
@@ -5077,33 +5079,33 @@ namespace ts {
                 return finishNode(factory.createTypeAssertion(type, expression), pos);
             }
 
-            auto nextTokenIsIdentifierOrKeywordOrOpenBracketOrTemplate() {
+            auto nextTokenIsIdentifierOrKeywordOrOpenBracketOrTemplate() -> boolean {
                 nextToken();
                 return scanner.tokenIsIdentifierOrKeyword(token())
                     || token() == SyntaxKind::OpenBracketToken
                     || isTemplateStartOfTaggedTemplate();
             }
 
-            auto isStartOfOptionalPropertyOrElementAccessChain() {
+            auto isStartOfOptionalPropertyOrElementAccessChain() -> boolean {
                 return token() == SyntaxKind::QuestionDotToken
                     && lookAhead<boolean>(std::bind(&Parser::nextTokenIsIdentifierOrKeywordOrOpenBracketOrTemplate, this));
             }
 
-            auto tryReparseOptionalChain(Expression node) {
-                if (node->flags & NodeFlags::OptionalChain) {
+            auto tryReparseOptionalChain(Expression node) -> boolean {
+                if (!!(node->flags & NodeFlags::OptionalChain)) {
                     return true;
                 }
                 // check for an optional chain in a non-null expression
                 if (isNonNullExpression(node)) {
-                    auto expr = node->expression;
-                    while (isNonNullExpression(expr) && !(expr.flags & NodeFlags::OptionalChain)) {
-                        expr = expr.expression;
+                    auto expr = node.as<NonNullExpression>()->expression;
+                    while (isNonNullExpression(expr) && !(expr->flags & NodeFlags::OptionalChain)) {
+                        expr = expr.as<NonNullExpression>()->expression;
                     }
-                    if (expr.flags & NodeFlags::OptionalChain) {
+                    if (!!(expr->flags & NodeFlags::OptionalChain)) {
                         // this is part of an optional chain. Walk down from `node` to `expression` and set the flag.
                         while (isNonNullExpression(node)) {
-                            (node.asMutable<NonNullExpression>()).flags |= NodeFlags::OptionalChain;
-                            node = node->expression;
+                            (node.asMutable<NonNullExpression>())->flags |= NodeFlags::OptionalChain;
+                            node = node.as<NonNullExpression>()->expression;
                         }
                         return true;
                     }
@@ -5117,21 +5119,21 @@ namespace ts {
                 auto propertyAccess = isOptionalChain ?
                     factory.createPropertyAccessChain(expression, questionDotToken, name) :
                     factory.createPropertyAccessExpression(expression, name);
-                if (isOptionalChain && isPrivateIdentifier(propertyAccess.name)) {
-                    parseErrorAtRange(propertyAccess.name, Diagnostics::An_optional_chain_cannot_contain_private_identifiers);
+                if (isOptionalChain && isPrivateIdentifier(propertyAccess->name)) {
+                    parseErrorAtRange(propertyAccess->name, Diagnostics::An_optional_chain_cannot_contain_private_identifiers);
                 }
                 return finishNode(propertyAccess, pos);
             }
 
             auto parseElementAccessExpressionRest(number pos, LeftHandSideExpression expression, QuestionDotToken questionDotToken) {
-                auto Expression argumentExpression;
+                Expression argumentExpression;
                 if (token() == SyntaxKind::CloseBracketToken) {
                     argumentExpression = createMissingNode(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ true, Diagnostics::An_element_access_expression_should_take_an_argument);
                 }
                 else {
                     auto argument = allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
                     if (isStringOrNumericLiteralLike(argument)) {
-                        argument.text = internIdentifier(argument.text);
+                        argument->text = internIdentifier(argument->text);
                     }
                     argumentExpression = argument;
                 }
@@ -5146,7 +5148,7 @@ namespace ts {
 
             auto parseMemberExpressionRest(number pos, LeftHandSideExpression expression, boolean allowOptionalChain) -> MemberExpression {
                 while (true) {
-                    auto QuestionDotToken questionDotToken;
+                    Node questionDotToken;
                     auto isPropertyAccess = false;
                     if (allowOptionalChain && isStartOfOptionalPropertyOrElementAccessChain()) {
                         questionDotToken = parseExpectedToken(SyntaxKind::QuestionDotToken);
@@ -5182,11 +5184,11 @@ namespace ts {
                 }
             }
 
-            auto isTemplateStartOfTaggedTemplate() {
+            auto isTemplateStartOfTaggedTemplate() -> boolean {
                 return token() == SyntaxKind::NoSubstitutionTemplateLiteral || token() == SyntaxKind::TemplateHead;
             }
 
-            auto parseTaggedTemplateRest(number pos, LeftHandSideExpression tag, QuestionDotToken questionDotToken, NodeArray<TypeNode> typeArguments) {
+            auto parseTaggedTemplateRest(number pos, LeftHandSideExpression tag, QuestionDotToken questionDotToken, NodeArray<TypeNode> typeArguments) -> Node {
                 auto tagExpression = factory.createTaggedTemplateExpression(
                     tag,
                     typeArguments,
@@ -5194,10 +5196,10 @@ namespace ts {
                         (reScanTemplateHeadOrNoSubstitutionTemplate(), parseLiteralNode().as<NoSubstitutionTemplateLiteral>()) :
                         parseTemplateExpression(/*isTaggedTemplate*/ true)
                 );
-                if (questionDotToken || tag.flags & NodeFlags::OptionalChain) {
-                    (tagExpression.asMutable<Node>()).flags |= NodeFlags::OptionalChain;
+                if (questionDotToken || !!(tag->flags & NodeFlags::OptionalChain)) {
+                    (tagExpression.asMutable<Node>())->flags |= NodeFlags::OptionalChain;
                 }
-                tagExpression.questionDotToken = questionDotToken;
+                tagExpression->questionDotToken = questionDotToken;
                 return finishNode(tagExpression, pos);
             }
 
@@ -5207,13 +5209,13 @@ namespace ts {
                     auto questionDotToken = parseOptionalToken(SyntaxKind::QuestionDotToken);
                     // handle 'foo<<T>()'
                     // parse template arguments only in TypeScript files (not in JavaScript files).
-                    if ((contextFlags & NodeFlags::JavaScriptFile) == 0 && (token() == SyntaxKind::LessThanToken || token() == SyntaxKind::LessThanLessThanToken)) {
+                    if ((contextFlags & NodeFlags::JavaScriptFile) == NodeFlags::None && (token() == SyntaxKind::LessThanToken || token() == SyntaxKind::LessThanLessThanToken)) {
                         // See if this is the start of a generic invocation.  If so, consume it and
                         // keep checking for postfix expressions.  Otherwise, it's just a '<' that's
                         // part of an arithmetic expression.  Break out so we consume it higher in the
                         // stack.
-                        auto typeArguments = tryParse<boolean>(std::bind(&Parser::parseTypeArgumentsInExpression, this));
-                        if (typeArguments) {
+                        auto typeArguments = tryParse<NodeArray<TypeNode> >(std::bind(&Parser::parseTypeArgumentsInExpression, this));
+                        if (!!typeArguments) {
                             if (isTemplateStartOfTaggedTemplate()) {
                                 expression = parseTaggedTemplateRest(pos, expression, questionDotToken, typeArguments);
                                 continue;
@@ -5245,15 +5247,15 @@ namespace ts {
                 return expression;
             }
 
-            auto parseArgumentList() {
+            auto parseArgumentList() -> NodeArray<Expression> {
                 parseExpected(SyntaxKind::OpenParenToken);
-                auto result = parseDelimitedList(ParsingContext::ArgumentExpressions, parseArgumentExpression);
+                auto result = parseDelimitedList<Expression>(ParsingContext::ArgumentExpressions, std::bind(&Parser::parseArgumentExpression, this));
                 parseExpected(SyntaxKind::CloseParenToken);
                 return result;
             }
 
-            auto parseTypeArgumentsInExpression() {
-                if ((contextFlags & NodeFlags::JavaScriptFile) != 0) {
+            auto parseTypeArgumentsInExpression() -> NodeArray<TypeNode> {
+                if ((contextFlags & NodeFlags::JavaScriptFile) != NodeFlags::None) {
                     // TypeArguments must not be parsed in JavaScript files to avoid ambiguity with binary operators.
                     return undefined;
                 }
@@ -5263,7 +5265,7 @@ namespace ts {
                 }
                 nextToken();
 
-                auto typeArguments = parseDelimitedList(ParsingContext::TypeArguments, parseType);
+                auto typeArguments = parseDelimitedList<TypeNode>(ParsingContext::TypeArguments, std::bind(&Parser::parseType, this));
                 if (!parseExpected(SyntaxKind::GreaterThanToken)) {
                     // If it doesn't have the closing `>` then it's definitely not an type argument list.
                     return undefined;
@@ -5271,7 +5273,7 @@ namespace ts {
 
                 // If we have a '<', then only parse this.as<a>() argument list if the type arguments
                 // are complete and we have an open paren.  if we don't, rewind and return nothing.
-                return typeArguments && canFollowTypeArgumentsInExpression()
+                return !!typeArguments && canFollowTypeArgumentsInExpression()
                     ? typeArguments
                     : undefined;
             }
@@ -5389,14 +5391,14 @@ namespace ts {
             }
 
             auto parseArgumentExpression() -> Expression {
-                return doOutsideOfContext(disallowInAndDecoratorContext, parseArgumentOrArrayLiteralElement);
+                return doOutsideOfContext<Expression>(disallowInAndDecoratorContext, std::bind(&Parser::parseArgumentOrArrayLiteralElement, this));
             }
 
             auto parseArrayLiteralExpression() -> Node {
                 auto pos = getNodePos();
                 parseExpected(SyntaxKind::OpenBracketToken);
                 auto multiLine = scanner.hasPrecedingLineBreak();
-                auto elements = parseDelimitedList(ParsingContext::ArrayLiteralMembers, parseArgumentOrArrayLiteralElement);
+                auto elements = parseDelimitedList<Expression>(ParsingContext::ArrayLiteralMembers, std::bind(&Parser::parseArgumentOrArrayLiteralElement, this));
                 parseExpected(SyntaxKind::CloseBracketToken);
                 return finishNode(factory.createArrayLiteralExpression(elements, multiLine), pos);
             }
@@ -5437,15 +5439,16 @@ namespace ts {
                 // CoverInitializedName[Yield] :
                 //     IdentifierReference[?Yield] Initializer[In, ?Yield]
                 // this is necessary because ObjectLiteral productions are also used to cover grammar for ObjectAssignmentPattern
-                auto Mutable node<ShorthandPropertyAssignment | PropertyAssignment>;
+                PropertyAssignment node;
                 auto isShorthandPropertyAssignment = tokenIsIdentifier && (token() != SyntaxKind::ColonToken);
                 if (isShorthandPropertyAssignment) {
                     auto equalsToken = parseOptionalToken(SyntaxKind::EqualsToken);
                     auto objectAssignmentInitializer = equalsToken ? allowInAnd<Expression>(std::bind(&Parser::parseAssignmentExpressionOrHigher, this)) : undefined;
-                    node = factory.createShorthandPropertyAssignment(name.as<Identifier>(), objectAssignmentInitializer);
+                    auto nodeSpa = factory.createShorthandPropertyAssignment(name.as<Identifier>(), objectAssignmentInitializer);
                     // Save equals token for error reporting.
                     // TODO(rbuckton) -> Consider manufacturing this when we need to report an error.as<it>() is otherwise not useful.
-                    node->equalsToken = equalsToken;
+                    nodeSpa->equalsToken = equalsToken;
+                    node = nodeSpa.as<PropertyAssignment>();
                 }
                 else {
                     parseExpected(SyntaxKind::ColonToken);
@@ -5465,10 +5468,10 @@ namespace ts {
                 auto openBracePosition = scanner.getTokenPos();
                 parseExpected(SyntaxKind::OpenBraceToken);
                 auto multiLine = scanner.hasPrecedingLineBreak();
-                auto properties = parseDelimitedList(ParsingContext::ObjectLiteralMembers, parseObjectLiteralElement, /*considerSemicolonAsDelimiter*/ true);
+                auto properties = parseDelimitedList<ObjectLiteralElementLike>(ParsingContext::ObjectLiteralMembers, std::bind(&Parser::parseObjectLiteralElement, this), /*considerSemicolonAsDelimiter*/ true);
                 if (!parseExpected(SyntaxKind::CloseBraceToken)) {
                     auto lastError = lastOrUndefined(parseDiagnostics);
-                    if (lastError && lastError.code == Diagnostics::_0_expected.code) {
+                    if (!!lastError && lastError.code == Diagnostics::_0_expected.code) {
                         addRelatedInfo(
                             lastError,
                             createDetachedDiagnostic(fileName, openBracePosition, 1, Diagnostics::The_parser_expected_to_find_a_to_match_the_token_here)
@@ -5576,7 +5579,7 @@ namespace ts {
                 }
             }
 
-            auto parseFunctionBlock(SignatureFlags flags, DiagnosticMessage diagnosticMessage) -> Block {
+            auto parseFunctionBlock(SignatureFlags flags, DiagnosticMessage diagnosticMessage = DiagnosticMessage()) -> Block {
                 auto savedYieldContext = inYieldContext();
                 setYieldContext(!!(flags & SignatureFlags::Yield));
 
@@ -5866,7 +5869,7 @@ namespace ts {
                 return token() == SyntaxKind::FunctionKeyword && !scanner.hasPrecedingLineBreak();
             }
 
-            auto nextTokenIsIdentifierOrKeywordOrLiteralOnSameLine() {
+            auto nextTokenIsIdentifierOrKeywordOrLiteralOnSameLine() -> boolean {
                 nextToken();
                 return (scanner.tokenIsIdentifierOrKeyword(token()) || token() == SyntaxKind::NumericLiteral || token() == SyntaxKind::BigIntLiteral || token() == SyntaxKind::StringLiteral) && !scanner.hasPrecedingLineBreak();
             }
@@ -6124,7 +6127,7 @@ namespace ts {
                 auto modifiers = parseModifiers();
                 if (isAmbient) {
                     for (auto m of modifiers!) {
-                        (m.asMutable<Node>()).flags |= NodeFlags::Ambient;
+                        (m.asMutable<Node>())->flags |= NodeFlags::Ambient;
                     }
                     return doInsideOfContext(NodeFlags::Ambient, () => parseDeclarationWorker(pos, hasJSDoc, decorators, modifiers));
                 }
@@ -6400,7 +6403,7 @@ namespace ts {
                 PropertyName name,
                 SyntaxKind questionToken,
                 SyntaxKind exclamationToken,
-                DiagnosticMessage diagnosticMessage
+                DiagnosticMessage diagnosticMessage = DiagnosticMessage()
             ) -> MethodDeclaration {
                 auto isGenerator = asteriskToken ? SignatureFlags::Yield : SignatureFlags::None;
                 auto isAsync = some(modifiers, isAsyncModifier) ? SignatureFlags::Await : SignatureFlags::None;
@@ -6659,7 +6662,7 @@ namespace ts {
                     auto isAmbient = some(modifiers, isDeclareModifier);
                     if (isAmbient) {
                         for (auto m of modifiers!) {
-                            (m.asMutable<Node>()).flags |= NodeFlags::Ambient;
+                            (m.asMutable<Node>())->flags |= NodeFlags::Ambient;
                         }
                         return doInsideOfContext(NodeFlags::Ambient, () => parsePropertyOrMethodDeclaration(pos, hasJSDoc, decorators, modifiers));
                     }
@@ -7534,7 +7537,7 @@ namespace ts {
                         }
                         state = JSDocState.SawAsterisk;
                     }
-                    auto tok = token().as<SyntaxKind>();
+                    auto tok = token();
                     while loop (true) {
                         switch (tok) {
                             case SyntaxKind::NewLineTrivia:
@@ -7622,12 +7625,12 @@ namespace ts {
                     }
                     if (!tags) {
                         tags = [tag];
-                        tagsPos = tag.pos;
+                        tagsPos = tag->pos;
                     }
                     else {
                         tags.push(tag);
                     }
-                    tagsEnd = tag.end;
+                    tagsEnd = tag->end;
                 }
 
                 auto tryParseTypeExpression() -> JSDocTypeExpression {
@@ -7715,7 +7718,7 @@ namespace ts {
 
                 auto parseReturnTag(number start, Identifier tagName, number indent, string indentText) -> JSDocReturnTag {
                     if (some(tags, isJSDocReturnTag)) {
-                        parseErrorAt(tagName.pos, scanner.getTokenPos(), Diagnostics::_0_tag_already_specified, tagName.escapedText);
+                        parseErrorAt(tagName->pos, scanner.getTokenPos(), Diagnostics::_0_tag_already_specified, tagName.escapedText);
                     }
 
                     auto typeExpression = tryParseTypeExpression();
@@ -7725,7 +7728,7 @@ namespace ts {
 
                 auto parseTypeTag(number start, Identifier tagName, number indent, string indentText) -> JSDocTypeTag {
                     if (some(tags, isJSDocTypeTag)) {
-                        parseErrorAt(tagName.pos, scanner.getTokenPos(), Diagnostics::_0_tag_already_specified, tagName.escapedText);
+                        parseErrorAt(tagName->pos, scanner.getTokenPos(), Diagnostics::_0_tag_already_specified, tagName.escapedText);
                     }
 
                     auto typeExpression = parseJSDocTypeExpression(/*mayOmitBraces*/ true);
@@ -7865,14 +7868,14 @@ namespace ts {
                             typeExpression = childTypeTag && childTypeTag.typeExpression && !isObjectOrObjectArrayTypeReference(childTypeTag.typeExpression.type) ?
                                 childTypeTag.typeExpression :
                                 finishNode(jsdocTypeLiteral, start);
-                            end = typeExpression.end;
+                            end = typeExpression->end;
                         }
                     }
 
                     // Only include the characters between the name end and the next token if a comment was actually parsed out - otherwise it's just whitespace
                     end = end || comment != undefined ?
                         getNodePos() :
-                        (fullName ?? typeExpression ?? tagName).end;
+                        (fullName ?? typeExpression ?? tagName)->end;
 
                     if (!comment) {
                         comment = parseTrailingTagComments(start, end, indent, indentText);
@@ -8225,20 +8228,20 @@ namespace ts {
                 for (auto directive of oldDirectives) {
                     auto { range, type } = directive;
                     // Range before the change
-                    if (range.end < changeStart) {
+                    if (range->end < changeStart) {
                         commentDirectives = append(commentDirectives, directive);
                     }
-                    else if (range.pos > changeRangeOldEnd) {
+                    else if (range->pos > changeRangeOldEnd) {
                         addNewlyScannedDirectives();
                         // Node is entirely past the change range.  We need to move both its pos and
                         // end, forward or backward appropriately.
                         auto CommentDirective updatedDirective = {
-                            range: { range.pos pos + delta, range.end end + delta },
+                            range: { range->pos pos + delta, range.end end + delta },
                             type
                         };
                         commentDirectives = append(commentDirectives, updatedDirective);
                         if (aggressiveChecks) {
-                            Debug::_assert(oldText.substring(range.pos, range.end) == newText.substring(updatedDirective.range.pos, updatedDirective.range.end));
+                            Debug::_assert(oldText.substring(range->pos, range.end) == newText.substring(updatedDirective.range->pos, updatedDirective.range.end));
                         }
                     }
                     // Ignore ranges that fall in change range
@@ -8285,7 +8288,7 @@ namespace ts {
 
                 auto visitArray(IncrementalNodeArray array) {
                     array._children = undefined;
-                    setTextRangePosEnd(array, array.pos + delta, array.end + delta);
+                    setTextRangePosEnd(array, array->pos + delta, array.end + delta);
 
                     for (auto node of array) {
                         visitNode(node);
@@ -8306,8 +8309,8 @@ namespace ts {
 
             auto adjustIntersectingElement(IncrementalElement element, number changeStart, number changeRangeOldEnd, number changeRangeNewEnd, number delta) {
                 Debug::_assert(element.end >= changeStart, "Adjusting an element that was entirely before the change range");
-                Debug::_assert(element.pos <= changeRangeOldEnd, "Adjusting an element that was entirely after the change range");
-                Debug::_assert(element.pos <= element.end);
+                Debug::_assert(element->pos <= changeRangeOldEnd, "Adjusting an element that was entirely after the change range");
+                Debug::_assert(element->pos <= element.end);
 
                 // We have an element that intersects the change range in some way.  It may have its
                 // start, or its end (or both) in the changed range.  We want to adjust any part
@@ -8340,7 +8343,7 @@ namespace ts {
                 //
                 // The element will keep its position if possible.  Or Move backward to the new-end
                 // if it's in the 'Y' range.
-                auto pos = Math.min(element.pos, changeRangeNewEnd);
+                auto pos = Math.min(element->pos, changeRangeNewEnd);
 
                 // If the 'end' is after the change range, then we always adjust it by the delta
                 // amount.  However, if the end is in the change range, then how we adjust it
@@ -8371,7 +8374,7 @@ namespace ts {
 
                 Debug::_assert(pos <= end);
                 if (element.parent) {
-                    Debug::_assertGreaterThanOrEqual(pos, element.parent.pos);
+                    Debug::_assertGreaterThanOrEqual(pos, element.parent->pos);
                     Debug::_assertLessThanOrEqual(end, element.parent.end);
                 }
 
@@ -8382,7 +8385,7 @@ namespace ts {
                 if (aggressiveChecks) {
                     auto pos = node->pos;
                     auto visitNode = (Node child) => {
-                        Debug::_assert(child.pos >= pos);
+                        Debug::_assert(child->pos >= pos);
                         pos = child.end;
                     };
                     if (hasJSDocNodes(node)) {
@@ -8409,8 +8412,8 @@ namespace ts {
                 return;
 
                 auto visitNode(IncrementalNode child) {
-                    Debug::_assert(child.pos <= child.end);
-                    if (child.pos > changeRangeOldEnd) {
+                    Debug::_assert(child->pos <= child.end);
+                    if (child->pos > changeRangeOldEnd) {
                         // Node is entirely past the change range.  We need to move both its pos and
                         // end, forward or backward appropriately.
                         moveElementEntirelyPastChangeRange(child, /*isArray*/ false, delta, oldText, newText, aggressiveChecks);
@@ -8442,8 +8445,8 @@ namespace ts {
                 }
 
                 auto visitArray(IncrementalNodeArray array) {
-                    Debug::_assert(array.pos <= array.end);
-                    if (array.pos > changeRangeOldEnd) {
+                    Debug::_assert(array->pos <= array.end);
+                    if (array->pos > changeRangeOldEnd) {
                         // Array is entirely after the change range.  We need to move it, and move any of
                         // its children.
                         moveElementEntirelyPastChangeRange(array, /*isArray*/ true, delta, oldText, newText, aggressiveChecks);
@@ -8511,7 +8514,7 @@ namespace ts {
 
                 if (lastNodeEntirelyBeforePosition) {
                     auto lastChildOfLastEntireNodeBeforePosition = getLastDescendant(lastNodeEntirelyBeforePosition);
-                    if (lastChildOfLastEntireNodeBeforePosition.pos > bestResult.pos) {
+                    if (lastChildOfLastEntireNodeBeforePosition->pos > bestResult->pos) {
                         bestResult = lastChildOfLastEntireNodeBeforePosition;
                     }
                 }
@@ -8539,8 +8542,8 @@ namespace ts {
 
                     // If the child intersects this position, then this node is currently the nearest
                     // node that starts before the position.
-                    if (child.pos <= position) {
-                        if (child.pos >= bestResult.pos) {
+                    if (child->pos <= position) {
+                        if (child->pos >= bestResult->pos) {
                             // This node starts before the position, and is closer to the position than
                             // the previous best node we found.  It is now the new best node->
                             bestResult = child;
@@ -8579,7 +8582,7 @@ namespace ts {
                         }
                     }
                     else {
-                        Debug::_assert(child.pos > position);
+                        Debug::_assert(child->pos > position);
                         // We're now at a node that is entirely past the position we're searching for.
                         // This node (and all following nodes) could never contribute to the result,
                         // so just skip them by returning 'true' here.
@@ -8630,7 +8633,7 @@ namespace ts {
 
                             // If we don't have a node, or the node we have isn't in the right position,
                             // then try to find a viable node at the position requested.
-                            if (!current || current.pos != position) {
+                            if (!current || current->pos != position) {
                                 findHighestListElementThatStartsAtPosition(position);
                             }
                         }
@@ -8643,7 +8646,7 @@ namespace ts {
                         lastQueriedPosition = position;
 
                         // Either we don'd have a node, or we have a node at the position being asked for.
-                        Debug::_assert(!current || current.pos == position);
+                        Debug::_assert(!current || current->pos == position);
                         return current.as<IncrementalNode>();
                     }
                 };
@@ -8675,13 +8678,13 @@ namespace ts {
                     }
 
                     auto visitArray(NodeArray<Node> array) {
-                        if (position >= array.pos && position < array.end) {
+                        if (position >= array->pos && position < array.end) {
                             // position was in this array.  Search through this array to see if we find a
                             // viable element.
                             for (auto i = 0; i < array.size(); i++) {
                                 auto child = array[i];
                                 if (child) {
-                                    if (child.pos == position) {
+                                    if (child->pos == position) {
                                         // Found the right node->  We're done.
                                         currentArray = array;
                                         currentArrayIndex = i;
@@ -8689,7 +8692,7 @@ namespace ts {
                                         return true;
                                     }
                                     else {
-                                        if (child.pos < position && position < child.end) {
+                                        if (child->pos < position && position < child.end) {
                                             // Position in somewhere within this child.  Search in it and
                                             // stop searching in this array.
                                             forEachChild(child, visitNode, visitArray);
@@ -8755,7 +8758,7 @@ namespace ts {
             auto newSourceFile = IncrementalParser::updateSourceFile(sourceFile, newText, textChangeRange, aggressiveChecks);
             // Because new source file node is created, it may not have the flag PossiblyContainDynamicImport. This is the case if there is no new edit to add dynamic import.
             // We will manually port the flag to the new source file.
-            newSourceFile.flags |= (sourceFile->flags & NodeFlags::PermanentlySetIncrementalFlags);
+            newSourceFile->flags |= (sourceFile->flags & NodeFlags::PermanentlySetIncrementalFlags);
             return newSourceFile;
         }
 
@@ -8782,7 +8785,7 @@ namespace ts {
             auto std::vector<PragmaPseudoMapEntry> pragmas;
 
             for (auto range of getLeadingCommentRanges(sourceText, 0) || emptyArray) {
-                auto comment = sourceText.substring(range.pos, range.end);
+                auto comment = sourceText.substring(range->pos, range.end);
                 extractPragmas(pragmas, range, comment);
             }
 
@@ -8824,16 +8827,16 @@ namespace ts {
                                 context.hasNoDefaultLib = true;
                             }
                             else if (types) {
-                                typeReferenceDirectives.push({ types.pos pos, types.end end, types.value fileName });
+                                typeReferenceDirectives.push({ types->pos pos, types.end end, types.value fileName });
                             }
                             else if (lib) {
-                                libReferenceDirectives.push({ lib.pos pos, lib.end end, lib.value fileName });
+                                libReferenceDirectives.push({ lib->pos pos, lib.end end, lib.value fileName });
                             }
                             else if (path) {
-                                referencedFiles.push({ path.pos pos, path.end end, path.value fileName });
+                                referencedFiles.push({ path->pos pos, path.end end, path.value fileName });
                             }
                             else {
-                                reportDiagnostic(arg.range.pos, arg.range.end - arg.range.pos, Diagnostics::Invalid_reference_directive_syntax);
+                                reportDiagnostic(arg.range->pos, arg.range.end - arg.range->pos, Diagnostics::Invalid_reference_directive_syntax);
                             }
                         });
                         break;
@@ -8849,7 +8852,7 @@ namespace ts {
                             for (auto entry of entryOrList) {
                                 if (context.moduleName) {
                                     // It TODO's probably fine to issue this diagnostic on all instances of the pragma
-                                    reportDiagnostic(entry.range.pos, entry.range.end - entry.range.pos, Diagnostics::An_AMD_module_cannot_have_multiple_name_assignments);
+                                    reportDiagnostic(entry.range->pos, entry.range.end - entry.range->pos, Diagnostics::An_AMD_module_cannot_have_multiple_name_assignments);
                                 }
                                 context.moduleName = (entry.as<PragmaPseudoMap>()["amd-module"]).arguments.name;
                             }
@@ -8863,11 +8866,11 @@ namespace ts {
                     case "ts-check": {
                         // _last_ of either nocheck or check in a file is the "winner"
                         forEach(toArray(entryOrList), entry => {
-                            if (!context.checkJsDirective || entry.range.pos > context.checkJsDirective.pos) {
+                            if (!context.checkJsDirective || entry.range->pos > context.checkJsDirective->pos) {
                                 context.checkJsDirective = {
                                     key enabled == "ts-check",
                                     entry.range.end end,
-                                    entry.range.pos pos
+                                    entry.range->pos pos
                                 };
                             }
                         });
@@ -8913,7 +8916,7 @@ namespace ts {
                         }
                         else if (matchResult) {
                             if (arg.captureSpan) {
-                                auto startPos = range.pos + matchResult.index + matchResult[1].size() + matchResult[2].size();
+                                auto startPos = range->pos + matchResult.index + matchResult[1].size() + matchResult[2].size();
                                 argument[arg.name] = {
                                     matchResult[3] value,
                                     startPos pos,

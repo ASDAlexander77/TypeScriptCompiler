@@ -967,6 +967,7 @@ private:
         }
 
         /* @internal */
+    public:
         auto skipTrivia(safe_string &text, number pos, bool stopAfterLineBreak = false, bool stopAtComments = false) -> number
         {
             if (positionIsSynthesized(pos))
@@ -1064,6 +1065,7 @@ private:
             }
         }
 
+    private:
         // All conflict markers consist of the same character repeated seven times.  If it is
         // a <<<<<<< or >>>>>>> marker then it is also followed by a space.
         number mergeConflictMarkerLength = std::strlen("<<<<<<<");
@@ -2712,7 +2714,7 @@ private:
                     return token = SyntaxKind::PrivateIdentifier;
                 default:
                     auto identifierKind = scanIdentifier(ch, languageVersion);
-                    if (!!identifierKind)
+                    if (identifierKind != SyntaxKind::Unknown)
                     {
                         return token = identifierKind;
                     }
@@ -2741,7 +2743,7 @@ private:
             tokenFlags = TokenFlags::None;
             auto ch = codePointAt(text, pos);
             auto identifierKind = scanIdentifier(ch, ScriptTarget::ESNext);
-            if (!!identifierKind)
+            if (identifierKind != SyntaxKind::Unknown)
             {
                 return token = identifierKind;
             }
@@ -3555,6 +3557,11 @@ private:
         return impl->reScanInvalidIdentifier();
     }
 
+    auto Scanner::reScanJsxToken() -> SyntaxKind
+    {
+        return impl->reScanJsxToken();
+    }
+
     auto Scanner::tokenIsIdentifierOrKeyword(SyntaxKind token) -> boolean
     {
         return impl->tokenIsIdentifierOrKeyword(token);
@@ -3588,6 +3595,11 @@ private:
     auto Scanner::reScanQuestionToken() -> void
     {
         impl->reScanAsteriskEqualsToken();
+    }
+
+    auto Scanner::skipTrivia(safe_string &text, number pos, bool stopAfterLineBreak, bool stopAtComments) -> number
+    {
+        return impl->skipTrivia(text, pos, stopAfterLineBreak, stopAtComments);
     }
 
     Scanner::~Scanner()

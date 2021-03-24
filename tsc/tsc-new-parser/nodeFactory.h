@@ -305,7 +305,7 @@ public:
     auto updateNonNullExpression(NonNullExpression node, Expression expression) -> NonNullExpression;
     auto createNonNullChain(Expression expression) -> NonNullChain;
     auto updateNonNullChain(NonNullChain node, Expression expression) -> NonNullChain;
-    auto createMetaProperty(MetaProperty keywordToken, Identifier name) -> MetaProperty;
+    auto createMetaProperty(SyntaxKind keywordToken, Identifier name) -> MetaProperty;
     auto updateMetaProperty(MetaProperty node, Identifier name) -> MetaProperty;
 
     //
@@ -722,7 +722,7 @@ public:
     // Utilities
     //
 
-    auto restoreOuterExpressions(Expression outerExpression, Expression innerExpression, OuterExpressionKinds kinds = undefined) -> Expression;
+    auto restoreOuterExpressions(Expression outerExpression, Expression innerExpression, OuterExpressionKinds kinds = OuterExpressionKinds::None) -> Expression;
     /* @internal */ auto restoreEnclosingLabel(Statement node, LabeledStatement outermostLabeledStatement, std::function<void(LabeledStatement)> afterRestoreLabelCallback = nullptr) -> Statement;
     /* @internal */ auto createUseStrictPrologue() -> PrologueDirective;
     /**

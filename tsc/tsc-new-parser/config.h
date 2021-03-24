@@ -14,6 +14,7 @@ using char_t = wchar_t;
 using sstream = std::wstringstream;
 using regex = std::wregex;
 using sregex_iterator = std::wsregex_iterator;
+#define regex_replace std::regex_replace
 
 #define to_number_base(x, y) std::stoi(x, nullptr, y)
 #define S(x) L##x

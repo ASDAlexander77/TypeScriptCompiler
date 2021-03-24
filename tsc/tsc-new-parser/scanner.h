@@ -45,6 +45,8 @@ enum class  TokenFlags : number {
     TemplateLiteralLikeFlags = ContainsInvalidEscape,
 };
 
+ENUM_OPS(TokenFlags)
+
 enum class SyntaxKind : number {
     Unknown,
     EndOfFileToken,
@@ -656,28 +658,6 @@ struct safe_string
     }
 };
 
-static TokenFlags& operator|=(TokenFlags& lhv, TokenFlags rhv)
-{
-    lhv = (TokenFlags) ((number) lhv | (number)rhv);
-    return lhv;
-}
-
-static TokenFlags operator&(TokenFlags lhv, TokenFlags rhv)
-{
-    lhv = (TokenFlags) ((number) lhv & (number)rhv);
-    return lhv;
-}
-
-static bool operator!(TokenFlags lhv)
-{
-    return (number)lhv == 0;
-}
-
-static bool operator!(SyntaxKind lhv)
-{
-    return (number)lhv == 0;
-}
-
 template <typename T>
 bool operator!(const std::vector<T>& values)
 {
@@ -864,6 +844,7 @@ namespace ts
         auto scanJsxToken() -> SyntaxKind;
         auto scanJsxAttributeValue() -> SyntaxKind;
         auto reScanInvalidIdentifier() -> SyntaxKind;
+        auto reScanJsxToken() -> SyntaxKind;
         auto tokenIsIdentifierOrKeyword(SyntaxKind token) -> boolean;
         auto tokenIsIdentifierOrKeywordOrGreaterThan(SyntaxKind token) -> boolean;
         auto getTokenFlags() -> TokenFlags;
@@ -871,6 +852,7 @@ namespace ts
         auto setInJSDocType(boolean inType) -> void;
         auto reScanAsteriskEqualsToken() -> void;
         auto reScanQuestionToken() -> void;
+        auto skipTrivia(safe_string &text, number pos, bool stopAfterLineBreak = false, bool stopAtComments = false) -> number;
 
         template <typename T>
         auto tryScan(std::function<T()> callback) -> T

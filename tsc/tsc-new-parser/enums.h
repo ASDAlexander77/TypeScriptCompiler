@@ -531,6 +531,19 @@ enum class NodeFactoryFlags : number {
 
 ENUM_OPS(NodeFactoryFlags)
 
+enum class OuterExpressionKinds : number {
+    None = 0,
+    Parentheses = 1 << 0,
+    TypeAssertions = 1 << 1,
+    NonNullAssertions = 1 << 2,
+    PartiallyEmittedExpressions = 1 << 3,
+
+    Assertions = TypeAssertions | NonNullAssertions,
+    All = Parentheses | Assertions | PartiallyEmittedExpressions
+};
+
+ENUM_OPS(OuterExpressionKinds)
+
 enum class Tristate : number {
     False,
     True,

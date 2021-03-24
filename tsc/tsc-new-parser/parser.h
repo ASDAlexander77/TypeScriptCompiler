@@ -45,6 +45,11 @@ struct NodeArray
         return items[i];
     }
 
+    inline auto operator !() -> boolean
+    {
+        return items.size() == 0;
+    }    
+
     inline auto clear() -> void {
         return items.clear();
     }
@@ -62,6 +67,16 @@ struct NodeArray
     {
         return &range;
     }
+
+    inline auto operator ==(undefined_t) -> boolean
+    {
+        return items.size() == 0;
+    } 
+
+    inline auto operator !=(undefined_t) -> boolean
+    {
+        return items.size() != 0;
+    }        
 };
 
 template <typename T>
@@ -98,7 +113,21 @@ typedef NodeArray<Modifier> ModifiersArray;
         {                                   \
             return node.data->kind;         \
         }                                   \
+        inline auto operator==(undefined_t) \
+        {                                   \
+            return !node.data;              \
+        }                                   \
+        inline auto operator!=(undefined_t) \
+        {                                   \
+            return !!node.data;             \
+        }                                   \
     };  
+
+struct NodeHolder
+{
+    Node* value;
+    operator Node();
+};
 
 struct NodeData : TextRange
 {   
@@ -111,6 +140,7 @@ struct NodeData : TextRange
     DecoratorsArray decorators;
     ModifiersArray modifiers;
     SyntaxKind originalKeywordKind;
+    NodeHolder parent;
     number jsdocDotPos;
 
     NodeArray<Node> children;
@@ -216,7 +246,17 @@ struct Node
     {
         return !data;
     }
+
+    auto operator!=(undefined_t)
+    {
+        return !!data;
+    }
 };
+
+NodeHolder::operator Node()
+{
+    return *value;
+}
 
 struct BaseNode
 {
@@ -272,7 +312,7 @@ static auto isArray(Node &node) -> boolean
     return node.data->kind == SyntaxKind::Array;
 }
 
-typedef SyntaxKind PrefixUnaryOperator;
+typedef SyntaxKind PrefixUnaryOperator, PostfixUnaryOperator;
 
 typedef Node Identifier, PropertyName, PrivateIdentifier, LiteralExpression, EntityName, Expression, IndexSignatureDeclaration,
     TypeElement, UnaryExpression, UpdateExpression, LeftHandSideExpression, MemberExpression, JsxText, JsxChild, JsxTagNameExpression,
@@ -280,8 +320,8 @@ typedef Node Identifier, PropertyName, PrivateIdentifier, LiteralExpression, Ent
     ObjectBindingPattern, ArrayBindingPattern, FunctionDeclaration, ConstructorDeclaration, AccessorDeclaration, ClassElement, ClassExpression,
     ModuleBlock, SuperExpression, ThisExpression, PseudoBigInt, MissingDeclaration, JsonObjectExpressionStatement, BindingName,
     CallSignatureDeclaration, MethodSignature, GetAccessorDeclaration, SetAccessorDeclaration, ConstructSignatureDeclaration, IndexSignatureDeclaration,
-    MemberName, PropertyAccessChain, ElementAccessChain, CallChain, NewExpression, ConciseBody,
-    Expression, PostfixUnaryOperator, OmittedExpression, NonNullChain, SemicolonClassElement, EmptyStatement, ForInitializer, ContinueStatement, 
+    MemberName, ElementAccessChain, CallChain, NewExpression, ConciseBody,
+    Expression, OmittedExpression, NonNullChain, SemicolonClassElement, EmptyStatement, ForInitializer, ContinueStatement, 
     BreakStatement, DebuggerStatement, ModuleName, ModuleBody, ModuleReference, NamedImportBindings, ImportSpecifier, NamedImports,
     NamedExportBindings, ExportSpecifier, NamedExports, DestructuringAssignment, PropertyDescriptorAttributes, CallBinding, Declaration;
 
@@ -299,13 +339,13 @@ typedef Node JSDocAllType, JSDocUnknownType, JSDocNonNullableType, JSDocNullable
     JSDocAuthorTag, JSDocClassTag, JSDocPublicTag, JSDocPrivateTag, JSDocProtectedTag, JSDocReadonlyTag, JSDocUnknownTag, JSDocDeprecatedTag,
     JSDocParameterTag, JSDocPropertyTag; 
 
-typedef Node JsxOpeningElement, JsxSelfClosingElement, JsxOpeningFragment, JsxAttributeLike;
+typedef Node JsxSelfClosingElement, JsxOpeningFragment, JsxAttributeLike, JsxTagNamePropertyAccess;
 
 typedef Node UnparsedPrologue, UnparsedSyntheticReference, UnparsedSourceText, UnparsedSource, UnparsedPrepend, UnparsedTextLike, InputFiles;
 
 typedef Node SyntheticExpression, SyntaxList, NotEmittedStatement, EndOfDeclarationMarker, SyntheticReferenceExpression, MergeDeclarationMarker, Bundle;
 
-typedef Node OuterExpressionKinds, PrologueDirective;
+typedef Node PrologueDirective;
 
 template<typename T>
 using AssignmentExpression = Node;
@@ -333,9 +373,14 @@ CLASS_DATA(TypeParameterDeclaration)
     Node expression;
 CLASS_DATA_END(TypeParameterDeclaration)
 
-CLASS_DATA(ShorthandPropertyAssignment)
+CLASS_DATA(PropertyAssignment)
     Node name;
     Node questionToken;
+    Node exclamationToken;
+    Node initializer;
+CLASS_DATA_END(PropertyAssignment)
+
+CLASS_DATA_BASE(ShorthandPropertyAssignment, PropertyAssignment)
     Node exclamationToken;
     Node equalsToken;
     Node objectAssignmentInitializer;
@@ -367,12 +412,6 @@ CLASS_DATA(PropertySignature)
     Node type;
     Node initializer;
 CLASS_DATA_END(PropertySignature)
-
-CLASS_DATA(PropertyAssignment)
-    Node name;
-    Node questionToken;
-    Node initializer;
-CLASS_DATA_END(PropertyAssignment)
 
 CLASS_DATA(VariableDeclaration)
     Node name;
@@ -507,6 +546,8 @@ CLASS_DATA(PropertyAccessExpression)
     Node questionDotToken;
     Node name;
 CLASS_DATA_END(PropertyAccessExpression)
+
+typedef PropertyAccessExpression PropertyAccessChain;
 
 CLASS_DATA(ElementAccessExpression)
     Node expression;
@@ -900,6 +941,8 @@ CLASS_DATA(JsxOpeningLikeElement)
     Node attributes;
 CLASS_DATA_END(JsxOpeningLikeElement)
 
+typedef JsxOpeningLikeElement JsxOpeningElement;
+
 CLASS_DATA(JsxAttributes)
     Node properties;
 CLASS_DATA_END(JsxAttributes)
@@ -1040,6 +1083,7 @@ namespace ts
     auto processCommentPragmas(SourceFile context, string sourceText) -> void;
     auto processPragmasIntoFields(SourceFile context, PragmaDiagnosticReporter reportDiagnostic) -> void;
     auto isExternalModule(SourceFile file) -> boolean;
+    auto tagNamesAreEquivalent(JsxTagNameExpression lhs, JsxTagNameExpression rhs) -> boolean;
 
     namespace IncrementalParser {
 

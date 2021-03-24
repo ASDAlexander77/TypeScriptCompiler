@@ -56,6 +56,13 @@ struct Debug
     }
 
     template <typename T>
+    static T _assertNever(T value)
+    {
+        assert(false);
+        return value;
+    }    
+
+    template <typename T>
     static auto fail(string message = string()) -> T {
         //debugger;
         string msg = S("Debug Failure.");
