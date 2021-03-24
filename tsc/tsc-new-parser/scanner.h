@@ -855,6 +855,12 @@ namespace ts
         auto skipTrivia(safe_string &text, number pos, bool stopAfterLineBreak = false, bool stopAtComments = false) -> number;
 
         template <typename T>
+        auto scanRange(number start, number length, std::function<T()> callback) -> T
+        {
+            return impl->scanRange<T>(start, length, callback);
+        }
+
+        template <typename T>
         auto tryScan(std::function<T()> callback) -> T
         {
             return impl->tryScan(callback);

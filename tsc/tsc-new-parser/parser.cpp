@@ -621,7 +621,7 @@ namespace ts {
         // Implement the parser.as<a>() singleton module.  We do this for perf reasons because creating
         // parser instances can actually be expensive enough to impact us on projects with many source
         // files.
-        class Parser {
+        struct Parser {
             // Share a single scanner across all calls to parse a source file.  This helps speed things
             // up by avoiding the cost of creating/compiling scanners over and over again.
             Scanner scanner;
@@ -7289,155 +7289,180 @@ namespace ts {
                 CallbackParameter = 1 << 2,
             };
 
-            auto parseJSDocCommentWorker(number start = 0, number length = -1) -> JSDoc {
-                auto content = sourceText;
-                auto end = length == -1 ? content.size() : start + length;
-                length = end - start;
+            struct EntityNameWIthBracketed 
+            { 
+                EntityNameWIthBracketed() = default;
+                EntityName name;
+                boolean isBracketed;
+            };
 
-                Debug::_assert(start >= 0);
-                Debug::_assert(start <= end);
-                Debug::_assert(end <= content.size());
+            struct ParseJSDocCommentClass
+            {
+                string content;
+                number start;
+                number end;
 
-                // Check for /** (JSDoc opening part)
-                if (!isJSDocLikeText(content, start)) {
-                    return undefined;
-                }
-
-                std::vector<JSDocTag> tags;
+                NodeArray<JSDocTag> tags;
                 number tagsPos;
                 number tagsEnd;
                 std::vector<string> comments;
 
-                // + 3 for leading /**, - 5 in total for /** */
-                return scanner.scanRange(start + 3, length - 5, () => {
-                    // Initially we can parse out a tag.  We also have seen a starting asterisk.
-                    // This is so that /** * @type */ doesn't parse.
-                    auto state = JSDocState::SawAsterisk;
-                    number margin;
-                    // + 4 for leading '/** '
-                    // + 1 because the last index of \n is always one index before the first character in the line and coincidentally, if there is no \n before start, it is -1, which is also one index before the first character
-                    auto indent = start - (content.lastIndexOf(S("\n"), start) + 1) + 4;
-                    auto pushComment(string text) {
-                        if (!margin) {
-                            margin = indent;
-                        }
-                        comments.push_back(text);
-                        indent += text.size();
+                Scanner &scanner;
+                Parser *parser;
+
+                ParseJSDocCommentClass(Scanner &scanner, Parser* parser, string sourceText) : content(sourceText), scanner(scanner)
+                {
+                }
+
+                auto parseJSDocCommentWorker(number start = 0, number length = -1) -> JSDoc {
+                    end = length == -1 ? content.size() : start + length;
+                    length = end - start;
+
+                    Debug::_assert(start >= 0);
+                    Debug::_assert(start <= end);
+                    Debug::_assert(end <= content.size());
+
+                    // Check for /** (JSDoc opening part)
+                    if (!isJSDocLikeText(content, start)) {
+                        return undefined;
                     }
 
-                    nextTokenJSDoc();
-                    while (parseOptionalJsdoc(SyntaxKind::WhitespaceTrivia));
-                    if (parseOptionalJsdoc(SyntaxKind::NewLineTrivia)) {
-                        state = JSDocState::BeginningOfLine;
-                        indent = 0;
-                    }
-                    while loop (true) {
-                        switch (token()) {
-                            case SyntaxKind::AtToken:
-                                if (state == JSDocState::BeginningOfLine || state == JSDocState::SawAsterisk) {
-                                    removeTrailingWhitespace(comments);
-                                    addTag(parseTag(indent));
-                                    // According NOTE to usejsdoc.org, a tag goes to end of line, except the last tag.
-                                    // Real-world comments may break this rule, so "BeginningOfLine" will not be a real line beginning
-                                    // for malformed examples like `/** @param {string} x @returns {number} the length */`
+                    // + 3 for leading /**, - 5 in total for /** */
+                    return scanner.scanRange<JSDoc>(start + 3, length - 5, [&] () {
+                        // Initially we can parse out a tag.  We also have seen a starting asterisk.
+                        // This is so that /** * @type */ doesn't parse.
+                        auto state = JSDocState::SawAsterisk;
+                        number margin;
+                        // + 4 for leading '/** '
+                        // + 1 because the last index of \n is always one index before the first character in the line and coincidentally, if there is no \n before start, it is -1, which is also one index before the first character
+                        auto indent = start - (content.find_last_of(S('\n'), start) + 1) + 4;
+                        auto pushComment = [&](string text) {
+                            if (!margin) {
+                                margin = indent;
+                            }
+                            comments.push_back(text);
+                            indent += text.size();
+                        };
+
+                        parser->nextTokenJSDoc();
+                        while (parseOptionalJsdoc(SyntaxKind::WhitespaceTrivia));
+                        if (parseOptionalJsdoc(SyntaxKind::NewLineTrivia)) {
+                            state = JSDocState::BeginningOfLine;
+                            indent = 0;
+                        }
+                        while (true) {
+                            switch (parser->token()) {
+                                case SyntaxKind::AtToken:
+                                    if (state == JSDocState::BeginningOfLine || state == JSDocState::SawAsterisk) {
+                                        removeTrailingWhitespace(comments);
+                                        addTag(parseTag(indent));
+                                        // According NOTE to usejsdoc.org, a tag goes to end of line, except the last tag.
+                                        // Real-world comments may break this rule, so "BeginningOfLine" will not be a real line beginning
+                                        // for malformed examples like `/** @param {string} x @returns {number} the length */`
+                                        state = JSDocState::BeginningOfLine;
+                                        margin = -1;
+                                    }
+                                    else {
+                                        pushComment(scanner.getTokenText());
+                                    }
+                                    break;
+                                case SyntaxKind::NewLineTrivia:
+                                    comments.push_back(scanner.getTokenText());
                                     state = JSDocState::BeginningOfLine;
-                                    margin = undefined;
-                                }
-                                else {
-                                    pushComment(scanner.getTokenText());
-                                }
-                                break;
-                            case SyntaxKind::NewLineTrivia:
-                                comments.push_back(scanner.getTokenText());
-                                state = JSDocState::BeginningOfLine;
-                                indent = 0;
-                                break;
-                            case SyntaxKind::AsteriskToken:
-                                auto asterisk = scanner.getTokenText();
-                                if (state == JSDocState::SawAsterisk || state == JSDocState::SavingComments) {
-                                    // If we've already seen an asterisk, then we can no longer parse a tag on this line
+                                    indent = 0;
+                                    break;
+                                case SyntaxKind::AsteriskToken:
+                                    {
+                                        auto asterisk = scanner.getTokenText();
+                                        if (state == JSDocState::SawAsterisk || state == JSDocState::SavingComments) {
+                                            // If we've already seen an asterisk, then we can no longer parse a tag on this line
+                                            state = JSDocState::SavingComments;
+                                            pushComment(asterisk);
+                                        }
+                                        else {
+                                            // Ignore the first asterisk on a line
+                                            state = JSDocState::SawAsterisk;
+                                            indent += asterisk.size();
+                                        }
+                                    }
+                                    break;
+                                case SyntaxKind::WhitespaceTrivia:
+                                    {
+                                        // only collect whitespace if we're already saving comments or have just crossed the comment indent margin
+                                        auto whitespace = scanner.getTokenText();
+                                        if (state == JSDocState::SavingComments) {
+                                            comments.push_back(whitespace);
+                                        }
+                                        else if (margin != -1 && indent + whitespace.size() > margin) {
+                                            comments.push_back(whitespace.substr(margin - indent));
+                                        }
+                                        indent += whitespace.size();
+                                    }
+                                    break;
+                                case SyntaxKind::EndOfFileToken:
+                                    goto loop;
+                                default:
+                                    // Anything else is doc comment text. We just save it. Because it
+                                    // wasn't a tag, we can no longer parse a tag on this line until we hit the next
+                                    // line break.
                                     state = JSDocState::SavingComments;
-                                    pushComment(asterisk);
-                                }
-                                else {
-                                    // Ignore the first asterisk on a line
-                                    state = JSDocState::SawAsterisk;
-                                    indent += asterisk.size();
-                                }
-                                break;
-                            case SyntaxKind::WhitespaceTrivia:
-                                // only collect whitespace if we're already saving comments or have just crossed the comment indent margin
-                                auto whitespace = scanner.getTokenText();
-                                if (state == JSDocState::SavingComments) {
-                                    comments.push(whitespace);
-                                }
-                                else if (margin != undefined && indent + whitespace.size() > margin) {
-                                    comments.push(whitespace.slice(margin - indent));
-                                }
-                                indent += whitespace.size();
-                                break;
-                            case SyntaxKind::EndOfFileToken:
-                                break loop;
-                            default:
-                                // Anything else is doc comment text. We just save it. Because it
-                                // wasn't a tag, we can no longer parse a tag on this line until we hit the next
-                                // line break.
-                                state = JSDocState::SavingComments;
-                                pushComment(scanner.getTokenText());
-                                break;
+                                    pushComment(scanner.getTokenText());
+                                    break;
+                            }
+                            parser->nextTokenJSDoc();
                         }
-                        nextTokenJSDoc();
-                    }
-                    removeLeadingNewlines(comments);
-                    removeTrailingWhitespace(comments);
-                    return createJSDocComment();
-                });
+                        loop:
+                        removeLeadingNewlines(comments);
+                        removeTrailingWhitespace(comments);
+                        return createJSDocComment();
+                    }); // end of lambda
+                }
 
-                auto removeLeadingNewlines(std::vector<string> comments) {
+                auto removeLeadingNewlines(std::vector<string> comments) -> void {
                     while (comments.size() && (comments[0] == S("\n") || comments[0] == S("\r"))) {
-                        comments.shift();
+                        comments.erase(comments.begin());
                     }
                 }
 
-                auto removeTrailingWhitespace(std::vector<string> comments) {
-                    while (comments.size() && comments[comments.size() - 1].trim() == string()) {
-                        comments.pop();
+                auto removeTrailingWhitespace(std::vector<string> comments) -> void {
+                    while (comments.size() && trim(comments[comments.size() - 1]) == string()) {
+                        comments.erase(comments.end());
                     }
                 }
 
                 auto createJSDocComment() -> JSDoc {
-                    auto comment = comments.size() ? comments.join(string()) : undefined;
-                    auto tagsArray = tags && createNodeArray(tags, tagsPos, tagsEnd);
-                    return finishNode(factory.createJSDocComment(comment, tagsArray), start, end);
+                    auto comment = comments.size() ? join(comments) : string();
+                    auto tagsArray = !!tags ? tags : parser->createNodeArray(tags, tagsPos, tagsEnd);
+                    return parser->finishNode(parser->factory.createJSDocComment(comment, tagsArray), start, end);
                 }
 
                 auto isNextNonwhitespaceTokenEndOfFile() -> boolean {
                     // We must use infinite lookahead,.as<there>() could be any number of newlines :(
                     while (true) {
-                        nextTokenJSDoc();
-                        if (token() == SyntaxKind::EndOfFileToken) {
+                        parser->nextTokenJSDoc();
+                        if (parser->token() == SyntaxKind::EndOfFileToken) {
                             return true;
                         }
-                        if (!(token() == SyntaxKind::WhitespaceTrivia || token() == SyntaxKind::NewLineTrivia)) {
+                        if (!(parser->token() == SyntaxKind::WhitespaceTrivia || parser->token() == SyntaxKind::NewLineTrivia)) {
                             return false;
                         }
                     }
                 }
 
                 auto skipWhitespace() -> void {
-                    if (token() == SyntaxKind::WhitespaceTrivia || token() == SyntaxKind::NewLineTrivia) {
-                        if (lookAhead<boolean>(std::bind(&Parser::isNextNonwhitespaceTokenEndOfFile, this))) {
+                    if (parser->token() == SyntaxKind::WhitespaceTrivia || parser->token() == SyntaxKind::NewLineTrivia) {
+                        if (parser->lookAhead<boolean>(std::bind(&ParseJSDocCommentClass::isNextNonwhitespaceTokenEndOfFile, this))) {
                             return; // Don't skip whitespace prior to EoF (or end of comment) - that shouldn't be included in any node's range
                         }
                     }
-                    while (token() == SyntaxKind::WhitespaceTrivia || token() == SyntaxKind::NewLineTrivia) {
-                        nextTokenJSDoc();
+                    while (parser->token() == SyntaxKind::WhitespaceTrivia || parser->token() == SyntaxKind::NewLineTrivia) {
+                        parser->nextTokenJSDoc();
                     }
                 }
 
                 auto skipWhitespaceOrAsterisk() -> string {
-                    if (token() == SyntaxKind::WhitespaceTrivia || token() == SyntaxKind::NewLineTrivia) {
-                        if (lookAhead<boolean>(std::bind(&Parser::isNextNonwhitespaceTokenEndOfFile, this))) {
+                    if (parser->token() == SyntaxKind::WhitespaceTrivia || parser->token() == SyntaxKind::NewLineTrivia) {
+                        if (parser->lookAhead<boolean>(std::bind(&ParseJSDocCommentClass::isNextNonwhitespaceTokenEndOfFile, this))) {
                             return string(); // Don't skip whitespace prior to EoF (or end of comment) - that shouldn't be included in any node's range
                         }
                     }
@@ -7445,88 +7470,94 @@ namespace ts {
                     auto precedingLineBreak = scanner.hasPrecedingLineBreak();
                     auto seenLineBreak = false;
                     auto indentText = string();
-                    while ((precedingLineBreak && token() == SyntaxKind::AsteriskToken) || token() == SyntaxKind::WhitespaceTrivia || token() == SyntaxKind::NewLineTrivia) {
+                    while ((precedingLineBreak && parser->token() == SyntaxKind::AsteriskToken) || parser->token() == SyntaxKind::WhitespaceTrivia || parser->token() == SyntaxKind::NewLineTrivia) {
                         indentText += scanner.getTokenText();
-                        if (token() == SyntaxKind::NewLineTrivia) {
+                        if (parser->token() == SyntaxKind::NewLineTrivia) {
                             precedingLineBreak = true;
                             seenLineBreak = true;
                             indentText = string();
                         }
-                        else if (token() == SyntaxKind::AsteriskToken) {
+                        else if (parser->token() == SyntaxKind::AsteriskToken) {
                             precedingLineBreak = false;
                         }
-                        nextTokenJSDoc();
+                        parser->nextTokenJSDoc();
                     }
                     return seenLineBreak ? indentText : string();
                 }
 
-                auto parseTag(number margin) {
-                    Debug::_assert(token() == SyntaxKind::AtToken);
+                auto parseTag(number margin) -> Node {
+                    Debug::_assert(parser->token() == SyntaxKind::AtToken);
                     auto start = scanner.getTokenPos();
-                    nextTokenJSDoc();
+                    parser->nextTokenJSDoc();
 
                     auto tagName = parseJSDocIdentifierName(/*message*/ undefined);
                     auto indentText = skipWhitespaceOrAsterisk();
 
-                    auto JSDocTag tag;
-                    switch (tagName.escapedText) {
-                        case "author":
+                    static std::map<string, int> m = {{S("author"), 1}, {S("implements"), 2}, {S("augments"), 3}, {S("extends"), 4}, {S("class"), 5}, 
+                        {S("constructor"), 6}, {S("public"), 7}, {S("private"), 8}, {S("protected"), 9}, {S("readonly"), 10}, {S("deprecated"), 11}, 
+                        {S("this"), 12}, {S("enum"), 13}, {S("arg"), 14}, {S("argument"), 15}, {S("param"), 16}, {S("return"), 17}, {S("returns"), 18}, 
+                        {S("template"), 19}, {S("type"), 20}, {S("typedef"), 21}, {S("callback"), 22}, {S("see"), 23}};
+
+                    /*JSDocTag*/Node tag;
+                    auto index = m[tagName.escapedText];
+                    switch (index) {
+                        case 1:
                             tag = parseAuthorTag(start, tagName, margin, indentText);
                             break;
-                        case "implements":
+                        case 2:
                             tag = parseImplementsTag(start, tagName, margin, indentText);
                             break;
-                        case "augments":
-                        case "extends":
+                        case 3:
+                        case 4:
                             tag = parseAugmentsTag(start, tagName, margin, indentText);
                             break;
-                        case "class":
-                        case "constructor":
-                            tag = parseSimpleTag(start, factory.createJSDocClassTag, tagName, margin, indentText);
+                        case 5:
+                        case 6:
+                            tag = parseSimpleTag(start, std::bind(&NodeFactory::createJSDocClassTag, &parser->factory, std::placeholders::_1, std::placeholders::_2), tagName, margin, indentText);
                             break;
-                        case "public":
-                            tag = parseSimpleTag(start, factory.createJSDocPublicTag, tagName, margin, indentText);
+                        case 7:
+                            tag = parseSimpleTag(start, std::bind(&NodeFactory::createJSDocPublicTag, &parser->factory, std::placeholders::_1, std::placeholders::_2), tagName, margin, indentText);
                             break;
-                        case "private":
-                            tag = parseSimpleTag(start, factory.createJSDocPrivateTag, tagName, margin, indentText);
+                        case 8:
+                            tag = parseSimpleTag(start, std::bind(&NodeFactory::createJSDocPrivateTag, &parser->factory, std::placeholders::_1, std::placeholders::_2), tagName, margin, indentText);
                             break;
-                        case "protected":
-                            tag = parseSimpleTag(start, factory.createJSDocProtectedTag, tagName, margin, indentText);
+                        case 9:
+                            tag = parseSimpleTag(start, std::bind(&NodeFactory::createJSDocProtectedTag, &parser->factory, std::placeholders::_1, std::placeholders::_2), tagName, margin, indentText);
                             break;
-                        case "readonly":
-                            tag = parseSimpleTag(start, factory.createJSDocReadonlyTag, tagName, margin, indentText);
+                        case 10:
+                            tag = parseSimpleTag(start, std::bind(&NodeFactory::createJSDocReadonlyTag, &parser->factory, std::placeholders::_1, std::placeholders::_2), tagName, margin, indentText);
                             break;
-                        case "deprecated":
-                            hasDeprecatedTag = true;
-                            tag = parseSimpleTag(start, factory.createJSDocDeprecatedTag, tagName, margin, indentText);
+                        case 11:
+                            parser->hasDeprecatedTag = true;
+                            tag = parseSimpleTag(start, std::bind(&NodeFactory::createJSDocDeprecatedTag, &parser->factory, std::placeholders::_1, std::placeholders::_2), tagName, margin, indentText);
                             break;
-                        case "this":
+                        case 12:
                             tag = parseThisTag(start, tagName, margin, indentText);
                             break;
-                        case "enum":
+                        case 13:
                             tag = parseEnumTag(start, tagName, margin, indentText);
                             break;
-                        case "arg":
-                        case "argument":
-                        case "param":
-                            return parseParameterOrPropertyTag(start, tagName, PropertyLikeParse.Parameter, margin);
-                        case "return":
-                        case "returns":
+                        case 14:
+                        case 15:
+                        case 16:
+                            return parseParameterOrPropertyTag(start, tagName, PropertyLikeParse::Parameter, margin);
+                        case 17:
+                        case 18:
                             tag = parseReturnTag(start, tagName, margin, indentText);
                             break;
-                        case "template":
+                        case 19:
                             tag = parseTemplateTag(start, tagName, margin, indentText);
                             break;
-                        case "type":
+                        case 20:
                             tag = parseTypeTag(start, tagName, margin, indentText);
                             break;
-                        case "typedef":
+                        case 21:
                             tag = parseTypedefTag(start, tagName, margin, indentText);
                             break;
-                        case "callback":
+                        case 22:
                             tag = parseCallbackTag(start, tagName, margin, indentText);
                             break;
-                        case "see":
+                        case 23:
                             tag = parseSeeTag(start, tagName, margin, indentText);
                             break;
                         default:
@@ -7538,10 +7569,10 @@ namespace ts {
 
                 auto parseTrailingTagComments(number pos, number end, number margin, string indentText) {
                     // some tags, like typedef and callback, have already parsed their comments earlier
-                    if (!indentText) {
+                    if (!indentText.empty()) {
                         margin += end - pos;
                     }
-                    return parseTagComments(margin, indentText.slice(margin));
+                    return parseTagComments(margin, indentText.substr(margin));
                 }
 
                 auto parseTagComments(number indent, string initialMargin) -> string {
@@ -7549,14 +7580,14 @@ namespace ts {
                     auto state = JSDocState::BeginningOfLine;
                     auto previousWhitespace = true;
                     auto number margin;
-                    auto pushComment(string text) {
+                    auto pushComment = [&](string text) {
                         if (!margin) {
                             margin = indent;
                         }
                         comments.push(text);
                         indent += text.size();
-                    }
-                    if (initialMargin != undefined) {
+                    };
+                    if (!initialMargin.empty()) {
                         // jump straight to saving comments if there is some initial indentation
                         if (initialMargin != string()) {
                             pushComment(initialMargin);
@@ -7564,7 +7595,7 @@ namespace ts {
                         state = JSDocState::SawAsterisk;
                     }
                     auto tok = token();
-                    while loop (true) {
+                    while (true) {
                         switch (tok) {
                             case SyntaxKind::NewLineTrivia:
                                 state = JSDocState::BeginningOfLine;
@@ -7582,7 +7613,7 @@ namespace ts {
                                 // falls through
                             case SyntaxKind::EndOfFileToken:
                                 // Done
-                                break loop;
+                                goto loop;
                             case SyntaxKind::WhitespaceTrivia:
                                 if (state == JSDocState::SavingComments || state == JSDocState::SavingBackticks) {
                                     pushComment(scanner.getTokenText());
@@ -7598,11 +7629,12 @@ namespace ts {
                                 break;
                             case SyntaxKind::OpenBraceToken:
                                 state = JSDocState::SavingComments;
-                                if (lookAhead<boolean>(() => nextTokenJSDoc() == SyntaxKind::AtToken && scanner.tokenIsIdentifierOrKeyword(nextTokenJSDoc()) && scanner.getTokenText() == "link")) {
+                                if (parser->lookAhead<boolean>([]() { return parser->nextTokenJSDoc() == SyntaxKind::AtToken && scanner.tokenIsIdentifierOrKeyword(parser->nextTokenJSDoc()) && scanner.getTokenText() == S("link");})) 
+                                {
                                     pushComment(scanner.getTokenText());
-                                    nextTokenJSDoc();
+                                    parser->nextTokenJSDoc();
                                     pushComment(scanner.getTokenText());
-                                    nextTokenJSDoc();
+                                    parser->nextTokenJSDoc();
                                 }
                                 pushComment(scanner.getTokenText());
                                 break;
@@ -7631,9 +7663,10 @@ namespace ts {
                                 pushComment(scanner.getTokenText());
                                 break;
                         }
-                        previousWhitespace = token() == SyntaxKind::WhitespaceTrivia;
-                        tok = nextTokenJSDoc();
+                        previousWhitespace = parser->token() == SyntaxKind::WhitespaceTrivia;
+                        tok = parser->nextTokenJSDoc();
                     }
+                    loop:
 
                     removeLeadingNewlines(comments);
                     removeTrailingWhitespace(comments);
@@ -7641,11 +7674,11 @@ namespace ts {
                 }
 
                 auto parseUnknownTag(number start, Identifier tagName, number indent, string indentText) {
-                    auto end = getNodePos();
-                    return finishNode(factory.createJSDocUnknownTag(tagName, parseTrailingTagComments(start, end, indent, indentText)), start, end);
+                    auto end = parser->getNodePos();
+                    return finishNode(parser->factory.createJSDocUnknownTag(tagName, parseTrailingTagComments(start, end, indent, indentText)), start, end);
                 }
 
-                auto addTag(JSDocTag tag) -> void {
+                auto addTag(/*JSDocTag*/Node tag) -> void {
                     if (!tag) {
                         return;
                     }
@@ -7654,17 +7687,17 @@ namespace ts {
                         tagsPos = tag->pos;
                     }
                     else {
-                        tags.push(tag);
+                        tags.push_back(tag);
                     }
                     tagsEnd = tag->end;
                 }
 
                 auto tryParseTypeExpression() -> JSDocTypeExpression {
                     skipWhitespaceOrAsterisk();
-                    return token() == SyntaxKind::OpenBraceToken ? parseJSDocTypeExpression() : undefined;
+                    return parser->token() == SyntaxKind::OpenBraceToken ? parseJSDocTypeExpression() : undefined;
                 }
 
-                auto parseBracketNameInPropertyAndParamTag() -> { EntityName name, boolean isBracketed } {
+                auto parseBracketNameInPropertyAndParamTag() -> EntityNameWIthBracketed {
                     // Looking for something like '[foo]', 'foo', '[foo.bar]' or 'foo.bar'
                     auto isBracketed = parseOptionalJsdoc(SyntaxKind::OpenBracketToken);
                     if (isBracketed) {
@@ -7696,11 +7729,11 @@ namespace ts {
                         case SyntaxKind::ArrayType:
                             return isObjectOrObjectArrayTypeReference(node.as<ArrayTypeNode>().elementType);
                         default:
-                            return isTypeReferenceNode(node) && ts.isIdentifier(node->typeName) && node->typeName.escapedText == "Object" && !node->typeArguments;
+                            return isTypeReferenceNode(node) && ts.isIdentifier(node->typeName) && node->typeName->escapedText == S("Object") && !node->typeArguments;
                     }
                 }
 
-                auto parseParameterOrPropertyTag(number start, Identifier tagName, PropertyLikeParse target, number indent) -> JSDocParameterTag | JSDocPropertyTag {
+                auto parseParameterOrPropertyTag(number start, Identifier tagName, PropertyLikeParse target, number indent) -> Node {
                     auto typeExpression = tryParseTypeExpression();
                     auto isNameFirst = !typeExpression;
                     skipWhitespaceOrAsterisk();
@@ -7714,12 +7747,12 @@ namespace ts {
 
                     auto comment = parseTrailingTagComments(start, getNodePos(), indent, indentText);
 
-                    auto nestedTypeLiteral = target != PropertyLikeParse.CallbackParameter && parseNestedTypeLiteral(typeExpression, name, target, indent);
+                    auto nestedTypeLiteral = target != PropertyLikeParse::CallbackParameter && parseNestedTypeLiteral(typeExpression, name, target, indent);
                     if (nestedTypeLiteral) {
                         typeExpression = nestedTypeLiteral;
                         isNameFirst = true;
                     }
-                    auto result = target == PropertyLikeParse.Property
+                    auto result = target == PropertyLikeParse::Property
                         ? factory.createJSDocPropertyTag(tagName, name, isBracketed, typeExpression, isNameFirst, comment)
                         : factory.createJSDocParameterTag(tagName, name, isBracketed, typeExpression, isNameFirst, comment);
                     return finishNode(result, start);
@@ -7810,12 +7843,12 @@ namespace ts {
                     return finishNode(factory.createJSDocAugmentsTag(tagName, className, parseTrailingTagComments(start, end, margin, indentText)), start, end);
                 }
 
-                auto parseExpressionWithTypeArgumentsForAugments() -> ExpressionWithTypeArguments & { Identifier expression | PropertyAccessEntityNameExpression } {
+                auto parseExpressionWithTypeArgumentsForAugments() -> ExpressionWithTypeArguments {
                     auto usedBrace = parseOptional(SyntaxKind::OpenBraceToken);
                     auto pos = getNodePos();
                     auto expression = parsePropertyAccessEntityNameExpression();
                     auto typeArguments = tryParseTypeArguments();
-                    auto node = factory.createExpressionWithTypeArguments(expression, typeArguments).as<ExpressionWithTypeArguments>() & { Identifier expression | PropertyAccessEntityNameExpression };
+                    auto node = factory.createExpressionWithTypeArguments(expression, typeArguments);
                     auto res = finishNode(node, pos);
                     if (usedBrace) {
                         parseExpected(SyntaxKind::CloseBraceToken);
@@ -7823,9 +7856,9 @@ namespace ts {
                     return res;
                 }
 
-                auto parsePropertyAccessEntityNameExpression() {
+                auto parsePropertyAccessEntityNameExpression() -> Node {
                     auto pos = getNodePos();
-                    auto Identifier node | PropertyAccessEntityNameExpression = parseJSDocIdentifierName();
+                    Node node = parseJSDocIdentifierName();
                     while (parseOptional(SyntaxKind::DotToken)) {
                         auto name = parseJSDocIdentifierName();
                         node = finishNode(factory.createPropertyAccessExpression(node, name), pos).as<PropertyAccessEntityNameExpression>();
@@ -7833,7 +7866,7 @@ namespace ts {
                     return node;
                 }
 
-                auto parseSimpleTag(number start, createTag: (Identifier tagName, string comment) => JSDocTag, Identifier tagName, number margin, string indentText) -> JSDocTag {
+                auto parseSimpleTag(number start, std::function<JSDocTag(Identifier, string)> createTag, Identifier tagName, number margin, string indentText) -> JSDocTag {
                     auto end = getNodePos();
                     return finishNode(createTag(tagName, parseTrailingTagComments(start, end, margin, indentText)), start, end);
                 }
@@ -7940,7 +7973,7 @@ namespace ts {
                     auto pos = getNodePos();
                     auto JSDocParameterTag child | false;
                     auto parameters;
-                    while (child = tryParse(() => parseChildParameterOrPropertyTag(PropertyLikeParse.CallbackParameter, indent).as<JSDocParameterTag>())) {
+                    while (child = tryParse(() => parseChildParameterOrPropertyTag(PropertyLikeParse::CallbackParameter, indent).as<JSDocParameterTag>())) {
                         parameters = append(parameters, child);
                     }
                     return createNodeArray(parameters || [], pos);
@@ -7980,11 +8013,11 @@ namespace ts {
                     return a.escapedText == b.escapedText;
                 }
 
-                auto parseChildPropertyTag(number indent) {
-                    return parseChildParameterOrPropertyTag(PropertyLikeParse.Property, indent).as<JSDocTypeTag>() | JSDocPropertyTag | false;
+                auto parseChildPropertyTag(number indent) -> JSDocTypeTag {
+                    return parseChildParameterOrPropertyTag(PropertyLikeParse::Property, indent).as<JSDocTypeTag>();
                 }
 
-                auto parseChildParameterOrPropertyTag(PropertyLikeParse target, number indent, EntityName name) -> JSDocTypeTag | JSDocPropertyTag | JSDocParameterTag | false {
+                auto parseChildParameterOrPropertyTag(PropertyLikeParse target, number indent, EntityName name) -> Node {
                     auto canParseTag = true;
                     auto seenAsterisk = false;
                     while (true) {
@@ -7993,8 +8026,8 @@ namespace ts {
                                 if (canParseTag) {
                                     auto child = tryParseChildTag(target, indent);
                                     if (child && (child->kind == SyntaxKind::JSDocParameterTag || child->kind == SyntaxKind::JSDocPropertyTag) &&
-                                        target != PropertyLikeParse.CallbackParameter &&
-                                        name && (ts.isIdentifier(child.name) || !escapedTextsEqual(name, child.name.left))) {
+                                        target != PropertyLikeParse::CallbackParameter &&
+                                        name && (ts::isIdentifier(child.name) || !escapedTextsEqual(name, child.name.left))) {
                                         return false;
                                     }
                                     return child;
@@ -8020,25 +8053,25 @@ namespace ts {
                     }
                 }
 
-                auto tryParseChildTag(PropertyLikeParse target, number indent) -> JSDocTypeTag | JSDocPropertyTag | JSDocParameterTag | false {
+                auto tryParseChildTag(PropertyLikeParse target, number indent) -> Node {
                     Debug::_assert(token() == SyntaxKind::AtToken);
                     auto start = scanner.getStartPos();
                     nextTokenJSDoc();
 
                     auto tagName = parseJSDocIdentifierName();
                     skipWhitespace();
-                    auto PropertyLikeParse t;
+                    PropertyLikeParse t;
                     switch (tagName.escapedText) {
                         case "type":
-                            return target == PropertyLikeParse.Property && parseTypeTag(start, tagName);
+                            return target == PropertyLikeParse::Property && parseTypeTag(start, tagName);
                         case "prop":
                         case "property":
-                            t = PropertyLikeParse.Property;
+                            t = PropertyLikeParse::Property;
                             break;
                         case "arg":
                         case "argument":
                         case "param":
-                            t = PropertyLikeParse.Parameter | PropertyLikeParse.CallbackParameter;
+                            t = PropertyLikeParse::Parameter | PropertyLikeParse::CallbackParameter;
                             break;
                         default:
                             return false;
@@ -8130,10 +8163,15 @@ namespace ts {
                     nextTokenJSDoc();
                     return result;
                 }
-            }
+            };
+
+            auto parseJSDocCommentWorker(number start = 0, number length = -1) -> JSDoc {
+                ParseJSDocCommentClass p(scanner, this, sourceText);
+                return p.parseJSDocCommentWorker(start, length);
+            } // end of parseJSDocCommentWorker
 
             // End JSDoc namespace
-        };
+        }; // End of Scanner
 
         namespace IncrementalParser {
             auto updateSourceFile(SourceFile sourceFile, string newText, TextChangeRange textChangeRange, boolean aggressiveChecks) -> SourceFile {

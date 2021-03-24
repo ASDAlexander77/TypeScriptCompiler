@@ -1113,6 +1113,8 @@ CLASS_DATA(NodeWithDiagnostics)
     NodeArray<Diagnostic> diagnostics;
 CLASS_DATA_END(NodeWithDiagnostics)
 
+typedef PropertyAccessExpression PropertyAccessEntityNameExpression;
+
 
 struct DiagnosticWithLocation : DiagnosticWithDetachedLocation {
     SourceFile file;
