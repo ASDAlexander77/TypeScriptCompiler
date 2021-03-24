@@ -1148,7 +1148,14 @@ namespace ts
         // The implementation takes advantage of the calling pattern it knows the parser will
         // make in order to optimize finding nodes as quickly as possible.
         struct SyntaxCursor {
-            SyntaxCursor() = default;
+            SyntaxCursor() {};
+            SyntaxCursor(std::function<IncrementalNode(number)> currentNode) : currentNode{currentNode} {};
+            SyntaxCursor(undefined_t) {};
+
+            inline operator bool()
+            {
+                return !!currentNode;
+            }
 
             std::function<IncrementalNode(number)> currentNode;
         };

@@ -642,7 +642,7 @@ namespace ts {
             LanguageVariant languageVariant;
             std::vector<DiagnosticWithDetachedLocation> parseDiagnostics;
             std::vector<DiagnosticWithDetachedLocation> jsDocDiagnostics;
-            Undefined<IncrementalParser::SyntaxCursor> syntaxCursor;
+            IncrementalParser::SyntaxCursor syntaxCursor;
 
             SyntaxKind currentToken;
             number nodeCount;
@@ -759,7 +759,7 @@ namespace ts {
                 return node;
             }
 
-            auto parseSourceFile(string fileName, string sourceText, ScriptTarget languageVersion, Undefined<IncrementalParser::SyntaxCursor> syntaxCursor, boolean setParentNodes = false, ScriptKind scriptKind = ScriptKind::Unknown) -> SourceFile {
+            auto parseSourceFile(string fileName, string sourceText, ScriptTarget languageVersion, IncrementalParser::SyntaxCursor syntaxCursor, boolean setParentNodes = false, ScriptKind scriptKind = ScriptKind::Unknown) -> SourceFile {
                 scriptKind = ensureScriptKind(fileName, scriptKind);
                 if (scriptKind == ScriptKind::JSON) {
                     auto result = parseJsonText(fileName, sourceText, languageVersion, syntaxCursor, setParentNodes);
@@ -794,7 +794,7 @@ namespace ts {
                 return isInvalid ? entityName : undefined;
             }
 
-            auto parseJsonText(string fileName, string sourceText, ScriptTarget languageVersion = ScriptTarget::ES2015, Undefined<IncrementalParser::SyntaxCursor> syntaxCursor = undefined, boolean setParentNodes = false) -> JsonSourceFile {
+            auto parseJsonText(string fileName, string sourceText, ScriptTarget languageVersion = ScriptTarget::ES2015, IncrementalParser::SyntaxCursor syntaxCursor = undefined, boolean setParentNodes = false) -> JsonSourceFile {
                 initializeState(fileName, sourceText, languageVersion, syntaxCursor, ScriptKind::JSON);
                 sourceFlags = contextFlags;
 
@@ -882,7 +882,7 @@ namespace ts {
                 return result;
             }
 
-            auto initializeState(string _fileName, string _sourceText, ScriptTarget _languageVersion, Undefined<IncrementalParser::SyntaxCursor> _syntaxCursor, ScriptKind _scriptKind) -> void {
+            auto initializeState(string _fileName, string _sourceText, ScriptTarget _languageVersion, IncrementalParser::SyntaxCursor _syntaxCursor, ScriptKind _scriptKind) -> void {
                 NodeConstructor = [] (SyntaxKind kind, number start, number end) {
                     return Node(kind, start, end);
                 };
@@ -6047,7 +6047,8 @@ namespace ts {
                     case SyntaxKind::FunctionKeyword:
                         return parseFunctionDeclaration(getNodePos(), hasPrecedingJSDocComment(), /*decorators*/ undefined, /*modifiers*/ undefined);
                     case SyntaxKind::ClassKeyword:
-                        return parseClassDeclaration(getNodePos(), hasPrecedingJSDocComment(), /*decorators*/ undefined, /*modifiers*/ undefined);
+                        // TODO:
+                        //return parseClassDeclaration(getNodePos(), hasPrecedingJSDocComment(), /*decorators*/ undefined, /*modifiers*/ undefined);
                     case SyntaxKind::IfKeyword:
                         return parseIfStatement();
                     case SyntaxKind::DoKeyword:
@@ -6155,7 +6156,8 @@ namespace ts {
                     case SyntaxKind::FunctionKeyword:
                         return parseFunctionDeclaration(pos, hasJSDoc, decorators, modifiers);
                     case SyntaxKind::ClassKeyword:
-                        return parseClassDeclaration(pos, hasJSDoc, decorators, modifiers);
+                        // TODO:
+                        //return parseClassDeclaration(pos, hasJSDoc, decorators, modifiers);
                     case SyntaxKind::InterfaceKeyword:
                         return parseInterfaceDeclaration(pos, hasJSDoc, decorators, modifiers);
                     case SyntaxKind::TypeKeyword:
@@ -6694,9 +6696,12 @@ namespace ts {
                 return parseClassDeclarationOrExpression(getNodePos(), hasPrecedingJSDocComment(), /*decorators*/ undefined, /*modifiers*/ undefined, SyntaxKind::ClassExpression);
             }
 
+            // TODO:
+            /*
             auto parseClassDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers) -> ClassDeclaration {
                 return parseClassDeclarationOrExpression(pos, hasJSDoc, decorators, modifiers, SyntaxKind::ClassDeclaration);
             }
+            */
 
             auto parseClassDeclarationOrExpression(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers, SyntaxKind kind) -> ClassLikeDeclaration {
                 auto savedAwaitContext = inAwaitContext();
