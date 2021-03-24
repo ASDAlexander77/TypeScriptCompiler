@@ -21,6 +21,9 @@ typedef std::function<Node(SyntaxKind, number, number)> NodeCreateFunc;
 
 typedef std::function<void(number, number, DiagnosticMessage)> PragmaDiagnosticReporter;
 
+template <SyntaxKind kind>
+using Token = Node;
+
 struct Node;
 
 template <typename T>

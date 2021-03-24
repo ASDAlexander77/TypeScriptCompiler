@@ -6130,7 +6130,7 @@ namespace ts {
                     for (auto &m : modifiers) {
                         (m.asMutable<Node>())->flags |= NodeFlags::Ambient;
                     }
-                    return doInsideOfContext<Statement>(NodeFlags::Ambient, [&]() { return parseDeclarationWorker(pos, hasJSDoc, decorators, modifiers); });
+                    return doInsideOfContext<Node>(NodeFlags::Ambient, [&]() { return parseDeclarationWorker(pos, hasJSDoc, decorators, modifiers); });
                 }
                 else {
                     return parseDeclarationWorker(pos, hasJSDoc, decorators, modifiers);
@@ -6180,7 +6180,7 @@ namespace ts {
                                 return parseExportDeclaration(pos, hasJSDoc, decorators, modifiers);
                         }
                     default:
-                        if (decorators || modifiers) {
+                        if (!!decorators || !!modifiers) {
                             // We reached this point because we encountered decorators and/or modifiers and assumed a declaration
                             // would follow. For recovery and error reporting purposes, return an incomplete declaration.
                             auto missing = createMissingNode<MissingDeclaration>(SyntaxKind::MissingDeclaration, /*reportAtCurrentPosition*/ true, Diagnostics::Declaration_expected);
@@ -6201,7 +6201,7 @@ namespace ts {
             auto parseFunctionBlockOrSemicolon(SignatureFlags flags, DiagnosticMessage diagnosticMessage) -> Block {
                 if (token() != SyntaxKind::OpenBraceToken && canParseSemicolon()) {
                     parseSemicolon();
-                    return;
+                    return undefined;
                 }
 
                 return parseFunctionBlock(flags, diagnosticMessage);
@@ -6224,8 +6224,8 @@ namespace ts {
                 auto pos = getNodePos();
                 auto dotDotDotToken = parseOptionalToken(SyntaxKind::DotDotDotToken);
                 auto tokenIsIdentifier = isBindingIdentifier();
-                auto PropertyName propertyName = parsePropertyName();
-                auto BindingName name;
+                /*PropertyName*/auto propertyName = parsePropertyName();
+                BindingName name;
                 if (tokenIsIdentifier && token() != SyntaxKind::ColonToken) {
                     name = propertyName.as<Identifier>();
                     propertyName = undefined;
@@ -6241,7 +6241,7 @@ namespace ts {
             auto parseObjectBindingPattern() -> ObjectBindingPattern {
                 auto pos = getNodePos();
                 parseExpected(SyntaxKind::OpenBraceToken);
-                auto elements = parseDelimitedList(ParsingContext::ObjectBindingElements, parseObjectBindingElement);
+                auto elements = parseDelimitedList<BindingElement>(ParsingContext::ObjectBindingElements, std::bind(&Parser::parseObjectBindingElement, this));
                 parseExpected(SyntaxKind::CloseBraceToken);
                 return finishNode(factory.createObjectBindingPattern(elements), pos);
             }
@@ -6249,7 +6249,7 @@ namespace ts {
             auto parseArrayBindingPattern() -> ArrayBindingPattern {
                 auto pos = getNodePos();
                 parseExpected(SyntaxKind::OpenBracketToken);
-                auto elements = parseDelimitedList(ParsingContext::ArrayBindingElements, parseArrayBindingElement);
+                auto elements = parseDelimitedList<ArrayBindingElement>(ParsingContext::ArrayBindingElements, std::bind(&Parser::parseArrayBindingElement, this));
                 parseExpected(SyntaxKind::CloseBracketToken);
                 return finishNode(factory.createArrayBindingPattern(elements), pos);
             }
@@ -6275,11 +6275,15 @@ namespace ts {
                 return parseVariableDeclaration(/*allowExclamation*/ true);
             }
 
+            auto parseVariableDeclaration0() -> VariableDeclaration {
+                return parseVariableDeclaration();
+            }
+
             auto parseVariableDeclaration(boolean allowExclamation = false) -> VariableDeclaration {
                 auto pos = getNodePos();
                 auto hasJSDoc = hasPrecedingJSDocComment();
                 auto name = parseIdentifierOrPattern(Diagnostics::Private_identifiers_are_not_allowed_in_variable_declarations);
-                auto ExclamationToken exclamationToken;
+                ExclamationToken exclamationToken;
                 if (allowExclamation && name->kind == SyntaxKind::Identifier &&
                     token() == SyntaxKind::ExclamationToken && !scanner.hasPrecedingLineBreak()) {
                     exclamationToken = parseTokenNode<Token<SyntaxKind::ExclamationToken>>();
@@ -6293,7 +6297,7 @@ namespace ts {
             auto parseVariableDeclarationList(boolean inForStatementInitializer) -> VariableDeclarationList {
                 auto pos = getNodePos();
 
-                auto NodeFlags flags = 0;
+                auto flags = NodeFlags::None;
                 switch (token()) {
                     case SyntaxKind::VarKeyword:
                         break;
@@ -6304,7 +6308,7 @@ namespace ts {
                         flags |= NodeFlags::Const;
                         break;
                     default:
-                        Debug::fail();
+                        Debug::fail<void>();
                 }
 
                 nextToken();
@@ -6318,7 +6322,7 @@ namespace ts {
                 // So we need to look ahead to determine if 'of' should be treated.as<a>() keyword in
                 // this context.
                 // The checker will then give an error that there is an empty declaration list.
-                auto declarations;
+                NodeArray<VariableDeclaration> declarations;
                 if (token() == SyntaxKind::OfKeyword && lookAhead<boolean>(std::bind(&Parser::canFollowContextualOfKeyword, this))) {
                     declarations = createMissingList<VariableDeclaration>();
                 }
@@ -6326,8 +6330,10 @@ namespace ts {
                     auto savedDisallowIn = inDisallowInContext();
                     setDisallowInContext(inForStatementInitializer);
 
-                    declarations = parseDelimitedList(ParsingContext::VariableDeclarations,
-                        inForStatementInitializer ? parseVariableDeclaration : parseVariableDeclarationAllowExclamation);
+                    declarations = parseDelimitedList<VariableDeclaration>(ParsingContext::VariableDeclarations,
+                        inForStatementInitializer 
+                            ? (std::function<VariableDeclaration()>) std::bind(&Parser::parseVariableDeclaration0, this) 
+                            : (std::function<VariableDeclaration()>) std::bind(&Parser::parseVariableDeclarationAllowExclamation, this));
 
                     setDisallowInContext(savedDisallowIn);
                 }
@@ -6354,11 +6360,11 @@ namespace ts {
                 parseExpected(SyntaxKind::FunctionKeyword);
                 auto asteriskToken = parseOptionalToken(SyntaxKind::AsteriskToken);
                 // We don't parse the name here in await context, instead we will report a grammar error in the checker.
-                auto name = modifierFlags & ModifierFlags.Default ? parseOptionalBindingIdentifier() : parseBindingIdentifier();
+                auto name = modifierFlags & ModifierFlags::Default ? parseOptionalBindingIdentifier() : parseBindingIdentifier();
                 auto isGenerator = asteriskToken ? SignatureFlags::Yield : SignatureFlags::None;
-                auto isAsync = modifierFlags & ModifierFlags.Async ? SignatureFlags::Await : SignatureFlags::None;
+                auto isAsync = modifierFlags & ModifierFlags::Async ? SignatureFlags::Await : SignatureFlags::None;
                 auto typeParameters = parseTypeParameters();
-                if (modifierFlags & ModifierFlags.Export) setAwaitContext(/*value*/ true);
+                if (modifierFlags & ModifierFlags::Export) setAwaitContext(/*value*/ true);
                 auto parameters = parseParameters(isGenerator | isAsync);
                 auto type = parseReturnType(SyntaxKind::ColonToken, /*isType*/ false);
                 auto body = parseFunctionBlockOrSemicolon(isGenerator | isAsync, Diagnostics::or_expected);
@@ -6665,7 +6671,7 @@ namespace ts {
                         for (auto m of modifiers!) {
                             (m.asMutable<Node>())->flags |= NodeFlags::Ambient;
                         }
-                        return doInsideOfContext(NodeFlags::Ambient, () => parsePropertyOrMethodDeclaration(pos, hasJSDoc, decorators, modifiers));
+                        return doInsideOfContext<Node>(NodeFlags::Ambient, [&]() { return parsePropertyOrMethodDeclaration(pos, hasJSDoc, decorators, modifiers); });
                     }
                     else {
                         return parsePropertyOrMethodDeclaration(pos, hasJSDoc, decorators, modifiers);
@@ -6747,7 +6753,7 @@ namespace ts {
                 auto tok = token();
                 Debug::_assert(tok == SyntaxKind::ExtendsKeyword || tok == SyntaxKind::ImplementsKeyword); // isListElement() should ensure this.
                 nextToken();
-                auto types = parseDelimitedList(ParsingContext::HeritageClauseElement, parseExpressionWithTypeArguments);
+                auto types = parseDelimitedList<ExpressionWithTypeArguments>(ParsingContext::HeritageClauseElement, std::bind(&Parser::parseExpressionWithTypeArguments, this));
                 return finishNode(factory.createHeritageClause(tok, types), pos);
             }
 
@@ -6809,7 +6815,7 @@ namespace ts {
                 auto name = parseIdentifier();
                 auto members;
                 if (parseExpected(SyntaxKind::OpenBraceToken)) {
-                    members = doOutsideOfYieldAndAwaitContext(() => parseDelimitedList(ParsingContext::EnumMembers, parseEnumMember));
+                    members = doOutsideOfYieldAndAwaitContext<NodeArray<EnumMember> >([&]() { return parseDelimitedList<EnumMember>(ParsingContext::EnumMembers, std::bind(&Parser::parseEnumMember, this)); });
                     parseExpected(SyntaxKind::CloseBraceToken);
                 }
                 else {
@@ -7197,7 +7203,7 @@ namespace ts {
             auto parseJSDocTypeExpression(boolean mayOmitBraces) -> JSDocTypeExpression {
                 auto pos = getNodePos();
                 auto hasBrace = (mayOmitBraces ? parseOptional : parseExpected)(SyntaxKind::OpenBraceToken);
-                auto type = doInsideOfContext(NodeFlags::JSDoc, parseJSDocType);
+                auto type = doInsideOfContext<TypeNode>(NodeFlags::JSDoc, std::bind(&Parser::parseJSDocType, this));
                 if (!mayOmitBraces || hasBrace) {
                     parseExpectedJSDoc(SyntaxKind::CloseBraceToken);
                 }
@@ -7222,7 +7228,7 @@ namespace ts {
 
             auto parseIsolatedJSDocComment(string content, number start, number length) -> Undefined<NodeWithDiagnostics> {
                 initializeState(string(), content, ScriptTarget::Latest, /*_syntaxCursor:*/ undefined, ScriptKind::JS);
-                auto jsDoc = doInsideOfContext(NodeFlags::JSDoc, () => parseJSDocCommentWorker(start, length));
+                auto jsDoc = doInsideOfContext<JSDoc>(NodeFlags::JSDoc, [&]() { return parseJSDocCommentWorker(start, length); });
 
                 auto sourceFile = <SourceFile>{ LanguageVariant::Standard languageVariant, content text };
                 auto diagnostics = attachFileToDiagnostics(parseDiagnostics, sourceFile);
@@ -7236,7 +7242,7 @@ namespace ts {
                 auto saveParseDiagnosticsLength = parseDiagnostics::size();
                 auto saveParseErrorBeforeNextFinishedNode = parseErrorBeforeNextFinishedNode;
 
-                auto comment = doInsideOfContext(NodeFlags::JSDoc, () => parseJSDocCommentWorker(start, length));
+                auto comment = doInsideOfContext<JSDoc>(NodeFlags::JSDoc, [&]() { return parseJSDocCommentWorker(start, length); });
                 setParent(comment, parent);
 
                 if (contextFlags & NodeFlags::JavaScriptFile) {

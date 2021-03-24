@@ -321,7 +321,8 @@ public:
 
     auto createBlock(NodeArray<Statement> statements, boolean multiLine = false) -> Block;
     auto updateBlock(Block node, NodeArray<Statement> statements) -> Block;
-    auto createVariableStatement(ModifiersArray modifiers, NodeArray</*VariableDeclarationList | VariableDeclaration*/Node> declarationList) -> VariableStatement;
+    auto createVariableStatement(ModifiersArray modifiers, NodeArray<VariableDeclaration> declarationList) -> VariableStatement;
+    auto createVariableStatement(ModifiersArray modifiers, VariableDeclarationList declarationList) -> VariableStatement;
     auto updateVariableStatement(VariableStatement node, ModifiersArray modifiers, VariableDeclarationList declarationList) -> VariableStatement;
     auto createEmptyStatement() -> EmptyStatement;
     auto createExpressionStatement(Expression expression) -> ExpressionStatement;
