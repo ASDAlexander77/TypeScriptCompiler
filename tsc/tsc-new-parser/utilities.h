@@ -581,4 +581,12 @@ static auto modifiersToFlags(ModifiersArray modifiers) -> ModifierFlags {
     return flags;
 }
 
+inline auto isParameterPropertyModifier(SyntaxKind kind) -> boolean {
+    return !!(modifierToFlag(kind) & ModifierFlags::ParameterPropertyModifier);
+}
+
+inline auto isClassMemberModifier(SyntaxKind idToken) -> boolean {
+    return isParameterPropertyModifier(idToken) || idToken == SyntaxKind::StaticKeyword;
+}
+
 #endif // UTILITIES_H

@@ -38,6 +38,11 @@ struct NodeArray
     std::vector<T> items;
     boolean isMissingList;
 
+    operator TextRange()
+    {
+        return range;
+    }
+
     inline auto operator [](size_t i) const -> T
     {
         return items[i];
@@ -327,16 +332,16 @@ static auto isArray(Node &node) -> boolean
 
 typedef SyntaxKind PrefixUnaryOperator, PostfixUnaryOperator;
 
-typedef Node Identifier, PropertyName, PrivateIdentifier, LiteralExpression, EntityName, Expression, IndexSignatureDeclaration,
+typedef Node PropertyName, PrivateIdentifier, LiteralExpression, EntityName, Expression, IndexSignatureDeclaration,
     TypeElement, UnaryExpression, UpdateExpression, LeftHandSideExpression, MemberExpression, JsxText, JsxChild, JsxTagNameExpression,
     JsxClosingFragment, PrimaryExpression, FunctionExpression, Statement, CaseOrDefaultClause, ArrayBindingElement,
-    ObjectBindingPattern, ArrayBindingPattern, FunctionDeclaration, AccessorDeclaration, ClassElement, ClassExpression,
+    ObjectBindingPattern, ArrayBindingPattern, FunctionDeclaration, ClassElement, ClassExpression,
     ModuleBlock, SuperExpression, ThisExpression, PseudoBigInt, MissingDeclaration, JsonObjectExpressionStatement, BindingName,
-    CallSignatureDeclaration, MethodSignature, GetAccessorDeclaration, SetAccessorDeclaration, ConstructSignatureDeclaration, IndexSignatureDeclaration,
+    CallSignatureDeclaration, MethodSignature, ConstructSignatureDeclaration, IndexSignatureDeclaration,
     MemberName, ElementAccessChain, CallChain, NewExpression, ConciseBody,
     Expression, OmittedExpression, NonNullChain, SemicolonClassElement, EmptyStatement, ForInitializer, ContinueStatement, 
-    BreakStatement, DebuggerStatement, ModuleName, ModuleBody, ModuleReference, NamedImportBindings, ImportSpecifier, NamedImports,
-    NamedExportBindings, ExportSpecifier, NamedExports, DestructuringAssignment, PropertyDescriptorAttributes, CallBinding, Declaration;
+    BreakStatement, DebuggerStatement, ModuleName, ModuleBody, ModuleReference, NamedImportBindings, NamedImports,
+    NamedExportBindings, NamedExports, DestructuringAssignment, PropertyDescriptorAttributes, CallBinding, Declaration;
 
 typedef Node FalseLiteral, TrueLiteral, NullLiteral, BooleanLiteral, NumericLiteral, BigIntLiteral, StringLiteral, PropertyNameLiteral, RegularExpressionLiteral, 
     ObjectLiteralElementLike, TemplateLiteral, NoSubstitutionTemplateLiteral;
@@ -344,7 +349,7 @@ typedef Node FalseLiteral, TrueLiteral, NullLiteral, BooleanLiteral, NumericLite
 typedef Node ThisTypeNode, UnionTypeNode, IntersectionTypeNode;
 
 typedef SyntaxKind QuestionDotToken, EndOfFileToken, DotDotDotToken, QuestionToken, PlusToken, MinusToken,
-    AsteriskToken, EqualsGreaterThanToken, ColonToken, ExclamationToken, EqualsToken;
+    AsteriskToken, EqualsGreaterThanToken, ColonToken, ExclamationToken, EqualsToken, HeritageClauseToken;
 
 typedef Node LiteralToken, BinaryOperatorToken;
 
@@ -371,6 +376,9 @@ using Push = Node;
 template<typename T>
 using VisitResult = Node;
 
+CLASS_DATA(Identifier)
+    string escapedText;
+CLASS_DATA_END(Identifier)
 
 CLASS_DATA(QualifiedName)
     Node left;
@@ -639,7 +647,8 @@ CLASS_DATA(NonNullExpression)
 CLASS_DATA_END(NonNullExpression)
 
 CLASS_DATA(MetaProperty)
-    Node name;
+    SyntaxKind keywordToken;
+    Identifier name;
 CLASS_DATA_END(MetaProperty)
 
 CLASS_DATA(ConditionalExpression)
@@ -663,7 +672,7 @@ CLASS_DATA(Block)
 CLASS_DATA_END(Block)
 
 CLASS_DATA(SourceFile)
-    Node statements;
+    NodeArray<Statement> statements;
     Node endOfFileToken;
     Node externalModuleIndicator;
     Node commonJsModuleIndicator;
@@ -885,6 +894,8 @@ CLASS_DATA(ImportOrExportSpecifier)
     Node name;
 CLASS_DATA_END(ImportOrExportSpecifier)
 
+typedef ImportOrExportSpecifier ImportSpecifier, ExportSpecifier;
+
 CLASS_DATA(ExportAssignment)
     Node expression;
 CLASS_DATA_END(ExportAssignment)
@@ -1085,6 +1096,13 @@ CLASS_DATA(ConstructorDeclaration)
     /* @internal */ NodeArray<TypeParameterDeclaration> typeParameters; // Present for use with reporting a grammar error
     /* @internal */ TypeNode type; // Present for use with reporting a grammar error
 CLASS_DATA_END(ConstructorDeclaration)
+
+CLASS_DATA(AccessorDeclaration)
+    /* @internal */ NodeArray<TypeParameterDeclaration> typeParameters; // Present for use with reporting a grammar error
+    /* @internal */ TypeNode type; // Present for use with reporting a grammar error
+CLASS_DATA_END(AccessorDeclaration)
+
+typedef AccessorDeclaration GetAccessorDeclaration, SetAccessorDeclaration;
 
 typedef FunctionOrConstructorTypeNode FunctionTypeNode;
 typedef FunctionOrConstructorTypeNode ConstructorTypeNode;

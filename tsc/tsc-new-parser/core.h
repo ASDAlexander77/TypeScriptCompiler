@@ -18,6 +18,20 @@ auto forEach(std::vector<T> array, std::function<U(T, number)> callback = nullpt
     return U();
 }
 
+template <typename U, typename T>
+auto forEach(T array, std::function<U(decltype(array[0]), number)> callback = nullptr) -> U {
+    if (!array.empty()) {
+        for (let i = 0; i < array.size(); i++) {
+            auto result = callback(array[i], i);
+            if (result) {
+                return result;
+            }
+        }
+    }
+
+    return U();
+}
+
 template <typename T>
 auto some(std::vector<T> array, std::function<boolean(T)> predicate = nullptr) -> boolean {
     if (!array.empty()) {
@@ -135,6 +149,12 @@ auto binarySearchKey(const std::vector<T> &array, U key, std::function<U(T, numb
     }
 
     return ~low;
+}
+
+template <typename T, typename U>
+inline auto append(T arr, U value) -> T {
+    arr->push_back(value);
+    return arr;
 }
 
 #endif // CORE_H

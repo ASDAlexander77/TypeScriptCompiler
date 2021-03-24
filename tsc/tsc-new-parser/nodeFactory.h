@@ -525,7 +525,7 @@ public:
     auto updateCaseClause(CaseClause node, Expression expression, NodeArray<Statement> statements) -> CaseClause;
     auto createDefaultClause(NodeArray<Statement> statements) -> DefaultClause;
     auto updateDefaultClause(DefaultClause node, NodeArray<Statement> statements) -> DefaultClause;
-    auto createHeritageClause(HeritageClause token, NodeArray<ExpressionWithTypeArguments> types) -> HeritageClause;
+    auto createHeritageClause(/*HeritageClause*/ HeritageClauseToken token, NodeArray<ExpressionWithTypeArguments> types) -> HeritageClause;
     auto updateHeritageClause(HeritageClause node, NodeArray<ExpressionWithTypeArguments> types) -> HeritageClause;
     auto createCatchClause(string variableDeclaration, Block block) -> CatchClause;
     auto createCatchClause(VariableDeclaration variableDeclaration, Block block) -> CatchClause;
