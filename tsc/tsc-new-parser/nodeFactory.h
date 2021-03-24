@@ -117,8 +117,8 @@ public:
     auto createTypeParameterDeclaration(string name, TypeNode constraint = undefined, TypeNode defaultType = undefined) -> TypeParameterDeclaration;
     auto createTypeParameterDeclaration(Identifier name, TypeNode constraint = undefined, TypeNode defaultType = undefined) -> TypeParameterDeclaration;
     auto updateTypeParameterDeclaration(TypeParameterDeclaration node, Identifier name, TypeNode constraint, TypeNode defaultType) -> TypeParameterDeclaration;
-    auto createParameterDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, DotDotDotToken dotDotDotToken, string name, QuestionToken questionToken = undefined, TypeNode type = undefined, Expression initializer = undefined) -> ParameterDeclaration;
-    auto createParameterDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, DotDotDotToken dotDotDotToken, BindingName name, QuestionToken questionToken = undefined, TypeNode type = undefined, Expression initializer = undefined) -> ParameterDeclaration;
+    auto createParameterDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, DotDotDotToken dotDotDotToken, string name, QuestionToken questionToken = SyntaxKind::Unknown, TypeNode type = undefined, Expression initializer = undefined) -> ParameterDeclaration;
+    auto createParameterDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, DotDotDotToken dotDotDotToken, BindingName name, QuestionToken questionToken = SyntaxKind::Unknown, TypeNode type = undefined, Expression initializer = undefined) -> ParameterDeclaration;
     auto updateParameterDeclaration(ParameterDeclaration node, DecoratorsArray decorators, ModifiersArray modifiers, DotDotDotToken dotDotDotToken, string name, QuestionToken questionToken, TypeNode type, Expression initializer) -> ParameterDeclaration;
     auto updateParameterDeclaration(ParameterDeclaration node, DecoratorsArray decorators, ModifiersArray modifiers, DotDotDotToken dotDotDotToken, BindingName name, QuestionToken questionToken, TypeNode type, Expression initializer) -> ParameterDeclaration;
     auto createDecorator(Expression expression) -> Decorator;
@@ -359,8 +359,8 @@ public:
     auto createTryStatement(Block tryBlock, CatchClause catchClause, Block finallyBlock) -> TryStatement;
     auto updateTryStatement(TryStatement node, Block tryBlock, CatchClause catchClause, Block finallyBlock) -> TryStatement;
     auto createDebuggerStatement() -> DebuggerStatement;
-    auto createVariableDeclaration(string name, ExclamationToken exclamationToken = undefined, TypeNode type = undefined, Expression initializer = undefined) -> VariableDeclaration;
-    auto createVariableDeclaration(BindingName name, ExclamationToken exclamationToken = undefined, TypeNode type = undefined, Expression initializer = undefined) -> VariableDeclaration;
+    auto createVariableDeclaration(string name, ExclamationToken exclamationToken = SyntaxKind::Unknown, TypeNode type = undefined, Expression initializer = undefined) -> VariableDeclaration;
+    auto createVariableDeclaration(BindingName name, ExclamationToken exclamationToken = SyntaxKind::Unknown, TypeNode type = undefined, Expression initializer = undefined) -> VariableDeclaration;
     auto updateVariableDeclaration(VariableDeclaration node, BindingName name, ExclamationToken exclamationToken, TypeNode type, Expression initializer) -> VariableDeclaration;
     auto createVariableDeclarationList(NodeArray<VariableDeclaration> declarations, NodeFlags flags = (NodeFlags)0) -> VariableDeclarationList;
     auto updateVariableDeclarationList(VariableDeclarationList node, NodeArray<VariableDeclaration> declarations) -> VariableDeclarationList;

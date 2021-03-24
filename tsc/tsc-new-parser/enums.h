@@ -517,6 +517,8 @@ enum class ModifierFlags : number {
     All = Export | Ambient | Public | Private | Protected | Static | Readonly | Abstract | Async | Default | Const | Deprecated
 };
 
+ENUM_OPS(ModifierFlags)
+
 enum class NodeFactoryFlags : number {
     None = 0,
     // Disables the parenthesizer rules for the factory.

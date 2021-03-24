@@ -2824,10 +2824,10 @@ namespace ts {
                     factory.createParameterDeclaration(
                         /*decorators*/ undefined,
                         /*modifiers*/ undefined,
-                        /*dotDotDotToken*/ undefined,
+                        /*dotDotDotToken*/ SyntaxKind::Unknown,
                         // TODO(rbuckton) -> JSDoc parameters don't have names (except `this`/`new`), should we manufacture an empty identifier?
                         name,
-                        /*questionToken*/ undefined,
+                        /*questionToken*/ SyntaxKind::Unknown,
                         parseJSDocType(),
                         /*initializer*/ undefined
                     ),
@@ -2954,9 +2954,9 @@ namespace ts {
                     auto node = factory.createParameterDeclaration(
                         /*decorators*/ undefined,
                         /*modifiers*/ undefined,
-                        /*dotDotDotToken*/ undefined,
+                        /*dotDotDotToken*/ SyntaxKind::Unknown,
                         createIdentifier(/*isIdentifier*/ true),
-                        /*questionToken*/ undefined,
+                        /*questionToken*/ SyntaxKind::Unknown,
                         parseTypeAnnotation(),
                         /*initializer*/ undefined
                     );
@@ -4046,7 +4046,7 @@ namespace ts {
                 else {
                     // if the next token is not on the same line.as<yield>().  or we don't have an '*' or
                     // the start of an expression, then this is just a simple "yield" expression.
-                    return finishNode(factory.createYieldExpression(/*asteriskToken*/ undefined, /*expression*/ undefined), pos);
+                    return finishNode(factory.createYieldExpression(/*asteriskToken*/ SyntaxKind::Unknown, /*expression*/ undefined), pos);
                 }
             }
 
@@ -4055,9 +4055,9 @@ namespace ts {
                 auto parameter = factory.createParameterDeclaration(
                     /*decorators*/ undefined,
                     /*modifiers*/ undefined,
-                    /*dotDotDotToken*/ undefined,
+                    /*dotDotDotToken*/ SyntaxKind::Unknown,
                     identifier,
-                    /*questionToken*/ undefined,
+                    /*questionToken*/ SyntaxKind::Unknown,
                     /*type*/ undefined,
                     /*initializer*/ undefined
                 );
@@ -5115,7 +5115,7 @@ namespace ts {
 
             auto parsePropertyAccessExpressionRest(number pos, LeftHandSideExpression expression, QuestionDotToken questionDotToken) {
                 auto name = parseRightSideOfDot(/*allowIdentifierNames*/ true, /*allowPrivateIdentifiers*/ true);
-                auto isOptionalChain = questionDotToken || tryReparseOptionalChain(expression);
+                auto isOptionalChain = (number)questionDotToken || tryReparseOptionalChain(expression);
                 auto propertyAccess = isOptionalChain ?
                     factory.createPropertyAccessChain(expression, questionDotToken, name) :
                     factory.createPropertyAccessExpression(expression, name);
@@ -5140,7 +5140,7 @@ namespace ts {
 
                 parseExpected(SyntaxKind::CloseBracketToken);
 
-                auto indexedAccess = questionDotToken || tryReparseOptionalChain(expression) ?
+                auto indexedAccess = (number)questionDotToken || tryReparseOptionalChain(expression) ?
                     factory.createElementAccessChain(expression, questionDotToken, argumentExpression) :
                     factory.createElementAccessExpression(expression, argumentExpression);
                 return finishNode(indexedAccess, pos);
@@ -5196,7 +5196,7 @@ namespace ts {
                         (reScanTemplateHeadOrNoSubstitutionTemplate(), parseLiteralNode().as<NoSubstitutionTemplateLiteral>()) :
                         parseTemplateExpression(/*isTaggedTemplate*/ true)
                 );
-                if (questionDotToken || !!(tag->flags & NodeFlags::OptionalChain)) {
+                if ((number)questionDotToken || !!(tag->flags & NodeFlags::OptionalChain)) {
                     (tagExpression.asMutable<Node>())->flags |= NodeFlags::OptionalChain;
                 }
                 tagExpression->questionDotToken = questionDotToken;
@@ -5539,7 +5539,7 @@ namespace ts {
                     if (isTemplateStartOfTaggedTemplate()) {
                         Debug::_assert(!!typeArguments,
                             S("Expected a type argument list; all plain tagged template starts should be consumed in 'parseMemberExpressionRest'"));
-                        expression = parseTaggedTemplateRest(expressionPos, expression, /*optionalChain*/ undefined, typeArguments);
+                        expression = parseTaggedTemplateRest(expressionPos, expression, /*optionalChain*/ SyntaxKind::Unknown, typeArguments);
                         typeArguments = undefined;
                     }
                     break;
@@ -6360,11 +6360,11 @@ namespace ts {
                 parseExpected(SyntaxKind::FunctionKeyword);
                 auto asteriskToken = parseOptionalToken(SyntaxKind::AsteriskToken);
                 // We don't parse the name here in await context, instead we will report a grammar error in the checker.
-                auto name = modifierFlags & ModifierFlags::Default ? parseOptionalBindingIdentifier() : parseBindingIdentifier();
+                auto name = !!(modifierFlags & ModifierFlags::Default) ? parseOptionalBindingIdentifier() : parseBindingIdentifier();
                 auto isGenerator = asteriskToken ? SignatureFlags::Yield : SignatureFlags::None;
-                auto isAsync = modifierFlags & ModifierFlags::Async ? SignatureFlags::Await : SignatureFlags::None;
+                auto isAsync = !!(modifierFlags & ModifierFlags::Async) ? SignatureFlags::Await : SignatureFlags::None;
                 auto typeParameters = parseTypeParameters();
-                if (modifierFlags & ModifierFlags::Export) setAwaitContext(/*value*/ true);
+                if (!!(modifierFlags & ModifierFlags::Export)) setAwaitContext(/*value*/ true);
                 auto parameters = parseParameters(isGenerator | isAsync);
                 auto type = parseReturnType(SyntaxKind::ColonToken, /*isType*/ false);
                 auto body = parseFunctionBlockOrSemicolon(isGenerator | isAsync, Diagnostics::or_expected);
@@ -6373,20 +6373,20 @@ namespace ts {
                 return withJSDoc(finishNode(node, pos), hasJSDoc);
             }
 
-            auto parseConstructorName() {
+            auto parseConstructorName() -> boolean {
                 if (token() == SyntaxKind::ConstructorKeyword) {
                     return parseExpected(SyntaxKind::ConstructorKeyword);
                 }
                 if (token() == SyntaxKind::StringLiteral && lookAhead<SyntaxKind>(std::bind(&Parser::nextToken, this)) == SyntaxKind::OpenParenToken) {
-                    return tryParse(() => {
+                    return tryParse<boolean>([&]() {
                         auto literalNode = parseLiteralNode();
-                        return literalnode->text == "constructor" ? literalNode : undefined;
+                        return literalNode->text == S("constructor");
                     });
                 }
             }
 
             auto tryParseConstructorDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers) -> ConstructorDeclaration {
-                return tryParse(() => {
+                return tryParse<ConstructorDeclaration>([&]() {
                     if (parseConstructorName()) {
                         auto typeParameters = parseTypeParameters();
                         auto parameters = parseParameters(SignatureFlags::None);
@@ -6406,13 +6406,13 @@ namespace ts {
                 boolean hasJSDoc,
                 NodeArray<Decorator> decorators,
                 NodeArray<Modifier> modifiers,
-                SyntaxKind asteriskToken,
+                AsteriskToken asteriskToken,
                 PropertyName name,
-                SyntaxKind questionToken,
-                SyntaxKind exclamationToken,
+                QuestionDotToken questionToken,
+                ExclamationToken exclamationToken,
                 DiagnosticMessage diagnosticMessage = DiagnosticMessage()
             ) -> MethodDeclaration {
-                auto isGenerator = asteriskToken ? SignatureFlags::Yield : SignatureFlags::None;
+                auto isGenerator = asteriskToken == SyntaxKind::AsteriskToken ? SignatureFlags::Yield : SignatureFlags::None;
                 auto isAsync = some(modifiers, isAsyncModifier) ? SignatureFlags::Await : SignatureFlags::None;
                 auto typeParameters = parseTypeParameters();
                 auto parameters = parseParameters(isGenerator | isAsync);
@@ -6440,13 +6440,13 @@ namespace ts {
                 NodeArray<Decorator> decorators,
                 NodeArray<Modifier> modifiers,
                 PropertyName name,
-                SyntaxKind questionToken
+                QuestionToken questionToken
             ) -> PropertyDeclaration {
-                auto exclamationToken = !questionToken && !scanner.hasPrecedingLineBreak() ? parseOptionalToken(SyntaxKind::ExclamationToken) : undefined;
+                auto exclamationToken = (number)questionToken && !scanner.hasPrecedingLineBreak() ? parseOptionalToken(SyntaxKind::ExclamationToken) : undefined;
                 auto type = parseTypeAnnotation();
                 auto initializer = doOutsideOfContext(NodeFlags::YieldContext | NodeFlags::AwaitContext | NodeFlags::DisallowInContext, parseInitializer);
                 parseSemicolon();
-                auto node = factory.createPropertyDeclaration(decorators, modifiers, name, questionToken || exclamationToken, type, initializer);
+                auto node = factory.createPropertyDeclaration(decorators, modifiers, name, (number)questionToken || exclamationToken, type, initializer);
                 return withJSDoc(finishNode(node, pos), hasJSDoc);
             }
 

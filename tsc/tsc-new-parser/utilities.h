@@ -541,7 +541,7 @@ static auto addRelatedInfo(T diagnostic, std::vector<DiagnosticRelatedInformatio
 }
 
 template <typename T>
-static auto addRelatedInfo(T diagnostic, DiagnosticRelatedInformation relatedInformation) -> T {
+auto addRelatedInfo(T diagnostic, DiagnosticRelatedInformation relatedInformation) -> T {
     if (!relatedInformation) {
         return diagnostic;
     }
@@ -552,6 +552,33 @@ static auto addRelatedInfo(T diagnostic, DiagnosticRelatedInformation relatedInf
     diagnostic.relatedInformation.push_back(relatedInformation);
 
     return diagnostic;
+}
+
+static auto modifierToFlag(SyntaxKind token) -> ModifierFlags {
+    switch (token) {
+        case SyntaxKind::StaticKeyword: return ModifierFlags::Static;
+        case SyntaxKind::PublicKeyword: return ModifierFlags::Public;
+        case SyntaxKind::ProtectedKeyword: return ModifierFlags::Protected;
+        case SyntaxKind::PrivateKeyword: return ModifierFlags::Private;
+        case SyntaxKind::AbstractKeyword: return ModifierFlags::Abstract;
+        case SyntaxKind::ExportKeyword: return ModifierFlags::Export;
+        case SyntaxKind::DeclareKeyword: return ModifierFlags::Ambient;
+        case SyntaxKind::ConstKeyword: return ModifierFlags::Const;
+        case SyntaxKind::DefaultKeyword: return ModifierFlags::Default;
+        case SyntaxKind::AsyncKeyword: return ModifierFlags::Async;
+        case SyntaxKind::ReadonlyKeyword: return ModifierFlags::Readonly;
+    }
+    return ModifierFlags::None;
+}
+
+static auto modifiersToFlags(ModifiersArray modifiers) -> ModifierFlags {
+    auto flags = ModifierFlags::None;
+    if (!!modifiers) {
+        for (auto &modifier : modifiers) {
+            flags |= modifierToFlag(modifier->kind);
+        }
+    }
+    return flags;
 }
 
 #endif // UTILITIES_H

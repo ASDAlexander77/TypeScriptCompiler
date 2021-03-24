@@ -330,7 +330,7 @@ typedef SyntaxKind PrefixUnaryOperator, PostfixUnaryOperator;
 typedef Node Identifier, PropertyName, PrivateIdentifier, LiteralExpression, EntityName, Expression, IndexSignatureDeclaration,
     TypeElement, UnaryExpression, UpdateExpression, LeftHandSideExpression, MemberExpression, JsxText, JsxChild, JsxTagNameExpression,
     JsxClosingFragment, PrimaryExpression, FunctionExpression, Statement, CaseOrDefaultClause, ArrayBindingElement,
-    ObjectBindingPattern, ArrayBindingPattern, FunctionDeclaration, ConstructorDeclaration, AccessorDeclaration, ClassElement, ClassExpression,
+    ObjectBindingPattern, ArrayBindingPattern, FunctionDeclaration, AccessorDeclaration, ClassElement, ClassExpression,
     ModuleBlock, SuperExpression, ThisExpression, PseudoBigInt, MissingDeclaration, JsonObjectExpressionStatement, BindingName,
     CallSignatureDeclaration, MethodSignature, GetAccessorDeclaration, SetAccessorDeclaration, ConstructSignatureDeclaration, IndexSignatureDeclaration,
     MemberName, ElementAccessChain, CallChain, NewExpression, ConciseBody,
@@ -343,8 +343,10 @@ typedef Node FalseLiteral, TrueLiteral, NullLiteral, BooleanLiteral, NumericLite
 
 typedef Node ThisTypeNode, UnionTypeNode, IntersectionTypeNode;
 
-typedef Node BinaryOperatorToken, QuestionDotToken, EndOfFileToken, LiteralToken, DotDotDotToken, QuestionToken, PlusToken, MinusToken,
+typedef SyntaxKind QuestionDotToken, EndOfFileToken, DotDotDotToken, QuestionToken, PlusToken, MinusToken,
     AsteriskToken, EqualsGreaterThanToken, ColonToken, ExclamationToken, EqualsToken;
+
+typedef Node LiteralToken, BinaryOperatorToken;
 
 typedef Node ReadonlyKeyword, AssertsKeyword, AwaitKeyword;
 
@@ -376,6 +378,7 @@ CLASS_DATA(QualifiedName)
 CLASS_DATA_END(QualifiedName)
 
 CLASS_DATA(MethodDeclaration)
+    ExclamationToken exclamationToken;
     Node name;
 CLASS_DATA_END(MethodDeclaration)
 
@@ -447,7 +450,7 @@ CLASS_DATA(SignatureDeclaration)
 CLASS_DATA_END(SignatureDeclaration)
 
 CLASS_DATA(FunctionLikeDeclaration)
-    Node asteriskToken;
+    AsteriskToken asteriskToken;
     Node name;
     Node questionToken;
     Node exclamationToken;
@@ -556,7 +559,7 @@ CLASS_DATA_END(ObjectLiteralExpression)
 
 CLASS_DATA(PropertyAccessExpression)
     Node expression;
-    Node questionDotToken;
+    QuestionDotToken questionDotToken;
     Node name;
 CLASS_DATA_END(PropertyAccessExpression)
 
@@ -564,20 +567,20 @@ typedef PropertyAccessExpression PropertyAccessChain;
 
 CLASS_DATA(ElementAccessExpression)
     Node expression;
-    Node questionDotToken;
+    QuestionDotToken questionDotToken;
     Node argumentExpression;
 CLASS_DATA_END(ElementAccessExpression)
 
 CLASS_DATA(CallExpression)
     Node expression;
-    Node questionDotToken;
+    QuestionDotToken questionDotToken;
     Node typeArguments;
     Node arguments;
 CLASS_DATA_END(CallExpression)
 
 CLASS_DATA(TaggedTemplateExpression)
     Node tag;
-    Node questionDotToken;
+    QuestionDotToken questionDotToken;
     Node typeArguments;
     Node _template;
 CLASS_DATA_END(TaggedTemplateExpression)
@@ -608,7 +611,7 @@ CLASS_DATA(PrefixUnaryExpression)
 CLASS_DATA_END(PrefixUnaryExpression)
 
 CLASS_DATA(YieldExpression)
-    Node asteriskToken;
+    AsteriskToken asteriskToken;
     Node expression;
 CLASS_DATA_END(YieldExpression)
 
@@ -1077,6 +1080,11 @@ CLASS_DATA(FunctionOrConstructorTypeNode)
     TypeNode type;
     Node parameters;
 CLASS_DATA_END(FunctionOrConstructorTypeNode)
+
+CLASS_DATA(ConstructorDeclaration)
+    /* @internal */ NodeArray<TypeParameterDeclaration> typeParameters; // Present for use with reporting a grammar error
+    /* @internal */ TypeNode type; // Present for use with reporting a grammar error
+CLASS_DATA_END(ConstructorDeclaration)
 
 typedef FunctionOrConstructorTypeNode FunctionTypeNode;
 typedef FunctionOrConstructorTypeNode ConstructorTypeNode;
