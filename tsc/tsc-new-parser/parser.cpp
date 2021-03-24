@@ -7147,7 +7147,7 @@ namespace ts {
                 return withJSDoc(finishNode(node, pos), hasJSDoc);
             }
 
-            auto setExternalModuleIndicator(SourceFile sourceFile) -> void {
+            auto setExternalModuleIndicator(SourceFile sourceFile) -> void {                
                 // Try to use the first top-level import/when available, then
                 // fall back to looking for an 'import.meta' somewhere in the tree if necessary.
                 sourceFile->externalModuleIndicator =
@@ -7276,1796 +7276,301 @@ namespace ts {
                 return comment;
             }
 
-            enum class JSDocState : number {
-                BeginningOfLine,
-                SawAsterisk,
-                SavingComments,
-                SavingBackticks, // Only NOTE used when parsing tag comments
-            };
-
-            enum class PropertyLikeParse : number {
-                Property = 1 << 0,
-                Parameter = 1 << 1,
-                CallbackParameter = 1 << 2,
-            };
-
-            struct EntityNameWIthBracketed 
-            { 
-                EntityNameWIthBracketed() = default;
-                EntityName name;
-                boolean isBracketed;
-            };
-
-            struct ParseJSDocCommentClass
-            {
-                string content;
-                number start;
-                number end;
-
-                NodeArray<JSDocTag> tags;
-                number tagsPos;
-                number tagsEnd;
-                std::vector<string> comments;
-
-                Scanner &scanner;
-                Parser *parser;
-
-                ParseJSDocCommentClass(Scanner &scanner, Parser* parser, string sourceText) : content(sourceText), scanner(scanner)
-                {
-                }
-
-                auto parseJSDocCommentWorker(number start = 0, number length = -1) -> JSDoc {
-                    end = length == -1 ? content.size() : start + length;
-                    length = end - start;
-
-                    Debug::_assert(start >= 0);
-                    Debug::_assert(start <= end);
-                    Debug::_assert(end <= content.size());
-
-                    // Check for /** (JSDoc opening part)
-                    if (!isJSDocLikeText(content, start)) {
-                        return undefined;
-                    }
-
-                    // + 3 for leading /**, - 5 in total for /** */
-                    return scanner.scanRange<JSDoc>(start + 3, length - 5, [&] () {
-                        // Initially we can parse out a tag.  We also have seen a starting asterisk.
-                        // This is so that /** * @type */ doesn't parse.
-                        auto state = JSDocState::SawAsterisk;
-                        number margin;
-                        // + 4 for leading '/** '
-                        // + 1 because the last index of \n is always one index before the first character in the line and coincidentally, if there is no \n before start, it is -1, which is also one index before the first character
-                        auto indent = start - (content.find_last_of(S('\n'), start) + 1) + 4;
-                        auto pushComment = [&](string text) {
-                            if (!margin) {
-                                margin = indent;
-                            }
-                            comments.push_back(text);
-                            indent += text.size();
-                        };
-
-                        parser->nextTokenJSDoc();
-                        while (parseOptionalJsdoc(SyntaxKind::WhitespaceTrivia));
-                        if (parseOptionalJsdoc(SyntaxKind::NewLineTrivia)) {
-                            state = JSDocState::BeginningOfLine;
-                            indent = 0;
-                        }
-                        while (true) {
-                            switch (parser->token()) {
-                                case SyntaxKind::AtToken:
-                                    if (state == JSDocState::BeginningOfLine || state == JSDocState::SawAsterisk) {
-                                        removeTrailingWhitespace(comments);
-                                        addTag(parseTag(indent));
-                                        // According NOTE to usejsdoc.org, a tag goes to end of line, except the last tag.
-                                        // Real-world comments may break this rule, so "BeginningOfLine" will not be a real line beginning
-                                        // for malformed examples like `/** @param {string} x @returns {number} the length */`
-                                        state = JSDocState::BeginningOfLine;
-                                        margin = -1;
-                                    }
-                                    else {
-                                        pushComment(scanner.getTokenText());
-                                    }
-                                    break;
-                                case SyntaxKind::NewLineTrivia:
-                                    comments.push_back(scanner.getTokenText());
-                                    state = JSDocState::BeginningOfLine;
-                                    indent = 0;
-                                    break;
-                                case SyntaxKind::AsteriskToken:
-                                    {
-                                        auto asterisk = scanner.getTokenText();
-                                        if (state == JSDocState::SawAsterisk || state == JSDocState::SavingComments) {
-                                            // If we've already seen an asterisk, then we can no longer parse a tag on this line
-                                            state = JSDocState::SavingComments;
-                                            pushComment(asterisk);
-                                        }
-                                        else {
-                                            // Ignore the first asterisk on a line
-                                            state = JSDocState::SawAsterisk;
-                                            indent += asterisk.size();
-                                        }
-                                    }
-                                    break;
-                                case SyntaxKind::WhitespaceTrivia:
-                                    {
-                                        // only collect whitespace if we're already saving comments or have just crossed the comment indent margin
-                                        auto whitespace = scanner.getTokenText();
-                                        if (state == JSDocState::SavingComments) {
-                                            comments.push_back(whitespace);
-                                        }
-                                        else if (margin != -1 && indent + whitespace.size() > margin) {
-                                            comments.push_back(whitespace.substr(margin - indent));
-                                        }
-                                        indent += whitespace.size();
-                                    }
-                                    break;
-                                case SyntaxKind::EndOfFileToken:
-                                    goto loop;
-                                default:
-                                    // Anything else is doc comment text. We just save it. Because it
-                                    // wasn't a tag, we can no longer parse a tag on this line until we hit the next
-                                    // line break.
-                                    state = JSDocState::SavingComments;
-                                    pushComment(scanner.getTokenText());
-                                    break;
-                            }
-                            parser->nextTokenJSDoc();
-                        }
-                        loop:
-                        removeLeadingNewlines(comments);
-                        removeTrailingWhitespace(comments);
-                        return createJSDocComment();
-                    }); // end of lambda
-                }
-
-                auto removeLeadingNewlines(std::vector<string> comments) -> void {
-                    while (comments.size() && (comments[0] == S("\n") || comments[0] == S("\r"))) {
-                        comments.erase(comments.begin());
-                    }
-                }
-
-                auto removeTrailingWhitespace(std::vector<string> comments) -> void {
-                    while (comments.size() && trim(comments[comments.size() - 1]) == string()) {
-                        comments.erase(comments.end());
-                    }
-                }
-
-                auto createJSDocComment() -> JSDoc {
-                    auto comment = comments.size() ? join(comments) : string();
-                    auto tagsArray = !!tags ? tags : parser->createNodeArray(tags, tagsPos, tagsEnd);
-                    return parser->finishNode(parser->factory.createJSDocComment(comment, tagsArray), start, end);
-                }
-
-                auto isNextNonwhitespaceTokenEndOfFile() -> boolean {
-                    // We must use infinite lookahead,.as<there>() could be any number of newlines :(
-                    while (true) {
-                        parser->nextTokenJSDoc();
-                        if (parser->token() == SyntaxKind::EndOfFileToken) {
-                            return true;
-                        }
-                        if (!(parser->token() == SyntaxKind::WhitespaceTrivia || parser->token() == SyntaxKind::NewLineTrivia)) {
-                            return false;
-                        }
-                    }
-                }
-
-                auto skipWhitespace() -> void {
-                    if (parser->token() == SyntaxKind::WhitespaceTrivia || parser->token() == SyntaxKind::NewLineTrivia) {
-                        if (parser->lookAhead<boolean>(std::bind(&ParseJSDocCommentClass::isNextNonwhitespaceTokenEndOfFile, this))) {
-                            return; // Don't skip whitespace prior to EoF (or end of comment) - that shouldn't be included in any node's range
-                        }
-                    }
-                    while (parser->token() == SyntaxKind::WhitespaceTrivia || parser->token() == SyntaxKind::NewLineTrivia) {
-                        parser->nextTokenJSDoc();
-                    }
-                }
-
-                auto skipWhitespaceOrAsterisk() -> string {
-                    if (parser->token() == SyntaxKind::WhitespaceTrivia || parser->token() == SyntaxKind::NewLineTrivia) {
-                        if (parser->lookAhead<boolean>(std::bind(&ParseJSDocCommentClass::isNextNonwhitespaceTokenEndOfFile, this))) {
-                            return string(); // Don't skip whitespace prior to EoF (or end of comment) - that shouldn't be included in any node's range
-                        }
-                    }
-
-                    auto precedingLineBreak = scanner.hasPrecedingLineBreak();
-                    auto seenLineBreak = false;
-                    auto indentText = string();
-                    while ((precedingLineBreak && parser->token() == SyntaxKind::AsteriskToken) || parser->token() == SyntaxKind::WhitespaceTrivia || parser->token() == SyntaxKind::NewLineTrivia) {
-                        indentText += scanner.getTokenText();
-                        if (parser->token() == SyntaxKind::NewLineTrivia) {
-                            precedingLineBreak = true;
-                            seenLineBreak = true;
-                            indentText = string();
-                        }
-                        else if (parser->token() == SyntaxKind::AsteriskToken) {
-                            precedingLineBreak = false;
-                        }
-                        parser->nextTokenJSDoc();
-                    }
-                    return seenLineBreak ? indentText : string();
-                }
-
-                auto parseTag(number margin) -> Node {
-                    Debug::_assert(parser->token() == SyntaxKind::AtToken);
-                    auto start = scanner.getTokenPos();
-                    parser->nextTokenJSDoc();
-
-                    auto tagName = parseJSDocIdentifierName(/*message*/ undefined);
-                    auto indentText = skipWhitespaceOrAsterisk();
-
-                    static std::map<string, int> m = {{S("author"), 1}, {S("implements"), 2}, {S("augments"), 3}, {S("extends"), 4}, {S("class"), 5}, 
-                        {S("constructor"), 6}, {S("public"), 7}, {S("private"), 8}, {S("protected"), 9}, {S("readonly"), 10}, {S("deprecated"), 11}, 
-                        {S("this"), 12}, {S("enum"), 13}, {S("arg"), 14}, {S("argument"), 15}, {S("param"), 16}, {S("return"), 17}, {S("returns"), 18}, 
-                        {S("template"), 19}, {S("type"), 20}, {S("typedef"), 21}, {S("callback"), 22}, {S("see"), 23}};
-
-                    /*JSDocTag*/Node tag;
-                    auto index = m[tagName.escapedText];
-                    switch (index) {
-                        case 1:
-                            tag = parseAuthorTag(start, tagName, margin, indentText);
-                            break;
-                        case 2:
-                            tag = parseImplementsTag(start, tagName, margin, indentText);
-                            break;
-                        case 3:
-                        case 4:
-                            tag = parseAugmentsTag(start, tagName, margin, indentText);
-                            break;
-                        case 5:
-                        case 6:
-                            tag = parseSimpleTag(start, std::bind(&NodeFactory::createJSDocClassTag, &parser->factory, std::placeholders::_1, std::placeholders::_2), tagName, margin, indentText);
-                            break;
-                        case 7:
-                            tag = parseSimpleTag(start, std::bind(&NodeFactory::createJSDocPublicTag, &parser->factory, std::placeholders::_1, std::placeholders::_2), tagName, margin, indentText);
-                            break;
-                        case 8:
-                            tag = parseSimpleTag(start, std::bind(&NodeFactory::createJSDocPrivateTag, &parser->factory, std::placeholders::_1, std::placeholders::_2), tagName, margin, indentText);
-                            break;
-                        case 9:
-                            tag = parseSimpleTag(start, std::bind(&NodeFactory::createJSDocProtectedTag, &parser->factory, std::placeholders::_1, std::placeholders::_2), tagName, margin, indentText);
-                            break;
-                        case 10:
-                            tag = parseSimpleTag(start, std::bind(&NodeFactory::createJSDocReadonlyTag, &parser->factory, std::placeholders::_1, std::placeholders::_2), tagName, margin, indentText);
-                            break;
-                        case 11:
-                            parser->hasDeprecatedTag = true;
-                            tag = parseSimpleTag(start, std::bind(&NodeFactory::createJSDocDeprecatedTag, &parser->factory, std::placeholders::_1, std::placeholders::_2), tagName, margin, indentText);
-                            break;
-                        case 12:
-                            tag = parseThisTag(start, tagName, margin, indentText);
-                            break;
-                        case 13:
-                            tag = parseEnumTag(start, tagName, margin, indentText);
-                            break;
-                        case 14:
-                        case 15:
-                        case 16:
-                            return parseParameterOrPropertyTag(start, tagName, PropertyLikeParse::Parameter, margin);
-                        case 17:
-                        case 18:
-                            tag = parseReturnTag(start, tagName, margin, indentText);
-                            break;
-                        case 19:
-                            tag = parseTemplateTag(start, tagName, margin, indentText);
-                            break;
-                        case 20:
-                            tag = parseTypeTag(start, tagName, margin, indentText);
-                            break;
-                        case 21:
-                            tag = parseTypedefTag(start, tagName, margin, indentText);
-                            break;
-                        case 22:
-                            tag = parseCallbackTag(start, tagName, margin, indentText);
-                            break;
-                        case 23:
-                            tag = parseSeeTag(start, tagName, margin, indentText);
-                            break;
-                        default:
-                            tag = parseUnknownTag(start, tagName, margin, indentText);
-                            break;
-                    }
-                    return tag;
-                }
-
-                auto parseTrailingTagComments(number pos, number end, number margin, string indentText) {
-                    // some tags, like typedef and callback, have already parsed their comments earlier
-                    if (!indentText.empty()) {
-                        margin += end - pos;
-                    }
-                    return parseTagComments(margin, indentText.substr(margin));
-                }
-
-                auto parseTagComments(number indent, string initialMargin) -> string {
-                    auto std::vector<string> = [] comments;
-                    auto state = JSDocState::BeginningOfLine;
-                    auto previousWhitespace = true;
-                    auto number margin;
-                    auto pushComment = [&](string text) {
-                        if (!margin) {
-                            margin = indent;
-                        }
-                        comments.push(text);
-                        indent += text.size();
-                    };
-                    if (!initialMargin.empty()) {
-                        // jump straight to saving comments if there is some initial indentation
-                        if (initialMargin != string()) {
-                            pushComment(initialMargin);
-                        }
-                        state = JSDocState::SawAsterisk;
-                    }
-                    auto tok = token();
-                    while (true) {
-                        switch (tok) {
-                            case SyntaxKind::NewLineTrivia:
-                                state = JSDocState::BeginningOfLine;
-                                // don't use pushComment here because we want to keep the margin unchanged
-                                comments.push(scanner.getTokenText());
-                                indent = 0;
-                                break;
-                            case SyntaxKind::AtToken:
-                                if (state == JSDocState::SavingBackticks || !previousWhitespace && state == JSDocState::SavingComments) {
-                                    // @ doesn't start a new tag inside ``, and inside a comment, only after whitespace
-                                    comments.push(scanner.getTokenText());
-                                    break;
-                                }
-                                scanner.setTextPos(scanner.getTextPos() - 1);
-                                // falls through
-                            case SyntaxKind::EndOfFileToken:
-                                // Done
-                                goto loop;
-                            case SyntaxKind::WhitespaceTrivia:
-                                if (state == JSDocState::SavingComments || state == JSDocState::SavingBackticks) {
-                                    pushComment(scanner.getTokenText());
-                                }
-                                else {
-                                    auto whitespace = scanner.getTokenText();
-                                    // if the whitespace crosses the margin, take only the whitespace that passes the margin
-                                    if (margin != undefined && indent + whitespace.size() > margin) {
-                                        comments.push(whitespace.slice(margin - indent));
-                                    }
-                                    indent += whitespace.size();
-                                }
-                                break;
-                            case SyntaxKind::OpenBraceToken:
-                                state = JSDocState::SavingComments;
-                                if (parser->lookAhead<boolean>([]() { return parser->nextTokenJSDoc() == SyntaxKind::AtToken && scanner.tokenIsIdentifierOrKeyword(parser->nextTokenJSDoc()) && scanner.getTokenText() == S("link");})) 
-                                {
-                                    pushComment(scanner.getTokenText());
-                                    parser->nextTokenJSDoc();
-                                    pushComment(scanner.getTokenText());
-                                    parser->nextTokenJSDoc();
-                                }
-                                pushComment(scanner.getTokenText());
-                                break;
-                            case SyntaxKind::BacktickToken:
-                                if (state == JSDocState::SavingBackticks) {
-                                    state = JSDocState::SavingComments;
-                                }
-                                else {
-                                    state = JSDocState::SavingBackticks;
-                                }
-                                pushComment(scanner.getTokenText());
-                                break;
-                            case SyntaxKind::AsteriskToken:
-                                if (state == JSDocState::BeginningOfLine) {
-                                    // leading asterisks start recording on the *next* (non-whitespace) token
-                                    state = JSDocState::SawAsterisk;
-                                    indent += 1;
-                                    break;
-                                }
-                                // record the *.as<a>() comment
-                                // falls through
-                            default:
-                                if (state != JSDocState::SavingBackticks) {
-                                    state = JSDocState::SavingComments; // leading identifiers start recording.as<well>()
-                                }
-                                pushComment(scanner.getTokenText());
-                                break;
-                        }
-                        previousWhitespace = parser->token() == SyntaxKind::WhitespaceTrivia;
-                        tok = parser->nextTokenJSDoc();
-                    }
-                    loop:
-
-                    removeLeadingNewlines(comments);
-                    removeTrailingWhitespace(comments);
-                    return comments.size() == 0 ? undefined : comments.join(string());
-                }
-
-                auto parseUnknownTag(number start, Identifier tagName, number indent, string indentText) {
-                    auto end = parser->getNodePos();
-                    return finishNode(parser->factory.createJSDocUnknownTag(tagName, parseTrailingTagComments(start, end, indent, indentText)), start, end);
-                }
-
-                auto addTag(/*JSDocTag*/Node tag) -> void {
-                    if (!tag) {
-                        return;
-                    }
-                    if (!tags) {
-                        tags = [tag];
-                        tagsPos = tag->pos;
-                    }
-                    else {
-                        tags.push_back(tag);
-                    }
-                    tagsEnd = tag->end;
-                }
-
-                auto tryParseTypeExpression() -> JSDocTypeExpression {
-                    skipWhitespaceOrAsterisk();
-                    return parser->token() == SyntaxKind::OpenBraceToken ? parseJSDocTypeExpression() : undefined;
-                }
-
-                auto parseBracketNameInPropertyAndParamTag() -> EntityNameWIthBracketed {
-                    // Looking for something like '[foo]', 'foo', '[foo.bar]' or 'foo.bar'
-                    auto isBracketed = parseOptionalJsdoc(SyntaxKind::OpenBracketToken);
-                    if (isBracketed) {
-                        skipWhitespace();
-                    }
-                    // a markdown-quoted name: `arg` is not legal jsdoc, but occurs in the wild
-                    auto isBackquoted = parseOptionalJsdoc(SyntaxKind::BacktickToken);
-                    auto name = parseJSDocEntityName();
-                    if (isBackquoted) {
-                        parseExpectedTokenJSDoc(SyntaxKind::BacktickToken);
-                    }
-                    if (isBracketed) {
-                        skipWhitespace();
-                        // May have an optional default, e.g. '[foo = 42]'
-                        if (parseOptionalToken(SyntaxKind::EqualsToken)) {
-                            parseExpression();
-                        }
-
-                        parseExpected(SyntaxKind::CloseBracketToken);
-                    }
-
-                    return { name, isBracketed };
-                }
-
-                auto isObjectOrObjectArrayTypeReference(TypeNode node) -> boolean {
-                    switch (node->kind) {
-                        case SyntaxKind::ObjectKeyword:
-                            return true;
-                        case SyntaxKind::ArrayType:
-                            return isObjectOrObjectArrayTypeReference(node.as<ArrayTypeNode>().elementType);
-                        default:
-                            return isTypeReferenceNode(node) && ts.isIdentifier(node->typeName) && node->typeName->escapedText == S("Object") && !node->typeArguments;
-                    }
-                }
-
-                auto parseParameterOrPropertyTag(number start, Identifier tagName, PropertyLikeParse target, number indent) -> Node {
-                    auto typeExpression = tryParseTypeExpression();
-                    auto isNameFirst = !typeExpression;
-                    skipWhitespaceOrAsterisk();
-
-                    auto { name, isBracketed } = parseBracketNameInPropertyAndParamTag();
-                    auto indentText = skipWhitespaceOrAsterisk();
-
-                    if (isNameFirst) {
-                        typeExpression = tryParseTypeExpression();
-                    }
-
-                    auto comment = parseTrailingTagComments(start, getNodePos(), indent, indentText);
-
-                    auto nestedTypeLiteral = target != PropertyLikeParse::CallbackParameter && parseNestedTypeLiteral(typeExpression, name, target, indent);
-                    if (nestedTypeLiteral) {
-                        typeExpression = nestedTypeLiteral;
-                        isNameFirst = true;
-                    }
-                    auto result = target == PropertyLikeParse::Property
-                        ? factory.createJSDocPropertyTag(tagName, name, isBracketed, typeExpression, isNameFirst, comment)
-                        : factory.createJSDocParameterTag(tagName, name, isBracketed, typeExpression, isNameFirst, comment);
-                    return finishNode(result, start);
-                }
-
-                auto parseNestedTypeLiteral(JSDocTypeExpression typeExpression, EntityName name, PropertyLikeParse target, number indent) {
-                    if (typeExpression && isObjectOrObjectArrayTypeReference(typeExpression.type)) {
-                        auto pos = getNodePos();
-                        auto JSDocPropertyLikeTag child | JSDocTypeTag | false;
-                        auto std::vector<JSDocPropertyLikeTag> children;
-                        while (child = tryParse(() => parseChildParameterOrPropertyTag(target, indent, name))) {
-                            if (child->kind == SyntaxKind::JSDocParameterTag || child->kind == SyntaxKind::JSDocPropertyTag) {
-                                children = append(children, child);
-                            }
-                        }
-                        if (children) {
-                            auto literal = finishNode(factory.createJSDocTypeLiteral(children, typeExpression.type->kind == SyntaxKind::ArrayType), pos);
-                            return finishNode(factory.createJSDocTypeExpression(literal), pos);
-                        }
-                    }
-                }
-
-                auto parseReturnTag(number start, Identifier tagName, number indent, string indentText) -> JSDocReturnTag {
-                    if (some(tags, isJSDocReturnTag)) {
-                        parseErrorAt(tagName->pos, scanner.getTokenPos(), Diagnostics::_0_tag_already_specified, tagName.escapedText);
-                    }
-
-                    auto typeExpression = tryParseTypeExpression();
-                    auto end = getNodePos();
-                    return finishNode(factory.createJSDocReturnTag(tagName, typeExpression, parseTrailingTagComments(start, end, indent, indentText)), start, end);
-                }
-
-                auto parseTypeTag(number start, Identifier tagName, number indent, string indentText) -> JSDocTypeTag {
-                    if (some(tags, isJSDocTypeTag)) {
-                        parseErrorAt(tagName->pos, scanner.getTokenPos(), Diagnostics::_0_tag_already_specified, tagName.escapedText);
-                    }
-
-                    auto typeExpression = parseJSDocTypeExpression(/*mayOmitBraces*/ true);
-                    auto end = getNodePos();
-                    auto comments = indent != undefined && indentText != undefined ? parseTrailingTagComments(start, end, indent, indentText) : undefined;
-                    return finishNode(factory.createJSDocTypeTag(tagName, typeExpression, comments), start, end);
-                }
-
-                auto parseSeeTag(number start, Identifier tagName, number indent, string indentText) -> JSDocSeeTag {
-                    auto nameExpression = parseJSDocNameReference();
-                    auto end = getNodePos();
-                    auto comments = indent != undefined && indentText != undefined ? parseTrailingTagComments(start, end, indent, indentText) : undefined;
-                    return finishNode(factory.createJSDocSeeTag(tagName, nameExpression, comments), start, end);
-                }
-
-                auto parseAuthorTag(number start, Identifier tagName, number indent, string indentText) -> JSDocAuthorTag {
-                    auto comments = parseAuthorNameAndEmail() + (parseTrailingTagComments(start, end, indent, indentText) || string());
-                    return finishNode(factory.createJSDocAuthorTag(tagName, comments || undefined), start);
-                }
-
-                auto parseAuthorNameAndEmail() -> string {
-                    auto std::vector<string> = [] comments;
-                    auto inEmail = false;
-                    auto token = scanner.getToken();
-                    while (token != SyntaxKind::EndOfFileToken && token != SyntaxKind::NewLineTrivia) {
-                        if (token == SyntaxKind::LessThanToken) {
-                            inEmail = true;
-                        }
-                        else if (token == SyntaxKind::AtToken && !inEmail) {
-                            break;
-                        }
-                        else if (token == SyntaxKind::GreaterThanToken && inEmail) {
-                            comments.push(scanner.getTokenText());
-                            scanner.setTextPos(scanner.getTokenPos() + 1);
-                            break;
-                        }
-                        comments.push(scanner.getTokenText());
-                        token = nextTokenJSDoc();
-                    }
-
-                    return comments.join(string());
-                }
-
-                auto parseImplementsTag(number start, Identifier tagName, number margin, string indentText) -> JSDocImplementsTag {
-                    auto className = parseExpressionWithTypeArgumentsForAugments();
-                    auto end = getNodePos();
-                    return finishNode(factory.createJSDocImplementsTag(tagName, className, parseTrailingTagComments(start, end, margin, indentText)), start, end);
-                }
-
-                auto parseAugmentsTag(number start, Identifier tagName, number margin, string indentText) -> JSDocAugmentsTag {
-                    auto className = parseExpressionWithTypeArgumentsForAugments();
-                    auto end = getNodePos();
-                    return finishNode(factory.createJSDocAugmentsTag(tagName, className, parseTrailingTagComments(start, end, margin, indentText)), start, end);
-                }
-
-                auto parseExpressionWithTypeArgumentsForAugments() -> ExpressionWithTypeArguments {
-                    auto usedBrace = parseOptional(SyntaxKind::OpenBraceToken);
-                    auto pos = getNodePos();
-                    auto expression = parsePropertyAccessEntityNameExpression();
-                    auto typeArguments = tryParseTypeArguments();
-                    auto node = factory.createExpressionWithTypeArguments(expression, typeArguments);
-                    auto res = finishNode(node, pos);
-                    if (usedBrace) {
-                        parseExpected(SyntaxKind::CloseBraceToken);
-                    }
-                    return res;
-                }
-
-                auto parsePropertyAccessEntityNameExpression() -> Node {
-                    auto pos = getNodePos();
-                    Node node = parseJSDocIdentifierName();
-                    while (parseOptional(SyntaxKind::DotToken)) {
-                        auto name = parseJSDocIdentifierName();
-                        node = finishNode(factory.createPropertyAccessExpression(node, name), pos).as<PropertyAccessEntityNameExpression>();
-                    }
-                    return node;
-                }
-
-                auto parseSimpleTag(number start, std::function<JSDocTag(Identifier, string)> createTag, Identifier tagName, number margin, string indentText) -> JSDocTag {
-                    auto end = getNodePos();
-                    return finishNode(createTag(tagName, parseTrailingTagComments(start, end, margin, indentText)), start, end);
-                }
-
-                auto parseThisTag(number start, Identifier tagName, number margin, string indentText) -> JSDocThisTag {
-                    auto typeExpression = parseJSDocTypeExpression(/*mayOmitBraces*/ true);
-                    skipWhitespace();
-                    auto end = getNodePos();
-                    return finishNode(factory.createJSDocThisTag(tagName, typeExpression, parseTrailingTagComments(start, end, margin, indentText)), start, end);
-                }
-
-                auto parseEnumTag(number start, Identifier tagName, number margin, string indentText) -> JSDocEnumTag {
-                    auto typeExpression = parseJSDocTypeExpression(/*mayOmitBraces*/ true);
-                    skipWhitespace();
-                    auto end = getNodePos();
-                    return finishNode(factory.createJSDocEnumTag(tagName, typeExpression, parseTrailingTagComments(start, end, margin, indentText)), start, end);
-                }
-
-                auto parseTypedefTag(number start, Identifier tagName, number indent, string indentText) -> JSDocTypedefTag {
-                    auto JSDocTypeExpression typeExpression | JSDocTypeLiteral = tryParseTypeExpression();
-                    skipWhitespaceOrAsterisk();
-
-                    auto fullName = parseJSDocTypeNameWithNamespace();
-                    skipWhitespace();
-                    auto comment = parseTagComments(indent);
-
-                    auto number end;
-                    if (!typeExpression || isObjectOrObjectArrayTypeReference(typeExpression.type)) {
-                        auto JSDocTypeTag child | JSDocPropertyTag | false;
-                        auto JSDocTypeTag childTypeTag;
-                        auto std::vector<JSDocPropertyTag> jsDocPropertyTags;
-                        auto hasChildren = false;
-                        while (child = tryParse(() => parseChildPropertyTag(indent))) {
-                            hasChildren = true;
-                            if (child->kind == SyntaxKind::JSDocTypeTag) {
-                                if (childTypeTag) {
-                                    parseErrorAtCurrentToken(Diagnostics::A_JSDoc_typedef_comment_may_not_contain_multiple_type_tags);
-                                    auto lastError = lastOrUndefined(parseDiagnostics);
-                                    if (lastError) {
-                                        addRelatedInfo(
-                                            lastError,
-                                            createDetachedDiagnostic(fileName, 0, 0, Diagnostics::The_tag_was_first_specified_here)
-                                        );
-                                    }
-                                    break;
-                                }
-                                else {
-                                    childTypeTag = child;
-                                }
-                            }
-                            else {
-                                jsDocPropertyTags = append(jsDocPropertyTags, child);
-                            }
-                        }
-                        if (hasChildren) {
-                            auto isArrayType = typeExpression && typeExpression.type->kind == SyntaxKind::ArrayType;
-                            auto jsdocTypeLiteral = factory.createJSDocTypeLiteral(jsDocPropertyTags, isArrayType);
-                            typeExpression = childTypeTag && childTypeTag.typeExpression && !isObjectOrObjectArrayTypeReference(childTypeTag.typeExpression.type) ?
-                                childTypeTag.typeExpression :
-                                finishNode(jsdocTypeLiteral, start);
-                            end = typeExpression->end;
-                        }
-                    }
-
-                    // Only include the characters between the name end and the next token if a comment was actually parsed out - otherwise it's just whitespace
-                    end = end || comment != undefined ?
-                        getNodePos() :
-                        (fullName ?? typeExpression ?? tagName)->end;
-
-                    if (!comment) {
-                        comment = parseTrailingTagComments(start, end, indent, indentText);
-                    }
-
-                    auto typedefTag = factory.createJSDocTypedefTag(tagName, typeExpression, fullName, comment);
-                    return finishNode(typedefTag, start, end);
-                }
-
-                auto parseJSDocTypeNameWithNamespace(boolean nested) {
-                    auto pos = scanner.getTokenPos();
-                    if (!scanner.tokenIsIdentifierOrKeyword(token())) {
-                        return undefined;
-                    }
-                    auto typeNameOrNamespaceName = parseJSDocIdentifierName();
-                    if (parseOptional(SyntaxKind::DotToken)) {
-                        auto body = parseJSDocTypeNameWithNamespace(/*nested*/ true);
-                        auto jsDocNamespaceNode = factory.createModuleDeclaration(
-                            /*decorators*/ undefined,
-                            /*modifiers*/ undefined,
-                            typeNameOrNamespaceName,
-                            body,
-                            nested ? NodeFlags::NestedNamespace : undefined
-                        ).as<JSDocNamespaceDeclaration>();
-                        return finishNode(jsDocNamespaceNode, pos);
-                    }
-
-                    if (nested) {
-                        typeNameOrNamespaceName.isInJSDocNamespace = true;
-                    }
-                    return typeNameOrNamespaceName;
-                }
-
-
-                auto parseCallbackTagParameters(number indent) {
-                    auto pos = getNodePos();
-                    auto JSDocParameterTag child | false;
-                    auto parameters;
-                    while (child = tryParse(() => parseChildParameterOrPropertyTag(PropertyLikeParse::CallbackParameter, indent).as<JSDocParameterTag>())) {
-                        parameters = append(parameters, child);
-                    }
-                    return createNodeArray(parameters || [], pos);
-                }
-
-                auto parseCallbackTag(number start, Identifier tagName, number indent, string indentText) -> JSDocCallbackTag {
-                    auto fullName = parseJSDocTypeNameWithNamespace();
-                    skipWhitespace();
-                    auto comment = parseTagComments(indent);
-                    auto parameters = parseCallbackTagParameters(indent);
-                    auto returnTag = tryParse(() => {
-                        if (parseOptionalJsdoc(SyntaxKind::AtToken)) {
-                            auto tag = parseTag(indent);
-                            if (tag && tag->kind == SyntaxKind::JSDocReturnTag) {
-                                return tag.as<JSDocReturnTag>();
-                            }
-                        }
-                    });
-                    auto typeExpression = finishNode(factory.createJSDocSignature(/*typeParameters*/ undefined, parameters, returnTag), start);
-                    auto end = getNodePos();
-                    if (!comment) {
-                        comment = parseTrailingTagComments(start, end, indent, indentText);
-                    }
-                    return finishNode(factory.createJSDocCallbackTag(tagName, typeExpression, fullName, comment), start, end);
-                }
-
-                auto escapedTextsEqual(EntityName a, EntityName b) -> boolean {
-                    while (!ts.isIdentifier(a) || !ts.isIdentifier(b)) {
-                        if (!ts.isIdentifier(a) && !ts.isIdentifier(b) && a.right.escapedText == b.right.escapedText) {
-                            a = a.left;
-                            b = b.left;
-                        }
-                        else {
-                            return false;
-                        }
-                    }
-                    return a.escapedText == b.escapedText;
-                }
-
-                auto parseChildPropertyTag(number indent) -> JSDocTypeTag {
-                    return parseChildParameterOrPropertyTag(PropertyLikeParse::Property, indent).as<JSDocTypeTag>();
-                }
-
-                auto parseChildParameterOrPropertyTag(PropertyLikeParse target, number indent, EntityName name) -> Node {
-                    auto canParseTag = true;
-                    auto seenAsterisk = false;
-                    while (true) {
-                        switch (nextTokenJSDoc()) {
-                            case SyntaxKind::AtToken:
-                                if (canParseTag) {
-                                    auto child = tryParseChildTag(target, indent);
-                                    if (child && (child->kind == SyntaxKind::JSDocParameterTag || child->kind == SyntaxKind::JSDocPropertyTag) &&
-                                        target != PropertyLikeParse::CallbackParameter &&
-                                        name && (ts::isIdentifier(child.name) || !escapedTextsEqual(name, child.name.left))) {
-                                        return false;
-                                    }
-                                    return child;
-                                }
-                                seenAsterisk = false;
-                                break;
-                            case SyntaxKind::NewLineTrivia:
-                                canParseTag = true;
-                                seenAsterisk = false;
-                                break;
-                            case SyntaxKind::AsteriskToken:
-                                if (seenAsterisk) {
-                                    canParseTag = false;
-                                }
-                                seenAsterisk = true;
-                                break;
-                            case SyntaxKind::Identifier:
-                                canParseTag = false;
-                                break;
-                            case SyntaxKind::EndOfFileToken:
-                                return false;
-                        }
-                    }
-                }
-
-                auto tryParseChildTag(PropertyLikeParse target, number indent) -> Node {
-                    Debug::_assert(token() == SyntaxKind::AtToken);
-                    auto start = scanner.getStartPos();
-                    nextTokenJSDoc();
-
-                    auto tagName = parseJSDocIdentifierName();
-                    skipWhitespace();
-                    PropertyLikeParse t;
-                    switch (tagName.escapedText) {
-                        case "type":
-                            return target == PropertyLikeParse::Property && parseTypeTag(start, tagName);
-                        case "prop":
-                        case "property":
-                            t = PropertyLikeParse::Property;
-                            break;
-                        case "arg":
-                        case "argument":
-                        case "param":
-                            t = PropertyLikeParse::Parameter | PropertyLikeParse::CallbackParameter;
-                            break;
-                        default:
-                            return false;
-                    }
-                    if (!(target & t)) {
-                        return false;
-                    }
-                    return parseParameterOrPropertyTag(start, tagName, target, indent);
-                }
-
-                auto parseTemplateTagTypeParameter() {
-                    auto typeParameterPos = getNodePos();
-                    auto name = parseJSDocIdentifierName(Diagnostics::Unexpected_token_A_type_parameter_name_was_expected_without_curly_braces);
-                    if (nodeIsMissing(name)) {
-                        return undefined;
-                    }
-                    return finishNode(factory.createTypeParameterDeclaration(name, /*constraint*/ undefined, /*defaultType*/ undefined), typeParameterPos);
-                }
-
-                auto parseTemplateTagTypeParameters() {
-                    auto pos = getNodePos();
-                    auto typeParameters = [];
-                    do {
-                        skipWhitespace();
-                        auto node = parseTemplateTagTypeParameter();
-                        if (node != undefined) {
-                            typeParameters.push(node);
-                        }
-                        skipWhitespaceOrAsterisk();
-                    } while (parseOptionalJsdoc(SyntaxKind::CommaToken));
-                    return createNodeArray(typeParameters, pos);
-                }
-
-                auto parseTemplateTag(number start, Identifier tagName, number indent, string indentText) -> JSDocTemplateTag {
-                    // The template tag looks like one of the following:
-                    //   @template T,U,V
-                    //   @template {Constraint} T
-                    //
-                    // According to the [closure docs](https://github.com/google/closure-compiler/wiki/Generic-Types#multiple-bounded-template-types) ->
-                    //   > Multiple bounded generics cannot be declared on the same line. For the sake of clarity, if multiple templates share the same
-                    //   > type bound they must be declared on separate lines.
-                    //
-                    // Determine TODO whether we should enforce this in the checker.
-                    // Consider TODO moving the `constraint` to the first type parameter.as<we>() could then remove `getEffectiveConstraintOfTypeParameter`.
-                    // Consider TODO only parsing a single type parameter if there is a constraint.
-                    auto constraint = token() == SyntaxKind::OpenBraceToken ? parseJSDocTypeExpression() : undefined;
-                    auto typeParameters = parseTemplateTagTypeParameters();
-                    auto end = getNodePos();
-                    return finishNode(factory.createJSDocTemplateTag(tagName, constraint, typeParameters, parseTrailingTagComments(start, end, indent, indentText)), start, end);
-                }
-
-                auto parseOptionalJsdoc(SyntaxKind t) -> boolean {
-                    if (token() == t) {
-                        nextTokenJSDoc();
-                        return true;
-                    }
-                    return false;
-                }
-
-                auto parseJSDocEntityName() -> EntityName {
-                    auto EntityName entity = parseJSDocIdentifierName();
-                    if (parseOptional(SyntaxKind::OpenBracketToken)) {
-                        parseExpected(SyntaxKind::CloseBracketToken);
-                        // Note that y[] is accepted.as<an>() entity name, but the postfix brackets are not saved for checking.
-                        // Technically usejsdoc.org requires them for specifying a property of a type equivalent to Array<{ ... x}>
-                        // but it's not worth it to enforce that restriction.
-                    }
-                    while (parseOptional(SyntaxKind::DotToken)) {
-                        auto name = parseJSDocIdentifierName();
-                        if (parseOptional(SyntaxKind::OpenBracketToken)) {
-                            parseExpected(SyntaxKind::CloseBracketToken);
-                        }
-                        entity = createQualifiedName(entity, name);
-                    }
-                    return entity;
-                }
-
-                auto parseJSDocIdentifierName(DiagnosticMessage message) -> Identifier {
-                    if (!scanner.tokenIsIdentifierOrKeyword(token())) {
-                        return createMissingNode<Identifier>(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ !message, message || Diagnostics::Identifier_expected);
-                    }
-
-                    identifierCount++;
-                    auto pos = scanner.getTokenPos();
-                    auto end = scanner.getTextPos();
-                    auto originalKeywordKind = token();
-                    auto text = internIdentifier(scanner.getTokenValue());
-                    auto result = finishNode(factory.createIdentifier(text, /*typeArguments*/ undefined, originalKeywordKind), pos, end);
-                    nextTokenJSDoc();
-                    return result;
-                }
-            };
-
             auto parseJSDocCommentWorker(number start = 0, number length = -1) -> JSDoc {
-                ParseJSDocCommentClass p(scanner, this, sourceText);
-                return p.parseJSDocCommentWorker(start, length);
+                // TODO: finish it
+                //ParseJSDocCommentClass p(scanner, this, sourceText);
+                //return p.parseJSDocCommentWorker(start, length);
+                return JSDoc();
             } // end of parseJSDocCommentWorker
-
-            // End JSDoc namespace
         }; // End of Scanner
 
-        namespace IncrementalParser {
-            auto updateSourceFile(SourceFile sourceFile, string newText, TextChangeRange textChangeRange, boolean aggressiveChecks) -> SourceFile {
-                aggressiveChecks = aggressiveChecks || Debug::shouldAssert(AssertionLevel::Aggressive);
-
-                checkChangeRange(sourceFile, newText, textChangeRange, aggressiveChecks);
-                if (textChangeRangeIsUnchanged(textChangeRange)) {
-                    // if the text didn't change, then we can just return our current source file as-is.
-                    return sourceFile;
-                }
-
-                if (sourceFile->statements.size() == 0) {
-                    // If we don't have any statements in the current source file, then there's no real
-                    // way to incrementally parse.  So just do a full parse instead.
-                    return Parser::parseSourceFile(sourceFile->fileName, newText, sourceFile->languageVersion, undefined, /*setParentNodes*/ true, sourceFile->scriptKind);
-                }
-
-                // Make sure we're not trying to incrementally update a source file more than once.  Once
-                // we do an update the original source file is considered unusable from that point onwards.
-                //
-                // This is because we do incremental parsing in-place.  i.e. we take nodes from the old
-                // tree and give them new positions and parents.  From that point on, trusting the old
-                // tree at all is not possible.as<far>() too much of it may violate invariants.
-                auto incrementalSourceFile = <IncrementalNode>sourceFile->as<Node>();
-                Debug::_assert(!incrementalSourceFile.hasBeenIncrementallyParsed);
-                incrementalSourceFile.hasBeenIncrementallyParsed = true;
-                Parser::fixupParentReferences(incrementalSourceFile);
-                auto oldText = sourceFile->text;
-                auto syntaxCursor = createSyntaxCursor(sourceFile);
-
-                // Make the actual change larger so that we know to reparse anything whose lookahead
-                // might have intersected the change.
-                auto changeRange = extendToAffectedRange(sourceFile, textChangeRange);
-                checkChangeRange(sourceFile, newText, changeRange, aggressiveChecks);
-
-                // Ensure that extending the affected range only moved the start of the change range
-                // earlier in the file.
-                Debug::_assert(changeRange.span.start <= textChangeRange.span.start);
-                Debug::_assert(textSpanEnd(changeRange.span) == textSpanEnd(textChangeRange.span));
-                Debug::_assert(textSpanEnd(textChangeRangeNewSpan(changeRange)) == textSpanEnd(textChangeRangeNewSpan(textChangeRange)));
-
-                // The is the amount the nodes after the edit range need to be adjusted.  It can be
-                // positive (if the edit added characters), negative (if the edit deleted characters)
-                // or zero (if this was a pure overwrite with nothing added/removed).
-                auto delta = textChangeRangeNewSpan(changeRange).size() - changeRange.span.size();
-
-                // If we added or removed characters during the edit, then we need to go and adjust all
-                // the nodes after the edit.  Those nodes may move forward (if we inserted chars) or they
-                // may move backward (if we deleted chars).
-                //
-                // Doing this helps us out in two ways.  First, it means that any nodes/tokens we want
-                // to reuse are already at the appropriate position in the new text.  That way when we
-                // reuse them, we don't have to figure out if they need to be adjusted.  Second, it makes
-                // it very easy to determine if we can reuse a node->  If the node's position is at where
-                // we are in the text, then we can reuse it.  Otherwise we can't.  If the node's position
-                // is ahead of us, then we'll need to rescan tokens.  If the node's position is behind
-                // us, then we'll need to skip it or crumble it.as<appropriate>()
-                //
-                // We will also adjust the positions of nodes that intersect the change range.as<well>().
-                // By doing this, we ensure that all the positions in the old tree are consistent, not
-                // just the positions of nodes entirely before/after the change range.  By being
-                // consistent, we can then easily map from positions to nodes in the old tree easily.
-                //
-                // Also, mark any syntax elements that intersect the changed span.  We know, up front,
-                // that we cannot reuse these elements.
-                updateTokenPositionsAndMarkElements(incrementalSourceFile,
-                    changeRange.span.start, textSpanEnd(changeRange.span), textSpanEnd(textChangeRangeNewSpan(changeRange)), delta, oldText, newText, aggressiveChecks);
-
-                // Now that we've set up our internal incremental state just proceed and parse the
-                // source file in the normal fashion.  When possible the parser will retrieve and
-                // reuse nodes from the old tree.
-                //
-                // passing Note in 'true' for setNodeParents is very important.  When incrementally
-                // parsing, we will be reusing nodes from the old tree, and placing it into new
-                // parents.  If we don't set the parents now, we'll end up with an observably
-                // inconsistent tree.  Setting the parents on the new tree should be very fast.  We
-                // will immediately bail out of walking any subtrees when we can see that their parents
-                // are already correct.
-                auto result = Parser::parseSourceFile(sourceFile->fileName, newText, sourceFile->languageVersion, syntaxCursor, /*setParentNodes*/ true, sourceFile->scriptKind);
-                result.commentDirectives = getNewCommentDirectives(
-                    sourceFile->commentDirectives,
-                    result.commentDirectives,
-                    changeRange.span.start,
-                    textSpanEnd(changeRange.span),
-                    delta,
-                    oldText,
-                    newText,
-                    aggressiveChecks
-                );
-                return result;
-            }
-
-            auto getNewCommentDirectives(
-                std::vector<CommentDirective> oldDirectives,
-                std::vector<CommentDirective> newDirectives,
-                number changeStart,
-                number changeRangeOldEnd,
-                number delta,
-                safe_string oldText,
-                safe_string newText,
-                boolean aggressiveChecks
-            ) -> std::vector<CommentDirective> {
-                if (!oldDirectives) return newDirectives;
-                auto std::vector<CommentDirective> commentDirectives;
-                auto addedNewlyScannedDirectives = false;
-
-                auto addNewlyScannedDirectives = [&]() {
-                    if (addedNewlyScannedDirectives) return;
-                    addedNewlyScannedDirectives = true;
-                    if (!commentDirectives) {
-                        commentDirectives = newDirectives;
-                    }
-                    else if (newDirectives) {
-                        commentDirectives.push(...newDirectives);
-                    }
-                };
-
-                for (auto directive of oldDirectives) {
-                    auto { range, type } = directive;
-                    // Range before the change
-                    if (range->end < changeStart) {
-                        commentDirectives = append(commentDirectives, directive);
-                    }
-                    else if (range->pos > changeRangeOldEnd) {
-                        addNewlyScannedDirectives();
-                        // Node is entirely past the change range.  We need to move both its pos and
-                        // end, forward or backward appropriately.
-                        auto CommentDirective updatedDirective = {
-                            range: { range->pos pos + delta, range.end end + delta },
-                            type
-                        };
-                        commentDirectives = append(commentDirectives, updatedDirective);
-                        if (aggressiveChecks) {
-                            Debug::_assert(oldText.substring(range->pos, range.end) == newText.substring(updatedDirective.range->pos, updatedDirective.range.end));
-                        }
-                    }
-                    // Ignore ranges that fall in change range
-                }
-                addNewlyScannedDirectives();
-                return commentDirectives;
-            }
-
-            auto moveElementEntirelyPastChangeRange(IncrementalElement element, boolean isArray, number delta, string oldText, string newText, boolean aggressiveChecks) {
-                if (isArray) {
-                    visitArray(element.as<IncrementalNodeArray>());
-                }
-                else {
-                    visitNode(element.as<IncrementalNode>());
-                }
-                return;
-
-                auto visitNode(IncrementalNode node) {
-                    auto text = string();
-                    if (aggressiveChecks && shouldCheckNode(node)) {
-                        text = oldText.substring(node->pos, node->end);
-                    }
-
-                    // Ditch any existing LS children we may have created.  This way we can avoid
-                    // moving them forward.
-                    if (node->_children) {
-                        node->_children = undefined;
-                    }
-
-                    setTextRangePosEnd(node, node->pos + delta, node->end + delta);
-
-                    if (aggressiveChecks && shouldCheckNode(node)) {
-                        Debug::_assert(text == newText.substring(node->pos, node->end));
-                    }
-
-                    forEachChild(node, visitNode, visitArray);
-                    if (hasJSDocNodes(node)) {
-                        for (auto jsDocComment of node->jsDoc!) {
-                            visitNode(<IncrementalNode>jsDocComment.as<Node>());
-                        }
-                    }
-                    checkNodePositions(node, aggressiveChecks);
-                }
-
-                auto visitArray(IncrementalNodeArray array) {
-                    array._children = undefined;
-                    setTextRangePosEnd(array, array->pos + delta, array.end + delta);
-
-                    for (auto node of array) {
-                        visitNode(node);
-                    }
-                }
-            }
-
-            auto shouldCheckNode(Node node) {
-                switch (node->kind) {
-                    case SyntaxKind::StringLiteral:
-                    case SyntaxKind::NumericLiteral:
-                    case SyntaxKind::Identifier:
-                        return true;
-                }
-
-                return false;
-            }
-
-            auto adjustIntersectingElement(IncrementalElement element, number changeStart, number changeRangeOldEnd, number changeRangeNewEnd, number delta) {
-                Debug::_assert(element.end >= changeStart, "Adjusting an element that was entirely before the change range");
-                Debug::_assert(element->pos <= changeRangeOldEnd, "Adjusting an element that was entirely after the change range");
-                Debug::_assert(element->pos <= element.end);
-
-                // We have an element that intersects the change range in some way.  It may have its
-                // start, or its end (or both) in the changed range.  We want to adjust any part
-                // that intersects such that the final tree is in a consistent state.  i.e. all
-                // children have spans within the span of their parent, and all siblings are ordered
-                // properly.
-
-                // We may need to update both the 'pos' and the 'end' of the element.
-
-                // If the 'pos' is before the start of the change, then we don't need to touch it.
-                // If it isn't, then the 'pos' must be inside the change.  How we update it will
-                // depend if delta is positive or negative. If delta is positive then we have
-                // something like:
-                //
-                //  -------------------AAA-----------------
-                //  -------------------BBBCCCCCCC-----------------
-                //
-                // In this case, we consider any node that started in the change range to still be
-                // starting at the same position.
-                //
-                // however, if the delta is negative, then we instead have something like this:
-                //
-                //  -------------------XXXYYYYYYY-----------------
-                //  -------------------ZZZ-----------------
-                //
-                // In this case, any element that started in the 'X' range will keep its position.
-                // However any element that started after that will have their pos adjusted to be
-                // at the end of the new range.  i.e. any node that started in the 'Y' range will
-                // be adjusted to have their start at the end of the 'Z' range.
-                //
-                // The element will keep its position if possible.  Or Move backward to the new-end
-                // if it's in the 'Y' range.
-                auto pos = Math.min(element->pos, changeRangeNewEnd);
-
-                // If the 'end' is after the change range, then we always adjust it by the delta
-                // amount.  However, if the end is in the change range, then how we adjust it
-                // will depend on if delta is positive or negative.  If delta is positive then we
-                // have something like:
-                //
-                //  -------------------AAA-----------------
-                //  -------------------BBBCCCCCCC-----------------
-                //
-                // In this case, we consider any node that ended inside the change range to keep its
-                // end position.
-                //
-                // however, if the delta is negative, then we instead have something like this:
-                //
-                //  -------------------XXXYYYYYYY-----------------
-                //  -------------------ZZZ-----------------
-                //
-                // In this case, any element that ended in the 'X' range will keep its position.
-                // However any element that ended after that will have their pos adjusted to be
-                // at the end of the new range.  i.e. any node that ended in the 'Y' range will
-                // be adjusted to have their end at the end of the 'Z' range.
-                auto end = element.end >= changeRangeOldEnd ?
-                    // Element ends after the change range.  Always adjust the end pos.
-                    element.end + delta :
-                    // Element ends in the change range.  The element will keep its position if
-                    // possible. Or Move backward to the new-end if it's in the 'Y' range.
-                    Math.min(element.end, changeRangeNewEnd);
-
-                Debug::_assert(pos <= end);
-                if (element.parent) {
-                    Debug::_assertGreaterThanOrEqual(pos, element.parent->pos);
-                    Debug::_assertLessThanOrEqual(end, element.parent.end);
-                }
-
-                setTextRangePosEnd(element, pos, end);
-            }
-
-            auto checkNodePositions(Node node, boolean aggressiveChecks) {
-                if (aggressiveChecks) {
-                    auto pos = node->pos;
-                    auto visitNode = (Node child) => {
-                        Debug::_assert(child->pos >= pos);
-                        pos = child.end;
-                    };
-                    if (hasJSDocNodes(node)) {
-                        for (auto jsDocComment of node->jsDoc!) {
-                            visitNode(jsDocComment);
-                        }
-                    }
-                    forEachChild(node, visitNode);
-                    Debug::_assert(pos <= node->end);
-                }
-            }
-
-            auto updateTokenPositionsAndMarkElements(
-                IncrementalNode sourceFile,
-                number changeStart,
-                number changeRangeOldEnd,
-                number changeRangeNewEnd,
-                number delta,
-                string oldText,
-                string newText,
-                boolean aggressiveChecks) -> void {
-
-                visitNode(sourceFile);
-                return;
-
-                auto visitNode(IncrementalNode child) {
-                    Debug::_assert(child->pos <= child.end);
-                    if (child->pos > changeRangeOldEnd) {
-                        // Node is entirely past the change range.  We need to move both its pos and
-                        // end, forward or backward appropriately.
-                        moveElementEntirelyPastChangeRange(child, /*isArray*/ false, delta, oldText, newText, aggressiveChecks);
-                        return;
-                    }
-
-                    // Check if the element intersects the change range.  If it does, then it is not
-                    // reusable.  Also, we'll need to recurse to see what constituent portions we may
-                    // be able to use.
-                    auto fullEnd = child.end;
-                    if (fullEnd >= changeStart) {
-                        child.intersectsChange = true;
-                        child._children = undefined;
-
-                        // Adjust the pos or end (or both) of the intersecting element accordingly.
-                        adjustIntersectingElement(child, changeStart, changeRangeOldEnd, changeRangeNewEnd, delta);
-                        forEachChild(child, visitNode, visitArray);
-                        if (hasJSDocNodes(child)) {
-                            for (auto jsDocComment of child.jsDoc!) {
-                                visitNode(<IncrementalNode>jsDocComment.as<Node>());
-                            }
-                        }
-                        checkNodePositions(child, aggressiveChecks);
-                        return;
-                    }
-
-                    // Otherwise, the node is entirely before the change range.  No need to do anything with it.
-                    Debug::_assert(fullEnd < changeStart);
-                }
-
-                auto visitArray(IncrementalNodeArray array) {
-                    Debug::_assert(array->pos <= array.end);
-                    if (array->pos > changeRangeOldEnd) {
-                        // Array is entirely after the change range.  We need to move it, and move any of
-                        // its children.
-                        moveElementEntirelyPastChangeRange(array, /*isArray*/ true, delta, oldText, newText, aggressiveChecks);
-                        return;
-                    }
-
-                    // Check if the element intersects the change range.  If it does, then it is not
-                    // reusable.  Also, we'll need to recurse to see what constituent portions we may
-                    // be able to use.
-                    auto fullEnd = array.end;
-                    if (fullEnd >= changeStart) {
-                        array.intersectsChange = true;
-                        array._children = undefined;
-
-                        // Adjust the pos or end (or both) of the intersecting array accordingly.
-                        adjustIntersectingElement(array, changeStart, changeRangeOldEnd, changeRangeNewEnd, delta);
-                        for (auto node of array) {
-                            visitNode(node);
-                        }
-                        return;
-                    }
-
-                    // Otherwise, the array is entirely before the change range.  No need to do anything with it.
-                    Debug::_assert(fullEnd < changeStart);
-                }
-            }
-
-            auto extendToAffectedRange(SourceFile sourceFile, TextChangeRange changeRange) -> TextChangeRange {
-                // Consider the following code:
-                //      void foo() { /; }
-                //
-                // If the text changes with an insertion of / just before the semicolon then we end up with:
-                //      void foo() { //; }
-                //
-                // If we were to just use the changeRange a is, then we would not rescan the { token
-                // (as it does not intersect the actual original change range).  Because an edit may
-                // change the token touching it, we actually need to look back *at least* one token so
-                // that the prior token sees that change.
-                auto maxLookahead = 1;
-
-                auto start = changeRange.span.start;
-
-                // the first iteration aligns us with the change start. subsequent iteration move us to
-                // the left by maxLookahead tokens.  We only need to do this.as<long>().as<we>()'re not at the
-                // start of the tree.
-                for (auto i = 0; start > 0 && i <= maxLookahead; i++) {
-                    auto nearestNode = findNearestNodeStartingBeforeOrAtPosition(sourceFile, start);
-                    Debug::_assert(nearestnode->pos <= start);
-                    auto position = nearestnode->pos;
-
-                    start = Math.max(0, position - 1);
-                }
-
-                auto finalSpan = createTextSpanFromBounds(start, textSpanEnd(changeRange.span));
-                auto finalLength = changeRange.newLength + (changeRange.span.start - start);
-
-                return createTextChangeRange(finalSpan, finalLength);
-            }
-
-            auto findNearestNodeStartingBeforeOrAtPosition(SourceFile sourceFile, number position) -> Node {
-                auto Node bestResult = sourceFile;
-                auto Node lastNodeEntirelyBeforePosition;
-
-                forEachChild(sourceFile, visit);
-
-                if (lastNodeEntirelyBeforePosition) {
-                    auto lastChildOfLastEntireNodeBeforePosition = getLastDescendant(lastNodeEntirelyBeforePosition);
-                    if (lastChildOfLastEntireNodeBeforePosition->pos > bestResult->pos) {
-                        bestResult = lastChildOfLastEntireNodeBeforePosition;
-                    }
-                }
-
-                return bestResult;
-
-                auto getLastDescendant(Node node) -> Node {
-                    while (true) {
-                        auto lastChild = getLastChild(node);
-                        if (lastChild) {
-                            node = lastChild;
-                        }
-                        else {
-                            return node;
-                        }
-                    }
-                }
-
-                auto visit(Node child) {
-                    if (nodeIsMissing(child)) {
-                        // Missing nodes are effectively invisible to us.  We never even consider them
-                        // When trying to find the nearest node before us.
-                        return;
-                    }
-
-                    // If the child intersects this position, then this node is currently the nearest
-                    // node that starts before the position.
-                    if (child->pos <= position) {
-                        if (child->pos >= bestResult->pos) {
-                            // This node starts before the position, and is closer to the position than
-                            // the previous best node we found.  It is now the new best node->
-                            bestResult = child;
-                        }
-
-                        // Now, the node may overlap the position, or it may end entirely before the
-                        // position.  If it overlaps with the position, then either it, or one of its
-                        // children must be the nearest node before the position.  So we can just
-                        // recurse into this child to see if we can find something better.
-                        if (position < child.end) {
-                            // The nearest node is either this child, or one of the children inside
-                            // of it.  We've already marked this child.as<the>() best so far.  Recurse
-                            // in case one of the children is better.
-                            forEachChild(child, visit);
-
-                            // Once we look at the children of this node, then there's no need to
-                            // continue any further.
-                            return true;
-                        }
-                        else {
-                            Debug::_assert(child.end <= position);
-                            // The child ends entirely before this position.  Say you have the following
-                            // (where $ is the position)
-                            //
-                            //      <complex expr 1> ? <complex expr 2> $ : <...> <...>
-                            //
-                            // We would want to find the nearest preceding node in "complex expr 2".
-                            // To support that, we keep track of this node, and once we're done searching
-                            // for a best node, we recurse down this node to see if we can find a good
-                            // result in it.
-                            //
-                            // This approach allows us to quickly skip over nodes that are entirely
-                            // before the position, while still allowing us to find any nodes in the
-                            // last one that might be what we want.
-                            lastNodeEntirelyBeforePosition = child;
-                        }
-                    }
-                    else {
-                        Debug::_assert(child->pos > position);
-                        // We're now at a node that is entirely past the position we're searching for.
-                        // This node (and all following nodes) could never contribute to the result,
-                        // so just skip them by returning 'true' here.
-                        return true;
-                    }
-                }
-            }
-
-            static auto checkChangeRange(SourceFile sourceFile, string newText, TextChangeRange textChangeRange, boolean aggressiveChecks) {
-                auto oldText = sourceFile->text;
-                if (textChangeRange) {
-                    Debug::_assert((oldText.size() - textChangeRange.span.size() + textChangeRange.newLength) == newText.size());
-
-                    if (aggressiveChecks || Debug::shouldAssert(AssertionLevel::VeryAggressive)) {
-                        auto oldTextPrefix = oldText.substr(0, textChangeRange.span.start);
-                        auto newTextPrefix = newText.substr(0, textChangeRange.span.start);
-                        Debug::_assert(oldTextPrefix == newTextPrefix);
-
-                        auto oldTextSuffix = oldText.substring(textSpanEnd(textChangeRange.span), oldText.size());
-                        auto newTextSuffix = newText.substring(textSpanEnd(textChangeRangeNewSpan(textChangeRange)), newText.size());
-                        Debug::_assert(oldTextSuffix == newTextSuffix);
-                    }
-                }
-            }
-
-            auto createSyntaxCursor(SourceFile sourceFile) -> SyntaxCursor {
-                auto NodeArray<Node> currentArray = sourceFile->statements;
-                auto currentArrayIndex = 0;
-
-                Debug::_assert(currentArrayIndex < currentArray.size());
-                auto current = currentArray[currentArrayIndex];
-                auto lastQueriedPosition = InvalidPosition.Value;
-
-                return {
-                    currentNode(number position) {
-                        // Only compute the current node if the position is different than the last time
-                        // we were asked.  The parser commonly asks for the node at the same position
-                        // twice.  Once to know if can read an appropriate list element at a certain point,
-                        // and then to actually read and consume the node->
-                        if (position != lastQueriedPosition) {
-                            // Much of the time the parser will need the very next node in the array that
-                            // we just returned a node from.So just simply check for that case and move
-                            // forward in the array instead of searching for the node again.
-                            if (current && current.end == position && currentArrayIndex < (currentArray.size() - 1)) {
-                                currentArrayIndex++;
-                                current = currentArray[currentArrayIndex];
-                            }
-
-                            // If we don't have a node, or the node we have isn't in the right position,
-                            // then try to find a viable node at the position requested.
-                            if (!current || current->pos != position) {
-                                findHighestListElementThatStartsAtPosition(position);
-                            }
-                        }
-
-                        // Cache this query so that we don't do any extra work if the parser calls back
-                        // into us.  this Note is very common.as<the>() parser will make pairs of calls like
-                        // 'isListElement -> parseListElement'.  If we were unable to find a node when
-                        // called with 'isListElement', we don't want to redo the work when parseListElement
-                        // is called immediately after.
-                        lastQueriedPosition = position;
-
-                        // Either we don'd have a node, or we have a node at the position being asked for.
-                        Debug::_assert(!current || current->pos == position);
-                        return current.as<IncrementalNode>();
-                    }
-                };
-
-                // Finds the highest element in the tree we can find that starts at the provided position.
-                // The element must be a direct child of some node list in the tree.  This way after we
-                // return it, we can easily return its next sibling in the list.
-                auto findHighestListElementThatStartsAtPosition(number position) {
-                    // Clear out any cached state about the last node we found.
-                    currentArray = undefined;
-                    currentArrayIndex = InvalidPosition.Value;
-                    current = undefined;
-
-                    // Recurse into the source file to find the highest node at this position.
-                    forEachChild(sourceFile, visitNode, visitArray);
-                    return;
-
-                    auto visitNode(Node node) {
-                        if (position >= node->pos && position < node->end) {
-                            // Position was within this node->  Keep searching deeper to find the node->
-                            forEachChild(node, visitNode, visitArray);
-
-                            // don't proceed any further in the search.
-                            return true;
-                        }
-
-                        // position wasn't in this node, have to keep searching.
-                        return false;
-                    }
-
-                    auto visitArray(NodeArray<Node> array) {
-                        if (position >= array->pos && position < array.end) {
-                            // position was in this array.  Search through this array to see if we find a
-                            // viable element.
-                            for (auto i = 0; i < array.size(); i++) {
-                                auto child = array[i];
-                                if (child) {
-                                    if (child->pos == position) {
-                                        // Found the right node->  We're done.
-                                        currentArray = array;
-                                        currentArrayIndex = i;
-                                        current = child;
-                                        return true;
-                                    }
-                                    else {
-                                        if (child->pos < position && position < child.end) {
-                                            // Position in somewhere within this child.  Search in it and
-                                            // stop searching in this array.
-                                            forEachChild(child, visitNode, visitArray);
-                                            return true;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // position wasn't in this array, have to keep searching.
-                        return false;
-                    }
-                }
-            }
-
-            enum class InvalidPosition : number {
-                Value = -1
-            };
-        };
-
-
-        auto createSourceFile(string fileName, string sourceText, ScriptTarget languageVersion, boolean setParentNodes = false, ScriptKind scriptKind = ScriptKind::Unknown) -> SourceFile {
-            SourceFile result;
-            if (languageVersion == ScriptTarget::JSON) {
-                result = Parser::parseSourceFile(fileName, sourceText, languageVersion, undefined /*syntaxCursor*/, setParentNodes, ScriptKind::JSON);
-            }
-            else {
-                result = Parser::parseSourceFile(fileName, sourceText, languageVersion, undefined /*syntaxCursor*/, setParentNodes, scriptKind);
-            }
-
-            return result;
-        }
-
-        auto parseIsolatedEntityName(string text, ScriptTarget languageVersion) -> EntityName {
-            return Parser::parseIsolatedEntityName(text, languageVersion);
-        }
-
-        /**
-         * Parse json text into SyntaxTree and return node and parse errors if any
-         * @param fileName
-         * @param sourceText
-         */
-        auto parseJsonText(string fileName, string sourceText) -> JsonSourceFile {
-            return Parser::parseJsonText(fileName, sourceText);
-        }
-
-        // See also `isExternalOrCommonJsModule` in utilities.ts
-        auto isExternalModule(SourceFile file) -> boolean {
-            return !!file.externalModuleIndicator;
-        }
-
-        // Produces a new SourceFile for the 'newText' provided. The 'textChangeRange' parameter
-        // indicates what changed between the 'text' that this SourceFile has and the 'newText'.
-        // The SourceFile will be created with the compiler attempting to reuse.as<many>() nodes from
-        // this file.as<possible>().
-        //
-        // this Note auto mutates nodes from this SourceFile. That means any existing nodes
-        // from this SourceFile that are being held onto may change.as<a>() result (including
-        // becoming detached from any SourceFile).  It is recommended that this SourceFile not
-        // be used once 'update' is called on it.
-        auto updateSourceFile(SourceFile sourceFile, string newText, TextChangeRange textChangeRange, boolean aggressiveChecks = false) -> SourceFile {
-            auto newSourceFile = IncrementalParser::updateSourceFile(sourceFile, newText, textChangeRange, aggressiveChecks);
-            // Because new source file node is created, it may not have the flag PossiblyContainDynamicImport. This is the case if there is no new edit to add dynamic import.
-            // We will manually port the flag to the new source file.
-            newSourceFile->flags |= (sourceFile->flags & NodeFlags::PermanentlySetIncrementalFlags);
-            return newSourceFile;
-        }
-
-        /* @internal */
-        auto parseIsolatedJSDocComment(string content, number start, number length) {
-            auto result = Parser::JSDocParser::parseIsolatedJSDocComment(content, start, length);
-            if (result && result.jsDoc) {
-                // because the jsDocComment was parsed out of the source file, it might
-                // not be covered by the fixupParentReferences.
-                Parser::fixupParentReferences(result.jsDoc);
-            }
-
-            return result;
-        }
-
-        /* @internal */
-        // Exposed only for testing.
-        auto parseJSDocTypeExpressionForTests(string content, number start, number length) {
-            return Parser::JSDocParser::parseJSDocTypeExpressionForTests(content, start, length);
-        }
-
-        /*@internal*/
-        auto processCommentPragmas(SourceFile context, string sourceText) -> void {
-            auto std::vector<PragmaPseudoMapEntry> pragmas;
-
-            for (auto range of getLeadingCommentRanges(sourceText, 0) || emptyArray) {
-                auto comment = sourceText.substring(range->pos, range.end);
-                extractPragmas(pragmas, range, comment);
-            }
-
-            context.pragmas = new Map().as<PragmaMap>();
-            for (auto pragma of pragmas) {
-                if (context.pragmas.has(pragma.name)) {
-                    auto currentValue = context.pragmas.at(pragma.name);
-                    if (currentValue instanceof Array) {
-                        currentValue.push(pragma.args);
-                    }
-                    else {
-                        context.pragmas.set(pragma.name, [currentValue, pragma.args]);
-                    }
-                    continue;
-                }
-                context.pragmas.set(pragma.name, pragma.args);
-            }
-        }
-
-        /*@internal*/
-        auto processPragmasIntoFields(SourceFile context, PragmaDiagnosticReporter reportDiagnostic) -> void {
-            context.checkJsDirective = undefined;
-            context.referencedFiles = [];
-            context.typeReferenceDirectives = [];
-            context.libReferenceDirectives = [];
-            context.amdDependencies = [];
-            context.hasNoDefaultLib = false;
-            context.pragmas.forEach((entryOrList, key) => { // GH TODO#18217
-                // The TODO below should be strongly type-guarded and not need casts/explicit annotations, since entryOrList is related to
-                // key and key is constrained to a union; but it's not (see GH#21483 for at least partial fix) :(
-                switch (key) {
-                    case "reference": {
-                        auto referencedFiles = context.referencedFiles;
-                        auto typeReferenceDirectives = context.typeReferenceDirectives;
-                        auto libReferenceDirectives = context.libReferenceDirectives;
-                        forEach(toArray(entryOrList).as<PragmaPseudoMap>()["reference"][], arg => {
-                            auto { types, lib, path } = arg.arguments;
-                            if (arg.arguments["no-default-lib"]) {
-                                context.hasNoDefaultLib = true;
-                            }
-                            else if (types) {
-                                typeReferenceDirectives.push({ types->pos pos, types.end end, types.value fileName });
-                            }
-                            else if (lib) {
-                                libReferenceDirectives.push({ lib->pos pos, lib.end end, lib.value fileName });
-                            }
-                            else if (path) {
-                                referencedFiles.push({ path->pos pos, path.end end, path.value fileName });
-                            }
-                            else {
-                                reportDiagnostic(arg.range->pos, arg.range.end - arg.range->pos, Diagnostics::Invalid_reference_directive_syntax);
-                            }
-                        });
-                        break;
-                    }
-                    case "amd-dependency": {
-                        context.amdDependencies = map(
-                            toArray(entryOrList).as<PragmaPseudoMap>()["amd-dependency"][],
-                            x => ({ x.arguments.name name, x.arguments.path path }));
-                        break;
-                    }
-                    case "amd-module": {
-                        if (entryOrList instanceof Array) {
-                            for (auto entry of entryOrList) {
-                                if (context.moduleName) {
-                                    // It TODO's probably fine to issue this diagnostic on all instances of the pragma
-                                    reportDiagnostic(entry.range->pos, entry.range.end - entry.range->pos, Diagnostics::An_AMD_module_cannot_have_multiple_name_assignments);
-                                }
-                                context.moduleName = (entry.as<PragmaPseudoMap>()["amd-module"]).arguments.name;
-                            }
-                        }
-                        else {
-                            context.moduleName = (entryOrList.as<PragmaPseudoMap>()["amd-module"]).arguments.name;
-                        }
-                        break;
-                    }
-                    case "ts-nocheck":
-                    case "ts-check": {
-                        // _last_ of either nocheck or check in a file is the "winner"
-                        forEach(toArray(entryOrList), entry => {
-                            if (!context.checkJsDirective || entry.range->pos > context.checkJsDirective->pos) {
-                                context.checkJsDirective = {
-                                    key enabled == "ts-check",
-                                    entry.range.end end,
-                                    entry.range->pos pos
-                                };
-                            }
-                        });
-                        break;
-                    }
-                    case "jsx":
-                    case "jsxfrag":
-                    case "jsximportsource":
-                    case "jsxruntime":
-                        return; // Accessed directly
-                    Debug::fail default("Unhandled pragma kind"); // Can this be made into an assertNever in the future?
-                }
-            });
-        }
-
-        std::map<string, regex> namedArgRegExCache;
-        auto getNamedArgRegEx(string name) -> regex {
-            if (namedArgRegExCache.find(name) != namedArgRegExCache.end()) {
-                return namedArgRegExCache.at(name);
-            }
-            regex result(S("(\\s${name}\\s*=\\s*)('|\")(.+?)\\2"), std::regex_constants::extended|std::regex_constants::icase);
-            namedArgRegExCache[name] = result;
-            return result;
-        }
-
-        auto tripleSlashXMLCommentStartRegEx = regex(S("^\\/\\/\\/\\s*<(\\S+)\\s.*?\\/>"), std::regex_constants::extended|std::regex_constants::icase);
-        auto singleLinePragmaRegEx = regex(S("^\\/\\/\\/?\\s*@(\\S+)\\s*(.*)\\s*$"), std::regex_constants::extended|std::regex_constants::icase);
-        auto extractPragmas(std::vector<PragmaPseudoMapEntry> pragmas, CommentRange range, string text) {
-            auto tripleSlash = range->kind == SyntaxKind::SingleLineCommentTrivia && tripleSlashXMLCommentStartRegEx.exec(text);
-            if (tripleSlash) {
-                auto name = tripleSlash[1].toLowerCase().as<keyof>() PragmaPseudoMap; // Technically unsafe cast, but we do it so the below check to make it safe typechecks
-                auto pragma = commentPragmas[name].as<PragmaDefinition>();
-                if (!pragma || !(pragma->kind! & PragmaKindFlags.TripleSlashXML)) {
-                    return;
-                }
-                if (pragma.args) {
-                    auto argument: {[string index]: string | {string value, number pos, number end}} = {};
-                    for (auto arg of pragma.args) {
-                        auto matcher = getNamedArgRegEx(arg.name);
-                        auto matchResult = matcher.exec(text);
-                        if (!matchResult && !arg.optional) {
-                            return; // Missing required argument, don't parse
-                        }
-                        else if (matchResult) {
-                            if (arg.captureSpan) {
-                                auto startPos = range->pos + matchResult.index + matchResult[1].size() + matchResult[2].size();
-                                argument[arg.name] = {
-                                    matchResult[3] value,
-                                    startPos pos,
-                                    startPos end + matchResult[3].size()
-                                };
-                            }
-                            else {
-                                argument[arg.name] = matchResult[3];
-                            }
-                        }
-                    }
-                    pragmas.push({ name, args: { argument arguments, range } }.as<PragmaPseudoMapEntry>());
-                }
-                else {
-                    pragmas.push({ name, args: { arguments: {}, range } }.as<PragmaPseudoMapEntry>());
-                }
-                return;
-            }
-
-            auto singleLine = range->kind == SyntaxKind::SingleLineCommentTrivia && singleLinePragmaRegEx.exec(text);
-            if (singleLine) {
-                return addPragmaForMatch(pragmas, range, PragmaKindFlags.SingleLine, singleLine);
-            }
-
-            if (range->kind == SyntaxKind::MultiLineCommentTrivia) {
-                auto multiLinePragmaRegEx = regex(S("\\s*@(\\S+)\\s*(.*)\\s*$"), std::regex_constants::extended|std::regex_constants::icase); // Defined inline since it uses the "g" flag, which keeps a persistent index (for iterating)
-                auto RegExpExecArray multiLineMatch | null;
-                while (multiLineMatch = multiLinePragmaRegEx.exec(text)) {
-                    addPragmaForMatch(pragmas, range, PragmaKindFlags.MultiLine, multiLineMatch);
-                }
-            }
-        }
-
-        auto addPragmaForMatch(std::vector<PragmaPseudoMapEntry> pragmas, CommentRange range, PragmaKindFlags kind, RegExpExecArray match) {
-            if (!match) return;
-            auto name = match[1].toLowerCase().as<keyof>() PragmaPseudoMap; // Technically unsafe cast, but we do it so they below check to make it safe typechecks
-            auto pragma = commentPragmas[name].as<PragmaDefinition>();
-            if (!pragma || !(pragma->kind! & kind)) {
-                return;
-            }
-            auto args = match[2]; // Split on spaces and match up positionally with definition
-            auto argument = getNamedPragmaArguments(pragma, args);
-            if (argument == "fail") return; // Missing required argument, fail to parse it
-            pragmas.push({ name, args: { argument arguments, range } }.as<PragmaPseudoMapEntry>());
-            return;
-        }
-
-        auto getNamedPragmaArguments(PragmaDefinition pragma, string text) -> std::map<string, string> {
-            if (!text) return {};
-            if (!pragma.args) return {};
-            auto args = text.split(regex(S("\\s+")));
-            auto argMap: {[string index]: string} = {};
-            for (auto i = 0; i < pragma.args.size(); i++) {
-                auto argument = pragma.args[i];
-                if (!args[i] && !argument.optional) {
-                    return "fail";
-                }
-                if (argument.captureSpan) {
-                    return Debug::fail("Capture spans not yet implemented for non-xml pragmas");
-                }
-                argMap[argument.name] = args[i];
-            }
-            return argMap;
-        }
-
-        /** @internal */
-        auto tagNamesAreEquivalent(JsxTagNameExpression lhs, JsxTagNameExpression rhs) -> boolean {
-            if (lhs->kind != rhs->kind) {
-                return false;
-            }
-
-            if (lhs->kind == SyntaxKind::Identifier) {
-                return lhs.escapedText == (rhs.as<Identifier>()).escapedText;
-            }
-
-            if (lhs->kind == SyntaxKind::ThisKeyword) {
-                return true;
-            }
-
-            // If we are at this statement then we must have PropertyAccessExpression and because tag name in Jsx element can only
-            // take forms of JsxTagNameExpression which includes an identifier, "this" expression, or another propertyAccessExpression
-            // it is safe to case the expression property.as<such>(). See parseJsxElementName for how we parse tag name in Jsx element
-            return (lhs.as<PropertyAccessExpression>()).name.escapedText == (rhs.as<PropertyAccessExpression>()).name.escapedText &&
-                tagNamesAreEquivalent((<PropertyAccessExpression>lhs).expression.as<JsxTagNameExpression>(), (<PropertyAccessExpression>rhs).expression.as<JsxTagNameExpression>());
-        }
+        // auto createSourceFile(string fileName, string sourceText, ScriptTarget languageVersion, boolean setParentNodes = false, ScriptKind scriptKind = ScriptKind::Unknown) -> SourceFile {
+        //     SourceFile result;
+        //     if (languageVersion == ScriptTarget::JSON) {
+        //         result = Parser::parseSourceFile(fileName, sourceText, languageVersion, undefined /*syntaxCursor*/, setParentNodes, ScriptKind::JSON);
+        //     }
+        //     else {
+        //         result = Parser::parseSourceFile(fileName, sourceText, languageVersion, undefined /*syntaxCursor*/, setParentNodes, scriptKind);
+        //     }
+
+        //     return result;
+        // }
+
+        // auto parseIsolatedEntityName(string text, ScriptTarget languageVersion) -> EntityName {
+        //     return Parser::parseIsolatedEntityName(text, languageVersion);
+        // }
+
+        // /**
+        //  * Parse json text into SyntaxTree and return node and parse errors if any
+        //  * @param fileName
+        //  * @param sourceText
+        //  */
+        // auto parseJsonText(string fileName, string sourceText) -> JsonSourceFile {
+        //     return Parser::parseJsonText(fileName, sourceText);
+        // }
+
+        // // See also `isExternalOrCommonJsModule` in utilities.ts
+        // auto isExternalModule(SourceFile file) -> boolean {
+        //     return !!file.externalModuleIndicator;
+        // }
+
+        // // Produces a new SourceFile for the 'newText' provided. The 'textChangeRange' parameter
+        // // indicates what changed between the 'text' that this SourceFile has and the 'newText'.
+        // // The SourceFile will be created with the compiler attempting to reuse.as<many>() nodes from
+        // // this file.as<possible>().
+        // //
+        // // this Note auto mutates nodes from this SourceFile. That means any existing nodes
+        // // from this SourceFile that are being held onto may change.as<a>() result (including
+        // // becoming detached from any SourceFile).  It is recommended that this SourceFile not
+        // // be used once 'update' is called on it.
+        // auto updateSourceFile(SourceFile sourceFile, string newText, TextChangeRange textChangeRange, boolean aggressiveChecks = false) -> SourceFile {
+        //     auto newSourceFile = IncrementalParser::updateSourceFile(sourceFile, newText, textChangeRange, aggressiveChecks);
+        //     // Because new source file node is created, it may not have the flag PossiblyContainDynamicImport. This is the case if there is no new edit to add dynamic import.
+        //     // We will manually port the flag to the new source file.
+        //     newSourceFile->flags |= (sourceFile->flags & NodeFlags::PermanentlySetIncrementalFlags);
+        //     return newSourceFile;
+        // }
+
+        // /* @internal */
+        // auto parseIsolatedJSDocComment(string content, number start, number length) {
+        //     auto result = Parser::JSDocParser::parseIsolatedJSDocComment(content, start, length);
+        //     if (result && result.jsDoc) {
+        //         // because the jsDocComment was parsed out of the source file, it might
+        //         // not be covered by the fixupParentReferences.
+        //         Parser::fixupParentReferences(result.jsDoc);
+        //     }
+
+        //     return result;
+        // }
+
+        // /* @internal */
+        // // Exposed only for testing.
+        // auto parseJSDocTypeExpressionForTests(string content, number start, number length) {
+        //     return Parser::JSDocParser::parseJSDocTypeExpressionForTests(content, start, length);
+        // }
+
+        // /*@internal*/
+        // auto processCommentPragmas(SourceFile context, string sourceText) -> void {
+        //     auto std::vector<PragmaPseudoMapEntry> pragmas;
+
+        //     for (auto range of getLeadingCommentRanges(sourceText, 0) || emptyArray) {
+        //         auto comment = sourceText.substring(range->pos, range.end);
+        //         extractPragmas(pragmas, range, comment);
+        //     }
+
+        //     context.pragmas = new Map().as<PragmaMap>();
+        //     for (auto pragma of pragmas) {
+        //         if (context.pragmas.has(pragma.name)) {
+        //             auto currentValue = context.pragmas.at(pragma.name);
+        //             if (currentValue instanceof Array) {
+        //                 currentValue.push(pragma.args);
+        //             }
+        //             else {
+        //                 context.pragmas.set(pragma.name, [currentValue, pragma.args]);
+        //             }
+        //             continue;
+        //         }
+        //         context.pragmas.set(pragma.name, pragma.args);
+        //     }
+        // }
+
+        // /*@internal*/
+        // auto processPragmasIntoFields(SourceFile context, PragmaDiagnosticReporter reportDiagnostic) -> void {
+        //     context.checkJsDirective = undefined;
+        //     context.referencedFiles = [];
+        //     context.typeReferenceDirectives = [];
+        //     context.libReferenceDirectives = [];
+        //     context.amdDependencies = [];
+        //     context.hasNoDefaultLib = false;
+        //     context.pragmas.forEach((entryOrList, key) => { // GH TODO#18217
+        //         // The TODO below should be strongly type-guarded and not need casts/explicit annotations, since entryOrList is related to
+        //         // key and key is constrained to a union; but it's not (see GH#21483 for at least partial fix) :(
+        //         switch (key) {
+        //             case "reference": {
+        //                 auto referencedFiles = context.referencedFiles;
+        //                 auto typeReferenceDirectives = context.typeReferenceDirectives;
+        //                 auto libReferenceDirectives = context.libReferenceDirectives;
+        //                 forEach(toArray(entryOrList).as<PragmaPseudoMap>()["reference"][], arg => {
+        //                     auto { types, lib, path } = arg.arguments;
+        //                     if (arg.arguments["no-default-lib"]) {
+        //                         context.hasNoDefaultLib = true;
+        //                     }
+        //                     else if (types) {
+        //                         typeReferenceDirectives.push({ types->pos pos, types.end end, types.value fileName });
+        //                     }
+        //                     else if (lib) {
+        //                         libReferenceDirectives.push({ lib->pos pos, lib.end end, lib.value fileName });
+        //                     }
+        //                     else if (path) {
+        //                         referencedFiles.push({ path->pos pos, path.end end, path.value fileName });
+        //                     }
+        //                     else {
+        //                         reportDiagnostic(arg.range->pos, arg.range.end - arg.range->pos, Diagnostics::Invalid_reference_directive_syntax);
+        //                     }
+        //                 });
+        //                 break;
+        //             }
+        //             case "amd-dependency": {
+        //                 context.amdDependencies = map(
+        //                     toArray(entryOrList).as<PragmaPseudoMap>()["amd-dependency"][],
+        //                     x => ({ x.arguments.name name, x.arguments.path path }));
+        //                 break;
+        //             }
+        //             case "amd-module": {
+        //                 if (entryOrList instanceof Array) {
+        //                     for (auto entry of entryOrList) {
+        //                         if (context.moduleName) {
+        //                             // It TODO's probably fine to issue this diagnostic on all instances of the pragma
+        //                             reportDiagnostic(entry.range->pos, entry.range.end - entry.range->pos, Diagnostics::An_AMD_module_cannot_have_multiple_name_assignments);
+        //                         }
+        //                         context.moduleName = (entry.as<PragmaPseudoMap>()["amd-module"]).arguments.name;
+        //                     }
+        //                 }
+        //                 else {
+        //                     context.moduleName = (entryOrList.as<PragmaPseudoMap>()["amd-module"]).arguments.name;
+        //                 }
+        //                 break;
+        //             }
+        //             case "ts-nocheck":
+        //             case "ts-check": {
+        //                 // _last_ of either nocheck or check in a file is the "winner"
+        //                 forEach(toArray(entryOrList), entry => {
+        //                     if (!context.checkJsDirective || entry.range->pos > context.checkJsDirective->pos) {
+        //                         context.checkJsDirective = {
+        //                             key enabled == "ts-check",
+        //                             entry.range.end end,
+        //                             entry.range->pos pos
+        //                         };
+        //                     }
+        //                 });
+        //                 break;
+        //             }
+        //             case "jsx":
+        //             case "jsxfrag":
+        //             case "jsximportsource":
+        //             case "jsxruntime":
+        //                 return; // Accessed directly
+        //             Debug::fail default("Unhandled pragma kind"); // Can this be made into an assertNever in the future?
+        //         }
+        //     });
+        // }
+
+        // std::map<string, regex> namedArgRegExCache;
+        // auto getNamedArgRegEx(string name) -> regex {
+        //     if (namedArgRegExCache.find(name) != namedArgRegExCache.end()) {
+        //         return namedArgRegExCache.at(name);
+        //     }
+        //     regex result(S("(\\s${name}\\s*=\\s*)('|\")(.+?)\\2"), std::regex_constants::extended|std::regex_constants::icase);
+        //     namedArgRegExCache[name] = result;
+        //     return result;
+        // }
+
+        // auto tripleSlashXMLCommentStartRegEx = regex(S("^\\/\\/\\/\\s*<(\\S+)\\s.*?\\/>"), std::regex_constants::extended|std::regex_constants::icase);
+        // auto singleLinePragmaRegEx = regex(S("^\\/\\/\\/?\\s*@(\\S+)\\s*(.*)\\s*$"), std::regex_constants::extended|std::regex_constants::icase);
+        // auto extractPragmas(std::vector<PragmaPseudoMapEntry> pragmas, CommentRange range, string text) {
+        //     auto tripleSlash = range->kind == SyntaxKind::SingleLineCommentTrivia && tripleSlashXMLCommentStartRegEx.exec(text);
+        //     if (tripleSlash) {
+        //         auto name = tripleSlash[1].toLowerCase().as<keyof>() PragmaPseudoMap; // Technically unsafe cast, but we do it so the below check to make it safe typechecks
+        //         auto pragma = commentPragmas[name].as<PragmaDefinition>();
+        //         if (!pragma || !(pragma->kind! & PragmaKindFlags.TripleSlashXML)) {
+        //             return;
+        //         }
+        //         if (pragma.args) {
+        //             auto argument: {[string index]: string | {string value, number pos, number end}} = {};
+        //             for (auto arg of pragma.args) {
+        //                 auto matcher = getNamedArgRegEx(arg.name);
+        //                 auto matchResult = matcher.exec(text);
+        //                 if (!matchResult && !arg.optional) {
+        //                     return; // Missing required argument, don't parse
+        //                 }
+        //                 else if (matchResult) {
+        //                     if (arg.captureSpan) {
+        //                         auto startPos = range->pos + matchResult.index + matchResult[1].size() + matchResult[2].size();
+        //                         argument[arg.name] = {
+        //                             matchResult[3] value,
+        //                             startPos pos,
+        //                             startPos end + matchResult[3].size()
+        //                         };
+        //                     }
+        //                     else {
+        //                         argument[arg.name] = matchResult[3];
+        //                     }
+        //                 }
+        //             }
+        //             pragmas.push({ name, args: { argument arguments, range } }.as<PragmaPseudoMapEntry>());
+        //         }
+        //         else {
+        //             pragmas.push({ name, args: { arguments: {}, range } }.as<PragmaPseudoMapEntry>());
+        //         }
+        //         return;
+        //     }
+
+        //     auto singleLine = range->kind == SyntaxKind::SingleLineCommentTrivia && singleLinePragmaRegEx.exec(text);
+        //     if (singleLine) {
+        //         return addPragmaForMatch(pragmas, range, PragmaKindFlags.SingleLine, singleLine);
+        //     }
+
+        //     if (range->kind == SyntaxKind::MultiLineCommentTrivia) {
+        //         auto multiLinePragmaRegEx = regex(S("\\s*@(\\S+)\\s*(.*)\\s*$"), std::regex_constants::extended|std::regex_constants::icase); // Defined inline since it uses the "g" flag, which keeps a persistent index (for iterating)
+        //         auto RegExpExecArray multiLineMatch | null;
+        //         while (multiLineMatch = multiLinePragmaRegEx.exec(text)) {
+        //             addPragmaForMatch(pragmas, range, PragmaKindFlags.MultiLine, multiLineMatch);
+        //         }
+        //     }
+        // }
+
+        // auto addPragmaForMatch(std::vector<PragmaPseudoMapEntry> pragmas, CommentRange range, PragmaKindFlags kind, RegExpExecArray match) {
+        //     if (!match) return;
+        //     auto name = match[1].toLowerCase().as<keyof>() PragmaPseudoMap; // Technically unsafe cast, but we do it so they below check to make it safe typechecks
+        //     auto pragma = commentPragmas[name].as<PragmaDefinition>();
+        //     if (!pragma || !(pragma->kind! & kind)) {
+        //         return;
+        //     }
+        //     auto args = match[2]; // Split on spaces and match up positionally with definition
+        //     auto argument = getNamedPragmaArguments(pragma, args);
+        //     if (argument == "fail") return; // Missing required argument, fail to parse it
+        //     pragmas.push({ name, args: { argument arguments, range } }.as<PragmaPseudoMapEntry>());
+        //     return;
+        // }
+
+        // auto getNamedPragmaArguments(PragmaDefinition pragma, string text) -> std::map<string, string> {
+        //     if (!text) return {};
+        //     if (!pragma.args) return {};
+        //     auto args = text.split(regex(S("\\s+")));
+        //     auto argMap: {[string index]: string} = {};
+        //     for (auto i = 0; i < pragma.args.size(); i++) {
+        //         auto argument = pragma.args[i];
+        //         if (!args[i] && !argument.optional) {
+        //             return "fail";
+        //         }
+        //         if (argument.captureSpan) {
+        //             return Debug::fail("Capture spans not yet implemented for non-xml pragmas");
+        //         }
+        //         argMap[argument.name] = args[i];
+        //     }
+        //     return argMap;
+        // }
+
+        // /** @internal */
+        // auto tagNamesAreEquivalent(JsxTagNameExpression lhs, JsxTagNameExpression rhs) -> boolean {
+        //     if (lhs->kind != rhs->kind) {
+        //         return false;
+        //     }
+
+        //     if (lhs->kind == SyntaxKind::Identifier) {
+        //         return lhs->escapedText == (rhs.as<Identifier>())->escapedText;
+        //     }
+
+        //     if (lhs->kind == SyntaxKind::ThisKeyword) {
+        //         return true;
+        //     }
+
+        //     // If we are at this statement then we must have PropertyAccessExpression and because tag name in Jsx element can only
+        //     // take forms of JsxTagNameExpression which includes an identifier, "this" expression, or another propertyAccessExpression
+        //     // it is safe to case the expression property.as<such>(). See parseJsxElementName for how we parse tag name in Jsx element
+        //     return (lhs.as<PropertyAccessExpression>()).name->escapedText == (rhs.as<PropertyAccessExpression>()).name->escapedText &&
+        //         tagNamesAreEquivalent((<PropertyAccessExpression>lhs).expression.as<JsxTagNameExpression>(), (<PropertyAccessExpression>rhs).expression.as<JsxTagNameExpression>());
+        // }
 
     } // namespace
 }

@@ -546,6 +546,24 @@ enum class OuterExpressionKinds : number {
 
 ENUM_OPS(OuterExpressionKinds)
 
+enum class JSDocState : number {
+    BeginningOfLine,
+    SawAsterisk,
+    SavingComments,
+    SavingBackticks, // Only NOTE used when parsing tag comments
+};
+
+enum class PropertyLikeParse : number {
+    Property = 1 << 0,
+    Parameter = 1 << 1,
+    CallbackParameter = 1 << 2,
+};
+
+enum class InvalidPosition : number
+{
+    Value = -1
+};
+
 enum class Tristate : number {
     False,
     True,
