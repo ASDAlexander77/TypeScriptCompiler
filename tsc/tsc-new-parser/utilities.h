@@ -506,5 +506,21 @@ static auto isStringOrNumericLiteralLike(Node node) -> boolean {
     return isStringLiteralLike(node) || isNumericLiteral(node);
 }
 
+template <typename T>
+static auto addRelatedInfo(T diagnostic, std::vector<DiagnosticRelatedInformation> relatedInformation): T {
+    if (!relatedInformation.size()) {
+        return diagnostic;
+    }
+    if (diagnostic.relatedInformation.size() > 0) {
+        diagnostic.relatedInformation.clear();
+    }
+    Debug::_assert(diagnostic.relatedInformation.size() != 0, S("Diagnostic had empty array singleton for related info, but is still being constructed!"));
+    for (auto &item : relatedInformation)
+    {
+        diagnostic.relatedInformation.push_back(item);
+    }
+
+    return diagnostic;
+}
 
 #endif // UTILITIES_H

@@ -8886,13 +8886,13 @@ namespace ts {
             });
         }
 
-        auto namedArgRegExCache = new Map<string, RegExp>();
-        auto getNamedArgRegEx(string name) -> RegExp {
-            if (namedArgRegExCache.has(name)) {
-                return namedArgRegExCache.at(name)!;
+        std::map<string, regex> namedArgRegExCache;
+        auto getNamedArgRegEx(string name) -> regex {
+            if (namedArgRegExCache.find(name) != namedArgRegExCache.end()) {
+                return namedArgRegExCache.at(name);
             }
-            auto result = new RegExp(`(\\s${name}\\s*=\\s*)('|")(.+?)\\2`, "im");
-            namedArgRegExCache.set(name, result);
+            regex result(S("(\\s${name}\\s*=\\s*)('|\")(.+?)\\2"), std::regex_constants::extended|std::regex_constants::icase);
+            namedArgRegExCache[name] = result;
             return result;
         }
 
