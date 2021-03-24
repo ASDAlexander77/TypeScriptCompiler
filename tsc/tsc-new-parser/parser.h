@@ -172,7 +172,7 @@ struct NodeData : TextRange
 
     NodeArray<Node> children;
 
-    NodeData(number start, number end) : TextRange{start, end} {};
+    NodeData(SyntaxKind kind, number start, number end) : kind(kind), TextRange{start, end} {};
 
     virtual ~NodeData() {}
 };
