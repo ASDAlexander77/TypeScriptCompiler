@@ -143,8 +143,15 @@ typedef NodeArray<Modifier> ModifiersArray;
 
 struct NodeHolder
 {
-    Node* value;
+    std::shared_ptr<Node> value;
+
     operator Node();
+    boolean operator !();
+    boolean operator ==(const Node& rhv);
+    Node* operator->();
+
+    auto begin() -> decltype(((NodeArray<Node>*)nullptr)->begin());
+    auto end() -> decltype(((NodeArray<Node>*)nullptr)->end());
 };
 
 struct NodeData : TextRange
@@ -160,6 +167,7 @@ struct NodeData : TextRange
     SyntaxKind originalKeywordKind;
     SyntaxKind parentKind;
     NodeHolder parent;
+    NodeHolder jsDoc;
     number jsdocDotPos;
 
     NodeArray<Node> children;
@@ -261,6 +269,16 @@ struct Node
         data->children.push_back(node);
     }    
 
+    auto begin() -> decltype(data->children.begin())
+    {
+        return data->children.begin();
+    }
+
+    auto end() -> decltype(data->children.end())
+    {
+        return data->children.end();
+    }
+
     auto operator==(undefined_t)
     {
         return !data;
@@ -272,9 +290,35 @@ struct Node
     }
 };
 
+// TODO: put into source file
 NodeHolder::operator Node()
 {
     return *value;
+}
+
+Node* NodeHolder::operator->()
+{
+    return value.operator->();
+}
+
+boolean NodeHolder::operator !()
+{
+    return !*value;
+}
+
+boolean NodeHolder::operator ==(const Node& rhv)
+{
+    return rhv.data == this->value->data;
+}
+
+auto NodeHolder::begin() -> decltype(value->begin())
+{
+    return value->begin();
+}
+
+auto NodeHolder::end() -> decltype(value->end())
+{
+    return value->end();
 }
 
 struct BaseNode

@@ -25,6 +25,11 @@ struct TextRange {
     TextRange() = default;
     number pos;
     number end;
+
+    bool operator !()
+    {
+        return pos < 0 || end < 0;
+    }
 };
 
 struct CommentDirective {

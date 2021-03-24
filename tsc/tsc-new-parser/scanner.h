@@ -866,6 +866,12 @@ namespace ts
             return impl->tryScan(callback);
         }
 
+        template <typename T>
+        auto lookAhead(std::function<T()> callback) -> T
+        {
+            return impl->lookAhead(callback);
+        }
+
         ~Scanner();
     };
 }

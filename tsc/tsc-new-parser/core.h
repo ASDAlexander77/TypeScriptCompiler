@@ -78,11 +78,11 @@ auto some(std::vector<T> array, std::function<boolean(T)> predicate = nullptr) -
 template <typename T>
 auto some(T array, std::function<boolean(decltype(array[0]))> predicate = nullptr) -> boolean
 {
-    if (!array.empty())
+    if (array.size())
     {
         if (predicate)
         {
-            for (const v : array)
+            for (auto &v : array)
             {
                 if (predicate(v))
                 {
@@ -111,7 +111,7 @@ auto addRange(T to, U from, number start = -1, number end = -1) -> T
     end = end == -1 ? from.size() : toOffset(from, end);
     for (auto i = start; i < end && i < from.size(); i++)
     {
-        if (from[i] != undefined)
+        if (!!from[i])
         {
             to.push_back(from[i]);
         }
