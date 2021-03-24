@@ -8,41 +8,6 @@ namespace ts {
 
     namespace
     {
-        template<typename T>
-        auto visitNode(NodeFuncT<T> cbNode, Node node) -> T {
-            return node ? cbNode(node) : T();
-        }
-
-        template<typename T>
-        auto visitNodes(NodeFuncT<T> cbNode, NodeArrayFuncT<T> cbNodes, /*NodeArray*/Node nodes) -> T {
-            if (nodes) {
-                if (cbNodes) {
-                    return cbNodes(nodes);
-                }
-                for (auto node : nodes) {
-                    auto result = cbNode(node);
-                    if (result) {
-                        return result;
-                    }
-                }
-            }
-        }
-
-        template<typename T>
-        auto visitNodes(NodeFuncT<T> cbNode, NodeArrayFuncT<T> cbNodes, NodeArray<T> nodes) -> T {
-            if (nodes) {
-                if (cbNodes) {
-                    return cbNodes(nodes);
-                }
-                for (auto node : nodes) {
-                    auto result = cbNode(node);
-                    if (result) {
-                        return result;
-                    }
-                }
-            }
-        }    
-
         /*@internal*/
         auto isJSDocLikeText(safe_string text, number start) {
             return text[start + 1] == CharacterCodes::asterisk &&
@@ -635,7 +600,7 @@ namespace ts {
                 // parser (ThisNodeHasError, ThisNodeOrAnySubNodesHasError, and
                 // HasAggregatedChildData).
                 auto contextFlagsToClear = context & contextFlags;
-                if (contextFlagsToClear) {
+                if (!!contextFlagsToClear) {
                     // clear the requested context flags
                     setContextFlag(/*val*/ false, contextFlagsToClear);
                     auto result = func();
@@ -657,7 +622,7 @@ namespace ts {
                 // parser (ThisNodeHasError, ThisNodeOrAnySubNodesHasError, and
                 // HasAggregatedChildData).
                 auto contextFlagsToSet = context & ~contextFlags;
-                if (contextFlagsToSet) {
+                if (!!contextFlagsToSet) {
                     // set the requested context flags
                     setContextFlag(/*val*/ true, contextFlagsToSet);
                     auto result = func();
@@ -1065,12 +1030,12 @@ namespace ts {
 
                 auto pos = getNodePos();
                 auto result =
-                    kind == SyntaxKind::Identifier ? factory.createIdentifier(string()) :
-                    isTemplateLiteralKind(kind) ? factory.createTemplateLiteralLikeNode(kind, string(), string(), /*templateFlags*/ TokenFlags::None) :
-                    kind == SyntaxKind::NumericLiteral ? factory.createNumericLiteral(string(), /*numericLiteralFlags*/ TokenFlags::None) :
-                    kind == SyntaxKind::StringLiteral ? factory.createStringLiteral(string(), /*isSingleQuote*/ false) :
-                    kind == SyntaxKind::MissingDeclaration ? factory.createMissingDeclaration() :
-                    factory.createToken(kind);
+                    kind == SyntaxKind::Identifier ? factory.createIdentifier(string()).as<Node>() :
+                    isTemplateLiteralKind(kind) ? factory.createTemplateLiteralLikeNode(kind, string(), string(), /*templateFlags*/ TokenFlags::None).as<Node>() :
+                    kind == SyntaxKind::NumericLiteral ? factory.createNumericLiteral(string(), /*numericLiteralFlags*/ TokenFlags::None).as<Node>() :
+                    kind == SyntaxKind::StringLiteral ? factory.createStringLiteral(string(), /*isSingleQuote*/ false).as<Node>() :
+                    kind == SyntaxKind::MissingDeclaration ? factory.createMissingDeclaration().as<Node>() :
+                    factory.createToken(kind).as<Node>();
                 return finishNode(result, pos);
             }
 
@@ -1865,15 +1830,15 @@ namespace ts {
             template <typename T> 
             auto parseDelimitedList(ParsingContext kind, std::function <T()> parseElement, boolean considerSemicolonAsDelimiter = false) -> NodeArray<T> {
                 auto saveParsingContext = parsingContext;
-                parsingContext |= 1 << kind;
-                auto list = [];
+                parsingContext |= (ParsingContext) (1 << (number) kind);
+                NodeArray<T> list;
                 auto listPos = getNodePos();
 
                 auto commaStart = -1; // Meaning the previous token was not a comma
                 while (true) {
                     if (isListElement(kind, /*inErrorRecovery*/ false)) {
                         auto startPos = scanner.getStartPos();
-                        list.push_back(parseListElement(kind, parseElement));
+                        list.push_back(parseListElement<T>(kind, parseElement));
                         commaStart = scanner.getTokenPos();
 
                         if (parseOptional(SyntaxKind::CommaToken)) {
@@ -1924,7 +1889,7 @@ namespace ts {
                 // was a trailing comma.
                 // Check if the last token was a comma.
                 // Always preserve a trailing comma by marking it on the NodeArray
-                return createNodeArray(list, listPos, /*end*/ undefined, commaStart >= 0);
+                return createNodeArray<T>(list, listPos, /*end*/ -1, commaStart >= 0);
             }
 
             auto getExpectedCommaDiagnostic(ParsingContext kind) -> DiagnosticMessage {
@@ -1936,7 +1901,7 @@ namespace ts {
 
             template <typename T> 
             auto createMissingList() -> MissingList<T> {
-                auto list = createNodeArray<T>(Node(), getNodePos()).as<MissingList>()<T>;
+                auto list = createNodeArray<T>(NodeArray<T>(), getNodePos());
                 list.isMissingList = true;
                 return list;
             }

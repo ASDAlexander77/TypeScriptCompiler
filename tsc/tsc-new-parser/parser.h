@@ -66,7 +66,7 @@ struct NodeArray
         return items.size();
     }
 
-    auto push_back(Node node) -> void
+    auto push_back(T node) -> void
     {
         items.push_back(node);
     }       

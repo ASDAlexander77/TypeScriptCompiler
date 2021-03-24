@@ -37,9 +37,9 @@ auto forEach(std::vector<T> array, std::function<U(T, number)> callback = nullpt
 template <typename U, typename T>
 auto forEach(T array, std::function<U(decltype(array[0]), number)> callback = nullptr) -> U
 {
-    if (!array.empty())
+    if (array.size())
     {
-        for (let i = 0; i < array.size(); i++)
+        for (auto i = 0; i < array.size(); i++)
         {
             auto result = callback(array[i], i);
             if (result)
@@ -200,7 +200,7 @@ auto binarySearchKey(const std::vector<T> &array, U key, std::function<U(T, numb
 template <typename T, typename U>
 inline auto append(T arr, U value) -> T
 {
-    arr->push_back(value);
+    arr.push_back(value);
     return arr;
 }
 

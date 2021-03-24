@@ -261,6 +261,41 @@ inline static auto isJSDocNode(Node node) -> boolean {
     return node->kind >= SyntaxKind::FirstJSDocNode && node->kind <= SyntaxKind::LastJSDocNode;
 }
 
+template<typename T>
+static auto visitNode(NodeFuncT<T> cbNode, Node node) -> T {
+    return node ? cbNode(node) : T();
+}
+
+template<typename T>
+static auto visitNodes(NodeFuncT<T> cbNode, NodeArrayFuncT<T> cbNodes, /*NodeArray*/Node nodes) -> T {
+    if (nodes) {
+        if (cbNodes) {
+            return cbNodes(nodes);
+        }
+        for (auto node : nodes) {
+            auto result = cbNode(node);
+            if (result) {
+                return result;
+            }
+        }
+    }
+}
+
+template<typename T>
+static auto visitNodes(NodeFuncT<T> cbNode, NodeArrayFuncT<T> cbNodes, NodeArray<T> nodes) -> T {
+    if (nodes) {
+        if (cbNodes) {
+            return cbNodes(nodes);
+        }
+        for (auto node : nodes) {
+            auto result = cbNode(node);
+            if (result) {
+                return result;
+            }
+        }
+    }
+}    
+
 /**
  * Invokes a callback for each child of the given node-> The 'cbNode' callback is invoked for all child nodes
  * stored in properties. If a 'cbNodes' callback is specified, it is invoked for embedded arrays; otherwise,

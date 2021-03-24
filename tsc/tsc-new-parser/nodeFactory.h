@@ -38,7 +38,6 @@ public:
     auto createNumericLiteral(number value, TokenFlags numericLiteralFlags = TokenFlags::None) -> NumericLiteral;
     auto createBigIntLiteral(string value) -> BigIntLiteral;
     auto createBigIntLiteral(PseudoBigInt value) -> BigIntLiteral;
-    auto createStringLiteral(string text, boolean isSingleQuote = false) -> StringLiteral;
     /* @internal*/ auto createStringLiteral(string text, boolean isSingleQuote = false, boolean hasExtendedUnicodeEscape = false) -> StringLiteral; // eslint-disable-line @typescript-eslint/unified-signatures
     auto createStringLiteralFromNode(PropertyNameLiteral sourceNode, boolean isSingleQuote = false) -> StringLiteral;
     auto createRegularExpressionLiteral(string text) -> RegularExpressionLiteral;
