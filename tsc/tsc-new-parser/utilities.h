@@ -63,7 +63,7 @@ inline auto isDiagnosticWithDetachedLocation(DiagnosticRelatedInformation diagno
     return diagnostic.start != -1 && diagnostic.length != -1 && diagnostic.fileName != S("");
 }
 
-auto attachFileToDiagnostic(DiagnosticRelatedInformation diagnostic, SourceFile file) -> DiagnosticWithLocation
+static auto attachFileToDiagnostic(DiagnosticRelatedInformation diagnostic, SourceFile file) -> DiagnosticWithLocation
 {
     auto fileName = file->fileName;
     auto length = file->text.length();
@@ -81,7 +81,7 @@ auto attachFileToDiagnostic(DiagnosticRelatedInformation diagnostic, SourceFile 
     return diagnosticWithLocation;
 }
 
-auto attachFileToDiagnostic(Diagnostic diagnostic, SourceFile file) -> DiagnosticWithLocation
+static auto attachFileToDiagnostic(Diagnostic diagnostic, SourceFile file) -> DiagnosticWithLocation
 {
     auto fileName = file->fileName;
     auto length = file->text.length();
@@ -524,7 +524,7 @@ static auto isStringOrNumericLiteralLike(Node node) -> boolean {
 }
 
 template <typename T>
-static auto addRelatedInfo(T diagnostic, std::vector<DiagnosticRelatedInformation> relatedInformation): T {
+static auto addRelatedInfo(T diagnostic, std::vector<DiagnosticRelatedInformation> relatedInformation) -> T {
     if (!relatedInformation.size()) {
         return diagnostic;
     }
