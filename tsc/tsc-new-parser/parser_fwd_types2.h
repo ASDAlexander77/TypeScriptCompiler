@@ -408,6 +408,11 @@ namespace ver2
 
     NODE_REF(JSDocTypeReferencingNode)
     NODE_REF(HasJSDoc)
+    NODE_REF(DestructuringPattern)
+    NODE_REF(BindingElementGrandparent)
+
+    NODE_REF(ObjectLiteralElementLike)
+    NODE_REF(StringLiteralLike)
     
 } // namespace ver2
 

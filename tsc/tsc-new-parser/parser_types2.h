@@ -78,9 +78,6 @@ namespace ver2
         /* @internal */ std::map<number, Declaration> assignmentDeclarationMembers; // detected late-bound assignment declarations associated with the symbol
     };
 
-    using DestructuringPattern = Node /*BindingPattern | ObjectLiteralExpression | ArrayLiteralExpression*/;
-    using DestructuringPatternRef = NodeRef /*BindingPattern | ObjectLiteralExpression | ArrayLiteralExpression*/;
-
     // Properties common to all types
     struct Type
     {
@@ -189,24 +186,6 @@ namespace ver2
     using ReadonlyKeyword = ModifierToken<SyntaxKind::ReadonlyKeyword>;
     using StaticKeyword = ModifierToken<SyntaxKind::StaticKeyword>;
 
-    using EntityName = Node /*Identifier | QualifiedName*/;
-
-    using PropertyName = Node /*Identifier | StringLiteral | NumericLiteral | ComputedPropertyName | PrivateIdentifier*/;
-
-    using MemberName = Node /*Identifier | PrivateIdentifier*/;
-
-    using DeclarationName = Node /*
-    | Identifier
-    | PrivateIdentifier
-    | StringLiteralLike
-    | NumericLiteral
-    | ComputedPropertyName
-    | ElementAccessExpression
-    | BindingPattern
-    | EntityNameExpression
-    */
-        ;
-
     struct QualifiedName : Node
     {
         // kind: SyntaxKind::QualifiedName;
@@ -307,23 +286,6 @@ namespace ver2
         /* @internal */ NodeArray<TypeNode> typeArguments; // Used for quick info, replaces typeParameters for instantiated signatures
     };
 
-    using SignatureDeclaration = Node /*
-    | CallSignatureDeclaration
-    | ConstructSignatureDeclaration
-    | MethodSignature
-    | IndexSignatureDeclaration
-    | FunctionTypeNode
-    | ConstructorTypeNode
-    | JSDocFunctionType
-    | FunctionDeclaration
-    | MethodDeclaration
-    | ConstructorDeclaration
-    | AccessorDeclaration
-    | FunctionExpression
-    | ArrowFunction
-    */
-        ;
-
     struct CallSignatureDeclaration : SignatureDeclarationBase, TypeElement
     {
         // kind: SyntaxKind::CallSignature;
@@ -333,8 +295,6 @@ namespace ver2
     {
         // kind: SyntaxKind::ConstructSignature;
     };
-
-    using BindingName = Node /*Identifier | BindingPattern*/;
 
     struct VariableDeclaration : NamedDeclaration, JSDocContainer
     {
@@ -380,9 +340,6 @@ namespace ver2
         REF(Expression) initializer;        // Optional initializer
     };
 
-    /*@internal*/
-    using BindingElementGrandparent = Node /*BindingElement["parent"]["parent"]*/;
-
     struct PropertySignature : TypeElement, JSDocContainer
     {
         // kind: SyntaxKind::PropertySignature;
@@ -427,16 +384,6 @@ namespace ver2
         REF(PropertyName) name;
     };
 
-    /** Unlike ObjectLiteralElement, excludes JSXAttribute and JSXSpreadAttribute. */
-    using ObjectLiteralElementLike = Node /*
-    | PropertyAssignment
-    | ShorthandPropertyAssignment
-    | SpreadAssignment
-    | MethodDeclaration
-    | AccessorDeclaration
-    */
-        ;
-
     struct PropertyAssignment : ObjectLiteralElement, JSDocContainer
     {
         // kind: SyntaxKind::PropertyAssignment;
@@ -467,21 +414,6 @@ namespace ver2
         REF(Expression) expression;
     };
 
-    using VariableLikeDeclaration = Node /*
-    | VariableDeclaration
-    | ParameterDeclaration
-    | BindingElement
-    | PropertyDeclaration
-    | PropertyAssignment
-    | PropertySignature
-    | JsxAttribute
-    | ShorthandPropertyAssignment
-    | EnumMember
-    | JSDocPropertyTag
-    | JSDocParameterTag
-    */
-        ;
-
     struct PropertyLikeDeclaration : NamedDeclaration
     {
         REF(PropertyName) name;
@@ -500,10 +432,6 @@ namespace ver2
         REF(Node) /**VariableDeclaration | ParameterDeclaration | BindingElement*/ parent;
         NodeArray<ArrayBindingElement> elements;
     };
-
-    using BindingPattern = Node /*ObjectBindingPattern | ArrayBindingPattern*/;
-
-    using ArrayBindingElement = Node /*BindingElement | OmittedExpression*/;
 
     /**
  * Several node kinds share function-like features such as a signature,
@@ -524,20 +452,6 @@ namespace ver2
         ///* @internal */ REF(FlowNode) endFlowNode;
         ///* @internal */ REF(FlowNode) returnFlowNode;
     };
-
-    using FunctionLikeDeclaration = Node /*
-    | FunctionDeclaration
-    | MethodDeclaration
-    | GetAccessorDeclaration
-    | SetAccessorDeclaration
-    | ConstructorDeclaration
-    | FunctionExpression
-    | ArrowFunction
-    */
-        ;
-
-    /** @deprecated Use SignatureDeclaration */
-    using FunctionLike = SignatureDeclaration;
 
     struct FunctionDeclaration : FunctionLikeDeclarationBase, DeclarationStatement
     {
@@ -610,8 +524,6 @@ namespace ver2
         /* @internal */ REF(TypeNode) type;                                      // Present for use with reporting a grammar error
     };
 
-    using AccessorDeclaration = Node /*GetAccessorDeclaration | SetAccessorDeclaration*/;
-
     struct IndexSignatureDeclaration : SignatureDeclarationBase, ClassElement, TypeElement
     {
         // kind: SyntaxKind::IndexSignature;
@@ -665,8 +577,6 @@ namespace ver2
         // kind: SyntaxKind::ThisType;
     };
 
-    using FunctionOrConstructorTypeNode = Node /*FunctionTypeNode | ConstructorTypeNode*/;
-
     struct FunctionOrConstructorTypeNodeBase : TypeNode, SignatureDeclarationBase
     {
         // kind: SyntaxKind::FunctionType | SyntaxKind::ConstructorType;
@@ -682,8 +592,6 @@ namespace ver2
     {
         // kind: SyntaxKind::ConstructorType;
     };
-
-    using TypeReferenceType = Node /*TypeReferenceNode | ExpressionWithTypeArguments*/;
 
     struct TypeReferenceNode : NodeWithTypeArguments
     {
@@ -745,8 +653,6 @@ namespace ver2
         // kind: SyntaxKind::RestType;
         REF(TypeNode) type;
     };
-
-    using UnionOrIntersectionTypeNode = Node /*UnionTypeNode | IntersectionTypeNode*/;
 
     struct UnionTypeNode : TypeNode
     {
@@ -811,9 +717,6 @@ namespace ver2
         REF(TypeNode) type;
     };
 
-    using StringLiteralLike = Node /*StringLiteral | NoSubstitutionTemplateLiteral*/;
-    using PropertyNameLiteral = Node /*Identifier | StringLiteralLike | NumericLiteral*/;
-
     struct TemplateLiteralTypeNode : TypeNode
     {
         NodeArray<TemplateLiteralTypeSpan> templateSpans;
@@ -848,7 +751,6 @@ namespace ver2
     };
 
     /** Deprecated, please use UpdateExpression */
-    using IncrementExpression = UpdateExpression;
     struct UpdateExpression : UnaryExpression
     {
         any _updateExpressionBrand;
@@ -967,8 +869,6 @@ namespace ver2
     {
         // kind: SyntaxKind::FalseKeyword;
     };
-
-    using BooleanLiteral = Node /*TrueLiteral | FalseLiteral*/;
 
     struct ThisExpression : PrimaryExpression
     {
@@ -1131,73 +1031,6 @@ namespace ver2
         REF(ArrayLiteralExpression) left;
     };
 
-    using DestructuringAssignment = Node /*
-    | ObjectDestructuringAssignment
-    | ArrayDestructuringAssignment
-    */
-        ;
-
-    using BindingOrAssignmentElement = Node /*
-    | VariableDeclaration
-    | ParameterDeclaration
-    | ObjectBindingOrAssignmentElement
-    | ArrayBindingOrAssignmentElement
-    */
-        ;
-
-    using ObjectBindingOrAssignmentElement = Node /*
-    | BindingElement
-    | PropertyAssignment // AssignmentProperty
-    | ShorthandPropertyAssignment // AssignmentProperty
-    | SpreadAssignment // AssignmentRestProperty
-    */
-        ;
-
-    using ArrayBindingOrAssignmentElement = Node /*
-    | BindingElement
-    | OmittedExpression // Elision
-    | SpreadElement // AssignmentRestElement
-    | ArrayLiteralExpression // ArrayAssignmentPattern
-    | ObjectLiteralExpression // ObjectAssignmentPattern
-    | AssignmentExpression<EqualsToken> // AssignmentElement
-    | Identifier // DestructuringAssignmentTarget
-    | PropertyAccessExpression // DestructuringAssignmentTarget
-    | ElementAccessExpression // DestructuringAssignmentTarget
-    */
-        ;
-
-    using BindingOrAssignmentElementRestIndicator = Node /*
-    | DotDotDotToken // from BindingElement
-    | SpreadElement // AssignmentRestElement
-    | SpreadAssignment // AssignmentRestProperty
-    */
-        ;
-
-    using BindingOrAssignmentElementTarget = Node /*
-    | BindingOrAssignmentPattern
-    | Identifier
-    | PropertyAccessExpression
-    | ElementAccessExpression
-    | OmittedExpression
-    */
-        ;
-
-    using ObjectBindingOrAssignmentPattern = Node /*
-    | ObjectBindingPattern
-    | ObjectLiteralExpression // ObjectAssignmentPattern
-    */
-        ;
-
-    using ArrayBindingOrAssignmentPattern = Node /*
-    | ArrayBindingPattern
-    | ArrayLiteralExpression // ArrayAssignmentPattern
-    */
-        ;
-
-    using AssignmentPattern = Node /*ObjectLiteralExpression | ArrayLiteralExpression*/;
-
-    using BindingOrAssignmentPattern = Node /*ObjectBindingOrAssignmentPattern | ArrayBindingOrAssignmentPattern*/;
-
     struct ConditionalExpression : Expression
     {
         // kind: SyntaxKind::ConditionalExpression;
@@ -1254,16 +1087,6 @@ namespace ver2
         // kind: SyntaxKind::BigIntLiteral;
     };
 
-    using LiteralToken = Node /*
-    | NumericLiteral
-    | BigIntLiteral
-    | StringLiteral
-    | JsxText
-    | RegularExpressionLiteral
-    | NoSubstitutionTemplateLiteral
-    */
-        ;
-
     struct TemplateHead : TemplateLiteralLikeNode
     {
         // kind: SyntaxKind::TemplateHead;
@@ -1287,19 +1110,6 @@ namespace ver2
         /* @internal */
         TokenFlags templateFlags;
     };
-
-    using PseudoLiteralToken = Node /*
-    | TemplateHead
-    | TemplateMiddle
-    | TemplateTail
-    */
-        ;
-
-    using TemplateLiteralToken = Node /*
-    | NoSubstitutionTemplateLiteral
-    | PseudoLiteralToken
-    */
-        ;
 
     struct TemplateExpression : PrimaryExpression
     {
@@ -1358,10 +1168,6 @@ namespace ver2
         /* @internal */
         boolean multiLine;
     };
-
-    using EntityNameExpression = Node /*Identifier | PropertyAccessEntityNameExpression*/;
-    using EntityNameOrEntityNameExpression = Node /*EntityName | EntityNameExpression*/;
-    using AccessExpression = Node /*PropertyAccessExpression | ElementAccessExpression*/;
 
     struct PropertyAccessExpression : MemberExpression, NamedDeclaration
     {
@@ -1432,9 +1238,6 @@ namespace ver2
         REF(SuperExpression) expression;
     };
 
-    // see: https://tc39.github.io/ecma262/#prod-SuperProperty
-    using SuperProperty = Node /*SuperPropertyAccessExpression | SuperElementAccessExpression*/;
-
     struct CallExpression : LeftHandSideExpression, Declaration
     {
         // kind: SyntaxKind::CallExpression;
@@ -1454,22 +1257,6 @@ namespace ver2
     {
         REF(QuestionDotToken) questionDotToken;
     };
-
-    using OptionalChain = Node /*
-    | PropertyAccessChain
-    | ElementAccessChain
-    | CallChain
-    | NonNullChain
-    */
-        ;
-
-    /* @internal */
-    using OptionalChainRoot = Node /*
-    | PropertyAccessChainRoot
-    | ElementAccessChainRoot
-    | CallChainRoot
-    */
-        ;
 
     /** @internal */
     struct BindableObjectDefinePropertyCall : CallExpression
@@ -1555,12 +1342,6 @@ namespace ver2
         REF(TypeNode) type;
         REF(UnaryExpression) expression;
     };
-
-    using AssertionExpression = Node /*
-    | TypeAssertion
-    | AsExpression
-    */
-        ;
 
     struct NonNullExpression : LeftHandSideExpression
     {
@@ -1751,14 +1532,6 @@ namespace ver2
         // kind: SyntaxKind::MissingDeclaration;
         REF(Identifier) name;
     };
-
-    using BlockLike = Node /*
-    | SourceFile
-    | Block
-    | ModuleBlock
-    | CaseOrDefaultClause
-    */
-        ;
 
     struct Block : Statement
     {
@@ -2114,8 +1887,6 @@ namespace ver2
         REF(ExportDeclaration) parent;
         NodeArray<ExportSpecifier> elements;
     };
-
-    using NamedImportsOrExports = Node /*NamedImports | NamedExports*/;
 
     struct ImportSpecifier : NamedDeclaration
     {
