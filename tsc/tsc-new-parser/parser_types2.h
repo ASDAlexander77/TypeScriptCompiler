@@ -142,49 +142,16 @@ namespace ver2
     {
     };
 
-    using DotToken = PunctuationToken<SyntaxKind::DotToken>;
-    using DotDotDotToken = PunctuationToken<SyntaxKind::DotDotDotToken>;
-    using QuestionToken = PunctuationToken<SyntaxKind::QuestionToken>;
-    using ExclamationToken = PunctuationToken<SyntaxKind::ExclamationToken>;
-    using ColonToken = PunctuationToken<SyntaxKind::ColonToken>;
-    using EqualsToken = PunctuationToken<SyntaxKind::EqualsToken>;
-    using AsteriskToken = PunctuationToken<SyntaxKind::AsteriskToken>;
-    using EqualsGreaterThanToken = PunctuationToken<SyntaxKind::EqualsGreaterThanToken>;
-    using PlusToken = PunctuationToken<SyntaxKind::PlusToken>;
-    using MinusToken = PunctuationToken<SyntaxKind::MinusToken>;
-    using QuestionDotToken = PunctuationToken<SyntaxKind::QuestionDotToken>;
-
     // Keywords
     template <SyntaxKind TKind>
     struct KeywordToken : Token<TKind>
     {
     };
 
-    using AssertsKeyword = KeywordToken<SyntaxKind::AssertsKeyword>;
-    using AwaitKeyword = KeywordToken<SyntaxKind::AwaitKeyword>;
-
-    /** @deprecated Use `AwaitKeyword` instead. */
-    using AwaitKeywordToken = AwaitKeyword;
-
-    /** @deprecated Use `AssertsKeyword` instead. */
-    using AssertsToken = AssertsKeyword;
-
     template <SyntaxKind TKind>
     struct ModifierToken : KeywordToken<TKind>
     {
     };
-
-    using AbstractKeyword = ModifierToken<SyntaxKind::AbstractKeyword>;
-    using AsyncKeyword = ModifierToken<SyntaxKind::AsyncKeyword>;
-    using ConstKeyword = ModifierToken<SyntaxKind::ConstKeyword>;
-    using DeclareKeyword = ModifierToken<SyntaxKind::DeclareKeyword>;
-    using DefaultKeyword = ModifierToken<SyntaxKind::DefaultKeyword>;
-    using ExportKeyword = ModifierToken<SyntaxKind::ExportKeyword>;
-    using PrivateKeyword = ModifierToken<SyntaxKind::PrivateKeyword>;
-    using ProtectedKeyword = ModifierToken<SyntaxKind::ProtectedKeyword>;
-    using PublicKeyword = ModifierToken<SyntaxKind::PublicKeyword>;
-    using ReadonlyKeyword = ModifierToken<SyntaxKind::ReadonlyKeyword>;
-    using StaticKeyword = ModifierToken<SyntaxKind::StaticKeyword>;
 
     struct QualifiedName : Node
     {

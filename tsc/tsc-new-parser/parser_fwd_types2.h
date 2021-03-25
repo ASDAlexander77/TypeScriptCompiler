@@ -378,6 +378,18 @@ namespace ver2
     CLASS_REF(AwaitKeywordToken, AwaitKeyword)
     CLASS_REF(AssertsToken, AssertsKeyword)
 
+    TMPL_REF(AbstractKeyword, ModifierToken, SyntaxKind::AbstractKeyword)
+    TMPL_REF(AsyncKeyword,ModifierToken, SyntaxKind::AsyncKeyword)
+    TMPL_REF(ConstKeyword, ModifierToken, SyntaxKind::ConstKeyword)
+    TMPL_REF(DeclareKeyword, ModifierToken, SyntaxKind::DeclareKeyword)
+    TMPL_REF(DefaultKeyword, ModifierToken, SyntaxKind::DefaultKeyword)
+    TMPL_REF(ExportKeyword, ModifierToken, SyntaxKind::ExportKeyword)
+    TMPL_REF(PrivateKeyword, ModifierToken, SyntaxKind::PrivateKeyword)
+    TMPL_REF(ProtectedKeyword, ModifierToken, SyntaxKind::ProtectedKeyword)
+    TMPL_REF(PublicKeyword, ModifierToken, SyntaxKind::PublicKeyword)
+    TMPL_REF(ReadonlyKeyword, ModifierToken, SyntaxKind::ReadonlyKeyword)
+    TMPL_REF(StaticKeyword, ModifierToken, SyntaxKind::StaticKeyword)
+
     NODE_REF(BindableStaticNameExpression)
     NODE_REF(BindableStaticAccessExpression)
     NODE_REF(BindableAccessExpression)
