@@ -1196,6 +1196,7 @@ namespace ts
     auto processPragmasIntoFields(SourceFile context, PragmaDiagnosticReporter reportDiagnostic) -> void;
     auto isExternalModule(SourceFile file) -> boolean;
     auto tagNamesAreEquivalent(JsxTagNameExpression lhs, JsxTagNameExpression rhs) -> boolean;
+    auto fixupParentReferences(Node rootNode) -> void;
 }
 
 #include "incremental_parser.h"

@@ -62,6 +62,14 @@ namespace ts {
             return fileExtensionIs(fileName, Extension::Dts);
         }
 
+        auto fixupParentReferences(Node rootNode) -> void {
+            // normally parent references are set during binding. However, for clients that only need
+            // a syntax tree, and no semantic features, then the binding process is an unnecessary
+            // overhead.  This functions allows us to set all the parents, without all the expense of
+            // binding.
+            setParentRecursive(rootNode, /*incremental*/ true);
+        }
+
         // Implement the parser.as<a>() singleton module.  We do this for perf reasons because creating
         // parser instances can actually be expensive enough to impact us on projects with many source
         // files.
@@ -579,14 +587,6 @@ namespace ts {
 
                 syntaxCursor = savedSyntaxCursor;
                 return factory.updateSourceFile(sourceFile, setTextRange(factory.createNodeArray(statements), sourceFile->statements));
-            }
-
-            auto fixupParentReferences(Node rootNode) -> void {
-                // normally parent references are set during binding. However, for clients that only need
-                // a syntax tree, and no semantic features, then the binding process is an unnecessary
-                // overhead.  This functions allows us to set all the parents, without all the expense of
-                // binding.
-                setParentRecursive(rootNode, /*incremental*/ true);
             }
 
             auto createSourceFile(string fileName, ScriptTarget languageVersion, ScriptKind scriptKind, boolean isDeclarationFile, NodeArray<Statement> statements, Node endOfFileToken, NodeFlags flags) -> SourceFile {

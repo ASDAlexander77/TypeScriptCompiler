@@ -32,7 +32,7 @@ namespace IncrementalParser
             // This is because we do incremental parsing in-place.  i.e. we take nodes from the old
             // tree and give them new positions and parents.  From that point on, trusting the old
             // tree at all is not possible.as<far>() too much of it may violate invariants.
-            auto incrementalSourceFile = <IncrementalNode> sourceFile->as<Node>();
+            auto incrementalSourceFile = (IncrementalNode) sourceFile->as<Node>();
             Debug::_assert(!incrementalSourceFile.hasBeenIncrementallyParsed);
             incrementalSourceFile.hasBeenIncrementallyParsed = true;
             Parser::fixupParentReferences(incrementalSourceFile);

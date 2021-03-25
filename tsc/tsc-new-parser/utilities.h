@@ -860,6 +860,8 @@ static auto forEachChildRecursively(Node rootNode, NodeWithParentFuncT<T> cbNode
             }
         }
     }
+
+    return false;
 }
 
 template <typename T>
