@@ -378,6 +378,37 @@ namespace ver2
     CLASS_REF(AwaitKeywordToken, AwaitKeyword)
     CLASS_REF(AssertsToken, AssertsKeyword)
 
+    NODE_REF(BindableStaticNameExpression)
+    NODE_REF(BindableStaticAccessExpression)
+    NODE_REF(BindableAccessExpression)
+    NODE_REF(CallLikeExpression)
+    
+    NODE_REF(TemplateLiteral)
+
+    NODE_REF(JsxChild)
+    NODE_REF(JsxOpeningLikeElement)
+    NODE_REF(JsxAttributeLike)
+    NODE_REF(JsxTagNameExpression)
+
+    NODE_REF(ForInitializer)
+    NODE_REF(BreakOrContinueStatement)
+    NODE_REF(CaseOrDefaultClause)
+
+    NODE_REF(ModuleName)
+    NODE_REF(ModuleBody)
+    NODE_REF(ModuleReference)
+    NODE_REF(NamespaceBody)
+    NODE_REF(JSDocNamespaceBody)
+
+    NODE_REF(NamedImportBindings)
+    NODE_REF(NamedExportBindings)
+
+    NODE_REF(ImportOrExportSpecifier)
+    NODE_REF(TypeOnlyCompatibleAliasDeclaration)
+
+    NODE_REF(JSDocTypeReferencingNode)
+    NODE_REF(HasJSDoc)
+    
 } // namespace ver2
 
 #endif // NEW_PARSER_FWRD_TYPES_H

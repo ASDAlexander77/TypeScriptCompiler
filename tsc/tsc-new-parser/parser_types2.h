@@ -1308,12 +1308,6 @@ namespace ver2
         NodeArray<TemplateSpan> templateSpans;
     };
 
-    using TemplateLiteral = Node /*
-    | TemplateExpression
-    | NoSubstitutionTemplateLiteral
-    */
-        ;
-
     // Each of these corresponds to a substitution expression and a template literal, in that order.
     // The template literal must have kind TemplateMiddleLiteral or TemplateTailLiteral.
     struct TemplateSpan : Node
@@ -1480,14 +1474,8 @@ namespace ver2
     /** @internal */
     struct BindableObjectDefinePropertyCall : CallExpression
     {
-        struct arguments_ : NodeArray<Node>, TextRange
-        {
-        } arguments;
+        NodeArray<Node> arguments;
     };
-
-    /** @internal */
-    using BindableStaticNameExpression =
-        | EntityNameExpression | BindableStaticElementAccessExpression;
 
     /** @internal */
     struct LiteralLikeElementAccessExpression : ElementAccessExpression, Declaration
@@ -1506,20 +1494,6 @@ namespace ver2
     {
         REF(BindableStaticNameExpression) expression;
     };
-
-    /** @internal */
-    using BindableStaticAccessExpression = Node /*
-    | PropertyAccessEntityNameExpression
-    | BindableStaticElementAccessExpression
-    */
-        ;
-
-    /** @internal */
-    using BindableAccessExpression = Node /*
-    | PropertyAccessEntityNameExpression
-    | BindableElementAccessExpression
-    */
-        ;
 
     /** @internal */
     struct BindableStaticPropertyAssignmentExpression : BinaryExpression
@@ -1567,15 +1541,6 @@ namespace ver2
         REF(TemplateLiteral) _template;
         /*@internal*/ REF(QuestionDotToken) questionDotToken; // NOTE: Invalid syntax, only used to report a grammar error.
     };
-
-    using CallLikeExpression = Node /*
-    | CallExpression
-    | NewExpression
-    | TaggedTemplateExpression
-    | Decorator
-    | JsxOpeningLikeElement
-    */
-        ;
 
     struct AsExpression : Expression
     {
@@ -1635,26 +1600,6 @@ namespace ver2
         NodeArray<JsxChild> children;
         REF(JsxClosingElement) closingElement;
     };
-
-    /// Either the opening tag in a <Tag>...</Tag> pair or the lone <Tag /> in a self-closing form
-    using JsxOpeningLikeElement = Node /*
-    | JsxSelfClosingElement
-    | JsxOpeningElement
-    */
-        ;
-
-    using JsxAttributeLike = Node /*
-    | JsxAttribute
-    | JsxSpreadAttribute
-    */
-        ;
-
-    using JsxTagNameExpression = Node /*
-    | Identifier
-    | ThisExpression
-    | JsxTagNamePropertyAccess
-    */
-        ;
 
     struct JsxTagNamePropertyAccess : PropertyAccessExpression
     {
@@ -1746,15 +1691,6 @@ namespace ver2
         REF(JsxElement) parent;
         boolean containsOnlyTriviaWhiteSpaces;
     };
-
-    using JsxChild = Node /*
-    | JsxText
-    | JsxExpression
-    | JsxElement
-    | JsxSelfClosingElement
-    | JsxFragment
-    */
-        ;
 
     // Represents a statement that is elided as part of a transformation to emit comments on a
     // not-emitted node.
@@ -1875,12 +1811,6 @@ namespace ver2
         REF(Expression) expression;
     };
 
-    using ForInitializer = Node /*
-    | VariableDeclarationList
-    | Expression
-    */
-        ;
-
     struct ForStatement : IterationStatement
     {
         // kind: SyntaxKind::ForStatement;
@@ -1888,12 +1818,6 @@ namespace ver2
         REF(Expression) condition;
         REF(Expression) incrementor;
     };
-
-    using ForInOrOfStatement = Node /*
-    | ForInStatement
-    | ForOfStatement
-    */
-        ;
 
     struct ForInStatement : IterationStatement
     {
@@ -1921,12 +1845,6 @@ namespace ver2
         // kind: SyntaxKind::ContinueStatement;
         REF(Identifier) label;
     };
-
-    using BreakOrContinueStatement = Node /*
-    | BreakStatement
-    | ContinueStatement
-    */
-        ;
 
     struct ReturnStatement : Statement
     {
@@ -1972,12 +1890,6 @@ namespace ver2
         NodeArray<Statement> statements;
         ///* @internal */ REF(FlowNode) fallthroughFlowNode;
     };
-
-    using CaseOrDefaultClause = Node /*
-    | CaseClause
-    | DefaultClause
-    */
-        ;
 
     struct LabeledStatement : Statement, JSDocContainer
     {
@@ -2071,24 +1983,6 @@ namespace ver2
         NodeArray<EnumMember> members;
     };
 
-    using ModuleName = Node /*
-    | Identifier
-    | StringLiteral
-    */
-        ;
-
-    using ModuleBody = Node /*
-    | NamespaceBody
-    | JSDocNamespaceBody
-    */
-        ;
-
-    /* @internal */
-    struct AmbientModuleDeclaration : ModuleDeclaration
-    {
-        REF(ModuleBlock) body;
-    };
-
     struct ModuleDeclaration : DeclarationStatement, JSDocContainer
     {
         // kind: SyntaxKind::ModuleDeclaration;
@@ -2097,11 +1991,11 @@ namespace ver2
         REF(Node) /**ModuleBody | JSDocNamespaceDeclaration*/ body;
     };
 
-    using NamespaceBody = Node /*
-    | ModuleBlock
-    | NamespaceDeclaration
-    */
-        ;
+    /* @internal */
+    struct AmbientModuleDeclaration : ModuleDeclaration
+    {
+        REF(ModuleBlock) body;
+    };
 
     struct NamespaceDeclaration : ModuleDeclaration
     {
@@ -2109,30 +2003,18 @@ namespace ver2
         REF(NamespaceBody) body;
     };
 
-    using JSDocNamespaceBody = Node /*
-    | Identifier
-    | JSDocNamespaceDeclaration
-    */
-        ;
-
     struct JSDocNamespaceDeclaration : ModuleDeclaration
     {
         REF(Identifier) name;
         REF(JSDocNamespaceBody) body;
     };
 
-    struct ModuleBlock : Node, Statement
+    struct ModuleBlock : Statement
     {
         // kind: SyntaxKind::ModuleBlock;
         REF(ModuleDeclaration) parent;
         NodeArray<Statement> statements;
     };
-
-    using ModuleReference = Node /*
-    | EntityName
-    | ExternalModuleReference
-    */
-        ;
 
     /**
  * One of:
@@ -2171,18 +2053,6 @@ namespace ver2
         REF(Expression) moduleSpecifier;
     };
 
-    using NamedImportBindings = Node /*
-    | NamespaceImport
-    | NamedImports
-    */
-        ;
-
-    using NamedExportBindings = Node /*
-    | NamespaceExport
-    | NamedExports
-    */
-        ;
-
     // In case of:
     // import d from "mod" => name = d, namedBinding = undefined
     // import * as ns from "mod" => name = undefined, namedBinding: NamespaceImport = { name: ns }
@@ -2209,7 +2079,7 @@ namespace ver2
     {
         // kind: SyntaxKind::NamespaceExport;
         REF(ExportDeclaration) parent;
-        Identifier
+        REF(Identifier) name;
     };
 
     struct NamespaceExportDeclaration : DeclarationStatement, JSDocContainer
@@ -2263,20 +2133,6 @@ namespace ver2
         REF(Identifier) name;         // Declared name
     };
 
-    using ImportOrExportSpecifier = Node /*
-    | ImportSpecifier
-    | ExportSpecifier
-    */
-        ;
-
-    using TypeOnlyCompatibleAliasDeclaration = Node /*
-    | ImportClause
-    | ImportEqualsDeclaration
-    | NamespaceImport
-    | ImportOrExportSpecifier
-    */
-        ;
-
     /**
  * This is either an `export =` or an `export default` declaration.
  * Unless `isExportEquals` is set, this node was parsed as an `export default`.
@@ -2304,7 +2160,7 @@ namespace ver2
     struct CommentRange : TextRange
     {
         boolean hasTrailingNewLine;
-        REF(CommentKind) kind;
+        CommentKind kind;
     };
 
     struct SynthesizedComment : CommentRange
@@ -2377,14 +2233,6 @@ namespace ver2
         // kind: SyntaxKind::JSDocNamepathType;
         REF(TypeNode) type;
     };
-
-    using JSDocTypeReferencingNode = Node /*
-    | JSDocVariadicType
-    | JSDocOptionalType
-    | JSDocNullableType
-    | JSDocNonNullableType
-    */
-        ;
 
     struct JSDoc : Node
     {
@@ -2567,7 +2415,7 @@ namespace ver2
     struct CommentDirective
     {
         REF(TextRange) range;
-        REF(CommentDirectiveType) type,
+        CommentDirectiveType type;
     };
 
     /*@internal*/
@@ -2588,18 +2436,18 @@ namespace ver2
     struct RedirectInfo
     {
         /** Source file this redirects to. */
-        REF(SourceFileRef) redirectTarget;
+        REF(SourceFile) redirectTarget;
         /**
      * Source file for the duplicate package. This will not be used by the Program,
      * but we need to keep this around so we can watch for changes in underlying.
      */
-        REF(SourceFileRef) unredirected;
+        REF(SourceFile) unredirected;
     };
 
     struct DiagnosticMessage
     {
         string key;
-        REF(DiagnosticCategory) category;
+        DiagnosticCategory category;
         number code;
         string message;
         std::vector<string> reportsUnnecessary;
@@ -2611,14 +2459,14 @@ namespace ver2
     struct DiagnosticMessageChain
     {
         string messageText;
-        REF(DiagnosticCategory) category;
+        DiagnosticCategory category;
         number code;
         std::vector<DiagnosticMessageChain> next;
     };
 
     struct DiagnosticRelatedInformation
     {
-        REF(DiagnosticCategory) category;
+        DiagnosticCategory category;
         number code;
         REF(SourceFile) file;
         number start;
@@ -2634,7 +2482,7 @@ namespace ver2
         std::vector<string> reportsDeprecated;
         string source;
         std::vector<DiagnosticRelatedInformation> relatedInformation;
-        /* @internal */ string /*keyof CompilerOptions*/ skippedOn ? ;
+        /* @internal */ string /*keyof CompilerOptions*/ skippedOn;
     };
 
     struct DiagnosticWithLocation : Diagnostic
@@ -2713,14 +2561,14 @@ namespace ver2
         Token<SyntaxKind::EndOfFileToken> endOfFileToken;
 
         string fileName;
-        /* @internal */ REF(Path) path;
+        /* @internal */ Path path;
         string text;
         /** Resolved path can be different from path property,
      * when file is included through project reference is mapped to its output instead of source
      * in that case resolvedPath = path to output file
      * path = input file's path
      */
-        /* @internal */ REF(Path) resolvedPath;
+        /* @internal */ Path resolvedPath;
         /** Original file name that can be different from fileName,
      * when file is included through project reference is mapped to its output instead of source
      * in that case originalFileName = name of input file
@@ -2740,7 +2588,7 @@ namespace ver2
         std::vector<FileReference> referencedFiles;
         std::vector<FileReference> typeReferenceDirectives;
         std::vector<FileReference> libReferenceDirectives;
-        REF(LanguageVariant) languageVariant;
+        LanguageVariant languageVariant;
         boolean isDeclarationFile;
 
         // this map is used by transpiler to supply alternative names for dependencies (i.e. in case of bundling)
@@ -2757,8 +2605,8 @@ namespace ver2
      */
         boolean hasNoDefaultLib;
 
-        REF(ScriptTarget) languageVersion;
-        /* @internal */ REF(ScriptKind) scriptKind;
+        ScriptTarget languageVersion;
+        /* @internal */ ScriptKind scriptKind;
 
         /**
      * The first "most obvious" node that makes a file an external module.
@@ -2814,7 +2662,7 @@ namespace ver2
         /* @internal */ REF(EntityName) localJsxFactory;
         /* @internal */ REF(EntityName) localJsxFragmentFactory;
 
-        /* @internal */ REF(ExportedModulesFromDeclarationEmit) exportedModulesFromDeclarationEmit;
+        /* @internal */ ExportedModulesFromDeclarationEmit exportedModulesFromDeclarationEmit;
     };
 
 } // namespace ver2
