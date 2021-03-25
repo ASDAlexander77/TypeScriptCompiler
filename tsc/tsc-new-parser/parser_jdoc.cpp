@@ -594,23 +594,23 @@ struct ParseJSDocCommentClass
     }
 
     auto parseTypedefTag(number start, Identifier tagName, number indent, string indentText) -> JSDocTypedefTag {
-        auto JSDocTypeExpression typeExpression | JSDocTypeLiteral = tryParseTypeExpression();
+        auto typeExpression = tryParseTypeExpression();
         skipWhitespaceOrAsterisk();
 
         auto fullName = parseJSDocTypeNameWithNamespace();
         skipWhitespace();
         auto comment = parseTagComments(indent);
 
-        auto number end;
+        number end;
         if (!typeExpression || isObjectOrObjectArrayTypeReference(typeExpression.type)) {
-            auto JSDocTypeTag child | JSDocPropertyTag | false;
-            auto JSDocTypeTag childTypeTag;
-            auto std::vector<JSDocPropertyTag> jsDocPropertyTags;
+            Node child;
+            JSDocTypeTag childTypeTag;
+            std::vector<JSDocPropertyTag> jsDocPropertyTags;
             auto hasChildren = false;
-            while (child = tryParse(() => parseChildPropertyTag(indent))) {
+            while (child = tryParse([&]() { return parseChildPropertyTag(indent); })) {
                 hasChildren = true;
                 if (child->kind == SyntaxKind::JSDocTypeTag) {
-                    if (childTypeTag) {
+                    if (!!childTypeTag) {
                         parseErrorAtCurrentToken(Diagnostics::A_JSDoc_typedef_comment_may_not_contain_multiple_type_tags);
                         auto lastError = lastOrUndefined(parseDiagnostics);
                         if (lastError) {
@@ -630,17 +630,17 @@ struct ParseJSDocCommentClass
                 }
             }
             if (hasChildren) {
-                auto isArrayType = typeExpression && typeExpression.type->kind == SyntaxKind::ArrayType;
+                auto isArrayType = !!typeExpression && typeExpression->type->kind == SyntaxKind::ArrayType;
                 auto jsdocTypeLiteral = parser->factory.createJSDocTypeLiteral(jsDocPropertyTags, isArrayType);
-                typeExpression = childTypeTag && childTypeTag.typeExpression && !isObjectOrObjectArrayTypeReference(childTypeTag.typeExpression.type) ?
-                    childTypeTag.typeExpression :
+                typeExpression = !!childTypeTag && childTypeTag->typeExpression && !isObjectOrObjectArrayTypeReference(childTypeTag->typeExpression->type) ?
+                    childTypeTag->typeExpression :
                     parser->finishNode(jsdocTypeLiteral, start);
                 end = typeExpression->end;
             }
         }
 
         // Only include the characters between the name end and the next token if a comment was actually parsed out - otherwise it's just whitespace
-        end = end || comment != undefined ?
+        end = end || !comment.empty() ?
             getNodePos() :
             (fullName ?? typeExpression ?? tagName)->end;
 
