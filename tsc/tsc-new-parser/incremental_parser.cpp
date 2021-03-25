@@ -112,7 +112,7 @@ namespace IncrementalParser
         {
             if (!oldDirectives)
                 return newDirectives;
-            auto std::vector<CommentDirective> commentDirectives;
+            std::vector<CommentDirective> commentDirectives;
             auto addedNewlyScannedDirectives = false;
 
             auto addNewlyScannedDirectives = [&]() {
@@ -123,33 +123,37 @@ namespace IncrementalParser
                 {
                     commentDirectives = newDirectives;
                 }
-                else if (newDirectives)
+                else if (!newDirectives.empty())
                 {
-                    commentDirectives.push(... newDirectives);
+                    for (auto &directive : newDirectives)
+                    {
+                        commentDirectives.push_back(directive);
+                    }
                 }
             };
 
-            for (auto directive of oldDirectives)
+            for (auto &directive : oldDirectives)
             {
-                auto {range, type} = directive;
+                auto range = directive.range;
+                auto type = directive.type;
                 // Range before the change
-                if (range->end < changeStart)
+                if (range.end < changeStart)
                 {
                     commentDirectives = append(commentDirectives, directive);
                 }
-                else if (range->pos > changeRangeOldEnd)
+                else if (range.pos > changeRangeOldEnd)
                 {
                     addNewlyScannedDirectives();
                     // Node is entirely past the change range.  We need to move both its pos and
                     // end, forward or backward appropriately.
-                    auto CommentDirective updatedDirective = {
-                        range : {range->pos pos + delta, range.end end + delta},
+                    CommentDirective updatedDirective = {
+                        {range.pos + delta, range.end + delta},
                         type
                     };
                     commentDirectives = append(commentDirectives, updatedDirective);
                     if (aggressiveChecks)
                     {
-                        Debug::_assert(oldText.substring(range->pos, range.end) == newText.substring(updatedDirective.range->pos, updatedDirective.range.end));
+                        Debug::_assert(oldText.substring(range.pos, range.end) == newText.substring(updatedDirective.range.pos, updatedDirective.range.end));
                     }
                 }
                 // Ignore ranges that fall in change range
@@ -160,22 +164,12 @@ namespace IncrementalParser
 
         auto moveElementEntirelyPastChangeRange(IncrementalElement element, boolean isArray, number delta, string oldText, string newText, boolean aggressiveChecks)
         {
-            if (isArray)
-            {
-                visitArray(element.as<IncrementalNodeArray>());
-            }
-            else
-            {
-                visitNode(element.as<IncrementalNode>());
-            }
-            return;
-
-            auto visitNode(IncrementalNode node)
+            auto visitNode = [&](IncrementalNode node)
             {
                 auto text = string();
                 if (aggressiveChecks && shouldCheckNode(node))
                 {
-                    text = oldText.substring(node->pos, node->end);
+                    text = safe_string(oldText).substring(node->pos, node->end);
                 }
 
                 // Ditch any existing LS children we may have created.  This way we can avoid
@@ -189,30 +183,41 @@ namespace IncrementalParser
 
                 if (aggressiveChecks && shouldCheckNode(node))
                 {
-                    Debug::_assert(text == newText.substring(node->pos, node->end));
+                    Debug::_assert(text == safe_string(newText).substring(node->pos, node->end));
                 }
 
                 forEachChild(node, visitNode, visitArray);
                 if (hasJSDocNodes(node))
                 {
-                    for (auto jsDocComment of node->jsDoc !)
+                    for (auto jsDocComment : node->jsDoc)
                     {
-                        visitNode(<IncrementalNode> jsDocComment.as<Node>());
+                        visitNode((IncrementalNode)jsDocComment.as<Node>());
                     }
                 }
                 checkNodePositions(node, aggressiveChecks);
             }
 
-            auto visitArray(IncrementalNodeArray array)
+            auto visitArray = [&](IncrementalNodeArray array)
             {
                 array._children = undefined;
                 setTextRangePosEnd(array, array->pos + delta, array.end + delta);
 
-                for (auto node of array)
+                for (auto node : array)
                 {
                     visitNode(node);
                 }
             }
+
+            if (isArray)
+            {
+                visitArray(element.as<IncrementalNodeArray>());
+            }
+            else
+            {
+                visitNode(element.as<IncrementalNode>());
+            }
+
+            return;
         }
 
         auto shouldCheckNode(Node node)
@@ -230,9 +235,9 @@ namespace IncrementalParser
 
         auto adjustIntersectingElement(IncrementalElement element, number changeStart, number changeRangeOldEnd, number changeRangeNewEnd, number delta)
         {
-            Debug::_assert(element.end >= changeStart, "Adjusting an element that was entirely before the change range");
-            Debug::_assert(element->pos <= changeRangeOldEnd, "Adjusting an element that was entirely after the change range");
-            Debug::_assert(element->pos <= element.end);
+            Debug::_assert(element.end >= changeStart, S("Adjusting an element that was entirely before the change range"));
+            Debug::_assert(element.pos <= changeRangeOldEnd, S("Adjusting an element that was entirely after the change range"));
+            Debug::_assert(element.pos <= element.end);
 
             // We have an element that intersects the change range in some way.  It may have its
             // start, or its end (or both) in the changed range.  We want to adjust any part
@@ -265,7 +270,7 @@ namespace IncrementalParser
             //
             // The element will keep its position if possible.  Or Move backward to the new-end
             // if it's in the 'Y' range.
-            auto pos = Math.min(element->pos, changeRangeNewEnd);
+            auto pos = std::min(element.pos, changeRangeNewEnd);
 
             // If the 'end' is after the change range, then we always adjust it by the delta
             // amount.  However, if the end is in the change range, then how we adjust it
@@ -293,12 +298,12 @@ namespace IncrementalParser
                                                         :
                                                         // Element ends in the change range.  The element will keep its position if
                            // possible. Or Move backward to the new-end if it's in the 'Y' range.
-                           Math.min(element.end, changeRangeNewEnd);
+                           std::min(element.end, changeRangeNewEnd);
 
             Debug::_assert(pos <= end);
             if (element.parent)
             {
-                Debug::_assertGreaterThanOrEqual(pos, element.parent->pos);
+                Debug::_assertGreaterThanOrEqual(pos, element.parent.pos);
                 Debug::_assertLessThanOrEqual(end, element.parent.end);
             }
 
