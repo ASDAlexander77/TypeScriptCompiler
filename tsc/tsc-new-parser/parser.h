@@ -71,6 +71,13 @@ struct NodeArray
         items.push_back(node);
     }       
 
+    auto pop() -> T
+    {
+        auto v = items.back();
+        items.pop_back();
+        return v;
+    }
+
     TextRange* operator ->()
     {
         return &range;
@@ -109,7 +116,8 @@ typedef Node Modifier;
 typedef NodeArray<Modifier> ModifiersArray;
 
 
-#define CLASS_DATA_BASE(x, b) struct x##Data : b##Data { using b##Data::b##Data;
+#define CLASS_DATA_BASE(x, b) struct x##Data : b##Data { using b##Data::b##Data;    \
+    virtual ~x##Data() override {}
 
 #define CLASS_DATA(x) CLASS_DATA_BASE(x, Node)
 
@@ -117,7 +125,7 @@ typedef NodeArray<Modifier> ModifiersArray;
     struct x : BaseNode {                   \
         x() {}                              \
         x(undefined_t) {}                   \
-        x(Node node) : BaseNode(node) { node.data = std::make_shared<x##Data>(*node.data); }   \
+        x(Node node) : BaseNode(node) { node.data = std::static_pointer_cast<x##Data>(node.data); }   \
                                             \
         x##Data* operator->()               \
         {                                   \
@@ -126,6 +134,10 @@ typedef NodeArray<Modifier> ModifiersArray;
         operator TextRange()                \
         {                                   \
             return *(TextRange*)node.data.get(); \
+        }                                   \
+        operator Node()                     \
+        {                                   \
+            return *this;                   \
         }                                   \
         inline operator SyntaxKind()        \
         {                                   \
@@ -141,15 +153,19 @@ typedef NodeArray<Modifier> ModifiersArray;
         }                                   \
     };  
 
+struct NodeData;
+
 struct NodeHolder
 {
-    std::shared_ptr<Node> value;
+    std::shared_ptr<NodeData> data;
 
     operator Node();
     boolean operator !();
     boolean operator ==(const Node& rhv);
-    Node* operator->();
+    Node operator=(Node& rhv);
+    NodeData* operator->();
 
+    size_t size();
     auto begin() -> decltype(((NodeArray<Node>*)nullptr)->begin());
     auto end() -> decltype(((NodeArray<Node>*)nullptr)->end());
 };
@@ -165,7 +181,6 @@ struct NodeData : TextRange
     DecoratorsArray decorators;
     ModifiersArray modifiers;
     SyntaxKind originalKeywordKind;
-    SyntaxKind parentKind;
     NodeHolder parent;
     NodeHolder jsDoc;
     number jsdocDotPos;
@@ -184,8 +199,18 @@ struct Node
     Node() {};
     Node(undefined_t) {};
     Node(SyntaxKind kind, number start, number end) : data(std::make_shared<NodeData>(kind, start, end)) {};
+    Node(NodeArray<Node> values) : data(std::make_shared<NodeData>(SyntaxKind::Array, -1, -1)) { data->children = values; };
     template <typename T>
-    Node(NodeArray<T> values) : data(std::make_shared<NodeData>(SyntaxKind::Array, -1, -1)) { data->children = (NodeArray<Node>) values; };
+    Node(NodeArray<T> values) : data(std::make_shared<NodeData>(SyntaxKind::Array, -1, -1)) { 
+        data->children.clear();
+        for (auto &item : values)
+        {
+            data->children.push_back(item); 
+        }
+    };
+
+/*protected*/
+    Node(std::shared_ptr<NodeData> data) : data(data) {};
 
     NodeData* operator->()
     {
@@ -208,6 +233,23 @@ struct Node
     {
         return T(*this);
     }    
+
+    auto asArray() -> NodeArray<Node>
+    {
+        return data->children;
+    }    
+
+    template <typename T> 
+    auto asArray() -> NodeArray<T>
+    {
+        NodeArray<T> ret;
+        for (auto &item : data->children)
+        {
+            data->children.push_back(item);
+        }
+
+        return ret;
+    }
 
     operator bool()
     {
@@ -279,6 +321,11 @@ struct Node
         return data->children.end();
     }
 
+    auto operator!()
+    {
+        return !data || data->kind == SyntaxKind::Unknown;
+    }
+
     auto operator==(undefined_t)
     {
         return !data;
@@ -288,37 +335,58 @@ struct Node
     {
         return !!data;
     }
+
+    auto operator==(std::nullptr_t)
+    {
+        return data.get() == nullptr;
+    }
+
+    auto operator!=(std::nullptr_t)
+    {
+        return data.get() != nullptr;
+    }    
 };
 
 // TODO: put into source file
 NodeHolder::operator Node()
 {
-    return *value;
+    return Node(data);
 }
 
-Node* NodeHolder::operator->()
+Node NodeHolder::operator=(Node& rhv)
 {
-    return value.operator->();
+    data = rhv.data;
+    return Node(data);
+}
+
+NodeData* NodeHolder::operator->()
+{
+    return data.operator->();
 }
 
 boolean NodeHolder::operator !()
 {
-    return !*value;
+    return data->operator!();
 }
 
 boolean NodeHolder::operator ==(const Node& rhv)
 {
-    return rhv.data == this->value->data;
+    return rhv.data.get() == this->data.get();
 }
 
-auto NodeHolder::begin() -> decltype(value->begin())
+auto NodeHolder::size() -> size_t
 {
-    return value->begin();
+    return data->children.size();
 }
 
-auto NodeHolder::end() -> decltype(value->end())
+auto NodeHolder::begin() -> decltype(data->children.begin())
 {
-    return value->end();
+    return data->children.begin();
+}
+
+auto NodeHolder::end() -> decltype(data->children.end())
+{
+    return data->children.end();
 }
 
 struct BaseNode
@@ -393,8 +461,8 @@ typedef Node FalseLiteral, TrueLiteral, NullLiteral, BooleanLiteral, NumericLite
 
 typedef Node ThisTypeNode, UnionTypeNode, IntersectionTypeNode;
 
-typedef SyntaxKind QuestionDotToken, EndOfFileToken, DotDotDotToken, QuestionToken, PlusToken, MinusToken,
-    AsteriskToken, EqualsGreaterThanToken, ColonToken, ExclamationToken, EqualsToken, HeritageClauseToken;
+typedef Node QuestionDotToken, EndOfFileToken, DotDotDotToken, QuestionToken, PlusToken, MinusToken,
+    AsteriskToken, EqualsGreaterThanToken, ColonToken, ExclamationToken, EqualsToken;
 
 typedef Node LiteralToken, BinaryOperatorToken;
 
@@ -1107,9 +1175,9 @@ CLASS_DATA(JSDocEnumTag)
 CLASS_DATA_END(JSDocEnumTag)
 
 CLASS_DATA(JSDocSignature)
-    Node typeParameters;
-    Node parameters;
-    Node type;
+    NodeArray<JSDocTemplateTag> typeParameters;
+    NodeArray<JSDocParameterTag> parameters;
+    JSDocReturnTag type;
 CLASS_DATA_END(JSDocSignature)
 
 CLASS_DATA(JSDocTypeLiteral)

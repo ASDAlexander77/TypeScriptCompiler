@@ -475,6 +475,11 @@ enum class SyntaxKind : number {
     /* @internal */ LastContextualKeyword = OfKeyword,
 };
 
+inline bool operator !(SyntaxKind rhs)
+{
+    return rhs != SyntaxKind::Unknown;
+}
+
 enum class CharacterCodes : number {
     outOfBoundary = -1,
     nullCharacter = 0,

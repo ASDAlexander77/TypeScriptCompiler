@@ -570,6 +570,11 @@ enum class Tristate : number {
     Unknown
 };
 
+inline bool operator !(Tristate rhs)
+{
+    return rhs != Tristate::True;
+}
+
 enum class Comparison : number {
     LessThan    = -1,
     EqualTo     = 0,

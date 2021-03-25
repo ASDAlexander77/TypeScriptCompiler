@@ -7,21 +7,27 @@
 template <typename T, typename U>
 auto copy(std::vector<T> &to_vector, const std::vector<U> &from_vector) -> void
 {
-    std::copy(from_vector.begin(), from_vector.end(), std::back_inserter(to_vector));
+    for (auto &item : from_vector)
+    {
+        to_vector.push_back(item);
+    }
 }
 
 template <typename T, typename U>
 auto copy(T &to_vector, const U &from_vector) -> void
 {
-    std::copy(from_vector.begin(), from_vector.end(), std::back_inserter(to_vector));
+    for (auto &item : from_vector)
+    {
+        to_vector.push_back(item);
+    }
 }
 
 template <typename T, typename U>
-auto forEach(std::vector<T> array, std::function<U(T, number)> callback = nullptr) -> U
+auto forEach(T array, std::function<U(std::remove_reference_t<decltype(array[0])>, number)> callback = nullptr) -> U
 {
-    if (!array.empty())
+    if (array.size())
     {
-        for (let i = 0; i < array.size(); i++)
+        for (auto i = 0; i < array.size(); i++)
         {
             auto result = callback(array[i], i);
             if (result)
@@ -34,14 +40,14 @@ auto forEach(std::vector<T> array, std::function<U(T, number)> callback = nullpt
     return U();
 }
 
-template <typename U, typename T>
-auto forEach(T array, std::function<U(decltype(array[0]), number)> callback = nullptr) -> U
+template <typename T, typename U>
+auto forEach(T array, std::function<U(std::remove_reference_t<decltype(array[0])>)> callback = nullptr) -> U
 {
     if (array.size())
     {
         for (auto i = 0; i < array.size(); i++)
         {
-            auto result = callback(array[i], i);
+            auto result = callback(array[i]);
             if (result)
             {
                 return result;

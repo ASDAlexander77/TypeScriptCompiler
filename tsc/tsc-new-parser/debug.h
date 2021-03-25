@@ -78,7 +78,7 @@ struct Debug
     static auto assertIsDefined(T value, string message = string()) -> T {
         // eslint-disable-next-line no-null/no-null
         if (value == undefined || value == nullptr) {
-            fail(message);
+            fail<void>(message);
         }
     }
 

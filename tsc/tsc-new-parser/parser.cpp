@@ -997,7 +997,7 @@ namespace ts {
 
             template <typename T>
             auto createNodeArray(NodeArray<T> elements, number pos, number end = -1, boolean hasTrailingComma = false) -> NodeArray<T> {
-                auto array = factory.createNodeArray(elements, hasTrailingComma);
+                auto array = factory.createNodeArray<T>(elements, hasTrailingComma);
                 setTextRangePosEnd(array, pos, end != -1 ? end : scanner.getStartPos());
                 return array;
             }
@@ -2161,7 +2161,7 @@ namespace ts {
 
             auto parseThisTypePredicate(ThisTypeNode lhs) -> TypePredicateNode {
                 nextToken();
-                return finishNode(factory.createTypePredicateNode(/*assertsModifier*/SyntaxKind::Unknown, lhs, parseType()), lhs->pos);
+                return finishNode(factory.createTypePredicateNode(/*assertsModifier*/ undefined, lhs, parseType()), lhs->pos);
             }
 
             auto parseThisTypeNode() -> ThisTypeNode {
@@ -2233,10 +2233,10 @@ namespace ts {
                     factory.createParameterDeclaration(
                         /*decorators*/ undefined,
                         /*modifiers*/ undefined,
-                        /*dotDotDotToken*/ SyntaxKind::Unknown,
+                        /*dotDotDotToken*/ undefined,
                         // TODO(rbuckton) -> JSDoc parameters don't have names (except `this`/`new`), should we manufacture an empty identifier?
                         name,
-                        /*questionToken*/ SyntaxKind::Unknown,
+                        /*questionToken*/ undefined,
                         parseJSDocType(),
                         /*initializer*/ undefined
                     ),
@@ -2363,9 +2363,9 @@ namespace ts {
                     auto node = factory.createParameterDeclaration(
                         /*decorators*/ undefined,
                         /*modifiers*/ undefined,
-                        /*dotDotDotToken*/ SyntaxKind::Unknown,
+                        /*dotDotDotToken*/ undefined,
                         createIdentifier(/*isIdentifier*/ true),
-                        /*questionToken*/ SyntaxKind::Unknown,
+                        /*questionToken*/ undefined,
                         parseTypeAnnotation(),
                         /*initializer*/ undefined
                     );
@@ -3176,7 +3176,7 @@ namespace ts {
                 auto typePredicateVariable = isIdentifier() ? tryParse<Identifier>(std::bind(&Parser::parseTypePredicatePrefix, this)) : undefined;
                 auto type = parseType();
                 if (!!typePredicateVariable) {
-                    return finishNode(factory.createTypePredicateNode(/*assertsModifier*/ SyntaxKind::Unknown, typePredicateVariable, type), pos);
+                    return finishNode(factory.createTypePredicateNode(/*assertsModifier*/ undefined, typePredicateVariable, type), pos);
                 }
                 else {
                     return type;
@@ -3455,7 +3455,7 @@ namespace ts {
                 else {
                     // if the next token is not on the same line.as<yield>().  or we don't have an '*' or
                     // the start of an expression, then this is just a simple "yield" expression.
-                    return finishNode(factory.createYieldExpression(/*asteriskToken*/ SyntaxKind::Unknown, /*expression*/ undefined), pos);
+                    return finishNode(factory.createYieldExpression(/*asteriskToken*/ undefined, /*expression*/ undefined), pos);
                 }
             }
 
@@ -3464,9 +3464,9 @@ namespace ts {
                 auto parameter = factory.createParameterDeclaration(
                     /*decorators*/ undefined,
                     /*modifiers*/ undefined,
-                    /*dotDotDotToken*/ SyntaxKind::Unknown,
+                    /*dotDotDotToken*/ undefined,
                     identifier,
-                    /*questionToken*/ SyntaxKind::Unknown,
+                    /*questionToken*/ undefined,
                     /*type*/ undefined,
                     /*initializer*/ undefined
                 );
@@ -4948,7 +4948,7 @@ namespace ts {
                     if (isTemplateStartOfTaggedTemplate()) {
                         Debug::_assert(!!typeArguments,
                             S("Expected a type argument list; all plain tagged template starts should be consumed in 'parseMemberExpressionRest'"));
-                        expression = parseTaggedTemplateRest(expressionPos, expression, /*optionalChain*/ SyntaxKind::Unknown, typeArguments);
+                        expression = parseTaggedTemplateRest(expressionPos, expression, /*optionalChain*/ undefined, typeArguments);
                         typeArguments = undefined;
                     }
                     break;
@@ -5873,7 +5873,7 @@ namespace ts {
                 // report an error in the grammar checker.
                 auto questionToken = parseOptionalToken(SyntaxKind::QuestionToken);
                 if (asteriskToken || token() == SyntaxKind::OpenParenToken || token() == SyntaxKind::LessThanToken) {
-                    return parseMethodDeclaration(pos, hasJSDoc, decorators, modifiers, asteriskToken, name, questionToken, /*exclamationToken*/ SyntaxKind::Unknown, Diagnostics::or_expected);
+                    return parseMethodDeclaration(pos, hasJSDoc, decorators, modifiers, asteriskToken, name, questionToken, /*exclamationToken*/ undefined, Diagnostics::or_expected);
                 }
                 return parsePropertyDeclaration(pos, hasJSDoc, decorators, modifiers, name, questionToken);
             }
@@ -6094,7 +6094,7 @@ namespace ts {
                 if (!!decorators || !!modifiers) {
                     // treat this.as<a>() property declaration with a missing name.
                     auto name = createMissingNode<Identifier>(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ true, Diagnostics::Declaration_expected);
-                    return parsePropertyDeclaration(pos, hasJSDoc, decorators, modifiers, name, /*questionToken*/ SyntaxKind::Unknown);
+                    return parsePropertyDeclaration(pos, hasJSDoc, decorators, modifiers, name, /*questionToken*/ undefined);
                 }
 
                 // 'isClassMemberStart' should have hinted not to attempt parsing.
@@ -6565,7 +6565,7 @@ namespace ts {
                 // Try to use the first top-level import/when available, then
                 // fall back to looking for an 'import.meta' somewhere in the tree if necessary.
                 sourceFile->externalModuleIndicator =
-                        forEach<Node>(sourceFile->statements, std::bind(&Parser::isAnExternalModuleIndicatorNode, this, std::placeholders::_1)) ||
+                        forEach<decltype(sourceFile->statements), Node>(sourceFile->statements, (NodeFuncT<Node>)std::bind(&Parser::isAnExternalModuleIndicatorNode, this, std::placeholders::_1)) ||
                         getImportMetaIfNecessary(sourceFile);
             }
 
@@ -6669,7 +6669,7 @@ namespace ts {
                 return undefined;
             }
 
-            auto parseJSDocComment(SyntaxKind parent, number start, number length) -> JSDoc {
+            auto parseJSDocComment(Node parent, number start, number length) -> JSDoc {
                 auto saveToken = currentToken;
                 // TODO: does it make any sense
                 //auto saveParseDiagnosticsLength = parseDiagnostics.size();
