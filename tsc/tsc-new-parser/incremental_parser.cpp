@@ -148,8 +148,7 @@ namespace IncrementalParser
                     // end, forward or backward appropriately.
                     CommentDirective updatedDirective = {
                         {range.pos + delta, range.end + delta},
-                        type
-                    };
+                        type};
                     commentDirectives = append(commentDirectives, updatedDirective);
                     if (aggressiveChecks)
                     {
@@ -164,8 +163,7 @@ namespace IncrementalParser
 
         auto moveElementEntirelyPastChangeRange(IncrementalElement element, boolean isArray, number delta, string oldText, string newText, boolean aggressiveChecks)
         {
-            auto visitNode = [&](IncrementalNode node)
-            {
+            auto visitNode = [&](IncrementalNode node) {
                 auto text = string();
                 if (aggressiveChecks && shouldCheckNode(node))
                 {
@@ -197,8 +195,7 @@ namespace IncrementalParser
                 checkNodePositions(node, aggressiveChecks);
             }
 
-            auto visitArray = [&](IncrementalNodeArray array)
-            {
+            auto visitArray = [&](IncrementalNodeArray array) {
                 array._children = undefined;
                 setTextRangePosEnd(array, array->pos + delta, array.end + delta);
 
@@ -315,14 +312,13 @@ namespace IncrementalParser
             if (aggressiveChecks)
             {
                 auto pos = node->pos;
-                auto visitNode = (Node child) = >
-                {
+                auto visitNode = [&](Node child) {
                     Debug::_assert(child->pos >= pos);
                     pos = child.end;
                 };
                 if (hasJSDocNodes(node))
                 {
-                    for (auto jsDocComment of node->jsDoc !)
+                    for (auto jsDocComment : node->jsDoc)
                     {
                         visitNode(jsDocComment);
                     }
@@ -342,12 +338,7 @@ namespace IncrementalParser
             string newText,
             boolean aggressiveChecks) -> void
         {
-
-            visitNode(sourceFile);
-            return;
-
-            auto visitNode(IncrementalNode child)
-            {
+            auto visitNode = [&](IncrementalNode child) {
                 Debug::_assert(child->pos <= child.end);
                 if (child->pos > changeRangeOldEnd)
                 {
@@ -371,9 +362,9 @@ namespace IncrementalParser
                     forEachChild(child, visitNode, visitArray);
                     if (hasJSDocNodes(child))
                     {
-                        for (auto jsDocComment of child.jsDoc !)
+                        for (auto jsDocComment : child.jsDoc)
                         {
-                            visitNode(<IncrementalNode> jsDocComment.as<Node>());
+                            visitNode((IncrementalNode)jsDocComment.as<Node>());
                         }
                     }
                     checkNodePositions(child, aggressiveChecks);
@@ -382,10 +373,9 @@ namespace IncrementalParser
 
                 // Otherwise, the node is entirely before the change range.  No need to do anything with it.
                 Debug::_assert(fullEnd < changeStart);
-            }
+            };
 
-            auto visitArray(IncrementalNodeArray array)
-            {
+            auto visitArray = [&](IncrementalNodeArray array) {
                 Debug::_assert(array->pos <= array.end);
                 if (array->pos > changeRangeOldEnd)
                 {
@@ -406,7 +396,7 @@ namespace IncrementalParser
 
                     // Adjust the pos or end (or both) of the intersecting array accordingly.
                     adjustIntersectingElement(array, changeStart, changeRangeOldEnd, changeRangeNewEnd, delta);
-                    for (auto node of array)
+                    for (auto node : array)
                     {
                         visitNode(node);
                     }
@@ -415,7 +405,10 @@ namespace IncrementalParser
 
                 // Otherwise, the array is entirely before the change range.  No need to do anything with it.
                 Debug::_assert(fullEnd < changeStart);
-            }
+            };
+
+            visitNode(sourceFile);
+            return;
         }
 
         auto extendToAffectedRange(SourceFile sourceFile, TextChangeRange changeRange) -> TextChangeRange
@@ -454,24 +447,10 @@ namespace IncrementalParser
 
         auto findNearestNodeStartingBeforeOrAtPosition(SourceFile sourceFile, number position) -> Node
         {
-            auto Node bestResult = sourceFile;
-            auto Node lastNodeEntirelyBeforePosition;
+            auto bestResult = sourceFile;
+            Node lastNodeEntirelyBeforePosition;
 
-            forEachChild(sourceFile, visit);
-
-            if (lastNodeEntirelyBeforePosition)
-            {
-                auto lastChildOfLastEntireNodeBeforePosition = getLastDescendant(lastNodeEntirelyBeforePosition);
-                if (lastChildOfLastEntireNodeBeforePosition->pos > bestResult->pos)
-                {
-                    bestResult = lastChildOfLastEntireNodeBeforePosition;
-                }
-            }
-
-            return bestResult;
-
-            auto getLastDescendant(Node node)->Node
-            {
+            auto getLastDescendant = [&](Node node) -> Node {
                 while (true)
                 {
                     auto lastChild = getLastChild(node);
@@ -484,10 +463,9 @@ namespace IncrementalParser
                         return node;
                     }
                 }
-            }
+            };
 
-            auto visit(Node child)
-            {
+            auto visit = [&](Node child) {
                 if (nodeIsMissing(child))
                 {
                     // Missing nodes are effectively invisible to us.  We never even consider them
@@ -548,7 +526,20 @@ namespace IncrementalParser
                     // so just skip them by returning 'true' here.
                     return true;
                 }
+            };
+
+            forEachChild(sourceFile, visit);
+
+            if (lastNodeEntirelyBeforePosition)
+            {
+                auto lastChildOfLastEntireNodeBeforePosition = getLastDescendant(lastNodeEntirelyBeforePosition);
+                if (lastChildOfLastEntireNodeBeforePosition->pos > bestResult->pos)
+                {
+                    bestResult = lastChildOfLastEntireNodeBeforePosition;
+                }
             }
+
+            return bestResult;
         }
 
         static auto checkChangeRange(SourceFile sourceFile, string newText, TextChangeRange textChangeRange, boolean aggressiveChecks)
@@ -564,8 +555,8 @@ namespace IncrementalParser
                     auto newTextPrefix = newText.substr(0, textChangeRange.span.start);
                     Debug::_assert(oldTextPrefix == newTextPrefix);
 
-                    auto oldTextSuffix = oldText.substring(textSpanEnd(textChangeRange.span), oldText.size());
-                    auto newTextSuffix = newText.substring(textSpanEnd(textChangeRangeNewSpan(textChangeRange)), newText.size());
+                    auto oldTextSuffix = safe_string(oldText).substring(textSpanEnd(textChangeRange.span), oldText.size());
+                    auto newTextSuffix = safe_string(newText).substring(textSpanEnd(textChangeRangeNewSpan(textChangeRange)), newText.size());
                     Debug::_assert(oldTextSuffix == newTextSuffix);
                 }
             }
@@ -573,114 +564,118 @@ namespace IncrementalParser
 
         auto createSyntaxCursor(SourceFile sourceFile) -> SyntaxCursor
         {
-            auto NodeArray<Node> currentArray = sourceFile->statements;
+            NodeArray<Node> currentArray = sourceFile->statements;
             auto currentArrayIndex = 0;
 
             Debug::_assert(currentArrayIndex < currentArray.size());
             auto current = currentArray[currentArrayIndex];
-            auto lastQueriedPosition = InvalidPosition.Value;
+            auto lastQueriedPosition = InvalidPosition::Value;
 
-            return {
-                currentNode(number position){
-                    // Only compute the current node if the position is different than the last time
-                    // we were asked.  The parser commonly asks for the node at the same position
-                    // twice.  Once to know if can read an appropriate list element at a certain point,
-                    // and then to actually read and consume the node->
-                    if (position != lastQueriedPosition){
-                        // Much of the time the parser will need the very next node in the array that
-                        // we just returned a node from.So just simply check for that case and move
-                        // forward in the array instead of searching for the node again.
-                        if (current && current.end == position && currentArrayIndex < (currentArray.size() - 1)){
-                            currentArrayIndex++;
-            current = currentArray[currentArrayIndex];
-        }
+            // Finds the highest element in the tree we can find that starts at the provided position.
+            // The element must be a direct child of some node list in the tree.  This way after we
+            // return it, we can easily return its next sibling in the list.
+            auto findHighestListElementThatStartsAtPosition = [&](number position) {
+                // Clear out any cached state about the last node we found.
+                currentArray = undefined;
+                currentArrayIndex = InvalidPosition::Value;
+                current = undefined;
 
-        // If we don't have a node, or the node we have isn't in the right position,
-        // then try to find a viable node at the position requested.
-        if (!current || current->pos != position)
-        {
-            findHighestListElementThatStartsAtPosition(position);
-        }
-    }
+                std::function<boolean(Node)> visitNode;
+                std::function<boolean(NodeArray<Node>)> visitArray;
 
-    // Cache this query so that we don't do any extra work if the parser calls back
-    // into us.  this Note is very common.as<the>() parser will make pairs of calls like
-    // 'isListElement -> parseListElement'.  If we were unable to find a node when
-    // called with 'isListElement', we don't want to redo the work when parseListElement
-    // is called immediately after.
-    lastQueriedPosition = position;
-
-    // Either we don'd have a node, or we have a node at the position being asked for.
-    Debug::_assert(!current || current->pos == position);
-    return current.as<IncrementalNode>();
-}
-}
-;
-
-// Finds the highest element in the tree we can find that starts at the provided position.
-// The element must be a direct child of some node list in the tree.  This way after we
-// return it, we can easily return its next sibling in the list.
-auto findHighestListElementThatStartsAtPosition(number position)
-{
-    // Clear out any cached state about the last node we found.
-    currentArray = undefined;
-    currentArrayIndex = InvalidPosition.Value;
-    current = undefined;
-
-    // Recurse into the source file to find the highest node at this position.
-    forEachChild(sourceFile, visitNode, visitArray);
-    return;
-
-    auto visitNode(Node node)
-    {
-        if (position >= node->pos && position < node->end)
-        {
-            // Position was within this node->  Keep searching deeper to find the node->
-            forEachChild(node, visitNode, visitArray);
-
-            // don't proceed any further in the search.
-            return true;
-        }
-
-        // position wasn't in this node, have to keep searching.
-        return false;
-    }
-
-    auto visitArray(NodeArray<Node> array)
-    {
-        if (position >= array->pos && position < array.end)
-        {
-            // position was in this array.  Search through this array to see if we find a
-            // viable element.
-            for (auto i = 0; i < array.size(); i++)
-            {
-                auto child = array[i];
-                if (child)
-                {
-                    if (child->pos == position)
+                visitNode = [&](Node node) {
+                    if (position >= node->pos && position < node->end)
                     {
-                        // Found the right node->  We're done.
-                        currentArray = array;
-                        currentArrayIndex = i;
-                        current = child;
+                        // Position was within this node->  Keep searching deeper to find the node->
+                        forEachChild(node, visitNode, visitArray);
+
+                        // don't proceed any further in the search.
                         return true;
                     }
-                    else
+
+                    // position wasn't in this node, have to keep searching.
+                    return false;
+                };
+
+                visitArray = [&](NodeArray<Node> array) -> boolean {
+                    if (position >= array->pos && position < array.end)
                     {
-                        if (child->pos < position && position < child.end)
+                        // position was in this array.  Search through this array to see if we find a
+                        // viable element.
+                        for (auto i = 0; i < array.size(); i++)
                         {
-                            // Position in somewhere within this child.  Search in it and
-                            // stop searching in this array.
-                            forEachChild(child, visitNode, visitArray);
-                            return true;
+                            auto child = array[i];
+                            if (child)
+                            {
+                                if (child->pos == position)
+                                {
+                                    // Found the right node->  We're done.
+                                    currentArray = array;
+                                    currentArrayIndex = i;
+                                    current = child;
+                                    return true;
+                                }
+                                else
+                                {
+                                    if (child->pos < position && position < child.end)
+                                    {
+                                        // Position in somewhere within this child.  Search in it and
+                                        // stop searching in this array.
+                                        forEachChild(child, visitNode, visitArray);
+                                        return true;
+                                    }
+                                }
+                            }
                         }
                     }
-                }
-            }
-        }
 
-        // position wasn't in this array, have to keep searching.
-        return false;
+                    // position wasn't in this array, have to keep searching.
+                    return false;
+                };
+
+                // Recurse into the source file to find the highest node at this position.
+                forEachChild(sourceFile, visitNode, visitArray);
+                return;
+            };
+
+            SyntaxCursor syntaxCursor;
+            syntaxCursor.currentNode = [&](number position) {
+                // Only compute the current node if the position is different than the last time
+                // we were asked.  The parser commonly asks for the node at the same position
+                // twice.  Once to know if can read an appropriate list element at a certain point,
+                // and then to actually read and consume the node->
+                if (position != lastQueriedPosition)
+                {
+                    // Much of the time the parser will need the very next node in the array that
+                    // we just returned a node from.So just simply check for that case and move
+                    // forward in the array instead of searching for the node again.
+                    if (current && current.end == position && currentArrayIndex < (currentArray.size() - 1))
+                    {
+                        currentArrayIndex++;
+                        current = currentArray[currentArrayIndex];
+                    }
+
+                    // If we don't have a node, or the node we have isn't in the right position,
+                    // then try to find a viable node at the position requested.
+                    if (!current || current->pos != position)
+                    {
+                        findHighestListElementThatStartsAtPosition(position);
+                    }
+                }
+
+                // Cache this query so that we don't do any extra work if the parser calls back
+                // into us.  this Note is very common.as<the>() parser will make pairs of calls like
+                // 'isListElement -> parseListElement'.  If we were unable to find a node when
+                // called with 'isListElement', we don't want to redo the work when parseListElement
+                // is called immediately after.
+                lastQueriedPosition = position;
+
+                // Either we don'd have a node, or we have a node at the position being asked for.
+                Debug::_assert(!current || current->pos == position);
+                return current.as<IncrementalNode>();
+            };
+
+            return syntaxCursor;
+        }
     }
-}
 }
