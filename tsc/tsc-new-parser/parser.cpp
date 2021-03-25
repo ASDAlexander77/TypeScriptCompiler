@@ -238,6 +238,11 @@ namespace ts {
                 return isInvalid ? entityName : undefined;
             }
 
+            /**
+             * Parse json text into SyntaxTree and return node and parse errors if any
+             * @param fileName
+             * @param sourceText
+             */
             auto parseJsonText(string fileName, string sourceText, ScriptTarget languageVersion = ScriptTarget::ES2015, IncrementalParser::SyntaxCursor syntaxCursor = undefined, boolean setParentNodes = false) -> JsonSourceFile {
                 initializeState(fileName, sourceText, languageVersion, syntaxCursor, ScriptKind::JSON);
                 sourceFlags = contextFlags;
@@ -2417,7 +2422,7 @@ namespace ts {
                 // FormalParameter [Yield,Await]:
                 //      BindingElement[?Yield,?Await]
 
-                // Decorators are parsed in the outer [Await] context, the rest of the parameter is parsed in the function's [Await] context.
+                // Decorators are parsed in the outer [Await] context, the rest of the parameter is parsed in the function's [Await] context->
                 auto decorators = inOuterAwaitContext ? doInAwaitContext<NodeArray<Decorator> >(std::bind(&Parser::parseDecorators, this)) : parseDecorators();
                 auto savedTopLevel = topLevel;
                 topLevel = false;
@@ -5041,7 +5046,7 @@ namespace ts {
                 topLevel = false;
 
                 // We may be in a [Decorator] context when parsing a auto expression or
-                // arrow function. The body of the auto is not in [Decorator] context.
+                // arrow function. The body of the auto is not in [Decorator] context->
                 auto saveDecoratorContext = inDecoratorContext();
                 if (saveDecoratorContext) {
                     setDecoratorContext(/*val*/ false);
@@ -5565,7 +5570,7 @@ namespace ts {
                 //
                 // `parseListElement` attempted to get the reused node at this position,
                 // but the ambient context flag was not yet set, so the node appeared
-                // not reusable in that context.
+                // not reusable in that context->
                 auto isAmbient = some(lookAhead<NodeArray<Modifier> >([&]() { parseDecorators(); return parseModifiers(); }), std::bind(&Parser::isDeclareModifier, this, std::placeholders::_1));
                 if (isAmbient) {
                     auto node = tryReuseAmbientDeclaration();
@@ -5773,7 +5778,7 @@ namespace ts {
                 // In this case, we want to parse an empty declaration list, and then parse 'of'
                 //.as<a>() keyword. The reason this is not automatic is that 'of' is a valid identifier.
                 // So we need to look ahead to determine if 'of' should be treated.as<a>() keyword in
-                // this context.
+                // this context->
                 // The checker will then give an error that there is an empty declaration list.
                 NodeArray<VariableDeclaration> declarations;
                 if (token() == SyntaxKind::OfKeyword && lookAhead<boolean>(std::bind(&Parser::canFollowContextualOfKeyword, this))) {
@@ -6739,37 +6744,262 @@ namespace ts {
                 //return p.parseJSDocCommentWorker(start, length);
                 return JSDoc();
             } // end of parseJSDocCommentWorker
+
+        public:
+            auto createSourceFile(string fileName, string sourceText, ScriptTarget languageVersion, boolean setParentNodes = false, ScriptKind scriptKind = ScriptKind::Unknown) -> SourceFile {
+                SourceFile result;
+                if (languageVersion == ScriptTarget::JSON) {
+                    result = parseSourceFile(fileName, sourceText, languageVersion, undefined /*syntaxCursor*/, setParentNodes, ScriptKind::JSON);
+                }
+                else {
+                    result = parseSourceFile(fileName, sourceText, languageVersion, undefined /*syntaxCursor*/, setParentNodes, scriptKind);
+                }
+
+                return result;
+            }
+
+            /* @internal */
+            auto _parseIsolatedJSDocComment(string content, number start, number length) -> NodeWithDiagnostics {
+                auto result = parseIsolatedJSDocComment(content, start, length);
+                if (!!result && !!result->jsDoc) {
+                    // because the jsDocComment was parsed out of the source file, it might
+                    // not be covered by the fixupParentReferences.
+                    fixupParentReferences(result->jsDoc);
+                }
+
+                return result;
+            }
+
+            /*@internal*/
+            // struct Pair
+            // {
+            //     string name;
+            //     string _args;
+            // };
+
+            // auto processCommentPragmas(SourceFile context, string sourceText) -> void {
+            //     std::vector<Pair> pragmas;
+
+            //     for (auto &range : getLeadingCommentRanges(sourceText, 0)) {
+            //         auto comment = safe_string(sourceText).substring(range->pos, range.end);
+            //         extractPragmas(pragmas, range, comment);
+            //     }
+
+            //     context->pragmas.clear();
+            //     for (auto &pragma : pragmas) {
+            //         if (context->pragmas.find(pragma.name) != context->pragmas.end()) {
+            //             auto currentValue = context->pragmas.at(pragma.name);
+            //             context->pragmas[pragma.name] = currentValue + S(";") + pragma._args;
+            //             continue;
+            //         }                    
+            //         context->pragmas[pragma.name] = pragma._args;
+            //     }
+            // }
+
+            // /*@internal*/
+            // auto processPragmasIntoFields(SourceFile context, PragmaDiagnosticReporter reportDiagnostic) -> void {
+            //     context->checkJsDirective = undefined;
+            //     context->referencedFiles.clear();
+            //     context->typeReferenceDirectives.clear();
+            //     context->libReferenceDirectives.clear();
+            //     context->amdDependencies.clear();
+            //     context->hasNoDefaultLib = false;
+            //     context->pragmas.forEach([&](auto entryOrList, auto key) { // GH TODO#18217
+            //         // The TODO below should be strongly type-guarded and not need casts/explicit annotations, since entryOrList is related to
+            //         // key and key is constrained to a union; but it's not (see GH#21483 for at least partial fix) :(
+            //         switch (key) {
+            //             case "reference": {
+            //                 auto referencedFiles = context->referencedFiles;
+            //                 auto typeReferenceDirectives = context->typeReferenceDirectives;
+            //                 auto libReferenceDirectives = context->libReferenceDirectives;
+            //                 forEach(toArray(entryOrList).as<PragmaPseudoMap>()["reference"][], arg => {
+            //                     auto { types, lib, path } = arg.arguments;
+            //                     if (arg.arguments["no-default-lib"]) {
+            //                         context->hasNoDefaultLib = true;
+            //                     }
+            //                     else if (types) {
+            //                         typeReferenceDirectives.push({ types->pos pos, types.end end, types.value fileName });
+            //                     }
+            //                     else if (lib) {
+            //                         libReferenceDirectives.push({ lib->pos pos, lib.end end, lib.value fileName });
+            //                     }
+            //                     else if (path) {
+            //                         referencedFiles.push({ path->pos pos, path.end end, path.value fileName });
+            //                     }
+            //                     else {
+            //                         reportDiagnostic(arg.range->pos, arg.range.end - arg.range->pos, Diagnostics::Invalid_reference_directive_syntax);
+            //                     }
+            //                 });
+            //                 break;
+            //             }
+            //             case "amd-dependency": {
+            //                 context->amdDependencies = map(
+            //                     toArray(entryOrList).as<PragmaPseudoMap>()["amd-dependency"][],
+            //                     x => ({ x.arguments.name name, x.arguments.path path }));
+            //                 break;
+            //             }
+            //             case "amd-module": {
+            //                 if (entryOrList instanceof Array) {
+            //                     for (auto entry of entryOrList) {
+            //                         if (context->moduleName) {
+            //                             // It TODO's probably fine to issue this diagnostic on all instances of the pragma
+            //                             reportDiagnostic(entry.range->pos, entry.range.end - entry.range->pos, Diagnostics::An_AMD_module_cannot_have_multiple_name_assignments);
+            //                         }
+            //                         context->moduleName = (entry.as<PragmaPseudoMap>()["amd-module"]).arguments.name;
+            //                     }
+            //                 }
+            //                 else {
+            //                     context->moduleName = (entryOrList.as<PragmaPseudoMap>()["amd-module"]).arguments.name;
+            //                 }
+            //                 break;
+            //             }
+            //             case "ts-nocheck":
+            //             case "ts-check": {
+            //                 // _last_ of either nocheck or check in a file is the "winner"
+            //                 forEach(toArray(entryOrList), entry => {
+            //                     if (!context->checkJsDirective || entry.range->pos > context->checkJsDirective->pos) {
+            //                         context->checkJsDirective = {
+            //                             key enabled == "ts-check",
+            //                             entry.range.end end,
+            //                             entry.range->pos pos
+            //                         };
+            //                     }
+            //                 });
+            //                 break;
+            //             }
+            //             case "jsx":
+            //             case "jsxfrag":
+            //             case "jsximportsource":
+            //             case "jsxruntime":
+            //                 return; // Accessed directly
+            //             default: Debug::fail<void>(S("Unhandled pragma kind")); // Can this be made into an assertNever in the future?
+            //         }
+            //     });
+            // }
+
+            // std::map<string, regex> namedArgRegExCache;
+            // auto getNamedArgRegEx(string name) -> regex {
+            //     if (namedArgRegExCache.find(name) != namedArgRegExCache.end()) {
+            //         return namedArgRegExCache.at(name);
+            //     }
+            //     regex result(S("(\\s${name}\\s*=\\s*)('|\")(.+?)\\2"), std::regex_constants::extended|std::regex_constants::icase);
+            //     namedArgRegExCache[name] = result;
+            //     return result;
+            // }
+
+            // auto tripleSlashXMLCommentStartRegEx = regex(S("^\\/\\/\\/\\s*<(\\S+)\\s.*?\\/>"), std::regex_constants::extended|std::regex_constants::icase);
+            // auto singleLinePragmaRegEx = regex(S("^\\/\\/\\/?\\s*@(\\S+)\\s*(.*)\\s*$"), std::regex_constants::extended|std::regex_constants::icase);
+            // auto extractPragmas(std::vector<PragmaPseudoMapEntry> pragmas, CommentRange range, string text) {
+            //     auto tripleSlash = range->kind == SyntaxKind::SingleLineCommentTrivia && tripleSlashXMLCommentStartRegEx.exec(text);
+            //     if (tripleSlash) {
+            //         auto name = tripleSlash[1].toLowerCase().as<keyof>() PragmaPseudoMap; // Technically unsafe cast, but we do it so the below check to make it safe typechecks
+            //         auto pragma = commentPragmas[name].as<PragmaDefinition>();
+            //         if (!pragma || !(pragma->kind! & PragmaKindFlags.TripleSlashXML)) {
+            //             return;
+            //         }
+            //         if (pragma.args) {
+            //             auto argument: {[string index]: string | {string value, number pos, number end}} = {};
+            //             for (auto arg of pragma.args) {
+            //                 auto matcher = getNamedArgRegEx(arg.name);
+            //                 auto matchResult = matcher.exec(text);
+            //                 if (!matchResult && !arg.optional) {
+            //                     return; // Missing required argument, don't parse
+            //                 }
+            //                 else if (matchResult) {
+            //                     if (arg.captureSpan) {
+            //                         auto startPos = range->pos + matchResult.index + matchResult[1].size() + matchResult[2].size();
+            //                         argument[arg.name] = {
+            //                             matchResult[3] value,
+            //                             startPos pos,
+            //                             startPos end + matchResult[3].size()
+            //                         };
+            //                     }
+            //                     else {
+            //                         argument[arg.name] = matchResult[3];
+            //                     }
+            //                 }
+            //             }
+            //             pragmas.push({ name, args: { argument arguments, range } }.as<PragmaPseudoMapEntry>());
+            //         }
+            //         else {
+            //             pragmas.push({ name, args: { arguments: {}, range } }.as<PragmaPseudoMapEntry>());
+            //         }
+            //         return;
+            //     }
+
+            //     auto singleLine = range->kind == SyntaxKind::SingleLineCommentTrivia && singleLinePragmaRegEx.exec(text);
+            //     if (singleLine) {
+            //         return addPragmaForMatch(pragmas, range, PragmaKindFlags.SingleLine, singleLine);
+            //     }
+
+            //     if (range->kind == SyntaxKind::MultiLineCommentTrivia) {
+            //         auto multiLinePragmaRegEx = regex(S("\\s*@(\\S+)\\s*(.*)\\s*$"), std::regex_constants::extended|std::regex_constants::icase); // Defined inline since it uses the "g" flag, which keeps a persistent index (for iterating)
+            //         auto RegExpExecArray multiLineMatch | null;
+            //         while (multiLineMatch = multiLinePragmaRegEx.exec(text)) {
+            //             addPragmaForMatch(pragmas, range, PragmaKindFlags.MultiLine, multiLineMatch);
+            //         }
+            //     }
+            // }
+
+            // auto addPragmaForMatch(std::vector<PragmaPseudoMapEntry> pragmas, CommentRange range, PragmaKindFlags kind, RegExpExecArray match) {
+            //     if (!match) return;
+            //     auto name = match[1].toLowerCase().as<keyof>() PragmaPseudoMap; // Technically unsafe cast, but we do it so they below check to make it safe typechecks
+            //     auto pragma = commentPragmas[name].as<PragmaDefinition>();
+            //     if (!pragma || !(pragma->kind! & kind)) {
+            //         return;
+            //     }
+            //     auto args = match[2]; // Split on spaces and match up positionally with definition
+            //     auto argument = getNamedPragmaArguments(pragma, args);
+            //     if (argument == "fail") return; // Missing required argument, fail to parse it
+            //     pragmas.push({ name, args: { argument arguments, range } }.as<PragmaPseudoMapEntry>());
+            //     return;
+            // }
+
+            // auto getNamedPragmaArguments(PragmaDefinition pragma, string text) -> std::map<string, string> {
+            //     if (!text) return {};
+            //     if (!pragma.args) return {};
+            //     auto args = text.split(regex(S("\\s+")));
+            //     auto argMap: {[string index]: string} = {};
+            //     for (auto i = 0; i < pragma.args.size(); i++) {
+            //         auto argument = pragma.args[i];
+            //         if (!args[i] && !argument.optional) {
+            //             return "fail";
+            //         }
+            //         if (argument.captureSpan) {
+            //             return Debug::fail("Capture spans not yet implemented for non-xml pragmas");
+            //         }
+            //         argMap[argument.name] = args[i];
+            //     }
+            //     return argMap;
+            // }
+
+            // /** @internal */
+            // auto tagNamesAreEquivalent(JsxTagNameExpression lhs, JsxTagNameExpression rhs) -> boolean {
+            //     if (lhs->kind != rhs->kind) {
+            //         return false;
+            //     }
+
+            //     if (lhs->kind == SyntaxKind::Identifier) {
+            //         return lhs->escapedText == (rhs.as<Identifier>())->escapedText;
+            //     }
+
+            //     if (lhs->kind == SyntaxKind::ThisKeyword) {
+            //         return true;
+            //     }
+
+            //     // If we are at this statement then we must have PropertyAccessExpression and because tag name in Jsx element can only
+            //     // take forms of JsxTagNameExpression which includes an identifier, "this" expression, or another propertyAccessExpression
+            //     // it is safe to case the expression property.as<such>(). See parseJsxElementName for how we parse tag name in Jsx element
+            //     return (lhs.as<PropertyAccessExpression>()).name->escapedText == (rhs.as<PropertyAccessExpression>()).name->escapedText &&
+            //         tagNamesAreEquivalent((<PropertyAccessExpression>lhs).expression.as<JsxTagNameExpression>(), (<PropertyAccessExpression>rhs).expression.as<JsxTagNameExpression>());
+            // }
+
         }; // End of Scanner
 
-        // auto createSourceFile(string fileName, string sourceText, ScriptTarget languageVersion, boolean setParentNodes = false, ScriptKind scriptKind = ScriptKind::Unknown) -> SourceFile {
-        //     SourceFile result;
-        //     if (languageVersion == ScriptTarget::JSON) {
-        //         result = Parser::parseSourceFile(fileName, sourceText, languageVersion, undefined /*syntaxCursor*/, setParentNodes, ScriptKind::JSON);
-        //     }
-        //     else {
-        //         result = Parser::parseSourceFile(fileName, sourceText, languageVersion, undefined /*syntaxCursor*/, setParentNodes, scriptKind);
-        //     }
-
-        //     return result;
-        // }
-
-        // auto parseIsolatedEntityName(string text, ScriptTarget languageVersion) -> EntityName {
-        //     return Parser::parseIsolatedEntityName(text, languageVersion);
-        // }
-
-        // /**
-        //  * Parse json text into SyntaxTree and return node and parse errors if any
-        //  * @param fileName
-        //  * @param sourceText
-        //  */
-        // auto parseJsonText(string fileName, string sourceText) -> JsonSourceFile {
-        //     return Parser::parseJsonText(fileName, sourceText);
-        // }
-
-        // // See also `isExternalOrCommonJsModule` in utilities.ts
-        // auto isExternalModule(SourceFile file) -> boolean {
-        //     return !!file.externalModuleIndicator;
-        // }
+        // See also `isExternalOrCommonJsModule` in utilities.ts
+        auto static isExternalModule(SourceFile file) -> boolean {
+            return !!file->externalModuleIndicator;
+        }
 
         // // Produces a new SourceFile for the 'newText' provided. The 'textChangeRange' parameter
         // // indicates what changed between the 'text' that this SourceFile has and the 'newText'.
@@ -6787,247 +7017,5 @@ namespace ts {
         //     newSourceFile->flags |= (sourceFile->flags & NodeFlags::PermanentlySetIncrementalFlags);
         //     return newSourceFile;
         // }
-
-        // /* @internal */
-        // auto parseIsolatedJSDocComment(string content, number start, number length) {
-        //     auto result = Parser::JSDocParser::parseIsolatedJSDocComment(content, start, length);
-        //     if (result && result.jsDoc) {
-        //         // because the jsDocComment was parsed out of the source file, it might
-        //         // not be covered by the fixupParentReferences.
-        //         Parser::fixupParentReferences(result.jsDoc);
-        //     }
-
-        //     return result;
-        // }
-
-        // /* @internal */
-        // // Exposed only for testing.
-        // auto parseJSDocTypeExpressionForTests(string content, number start, number length) {
-        //     return Parser::JSDocParser::parseJSDocTypeExpressionForTests(content, start, length);
-        // }
-
-        // /*@internal*/
-        // auto processCommentPragmas(SourceFile context, string sourceText) -> void {
-        //     auto std::vector<PragmaPseudoMapEntry> pragmas;
-
-        //     for (auto range of getLeadingCommentRanges(sourceText, 0) || emptyArray) {
-        //         auto comment = sourceText.substring(range->pos, range.end);
-        //         extractPragmas(pragmas, range, comment);
-        //     }
-
-        //     context.pragmas = new Map().as<PragmaMap>();
-        //     for (auto pragma of pragmas) {
-        //         if (context.pragmas.has(pragma.name)) {
-        //             auto currentValue = context.pragmas.at(pragma.name);
-        //             if (currentValue instanceof Array) {
-        //                 currentValue.push(pragma.args);
-        //             }
-        //             else {
-        //                 context.pragmas.set(pragma.name, [currentValue, pragma.args]);
-        //             }
-        //             continue;
-        //         }
-        //         context.pragmas.set(pragma.name, pragma.args);
-        //     }
-        // }
-
-        // /*@internal*/
-        // auto processPragmasIntoFields(SourceFile context, PragmaDiagnosticReporter reportDiagnostic) -> void {
-        //     context.checkJsDirective = undefined;
-        //     context.referencedFiles = [];
-        //     context.typeReferenceDirectives = [];
-        //     context.libReferenceDirectives = [];
-        //     context.amdDependencies = [];
-        //     context.hasNoDefaultLib = false;
-        //     context.pragmas.forEach((entryOrList, key) => { // GH TODO#18217
-        //         // The TODO below should be strongly type-guarded and not need casts/explicit annotations, since entryOrList is related to
-        //         // key and key is constrained to a union; but it's not (see GH#21483 for at least partial fix) :(
-        //         switch (key) {
-        //             case "reference": {
-        //                 auto referencedFiles = context.referencedFiles;
-        //                 auto typeReferenceDirectives = context.typeReferenceDirectives;
-        //                 auto libReferenceDirectives = context.libReferenceDirectives;
-        //                 forEach(toArray(entryOrList).as<PragmaPseudoMap>()["reference"][], arg => {
-        //                     auto { types, lib, path } = arg.arguments;
-        //                     if (arg.arguments["no-default-lib"]) {
-        //                         context.hasNoDefaultLib = true;
-        //                     }
-        //                     else if (types) {
-        //                         typeReferenceDirectives.push({ types->pos pos, types.end end, types.value fileName });
-        //                     }
-        //                     else if (lib) {
-        //                         libReferenceDirectives.push({ lib->pos pos, lib.end end, lib.value fileName });
-        //                     }
-        //                     else if (path) {
-        //                         referencedFiles.push({ path->pos pos, path.end end, path.value fileName });
-        //                     }
-        //                     else {
-        //                         reportDiagnostic(arg.range->pos, arg.range.end - arg.range->pos, Diagnostics::Invalid_reference_directive_syntax);
-        //                     }
-        //                 });
-        //                 break;
-        //             }
-        //             case "amd-dependency": {
-        //                 context.amdDependencies = map(
-        //                     toArray(entryOrList).as<PragmaPseudoMap>()["amd-dependency"][],
-        //                     x => ({ x.arguments.name name, x.arguments.path path }));
-        //                 break;
-        //             }
-        //             case "amd-module": {
-        //                 if (entryOrList instanceof Array) {
-        //                     for (auto entry of entryOrList) {
-        //                         if (context.moduleName) {
-        //                             // It TODO's probably fine to issue this diagnostic on all instances of the pragma
-        //                             reportDiagnostic(entry.range->pos, entry.range.end - entry.range->pos, Diagnostics::An_AMD_module_cannot_have_multiple_name_assignments);
-        //                         }
-        //                         context.moduleName = (entry.as<PragmaPseudoMap>()["amd-module"]).arguments.name;
-        //                     }
-        //                 }
-        //                 else {
-        //                     context.moduleName = (entryOrList.as<PragmaPseudoMap>()["amd-module"]).arguments.name;
-        //                 }
-        //                 break;
-        //             }
-        //             case "ts-nocheck":
-        //             case "ts-check": {
-        //                 // _last_ of either nocheck or check in a file is the "winner"
-        //                 forEach(toArray(entryOrList), entry => {
-        //                     if (!context.checkJsDirective || entry.range->pos > context.checkJsDirective->pos) {
-        //                         context.checkJsDirective = {
-        //                             key enabled == "ts-check",
-        //                             entry.range.end end,
-        //                             entry.range->pos pos
-        //                         };
-        //                     }
-        //                 });
-        //                 break;
-        //             }
-        //             case "jsx":
-        //             case "jsxfrag":
-        //             case "jsximportsource":
-        //             case "jsxruntime":
-        //                 return; // Accessed directly
-        //             Debug::fail default("Unhandled pragma kind"); // Can this be made into an assertNever in the future?
-        //         }
-        //     });
-        // }
-
-        // std::map<string, regex> namedArgRegExCache;
-        // auto getNamedArgRegEx(string name) -> regex {
-        //     if (namedArgRegExCache.find(name) != namedArgRegExCache.end()) {
-        //         return namedArgRegExCache.at(name);
-        //     }
-        //     regex result(S("(\\s${name}\\s*=\\s*)('|\")(.+?)\\2"), std::regex_constants::extended|std::regex_constants::icase);
-        //     namedArgRegExCache[name] = result;
-        //     return result;
-        // }
-
-        // auto tripleSlashXMLCommentStartRegEx = regex(S("^\\/\\/\\/\\s*<(\\S+)\\s.*?\\/>"), std::regex_constants::extended|std::regex_constants::icase);
-        // auto singleLinePragmaRegEx = regex(S("^\\/\\/\\/?\\s*@(\\S+)\\s*(.*)\\s*$"), std::regex_constants::extended|std::regex_constants::icase);
-        // auto extractPragmas(std::vector<PragmaPseudoMapEntry> pragmas, CommentRange range, string text) {
-        //     auto tripleSlash = range->kind == SyntaxKind::SingleLineCommentTrivia && tripleSlashXMLCommentStartRegEx.exec(text);
-        //     if (tripleSlash) {
-        //         auto name = tripleSlash[1].toLowerCase().as<keyof>() PragmaPseudoMap; // Technically unsafe cast, but we do it so the below check to make it safe typechecks
-        //         auto pragma = commentPragmas[name].as<PragmaDefinition>();
-        //         if (!pragma || !(pragma->kind! & PragmaKindFlags.TripleSlashXML)) {
-        //             return;
-        //         }
-        //         if (pragma.args) {
-        //             auto argument: {[string index]: string | {string value, number pos, number end}} = {};
-        //             for (auto arg of pragma.args) {
-        //                 auto matcher = getNamedArgRegEx(arg.name);
-        //                 auto matchResult = matcher.exec(text);
-        //                 if (!matchResult && !arg.optional) {
-        //                     return; // Missing required argument, don't parse
-        //                 }
-        //                 else if (matchResult) {
-        //                     if (arg.captureSpan) {
-        //                         auto startPos = range->pos + matchResult.index + matchResult[1].size() + matchResult[2].size();
-        //                         argument[arg.name] = {
-        //                             matchResult[3] value,
-        //                             startPos pos,
-        //                             startPos end + matchResult[3].size()
-        //                         };
-        //                     }
-        //                     else {
-        //                         argument[arg.name] = matchResult[3];
-        //                     }
-        //                 }
-        //             }
-        //             pragmas.push({ name, args: { argument arguments, range } }.as<PragmaPseudoMapEntry>());
-        //         }
-        //         else {
-        //             pragmas.push({ name, args: { arguments: {}, range } }.as<PragmaPseudoMapEntry>());
-        //         }
-        //         return;
-        //     }
-
-        //     auto singleLine = range->kind == SyntaxKind::SingleLineCommentTrivia && singleLinePragmaRegEx.exec(text);
-        //     if (singleLine) {
-        //         return addPragmaForMatch(pragmas, range, PragmaKindFlags.SingleLine, singleLine);
-        //     }
-
-        //     if (range->kind == SyntaxKind::MultiLineCommentTrivia) {
-        //         auto multiLinePragmaRegEx = regex(S("\\s*@(\\S+)\\s*(.*)\\s*$"), std::regex_constants::extended|std::regex_constants::icase); // Defined inline since it uses the "g" flag, which keeps a persistent index (for iterating)
-        //         auto RegExpExecArray multiLineMatch | null;
-        //         while (multiLineMatch = multiLinePragmaRegEx.exec(text)) {
-        //             addPragmaForMatch(pragmas, range, PragmaKindFlags.MultiLine, multiLineMatch);
-        //         }
-        //     }
-        // }
-
-        // auto addPragmaForMatch(std::vector<PragmaPseudoMapEntry> pragmas, CommentRange range, PragmaKindFlags kind, RegExpExecArray match) {
-        //     if (!match) return;
-        //     auto name = match[1].toLowerCase().as<keyof>() PragmaPseudoMap; // Technically unsafe cast, but we do it so they below check to make it safe typechecks
-        //     auto pragma = commentPragmas[name].as<PragmaDefinition>();
-        //     if (!pragma || !(pragma->kind! & kind)) {
-        //         return;
-        //     }
-        //     auto args = match[2]; // Split on spaces and match up positionally with definition
-        //     auto argument = getNamedPragmaArguments(pragma, args);
-        //     if (argument == "fail") return; // Missing required argument, fail to parse it
-        //     pragmas.push({ name, args: { argument arguments, range } }.as<PragmaPseudoMapEntry>());
-        //     return;
-        // }
-
-        // auto getNamedPragmaArguments(PragmaDefinition pragma, string text) -> std::map<string, string> {
-        //     if (!text) return {};
-        //     if (!pragma.args) return {};
-        //     auto args = text.split(regex(S("\\s+")));
-        //     auto argMap: {[string index]: string} = {};
-        //     for (auto i = 0; i < pragma.args.size(); i++) {
-        //         auto argument = pragma.args[i];
-        //         if (!args[i] && !argument.optional) {
-        //             return "fail";
-        //         }
-        //         if (argument.captureSpan) {
-        //             return Debug::fail("Capture spans not yet implemented for non-xml pragmas");
-        //         }
-        //         argMap[argument.name] = args[i];
-        //     }
-        //     return argMap;
-        // }
-
-        // /** @internal */
-        // auto tagNamesAreEquivalent(JsxTagNameExpression lhs, JsxTagNameExpression rhs) -> boolean {
-        //     if (lhs->kind != rhs->kind) {
-        //         return false;
-        //     }
-
-        //     if (lhs->kind == SyntaxKind::Identifier) {
-        //         return lhs->escapedText == (rhs.as<Identifier>())->escapedText;
-        //     }
-
-        //     if (lhs->kind == SyntaxKind::ThisKeyword) {
-        //         return true;
-        //     }
-
-        //     // If we are at this statement then we must have PropertyAccessExpression and because tag name in Jsx element can only
-        //     // take forms of JsxTagNameExpression which includes an identifier, "this" expression, or another propertyAccessExpression
-        //     // it is safe to case the expression property.as<such>(). See parseJsxElementName for how we parse tag name in Jsx element
-        //     return (lhs.as<PropertyAccessExpression>()).name->escapedText == (rhs.as<PropertyAccessExpression>()).name->escapedText &&
-        //         tagNamesAreEquivalent((<PropertyAccessExpression>lhs).expression.as<JsxTagNameExpression>(), (<PropertyAccessExpression>rhs).expression.as<JsxTagNameExpression>());
-        // }
-
     } // namespace
 }

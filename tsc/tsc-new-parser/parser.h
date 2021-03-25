@@ -1196,42 +1196,8 @@ namespace ts
     auto processPragmasIntoFields(SourceFile context, PragmaDiagnosticReporter reportDiagnostic) -> void;
     auto isExternalModule(SourceFile file) -> boolean;
     auto tagNamesAreEquivalent(JsxTagNameExpression lhs, JsxTagNameExpression rhs) -> boolean;
-
-    namespace IncrementalParser {
-
-        struct IncrementalElement : TextRange {
-            Node parent;
-            boolean intersectsChange;
-            number length;
-            std::vector<Node> _children;
-        };
-
-        struct IncrementalNode : Node, IncrementalElement {
-            boolean hasBeenIncrementallyParsed;
-        };
-
-        struct IncrementalNodeArray : NodeArray<IncrementalNode>, IncrementalElement {
-            number length;
-        };
-
-        // Allows finding nodes in the source file at a certain position in an efficient manner.
-        // The implementation takes advantage of the calling pattern it knows the parser will
-        // make in order to optimize finding nodes as quickly as possible.
-        struct SyntaxCursor {
-            SyntaxCursor() {};
-            SyntaxCursor(std::function<IncrementalNode(number)> currentNode) : currentNode{currentNode} {};
-            SyntaxCursor(undefined_t) {};
-
-            inline operator bool()
-            {
-                return !!currentNode;
-            }
-
-            std::function<IncrementalNode(number)> currentNode;
-        };
-
-        auto createSyntaxCursor(SourceFile sourceFile) -> SyntaxCursor;
-    }
 }
+
+#include "incremental_parser.h"
 
 #endif // PARSER_H
