@@ -248,7 +248,7 @@ inline auto setTextRange(T range, TextRange location) -> T
     return !!location ? setTextRangePosEnd(range, location.pos, location.end) : range;
 }
 
-auto hasJSDocNodes(Node node) -> boolean {
+inline static auto hasJSDocNodes(Node node) -> boolean {
     auto jsDoc = node->jsDoc;
     return !!jsDoc && jsDoc.size() > 0;
 }

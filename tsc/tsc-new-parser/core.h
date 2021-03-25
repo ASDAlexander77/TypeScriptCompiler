@@ -211,7 +211,7 @@ inline auto append(T arr, U value) -> T
 }
 
 // trim from start (in place)
-inline void ltrim(string &s)
+inline static void ltrim(string &s)
 {
     s.erase(s.begin(), std::find_if(s.begin(), s.end(), [](char_t ch) {
                 return !std::isspace(ch);
@@ -219,7 +219,7 @@ inline void ltrim(string &s)
 }
 
 // trim from end (in place)
-inline void rtrim(string &s)
+inline static void rtrim(string &s)
 {
     s.erase(std::find_if(s.rbegin(), s.rend(), [](char_t ch) {
                 return !std::isspace(ch);
@@ -228,7 +228,7 @@ inline void rtrim(string &s)
 }
 
 // trim from both ends (in place)
-inline auto trim(const string &s) -> string
+inline static auto trim(const string &s) -> string
 {
     auto n = s;
     ltrim(n);
@@ -236,7 +236,7 @@ inline auto trim(const string &s) -> string
     return n;
 }
 
-string join(const std::vector<string> &v)
+static string join(const std::vector<string> &v)
 {
     string s;
     for (auto &p : v)

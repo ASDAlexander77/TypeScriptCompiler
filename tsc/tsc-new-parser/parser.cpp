@@ -4,6 +4,48 @@
 #include "core.h"
 #include "utilities.h"
 
+
+NodeHolder::operator Node()
+{
+    return Node(data);
+}
+
+Node NodeHolder::operator=(Node& rhv)
+{
+    data = rhv.data;
+    return Node(data);
+}
+
+NodeData* NodeHolder::operator->()
+{
+    return data.operator->();
+}
+
+boolean NodeHolder::operator !()
+{
+    return data->operator!();
+}
+
+boolean NodeHolder::operator ==(const Node& rhv)
+{
+    return rhv.data.get() == this->data.get();
+}
+
+auto NodeHolder::size() -> size_t
+{
+    return data->children.size();
+}
+
+auto NodeHolder::begin() -> decltype(data->children.begin())
+{
+    return data->children.begin();
+}
+
+auto NodeHolder::end() -> decltype(data->children.end())
+{
+    return data->children.end();
+}
+
 namespace ts {
 
     namespace
@@ -1921,7 +1963,7 @@ namespace ts {
                 return createMissingList<T>();
             }
 
-            auto parseEntityName(boolean allowReservedWords, Undefined<DiagnosticMessage> diagnosticMessage = undefined) -> Identifier {
+            auto parseEntityName(boolean allowReservedWords, DiagnosticMessage diagnosticMessage = DiagnosticMessage()) -> Identifier {
                 auto pos = getNodePos();
                 auto entity = allowReservedWords ? parseIdentifierName(diagnosticMessage) : parseIdentifier(diagnosticMessage);
                 auto dotPos = getNodePos();

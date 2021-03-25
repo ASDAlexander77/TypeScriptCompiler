@@ -347,48 +347,6 @@ struct Node
     }    
 };
 
-// TODO: put into source file
-NodeHolder::operator Node()
-{
-    return Node(data);
-}
-
-Node NodeHolder::operator=(Node& rhv)
-{
-    data = rhv.data;
-    return Node(data);
-}
-
-NodeData* NodeHolder::operator->()
-{
-    return data.operator->();
-}
-
-boolean NodeHolder::operator !()
-{
-    return data->operator!();
-}
-
-boolean NodeHolder::operator ==(const Node& rhv)
-{
-    return rhv.data.get() == this->data.get();
-}
-
-auto NodeHolder::size() -> size_t
-{
-    return data->children.size();
-}
-
-auto NodeHolder::begin() -> decltype(data->children.begin())
-{
-    return data->children.begin();
-}
-
-auto NodeHolder::end() -> decltype(data->children.end())
-{
-    return data->children.end();
-}
-
 struct BaseNode
 {
     Node node;

@@ -475,7 +475,7 @@ enum class SyntaxKind : number {
     /* @internal */ LastContextualKeyword = OfKeyword,
 };
 
-inline bool operator !(SyntaxKind rhs)
+inline static bool operator !(SyntaxKind rhs)
 {
     return rhs != SyntaxKind::Unknown;
 }
