@@ -3,12 +3,11 @@
 
 #include "config.h"
 #include "undefined.h"
-
-struct DiagnosticMessage
+struct DiagnosticMessageStore
 {
-    DiagnosticMessage() = default;
-    DiagnosticMessage(int code, DiagnosticCategory category, string label, string message) : code(code), category(category), label(label), message(message) {};
-    DiagnosticMessage(undefined_t) : category{DiagnosticCategory::Undefined} {}
+    DiagnosticMessageStore() = default;
+    DiagnosticMessageStore(int code, DiagnosticCategory category, string label, string message) : code(code), category(category), label(label), message(message) {};
+    DiagnosticMessageStore(undefined_t) : category{DiagnosticCategory::Undefined} {}
 
     int code;
     DiagnosticCategory category;
@@ -20,69 +19,5 @@ struct DiagnosticMessage
         return category == DiagnosticCategory::Undefined;
     }
 };
-
-struct TextRange {
-    TextRange() = default;
-    number pos;
-    number end;
-
-    bool operator !()
-    {
-        return pos < 0 || end < 0;
-    }
-};
-
-struct CommentDirective {
-    CommentDirective() = default;
-    TextRange range;
-    CommentDirectiveType type;
-};
-
-struct TextSpan {
-    number start;
-    number length;
-};
-
-struct FileReference : TextSpan {
-    string fileName;
-};
-
-struct AmdDependency {
-    string path;
-    string name;
-};
-
-struct TextChangeRange {
-    TextSpan span;
-    number newLength;
-};
-
-struct DiagnosticRelatedInformation {
-    DiagnosticRelatedInformation() = default;
-    
-    DiagnosticRelatedInformation(undefined_t) : category(DiagnosticCategory::Undefined) {}
-
-    DiagnosticCategory category;
-    string fileName;
-    number code;
-    number start;
-    number length;
-    string messageText;
-
-    inline boolean operator !()
-    {
-        return category == DiagnosticCategory::Undefined;
-    }
-};
-
-struct Diagnostic : DiagnosticRelatedInformation {
-    std::vector<string> reportsUnnecessary;
-    std::vector<DiagnosticRelatedInformation> relatedInformation;
-};
-
-struct DiagnosticWithDetachedLocation : Diagnostic {
-
-};
-
 
 #endif // ENUMS_H

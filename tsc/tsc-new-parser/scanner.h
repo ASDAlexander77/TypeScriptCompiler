@@ -17,6 +17,11 @@
 #include "scanner_enums.h"
 #include "diagnostics.h"
 
+// forward declarations
+struct CommentDirective;
+struct DiagnosticMessage;
+struct CommentRange;
+
 struct safe_string
 {
     string value;
@@ -109,15 +114,6 @@ struct LineAndCharacter {
     number character;
 };
 
-struct CommentRange {
-    CommentRange() = default;
-
-    SyntaxKind kind;
-    number pos;
-    number end;
-    boolean hasTrailingNewLine;
-};
-
 struct ScanResult {
     ScanResult() = default;
 
@@ -128,6 +124,7 @@ struct ScanResult {
 template <typename T, typename U>
 using cb_type = std::function<U(number, number, SyntaxKind, boolean, T, U)>;
 
+struct DiagnosticMessage;
 using ErrorCallback = std::function<void(DiagnosticMessage, number)>;
 
 template <typename T>

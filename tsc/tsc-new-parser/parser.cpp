@@ -1939,7 +1939,7 @@ namespace ts {
             }
 
             auto getExpectedCommaDiagnostic(ParsingContext kind) -> DiagnosticMessage {
-                return kind == ParsingContext::EnumMembers ? Diagnostics::An_enum_member_name_must_be_followed_by_a_or : undefined;
+                return kind == ParsingContext::EnumMembers ? DiagnosticMessage(Diagnostics::An_enum_member_name_must_be_followed_by_a_or) : undefined;
             }
 
             template <typename T> 

@@ -13,7 +13,7 @@
 #define REF(x) x##Ref
 #define REF_INST(x) std::reference_wrapper<x>
 
-namespace ver2
+namespace data
 {
     using NodeId = number;
 
@@ -2403,6 +2403,6 @@ namespace ver2
         /* @internal */ ExportedModulesFromDeclarationEmit exportedModulesFromDeclarationEmit;
     };
 
-} // namespace ver2
+} // namespace data
 
 #endif // NEW_PARSER_TYPES_H

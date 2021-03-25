@@ -1,6 +1,8 @@
 #ifndef PARSER_TYPES_H
 #define PARSER_TYPES_H
 
+#include "types.h"
+
 struct Node;
 
 template <typename T>
@@ -17,6 +19,17 @@ template <SyntaxKind kind>
 using Token = Node;
 
 struct Node;
+
+struct TextRange {
+    TextRange() = default;
+    number pos;
+    number end;
+
+    bool operator !()
+    {
+        return pos < 0 || end < 0;
+    }
+};
 
 template <typename T>
 struct NodeArray
@@ -160,6 +173,84 @@ struct NodeRef
     size_t size();
     auto begin() -> decltype(((NodeArray<Node>*)nullptr)->begin());
     auto end() -> decltype(((NodeArray<Node>*)nullptr)->end());
+};
+
+struct DiagnosticMessage
+{
+    DiagnosticMessage() = default;
+    DiagnosticMessage(int code, DiagnosticCategory category, string label, string message) : code(code), category(category), label(label), message(message) {}
+    DiagnosticMessage(undefined_t) : category{DiagnosticCategory::Undefined} {}
+    DiagnosticMessage(DiagnosticMessageStore &item) : code(item.code), category(item.category), label(item.label), message(item.message) {}
+
+    int code;
+    DiagnosticCategory category;
+    string label;
+    string message;
+
+    bool operator !()
+    {
+        return category == DiagnosticCategory::Undefined;
+    }
+};
+
+struct CommentRange {
+    CommentRange() = default;
+
+    SyntaxKind kind;
+    number pos;
+    number end;
+    boolean hasTrailingNewLine;
+};
+
+struct CommentDirective {
+    CommentDirective() = default;
+    TextRange range;
+    CommentDirectiveType type;
+};
+
+struct TextSpan {
+    number start;
+    number length;
+};
+
+struct FileReference : TextSpan {
+    string fileName;
+};
+
+struct AmdDependency {
+    string path;
+    string name;
+};
+
+struct TextChangeRange {
+    TextSpan span;
+    number newLength;
+};
+
+struct DiagnosticRelatedInformation {
+    DiagnosticRelatedInformation() = default;
+    
+    DiagnosticRelatedInformation(undefined_t) : category(DiagnosticCategory::Undefined) {}
+
+    DiagnosticCategory category;
+    string fileName;
+    number code;
+    number start;
+    number length;
+    string messageText;
+
+    inline boolean operator !()
+    {
+        return category == DiagnosticCategory::Undefined;
+    }
+};
+
+struct Diagnostic : DiagnosticRelatedInformation {
+    std::vector<string> reportsUnnecessary;
+    std::vector<DiagnosticRelatedInformation> relatedInformation;
+};
+
+struct DiagnosticWithDetachedLocation : Diagnostic {
 };
 
 struct NodeData : TextRange

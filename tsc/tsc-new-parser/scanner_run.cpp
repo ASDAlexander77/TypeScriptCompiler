@@ -23,7 +23,7 @@ namespace fs = std::experimental::filesystem;
 
 #include "scanner.h"
 
-#include "parser_types2.h"
+//#include "parser_types2.h"
 
 void printScanner(const wchar_t *str)
 {
