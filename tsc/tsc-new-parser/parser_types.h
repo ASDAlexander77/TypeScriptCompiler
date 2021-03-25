@@ -1,0 +1,742 @@
+#ifndef PARSER_TYPES_H
+#define PARSER_TYPES_H
+
+CLASS_DATA(Identifier)
+    string escapedText;
+CLASS_DATA_END(Identifier)
+
+CLASS_DATA(QualifiedName)
+    Node left;
+    Node right;
+CLASS_DATA_END(QualifiedName)
+
+CLASS_DATA(MethodDeclaration)
+    ExclamationToken exclamationToken;
+    Node name;
+CLASS_DATA_END(MethodDeclaration)
+
+CLASS_DATA(TypeParameterDeclaration)
+    Node name;
+    Node constraint;
+    Node _default;
+    Node expression;
+CLASS_DATA_END(TypeParameterDeclaration)
+
+CLASS_DATA(PropertyAssignment)
+    Node name;
+    Node questionToken;
+    Node exclamationToken;
+    Node initializer;
+CLASS_DATA_END(PropertyAssignment)
+
+CLASS_DATA_BASE(ShorthandPropertyAssignment, PropertyAssignment)
+    Node exclamationToken;
+    Node equalsToken;
+    Node objectAssignmentInitializer;
+CLASS_DATA_END(ShorthandPropertyAssignment)
+
+CLASS_DATA(SpreadAssignment)
+    Node expression;
+CLASS_DATA_END(SpreadAssignment)
+
+CLASS_DATA(ParameterDeclaration)
+    Node dotDotDotToken;
+    Node name;
+    Node questionToken;
+    Node type;
+    Node initializer;
+CLASS_DATA_END(ParameterDeclaration)
+
+CLASS_DATA(PropertyDeclaration)
+    Node name;
+    Node questionToken;
+    Node exclamationToken;
+    Node type;
+    Node initializer;
+CLASS_DATA_END(PropertyDeclaration)
+
+CLASS_DATA(PropertySignature)
+    Node name;
+    Node questionToken;
+    Node type;
+    Node initializer;
+CLASS_DATA_END(PropertySignature)
+
+CLASS_DATA(VariableDeclaration)
+    Node name;
+    Node exclamationToken;
+    Node type;
+    Node initializer;
+CLASS_DATA_END(VariableDeclaration)
+
+CLASS_DATA(BindingElement)
+    Node dotDotDotToken;
+    Node propertyName;
+    Node name;
+    Node initializer;
+CLASS_DATA_END(BindingElement)
+
+CLASS_DATA(SignatureDeclaration)
+    Node typeParameters;
+    Node parameters;
+    Node type;
+CLASS_DATA_END(SignatureDeclaration)
+
+CLASS_DATA(FunctionLikeDeclaration)
+    AsteriskToken asteriskToken;
+    Node name;
+    Node questionToken;
+    Node exclamationToken;
+    Node typeParameters;
+    Node parameters;
+    Node type;
+    Node equalsGreaterThanToken;
+    Node body;
+CLASS_DATA_END(FunctionLikeDeclaration)
+
+CLASS_DATA(ArrowFunction)
+    Node equalsGreaterThanToken;
+CLASS_DATA_END(ArrowFunction)
+
+
+CLASS_DATA(TypeReferenceNode)
+    Node typeArguments;
+    Node typeName;
+CLASS_DATA_END(TypeReferenceNode)
+
+CLASS_DATA(TypePredicateNode)
+    Node assertsModifier;
+    Node parameterName;
+    Node type;
+CLASS_DATA_END(TypePredicateNode)
+
+CLASS_DATA(TypeQueryNode)
+    Node exprName;
+CLASS_DATA_END(TypeQueryNode)
+
+CLASS_DATA(TypeLiteralNode)
+    Node members;
+CLASS_DATA_END(TypeLiteralNode)
+
+CLASS_DATA(TypeNode)
+    Node type;
+CLASS_DATA_END(TypeNode)
+
+CLASS_DATA(ArrayTypeNode)
+    Node elementType;
+CLASS_DATA_END(ArrayTypeNode)
+
+CLASS_DATA(TupleTypeNode)
+    Node elements;
+CLASS_DATA_END(TupleTypeNode)
+
+CLASS_DATA(UnionOrIntersectionTypeNode)
+    Node types;
+CLASS_DATA_END(UnionOrIntersectionTypeNode)
+
+CLASS_DATA(ConditionalTypeNode)
+    Node checkType;
+    Node extendsType;
+    Node trueType;
+    Node falseType;
+CLASS_DATA_END(ConditionalTypeNode)
+
+CLASS_DATA(InferTypeNode)
+    Node typeParameter;
+CLASS_DATA_END(InferTypeNode)
+
+CLASS_DATA(ImportTypeNode)
+    Node argument;
+    Node qualifier;
+    Node typeArguments;
+CLASS_DATA_END(ImportTypeNode)
+
+typedef TypeNode ParenthesizedTypeNode;
+typedef TypeNode TypeOperatorNode;
+
+CLASS_DATA(IndexedAccessTypeNode)
+    Node objectType;
+    Node indexType;
+CLASS_DATA_END(IndexedAccessTypeNode)
+
+CLASS_DATA(MappedTypeNode)
+    Node readonlyToken;
+    Node typeParameter;
+    Node nameType;
+    Node questionToken;
+    Node type;
+CLASS_DATA_END(MappedTypeNode)
+
+CLASS_DATA(LiteralTypeNode)
+    Node literal;
+CLASS_DATA_END(LiteralTypeNode)
+
+CLASS_DATA(NamedTupleMember)
+    Node dotDotDotToken;
+    Node name;
+    Node questionToken;
+    Node type;
+CLASS_DATA_END(NamedTupleMember)
+
+CLASS_DATA(BindingPattern)
+    Node elements;
+CLASS_DATA_END(BindingPattern)
+
+CLASS_DATA(ArrayLiteralExpression)
+    Node elements;
+CLASS_DATA_END(ArrayLiteralExpression)
+
+CLASS_DATA(ObjectLiteralExpression)
+    Node properties;
+CLASS_DATA_END(ObjectLiteralExpression)
+
+CLASS_DATA(PropertyAccessExpression)
+    Node expression;
+    QuestionDotToken questionDotToken;
+    Node name;
+CLASS_DATA_END(PropertyAccessExpression)
+
+typedef PropertyAccessExpression PropertyAccessChain;
+
+CLASS_DATA(ElementAccessExpression)
+    Node expression;
+    QuestionDotToken questionDotToken;
+    Node argumentExpression;
+CLASS_DATA_END(ElementAccessExpression)
+
+CLASS_DATA(CallExpression)
+    Node expression;
+    QuestionDotToken questionDotToken;
+    Node typeArguments;
+    Node arguments;
+CLASS_DATA_END(CallExpression)
+
+CLASS_DATA(TaggedTemplateExpression)
+    Node tag;
+    QuestionDotToken questionDotToken;
+    Node typeArguments;
+    Node _template;
+CLASS_DATA_END(TaggedTemplateExpression)
+
+CLASS_DATA(TypeAssertion)
+    Node type;
+    Node expression;
+CLASS_DATA_END(TypeAssertion)
+
+CLASS_DATA(ParenthesizedExpression)
+    Node expression;
+CLASS_DATA_END(ParenthesizedExpression)
+
+CLASS_DATA(DeleteExpression)
+    Node expression;
+CLASS_DATA_END(DeleteExpression)
+
+CLASS_DATA(TypeOfExpression)
+    Node expression;
+CLASS_DATA_END(TypeOfExpression)
+
+CLASS_DATA(VoidExpression)
+    Node expression;
+CLASS_DATA_END(VoidExpression)
+
+CLASS_DATA(PrefixUnaryExpression)
+    Node operand;
+CLASS_DATA_END(PrefixUnaryExpression)
+
+CLASS_DATA(YieldExpression)
+    AsteriskToken asteriskToken;
+    Node expression;
+CLASS_DATA_END(YieldExpression)
+
+CLASS_DATA(AwaitExpression)
+    Node expression;
+CLASS_DATA_END(AwaitExpression)
+
+CLASS_DATA(PostfixUnaryExpression)
+    Node operand;
+CLASS_DATA_END(PostfixUnaryExpression)
+
+CLASS_DATA(BinaryExpression)
+    Node left;
+    Node operatorToken;
+    Node right;
+CLASS_DATA_END(BinaryExpression)
+
+CLASS_DATA(AsExpression)
+    Node expression;
+    Node type;
+CLASS_DATA_END(AsExpression)
+
+CLASS_DATA(NonNullExpression)
+    Node expression;
+CLASS_DATA_END(NonNullExpression)
+
+CLASS_DATA(MetaProperty)
+    SyntaxKind keywordToken;
+    Identifier name;
+CLASS_DATA_END(MetaProperty)
+
+CLASS_DATA(ConditionalExpression)
+    Node condition;
+    Node questionToken;
+    Node whenTrue;
+    Node colonToken;
+    Node whenFalse;
+CLASS_DATA_END(ConditionalExpression)
+
+CLASS_DATA(SpreadElement)
+    Node expression;
+CLASS_DATA_END(SpreadElement)
+
+CLASS_DATA(PartiallyEmittedExpression)
+    Node expression;
+CLASS_DATA_END(PartiallyEmittedExpression)
+
+CLASS_DATA(Block)
+    Node statements;
+CLASS_DATA_END(Block)
+
+CLASS_DATA(SourceFile)
+    NodeArray<Statement> statements;
+    Node endOfFileToken;
+    Node externalModuleIndicator;
+    Node commonJsModuleIndicator;
+
+    // extra fields
+    std::vector<FileReference> referencedFiles;
+    std::vector<FileReference> typeReferenceDirectives;
+    std::vector<FileReference> libReferenceDirectives;
+    std::vector<AmdDependency> amdDependencies;
+    LanguageVariant languageVariant;
+    boolean isDeclarationFile;
+
+    std::map<string, string> renamedDependencies;
+    boolean hasNoDefaultLib;
+    ScriptTarget languageVersion;
+    ScriptKind scriptKind;
+
+    std::map<string, string> pragmas;
+
+    // stats
+    std::vector<CommentDirective> commentDirectives;
+    string fileName;
+    string text;
+    number nodeCount;
+    number identifierCount;
+    std::map<string, string> identifiers;
+
+    std::vector<DiagnosticWithDetachedLocation> parseDiagnostics;
+    std::vector<DiagnosticWithDetachedLocation> bindDiagnostics;
+    std::vector<DiagnosticWithDetachedLocation> bindSuggestionDiagnostics;
+    std::vector<DiagnosticWithDetachedLocation> jsDocDiagnostics;
+CLASS_DATA_END(SourceFile)
+
+typedef SourceFile JsonSourceFile;
+
+CLASS_DATA(VariableStatement)
+    Node declarationList;
+CLASS_DATA_END(VariableStatement)
+
+CLASS_DATA(VariableDeclarationList)
+    Node declarations;
+CLASS_DATA_END(VariableDeclarationList)
+
+CLASS_DATA(ExpressionStatement)
+    Node expression;
+CLASS_DATA_END(ExpressionStatement)
+
+CLASS_DATA(IfStatement)
+    Node expression;
+    Node thenStatement;
+    Node elseStatement;
+CLASS_DATA_END(IfStatement)
+
+CLASS_DATA(DoStatement)
+    Node statement;
+    Node expression;
+CLASS_DATA_END(DoStatement)
+
+CLASS_DATA(WhileStatement)
+    Node expression;
+    Node statement;
+CLASS_DATA_END(WhileStatement)
+
+CLASS_DATA(ForStatement)
+    Node initializer;
+    Node condition;
+    Node incrementor;
+    Node statement;
+CLASS_DATA_END(ForStatement)
+
+CLASS_DATA(ForInStatement)
+    Node initializer;
+    Node expression;
+    Node statement;
+CLASS_DATA_END(ForInStatement)
+
+CLASS_DATA(ForOfStatement)
+    Node awaitModifier;
+    Node initializer;
+    Node expression;
+    Node statement;
+CLASS_DATA_END(ForOfStatement)
+
+CLASS_DATA(BreakOrContinueStatement)
+    Node label;
+CLASS_DATA_END(BreakOrContinueStatement)
+
+CLASS_DATA(ReturnStatement)
+    Node expression;
+CLASS_DATA_END(ReturnStatement)
+
+CLASS_DATA(WithStatement)
+    Node expression;
+    Node statement;
+CLASS_DATA_END(WithStatement)
+
+CLASS_DATA(SwitchStatement)
+    Node expression;
+    Node caseBlock;
+CLASS_DATA_END(SwitchStatement)
+
+CLASS_DATA(CaseBlock)
+    Node clauses;
+CLASS_DATA_END(CaseBlock)
+
+CLASS_DATA(CaseClause)
+    Node expression;
+    Node statements;
+CLASS_DATA_END(CaseClause)
+
+CLASS_DATA(DefaultClause)
+    Node statements;
+CLASS_DATA_END(DefaultClause)
+
+CLASS_DATA(LabeledStatement)
+    Node label;
+    Node statement;
+CLASS_DATA_END(LabeledStatement)
+
+CLASS_DATA(ThrowStatement)
+    Node expression;
+CLASS_DATA_END(ThrowStatement)
+
+CLASS_DATA(TryStatement)
+    Node tryBlock;
+    Node catchClause;
+    Node finallyBlock;
+CLASS_DATA_END(TryStatement)
+
+CLASS_DATA(CatchClause)
+    Node variableDeclaration;
+    Node block;
+CLASS_DATA_END(CatchClause)
+
+CLASS_DATA(Decorator)
+    Node expression;
+CLASS_DATA_END(Decorator)
+
+CLASS_DATA(ClassLikeDeclaration)
+    Node name;
+    Node typeParameters;
+    Node heritageClauses;
+    Node members;
+CLASS_DATA_END(ClassLikeDeclaration)
+
+CLASS_DATA(InterfaceDeclaration)
+    Node name;
+    Node typeParameters;
+    Node heritageClauses;
+    Node members;
+CLASS_DATA_END(InterfaceDeclaration)
+
+CLASS_DATA(ClassDeclaration)
+    Node name;
+    Node typeParameters;
+    Node heritageClauses;
+    Node members;
+CLASS_DATA_END(ClassDeclaration)
+
+CLASS_DATA(TypeAliasDeclaration)
+    Node name;
+    Node typeParameters;
+    Node type;
+CLASS_DATA_END(TypeAliasDeclaration)
+
+CLASS_DATA(EnumDeclaration)
+    Node name;
+    Node members;
+CLASS_DATA_END(EnumDeclaration)
+
+CLASS_DATA(EnumMember)
+    Node name;
+    Node initializer;
+CLASS_DATA_END(EnumMember)
+
+CLASS_DATA(ModuleDeclaration)
+    Node name;
+    Node body;
+CLASS_DATA_END(ModuleDeclaration)
+
+CLASS_DATA(ImportEqualsDeclaration)
+    Node name;
+    Node moduleReference;
+CLASS_DATA_END(ImportEqualsDeclaration)
+
+CLASS_DATA(ImportDeclaration)
+    Node importClause;
+    Node moduleSpecifier;
+CLASS_DATA_END(ImportDeclaration)
+
+CLASS_DATA(ImportClause)
+    Node name;
+    Node namedBindings;
+CLASS_DATA_END(ImportClause)
+
+CLASS_DATA(NamespaceExportDeclaration)
+    Node name;
+CLASS_DATA_END(NamespaceExportDeclaration)
+
+CLASS_DATA(NamespaceImport)
+    Node name;
+CLASS_DATA_END(NamespaceImport)
+
+CLASS_DATA(NamespaceExport)
+    Node name;
+CLASS_DATA_END(NamespaceExport)
+
+CLASS_DATA(NamedImportsOrExports)
+    Node elements;
+CLASS_DATA_END(NamedImportsOrExports)
+
+CLASS_DATA(ExportDeclaration)
+    Node exportClause;
+    Node moduleSpecifier;
+CLASS_DATA_END(ExportDeclaration)
+
+CLASS_DATA(ImportOrExportSpecifier)
+    Node propertyName;
+    Node name;
+CLASS_DATA_END(ImportOrExportSpecifier)
+
+typedef ImportOrExportSpecifier ImportSpecifier, ExportSpecifier;
+
+CLASS_DATA(ExportAssignment)
+    Node expression;
+CLASS_DATA_END(ExportAssignment)
+
+CLASS_DATA(TemplateExpression)
+    Node head;
+    Node templateSpans;
+CLASS_DATA_END(TemplateExpression)
+
+CLASS_DATA(TemplateSpan)
+    Node expression;
+    Node literal;
+CLASS_DATA_END(TemplateSpan)
+
+CLASS_DATA(TemplateHead)
+CLASS_DATA_END(TemplateHead)
+
+CLASS_DATA(TemplateMiddle)
+CLASS_DATA_END(TemplateMiddle)
+
+CLASS_DATA(TemplateTail)
+CLASS_DATA_END(TemplateTail)
+
+CLASS_DATA(TemplateLiteralTypeNode)
+    Node head;
+    Node templateSpans;
+CLASS_DATA_END(TemplateLiteralTypeNode)
+
+CLASS_DATA(TemplateLiteralTypeSpan)
+    Node type;
+    Node literal;
+CLASS_DATA_END(TemplateLiteralTypeSpan)
+
+CLASS_DATA(ComputedPropertyName)
+    Node expression;
+CLASS_DATA_END(ComputedPropertyName)
+
+CLASS_DATA(HeritageClause)
+    Node types;
+CLASS_DATA_END(HeritageClause)
+
+CLASS_DATA(ExpressionWithTypeArguments)
+    Node expression;
+    Node typeArguments;
+CLASS_DATA_END(ExpressionWithTypeArguments)
+
+CLASS_DATA(ExternalModuleReference)
+    Node expression;
+CLASS_DATA_END(ExternalModuleReference)
+
+CLASS_DATA(CommaListExpression)
+    Node elements;
+CLASS_DATA_END(CommaListExpression)
+
+CLASS_DATA(JsxElement)
+    Node openingElement;
+    Node children;
+    Node closingElement;
+CLASS_DATA_END(JsxElement)
+
+CLASS_DATA(JsxFragment)
+    Node openingFragment;
+    Node children;
+    Node closingFragment;
+CLASS_DATA_END(JsxFragment)
+
+CLASS_DATA(JsxOpeningLikeElement)
+    Node tagName;
+    Node typeArguments;
+    Node attributes;
+CLASS_DATA_END(JsxOpeningLikeElement)
+
+typedef JsxOpeningLikeElement JsxOpeningElement;
+
+CLASS_DATA(JsxAttributes)
+    Node properties;
+CLASS_DATA_END(JsxAttributes)
+
+CLASS_DATA(JsxAttribute)
+    Node name;
+    Node initializer;
+CLASS_DATA_END(JsxAttribute)
+
+CLASS_DATA(JsxSpreadAttribute)
+    Node expression;
+CLASS_DATA_END(JsxSpreadAttribute)
+
+CLASS_DATA(JsxExpression)
+    Node dotDotDotToken;
+    Node expression;
+CLASS_DATA_END(JsxExpression)
+
+CLASS_DATA(JsxClosingElement)
+    Node tagName;
+CLASS_DATA_END(JsxClosingElement)
+
+typedef TypeNode OptionalTypeNode, RestTypeNode, JSDocTypeExpression, JSDocNonNullableTypeNode, JSDocNullableTypeNode, JSDocOptionalTypeNode, JSDocVariadicTypeNode;
+
+CLASS_DATA(JSDocFunctionType)
+    Node parameters;
+    Node type;
+CLASS_DATA_END(JSDocFunctionType)
+
+CLASS_DATA(JSDoc)
+    Node tags;
+CLASS_DATA_END(JSDoc)
+
+CLASS_DATA(JSDocSeeTag)
+    Node tagName;
+    Node name;
+CLASS_DATA_END(JSDocSeeTag)
+
+CLASS_DATA(JSDocNameReference)
+    Node name;
+CLASS_DATA_END(JSDocNameReference)
+
+CLASS_DATA(JSDocTag)
+    Node tagName;
+CLASS_DATA_END(JSDocTag)
+
+CLASS_DATA(JSDocPropertyLikeTag)
+    Node isNameFirst;
+    Node name;
+    Node typeExpression;
+CLASS_DATA_END(JSDocPropertyLikeTag)
+
+CLASS_DATA(JSDocImplementsTag)
+    Node _class;
+CLASS_DATA_END(JSDocImplementsTag)
+
+CLASS_DATA(JSDocAugmentsTag)
+    Node _class;
+CLASS_DATA_END(JSDocAugmentsTag)
+
+CLASS_DATA(JSDocTemplateTag)
+    Node constraint;
+    Node typeParameters;
+CLASS_DATA_END(JSDocTemplateTag)
+
+CLASS_DATA(JSDocTypedefTag)
+    Node typeExpression;
+    Node fullName;
+CLASS_DATA_END(JSDocTypedefTag)
+
+CLASS_DATA(JSDocCallbackTag)
+    Node fullName;
+    Node typeExpression;
+CLASS_DATA_END(JSDocCallbackTag)
+
+CLASS_DATA(JSDocReturnTag)
+    Node typeExpression;
+CLASS_DATA_END(JSDocReturnTag)
+
+CLASS_DATA(JSDocTypeTag)
+    Node typeExpression;
+CLASS_DATA_END(JSDocTypeTag)
+
+CLASS_DATA(JSDocThisTag)
+    Node typeExpression;
+CLASS_DATA_END(JSDocThisTag)
+
+CLASS_DATA(JSDocEnumTag)
+    Node typeExpression;
+CLASS_DATA_END(JSDocEnumTag)
+
+CLASS_DATA(JSDocSignature)
+    NodeArray<JSDocTemplateTag> typeParameters;
+    NodeArray<JSDocParameterTag> parameters;
+    JSDocReturnTag type;
+CLASS_DATA_END(JSDocSignature)
+
+CLASS_DATA(JSDocTypeLiteral)
+    Node jsDocPropertyTags;
+CLASS_DATA_END(JSDocTypeLiteral)
+
+CLASS_DATA(JSDocContainer)
+    Node jsDocCache;
+CLASS_DATA_END(JSDocContainer)
+
+CLASS_DATA(LiteralLikeNode)
+    string text;
+    boolean isUnterminated;
+    boolean hasExtendedUnicodeEscape;
+CLASS_DATA_END(LiteralLikeNode)
+
+CLASS_DATA_BASE(TemplateLiteralLikeNode, LiteralLikeNode)
+    string rawText;
+    /* @internal */
+    TokenFlags templateFlags;
+CLASS_DATA_END(TemplateLiteralLikeNode)
+
+CLASS_DATA(FunctionOrConstructorTypeNode)
+    TypeNode type;
+    Node parameters;
+CLASS_DATA_END(FunctionOrConstructorTypeNode)
+
+CLASS_DATA(ConstructorDeclaration)
+    /* @internal */ NodeArray<TypeParameterDeclaration> typeParameters; // Present for use with reporting a grammar error
+    /* @internal */ TypeNode type; // Present for use with reporting a grammar error
+CLASS_DATA_END(ConstructorDeclaration)
+
+CLASS_DATA(AccessorDeclaration)
+    /* @internal */ NodeArray<TypeParameterDeclaration> typeParameters; // Present for use with reporting a grammar error
+    /* @internal */ TypeNode type; // Present for use with reporting a grammar error
+CLASS_DATA_END(AccessorDeclaration)
+
+typedef AccessorDeclaration GetAccessorDeclaration, SetAccessorDeclaration;
+
+typedef FunctionOrConstructorTypeNode FunctionTypeNode;
+typedef FunctionOrConstructorTypeNode ConstructorTypeNode;
+
+CLASS_DATA(NodeWithDiagnostics)
+    Node node;
+    NodeArray<Diagnostic> diagnostics;
+CLASS_DATA_END(NodeWithDiagnostics)
+
+typedef PropertyAccessExpression PropertyAccessEntityNameExpression;
+
+#endif // PARSER_TYPES_H

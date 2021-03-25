@@ -4,44 +4,43 @@
 #include "core.h"
 #include "utilities.h"
 
-
-NodeHolder::operator Node()
+NodeRef::operator Node()
 {
     return Node(data);
 }
 
-Node NodeHolder::operator=(Node& rhv)
+Node NodeRef::operator=(Node& rhv)
 {
     data = rhv.data;
     return Node(data);
 }
 
-NodeData* NodeHolder::operator->()
+NodeData* NodeRef::operator->()
 {
     return data.operator->();
 }
 
-boolean NodeHolder::operator !()
+boolean NodeRef::operator !()
 {
     return data->operator!();
 }
 
-boolean NodeHolder::operator ==(const Node& rhv)
+boolean NodeRef::operator ==(const Node& rhv)
 {
     return rhv.data.get() == this->data.get();
 }
 
-auto NodeHolder::size() -> size_t
+auto NodeRef::size() -> size_t
 {
     return data->children.size();
 }
 
-auto NodeHolder::begin() -> decltype(data->children.begin())
+auto NodeRef::begin() -> decltype(data->children.begin())
 {
     return data->children.begin();
 }
 
-auto NodeHolder::end() -> decltype(data->children.end())
+auto NodeRef::end() -> decltype(data->children.end())
 {
     return data->children.end();
 }

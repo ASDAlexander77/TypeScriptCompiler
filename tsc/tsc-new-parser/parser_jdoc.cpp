@@ -840,7 +840,7 @@ struct ParseJSDocCommentClass
     }
 
     auto parseJSDocEntityName() -> EntityName {
-        auto EntityName entity = parseJSDocIdentifierName();
+        EntityName entity = parseJSDocIdentifierName();
         if (parseOptional(SyntaxKind::OpenBracketToken)) {
             parseExpected(SyntaxKind::CloseBracketToken);
             // Note that y[] is accepted.as<an>() entity name, but the postfix brackets are not saved for checking.

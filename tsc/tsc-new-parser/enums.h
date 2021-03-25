@@ -581,4 +581,184 @@ enum class Comparison : number {
     GreaterThan = 1
 };
 
+enum class SymbolFlags : number {
+    None                    = 0,
+    FunctionScopedVariable  = 1 << 0,   // Variable (var) or parameter
+    BlockScopedVariable     = 1 << 1,   // A block-scoped variable (let or const)
+    Property                = 1 << 2,   // Property or enum member
+    EnumMember              = 1 << 3,   // Enum member
+    Function                = 1 << 4,   // Function
+    Class                   = 1 << 5,   // Class
+    Interface               = 1 << 6,   // Interface
+    ConstEnum               = 1 << 7,   // Const enum
+    RegularEnum             = 1 << 8,   // Enum
+    ValueModule             = 1 << 9,   // Instantiated module
+    NamespaceModule         = 1 << 10,  // Uninstantiated module
+    TypeLiteral             = 1 << 11,  // Type Literal or mapped type
+    ObjectLiteral           = 1 << 12,  // Object Literal
+    Method                  = 1 << 13,  // Method
+    Constructor             = 1 << 14,  // Constructor
+    GetAccessor             = 1 << 15,  // Get accessor
+    SetAccessor             = 1 << 16,  // Set accessor
+    Signature               = 1 << 17,  // Call, construct, or index signature
+    TypeParameter           = 1 << 18,  // Type parameter
+    TypeAlias               = 1 << 19,  // Type alias
+    ExportValue             = 1 << 20,  // Exported value marker (see comment in declareModuleMember in binder)
+    Alias                   = 1 << 21,  // An alias for another symbol (see comment in isAliasSymbolDeclaration in checker)
+    Prototype               = 1 << 22,  // Prototype property (no source representation)
+    ExportStar              = 1 << 23,  // Export * declaration
+    Optional                = 1 << 24,  // Optional property
+    Transient               = 1 << 25,  // Transient symbol (created during type check)
+    Assignment              = 1 << 26,  // Assignment treated as declaration (eg `this.prop = 1`)
+    ModuleExports           = 1 << 27,  // Symbol for CommonJS `module` of `module.exports`
+    /* @internal */
+    All = FunctionScopedVariable | BlockScopedVariable | Property | EnumMember | Function | Class | Interface | ConstEnum | RegularEnum | ValueModule | NamespaceModule | TypeLiteral
+        | ObjectLiteral | Method | Constructor | GetAccessor | SetAccessor | Signature | TypeParameter | TypeAlias | ExportValue | Alias | Prototype | ExportStar | Optional | Transient,
+
+    Enum = RegularEnum | ConstEnum,
+    Variable = FunctionScopedVariable | BlockScopedVariable,
+    Value = Variable | Property | EnumMember | ObjectLiteral | Function | Class | Enum | ValueModule | Method | GetAccessor | SetAccessor,
+    Type = Class | Interface | Enum | EnumMember | TypeLiteral | TypeParameter | TypeAlias,
+    Namespace = ValueModule | NamespaceModule | Enum,
+    Module = ValueModule | NamespaceModule,
+    Accessor = GetAccessor | SetAccessor,
+
+    // Variables can be redeclared, but can not redeclare a block-scoped declaration with the
+    // same name, or any other value that is not a variable, e.g. ValueModule or Class
+    FunctionScopedVariableExcludes = Value & ~FunctionScopedVariable,
+
+    // Block-scoped declarations are not allowed to be re-declared
+    // they can not merge with anything in the value space
+    BlockScopedVariableExcludes = Value,
+
+    ParameterExcludes = Value,
+    PropertyExcludes = None,
+    EnumMemberExcludes = Value | Type,
+    FunctionExcludes = Value & ~(Function | ValueModule | Class),
+    ClassExcludes = (Value | Type) & ~(ValueModule | Interface | Function), // class-interface mergability done in checker.ts
+    InterfaceExcludes = Type & ~(Interface | Class),
+    RegularEnumExcludes = (Value | Type) & ~(RegularEnum | ValueModule), // regular enums merge only with regular enums and modules
+    ConstEnumExcludes = (Value | Type) & ~ConstEnum, // const enums merge only with const enums
+    ValueModuleExcludes = Value & ~(Function | Class | RegularEnum | ValueModule),
+    NamespaceModuleExcludes = 0,
+    MethodExcludes = Value & ~Method,
+    GetAccessorExcludes = Value & ~SetAccessor,
+    SetAccessorExcludes = Value & ~GetAccessor,
+    TypeParameterExcludes = Type & ~TypeParameter,
+    TypeAliasExcludes = Type,
+    AliasExcludes = Alias,
+
+    ModuleMember = Variable | Function | Class | Interface | Enum | Module | TypeAlias | Alias,
+
+    ExportHasLocal = Function | Class | Enum | ValueModule,
+
+    BlockScoped = BlockScopedVariable | Class | Enum,
+
+    PropertyOrAccessor = Property | Accessor,
+
+    ClassMember = Method | Accessor | Property,
+
+    /* @internal */
+    ExportSupportsDefaultModifier = Class | Function | Interface,
+
+    /* @internal */
+    ExportDoesNotSupportDefaultModifier = ~ExportSupportsDefaultModifier,
+
+    /* @internal */
+    // The set of things we consider semantically classifiable.  Used to speed up the LS during
+    // classification.
+    Classifiable = Class | Enum | TypeAlias | Interface | TypeParameter | Module | Alias,
+
+    /* @internal */
+    LateBindingContainer = Class | Interface | TypeLiteral | ObjectLiteral | Function,
+};
+
+enum class TypeFlags : number {
+    Any             = 1 << 0,
+    Unknown         = 1 << 1,
+    String          = 1 << 2,
+    Number          = 1 << 3,
+    Boolean         = 1 << 4,
+    Enum            = 1 << 5,
+    BigInt          = 1 << 6,
+    StringLiteral   = 1 << 7,
+    NumberLiteral   = 1 << 8,
+    BooleanLiteral  = 1 << 9,
+    EnumLiteral     = 1 << 10,  // Always combined with StringLiteral, NumberLiteral, or Union
+    BigIntLiteral   = 1 << 11,
+    ESSymbol        = 1 << 12,  // Type of symbol primitive introduced in ES6
+    UniqueESSymbol  = 1 << 13,  // unique symbol
+    Void            = 1 << 14,
+    Undefined       = 1 << 15,
+    Null            = 1 << 16,
+    Never           = 1 << 17,  // Never type
+    TypeParameter   = 1 << 18,  // Type parameter
+    Object          = 1 << 19,  // Object type
+    Union           = 1 << 20,  // Union (T | U)
+    Intersection    = 1 << 21,  // Intersection (T & U)
+    Index           = 1 << 22,  // keyof T
+    IndexedAccess   = 1 << 23,  // T[K]
+    Conditional     = 1 << 24,  // T extends U ? X : Y
+    Substitution    = 1 << 25,  // Type parameter substitution
+    NonPrimitive    = 1 << 26,  // intrinsic object type
+    TemplateLiteral = 1 << 27,  // Template literal type
+    StringMapping   = 1 << 28,  // Uppercase/Lowercase type
+
+    /* @internal */
+    AnyOrUnknown = Any | Unknown,
+    /* @internal */
+    Nullable = Undefined | Null,
+    Literal = StringLiteral | NumberLiteral | BigIntLiteral | BooleanLiteral,
+    Unit = Literal | UniqueESSymbol | Nullable,
+    StringOrNumberLiteral = StringLiteral | NumberLiteral,
+    /* @internal */
+    StringOrNumberLiteralOrUnique = StringLiteral | NumberLiteral | UniqueESSymbol,
+    /* @internal */
+    DefinitelyFalsy = StringLiteral | NumberLiteral | BigIntLiteral | BooleanLiteral | Void | Undefined | Null,
+    PossiblyFalsy = DefinitelyFalsy | String | Number | BigInt | Boolean,
+    /* @internal */
+    Intrinsic = Any | Unknown | String | Number | BigInt | Boolean | BooleanLiteral | ESSymbol | Void | Undefined | Null | Never | NonPrimitive,
+    /* @internal */
+    Primitive = String | Number | BigInt | Boolean | Enum | EnumLiteral | ESSymbol | Void | Undefined | Null | Literal | UniqueESSymbol,
+    StringLike = String | StringLiteral | TemplateLiteral | StringMapping,
+    NumberLike = Number | NumberLiteral | Enum,
+    BigIntLike = BigInt | BigIntLiteral,
+    BooleanLike = Boolean | BooleanLiteral,
+    EnumLike = Enum | EnumLiteral,
+    ESSymbolLike = ESSymbol | UniqueESSymbol,
+    VoidLike = Void | Undefined,
+    /* @internal */
+    DisjointDomains = NonPrimitive | StringLike | NumberLike | BigIntLike | BooleanLike | ESSymbolLike | VoidLike | Null,
+    UnionOrIntersection = Union | Intersection,
+    StructuredType = Object | Union | Intersection,
+    TypeVariable = TypeParameter | IndexedAccess,
+    InstantiableNonPrimitive = TypeVariable | Conditional | Substitution,
+    InstantiablePrimitive = Index | TemplateLiteral | StringMapping,
+    Instantiable = InstantiableNonPrimitive | InstantiablePrimitive,
+    StructuredOrInstantiable = StructuredType | Instantiable,
+    /* @internal */
+    ObjectFlagsType = Any | Nullable | Never | Object | Union | Intersection,
+    /* @internal */
+    Simplifiable = IndexedAccess | Conditional,
+    /* @internal */
+    Substructure = Object | Union | Intersection | Index | IndexedAccess | Conditional | Substitution | TemplateLiteral | StringMapping,
+    // 'Narrowable' types are types where narrowing actually narrows.
+    // This *should* be every type other than null, undefined, void, and never
+    Narrowable = Any | Unknown | StructuredOrInstantiable | StringLike | NumberLike | BigIntLike | BooleanLike | ESSymbol | UniqueESSymbol | NonPrimitive,
+    /* @internal */
+    NotPrimitiveUnion = Any | Unknown | Enum | Void | Never | Object | Intersection | Instantiable,
+    // The following flags are aggregated during union and intersection type construction
+    /* @internal */
+    IncludesMask = Any | Unknown | Primitive | Never | Object | Union | Intersection | NonPrimitive | TemplateLiteral,
+    // The following flags are used for different purposes during union and intersection type construction
+    /* @internal */
+    IncludesStructuredOrInstantiable = TypeParameter,
+    /* @internal */
+    IncludesNonWideningType = Index,
+    /* @internal */
+    IncludesWildcard = IndexedAccess,
+    /* @internal */
+    IncludesEmptyObject = Conditional,
+};
+
 #endif // ENUMS_H
