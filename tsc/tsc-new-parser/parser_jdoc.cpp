@@ -376,12 +376,12 @@ struct ParseJSDocCommentClass
 
         removeLeadingNewlines(comments);
         removeTrailingWhitespace(comments);
-        return comments.size() == 0 ? undefined : comments.join(string());
+        return comments.size() == 0 ? string() : join(comments);
     }
 
     auto parseUnknownTag(number start, Identifier tagName, number indent, string indentText) -> JSDocUnknownTag {
         auto end = parser->getNodePos();
-        return finishNode(parser->factory.createJSDocUnknownTag(tagName, parseTrailingTagComments(start, end, indent, indentText)), start, end);
+        return parser->finishNode(parser->factory.createJSDocUnknownTag(tagName, parseTrailingTagComments(start, end, indent, indentText)), start, end);
     }
 
     auto addTag(JSDocTag tag) -> void {
@@ -400,7 +400,7 @@ struct ParseJSDocCommentClass
 
     auto tryParseTypeExpression() -> JSDocTypeExpression {
         skipWhitespaceOrAsterisk();
-        return parser->token() == SyntaxKind::OpenBraceToken ? parseJSDocTypeExpression() : undefined;
+        return parser->token() == SyntaxKind::OpenBraceToken ? parser->parseJSDocTypeExpression() : undefined;
     }
 
     auto parseBracketNameInPropertyAndParamTag() -> EntityNameWIthBracketed {
@@ -413,16 +413,16 @@ struct ParseJSDocCommentClass
         auto isBackquoted = parseOptionalJsdoc(SyntaxKind::BacktickToken);
         auto name = parseJSDocEntityName();
         if (isBackquoted) {
-            parseExpectedTokenJSDoc(SyntaxKind::BacktickToken);
+            parser->parseExpectedTokenJSDoc(SyntaxKind::BacktickToken);
         }
         if (isBracketed) {
             skipWhitespace();
             // May have an optional default, e.g. '[foo = 42]'
-            if (parseOptionalToken(SyntaxKind::EqualsToken)) {
-                parseExpression();
+            if (parser->parseOptionalToken(SyntaxKind::EqualsToken)) {
+                parser->parseExpression();
             }
 
-            parseExpected(SyntaxKind::CloseBracketToken);
+            parser->parseExpected(SyntaxKind::CloseBracketToken);
         }
 
         return { name, isBracketed };
@@ -433,9 +433,9 @@ struct ParseJSDocCommentClass
             case SyntaxKind::ObjectKeyword:
                 return true;
             case SyntaxKind::ArrayType:
-                return isObjectOrObjectArrayTypeReference(node.as<ArrayTypeNode>().elementType);
+                return isObjectOrObjectArrayTypeReference(node.as<ArrayTypeNode>()->elementType);
             default:
-                return isTypeReferenceNode(node) && ts.isIdentifier(node->typeName) && node->typeName->escapedText == S("Object") && !node->typeArguments;
+                return parser->isTypeReferenceNode(node) && ts::isIdentifier(node->typeName) && node->typeName->escapedText == S("Object") && !node->typeArguments;
         }
     }
 
@@ -444,7 +444,9 @@ struct ParseJSDocCommentClass
         auto isNameFirst = !typeExpression;
         skipWhitespaceOrAsterisk();
 
-        auto { name, isBracketed } = parseBracketNameInPropertyAndParamTag();
+        auto res = parseBracketNameInPropertyAndParamTag();
+        name = res.name;
+        isBracketed = res.isBracketed;
         auto indentText = skipWhitespaceOrAsterisk();
 
         if (isNameFirst) {
@@ -459,24 +461,24 @@ struct ParseJSDocCommentClass
             isNameFirst = true;
         }
         auto result = target == PropertyLikeParse::Property
-            ? factory.createJSDocPropertyTag(tagName, name, isBracketed, typeExpression, isNameFirst, comment)
-            : factory.createJSDocParameterTag(tagName, name, isBracketed, typeExpression, isNameFirst, comment);
-        return finishNode(result, start);
+            ? parser->factory.createJSDocPropertyTag(tagName, name, isBracketed, typeExpression, isNameFirst, comment)
+            : parser->factory.createJSDocParameterTag(tagName, name, isBracketed, typeExpression, isNameFirst, comment);
+        return parser->finishNode(result, start);
     }
 
     auto parseNestedTypeLiteral(JSDocTypeExpression typeExpression, EntityName name, PropertyLikeParse target, number indent) {
-        if (typeExpression && isObjectOrObjectArrayTypeReference(typeExpression.type)) {
+        if (typeExpression && isObjectOrObjectArrayTypeReference(typeExpression->type)) {
             auto pos = getNodePos();
-            auto JSDocPropertyLikeTag child | JSDocTypeTag | false;
-            auto std::vector<JSDocPropertyLikeTag> children;
-            while (child = tryParse(() => parseChildParameterOrPropertyTag(target, indent, name))) {
+            Node child;
+            std::vector<JSDocPropertyLikeTag> children;
+            while (child = parser->tryParse([&]() { return parseChildParameterOrPropertyTag(target, indent, name); })) {
                 if (child->kind == SyntaxKind::JSDocParameterTag || child->kind == SyntaxKind::JSDocPropertyTag) {
                     children = append(children, child);
                 }
             }
-            if (children) {
-                auto literal = finishNode(factory.createJSDocTypeLiteral(children, typeExpression.type->kind == SyntaxKind::ArrayType), pos);
-                return finishNode(factory.createJSDocTypeExpression(literal), pos);
+            if (!children.empty()) {
+                auto literal = parser->finishNode(parser->factory.createJSDocTypeLiteral(children, typeExpression->type->kind == SyntaxKind::ArrayType), pos);
+                return parser->finishNode(parser->factory.createJSDocTypeExpression(literal), pos);
             }
         }
     }
@@ -488,7 +490,7 @@ struct ParseJSDocCommentClass
 
         auto typeExpression = tryParseTypeExpression();
         auto end = getNodePos();
-        return finishNode(factory.createJSDocReturnTag(tagName, typeExpression, parseTrailingTagComments(start, end, indent, indentText)), start, end);
+        return parser->finishNode(parser->factory.createJSDocReturnTag(tagName, typeExpression, parseTrailingTagComments(start, end, indent, indentText)), start, end);
     }
 
     auto parseTypeTag(number start, Identifier tagName, number indent, string indentText) -> JSDocTypeTag {
@@ -499,23 +501,23 @@ struct ParseJSDocCommentClass
         auto typeExpression = parseJSDocTypeExpression(/*mayOmitBraces*/ true);
         auto end = getNodePos();
         auto comments = indent != undefined && indentText != undefined ? parseTrailingTagComments(start, end, indent, indentText) : undefined;
-        return finishNode(factory.createJSDocTypeTag(tagName, typeExpression, comments), start, end);
+        return parser->finishNode(parser->factory.createJSDocTypeTag(tagName, typeExpression, comments), start, end);
     }
 
     auto parseSeeTag(number start, Identifier tagName, number indent, string indentText) -> JSDocSeeTag {
         auto nameExpression = parseJSDocNameReference();
         auto end = getNodePos();
         auto comments = indent != undefined && indentText != undefined ? parseTrailingTagComments(start, end, indent, indentText) : undefined;
-        return finishNode(factory.createJSDocSeeTag(tagName, nameExpression, comments), start, end);
+        return parser->finishNode(parser->factory.createJSDocSeeTag(tagName, nameExpression, comments), start, end);
     }
 
     auto parseAuthorTag(number start, Identifier tagName, number indent, string indentText) -> JSDocAuthorTag {
         auto comments = parseAuthorNameAndEmail() + (parseTrailingTagComments(start, end, indent, indentText) || string());
-        return finishNode(factory.createJSDocAuthorTag(tagName, comments || undefined), start);
+        return parser->finishNode(parser->factory.createJSDocAuthorTag(tagName, comments || undefined), start);
     }
 
     auto parseAuthorNameAndEmail() -> string {
-        auto std::vector<string> = [] comments;
+        auto std::vector<string> comments;
         auto inEmail = false;
         auto token = scanner.getToken();
         while (token != SyntaxKind::EndOfFileToken && token != SyntaxKind::NewLineTrivia) {
@@ -526,27 +528,27 @@ struct ParseJSDocCommentClass
                 break;
             }
             else if (token == SyntaxKind::GreaterThanToken && inEmail) {
-                comments.push(scanner.getTokenText());
+                comments.push_back(scanner.getTokenText());
                 scanner.setTextPos(scanner.getTokenPos() + 1);
                 break;
             }
-            comments.push(scanner.getTokenText());
+            comments.push_back(scanner.getTokenText());
             token = nextTokenJSDoc();
         }
 
-        return comments.join(string());
+        return join(comments);
     }
 
     auto parseImplementsTag(number start, Identifier tagName, number margin, string indentText) -> JSDocImplementsTag {
         auto className = parseExpressionWithTypeArgumentsForAugments();
         auto end = getNodePos();
-        return finishNode(factory.createJSDocImplementsTag(tagName, className, parseTrailingTagComments(start, end, margin, indentText)), start, end);
+        return parser->finishNode(parser->factory.createJSDocImplementsTag(tagName, className, parseTrailingTagComments(start, end, margin, indentText)), start, end);
     }
 
     auto parseAugmentsTag(number start, Identifier tagName, number margin, string indentText) -> JSDocAugmentsTag {
         auto className = parseExpressionWithTypeArgumentsForAugments();
         auto end = getNodePos();
-        return finishNode(factory.createJSDocAugmentsTag(tagName, className, parseTrailingTagComments(start, end, margin, indentText)), start, end);
+        return parser->finishNode(parser->factory.createJSDocAugmentsTag(tagName, className, parseTrailingTagComments(start, end, margin, indentText)), start, end);
     }
 
     auto parseExpressionWithTypeArgumentsForAugments() -> ExpressionWithTypeArguments {
@@ -554,8 +556,8 @@ struct ParseJSDocCommentClass
         auto pos = getNodePos();
         auto expression = parsePropertyAccessEntityNameExpression();
         auto typeArguments = tryParseTypeArguments();
-        auto node = factory.createExpressionWithTypeArguments(expression, typeArguments);
-        auto res = finishNode(node, pos);
+        auto node = parser->factory.createExpressionWithTypeArguments(expression, typeArguments);
+        auto res = parser->finishNode(node, pos);
         if (usedBrace) {
             parseExpected(SyntaxKind::CloseBraceToken);
         }
@@ -567,28 +569,28 @@ struct ParseJSDocCommentClass
         Node node = parseJSDocIdentifierName();
         while (parseOptional(SyntaxKind::DotToken)) {
             auto name = parseJSDocIdentifierName();
-            node = finishNode(factory.createPropertyAccessExpression(node, name), pos).as<PropertyAccessEntityNameExpression>();
+            node = parser->finishNode(parser->factory.createPropertyAccessExpression(node, name), pos).as<PropertyAccessEntityNameExpression>();
         }
         return node;
     }
 
     auto parseSimpleTag(number start, std::function<JSDocTag(Identifier, string)> createTag, Identifier tagName, number margin, string indentText) -> JSDocTag {
         auto end = getNodePos();
-        return finishNode(createTag(tagName, parseTrailingTagComments(start, end, margin, indentText)), start, end);
+        return parser->finishNode(createTag(tagName, parseTrailingTagComments(start, end, margin, indentText)), start, end);
     }
 
     auto parseThisTag(number start, Identifier tagName, number margin, string indentText) -> JSDocThisTag {
         auto typeExpression = parseJSDocTypeExpression(/*mayOmitBraces*/ true);
         skipWhitespace();
         auto end = getNodePos();
-        return finishNode(factory.createJSDocThisTag(tagName, typeExpression, parseTrailingTagComments(start, end, margin, indentText)), start, end);
+        return parser->finishNode(parser->factory.createJSDocThisTag(tagName, typeExpression, parseTrailingTagComments(start, end, margin, indentText)), start, end);
     }
 
     auto parseEnumTag(number start, Identifier tagName, number margin, string indentText) -> JSDocEnumTag {
         auto typeExpression = parseJSDocTypeExpression(/*mayOmitBraces*/ true);
         skipWhitespace();
         auto end = getNodePos();
-        return finishNode(factory.createJSDocEnumTag(tagName, typeExpression, parseTrailingTagComments(start, end, margin, indentText)), start, end);
+        return parser->finishNode(parser->factory.createJSDocEnumTag(tagName, typeExpression, parseTrailingTagComments(start, end, margin, indentText)), start, end);
     }
 
     auto parseTypedefTag(number start, Identifier tagName, number indent, string indentText) -> JSDocTypedefTag {
@@ -629,10 +631,10 @@ struct ParseJSDocCommentClass
             }
             if (hasChildren) {
                 auto isArrayType = typeExpression && typeExpression.type->kind == SyntaxKind::ArrayType;
-                auto jsdocTypeLiteral = factory.createJSDocTypeLiteral(jsDocPropertyTags, isArrayType);
+                auto jsdocTypeLiteral = parser->factory.createJSDocTypeLiteral(jsDocPropertyTags, isArrayType);
                 typeExpression = childTypeTag && childTypeTag.typeExpression && !isObjectOrObjectArrayTypeReference(childTypeTag.typeExpression.type) ?
                     childTypeTag.typeExpression :
-                    finishNode(jsdocTypeLiteral, start);
+                    parser->finishNode(jsdocTypeLiteral, start);
                 end = typeExpression->end;
             }
         }
@@ -646,8 +648,8 @@ struct ParseJSDocCommentClass
             comment = parseTrailingTagComments(start, end, indent, indentText);
         }
 
-        auto typedefTag = factory.createJSDocTypedefTag(tagName, typeExpression, fullName, comment);
-        return finishNode(typedefTag, start, end);
+        auto typedefTag = parser->factory.createJSDocTypedefTag(tagName, typeExpression, fullName, comment);
+        return parser->finishNode(typedefTag, start, end);
     }
 
     auto parseJSDocTypeNameWithNamespace(boolean nested) {
@@ -658,14 +660,14 @@ struct ParseJSDocCommentClass
         auto typeNameOrNamespaceName = parseJSDocIdentifierName();
         if (parseOptional(SyntaxKind::DotToken)) {
             auto body = parseJSDocTypeNameWithNamespace(/*nested*/ true);
-            auto jsDocNamespaceNode = factory.createModuleDeclaration(
+            auto jsDocNamespaceNode = parser->factory.createModuleDeclaration(
                 /*decorators*/ undefined,
                 /*modifiers*/ undefined,
                 typeNameOrNamespaceName,
                 body,
                 nested ? NodeFlags::NestedNamespace : undefined
             ).as<JSDocNamespaceDeclaration>();
-            return finishNode(jsDocNamespaceNode, pos);
+            return parser->finishNode(jsDocNamespaceNode, pos);
         }
 
         if (nested) {
@@ -698,12 +700,12 @@ struct ParseJSDocCommentClass
                 }
             }
         });
-        auto typeExpression = finishNode(factory.createJSDocSignature(/*typeParameters*/ undefined, parameters, returnTag), start);
+        auto typeExpression = parser->finishNode(parser->factory.createJSDocSignature(/*typeParameters*/ undefined, parameters, returnTag), start);
         auto end = getNodePos();
         if (!comment) {
             comment = parseTrailingTagComments(start, end, indent, indentText);
         }
-        return finishNode(factory.createJSDocCallbackTag(tagName, typeExpression, fullName, comment), start, end);
+        return parser->finishNode(parser->factory.createJSDocCallbackTag(tagName, typeExpression, fullName, comment), start, end);
     }
 
     auto escapedTextsEqual(EntityName a, EntityName b) -> boolean {
@@ -794,7 +796,7 @@ struct ParseJSDocCommentClass
         if (nodeIsMissing(name)) {
             return undefined;
         }
-        return finishNode(factory.createTypeParameterDeclaration(name, /*constraint*/ undefined, /*defaultType*/ undefined), typeParameterPos);
+        return parser->finishNode(parser->factory.createTypeParameterDeclaration(name, /*constraint*/ undefined, /*defaultType*/ undefined), typeParameterPos);
     }
 
     auto parseTemplateTagTypeParameters() {
@@ -826,7 +828,7 @@ struct ParseJSDocCommentClass
         auto constraint = token() == SyntaxKind::OpenBraceToken ? parseJSDocTypeExpression() : undefined;
         auto typeParameters = parseTemplateTagTypeParameters();
         auto end = getNodePos();
-        return finishNode(factory.createJSDocTemplateTag(tagName, constraint, typeParameters, parseTrailingTagComments(start, end, indent, indentText)), start, end);
+        return parser->finishNode(parser->factory.createJSDocTemplateTag(tagName, constraint, typeParameters, parseTrailingTagComments(start, end, indent, indentText)), start, end);
     }
 
     auto parseOptionalJsdoc(SyntaxKind t) -> boolean {
@@ -865,7 +867,7 @@ struct ParseJSDocCommentClass
         auto end = scanner.getTextPos();
         auto originalKeywordKind = token();
         auto text = internIdentifier(scanner.getTokenValue());
-        auto result = finishNode(factory.createIdentifier(text, /*typeArguments*/ undefined, originalKeywordKind), pos, end);
+        auto result = parser->finishNode(parser->factory.createIdentifier(text, /*typeArguments*/ undefined, originalKeywordKind), pos, end);
         nextTokenJSDoc();
         return result;
     }
