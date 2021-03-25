@@ -46,6 +46,9 @@ namespace ver2
     struct JSDoc;
     struct JSDocTag;
 
+    struct Identifier;
+    using IdentifierRef = std::reference_wrapper<Declaration>;
+
     ///////////////////////////////////////////////////////////////////////
 
     struct TextRange
@@ -208,14 +211,6 @@ namespace ver2
 
     using MemberName = Node /*Identifier | PrivateIdentifier*/;
 
-    struct QualifiedName : Node
-    {
-        // kind: SyntaxKind::QualifiedName;
-        EntityName left;
-        Identifier right;
-        /*@internal*/ number jsdocDotPos; // QualifiedName occurs in JSDoc-style generic: Id1.Id2.<T>
-    };
-
     using DeclarationName = Node /*
     | Identifier
     | PrivateIdentifier
@@ -227,6 +222,14 @@ namespace ver2
     | EntityNameExpression
     */
         ;
+
+    struct QualifiedName : Node
+    {
+        // kind: SyntaxKind::QualifiedName;
+        EntityName left;
+        IdentifierRef right;
+        /*@internal*/ number jsdocDotPos; // QualifiedName occurs in JSDoc-style generic: Id1.Id2.<T>
+    };
 
     struct Declaration : Node
     {
