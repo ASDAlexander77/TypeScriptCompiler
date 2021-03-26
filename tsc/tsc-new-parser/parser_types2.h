@@ -43,13 +43,19 @@ namespace data
     };
 
     template <typename T /*extends Node*/>
-    struct NodeArray : ReadonlyArray<T>, ReadonlyTextRange
+    struct NodeArray : ReadonlyArray<T>
     {
         using ReadonlyArray::ReadonlyArray;
         
         NodeArray() {}
         NodeArray(undefined_t) {}
 
+        inline operator TextRange()
+        {
+            return range;
+        }
+
+        ReadonlyTextRange range;
         boolean hasTrailingComma;
         /* @internal */ TransformFlags transformFlags; // Flags for transforms, possibly undefined
     };
