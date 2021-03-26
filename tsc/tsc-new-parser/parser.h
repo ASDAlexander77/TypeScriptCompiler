@@ -19,7 +19,7 @@ typedef std::function<Node(SyntaxKind, number, number)> NodeCreateFunc;
 
 typedef std::function<void(number, number, DiagnosticMessage)> PragmaDiagnosticReporter;
 
-#include "parser_types2.h"
+#include "parser_types.h"
 
 namespace ts
 {

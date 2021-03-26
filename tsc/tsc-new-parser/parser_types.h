@@ -240,6 +240,11 @@ struct DiagnosticRelatedInformation {
     {
         return category == DiagnosticCategory::Undefined;
     }
+
+    inline DiagnosticRelatedInformation* operator ->()
+    {
+        return this;
+    }
 };
 
 struct Diagnostic : DiagnosticRelatedInformation {

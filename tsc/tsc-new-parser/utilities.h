@@ -60,18 +60,21 @@ inline auto ensureScriptKind(string fileName, ScriptKind scriptKind = ScriptKind
 
 inline auto isDiagnosticWithDetachedLocation(DiagnosticRelatedInformation diagnostic) -> boolean
 {
-    return diagnostic->start != -1 && diagnostic->length != -1 && diagnostic->fileName != S("");
+    // TODO: sort out
+    //return diagnostic->start != -1 && diagnostic->length != -1 && diagnostic->fileName != S("");
+    return false;
 }
 
 static auto attachFileToDiagnostic(DiagnosticRelatedInformation diagnostic, SourceFile file) -> DiagnosticWithLocation
 {
     auto fileName = file->fileName;
     auto length = file->text.length();
-    Debug::assertEqual(diagnostic->fileName, fileName);
+    //Debug::assertEqual(diagnostic->fileName, fileName);
     Debug::assertLessThanOrEqual(diagnostic->start, length);
     Debug::assertLessThanOrEqual(diagnostic->start + diagnostic->length, length);
     DiagnosticWithLocation diagnosticWithLocation;
-    diagnosticWithLocation->file = file;
+    // TODO: review it
+    //diagnosticWithLocation->file = file;
     diagnosticWithLocation->start = diagnostic->start;
     diagnosticWithLocation->length = diagnostic->length;
     diagnosticWithLocation->messageText = diagnostic->messageText;
@@ -89,12 +92,15 @@ static auto attachFileToDiagnostic(Diagnostic diagnostic, SourceFile file) -> Di
     Debug::assertLessThanOrEqual(diagnostic->start, length);
     Debug::assertLessThanOrEqual(diagnostic->start + diagnostic->length, length);
     DiagnosticWithLocation diagnosticWithLocation;
-    diagnosticWithLocation->file = file;
+    // TODO: review it
+    //diagnosticWithLocation->file = file;
     diagnosticWithLocation->start = diagnostic->start;
     diagnosticWithLocation->length = diagnostic->length;
     diagnosticWithLocation->messageText = diagnostic->messageText;
     diagnosticWithLocation->category = diagnostic->category;
     diagnosticWithLocation->code = diagnostic->code;
+    // TODO: review it
+    /*
     diagnosticWithLocation->reportsUnnecessary = diagnostic->reportsUnnecessary;
 
     if (!diagnostic->relatedInformation.empty())
@@ -113,6 +119,7 @@ static auto attachFileToDiagnostic(Diagnostic diagnostic, SourceFile file) -> Di
             }
         }
     }
+    */
 
     return diagnosticWithLocation;
 }
