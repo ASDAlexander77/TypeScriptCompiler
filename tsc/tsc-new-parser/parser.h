@@ -9,7 +9,11 @@
 
 #include <memory>
 
+#ifdef PARSER_VER1
+#include "parser_types.h"
+#else
 #include "parser_types2.h"
+#endif
 
 template <typename T>
 using NodeFuncT = std::function<T(Node)>;

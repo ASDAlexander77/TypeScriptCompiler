@@ -3,6 +3,19 @@
 
 #include "config.h"
 #include "undefined.h"
+
+struct LineAndCharacter {
+
+    LineAndCharacter() = default;
+
+    /** 0-based. */
+    number line;
+    /*
+        * 0-based. This value denotes the character position in line and is different from the 'column' because of tab characters.
+        */
+    number character;
+};
+
 struct DiagnosticMessageStore
 {
     DiagnosticMessageStore() = default;

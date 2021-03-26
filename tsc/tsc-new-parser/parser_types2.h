@@ -2175,7 +2175,7 @@ namespace data
         string text;
         std::vector<number> lineMap;
         /* @internal */
-        auto getPositionOfLineAndCharacter(number line, number character, boolean allowEdits = true) -> number;
+        std::function<number(number, number, boolean allowEdits)> getPositionOfLineAndCharacter;
     };
 
     struct RedirectInfo
@@ -2542,6 +2542,12 @@ namespace data
     {
         PTR(LeftHandSideExpression) target;
         PTR(Expression) thisArg;
+    };
+
+    struct NodeWithDiagnostics 
+    { 
+        JSDocTypeExpression jsDocTypeExpression;
+        std::vector<Diagnostic> diagnostics;
     };
 
 } // namespace data

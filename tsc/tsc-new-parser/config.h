@@ -25,4 +25,6 @@ using sregex_iterator = std::wsregex_iterator;
 #define to_bignumber_base(x, y) std::stoll(x, nullptr, y)
 #define to_bignumber(x) std::stoll(x)
 
+//#define PARSER_VER1
+
 #endif // CONFIG_H

@@ -4,6 +4,8 @@
 #include "core.h"
 #include "utilities.h"
 
+#ifdef PARSER_VER1
+
 NodeRef::operator Node()
 {
     return Node(data);
@@ -44,6 +46,8 @@ auto NodeRef::end() -> decltype(data->children.end())
 {
     return data->children.end();
 }
+
+#endif
 
 namespace ts {
 
@@ -257,15 +261,16 @@ namespace ts {
                 // Prime the scanner.
                 nextToken();
                 auto pos = getNodePos();
-                Node statements, endOfFileToken;
+                NodeArray<Statement> statements;
+                Node endOfFileToken;
                 if (token() == SyntaxKind::EndOfFileToken) {
-                    statements = createNodeArray(Node(), pos, pos);
+                    statements = createNodeArray(NodeArray<Statement>(), pos, pos);
                     endOfFileToken = parseTokenNode<EndOfFileToken>();
                 }
                 else {
                     // Loop and synthesize an ArrayLiteralExpression if there are more than
                     // one top-level expressions to ensure all input text is consumed.
-                    Node expressions;
+                    NodeArray<Expression> expressions;
                     while (token() != SyntaxKind::EndOfFileToken) {
                         Node expression;
                         switch (token()) {
@@ -298,18 +303,13 @@ namespace ts {
                         }
 
                         // Error collect recovery multiple top-level expressions
-                        if (expressions) {
-                            expressions.push_back(expression);
-                        }
-                        else {
-                            expressions = expression;
-                            if (token() != SyntaxKind::EndOfFileToken) {
-                                parseErrorAtCurrentToken(Diagnostics::Unexpected_token);
-                            }
+                        expressions.push_back(expression);
+                        if (token() != SyntaxKind::EndOfFileToken) {
+                            parseErrorAtCurrentToken(Diagnostics::Unexpected_token);
                         }
                     }
 
-                    auto expression = isArray(expressions) ? finishNode(factory.createArrayLiteralExpression(expressions), pos) : Debug::checkDefined(expressions);
+                    auto expression = expressions.size() > 1 ? finishNode(factory.createArrayLiteralExpression(expressions), pos) : Debug::checkDefined(expressions[0]);
                     auto statement = factory.createExpressionStatement(expression).as<JsonObjectExpressionStatement>();
                     finishNode(statement, pos);
                     statements = createNodeArray(NodeArray<Statement>(statement), pos);

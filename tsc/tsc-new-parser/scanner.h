@@ -17,7 +17,11 @@
 #include "scanner_enums.h"
 #include "diagnostics.h"
 
-#include "parser_fwd_types2.h"
+#ifdef PARSER_VER1
+#include "parser_types.h"
+#else
+#include "parser_types2.h"
+#endif
 
 struct safe_string
 {
@@ -89,18 +93,6 @@ static void error(string msg)
 {
     std::wcerr << msg;
 }
-
-struct LineAndCharacter {
-
-    LineAndCharacter() = default;
-
-    /** 0-based. */
-    number line;
-    /*
-        * 0-based. This value denotes the character position in line and is different from the 'column' because of tab characters.
-        */
-    number character;
-};
 
 struct ScanResult {
     ScanResult() = default;

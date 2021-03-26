@@ -766,7 +766,7 @@ private:
 
         auto getPositionOfLineAndCharacter(SourceFileLike sourceFile, number line, number character, bool allowEdits = true) -> number
         {
-            return sourceFile.hasGetPositionOfLineAndCharacter ? sourceFile.getPositionOfLineAndCharacter(line, character, allowEdits) : computePositionOfLineAndCharacter(getLineStarts(sourceFile), line, character, sourceFile.text, allowEdits);
+            return sourceFile->getPositionOfLineAndCharacter ? sourceFile->getPositionOfLineAndCharacter(line, character, allowEdits) : computePositionOfLineAndCharacter(getLineStarts(sourceFile), line, character, sourceFile->text, allowEdits);
         }
 
         /* @internal */

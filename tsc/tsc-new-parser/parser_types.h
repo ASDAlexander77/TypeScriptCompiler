@@ -3,6 +3,8 @@
 
 #include "types.h"
 
+#define PARSER_VER1
+
 struct Node;
 
 template <SyntaxKind kind>

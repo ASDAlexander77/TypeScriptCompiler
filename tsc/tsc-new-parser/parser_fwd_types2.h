@@ -150,7 +150,6 @@ namespace data
     FORWARD_DECLARATION(PrivateIdentifier)
     FORWARD_DECLARATION(LateBoundName)
     FORWARD_DECLARATION(Decorator)
-    FORWARD_DECLARATION(Modifier)
     FORWARD_DECLARATION(TypeParameterDeclaration)
     FORWARD_DECLARATION(SignatureDeclarationBase)
     FORWARD_DECLARATION(CallSignatureDeclaration)
@@ -436,7 +435,10 @@ namespace data
     FORWARD_DECLARATION(CallBinding)
     FORWARD_DECLARATION_T(Push)
     FORWARD_DECLARATION_T(VisitResult)
+    FORWARD_DECLARATION(NodeWithDiagnostics)
 
+    NODE_REF(Modifier)
+    
     NODE_REF(EntityName)
     NODE_REF(PropertyName)
     NODE_REF(MemberName)
@@ -528,6 +530,14 @@ namespace data
     NODE_REF(ObjectLiteralElementLike)
     NODE_REF(StringLiteralLike)
     NODE_REF(PropertyNameLiteral)
+
+    CLASS_REF(JsonSourceFile, SourceFile)
+
+    NODE_REF(UnionOrIntersectionTypeNode)
+    NODE_REF(AccessorDeclaration)
+    NODE_REF(NamedImportsOrExports)
+
+    NODE_REF(BooleanLiteral)
 
 } // namespace data
 
@@ -926,6 +936,15 @@ POINTER(SyntaxList)
 POINTER(Bundle)
 POINTER(PropertyDescriptorAttributes)
 POINTER(CallBinding)
+
+POINTER(JsonSourceFile)
+POINTER(UnionOrIntersectionTypeNode)
+POINTER(AccessorDeclaration)
+POINTER(NamedImportsOrExports)
+
+POINTER(NodeWithDiagnostics)
+POINTER(BooleanLiteral)
+
 POINTER_T(Push)
 POINTER_T(VisitResult)
 
