@@ -204,10 +204,10 @@ public:
 struct CommentRange {
     CommentRange() = default;
 
-    SyntaxKind kind;
     number pos;
     number end;
     boolean hasTrailingNewLine;
+    SyntaxKind kind;
 };
 
 struct CommentDirective {

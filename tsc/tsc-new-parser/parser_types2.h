@@ -1905,8 +1905,6 @@ namespace data
 
     struct CommentRange : TextRange
     {
-        CommentRange(number pos, number end, boolean hasTrailingNewLine, CommentKind kind) : TextRange{pos, end}, hasTrailingNewLine(hasTrailingNewLine), kind(kind) {};
-
         boolean hasTrailingNewLine;
         CommentKind kind;
     };
