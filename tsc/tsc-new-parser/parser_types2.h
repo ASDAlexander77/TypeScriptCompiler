@@ -2188,6 +2188,9 @@ namespace data
         std::vector<string> reportsDeprecated;
         /* @internal */
         boolean elidedInCompatabilityPyramid;
+
+        DiagnosticMessage() = default;
+        DiagnosticMessage(DiagnosticMessageStore &item) : code(item.code), category(item.category), key(item.label), message(item.message) {}
     };
 
     struct DiagnosticMessageChain
@@ -2512,6 +2515,22 @@ namespace data
     struct SyntaxList : Node 
     {
         std::vector<Node> _children;
+    };
+
+    struct PropertyDescriptorAttributes 
+    {
+        REF(Expression) enumerable;
+        REF(Expression) configurable;
+        REF(Expression) writable;
+        REF(Expression) value;
+        REF(Expression) get;
+        REF(Expression) set;
+    };
+
+    struct CallBinding
+    {
+        REF(LeftHandSideExpression) target;
+        REF(Expression) thisArg;
     };
 
 } // namespace data
