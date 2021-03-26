@@ -25,10 +25,6 @@ namespace data
 
     using SymbolTable = std::map<string, Symbol>;
 
-    using Modifier = Node;
-    // Arrays
-    using ModifiersArray = NodeArray<Modifier>;
-
     ///////////////////////////////////////////////////////////////////////
 
     struct TextRange

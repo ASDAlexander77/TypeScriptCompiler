@@ -175,10 +175,15 @@ struct DiagnosticMessage
     string label;
     string message;
 
-    bool operator !()
+    inline bool operator !()
     {
         return category == DiagnosticCategory::Undefined;
     }
+
+    inline DiagnosticMessage* operator ->()
+    {
+        return this;
+    }    
 };
 
 class SourceFileLike {

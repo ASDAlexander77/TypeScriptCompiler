@@ -54,9 +54,14 @@ struct wrapper
 	template <typename U>
 	wrapper(wrapper<U> otherPtr) : instance(std::static_pointer_cast<T>(otherPtr.instance)) {};
 
-    auto operator->()
+    inline auto operator->()
     {
         return instance.operator->();
+    }
+
+    inline auto operator!()
+    {
+        return !instance;
     }
 
 	REF_INST(T) instance;
@@ -90,6 +95,7 @@ namespace data
     FORWARD_DECLARATION(PrivateIdentifier)
     FORWARD_DECLARATION(LateBoundName)
     FORWARD_DECLARATION(Decorator)
+    FORWARD_DECLARATION(Modifier)
     FORWARD_DECLARATION(TypeParameterDeclaration)
     FORWARD_DECLARATION(SignatureDeclarationBase)
     FORWARD_DECLARATION(CallSignatureDeclaration)
@@ -471,6 +477,7 @@ WRAPPER(ComputedPropertyName)
 WRAPPER(PrivateIdentifier)
 WRAPPER(LateBoundName)
 WRAPPER(Decorator)
+WRAPPER(Modifier)
 WRAPPER(TypeParameterDeclaration)
 WRAPPER(SignatureDeclarationBase)
 WRAPPER(CallSignatureDeclaration)

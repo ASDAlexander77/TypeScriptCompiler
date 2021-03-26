@@ -130,7 +130,7 @@ static auto assertDiagnosticLocation(SourceFile file, number start, number lengt
 
 static auto getLocaleSpecificMessage(DiagnosticMessage message) -> string
 {
-    return string(message.message);
+    return string(message->message);
 }
 
 static auto createDetachedDiagnostic(string fileName, number start, number length, DiagnosticMessage message) -> DiagnosticWithDetachedLocation
@@ -145,14 +145,14 @@ static auto createDetachedDiagnostic(string fileName, number start, number lengt
     */
 
     DiagnosticWithDetachedLocation d;
-    d.start = start;
-    d.length = length;
+    d->start = start;
+    d->length = length;
 
-    d.messageText = text;
-    d.category = message.category;
-    d.code = message.code;
+    d->messageText = text;
+    d->category = message->category;
+    d->code = message->code;
     //d.reportsUnnecessary = message.reportsUnnecessary;
-    d.fileName = fileName;
+    d->fileName = fileName;
 
     return d;
 }
@@ -170,14 +170,14 @@ static auto createDetachedDiagnostic(string fileName, number start, number lengt
     */
 
     DiagnosticWithDetachedLocation d;
-    d.start = start;
-    d.length = length;
+    d->start = start;
+    d->length = length;
 
-    d.messageText = text;
-    d.category = message.category;
-    d.code = message.code;
+    d->messageText = text;
+    d->category = message->category;
+    d->code = message->code;
     //diagnosticWithDetachedLocation.reportsUnnecessary = message.reportsUnnecessary;
-    d.fileName = fileName;
+    d->fileName = fileName;
 
     return d;
 }
