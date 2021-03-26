@@ -1051,6 +1051,12 @@ namespace data
         // kind: SyntaxKind::BigIntLiteral;
     };
 
+    struct PseudoBigInt 
+    {
+        boolean negative;
+        string base10Value;
+    };
+
     struct TemplateHead : TemplateLiteralLikeNode
     {
         // kind: SyntaxKind::TemplateHead;

@@ -189,6 +189,7 @@ namespace data
     FORWARD_DECLARATION(NoSubstitutionTemplateLiteral)
     FORWARD_DECLARATION(NumericLiteral)
     FORWARD_DECLARATION(BigIntLiteral)
+    FORWARD_DECLARATION(PseudoBigInt)
     FORWARD_DECLARATION(TemplateHead)
     FORWARD_DECLARATION(TemplateMiddle)
     FORWARD_DECLARATION(TemplateTail)
@@ -446,6 +447,7 @@ namespace data
 
     NODE_REF(ObjectLiteralElementLike)
     NODE_REF(StringLiteralLike)
+    NODE_REF(PropertyNameLiteral);
     
 } // namespace data
 
@@ -566,6 +568,7 @@ WRAPPER(RegularExpressionLiteral)
 WRAPPER(NoSubstitutionTemplateLiteral)
 WRAPPER(NumericLiteral)
 WRAPPER(BigIntLiteral)
+WRAPPER(PseudoBigInt)
 WRAPPER(TemplateHead)
 WRAPPER(TemplateMiddle)
 WRAPPER(TemplateTail)
@@ -822,6 +825,7 @@ WRAPPER(BindingElementGrandparent)
 
 WRAPPER(ObjectLiteralElementLike)
 WRAPPER(StringLiteralLike)
+WRAPPER(PropertyNameLiteral)
 
 template <typename T>
 using NodeArray = data::NodeArray<T>;
