@@ -4,56 +4,59 @@
 #include <memory>
 #include <functional>
 
-#define REF(x) x##Ref
-#define REF_INST(x) std::shared_ptr<x>
+#define REF_NAME(x) x##Ref
+#define REF_TYPE(x) std::shared_ptr<x>
 
 #define FORWARD_DECLARATION(x) \
     struct x; \
-    using REF(x) = REF_INST(x);
+    using REF_NAME(x) = REF_TYPE(x);
 
 #define FORWARD_DECLARATION_T(x) \
     template <typename T> \
     struct x; \
     template <typename T> \
-    using REF(x) = REF_INST(x<T>);
+    using REF_NAME(x) = REF_TYPE(x<T>);
 
 #define FORWARD_DECLARATION_VAR(x, v) \
     template <v TKind> \
     struct x; \
     template <v TKind> \
-    using REF(x) = REF_INST(x<TKind>);
+    using REF_NAME(x) = REF_TYPE(x<TKind>);
 
 #define FORWARD_DECLARATION_VARS(x, v) \
     template <v ... TKind> \
     struct x; \
     template <v ... TKind> \
-    using REF(x) = REF_INST(x<TKind...>);
+    using REF_NAME(x) = REF_TYPE(x<TKind...>);
 
 #define NODE_REF(x) \
     using x = Node; \
-    using REF(x) = REF(Node);
+    using REF_NAME(x) = REF_NAME(Node);
 
 #define CLASS_REF(x, c) \
     using x = c; \
-    using REF(x) = REF(c);
+    using REF_NAME(x) = REF_NAME(c);
 
 #define TMPL_REF(x, n, t) \
     using x = n<t>; \
-    using REF(x) = REF(n)<t>;
+    using REF_NAME(x) = REF_NAME(n)<t>;
 
 #define TMPL_REF2(x, n, t1, t2) \
     using x = n<t1>; \
-    using REF(x) = REF(n)<t1, t2>;    
+    using REF_NAME(x) = REF_NAME(n)<t1, t2>;    
 
-#define POINTER(x) using x = ptr<data::x>;
-#define POINTER_T(x) template <typename T> using x = ptr<data::x<T> >;
+#define PTR(x) ptr<x>
+#define POINTER(x) using x = PTR(data::x);
+#define POINTER_T(x) template <typename T> using x = PTR(data::x<T>);
 
 template <typename T>
 struct ptr
 {
 	ptr() {};
 
-	ptr(REF_INST(T) value) : instance(value) {};
+	ptr(undefined_t) : instance(nullptr) {};
+
+	ptr(REF_TYPE(T) value) : instance(value) {};
 
 	template <typename U>
 	ptr(ptr<U> otherPtr) : instance(std::static_pointer_cast<T>(otherPtr.instance)) {};
@@ -73,6 +76,16 @@ struct ptr
     {
         return !instance;
     }
+
+    inline operator bool()
+    {
+        return !!instance;
+    }
+
+    inline operator SyntaxKind()
+    {
+        return instance->kind;
+    }    
 
     inline auto operator==(undefined_t)
     {
@@ -106,7 +119,7 @@ struct ptr
         return U(*this);
     }    
 
-	REF_INST(T) instance;
+	REF_TYPE(T) instance;
 };
 
 namespace data

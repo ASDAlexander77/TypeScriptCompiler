@@ -45,6 +45,11 @@ namespace data
     template <typename T /*extends Node*/>
     struct NodeArray : ReadonlyArray<T>, ReadonlyTextRange
     {
+        using ReadonlyArray::ReadonlyArray;
+        
+        NodeArray() {}
+        NodeArray(undefined_t) {}
+
         boolean hasTrailingComma;
         /* @internal */ TransformFlags transformFlags; // Flags for transforms, possibly undefined
     };
@@ -56,14 +61,14 @@ namespace data
         SymbolFlags flags;                                                          // Symbol flags
         string escapedName;                                                         // Name of symbol
         std::vector<Declaration> declarations;                                      // Declarations associated with this symbol
-        REF(Declaration) valueDeclaration;                                          // First value declaration of the symbol
+        PTR(Declaration) valueDeclaration;                                          // First value declaration of the symbol
         SymbolTable members;                                                        // Class, interface or object literal instance members
         SymbolTable exports;                                                        // Module exports
         SymbolTable globalExports;                                                  // Conditional global UMD exports
         /* @internal */ SymbolId id;                                                // Unique id (used to look up SymbolLinks)
         /* @internal */ number mergeId;                                             // Merge id (used to look up merged symbol)
-        /* @internal */ REF(Symbol) parent;                                         // Parent symbol
-        /* @internal */ REF(Symbol) exportSymbol;                                   // Exported symbol associated with this symbol
+        /* @internal */ PTR(Symbol) parent;                                         // Parent symbol
+        /* @internal */ PTR(Symbol) exportSymbol;                                   // Exported symbol associated with this symbol
         /* @internal */ boolean constEnumOnlyModule;                                // True if module contains only const enums or other modules with only const enums
         /* @internal */ SymbolFlags isReferenced;                                   // True if the symbol is referenced elsewhere. Keeps track of the meaning of a reference in case a symbol is both a type parameter and parameter.
         /* @internal */ boolean isReplaceableByMethod;                              // Can this Javascript class property be replaced by a method symbol?
@@ -76,20 +81,20 @@ namespace data
     {
         TypeFlags flags;           // Flags
         /* @internal */ TypeId id; // Unique ID
-        ///* @internal */ REF(TypeChecker) checker;
-        REF(Symbol) symbol;                                            // Symbol associated with type (if any)
-        REF(DestructuringPattern) pattern;                        // Destructuring pattern represented by type (if any)
-        REF(Symbol) aliasSymbol;                                       // Alias associated with type
+        ///* @internal */ PTR(TypeChecker) checker;
+        PTR(Symbol) symbol;                                            // Symbol associated with type (if any)
+        PTR(DestructuringPattern) pattern;                        // Destructuring pattern represented by type (if any)
+        PTR(Symbol) aliasSymbol;                                       // Alias associated with type
         std::vector<Type> aliasTypeArguments;                     // Alias type arguments (if any)
         /* @internal */ boolean aliasTypeArgumentsContainsMarker; // Alias type arguments (if any)
         /* @internal */
-        REF(Type) permissiveInstantiation; // Instantiation with type parameters mapped to wildcard type
+        PTR(Type) permissiveInstantiation; // Instantiation with type parameters mapped to wildcard type
         /* @internal */
-        REF(Type) restrictiveInstantiation; // Instantiation with type parameters mapped to unconstrained form
+        PTR(Type) restrictiveInstantiation; // Instantiation with type parameters mapped to unconstrained form
         /* @internal */
-        REF(Type) immediateBaseConstraint; // Immediate base constraint cache
+        PTR(Type) immediateBaseConstraint; // Immediate base constraint cache
         /* @internal */
-        REF(Type) widened; // Cached widened form of the type
+        PTR(Type) widened; // Cached widened form of the type
     };
 
     struct Node : TextRange
@@ -101,16 +106,16 @@ namespace data
         NodeArray<Decorator> decorators;               // Array of decorators (in document order)
         ModifiersArray modifiers;                      // Array of modifiers
         /* @internal */ NodeId id;                     // Unique id (used to look up NodeLinks)
-        REF(Node) parent;                                   // Parent node (initialized by binding)
-        /* @internal */ REF(Node) original;                 // The original node if this is an updated node.
-        /* @internal */ REF(Symbol) symbol;                 // Symbol declared by node (initialized by binding)
+        PTR(Node) parent;                                   // Parent node (initialized by binding)
+        /* @internal */ PTR(Node) original;                 // The original node if this is an updated node.
+        /* @internal */ PTR(Symbol) symbol;                 // Symbol declared by node (initialized by binding)
         /* @internal */ SymbolTable locals;            // Locals associated with node (initialized by binding)
-        /* @internal */ REF(Node) nextContainer;            // Next container in declaration order (initialized by binding)
-        /* @internal */ REF(Symbol) localSymbol;            // Local symbol declared by node (initialized by binding only for exported nodes)
-        ///* @internal */ REF(FlowNode) flowNode;                  // Associated FlowNode (initialized by binding)
-        ///* @internal */ REF(EmitNode) emitNode;                  // Associated EmitNode (initialized by transforms)
-        ///* @internal */ REF(Type) contextualType;                // Used to temporarily assign a contextual type during overload resolution
-        ///* @internal */ REF(InferenceContext) inferenceContext;  // Inference context for contextual type
+        /* @internal */ PTR(Node) nextContainer;            // Next container in declaration order (initialized by binding)
+        /* @internal */ PTR(Symbol) localSymbol;            // Local symbol declared by node (initialized by binding only for exported nodes)
+        ///* @internal */ PTR(FlowNode) flowNode;                  // Associated FlowNode (initialized by binding)
+        ///* @internal */ PTR(EmitNode) emitNode;                  // Associated EmitNode (initialized by transforms)
+        ///* @internal */ PTR(Type) contextualType;                // Used to temporarily assign a contextual type during overload resolution
+        ///* @internal */ PTR(InferenceContext) inferenceContext;  // Inference context for contextual type
     };
 
     // TODO(rbuckton): Constraint 'TKind' to 'TokenSyntaxKind'
@@ -149,8 +154,8 @@ namespace data
     struct QualifiedName : Node
     {
         // kind: SyntaxKind::QualifiedName;
-        REF(EntityName) left;
-        REF(Identifier) right;
+        PTR(EntityName) left;
+        PTR(Identifier) right;
         /*@internal*/ number jsdocDotPos; // QualifiedName occurs in JSDoc-style generic: Id1.Id2.<T>
     };
 
@@ -161,27 +166,27 @@ namespace data
 
     struct NamedDeclaration : Declaration
     {
-        REF(DeclarationName) name;
+        PTR(DeclarationName) name;
     };
 
     struct TypeElement : NamedDeclaration
     {
         any _typeElementBrand;
-        REF(PropertyName) name;
-        REF(QuestionToken) questionToken;
+        PTR(PropertyName) name;
+        PTR(QuestionToken) questionToken;
     };
 
     /* @internal */
     struct DynamicNamedDeclaration : NamedDeclaration
     {
-        REF(ComputedPropertyName) name;
+        PTR(ComputedPropertyName) name;
     };
 
     /* @internal */
     // A declaration that supports late-binding (used in checker)
     struct LateBoundDeclaration : DynamicNamedDeclaration
     {
-        REF(LateBoundName) name;
+        PTR(LateBoundName) name;
     };
 
     struct Statement : Node
@@ -191,14 +196,14 @@ namespace data
 
     struct DeclarationStatement : NamedDeclaration, Statement
     {
-        REF(Node) /**Identifier | StringLiteral | NumericLiteral*/ name;
+        PTR(Node) /**Identifier | StringLiteral | NumericLiteral*/ name;
     };
 
     struct ComputedPropertyName : Node
     {
         // kind: SyntaxKind::ComputedPropertyName;
-        REF(Declaration) parent;
-        REF(Expression) expression;
+        PTR(Declaration) parent;
+        PTR(Expression) expression;
     };
 
     struct PrivateIdentifier : Node
@@ -213,36 +218,36 @@ namespace data
     // A name that supports late-binding (used in checker)
     struct LateBoundName : ComputedPropertyName
     {
-        REF(EntityNameExpression) expression;
+        PTR(EntityNameExpression) expression;
     };
 
     struct Decorator : Node
     {
         // kind: SyntaxKind::Decorator;
-        REF(NamedDeclaration) parent;
-        REF(LeftHandSideExpression) expression;
+        PTR(NamedDeclaration) parent;
+        PTR(LeftHandSideExpression) expression;
     };
 
     struct TypeParameterDeclaration : NamedDeclaration
     {
         // kind: SyntaxKind::TypeParameter;
-        REF(Node) /**DeclarationWithTypeParameterChildren | InferTypeNode*/ parent;
-        REF(Identifier) name;
+        PTR(Node) /**DeclarationWithTypeParameterChildren | InferTypeNode*/ parent;
+        PTR(Identifier) name;
         /** Note: Consider calling `getEffectiveConstraintOfTypeParameter` */
-        REF(TypeNode) constraint;
-        REF(TypeNode) default;
+        PTR(TypeNode) constraint;
+        PTR(TypeNode) default;
 
         // For error recovery purposes.
-        REF(Expression) expression;
+        PTR(Expression) expression;
     };
 
     struct SignatureDeclarationBase : NamedDeclaration, JSDocContainer
     {
         SyntaxKind kind;
-        REF(PropertyName) name;
+        PTR(PropertyName) name;
         NodeArray<TypeParameterDeclaration> typeParameters;
         NodeArray<ParameterDeclaration> parameters;
-        REF(TypeNode) type;
+        PTR(TypeNode) type;
         /* @internal */ NodeArray<TypeNode> typeArguments; // Used for quick info, replaces typeParameters for instantiated signatures
     };
 
@@ -259,137 +264,137 @@ namespace data
     struct VariableDeclaration : NamedDeclaration, JSDocContainer
     {
         // kind: SyntaxKind::VariableDeclaration;
-        REF(Node) /**VariableDeclarationList | CatchClause*/ parent;
-        REF(BindingName) name;                  // Declared variable name
-        REF(ExclamationToken) exclamationToken; // Optional definite assignment assertion
-        REF(TypeNode) type;                     // Optional type annotation
-        REF(Expression) initializer;            // Optional initializer
+        PTR(Node) /**VariableDeclarationList | CatchClause*/ parent;
+        PTR(BindingName) name;                  // Declared variable name
+        PTR(ExclamationToken) exclamationToken; // Optional definite assignment assertion
+        PTR(TypeNode) type;                     // Optional type annotation
+        PTR(Expression) initializer;            // Optional initializer
     };
 
     /* @internal */
     struct InitializedVariableDeclaration : VariableDeclaration
     {
-        REF(Expression) initializer;
+        PTR(Expression) initializer;
     };
 
     struct VariableDeclarationList : Node
     {
         // kind: SyntaxKind::VariableDeclarationList;
-        REF(Node) /**VariableStatement | ForStatement | ForOfStatement | ForInStatement*/ parent;
+        PTR(Node) /**VariableStatement | ForStatement | ForOfStatement | ForInStatement*/ parent;
         NodeArray<VariableDeclaration> declarations;
     };
 
     struct ParameterDeclaration : NamedDeclaration, JSDocContainer
     {
         // kind: SyntaxKind::Parameter;
-        REF(SignatureDeclaration) parent;
-        REF(DotDotDotToken) dotDotDotToken; // Present on rest parameter
-        REF(BindingName) name;              // Declared parameter name.
-        REF(QuestionToken) questionToken;   // Present on optional parameter
-        REF(TypeNode) type;                 // Optional type annotation
-        REF(Expression) initializer;        // Optional initializer
+        PTR(SignatureDeclaration) parent;
+        PTR(DotDotDotToken) dotDotDotToken; // Present on rest parameter
+        PTR(BindingName) name;              // Declared parameter name.
+        PTR(QuestionToken) questionToken;   // Present on optional parameter
+        PTR(TypeNode) type;                 // Optional type annotation
+        PTR(Expression) initializer;        // Optional initializer
     };
 
     struct BindingElement : NamedDeclaration
     {
         // kind: SyntaxKind::BindingElement;
-        REF(BindingPattern) parent;
-        REF(PropertyName) propertyName;     // Binding property name (in object binding pattern)
-        REF(DotDotDotToken) dotDotDotToken; // Present on rest element (in object binding pattern)
-        REF(BindingName) name;              // Declared binding element name
-        REF(Expression) initializer;        // Optional initializer
+        PTR(BindingPattern) parent;
+        PTR(PropertyName) propertyName;     // Binding property name (in object binding pattern)
+        PTR(DotDotDotToken) dotDotDotToken; // Present on rest element (in object binding pattern)
+        PTR(BindingName) name;              // Declared binding element name
+        PTR(Expression) initializer;        // Optional initializer
     };
 
     struct PropertySignature : TypeElement, JSDocContainer
     {
         // kind: SyntaxKind::PropertySignature;
-        REF(PropertyName) name;           // Declared property name
-        REF(QuestionToken) questionToken; // Present on optional property
-        REF(TypeNode) type;               // Optional type annotation
-        REF(Expression) initializer;      // Present for use with reporting a grammar error
+        PTR(PropertyName) name;           // Declared property name
+        PTR(QuestionToken) questionToken; // Present on optional property
+        PTR(TypeNode) type;               // Optional type annotation
+        PTR(Expression) initializer;      // Present for use with reporting a grammar error
     };
 
     struct ClassElement : NamedDeclaration
     {
         any _classElementBrand;
-        REF(PropertyName) name;
+        PTR(PropertyName) name;
     };
 
     struct PropertyDeclaration : ClassElement, JSDocContainer
     {
         // kind: SyntaxKind::PropertyDeclaration;
-        REF(ClassLikeDeclaration) parent;
-        REF(PropertyName) name;
-        REF(QuestionToken) questionToken; // Present for use with reporting a grammar error
-        REF(ExclamationToken) exclamationToken;
-        REF(TypeNode) type;
-        REF(Expression) initializer; // Optional initializer
+        PTR(ClassLikeDeclaration) parent;
+        PTR(PropertyName) name;
+        PTR(QuestionToken) questionToken; // Present for use with reporting a grammar error
+        PTR(ExclamationToken) exclamationToken;
+        PTR(TypeNode) type;
+        PTR(Expression) initializer; // Optional initializer
     };
 
     /*@internal*/
     struct PrivateIdentifierPropertyDeclaration : PropertyDeclaration
     {
-        REF(PrivateIdentifier) name;
+        PTR(PrivateIdentifier) name;
     };
 
     /* @internal */
     struct InitializedPropertyDeclaration : PropertyDeclaration
     {
-        REF(Expression) initializer;
+        PTR(Expression) initializer;
     };
 
     struct ObjectLiteralElement : NamedDeclaration
     {
         any _objectLiteralBrand;
-        REF(PropertyName) name;
+        PTR(PropertyName) name;
     };
 
     struct PropertyAssignment : ObjectLiteralElement, JSDocContainer
     {
         // kind: SyntaxKind::PropertyAssignment;
-        REF(ObjectLiteralExpression) parent;
-        REF(PropertyName) name;
-        REF(QuestionToken) questionToken;       // Present for use with reporting a grammar error
-        REF(ExclamationToken) exclamationToken; // Present for use with reporting a grammar error
-        REF(Expression) initializer;
+        PTR(ObjectLiteralExpression) parent;
+        PTR(PropertyName) name;
+        PTR(QuestionToken) questionToken;       // Present for use with reporting a grammar error
+        PTR(ExclamationToken) exclamationToken; // Present for use with reporting a grammar error
+        PTR(Expression) initializer;
     };
 
     struct ShorthandPropertyAssignment : ObjectLiteralElement, JSDocContainer
     {
         // kind: SyntaxKind::ShorthandPropertyAssignment;
-        REF(ObjectLiteralExpression) parent;
-        REF(Identifier) name;
-        REF(QuestionToken) questionToken;
-        REF(ExclamationToken) exclamationToken;
+        PTR(ObjectLiteralExpression) parent;
+        PTR(Identifier) name;
+        PTR(QuestionToken) questionToken;
+        PTR(ExclamationToken) exclamationToken;
         // used when ObjectLiteralExpression is used in ObjectAssignmentPattern
         // it is a grammar error to appear in actual object initializer:
-        REF(EqualsToken) equalsToken;
-        REF(Expression) objectAssignmentInitializer;
+        PTR(EqualsToken) equalsToken;
+        PTR(Expression) objectAssignmentInitializer;
     };
 
     struct SpreadAssignment : ObjectLiteralElement, JSDocContainer
     {
         // kind: SyntaxKind::SpreadAssignment;
-        REF(ObjectLiteralExpression) parent;
-        REF(Expression) expression;
+        PTR(ObjectLiteralExpression) parent;
+        PTR(Expression) expression;
     };
 
     struct PropertyLikeDeclaration : NamedDeclaration
     {
-        REF(PropertyName) name;
+        PTR(PropertyName) name;
     };
 
     struct ObjectBindingPattern : Node
     {
         // kind: SyntaxKind::ObjectBindingPattern;
-        REF(Node) /**VariableDeclaration | ParameterDeclaration | BindingElement*/ parent;
+        PTR(Node) /**VariableDeclaration | ParameterDeclaration | BindingElement*/ parent;
         NodeArray<BindingElement> elements;
     };
 
     struct ArrayBindingPattern : Node
     {
         // kind: SyntaxKind::ArrayBindingPattern;
-        REF(Node) /**VariableDeclaration | ParameterDeclaration | BindingElement*/ parent;
+        PTR(Node) /**VariableDeclaration | ParameterDeclaration | BindingElement*/ parent;
         NodeArray<ArrayBindingElement> elements;
     };
 
@@ -405,26 +410,26 @@ namespace data
     {
         any _functionLikeDeclarationBrand;
 
-        REF(AsteriskToken) asteriskToken;
-        REF(QuestionToken) questionToken;
-        REF(ExclamationToken) exclamationToken;
-        REF(Node) /**Block | Expression*/ body;
-        ///* @internal */ REF(FlowNode) endFlowNode;
-        ///* @internal */ REF(FlowNode) returnFlowNode;
+        PTR(AsteriskToken) asteriskToken;
+        PTR(QuestionToken) questionToken;
+        PTR(ExclamationToken) exclamationToken;
+        PTR(Node) /**Block | Expression*/ body;
+        ///* @internal */ PTR(FlowNode) endFlowNode;
+        ///* @internal */ PTR(FlowNode) returnFlowNode;
     };
 
     struct FunctionDeclaration : FunctionLikeDeclarationBase, DeclarationStatement
     {
         // kind: SyntaxKind::FunctionDeclaration;
-        REF(Identifier) name;
-        REF(FunctionBody) body;
+        PTR(Identifier) name;
+        PTR(FunctionBody) body;
     };
 
     struct MethodSignature : SignatureDeclarationBase, TypeElement
     {
         // kind: SyntaxKind::MethodSignature;
-        REF(ObjectTypeDeclaration) parent;
-        REF(PropertyName) name;
+        PTR(ObjectTypeDeclaration) parent;
+        PTR(PropertyName) name;
     };
 
     // Note that a MethodDeclaration is considered both a ClassElement and an ObjectLiteralElement.
@@ -439,26 +444,26 @@ namespace data
     struct MethodDeclaration : FunctionLikeDeclarationBase, ClassElement, ObjectLiteralElement
     {
         // kind: SyntaxKind::MethodDeclaration;
-        REF(Node) /**ClassLikeDeclaration | ObjectLiteralExpression*/ parent;
-        REF(PropertyName) name;
-        REF(FunctionBody) body;
-        /* @internal*/ REF(ExclamationToken) exclamationToken; // Present for use with reporting a grammar error
+        PTR(Node) /**ClassLikeDeclaration | ObjectLiteralExpression*/ parent;
+        PTR(PropertyName) name;
+        PTR(FunctionBody) body;
+        /* @internal*/ PTR(ExclamationToken) exclamationToken; // Present for use with reporting a grammar error
     };
 
     struct ConstructorDeclaration : FunctionLikeDeclarationBase, ClassElement
     {
         // kind: SyntaxKind::Constructor;
-        REF(ClassLikeDeclaration) parent;
-        REF(FunctionBody) body;
+        PTR(ClassLikeDeclaration) parent;
+        PTR(FunctionBody) body;
         /* @internal */ NodeArray<TypeParameterDeclaration> typeParameters; // Present for use with reporting a grammar error
-        /* @internal */ REF(TypeNode) type;                                      // Present for use with reporting a grammar error
+        /* @internal */ PTR(TypeNode) type;                                      // Present for use with reporting a grammar error
     };
 
     /** For when we encounter a semicolon in a class declaration. ES6 allows these as class elements. */
     struct SemicolonClassElement : ClassElement
     {
         // kind: SyntaxKind::SemicolonClassElement;
-        REF(ClassLikeDeclaration) parent;
+        PTR(ClassLikeDeclaration) parent;
     };
 
     // See the comment on MethodDeclaration for the intuition behind GetAccessorDeclaration being a
@@ -466,9 +471,9 @@ namespace data
     struct GetAccessorDeclaration : FunctionLikeDeclarationBase, ClassElement, ObjectLiteralElement
     {
         // kind: SyntaxKind::GetAccessor;
-        REF(Node) /**ClassLikeDeclaration | ObjectLiteralExpression*/ parent;
-        REF(PropertyName) name;
-        REF(FunctionBody) body;
+        PTR(Node) /**ClassLikeDeclaration | ObjectLiteralExpression*/ parent;
+        PTR(PropertyName) name;
+        PTR(FunctionBody) body;
         /* @internal */ NodeArray<TypeParameterDeclaration> typeParameters; // Present for use with reporting a grammar error
     };
 
@@ -477,18 +482,18 @@ namespace data
     struct SetAccessorDeclaration : FunctionLikeDeclarationBase, ClassElement, ObjectLiteralElement
     {
         // kind: SyntaxKind::SetAccessor;
-        REF(Node) /**ClassLikeDeclaration | ObjectLiteralExpression*/ parent;
-        REF(PropertyName) name;
-        REF(FunctionBody) body;
+        PTR(Node) /**ClassLikeDeclaration | ObjectLiteralExpression*/ parent;
+        PTR(PropertyName) name;
+        PTR(FunctionBody) body;
         /* @internal */ NodeArray<TypeParameterDeclaration> typeParameters; // Present for use with reporting a grammar error
-        /* @internal */ REF(TypeNode) type;                                      // Present for use with reporting a grammar error
+        /* @internal */ PTR(TypeNode) type;                                      // Present for use with reporting a grammar error
     };
 
     struct IndexSignatureDeclaration : SignatureDeclarationBase, ClassElement, TypeElement
     {
         // kind: SyntaxKind::IndexSignature;
-        REF(ObjectTypeDeclaration) parent;
-        REF(TypeNode) type;
+        PTR(ObjectTypeDeclaration) parent;
+        PTR(TypeNode) type;
     };
 
     struct TypeNode : Node
@@ -511,20 +516,20 @@ namespace data
     {
         // kind: SyntaxKind::ImportType;
         boolean isTypeOf;
-        REF(TypeNode) argument;
-        REF(EntityName) qualifier;
+        PTR(TypeNode) argument;
+        PTR(EntityName) qualifier;
     };
 
     struct LiteralTypeNode : TypeNode
     {
         // kind: SyntaxKind::LiteralType;
-        REF(Node) /**NullLiteral | BooleanLiteral | LiteralExpression | PrefixUnaryExpression*/ literal;
+        PTR(Node) /**NullLiteral | BooleanLiteral | LiteralExpression | PrefixUnaryExpression*/ literal;
     };
 
     /* @internal */
     struct argumentType_ : LiteralTypeNode
     {
-        REF(StringLiteral) iteral;
+        PTR(StringLiteral) iteral;
     };
 
     struct LiteralImportTypeNode : ImportTypeNode
@@ -540,7 +545,7 @@ namespace data
     struct FunctionOrConstructorTypeNodeBase : TypeNode, SignatureDeclarationBase
     {
         // kind: SyntaxKind::FunctionType | SyntaxKind::ConstructorType;
-        REF(TypeNode) type;
+        PTR(TypeNode) type;
     };
 
     struct FunctionTypeNode : FunctionOrConstructorTypeNodeBase
@@ -556,22 +561,22 @@ namespace data
     struct TypeReferenceNode : NodeWithTypeArguments
     {
         // kind: SyntaxKind::TypeReference;
-        REF(EntityName) typeName;
+        PTR(EntityName) typeName;
     };
 
     struct TypePredicateNode : TypeNode
     {
         // kind: SyntaxKind::TypePredicate;
-        REF(Node) /**SignatureDeclaration | JSDocTypeExpression*/ parent;
-        REF(AssertsToken) assertsModifier;
-        REF(Node) /**Identifier | ThisTypeNode*/ parameterName;
-        REF(TypeNode) type;
+        PTR(Node) /**SignatureDeclaration | JSDocTypeExpression*/ parent;
+        PTR(AssertsToken) assertsModifier;
+        PTR(Node) /**Identifier | ThisTypeNode*/ parameterName;
+        PTR(TypeNode) type;
     };
 
     struct TypeQueryNode : TypeNode
     {
         // kind: SyntaxKind::TypeQuery;
-        REF(EntityName) exprName;
+        PTR(EntityName) exprName;
     };
 
     // A TypeLiteral is the declaration node for an anonymous symbol.
@@ -584,7 +589,7 @@ namespace data
     struct ArrayTypeNode : TypeNode
     {
         // kind: SyntaxKind::ArrayType;
-        REF(TypeNode) elementType;
+        PTR(TypeNode) elementType;
     };
 
     struct TupleTypeNode : TypeNode
@@ -597,21 +602,21 @@ namespace data
     {
         // kind: SyntaxKind::NamedTupleMember;
         Token<SyntaxKind::DotDotDotToken> dotDotDotToken;
-        REF(Identifier) name;
+        PTR(Identifier) name;
         Token<SyntaxKind::QuestionToken> questionToken;
-        REF(TypeNode) type;
+        PTR(TypeNode) type;
     };
 
     struct OptionalTypeNode : TypeNode
     {
         // kind: SyntaxKind::OptionalType;
-        REF(TypeNode) type;
+        PTR(TypeNode) type;
     };
 
     struct RestTypeNode : TypeNode
     {
         // kind: SyntaxKind::RestType;
-        REF(TypeNode) type;
+        PTR(TypeNode) type;
     };
 
     struct UnionTypeNode : TypeNode
@@ -629,29 +634,29 @@ namespace data
     struct ConditionalTypeNode : TypeNode
     {
         // kind: SyntaxKind::ConditionalType;
-        REF(TypeNode) checkType;
-        REF(TypeNode) extendsType;
-        REF(TypeNode) trueType;
-        REF(TypeNode) falseType;
+        PTR(TypeNode) checkType;
+        PTR(TypeNode) extendsType;
+        PTR(TypeNode) trueType;
+        PTR(TypeNode) falseType;
     };
 
     struct InferTypeNode : TypeNode
     {
         // kind: SyntaxKind::InferType;
-        REF(TypeParameterDeclaration) typeParameter;
+        PTR(TypeParameterDeclaration) typeParameter;
     };
 
     struct ParenthesizedTypeNode : TypeNode
     {
         // kind: SyntaxKind::ParenthesizedType;
-        REF(TypeNode) type;
+        PTR(TypeNode) type;
     };
 
     struct TypeOperatorNode : TypeNode
     {
         // kind: SyntaxKind::TypeOperator;
         SyntaxKind _operator;
-        REF(TypeNode) type;
+        PTR(TypeNode) type;
     };
 
     /* @internal */
@@ -663,18 +668,18 @@ namespace data
     struct IndexedAccessTypeNode : TypeNode
     {
         // kind: SyntaxKind::IndexedAccessType;
-        REF(TypeNode) objectType;
-        REF(TypeNode) indexType;
+        PTR(TypeNode) objectType;
+        PTR(TypeNode) indexType;
     };
 
     struct MappedTypeNode : TypeNode, Declaration
     {
         // kind: SyntaxKind::MappedType;
-        REF(Node) /**ReadonlyToken | PlusToken | MinusToken*/ readonlyToken;
-        REF(TypeParameterDeclaration) typeParameter;
-        REF(TypeNode) nameType;
-        REF(Node) /**QuestionToken | PlusToken | MinusToken*/ questionToken;
-        REF(TypeNode) type;
+        PTR(Node) /**ReadonlyToken | PlusToken | MinusToken*/ readonlyToken;
+        PTR(TypeParameterDeclaration) typeParameter;
+        PTR(TypeNode) nameType;
+        PTR(Node) /**QuestionToken | PlusToken | MinusToken*/ questionToken;
+        PTR(TypeNode) type;
     };
 
     struct TemplateLiteralTypeNode : TypeNode
@@ -684,8 +689,8 @@ namespace data
 
     struct TemplateLiteralTypeSpan : TypeNode
     {
-        REF(TypeNode) type;
-        REF(Node) /**TemplateMiddle | TemplateTail*/ literal;
+        PTR(TypeNode) type;
+        PTR(Node) /**TemplateMiddle | TemplateTail*/ literal;
     };
 
     // Note: 'brands' in our syntax nodes serve to give us a small amount of nominal typing.
@@ -724,7 +729,7 @@ namespace data
     {
         // kind: SyntaxKind::PrefixUnaryExpression;
         PrefixUnaryOperator _operator;
-        REF(UnaryExpression) operand;
+        PTR(UnaryExpression) operand;
     };
 
     // see: https://tc39.github.io/ecma262/#prod-UpdateExpression
@@ -733,7 +738,7 @@ namespace data
     struct PostfixUnaryExpression : UpdateExpression
     {
         // kind: SyntaxKind::PostfixUnaryExpression;
-        REF(LeftHandSideExpression) operand;
+        PTR(LeftHandSideExpression) operand;
         PostfixUnaryOperator _operator;
     };
 
@@ -747,7 +752,7 @@ namespace data
     struct PartiallyEmittedExpression : LeftHandSideExpression
     {
         // kind: SyntaxKind::PartiallyEmittedExpression;
-        REF(Expression) expression;
+        PTR(Expression) expression;
     };
 
     struct MemberExpression : LeftHandSideExpression
@@ -781,7 +786,7 @@ namespace data
     struct StringLiteral : LiteralExpression, Declaration
     {
         // kind: SyntaxKind::StringLiteral;
-        /* @internal */ REF(Node) /**Identifier | StringLiteralLike | NumericLiteral*/ textSourceNode; // Allows a StringLiteral to get its text from another node (used by transforms).
+        /* @internal */ PTR(Node) /**Identifier | StringLiteralLike | NumericLiteral*/ textSourceNode; // Allows a StringLiteral to get its text from another node (used by transforms).
                                                                                                  /** Note: this is only set when synthesizing a node, not during parsing. */
         /* @internal */ boolean singleQuote;
     };
@@ -797,7 +802,7 @@ namespace data
         SyntaxKind originalKeywordKind;                                                      // Original syntaxKind which get set so that we can report an error later
         /*@internal*/ GeneratedIdentifierFlags autoGenerateFlags;                            // Specifies whether to auto-generate the text for an identifier.
         /*@internal*/ number autoGenerateId;                                                 // Ensures unique generated identifiers get unique names, but clones get the same name.
-        /*@internal*/ REF(ImportSpecifier) generatedImportReference;                         // Reference to the generated import specifier this identifier refers to
+        /*@internal*/ PTR(ImportSpecifier) generatedImportReference;                         // Reference to the generated import specifier this identifier refers to
         boolean isInJSDocNamespace;                                                          // if the node is a member in a JSDoc namespace
         /*@internal*/ NodeArray<Node /*TypeNode | TypeParameterDeclaration*/> typeArguments; // Only defined on synthesized nodes. Though not syntactically valid, used in emitting diagnostics, quickinfo, and signature help.
         /*@internal*/ number jsdocDotPos;                                                    // Identifier occurs in JSDoc-style generic: Id.<T>
@@ -806,7 +811,7 @@ namespace data
     // Transient identifier node (marked by id === -1)
     struct TransientIdentifier : Identifier
     {
-        REF(Symbol) resolvedSymbol;
+        PTR(Symbol) resolvedSymbol;
     };
 
     /*@internal*/
@@ -848,40 +853,40 @@ namespace data
     struct DeleteExpression : UnaryExpression
     {
         // kind: SyntaxKind::DeleteExpression;
-        REF(UnaryExpression) expression;
+        PTR(UnaryExpression) expression;
     };
 
     struct TypeOfExpression : UnaryExpression
     {
         // kind: SyntaxKind::TypeOfExpression;
-        REF(UnaryExpression) expression;
+        PTR(UnaryExpression) expression;
     };
 
     struct VoidExpression : UnaryExpression
     {
         // kind: SyntaxKind::VoidExpression;
-        REF(UnaryExpression) expression;
+        PTR(UnaryExpression) expression;
     };
 
     struct AwaitExpression : UnaryExpression
     {
         // kind: SyntaxKind::AwaitExpression;
-        REF(UnaryExpression) expression;
+        PTR(UnaryExpression) expression;
     };
 
     struct YieldExpression : Expression
     {
         // kind: SyntaxKind::YieldExpression;
-        REF(AsteriskToken) asteriskToken;
-        REF(Expression) expression;
+        PTR(AsteriskToken) asteriskToken;
+        PTR(Expression) expression;
     };
 
     struct SyntheticExpression : Expression
     {
         // kind: SyntaxKind::SyntheticExpression;
         boolean isSpread;
-        REF(Type) type;
-        REF(Node) /**ParameterDeclaration | NamedTupleMember*/ tupleNameSource;
+        PTR(Type) type;
+        PTR(Node) /**ParameterDeclaration | NamedTupleMember*/ tupleNameSource;
     };
 
     // see: https://tc39.github.io/ecma262/#prod-ExponentiationExpression
@@ -952,21 +957,21 @@ namespace data
     struct BinaryExpression : Expression, Declaration
     {
         // kind: SyntaxKind::BinaryExpression;
-        REF(Expression) left;
-        REF(BinaryOperatorToken) operatorToken;
-        REF(Expression) right;
+        PTR(Expression) left;
+        PTR(BinaryOperatorToken) operatorToken;
+        PTR(Expression) right;
     };
 
     /* @internal */
     struct DynamicNamedBinaryExpression : BinaryExpression
     {
-        REF(ElementAccessExpression) left;
+        PTR(ElementAccessExpression) left;
     };
 
     /* @internal */
     struct LateBoundBinaryExpressionDeclaration : DynamicNamedBinaryExpression
     {
-        REF(LateBoundElementAccessExpression) left;
+        PTR(LateBoundElementAccessExpression) left;
     };
 
     using AssignmentOperatorToken = Token<SyntaxKind::EqualsToken, SyntaxKind::QuestionQuestionEqualsToken /*to keep it short, [from, to]*/>;
@@ -974,42 +979,42 @@ namespace data
     template <typename TOperator /*AssignmentOperatorToken*/>
     struct AssignmentExpression : BinaryExpression
     {
-        REF(LeftHandSideExpression) left;
-        REF_INST(TOperator) operatorToken;
+        PTR(LeftHandSideExpression) left;
+        PTR(TOperator) operatorToken;
     };
 
     struct ObjectDestructuringAssignment : AssignmentExpression<EqualsToken>
     {
-        REF(ObjectLiteralExpression) left;
+        PTR(ObjectLiteralExpression) left;
     };
 
     struct ArrayDestructuringAssignment : AssignmentExpression<EqualsToken>
     {
-        REF(ArrayLiteralExpression) left;
+        PTR(ArrayLiteralExpression) left;
     };
 
     struct ConditionalExpression : Expression
     {
         // kind: SyntaxKind::ConditionalExpression;
-        REF(Expression) condition;
-        REF(QuestionToken) questionToken;
-        REF(Expression) whenTrue;
-        REF(ColonToken) colonToken;
-        REF(Expression) whenFalse;
+        PTR(Expression) condition;
+        PTR(QuestionToken) questionToken;
+        PTR(Expression) whenTrue;
+        PTR(ColonToken) colonToken;
+        PTR(Expression) whenFalse;
     };
 
     struct FunctionExpression : PrimaryExpression, FunctionLikeDeclarationBase
     {
         // kind: SyntaxKind::FunctionExpression;
-        REF(Identifier) name;
-        REF(FunctionBody) body; // Required, whereas the member inherited from FunctionDeclaration is optional
+        PTR(Identifier) name;
+        PTR(FunctionBody) body; // Required, whereas the member inherited from FunctionDeclaration is optional
     };
 
     struct ArrowFunction : Expression, FunctionLikeDeclarationBase
     {
         // kind: SyntaxKind::ArrowFunction;
-        REF(EqualsGreaterThanToken) equalsGreaterThanToken;
-        REF(ConciseBody) body;
+        PTR(EqualsGreaterThanToken) equalsGreaterThanToken;
+        PTR(ConciseBody) body;
         never name;
     };
 
@@ -1053,7 +1058,7 @@ namespace data
     struct TemplateHead : TemplateLiteralLikeNode
     {
         // kind: SyntaxKind::TemplateHead;
-        REF(Node) /**TemplateExpression | TemplateLiteralTypeNode*/ parent;
+        PTR(Node) /**TemplateExpression | TemplateLiteralTypeNode*/ parent;
         /* @internal */
         TokenFlags templateFlags;
     };
@@ -1061,7 +1066,7 @@ namespace data
     struct TemplateMiddle : TemplateLiteralLikeNode
     {
         // kind: SyntaxKind::TemplateMiddle;
-        REF(Node) /**TemplateSpan | TemplateLiteralTypeSpan*/ parent;
+        PTR(Node) /**TemplateSpan | TemplateLiteralTypeSpan*/ parent;
         /* @internal */
         TokenFlags templateFlags;
     };
@@ -1069,7 +1074,7 @@ namespace data
     struct TemplateTail : TemplateLiteralLikeNode
     {
         // kind: SyntaxKind::TemplateTail;
-        REF(Node) /**TemplateSpan | TemplateLiteralTypeSpan*/ parent;
+        PTR(Node) /**TemplateSpan | TemplateLiteralTypeSpan*/ parent;
         /* @internal */
         TokenFlags templateFlags;
     };
@@ -1077,7 +1082,7 @@ namespace data
     struct TemplateExpression : PrimaryExpression
     {
         // kind: SyntaxKind::TemplateExpression;
-        REF(TemplateHead) head;
+        PTR(TemplateHead) head;
         NodeArray<TemplateSpan> templateSpans;
     };
 
@@ -1086,15 +1091,15 @@ namespace data
     struct TemplateSpan : Node
     {
         // kind: SyntaxKind::TemplateSpan;
-        REF(TemplateExpression) parent;
-        REF(Expression) expression;
-        REF(Node) /**TemplateMiddle | TemplateTail*/ literal;
+        PTR(TemplateExpression) parent;
+        PTR(Expression) expression;
+        PTR(Node) /**TemplateMiddle | TemplateTail*/ literal;
     };
 
     struct ParenthesizedExpression : PrimaryExpression, JSDocContainer
     {
         // kind: SyntaxKind::ParenthesizedExpression;
-        REF(Expression) expression;
+        PTR(Expression) expression;
     };
 
     struct ArrayLiteralExpression : PrimaryExpression
@@ -1108,8 +1113,8 @@ namespace data
     struct SpreadElement : Expression
     {
         // kind: SyntaxKind::SpreadElement;
-        REF(Node) /**ArrayLiteralExpression | CallExpression | NewExpression*/ parent;
-        REF(Expression) expression;
+        PTR(Node) /**ArrayLiteralExpression | CallExpression | NewExpression*/ parent;
+        PTR(Expression) expression;
     };
 
     /**
@@ -1135,54 +1140,54 @@ namespace data
     struct PropertyAccessExpression : MemberExpression, NamedDeclaration
     {
         // kind: SyntaxKind::PropertyAccessExpression;
-        REF(LeftHandSideExpression) expression;
-        REF(QuestionDotToken) questionDotToken;
-        REF(MemberName) name;
+        PTR(LeftHandSideExpression) expression;
+        PTR(QuestionDotToken) questionDotToken;
+        PTR(MemberName) name;
     };
 
     /*@internal*/
     struct PrivateIdentifierPropertyAccessExpression : PropertyAccessExpression
     {
-        REF(PrivateIdentifier) name;
+        PTR(PrivateIdentifier) name;
     };
 
     struct PropertyAccessChain : PropertyAccessExpression
     {
         any _optionalChainBrand;
-        REF(MemberName) name;
+        PTR(MemberName) name;
     };
 
     /* @internal */
     struct PropertyAccessChainRoot : PropertyAccessChain
     {
-        REF(QuestionDotToken) questionDotToken;
+        PTR(QuestionDotToken) questionDotToken;
     };
 
     struct SuperPropertyAccessExpression : PropertyAccessExpression
     {
-        REF(SuperExpression) expression;
+        PTR(SuperExpression) expression;
     };
 
     /** Brand for a PropertyAccessExpression which, like a QualifiedName, consists of a sequence of identifiers separated by dots. */
     struct PropertyAccessEntityNameExpression : PropertyAccessExpression
     {
         any _propertyAccessExpressionLikeQualifiedNameBrand;
-        REF(EntityNameExpression) expression;
-        REF(Identifier) name;
+        PTR(EntityNameExpression) expression;
+        PTR(Identifier) name;
     };
 
     struct ElementAccessExpression : MemberExpression
     {
         // kind: SyntaxKind::ElementAccessExpression;
-        REF(LeftHandSideExpression) expression;
-        REF(QuestionDotToken) questionDotToken;
-        REF(Expression) argumentExpression;
+        PTR(LeftHandSideExpression) expression;
+        PTR(QuestionDotToken) questionDotToken;
+        PTR(Expression) argumentExpression;
     };
 
     /* @internal */
     struct LateBoundElementAccessExpression : ElementAccessExpression
     {
-        REF(EntityNameExpression) argumentExpression;
+        PTR(EntityNameExpression) argumentExpression;
     };
 
     struct ElementAccessChain : ElementAccessExpression
@@ -1193,19 +1198,19 @@ namespace data
     /* @internal */
     struct ElementAccessChainRoot : ElementAccessChain
     {
-        REF(QuestionDotToken) questionDotToken;
+        PTR(QuestionDotToken) questionDotToken;
     };
 
     struct SuperElementAccessExpression : ElementAccessExpression
     {
-        REF(SuperExpression) expression;
+        PTR(SuperExpression) expression;
     };
 
     struct CallExpression : LeftHandSideExpression, Declaration
     {
         // kind: SyntaxKind::CallExpression;
-        REF(LeftHandSideExpression) expression;
-        REF(QuestionDotToken) questionDotToken;
+        PTR(LeftHandSideExpression) expression;
+        PTR(QuestionDotToken) questionDotToken;
         NodeArray<TypeNode> typeArguments;
         NodeArray<Expression> arguments;
     };
@@ -1218,7 +1223,7 @@ namespace data
     /* @internal */
     struct CallChainRoot : CallChain
     {
-        REF(QuestionDotToken) questionDotToken;
+        PTR(QuestionDotToken) questionDotToken;
     };
 
     /** @internal */
@@ -1230,55 +1235,55 @@ namespace data
     /** @internal */
     struct LiteralLikeElementAccessExpression : ElementAccessExpression, Declaration
     {
-        REF(Node) /**StringLiteralLike | NumericLiteral*/ argumentExpression;
+        PTR(Node) /**StringLiteralLike | NumericLiteral*/ argumentExpression;
     };
 
     /** @internal */
     struct BindableStaticElementAccessExpression : LiteralLikeElementAccessExpression
     {
-        REF(BindableStaticNameExpression) expression;
+        PTR(BindableStaticNameExpression) expression;
     };
 
     /** @internal */
     struct BindableElementAccessExpression : ElementAccessExpression
     {
-        REF(BindableStaticNameExpression) expression;
+        PTR(BindableStaticNameExpression) expression;
     };
 
     /** @internal */
     struct BindableStaticPropertyAssignmentExpression : BinaryExpression
     {
-        REF(BindableStaticAccessExpression) left;
+        PTR(BindableStaticAccessExpression) left;
     };
 
     /** @internal */
     struct BindablePropertyAssignmentExpression : BinaryExpression
     {
-        REF(BindableAccessExpression) left;
+        PTR(BindableAccessExpression) left;
     };
 
     // see: https://tc39.github.io/ecma262/#prod-SuperCall
     struct SuperCall : CallExpression
     {
-        REF(SuperExpression) expression;
+        PTR(SuperExpression) expression;
     };
 
     struct ImportCall : CallExpression
     {
-        REF(ImportExpression) expression;
+        PTR(ImportExpression) expression;
     };
 
     struct ExpressionWithTypeArguments : NodeWithTypeArguments
     {
         // kind: SyntaxKind::ExpressionWithTypeArguments;
-        REF(Node) /**HeritageClause | JSDocAugmentsTag | JSDocImplementsTag*/ parent;
-        REF(LeftHandSideExpression) expression;
+        PTR(Node) /**HeritageClause | JSDocAugmentsTag | JSDocImplementsTag*/ parent;
+        PTR(LeftHandSideExpression) expression;
     };
 
     struct NewExpression : PrimaryExpression, Declaration
     {
         // kind: SyntaxKind::NewExpression;
-        REF(LeftHandSideExpression) expression;
+        PTR(LeftHandSideExpression) expression;
         NodeArray<TypeNode> typeArguments;
         NodeArray<Expression> arguments;
     };
@@ -1286,30 +1291,30 @@ namespace data
     struct TaggedTemplateExpression : MemberExpression
     {
         // kind: SyntaxKind::TaggedTemplateExpression;
-        REF(LeftHandSideExpression) tag;
+        PTR(LeftHandSideExpression) tag;
         NodeArray<TypeNode> typeArguments;
-        REF(TemplateLiteral) _template;
-        /*@internal*/ REF(QuestionDotToken) questionDotToken; // NOTE: Invalid syntax, only used to report a grammar error.
+        PTR(TemplateLiteral) _template;
+        /*@internal*/ PTR(QuestionDotToken) questionDotToken; // NOTE: Invalid syntax, only used to report a grammar error.
     };
 
     struct AsExpression : Expression
     {
         // kind: SyntaxKind::AsExpression;
-        REF(Expression) expression;
-        REF(TypeNode) type;
+        PTR(Expression) expression;
+        PTR(TypeNode) type;
     };
 
     struct TypeAssertion : UnaryExpression
     {
         // kind: SyntaxKind::TypeAssertionExpression;
-        REF(TypeNode) type;
-        REF(UnaryExpression) expression;
+        PTR(TypeNode) type;
+        PTR(UnaryExpression) expression;
     };
 
     struct NonNullExpression : LeftHandSideExpression
     {
         // kind: SyntaxKind::NonNullExpression;
-        REF(Expression) expression;
+        PTR(Expression) expression;
     };
 
     struct NonNullChain : NonNullExpression
@@ -1323,7 +1328,7 @@ namespace data
     {
         // kind: SyntaxKind::MetaProperty;
         SyntaxKind keywordToken;
-        REF(Identifier) name;
+        PTR(Identifier) name;
     };
 
     /* @internal */
@@ -1340,99 +1345,99 @@ namespace data
     struct JsxElement : PrimaryExpression
     {
         // kind: SyntaxKind::JsxElement;
-        REF(JsxOpeningElement) openingElement;
+        PTR(JsxOpeningElement) openingElement;
         NodeArray<JsxChild> children;
-        REF(JsxClosingElement) closingElement;
+        PTR(JsxClosingElement) closingElement;
     };
 
     struct JsxTagNamePropertyAccess : PropertyAccessExpression
     {
-        REF(JsxTagNameExpression) expression;
+        PTR(JsxTagNameExpression) expression;
     };
 
     struct JsxAttributes : ObjectLiteralExpressionBase<JsxAttributeLike>
     {
         // kind: SyntaxKind::JsxAttributes;
-        REF(JsxOpeningLikeElement) parent;
+        PTR(JsxOpeningLikeElement) parent;
     };
 
     /// The opening element of a <Tag>...</Tag> JsxElement
     struct JsxOpeningElement : Expression
     {
         // kind: SyntaxKind::JsxOpeningElement;
-        REF(JsxElement) parent;
-        REF(JsxTagNameExpression) tagName;
+        PTR(JsxElement) parent;
+        PTR(JsxTagNameExpression) tagName;
         NodeArray<TypeNode> typeArguments;
-        REF(JsxAttributes) attributes;
+        PTR(JsxAttributes) attributes;
     };
 
     /// A JSX expression of the form <TagName attrs />
     struct JsxSelfClosingElement : PrimaryExpression
     {
         // kind: SyntaxKind::JsxSelfClosingElement;
-        REF(JsxTagNameExpression) tagName;
+        PTR(JsxTagNameExpression) tagName;
         NodeArray<TypeNode> typeArguments;
-        REF(JsxAttributes) attributes;
+        PTR(JsxAttributes) attributes;
     };
 
     /// A JSX expression of the form <>...</>
     struct JsxFragment : PrimaryExpression
     {
         // kind: SyntaxKind::JsxFragment;
-        REF(JsxOpeningFragment) openingFragment;
+        PTR(JsxOpeningFragment) openingFragment;
         NodeArray<JsxChild> children;
-        REF(JsxClosingFragment) closingFragment;
+        PTR(JsxClosingFragment) closingFragment;
     };
 
     /// The opening element of a <>...</> JsxFragment
     struct JsxOpeningFragment : Expression
     {
         // kind: SyntaxKind::JsxOpeningFragment;
-        REF(JsxFragment) parent;
+        PTR(JsxFragment) parent;
     };
 
     /// The closing element of a <>...</> JsxFragment
     struct JsxClosingFragment : Expression
     {
         // kind: SyntaxKind::JsxClosingFragment;
-        REF(JsxFragment) parent;
+        PTR(JsxFragment) parent;
     };
 
     struct JsxAttribute : ObjectLiteralElement
     {
         // kind: SyntaxKind::JsxAttribute;
-        REF(JsxAttributes) parent;
-        REF(Identifier) name;
+        PTR(JsxAttributes) parent;
+        PTR(Identifier) name;
         /// JSX attribute initializers are optional; <X y /> is sugar for <X y={true} />
-        REF(Node) /**StringLiteral | JsxExpression*/ initializer;
+        PTR(Node) /**StringLiteral | JsxExpression*/ initializer;
     };
 
     struct JsxSpreadAttribute : ObjectLiteralElement
     {
         // kind: SyntaxKind::JsxSpreadAttribute;
-        REF(JsxAttributes) parent;
-        REF(Expression) expression;
+        PTR(JsxAttributes) parent;
+        PTR(Expression) expression;
     };
 
     struct JsxClosingElement : Node
     {
         // kind: SyntaxKind::JsxClosingElement;
-        REF(JsxElement) parent;
-        REF(JsxTagNameExpression) tagName;
+        PTR(JsxElement) parent;
+        PTR(JsxTagNameExpression) tagName;
     };
 
     struct JsxExpression : Expression
     {
         // kind: SyntaxKind::JsxExpression;
-        REF(Node) /**JsxElement | JsxAttributeLike*/ parent;
+        PTR(Node) /**JsxElement | JsxAttributeLike*/ parent;
         Token<SyntaxKind::DotDotDotToken> dotDotDotToken;
-        REF(Expression) expression;
+        PTR(Expression) expression;
     };
 
     struct JsxText : LiteralLikeNode
     {
         // kind: SyntaxKind::JsxText;
-        REF(JsxElement) parent;
+        PTR(JsxElement) parent;
         boolean containsOnlyTriviaWhiteSpaces;
     };
 
@@ -1474,8 +1479,8 @@ namespace data
     struct SyntheticReferenceExpression : LeftHandSideExpression
     {
         // kind: SyntaxKind::SyntheticReferenceExpression;
-        REF(Expression) expression;
-        REF(Expression) thisArg;
+        PTR(Expression) expression;
+        PTR(Expression) thisArg;
     };
 
     struct EmptyStatement : Statement
@@ -1493,7 +1498,7 @@ namespace data
         /*@internal*/ NodeArray<Decorator> decorators; // Present for use with reporting a grammar error
         /*@internal*/ ModifiersArray modifiers;        // Present for use with reporting a grammar error
         // kind: SyntaxKind::MissingDeclaration;
-        REF(Identifier) name;
+        PTR(Identifier) name;
     };
 
     struct Block : Statement
@@ -1507,159 +1512,159 @@ namespace data
     {
         /* @internal*/ NodeArray<Decorator> decorators; // Present for use with reporting a grammar error
         // kind: SyntaxKind::VariableStatement;
-        REF(VariableDeclarationList) declarationList;
+        PTR(VariableDeclarationList) declarationList;
     };
 
     struct ExpressionStatement : Statement, JSDocContainer
     {
         // kind: SyntaxKind::ExpressionStatement;
-        REF(Expression) expression;
+        PTR(Expression) expression;
     };
 
     /* @internal */
     struct PrologueDirective : ExpressionStatement
     {
-        REF(StringLiteral) expression;
+        PTR(StringLiteral) expression;
     };
 
     struct IfStatement : Statement
     {
         // kind: SyntaxKind::IfStatement;
-        REF(Expression) expression;
-        REF(Statement) thenStatement;
-        REF(Statement) elseStatement;
+        PTR(Expression) expression;
+        PTR(Statement) thenStatement;
+        PTR(Statement) elseStatement;
     };
 
     struct IterationStatement : Statement
     {
-        REF(Statement) statement;
+        PTR(Statement) statement;
     };
 
     struct DoStatement : IterationStatement
     {
         // kind: SyntaxKind::DoStatement;
-        REF(Expression) expression;
+        PTR(Expression) expression;
     };
 
     struct WhileStatement : IterationStatement
     {
         // kind: SyntaxKind::WhileStatement;
-        REF(Expression) expression;
+        PTR(Expression) expression;
     };
 
     struct ForStatement : IterationStatement
     {
         // kind: SyntaxKind::ForStatement;
-        REF(ForInitializer) initializer;
-        REF(Expression) condition;
-        REF(Expression) incrementor;
+        PTR(ForInitializer) initializer;
+        PTR(Expression) condition;
+        PTR(Expression) incrementor;
     };
 
     struct ForInStatement : IterationStatement
     {
         // kind: SyntaxKind::ForInStatement;
-        REF(ForInitializer) initializer;
-        REF(Expression) expression;
+        PTR(ForInitializer) initializer;
+        PTR(Expression) expression;
     };
 
     struct ForOfStatement : IterationStatement
     {
         // kind: SyntaxKind::ForOfStatement;
-        REF(AwaitKeywordToken) awaitModifier;
-        REF(ForInitializer) initializer;
-        REF(Expression) expression;
+        PTR(AwaitKeywordToken) awaitModifier;
+        PTR(ForInitializer) initializer;
+        PTR(Expression) expression;
     };
 
     struct BreakStatement : Statement
     {
         // kind: SyntaxKind::BreakStatement;
-        REF(Identifier) label;
+        PTR(Identifier) label;
     };
 
     struct ContinueStatement : Statement
     {
         // kind: SyntaxKind::ContinueStatement;
-        REF(Identifier) label;
+        PTR(Identifier) label;
     };
 
     struct ReturnStatement : Statement
     {
         // kind: SyntaxKind::ReturnStatement;
-        REF(Expression) expression;
+        PTR(Expression) expression;
     };
 
     struct WithStatement : Statement
     {
         // kind: SyntaxKind::WithStatement;
-        REF(Expression) expression;
-        REF(Statement) statement;
+        PTR(Expression) expression;
+        PTR(Statement) statement;
     };
 
     struct SwitchStatement : Statement
     {
         // kind: SyntaxKind::SwitchStatement;
-        REF(Expression) expression;
-        REF(CaseBlock) caseBlock;
+        PTR(Expression) expression;
+        PTR(CaseBlock) caseBlock;
         boolean possiblyExhaustive; // initialized by binding
     };
 
     struct CaseBlock : Node
     {
         // kind: SyntaxKind::CaseBlock;
-        REF(SwitchStatement) parent;
+        PTR(SwitchStatement) parent;
         NodeArray<CaseOrDefaultClause> clauses;
     };
 
     struct CaseClause : Node
     {
         // kind: SyntaxKind::CaseClause;
-        REF(CaseBlock) parent;
-        REF(Expression) expression;
+        PTR(CaseBlock) parent;
+        PTR(Expression) expression;
         NodeArray<Statement> statements;
-        ///* @internal */ REF(FlowNode) fallthroughFlowNode;
+        ///* @internal */ PTR(FlowNode) fallthroughFlowNode;
     };
 
     struct DefaultClause : Node
     {
         // kind: SyntaxKind::DefaultClause;
-        REF(CaseBlock) parent;
+        PTR(CaseBlock) parent;
         NodeArray<Statement> statements;
-        ///* @internal */ REF(FlowNode) fallthroughFlowNode;
+        ///* @internal */ PTR(FlowNode) fallthroughFlowNode;
     };
 
     struct LabeledStatement : Statement, JSDocContainer
     {
         // kind: SyntaxKind::LabeledStatement;
-        REF(Identifier) label;
-        REF(Statement) statement;
+        PTR(Identifier) label;
+        PTR(Statement) statement;
     };
 
     struct ThrowStatement : Statement
     {
         // kind: SyntaxKind::ThrowStatement;
-        REF(Expression) expression;
+        PTR(Expression) expression;
     };
 
     struct TryStatement : Statement
     {
         // kind: SyntaxKind::TryStatement;
-        REF(Block) tryBlock;
-        REF(CatchClause) catchClause;
-        REF(Block) finallyBlock;
+        PTR(Block) tryBlock;
+        PTR(CatchClause) catchClause;
+        PTR(Block) finallyBlock;
     };
 
     struct CatchClause : Node
     {
         // kind: SyntaxKind::CatchClause;
-        REF(TryStatement) parent;
-        REF(VariableDeclaration) variableDeclaration;
-        REF(Block) block;
+        PTR(TryStatement) parent;
+        PTR(VariableDeclaration) variableDeclaration;
+        PTR(Block) block;
     };
 
     struct ClassLikeDeclarationBase : NamedDeclaration, JSDocContainer
     {
         // kind: SyntaxKind::ClassDeclaration | SyntaxKind::ClassExpression;
-        REF(Identifier) name;
+        PTR(Identifier) name;
         NodeArray<TypeParameterDeclaration> typeParameters;
         NodeArray<HeritageClause> heritageClauses;
         NodeArray<ClassElement> members;
@@ -1669,7 +1674,7 @@ namespace data
     {
         // kind: SyntaxKind::ClassDeclaration;
         /** May be undefined in `export default class { ... }`. */
-        REF(Identifier) name;
+        PTR(Identifier) name;
     };
 
     struct ClassExpression : ClassLikeDeclarationBase, PrimaryExpression
@@ -1680,7 +1685,7 @@ namespace data
     struct InterfaceDeclaration : DeclarationStatement, JSDocContainer
     {
         // kind: SyntaxKind::InterfaceDeclaration;
-        REF(Identifier) name;
+        PTR(Identifier) name;
         NodeArray<TypeParameterDeclaration> typeParameters;
         NodeArray<HeritageClause> heritageClauses;
         NodeArray<TypeElement> members;
@@ -1697,58 +1702,58 @@ namespace data
     struct TypeAliasDeclaration : DeclarationStatement, JSDocContainer
     {
         // kind: SyntaxKind::TypeAliasDeclaration;
-        REF(Identifier) name;
+        PTR(Identifier) name;
         NodeArray<TypeParameterDeclaration> typeParameters;
-        REF(TypeNode) type;
+        PTR(TypeNode) type;
     };
 
     struct EnumMember : NamedDeclaration, JSDocContainer
     {
         // kind: SyntaxKind::EnumMember;
-        REF(EnumDeclaration) parent;
+        PTR(EnumDeclaration) parent;
         // This does include ComputedPropertyName, but the parser will give an error
         // if it parses a ComputedPropertyName in an EnumMember
-        REF(PropertyName) name;
-        REF(Expression) initializer;
+        PTR(PropertyName) name;
+        PTR(Expression) initializer;
     };
 
     struct EnumDeclaration : DeclarationStatement, JSDocContainer
     {
         // kind: SyntaxKind::EnumDeclaration;
-        REF(Identifier) name;
+        PTR(Identifier) name;
         NodeArray<EnumMember> members;
     };
 
     struct ModuleDeclaration : DeclarationStatement, JSDocContainer
     {
         // kind: SyntaxKind::ModuleDeclaration;
-        REF(Node) /**ModuleBody | SourceFile*/ parent;
-        REF(ModuleName) name;
-        REF(Node) /**ModuleBody | JSDocNamespaceDeclaration*/ body;
+        PTR(Node) /**ModuleBody | SourceFile*/ parent;
+        PTR(ModuleName) name;
+        PTR(Node) /**ModuleBody | JSDocNamespaceDeclaration*/ body;
     };
 
     /* @internal */
     struct AmbientModuleDeclaration : ModuleDeclaration
     {
-        REF(ModuleBlock) body;
+        PTR(ModuleBlock) body;
     };
 
     struct NamespaceDeclaration : ModuleDeclaration
     {
-        REF(Identifier) name;
-        REF(NamespaceBody) body;
+        PTR(Identifier) name;
+        PTR(NamespaceBody) body;
     };
 
     struct JSDocNamespaceDeclaration : ModuleDeclaration
     {
-        REF(Identifier) name;
-        REF(JSDocNamespaceBody) body;
+        PTR(Identifier) name;
+        PTR(JSDocNamespaceBody) body;
     };
 
     struct ModuleBlock : Statement
     {
         // kind: SyntaxKind::ModuleBlock;
-        REF(ModuleDeclaration) parent;
+        PTR(ModuleDeclaration) parent;
         NodeArray<Statement> statements;
     };
 
@@ -1760,20 +1765,20 @@ namespace data
     struct ImportEqualsDeclaration : DeclarationStatement, JSDocContainer
     {
         // kind: SyntaxKind::ImportEqualsDeclaration;
-        REF(Node) /**SourceFile | ModuleBlock*/ parent;
-        REF(Identifier) name;
+        PTR(Node) /**SourceFile | ModuleBlock*/ parent;
+        PTR(Identifier) name;
         boolean isTypeOnly;
 
         // 'EntityName' for an internal module reference, 'ExternalModuleReference' for an external
         // module reference.
-        REF(ModuleReference) moduleReference;
+        PTR(ModuleReference) moduleReference;
     };
 
     struct ExternalModuleReference : Node
     {
         // kind: SyntaxKind::ExternalModuleReference;
-        REF(ImportEqualsDeclaration) parent;
-        REF(Expression) expression;
+        PTR(ImportEqualsDeclaration) parent;
+        PTR(Expression) expression;
     };
 
     // In case of:
@@ -1783,10 +1788,10 @@ namespace data
     struct ImportDeclaration : Statement, JSDocContainer
     {
         // kind: SyntaxKind::ImportDeclaration;
-        REF(Node) /**SourceFile | ModuleBlock*/ parent;
-        REF(ImportClause) importClause;
+        PTR(Node) /**SourceFile | ModuleBlock*/ parent;
+        PTR(ImportClause) importClause;
         /** If this is not a StringLiteral it will be a grammar error. */
-        REF(Expression) moduleSpecifier;
+        PTR(Expression) moduleSpecifier;
     };
 
     // In case of:
@@ -1798,30 +1803,30 @@ namespace data
     struct ImportClause : NamedDeclaration
     {
         // kind: SyntaxKind::ImportClause;
-        REF(ImportDeclaration) parent;
+        PTR(ImportDeclaration) parent;
         boolean isTypeOnly;
-        REF(Identifier) name; // Default binding
-        REF(NamedImportBindings) namedBindings;
+        PTR(Identifier) name; // Default binding
+        PTR(NamedImportBindings) namedBindings;
     };
 
     struct NamespaceImport : NamedDeclaration
     {
         // kind: SyntaxKind::NamespaceImport;
-        REF(ImportClause) parent;
-        REF(Identifier) name;
+        PTR(ImportClause) parent;
+        PTR(Identifier) name;
     };
 
     struct NamespaceExport : NamedDeclaration
     {
         // kind: SyntaxKind::NamespaceExport;
-        REF(ExportDeclaration) parent;
-        REF(Identifier) name;
+        PTR(ExportDeclaration) parent;
+        PTR(Identifier) name;
     };
 
     struct NamespaceExportDeclaration : DeclarationStatement, JSDocContainer
     {
         // kind: SyntaxKind::NamespaceExportDeclaration name;
-        REF(Identifier) name;
+        PTR(Identifier) name;
         /* @internal */ NodeArray<Decorator> decorators; // Present for use with reporting a grammar error
         /* @internal */ ModifiersArray modifiers;        // Present for use with reporting a grammar error
     };
@@ -1829,42 +1834,42 @@ namespace data
     struct ExportDeclaration : DeclarationStatement, JSDocContainer
     {
         // kind: SyntaxKind::ExportDeclaration;
-        REF(Node) /**SourceFile | ModuleBlock*/ parent;
+        PTR(Node) /**SourceFile | ModuleBlock*/ parent;
         boolean isTypeOnly;
         /** Will not be assigned in the case of `export * from "foo";` */
-        REF(NamedExportBindings) exportClause;
+        PTR(NamedExportBindings) exportClause;
         /** If this is not a StringLiteral it will be a grammar error. */
-        REF(Expression) moduleSpecifier;
+        PTR(Expression) moduleSpecifier;
     };
 
     struct NamedImports : Node
     {
         // kind: SyntaxKind::NamedImports;
-        REF(ImportClause) parent;
+        PTR(ImportClause) parent;
         NodeArray<ImportSpecifier> elements;
     };
 
     struct NamedExports : Node
     {
         // kind: SyntaxKind::NamedExports;
-        REF(ExportDeclaration) parent;
+        PTR(ExportDeclaration) parent;
         NodeArray<ExportSpecifier> elements;
     };
 
     struct ImportSpecifier : NamedDeclaration
     {
         // kind: SyntaxKind::ImportSpecifier;
-        REF(NamedImports) parent;
-        REF(Identifier) propertyName; // Name preceding "as" keyword (or undefined when "as" is absent)
-        REF(Identifier) name;         // Declared name
+        PTR(NamedImports) parent;
+        PTR(Identifier) propertyName; // Name preceding "as" keyword (or undefined when "as" is absent)
+        PTR(Identifier) name;         // Declared name
     };
 
     struct ExportSpecifier : NamedDeclaration
     {
         // kind: SyntaxKind::ExportSpecifier;
-        REF(NamedExports) parent;
-        REF(Identifier) propertyName; // Name preceding "as" keyword (or undefined when "as" is absent)
-        REF(Identifier) name;         // Declared name
+        PTR(NamedExports) parent;
+        PTR(Identifier) propertyName; // Name preceding "as" keyword (or undefined when "as" is absent)
+        PTR(Identifier) name;         // Declared name
     };
 
     /**
@@ -1874,9 +1879,9 @@ namespace data
     struct ExportAssignment : DeclarationStatement, JSDocContainer
     {
         // kind: SyntaxKind::ExportAssignment;
-        REF(SourceFile) parent;
+        PTR(SourceFile) parent;
         boolean isExportEquals;
-        REF(Expression) expression;
+        PTR(Expression) expression;
     };
 
     struct FileReference : TextRange
@@ -1909,13 +1914,13 @@ namespace data
     struct JSDocTypeExpression : TypeNode
     {
         // kind: SyntaxKind::JSDocTypeExpression;
-        REF(TypeNode) type;
+        PTR(TypeNode) type;
     };
 
     struct JSDocNameReference : Node
     {
         // kind: SyntaxKind::JSDocNameReference;
-        REF(EntityName) name;
+        PTR(EntityName) name;
     };
 
     struct JSDocType : TypeNode
@@ -1936,19 +1941,19 @@ namespace data
     struct JSDocNonNullableType : JSDocType
     {
         // kind: SyntaxKind::JSDocNonNullableType;
-        REF(TypeNode) type;
+        PTR(TypeNode) type;
     };
 
     struct JSDocNullableType : JSDocType
     {
         // kind: SyntaxKind::JSDocNullableType;
-        REF(TypeNode) type;
+        PTR(TypeNode) type;
     };
 
     struct JSDocOptionalType : JSDocType
     {
         // kind: SyntaxKind::JSDocOptionalType;
-        REF(TypeNode) type;
+        PTR(TypeNode) type;
     };
 
     struct JSDocFunctionType : JSDocType, SignatureDeclarationBase
@@ -1959,27 +1964,27 @@ namespace data
     struct JSDocVariadicType : JSDocType
     {
         // kind: SyntaxKind::JSDocVariadicType;
-        REF(TypeNode) type;
+        PTR(TypeNode) type;
     };
 
     struct JSDocNamepathType : JSDocType
     {
         // kind: SyntaxKind::JSDocNamepathType;
-        REF(TypeNode) type;
+        PTR(TypeNode) type;
     };
 
     struct JSDoc : Node
     {
         // kind: SyntaxKind::JSDocComment;
-        REF(HasJSDoc) parent;
+        PTR(HasJSDoc) parent;
         NodeArray<JSDocTag> tags;
         string comment;
     };
 
     struct JSDocTag : Node
     {
-        REF(Node) /**JSDoc | JSDocTypeLiteral*/ parent;
-        REF(Identifier) tagName;
+        PTR(Node) /**JSDoc | JSDocTypeLiteral*/ parent;
+        PTR(Identifier) tagName;
         string comment;
     };
 
@@ -1997,7 +2002,7 @@ namespace data
         // kind: SyntaxKind::JSDocAugmentsTag;
         struct _classArg : ExpressionWithTypeArguments
         {
-            REF(Node) /**Identifier | PropertyAccessEntityNameExpression*/ expression;
+            PTR(Node) /**Identifier | PropertyAccessEntityNameExpression*/ expression;
         } _class;
     };
 
@@ -2006,7 +2011,7 @@ namespace data
         // kind: SyntaxKind::JSDocImplementsTag;
         struct _classArg : ExpressionWithTypeArguments
         {
-            REF(Node) /**Identifier | PropertyAccessEntityNameExpression*/ expression;
+            PTR(Node) /**Identifier | PropertyAccessEntityNameExpression*/ expression;
         } _class;
     };
 
@@ -2048,57 +2053,57 @@ namespace data
     struct JSDocEnumTag : JSDocTag, Declaration
     {
         // kind: SyntaxKind::JSDocEnumTag;
-        REF(JSDoc) parent;
-        REF(JSDocTypeExpression) typeExpression;
+        PTR(JSDoc) parent;
+        PTR(JSDocTypeExpression) typeExpression;
     };
 
     struct JSDocThisTag : JSDocTag
     {
         // kind: SyntaxKind::JSDocThisTag;
-        REF(JSDocTypeExpression) typeExpression;
+        PTR(JSDocTypeExpression) typeExpression;
     };
 
     struct JSDocTemplateTag : JSDocTag
     {
         // kind: SyntaxKind::JSDocTemplateTag;
-        REF(Node) /**JSDocTypeExpression | undefined*/ constraint;
+        PTR(Node) /**JSDocTypeExpression | undefined*/ constraint;
         NodeArray<TypeParameterDeclaration> typeParameters;
     };
 
     struct JSDocSeeTag : JSDocTag
     {
         // kind: SyntaxKind::JSDocSeeTag;
-        REF(JSDocNameReference) name;
+        PTR(JSDocNameReference) name;
     };
 
     struct JSDocReturnTag : JSDocTag
     {
         // kind: SyntaxKind::JSDocReturnTag;
-        REF(JSDocTypeExpression) typeExpression;
+        PTR(JSDocTypeExpression) typeExpression;
     };
 
     struct JSDocTypeTag : JSDocTag
     {
         // kind: SyntaxKind::JSDocTypeTag;
-        REF(JSDocTypeExpression) typeExpression;
+        PTR(JSDocTypeExpression) typeExpression;
     };
 
     struct JSDocTypedefTag : JSDocTag, NamedDeclaration
     {
         // kind: SyntaxKind::JSDocTypedefTag;
-        REF(JSDoc) parent;
-        REF(Node) /**JSDocNamespaceDeclaration | Identifier*/ fullName;
-        REF(Identifier) name;
-        REF(Node) /**JSDocTypeExpression | JSDocTypeLiteral*/ typeExpression;
+        PTR(JSDoc) parent;
+        PTR(Node) /**JSDocNamespaceDeclaration | Identifier*/ fullName;
+        PTR(Identifier) name;
+        PTR(Node) /**JSDocTypeExpression | JSDocTypeLiteral*/ typeExpression;
     };
 
     struct JSDocCallbackTag : JSDocTag, NamedDeclaration
     {
         // kind: SyntaxKind::JSDocCallbackTag;
-        REF(JSDoc) parent;
-        REF(Node) /**JSDocNamespaceDeclaration | Identifier*/ fullName;
-        REF(Identifier) name;
-        REF(JSDocSignature) typeExpression;
+        PTR(JSDoc) parent;
+        PTR(Node) /**JSDocNamespaceDeclaration | Identifier*/ fullName;
+        PTR(Identifier) name;
+        PTR(JSDocSignature) typeExpression;
     };
 
     struct JSDocSignature : JSDocType, Declaration
@@ -2106,14 +2111,14 @@ namespace data
         // kind: SyntaxKind::JSDocSignature;
         std::vector<JSDocTemplateTag> typeParameters;
         std::vector<JSDocParameterTag> parameters;
-        REF(Node) /**JSDocReturnTag | undefined*/ type;
+        PTR(Node) /**JSDocReturnTag | undefined*/ type;
     };
 
     struct JSDocPropertyLikeTag : JSDocTag, Declaration
     {
-        REF(JSDoc) parent;
-        REF(EntityName) name;
-        REF(JSDocTypeExpression) typeExpression;
+        PTR(JSDoc) parent;
+        PTR(EntityName) name;
+        PTR(JSDocTypeExpression) typeExpression;
         /** Whether the property name came before the type -- non-standard for JSDoc, but Typescript-like */
         boolean isNameFirst;
         boolean isBracketed;
@@ -2148,7 +2153,7 @@ namespace data
     /* @internal */
     struct CommentDirective
     {
-        REF(TextRange) range;
+        PTR(TextRange) range;
         CommentDirectiveType type;
     };
 
@@ -2170,12 +2175,12 @@ namespace data
     struct RedirectInfo
     {
         /** Source file this redirects to. */
-        REF(SourceFile) redirectTarget;
+        PTR(SourceFile) redirectTarget;
         /**
      * Source file for the duplicate package. This will not be used by the Program,
      * but we need to keep this around so we can watch for changes in underlying.
      */
-        REF(SourceFile) unredirected;
+        PTR(SourceFile) unredirected;
     };
 
     struct DiagnosticMessage
@@ -2205,11 +2210,11 @@ namespace data
     {
         DiagnosticCategory category;
         number code;
-        REF(SourceFile) file;
+        PTR(SourceFile) file;
         number start;
         number length;
         string messageText;
-        REF(DiagnosticMessageChain) messageChain;
+        PTR(DiagnosticMessageChain) messageChain;
     };
 
     struct Diagnostic : DiagnosticRelatedInformation
@@ -2224,7 +2229,7 @@ namespace data
 
     struct DiagnosticWithLocation : Diagnostic
     {
-        REF(SourceFile) file;
+        PTR(SourceFile) file;
         number start;
         number length;
     };
@@ -2271,7 +2276,7 @@ namespace data
      * This is optional for backwards-compatibility, but will be added if not provided.
      */
         string /*Extension*/ extension;
-        REF(PackageId) packageId;
+        PTR(PackageId) packageId;
     };
 
     struct ResolvedTypeReferenceDirective
@@ -2280,15 +2285,15 @@ namespace data
         boolean primary;
         // The location of the .d.ts file we located, or undefined if resolution failed
         string resolvedFileName;
-        REF(PackageId) packageId;
+        PTR(PackageId) packageId;
         /** True if `resolvedFileName` comes from `node_modules`. */
         boolean isExternalLibraryImport;
     };
 
     struct PatternAmbientModule
     {
-        REF(Node) pattern;
-        REF(Symbol) symbol;
+        PTR(Node) pattern;
+        PTR(Symbol) symbol;
     };
 
     struct SourceFile : Declaration
@@ -2318,7 +2323,7 @@ namespace data
      * (See `createRedirectSourceFile` in program.ts.)
      * The redirect will have this set. The redirected-to source file will be in `redirectTargetsMap`.
      */
-        /* @internal */ REF(RedirectInfo) redirectInfo;
+        /* @internal */ PTR(RedirectInfo) redirectInfo;
 
         std::vector<AmdDependency> amdDependencies;
         string moduleName;
@@ -2350,9 +2355,9 @@ namespace data
      * This is intended to be the first top-level import/export,
      * but could be arbitrarily nested (e.g. `import.meta`).
      */
-        /* @internal */ REF(Node) externalModuleIndicator;
+        /* @internal */ PTR(Node) externalModuleIndicator;
         // The first node that causes this file to be a CommonJS module
-        /* @internal */ REF(Node) commonJsModuleIndicator;
+        /* @internal */ PTR(Node) commonJsModuleIndicator;
         // JS identifier-declarations that are intended to merge with globals
         /* @internal */ SymbolTable jsGlobalAugmentations;
 
@@ -2391,44 +2396,44 @@ namespace data
         /* @internal */ NodeArray<Node> moduleAugmentations;
         /* @internal */ std::vector<PatternAmbientModule> patternAmbientModules;
         /* @internal */ std::vector<string> ambientModuleNames;
-        /* @internal */ REF(CheckJsDirective) checkJsDirective;
+        /* @internal */ PTR(CheckJsDirective) checkJsDirective;
         /* @internal */ string version;
         /* @internal */ std::map<string, string> pragmas;
         /* @internal */ string localJsxNamespace;
         /* @internal */ string localJsxFragmentNamespace;
-        /* @internal */ REF(EntityName) localJsxFactory;
-        /* @internal */ REF(EntityName) localJsxFragmentFactory;
+        /* @internal */ PTR(EntityName) localJsxFactory;
+        /* @internal */ PTR(EntityName) localJsxFragmentFactory;
 
         /* @internal */ ExportedModulesFromDeclarationEmit exportedModulesFromDeclarationEmit;
     };
 
     struct UnparsedSection : Node 
     {
-        REF(UnparsedSource) parent;
+        PTR(UnparsedSource) parent;
         string data;
     };
 
     struct UnparsedPrologue : UnparsedSection 
     {
-        REF(UnparsedSource) parent;
+        PTR(UnparsedSource) parent;
         string data;
     };
 
     struct UnparsedPrepend : UnparsedSection 
     {
-        REF(UnparsedSource) parent;
+        PTR(UnparsedSource) parent;
         string data;
         std::vector<UnparsedTextLike> texts;
     };
 
     struct UnparsedTextLike : UnparsedSection 
     {
-        REF(UnparsedSource) parent;
+        PTR(UnparsedSource) parent;
     };
 
     struct UnparsedSyntheticReference : UnparsedSection 
     {
-        REF(UnparsedSource) parent;
+        PTR(UnparsedSource) parent;
         /*@internal*/ Node /*BundleFileHasNoDefaultLib | BundleFileReference*/ section;
     };  
 
@@ -2519,18 +2524,18 @@ namespace data
 
     struct PropertyDescriptorAttributes 
     {
-        REF(Expression) enumerable;
-        REF(Expression) configurable;
-        REF(Expression) writable;
-        REF(Expression) value;
-        REF(Expression) get;
-        REF(Expression) set;
+        PTR(Expression) enumerable;
+        PTR(Expression) configurable;
+        PTR(Expression) writable;
+        PTR(Expression) value;
+        PTR(Expression) get;
+        PTR(Expression) set;
     };
 
     struct CallBinding
     {
-        REF(LeftHandSideExpression) target;
-        REF(Expression) thisArg;
+        PTR(LeftHandSideExpression) target;
+        PTR(Expression) thisArg;
     };
 
 } // namespace data
