@@ -3,10 +3,10 @@
 
 #include "types.h"
 
+struct Node;
+
 template <SyntaxKind kind>
 using Token = Node;
-
-struct Node;
 
 struct TextRange {
     TextRange() = default;

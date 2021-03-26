@@ -1,10 +1,11 @@
 #ifndef NEW_PARSER_FWRD_TYPES_H
 #define NEW_PARSER_FWRD_TYPES_H
 
+#include <memory>
 #include <functional>
 
 #define REF(x) x##Ref
-#define REF_INST(x) std::reference_wrapper<x>
+#define REF_INST(x) std::shared_ptr<x>
 
 #define FORWARD_DECLARATION(x) \
     struct x; \
@@ -40,13 +41,26 @@
     using x = n<t>; \
     using REF(x) = REF(n)<t>;
 
-#define WRAPPER(x)                  \
-    struct x {                      \
-        data::REF(x) ref;           \
-        data::x* operator ->() {    \
-            return &ref.get();      \
-        }                           \
-    };
+//#define WRAPPER(x) using x = wrapper<data::x>;
+#define WRAPPER(x) using x = wrapper<data::x>;
+
+template <typename T>
+struct wrapper
+{
+	wrapper() {};
+
+	wrapper(REF_INST(T) value) : instance(value) {};
+
+	template <typename U>
+	wrapper(wrapper<U> otherPtr) : instance(std::static_pointer_cast<T>(otherPtr.instance)) {};
+
+    auto operator->()
+    {
+        return instance.operator->();
+    }
+
+	REF_INST(T) instance;
+};
 
 namespace data
 {

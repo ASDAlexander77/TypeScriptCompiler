@@ -69,6 +69,7 @@ static auto attachFileToDiagnostic(DiagnosticRelatedInformation diagnostic, Sour
 {
     auto fileName = file->fileName;
     auto length = file->text.length();
+    // TODO: review it
     //Debug::assertEqual(diagnostic->fileName, fileName);
     Debug::assertLessThanOrEqual(diagnostic->start, length);
     Debug::assertLessThanOrEqual(diagnostic->start + diagnostic->length, length);
@@ -88,7 +89,8 @@ static auto attachFileToDiagnostic(Diagnostic diagnostic, SourceFile file) -> Di
 {
     auto fileName = file->fileName;
     auto length = file->text.length();
-    Debug::assertEqual(diagnostic->fileName, fileName);
+    // TODO: review it
+    //Debug::assertEqual(diagnostic->fileName, fileName);
     Debug::assertLessThanOrEqual(diagnostic->start, length);
     Debug::assertLessThanOrEqual(diagnostic->start + diagnostic->length, length);
     DiagnosticWithLocation diagnosticWithLocation;
