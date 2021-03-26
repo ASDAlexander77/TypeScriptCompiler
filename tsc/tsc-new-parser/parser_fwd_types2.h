@@ -39,7 +39,10 @@
     using x = n<t>; \
     using REF(x) = REF(n)<t>;
 
-#define WRAPPER(x) using x = REF(data::x);
+#define WRAPPER(x) \
+    struct x {  \
+        REF(data::x) ref;   \
+    };
 
 namespace data
 {
@@ -729,7 +732,7 @@ WRAPPER(BindingPattern)
 WRAPPER(ArrayBindingElement)
 WRAPPER(ClassLikeDeclaration)
 
-WRAPPER(FunctionBody, Block)
+WRAPPER(FunctionBody)
 WRAPPER(ConciseBody)
 
 WRAPPER(ObjectTypeDeclaration)

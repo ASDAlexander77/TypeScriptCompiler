@@ -193,6 +193,15 @@ struct DiagnosticMessage
     }
 };
 
+class SourceFileLike {
+public:
+    string text;
+    std::vector<number> lineMap;
+    /* @internal */
+    bool hasGetPositionOfLineAndCharacter;
+    auto getPositionOfLineAndCharacter(number line, number character, bool allowEdits = true) -> number;
+};
+
 struct CommentRange {
     CommentRange() = default;
 
