@@ -58,8 +58,16 @@ struct ptr
 
 	ptr(REF_TYPE(T) value) : instance(value) {};
 
+	ptr(const T& t) : instance(std::make_shared<T>(t)) {};
+
 	template <typename U>
 	ptr(ptr<U> otherPtr) : instance(std::static_pointer_cast<T>(otherPtr.instance)) {};
+
+	template <typename I>
+	ptr(const I& inst) : instance(std::make_shared<T>(inst)) {};
+
+    template <typename... Args>
+	ptr(Args &&... args) : instance(std::make_shared<T>(std::forward<Args>(args)...)) {};
 
     inline auto operator->()
     {
@@ -436,6 +444,7 @@ namespace data
     FORWARD_DECLARATION_T(Push)
     FORWARD_DECLARATION_T(VisitResult)
     FORWARD_DECLARATION(NodeWithDiagnostics)
+    FORWARD_DECLARATION(JsonObjectExpressionStatement)
 
     NODE_REF(Modifier)
     
@@ -538,6 +547,7 @@ namespace data
     NODE_REF(NamedImportsOrExports)
 
     NODE_REF(BooleanLiteral)
+    NODE_REF(JsonObjectExpression)
 
 } // namespace data
 
@@ -944,6 +954,8 @@ POINTER(NamedImportsOrExports)
 
 POINTER(NodeWithDiagnostics)
 POINTER(BooleanLiteral)
+POINTER(JsonObjectExpressionStatement)
+POINTER(JsonObjectExpression)
 
 POINTER_T(Push)
 POINTER_T(VisitResult)

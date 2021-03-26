@@ -811,17 +811,17 @@ private:
         /* @internal */
         auto getLineStarts(SourceFileLike sourceFile) -> std::vector<number>
         {
-            if (!sourceFile.lineMap.empty())
+            if (!sourceFile->lineMap.empty())
             {
-                return sourceFile.lineMap;
+                return sourceFile->lineMap;
             }
 
-            auto lineMap = computeLineStarts(sourceFile.text);
+            auto lineMap = computeLineStarts(sourceFile->text);
             for (auto &item : lineMap)
             {
-                sourceFile.lineMap.push_back(item);
+                sourceFile->lineMap.push_back(item);
             }
-            return sourceFile.lineMap;
+            return sourceFile->lineMap;
         }
 
         /* @internal */
@@ -1337,7 +1337,7 @@ private:
 
         auto appendCommentRange(number pos, number end, SyntaxKind kind, boolean hasTrailingNewLine, number state, std::vector<CommentRange> comments) -> std::vector<CommentRange>
         {
-            comments.push_back({kind, pos, end, hasTrailingNewLine});
+            comments.push_back({pos, end, hasTrailingNewLine, kind});
             return comments;
         }
 
@@ -2888,7 +2888,7 @@ private:
             }
 
             commentDirectives.push_back({
-                {lineStart, pos},
+                TextRange{lineStart, pos},
                 type
             });
             return commentDirectives;

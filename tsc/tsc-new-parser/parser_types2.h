@@ -40,6 +40,7 @@ namespace data
     template <typename T /*extends Node*/>
     struct ReadonlyArray : std::vector<T>
     {
+        using vector::vector;
     };
 
     template <typename T /*extends Node*/>
@@ -1904,6 +1905,8 @@ namespace data
 
     struct CommentRange : TextRange
     {
+        CommentRange(number pos, number end, boolean hasTrailingNewLine, CommentKind kind) : TextRange{pos, end}, hasTrailingNewLine(hasTrailingNewLine), kind(kind) {};
+
         boolean hasTrailingNewLine;
         CommentKind kind;
     };
@@ -2159,7 +2162,7 @@ namespace data
     /* @internal */
     struct CommentDirective
     {
-        PTR(TextRange) range;
+        TextRange range;
         CommentDirectiveType type;
     };
 
@@ -2548,6 +2551,17 @@ namespace data
     { 
         JSDocTypeExpression jsDocTypeExpression;
         std::vector<Diagnostic> diagnostics;
+    };
+
+    struct JsonMinusNumericLiteral : PrefixUnaryExpression 
+    {
+        SyntaxKind _operator;
+        PTR(NumericLiteral) operand;
+    };
+
+    struct JsonObjectExpressionStatement : ExpressionStatement 
+    {
+        PTR(JsonObjectExpression) expression;
     };
 
 } // namespace data

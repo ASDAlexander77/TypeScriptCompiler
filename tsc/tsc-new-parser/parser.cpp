@@ -310,7 +310,7 @@ namespace ts {
                     }
 
                     auto expression = expressions.size() > 1 ? finishNode(factory.createArrayLiteralExpression(expressions), pos) : Debug::checkDefined(expressions[0]);
-                    auto statement = factory.createExpressionStatement(expression).as<JsonObjectExpressionStatement>();
+                    auto statement = factory.createExpressionStatement(expression).as<Statement>();
                     finishNode(statement, pos);
                     statements = createNodeArray(NodeArray<Statement>(statement), pos);
                     endOfFileToken = parseExpectedToken(SyntaxKind::EndOfFileToken, Diagnostics::Unexpected_token);
