@@ -1,5 +1,5 @@
-#ifndef NEW_PARSER_FWRD_TYPES_H
-#define NEW_PARSER_FWRD_TYPES_H
+#ifndef NEW_PARSER_FWRD_TYPES2_H
+#define NEW_PARSER_FWRD_TYPES2_H
 
 #include <memory>
 #include <functional>
@@ -826,4 +826,4 @@ WRAPPER(StringLiteralLike)
 template <typename T>
 using NodeArray = data::NodeArray<T>;
 
-#endif // NEW_PARSER_FWRD_TYPES_H
+#endif // NEW_PARSER_FWRD_TYPES2_H

@@ -17,10 +17,7 @@
 #include "scanner_enums.h"
 #include "diagnostics.h"
 
-// forward declarations
-struct CommentDirective;
-struct DiagnosticMessage;
-struct CommentRange;
+#include "parser_fwd_types.h"
 
 struct safe_string
 {
@@ -115,7 +112,6 @@ struct ScanResult {
 template <typename T, typename U>
 using cb_type = std::function<U(number, number, SyntaxKind, boolean, T, U)>;
 
-struct DiagnosticMessage;
 using ErrorCallback = std::function<void(DiagnosticMessage, number)>;
 
 template <typename T>
