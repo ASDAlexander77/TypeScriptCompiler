@@ -193,8 +193,12 @@ public:
     string text;
     std::vector<number> lineMap;
     /* @internal */
-    bool hasGetPositionOfLineAndCharacter;
-    auto getPositionOfLineAndCharacter(number line, number character, bool allowEdits = true) -> number;
+    std::function<number(number, number, bool)> getPositionOfLineAndCharacter;
+
+    inline auto operator->()
+    {
+        return this;
+    }
 };
 
 struct CommentRange {
