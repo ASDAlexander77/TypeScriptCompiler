@@ -3,29 +3,30 @@
 
 #include <functional>
 
+#define REF(x) x##Ref
+#define REF_INST(x) std::reference_wrapper<x>
+
 #define FORWARD_DECLARATION(x) \
     struct x; \
-    using x##Ref = std::reference_wrapper<x>;
+    using REF(x) = REF_INST(x);
 
 #define FORWARD_DECLARATION_T(x) \
     template <typename T> \
     struct x; \
     template <typename T> \
-    using x##Ref = std::reference_wrapper<x<T>>;
+    using REF(x) = REF_INST(x<T>);
 
 #define FORWARD_DECLARATION_VAR(x, v) \
     template <v TKind> \
     struct x; \
     template <v TKind> \
-    using x##Ref = std::reference_wrapper<x<TKind>>;
+    using REF(x) = REF_INST(x<TKind>);
 
 #define FORWARD_DECLARATION_VARS(x, v) \
     template <v ... TKind> \
     struct x; \
     template <v ... TKind> \
-    using x##Ref = std::reference_wrapper<x<TKind...>>;
-
-#define REF(x) x##Ref
+    using REF(x) = REF_INST(x<TKind...>);
 
 #define NODE_REF(x) \
     using x = Node; \
@@ -39,9 +40,12 @@
     using x = n<t>; \
     using REF(x) = REF(n)<t>;
 
-#define WRAPPER(x) \
-    struct x {  \
-        REF(data::x) ref;   \
+#define WRAPPER(x)                  \
+    struct x {                      \
+        data::REF(x) ref;           \
+        data::x* operator ->() {    \
+            return &ref.get();      \
+        }                           \
     };
 
 namespace data
@@ -804,5 +808,8 @@ WRAPPER(BindingElementGrandparent)
 
 WRAPPER(ObjectLiteralElementLike)
 WRAPPER(StringLiteralLike)
+
+template <typename T>
+using NodeArray = data::NodeArray<T>;
 
 #endif // NEW_PARSER_FWRD_TYPES_H

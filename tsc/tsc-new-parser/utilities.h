@@ -60,23 +60,23 @@ inline auto ensureScriptKind(string fileName, ScriptKind scriptKind = ScriptKind
 
 inline auto isDiagnosticWithDetachedLocation(DiagnosticRelatedInformation diagnostic) -> boolean
 {
-    return diagnostic.start != -1 && diagnostic.length != -1 && diagnostic.fileName != S("");
+    return diagnostic->start != -1 && diagnostic->length != -1 && diagnostic->fileName != S("");
 }
 
 static auto attachFileToDiagnostic(DiagnosticRelatedInformation diagnostic, SourceFile file) -> DiagnosticWithLocation
 {
     auto fileName = file->fileName;
     auto length = file->text.length();
-    Debug::assertEqual(diagnostic.fileName, fileName);
-    Debug::assertLessThanOrEqual(diagnostic.start, length);
-    Debug::assertLessThanOrEqual(diagnostic.start + diagnostic.length, length);
+    Debug::assertEqual(diagnostic->fileName, fileName);
+    Debug::assertLessThanOrEqual(diagnostic->start, length);
+    Debug::assertLessThanOrEqual(diagnostic->start + diagnostic->length, length);
     DiagnosticWithLocation diagnosticWithLocation;
-    diagnosticWithLocation.file = file;
-    diagnosticWithLocation.start = diagnostic.start;
-    diagnosticWithLocation.length = diagnostic.length;
-    diagnosticWithLocation.messageText = diagnostic.messageText;
-    diagnosticWithLocation.category = diagnostic.category;
-    diagnosticWithLocation.code = diagnostic.code;
+    diagnosticWithLocation->file = file;
+    diagnosticWithLocation->start = diagnostic->start;
+    diagnosticWithLocation->length = diagnostic->length;
+    diagnosticWithLocation->messageText = diagnostic->messageText;
+    diagnosticWithLocation->category = diagnostic->category;
+    diagnosticWithLocation->code = diagnostic->code;
 
     return diagnosticWithLocation;
 }
@@ -85,31 +85,31 @@ static auto attachFileToDiagnostic(Diagnostic diagnostic, SourceFile file) -> Di
 {
     auto fileName = file->fileName;
     auto length = file->text.length();
-    Debug::assertEqual(diagnostic.fileName, fileName);
-    Debug::assertLessThanOrEqual(diagnostic.start, length);
-    Debug::assertLessThanOrEqual(diagnostic.start + diagnostic.length, length);
+    Debug::assertEqual(diagnostic->fileName, fileName);
+    Debug::assertLessThanOrEqual(diagnostic->start, length);
+    Debug::assertLessThanOrEqual(diagnostic->start + diagnostic->length, length);
     DiagnosticWithLocation diagnosticWithLocation;
-    diagnosticWithLocation.file = file;
-    diagnosticWithLocation.start = diagnostic.start;
-    diagnosticWithLocation.length = diagnostic.length;
-    diagnosticWithLocation.messageText = diagnostic.messageText;
-    diagnosticWithLocation.category = diagnostic.category;
-    diagnosticWithLocation.code = diagnostic.code;
-    diagnosticWithLocation.reportsUnnecessary = diagnostic.reportsUnnecessary;
+    diagnosticWithLocation->file = file;
+    diagnosticWithLocation->start = diagnostic->start;
+    diagnosticWithLocation->length = diagnostic->length;
+    diagnosticWithLocation->messageText = diagnostic->messageText;
+    diagnosticWithLocation->category = diagnostic->category;
+    diagnosticWithLocation->code = diagnostic->code;
+    diagnosticWithLocation->reportsUnnecessary = diagnostic->reportsUnnecessary;
 
-    if (!diagnostic.relatedInformation.empty())
+    if (!diagnostic->relatedInformation.empty())
     {
-        for (auto &related : diagnostic.relatedInformation)
+        for (auto &related : diagnostic->relatedInformation)
         {
             if (isDiagnosticWithDetachedLocation(related) && related.fileName == fileName)
             {
                 Debug::assertLessThanOrEqual(related.start, length);
                 Debug::assertLessThanOrEqual(related.start + related.length, length);
-                diagnosticWithLocation.relatedInformation.push_back(attachFileToDiagnostic(related, file));
+                diagnosticWithLocation->relatedInformation.push_back(attachFileToDiagnostic(related, file));
             }
             else
             {
-                diagnosticWithLocation.relatedInformation.push_back(related);
+                diagnosticWithLocation->relatedInformation.push_back(related);
             }
         }
     }

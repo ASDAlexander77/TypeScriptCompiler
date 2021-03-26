@@ -3,18 +3,6 @@
 
 #include "types.h"
 
-struct Node;
-
-template <typename T>
-using NodeFuncT = std::function<T(Node)>;
-
-template <typename T>
-using NodeWithParentFuncT = std::function<T(Node, Node)>;
-
-typedef std::function<Node(SyntaxKind, number, number)> NodeCreateFunc;
-
-typedef std::function<void(number, number, DiagnosticMessage)> PragmaDiagnosticReporter;
-
 template <SyntaxKind kind>
 using Token = Node;
 

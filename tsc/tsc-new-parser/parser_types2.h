@@ -10,9 +10,6 @@
 #include <map>
 #include <set>
 
-#define REF(x) x##Ref
-#define REF_INST(x) std::reference_wrapper<x>
-
 namespace data
 {
     using NodeId = number;
