@@ -17,7 +17,7 @@
 #include "scanner_enums.h"
 #include "diagnostics.h"
 
-#include "parser_fwd_types.h"
+#include "parser_fwd_types2.h"
 
 struct safe_string
 {

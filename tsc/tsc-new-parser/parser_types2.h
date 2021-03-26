@@ -949,9 +949,6 @@ namespace data
 
     using LogicalOrCoalescingAssignmentOperator = SyntaxKind;
 
-    using BinaryOperatorToken = Token<SyntaxKind::AsteriskAsteriskToken, SyntaxKind::CommaToken /*to keep it short, [from, to]*/>;
-    using BinaryOperatorTokenRef = TokenRef<SyntaxKind::AsteriskAsteriskToken, SyntaxKind::CommaToken /*to keep it short, [from, to]*/>;
-
     struct BinaryExpression : Expression, Declaration
     {
         // kind: SyntaxKind::BinaryExpression;
@@ -2400,6 +2397,121 @@ namespace data
         /* @internal */ REF(EntityName) localJsxFragmentFactory;
 
         /* @internal */ ExportedModulesFromDeclarationEmit exportedModulesFromDeclarationEmit;
+    };
+
+    struct UnparsedSection : Node 
+    {
+        REF(UnparsedSource) parent;
+        string data;
+    };
+
+    struct UnparsedPrologue : UnparsedSection 
+    {
+        REF(UnparsedSource) parent;
+        string data;
+    };
+
+    struct UnparsedPrepend : UnparsedSection 
+    {
+        REF(UnparsedSource) parent;
+        string data;
+        std::vector<UnparsedTextLike> texts;
+    };
+
+    struct UnparsedTextLike : UnparsedSection 
+    {
+        REF(UnparsedSource) parent;
+    };
+
+    struct UnparsedSyntheticReference : UnparsedSection 
+    {
+        REF(UnparsedSource) parent;
+        /*@internal*/ Node /*BundleFileHasNoDefaultLib | BundleFileReference*/ section;
+    };  
+
+    struct EmitHelperBase 
+    {
+        string name;                                                    // A unique name for this helper.
+        boolean scoped;                                                 // Indicates whether the helper MUST be emitted in the current scope.
+        string text;                                                    // ES3-compatible raw script text, or a function yielding such a string
+        number priority;                                                // Helpers with a higher priority are emitted earlier than other helpers on the node.
+        std::vector<EmitHelper> dependencies;
+    };
+
+    struct ScopedEmitHelper : EmitHelperBase 
+    {
+        boolean scoped;
+    };
+
+    struct UnscopedEmitHelper : EmitHelperBase 
+    {
+        boolean scoped;                                      // Indicates whether the helper MUST be emitted in the current scope.
+        /* @internal */
+        string importName;                                   // The name of the helper to use when importing via `--importHelpers`.
+        string text;                                         // ES3-compatible raw script text, or a function yielding such a string
+    };
+
+    struct RawSourceMap 
+    {
+        number version;
+        string file;
+        string sourceRoot;
+        std::vector<string> sources;
+        string sourcesContent;
+        string mappings;
+        std::vector<string> names;
+    };
+
+    struct UnparsedSource : Node 
+    {
+        string fileName;
+        string text;
+        std::vector<UnparsedPrologue> prologues;
+        std::vector<UnscopedEmitHelper> helpers;
+
+        // References and noDefaultLibAre Dts only
+        std::vector<FileReference> referencedFiles;
+        std::vector<string> typeReferenceDirectives;
+        std::vector<FileReference> libReferenceDirectives;
+        boolean hasNoDefaultLib;
+
+        string sourceMapPath;
+        string sourceMapText;
+        std::vector<UnparsedSyntheticReference> syntheticReferences;
+        std::vector<UnparsedSourceText> texts;
+        /*@internal*/ boolean oldFileOfCurrentEmit;
+        /*@internal*/ RawSourceMap parsedSourceMap;
+        // Adding this to satisfy services, fix later
+        /*@internal*/
+        auto getLineAndCharacterOfPosition(number pos) -> LineAndCharacter;
+    };
+
+    struct BuildInfo 
+    {
+        // TODO: finish later
+        //BundleBuildInfo bundle;
+        //ProgramBuildInfo program;
+        string version;
+    };
+
+    struct InputFiles : Node 
+    {
+        string javascriptPath;
+        string javascriptText;
+        string javascriptMapPath;
+        string javascriptMapText;
+        string declarationPath;
+        string declarationText;
+        string declarationMapPath;
+        string declarationMapText;
+        /*@internal*/ string buildInfoPath;
+        /*@internal*/ BuildInfo buildInfo;
+        /*@internal*/ boolean oldFileOfCurrentEmit;
+    };
+
+    struct SyntaxList : Node 
+    {
+        std::vector<Node> _children;
     };
 
 } // namespace data

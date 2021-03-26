@@ -238,7 +238,7 @@ inline auto setTextRange(T range, TextRange location) -> T
 }
 
 inline static auto hasJSDocNodes(Node node) -> boolean {
-    auto jsDoc = node->jsDoc;
+    auto jsDoc = node.as<JSDocContainer>()->jsDoc;
     return !!jsDoc && jsDoc.size() > 0;
 }
 

@@ -41,6 +41,10 @@
     using x = n<t>; \
     using REF(x) = REF(n)<t>;
 
+#define TMPL_REF2(x, n, t1, t2) \
+    using x = n<t1>; \
+    using REF(x) = REF(n)<t1, t2>;    
+
 //#define WRAPPER(x) using x = wrapper<data::x>;
 #define WRAPPER(x) using x = wrapper<data::x>;
 
@@ -63,6 +67,38 @@ struct wrapper
     {
         return !instance;
     }
+
+    inline auto operator==(undefined_t)
+    {
+        return !instance;
+    }
+
+    inline auto operator!=(undefined_t)
+    {
+        return !!instance;
+    }
+
+    inline auto operator==(std::nullptr_t)
+    {
+        return instance == nullptr;
+    }
+
+    inline auto operator!=(std::nullptr_t)
+    {
+        return instance != nullptr;
+    }    
+
+    template <typename U> 
+    inline auto as() -> U
+    {
+        return U(*this);
+    }
+
+    template <typename U> 
+    inline auto asMutable() -> U
+    {
+        return U(*this);
+    }    
 
 	REF_INST(T) instance;
 };
@@ -365,6 +401,17 @@ namespace data
     FORWARD_DECLARATION(ResolvedTypeReferenceDirective)
     FORWARD_DECLARATION(PatternAmbientModule)
     FORWARD_DECLARATION(SourceFile)
+    FORWARD_DECLARATION(UnparsedSource)
+    FORWARD_DECLARATION(UnparsedSourceText)
+    FORWARD_DECLARATION(UnparsedNode)
+    FORWARD_DECLARATION(UnparsedSection)
+    FORWARD_DECLARATION(UnparsedPrologue)
+    FORWARD_DECLARATION(UnparsedPrepend)
+    FORWARD_DECLARATION(UnparsedTextLike)
+    FORWARD_DECLARATION(UnparsedSyntheticReference)
+    FORWARD_DECLARATION(EmitHelper)
+    FORWARD_DECLARATION(InputFiles)
+    FORWARD_DECLARATION(SyntaxList)
 
     NODE_REF(EntityName)
     NODE_REF(PropertyName)
@@ -402,6 +449,9 @@ namespace data
 
     TMPL_REF(AssertsKeyword, KeywordToken, SyntaxKind::AssertsKeyword)
     TMPL_REF(AwaitKeyword, KeywordToken, SyntaxKind::AwaitKeyword)
+
+    TMPL_REF2(LiteralToken, Token, SyntaxKind::NumericLiteral, SyntaxKind::NoSubstitutionTemplateLiteral)
+    TMPL_REF2(BinaryOperatorToken, Token, SyntaxKind::AsteriskAsteriskToken, SyntaxKind::CommaToken)
 
     CLASS_REF(AwaitKeywordToken, AwaitKeyword)
     CLASS_REF(AssertsToken, AssertsKeyword)
@@ -453,8 +503,8 @@ namespace data
 
     NODE_REF(ObjectLiteralElementLike)
     NODE_REF(StringLiteralLike)
-    NODE_REF(PropertyNameLiteral);
-    
+    NODE_REF(PropertyNameLiteral)
+
 } // namespace data
 
 WRAPPER(TextRange)
@@ -779,6 +829,9 @@ WRAPPER(PlusToken)
 WRAPPER(MinusToken)
 WRAPPER(QuestionDotToken)
 
+WRAPPER(LiteralToken)
+WRAPPER(BinaryOperatorToken)
+
 WRAPPER(AssertsKeyword)
 WRAPPER(AwaitKeyword)
 
@@ -834,7 +887,31 @@ WRAPPER(ObjectLiteralElementLike)
 WRAPPER(StringLiteralLike)
 WRAPPER(PropertyNameLiteral)
 
+WRAPPER(UnparsedSource)
+WRAPPER(UnparsedSourceText)
+WRAPPER(UnparsedNode)
+WRAPPER(UnparsedPrologue)
+WRAPPER(UnparsedPrepend)
+WRAPPER(UnparsedTextLike)
+WRAPPER(UnparsedSyntheticReference)
+
+WRAPPER(EmitHelper)
+WRAPPER(InputFiles)
+WRAPPER(SyntaxList)
+
+using PrefixUnaryOperator = SyntaxKind;
+using PostfixUnaryOperator = SyntaxKind;
+
 template <typename T>
 using NodeArray = data::NodeArray<T>;
+
+using ModifiersArray = NodeArray<Modifier>;
+using DecoratorsArray = NodeArray<Decorator>;
+
+template <typename T>
+using NodeArrayFuncT = std::function<T(NodeArray<T>)>;
+
+template <typename T>
+using NodeWithParentArrayFuncT = std::function<T(NodeArray<T>, Node)>;
 
 #endif // NEW_PARSER_FWRD_TYPES2_H
