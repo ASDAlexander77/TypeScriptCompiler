@@ -4,51 +4,6 @@
 #include "core.h"
 #include "utilities.h"
 
-#ifdef PARSER_VER1
-
-NodeRef::operator Node()
-{
-    return Node(data);
-}
-
-Node NodeRef::operator=(Node& rhv)
-{
-    data = rhv.data;
-    return Node(data);
-}
-
-NodeData* NodeRef::operator->()
-{
-    return data.operator->();
-}
-
-boolean NodeRef::operator !()
-{
-    return data->operator!();
-}
-
-boolean NodeRef::operator ==(const Node& rhv)
-{
-    return rhv.data.get() == this->data.get();
-}
-
-auto NodeRef::size() -> size_t
-{
-    return data->children.size();
-}
-
-auto NodeRef::begin() -> decltype(data->children.begin())
-{
-    return data->children.begin();
-}
-
-auto NodeRef::end() -> decltype(data->children.end())
-{
-    return data->children.end();
-}
-
-#endif
-
 namespace ts {
 
     namespace
