@@ -7820,11 +7820,21 @@ namespace ts
 
     Parser::Parser()
     {
-        //impl = ts::Impl::Parser::createParser();
+        impl = new ts::Impl::Parser();
     }
+
+    auto Parser::parseSourceFile(string sourceText, ScriptTarget languageVersion) -> SourceFile
+    {
+        return impl->parseSourceFile(string(), sourceText, languageVersion, IncrementalParser::SyntaxCursor());
+    }    
+
+    auto Parser::parseSourceFile(string fileName, string sourceText, ScriptTarget languageVersion, IncrementalParser::SyntaxCursor syntaxCursor, boolean setParentNodes, ScriptKind scriptKind) -> SourceFile
+    {
+        return impl->parseSourceFile(fileName, sourceText, languageVersion, syntaxCursor, setParentNodes, scriptKind);
+    }    
 
     Parser::~Parser()
     {
-        //delete impl;
+        delete impl;
     }
 }

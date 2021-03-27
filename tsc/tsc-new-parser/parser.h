@@ -40,6 +40,10 @@ namespace ts
     public:
         Parser();
 
+        auto Parser::parseSourceFile(string, ScriptTarget) -> SourceFile;
+
+        auto Parser::parseSourceFile(string, string, ScriptTarget, IncrementalParser::SyntaxCursor, boolean = false, ScriptKind = ScriptKind::Unknown) -> SourceFile;
+
         ~Parser();
     };
 
