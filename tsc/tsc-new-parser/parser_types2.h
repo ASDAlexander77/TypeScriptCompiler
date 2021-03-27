@@ -51,10 +51,15 @@ namespace data
         NodeArray() {}
         NodeArray(undefined_t) {}
 
-        inline operator TextRange()
+        inline operator TextRange&()
         {
             return range;
         }
+
+        inline auto operator->()
+        {
+            return this;
+        }        
 
         ReadonlyTextRange range;
         boolean hasTrailingComma;
@@ -110,7 +115,7 @@ namespace data
         NodeFlags flags;
         /* @internal */ ModifierFlags modifierFlagsCache;
         /* @internal */ TransformFlags transformFlags; // Flags for transforms
-        NodeArray<Decorator> decorators;               // Array of decorators (in document order)
+        NodeArray<PTR(Decorator)> decorators;               // Array of decorators (in document order)
         ModifiersArray modifiers;                      // Array of modifiers
         /* @internal */ NodeId id;                     // Unique id (used to look up NodeLinks)
         PTR(Node) parent;                                   // Parent node (initialized by binding)
@@ -252,10 +257,10 @@ namespace data
     {
         SyntaxKind kind;
         PTR(PropertyName) name;
-        NodeArray<TypeParameterDeclaration> typeParameters;
-        NodeArray<ParameterDeclaration> parameters;
+        NodeArray<PTR(TypeParameterDeclaration)> typeParameters;
+        NodeArray<PTR(ParameterDeclaration)> parameters;
         PTR(TypeNode) type;
-        /* @internal */ NodeArray<TypeNode> typeArguments; // Used for quick info, replaces typeParameters for instantiated signatures
+        /* @internal */ NodeArray<PTR(TypeNode)> typeArguments; // Used for quick info, replaces typeParameters for instantiated signatures
     };
 
     struct CallSignatureDeclaration : SignatureDeclarationBase, TypeElement
@@ -288,7 +293,7 @@ namespace data
     {
         // kind: SyntaxKind::VariableDeclarationList;
         PTR(Node) /**VariableStatement | ForStatement | ForOfStatement | ForInStatement*/ parent;
-        NodeArray<VariableDeclaration> declarations;
+        NodeArray<PTR(VariableDeclaration)> declarations;
     };
 
     struct ParameterDeclaration : NamedDeclaration, JSDocContainer
@@ -395,14 +400,14 @@ namespace data
     {
         // kind: SyntaxKind::ObjectBindingPattern;
         PTR(Node) /**VariableDeclaration | ParameterDeclaration | BindingElement*/ parent;
-        NodeArray<BindingElement> elements;
+        NodeArray<PTR(BindingElement)> elements;
     };
 
     struct ArrayBindingPattern : Node
     {
         // kind: SyntaxKind::ArrayBindingPattern;
         PTR(Node) /**VariableDeclaration | ParameterDeclaration | BindingElement*/ parent;
-        NodeArray<ArrayBindingElement> elements;
+        NodeArray<PTR(ArrayBindingElement)> elements;
     };
 
     /**
@@ -462,7 +467,7 @@ namespace data
         // kind: SyntaxKind::Constructor;
         PTR(ClassLikeDeclaration) parent;
         PTR(FunctionBody) body;
-        /* @internal */ NodeArray<TypeParameterDeclaration> typeParameters; // Present for use with reporting a grammar error
+        /* @internal */ NodeArray<PTR(TypeParameterDeclaration)> typeParameters; // Present for use with reporting a grammar error
         /* @internal */ PTR(TypeNode) type;                                      // Present for use with reporting a grammar error
     };
 
@@ -481,7 +486,7 @@ namespace data
         PTR(Node) /**ClassLikeDeclaration | ObjectLiteralExpression*/ parent;
         PTR(PropertyName) name;
         PTR(FunctionBody) body;
-        /* @internal */ NodeArray<TypeParameterDeclaration> typeParameters; // Present for use with reporting a grammar error
+        /* @internal */ NodeArray<PTR(TypeParameterDeclaration)> typeParameters; // Present for use with reporting a grammar error
     };
 
     // See the comment on MethodDeclaration for the intuition behind SetAccessorDeclaration being a
@@ -492,7 +497,7 @@ namespace data
         PTR(Node) /**ClassLikeDeclaration | ObjectLiteralExpression*/ parent;
         PTR(PropertyName) name;
         PTR(FunctionBody) body;
-        /* @internal */ NodeArray<TypeParameterDeclaration> typeParameters; // Present for use with reporting a grammar error
+        /* @internal */ NodeArray<PTR(TypeParameterDeclaration)> typeParameters; // Present for use with reporting a grammar error
         /* @internal */ PTR(TypeNode) type;                                      // Present for use with reporting a grammar error
     };
 
@@ -516,7 +521,7 @@ namespace data
 
     struct NodeWithTypeArguments : TypeNode
     {
-        NodeArray<TypeNode> typeArguments;
+        NodeArray<PTR(TypeNode)> typeArguments;
     };
 
     struct ImportTypeNode : NodeWithTypeArguments
@@ -590,7 +595,7 @@ namespace data
     struct TypeLiteralNode : TypeNode, Declaration
     {
         // kind: SyntaxKind::TypeLiteral;
-        NodeArray<TypeElement> members;
+        NodeArray<PTR(TypeElement)> members;
     };
 
     struct ArrayTypeNode : TypeNode
@@ -602,7 +607,7 @@ namespace data
     struct TupleTypeNode : TypeNode
     {
         // kind: SyntaxKind::TupleType;
-        NodeArray<Node /*TypeNode | NamedTupleMember*/> elements;
+        NodeArray<PTR(Node /*TypeNode | NamedTupleMember*/)> elements;
     };
 
     struct NamedTupleMember : TypeNode, JSDocContainer, Declaration
@@ -629,13 +634,13 @@ namespace data
     struct UnionTypeNode : TypeNode
     {
         // kind: SyntaxKind::UnionType;
-        NodeArray<TypeNode> types;
+        NodeArray<PTR(TypeNode)> types;
     };
 
     struct IntersectionTypeNode : TypeNode
     {
         // kind: SyntaxKind::IntersectionType;
-        NodeArray<TypeNode> types;
+        NodeArray<PTR(TypeNode)> types;
     };
 
     struct ConditionalTypeNode : TypeNode
@@ -691,7 +696,7 @@ namespace data
 
     struct TemplateLiteralTypeNode : TypeNode
     {
-        NodeArray<TemplateLiteralTypeSpan> templateSpans;
+        NodeArray<PTR(TemplateLiteralTypeSpan)> templateSpans;
     };
 
     struct TemplateLiteralTypeSpan : TypeNode
@@ -811,7 +816,7 @@ namespace data
         /*@internal*/ number autoGenerateId;                                                 // Ensures unique generated identifiers get unique names, but clones get the same name.
         /*@internal*/ PTR(ImportSpecifier) generatedImportReference;                         // Reference to the generated import specifier this identifier refers to
         boolean isInJSDocNamespace;                                                          // if the node is a member in a JSDoc namespace
-        /*@internal*/ NodeArray<Node /*TypeNode | TypeParameterDeclaration*/> typeArguments; // Only defined on synthesized nodes. Though not syntactically valid, used in emitting diagnostics, quickinfo, and signature help.
+        /*@internal*/ NodeArray<PTR(Node /*TypeNode | TypeParameterDeclaration*/)> typeArguments; // Only defined on synthesized nodes. Though not syntactically valid, used in emitting diagnostics, quickinfo, and signature help.
         /*@internal*/ number jsdocDotPos;                                                    // Identifier occurs in JSDoc-style generic: Id.<T>
     };
 
@@ -1090,7 +1095,7 @@ namespace data
     {
         // kind: SyntaxKind::TemplateExpression;
         PTR(TemplateHead) head;
-        NodeArray<TemplateSpan> templateSpans;
+        NodeArray<PTR(TemplateSpan)> templateSpans;
     };
 
     // Each of these corresponds to a substitution expression and a template literal, in that order.
@@ -1112,7 +1117,7 @@ namespace data
     struct ArrayLiteralExpression : PrimaryExpression
     {
         // kind: SyntaxKind::ArrayLiteralExpression;
-        NodeArray<Expression> elements;
+        NodeArray<PTR(Expression)> elements;
         /* @internal */
         boolean multiLine;
     };
@@ -1133,7 +1138,7 @@ namespace data
     template <typename T /*: ObjectLiteralElement*/>
     struct ObjectLiteralExpressionBase : PrimaryExpression, Declaration
     {
-        NodeArray<T> properties;
+        NodeArray<PTR(T)> properties;
     };
 
     // An ObjectLiteralExpression is the declaration node for an anonymous symbol.
@@ -1218,8 +1223,8 @@ namespace data
         // kind: SyntaxKind::CallExpression;
         PTR(LeftHandSideExpression) expression;
         PTR(QuestionDotToken) questionDotToken;
-        NodeArray<TypeNode> typeArguments;
-        NodeArray<Expression> arguments;
+        NodeArray<PTR(TypeNode)> typeArguments;
+        NodeArray<PTR(Expression)> arguments;
     };
 
     struct CallChain : CallExpression
@@ -1236,7 +1241,7 @@ namespace data
     /** @internal */
     struct BindableObjectDefinePropertyCall : CallExpression
     {
-        NodeArray<Node> arguments;
+        NodeArray<PTR(Node)> arguments;
     };
 
     /** @internal */
@@ -1291,15 +1296,15 @@ namespace data
     {
         // kind: SyntaxKind::NewExpression;
         PTR(LeftHandSideExpression) expression;
-        NodeArray<TypeNode> typeArguments;
-        NodeArray<Expression> arguments;
+        NodeArray<PTR(TypeNode)> typeArguments;
+        NodeArray<PTR(Expression)> arguments;
     };
 
     struct TaggedTemplateExpression : MemberExpression
     {
         // kind: SyntaxKind::TaggedTemplateExpression;
         PTR(LeftHandSideExpression) tag;
-        NodeArray<TypeNode> typeArguments;
+        NodeArray<PTR(TypeNode)> typeArguments;
         PTR(TemplateLiteral) _template;
         /*@internal*/ PTR(QuestionDotToken) questionDotToken; // NOTE: Invalid syntax, only used to report a grammar error.
     };
@@ -1353,7 +1358,7 @@ namespace data
     {
         // kind: SyntaxKind::JsxElement;
         PTR(JsxOpeningElement) openingElement;
-        NodeArray<JsxChild> children;
+        NodeArray<PTR(JsxChild)> children;
         PTR(JsxClosingElement) closingElement;
     };
 
@@ -1374,7 +1379,7 @@ namespace data
         // kind: SyntaxKind::JsxOpeningElement;
         PTR(JsxElement) parent;
         PTR(JsxTagNameExpression) tagName;
-        NodeArray<TypeNode> typeArguments;
+        NodeArray<PTR(TypeNode)> typeArguments;
         PTR(JsxAttributes) attributes;
     };
 
@@ -1383,7 +1388,7 @@ namespace data
     {
         // kind: SyntaxKind::JsxSelfClosingElement;
         PTR(JsxTagNameExpression) tagName;
-        NodeArray<TypeNode> typeArguments;
+        NodeArray<PTR(TypeNode)> typeArguments;
         PTR(JsxAttributes) attributes;
     };
 
@@ -1392,7 +1397,7 @@ namespace data
     {
         // kind: SyntaxKind::JsxFragment;
         PTR(JsxOpeningFragment) openingFragment;
-        NodeArray<JsxChild> children;
+        NodeArray<PTR(JsxChild)> children;
         PTR(JsxClosingFragment) closingFragment;
     };
 
@@ -1470,7 +1475,7 @@ namespace data
     struct CommaListExpression : Expression
     {
         // kind: SyntaxKind::CommaListExpression;
-        NodeArray<Expression> elements;
+        NodeArray<PTR(Expression)> elements;
     };
 
     /**
@@ -1502,7 +1507,7 @@ namespace data
 
     struct MissingDeclaration : DeclarationStatement
     {
-        /*@internal*/ NodeArray<Decorator> decorators; // Present for use with reporting a grammar error
+        /*@internal*/ NodeArray<PTR(Decorator)> decorators; // Present for use with reporting a grammar error
         /*@internal*/ ModifiersArray modifiers;        // Present for use with reporting a grammar error
         // kind: SyntaxKind::MissingDeclaration;
         PTR(Identifier) name;
@@ -1511,13 +1516,13 @@ namespace data
     struct Block : Statement
     {
         // kind: SyntaxKind::Block;
-        NodeArray<Statement> statements;
+        NodeArray<PTR(Statement)> statements;
         /*@internal*/ boolean multiLine;
     };
 
     struct VariableStatement : Statement, JSDocContainer
     {
-        /* @internal*/ NodeArray<Decorator> decorators; // Present for use with reporting a grammar error
+        /* @internal*/ NodeArray<PTR(Decorator)> decorators; // Present for use with reporting a grammar error
         // kind: SyntaxKind::VariableStatement;
         PTR(VariableDeclarationList) declarationList;
     };
@@ -1619,7 +1624,7 @@ namespace data
     {
         // kind: SyntaxKind::CaseBlock;
         PTR(SwitchStatement) parent;
-        NodeArray<CaseOrDefaultClause> clauses;
+        NodeArray<PTR(CaseOrDefaultClause)> clauses;
     };
 
     struct CaseClause : Node
@@ -1627,7 +1632,7 @@ namespace data
         // kind: SyntaxKind::CaseClause;
         PTR(CaseBlock) parent;
         PTR(Expression) expression;
-        NodeArray<Statement> statements;
+        NodeArray<PTR(Statement)> statements;
         ///* @internal */ PTR(FlowNode) fallthroughFlowNode;
     };
 
@@ -1635,7 +1640,7 @@ namespace data
     {
         // kind: SyntaxKind::DefaultClause;
         PTR(CaseBlock) parent;
-        NodeArray<Statement> statements;
+        NodeArray<PTR(Statement)> statements;
         ///* @internal */ PTR(FlowNode) fallthroughFlowNode;
     };
 
@@ -1672,9 +1677,9 @@ namespace data
     {
         // kind: SyntaxKind::ClassDeclaration | SyntaxKind::ClassExpression;
         PTR(Identifier) name;
-        NodeArray<TypeParameterDeclaration> typeParameters;
-        NodeArray<HeritageClause> heritageClauses;
-        NodeArray<ClassElement> members;
+        NodeArray<PTR(TypeParameterDeclaration)> typeParameters;
+        NodeArray<PTR(HeritageClause)> heritageClauses;
+        NodeArray<PTR(ClassElement)> members;
     };
 
     struct ClassDeclaration : ClassLikeDeclarationBase, DeclarationStatement
@@ -1693,9 +1698,9 @@ namespace data
     {
         // kind: SyntaxKind::InterfaceDeclaration;
         PTR(Identifier) name;
-        NodeArray<TypeParameterDeclaration> typeParameters;
-        NodeArray<HeritageClause> heritageClauses;
-        NodeArray<TypeElement> members;
+        NodeArray<PTR(TypeParameterDeclaration)> typeParameters;
+        NodeArray<PTR(HeritageClause)> heritageClauses;
+        NodeArray<PTR(TypeElement)> members;
     };
 
     struct HeritageClause : Node
@@ -1703,14 +1708,14 @@ namespace data
         // kind: SyntaxKind::HeritageClause;
         NodeRef /*InterfaceDeclaration | ClassLikeDeclaration*/ parent;
         SyntaxKind token;
-        NodeArray<ExpressionWithTypeArguments> types;
+        NodeArray<PTR(ExpressionWithTypeArguments)> types;
     };
 
     struct TypeAliasDeclaration : DeclarationStatement, JSDocContainer
     {
         // kind: SyntaxKind::TypeAliasDeclaration;
         PTR(Identifier) name;
-        NodeArray<TypeParameterDeclaration> typeParameters;
+        NodeArray<PTR(TypeParameterDeclaration)> typeParameters;
         PTR(TypeNode) type;
     };
 
@@ -1728,7 +1733,7 @@ namespace data
     {
         // kind: SyntaxKind::EnumDeclaration;
         PTR(Identifier) name;
-        NodeArray<EnumMember> members;
+        NodeArray<PTR(EnumMember)> members;
     };
 
     struct ModuleDeclaration : DeclarationStatement, JSDocContainer
@@ -1761,7 +1766,7 @@ namespace data
     {
         // kind: SyntaxKind::ModuleBlock;
         PTR(ModuleDeclaration) parent;
-        NodeArray<Statement> statements;
+        NodeArray<PTR(Statement)> statements;
     };
 
     /**
@@ -1834,7 +1839,7 @@ namespace data
     {
         // kind: SyntaxKind::NamespaceExportDeclaration name;
         PTR(Identifier) name;
-        /* @internal */ NodeArray<Decorator> decorators; // Present for use with reporting a grammar error
+        /* @internal */ NodeArray<PTR(Decorator)> decorators; // Present for use with reporting a grammar error
         /* @internal */ ModifiersArray modifiers;        // Present for use with reporting a grammar error
     };
 
@@ -1853,14 +1858,14 @@ namespace data
     {
         // kind: SyntaxKind::NamedImports;
         PTR(ImportClause) parent;
-        NodeArray<ImportSpecifier> elements;
+        NodeArray<PTR(ImportSpecifier)> elements;
     };
 
     struct NamedExports : Node
     {
         // kind: SyntaxKind::NamedExports;
         PTR(ExportDeclaration) parent;
-        NodeArray<ExportSpecifier> elements;
+        NodeArray<PTR(ExportSpecifier)> elements;
     };
 
     struct ImportSpecifier : NamedDeclaration
@@ -1984,7 +1989,7 @@ namespace data
     {
         // kind: SyntaxKind::JSDocComment;
         PTR(HasJSDoc) parent;
-        NodeArray<JSDocTag> tags;
+        NodeArray<PTR(JSDocTag)> tags;
         string comment;
     };
 
@@ -2074,7 +2079,7 @@ namespace data
     {
         // kind: SyntaxKind::JSDocTemplateTag;
         PTR(Node) /**JSDocTypeExpression | undefined*/ constraint;
-        NodeArray<TypeParameterDeclaration> typeParameters;
+        NodeArray<PTR(TypeParameterDeclaration)> typeParameters;
     };
 
     struct JSDocSeeTag : JSDocTag
@@ -2306,7 +2311,7 @@ namespace data
     struct SourceFile : Declaration
     {
         // kind: SyntaxKind::SourceFile;
-        NodeArray<Statement> statements;
+        NodeArray<PTR(Statement)> statements;
         Token<SyntaxKind::EndOfFileToken> endOfFileToken;
 
         string fileName;
@@ -2400,7 +2405,7 @@ namespace data
         /* @internal */ std::map<string, ResolvedTypeReferenceDirective> resolvedTypeReferenceDirectiveNames;
         /* @internal */ std::vector<StringLiteralLike> imports;
         // Identifier only if `declare global`
-        /* @internal */ NodeArray<Node> moduleAugmentations;
+        /* @internal */ NodeArray<PTR(Node)> moduleAugmentations;
         /* @internal */ std::vector<PatternAmbientModule> patternAmbientModules;
         /* @internal */ std::vector<string> ambientModuleNames;
         /* @internal */ PTR(CheckJsDirective) checkJsDirective;

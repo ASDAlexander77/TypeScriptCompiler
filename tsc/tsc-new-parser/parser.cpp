@@ -327,10 +327,10 @@ namespace ts {
                 sourceFile->identifierCount = identifierCount;
                 sourceFile->identifiers = identifiers;
                 //sourceFile->parseDiagnostics = attachFileToDiagnostics(parseDiagnostics, sourceFile);
-                sourceFile->parseDiagnostics = parseDiagnostics;
+                copy(sourceFile->parseDiagnostics, parseDiagnostics);
                 if (!jsDocDiagnostics.empty()) {
                     //sourceFile->jsDocDiagnostics = attachFileToDiagnostics(jsDocDiagnostics, sourceFile);
-                    sourceFile->jsDocDiagnostics = jsDocDiagnostics;
+                    copy(sourceFile->jsDocDiagnostics, jsDocDiagnostics);
                 }
 
                 auto result = JsonSourceFile(sourceFile);
@@ -438,15 +438,15 @@ namespace ts {
                 };
                 processPragmasIntoFields(sourceFile, reportPragmaDiagnostic);
 
-                sourceFile->commentDirectives = scanner.getCommentDirectives();
+                copy(sourceFile->commentDirectives, scanner.getCommentDirectives());
                 sourceFile->nodeCount = nodeCount;
                 sourceFile->identifierCount = identifierCount;
                 sourceFile->identifiers = identifiers;
                 //sourceFile->parseDiagnostics = attachFileToDiagnostics(parseDiagnostics, sourceFile);
-                sourceFile->parseDiagnostics = parseDiagnostics;
+                copy(sourceFile->parseDiagnostics, parseDiagnostics);
                 if (!jsDocDiagnostics.empty()) {
                     //sourceFile->jsDocDiagnostics = attachFileToDiagnostics(jsDocDiagnostics, sourceFile);
-                    sourceFile->jsDocDiagnostics = jsDocDiagnostics;
+                    copy(sourceFile->jsDocDiagnostics, jsDocDiagnostics);
                 }
 
                 if (setParentNodes) {
@@ -486,7 +486,7 @@ namespace ts {
                         && !!(node->transformFlags & TransformFlags::ContainsPossibleTopLevelAwait);
                 };
 
-                auto findNextStatementWithAwait = [&](Node statements, number start) {
+                auto findNextStatementWithAwait = [&](NodeArray<Statement> statements, number start) {
                     for (auto i = start; i < statements.size(); i++) {
                         if (containsPossibleTopLevelAwait(statements[i])) {
                             return i;
@@ -495,7 +495,7 @@ namespace ts {
                     return -1;
                 };
 
-                auto findNextStatementWithoutAwait = [&](Node statements, number start) {
+                auto findNextStatementWithoutAwait = [&](NodeArray<Statement> statements, number start) {
                     for (auto i = start; i < statements.size(); i++) {
                         if (!containsPossibleTopLevelAwait(statements[i])) {
                             return i;
@@ -514,7 +514,7 @@ namespace ts {
 
                 syntaxCursor = IncrementalParser::SyntaxCursor{ currentNode };
 
-                Node statements;
+                NodeArray<Statement> statements;
                 auto savedParseDiagnostics = parseDiagnostics;
 
                 parseDiagnostics.clear();
@@ -529,8 +529,8 @@ namespace ts {
                     pos = findNextStatementWithoutAwait(sourceFile->statements, start);
 
                     // append all diagnostics associated with the copied range
-                    auto diagnosticStart = findIndex(savedParseDiagnostics, [&](auto diagnostic, number index) { return diagnostic.start >= prevStatement->pos; });
-                    auto diagnosticEnd = diagnosticStart >= 0 ? findIndex(savedParseDiagnostics, [&](auto diagnostic, number index) { return diagnostic.start >= nextStatement->pos, diagnosticStart; }) : -1;
+                    auto diagnosticStart = findIndex(savedParseDiagnostics, [&](auto diagnostic, number index) { return diagnostic->start >= prevStatement->pos; });
+                    auto diagnosticEnd = diagnosticStart >= 0 ? findIndex(savedParseDiagnostics, [&](auto diagnostic, number index) { return diagnostic->start >= nextStatement->pos, diagnosticStart; }) : -1;
                     if (diagnosticStart >= 0) {
                         addRange(parseDiagnostics, savedParseDiagnostics, diagnosticStart, diagnosticEnd >= 0 ? diagnosticEnd : -1);
                     }
@@ -578,7 +578,7 @@ namespace ts {
                     addRange(statements, sourceFile->statements, pos);
 
                     // append all diagnostics associated with the copied range
-                    auto diagnosticStart = findIndex(savedParseDiagnostics, [&](auto diagnostic, number index) { return diagnostic.start >= prevStatement->pos; });
+                    auto diagnosticStart = findIndex(savedParseDiagnostics, [&](auto diagnostic, number index) { return diagnostic->start >= prevStatement->pos; });
                     if (diagnosticStart >= 0) {
                         addRange(parseDiagnostics, savedParseDiagnostics, diagnosticStart);
                     }
@@ -748,7 +748,7 @@ namespace ts {
             auto parseErrorAtPosition(number start, number length, DiagnosticMessage message, string arg0 = string()) -> void {
                 // Don't report another error if it would just be at the same position.as<the>() last error.
                 auto lastError = lastOrUndefined(parseDiagnostics);
-                if (!lastError || start != lastError.start) {
+                if (!lastError || start != lastError->start) {
                     parseDiagnostics.push_back(createDetachedDiagnostic(fileName, start, length, message, arg0));
                 }
 
@@ -762,7 +762,7 @@ namespace ts {
             }
 
             auto parseErrorAtRange(TextRange range, DiagnosticMessage message) -> void {
-                parseErrorAt(range.pos, range.end, message);
+                parseErrorAt(range->pos, range->end, message);
             }
 
             template<typename T>

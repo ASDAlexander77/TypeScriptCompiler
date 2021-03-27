@@ -16,6 +16,12 @@ namespace IncrementalParser
     struct IncrementalNode : Node, IncrementalElement
     {
         boolean hasBeenIncrementallyParsed;
+
+        inline operator bool()
+        {
+            // TODO: review it
+            return true;
+        }
     };
 
     struct IncrementalNodeArray : NodeArray<IncrementalNode>, IncrementalElement

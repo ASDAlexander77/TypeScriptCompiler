@@ -208,14 +208,14 @@ inline auto fileExtensionIs(string path, string extension) -> boolean
 template <typename T>
 inline auto setTextRangePos(T range, number pos)
 {
-    range->pos = pos;
+    ((TextRange&)range)->pos = pos;
     return range;
 }
 
 template <typename T>
 inline auto setTextRangeEnd(T range, number end) -> T
 {
-    range->end = end;
+    ((TextRange&)range)->end = end;
     return range;
 }
 
