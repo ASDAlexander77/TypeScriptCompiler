@@ -4,7 +4,7 @@
 #include "config.h"
 #include "enums.h"
 #include "scanner_enums.h"
-#include "parser_fwd_types2.h"
+#include "parser_fwd_types.h"
 
 #include <vector>
 #include <map>

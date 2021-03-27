@@ -17,11 +17,7 @@
 #include "scanner_enums.h"
 #include "diagnostics.h"
 
-#ifdef PARSER_VER1
 #include "parser_types.h"
-#else
-#include "parser_types2.h"
-#endif
 
 struct safe_string
 {
@@ -178,11 +174,14 @@ static auto parsePseudoBigInt(string stringValue) -> string {
 
 namespace ts
 {
-    class ScannerImpl;
+    namespace Impl
+    {
+        class Scanner;
+    }
 
     class Scanner
     {
-        ScannerImpl* impl;
+        Impl::Scanner* impl;
     public:
         Scanner(ScriptTarget, boolean, LanguageVariant = LanguageVariant::Standard, string = string(), ErrorCallback = nullptr, number = 0, number = -1);
 

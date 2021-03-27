@@ -21,12 +21,13 @@ namespace fs = std::filesystem;
 namespace fs = std::experimental::filesystem;
 #endif
 
-#include "scanner.h"
+#include "parser.h"
 #include "file_helper.h"
 
 void printParser(const wchar_t *str)
 {
     // TODO:
+    ts::Parser parser;
 }
 
 int main(int argc, char **args)

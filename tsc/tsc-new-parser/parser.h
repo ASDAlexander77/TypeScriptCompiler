@@ -9,11 +9,7 @@
 
 #include <memory>
 
-#ifdef PARSER_VER1
 #include "parser_types.h"
-#else
-#include "parser_types2.h"
-#endif
 
 template <typename T>
 using NodeFuncT = std::function<T(Node)>;
@@ -31,6 +27,22 @@ namespace ts
     auto isExternalModule(SourceFile file) -> boolean;
     auto tagNamesAreEquivalent(JsxTagNameExpression lhs, JsxTagNameExpression rhs) -> boolean;
     auto fixupParentReferences(Node rootNode) -> void;
+
+    namespace Impl
+    {
+        struct Parser;
+    };
+
+    class Parser
+    {
+        Impl::Parser *impl;
+
+    public:
+        Parser();
+
+        ~Parser();
+    };
+
 }
 
 #include "incremental_parser.h"
