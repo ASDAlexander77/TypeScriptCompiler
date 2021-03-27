@@ -135,17 +135,28 @@ public:
 
     inline auto operator||(bool rhs) -> bool
     {
-        return static_cast<bool>(node) || rhs;
+        return this->operator bool() || rhs;
     }    
 
     inline auto operator||(ptr rhs) -> ptr
     {
-        if (static_cast<bool>(node))
+        if (this->operator bool())
         {
             return *this;
         }
 
         return rhs;
+    }    
+
+    template <typename U> 
+    inline auto operator||(ptr<U> rhs) -> ptr
+    {
+        if (this->operator bool())
+        {
+            return *this;
+        }
+
+        return rhs.as<U>();
     }    
 
     template <typename U> 

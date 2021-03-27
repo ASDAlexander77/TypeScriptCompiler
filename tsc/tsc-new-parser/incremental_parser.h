@@ -10,7 +10,7 @@ namespace IncrementalParser
         Node parent;
         boolean intersectsChange;
         number length;
-        std::vector<Node> _children;
+        NodeArray<PTR(Node)> _children;
     };
 
     struct IncrementalNode : Node, IncrementalElement
@@ -21,18 +21,6 @@ namespace IncrementalParser
         {
             return Node::operator->();
         }
-
-        template <typename U> 
-        inline auto as() -> U
-        {
-            return U(*this);
-        }
-
-        template <typename U> 
-        inline auto asMutable() -> U
-        {
-            return U(*this);
-        }          
 
         inline operator bool()
         {
