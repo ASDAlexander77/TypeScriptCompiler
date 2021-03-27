@@ -55,8 +55,8 @@ namespace data
 
         auto pop() -> T
         {
-            auto v = items.back();
-            items.pop_back();
+            auto v = back();
+            pop_back();
             return v;
         }
 

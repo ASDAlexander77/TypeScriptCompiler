@@ -256,8 +256,8 @@ static auto visitNode(NodeFuncT<T> cbNode, Node node) -> T {
 }
 
 template<typename T>
-static auto visitNodes(NodeFuncT<T> cbNode, NodeArrayFuncT<T> cbNodes, /*NodeArray*/Node nodes) -> T {
-    if (nodes) {
+static auto visitNodes(NodeFuncT<T> cbNode, NodeArrayFuncT<T> cbNodes, NodeArray<T> nodes) -> T {
+    if (!!nodes) {
         if (cbNodes) {
             return cbNodes(nodes);
         }
@@ -268,16 +268,16 @@ static auto visitNodes(NodeFuncT<T> cbNode, NodeArrayFuncT<T> cbNodes, /*NodeArr
             }
         }
     }
-}
+}    
 
-template<typename T>
-static auto visitNodes(NodeFuncT<T> cbNode, NodeArrayFuncT<T> cbNodes, NodeArray<T> nodes) -> T {
+template<typename T, typename U>
+static auto visitNodes(NodeFuncT<T> cbNode, NodeArrayFuncT<T> cbNodes, NodeArray<U> nodes) -> T {
     if (!!nodes) {
         if (cbNodes) {
-            return cbNodes(nodes);
+            return cbNodes(NodeArray<T>(nodes.begin(), nodes.end()));
         }
         for (auto node : nodes) {
-            auto result = cbNode(node);
+            auto result = cbNode(node.as<T>());
             if (result) {
                 return result;
             }
