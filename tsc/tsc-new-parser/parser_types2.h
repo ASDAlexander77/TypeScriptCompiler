@@ -88,7 +88,7 @@ namespace data
         boolean isMissingList;
     };
 
-    using ModifiersArray = NodeArray<Modifier>;
+    using ModifiersArray = NodeArray<PTR(Modifier)>;
 
     struct Symbol
     {

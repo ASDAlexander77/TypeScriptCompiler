@@ -6643,7 +6643,7 @@ namespace ts {
 
             /** Do not use hasModifier inside the parser; it relies on parent pointers. Use this instead. */
             auto hasModifierOfKind(Node node, SyntaxKind kind) -> boolean {
-                return some(node->modifiers, [=](auto m) { return m.kind == kind; });
+                return some(node->modifiers, [=](auto m) { return m->kind == kind; });
             }
 
             auto isImportMeta(Node node) -> boolean {
