@@ -156,11 +156,11 @@ namespace data
 
     // TODO(rbuckton): Constraint 'TKind' to 'TokenSyntaxKind'
     template <SyntaxKind... TKind>
-    struct Token : Node
+    struct Token : virtual Node
     {
     };
 
-    struct JSDocContainer
+    struct JSDocContainer : virtual Node
     {
         /* @internal */ NodeArray<PTR(JSDoc)> jsDoc;         // JSDoc that directly precedes this node
         /* @internal */ NodeArray<PTR(JSDocTag)> jsDocCache; // Cache for getJSDocTags
@@ -187,7 +187,7 @@ namespace data
     {
     };
 
-    struct QualifiedName : Node
+    struct QualifiedName : virtual Node
     {
         // kind: SyntaxKind::QualifiedName;
         PTR(EntityName) left;
@@ -195,7 +195,7 @@ namespace data
         /*@internal*/ number jsdocDotPos; // QualifiedName occurs in JSDoc-style generic: Id1.Id2.<T>
     };
 
-    struct Declaration : Node
+    struct Declaration : virtual Node
     {
         any _declarationBrand;
     };
@@ -235,7 +235,7 @@ namespace data
         PTR(LateBoundName) name;
     };
 
-    struct Statement : Node
+    struct Statement : virtual Node
     {
         any _statementBrand;
     };
@@ -245,14 +245,14 @@ namespace data
         PTR(Node) /**Identifier | StringLiteral | NumericLiteral*/ name;
     };
 
-    struct ComputedPropertyName : Node
+    struct ComputedPropertyName : virtual Node
     {
         // kind: SyntaxKind::ComputedPropertyName;
         PTR(Declaration) parent;
         PTR(Expression) expression;
     };
 
-    struct PrivateIdentifier : Node
+    struct PrivateIdentifier : virtual Node
     {
         // kind: SyntaxKind::PrivateIdentifier;
         // escaping not strictly necessary
@@ -267,7 +267,7 @@ namespace data
         PTR(EntityNameExpression) expression;
     };
 
-    struct Decorator : Node
+    struct Decorator : virtual Node
     {
         // kind: SyntaxKind::Decorator;
         PTR(NamedDeclaration) parent;
@@ -331,7 +331,7 @@ namespace data
         PTR(Expression) initializer;
     };
 
-    struct VariableDeclarationList : Node
+    struct VariableDeclarationList : virtual Node
     {
         // kind: SyntaxKind::VariableDeclarationList;
         PTR(Node) /**VariableStatement | ForStatement | ForOfStatement | ForInStatement*/ parent;
@@ -438,14 +438,14 @@ namespace data
         PTR(PropertyName) name;
     };
 
-    struct ObjectBindingPattern : Node
+    struct ObjectBindingPattern : virtual Node
     {
         // kind: SyntaxKind::ObjectBindingPattern;
         PTR(Node) /**VariableDeclaration | ParameterDeclaration | BindingElement*/ parent;
         NodeArray<PTR(BindingElement)> elements;
     };
 
-    struct ArrayBindingPattern : Node
+    struct ArrayBindingPattern : virtual Node
     {
         // kind: SyntaxKind::ArrayBindingPattern;
         PTR(Node) /**VariableDeclaration | ParameterDeclaration | BindingElement*/ parent;
@@ -550,7 +550,7 @@ namespace data
         PTR(TypeNode) type;
     };
 
-    struct TypeNode : Node
+    struct TypeNode : virtual Node
     {
         // kind: TypeNodeSyntaxKind;
         any _typeNodeBrand;
@@ -756,7 +756,7 @@ namespace data
     // checker actually thinks you have something of the right type.  Note: the brands are
     // never actually given values.  At runtime they have zero cost.
 
-    struct Expression : Node
+    struct Expression : virtual Node
     {
         any _expressionBrand;
     };
@@ -1150,7 +1150,7 @@ namespace data
 
     // Each of these corresponds to a substitution expression and a template literal, in that order.
     // The template literal must have kind TemplateMiddleLiteral or TemplateTailLiteral.
-    struct TemplateSpan : Node
+    struct TemplateSpan : virtual Node
     {
         // kind: SyntaxKind::TemplateSpan;
         PTR(TemplateExpression) parent;
@@ -1481,7 +1481,7 @@ namespace data
         PTR(Expression) expression;
     };
 
-    struct JsxClosingElement : Node
+    struct JsxClosingElement : virtual Node
     {
         // kind: SyntaxKind::JsxClosingElement;
         PTR(JsxElement) parent;
@@ -1670,14 +1670,14 @@ namespace data
         boolean possiblyExhaustive; // initialized by binding
     };
 
-    struct CaseBlock : Node
+    struct CaseBlock : virtual Node
     {
         // kind: SyntaxKind::CaseBlock;
         PTR(SwitchStatement) parent;
         NodeArray<PTR(CaseOrDefaultClause)> clauses;
     };
 
-    struct CaseClause : Node
+    struct CaseClause : virtual Node
     {
         // kind: SyntaxKind::CaseClause;
         PTR(CaseBlock) parent;
@@ -1686,7 +1686,7 @@ namespace data
         ///* @internal */ PTR(FlowNode) fallthroughFlowNode;
     };
 
-    struct DefaultClause : Node
+    struct DefaultClause : virtual Node
     {
         // kind: SyntaxKind::DefaultClause;
         PTR(CaseBlock) parent;
@@ -1715,7 +1715,7 @@ namespace data
         PTR(Block) finallyBlock;
     };
 
-    struct CatchClause : Node
+    struct CatchClause : virtual Node
     {
         // kind: SyntaxKind::CatchClause;
         PTR(TryStatement) parent;
@@ -1753,7 +1753,7 @@ namespace data
         NodeArray<PTR(TypeElement)> members;
     };
 
-    struct HeritageClause : Node
+    struct HeritageClause : virtual Node
     {
         // kind: SyntaxKind::HeritageClause;
         NodeRef /*InterfaceDeclaration | ClassLikeDeclaration*/ parent;
@@ -1836,7 +1836,7 @@ namespace data
         PTR(ModuleReference) moduleReference;
     };
 
-    struct ExternalModuleReference : Node
+    struct ExternalModuleReference : virtual Node
     {
         // kind: SyntaxKind::ExternalModuleReference;
         PTR(ImportEqualsDeclaration) parent;
@@ -1904,14 +1904,14 @@ namespace data
         PTR(Expression) moduleSpecifier;
     };
 
-    struct NamedImports : Node
+    struct NamedImports : virtual Node
     {
         // kind: SyntaxKind::NamedImports;
         PTR(ImportClause) parent;
         NodeArray<PTR(ImportSpecifier)> elements;
     };
 
-    struct NamedExports : Node
+    struct NamedExports : virtual Node
     {
         // kind: SyntaxKind::NamedExports;
         PTR(ExportDeclaration) parent;
@@ -1981,7 +1981,7 @@ namespace data
         PTR(TypeNode) type;
     };
 
-    struct JSDocNameReference : Node
+    struct JSDocNameReference : virtual Node
     {
         // kind: SyntaxKind::JSDocNameReference;
         PTR(EntityName) name;
@@ -2037,7 +2037,7 @@ namespace data
         PTR(TypeNode) type;
     };
 
-    struct JSDoc : Node
+    struct JSDoc : virtual Node
     {
         // kind: SyntaxKind::JSDocComment;
         PTR(HasJSDoc) parent;
@@ -2045,7 +2045,7 @@ namespace data
         string comment;
     };
 
-    struct JSDocTag : Node
+    struct JSDocTag : virtual Node
     {
         PTR(Node) /**JSDoc | JSDocTypeLiteral*/ parent;
         PTR(Identifier) tagName;
@@ -2473,7 +2473,7 @@ namespace data
         /* @internal */ ExportedModulesFromDeclarationEmit exportedModulesFromDeclarationEmit;
     };
 
-    struct UnparsedSection : Node 
+    struct UnparsedSection : virtual Node 
     {
         PTR(UnparsedSource) parent;
         string data;
@@ -2536,7 +2536,7 @@ namespace data
         std::vector<string> names;
     };
 
-    struct UnparsedSource : Node 
+    struct UnparsedSource : virtual Node 
     {
         string fileName;
         string text;
@@ -2568,7 +2568,7 @@ namespace data
         string version;
     };
 
-    struct InputFiles : Node 
+    struct InputFiles : virtual Node 
     {
         string javascriptPath;
         string javascriptText;
@@ -2583,7 +2583,7 @@ namespace data
         /*@internal*/ boolean oldFileOfCurrentEmit;
     };
 
-    struct SyntaxList : Node 
+    struct SyntaxList : virtual Node 
     {
         std::vector<Node> _children;
     };

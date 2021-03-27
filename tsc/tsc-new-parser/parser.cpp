@@ -465,7 +465,7 @@ namespace ts {
             template <typename T>
             auto addJSDocComment(T node) -> T {
                 // TODO:
-                Debug::_assert(!node.dynCast<JSDocContainer>()->jsDoc); // Should only be called once per node
+                Debug::_assert(!node.as<JSDocContainer>()->jsDoc); // Should only be called once per node
                 /*
                 auto jsDoc = mapDefined(getJSDocCommentRanges(node, sourceText), [&] (auto comment) { return JSDocParser::parseJSDocComment(node, comment->pos, comment->end - comment->pos); });
                 if (jsDoc.size()) node->jsDoc = jsDoc;

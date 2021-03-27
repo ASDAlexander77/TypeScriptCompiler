@@ -63,10 +63,10 @@ struct ptr
 	ptr(const T& t) : instance(std::make_shared<T>(t)) {};
 
 	template <typename U>
-	ptr(ptr<U> otherPtr) : instance(std::static_pointer_cast<T>(otherPtr.instance)) {};
+	ptr(ptr<U> otherPtr) : instance(std::dynamic_pointer_cast<T>(otherPtr.instance)) {};
 
 	template <typename U>
-	ptr(ptr<U> otherPtr, boolean dynCast) : instance(std::dynamic_pointer_cast<T>(otherPtr.instance)) {};
+	ptr(ptr<U> otherPtr, boolean) : instance(std::static_pointer_cast<T>(otherPtr.instance)) {};
 
 	template <typename I>
 	ptr(const I& inst) : instance(std::make_shared<T>(inst)) {};
@@ -144,7 +144,7 @@ struct ptr
     }    
 
     template <typename U> 
-    inline auto dynCast() -> U
+    inline auto cast() -> U
     {
         return U(*this, true);
     }
