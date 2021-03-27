@@ -80,6 +80,8 @@ struct Debug
         if (value == undefined || value == nullptr) {
             fail<void>(message);
         }
+
+        return value;
     }
 
     template<typename T>

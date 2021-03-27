@@ -2403,6 +2403,8 @@ namespace ts
                 {
                     return parseBracketedList<TypeNode>(ParsingContext::TypeArguments, std::bind(&Parser::parseType, this), SyntaxKind::LessThanToken, SyntaxKind::GreaterThanToken);
                 }
+
+                return undefined;
             }
 
             auto parseTypeReference() -> TypeReferenceNode
@@ -2627,6 +2629,8 @@ namespace ts
                 {
                     return parseBracketedList<TypeParameterDeclaration>(ParsingContext::TypeParameters, std::bind(&Parser::parseTypeParameter, this), SyntaxKind::LessThanToken, SyntaxKind::GreaterThanToken);
                 }
+
+                return undefined;
             }
 
             auto isStartOfParameter(boolean isJSDocParameter) -> boolean
@@ -2715,6 +2719,8 @@ namespace ts
                 {
                     return parseTypeOrTypePredicate();
                 }
+
+                return undefined;
             }
 
             auto shouldParseReturnType(SyntaxKind returnToken, boolean isType) -> boolean
@@ -3609,6 +3615,8 @@ namespace ts
                     nextToken();
                     return id;
                 }
+
+                return undefined;
             }
 
             auto parseAssertsTypePredicate() -> TypeNode
@@ -6243,6 +6251,8 @@ namespace ts
                     {
                         return consumeNode(node).as<Statement>();
                     }
+
+                    return (Statement)undefined;
                 });
             }
 
@@ -6514,6 +6524,8 @@ namespace ts
                         return literalNode->text == S("constructor");
                     });
                 }
+
+                return false;
             }
 
             auto tryParseConstructorDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers) -> ConstructorDeclaration
@@ -6531,7 +6543,11 @@ namespace ts
                         node->type = type;
                         return withJSDoc(finishNode(node, pos), hasJSDoc);
                     }
+
+                    return (Node)undefined;
                 });
+
+                return undefined;
             }
 
             auto parseMethodDeclaration(

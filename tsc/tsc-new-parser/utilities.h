@@ -268,6 +268,8 @@ static auto visitNodes(NodeFuncT<T> cbNode, NodeArrayFuncT<T> cbNodes, NodeArray
             }
         }
     }
+
+    return undefined;
 }    
 
 template<typename T, typename U>
@@ -283,6 +285,8 @@ static auto visitNodes(NodeFuncT<T> cbNode, NodeArrayFuncT<T> cbNodes, NodeArray
             }
         }
     }
+
+    return undefined;
 }    
 
 /**
@@ -789,6 +793,8 @@ static auto forEachChild(Node node, NodeFuncT<T> cbNode, NodeArrayFuncT<T> cbNod
         case SyntaxKind::PartiallyEmittedExpression:
             return visitNode(cbNode, node.as<PartiallyEmittedExpression>()->expression);
     }
+
+    return undefined;
 }
 
 static auto gatherPossibleChildren(Node node) -> NodeArray<Node> {
