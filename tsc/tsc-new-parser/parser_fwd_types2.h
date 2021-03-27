@@ -48,6 +48,7 @@
 #define PTR(x) ptr<x>
 #define POINTER(x) using x = PTR(data::x);
 #define POINTER_T(x) template <typename T> using x = PTR(data::x<T>);
+#define POINTER_VAR(x, v) template <v TKind> using x = PTR(data::x<TKind>);
 #define POINTER_TARGS(x, v) template <v ... TKind> using x = PTR(data::x<TKind...>);
 
 template <typename T>
@@ -99,7 +100,7 @@ struct ptr
         return instance->kind;
     }    
 
-    inline operator const T &()
+    inline operator const T &() const
     {
         return *instance;
     }
@@ -166,6 +167,7 @@ namespace data
     FORWARD_DECLARATION_VAR(PunctuationToken, SyntaxKind)
     FORWARD_DECLARATION_VAR(KeywordToken, SyntaxKind)
     FORWARD_DECLARATION_VAR(ModifierToken, SyntaxKind)
+    FORWARD_DECLARATION_VAR(LiteralToken, SyntaxKind)
     FORWARD_DECLARATION(QualifiedName)
     FORWARD_DECLARATION(Declaration)
     FORWARD_DECLARATION(NamedDeclaration)
@@ -506,7 +508,6 @@ namespace data
     TMPL_REF(AssertsKeyword, KeywordToken, SyntaxKind::AssertsKeyword)
     TMPL_REF(AwaitKeyword, KeywordToken, SyntaxKind::AwaitKeyword)
 
-    TMPL_REF2(LiteralToken, Token, SyntaxKind::NumericLiteral, SyntaxKind::NoSubstitutionTemplateLiteral)
     TMPL_REF2(BinaryOperatorToken, Token, SyntaxKind::AsteriskAsteriskToken, SyntaxKind::CommaToken)
 
     CLASS_REF(AwaitKeywordToken, AwaitKeyword)
@@ -896,7 +897,7 @@ POINTER(PlusToken)
 POINTER(MinusToken)
 POINTER(QuestionDotToken)
 
-POINTER(LiteralToken)
+POINTER_VAR(LiteralToken, SyntaxKind)
 POINTER(BinaryOperatorToken)
 
 POINTER(AssertsKeyword)

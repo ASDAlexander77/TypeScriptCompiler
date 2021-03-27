@@ -285,7 +285,7 @@ public:
     auto createTemplateMiddle(string text, string rawText = string(), TokenFlags templateFlags = TokenFlags::None) -> TemplateMiddle;
     auto createTemplateTail(string text, string rawText = string(), TokenFlags templateFlags = TokenFlags::None) -> TemplateTail;
     auto createNoSubstitutionTemplateLiteral(string text, string rawText = string()) -> NoSubstitutionTemplateLiteral;
-    /* @internal */ auto createLiteralLikeNode(SyntaxKind kind, string text) -> LiteralToken;
+    /* @internal */ auto createLiteralLikeNode(SyntaxKind kind, string text) -> LiteralLikeNode;
     /* @internal */ auto createTemplateLiteralLikeNode(SyntaxKind kind, string text, string rawText, TokenFlags templateFlags) -> TemplateLiteralLikeNode;
     auto createYieldExpression(AsteriskToken asteriskToken, Expression expression) -> YieldExpression;
     auto updateYieldExpression(YieldExpression node, AsteriskToken asteriskToken, Expression expression) -> YieldExpression;

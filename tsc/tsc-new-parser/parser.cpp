@@ -327,10 +327,10 @@ namespace ts {
                 sourceFile->identifierCount = identifierCount;
                 sourceFile->identifiers = identifiers;
                 //sourceFile->parseDiagnostics = attachFileToDiagnostics(parseDiagnostics, sourceFile);
-                copy(sourceFile->parseDiagnostics, parseDiagnostics);
+                copy(sourceFile->parseDiagnostics, attachFileToDiagnostics(parseDiagnostics, sourceFile));
                 if (!jsDocDiagnostics.empty()) {
                     //sourceFile->jsDocDiagnostics = attachFileToDiagnostics(jsDocDiagnostics, sourceFile);
-                    copy(sourceFile->jsDocDiagnostics, jsDocDiagnostics);
+                    copy(sourceFile->jsDocDiagnostics, attachFileToDiagnostics(jsDocDiagnostics, sourceFile));
                 }
 
                 auto result = JsonSourceFile(sourceFile);
@@ -443,10 +443,10 @@ namespace ts {
                 sourceFile->identifierCount = identifierCount;
                 sourceFile->identifiers = identifiers;
                 //sourceFile->parseDiagnostics = attachFileToDiagnostics(parseDiagnostics, sourceFile);
-                copy(sourceFile->parseDiagnostics, parseDiagnostics);
+                copy(sourceFile->parseDiagnostics, attachFileToDiagnostics(parseDiagnostics, sourceFile));
                 if (!jsDocDiagnostics.empty()) {
                     //sourceFile->jsDocDiagnostics = attachFileToDiagnostics(jsDocDiagnostics, sourceFile);
-                    copy(sourceFile->jsDocDiagnostics, jsDocDiagnostics);
+                    copy(sourceFile->jsDocDiagnostics, attachFileToDiagnostics(jsDocDiagnostics, sourceFile));
                 }
 
                 if (setParentNodes) {
@@ -465,7 +465,7 @@ namespace ts {
             template <typename T>
             auto addJSDocComment(T node) -> T {
                 // TODO:
-                Debug::_assert(!node->jsDoc); // Should only be called once per node
+                Debug::_assert(!node.dynCast<JSDocContainer>()->jsDoc); // Should only be called once per node
                 /*
                 auto jsDoc = mapDefined(getJSDocCommentRanges(node, sourceText), [&] (auto comment) { return JSDocParser::parseJSDocComment(node, comment->pos, comment->end - comment->pos); });
                 if (jsDoc.size()) node->jsDoc = jsDoc;
@@ -772,7 +772,7 @@ namespace ts {
 
             template<typename T>
             auto parseErrorAtRange(TextRange range, DiagnosticMessage message, T arg0) -> void {
-                parseErrorAt(range.pos, range.end, message, arg0);
+                parseErrorAt(range->pos, range->end, message, arg0);
             }
 
             auto scanError(DiagnosticMessage message, number length) -> void {
@@ -2147,10 +2147,10 @@ namespace ts {
                     // never get a token like this. Instead, we would get 00 and 9.as<two>() separate tokens.
                     // We also do not need to check for negatives because any prefix operator would be part of a
                     // parent unary expression.
-                    kind == SyntaxKind::NumericLiteral ? factory.createNumericLiteral(scanner.getTokenValue(), scanner.getNumericLiteralFlags()) :
-                    kind == SyntaxKind::StringLiteral ? factory.createStringLiteral(scanner.getTokenValue(), /*isSingleQuote*/ /*undefined*/false, scanner.hasExtendedUnicodeEscape()) :
+                    kind == SyntaxKind::NumericLiteral ? factory.createNumericLiteral(scanner.getTokenValue(), scanner.getNumericLiteralFlags()).as<LiteralLikeNode>() :
+                    kind == SyntaxKind::StringLiteral ? factory.createStringLiteral(scanner.getTokenValue(), /*isSingleQuote*/ /*undefined*/false, scanner.hasExtendedUnicodeEscape()).as<LiteralLikeNode>() :
                     isLiteralKind(kind) ? factory.createLiteralLikeNode(kind, scanner.getTokenValue()) :
-                    Debug::fail<Node>();
+                    Debug::fail<LiteralLikeNode>();
 
                 if (scanner.hasExtendedUnicodeEscape()) {
                     node->hasExtendedUnicodeEscape = true;
@@ -2552,8 +2552,8 @@ namespace ts {
                 auto type = parseReturnType(SyntaxKind::ColonToken, /*isType*/ true);
                 parseTypeMemberSemicolon();
                 auto node = kind == SyntaxKind::CallSignature
-                    ? factory.createCallSignature(typeParameters, parameters, type)
-                    : factory.createConstructSignature(typeParameters, parameters, type);
+                    ? factory.createCallSignature(typeParameters, parameters, type).as<SignatureDeclarationBase>()
+                    : factory.createConstructSignature(typeParameters, parameters, type).as<SignatureDeclarationBase>();
                 return withJSDoc(finishNode(node, pos), hasJSDoc);
             }
 

@@ -497,6 +497,12 @@ static auto isArray(Node &node) -> boolean
     return node.data->kind == SyntaxKind::Array;
 }
 
+template <typename T>
+static auto isArray(const NodeArray<T> &node) -> boolean
+{
+    return true;
+}
+
 typedef SyntaxKind PrefixUnaryOperator, PostfixUnaryOperator;
 
 typedef Node PropertyName, PrivateIdentifier, LiteralExpression, EntityName, Expression, IndexSignatureDeclaration,

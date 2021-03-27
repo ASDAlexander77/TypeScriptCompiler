@@ -53,6 +53,13 @@ namespace data
         NodeArray() {}
         NodeArray(undefined_t) {}
 
+        auto pop() -> T
+        {
+            auto v = items.back();
+            items.pop_back();
+            return v;
+        }
+
         inline operator TextRange&()
         {
             return range;
@@ -193,7 +200,17 @@ namespace data
         any _declarationBrand;
     };
 
+    struct DeclarationNoNode
+    {
+        any _declarationBrand;
+    };
+
     struct NamedDeclaration : Declaration
+    {
+        PTR(DeclarationName) name;
+    };
+
+    struct NamedDeclarationNoNode : DeclarationNoNode
     {
         PTR(DeclarationName) name;
     };
@@ -264,7 +281,7 @@ namespace data
         PTR(Identifier) name;
         /** Note: Consider calling `getEffectiveConstraintOfTypeParameter` */
         PTR(TypeNode) constraint;
-        PTR(TypeNode) default;
+        PTR(TypeNode) _default;
 
         // For error recovery purposes.
         PTR(Expression) expression;
@@ -272,7 +289,15 @@ namespace data
 
     struct SignatureDeclarationBase : NamedDeclaration, JSDocContainer
     {
-        SyntaxKind kind;
+        PTR(PropertyName) name;
+        NodeArray<PTR(TypeParameterDeclaration)> typeParameters;
+        NodeArray<PTR(ParameterDeclaration)> parameters;
+        PTR(TypeNode) type;
+        /* @internal */ NodeArray<PTR(TypeNode)> typeArguments; // Used for quick info, replaces typeParameters for instantiated signatures
+    };
+
+    struct SignatureDeclarationBaseNoNode : NamedDeclarationNoNode, JSDocContainer
+    {
         PTR(PropertyName) name;
         NodeArray<PTR(TypeParameterDeclaration)> typeParameters;
         NodeArray<PTR(ParameterDeclaration)> parameters;
@@ -714,6 +739,7 @@ namespace data
 
     struct TemplateLiteralTypeNode : TypeNode
     {
+        PTR(TemplateHead) head;
         NodeArray<PTR(TemplateLiteralTypeSpan)> templateSpans;
     };
 
@@ -798,7 +824,7 @@ namespace data
     // The text property of a LiteralExpression stores the interpreted value of the literal in text form. For a StringLiteral,
     // or any literal of a template, this means quotes have been removed and escapes have been converted to actual characters.
     // For a NumericLiteral, the stored value is the toString() representation of the number. For example 1, 1.00, and 1e0 are all stored as just "1".
-    struct LiteralLikeNode : Node
+    struct LiteralLikeNode : PrimaryExpression
     {
         string text;
         boolean isUnterminated;
@@ -808,9 +834,14 @@ namespace data
     // The text property of a LiteralExpression stores the interpreted value of the literal in text form. For a StringLiteral,
     // or any literal of a template, this means quotes have been removed and escapes have been converted to actual characters.
     // For a NumericLiteral, the stored value is the toString() representation of the number. For example 1, 1.00, and 1e0 are all stored as just "1".
-    struct LiteralExpression : LiteralLikeNode, PrimaryExpression
+    struct LiteralExpression : LiteralLikeNode
     {
         any _literalExpressionBrand;
+    };
+
+    template <SyntaxKind TKind>
+    struct LiteralToken : LiteralLikeNode
+    {
     };
 
     struct StringLiteral : LiteralExpression, Declaration
@@ -1989,7 +2020,7 @@ namespace data
         PTR(TypeNode) type;
     };
 
-    struct JSDocFunctionType : JSDocType, SignatureDeclarationBase
+    struct JSDocFunctionType : JSDocType, SignatureDeclarationBaseNoNode
     {
         // kind: SyntaxKind::JSDocFunctionType;
     };

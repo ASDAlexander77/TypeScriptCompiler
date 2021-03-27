@@ -234,7 +234,7 @@ inline auto setTextRangePosWidth(T range, number pos, number width)
 template <typename T>
 inline auto setTextRange(T range, TextRange location) -> T
 {
-    return !!location ? setTextRangePosEnd(range, location.pos, location.end) : range;
+    return !!location ? setTextRangePosEnd(range, location->pos, location->end) : range;
 }
 
 inline static auto hasJSDocNodes(Node node) -> boolean {
@@ -372,9 +372,9 @@ static auto forEachChild(Node node, NodeFuncT<T> cbNode, NodeArrayFuncT<T> cbNod
         case SyntaxKind::IndexSignature:
             return visitNodes(cbNode, cbNodes, node->decorators) ||
                 visitNodes(cbNode, cbNodes, node->modifiers) ||
-                visitNodes(cbNode, cbNodes, node.as<SignatureDeclaration>()->typeParameters) ||
-                visitNodes(cbNode, cbNodes, node.as<SignatureDeclaration>()->parameters) ||
-                visitNode(cbNode, node.as<SignatureDeclaration>()->type);
+                visitNodes(cbNode, cbNodes, node.as<SignatureDeclarationBase>()->typeParameters) ||
+                visitNodes(cbNode, cbNodes, node.as<SignatureDeclarationBase>()->parameters) ||
+                visitNode(cbNode, node.as<SignatureDeclarationBase>()->type);
         case SyntaxKind::MethodDeclaration:
         case SyntaxKind::MethodSignature:
         case SyntaxKind::Constructor:
@@ -385,15 +385,15 @@ static auto forEachChild(Node node, NodeFuncT<T> cbNode, NodeArrayFuncT<T> cbNod
         case SyntaxKind::ArrowFunction:
             return visitNodes(cbNode, cbNodes, node->decorators) ||
                 visitNodes(cbNode, cbNodes, node->modifiers) ||
-                visitNode(cbNode, node.as<FunctionLikeDeclaration>()->asteriskToken) ||
-                visitNode(cbNode, node.as<FunctionLikeDeclaration>()->name) ||
-                visitNode(cbNode, node.as<FunctionLikeDeclaration>()->questionToken) ||
-                visitNode(cbNode, node.as<FunctionLikeDeclaration>()->exclamationToken) ||
-                visitNodes(cbNode, cbNodes, node.as<FunctionLikeDeclaration>()->typeParameters) ||
-                visitNodes(cbNode, cbNodes, node.as<FunctionLikeDeclaration>()->parameters) ||
-                visitNode(cbNode, node.as<FunctionLikeDeclaration>()->type) ||
+                visitNode(cbNode, node.as<FunctionLikeDeclarationBase>()->asteriskToken) ||
+                visitNode(cbNode, node.as<FunctionLikeDeclarationBase>()->name) ||
+                visitNode(cbNode, node.as<FunctionLikeDeclarationBase>()->questionToken) ||
+                visitNode(cbNode, node.as<FunctionLikeDeclarationBase>()->exclamationToken) ||
+                visitNodes(cbNode, cbNodes, node.as<FunctionLikeDeclarationBase>()->typeParameters) ||
+                visitNodes(cbNode, cbNodes, node.as<FunctionLikeDeclarationBase>()->parameters) ||
+                visitNode(cbNode, node.as<FunctionLikeDeclarationBase>()->type) ||
                 visitNode(cbNode, node.as<ArrowFunction>()->equalsGreaterThanToken) ||
-                visitNode(cbNode, node.as<FunctionLikeDeclaration>()->body);
+                visitNode(cbNode, node.as<FunctionLikeDeclarationBase>()->body);
         case SyntaxKind::TypeReference:
             return visitNode(cbNode, node.as<TypeReferenceNode>()->typeName) ||
                 visitNodes(cbNode, cbNodes, node.as<TypeReferenceNode>()->typeArguments);
@@ -410,8 +410,9 @@ static auto forEachChild(Node node, NodeFuncT<T> cbNode, NodeArrayFuncT<T> cbNod
         case SyntaxKind::TupleType:
             return visitNodes(cbNode, cbNodes, node.as<TupleTypeNode>()->elements);
         case SyntaxKind::UnionType:
+            return visitNodes(cbNode, cbNodes, node.as<UnionTypeNode>()->types);
         case SyntaxKind::IntersectionType:
-            return visitNodes(cbNode, cbNodes, node.as<UnionOrIntersectionTypeNode>()->types);
+            return visitNodes(cbNode, cbNodes, node.as<IntersectionTypeNode>()->types);
         case SyntaxKind::ConditionalType:
             return visitNode(cbNode, node.as<ConditionalTypeNode>()->checkType) ||
                 visitNode(cbNode, node.as<ConditionalTypeNode>()->extendsType) ||
@@ -444,8 +445,9 @@ static auto forEachChild(Node node, NodeFuncT<T> cbNode, NodeArrayFuncT<T> cbNod
                 visitNode(cbNode, node.as<NamedTupleMember>()->questionToken) ||
                 visitNode(cbNode, node.as<NamedTupleMember>()->type);
         case SyntaxKind::ObjectBindingPattern:
+            return visitNodes(cbNode, cbNodes, node.as<ObjectBindingPattern>()->elements);
         case SyntaxKind::ArrayBindingPattern:
-            return visitNodes(cbNode, cbNodes, node.as<BindingPattern>()->elements);
+            return visitNodes(cbNode, cbNodes, node.as<ArrayBindingPattern>()->elements);
         case SyntaxKind::ArrayLiteralExpression:
             return visitNodes(cbNode, cbNodes, node.as<ArrayLiteralExpression>()->elements);
         case SyntaxKind::ObjectLiteralExpression:
@@ -547,8 +549,9 @@ static auto forEachChild(Node node, NodeFuncT<T> cbNode, NodeArrayFuncT<T> cbNod
                 visitNode(cbNode, node.as<ForOfStatement>()->expression) ||
                 visitNode(cbNode, node.as<ForOfStatement>()->statement);
         case SyntaxKind::ContinueStatement:
+            return visitNode(cbNode, node.as<ContinueStatement>()->label);
         case SyntaxKind::BreakStatement:
-            return visitNode(cbNode, node.as<BreakOrContinueStatement>()->label);
+            return visitNode(cbNode, node.as<BreakStatement>()->label);
         case SyntaxKind::ReturnStatement:
             return visitNode(cbNode, node.as<ReturnStatement>()->expression);
         case SyntaxKind::WithStatement:
@@ -582,10 +585,10 @@ static auto forEachChild(Node node, NodeFuncT<T> cbNode, NodeArrayFuncT<T> cbNod
         case SyntaxKind::ClassExpression:
             return visitNodes(cbNode, cbNodes, node->decorators) ||
                 visitNodes(cbNode, cbNodes, node->modifiers) ||
-                visitNode(cbNode, node.as<ClassLikeDeclaration>()->name) ||
-                visitNodes(cbNode, cbNodes, node.as<ClassLikeDeclaration>()->typeParameters) ||
-                visitNodes(cbNode, cbNodes, node.as<ClassLikeDeclaration>()->heritageClauses) ||
-                visitNodes(cbNode, cbNodes, node.as<ClassLikeDeclaration>()->members);
+                visitNode(cbNode, node.as<ClassLikeDeclarationBase>()->name) ||
+                visitNodes(cbNode, cbNodes, node.as<ClassLikeDeclarationBase>()->typeParameters) ||
+                visitNodes(cbNode, cbNodes, node.as<ClassLikeDeclarationBase>()->heritageClauses) ||
+                visitNodes(cbNode, cbNodes, node.as<ClassLikeDeclarationBase>()->members);
         case SyntaxKind::InterfaceDeclaration:
             return visitNodes(cbNode, cbNodes, node->decorators) ||
                 visitNodes(cbNode, cbNodes, node->modifiers) ||
@@ -633,17 +636,20 @@ static auto forEachChild(Node node, NodeFuncT<T> cbNode, NodeArrayFuncT<T> cbNod
         case SyntaxKind::NamespaceExport:
             return visitNode(cbNode, node.as<NamespaceExport>()->name);
         case SyntaxKind::NamedImports:
+            return visitNodes(cbNode, cbNodes, node.as<NamedImports>()->elements);
         case SyntaxKind::NamedExports:
-            return visitNodes(cbNode, cbNodes, node.as<NamedImportsOrExports>()->elements);
+            return visitNodes(cbNode, cbNodes, node.as<NamedExports>()->elements);
         case SyntaxKind::ExportDeclaration:
             return visitNodes(cbNode, cbNodes, node->decorators) ||
                 visitNodes(cbNode, cbNodes, node->modifiers) ||
                 visitNode(cbNode, node.as<ExportDeclaration>()->exportClause) ||
                 visitNode(cbNode, node.as<ExportDeclaration>()->moduleSpecifier);
         case SyntaxKind::ImportSpecifier:
+            return visitNode(cbNode, node.as<ImportSpecifier>()->propertyName) ||
+                visitNode(cbNode, node.as<ImportSpecifier>()->name);
         case SyntaxKind::ExportSpecifier:
-            return visitNode(cbNode, node.as<ImportOrExportSpecifier>()->propertyName) ||
-                visitNode(cbNode, node.as<ImportOrExportSpecifier>()->name);
+            return visitNode(cbNode, node.as<ExportSpecifier>()->propertyName) ||
+                visitNode(cbNode, node.as<ExportSpecifier>()->name);
         case SyntaxKind::ExportAssignment:
             return visitNodes(cbNode, cbNodes, node->decorators) ||
                 visitNodes(cbNode, cbNodes, node->modifiers) ||
@@ -679,10 +685,13 @@ static auto forEachChild(Node node, NodeFuncT<T> cbNode, NodeArrayFuncT<T> cbNod
                 visitNodes(cbNode, cbNodes, node.as<JsxFragment>()->children) ||
                 visitNode(cbNode, node.as<JsxFragment>()->closingFragment);
         case SyntaxKind::JsxSelfClosingElement:
+            return visitNode(cbNode, node.as<JsxSelfClosingElement>()->tagName) ||
+                visitNodes(cbNode, cbNodes, node.as<JsxSelfClosingElement>()->typeArguments) ||
+                visitNode(cbNode, node.as<JsxSelfClosingElement>()->attributes);
         case SyntaxKind::JsxOpeningElement:
-            return visitNode(cbNode, node.as<JsxOpeningLikeElement>()->tagName) ||
-                visitNodes(cbNode, cbNodes, node.as<JsxOpeningLikeElement>()->typeArguments) ||
-                visitNode(cbNode, node.as<JsxOpeningLikeElement>()->attributes);
+            return visitNode(cbNode, node.as<JsxOpeningElement>()->tagName) ||
+                visitNodes(cbNode, cbNodes, node.as<JsxOpeningElement>()->typeArguments) ||
+                visitNode(cbNode, node.as<JsxOpeningElement>()->attributes);
         case SyntaxKind::JsxAttributes:
             return visitNodes(cbNode, cbNodes, node.as<JsxAttributes>()->properties);
         case SyntaxKind::JsxAttribute:
@@ -703,13 +712,13 @@ static auto forEachChild(Node node, NodeFuncT<T> cbNode, NodeArrayFuncT<T> cbNod
         case SyntaxKind::JSDocTypeExpression:
             return visitNode(cbNode, node.as<JSDocTypeExpression>()->type);
         case SyntaxKind::JSDocNonNullableType:
-            return visitNode(cbNode, node.as<JSDocNonNullableTypeNode>()->type);
+            return visitNode(cbNode, node.as<JSDocNonNullableType>()->type);
         case SyntaxKind::JSDocNullableType:
-            return visitNode(cbNode, node.as<JSDocNullableTypeNode>()->type);
+            return visitNode(cbNode, node.as<JSDocNullableType>()->type);
         case SyntaxKind::JSDocOptionalType:
-            return visitNode(cbNode, node.as<JSDocOptionalTypeNode>()->type);
+            return visitNode(cbNode, node.as<JSDocOptionalType>()->type);
         case SyntaxKind::JSDocVariadicType:
-            return visitNode(cbNode, node.as<JSDocVariadicTypeNode>()->type);
+            return visitNode(cbNode, node.as<JSDocVariadicType>()->type);
         case SyntaxKind::JSDocFunctionType:
             return visitNodes(cbNode, cbNodes, node.as<JSDocFunctionType>()->parameters) ||
                 visitNode(cbNode, node.as<JSDocFunctionType>()->type);
@@ -766,10 +775,10 @@ static auto forEachChild(Node node, NodeFuncT<T> cbNode, NodeArrayFuncT<T> cbNod
                 visitNode(cbNode, node.as<JSDocEnumTag>()->typeExpression);
         case SyntaxKind::JSDocSignature:
             return forEach<decltype(node.as<JSDocSignature>()->typeParameters), T>(node.as<JSDocSignature>()->typeParameters, cbNode) ||
-                forEach(node.as<JSDocSignature>()->parameters, cbNode) ||
+                forEach<decltype(node.as<JSDocSignature>()->parameters), T>(node.as<JSDocSignature>()->parameters, cbNode) ||
                 visitNode(cbNode, node.as<JSDocSignature>()->type);
         case SyntaxKind::JSDocTypeLiteral:
-            return forEach(node.as<JSDocTypeLiteral>()->jsDocPropertyTags, cbNode);
+            return forEach<decltype(node.as<JSDocTypeLiteral>()->jsDocPropertyTags), T>(node.as<JSDocTypeLiteral>()->jsDocPropertyTags, cbNode);
         case SyntaxKind::JSDocTag:
         case SyntaxKind::JSDocClassTag:
         case SyntaxKind::JSDocPublicTag:
@@ -819,6 +828,8 @@ static auto forEachChildRecursively(Node rootNode, NodeWithParentFuncT<T> cbNode
     while (queue.size() != 0) {
         auto current = queue.pop();
         auto parent = parents.pop();
+        // TODO: review it
+        /*
         if (isArray(current)) {
             if (cbNodes) {
                 auto res = cbNodes(current.asArray<boolean>(), parent);
@@ -834,6 +845,7 @@ static auto forEachChildRecursively(Node rootNode, NodeWithParentFuncT<T> cbNode
             }
         }
         else {
+        */
             auto res = cbNode(current, parent);
             if (res) {
                 //TODO: review it
@@ -847,7 +859,7 @@ static auto forEachChildRecursively(Node rootNode, NodeWithParentFuncT<T> cbNode
                     parents.push_back(current);
                 }
             }
-        }
+        //}
     }
 
     return false;
@@ -1154,11 +1166,11 @@ auto addRelatedInfo(T diagnostic, DiagnosticRelatedInformation relatedInformatio
     if (!relatedInformation) {
         return diagnostic;
     }
-    if (diagnostic.relatedInformation.size() > 0) {
-        diagnostic.relatedInformation.clear();
+    if (diagnostic->relatedInformation.size() > 0) {
+        diagnostic->relatedInformation.clear();
     }
-    Debug::_assert(diagnostic.relatedInformation.size() != 0, S("Diagnostic had empty array singleton for related info, but is still being constructed!"));
-    diagnostic.relatedInformation.push_back(relatedInformation);
+    Debug::_assert(diagnostic->relatedInformation.size() != 0, S("Diagnostic had empty array singleton for related info, but is still being constructed!"));
+    diagnostic->relatedInformation.push_back(relatedInformation);
 
     return diagnostic;
 }
