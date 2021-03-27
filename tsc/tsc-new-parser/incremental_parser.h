@@ -17,10 +17,26 @@ namespace IncrementalParser
     {
         boolean hasBeenIncrementallyParsed;
 
+        inline auto operator->()
+        {
+            return Node::operator->();
+        }
+
+        template <typename U> 
+        inline auto as() -> U
+        {
+            return U(*this);
+        }
+
+        template <typename U> 
+        inline auto asMutable() -> U
+        {
+            return U(*this);
+        }          
+
         inline operator bool()
         {
-            // TODO: review it
-            return true;
+            return Node::operator bool();
         }
     };
 

@@ -2887,10 +2887,7 @@ private:
                 return commentDirectives;
             }
 
-            commentDirectives.push_back({
-                TextRange{lineStart, pos},
-                type
-            });
+            commentDirectives.push_back({lineStart, pos, type});
             return commentDirectives;
         }
 

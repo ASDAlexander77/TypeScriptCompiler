@@ -48,6 +48,7 @@
 #define PTR(x) ptr<x>
 #define POINTER(x) using x = PTR(data::x);
 #define POINTER_T(x) template <typename T> using x = PTR(data::x<T>);
+#define POINTER_TARGS(x, v) template <v ... TKind> using x = PTR(data::x<TKind...>);
 
 template <typename T>
 struct ptr
@@ -63,6 +64,9 @@ struct ptr
 	template <typename U>
 	ptr(ptr<U> otherPtr) : instance(std::static_pointer_cast<T>(otherPtr.instance)) {};
 
+	template <typename U>
+	ptr(ptr<U> otherPtr, boolean dynCast) : instance(std::dynamic_pointer_cast<T>(otherPtr.instance)) {};
+
 	template <typename I>
 	ptr(const I& inst) : instance(std::make_shared<T>(inst)) {};
 
@@ -76,7 +80,7 @@ struct ptr
 
     auto operator=(undefined_t) -> ptr&
     {
-        instance.clear();
+        instance.reset();
         return *this;
     }        
 
@@ -93,6 +97,17 @@ struct ptr
     inline operator SyntaxKind()
     {
         return instance->kind;
+    }    
+
+    inline operator const T &()
+    {
+        return *instance;
+    }
+
+	template <typename U>
+    inline auto operator==(ptr<U> otherPtr)
+    {
+        return instance == otherPtr.instance;
     }    
 
     inline auto operator==(undefined_t)
@@ -126,6 +141,12 @@ struct ptr
     {
         return U(*this);
     }    
+
+    template <typename U> 
+    inline auto dynCast() -> U
+    {
+        return U(*this, true);
+    }
 
 	REF_TYPE(T) instance;
 };
@@ -549,6 +570,8 @@ namespace data
     NODE_REF(BooleanLiteral)
     NODE_REF(JsonObjectExpression)
 
+    NODE_REF(FunctionOrConstructorTypeNode)
+
 } // namespace data
 
 POINTER(TextRange)
@@ -956,9 +979,11 @@ POINTER(NodeWithDiagnostics)
 POINTER(BooleanLiteral)
 POINTER(JsonObjectExpressionStatement)
 POINTER(JsonObjectExpression)
+POINTER(FunctionOrConstructorTypeNode)
 
 POINTER_T(Push)
 POINTER_T(VisitResult)
+POINTER_TARGS(Token, SyntaxKind)
 
 using PrefixUnaryOperator = SyntaxKind;
 using PostfixUnaryOperator = SyntaxKind;

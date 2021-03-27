@@ -238,7 +238,7 @@ inline auto setTextRange(T range, TextRange location) -> T
 }
 
 inline static auto hasJSDocNodes(Node node) -> boolean {
-    auto jsDoc = node.as<JSDocContainer>()->jsDoc;
+    auto jsDoc = node.dynCast<JSDocContainer>()->jsDoc;
     return !!jsDoc && jsDoc.size() > 0;
 }
 
@@ -868,7 +868,7 @@ static auto setParentRecursive(T rootNode, boolean incremental) -> T
     auto bindJSDoc = [&](Node child) {
         if (hasJSDocNodes(child))
         {
-            for (auto &doc : child->jsDoc)
+            for (auto &doc : child.dynCast<JSDocContainer>()->jsDoc)
             {
                 bindParentToChildIgnoringJSDoc(doc, child);
                 forEachChildRecursively<boolean>(doc, bindParentToChildIgnoringJSDoc);

@@ -29,6 +29,8 @@ namespace data
 
     struct TextRange
     {
+        TextRange() = default;
+
         number pos;
         number end;
     };
@@ -61,9 +63,22 @@ namespace data
             return this;
         }        
 
+        inline auto operator==(undefined_t)
+        {
+            // TODO: review it
+            return size() == 0;
+        }
+
+        inline auto operator!=(undefined_t)
+        {
+            return size() != 0;
+        }        
+
         ReadonlyTextRange range;
         boolean hasTrailingComma;
         /* @internal */ TransformFlags transformFlags; // Flags for transforms, possibly undefined
+        // to support MissingList
+        boolean isMissingList;
     };
 
     using ModifiersArray = NodeArray<Modifier>;
@@ -111,6 +126,8 @@ namespace data
 
     struct Node : TextRange
     {
+        virtual ~Node() {}
+
         SyntaxKind kind;
         NodeFlags flags;
         /* @internal */ ModifierFlags modifierFlagsCache;
@@ -480,7 +497,7 @@ namespace data
 
     // See the comment on MethodDeclaration for the intuition behind GetAccessorDeclaration being a
     // ClassElement and an ObjectLiteralElement.
-    struct GetAccessorDeclaration : FunctionLikeDeclarationBase, ClassElement, ObjectLiteralElement
+    struct GetAccessorDeclaration : FunctionLikeDeclarationBase/*, ClassElement, ObjectLiteralElement*/ // ClassElement and ObjectLiteralElement contains all fields in FunctionLikeDeclarationBase
     {
         // kind: SyntaxKind::GetAccessor;
         PTR(Node) /**ClassLikeDeclaration | ObjectLiteralExpression*/ parent;
@@ -491,7 +508,7 @@ namespace data
 
     // See the comment on MethodDeclaration for the intuition behind SetAccessorDeclaration being a
     // ClassElement and an ObjectLiteralElement.
-    struct SetAccessorDeclaration : FunctionLikeDeclarationBase, ClassElement, ObjectLiteralElement
+    struct SetAccessorDeclaration : FunctionLikeDeclarationBase/*, ClassElement, ObjectLiteralElement*/ // ClassElement and ObjectLiteralElement contains all fields in FunctionLikeDeclarationBase
     {
         // kind: SyntaxKind::SetAccessor;
         PTR(Node) /**ClassLikeDeclaration | ObjectLiteralExpression*/ parent;
@@ -556,6 +573,7 @@ namespace data
 
     struct FunctionOrConstructorTypeNodeBase : TypeNode, SignatureDeclarationBase
     {
+        using TypeNode::Node::modifiers;
         // kind: SyntaxKind::FunctionType | SyntaxKind::ConstructorType;
         PTR(TypeNode) type;
     };
@@ -803,7 +821,8 @@ namespace data
         /* @internal */ boolean singleQuote;
     };
 
-    struct Identifier : PrimaryExpression, Declaration
+    // TODO: review Declaration
+    struct Identifier : PrimaryExpression/*, Declaration*/
     {
         // kind: SyntaxKind::Identifier;
         /**
@@ -1910,6 +1929,8 @@ namespace data
 
     struct CommentRange : TextRange
     {
+        CommentRange(number pos, number end, boolean hasTrailingNewLine, CommentKind kind) : TextRange{pos, end}, hasTrailingNewLine(hasTrailingNewLine), kind(kind) {}
+
         boolean hasTrailingNewLine;
         CommentKind kind;
     };
@@ -2165,6 +2186,8 @@ namespace data
     /* @internal */
     struct CommentDirective
     {
+        CommentDirective(number pos, number end, CommentDirectiveType type) : range{pos, end}, type(type) {}
+
         TextRange range;
         CommentDirectiveType type;
     };
@@ -2552,7 +2575,8 @@ namespace data
 
     struct NodeWithDiagnostics 
     { 
-        JSDocTypeExpression jsDocTypeExpression;
+        PTR(Node) node;
+        PTR(JSDoc) jsDoc;
         std::vector<Diagnostic> diagnostics;
     };
 

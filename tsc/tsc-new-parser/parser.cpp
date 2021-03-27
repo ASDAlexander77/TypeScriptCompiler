@@ -1589,9 +1589,9 @@ namespace ts {
                     return undefined;
                 }
 
-                if (node.as<JSDocContainer>()->jsDocCache) {
+                if (node.as<JSDocContainer>()->jsDocCache.size() > 0) {
                     // jsDocCache may include tags from parent nodes, which might have been modified.
-                    node.as<JSDocContainer>()->jsDocCache = undefined;
+                    node.as<JSDocContainer>()->jsDocCache.clear();
                 }
 
                 return node;
@@ -1716,7 +1716,7 @@ namespace ts {
                             // into an actual .ConstructorDeclaration.
                             auto methodDeclaration = node.as<MethodDeclaration>();
                             auto nameIsConstructor = methodDeclaration->name->kind == SyntaxKind::Identifier &&
-                                methodDeclaration->name->originalKeywordKind == SyntaxKind::ConstructorKeyword;
+                                methodDeclaration->name.as<Identifier>()->originalKeywordKind == SyntaxKind::ConstructorKeyword;
 
                             return !nameIsConstructor;
                     }
@@ -1952,8 +1952,9 @@ namespace ts {
                 return list;
             }
 
-            auto isMissingList(NodeArray<Node> arr) -> boolean {
-                return ((MissingList<Node>)arr).isMissingList;
+            template <typename T> 
+            auto isMissingList(NodeArray<T> arr) -> boolean {
+                return arr.isMissingList;
             }
 
             template <typename T>
@@ -2194,9 +2195,16 @@ namespace ts {
                     case SyntaxKind::FunctionType:
                     case SyntaxKind::ConstructorType: {
                         auto res = node.as<FunctionOrConstructorTypeNode>();
-                        auto parameters = res->parameters;
-                        auto type = res->type;
-                        return isMissingList(parameters) || typeHasArrowFunctionBlockingParseError(type);
+                        if (res->kind == SyntaxKind::FunctionType)
+                        {
+                            auto res1 = res.as<FunctionTypeNode>();
+                            return isMissingList(res1->parameters) || typeHasArrowFunctionBlockingParseError(res1->type);
+                        }
+                        else
+                        {
+                            auto res1 = res.as<ConstructorTypeNode>();
+                            return isMissingList(res1->parameters) || typeHasArrowFunctionBlockingParseError(res1->type);
+                        }
                     }
                     case SyntaxKind::ParenthesizedType:
                         return typeHasArrowFunctionBlockingParseError(node.as<ParenthesizedTypeNode>()->type);
@@ -2778,8 +2786,8 @@ namespace ts {
                     return finishNode(factory.createRestTypeNode(parseType()), pos);
                 }
                 auto type = parseType();
-                if (isJSDocNullableType(type) && type->pos == type->type->pos) {
-                    auto node = factory.createOptionalTypeNode(type->type);
+                if (isJSDocNullableType(type) && type->pos == type.as<JSDocNullableType>()->type->pos) {
+                    auto node = factory.createOptionalTypeNode(type.as<JSDocNullableType>()->type);
                     setTextRange(node, type);
                     node->flags = type->flags;
                     return node;
@@ -2853,7 +2861,7 @@ namespace ts {
                 auto node = isConstructorType
                     ? factory.createConstructorTypeNode(modifiers, typeParameters, parameters, type)
                     : factory.createFunctionTypeNode(typeParameters, parameters, type);
-                if (!isConstructorType) node->modifiers = modifiers;
+                if (!isConstructorType) copy(node.as<FunctionTypeNode>()->modifiers, modifiers);
                 return withJSDoc(finishNode(node, pos), hasJSDoc);
             }
 
@@ -4588,7 +4596,7 @@ namespace ts {
                 else {
                     auto argument = allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
                     if (isStringOrNumericLiteralLike(argument)) {
-                        argument->text = internIdentifier(argument->text);
+                        argument.as<LiteralLikeNode>()->text = internIdentifier(argument.as<LiteralLikeNode>()->text);
                     }
                     argumentExpression = argument;
                 }
@@ -4912,7 +4920,7 @@ namespace ts {
                 }
                 // Decorators, Modifiers, questionToken, and exclamationToken are not supported by property assignments and are reported in the grammar checker
                 node->decorators = decorators;
-                node->modifiers = modifiers;
+                copy(node->modifiers, modifiers);
                 node->questionToken = questionToken;
                 node->exclamationToken = exclamationToken;
                 return withJSDoc(finishNode(node, pos), hasJSDoc);
@@ -4926,7 +4934,7 @@ namespace ts {
                 auto properties = parseDelimitedList<ObjectLiteralElementLike>(ParsingContext::ObjectLiteralMembers, std::bind(&Parser::parseObjectLiteralElement, this), /*considerSemicolonAsDelimiter*/ true);
                 if (!parseExpected(SyntaxKind::CloseBraceToken)) {
                     auto lastError = lastOrUndefined(parseDiagnostics);
-                    if (!!lastError && lastError.code == Diagnostics::_0_expected.code) {
+                    if (!!lastError && lastError->code == Diagnostics::_0_expected.code) {
                         addRelatedInfo(
                             lastError,
                             createDetachedDiagnostic(fileName, openBracePosition, 1, Diagnostics::The_parser_expected_to_find_a_to_match_the_token_here)
@@ -5019,7 +5027,7 @@ namespace ts {
                     auto statements = parseList<Statement>(ParsingContext::BlockStatements, std::bind(&Parser::parseStatement, this));
                     if (!parseExpected(SyntaxKind::CloseBraceToken)) {
                         auto lastError = lastOrUndefined(parseDiagnostics);
-                        if (!!lastError && lastError.code == Diagnostics::_0_expected.code) {
+                        if (!!lastError && lastError->code == Diagnostics::_0_expected.code) {
                             addRelatedInfo(
                                 lastError,
                                 createDetachedDiagnostic(fileName, openBracePosition, 1, Diagnostics::The_parser_expected_to_find_a_to_match_the_token_here)
@@ -5643,7 +5651,7 @@ namespace ts {
                             auto missing = createMissingNode<MissingDeclaration>(SyntaxKind::MissingDeclaration, /*reportAtCurrentPosition*/ true, Diagnostics::Declaration_expected);
                             setTextRangePos(missing, pos);
                             missing->decorators = decorators;
-                            missing->modifiers = modifiers;
+                            copy(missing->modifiers, modifiers);
                             return missing;
                         }
                         return undefined; // GH TODO#18217
@@ -6167,7 +6175,7 @@ namespace ts {
                 if (some(modifiers, isExportModifier)) setAwaitContext(/*value*/ true);
                 auto heritageClauses = parseHeritageClauses();
 
-                ModifiersArray members;
+                NodeArray<ClassElement> members;
                 if (parseExpected(SyntaxKind::OpenBraceToken)) {
                     // ClassTail[Yield,Await] : (Modified) See 14.5
                     //      ClassHeritage[?Yield,?Await]opt { ClassBody[?Yield,?Await]opt }
@@ -6314,7 +6322,7 @@ namespace ts {
 
             auto parseAmbientExternalModuleDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers) -> ModuleDeclaration {
                 auto flags = NodeFlags::None;
-                Node name;
+                LiteralLikeNode name;
                 if (token() == SyntaxKind::GlobalKeyword) {
                     // parse 'global'.as<name>() of global scope augmentation
                     name = parseIdentifier();
@@ -6322,7 +6330,7 @@ namespace ts {
                 }
                 else {
                     name = parseLiteralNode().as<StringLiteral>();
-                    name->text = internIdentifier(name->text);
+                    name->text = internIdentifier(name.as<LiteralLikeNode>()->text);
                 }
                 ModuleBlock body;
                 if (token() == SyntaxKind::OpenBraceToken) {
@@ -6374,7 +6382,7 @@ namespace ts {
                 auto node = factory.createNamespaceExportDeclaration(name);
                 // NamespaceExportDeclaration nodes cannot have decorators or modifiers, so we attach them here so we can report them in the grammar checker
                 node->decorators = decorators;
-                node->modifiers = modifiers;
+                copy(node->modifiers, modifiers);
                 return withJSDoc(finishNode(node, pos), hasJSDoc);
             }
 
@@ -6509,8 +6517,8 @@ namespace ts {
                 //  ImportSpecifier
                 //  ImportsList, ImportSpecifier
                 auto node = kind == SyntaxKind::NamedImports
-                    ? factory.createNamedImports(parseBracketedList<ImportOrExportSpecifier>(ParsingContext::ImportOrExportSpecifiers, std::bind(&Parser::parseImportSpecifier, this), SyntaxKind::OpenBraceToken, SyntaxKind::CloseBraceToken))
-                    : factory.createNamedExports(parseBracketedList<ImportOrExportSpecifier>(ParsingContext::ImportOrExportSpecifiers, std::bind(&Parser::parseExportSpecifier, this), SyntaxKind::OpenBraceToken, SyntaxKind::CloseBraceToken));
+                    ? factory.createNamedImports(parseBracketedList<ImportSpecifier>(ParsingContext::ImportOrExportSpecifiers, std::bind(&Parser::parseImportSpecifier, this), SyntaxKind::OpenBraceToken, SyntaxKind::CloseBraceToken))
+                    : factory.createNamedExports(parseBracketedList<ExportSpecifier>(ParsingContext::ImportOrExportSpecifiers, std::bind(&Parser::parseExportSpecifier, this), SyntaxKind::OpenBraceToken, SyntaxKind::CloseBraceToken));
                 return finishNode(node, pos);
             }
 
@@ -6635,7 +6643,7 @@ namespace ts {
 
             /** Do not use hasModifier inside the parser; it relies on parent pointers. Use this instead. */
             auto hasModifierOfKind(Node node, SyntaxKind kind) -> boolean {
-                return some(node->modifiers, [=](auto m) { return m->kind == kind; });
+                return some(node->modifiers, [=](auto m) { return m.kind == kind; });
             }
 
             auto isImportMeta(Node node) -> boolean {
@@ -6653,7 +6661,7 @@ namespace ts {
                 auto sourceFile = createSourceFile(S("file.js"), ScriptTarget::Latest, ScriptKind::JS, /*isDeclarationFile*/ false, NodeArray<Statement>(), factory.createToken(SyntaxKind::EndOfFileToken), NodeFlags::None);
                 auto diagnostics = attachFileToDiagnostics(parseDiagnostics, sourceFile);
                 if (!!jsDocDiagnostics) {
-                    copy<DiagnosticWithDetachedLocation, DiagnosticWithLocation>(sourceFile->jsDocDiagnostics, attachFileToDiagnostics(jsDocDiagnostics, sourceFile));
+                    copy(sourceFile->jsDocDiagnostics, attachFileToDiagnostics(jsDocDiagnostics, sourceFile));
                 }
 
                 clearState();
