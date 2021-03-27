@@ -346,13 +346,13 @@ namespace ts {
                     return Node(kind, start, end);
                 };
                 IdentifierConstructor = [] (SyntaxKind kind, number start, number end) {
-                    return Node(kind, start, end);
+                    return Identifier(kind, start, end);
                 };
                 PrivateIdentifierConstructor = [] (SyntaxKind kind, number start, number end) {
-                    return Node(kind, start, end);
+                    return PrivateIdentifier(kind, start, end);
                 };
                 SourceFileConstructor = [] (SyntaxKind kind, number start, number end) {
-                    return Node(kind, start, end);
+                    return SourceFile(kind, start, end);
                 };
 
                 fileName = normalizePath(_fileName);

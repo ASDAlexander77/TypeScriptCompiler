@@ -135,6 +135,9 @@ namespace data
     {
         virtual ~Node() {}
 
+        Node() = default;
+        Node(SyntaxKind kind, number pos, number end) : kind(kind), TextRange{pos, end} {}
+
         SyntaxKind kind;
         NodeFlags flags;
         /* @internal */ ModifierFlags modifierFlagsCache;
@@ -254,6 +257,9 @@ namespace data
 
     struct PrivateIdentifier : virtual Node
     {
+        PrivateIdentifier() = default;
+        PrivateIdentifier(SyntaxKind kind, number pos, number end) : Node{kind, pos, end} {}
+
         // kind: SyntaxKind::PrivateIdentifier;
         // escaping not strictly necessary
         // avoids gotchas in transforms and utils
@@ -855,6 +861,14 @@ namespace data
     // TODO: review Declaration
     struct Identifier : PrimaryExpression/*, Declaration*/
     {
+        Identifier() = default;
+        Identifier(SyntaxKind kind_, number pos_, number end_) 
+        {
+            kind = kind_;
+            pos = pos_;
+            end = end_;
+        }
+
         // kind: SyntaxKind::Identifier;
         /**
      * Prefer to use `id.unescapedText`. (Note: This is available only in services, not internally to the TypeScript compiler.)
@@ -2364,6 +2378,14 @@ namespace data
 
     struct SourceFile : Declaration
     {
+        SourceFile() = default;
+        SourceFile(SyntaxKind kind_, number pos_, number end_)
+        {
+            kind = kind_;
+            pos = pos_;
+            end = end_;
+        }
+
         // kind: SyntaxKind::SourceFile;
         NodeArray<PTR(Statement)> statements;
         Token<SyntaxKind::EndOfFileToken> endOfFileToken;

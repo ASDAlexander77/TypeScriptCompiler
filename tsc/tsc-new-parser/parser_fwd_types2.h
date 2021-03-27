@@ -65,9 +65,11 @@ struct ptr
 	template <typename U>
 	ptr(ptr<U> otherPtr) : instance(std::dynamic_pointer_cast<T>(otherPtr.instance)) {};
 
+protected:
 	template <typename U>
 	ptr(ptr<U> otherPtr, boolean) : instance(std::static_pointer_cast<T>(otherPtr.instance)) {};
 
+public:
 	template <typename I>
 	ptr(const I& inst) : instance(std::make_shared<T>(inst)) {};
 
@@ -129,6 +131,21 @@ struct ptr
     inline auto operator!=(std::nullptr_t)
     {
         return instance != nullptr;
+    }    
+
+    inline auto operator||(bool rhs) -> bool
+    {
+        return static_cast<bool>(node) || rhs;
+    }    
+
+    inline auto operator||(ptr rhs) -> ptr
+    {
+        if (static_cast<bool>(node))
+        {
+            return *this;
+        }
+
+        return rhs;
     }    
 
     template <typename U> 
