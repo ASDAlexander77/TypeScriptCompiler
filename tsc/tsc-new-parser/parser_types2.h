@@ -155,8 +155,8 @@ namespace data
 
     struct JSDocContainer
     {
-        /* @internal */ std::vector<JSDoc> jsDoc;         // JSDoc that directly precedes this node
-        /* @internal */ std::vector<JSDocTag> jsDocCache; // Cache for getJSDocTags
+        /* @internal */ NodeArray<PTR(JSDoc)> jsDoc;         // JSDoc that directly precedes this node
+        /* @internal */ NodeArray<PTR(JSDocTag)> jsDocCache; // Cache for getJSDocTags
     };
 
     struct EndOfFileToken : Token<SyntaxKind::EndOfFileToken>, JSDocContainer

@@ -856,7 +856,7 @@ static auto forEachChildRecursively(Node rootNode, NodeWithParentFuncT<T> cbNode
 template <typename T>
 static auto setParentRecursive(T rootNode, boolean incremental) -> T
 {
-    auto bindParentToChildIgnoringJSDoc = [&](Node child, Node parent) -> boolean /*true is skip*/ {
+    auto bindParentToChildIgnoringJSDoc = [&](auto child, auto parent) /*true is skip*/ {
         if (incremental && child->parent == parent)
         {
             return true;
@@ -865,7 +865,7 @@ static auto setParentRecursive(T rootNode, boolean incremental) -> T
         return false;
     };
 
-    auto bindJSDoc = [&](Node child) {
+    auto bindJSDoc = [&](auto child) {
         if (hasJSDocNodes(child))
         {
             for (auto &doc : child.dynCast<JSDocContainer>()->jsDoc)
