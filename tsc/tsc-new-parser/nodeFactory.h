@@ -20,6 +20,11 @@ public:
         return name;
     }
 
+    template <typename T>
+    inline auto asNodeArray(NodeArray<T> array) -> NodeArray<T> {
+        return createNodeArray(array);
+    }
+
     auto propagateIdentifierNameFlags(Identifier node) -> TransformFlags {
         // An IdentifierName is allowed to be `await`
         return propagateChildFlags(node) & ~TransformFlags::ContainsPossibleTopLevelAwait;
@@ -113,6 +118,11 @@ public:
             subtreeFlags |= propagateChildFlags(child);
         }
         children->transformFlags = subtreeFlags;
+    }
+
+    template <typename T> 
+    auto propagateChildrenFlags(NodeArray<T> children) -> TransformFlags {
+        return !!children ? children->transformFlags : TransformFlags::None;
     }
 
     template <typename T> 
@@ -232,6 +242,65 @@ public:
     // //
     // // Signature elements
     // //
+
+    template <typename T>
+    auto createBaseDeclaration(
+        SyntaxKind kind,
+        DecoratorsArray decorators, 
+        ModifiersArray modifiers
+    ) {
+        auto node = createBaseNode<T>(kind);
+        node->decorators = asNodeArray(decorators);
+        node->modifiers = asNodeArray(modifiers);
+        node->transformFlags |=
+            propagateChildrenFlags(node->decorators) |
+            propagateChildrenFlags(node->modifiers);
+        // NOTE: The following properties are commonly set by the binder and are added here to
+        // ensure declarations have a stable shape.
+        node->symbol = undefined; // initialized by binder
+        node->localSymbol = undefined; // initialized by binder
+        node->locals.clear(); // initialized by binder
+        node->nextContainer = undefined; // initialized by binder
+        return node;
+    }
+
+    template <typename T>
+    auto createBaseNamedDeclaration(
+        SyntaxKind kind,
+        DecoratorsArray decorators, 
+        ModifiersArray modifiers,
+        Identifier name
+    ) -> T {
+        auto node = createBaseDeclaration<T>(
+            kind,
+            decorators,
+            modifiers
+        );
+        name = asName(name);
+        node->name = name;
+
+        // The PropertyName of a member is allowed to be `await`.
+        // We don't need to exclude `await` for type signatures since types
+        // don't propagate child flags.
+        if (name) {
+            switch (node->kind) {
+                case SyntaxKind::MethodDeclaration:
+                case SyntaxKind::GetAccessor:
+                case SyntaxKind::SetAccessor:
+                case SyntaxKind::PropertyDeclaration:
+                case SyntaxKind::PropertyAssignment:
+                    if (isIdentifier(name)) {
+                        node->transformFlags |= propagateIdentifierNameFlags(name);
+                        break;
+                    }
+                    // fall through
+                default:
+                    node->transformFlags |= propagateChildFlags(name);
+                    break;
+            }
+        }
+        return node;
+    }
 
     // auto createTypeParameterDeclaration(string name, TypeNode constraint = undefined, TypeNode defaultType = undefined) -> TypeParameterDeclaration;
      auto createTypeParameterDeclaration(Identifier name, TypeNode constraint = undefined, TypeNode defaultType = undefined) -> TypeParameterDeclaration;

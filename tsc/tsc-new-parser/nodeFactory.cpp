@@ -134,3 +134,16 @@ auto NodeFactory::createComputedPropertyName(Expression expression) -> ComputedP
         TransformFlags::ContainsComputedPropertyName;
     return node;
 }
+
+auto NodeFactory::createTypeParameterDeclaration(Identifier name, TypeNode constraint, TypeNode defaultType) -> TypeParameterDeclaration {
+    auto node = createBaseNamedDeclaration<TypeParameterDeclaration>(
+        SyntaxKind::TypeParameter,
+        /*decorators*/ undefined,
+        /*modifiers*/ undefined,
+        name
+    );
+    node->constraint = constraint;
+    node->_default = defaultType;
+    node->transformFlags = TransformFlags::ContainsTypeScript;
+    return node;
+}
