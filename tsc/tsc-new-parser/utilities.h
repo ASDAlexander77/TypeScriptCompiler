@@ -194,6 +194,12 @@ inline auto getLanguageVariant(ScriptKind scriptKind) -> LanguageVariant
     return scriptKind == ScriptKind::TSX || scriptKind == ScriptKind::JSX || scriptKind == ScriptKind::JS || scriptKind == ScriptKind::JSON ? LanguageVariant::JSX : LanguageVariant::Standard;
 }
 
+inline auto startsWith(string str, string prefix) -> boolean
+{
+    auto expectedPos = 0;
+    return str.find(prefix, expectedPos) == expectedPos;
+}
+
 inline auto endsWith(string str, string suffix) -> boolean
 {
     auto expectedPos = str.length() - suffix.length();
@@ -1235,6 +1241,10 @@ inline static auto isPropertyName(Node node) -> boolean {
         || kind == SyntaxKind::StringLiteral
         || kind == SyntaxKind::NumericLiteral
         || kind == SyntaxKind::ComputedPropertyName;
+}
+
+inline static auto escapeLeadingUnderscores(string identifier) -> string {
+    return (identifier.size() >= 2 && (CharacterCodes)identifier[0] == CharacterCodes::_ && (CharacterCodes)identifier[1] == CharacterCodes::_ ? S("_") + identifier : identifier);
 }
 
 inline static auto regex_exec(string &text, regex regEx) -> boolean

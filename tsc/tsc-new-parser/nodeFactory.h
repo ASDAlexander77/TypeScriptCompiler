@@ -5,26 +5,25 @@
 #include "scanner.h"
 #include "utilities.h"
 
-typedef std::function<Node(SyntaxKind)> NodeCreate;
-
-struct BaseNodeFactory
-{
-    BaseNodeFactory() = default;
-
-    NodeCreate createBaseSourceFileNode;
-    NodeCreate createBaseIdentifierNode;
-    NodeCreate createBasePrivateIdentifierNode;
-    NodeCreate createBaseTokenNode;
-    NodeCreate createBaseNode;
-};
-
 class NodeFactory
 {
+    ts::Scanner *scanner;
+
     NodeFactoryFlags nodeFactoryFlags;
-    BaseNodeFactory baseNodeFactory;
+    NodeCreateCallbackFunc createNodeCallback;
 
 public:
-    NodeFactory(NodeFactoryFlags nodeFactoryFlags, BaseNodeFactory baseNodeFactory) : nodeFactoryFlags(nodeFactoryFlags), baseNodeFactory(baseNodeFactory) {}
+    NodeFactory(ts::Scanner *scanner, NodeFactoryFlags nodeFactoryFlags, NodeCreateCallbackFunc createNodeCallback) 
+        : scanner(scanner), nodeFactoryFlags(nodeFactoryFlags), createNodeCallback(createNodeCallback) {}
+
+    inline auto asName(Identifier name) -> Identifier {
+        return name;
+    }
+
+    auto propagateIdentifierNameFlags(Identifier node) -> TransformFlags {
+        // An IdentifierName is allowed to be `await`
+        return propagateChildFlags(node) & ~TransformFlags::ContainsPossibleTopLevelAwait;
+    }
 
     auto getTransformFlagsSubtreeExclusions(SyntaxKind kind) -> TransformFlags {
         if (kind >= SyntaxKind::FirstTypeNode && kind <= SyntaxKind::LastTypeNode) {
@@ -117,19 +116,25 @@ public:
     }
 
     template <typename T> 
+    auto createBaseNode(SyntaxKind kind) {
+        auto newNode = T();
+        newNode->kind = kind;
+        createNodeCallback(newNode);
+        return newNode;
+    }
+
+    template <typename T> 
     auto createBaseToken(SyntaxKind kind) {
-        return baseFactory.createBaseTokenNode<T>(kind);
+        return createBaseNode<T>(kind);
     }
 
     template <typename T> 
     auto createBaseLiteral(SyntaxKind kind, string text) {
-        auto node = createBaseToken(kind);
+        auto node = createBaseNode<T>(kind);
         node->text = text;
         return node;
     }
 
-    /* @internal */ //ParenthesizerRules parenthesizer;
-    /* @internal */ //NodeConverters converters;
     //auto createNodeArray(Node elements = undefined, boolean hasTrailingComma = false) -> Node;
     template <typename T> 
     auto createNodeArray(NodeArray<T> elements, boolean hasTrailingComma = false) -> NodeArray<T>
@@ -149,6 +154,7 @@ public:
     // auto createNumericLiteral(number value, TokenFlags numericLiteralFlags = TokenFlags::None) -> NumericLiteral;
     // auto createBigIntLiteral(string value) -> BigIntLiteral;
     // auto createBigIntLiteral(PseudoBigInt value) -> BigIntLiteral;
+    auto createBaseStringLiteral(string text, boolean isSingleQuote = false) -> StringLiteral;
     /* @internal*/ auto createStringLiteral(string text, boolean isSingleQuote = false, boolean hasExtendedUnicodeEscape = false) -> StringLiteral; // eslint-disable-line @typescript-eslint/unified-signatures
     // auto createStringLiteralFromNode(PropertyNameLiteral sourceNode, boolean isSingleQuote = false) -> StringLiteral;
     // auto createRegularExpressionLiteral(string text) -> RegularExpressionLiteral;
@@ -157,6 +163,7 @@ public:
     // Identifiers
     //
 
+    auto createBaseIdentifier(string text, SyntaxKind originalKeywordKind = SyntaxKind::Unknown);
     /* @internal */ auto createIdentifier(string text, NodeArray</*TypeNode | TypeParameterDeclaration*/Node> typeArguments = undefined, SyntaxKind originalKeywordKind = SyntaxKind::Unknown) -> Identifier; // eslint-disable-line @typescript-eslint/unified-signatures
     ///* @internal */ auto updateIdentifier(Identifier node, NodeArray</*TypeNode | TypeParameterDeclaration*/Node> typeArguments) -> Identifier;
 

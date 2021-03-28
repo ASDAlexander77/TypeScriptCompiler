@@ -20,6 +20,8 @@ typedef std::function<Node(SyntaxKind, number, number)> NodeCreateFunc;
 
 typedef std::function<void(number, number, DiagnosticMessage)> PragmaDiagnosticReporter;
 
+typedef std::function<void (Node)> NodeCreateCallbackFunc;
+
 namespace IncrementalParser
 {
     struct SyntaxCursor;

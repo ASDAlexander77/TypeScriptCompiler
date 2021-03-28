@@ -42,11 +42,7 @@ namespace ts
 
             NodeFlags disallowInAndDecoratorContext = NodeFlags::DisallowInContext | NodeFlags::DecoratorContext;
 
-            NodeCreateFunc NodeConstructor;
-            NodeCreateFunc TokenConstructor;
-            NodeCreateFunc IdentifierConstructor;
-            NodeCreateFunc PrivateIdentifierConstructor;
-            NodeCreateFunc SourceFileConstructor;
+            NodeCreateFunc nodeCreateCallback;
 
             string fileName;
             NodeFlags sourceFlags;
@@ -150,19 +146,15 @@ namespace ts
 
             // Rather than using `createBaseNodeFactory` here, we establish a `BaseNodeFactory` that closes over the
             // constructors above, which are reset each time `initializeState` is called.
-            BaseNodeFactory baseNodeFactory;
             NodeFactory factory;
 
             // Share a single scanner across all calls to parse a source file.  This helps speed things
             // up by avoiding the cost of creating/compiling scanners over and over again.
             Parser() : scanner(ScriptTarget::Latest, /*skipTrivia*/ true),
-                       baseNodeFactory{
-                           [&](SyntaxKind kind) { return countNode(SourceFileConstructor(kind, /*pos*/ 0, /*end*/ 0)); },
-                           [&](SyntaxKind kind) { return countNode(IdentifierConstructor(kind, /*pos*/ 0, /*end*/ 0)); },
-                           [&](SyntaxKind kind) { return countNode(PrivateIdentifierConstructor(kind, /*pos*/ 0, /*end*/ 0)); },
-                           [&](SyntaxKind kind) { return countNode(TokenConstructor(kind, /*pos*/ 0, /*end*/ 0)); },
-                           [&](SyntaxKind kind) { return countNode(NodeConstructor(kind, /*pos*/ 0, /*end*/ 0)); }},
-                       factory(NodeFactoryFlags::NoParenthesizerRules | NodeFactoryFlags::NoNodeConverters | NodeFactoryFlags::NoOriginalNode, baseNodeFactory)
+                       factory(
+                           &scanner,
+                           NodeFactoryFlags::NoParenthesizerRules | NodeFactoryFlags::NoNodeConverters | NodeFactoryFlags::NoOriginalNode, 
+                           [&](Node node) -> void { countNode(node); })
             {
             }
 
@@ -312,22 +304,6 @@ namespace ts
 
             auto initializeState(string _fileName, string _sourceText, ScriptTarget _languageVersion, IncrementalParser::SyntaxCursor _syntaxCursor, ScriptKind _scriptKind) -> void
             {
-                NodeConstructor = [](SyntaxKind kind, number start, number end) {
-                    return Node(kind, start, end);
-                };
-                TokenConstructor = [](SyntaxKind kind, number start, number end) {
-                    return Node(kind, start, end);
-                };
-                IdentifierConstructor = [](SyntaxKind kind, number start, number end) {
-                    return Identifier(kind, start, end);
-                };
-                PrivateIdentifierConstructor = [](SyntaxKind kind, number start, number end) {
-                    return PrivateIdentifier(kind, start, end);
-                };
-                SourceFileConstructor = [](SyntaxKind kind, number start, number end) {
-                    return SourceFile(kind, start, end);
-                };
-
                 fileName = normalizePath(_fileName);
                 sourceText = _sourceText;
                 languageVersion = _languageVersion;

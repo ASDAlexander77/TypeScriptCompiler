@@ -724,13 +724,13 @@ namespace ts
                 return tokenToText[t];
             }
 
-        private:
             /* @internal */
             auto stringToToken(string s) -> SyntaxKind
             {
                 return textToToken.at(s);
             }
 
+        private:
             /* @internal */
             auto computeLineStarts(safe_string text) -> std::vector<number>
             {
@@ -3614,6 +3614,11 @@ namespace ts
     auto Scanner::getLeadingCommentRanges(string &text, number pos) -> std::vector<CommentRange>
     {
         return impl->getLeadingCommentRanges(text, pos);
+    }
+
+    auto Scanner::stringToToken(string s) -> SyntaxKind
+    {
+        return impl->stringToToken(s);
     }
 
     Scanner::~Scanner()
