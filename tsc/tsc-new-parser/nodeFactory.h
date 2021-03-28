@@ -97,6 +97,10 @@ public:
         }
     }
 
+    auto propagatePropertyNameFlagsOfChild(PropertyName node, TransformFlags transformFlags) -> TransformFlags {
+        return transformFlags | (node->transformFlags & TransformFlags::PropertyNamePropagatingFlags);
+    }
+
     auto propagateChildFlags(Node child) -> TransformFlags {
         if (!child) return TransformFlags::None;
         auto childFlags = child->transformFlags & ~getTransformFlagsSubtreeExclusions(child->kind);

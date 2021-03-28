@@ -1224,11 +1224,11 @@ inline static auto setParent(Node child, Node parent) -> Node {
     return child;
 }
 
-auto isNamedDeclaration(Node node) -> boolean {
+inline static auto isNamedDeclaration(Node node) -> boolean {
     return !!node.is<NamedDeclaration>(); // A 'name' property should always be a DeclarationName.
 }
 
-auto isPropertyName(Node node) -> boolean {
+inline static auto isPropertyName(Node node) -> boolean {
     auto kind = node->kind;
     return kind == SyntaxKind::Identifier
         || kind == SyntaxKind::PrivateIdentifier
