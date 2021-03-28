@@ -110,12 +110,27 @@ auto NodeFactory::createToken(SyntaxKind token) -> Node {
     return node;
 }
 
-auto NodeFactory::createQualifiedName(EntityName left, Identifier right) -> Identifier {
+auto NodeFactory::createQualifiedName(EntityName left, Identifier right) -> QualifiedName 
+{
     auto node = createBaseNode<QualifiedName>(SyntaxKind::QualifiedName);
     node->left = left;
     node->right = asName(right);
     node->transformFlags |=
         propagateChildFlags(node->left) |
         propagateIdentifierNameFlags(node->right);
+    return node;
+}
+
+auto NodeFactory::parenthesizeExpressionOfComputedPropertyName(Expression expression) -> Expression {
+    return isCommaSequence(expression) ? createParenthesizedExpression(expression) : expression;
+}
+
+auto NodeFactory::createComputedPropertyName(Expression expression) -> ComputedPropertyName {
+    auto node = createBaseNode<ComputedPropertyName>(SyntaxKind::ComputedPropertyName);
+    node->expression = parenthesizeExpressionOfComputedPropertyName(expression);
+    node->transformFlags |=
+        propagateChildFlags(node->expression) |
+        TransformFlags::ContainsES2015 |
+        TransformFlags::ContainsComputedPropertyName;
     return node;
 }

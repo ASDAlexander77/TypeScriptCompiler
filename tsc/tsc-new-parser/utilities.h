@@ -1247,6 +1247,11 @@ inline static auto escapeLeadingUnderscores(string identifier) -> string {
     return (identifier.size() >= 2 && (CharacterCodes)identifier[0] == CharacterCodes::_ && (CharacterCodes)identifier[1] == CharacterCodes::_ ? S("_") + identifier : identifier);
 }
 
+inline static auto isCommaSequence(Expression node) -> boolean {
+    return node->kind == SyntaxKind::BinaryExpression && node.as<BinaryExpression>()->operatorToken->kind == SyntaxKind::CommaToken ||
+        node->kind == SyntaxKind::CommaListExpression;
+}
+
 inline static auto regex_exec(string &text, regex regEx) -> boolean
 {
     auto words_begin = sregex_iterator(text.begin(), text.end(), regEx);

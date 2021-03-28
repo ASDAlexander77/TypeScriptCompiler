@@ -227,6 +227,8 @@ public:
      auto createComputedPropertyName(Expression expression) -> ComputedPropertyName;
     // auto updateComputedPropertyName(ComputedPropertyName node, Expression expression) -> ComputedPropertyName;
 
+    auto parenthesizeExpressionOfComputedPropertyName(Expression expression) -> Expression;
+
     // //
     // // Signature elements
     // //
