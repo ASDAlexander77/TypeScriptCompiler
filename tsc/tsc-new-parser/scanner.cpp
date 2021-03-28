@@ -1343,6 +1343,7 @@ namespace ts
                 return comments;
             }
 
+        public:
             auto getLeadingCommentRanges(string &text, number pos) -> std::vector<CommentRange>
             {
                 return reduceEachLeadingCommentRange<number, std::vector<CommentRange>>(
@@ -1353,6 +1354,7 @@ namespace ts
                     std::vector<CommentRange>());
             }
 
+        private:
             auto getTrailingCommentRanges(string &text, number pos) -> std::vector<CommentRange>
             {
                 return reduceEachTrailingCommentRange<number, std::vector<CommentRange>>(
@@ -3439,6 +3441,11 @@ namespace ts
         return impl->token;
     }
 
+    auto Scanner::getTextPos() -> number
+    {
+        return impl->pos;
+    }
+
     auto Scanner::getStartPos() -> number
     {
         return impl->startPos;
@@ -3602,6 +3609,11 @@ namespace ts
     auto Scanner::skipTrivia(safe_string &text, number pos, bool stopAfterLineBreak, bool stopAtComments) -> number
     {
         return impl->skipTrivia(text, pos, stopAfterLineBreak, stopAtComments);
+    }
+
+    auto Scanner::getLeadingCommentRanges(string &text, number pos) -> std::vector<CommentRange>
+    {
+        return impl->getLeadingCommentRanges(text, pos);
     }
 
     Scanner::~Scanner()

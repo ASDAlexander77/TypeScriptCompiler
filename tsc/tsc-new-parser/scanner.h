@@ -227,6 +227,7 @@ namespace ts
         auto reScanAsteriskEqualsToken() -> void;
         auto reScanQuestionToken() -> void;
         auto skipTrivia(safe_string &text, number pos, bool stopAfterLineBreak = false, bool stopAtComments = false) -> number;
+        auto getLeadingCommentRanges(string &text, number pos) -> std::vector<CommentRange>;
 
         template <typename T>
         auto scanRange(number start, number length, std::function<T()> callback) -> T

@@ -1224,4 +1224,11 @@ inline static auto setParent(Node child, Node parent) -> Node {
     return child;
 }
 
+inline static auto regex_exec(string &text, regex regEx) -> boolean
+{
+    auto words_begin = sregex_iterator(text.begin(), text.end(), regEx);
+    auto words_end = sregex_iterator();
+    return words_begin != words_end;
+}
+
 #endif // UTILITIES_H
