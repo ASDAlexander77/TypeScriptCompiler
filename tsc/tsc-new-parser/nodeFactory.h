@@ -116,6 +116,18 @@ public:
         children->transformFlags = subtreeFlags;
     }
 
+    template <typename T> 
+    auto createBaseToken(SyntaxKind kind) {
+        return baseFactory.createBaseTokenNode<T>(kind);
+    }
+
+    template <typename T> 
+    auto createBaseLiteral(SyntaxKind kind, string text) {
+        auto node = createBaseToken(kind);
+        node->text = text;
+        return node;
+    }
+
     /* @internal */ //ParenthesizerRules parenthesizer;
     /* @internal */ //NodeConverters converters;
     //auto createNodeArray(Node elements = undefined, boolean hasTrailingComma = false) -> Node;
