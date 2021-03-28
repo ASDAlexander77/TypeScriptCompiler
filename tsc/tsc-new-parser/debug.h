@@ -89,6 +89,10 @@ struct Debug
         assertIsDefined(value, message);
         return value;
     }
+
+    template<typename T>
+    static auto attachNodeArrayDebugInfo(NodeArray<T> &elements) -> void {
+    }
 };
 
 #endif // DEBUG_H

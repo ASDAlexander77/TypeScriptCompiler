@@ -1224,6 +1224,19 @@ inline static auto setParent(Node child, Node parent) -> Node {
     return child;
 }
 
+auto isNamedDeclaration(Node node) -> boolean {
+    return !!node.is<NamedDeclaration>(); // A 'name' property should always be a DeclarationName.
+}
+
+auto isPropertyName(Node node) -> boolean {
+    auto kind = node->kind;
+    return kind == SyntaxKind::Identifier
+        || kind == SyntaxKind::PrivateIdentifier
+        || kind == SyntaxKind::StringLiteral
+        || kind == SyntaxKind::NumericLiteral
+        || kind == SyntaxKind::ComputedPropertyName;
+}
+
 inline static auto regex_exec(string &text, regex regEx) -> boolean
 {
     auto words_begin = sregex_iterator(text.begin(), text.end(), regEx);

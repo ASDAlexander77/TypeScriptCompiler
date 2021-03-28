@@ -177,6 +177,12 @@ public:
         return U(*this, true);
     }
 
+    template <typename U> 
+    inline auto is() -> boolean
+    {
+        return !!std::dynamic_pointer_cast<U>(instance);
+    }    
+
 	REF_TYPE(T) instance;
 };
 

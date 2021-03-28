@@ -3,6 +3,7 @@
 
 #include "enums.h"
 #include "scanner.h"
+#include "utilities.h"
 
 typedef std::function<Node(SyntaxKind)> NodeCreate;
 
@@ -25,36 +26,103 @@ class NodeFactory
 public:
     NodeFactory(NodeFactoryFlags nodeFactoryFlags, BaseNodeFactory baseNodeFactory) : nodeFactoryFlags(nodeFactoryFlags), baseNodeFactory(baseNodeFactory) {}
 
+    auto getTransformFlagsSubtreeExclusions(SyntaxKind kind) -> TransformFlags {
+        if (kind >= SyntaxKind::FirstTypeNode && kind <= SyntaxKind::LastTypeNode) {
+            return TransformFlags::TypeExcludes;
+        }
+
+        switch (kind) {
+            case SyntaxKind::CallExpression:
+            case SyntaxKind::NewExpression:
+            case SyntaxKind::ArrayLiteralExpression:
+                return TransformFlags::ArrayLiteralOrCallOrNewExcludes;
+            case SyntaxKind::ModuleDeclaration:
+                return TransformFlags::ModuleExcludes;
+            case SyntaxKind::Parameter:
+                return TransformFlags::ParameterExcludes;
+            case SyntaxKind::ArrowFunction:
+                return TransformFlags::ArrowFunctionExcludes;
+            case SyntaxKind::FunctionExpression:
+            case SyntaxKind::FunctionDeclaration:
+                return TransformFlags::FunctionExcludes;
+            case SyntaxKind::VariableDeclarationList:
+                return TransformFlags::VariableDeclarationListExcludes;
+            case SyntaxKind::ClassDeclaration:
+            case SyntaxKind::ClassExpression:
+                return TransformFlags::ClassExcludes;
+            case SyntaxKind::Constructor:
+                return TransformFlags::ConstructorExcludes;
+            case SyntaxKind::PropertyDeclaration:
+                return TransformFlags::PropertyExcludes;
+            case SyntaxKind::MethodDeclaration:
+            case SyntaxKind::GetAccessor:
+            case SyntaxKind::SetAccessor:
+                return TransformFlags::MethodOrAccessorExcludes;
+            case SyntaxKind::AnyKeyword:
+            case SyntaxKind::NumberKeyword:
+            case SyntaxKind::BigIntKeyword:
+            case SyntaxKind::NeverKeyword:
+            case SyntaxKind::StringKeyword:
+            case SyntaxKind::ObjectKeyword:
+            case SyntaxKind::BooleanKeyword:
+            case SyntaxKind::SymbolKeyword:
+            case SyntaxKind::VoidKeyword:
+            case SyntaxKind::TypeParameter:
+            case SyntaxKind::PropertySignature:
+            case SyntaxKind::MethodSignature:
+            case SyntaxKind::CallSignature:
+            case SyntaxKind::ConstructSignature:
+            case SyntaxKind::IndexSignature:
+            case SyntaxKind::InterfaceDeclaration:
+            case SyntaxKind::TypeAliasDeclaration:
+                return TransformFlags::TypeExcludes;
+            case SyntaxKind::ObjectLiteralExpression:
+                return TransformFlags::ObjectLiteralExcludes;
+            case SyntaxKind::CatchClause:
+                return TransformFlags::CatchClauseExcludes;
+            case SyntaxKind::ObjectBindingPattern:
+            case SyntaxKind::ArrayBindingPattern:
+                return TransformFlags::BindingPatternExcludes;
+            case SyntaxKind::TypeAssertionExpression:
+            case SyntaxKind::AsExpression:
+            case SyntaxKind::PartiallyEmittedExpression:
+            case SyntaxKind::ParenthesizedExpression:
+            case SyntaxKind::SuperKeyword:
+                return TransformFlags::OuterExpressionExcludes;
+            case SyntaxKind::PropertyAccessExpression:
+            case SyntaxKind::ElementAccessExpression:
+                return TransformFlags::PropertyAccessExcludes;
+            default:
+                return TransformFlags::NodeExcludes;
+        }
+    }
+
+    auto propagateChildFlags(Node child) -> TransformFlags {
+        if (!child) return TransformFlags::None;
+        auto childFlags = child->transformFlags & ~getTransformFlagsSubtreeExclusions(child->kind);
+        return isNamedDeclaration(child) && isPropertyName(child.as<NamedDeclaration>()->name) ? propagatePropertyNameFlagsOfChild(child.as<NamedDeclaration>()->name, childFlags) : childFlags;
+    }
+
+    template <typename T> 
+    auto aggregateChildrenFlags(NodeArray<T> children) -> void {
+        auto subtreeFlags = TransformFlags::None;
+        for (auto &child : children) {
+            subtreeFlags |= propagateChildFlags(child);
+        }
+        children->transformFlags = subtreeFlags;
+    }
+
     /* @internal */ //ParenthesizerRules parenthesizer;
     /* @internal */ //NodeConverters converters;
     //auto createNodeArray(Node elements = undefined, boolean hasTrailingComma = false) -> Node;
-    template <typename T> auto createNodeArray(NodeArray<T> elements, boolean hasTrailingComma = false) -> NodeArray<T>
+    template <typename T> 
+    auto createNodeArray(NodeArray<T> elements, boolean hasTrailingComma = false) -> NodeArray<T>
     {
-        /*
-        if (elements == undefined || elements == emptyArray) {
-            elements = [];
-        }
-        else if (isNodeArray(elements)) {
-            // Ensure the transform flags have been aggregated for this NodeArray
-            if (elements.transformFlags == undefined) {
-                aggregateChildrenFlags(elements as MutableNodeArray<T>);
-            }
-            Debug::attachNodeArrayDebugInfo(elements);
-            return elements;
-        }
-
-        // Since the element list of a node array is typically created by starting with an empty array and
-        // repeatedly calling push(), the list may not have the optimal memory layout. We invoke slice() for
-        // small arrays (1 to 4 elements) to give the VM a chance to allocate an optimal representation.
-        const length = elements.length;
-        const array = <MutableNodeArray<T>>(length >= 1 && length <= 4 ? elements.slice() : elements);
-        setTextRangePosEnd(array, -1, -1);
-        array.hasTrailingComma = !!hasTrailingComma;
-        aggregateChildrenFlags(array);
-        Debug::attachNodeArrayDebugInfo(array);
-        return array;
-        */
-       return elements;
+        setTextRangePosEnd(elements, -1, -1);
+        elements.hasTrailingComma = !!hasTrailingComma;
+        aggregateChildrenFlags(elements);
+        Debug::attachNodeArrayDebugInfo(elements);
+        return elements;
     }
 
     //
