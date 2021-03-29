@@ -68,6 +68,11 @@ namespace ts
             return createToken(value);
         }
 
+        template <typename T>
+        inline auto asEmbeddedStatement(T statement) -> T {
+            return statement && isNotEmittedStatement(statement) ? setTextRange(setOriginalNode(createEmptyStatement(), statement), statement) : statement;
+        }
+
         auto propagateIdentifierNameFlags(Identifier node) -> TransformFlags;
 
         auto propagateAssignmentPatternFlags(Node node) -> TransformFlags;

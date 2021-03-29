@@ -1634,7 +1634,7 @@ namespace ts
     //
 
     // @api
-    auto NodeFactory::createTemplateSpan(Expression expression, literal: TemplateMiddle | TemplateTail) {
+    auto NodeFactory::createTemplateSpan(Expression expression, Node literal) -> TemplateSpan {
         auto node = createBaseNode<TemplateSpan>(SyntaxKind::TemplateSpan);
         node->expression = expression;
         node->literal = literal;
@@ -1649,7 +1649,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createSemicolonClassElement() {
+    auto NodeFactory::createSemicolonClassElement() -> SemicolonClassElement {
         auto node = createBaseNode<SemicolonClassElement>(SyntaxKind::SemicolonClassElement);
         node->transformFlags |= TransformFlags::ContainsES2015;
         return node;
@@ -1660,7 +1660,7 @@ namespace ts
     //
 
     // @api
-    auto NodeFactory::createBlock(statements: Statement[], multiLine?: boolean) -> Block {
+    auto NodeFactory::createBlock(NodeArray<Statement> statements, boolean multiLine) -> Block {
         auto node = createBaseNode<Block>(SyntaxKind::Block);
         node->statements = createNodeArray(statements);
         node->multiLine = multiLine;
@@ -1672,12 +1672,12 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createVariableStatement(ModifiersArray modifiers, declarationList: VariableDeclarationList | VariableDeclaration[]) {
+    auto NodeFactory::createVariableStatement(ModifiersArray modifiers, VariableDeclarationList declarationList) -> VariableStatement {
         auto node = createBaseDeclaration<VariableStatement>(SyntaxKind::VariableStatement, /*decorators*/ undefined, modifiers);
-        node->declarationList = isArray(declarationList) ? createVariableDeclarationList(declarationList) : declarationList;
+        node->declarationList = declarationList;
         node->transformFlags |=
             propagateChildFlags(node->declarationList);
-        if (modifiersToFlags(node->modifiers) & ModifierFlags::Ambient) {
+        if (!!(modifiersToFlags(node->modifiers) & ModifierFlags::Ambient)) {
             node->transformFlags = TransformFlags::ContainsTypeScript;
         }
         return node;
@@ -1687,7 +1687,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createEmptyStatement() {
+    auto NodeFactory::createEmptyStatement() -> EmptyStatement {
         return createBaseNode<EmptyStatement>(SyntaxKind::EmptyStatement);
     }
 
@@ -1703,7 +1703,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createIfStatement(Expression expression, thenStatement: Statement, elseStatement?: Statement) {
+    auto NodeFactory::createIfStatement(Expression expression, Statement thenStatement, Statement elseStatement) -> IfStatement {
         auto node = createBaseNode<IfStatement>(SyntaxKind::IfStatement);
         node->expression = expression;
         node->thenStatement = asEmbeddedStatement(thenStatement);
@@ -1719,7 +1719,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createDoStatement(statement: Statement, Expression expression) {
+    auto NodeFactory::createDoStatement(Statement statement, Expression expression) -> DoStatement {
         auto node = createBaseNode<DoStatement>(SyntaxKind::DoStatement);
         node->statement = asEmbeddedStatement(statement);
         node->expression = expression;
@@ -1733,7 +1733,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createWhileStatement(Expression expression, statement: Statement) {
+    auto NodeFactory::createWhileStatement(Expression expression, Statement statement) -> WhileStatement {
         auto node = createBaseNode<WhileStatement>(SyntaxKind::WhileStatement);
         node->expression = expression;
         node->statement = asEmbeddedStatement(statement);
@@ -1747,7 +1747,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createForStatement(initializer: ForInitializer, condition: Expression, incrementor: Expression, statement: Statement) {
+    auto NodeFactory::createForStatement(ForInitializer initializer, Expression condition, Expression incrementor, Statement statement) -> ForStatement {
         auto node = createBaseNode<ForStatement>(SyntaxKind::ForStatement);
         node->initializer = initializer;
         node->condition = condition;
@@ -1765,7 +1765,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createForInStatement(initializer: ForInitializer, Expression expression, statement: Statement) {
+    auto NodeFactory::createForInStatement(ForInitializer initializer, Expression expression, Statement statement) -> ForInStatement {
         auto node = createBaseNode<ForInStatement>(SyntaxKind::ForInStatement);
         node->initializer = initializer;
         node->expression = expression;
@@ -1781,7 +1781,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createForOfStatement(awaitModifier: AwaitKeyword, initializer: ForInitializer, Expression expression, statement: Statement) {
+    auto NodeFactory::createForOfStatement(AwaitKeyword awaitModifier, ForInitializer initializer, Expression expression, Statement statement) -> ForOfStatement {
         auto node = createBaseNode<ForOfStatement>(SyntaxKind::ForOfStatement);
         node->awaitModifier = awaitModifier;
         node->initializer = initializer;
@@ -1801,7 +1801,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createContinueStatement(label?: string | Identifier) -> ContinueStatement {
+    auto NodeFactory::createContinueStatement(Identifier label) -> ContinueStatement {
         auto node = createBaseNode<ContinueStatement>(SyntaxKind::ContinueStatement);
         node->label = asName(label);
         node->transformFlags |=
@@ -1814,7 +1814,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createBreakStatement(label?: string | Identifier) -> BreakStatement {
+    auto NodeFactory::createBreakStatement(Identifier label) -> BreakStatement {
         auto node = createBaseNode<BreakStatement>(SyntaxKind::BreakStatement);
         node->label = asName(label);
         node->transformFlags |=
@@ -1827,7 +1827,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createReturnStatement(expression?: Expression) -> ReturnStatement {
+    auto NodeFactory::createReturnStatement(Expression expression) -> ReturnStatement {
         auto node = createBaseNode<ReturnStatement>(SyntaxKind::ReturnStatement);
         node->expression = expression;
         // return in an ES2018 async generator must be awaited
@@ -1842,7 +1842,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createWithStatement(Expression expression, statement: Statement) {
+    auto NodeFactory::createWithStatement(Expression expression, Statement statement) -> WithStatement {
         auto node = createBaseNode<WithStatement>(SyntaxKind::WithStatement);
         node->expression = expression;
         node->statement = asEmbeddedStatement(statement);
@@ -1856,7 +1856,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createSwitchStatement(Expression expression, caseBlock: CaseBlock) -> SwitchStatement {
+    auto NodeFactory::createSwitchStatement(Expression expression, CaseBlock caseBlock) -> SwitchStatement {
         auto node = createBaseNode<SwitchStatement>(SyntaxKind::SwitchStatement);
         node->expression = parenthesizerRules.parenthesizeExpressionForDisallowedComma(expression);
         node->caseBlock = caseBlock;
@@ -1870,7 +1870,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createLabeledStatement(label: string | Identifier, statement: Statement) {
+    auto NodeFactory::createLabeledStatement(Identifier label, Statement statement) -> LabeledStatement {
         auto node = createBaseNode<LabeledStatement>(SyntaxKind::LabeledStatement);
         node->label = asName(label);
         node->statement = asEmbeddedStatement(statement);
@@ -1884,7 +1884,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createThrowStatement(Expression expression) {
+    auto NodeFactory::createThrowStatement(Expression expression) -> ThrowStatement {
         auto node = createBaseNode<ThrowStatement>(SyntaxKind::ThrowStatement);
         node->expression = expression;
         node->transformFlags |= propagateChildFlags(node->expression);
@@ -1895,7 +1895,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createTryStatement(tryBlock: Block, catchClause: CatchClause, finallyBlock: Block) {
+    auto NodeFactory::createTryStatement(Block tryBlock, CatchClause catchClause, Block finallyBlock) -> TryStatement {
         auto node = createBaseNode<TryStatement>(SyntaxKind::TryStatement);
         node->tryBlock = tryBlock;
         node->catchClause = catchClause;
@@ -1911,19 +1911,19 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createDebuggerStatement() {
+    auto NodeFactory::createDebuggerStatement() -> DebuggerStatement {
         return createBaseNode<DebuggerStatement>(SyntaxKind::DebuggerStatement);
     }
 
     // @api
-    auto NodeFactory::createVariableDeclaration(name: string | BindingName, exclamationToken: ExclamationToken, TypeNode type, Expression initializer) {
+    auto NodeFactory::createVariableDeclaration(BindingName name, ExclamationToken exclamationToken, TypeNode type, Expression initializer) -> VariableDeclaration {
         auto node = createBaseVariableLikeDeclaration<VariableDeclaration>(
             SyntaxKind::VariableDeclaration,
             /*decorators*/ undefined,
             /*modifiers*/ undefined,
             name,
             type,
-            initializer && parenthesizerRules.parenthesizeExpressionForDisallowedComma(initializer)
+            initializer ? parenthesizerRules.parenthesizeExpressionForDisallowedComma(initializer) : undefined
         );
         node->exclamationToken = exclamationToken;
         node->transformFlags |= propagateChildFlags(node->exclamationToken);
@@ -1937,14 +1937,14 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createVariableDeclarationList(declarations: VariableDeclaration[], flags = NodeFlags::None) {
+    auto NodeFactory::createVariableDeclarationList(NodeArray<VariableDeclaration> declarations, NodeFlags flags) -> VariableDeclarationList {
         auto node = createBaseNode<VariableDeclarationList>(SyntaxKind::VariableDeclarationList);
         node->flags |= flags & NodeFlags::BlockScoped;
         node->declarations = createNodeArray(declarations);
         node->transformFlags |=
             propagateChildrenFlags(node->declarations) |
             TransformFlags::ContainsHoistedDeclarationOrCompletion;
-        if (flags & NodeFlags::BlockScoped) {
+        if (!!(flags & NodeFlags::BlockScoped)) {
             node->transformFlags |=
                 TransformFlags::ContainsES2015 |
                 TransformFlags::ContainsBlockScopedBinding;
@@ -1957,15 +1957,14 @@ namespace ts
 
     // @api
     auto NodeFactory::createFunctionDeclaration(
-        DecoratorsArray decorators,
-        ModifiersArray modifiers,
-        AsteriskToken asteriskToken,
-        name: string | Identifier,
-        NodeArray<TypeParameterDeclaration> typeParameters,
-        NodeArray<ParameterDeclaration> parameters,
-        TypeNode type,
-        Block body
-    ) {
+        DecoratorsArray decorators, 
+        ModifiersArray modifiers, 
+        AsteriskToken asteriskToken, 
+        Identifier name, 
+        NodeArray<TypeParameterDeclaration> typeParameters, 
+        NodeArray<ParameterDeclaration> parameters, 
+        TypeNode type, 
+        Block body) -> FunctionDeclaration {
         auto node = createBaseFunctionLikeDeclaration<FunctionDeclaration>(
             SyntaxKind::FunctionDeclaration,
             decorators,
@@ -1977,14 +1976,14 @@ namespace ts
             body
         );
         node->asteriskToken = asteriskToken;
-        if (!node->body || modifiersToFlags(node->modifiers) & ModifierFlags::Ambient) {
+        if (!node->body || !!(modifiersToFlags(node->modifiers) & ModifierFlags::Ambient)) {
             node->transformFlags = TransformFlags::ContainsTypeScript;
         }
         else {
             node->transformFlags |=
                 propagateChildFlags(node->asteriskToken) |
                 TransformFlags::ContainsHoistedDeclarationOrCompletion;
-            if (modifiersToFlags(node->modifiers) & ModifierFlags::Async) {
+            if (!!(modifiersToFlags(node->modifiers) & ModifierFlags::Async)) {
                 if (node->asteriskToken) {
                     node->transformFlags |= TransformFlags::ContainsES2018;
                 }
@@ -2004,13 +2003,12 @@ namespace ts
 
     // @api
     auto NodeFactory::createClassDeclaration(
-        DecoratorsArray decorators,
-        ModifiersArray modifiers,
-        name: string | Identifier,
-        NodeArray<TypeParameterDeclaration> typeParameters,
-        heritageClauses: HeritageClause[],
-        members: ClassElement[]
-    ) {
+        DecoratorsArray decorators, 
+        ModifiersArray modifiers, 
+        Identifier name, 
+        NodeArray<TypeParameterDeclaration> typeParameters, 
+        NodeArray<HeritageClause> heritageClauses, 
+        NodeArray<ClassElement> members) -> ClassDeclaration {
         auto node = createBaseClassLikeDeclaration<ClassDeclaration>(
             SyntaxKind::ClassDeclaration,
             decorators,
@@ -2020,12 +2018,12 @@ namespace ts
             heritageClauses,
             members
         );
-        if (modifiersToFlags(node->modifiers) & ModifierFlags::Ambient) {
+        if (!!(modifiersToFlags(node->modifiers) & ModifierFlags::Ambient)) {
             node->transformFlags = TransformFlags::ContainsTypeScript;
         }
         else {
             node->transformFlags |= TransformFlags::ContainsES2015;
-            if (node->transformFlags & TransformFlags::ContainsTypeScriptClassSyntax) {
+            if (!!(node->transformFlags & TransformFlags::ContainsTypeScriptClassSyntax)) {
                 node->transformFlags |= TransformFlags::ContainsTypeScript;
             }
         }
@@ -2037,13 +2035,12 @@ namespace ts
 
     // @api
     auto NodeFactory::createInterfaceDeclaration(
-        DecoratorsArray decorators,
-        ModifiersArray modifiers,
-        name: string | Identifier,
-        NodeArray<TypeParameterDeclaration> typeParameters,
-        heritageClauses: HeritageClause[],
-        NodeArray<TypeElement> members
-    ) {
+        DecoratorsArray decorators, 
+        ModifiersArray modifiers, 
+        Identifier name, 
+        NodeArray<TypeParameterDeclaration> typeParameters, 
+        NodeArray<HeritageClause> heritageClauses, 
+        NodeArray<TypeElement> members) -> InterfaceDeclaration {
         auto node = createBaseInterfaceOrClassLikeDeclaration<InterfaceDeclaration>(
             SyntaxKind::InterfaceDeclaration,
             decorators,
