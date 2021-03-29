@@ -1256,14 +1256,6 @@ inline static auto isIdentifierTypePredicate(TypePredicateNode predicate) -> boo
     return predicate && predicate->kind == SyntaxKind::Identifier;
 }
 
-inline static auto isIdentifier(Node node) -> boolean {
-    return node->kind == SyntaxKind::Identifier;
-}
-
-inline static auto isPrivateIdentifier(Node node) -> boolean {
-    return node->kind == SyntaxKind::PrivateIdentifier;
-}
-
 inline static auto regex_exec(string &text, regex regEx) -> boolean
 {
     auto words_begin = sregex_iterator(text.begin(), text.end(), regEx);
