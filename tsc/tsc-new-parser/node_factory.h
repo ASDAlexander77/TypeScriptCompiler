@@ -4,20 +4,22 @@
 #include "enums.h"
 #include "scanner.h"
 #include "utilities.h"
-#include "nodeTest.h"
+#include "node_test.h"
+#include "parenthesizer_rules.h"
 
 namespace ts
 {
     class NodeFactory
     {
         Scanner *scanner;
+        ParenthesizerRules parenthesizerRules;
 
         NodeFactoryFlags nodeFactoryFlags;
         NodeCreateCallbackFunc createNodeCallback;
 
     public:
         NodeFactory(ts::Scanner *scanner, NodeFactoryFlags nodeFactoryFlags, NodeCreateCallbackFunc createNodeCallback)
-            : scanner(scanner), nodeFactoryFlags(nodeFactoryFlags), createNodeCallback(createNodeCallback) {}
+            : scanner(scanner), parenthesizerRules(this), nodeFactoryFlags(nodeFactoryFlags), createNodeCallback(createNodeCallback) {}
 
         inline auto asName(Identifier name) -> Identifier
         {
@@ -255,8 +257,6 @@ namespace ts
         auto createComputedPropertyName(Expression expression) -> ComputedPropertyName;
         // auto updateComputedPropertyName(ComputedPropertyName node, Expression expression) -> ComputedPropertyName;
 
-        auto parenthesizeExpressionOfComputedPropertyName(Expression expression) -> Expression;
-
         // //
         // // Signature elements
         // //
@@ -325,7 +325,49 @@ namespace ts
         // auto createTypeParameterDeclaration(string name, TypeNode constraint = undefined, TypeNode defaultType = undefined) -> TypeParameterDeclaration;
         auto createTypeParameterDeclaration(Identifier name, TypeNode constraint = undefined, TypeNode defaultType = undefined) -> TypeParameterDeclaration;
         // auto updateTypeParameterDeclaration(TypeParameterDeclaration node, Identifier name, TypeNode constraint, TypeNode defaultType) -> TypeParameterDeclaration;
-        // auto createParameterDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, DotDotDotToken dotDotDotToken, string name, QuestionToken questionToken = undefined, TypeNode type = undefined, Expression initializer = undefined) -> ParameterDeclaration;
+        
+        template <typename T>
+        auto createBaseBindingLikeDeclaration(
+            SyntaxKind kind,
+            DecoratorsArray decorators,
+            ModifiersArray modifiers,
+            BindingName name,
+            Expression initializer
+        ) -> T {
+            auto node = createBaseNamedDeclaration<T>(
+                kind,
+                decorators,
+                modifiers,
+                name
+            );
+            node->initializer = initializer;
+            node->transformFlags |= propagateChildFlags(node->initializer);
+            return node;
+        }
+
+        template <typename T>
+        auto createBaseVariableLikeDeclaration(
+            SyntaxKind kind,
+            DecoratorsArray decorators,
+            ModifiersArray modifiers,
+            BindingName name,
+            TypeNode type,
+            Expression initializer
+        ) -> T {
+            auto node = createBaseBindingLikeDeclaration<T>(
+                kind,
+                decorators,
+                modifiers,
+                name,
+                initializer
+            );
+            node->type = type;
+            node->transformFlags |= propagateChildFlags(type);
+            if (type) node->transformFlags |= TransformFlags::ContainsTypeScript;
+            return node;
+        }
+
+        // auto createParameterDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, DotDotDotToken dotDotDotToken, string name, QuestionToken questionToken = undefined, TypeNode type = undefined, Expression initializer = undefined) -> ParameterDeclaration;      
         auto createParameterDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, DotDotDotToken dotDotDotToken, BindingName name, QuestionToken questionToken = undefined, TypeNode type = undefined, Expression initializer = undefined) -> ParameterDeclaration;
         // auto updateParameterDeclaration(ParameterDeclaration node, DecoratorsArray decorators, ModifiersArray modifiers, DotDotDotToken dotDotDotToken, string name, QuestionToken questionToken, TypeNode type, Expression initializer) -> ParameterDeclaration;
         // auto updateParameterDeclaration(ParameterDeclaration node, DecoratorsArray decorators, ModifiersArray modifiers, DotDotDotToken dotDotDotToken, BindingName name, QuestionToken questionToken, TypeNode type, Expression initializer) -> ParameterDeclaration;

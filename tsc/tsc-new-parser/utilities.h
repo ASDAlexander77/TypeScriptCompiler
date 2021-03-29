@@ -8,7 +8,7 @@
 #include "core.h"
 #include "enums.h"
 #include "types.h"
-#include "nodeTest.h"
+#include "node_test.h"
 #include "scanner.h"
 #include "parser.h"
 
@@ -1254,6 +1254,14 @@ inline static auto isCommaSequence(Expression node) -> boolean {
 
 inline static auto isIdentifierTypePredicate(TypePredicateNode predicate) -> boolean {
     return predicate && predicate->kind == SyntaxKind::Identifier;
+}
+
+inline static auto identifierIsThisKeyword(Identifier id) -> boolean {
+    return id->originalKeywordKind == SyntaxKind::ThisKeyword;
+}
+
+inline static auto isThisIdentifier(Node node) -> boolean {
+    return !!node && node->kind == SyntaxKind::Identifier && identifierIsThisKeyword(node.as<Identifier>());
 }
 
 inline static auto regex_exec(string &text, regex regEx) -> boolean

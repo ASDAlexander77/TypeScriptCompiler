@@ -1,8 +1,7 @@
-#include "nodeFactory.h"
+#include "node_factory.h"
 
 namespace ts
 {
-
     auto NodeFactory::createNumericLiteral(string value, TokenFlags numericLiteralFlags) -> NumericLiteral
     {
         auto node = createBaseLiteral<NumericLiteral>(SyntaxKind::NumericLiteral, value);
@@ -134,15 +133,10 @@ namespace ts
         return node;
     }
 
-    auto NodeFactory::parenthesizeExpressionOfComputedPropertyName(Expression expression) -> Expression
-    {
-        return isCommaSequence(expression) ? createParenthesizedExpression(expression) : expression;
-    }
-
     auto NodeFactory::createComputedPropertyName(Expression expression) -> ComputedPropertyName
     {
         auto node = createBaseNode<ComputedPropertyName>(SyntaxKind::ComputedPropertyName);
-        node->expression = parenthesizeExpressionOfComputedPropertyName(expression);
+        node->expression = parenthesizerRules.parenthesizeExpressionOfComputedPropertyName(expression);
         node->transformFlags |=
             propagateChildFlags(node->expression) |
             TransformFlags::ContainsES2015 |
@@ -162,5 +156,39 @@ namespace ts
         node->transformFlags = TransformFlags::ContainsTypeScript;
         return node;
     }
+
+    auto NodeFactory::createParameterDeclaration(
+        DecoratorsArray decorators, 
+        ModifiersArray modifiers, 
+        DotDotDotToken dotDotDotToken, 
+        BindingName name, 
+        QuestionToken questionToken, 
+        TypeNode type, 
+        Expression initializer) -> ParameterDeclaration
+    {
+        auto node = createBaseVariableLikeDeclaration<ParameterDeclaration>(
+            SyntaxKind::Parameter,
+            decorators,
+            modifiers,
+            name,
+            type,
+            initializer ? parenthesizerRules.parenthesizeExpressionForDisallowedComma(initializer) : undefined
+        );
+        node->dotDotDotToken = dotDotDotToken;
+        node->questionToken = questionToken;
+        if (isThisIdentifier(node->name)) {
+            node->transformFlags = TransformFlags::ContainsTypeScript;
+        }
+        else {
+            node->transformFlags |=
+                propagateChildFlags(node->dotDotDotToken) |
+                propagateChildFlags(node->questionToken);
+            if (questionToken) node->transformFlags |= TransformFlags::ContainsTypeScript;
+            if (!!(modifiersToFlags(node->modifiers) & ModifierFlags::ParameterPropertyModifier)) node->transformFlags |= TransformFlags::ContainsTypeScriptClassSyntax;
+            if (!!initializer || !!dotDotDotToken) node->transformFlags |= TransformFlags::ContainsES2015;
+        }
+        return node;
+    }
+
 
 }
