@@ -564,7 +564,7 @@ namespace data
     NODE_REF(BindableAccessExpression)
     NODE_REF(CallLikeExpression)
     
-    NODE_REF(TemplateLiteral)
+    CLASS_REF(TemplateLiteral, TemplateLiteralLikeNode)
 
     NODE_REF(JsxChild)
     NODE_REF(JsxOpeningLikeElement)

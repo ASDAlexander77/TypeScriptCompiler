@@ -32,6 +32,10 @@ namespace ts
             return createNodeArray(array);
         }
 
+        inline auto asExpression(Expression value) -> Expression {
+            return value;
+        }
+
         auto propagateIdentifierNameFlags(Identifier node) -> TransformFlags
         {
             // An IdentifierName is allowed to be `await`
@@ -436,6 +440,33 @@ namespace ts
         auto createMethodSignature(ModifiersArray modifiers, PropertyName name, QuestionToken questionToken, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, TypeNode type) -> MethodSignature;
         // auto updateMethodSignature(MethodSignature node, ModifiersArray modifiers, PropertyName name, QuestionToken questionToken, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, TypeNode type) -> MethodSignature;
         // auto createMethodDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, AsteriskToken asteriskToken, string name, QuestionToken questionToken, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, TypeNode type, Block body) -> MethodDeclaration;
+
+        template <typename T>
+        auto  createBaseFunctionLikeDeclaration(
+            SyntaxKind kind,
+            DecoratorsArray decorators, 
+            ModifiersArray modifiers,
+            PropertyName name,
+            NodeArray<TypeParameterDeclaration> typeParameters,
+            NodeArray<ParameterDeclaration> parameters,
+            TypeNode type,
+            Block body
+        ) {
+            auto node = createBaseSignatureDeclaration<T>(
+                kind,
+                decorators,
+                modifiers,
+                name,
+                typeParameters,
+                parameters,
+                type
+            );
+            node->body = body;
+            node->transformFlags |= propagateChildFlags(node->body) & ~TransformFlags::ContainsPossibleTopLevelAwait;
+            if (!body) node->transformFlags |= TransformFlags::ContainsTypeScript;
+            return node;
+        }
+
         auto createMethodDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, AsteriskToken asteriskToken, PropertyName name, QuestionToken questionToken, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, TypeNode type, Block body) -> MethodDeclaration;
         // auto updateMethodDeclaration(MethodDeclaration node, DecoratorsArray decorators, ModifiersArray modifiers, AsteriskToken asteriskToken, PropertyName name, QuestionToken questionToken, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, TypeNode type, Block body) -> MethodDeclaration;
         auto createConstructorDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, NodeArray<ParameterDeclaration> parameters, Block body) -> ConstructorDeclaration;
@@ -527,6 +558,13 @@ namespace ts
         // //
         // // Expression
         // //
+
+        template <typename T>
+        auto createBaseExpression(SyntaxKind kind) {
+            auto node = createBaseNode<T>(kind);
+            // the following properties are commonly set by the checker/binder
+            return node;
+        }
 
         auto createArrayLiteralExpression(NodeArray<Expression> elements = undefined, boolean multiLine = false) -> ArrayLiteralExpression;
         // auto updateArrayLiteralExpression(ArrayLiteralExpression node, NodeArray<Expression> elements) -> ArrayLiteralExpression;

@@ -1455,6 +1455,23 @@ namespace ts
         return hasSyntacticModifier(node, ModifierFlags::Static);
     }
 
+    inline static auto isSuperProperty(Node node) -> boolean {
+        auto kind = node->kind;
+        if (kind == SyntaxKind::PropertyAccessExpression) return node.as<PropertyAccessExpression>()->expression->kind == SyntaxKind::SuperKeyword;        
+        if (kind == SyntaxKind::ElementAccessExpression) return node.as<ElementAccessExpression>()->expression->kind == SyntaxKind::SuperKeyword;        
+        return false;
+    }
+
+    inline static auto hasInvalidEscape(TemplateLiteral _template) -> boolean {
+        return _template && !!(isNoSubstitutionTemplateLiteral(_template)
+            ? !!_template->templateFlags
+            : (!!_template.as<TemplateLiteralTypeNode>()->head->templateFlags || some(_template.as<TemplateLiteralTypeNode>()->templateSpans, 
+                [](TemplateSpan span) 
+                { 
+                    return !!span->literal.as<TemplateMiddle>()->templateFlags; 
+                })));
+    }
+
     inline static auto regex_exec(string &text, regex regEx) -> boolean
     {
         auto words_begin = sregex_iterator(text.begin(), text.end(), regEx);

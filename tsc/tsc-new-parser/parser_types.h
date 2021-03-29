@@ -1138,26 +1138,14 @@ namespace data
 
     struct TemplateHead : TemplateLiteralLikeNode
     {
-        // kind: SyntaxKind::TemplateHead;
-        PTR(Node) /**TemplateExpression | TemplateLiteralTypeNode*/ parent;
-        /* @internal */
-        TokenFlags templateFlags;
     };
 
     struct TemplateMiddle : TemplateLiteralLikeNode
     {
-        // kind: SyntaxKind::TemplateMiddle;
-        PTR(Node) /**TemplateSpan | TemplateLiteralTypeSpan*/ parent;
-        /* @internal */
-        TokenFlags templateFlags;
     };
 
     struct TemplateTail : TemplateLiteralLikeNode
     {
-        // kind: SyntaxKind::TemplateTail;
-        PTR(Node) /**TemplateSpan | TemplateLiteralTypeSpan*/ parent;
-        /* @internal */
-        TokenFlags templateFlags;
     };
 
     struct TemplateExpression : PrimaryExpression

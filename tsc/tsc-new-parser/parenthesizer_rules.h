@@ -23,6 +23,18 @@ namespace ts
         auto parenthesizeExpressionForDisallowedComma(Expression expression) -> Expression;
 
         auto parenthesizeLeftSideOfAccess(Expression expression) -> LeftHandSideExpression;
+
+        auto parenthesizeTypeArguments(NodeArray<TypeNode> typeArguments) -> NodeArray<TypeNode>;
+
+        auto parenthesizeElementTypeOfArrayType(TypeNode ember) -> TypeNode;
+
+        auto parenthesizeConstituentTypesOfUnionOrIntersectionType(NodeArray<TypeNode> members) -> NodeArray<TypeNode>;
+
+        auto parenthesizeMemberOfConditionalType(TypeNode member) -> TypeNode;
+
+        auto parenthesizeMemberOfElementType(TypeNode member) -> TypeNode;
+
+        auto parenthesizeExpressionOfNew(Expression expression) -> LeftHandSideExpression;
     };
 }
 

@@ -319,7 +319,7 @@ namespace ts
         if (questionToken) {
             node->transformFlags |= TransformFlags::ContainsTypeScript;
         }
-        if (modifiersToFlags(node->modifiers) & ModifierFlags::Async) {
+        if (!!(modifiersToFlags(node->modifiers) & ModifierFlags::Async)) {
             if (asteriskToken) {
                 node->transformFlags |= TransformFlags::ContainsES2018;
             }
@@ -506,11 +506,11 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createTypeReferenceNode(EntityName typeName, NodeArray<TypeNode> typeArguments = undefined) -> TypeReferenceNode 
+    auto NodeFactory::createTypeReferenceNode(EntityName typeName, NodeArray<TypeNode> typeArguments) -> TypeReferenceNode 
     {
         auto node = createBaseNode<TypeReferenceNode>(SyntaxKind::TypeReference);
         node->typeName = asName(typeName);
-        node->typeArguments = typeArguments && parenthesizerRules.parenthesizeTypeArguments(createNodeArray(typeArguments));
+        node->typeArguments = typeArguments ? parenthesizerRules.parenthesizeTypeArguments(createNodeArray(typeArguments)) : undefined;
         node->transformFlags = TransformFlags::ContainsTypeScript;
         return node;
     }
@@ -593,18 +593,12 @@ namespace ts
     }
 
     // @api
-    
-
-    // @api
     auto NodeFactory::createOptionalTypeNode(TypeNode type) -> OptionalTypeNode {
         auto node = createBaseNode<OptionalTypeNode>(SyntaxKind::OptionalType);
         node->type = parenthesizerRules.parenthesizeElementTypeOfArrayType(type);
         node->transformFlags = TransformFlags::ContainsTypeScript;
         return node;
     }
-
-    // @api
-    
 
     // @api
     auto NodeFactory::createRestTypeNode(TypeNode type) -> RestTypeNode {
@@ -616,18 +610,15 @@ namespace ts
 
     // @api
     auto NodeFactory::createUnionTypeNode(NodeArray<TypeNode> types) -> UnionTypeNode {
-        auto node = createBaseNode<UnionTypeNode>(kind);
+        auto node = createBaseNode<UnionTypeNode>(SyntaxKind::UnionType);
         node->types = parenthesizerRules.parenthesizeConstituentTypesOfUnionOrIntersectionType(types);
         node->transformFlags = TransformFlags::ContainsTypeScript;
         return node;
     }
 
     // @api
-    
-
-    // @api
     auto NodeFactory::createIntersectionTypeNode(NodeArray<TypeNode> types) -> IntersectionTypeNode {
-        auto node = createBaseNode<IntersectionTypeNode>(kind);
+        auto node = createBaseNode<IntersectionTypeNode>(SyntaxKind::IntersectionType);
         node->types = parenthesizerRules.parenthesizeConstituentTypesOfUnionOrIntersectionType(types);
         node->transformFlags = TransformFlags::ContainsTypeScript;
         return node;
@@ -659,9 +650,6 @@ namespace ts
     }
 
     // @api
-    
-
-    // @api
     auto NodeFactory::createTemplateLiteralType(TemplateHead head, NodeArray<TemplateLiteralTypeSpan> templateSpans) -> TemplateLiteralTypeNode {
         auto node = createBaseNode<TemplateLiteralTypeNode>(SyntaxKind::TemplateLiteralType);
         node->head = head;
@@ -671,24 +659,18 @@ namespace ts
     }
 
     // @api
-    
-
-    // @api
-    auto NodeFactory::createImportTypeNode(argument: TypeNode, qualifier?: EntityName, typeArguments?: TypeNode[], isTypeOf = false) {
+    auto NodeFactory::createImportTypeNode(TypeNode argument, EntityName qualifier, NodeArray<TypeNode> typeArguments, boolean isTypeOf) -> ImportTypeNode {
         auto node = createBaseNode<ImportTypeNode>(SyntaxKind::ImportType);
         node->argument = argument;
         node->qualifier = qualifier;
-        node->typeArguments = typeArguments && parenthesizerRules.parenthesizeTypeArguments(typeArguments);
+        node->typeArguments = typeArguments ? parenthesizerRules.parenthesizeTypeArguments(typeArguments) : undefined;
         node->isTypeOf = isTypeOf;
         node->transformFlags = TransformFlags::ContainsTypeScript;
         return node;
     }
 
     // @api
-    
-
-    // @api
-    auto NodeFactory::createParenthesizedType(TypeNode type) {
+    auto NodeFactory::createParenthesizedType(TypeNode type) -> ParenthesizedTypeNode {
         auto node = createBaseNode<ParenthesizedTypeNode>(SyntaxKind::ParenthesizedType);
         node->type = type;
         node->transformFlags = TransformFlags::ContainsTypeScript;
@@ -696,19 +678,16 @@ namespace ts
     }
 
     // @api
-    
-
-    // @api
-    auto NodeFactory::createThisTypeNode() {
+    auto NodeFactory::createThisTypeNode() -> ThisTypeNode {
         auto node = createBaseNode<ThisTypeNode>(SyntaxKind::ThisType);
         node->transformFlags = TransformFlags::ContainsTypeScript;
         return node;
     }
 
     // @api
-    auto NodeFactory::createTypeOperatorNode(operator: SyntaxKind::KeyOfKeyword | SyntaxKind::UniqueKeyword | SyntaxKind::ReadonlyKeyword, TypeNode type) -> TypeOperatorNode {
+    auto NodeFactory::createTypeOperatorNode(SyntaxKind _operator, TypeNode type) -> TypeOperatorNode {
         auto node = createBaseNode<TypeOperatorNode>(SyntaxKind::TypeOperator);
-        node->operator = operator;
+        node->_operator = _operator;
         node->type = parenthesizerRules.parenthesizeMemberOfElementType(type);
         node->transformFlags = TransformFlags::ContainsTypeScript;
         return node;
@@ -718,7 +697,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createIndexedAccessTypeNode(objectType: TypeNode, indexType: TypeNode) {
+    auto NodeFactory::createIndexedAccessTypeNode(TypeNode objectType, TypeNode indexType) -> IndexedAccessTypeNode {
         auto node = createBaseNode<IndexedAccessTypeNode>(SyntaxKind::IndexedAccessType);
         node->objectType = parenthesizerRules.parenthesizeMemberOfElementType(objectType);
         node->indexType = indexType;
@@ -730,7 +709,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createMappedTypeNode(readonlyToken: ReadonlyKeyword | PlusToken | MinusToken, TypeParameterDeclaration typeParameter, nameType: TypeNode, QuestionToken questionToken | PlusToken | MinusToken, TypeNode type) -> MappedTypeNode {
+    auto NodeFactory::createMappedTypeNode(Node readonlyToken, TypeParameterDeclaration typeParameter, TypeNode nameType, Node questionToken, TypeNode type) -> MappedTypeNode {
         auto node = createBaseNode<MappedTypeNode>(SyntaxKind::MappedType);
         node->readonlyToken = readonlyToken;
         node->typeParameter = typeParameter;
@@ -745,7 +724,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createLiteralTypeNode(literal: LiteralTypeNode["literal"]) {
+    auto NodeFactory::createLiteralTypeNode(LiteralTypeNode literal) -> LiteralTypeNode {
         auto node = createBaseNode<LiteralTypeNode>(SyntaxKind::LiteralType);
         node->literal = literal;
         node->transformFlags = TransformFlags::ContainsTypeScript;
@@ -760,14 +739,14 @@ namespace ts
     //
 
     // @api
-    auto NodeFactory::createObjectBindingPattern(elements: BindingElement[]) {
+    auto NodeFactory::createObjectBindingPattern(NodeArray<BindingElement> elements) -> ObjectBindingPattern {
         auto node = createBaseNode<ObjectBindingPattern>(SyntaxKind::ObjectBindingPattern);
         node->elements = createNodeArray(elements);
         node->transformFlags |=
             propagateChildrenFlags(node->elements) |
             TransformFlags::ContainsES2015 |
             TransformFlags::ContainsBindingPattern;
-        if (node->transformFlags & TransformFlags::ContainsRestOrSpread) {
+        if (!!(node->transformFlags & TransformFlags::ContainsRestOrSpread)) {
             node->transformFlags |=
                 TransformFlags::ContainsES2018 |
                 TransformFlags::ContainsObjectRestOrSpread;
@@ -779,7 +758,8 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createArrayBindingPattern(elements: ArrayBindingElement[]) {
+    auto NodeFactory::createArrayBindingPattern(NodeArray<ArrayBindingElement> elements) -> ArrayBindingPattern
+    {
         auto node = createBaseNode<ArrayBindingPattern>(SyntaxKind::ArrayBindingPattern);
         node->elements = createNodeArray(elements);
         node->transformFlags |=
@@ -793,7 +773,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createBindingElement(dotDotDotToken: DotDotDotToken, propertyName: string | PropertyName, name: string | BindingName, initializer?: Expression) {
+    auto NodeFactory::createBindingElement(DotDotDotToken dotDotDotToken, PropertyName propertyName, BindingName name, Expression initializer) -> BindingElement {
         auto node = createBaseBindingLikeDeclaration<BindingElement>(
             SyntaxKind::BindingElement,
             /*decorators*/ undefined,
@@ -822,14 +802,8 @@ namespace ts
     // Expression
     //
 
-    auto NodeFactory::createBaseExpression<T extends Expression>(kind: T["kind"]) {
-        auto node = createBaseNode(kind);
-        // the following properties are commonly set by the checker/binder
-        return node;
-    }
-
     // @api
-    auto NodeFactory::createArrayLiteralExpression(elements?: Expression[], multiLine?: boolean) {
+    auto NodeFactory::createArrayLiteralExpression(NodeArray<Expression> elements, boolean multiLine) -> ArrayLiteralExpression {
         auto node = createBaseExpression<ArrayLiteralExpression>(SyntaxKind::ArrayLiteralExpression);
         node->elements = parenthesizerRules.parenthesizeExpressionsOfCommaDelimitedList(createNodeArray(elements));
         node->multiLine = multiLine;
@@ -841,7 +815,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createObjectLiteralExpression(properties?: ObjectLiteralElementLike[], multiLine?: boolean) {
+    auto NodeFactory::createObjectLiteralExpression(NodeArray<ObjectLiteralElementLike> properties, boolean multiLine) -> ObjectLiteralExpression {
         auto node = createBaseExpression<ObjectLiteralExpression>(SyntaxKind::ObjectLiteralExpression);
         node->properties = createNodeArray(properties);
         node->multiLine = multiLine;
@@ -853,7 +827,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createPropertyAccessExpression(Expression expression, name: string | Identifier | PrivateIdentifier) {
+    auto NodeFactory::createPropertyAccessExpression(Expression expression, MemberName name) -> PropertyAccessExpression {
         auto node = createBaseExpression<PropertyAccessExpression>(SyntaxKind::PropertyAccessExpression);
         node->expression = parenthesizerRules.parenthesizeLeftSideOfAccess(expression);
         node->name = asName(name);
@@ -873,17 +847,9 @@ namespace ts
     }
 
     // @api
-    
-        return node->expression !== expression
-            || node->name !== name
-            ? update(createPropertyAccessExpression(expression, name), node)
-            : node;
-    }
-
-    // @api
-    auto NodeFactory::createPropertyAccessChain(Expression expression, questionDotToken: QuestionDotToken, name: string | Identifier | PrivateIdentifier) {
+    auto NodeFactory::createPropertyAccessChain(Expression expression, QuestionDotToken questionDotToken, MemberName name) -> PropertyAccessChain {
         auto node = createBaseExpression<PropertyAccessChain>(SyntaxKind::PropertyAccessExpression);
-        node->flags |= NodeFlags.OptionalChain;
+        node->flags |= NodeFlags::OptionalChain;
         node->expression = parenthesizerRules.parenthesizeLeftSideOfAccess(expression);
         node->questionDotToken = questionDotToken;
         node->name = asName(name);
@@ -901,7 +867,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createElementAccessExpression(Expression expression, index: number | Expression) {
+    auto NodeFactory::createElementAccessExpression(Expression expression, Expression index) -> ElementAccessExpression {
         auto node = createBaseExpression<ElementAccessExpression>(SyntaxKind::ElementAccessExpression);
         node->expression = parenthesizerRules.parenthesizeLeftSideOfAccess(expression);
         node->argumentExpression = asExpression(index);
@@ -919,17 +885,9 @@ namespace ts
     }
 
     // @api
-    
-        return node->expression !== expression
-            || node->argumentExpression !== argumentExpression
-            ? update(createElementAccessExpression(expression, argumentExpression), node)
-            : node;
-    }
-
-    // @api
-    auto NodeFactory::createElementAccessChain(Expression expression, questionDotToken: QuestionDotToken, index: number | Expression) {
+    auto NodeFactory::createElementAccessChain(Expression expression, QuestionDotToken questionDotToken, Expression index) -> ElementAccessChain {
         auto node = createBaseExpression<ElementAccessChain>(SyntaxKind::ElementAccessExpression);
-        node->flags |= NodeFlags.OptionalChain;
+        node->flags |= NodeFlags::OptionalChain;
         node->expression = parenthesizerRules.parenthesizeLeftSideOfAccess(expression);
         node->questionDotToken = questionDotToken;
         node->argumentExpression = asExpression(index);
@@ -945,7 +903,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createCallExpression(Expression expression, typeArguments: TypeNode[], argumentsArray: Expression[]) {
+    auto NodeFactory::createCallExpression(Expression expression, NodeArray<TypeNode> typeArguments, NodeArray<Expression> argumentsArray) -> CallExpression {
         auto node = createBaseExpression<CallExpression>(SyntaxKind::CallExpression);
         node->expression = parenthesizerRules.parenthesizeLeftSideOfAccess(expression);
         node->typeArguments = asNodeArray(typeArguments);
@@ -970,9 +928,10 @@ namespace ts
 
 
     // @api
-    auto NodeFactory::createCallChain(Expression expression, questionDotToken: QuestionDotToken, typeArguments: TypeNode[], argumentsArray: Expression[]) {
+    auto NodeFactory::createCallChain(Expression expression, QuestionDotToken questionDotToken, NodeArray<TypeNode> typeArguments, NodeArray<Expression> argumentsArray) -> CallChain
+    {
         auto node = createBaseExpression<CallChain>(SyntaxKind::CallExpression);
-        node->flags |= NodeFlags.OptionalChain;
+        node->flags |= NodeFlags::OptionalChain;
         node->expression = parenthesizerRules.parenthesizeLeftSideOfAccess(expression);
         node->questionDotToken = questionDotToken;
         node->typeArguments = asNodeArray(typeArguments);
@@ -996,7 +955,8 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createNewExpression(Expression expression, typeArguments: TypeNode[], argumentsArray: Expression[]) {
+    auto NodeFactory::createNewExpression(Expression expression, NodeArray<TypeNode> typeArguments, NodeArray<Expression> argumentsArray) -> NewExpression
+    {
         auto node = createBaseExpression<NewExpression>(SyntaxKind::NewExpression);
         node->expression = parenthesizerRules.parenthesizeExpressionOfNew(expression);
         node->typeArguments = asNodeArray(typeArguments);
@@ -1016,20 +976,20 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createTaggedTemplateExpression(tag: Expression, typeArguments: TypeNode[], template: TemplateLiteral) {
+    auto NodeFactory::createTaggedTemplateExpression(Expression tag, NodeArray<TypeNode> typeArguments, TemplateLiteral _template) -> TaggedTemplateExpression {
         auto node = createBaseExpression<TaggedTemplateExpression>(SyntaxKind::TaggedTemplateExpression);
         node->tag = parenthesizerRules.parenthesizeLeftSideOfAccess(tag);
         node->typeArguments = asNodeArray(typeArguments);
-        node->template = template;
+        node->_template = _template;
         node->transformFlags |=
             propagateChildFlags(node->tag) |
             propagateChildrenFlags(node->typeArguments) |
-            propagateChildFlags(node->template) |
+            propagateChildFlags(node->_template) |
             TransformFlags::ContainsES2015;
         if (node->typeArguments) {
             node->transformFlags |= TransformFlags::ContainsTypeScript;
         }
-        if (hasInvalidEscape(node->template)) {
+        if (hasInvalidEscape(node->_template)) {
             node->transformFlags |= TransformFlags::ContainsES2018;
         }
         return node;
@@ -1471,7 +1431,7 @@ namespace ts
     // @api
     auto NodeFactory::createNonNullChain(Expression expression) {
         auto node = createBaseExpression<NonNullChain>(SyntaxKind::NonNullExpression);
-        node->flags |= NodeFlags.OptionalChain;
+        node->flags |= NodeFlags::OptionalChain;
         node->expression = parenthesizerRules.parenthesizeLeftSideOfAccess(expression);
         node->transformFlags |=
             propagateChildFlags(node->expression) |
@@ -1812,14 +1772,14 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createVariableDeclarationList(declarations: VariableDeclaration[], flags = NodeFlags.None) {
+    auto NodeFactory::createVariableDeclarationList(declarations: VariableDeclaration[], flags = NodeFlags::None) {
         auto node = createBaseNode<VariableDeclarationList>(SyntaxKind::VariableDeclarationList);
-        node->flags |= flags & NodeFlags.BlockScoped;
+        node->flags |= flags & NodeFlags::BlockScoped;
         node->declarations = createNodeArray(declarations);
         node->transformFlags |=
             propagateChildrenFlags(node->declarations) |
             TransformFlags::ContainsHoistedDeclarationOrCompletion;
-        if (flags & NodeFlags.BlockScoped) {
+        if (flags & NodeFlags::BlockScoped) {
             node->transformFlags |=
                 TransformFlags::ContainsES2015 |
                 TransformFlags::ContainsBlockScopedBinding;
@@ -1988,14 +1948,14 @@ namespace ts
         ModifiersArray modifiers,
         name: ModuleName,
         body: ModuleBody,
-        flags = NodeFlags.None
+        flags = NodeFlags::None
     ) {
         auto node = createBaseDeclaration<ModuleDeclaration>(
             SyntaxKind::ModuleDeclaration,
             decorators,
             modifiers
         );
-        node->flags |= flags & (NodeFlags.Namespace | NodeFlags.NestedNamespace | NodeFlags.GlobalAugmentation);
+        node->flags |= flags & (NodeFlags::Namespace | NodeFlags::NestedNamespace | NodeFlags::GlobalAugmentation);
         node->name = name;
         node->body = body;
         if (modifiersToFlags(node->modifiers) & ModifierFlags::Ambient) {
