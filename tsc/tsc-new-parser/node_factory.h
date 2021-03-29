@@ -13,7 +13,6 @@ namespace ts
     {
         Scanner *scanner;
         ParenthesizerRules parenthesizerRules;
-
         NodeFactoryFlags nodeFactoryFlags;
         NodeCreateCallbackFunc createNodeCallback;
 

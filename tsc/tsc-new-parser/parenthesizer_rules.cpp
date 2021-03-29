@@ -1,8 +1,10 @@
+#include "parenthesizer_rules.h"
+
 namespace ts 
 {
     auto ParenthesizerRules::parenthesizeExpressionOfComputedPropertyName(Expression expression) -> Expression
     {
-        return isCommaSequence(expression) ? createParenthesizedExpression(expression) : expression;
+        return isCommaSequence(expression) ? factory->createParenthesizedExpression(expression) : expression;
     }
 
     auto ParenthesizerRules::parenthesizeExpressionsOfCommaDelimitedList(NodeArray<Expression> elements) -> NodeArray<Expression> {
@@ -27,7 +29,7 @@ namespace ts
         //
         auto emittedExpression = skipPartiallyEmittedExpressions(expression);
         if (isLeftHandSideExpression(emittedExpression)
-            && (emittedExpression->kind != SyntaxKind::NewExpression || emittedExpression.as<NewExpression>().arguments)) {
+            && (emittedExpression->kind != SyntaxKind::NewExpression || emittedExpression.as<NewExpression>()->arguments)) {
             // TODO(rbuckton) -> Verify whether this assertion holds.
             return expression.as<LeftHandSideExpression>();
         }
@@ -146,7 +148,7 @@ namespace ts
         */
     auto ParenthesizerRules::parenthesizeExpressionOfExportDefault(Expression expression) -> Expression {
         auto check = skipPartiallyEmittedExpressions(expression);
-        let needsParens = isCommaSequence(check);
+        auto needsParens = isCommaSequence(check);
         if (!needsParens) {
             switch (getLeftmostExpression(check, /*stopAtCallExpression*/ false)->kind) {
                 case SyntaxKind::ClassExpression:
@@ -245,44 +247,6 @@ namespace ts
         }
 
         return expression;
-    }
-
-    auto ParenthesizerRules::parenthesizeConciseBodyOfArrowFunction(body: ConciseBody) -> ConciseBody {
-        if (!isBlock(body) && (isCommaSequence(body) || getLeftmostExpression(body, /*stopAtCallExpressions*/ false)->kind == SyntaxKind::ObjectLiteralExpression)) {
-            // TODO(rbuckton) -> Verifiy whether `setTextRange` is needed.
-            return setTextRange(factory->createParenthesizedExpression(body), body);
-        }
-
-        return body;
-    }
-
-    auto ParenthesizerRules::parenthesizeMemberOfConditionalType(TypeNode member) -> TypeNode {
-        return member->kind == SyntaxKind::ConditionalType ? factory->createParenthesizedType(member) : member;
-    }
-
-    auto ParenthesizerRules::parenthesizeMemberOfElementType(TypeNode member) -> TypeNode {
-        switch (member->kind) {
-            case SyntaxKind::UnionType:
-            case SyntaxKind::IntersectionType:
-            case SyntaxKind::FunctionType:
-            case SyntaxKind::ConstructorType:
-                return factory->createParenthesizedType(member);
-        }
-        return parenthesizeMemberOfConditionalType(member);
-    }
-
-    auto ParenthesizerRules::parenthesizeElementTypeOfArrayType(TypeNode member) -> TypeNode {
-        switch (member->kind) {
-            case SyntaxKind::TypeQuery:
-            case SyntaxKind::TypeOperator:
-            case SyntaxKind::InferType:
-                return factory->createParenthesizedType(member);
-        }
-        return parenthesizeMemberOfElementType(member);
-    }
-
-    auto ParenthesizerRules::parenthesizeConstituentTypesOfUnionOrIntersectionType(NodeArray<TypeNode> members) -> NodeArray<TypeNode> {
-        return factory->createNodeArray(sameMap(members, parenthesizeMemberOfElementType));
     }
 
     auto ParenthesizerRules::parenthesizeOrdinalTypeArgument(TypeNode node, number i) {

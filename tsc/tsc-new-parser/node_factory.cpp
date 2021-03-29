@@ -1367,7 +1367,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createTemplateExpression(head: TemplateHead, templateSpans: TemplateSpan[]) {
+    auto NodeFactory::createTemplateExpression(TemplateHead head, NodeArray<TemplateSpan> templateSpans) -> TemplateExpression {
         auto node = createBaseExpression<TemplateExpression>(SyntaxKind::TemplateExpression);
         node->head = head;
         node->templateSpans = createNodeArray(templateSpans);

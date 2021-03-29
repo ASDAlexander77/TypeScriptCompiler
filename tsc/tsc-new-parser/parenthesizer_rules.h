@@ -4,6 +4,7 @@
 
 #include "enums.h"
 #include "scanner.h"
+#include "node_factory.h"
 #include "utilities.h"
 
 namespace ts 
