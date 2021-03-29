@@ -1472,6 +1472,140 @@ namespace ts
                 })));
     }
 
+    inline static auto isAssignmentPattern(Node node) -> AssignmentPattern {
+        auto kind = node->kind;
+        return kind == SyntaxKind::ArrayLiteralExpression
+            || kind == SyntaxKind::ObjectLiteralExpression;
+    }
+
+    inline static auto isDeclarationBindingElement(Node bindingElement) -> boolean {
+        switch (bindingElement->kind) {
+            case SyntaxKind::VariableDeclaration:
+            case SyntaxKind::Parameter:
+            case SyntaxKind::BindingElement:
+                return true;
+        }
+
+        return false;
+    }
+
+    inline static auto isObjectLiteralElementLike(Node node) -> boolean {
+        auto kind = node->kind;
+        return kind == SyntaxKind::PropertyAssignment
+            || kind == SyntaxKind::ShorthandPropertyAssignment
+            || kind == SyntaxKind::SpreadAssignment
+            || kind == SyntaxKind::MethodDeclaration
+            || kind == SyntaxKind::GetAccessor
+            || kind == SyntaxKind::SetAccessor;
+    }
+
+    inline static auto getElementsOfBindingOrAssignmentPattern(Node name) -> NodeArray<BindingElement> {
+        switch (name->kind) {
+            case SyntaxKind::ObjectBindingPattern:
+                // `a` in `{a}`
+                // `a` in `[a]`
+                return name.as<ObjectBindingPattern>()->elements;
+            case SyntaxKind::ArrayBindingPattern:
+                // `a` in `{a}`
+                // `a` in `[a]`
+                return NodeArray<BindingElement>(name.as<ArrayBindingPattern>()->elements);
+            case SyntaxKind::ArrayLiteralExpression:
+                // `a` in `{a}`
+                // `a` in `[a]`
+                return NodeArray<BindingElement>(name.as<ArrayLiteralExpression>()->elements);
+
+            case SyntaxKind::ObjectLiteralExpression:
+                // `a` in `{a}`
+                return NodeArray<BindingElement>(name.as<ObjectLiteralExpression>()->properties);
+        }
+    }
+
+    inline static auto isAssignmentExpression(Node node, boolean excludeCompoundAssignment = false) -> boolean {
+        return isBinaryExpression(node)
+            && (excludeCompoundAssignment
+                ? node.as<BinaryExpression>()->operatorToken->kind == SyntaxKind::EqualsToken
+                : isAssignmentOperator(node.as<BinaryExpression>()->operatorToken->kind))
+            && isLeftHandSideExpression(node.as<BinaryExpression>()->left);
+    }
+
+    inline static auto isLogicalOrCoalescingAssignmentOperator(SyntaxKind token) -> boolean {
+        return token == SyntaxKind::BarBarEqualsToken
+            || token == SyntaxKind::AmpersandAmpersandEqualsToken
+            || token == SyntaxKind::QuestionQuestionEqualsToken;
+    }
+
+    inline static auto getTargetOfBindingOrAssignmentElement(Node bindingElement) -> Node {
+        if (isDeclarationBindingElement(bindingElement)) {
+            // `a` in `let { a } = ...`
+            // `a` in `let { a = 1 } = ...`
+            // `b` in `let { a: b } = ...`
+            // `b` in `let { a: b = 1 } = ...`
+            // `a` in `let { ...a } = ...`
+            // `{b}` in `let { a: {b} } = ...`
+            // `{b}` in `let { a: {b} = 1 } = ...`
+            // `[b]` in `let { a: [b] } = ...`
+            // `[b]` in `let { a: [b] = 1 } = ...`
+            // `a` in `let [a] = ...`
+            // `a` in `let [a = 1] = ...`
+            // `a` in `let [...a] = ...`
+            // `{a}` in `let [{a}] = ...`
+            // `{a}` in `let [{a} = 1] = ...`
+            // `[a]` in `let [[a]] = ...`
+            // `[a]` in `let [[a] = 1] = ...`
+            return bindingElement.as<NamedDeclaration>()->name;
+        }
+
+        if (isObjectLiteralElementLike(bindingElement)) {
+            switch (bindingElement->kind) {
+                case SyntaxKind::PropertyAssignment:
+                    // `b` in `({ a: b } = ...)`
+                    // `b` in `({ a: b = 1 } = ...)`
+                    // `{b}` in `({ a: {b} } = ...)`
+                    // `{b}` in `({ a: {b} = 1 } = ...)`
+                    // `[b]` in `({ a: [b] } = ...)`
+                    // `[b]` in `({ a: [b] = 1 } = ...)`
+                    // `b.c` in `({ a: b.c } = ...)`
+                    // `b.c` in `({ a: b.c = 1 } = ...)`
+                    // `b[0]` in `({ a: b[0] } = ...)`
+                    // `b[0]` in `({ a: b[0] = 1 } = ...)`
+                    return getTargetOfBindingOrAssignmentElement(bindingElement.as<PropertyAssignment>()->initializer);
+
+                case SyntaxKind::ShorthandPropertyAssignment:
+                    // `a` in `({ a } = ...)`
+                    // `a` in `({ a = 1 } = ...)`
+                    return bindingElement.as<ShorthandPropertyAssignment>()->name;
+
+                case SyntaxKind::SpreadAssignment:
+                    // `a` in `({ ...a } = ...)`
+                    return getTargetOfBindingOrAssignmentElement(bindingElement.as<SpreadAssignment>()->expression);
+            }
+
+            // no target
+            return undefined;
+        }
+
+        if (isAssignmentExpression(bindingElement, /*excludeCompoundAssignment*/ true)) {
+            // `a` in `[a = 1] = ...`
+            // `{a}` in `[{a} = 1] = ...`
+            // `[a]` in `[[a] = 1] = ...`
+            // `a.b` in `[a.b = 1] = ...`
+            // `a[0]` in `[a[0] = 1] = ...`
+            return getTargetOfBindingOrAssignmentElement(bindingElement.as<BinaryExpression>()->left);
+        }
+
+        if (isSpreadElement(bindingElement)) {
+            // `a` in `[...a] = ...`
+            return getTargetOfBindingOrAssignmentElement(bindingElement.as<SpreadElement>()->expression);
+        }
+
+        // `a` in `[a] = ...`
+        // `{a}` in `[{a}] = ...`
+        // `[a]` in `[[a]] = ...`
+        // `a.b` in `[a.b] = ...`
+        // `a[0]` in `[a[0]] = ...`
+        return bindingElement;
+    }
+
     inline static auto regex_exec(string &text, regex regEx) -> boolean
     {
         auto words_begin = sregex_iterator(text.begin(), text.end(), regEx);

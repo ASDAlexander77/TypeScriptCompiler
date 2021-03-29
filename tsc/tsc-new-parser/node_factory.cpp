@@ -2,6 +2,120 @@
 
 namespace ts
 {
+    auto NodeFactory::propagateIdentifierNameFlags(Identifier node) -> TransformFlags
+    {
+        // An IdentifierName is allowed to be `await`
+        return propagateChildFlags(node) & ~TransformFlags::ContainsPossibleTopLevelAwait;
+    }
+
+    auto NodeFactory::propagatePropertyNameFlagsOfChild(PropertyName node, TransformFlags transformFlags) -> TransformFlags
+    {
+        return transformFlags | (node->transformFlags & TransformFlags::PropertyNamePropagatingFlags);
+    }    
+
+    auto NodeFactory::propagateChildFlags(Node child) -> TransformFlags
+    {
+        if (!child)
+            return TransformFlags::None;
+        auto childFlags = child->transformFlags & ~getTransformFlagsSubtreeExclusions(child->kind);
+        return isNamedDeclaration(child) && isPropertyName(child.as<NamedDeclaration>()->name) ? propagatePropertyNameFlagsOfChild(child.as<NamedDeclaration>()->name, childFlags) : childFlags;
+    }
+
+    auto NodeFactory::propagateAssignmentPatternFlags(AssignmentPattern node) -> TransformFlags {
+        if (!!(node->transformFlags & TransformFlags::ContainsObjectRestOrSpread)) return TransformFlags::ContainsObjectRestOrSpread;
+        if (!!(node->transformFlags & TransformFlags::ContainsES2018)) {
+            // check for nested spread assignments, otherwise '{ x: { a, ...b } = foo } = c'
+            // will not be correctly interpreted by the ES2018 transformer
+            for (auto element : getElementsOfBindingOrAssignmentPattern(node)) {
+                auto target = getTargetOfBindingOrAssignmentElement(element);
+                if (!!(target && isAssignmentPattern(target))) {
+                    if (!!(target->transformFlags & TransformFlags::ContainsObjectRestOrSpread)) {
+                        return TransformFlags::ContainsObjectRestOrSpread;
+                    }
+                    if (!!(target->transformFlags & TransformFlags::ContainsES2018)) {
+                        auto flags = propagateAssignmentPatternFlags(target);
+                        if (!!flags) return flags;
+                    }
+                }
+            }
+        }
+        return TransformFlags::None;
+    }
+
+    auto NodeFactory::getTransformFlagsSubtreeExclusions(SyntaxKind kind) -> TransformFlags
+    {
+        if (kind >= SyntaxKind::FirstTypeNode && kind <= SyntaxKind::LastTypeNode)
+        {
+            return TransformFlags::TypeExcludes;
+        }
+
+        switch (kind)
+        {
+        case SyntaxKind::CallExpression:
+        case SyntaxKind::NewExpression:
+        case SyntaxKind::ArrayLiteralExpression:
+            return TransformFlags::ArrayLiteralOrCallOrNewExcludes;
+        case SyntaxKind::ModuleDeclaration:
+            return TransformFlags::ModuleExcludes;
+        case SyntaxKind::Parameter:
+            return TransformFlags::ParameterExcludes;
+        case SyntaxKind::ArrowFunction:
+            return TransformFlags::ArrowFunctionExcludes;
+        case SyntaxKind::FunctionExpression:
+        case SyntaxKind::FunctionDeclaration:
+            return TransformFlags::FunctionExcludes;
+        case SyntaxKind::VariableDeclarationList:
+            return TransformFlags::VariableDeclarationListExcludes;
+        case SyntaxKind::ClassDeclaration:
+        case SyntaxKind::ClassExpression:
+            return TransformFlags::ClassExcludes;
+        case SyntaxKind::Constructor:
+            return TransformFlags::ConstructorExcludes;
+        case SyntaxKind::PropertyDeclaration:
+            return TransformFlags::PropertyExcludes;
+        case SyntaxKind::MethodDeclaration:
+        case SyntaxKind::GetAccessor:
+        case SyntaxKind::SetAccessor:
+            return TransformFlags::MethodOrAccessorExcludes;
+        case SyntaxKind::AnyKeyword:
+        case SyntaxKind::NumberKeyword:
+        case SyntaxKind::BigIntKeyword:
+        case SyntaxKind::NeverKeyword:
+        case SyntaxKind::StringKeyword:
+        case SyntaxKind::ObjectKeyword:
+        case SyntaxKind::BooleanKeyword:
+        case SyntaxKind::SymbolKeyword:
+        case SyntaxKind::VoidKeyword:
+        case SyntaxKind::TypeParameter:
+        case SyntaxKind::PropertySignature:
+        case SyntaxKind::MethodSignature:
+        case SyntaxKind::CallSignature:
+        case SyntaxKind::ConstructSignature:
+        case SyntaxKind::IndexSignature:
+        case SyntaxKind::InterfaceDeclaration:
+        case SyntaxKind::TypeAliasDeclaration:
+            return TransformFlags::TypeExcludes;
+        case SyntaxKind::ObjectLiteralExpression:
+            return TransformFlags::ObjectLiteralExcludes;
+        case SyntaxKind::CatchClause:
+            return TransformFlags::CatchClauseExcludes;
+        case SyntaxKind::ObjectBindingPattern:
+        case SyntaxKind::ArrayBindingPattern:
+            return TransformFlags::BindingPatternExcludes;
+        case SyntaxKind::TypeAssertionExpression:
+        case SyntaxKind::AsExpression:
+        case SyntaxKind::PartiallyEmittedExpression:
+        case SyntaxKind::ParenthesizedExpression:
+        case SyntaxKind::SuperKeyword:
+            return TransformFlags::OuterExpressionExcludes;
+        case SyntaxKind::PropertyAccessExpression:
+        case SyntaxKind::ElementAccessExpression:
+            return TransformFlags::PropertyAccessExcludes;
+        default:
+            return TransformFlags::NodeExcludes;
+        }
+    }
+
     auto NodeFactory::createNumericLiteral(string value, TokenFlags numericLiteralFlags) -> NumericLiteral
     {
         auto node = createBaseLiteral<NumericLiteral>(SyntaxKind::NumericLiteral, value);
@@ -999,7 +1113,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createTypeAssertion(TypeNode type, Expression expression) {
+    auto NodeFactory::createTypeAssertion(TypeNode type, Expression expression) -> TypeAssertion {
         auto node = createBaseExpression<TypeAssertion>(SyntaxKind::TypeAssertionExpression);
         node->expression = parenthesizerRules.parenthesizeOperandOfPrefixUnary(expression);
         node->type = type;
@@ -1014,7 +1128,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createParenthesizedExpression(Expression expression) {
+    auto NodeFactory::createParenthesizedExpression(Expression expression) -> ParenthesizedExpression {
         auto node = createBaseExpression<ParenthesizedExpression>(SyntaxKind::ParenthesizedExpression);
         node->expression = expression;
         node->transformFlags = propagateChildFlags(node->expression);
@@ -1028,12 +1142,12 @@ namespace ts
     auto NodeFactory::createFunctionExpression(
         ModifiersArray modifiers,
         AsteriskToken asteriskToken,
-        name: string | Identifier,
+        Identifier name,
         NodeArray<TypeParameterDeclaration> typeParameters,
         NodeArray<ParameterDeclaration> parameters,
         TypeNode type,
         Block body
-    ) {
+    ) -> FunctionExpression {
         auto node = createBaseFunctionLikeDeclaration<FunctionExpression>(
             SyntaxKind::FunctionExpression,
             /*decorators*/ undefined,
@@ -1049,7 +1163,7 @@ namespace ts
         if (node->typeParameters) {
             node->transformFlags |= TransformFlags::ContainsTypeScript;
         }
-        if (modifiersToFlags(node->modifiers) & ModifierFlags::Async) {
+        if (!!(modifiersToFlags(node->modifiers) & ModifierFlags::Async)) {
             if (node->asteriskToken) {
                 node->transformFlags |= TransformFlags::ContainsES2018;
             }
@@ -1072,9 +1186,9 @@ namespace ts
         NodeArray<TypeParameterDeclaration> typeParameters,
         NodeArray<ParameterDeclaration> parameters,
         TypeNode type,
-        equalsGreaterThanToken: EqualsGreaterThanToken,
-        body: ConciseBody
-    ) {
+        EqualsGreaterThanToken equalsGreaterThanToken,
+        ConciseBody body
+    ) -> ArrowFunction {
         auto node = createBaseFunctionLikeDeclaration<ArrowFunction>(
             SyntaxKind::ArrowFunction,
             /*decorators*/ undefined,
@@ -1085,11 +1199,11 @@ namespace ts
             type,
             parenthesizerRules.parenthesizeConciseBodyOfArrowFunction(body)
         );
-        node->equalsGreaterThanToken = equalsGreaterThanToken ?? createToken(SyntaxKind::EqualsGreaterThanToken);
+        node->equalsGreaterThanToken = equalsGreaterThanToken ? equalsGreaterThanToken : createToken(SyntaxKind::EqualsGreaterThanToken);
         node->transformFlags |=
             propagateChildFlags(node->equalsGreaterThanToken) |
             TransformFlags::ContainsES2015;
-        if (modifiersToFlags(node->modifiers) & ModifierFlags::Async) {
+        if (!!(modifiersToFlags(node->modifiers) & ModifierFlags::Async)) {
             node->transformFlags |= TransformFlags::ContainsES2017;
         }
         return node;
@@ -1099,7 +1213,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createDeleteExpression(Expression expression) {
+    auto NodeFactory::createDeleteExpression(Expression expression) -> DeleteExpression {
         auto node = createBaseExpression<DeleteExpression>(SyntaxKind::DeleteExpression);
         node->expression = parenthesizerRules.parenthesizeOperandOfPrefixUnary(expression);
         node->transformFlags |= propagateChildFlags(node->expression);
@@ -1110,7 +1224,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createTypeOfExpression(Expression expression) {
+    auto NodeFactory::createTypeOfExpression(Expression expression) -> TypeOfExpression {
         auto node = createBaseExpression<TypeOfExpression>(SyntaxKind::TypeOfExpression);
         node->expression = parenthesizerRules.parenthesizeOperandOfPrefixUnary(expression);
         node->transformFlags |= propagateChildFlags(node->expression);
@@ -1121,7 +1235,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createVoidExpression(Expression expression) {
+    auto NodeFactory::createVoidExpression(Expression expression) -> VoidExpression {
         auto node = createBaseExpression<VoidExpression>(SyntaxKind::VoidExpression);
         node->expression = parenthesizerRules.parenthesizeOperandOfPrefixUnary(expression);
         node->transformFlags |= propagateChildFlags(node->expression);
@@ -1132,7 +1246,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createAwaitExpression(Expression expression) {
+    auto NodeFactory::createAwaitExpression(Expression expression) -> AwaitExpression {
         auto node = createBaseExpression<AwaitExpression>(SyntaxKind::AwaitExpression);
         node->expression = parenthesizerRules.parenthesizeOperandOfPrefixUnary(expression);
         node->transformFlags |=
@@ -1147,9 +1261,9 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createPrefixUnaryExpression(operator: PrefixUnaryOperator, operand: Expression) {
+    auto NodeFactory::createPrefixUnaryExpression(PrefixUnaryOperator _operator, Expression operand) -> PrefixUnaryExpression {
         auto node = createBaseExpression<PrefixUnaryExpression>(SyntaxKind::PrefixUnaryExpression);
-        node->operator = operator;
+        node->_operator = _operator;
         node->operand = parenthesizerRules.parenthesizeOperandOfPrefixUnary(operand);
         node->transformFlags |= propagateChildFlags(node->operand);
         return node;
@@ -1159,22 +1273,21 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createPostfixUnaryExpression(operand: Expression, operator: PostfixUnaryOperator) {
+    auto NodeFactory::createPostfixUnaryExpression(Expression operand, PostfixUnaryOperator _operator) -> PostfixUnaryExpression {
         auto node = createBaseExpression<PostfixUnaryExpression>(SyntaxKind::PostfixUnaryExpression);
-        node->operator = operator;
+        node->_operator = _operator;
         node->operand = parenthesizerRules.parenthesizeOperandOfPostfixUnary(operand);
         node->transformFlags = propagateChildFlags(node->operand);
         return node;
     }
 
     // @api
-    
 
     // @api
-    auto NodeFactory::createBinaryExpression(left: Expression, operator: BinaryOperator | BinaryOperatorToken, right: Expression) {
+    auto NodeFactory::createBinaryExpression(Expression left, Node _operator, Expression right) -> BinaryExpression {
         auto node = createBaseExpression<BinaryExpression>(SyntaxKind::BinaryExpression);
-        const operatorToken = asToken(operator);
-        const operatorKind = operatorToken.kind;
+        auto operatorToken = asToken(_operator);
+        auto operatorKind = operatorToken->kind;
         node->left = parenthesizerRules.parenthesizeLeftSideOfBinary(operatorKind, left);
         node->operatorToken = operatorToken;
         node->right = parenthesizerRules.parenthesizeRightSideOfBinary(operatorKind, node->left, right);
@@ -1182,10 +1295,10 @@ namespace ts
             propagateChildFlags(node->left) |
             propagateChildFlags(node->operatorToken) |
             propagateChildFlags(node->right);
-        if (operatorKind === SyntaxKind::QuestionQuestionToken) {
+        if (operatorKind == SyntaxKind::QuestionQuestionToken) {
             node->transformFlags |= TransformFlags::ContainsES2020;
         }
-        else if (operatorKind === SyntaxKind::EqualsToken) {
+        else if (operatorKind == SyntaxKind::EqualsToken) {
             if (isObjectLiteralExpression(node->left)) {
                 node->transformFlags |=
                     TransformFlags::ContainsES2015 |
@@ -1200,7 +1313,7 @@ namespace ts
                     propagateAssignmentPatternFlags(node->left);
             }
         }
-        else if (operatorKind === SyntaxKind::AsteriskAsteriskToken || operatorKind === SyntaxKind::AsteriskAsteriskEqualsToken) {
+        else if (operatorKind == SyntaxKind::AsteriskAsteriskToken || operatorKind == SyntaxKind::AsteriskAsteriskEqualsToken) {
             node->transformFlags |= TransformFlags::ContainsES2016;
         }
         else if (isLogicalOrCoalescingAssignmentOperator(operatorKind)) {
@@ -1209,20 +1322,20 @@ namespace ts
         return node;
     }
 
-    auto propagateAssignmentPatternFlags(node: AssignmentPattern) -> TransformFlags {
-        if (node->transformFlags & TransformFlags::ContainsObjectRestOrSpread) return TransformFlags::ContainsObjectRestOrSpread;
-        if (node->transformFlags & TransformFlags::ContainsES2018) {
+    auto propagateAssignmentPatternFlags(AssignmentPattern node) -> TransformFlags {
+        if (!!(node->transformFlags & TransformFlags::ContainsObjectRestOrSpread)) return TransformFlags::ContainsObjectRestOrSpread;
+        if (!!(node->transformFlags & TransformFlags::ContainsES2018)) {
             // check for nested spread assignments, otherwise '{ x: { a, ...b } = foo } = c'
             // will not be correctly interpreted by the ES2018 transformer
-            for (const element of getElementsOfBindingOrAssignmentPattern(node)) {
-                const target = getTargetOfBindingOrAssignmentElement(element);
+            for (auto element : getElementsOfBindingOrAssignmentPattern(node)) {
+                auto target = getTargetOfBindingOrAssignmentElement(element);
                 if (target && isAssignmentPattern(target)) {
-                    if (target.transformFlags & TransformFlags::ContainsObjectRestOrSpread) {
+                    if (!!(target->transformFlags & TransformFlags::ContainsObjectRestOrSpread)) {
                         return TransformFlags::ContainsObjectRestOrSpread;
                     }
-                    if (target.transformFlags & TransformFlags::ContainsES2018) {
-                        const flags = propagateAssignmentPatternFlags(target);
-                        if (flags) return flags;
+                    if (!!(target->transformFlags & TransformFlags::ContainsES2018)) {
+                        auto flags = propagateAssignmentPatternFlags(target);
+                        if (!!flags) return flags;
                     }
                 }
             }
@@ -1234,12 +1347,12 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createConditionalExpression(condition: Expression, QuestionToken questionToken, whenTrue: Expression, colonToken: ColonToken, whenFalse: Expression) {
+    auto NodeFactory::createConditionalExpression(Expression condition, QuestionToken questionToken, Expression whenTrue, ColonToken colonToken, Expression whenFalse) -> ConditionalExpression {
         auto node = createBaseExpression<ConditionalExpression>(SyntaxKind::ConditionalExpression);
         node->condition = parenthesizerRules.parenthesizeConditionOfConditionalExpression(condition);
-        node->questionToken = questionToken ?? createToken(SyntaxKind::QuestionToken);
+        node->questionToken = questionToken ? questionToken : createToken(SyntaxKind::QuestionToken);
         node->whenTrue = parenthesizerRules.parenthesizeBranchOfConditionalExpression(whenTrue);
-        node->colonToken = colonToken ?? createToken(SyntaxKind::ColonToken);
+        node->colonToken = colonToken ? colonToken : createToken(SyntaxKind::ColonToken);
         node->whenFalse = parenthesizerRules.parenthesizeBranchOfConditionalExpression(whenFalse);
         node->transformFlags |=
             propagateChildFlags(node->condition) |
@@ -1275,18 +1388,18 @@ namespace ts
         let cooked: string | object = undefined;
         if (rawText !== undefined && rawText !== text) {
             cooked = getCookedText(kind, rawText);
-            if (typeof cooked === "object") {
+            if (typeof cooked == "object") {
                 return Debug.fail("Invalid raw text");
             }
         }
-        if (text === undefined) {
-            if (cooked === undefined) {
+        if (text == undefined) {
+            if (cooked == undefined) {
                 return Debug.fail("Arguments 'text' and 'rawText' may not both be undefined.");
             }
             text = cooked;
         }
         else if (cooked !== undefined) {
-            Debug.assert(text === cooked, "Expected argument 'text' to be the normalized (i.e. 'cooked') version of argument 'rawText'.");
+            Debug.assert(text == cooked, "Expected argument 'text' to be the normalized (i.e. 'cooked') version of argument 'rawText'.");
         }
         return createTemplateLiteralLikeNode(kind, text, rawText, templateFlags);
     }
@@ -2310,8 +2423,8 @@ namespace ts
     
 
     auto getDefaultTagName(node: JSDocTag) {
-        const defaultTagName = getDefaultTagNameForKind(node->kind);
-        return node->tagName.escapedText === escapeLeadingUnderscores(defaultTagName)
+        auto defaultTagName = getDefaultTagNameForKind(node->kind);
+        return node->tagName.escapedText == escapeLeadingUnderscores(defaultTagName)
             ? node->tagName
             : createIdentifier(defaultTagName);
     }

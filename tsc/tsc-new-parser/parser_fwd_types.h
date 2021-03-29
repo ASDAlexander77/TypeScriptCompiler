@@ -606,6 +606,7 @@ namespace data
     NODE_REF(JsonObjectExpression)
 
     NODE_REF(FunctionOrConstructorTypeNode)
+    NODE_REF(AssignmentPattern)
 
 } // namespace data
 
@@ -1015,6 +1016,7 @@ POINTER(BooleanLiteral)
 POINTER(JsonObjectExpressionStatement)
 POINTER(JsonObjectExpression)
 POINTER(FunctionOrConstructorTypeNode)
+POINTER(AssignmentPattern)
 
 POINTER_T(Push)
 POINTER_T(VisitResult)

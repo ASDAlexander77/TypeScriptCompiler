@@ -35,6 +35,26 @@ namespace ts
         auto parenthesizeMemberOfElementType(TypeNode member) -> TypeNode;
 
         auto parenthesizeExpressionOfNew(Expression expression) -> LeftHandSideExpression;
+
+        auto parenthesizeOperandOfPrefixUnary(Expression operand) -> UnaryExpression;
+
+        auto parenthesizeConciseBodyOfArrowFunction(ConciseBody body) -> ConciseBody;
+
+        auto parenthesizeOperandOfPostfixUnary(Expression operand) -> LeftHandSideExpression;
+
+        auto parenthesizeLeftSideOfBinary(SyntaxKind binaryOperator, Expression leftSide) -> Expression;
+
+        auto parenthesizeRightSideOfBinary(SyntaxKind binaryOperator, Expression leftSide, Expression rightSide) -> Expression;
+
+        auto parenthesizeConditionOfConditionalExpression(Expression condition) -> Expression;
+
+        auto parenthesizeBranchOfConditionalExpression(Expression branch) -> Expression;
+
+        auto parenthesizeExpressionOfExportDefault(Expression expression) -> Expression;
+
+        auto parenthesizeExpressionOfExpressionStatement(Expression expression) -> Expression;
+
+        auto parenthesizeOrdinalTypeArgument(TypeNode node, number i);
     };
 }
 

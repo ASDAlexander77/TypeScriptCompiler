@@ -36,98 +36,19 @@ namespace ts
             return value;
         }
 
-        auto propagateIdentifierNameFlags(Identifier node) -> TransformFlags
-        {
-            // An IdentifierName is allowed to be `await`
-            return propagateChildFlags(node) & ~TransformFlags::ContainsPossibleTopLevelAwait;
+        inline auto asToken(Node value) -> Node {
+            return createToken(value);
         }
 
-        auto getTransformFlagsSubtreeExclusions(SyntaxKind kind) -> TransformFlags
-        {
-            if (kind >= SyntaxKind::FirstTypeNode && kind <= SyntaxKind::LastTypeNode)
-            {
-                return TransformFlags::TypeExcludes;
-            }
+        auto propagateIdentifierNameFlags(Identifier node) -> TransformFlags;
 
-            switch (kind)
-            {
-            case SyntaxKind::CallExpression:
-            case SyntaxKind::NewExpression:
-            case SyntaxKind::ArrayLiteralExpression:
-                return TransformFlags::ArrayLiteralOrCallOrNewExcludes;
-            case SyntaxKind::ModuleDeclaration:
-                return TransformFlags::ModuleExcludes;
-            case SyntaxKind::Parameter:
-                return TransformFlags::ParameterExcludes;
-            case SyntaxKind::ArrowFunction:
-                return TransformFlags::ArrowFunctionExcludes;
-            case SyntaxKind::FunctionExpression:
-            case SyntaxKind::FunctionDeclaration:
-                return TransformFlags::FunctionExcludes;
-            case SyntaxKind::VariableDeclarationList:
-                return TransformFlags::VariableDeclarationListExcludes;
-            case SyntaxKind::ClassDeclaration:
-            case SyntaxKind::ClassExpression:
-                return TransformFlags::ClassExcludes;
-            case SyntaxKind::Constructor:
-                return TransformFlags::ConstructorExcludes;
-            case SyntaxKind::PropertyDeclaration:
-                return TransformFlags::PropertyExcludes;
-            case SyntaxKind::MethodDeclaration:
-            case SyntaxKind::GetAccessor:
-            case SyntaxKind::SetAccessor:
-                return TransformFlags::MethodOrAccessorExcludes;
-            case SyntaxKind::AnyKeyword:
-            case SyntaxKind::NumberKeyword:
-            case SyntaxKind::BigIntKeyword:
-            case SyntaxKind::NeverKeyword:
-            case SyntaxKind::StringKeyword:
-            case SyntaxKind::ObjectKeyword:
-            case SyntaxKind::BooleanKeyword:
-            case SyntaxKind::SymbolKeyword:
-            case SyntaxKind::VoidKeyword:
-            case SyntaxKind::TypeParameter:
-            case SyntaxKind::PropertySignature:
-            case SyntaxKind::MethodSignature:
-            case SyntaxKind::CallSignature:
-            case SyntaxKind::ConstructSignature:
-            case SyntaxKind::IndexSignature:
-            case SyntaxKind::InterfaceDeclaration:
-            case SyntaxKind::TypeAliasDeclaration:
-                return TransformFlags::TypeExcludes;
-            case SyntaxKind::ObjectLiteralExpression:
-                return TransformFlags::ObjectLiteralExcludes;
-            case SyntaxKind::CatchClause:
-                return TransformFlags::CatchClauseExcludes;
-            case SyntaxKind::ObjectBindingPattern:
-            case SyntaxKind::ArrayBindingPattern:
-                return TransformFlags::BindingPatternExcludes;
-            case SyntaxKind::TypeAssertionExpression:
-            case SyntaxKind::AsExpression:
-            case SyntaxKind::PartiallyEmittedExpression:
-            case SyntaxKind::ParenthesizedExpression:
-            case SyntaxKind::SuperKeyword:
-                return TransformFlags::OuterExpressionExcludes;
-            case SyntaxKind::PropertyAccessExpression:
-            case SyntaxKind::ElementAccessExpression:
-                return TransformFlags::PropertyAccessExcludes;
-            default:
-                return TransformFlags::NodeExcludes;
-            }
-        }
+        auto propagateAssignmentPatternFlags(Node node) -> TransformFlags;
 
-        auto propagatePropertyNameFlagsOfChild(PropertyName node, TransformFlags transformFlags) -> TransformFlags
-        {
-            return transformFlags | (node->transformFlags & TransformFlags::PropertyNamePropagatingFlags);
-        }
+        auto getTransformFlagsSubtreeExclusions(SyntaxKind kind) -> TransformFlags;
 
-        auto propagateChildFlags(Node child) -> TransformFlags
-        {
-            if (!child)
-                return TransformFlags::None;
-            auto childFlags = child->transformFlags & ~getTransformFlagsSubtreeExclusions(child->kind);
-            return isNamedDeclaration(child) && isPropertyName(child.as<NamedDeclaration>()->name) ? propagatePropertyNameFlagsOfChild(child.as<NamedDeclaration>()->name, childFlags) : childFlags;
-        }
+        auto propagatePropertyNameFlagsOfChild(PropertyName node, TransformFlags transformFlags) -> TransformFlags;
+
+        auto propagateChildFlags(Node child) -> TransformFlags;
 
         template <typename T>
         auto aggregateChildrenFlags(NodeArray<T> children) -> void
@@ -178,6 +99,189 @@ namespace ts
             aggregateChildrenFlags(elements);
             Debug::attachNodeArrayDebugInfo(elements);
             return elements;
+        }
+
+
+        template <typename T>
+        auto createBaseDeclaration(
+            SyntaxKind kind,
+            DecoratorsArray decorators,
+            ModifiersArray modifiers)
+        {
+            auto node = createBaseNode<T>(kind);
+            node->decorators = asNodeArray(decorators);
+            node->modifiers = asNodeArray(modifiers);
+            node->transformFlags |=
+                propagateChildrenFlags(node->decorators) |
+                propagateChildrenFlags(node->modifiers);
+            // NOTE: The following properties are commonly set by the binder and are added here to
+            // ensure declarations have a stable shape.
+            node->symbol = undefined;        // initialized by binder
+            node->localSymbol = undefined;   // initialized by binder
+            node->locals.clear();            // initialized by binder
+            node->nextContainer = undefined; // initialized by binder
+            return node;
+        }
+
+        template <typename T>
+        auto createBaseNamedDeclaration(
+            SyntaxKind kind,
+            DecoratorsArray decorators,
+            ModifiersArray modifiers,
+            Identifier name) -> T
+        {
+            auto node = createBaseDeclaration<T>(
+                kind,
+                decorators,
+                modifiers);
+            name = asName(name);
+            node->name = name;
+
+            // The PropertyName of a member is allowed to be `await`.
+            // We don't need to exclude `await` for type signatures since types
+            // don't propagate child flags.
+            if (name)
+            {
+                switch (node->kind)
+                {
+                case SyntaxKind::MethodDeclaration:
+                case SyntaxKind::GetAccessor:
+                case SyntaxKind::SetAccessor:
+                case SyntaxKind::PropertyDeclaration:
+                case SyntaxKind::PropertyAssignment:
+                    if (isIdentifier(name))
+                    {
+                        node->transformFlags |= propagateIdentifierNameFlags(name);
+                        break;
+                    }
+                    // fall through
+                default:
+                    node->transformFlags |= propagateChildFlags(name);
+                    break;
+                }
+            }
+            return node;
+        }
+        
+        template <typename T>
+        auto createBaseBindingLikeDeclaration(
+            SyntaxKind kind,
+            DecoratorsArray decorators,
+            ModifiersArray modifiers,
+            BindingName name,
+            Expression initializer
+        ) -> T {
+            auto node = createBaseNamedDeclaration<T>(
+                kind,
+                decorators,
+                modifiers,
+                name
+            );
+            node->initializer = initializer;
+            node->transformFlags |= propagateChildFlags(node->initializer);
+            return node;
+        }
+
+        template <typename T>
+        auto createBaseVariableLikeDeclaration(
+            SyntaxKind kind,
+            DecoratorsArray decorators,
+            ModifiersArray modifiers,
+            BindingName name,
+            TypeNode type,
+            Expression initializer
+        ) -> T {
+            auto node = createBaseBindingLikeDeclaration<T>(
+                kind,
+                decorators,
+                modifiers,
+                name,
+                initializer
+            );
+            node->type = type;
+            node->transformFlags |= propagateChildFlags(type);
+            if (type) node->transformFlags |= TransformFlags::ContainsTypeScript;
+            return node;
+        }
+
+        
+        template <typename T>
+        auto createBaseGenericNamedDeclaration(
+            SyntaxKind kind,
+            DecoratorsArray decorators, 
+            ModifiersArray modifiers,
+            PropertyName name,
+            NodeArray<TypeParameterDeclaration> typeParameters
+        ) {
+            auto node = createBaseNamedDeclaration<T>(
+                kind,
+                decorators,
+                modifiers,
+                name
+            );
+            node->typeParameters = asNodeArray(typeParameters);
+            node->transformFlags |= propagateChildrenFlags(node->typeParameters);
+            if (!typeParameters.empty()) node->transformFlags |= TransformFlags::ContainsTypeScript;
+            return node;
+        }
+
+        template <typename T>
+        auto createBaseSignatureDeclaration(
+            SyntaxKind kind,
+            DecoratorsArray decorators, 
+            ModifiersArray modifiers,
+            PropertyName name,
+            NodeArray<TypeParameterDeclaration> typeParameters, 
+            NodeArray<ParameterDeclaration> parameters,
+            TypeNode type
+        ) {
+            auto node = createBaseGenericNamedDeclaration<T>(
+                kind,
+                decorators,
+                modifiers,
+                name,
+                typeParameters
+            );
+            node->parameters = createNodeArray(parameters);
+            node->type = type;
+            node->transformFlags |=
+                propagateChildrenFlags(node->parameters) |
+                propagateChildFlags(node->type);
+            if (type) node->transformFlags |= TransformFlags::ContainsTypeScript;
+            return node;
+        }
+
+        template <typename T>
+        auto  createBaseFunctionLikeDeclaration(
+            SyntaxKind kind,
+            DecoratorsArray decorators, 
+            ModifiersArray modifiers,
+            PropertyName name,
+            NodeArray<TypeParameterDeclaration> typeParameters,
+            NodeArray<ParameterDeclaration> parameters,
+            TypeNode type,
+            Block body
+        ) {
+            auto node = createBaseSignatureDeclaration<T>(
+                kind,
+                decorators,
+                modifiers,
+                name,
+                typeParameters,
+                parameters,
+                type
+            );
+            node->body = body;
+            node->transformFlags |= propagateChildFlags(node->body) & ~TransformFlags::ContainsPossibleTopLevelAwait;
+            if (!body) node->transformFlags |= TransformFlags::ContainsTypeScript;
+            return node;
+        }
+
+        template <typename T>
+        auto createBaseExpression(SyntaxKind kind) {
+            auto node = createBaseNode<T>(kind);
+            // the following properties are commonly set by the checker/binder
+            return node;
         }
 
         //
@@ -265,111 +369,9 @@ namespace ts
         // // Signature elements
         // //
 
-        template <typename T>
-        auto createBaseDeclaration(
-            SyntaxKind kind,
-            DecoratorsArray decorators,
-            ModifiersArray modifiers)
-        {
-            auto node = createBaseNode<T>(kind);
-            node->decorators = asNodeArray(decorators);
-            node->modifiers = asNodeArray(modifiers);
-            node->transformFlags |=
-                propagateChildrenFlags(node->decorators) |
-                propagateChildrenFlags(node->modifiers);
-            // NOTE: The following properties are commonly set by the binder and are added here to
-            // ensure declarations have a stable shape.
-            node->symbol = undefined;        // initialized by binder
-            node->localSymbol = undefined;   // initialized by binder
-            node->locals.clear();            // initialized by binder
-            node->nextContainer = undefined; // initialized by binder
-            return node;
-        }
-
-        template <typename T>
-        auto createBaseNamedDeclaration(
-            SyntaxKind kind,
-            DecoratorsArray decorators,
-            ModifiersArray modifiers,
-            Identifier name) -> T
-        {
-            auto node = createBaseDeclaration<T>(
-                kind,
-                decorators,
-                modifiers);
-            name = asName(name);
-            node->name = name;
-
-            // The PropertyName of a member is allowed to be `await`.
-            // We don't need to exclude `await` for type signatures since types
-            // don't propagate child flags.
-            if (name)
-            {
-                switch (node->kind)
-                {
-                case SyntaxKind::MethodDeclaration:
-                case SyntaxKind::GetAccessor:
-                case SyntaxKind::SetAccessor:
-                case SyntaxKind::PropertyDeclaration:
-                case SyntaxKind::PropertyAssignment:
-                    if (isIdentifier(name))
-                    {
-                        node->transformFlags |= propagateIdentifierNameFlags(name);
-                        break;
-                    }
-                    // fall through
-                default:
-                    node->transformFlags |= propagateChildFlags(name);
-                    break;
-                }
-            }
-            return node;
-        }
-
         // auto createTypeParameterDeclaration(string name, TypeNode constraint = undefined, TypeNode defaultType = undefined) -> TypeParameterDeclaration;
         auto createTypeParameterDeclaration(Identifier name, TypeNode constraint = undefined, TypeNode defaultType = undefined) -> TypeParameterDeclaration;
         // auto updateTypeParameterDeclaration(TypeParameterDeclaration node, Identifier name, TypeNode constraint, TypeNode defaultType) -> TypeParameterDeclaration;
-        
-        template <typename T>
-        auto createBaseBindingLikeDeclaration(
-            SyntaxKind kind,
-            DecoratorsArray decorators,
-            ModifiersArray modifiers,
-            BindingName name,
-            Expression initializer
-        ) -> T {
-            auto node = createBaseNamedDeclaration<T>(
-                kind,
-                decorators,
-                modifiers,
-                name
-            );
-            node->initializer = initializer;
-            node->transformFlags |= propagateChildFlags(node->initializer);
-            return node;
-        }
-
-        template <typename T>
-        auto createBaseVariableLikeDeclaration(
-            SyntaxKind kind,
-            DecoratorsArray decorators,
-            ModifiersArray modifiers,
-            BindingName name,
-            TypeNode type,
-            Expression initializer
-        ) -> T {
-            auto node = createBaseBindingLikeDeclaration<T>(
-                kind,
-                decorators,
-                modifiers,
-                name,
-                initializer
-            );
-            node->type = type;
-            node->transformFlags |= propagateChildFlags(type);
-            if (type) node->transformFlags |= TransformFlags::ContainsTypeScript;
-            return node;
-        }
 
         // auto createParameterDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, DotDotDotToken dotDotDotToken, string name, QuestionToken questionToken = undefined, TypeNode type = undefined, Expression initializer = undefined) -> ParameterDeclaration;      
         auto createParameterDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, DotDotDotToken dotDotDotToken, BindingName name, QuestionToken questionToken = undefined, TypeNode type = undefined, Expression initializer = undefined) -> ParameterDeclaration;
@@ -389,83 +391,11 @@ namespace ts
         auto createPropertyDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, PropertyName name, Node questionOrExclamationToken, TypeNode type, Expression initializer) -> PropertyDeclaration;
         // auto updatePropertyDeclaration(PropertyDeclaration node, DecoratorsArray decorators, ModifiersArray modifiers, string name, Node questionOrExclamationToken, TypeNode type, Expression initializer) -> PropertyDeclaration;
         // auto updatePropertyDeclaration(PropertyDeclaration node, DecoratorsArray decorators, ModifiersArray modifiers, PropertyName name, Node questionOrExclamationToken, TypeNode type, Expression initializer) -> PropertyDeclaration;
-        
-        template <typename T>
-        auto createBaseGenericNamedDeclaration(
-            SyntaxKind kind,
-            DecoratorsArray decorators, 
-            ModifiersArray modifiers,
-            PropertyName name,
-            NodeArray<TypeParameterDeclaration> typeParameters
-        ) {
-            auto node = createBaseNamedDeclaration<T>(
-                kind,
-                decorators,
-                modifiers,
-                name
-            );
-            node->typeParameters = asNodeArray(typeParameters);
-            node->transformFlags |= propagateChildrenFlags(node->typeParameters);
-            if (!typeParameters.empty()) node->transformFlags |= TransformFlags::ContainsTypeScript;
-            return node;
-        }
-
-        template <typename T>
-        auto createBaseSignatureDeclaration(
-            SyntaxKind kind,
-            DecoratorsArray decorators, 
-            ModifiersArray modifiers,
-            PropertyName name,
-            NodeArray<TypeParameterDeclaration> typeParameters, 
-            NodeArray<ParameterDeclaration> parameters,
-            TypeNode type
-        ) {
-            auto node = createBaseGenericNamedDeclaration<T>(
-                kind,
-                decorators,
-                modifiers,
-                name,
-                typeParameters
-            );
-            node->parameters = createNodeArray(parameters);
-            node->type = type;
-            node->transformFlags |=
-                propagateChildrenFlags(node->parameters) |
-                propagateChildFlags(node->type);
-            if (type) node->transformFlags |= TransformFlags::ContainsTypeScript;
-            return node;
-        }
 
         // auto createMethodSignature(ModifiersArray modifiers, string name, QuestionToken questionToken, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, TypeNode type) -> MethodSignature;
         auto createMethodSignature(ModifiersArray modifiers, PropertyName name, QuestionToken questionToken, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, TypeNode type) -> MethodSignature;
         // auto updateMethodSignature(MethodSignature node, ModifiersArray modifiers, PropertyName name, QuestionToken questionToken, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, TypeNode type) -> MethodSignature;
         // auto createMethodDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, AsteriskToken asteriskToken, string name, QuestionToken questionToken, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, TypeNode type, Block body) -> MethodDeclaration;
-
-        template <typename T>
-        auto  createBaseFunctionLikeDeclaration(
-            SyntaxKind kind,
-            DecoratorsArray decorators, 
-            ModifiersArray modifiers,
-            PropertyName name,
-            NodeArray<TypeParameterDeclaration> typeParameters,
-            NodeArray<ParameterDeclaration> parameters,
-            TypeNode type,
-            Block body
-        ) {
-            auto node = createBaseSignatureDeclaration<T>(
-                kind,
-                decorators,
-                modifiers,
-                name,
-                typeParameters,
-                parameters,
-                type
-            );
-            node->body = body;
-            node->transformFlags |= propagateChildFlags(node->body) & ~TransformFlags::ContainsPossibleTopLevelAwait;
-            if (!body) node->transformFlags |= TransformFlags::ContainsTypeScript;
-            return node;
-        }
 
         auto createMethodDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, AsteriskToken asteriskToken, PropertyName name, QuestionToken questionToken, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, TypeNode type, Block body) -> MethodDeclaration;
         // auto updateMethodDeclaration(MethodDeclaration node, DecoratorsArray decorators, ModifiersArray modifiers, AsteriskToken asteriskToken, PropertyName name, QuestionToken questionToken, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, TypeNode type, Block body) -> MethodDeclaration;
@@ -558,13 +488,6 @@ namespace ts
         // //
         // // Expression
         // //
-
-        template <typename T>
-        auto createBaseExpression(SyntaxKind kind) {
-            auto node = createBaseNode<T>(kind);
-            // the following properties are commonly set by the checker/binder
-            return node;
-        }
 
         auto createArrayLiteralExpression(NodeArray<Expression> elements = undefined, boolean multiLine = false) -> ArrayLiteralExpression;
         // auto updateArrayLiteralExpression(ArrayLiteralExpression node, NodeArray<Expression> elements) -> ArrayLiteralExpression;
