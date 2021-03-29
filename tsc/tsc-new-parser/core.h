@@ -104,6 +104,38 @@ auto some(T array, std::function<boolean(decltype(array[0]))> predicate = nullpt
     return false;
 }
 
+/** Works like Array.prototype.find, returning `undefined` if no element satisfying the predicate is found. */
+template <typename T>
+auto find(std::vector<T> array, std::function<boolean(T)> predicate) -> T {
+    for (auto value : array) {
+        if (predicate(value)) {
+            return value;
+        }
+    }
+    return undefined;
+}
+
+template <typename T>
+auto find(std::vector<T> array, std::function<boolean(T, number)> predicate) -> T {
+    for (auto i = 0; i < array.size(); i++) {
+        auto value = array[i];
+        if (predicate(value, i)) {
+            return value;
+        }
+    }
+    return undefined;
+}
+
+template <typename T>
+auto find(T array, std::function<boolean(decltype(array[0]))> predicate) -> decltype(array[0]) {
+    for (auto value : array) {
+        if (predicate(value)) {
+            return value;
+        }
+    }
+    return undefined;
+}
+
 template <typename T>
 auto toOffset(T array, number offset) -> number
 {

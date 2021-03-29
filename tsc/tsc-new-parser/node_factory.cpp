@@ -232,10 +232,10 @@ namespace ts
         DecoratorsArray decorators,
         ModifiersArray modifiers,
         PropertyName name,
-        QuestionToken questionOrExclamationToken,
+        Node questionOrExclamationToken,
         TypeNode type,
         Expression initializer
-    ) {
+    ) -> PropertyDeclaration {
         auto node = createBaseVariableLikeDeclaration<PropertyDeclaration>(
             SyntaxKind::PropertyDeclaration,
             decorators,
@@ -270,7 +270,7 @@ namespace ts
         NodeArray<TypeParameterDeclaration> typeParameters,
         NodeArray<ParameterDeclaration> parameters,
         TypeNode type
-    ) {
+    ) -> MethodSignature {
         auto node = createBaseSignatureDeclaration<MethodSignature>(
             SyntaxKind::MethodSignature,
             /*decorators*/ undefined,
@@ -299,7 +299,7 @@ namespace ts
         NodeArray<ParameterDeclaration> parameters,
         TypeNode type,
         Block body
-    ) {
+    ) -> MethodDeclaration {
         auto node = createBaseFunctionLikeDeclaration<MethodDeclaration>(
             SyntaxKind::MethodDeclaration,
             decorators,
@@ -342,7 +342,7 @@ namespace ts
         ModifiersArray modifiers,
         NodeArray<ParameterDeclaration> parameters,
         Block body
-    ) {
+    ) -> ConstructorDeclaration {
         auto node = createBaseFunctionLikeDeclaration<ConstructorDeclaration>(
             SyntaxKind::Constructor,
             decorators,
@@ -368,7 +368,7 @@ namespace ts
         NodeArray<ParameterDeclaration> parameters,
         TypeNode type,
         Block body
-    ) {
+    ) -> GetAccessorDeclaration {
         return createBaseFunctionLikeDeclaration<GetAccessorDeclaration>(
             SyntaxKind::GetAccessor,
             decorators,
@@ -391,7 +391,7 @@ namespace ts
         PropertyName name,
         NodeArray<ParameterDeclaration> parameters,
         Block body
-    ) {
+    ) -> SetAccessorDeclaration {
         return createBaseFunctionLikeDeclaration<SetAccessorDeclaration>(
             SyntaxKind::SetAccessor,
             decorators,
@@ -475,7 +475,8 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createTemplateLiteralTypeSpan(TypeNode type, literal: TemplateMiddle | TemplateTail) {
+    auto NodeFactory::createTemplateLiteralTypeSpan(TypeNode type, Node literal) -> TemplateLiteralTypeSpan
+    {
         auto node = createBaseNode<TemplateLiteralTypeSpan>(SyntaxKind::TemplateLiteralTypeSpan);
         node->type = type;
         node->literal = literal;
@@ -491,7 +492,8 @@ namespace ts
     //
 
     // @api
-    auto NodeFactory::createTypePredicateNode(assertsModifier: AssertsKeyword, parameterName: Identifier | ThisTypeNode | string, TypeNode type) {
+    auto NodeFactory::createTypePredicateNode(AssertsKeyword assertsModifier, Node parameterName, TypeNode type) -> TypePredicateNode 
+    {
         auto node = createBaseNode<TypePredicateNode>(SyntaxKind::TypePredicate);
         node->assertsModifier = assertsModifier;
         node->parameterName = asName(parameterName);
@@ -504,7 +506,8 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createTypeReferenceNode(typeName: string | EntityName, typeArguments: TypeNode[]) {
+    auto NodeFactory::createTypeReferenceNode(EntityName typeName, NodeArray<TypeNode> typeArguments = undefined) -> TypeReferenceNode 
+    {
         auto node = createBaseNode<TypeReferenceNode>(SyntaxKind::TypeReference);
         node->typeName = asName(typeName);
         node->typeArguments = typeArguments && parenthesizerRules.parenthesizeTypeArguments(createNodeArray(typeArguments));
@@ -535,53 +538,7 @@ namespace ts
     }
 
     // @api
-    
-
-    // @api
-    auto NodeFactory::createConstructorTypeNode(...args: Parameters<typeof createConstructorTypeNode1 | typeof createConstructorTypeNode2>) {
-        return args.length === 4 ? createConstructorTypeNode1(...args) :
-            args.length === 3 ? createConstructorTypeNode2(...args) :
-            Debug.fail("Incorrect number of arguments specified.");
-    }
-
-    auto NodeFactory::createConstructorTypeNode1(
-        ModifiersArray modifiers,
-        NodeArray<TypeParameterDeclaration> typeParameters,
-        NodeArray<ParameterDeclaration> parameters,
-        TypeNode type
-    ) -> ConstructorTypeNode {
-        auto node = createBaseSignatureDeclaration<ConstructorTypeNode>(
-            SyntaxKind::ConstructorType,
-            /*decorators*/ undefined,
-            modifiers,
-            /*name*/ undefined,
-            typeParameters,
-            parameters,
-            type
-        );
-        node->transformFlags = TransformFlags::ContainsTypeScript;
-        return node;
-    }
-
-    /** @deprecated */
-    auto NodeFactory::createConstructorTypeNode2(
-        NodeArray<TypeParameterDeclaration> typeParameters,
-        NodeArray<ParameterDeclaration> parameters,
-        TypeNode type
-    ) -> ConstructorTypeNode {
-        return createConstructorTypeNode1(/*modifiers*/ undefined, typeParameters, parameters, type);
-    }
-
-    // @api
-    
-
-    
-
-    /** @deprecated */
-    
-
-    // @api
-    auto NodeFactory::createTypeQueryNode(exprName: EntityName) {
+    auto NodeFactory::createTypeQueryNode(EntityName exprName) -> TypeQueryNode {
         auto node = createBaseNode<TypeQueryNode>(SyntaxKind::TypeQuery);
         node->exprName = exprName;
         node->transformFlags = TransformFlags::ContainsTypeScript;
@@ -592,7 +549,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createTypeLiteralNode(members: TypeElement[]) {
+    auto NodeFactory::createTypeLiteralNode(NodeArray<TypeElement> members) -> TypeLiteralNode {
         auto node = createBaseNode<TypeLiteralNode>(SyntaxKind::TypeLiteral);
         node->members = createNodeArray(members);
         node->transformFlags = TransformFlags::ContainsTypeScript;
@@ -603,7 +560,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createArrayTypeNode(elementType: TypeNode) {
+    auto NodeFactory::createArrayTypeNode(TypeNode elementType) -> ArrayTypeNode {
         auto node = createBaseNode<ArrayTypeNode>(SyntaxKind::ArrayType);
         node->elementType = parenthesizerRules.parenthesizeElementTypeOfArrayType(elementType);
         node->transformFlags = TransformFlags::ContainsTypeScript;
@@ -614,7 +571,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createTupleTypeNode(elements: (TypeNode | NamedTupleMember)[]) {
+    auto NodeFactory::createTupleTypeNode(NodeArray</*TypeNode | NamedTupleMember*/ Node> elements) -> TupleTypeNode {
         auto node = createBaseNode<TupleTypeNode>(SyntaxKind::TupleType);
         node->elements = createNodeArray(elements);
         node->transformFlags = TransformFlags::ContainsTypeScript;
@@ -625,7 +582,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createNamedTupleMember(dotDotDotToken: DotDotDotToken, name: Identifier, QuestionToken questionToken, TypeNode type) {
+    auto NodeFactory::createNamedTupleMember(DotDotDotToken dotDotDotToken, Identifier name, QuestionToken questionToken, TypeNode type) -> NamedTupleMember {
         auto node = createBaseNode<NamedTupleMember>(SyntaxKind::NamedTupleMember);
         node->dotDotDotToken = dotDotDotToken;
         node->name = name;
@@ -639,7 +596,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createOptionalTypeNode(TypeNode type) {
+    auto NodeFactory::createOptionalTypeNode(TypeNode type) -> OptionalTypeNode {
         auto node = createBaseNode<OptionalTypeNode>(SyntaxKind::OptionalType);
         node->type = parenthesizerRules.parenthesizeElementTypeOfArrayType(type);
         node->transformFlags = TransformFlags::ContainsTypeScript;
@@ -650,7 +607,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createRestTypeNode(TypeNode type) {
+    auto NodeFactory::createRestTypeNode(TypeNode type) -> RestTypeNode {
         auto node = createBaseNode<RestTypeNode>(SyntaxKind::RestType);
         node->type = type;
         node->transformFlags = TransformFlags::ContainsTypeScript;
@@ -658,35 +615,29 @@ namespace ts
     }
 
     // @api
-    
-
-    auto NodeFactory::createUnionOrIntersectionTypeNode(kind: SyntaxKind::UnionType | SyntaxKind::IntersectionType, types: TypeNode[]) {
-        auto node = createBaseNode<UnionTypeNode | IntersectionTypeNode>(kind);
+    auto NodeFactory::createUnionTypeNode(NodeArray<TypeNode> types) -> UnionTypeNode {
+        auto node = createBaseNode<UnionTypeNode>(kind);
         node->types = parenthesizerRules.parenthesizeConstituentTypesOfUnionOrIntersectionType(types);
         node->transformFlags = TransformFlags::ContainsTypeScript;
         return node;
     }
 
+    // @api
     
 
     // @api
-    auto NodeFactory::createUnionTypeNode(types: TypeNode[]) -> UnionTypeNode {
-        return <UnionTypeNode>createUnionOrIntersectionTypeNode(SyntaxKind::UnionType, types);
+    auto NodeFactory::createIntersectionTypeNode(NodeArray<TypeNode> types) -> IntersectionTypeNode {
+        auto node = createBaseNode<IntersectionTypeNode>(kind);
+        node->types = parenthesizerRules.parenthesizeConstituentTypesOfUnionOrIntersectionType(types);
+        node->transformFlags = TransformFlags::ContainsTypeScript;
+        return node;
     }
 
     // @api
     
 
     // @api
-    auto NodeFactory::createIntersectionTypeNode(types: TypeNode[]) -> IntersectionTypeNode {
-        return <IntersectionTypeNode>createUnionOrIntersectionTypeNode(SyntaxKind::IntersectionType, types);
-    }
-
-    // @api
-    
-
-    // @api
-    auto NodeFactory::createConditionalTypeNode(checkType: TypeNode, extendsType: TypeNode, trueType: TypeNode, falseType: TypeNode) {
+    auto NodeFactory::createConditionalTypeNode(TypeNode checkType, TypeNode extendsType, TypeNode trueType, TypeNode falseType) -> ConditionalTypeNode {
         auto node = createBaseNode<ConditionalTypeNode>(SyntaxKind::ConditionalType);
         node->checkType = parenthesizerRules.parenthesizeMemberOfConditionalType(checkType);
         node->extendsType = parenthesizerRules.parenthesizeMemberOfConditionalType(extendsType);
@@ -700,7 +651,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createInferTypeNode(typeParameter: TypeParameterDeclaration) {
+    auto NodeFactory::createInferTypeNode(TypeParameterDeclaration typeParameter) -> InferTypeNode {
         auto node = createBaseNode<InferTypeNode>(SyntaxKind::InferType);
         node->typeParameter = typeParameter;
         node->transformFlags = TransformFlags::ContainsTypeScript;
@@ -711,7 +662,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createTemplateLiteralType(head: TemplateHead, templateSpans: TemplateLiteralTypeSpan[]) {
+    auto NodeFactory::createTemplateLiteralType(TemplateHead head, NodeArray<TemplateLiteralTypeSpan> templateSpans) -> TemplateLiteralTypeNode {
         auto node = createBaseNode<TemplateLiteralTypeNode>(SyntaxKind::TemplateLiteralType);
         node->head = head;
         node->templateSpans = createNodeArray(templateSpans);
@@ -779,7 +730,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createMappedTypeNode(readonlyToken: ReadonlyKeyword | PlusToken | MinusToken, typeParameter: TypeParameterDeclaration, nameType: TypeNode, QuestionToken questionToken | PlusToken | MinusToken, TypeNode type) -> MappedTypeNode {
+    auto NodeFactory::createMappedTypeNode(readonlyToken: ReadonlyKeyword | PlusToken | MinusToken, TypeParameterDeclaration typeParameter, nameType: TypeNode, QuestionToken questionToken | PlusToken | MinusToken, TypeNode type) -> MappedTypeNode {
         auto node = createBaseNode<MappedTypeNode>(SyntaxKind::MappedType);
         node->readonlyToken = readonlyToken;
         node->typeParameter = typeParameter;
@@ -1966,7 +1917,7 @@ namespace ts
         name: string | Identifier,
         NodeArray<TypeParameterDeclaration> typeParameters,
         heritageClauses: HeritageClause[],
-        members: TypeElement[]
+        NodeArray<TypeElement> members
     ) {
         auto node = createBaseInterfaceOrClassLikeDeclaration<InterfaceDeclaration>(
             SyntaxKind::InterfaceDeclaration,

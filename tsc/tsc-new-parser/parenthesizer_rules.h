@@ -21,6 +21,8 @@ namespace ts
         auto parenthesizeExpressionsOfCommaDelimitedList(NodeArray<Expression> elements) -> NodeArray<Expression>;
 
         auto parenthesizeExpressionForDisallowedComma(Expression expression) -> Expression;
+
+        auto parenthesizeLeftSideOfAccess(Expression expression) -> LeftHandSideExpression;
     };
 }
 

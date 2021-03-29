@@ -17,4 +17,22 @@ namespace ts
         // TODO(rbuckton): Verifiy whether `setTextRange` is needed.
         return expressionPrecedence > commaPrecedence ? expression : setTextRange(factory->createParenthesizedExpression(expression), expression);
     }
+
+    auto parenthesizeLeftSideOfAccess(Expression expression) -> LeftHandSideExpression {
+        // isLeftHandSideExpression is almost the correct criterion for when it is not necessary
+        // to parenthesize the expression before a dot. The known exception is:
+        //
+        //    NewExpression:
+        //       new C.x        -> not the same as (new C).x
+        //
+        auto emittedExpression = skipPartiallyEmittedExpressions(expression);
+        if (isLeftHandSideExpression(emittedExpression)
+            && (emittedExpression->kind != SyntaxKind.NewExpression || emittedExpression.as<NewExpression>().arguments)) {
+            // TODO(rbuckton): Verify whether this assertion holds.
+            return expression.as<LeftHandSideExpression>();
+        }
+
+        // TODO(rbuckton): Verifiy whether `setTextRange` is needed.
+        return setTextRange(factory->createParenthesizedExpression(expression), expression);
+    }
 }
