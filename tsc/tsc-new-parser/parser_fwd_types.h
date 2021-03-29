@@ -118,6 +118,12 @@ public:
         return instance == otherPtr.instance;
     }    
 
+	template <typename U>
+    inline auto operator!=(ptr<U> otherPtr)
+    {
+        return instance != otherPtr.instance;
+    }   
+
     inline auto operator==(undefined_t)
     {
         return !instance;

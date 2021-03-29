@@ -1385,67 +1385,114 @@ namespace ts
     }
 
     // @api
-    
+    auto NodeFactory::getCookedText(SyntaxKind kind, string rawText) -> std::pair<string, boolean> {
+        switch (kind) {
+            case SyntaxKind::NoSubstitutionTemplateLiteral:
+                rawTextScanner.setText(S("`") + rawText + S("`"));
+                break;
+            case SyntaxKind::TemplateHead:
+                // tslint:disable-next-line no-invalid-template-strings
+                rawTextScanner.setText(S("`") + rawText + S("${"));
+                break;
+            case SyntaxKind::TemplateMiddle:
+                // tslint:disable-next-line no-invalid-template-strings
+                rawTextScanner.setText(S("}") + rawText + S("${"));
+                break;
+            case SyntaxKind::TemplateTail:
+                rawTextScanner.setText(S("}") + rawText + S("`"));
+                break;
+        }
 
-    auto NodeFactory::createTemplateLiteralLikeNodeChecked(kind: TemplateLiteralToken["kind"], text: string, rawText: string, templateFlags = TokenFlags.None) {
-        Debug.assert(!(templateFlags & ~TokenFlags.TemplateLiteralLikeFlags), "Unsupported template flags.");
+        auto token = rawTextScanner.scan();
+        if (token == SyntaxKind::CloseBracketToken) {
+            token = rawTextScanner.reScanTemplateToken(/*isTaggedTemplate*/ false);
+        }
+
+        if (rawTextScanner.isUnterminated()) {
+            rawTextScanner.setText(string());
+            return std::make_pair(S(""), false);
+        }
+
+        string tokenValue;
+        switch (token) {
+            case SyntaxKind::NoSubstitutionTemplateLiteral:
+            case SyntaxKind::TemplateHead:
+            case SyntaxKind::TemplateMiddle:
+            case SyntaxKind::TemplateTail:
+                tokenValue = rawTextScanner.getTokenValue();
+                break;
+        }
+
+        if (tokenValue.empty() || rawTextScanner.scan() != SyntaxKind::EndOfFileToken) {
+            rawTextScanner.setText(string());
+            return std::make_pair(S(""), false);
+        }
+
+        rawTextScanner.setText(string());
+        return std::make_pair(tokenValue, true);
+    }
+
+    auto NodeFactory::createTemplateLiteralLikeNodeChecked(SyntaxKind kind, string text, string rawText, TokenFlags templateFlags) -> TemplateLiteralLikeNode {
+        Debug::_assert(!(templateFlags & ~TokenFlags::TemplateLiteralLikeFlags), S("Unsupported template flags."));
         // NOTE: without the assignment to `undefined`, we don't narrow the initial type of `cooked`.
         // eslint-disable-next-line no-undef-init
-        let cooked: string | object = undefined;
-        if (rawText !== undefined && rawText !== text) {
-            cooked = getCookedText(kind, rawText);
-            if (typeof cooked == "object") {
-                return Debug.fail("Invalid raw text");
+        string cooked;
+        if (!rawText.empty() && rawText != text) {
+            auto res = getCookedText(kind, rawText);
+            if (!std::get<1>(res)) {
+                return Debug::fail<TemplateLiteralLikeNode>(S("Invalid raw text"));
             }
+
+            cooked = std::get<0>(res);
         }
-        if (text == undefined) {
-            if (cooked == undefined) {
-                return Debug.fail("Arguments 'text' and 'rawText' may not both be undefined.");
+        if (text.empty()) {
+            if (cooked.empty()) {
+                return Debug::fail<TemplateLiteralLikeNode>(S("Arguments 'text' and 'rawText' may not both be undefined."));
             }
             text = cooked;
         }
-        else if (cooked !== undefined) {
-            Debug.assert(text == cooked, "Expected argument 'text' to be the normalized (i.e. 'cooked') version of argument 'rawText'.");
+        else if (!cooked.empty()) {
+            Debug::_assert(text == cooked, S("Expected argument 'text' to be the normalized (i.e. 'cooked') version of argument 'rawText'."));
         }
         return createTemplateLiteralLikeNode(kind, text, rawText, templateFlags);
     }
 
     // @api
-    auto NodeFactory::createTemplateLiteralLikeNode(kind: TemplateLiteralToken["kind"], text: string, rawText: string, templateFlags: TokenFlags) {
+    auto NodeFactory::createTemplateLiteralLikeNode(SyntaxKind kind, string text, string rawText, TokenFlags templateFlags) -> TemplateLiteralLikeNode {
         auto node = createBaseToken<TemplateLiteralLikeNode>(kind);
         node->text = text;
         node->rawText = rawText;
-        node->templateFlags = templateFlags! & TokenFlags.TemplateLiteralLikeFlags;
+        node->templateFlags = templateFlags & TokenFlags::TemplateLiteralLikeFlags;
         node->transformFlags |= TransformFlags::ContainsES2015;
-        if (node->templateFlags) {
+        if (!!node->templateFlags) {
             node->transformFlags |= TransformFlags::ContainsES2018;
         }
         return node;
     }
 
     // @api
-    auto NodeFactory::createTemplateHead(text: string, rawText?: string, templateFlags?: TokenFlags) {
-        return <TemplateHead>createTemplateLiteralLikeNodeChecked(SyntaxKind::TemplateHead, text, rawText, templateFlags);
+    auto NodeFactory::createTemplateHead(string text, string rawText, TokenFlags templateFlags) -> TemplateHead {
+        return createTemplateLiteralLikeNodeChecked(SyntaxKind::TemplateHead, text, rawText, templateFlags);
     }
 
     // @api
-    auto NodeFactory::createTemplateMiddle(text: string, rawText?: string, templateFlags?: TokenFlags) {
-        return <TemplateMiddle>createTemplateLiteralLikeNodeChecked(SyntaxKind::TemplateMiddle, text, rawText, templateFlags);
+    auto NodeFactory::createTemplateMiddle(string text, string rawText, TokenFlags templateFlags) -> TemplateMiddle {
+        return createTemplateLiteralLikeNodeChecked(SyntaxKind::TemplateMiddle, text, rawText, templateFlags);
     }
 
     // @api
-    auto NodeFactory::createTemplateTail(text: string, rawText?: string, templateFlags?: TokenFlags) {
-        return <TemplateTail>createTemplateLiteralLikeNodeChecked(SyntaxKind::TemplateTail, text, rawText, templateFlags);
+    auto NodeFactory::createTemplateTail(string text, string rawText, TokenFlags templateFlags) -> TemplateTail {
+        return createTemplateLiteralLikeNodeChecked(SyntaxKind::TemplateTail, text, rawText, templateFlags);
     }
 
     // @api
-    auto NodeFactory::createNoSubstitutionTemplateLiteral(text: string, rawText?: string, templateFlags?: TokenFlags) {
-        return <NoSubstitutionTemplateLiteral>createTemplateLiteralLikeNodeChecked(SyntaxKind::NoSubstitutionTemplateLiteral, text, rawText, templateFlags);
+    auto NodeFactory::createNoSubstitutionTemplateLiteral(string text, string rawText, TokenFlags templateFlags) -> NoSubstitutionTemplateLiteral {
+        return createTemplateLiteralLikeNodeChecked(SyntaxKind::NoSubstitutionTemplateLiteral, text, rawText, templateFlags);
     }
 
     // @api
     auto NodeFactory::createYieldExpression(AsteriskToken asteriskToken, Expression expression) -> YieldExpression {
-        Debug.assert(!asteriskToken || !!expression, "A `YieldExpression` with an asteriskToken must have an expression.");
+        Debug::_assert(!asteriskToken || !!expression, S("A `YieldExpression` with an asteriskToken must have an expression."));
         auto node = createBaseExpression<YieldExpression>(SyntaxKind::YieldExpression);
         node->expression = expression && parenthesizerRules.parenthesizeExpressionForDisallowedComma(expression);
         node->asteriskToken = asteriskToken;
@@ -1462,7 +1509,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createSpreadElement(Expression expression) {
+    auto NodeFactory::createSpreadElement(Expression expression) -> SpreadElement {
         auto node = createBaseExpression<SpreadElement>(SyntaxKind::SpreadElement);
         node->expression = parenthesizerRules.parenthesizeExpressionForDisallowedComma(expression);
         node->transformFlags |=
@@ -1477,13 +1524,12 @@ namespace ts
 
     // @api
     auto NodeFactory::createClassExpression(
-        DecoratorsArray decorators,
-        ModifiersArray modifiers,
-        name: string | Identifier,
-        NodeArray<TypeParameterDeclaration> typeParameters,
-        heritageClauses: HeritageClause[],
-        members: ClassElement[]
-    ) {
+        DecoratorsArray decorators, 
+        ModifiersArray modifiers, 
+        Identifier name, 
+        NodeArray<TypeParameterDeclaration> typeParameters, 
+        NodeArray<HeritageClause> heritageClauses, 
+        NodeArray<ClassElement> members) -> ClassExpression {
         auto node = createBaseClassLikeDeclaration<ClassExpression>(
             SyntaxKind::ClassExpression,
             decorators,
@@ -1501,15 +1547,15 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createOmittedExpression() {
+    auto NodeFactory::createOmittedExpression() -> OmittedExpression {
         return createBaseExpression<OmittedExpression>(SyntaxKind::OmittedExpression);
     }
 
     // @api
-    auto NodeFactory::createExpressionWithTypeArguments(Expression expression, typeArguments: TypeNode[]) {
+    auto NodeFactory::createExpressionWithTypeArguments(Expression expression, NodeArray<TypeNode> typeArguments) -> ExpressionWithTypeArguments {
         auto node = createBaseNode<ExpressionWithTypeArguments>(SyntaxKind::ExpressionWithTypeArguments);
         node->expression = parenthesizerRules.parenthesizeLeftSideOfAccess(expression);
-        node->typeArguments = typeArguments && parenthesizerRules.parenthesizeTypeArguments(typeArguments);
+        node->typeArguments = typeArguments ? parenthesizerRules.parenthesizeTypeArguments(typeArguments) : undefined;
         node->transformFlags |=
             propagateChildFlags(node->expression) |
             propagateChildrenFlags(node->typeArguments) |
@@ -1521,7 +1567,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createAsExpression(Expression expression, TypeNode type) {
+    auto NodeFactory::createAsExpression(Expression expression, TypeNode type) -> AsExpression {
         auto node = createBaseExpression<AsExpression>(SyntaxKind::AsExpression);
         node->expression = expression;
         node->type = type;
@@ -1536,7 +1582,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createNonNullExpression(Expression expression) {
+    auto NodeFactory::createNonNullExpression(Expression expression) -> NonNullExpression {
         auto node = createBaseExpression<NonNullExpression>(SyntaxKind::NonNullExpression);
         node->expression = parenthesizerRules.parenthesizeLeftSideOfAccess(expression);
         node->transformFlags |=
@@ -1548,7 +1594,7 @@ namespace ts
     // @api
 
     // @api
-    auto NodeFactory::createNonNullChain(Expression expression) {
+    auto NodeFactory::createNonNullChain(Expression expression) -> NonNullChain {
         auto node = createBaseExpression<NonNullChain>(SyntaxKind::NonNullExpression);
         node->flags |= NodeFlags::OptionalChain;
         node->expression = parenthesizerRules.parenthesizeLeftSideOfAccess(expression);
@@ -1562,7 +1608,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createMetaProperty(keywordToken: MetaProperty["keywordToken"], name: Identifier) {
+    auto NodeFactory::createMetaProperty(SyntaxKind keywordToken, Identifier name) -> MetaProperty {
         auto node = createBaseExpression<MetaProperty>(SyntaxKind::MetaProperty);
         node->keywordToken = keywordToken;
         node->name = name;
@@ -1575,7 +1621,7 @@ namespace ts
                 node->transformFlags |= TransformFlags::ContainsESNext;
                 break;
             default:
-                return Debug.assertNever(keywordToken);
+                return Debug::_assertNever(keywordToken);
         }
         return node;
     }
@@ -2361,7 +2407,7 @@ namespace ts
     // @api
     // createJSDocAllType
     // createJSDocUnknownType
-    auto NodeFactory::createJSDocPrimaryTypeWorker<T extends JSDocType>(kind: T["kind"]) {
+    auto NodeFactory::createJSDocPrimaryTypeWorker<T extends JSDocType>(kind: T) {
         return createBaseNode(kind);
     }
 
@@ -2372,7 +2418,7 @@ namespace ts
     // createJSDocVariadicType
     // createJSDocNamepathType
 
-    auto NodeFactory::createJSDocUnaryTypeWorker<T extends JSDocType & { TypeNode type; }>(kind: T["kind"], type: T["type"]) -> T {
+    auto NodeFactory::createJSDocUnaryTypeWorker<T extends JSDocType & { TypeNode type; }>(kind: T, type: T[S("type")]) -> T {
         auto node = createBaseNode<T>(kind);
         node->type = type;
         return node;
@@ -2436,7 +2482,7 @@ namespace ts
     }
 
     // @api
-    auto NodeFactory::createBaseJSDocTag<T extends JSDocTag>(kind: T["kind"], tagName: Identifier, comment: string) {
+    auto NodeFactory::createBaseJSDocTag<T extends JSDocTag>(kind: T, tagName: Identifier, comment: string) {
         auto node = createBaseNode<T>(kind);
         node->tagName = tagName;
         node->comment = comment;
@@ -2445,7 +2491,7 @@ namespace ts
 
     // @api
     auto NodeFactory::createJSDocTemplateTag(tagName: Identifier, constraint: JSDocTypeExpression, NodeArray<TypeParameterDeclaration> typeParameters, comment?: string) -> JSDocTemplateTag {
-        auto node = createBaseJSDocTag<JSDocTemplateTag>(SyntaxKind::JSDocTemplateTag, tagName ?? createIdentifier("template"), comment);
+        auto node = createBaseJSDocTag<JSDocTemplateTag>(SyntaxKind::JSDocTemplateTag, tagName ?? createIdentifier(S("template")), comment);
         node->constraint = constraint;
         node->typeParameters = createNodeArray(typeParameters);
         return node;
@@ -2456,7 +2502,7 @@ namespace ts
 
     // @api
     auto NodeFactory::createJSDocTypedefTag(tagName: Identifier, typeExpression?: JSDocTypeExpression, fullName?: Identifier | JSDocNamespaceDeclaration, comment?: string) -> JSDocTypedefTag {
-        auto node = createBaseJSDocTag<JSDocTypedefTag>(SyntaxKind::JSDocTypedefTag, tagName ?? createIdentifier("typedef"), comment);
+        auto node = createBaseJSDocTag<JSDocTypedefTag>(SyntaxKind::JSDocTypedefTag, tagName ?? createIdentifier(S("typedef")), comment);
         node->typeExpression = typeExpression;
         node->fullName = fullName;
         node->name = getJSDocTypeAliasName(fullName);
@@ -2468,7 +2514,7 @@ namespace ts
 
     // @api
     auto NodeFactory::createJSDocParameterTag(tagName: Identifier, name: EntityName, isBracketed: boolean, typeExpression?: JSDocTypeExpression, isNameFirst?: boolean, comment?: string) -> JSDocParameterTag {
-        auto node = createBaseJSDocTag<JSDocParameterTag>(SyntaxKind::JSDocParameterTag, tagName ?? createIdentifier("param"), comment);
+        auto node = createBaseJSDocTag<JSDocParameterTag>(SyntaxKind::JSDocParameterTag, tagName ?? createIdentifier(S("param")), comment);
         node->typeExpression = typeExpression;
         node->name = name;
         node->isNameFirst = !!isNameFirst;
@@ -2481,7 +2527,7 @@ namespace ts
 
     // @api
     auto NodeFactory::createJSDocPropertyTag(tagName: Identifier, name: EntityName, isBracketed: boolean, typeExpression?: JSDocTypeExpression, isNameFirst?: boolean, comment?: string) -> JSDocPropertyTag {
-        auto node = createBaseJSDocTag<JSDocPropertyTag>(SyntaxKind::JSDocPropertyTag, tagName ?? createIdentifier("prop"), comment);
+        auto node = createBaseJSDocTag<JSDocPropertyTag>(SyntaxKind::JSDocPropertyTag, tagName ?? createIdentifier(S("prop")), comment);
         node->typeExpression = typeExpression;
         node->name = name;
         node->isNameFirst = !!isNameFirst;
@@ -2494,7 +2540,7 @@ namespace ts
 
     // @api
     auto NodeFactory::createJSDocCallbackTag(tagName: Identifier, typeExpression: JSDocSignature, fullName?: Identifier | JSDocNamespaceDeclaration, comment?: string) -> JSDocCallbackTag {
-        auto node = createBaseJSDocTag<JSDocCallbackTag>(SyntaxKind::JSDocCallbackTag, tagName ?? createIdentifier("callback"), comment);
+        auto node = createBaseJSDocTag<JSDocCallbackTag>(SyntaxKind::JSDocCallbackTag, tagName ?? createIdentifier(S("callback")), comment);
         node->typeExpression = typeExpression;
         node->fullName = fullName;
         node->name = getJSDocTypeAliasName(fullName);
@@ -2505,8 +2551,8 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createJSDocAugmentsTag(tagName: Identifier, className: JSDocAugmentsTag["class"], comment?: string) -> JSDocAugmentsTag {
-        auto node = createBaseJSDocTag<JSDocAugmentsTag>(SyntaxKind::JSDocAugmentsTag, tagName ?? createIdentifier("augments"), comment);
+    auto NodeFactory::createJSDocAugmentsTag(tagName: Identifier, className: JSDocAugmentsTag[S("class")], comment?: string) -> JSDocAugmentsTag {
+        auto node = createBaseJSDocTag<JSDocAugmentsTag>(SyntaxKind::JSDocAugmentsTag, tagName ?? createIdentifier(S("augments")), comment);
         node->class = className;
         return node;
     }
@@ -2515,15 +2561,15 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createJSDocImplementsTag(tagName: Identifier, className: JSDocImplementsTag["class"], comment?: string) -> JSDocImplementsTag {
-        auto node = createBaseJSDocTag<JSDocImplementsTag>(SyntaxKind::JSDocImplementsTag, tagName ?? createIdentifier("implements"), comment);
+    auto NodeFactory::createJSDocImplementsTag(tagName: Identifier, className: JSDocImplementsTag[S("class")], comment?: string) -> JSDocImplementsTag {
+        auto node = createBaseJSDocTag<JSDocImplementsTag>(SyntaxKind::JSDocImplementsTag, tagName ?? createIdentifier(S("implements")), comment);
         node->class = className;
         return node;
     }
 
     // @api
     auto NodeFactory::createJSDocSeeTag(tagName: Identifier, name: JSDocNameReference, comment?: string) -> JSDocSeeTag {
-        auto node = createBaseJSDocTag<JSDocSeeTag>(SyntaxKind::JSDocSeeTag, tagName ?? createIdentifier("see"), comment);
+        auto node = createBaseJSDocTag<JSDocSeeTag>(SyntaxKind::JSDocSeeTag, tagName ?? createIdentifier(S("see")), comment);
         node->name = name;
         return node;
     }
@@ -2552,7 +2598,7 @@ namespace ts
     // createJSDocProtectedTag
     // createJSDocReadonlyTag
     // createJSDocDeprecatedTag
-    auto NodeFactory::createJSDocSimpleTagWorker<T extends JSDocTag>(kind: T["kind"], tagName: Identifier, comment?: string) {
+    auto NodeFactory::createJSDocSimpleTagWorker<T extends JSDocTag>(kind: T, tagName: Identifier, comment?: string) {
         auto node = createBaseJSDocTag<T>(kind, tagName ?? createIdentifier(getDefaultTagNameForKind(kind)), comment);
         return node;
     }
@@ -2572,7 +2618,7 @@ namespace ts
     // createJSDocReturnTag
     // createJSDocThisTag
     // createJSDocEnumTag
-    auto NodeFactory::createJSDocTypeLikeTagWorker<T extends JSDocTag & { typeExpression?: JSDocTypeExpression }>(kind: T["kind"], tagName: Identifier, typeExpression?: JSDocTypeExpression, comment?: string) {
+    auto NodeFactory::createJSDocTypeLikeTagWorker<T extends JSDocTag & { typeExpression?: JSDocTypeExpression }>(kind: T, tagName: Identifier, typeExpression?: JSDocTypeExpression, comment?: string) {
         auto node = createBaseJSDocTag<T>(kind, tagName ?? createIdentifier(getDefaultTagNameForKind(kind)), comment);
         node->typeExpression = typeExpression;
         return node;
@@ -2802,7 +2848,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createHeritageClause(token: HeritageClause["token"], types: ExpressionWithTypeArguments[]) {
+    auto NodeFactory::createHeritageClause(token: HeritageClause[S("token")], types: ExpressionWithTypeArguments[]) {
         auto node = createBaseNode<HeritageClause>(SyntaxKind::HeritageClause);
         node->token = token;
         node->types = createNodeArray(types);
@@ -2815,7 +2861,7 @@ namespace ts
                 node->transformFlags |= TransformFlags::ContainsTypeScript;
                 break;
             default:
-                return Debug.assertNever(token);
+                return Debug::_assertNever(token);
         }
         return node;
     }

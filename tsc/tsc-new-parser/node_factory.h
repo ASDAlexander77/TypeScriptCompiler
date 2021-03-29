@@ -12,13 +12,15 @@ namespace ts
     class NodeFactory
     {
         Scanner *scanner;
+        Scanner rawTextScanner;
         ParenthesizerRules parenthesizerRules;
         NodeFactoryFlags nodeFactoryFlags;
         NodeCreateCallbackFunc createNodeCallback;
 
     public:
         NodeFactory(ts::Scanner *scanner, NodeFactoryFlags nodeFactoryFlags, NodeCreateCallbackFunc createNodeCallback)
-            : scanner(scanner), parenthesizerRules(this), nodeFactoryFlags(nodeFactoryFlags), createNodeCallback(createNodeCallback) {}
+            : scanner(scanner), rawTextScanner(ScriptTarget::Latest, /*skipTrivia*/ false, LanguageVariant::Standard), 
+              parenthesizerRules(this), nodeFactoryFlags(nodeFactoryFlags), createNodeCallback(createNodeCallback) {}
 
         template <typename T>
         auto update(T updated, T original) -> T {
@@ -92,6 +94,8 @@ namespace ts
         {
             return !!children ? children->transformFlags : TransformFlags::None;
         }
+
+        auto NodeFactory::getCookedText(SyntaxKind kind, string rawText) -> std::pair<string, boolean>;
 
         template <typename T>
         auto createBaseNode(SyntaxKind kind)
@@ -307,6 +311,50 @@ namespace ts
         auto createBaseExpression(SyntaxKind kind) {
             auto node = createBaseNode<T>(kind);
             // the following properties are commonly set by the checker/binder
+            return node;
+        }
+
+        template <typename T>
+        auto createBaseInterfaceOrClassLikeDeclaration(
+            SyntaxKind kind,
+            DecoratorsArray decorators, 
+            ModifiersArray modifiers, 
+            Identifier name, 
+            NodeArray<TypeParameterDeclaration> typeParameters, 
+            NodeArray<HeritageClause> heritageClauses
+        ) {
+            auto node = createBaseGenericNamedDeclaration<T>(
+                kind,
+                decorators,
+                modifiers,
+                name,
+                typeParameters
+            );
+            node->heritageClauses = asNodeArray(heritageClauses);
+            node->transformFlags |= propagateChildrenFlags(node->heritageClauses);
+            return node;
+        }
+
+        template <typename T>
+        auto createBaseClassLikeDeclaration(
+            SyntaxKind kind,
+            DecoratorsArray decorators, 
+            ModifiersArray modifiers, 
+            Identifier name, 
+            NodeArray<TypeParameterDeclaration> typeParameters, 
+            NodeArray<HeritageClause> heritageClauses, 
+            NodeArray<ClassElement> members
+        ) {
+            auto node = createBaseInterfaceOrClassLikeDeclaration<T>(
+                kind,
+                decorators,
+                modifiers,
+                name,
+                typeParameters,
+                heritageClauses
+            );
+            node->members = createNodeArray(members);
+            node->transformFlags |= propagateChildrenFlags(node->members);
             return node;
         }
 
@@ -566,11 +614,12 @@ namespace ts
         // auto updateConditionalExpression(ConditionalExpression node, Expression condition, QuestionToken questionToken, Expression whenTrue, ColonToken colonToken, Expression whenFalse) -> ConditionalExpression;
         auto createTemplateExpression(TemplateHead head, NodeArray<TemplateSpan> templateSpans) -> TemplateExpression;
         // auto updateTemplateExpression(TemplateExpression node, TemplateHead head, NodeArray<TemplateSpan> templateSpans) -> TemplateExpression;
-        // auto createTemplateHead(string text, string rawText = string(), TokenFlags templateFlags = TokenFlags::None) -> TemplateHead;
-        // auto createTemplateMiddle(string text, string rawText = string(), TokenFlags templateFlags = TokenFlags::None) -> TemplateMiddle;
-        // auto createTemplateTail(string text, string rawText = string(), TokenFlags templateFlags = TokenFlags::None) -> TemplateTail;
-        // auto createNoSubstitutionTemplateLiteral(string text, string rawText = string()) -> NoSubstitutionTemplateLiteral;
+         auto createTemplateHead(string text, string rawText = string(), TokenFlags templateFlags = TokenFlags::None) -> TemplateHead;
+         auto createTemplateMiddle(string text, string rawText = string(), TokenFlags templateFlags = TokenFlags::None) -> TemplateMiddle;
+         auto createTemplateTail(string text, string rawText = string(), TokenFlags templateFlags = TokenFlags::None) -> TemplateTail;
+         auto createNoSubstitutionTemplateLiteral(string text, string rawText = string(), TokenFlags templateFlags = TokenFlags::None) -> NoSubstitutionTemplateLiteral;
         /* @internal */ auto createLiteralLikeNode(SyntaxKind kind, string text) -> LiteralLikeNode;
+        /* @internal */ auto createTemplateLiteralLikeNodeChecked(SyntaxKind kind, string text, string rawText, TokenFlags templateFlags = TokenFlags::None) -> TemplateLiteralLikeNode;
         /* @internal */ auto createTemplateLiteralLikeNode(SyntaxKind kind, string text, string rawText, TokenFlags templateFlags) -> TemplateLiteralLikeNode;
         auto createYieldExpression(AsteriskToken asteriskToken, Expression expression) -> YieldExpression;
         // auto updateYieldExpression(YieldExpression node, AsteriskToken asteriskToken, Expression expression) -> YieldExpression;
@@ -586,7 +635,7 @@ namespace ts
         // auto updateAsExpression(AsExpression node, Expression expression, TypeNode type) -> AsExpression;
         auto createNonNullExpression(Expression expression) -> NonNullExpression;
         // auto updateNonNullExpression(NonNullExpression node, Expression expression) -> NonNullExpression;
-        // auto createNonNullChain(Expression expression) -> NonNullChain;
+         auto createNonNullChain(Expression expression) -> NonNullChain;
         // auto updateNonNullChain(NonNullChain node, Expression expression) -> NonNullChain;
         auto createMetaProperty(SyntaxKind keywordToken, Identifier name) -> MetaProperty;
         // auto updateMetaProperty(MetaProperty node, Identifier name) -> MetaProperty;
