@@ -234,7 +234,7 @@ namespace ts
         PropertyName name,
         QuestionToken questionOrExclamationToken,
         TypeNode type,
-        initializer: Expression
+        Expression initializer
     ) {
         auto node = createBaseVariableLikeDeclaration<PropertyDeclaration>(
             SyntaxKind::PropertyDeclaration,
@@ -298,7 +298,7 @@ namespace ts
         NodeArray<TypeParameterDeclaration> typeParameters,
         NodeArray<ParameterDeclaration> parameters,
         TypeNode type,
-        body: Block
+        Block body
     ) {
         auto node = createBaseFunctionLikeDeclaration<MethodDeclaration>(
             SyntaxKind::MethodDeclaration,
@@ -341,7 +341,7 @@ namespace ts
         DecoratorsArray decorators,
         ModifiersArray modifiers,
         NodeArray<ParameterDeclaration> parameters,
-        body: Block
+        Block body
     ) {
         auto node = createBaseFunctionLikeDeclaration<ConstructorDeclaration>(
             SyntaxKind::Constructor,
@@ -367,7 +367,7 @@ namespace ts
         PropertyName name,
         NodeArray<ParameterDeclaration> parameters,
         TypeNode type,
-        body: Block
+        Block body
     ) {
         return createBaseFunctionLikeDeclaration<GetAccessorDeclaration>(
             SyntaxKind::GetAccessor,
@@ -390,7 +390,7 @@ namespace ts
         ModifiersArray modifiers,
         PropertyName name,
         NodeArray<ParameterDeclaration> parameters,
-        body: Block
+        Block body
     ) {
         return createBaseFunctionLikeDeclaration<SetAccessorDeclaration>(
             SyntaxKind::SetAccessor,
@@ -489,11 +489,6 @@ namespace ts
     //
     // Types
     //
-
-    // @api
-    auto NodeFactory::createKeywordTypeNode<TKind extends KeywordTypeSyntaxKind>(kind: TKind) {
-        return createToken(kind);
-    }
 
     // @api
     auto NodeFactory::createTypePredicateNode(assertsModifier: AssertsKeyword, parameterName: Identifier | ThisTypeNode | string, TypeNode type) {
@@ -1126,7 +1121,7 @@ namespace ts
         NodeArray<TypeParameterDeclaration> typeParameters,
         NodeArray<ParameterDeclaration> parameters,
         TypeNode type,
-        body: Block
+        Block body
     ) {
         auto node = createBaseFunctionLikeDeclaration<FunctionExpression>(
             SyntaxKind::FunctionExpression,
@@ -1845,7 +1840,7 @@ namespace ts
     }
 
     // @api
-    auto NodeFactory::createVariableDeclaration(name: string | BindingName, exclamationToken: ExclamationToken, TypeNode type, initializer: Expression) {
+    auto NodeFactory::createVariableDeclaration(name: string | BindingName, exclamationToken: ExclamationToken, TypeNode type, Expression initializer) {
         auto node = createBaseVariableLikeDeclaration<VariableDeclaration>(
             SyntaxKind::VariableDeclaration,
             /*decorators*/ undefined,
@@ -1893,7 +1888,7 @@ namespace ts
         NodeArray<TypeParameterDeclaration> typeParameters,
         NodeArray<ParameterDeclaration> parameters,
         TypeNode type,
-        body: Block
+        Block body
     ) {
         auto node = createBaseFunctionLikeDeclaration<FunctionDeclaration>(
             SyntaxKind::FunctionDeclaration,
@@ -2824,7 +2819,7 @@ namespace ts
     //
 
     // @api
-    auto NodeFactory::createPropertyAssignment(PropertyName name, initializer: Expression) {
+    auto NodeFactory::createPropertyAssignment(PropertyName name, Expression initializer) {
         auto node = createBaseNamedDeclaration<PropertyAssignment>(
             SyntaxKind::PropertyAssignment,
             /*decorators*/ undefined,
@@ -2840,10 +2835,10 @@ namespace ts
 
     auto finishUpdatePropertyAssignment(updated: Mutable<PropertyAssignment>, original: PropertyAssignment) {
         // copy children used only for error reporting
-        if (original.decorators) updated.decorators = original.decorators;
-        if (original.modifiers) updated.modifiers = original.modifiers;
-        if (original.questionToken) updated.questionToken = original.questionToken;
-        if (original.exclamationToken) updated.exclamationToken = original.exclamationToken;
+        if (original->decorators) updated.decorators = original->decorators;
+        if (original->modifiers) updated.modifiers = original->modifiers;
+        if (original->questionToken) updated.questionToken = original->questionToken;
+        if (original->exclamationToken) updated.exclamationToken = original->exclamationToken;
         return update(updated, original);
     }
 
@@ -2867,11 +2862,11 @@ namespace ts
 
     auto finishUpdateShorthandPropertyAssignment(updated: Mutable<ShorthandPropertyAssignment>, original: ShorthandPropertyAssignment) {
         // copy children used only for error reporting
-        if (original.decorators) updated.decorators = original.decorators;
-        if (original.modifiers) updated.modifiers = original.modifiers;
-        if (original.equalsToken) updated.equalsToken = original.equalsToken;
-        if (original.questionToken) updated.questionToken = original.questionToken;
-        if (original.exclamationToken) updated.exclamationToken = original.exclamationToken;
+        if (original->decorators) updated.decorators = original->decorators;
+        if (original->modifiers) updated.modifiers = original->modifiers;
+        if (original->equalsToken) updated.equalsToken = original->equalsToken;
+        if (original->questionToken) updated.questionToken = original->questionToken;
+        if (original->exclamationToken) updated.exclamationToken = original->exclamationToken;
         return update(updated, original);
     }
 
@@ -2925,8 +2920,8 @@ namespace ts
         node->statements = createNodeArray(statements);
         node->endOfFileToken = endOfFileToken;
         node->flags |= flags;
-        node->fileName = "";
-        node->text = "";
+        node->fileName = string();
+        node->text = string();
         node->languageVersion = 0;
         node->languageVariant = 0;
         node->scriptKind = 0;
