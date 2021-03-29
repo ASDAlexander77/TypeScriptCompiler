@@ -1038,6 +1038,7 @@ namespace data
         PTR(Expression) left;
         PTR(BinaryOperatorToken) operatorToken;
         PTR(Expression) right;
+        SyntaxKind cachedLiteralKind;
     };
 
     /* @internal */

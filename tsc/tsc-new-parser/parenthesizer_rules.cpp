@@ -1,4 +1,5 @@
 #include "parenthesizer_rules.h"
+#include "node_factory.h"
 
 namespace ts 
 {
@@ -104,6 +105,46 @@ namespace ts
     auto ParenthesizerRules::parenthesizeOperandOfPostfixUnary(Expression operand) -> LeftHandSideExpression {
         // TODO(rbuckton) -> Verifiy whether `setTextRange` is needed.
         return isLeftHandSideExpression(operand) ? operand : setTextRange(factory->createParenthesizedExpression(operand), operand);
+    }
+
+    inline static auto operatorHasAssociativeProperty(SyntaxKind binaryOperator) {
+        // The following operators are associative in JavaScript:
+        //  (a*b)*c     -> a*(b*c)  -> a*b*c
+        //  (a|b)|c     -> a|(b|c)  -> a|b|c
+        //  (a&b)&c     -> a&(b&c)  -> a&b&c
+        //  (a^b)^c     -> a^(b^c)  -> a^b^c
+        //
+        // While addition is associative in mathematics, JavaScript's `+` is not
+        // guaranteed to be associative as it is overloaded with string concatenation.
+        return binaryOperator == SyntaxKind::AsteriskToken
+            || binaryOperator == SyntaxKind::BarToken
+            || binaryOperator == SyntaxKind::AmpersandToken
+            || binaryOperator == SyntaxKind::CaretToken;
+    }
+
+    auto getLiteralKindOfBinaryPlusOperand(Expression node1) -> SyntaxKind {
+        auto node = skipPartiallyEmittedExpressions(node1);
+
+        if (isLiteralKind(node->kind)) {
+            return node->kind;
+        }
+
+        if (node->kind == SyntaxKind::BinaryExpression && (node.as<BinaryExpression>())->operatorToken->kind == SyntaxKind::PlusToken) {
+            if (node.as<BinaryExpression>()->cachedLiteralKind != SyntaxKind::Unknown) {
+                return node.as<BinaryExpression>()->cachedLiteralKind;
+            }
+
+            auto leftKind = getLiteralKindOfBinaryPlusOperand(node.as<BinaryExpression>()->left);
+            auto literalKind = isLiteralKind(leftKind)
+                && leftKind == getLiteralKindOfBinaryPlusOperand(node.as<BinaryExpression>()->right)
+                    ? leftKind
+                    : SyntaxKind::Unknown;
+
+            node.as<BinaryExpression>()->cachedLiteralKind = literalKind;
+            return literalKind;
+        }
+
+        return SyntaxKind::Unknown;
     }
 
     auto ParenthesizerRules::binaryOperandNeedsParentheses(SyntaxKind binaryOperator, Expression operand, boolean isLeftSideOfBinary, Expression leftOperand) -> boolean {
@@ -268,71 +309,22 @@ namespace ts
         return needsParens ? factory->createParenthesizedExpression(expression) : expression;
     }
 
-    /**
-     * Wraps an expression in parentheses if it is needed in order to use the expression
-        * as the expression of a `NewExpression` node.
-        */
-    auto ParenthesizerRules::parenthesizeExpressionOfNew(Expression expression) -> LeftHandSideExpression {
-        auto leftmostExpr = getLeftmostExpression(expression, /*stopAtCallExpressions*/ true);
-        switch (leftmostExpr->kind) {
-            case SyntaxKind::CallExpression:
-                return factory->createParenthesizedExpression(expression);
-
-            case SyntaxKind::NewExpression:
-                return !leftmostExpr.as<NewExpression>()->arguments
-                    ? factory->createParenthesizedExpression(expression)
-                    : expression as LeftHandSideExpression; // TODO(rbuckton) -> Verify this assertion holds
-        }
-
-        return parenthesizeLeftSideOfAccess(expression);
-    }
-
-    /**
-     * Wraps an expression in parentheses if it is needed in order to use the expression for
-        * property or element access.
-        */
-    auto ParenthesizerRules::parenthesizeLeftSideOfAccess(Expression expression) -> LeftHandSideExpression {
-        // isLeftHandSideExpression is almost the correct criterion for when it is not necessary
-        // to parenthesize the expression before a dot. The known exception is:
-        //
-        //    NewExpression:
-        //       new C.x        -> not the same as (new C).x
-        //
-        auto emittedExpression = skipPartiallyEmittedExpressions(expression);
-        if (isLeftHandSideExpression(emittedExpression)
-            && (emittedExpression->kind != SyntaxKind::NewExpression || emittedExpression.as<NewExpression>()->arguments)) {
-            // TODO(rbuckton) -> Verify whether this assertion holds.
-            return expression as LeftHandSideExpression;
-        }
-
-        // TODO(rbuckton) -> Verifiy whether `setTextRange` is needed.
-        return setTextRange(factory->createParenthesizedExpression(expression), expression);
-    }
-
-    auto ParenthesizerRules::parenthesizeOperandOfPostfixUnary(Expression operand) -> LeftHandSideExpression {
-        // TODO(rbuckton) -> Verifiy whether `setTextRange` is needed.
-        return isLeftHandSideExpression(operand) ? operand : setTextRange(factory->createParenthesizedExpression(operand), operand);
-    }
-
-    auto ParenthesizerRules::parenthesizeOperandOfPrefixUnary(Expression operand) -> UnaryExpression {
-        // TODO(rbuckton) -> Verifiy whether `setTextRange` is needed.
-        return isUnaryExpression(operand) ? operand : setTextRange(factory->createParenthesizedExpression(operand), operand);
-    }
-
     auto ParenthesizerRules::parenthesizeExpressionOfExpressionStatement(Expression expression) -> Expression {
         auto emittedExpression = skipPartiallyEmittedExpressions(expression);
         if (isCallExpression(emittedExpression)) {
-            auto callee = emittedExpression.expression;
+            auto callee = emittedExpression.as<CallExpression>()->expression;
             auto kind = skipPartiallyEmittedExpressions(callee)->kind;
             if (kind == SyntaxKind::FunctionExpression || kind == SyntaxKind::ArrowFunction) {
                 // TODO(rbuckton) -> Verifiy whether `setTextRange` is needed.
                 auto updated = factory->updateCallExpression(
-                    emittedExpression,
+                    emittedExpression.as<CallExpression>(),
                     setTextRange(factory->createParenthesizedExpression(callee), callee),
-                    emittedExpression.typeArguments,
-                    emittedExpression.arguments
+                    emittedExpression.as<CallExpression>()->typeArguments,
+                    emittedExpression.as<CallExpression>()->arguments
                 );
-                return factory->restoreOuterExpressions(expression, updated, OuterExpressionKinds::PartiallyEmittedExpressions);
+                // TODO: finish it
+                //return factory->restoreOuterExpressions(expression, updated, OuterExpressionKinds::PartiallyEmittedExpressions);
+                return expression;
             }
         }
 
@@ -348,11 +340,4 @@ namespace ts
     auto ParenthesizerRules::parenthesizeOrdinalTypeArgument(TypeNode node, number i) -> TypeNode {
         return i == 0 && isFunctionOrConstructorTypeNode(node) && node.as<FunctionOrConstructorTypeNodeBase>()->typeParameters ? factory->createParenthesizedType(node) : node;
     }
-
-    auto ParenthesizerRules::parenthesizeTypeArguments(NodeArray<TypeNode> typeArguments) -> NodeArray<TypeNode> {
-        if (some(typeArguments)) {
-            return factory->createNodeArray(sameMap(typeArguments, parenthesizeOrdinalTypeArgument));
-        }
-    }
-
 }

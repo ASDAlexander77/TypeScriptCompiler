@@ -1834,6 +1834,22 @@ namespace ts
         return Associativity::Left;
     }
 
+    inline static auto getExpressionAssociativity(Expression expression) {
+        auto _operator = getOperator(expression);
+        auto hasArguments = expression->kind == SyntaxKind::NewExpression && !!expression.as<NewExpression>()->arguments;
+        return getOperatorAssociativity(expression->kind, _operator, hasArguments);
+    }
+
+    inline static auto isFunctionOrConstructorTypeNode(Node node) -> boolean {
+        switch (node->kind) {
+            case SyntaxKind::FunctionType:
+            case SyntaxKind::ConstructorType:
+                return true;
+        }
+
+        return false;
+    }
+
     inline static auto regex_exec(string &text, regex regEx) -> boolean
     {
         auto words_begin = sregex_iterator(text.begin(), text.end(), regEx);

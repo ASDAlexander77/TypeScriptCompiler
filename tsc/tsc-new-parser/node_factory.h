@@ -20,6 +20,33 @@ namespace ts
         NodeFactory(ts::Scanner *scanner, NodeFactoryFlags nodeFactoryFlags, NodeCreateCallbackFunc createNodeCallback)
             : scanner(scanner), parenthesizerRules(this), nodeFactoryFlags(nodeFactoryFlags), createNodeCallback(createNodeCallback) {}
 
+        template <typename T>
+        auto update(T updated, T original) -> T {
+            if (!!(flags & NodeFactoryFlags.NoOriginalNode))
+            {
+                return updateWithoutOriginal(updated, original);
+            }
+
+            return updateWithOriginal(updated, original);
+        }
+
+        template <typename T>
+        auto updateWithoutOriginal(T updated, T original) -> T {
+            if (updated != original) {
+                setTextRange(updated, original);
+            }
+            return updated;
+        }
+
+        template <typename T>
+        auto updateWithOriginal(T updated, T original) -> T {
+            if (updated !== original) {
+                setOriginalNode(updated, original);
+                setTextRange(updated, original);
+            }
+            return updated;
+        }
+
         inline auto asName(Identifier name) -> Identifier
         {
             return name;
@@ -505,7 +532,7 @@ namespace ts
         auto createElementAccessChain(Expression expression, QuestionDotToken questionDotToken, Expression index) -> ElementAccessChain;
         // auto updateElementAccessChain(ElementAccessChain node, Expression expression, QuestionDotToken questionDotToken, Expression argumentExpression) -> ElementAccessChain;
         auto createCallExpression(Expression expression, NodeArray<TypeNode> typeArguments, NodeArray<Expression> argumentsArray) -> CallExpression;
-        // auto updateCallExpression(CallExpression node, Expression expression, NodeArray<TypeNode> typeArguments, NodeArray<Expression> argumentsArray) -> CallExpression;
+        auto updateCallExpression(CallExpression node, Expression expression, NodeArray<TypeNode> typeArguments, NodeArray<Expression> argumentsArray) -> CallExpression;
         auto createCallChain(Expression expression, QuestionDotToken questionDotToken, NodeArray<TypeNode> typeArguments, NodeArray<Expression> argumentsArray) -> CallChain;
         // auto updateCallChain(CallChain node, Expression expression, QuestionDotToken questionDotToken, NodeArray<TypeNode> typeArguments, NodeArray<Expression> argumentsArray) -> CallChain;
         auto createNewExpression(Expression expression, NodeArray<TypeNode> typeArguments, NodeArray<Expression> argumentsArray) -> NewExpression;

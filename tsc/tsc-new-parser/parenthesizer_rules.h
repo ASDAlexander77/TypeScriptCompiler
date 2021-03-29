@@ -7,7 +7,6 @@
 #include "scanner_enums.h"
 #include "parser_fwd_types.h"
 #include "core.h"
-#include "node_factory.h"
 #include "utilities.h"
 
 namespace ts 

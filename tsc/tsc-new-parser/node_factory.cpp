@@ -1039,7 +1039,13 @@ namespace ts
     }
 
     // @api
-
+    auto NodeFactory::updateCallExpression(CallExpression node, Expression expression, NodeArray<TypeNode> typeArguments, NodeArray<Expression> argumentsArray) -> CallExpression {
+        return node->expression != expression
+            || node->typeArguments != typeArguments
+            || node->arguments != argumentsArray
+            ? update(createCallExpression(expression, typeArguments, argumentsArray), node)
+            : node;
+    }
 
     // @api
     auto NodeFactory::createCallChain(Expression expression, QuestionDotToken questionDotToken, NodeArray<TypeNode> typeArguments, NodeArray<Expression> argumentsArray) -> CallChain
