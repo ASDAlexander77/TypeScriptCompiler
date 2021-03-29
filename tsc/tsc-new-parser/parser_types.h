@@ -65,6 +65,11 @@ namespace data
             return range;
         }
 
+        inline operator bool()
+        {
+            return !empty();
+        }
+
         inline auto operator->()
         {
             return this;

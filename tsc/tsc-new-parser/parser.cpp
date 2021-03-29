@@ -1,6 +1,6 @@
 #include "parser.h"
-#include "nodeFactory.h"
-#include "nodeTest.h"
+#include "node_factory.h"
+#include "node_test.h"
 #include "core.h"
 #include "utilities.h"
 

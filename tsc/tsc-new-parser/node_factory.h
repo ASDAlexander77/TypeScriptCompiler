@@ -385,6 +385,53 @@ namespace ts
         auto createPropertyDeclaration(DecoratorsArray decorators, ModifiersArray modifiers, PropertyName name, Node questionOrExclamationToken, TypeNode type, Expression initializer) -> PropertyDeclaration;
         // auto updatePropertyDeclaration(PropertyDeclaration node, DecoratorsArray decorators, ModifiersArray modifiers, string name, Node questionOrExclamationToken, TypeNode type, Expression initializer) -> PropertyDeclaration;
         // auto updatePropertyDeclaration(PropertyDeclaration node, DecoratorsArray decorators, ModifiersArray modifiers, PropertyName name, Node questionOrExclamationToken, TypeNode type, Expression initializer) -> PropertyDeclaration;
+        
+        template <typename T>
+        auto createBaseGenericNamedDeclaration(
+            SyntaxKind kind,
+            DecoratorsArray decorators, 
+            ModifiersArray modifiers,
+            PropertyName name,
+            NodeArray<TypeParameterDeclaration> typeParameters
+        ) {
+            auto node = createBaseNamedDeclaration<T>(
+                kind,
+                decorators,
+                modifiers,
+                name
+            );
+            node->typeParameters = asNodeArray(typeParameters);
+            node->transformFlags |= propagateChildrenFlags(node->typeParameters);
+            if (!typeParameters.empty()) node->transformFlags |= TransformFlags::ContainsTypeScript;
+            return node;
+        }
+
+        template <typename T>
+        auto createBaseSignatureDeclaration(
+            SyntaxKind kind,
+            DecoratorsArray decorators, 
+            ModifiersArray modifiers,
+            PropertyName name,
+            NodeArray<TypeParameterDeclaration> typeParameters, 
+            NodeArray<ParameterDeclaration> parameters,
+            TypeNode type
+        ) {
+            auto node = createBaseGenericNamedDeclaration<T>(
+                kind,
+                decorators,
+                modifiers,
+                name,
+                typeParameters
+            );
+            node->parameters = createNodeArray(parameters);
+            node->type = type;
+            node->transformFlags |=
+                propagateChildrenFlags(node->parameters) |
+                propagateChildFlags(node->type);
+            if (type) node->transformFlags |= TransformFlags::ContainsTypeScript;
+            return node;
+        }
+
         // auto createMethodSignature(ModifiersArray modifiers, string name, QuestionToken questionToken, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, TypeNode type) -> MethodSignature;
         auto createMethodSignature(ModifiersArray modifiers, PropertyName name, QuestionToken questionToken, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, TypeNode type) -> MethodSignature;
         // auto updateMethodSignature(MethodSignature node, ModifiersArray modifiers, PropertyName name, QuestionToken questionToken, NodeArray<TypeParameterDeclaration> typeParameters, NodeArray<ParameterDeclaration> parameters, TypeNode type) -> MethodSignature;
