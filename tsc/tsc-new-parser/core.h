@@ -133,7 +133,47 @@ auto find(T array, std::function<boolean(decltype(array[0]))> predicate) -> decl
             return value;
         }
     }
-    return undefined;
+    return decltype(array[0])();
+}
+
+template <typename T>
+auto sameMap(T array, std::function<std::remove_reference_t<decltype(array[0])>(std::remove_reference_t<decltype(array[0])>)> f) -> T {
+    if (array) {
+        for (auto i = 0; i < array.size(); i++) {
+            auto &item = array[i];
+            auto mapped = f(item);
+            if (item != mapped) {
+                T result;
+                copy(result, array);
+                result.push_back(mapped);
+                for (i++; i < array.size(); i++) {
+                    result.push_back(f(array[i]));
+                }
+                return result;
+            }
+        }
+    }
+    return array;
+}
+
+template <typename T>
+auto sameMapWithNumber(T array, std::function<std::remove_reference_t<decltype(array[0])>(std::remove_reference_t<decltype(array[0])>, number)> f) -> T {
+    if (array) {
+        for (auto i = 0; i < array.size(); i++) {
+            auto &item = array[i];
+            auto mapped = f(item, i);
+            if (item != mapped) {
+                T result;
+                copy(result, array);
+                result.push_back(mapped);
+                for (i++; i < array.size(); i++) {
+                    result.push_back(f(array[i], i));
+                }
+                return result;
+            }
+        }
+    }
+    return array;
 }
 
 template <typename T>

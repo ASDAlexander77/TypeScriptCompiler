@@ -2,8 +2,11 @@
 #ifndef PARENTHESIZERRULES_H
 #define PARENTHESIZERRULES_H
 
+#include "config.h"
 #include "enums.h"
-#include "scanner.h"
+#include "scanner_enums.h"
+#include "parser_fwd_types.h"
+#include "core.h"
 #include "node_factory.h"
 #include "utilities.h"
 
@@ -43,6 +46,8 @@ namespace ts
 
         auto parenthesizeOperandOfPostfixUnary(Expression operand) -> LeftHandSideExpression;
 
+        auto parenthesizeBinaryOperand(SyntaxKind binaryOperator, Expression operand, boolean isLeftSideOfBinary, Expression leftOperand = undefined) -> Expression;
+
         auto parenthesizeLeftSideOfBinary(SyntaxKind binaryOperator, Expression leftSide) -> Expression;
 
         auto parenthesizeRightSideOfBinary(SyntaxKind binaryOperator, Expression leftSide, Expression rightSide) -> Expression;
@@ -55,7 +60,9 @@ namespace ts
 
         auto parenthesizeExpressionOfExpressionStatement(Expression expression) -> Expression;
 
-        auto parenthesizeOrdinalTypeArgument(TypeNode node, number i);
+        auto parenthesizeOrdinalTypeArgument(TypeNode node, number i) -> TypeNode;
+
+        auto binaryOperandNeedsParentheses(SyntaxKind binaryOperator, Expression operand, boolean isLeftSideOfBinary, Expression leftOperand = undefined) -> boolean;
     };
 }
 

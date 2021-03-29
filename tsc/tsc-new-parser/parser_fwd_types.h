@@ -1,6 +1,11 @@
 #ifndef NEW_PARSER_FWRD_TYPES2_H
 #define NEW_PARSER_FWRD_TYPES2_H
 
+#include "config.h"
+#include "enums.h"
+#include "scanner_enums.h"
+#include "undefined.h"
+
 #include <memory>
 #include <functional>
 

@@ -1,9 +1,6 @@
 #ifndef NEW_PARSER_TYPES_H
 #define NEW_PARSER_TYPES_H
 
-#include "config.h"
-#include "enums.h"
-#include "scanner_enums.h"
 #include "parser_fwd_types.h"
 
 #include <vector>

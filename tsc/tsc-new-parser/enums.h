@@ -792,4 +792,9 @@ enum class TypeFlags : number {
     IncludesEmptyObject = Conditional,
 };
 
+enum class Associativity : number {
+    Left,
+    Right
+};
+
 #endif // ENUMS_H

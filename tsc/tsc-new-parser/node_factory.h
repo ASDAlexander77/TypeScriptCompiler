@@ -1,7 +1,7 @@
 #ifndef NODEFACTORY_H
 #define NODEFACTORY_H
 
-#include "enums.h"
+#include "parser_fwd_types.h"
 #include "scanner.h"
 #include "utilities.h"
 #include "node_test.h"

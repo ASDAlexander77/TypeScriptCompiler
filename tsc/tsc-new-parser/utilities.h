@@ -1606,6 +1606,234 @@ namespace ts
         return bindingElement;
     }
 
+    inline static auto getOperator(Expression expression) -> SyntaxKind {
+        if (expression->kind == SyntaxKind::BinaryExpression) {
+            return expression.as<BinaryExpression>()->operatorToken->kind;
+        }
+        else if (expression->kind == SyntaxKind::PrefixUnaryExpression) {
+            return expression.as<PrefixUnaryExpression>()->_operator;
+        }
+        else if (expression->kind == SyntaxKind::PostfixUnaryExpression) {
+            return expression.as<PostfixUnaryExpression>()->_operator;
+        }
+        else {
+            return expression->kind;
+        }
+
+        return SyntaxKind::Unknown;
+    }
+
+    inline static auto getOperatorPrecedence(SyntaxKind nodeKind, SyntaxKind operatorKind, boolean hasArguments = false) {
+        switch (nodeKind) {
+            case SyntaxKind::CommaListExpression:
+                return OperatorPrecedence::Comma;
+
+            case SyntaxKind::SpreadElement:
+                return OperatorPrecedence::Spread;
+
+            case SyntaxKind::YieldExpression:
+                return OperatorPrecedence::Yield;
+
+            case SyntaxKind::ConditionalExpression:
+                return OperatorPrecedence::Conditional;
+
+            case SyntaxKind::BinaryExpression:
+                switch (operatorKind) {
+                    case SyntaxKind::CommaToken:
+                        return OperatorPrecedence::Comma;
+
+                    case SyntaxKind::EqualsToken:
+                    case SyntaxKind::PlusEqualsToken:
+                    case SyntaxKind::MinusEqualsToken:
+                    case SyntaxKind::AsteriskAsteriskEqualsToken:
+                    case SyntaxKind::AsteriskEqualsToken:
+                    case SyntaxKind::SlashEqualsToken:
+                    case SyntaxKind::PercentEqualsToken:
+                    case SyntaxKind::LessThanLessThanEqualsToken:
+                    case SyntaxKind::GreaterThanGreaterThanEqualsToken:
+                    case SyntaxKind::GreaterThanGreaterThanGreaterThanEqualsToken:
+                    case SyntaxKind::AmpersandEqualsToken:
+                    case SyntaxKind::CaretEqualsToken:
+                    case SyntaxKind::BarEqualsToken:
+                    case SyntaxKind::BarBarEqualsToken:
+                    case SyntaxKind::AmpersandAmpersandEqualsToken:
+                    case SyntaxKind::QuestionQuestionEqualsToken:
+                        return OperatorPrecedence::Assignment;
+
+                    default:
+                        return getBinaryOperatorPrecedence(operatorKind);
+                }
+
+            // TODO: Should prefix `++` and `--` be moved to the `Update` precedence?
+            case SyntaxKind::TypeAssertionExpression:
+            case SyntaxKind::NonNullExpression:
+            case SyntaxKind::PrefixUnaryExpression:
+            case SyntaxKind::TypeOfExpression:
+            case SyntaxKind::VoidExpression:
+            case SyntaxKind::DeleteExpression:
+            case SyntaxKind::AwaitExpression:
+                return OperatorPrecedence::Unary;
+
+            case SyntaxKind::PostfixUnaryExpression:
+                return OperatorPrecedence::Update;
+
+            case SyntaxKind::CallExpression:
+                return OperatorPrecedence::LeftHandSide;
+
+            case SyntaxKind::NewExpression:
+                return hasArguments ? OperatorPrecedence::Member : OperatorPrecedence::LeftHandSide;
+
+            case SyntaxKind::TaggedTemplateExpression:
+            case SyntaxKind::PropertyAccessExpression:
+            case SyntaxKind::ElementAccessExpression:
+            case SyntaxKind::MetaProperty:
+                return OperatorPrecedence::Member;
+
+            case SyntaxKind::AsExpression:
+                return OperatorPrecedence::Relational;
+
+            case SyntaxKind::ThisKeyword:
+            case SyntaxKind::SuperKeyword:
+            case SyntaxKind::Identifier:
+            case SyntaxKind::NullKeyword:
+            case SyntaxKind::TrueKeyword:
+            case SyntaxKind::FalseKeyword:
+            case SyntaxKind::NumericLiteral:
+            case SyntaxKind::BigIntLiteral:
+            case SyntaxKind::StringLiteral:
+            case SyntaxKind::ArrayLiteralExpression:
+            case SyntaxKind::ObjectLiteralExpression:
+            case SyntaxKind::FunctionExpression:
+            case SyntaxKind::ArrowFunction:
+            case SyntaxKind::ClassExpression:
+            case SyntaxKind::RegularExpressionLiteral:
+            case SyntaxKind::NoSubstitutionTemplateLiteral:
+            case SyntaxKind::TemplateExpression:
+            case SyntaxKind::ParenthesizedExpression:
+            case SyntaxKind::OmittedExpression:
+            case SyntaxKind::JsxElement:
+            case SyntaxKind::JsxSelfClosingElement:
+            case SyntaxKind::JsxFragment:
+                return OperatorPrecedence::Primary;
+
+            default:
+                return OperatorPrecedence::Invalid;
+        }
+
+        return OperatorPrecedence::Invalid;
+    }
+
+    inline static auto getExpressionPrecedence(Expression expression) {
+        auto _operator = getOperator(expression);
+        auto hasArguments = expression->kind == SyntaxKind::NewExpression && !!expression.as<NewExpression>()->arguments;
+        return getOperatorPrecedence(expression->kind, _operator, hasArguments);
+    }
+
+    inline static auto getLeftmostExpression(Expression node, boolean stopAtCallExpressions) -> Node {
+        while (true) {
+            switch (node->kind) {
+                case SyntaxKind::PostfixUnaryExpression:
+                    node = node.as<PostfixUnaryExpression>()->operand;
+                    continue;
+
+                case SyntaxKind::BinaryExpression:
+                    node = node.as<BinaryExpression>()->left;
+                    continue;
+
+                case SyntaxKind::ConditionalExpression:
+                    node = node.as<ConditionalExpression>()->condition;
+                    continue;
+
+                case SyntaxKind::TaggedTemplateExpression:
+                    node = node.as<TaggedTemplateExpression>()->tag;
+                    continue;
+
+                case SyntaxKind::CallExpression:
+                    if (stopAtCallExpressions) {
+                        return node;
+                    }
+                    node = node.as<CallExpression>()->expression;
+                    continue;
+                    // falls through
+                case SyntaxKind::AsExpression:
+                    node = node.as<AsExpression>()->expression;
+                    continue;
+                case SyntaxKind::ElementAccessExpression:
+                    node = node.as<ElementAccessExpression>()->expression;
+                    continue;
+                case SyntaxKind::PropertyAccessExpression:
+                    node = node.as<PropertyAccessExpression>()->expression;
+                    continue;
+                case SyntaxKind::NonNullExpression:
+                    node = node.as<NonNullExpression>()->expression;
+                    continue;
+                case SyntaxKind::PartiallyEmittedExpression:
+                    node = node.as<PartiallyEmittedExpression>()->expression;
+                    continue;
+            }
+
+            return node;
+        }
+    }
+
+    inline static auto isUnaryExpressionKind(SyntaxKind kind) -> boolean {
+        switch (kind) {
+            case SyntaxKind::PrefixUnaryExpression:
+            case SyntaxKind::PostfixUnaryExpression:
+            case SyntaxKind::DeleteExpression:
+            case SyntaxKind::TypeOfExpression:
+            case SyntaxKind::VoidExpression:
+            case SyntaxKind::AwaitExpression:
+            case SyntaxKind::TypeAssertionExpression:
+                return true;
+            default:
+                return isLeftHandSideExpressionKind(kind);
+        }
+    }
+
+    inline static auto isUnaryExpression(Node node) -> boolean {
+        return isUnaryExpressionKind(skipPartiallyEmittedExpressions(node)->kind);
+    }
+
+    inline static auto getOperatorAssociativity(SyntaxKind kind, SyntaxKind _operator, boolean hasArguments = false) -> Associativity {
+        switch (kind) {
+            case SyntaxKind::NewExpression:
+                return hasArguments ? Associativity::Left : Associativity::Right;
+
+            case SyntaxKind::PrefixUnaryExpression:
+            case SyntaxKind::TypeOfExpression:
+            case SyntaxKind::VoidExpression:
+            case SyntaxKind::DeleteExpression:
+            case SyntaxKind::AwaitExpression:
+            case SyntaxKind::ConditionalExpression:
+            case SyntaxKind::YieldExpression:
+                return Associativity::Right;
+
+            case SyntaxKind::BinaryExpression:
+                switch (_operator) {
+                    case SyntaxKind::AsteriskAsteriskToken:
+                    case SyntaxKind::EqualsToken:
+                    case SyntaxKind::PlusEqualsToken:
+                    case SyntaxKind::MinusEqualsToken:
+                    case SyntaxKind::AsteriskAsteriskEqualsToken:
+                    case SyntaxKind::AsteriskEqualsToken:
+                    case SyntaxKind::SlashEqualsToken:
+                    case SyntaxKind::PercentEqualsToken:
+                    case SyntaxKind::LessThanLessThanEqualsToken:
+                    case SyntaxKind::GreaterThanGreaterThanEqualsToken:
+                    case SyntaxKind::GreaterThanGreaterThanGreaterThanEqualsToken:
+                    case SyntaxKind::AmpersandEqualsToken:
+                    case SyntaxKind::CaretEqualsToken:
+                    case SyntaxKind::BarEqualsToken:
+                    case SyntaxKind::BarBarEqualsToken:
+                    case SyntaxKind::AmpersandAmpersandEqualsToken:
+                    case SyntaxKind::QuestionQuestionEqualsToken:
+                        return Associativity::Right;
+                }
+        }
+        return Associativity::Left;
+    }
+
     inline static auto regex_exec(string &text, regex regEx) -> boolean
     {
         auto words_begin = sregex_iterator(text.begin(), text.end(), regEx);
