@@ -65,7 +65,7 @@ struct ptr
         Dynamic
     };
 
-	ptr() {};
+	ptr() : instance(std::make_shared<T>()) {};
 
 	ptr(undefined_t) : /*instance(nullptr)*/ instance(std::make_shared<T>()) {};
 

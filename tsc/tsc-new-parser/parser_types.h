@@ -859,7 +859,7 @@ namespace data
     };
 
     // TODO: review Declaration
-    struct Identifier : PrimaryExpression/*, Declaration*/
+    struct Identifier : PrimaryExpression, Declaration
     {
         Identifier() = default;
         Identifier(SyntaxKind kind_, number pos_, number end_) 
