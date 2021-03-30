@@ -112,12 +112,12 @@ public:
 
     inline operator bool()
     {
-        return !!instance;
+        return instance ? instance->kind != SyntaxKind::Unknown : false;
     }
 
     inline operator SyntaxKind()
     {
-        return instance->kind;
+        return instance ? instance->kind : SyntaxKind::Unknown;
     }    
 
     inline operator const T &() const

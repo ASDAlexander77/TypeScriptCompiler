@@ -28,7 +28,7 @@ void printParser(const wchar_t *str)
 {
     // TODO:
     ts::Parser parser;
-    auto sourceFile = parser.parseSourceFile(S("function f()"), ScriptTarget::Latest);
+    auto sourceFile = parser.parseSourceFile(S("function f() {}"), ScriptTarget::Latest);
 }
 
 int main(int argc, char **args)
