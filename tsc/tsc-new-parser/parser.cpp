@@ -3471,7 +3471,7 @@ namespace ts
                 Node type = (hasLeadingOperator ? parseFunctionOrConstructorTypeToError(isUnionType) : undefined) || parseConstituentType();
                 if (token() == operator_ || hasLeadingOperator)
                 {
-                    auto types = NodeArray<TypeNode>({type});
+                    auto types = NodeArray<TypeNode>(type);
                     while (parseOptional(operator_))
                     {
                         types.push_back(parseFunctionOrConstructorTypeToError(isUnionType) || parseConstituentType());

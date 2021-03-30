@@ -48,10 +48,15 @@ namespace data
     template <typename T /*extends Node*/>
     struct NodeArray : ReadonlyArray<T>
     {
-        using ReadonlyArray::ReadonlyArray;
-        
-        NodeArray() {}
-        NodeArray(undefined_t) {}
+        NodeArray() : ReadonlyArray() {}
+        NodeArray(undefined_t) : ReadonlyArray() {}
+
+        template <typename U>
+        NodeArray(NodeArray<U> other) : ReadonlyArray(other.begin(), other.end()) {
+        }
+
+        NodeArray(T item) : ReadonlyArray({item}) {
+        }    
 
         auto pop() -> T
         {
@@ -75,7 +80,7 @@ namespace data
             return this;
         }        
 
-        inline auto operator==(NodeArray otherArray)
+        inline auto operator==(const NodeArray<T> &otherArray)
         {
             if (this->size() != otherArray.size())
             {
@@ -85,7 +90,7 @@ namespace data
             return arraysEqual(*this, otherArray);
         }
 
-        inline auto operator!=(NodeArray otherArray)
+        inline auto operator!=(const NodeArray<T> &otherArray)
         {
             if (this->size() != otherArray.size())
             {

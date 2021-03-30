@@ -125,6 +125,16 @@ public:
         return *instance;
     }
 
+    inline auto operator==(const ptr<T> &otherPtr)
+    {
+        return instance == otherPtr.instance;
+    }    
+
+    inline auto operator!=(const ptr<T> &otherPtr)
+    {
+        return instance != otherPtr.instance;
+    }       
+
 	template <typename U>
     inline auto operator==(ptr<U> otherPtr)
     {
@@ -136,6 +146,16 @@ public:
     {
         return instance != otherPtr.instance;
     }   
+
+    inline auto operator==(SyntaxKind kind)
+    {
+        return instance->kind == kind;
+    }
+
+    inline auto operator!=(SyntaxKind kind)
+    {
+        return instance->kind != kind;
+    }    
 
     inline auto operator==(undefined_t)
     {

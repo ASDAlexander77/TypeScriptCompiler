@@ -301,7 +301,7 @@ namespace ts
         {
             if (cbNodes)
             {
-                return cbNodes(NodeArray<T>(nodes.begin(), nodes.end()));
+                return cbNodes(NodeArray<T>(nodes));
             }
             for (auto node : nodes)
             {
