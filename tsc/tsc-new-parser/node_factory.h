@@ -68,6 +68,21 @@ namespace ts
             return createToken(value);
         }
 
+        auto mergeEmitNode(/*EmitNode*/ Node sourceEmitNode, /*EmitNode*/ Node destEmitNode) -> /* EmitNode */ Node {
+            // TODO: finish it
+            return destEmitNode;
+        }
+
+        template <typename T>
+        auto setOriginalNode(T node, Node original) -> T {
+            node->original = original;
+            if (original) {
+                auto emitNode = original->emitNode;
+                if (emitNode) node->emitNode = mergeEmitNode(emitNode, node->emitNode);
+            }
+            return node;
+        }
+
         template <typename T>
         inline auto asEmbeddedStatement(T statement) -> T {
             return statement && isNotEmittedStatement(statement) ? setTextRange(setOriginalNode(createEmptyStatement(), statement), statement) : statement;

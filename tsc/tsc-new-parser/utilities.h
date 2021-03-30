@@ -1370,23 +1370,23 @@ namespace ts
     }
 
     inline static auto getJSDocPublicTagNoCache(Node node) -> JSDocPublicTag {
-        return getFirstJSDocTag(node, isJSDocPublicTag, /*noCache*/ true);
+        return getFirstJSDocTag(node, [](Node node) { return isJSDocPublicTag(node); }, /*noCache*/ true);
     }
 
     inline static auto getJSDocPrivateTagNoCache(Node node) -> JSDocPublicTag {
-        return getFirstJSDocTag(node, isJSDocPrivateTag, /*noCache*/ true);
+        return getFirstJSDocTag(node, [](Node node) { return isJSDocPrivateTag(node); }, /*noCache*/ true);
     }
 
     inline static auto getJSDocProtectedTagNoCache(Node node) -> JSDocProtectedTag {
-        return getFirstJSDocTag(node, isJSDocProtectedTag, /*noCache*/ true);
+        return getFirstJSDocTag(node, [](Node node) { return isJSDocProtectedTag(node); }, /*noCache*/ true);
     }
 
     inline static auto getJSDocReadonlyTagNoCache(Node node) -> JSDocReadonlyTag {
-        return getFirstJSDocTag(node, isJSDocReadonlyTag, /*noCache*/ true);
+        return getFirstJSDocTag(node, [](Node node) { return isJSDocReadonlyTag(node); }, /*noCache*/ true);
     }
 
     inline static auto getJSDocDeprecatedTagNoCache(Node node) -> JSDocDeprecatedTag {
-        return getFirstJSDocTag(node, isJSDocDeprecatedTag, /*noCache*/ true);
+        return getFirstJSDocTag(node, [](Node node) { return isJSDocDeprecatedTag(node); }, /*noCache*/ true);
     }
 
     inline static auto getJSDocModifierFlagsNoCache(Node node) -> ModifierFlags
