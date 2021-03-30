@@ -75,6 +75,26 @@ namespace data
             return this;
         }        
 
+        inline auto operator==(NodeArray otherArray)
+        {
+            if (this->size() != otherArray.size())
+            {
+                return false;
+            }
+
+            return arraysEqual(*this, otherArray);
+        }
+
+        inline auto operator!=(NodeArray otherArray)
+        {
+            if (this->size() != otherArray.size())
+            {
+                return true;
+            }
+
+            return !arraysEqual(*this, otherArray);
+        }          
+        
         inline auto operator==(undefined_t)
         {
             // TODO: review it

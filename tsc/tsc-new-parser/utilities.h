@@ -1518,6 +1518,8 @@ namespace ts
                 // `a` in `{a}`
                 return NodeArray<BindingElement>(name.as<ObjectLiteralExpression>()->properties);
         }
+
+        return undefined;
     }
 
     inline static auto isAssignmentExpression(Node node, boolean excludeCompoundAssignment = false) -> boolean {

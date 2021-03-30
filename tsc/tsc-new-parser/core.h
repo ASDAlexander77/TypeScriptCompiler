@@ -224,6 +224,13 @@ auto arraysEqual(const std::vector<T> &a, const std::vector<T> &b) -> boolean
 }
 
 template <typename T>
+auto arraysEqual(T &a, T &b) -> boolean
+{
+    return std::equal(a.begin(), a.end(), b.begin());
+}
+
+
+template <typename T>
 auto compareComparableValues(T a, T b)
 {
     return a == b ? Comparison::EqualTo : a < b ? Comparison::LessThan
