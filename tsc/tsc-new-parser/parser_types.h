@@ -124,7 +124,7 @@ namespace data
     {
         SymbolFlags flags;                                                          // Symbol flags
         string escapedName;                                                         // Name of symbol
-        std::vector<Declaration> declarations;                                      // Declarations associated with this symbol
+        NodeArray<PTR(Declaration)> declarations;                                   // Declarations associated with this symbol
         PTR(Declaration) valueDeclaration;                                          // First value declaration of the symbol
         SymbolTable members;                                                        // Class, interface or object literal instance members
         SymbolTable exports;                                                        // Module exports
@@ -149,7 +149,7 @@ namespace data
         PTR(Symbol) symbol;                                            // Symbol associated with type (if any)
         PTR(DestructuringPattern) pattern;                        // Destructuring pattern represented by type (if any)
         PTR(Symbol) aliasSymbol;                                       // Alias associated with type
-        std::vector<Type> aliasTypeArguments;                     // Alias type arguments (if any)
+        NodeArray<PTR(Type)> aliasTypeArguments;                     // Alias type arguments (if any)
         /* @internal */ boolean aliasTypeArgumentsContainsMarker; // Alias type arguments (if any)
         /* @internal */
         PTR(Type) permissiveInstantiation; // Instantiation with type parameters mapped to wildcard type
@@ -1956,6 +1956,16 @@ namespace data
     struct FileReference : TextRange
     {
         string fileName;
+
+        friend inline auto operator==(const FileReference &current, const FileReference &other) -> boolean
+        {
+            return current.fileName == other.fileName;
+        }
+
+        friend inline auto operator!=(const FileReference &current, const FileReference &other) -> boolean
+        {
+            return current.fileName == other.fileName;
+        }
     };
 
     struct CheckJsDirective : TextRange
@@ -2472,7 +2482,7 @@ namespace data
         // Content of this field should never be used directly - use getResolvedModuleFileName/setResolvedModuleFileName functions instead
         /* @internal */ std::map<string, ResolvedModuleFull> resolvedModules;
         /* @internal */ std::map<string, ResolvedTypeReferenceDirective> resolvedTypeReferenceDirectiveNames;
-        /* @internal */ std::vector<StringLiteralLike> imports;
+        /* @internal */ NodeArray<PTR(StringLiteralLike)> imports;
         // Identifier only if `declare global`
         /* @internal */ NodeArray<PTR(Node)> moduleAugmentations;
         /* @internal */ std::vector<PatternAmbientModule> patternAmbientModules;
@@ -2504,7 +2514,7 @@ namespace data
     {
         PTR(UnparsedSource) parent;
         string data;
-        std::vector<UnparsedTextLike> texts;
+        NodeArray<PTR(UnparsedTextLike)> texts;
     };
 
     struct UnparsedTextLike : UnparsedSection 
@@ -2524,7 +2534,7 @@ namespace data
         boolean scoped;                                                 // Indicates whether the helper MUST be emitted in the current scope.
         string text;                                                    // ES3-compatible raw script text, or a function yielding such a string
         number priority;                                                // Helpers with a higher priority are emitted earlier than other helpers on the node.
-        std::vector<EmitHelper> dependencies;
+        NodeArray<PTR(EmitHelper)> dependencies;
     };
 
     struct ScopedEmitHelper : EmitHelperBase 
@@ -2555,19 +2565,19 @@ namespace data
     {
         string fileName;
         string text;
-        std::vector<UnparsedPrologue> prologues;
-        std::vector<UnscopedEmitHelper> helpers;
+        NodeArray<PTR(UnparsedPrologue)> prologues;
+        NodeArray<PTR(UnscopedEmitHelper)> helpers;
 
         // References and noDefaultLibAre Dts only
-        std::vector<FileReference> referencedFiles;
+        NodeArray<PTR(FileReference)> referencedFiles;
         std::vector<string> typeReferenceDirectives;
-        std::vector<FileReference> libReferenceDirectives;
+        NodeArray<PTR(FileReference)> libReferenceDirectives;
         boolean hasNoDefaultLib;
 
         string sourceMapPath;
         string sourceMapText;
-        std::vector<UnparsedSyntheticReference> syntheticReferences;
-        std::vector<UnparsedSourceText> texts;
+        NodeArray<PTR(UnparsedSyntheticReference)> syntheticReferences;
+        NodeArray<PTR(UnparsedSourceText)> texts;
         /*@internal*/ boolean oldFileOfCurrentEmit;
         /*@internal*/ RawSourceMap parsedSourceMap;
         // Adding this to satisfy services, fix later

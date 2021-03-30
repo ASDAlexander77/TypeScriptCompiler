@@ -125,54 +125,76 @@ public:
         return *instance;
     }
 
-    inline auto operator==(const ptr<T> &otherPtr)
+    inline auto operator==(const ptr<T> &otherPtr) -> boolean
     {
         return instance == otherPtr.instance;
     }    
 
-    inline auto operator!=(const ptr<T> &otherPtr)
+    inline auto operator!=(const ptr<T> &otherPtr) -> boolean
     {
         return instance != otherPtr.instance;
     }       
 
 	template <typename U>
-    inline auto operator==(ptr<U> otherPtr)
+    inline auto operator==(const ptr<U> &otherPtr) -> boolean
     {
         return instance == otherPtr.instance;
     }    
 
 	template <typename U>
-    inline auto operator!=(ptr<U> otherPtr)
+    inline auto operator!=(const ptr<U> &otherPtr) -> boolean
     {
         return instance != otherPtr.instance;
     }   
 
-    inline auto operator==(SyntaxKind kind)
+    inline friend auto operator==(const ptr<T> &inst, const ptr<T> &otherPtr) -> boolean
+    {
+        return inst.instance == otherPtr.instance;
+    }    
+
+    inline friend auto operator!=(const ptr<T> &inst, const ptr<T> &otherPtr) -> boolean
+    {
+        return inst.instance != otherPtr.instance;
+    }       
+
+	template <typename U>
+    inline friend auto operator==(const ptr<T> &inst, const ptr<U> &otherPtr) -> boolean
+    {
+        return inst.instance == otherPtr.instance;
+    }    
+
+	template <typename U>
+    inline friend auto operator!=(const ptr<T> &inst, const ptr<U> &otherPtr) -> boolean
+    {
+        return inst.instance != otherPtr.instance;
+    }     
+
+    inline auto operator==(SyntaxKind kind) -> boolean
     {
         return instance->kind == kind;
     }
 
-    inline auto operator!=(SyntaxKind kind)
+    inline auto operator!=(SyntaxKind kind) -> boolean
     {
         return instance->kind != kind;
     }    
 
-    inline auto operator==(undefined_t)
+    inline auto operator==(undefined_t) -> boolean
     {
         return !instance;
     }
 
-    inline auto operator!=(undefined_t)
+    inline auto operator!=(undefined_t) -> boolean
     {
         return !!instance;
     }
 
-    inline auto operator==(std::nullptr_t)
+    inline auto operator==(std::nullptr_t) -> boolean
     {
         return instance == nullptr;
     }
 
-    inline auto operator!=(std::nullptr_t)
+    inline auto operator!=(std::nullptr_t) -> boolean
     {
         return instance != nullptr;
     }    

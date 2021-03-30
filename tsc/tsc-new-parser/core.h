@@ -220,13 +220,41 @@ auto lastOrUndefined(T array) -> decltype(array[0])
 template <typename T>
 auto arraysEqual(const std::vector<T> &a, const std::vector<T> &b) -> boolean
 {
-    return std::equal(a.begin(), a.end(), b.begin());
+    if (a.size() != b.size())
+    {
+        return false;
+    }
+
+    auto i = 0;
+    for (auto &ai : a)
+    {
+        if (ai != b[i++])
+        {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 template <typename T>
 auto arraysEqual(T &a, T &b) -> boolean
 {
-    return std::equal(a.begin(), a.end(), b.begin());
+    if (a.size() != b.size())
+    {
+        return false;
+    }
+        
+    auto i = 0;
+    for (auto &ai : a)
+    {
+        if (ai != b[i++])
+        {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 

@@ -101,18 +101,18 @@ namespace IncrementalParser
         }
 
         auto getNewCommentDirectives(
-            std::vector<CommentDirective> oldDirectives,
-            std::vector<CommentDirective> newDirectives,
+            NodeArray<CommentDirective> oldDirectives,
+            NodeArray<CommentDirective> newDirectives,
             number changeStart,
             number changeRangeOldEnd,
             number delta,
             safe_string oldText,
             safe_string newText,
-            boolean aggressiveChecks) -> std::vector<CommentDirective>
+            boolean aggressiveChecks) -> NodeArray<CommentDirective>
         {
             if (!oldDirectives)
                 return newDirectives;
-            std::vector<CommentDirective> commentDirectives;
+            NodeArray<CommentDirective> commentDirectives;
             auto addedNewlyScannedDirectives = false;
 
             auto addNewlyScannedDirectives = [&]() {
