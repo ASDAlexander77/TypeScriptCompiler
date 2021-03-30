@@ -121,7 +121,7 @@ namespace ts
         template <typename T>
         auto createBaseNode(SyntaxKind kind)
         {
-            auto newNode = T();
+            auto newNode = T(T::data());
             newNode->kind = kind;
             createNodeCallback(newNode);
             return newNode;

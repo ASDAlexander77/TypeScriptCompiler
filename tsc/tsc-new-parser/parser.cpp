@@ -1150,12 +1150,8 @@ namespace ts
 
             auto internIdentifier(string text) -> string
             {
-                auto identifier = identifiers.at(text);
-                if (!identifier.empty())
-                {
-                    identifiers[text] = (identifier = text);
-                }
-                return identifier;
+                identifiers[text] = text;
+                return identifiers.at(text);
             }
 
             // An identifier that starts with two underscores has an extra underscore character prepended to it to avoid issues

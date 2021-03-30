@@ -59,6 +59,8 @@
 template <typename T>
 struct ptr
 {
+    typedef T data;
+
     enum class Cast
     {
         Static,
@@ -84,9 +86,6 @@ protected:
 	ptr(ptr<U> otherPtr, Cast) : instance(std::static_pointer_cast<T>(otherPtr.instance)) {};
 
 public:
-    //template <typename... Args>
-	//ptr(Args &&... args) : instance(std::make_shared<T>(std::forward<Args>(args)...)) {};
-
     inline auto operator->()
     {
         return instance.operator->();
