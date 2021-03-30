@@ -944,6 +944,7 @@ namespace ts
         // //
 
         auto createSourceFile(NodeArray<Statement> statements, EndOfFileToken endOfFileToken, NodeFlags flags) -> SourceFile;
+        auto cloneSourceFileWithChanges(SourceFile node, NodeArray<Statement> statements, boolean isDeclarationFile, NodeArray<FileReference> referencedFiles, NodeArray<FileReference> typeReferences, boolean hasNoDefaultLib, NodeArray<FileReference> libReferences) -> SourceFile;
         auto updateSourceFile(SourceFile node, NodeArray<Statement> statements, boolean isDeclarationFile = false, NodeArray<FileReference> referencedFiles = undefined, NodeArray<FileReference> typeReferences = undefined, boolean hasNoDefaultLib = false, NodeArray<FileReference> libReferences = undefined) -> SourceFile;
 
         // /* @internal */ auto createUnparsedSource(NodeArray<UnparsedPrologue> prologues, NodeArray<UnparsedSyntheticReference> syntheticReferences, NodeArray<UnparsedSourceText> texts) -> UnparsedSource;

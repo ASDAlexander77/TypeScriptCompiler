@@ -3001,4 +3001,52 @@ namespace ts
             propagateChildFlags(node->endOfFileToken);
         return node;
     }
+
+    auto NodeFactory::cloneSourceFileWithChanges(
+        SourceFile source, 
+        NodeArray<Statement> statements, 
+        boolean isDeclarationFile, 
+        NodeArray<FileReference> referencedFiles, 
+        NodeArray<FileReference> typeReferences, 
+        boolean hasNoDefaultLib, 
+        NodeArray<FileReference> libReferences) -> SourceFile {
+        auto node = createBaseNode<SourceFile>(SyntaxKind::SourceFile);
+        // TODO: finish it
+        /*
+        for (const p in source) {
+            if (p === "emitNode" || hasProperty(node, p) || !hasProperty(source, p)) continue;
+            (node as any)[p] = (source as any)[p];
+        }
+        */
+        node->flags |= source->flags;
+        node->statements = createNodeArray(statements);
+        node->endOfFileToken = source->endOfFileToken;
+        node->isDeclarationFile = isDeclarationFile;
+        copy(node->referencedFiles, referencedFiles);
+        copy(node->typeReferenceDirectives, typeReferences);
+        node->hasNoDefaultLib = hasNoDefaultLib;
+        copy(node->libReferenceDirectives, libReferences);
+        node->transformFlags =
+            propagateChildrenFlags(node->statements) |
+            propagateChildFlags(node->endOfFileToken);
+        return node;
+    }
+
+    auto NodeFactory::updateSourceFile(
+        SourceFile node, 
+        NodeArray<Statement> statements, 
+        boolean isDeclarationFile, 
+        NodeArray<FileReference> referencedFiles, 
+        NodeArray<FileReference> typeReferenceDirectives, 
+        boolean hasNoDefaultLib, 
+        NodeArray<FileReference> libReferenceDirectives) -> SourceFile {
+        return node->statements != statements
+            || node->isDeclarationFile != isDeclarationFile
+            || node->referencedFiles != referencedFiles
+            || node->typeReferenceDirectives != typeReferenceDirectives
+            || node->hasNoDefaultLib != hasNoDefaultLib
+            || node->libReferenceDirectives != libReferenceDirectives
+            ? update(cloneSourceFileWithChanges(node, statements, isDeclarationFile, referencedFiles, typeReferenceDirectives, hasNoDefaultLib, libReferenceDirectives), node)
+            : node;
+    }
 }

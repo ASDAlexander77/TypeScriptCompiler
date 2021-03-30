@@ -94,7 +94,7 @@ namespace data
 
             return !arraysEqual(*this, otherArray);
         }          
-        
+
         inline auto operator==(undefined_t)
         {
             // TODO: review it
@@ -2401,11 +2401,11 @@ namespace data
      */
         /* @internal */ PTR(RedirectInfo) redirectInfo;
 
-        std::vector<AmdDependency> amdDependencies;
+        NodeArray<AmdDependency> amdDependencies;
         string moduleName;
-        std::vector<FileReference> referencedFiles;
-        std::vector<FileReference> typeReferenceDirectives;
-        std::vector<FileReference> libReferenceDirectives;
+        NodeArray<FileReference> referencedFiles;
+        NodeArray<FileReference> typeReferenceDirectives;
+        NodeArray<FileReference> libReferenceDirectives;
         LanguageVariant languageVariant;
         boolean isDeclarationFile;
 
