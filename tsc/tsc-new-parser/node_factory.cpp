@@ -141,6 +141,20 @@ namespace ts
         return node;
     }
 
+    auto NodeFactory::createLiteralLikeNode(SyntaxKind kind, string text) -> LiteralLikeNode {
+        switch (kind) {
+            case SyntaxKind::NumericLiteral: return createNumericLiteral(text);
+            case SyntaxKind::BigIntLiteral: return createBigIntLiteral(text);
+            case SyntaxKind::StringLiteral: return createStringLiteral(text);
+            case SyntaxKind::JsxText: return createJsxText(text);
+            case SyntaxKind::JsxTextAllWhiteSpaces: return createJsxText(text, /*containsOnlyTriviaWhiteSpaces*/ true);
+            case SyntaxKind::RegularExpressionLiteral: return createRegularExpressionLiteral(text);
+            case SyntaxKind::NoSubstitutionTemplateLiteral: return createTemplateLiteralLikeNode(kind, text);
+        }
+
+        return undefined;
+    }
+
     auto NodeFactory::createBaseIdentifier(string text, SyntaxKind originalKeywordKind)
     {
         if (originalKeywordKind == SyntaxKind::Unknown && !text.empty())
@@ -642,6 +656,26 @@ namespace ts
             SyntaxKind::FunctionType,
             /*decorators*/ undefined,
             /*modifiers*/ undefined,
+            /*name*/ undefined,
+            typeParameters,
+            parameters,
+            type
+        );
+        node->transformFlags = TransformFlags::ContainsTypeScript;
+        return node;
+    }
+
+    // @api
+    auto NodeFactory::createConstructorTypeNode(
+        ModifiersArray modifiers, 
+        NodeArray<TypeParameterDeclaration> typeParameters, 
+        NodeArray<ParameterDeclaration> parameters, 
+        TypeNode type
+    ) -> ConstructorTypeNode {
+        auto node = createBaseSignatureDeclaration<ConstructorTypeNode>(
+            SyntaxKind::ConstructorType,
+            /*decorators*/ undefined,
+            modifiers,
             /*name*/ undefined,
             typeParameters,
             parameters,
