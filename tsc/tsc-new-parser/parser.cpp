@@ -970,7 +970,7 @@ namespace ts
                 return token() > SyntaxKind::LastReservedWord;
             }
 
-            auto parseExpected(SyntaxKind kind, DiagnosticMessage diagnosticMessage = DiagnosticMessage(), boolean shouldAdvance = true) -> boolean
+            auto parseExpected(SyntaxKind kind, DiagnosticMessage diagnosticMessage = undefined, boolean shouldAdvance = true) -> boolean
             {
                 if (token() == kind)
                 {
@@ -1032,7 +1032,7 @@ namespace ts
                 return Node();
             }
 
-            auto parseExpectedToken(SyntaxKind t, DiagnosticMessage diagnosticMessage = DiagnosticMessage(), string arg0 = string()) -> Node
+            auto parseExpectedToken(SyntaxKind t, DiagnosticMessage diagnosticMessage = undefined, string arg0 = string()) -> Node
             {
                 return parseOptionalToken(t) ||
                        createMissingNode(t, /*reportAtCurrentPosition*/ false, diagnosticMessage, arg0);
@@ -1127,7 +1127,7 @@ namespace ts
             }
 
             template <typename T = Node>
-            auto createMissingNode(SyntaxKind kind, boolean reportAtCurrentPosition, DiagnosticMessage diagnosticMessage = DiagnosticMessage(), string arg0 = string()) -> Node
+            auto createMissingNode(SyntaxKind kind, boolean reportAtCurrentPosition, DiagnosticMessage diagnosticMessage = undefined, string arg0 = string()) -> Node
             {
                 if (reportAtCurrentPosition)
                 {
@@ -1161,7 +1161,7 @@ namespace ts
             // An identifier that starts with two underscores has an extra underscore character prepended to it to avoid issues
             // with magic property names like '__proto__'. The 'identifiers' object is used to share a single string instance for
             // each identifier in order to reduce memory consumption.
-            auto createIdentifier(boolean isIdentifier, DiagnosticMessage diagnosticMessage = DiagnosticMessage(), DiagnosticMessage privateIdentifierDiagnosticMessage = DiagnosticMessage()) -> Identifier
+            auto createIdentifier(boolean isIdentifier, DiagnosticMessage diagnosticMessage = undefined, DiagnosticMessage privateIdentifierDiagnosticMessage = undefined) -> Identifier
             {
                 if (isIdentifier)
                 {
@@ -1198,17 +1198,17 @@ namespace ts
                 return createMissingNode<Identifier>(SyntaxKind::Identifier, reportAtCurrentPosition, !!diagnosticMessage ? diagnosticMessage : defaultMessage, msgArg);
             }
 
-            auto parseBindingIdentifier(DiagnosticMessage privateIdentifierDiagnosticMessage = DiagnosticMessage())
+            auto parseBindingIdentifier(DiagnosticMessage privateIdentifierDiagnosticMessage = undefined)
             {
-                return createIdentifier(isBindingIdentifier(), /*diagnosticMessage*/ DiagnosticMessage(), privateIdentifierDiagnosticMessage);
+                return createIdentifier(isBindingIdentifier(), /*diagnosticMessage*/ undefined, privateIdentifierDiagnosticMessage);
             }
 
-            auto parseIdentifier(DiagnosticMessage diagnosticMessage = DiagnosticMessage(), DiagnosticMessage privateIdentifierDiagnosticMessage = DiagnosticMessage()) -> Identifier
+            auto parseIdentifier(DiagnosticMessage diagnosticMessage = undefined, DiagnosticMessage privateIdentifierDiagnosticMessage = undefined) -> Identifier
             {
                 return createIdentifier(isIdentifier(), diagnosticMessage, privateIdentifierDiagnosticMessage);
             }
 
-            auto parseIdentifierName(DiagnosticMessage diagnosticMessage = DiagnosticMessage()) -> Identifier
+            auto parseIdentifierName(DiagnosticMessage diagnosticMessage = undefined) -> Identifier
             {
                 return createIdentifier(scanner.tokenIsIdentifierOrKeyword(token()), diagnosticMessage);
             }
@@ -2154,7 +2154,7 @@ namespace ts
                 return createMissingList<T>();
             }
 
-            auto parseEntityName(boolean allowReservedWords, DiagnosticMessage diagnosticMessage = DiagnosticMessage()) -> Identifier
+            auto parseEntityName(boolean allowReservedWords, DiagnosticMessage diagnosticMessage = undefined) -> Identifier
             {
                 auto pos = getNodePos();
                 auto entity = allowReservedWords ? parseIdentifierName(diagnosticMessage) : parseIdentifier(diagnosticMessage);
@@ -5573,7 +5573,7 @@ namespace ts
             }
 
             // STATEMENTS
-            auto parseBlock(boolean ignoreMissingOpenBrace, DiagnosticMessage diagnosticMessage = DiagnosticMessage()) -> Block
+            auto parseBlock(boolean ignoreMissingOpenBrace, DiagnosticMessage diagnosticMessage = undefined) -> Block
             {
                 auto pos = getNodePos();
                 auto openBracePosition = scanner.getTokenPos();
@@ -5600,7 +5600,7 @@ namespace ts
                 }
             }
 
-            auto parseFunctionBlock(SignatureFlags flags, DiagnosticMessage diagnosticMessage = DiagnosticMessage()) -> Block
+            auto parseFunctionBlock(SignatureFlags flags, DiagnosticMessage diagnosticMessage = undefined) -> Block
             {
                 auto savedYieldContext = inYieldContext();
                 setYieldContext(!!(flags & SignatureFlags::Yield));
@@ -6290,7 +6290,7 @@ namespace ts
                 return !scanner.hasPrecedingLineBreak() && (isIdentifier() || token() == SyntaxKind::StringLiteral);
             }
 
-            auto parseFunctionBlockOrSemicolon(SignatureFlags flags, DiagnosticMessage diagnosticMessage = DiagnosticMessage()) -> Block
+            auto parseFunctionBlockOrSemicolon(SignatureFlags flags, DiagnosticMessage diagnosticMessage = undefined) -> Block
             {
                 if (token() != SyntaxKind::OpenBraceToken && canParseSemicolon())
                 {
@@ -6360,7 +6360,7 @@ namespace ts
                 return token() == SyntaxKind::OpenBraceToken || token() == SyntaxKind::OpenBracketToken || token() == SyntaxKind::PrivateIdentifier || isBindingIdentifier();
             }
 
-            auto parseIdentifierOrPattern(DiagnosticMessage privateIdentifierDiagnosticMessage = DiagnosticMessage()) -> Node
+            auto parseIdentifierOrPattern(DiagnosticMessage privateIdentifierDiagnosticMessage = undefined) -> Node
             {
                 if (token() == SyntaxKind::OpenBracketToken)
                 {
@@ -6535,7 +6535,7 @@ namespace ts
                 PropertyName name,
                 QuestionDotToken questionToken,
                 ExclamationToken exclamationToken,
-                DiagnosticMessage diagnosticMessage = DiagnosticMessage()) -> MethodDeclaration
+                DiagnosticMessage diagnosticMessage = undefined) -> MethodDeclaration
             {
                 auto isGenerator = asteriskToken == SyntaxKind::AsteriskToken ? SignatureFlags::Yield : SignatureFlags::None;
                 auto isAsync = some(modifiers, isAsyncModifier) ? SignatureFlags::Await : SignatureFlags::None;

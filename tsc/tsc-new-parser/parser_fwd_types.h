@@ -65,13 +65,9 @@ struct ptr
         Dynamic
     };
 
-	ptr() : instance(std::make_shared<T>()) {};
+    ptr() : instance(nullptr) {};
 
-	ptr(undefined_t) : /*instance(nullptr)*/ instance(std::make_shared<T>()) {};
-
-	ptr(REF_TYPE(T) value) : instance(value) {};
-
-	ptr(const T& t) : instance(std::make_shared<T>(t)) {};
+	ptr(undefined_t) : instance(nullptr) {};
 
 	template <typename U>
 	ptr(ptr<U> otherPtr) : instance(std::dynamic_pointer_cast<T>(otherPtr.instance)) {
@@ -88,11 +84,8 @@ protected:
 	ptr(ptr<U> otherPtr, Cast) : instance(std::static_pointer_cast<T>(otherPtr.instance)) {};
 
 public:
-	template <typename I>
-	ptr(const I& inst) : instance(std::make_shared<T>(inst)) {};
-
-    template <typename... Args>
-	ptr(Args &&... args) : instance(std::make_shared<T>(std::forward<Args>(args)...)) {};
+    //template <typename... Args>
+	//ptr(Args &&... args) : instance(std::make_shared<T>(std::forward<Args>(args)...)) {};
 
     inline auto operator->()
     {
