@@ -1656,7 +1656,7 @@ namespace ts
                 auto node = currentNode(parsingContext);
                 if (node)
                 {
-                    return consumeNode(node).as<T>().as<T>();
+                    return consumeNode(node).as<T>();
                 }
 
                 return parseElement();
