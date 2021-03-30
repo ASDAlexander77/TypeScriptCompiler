@@ -417,12 +417,12 @@ namespace ts
 
         auto createNumericLiteral(string value, TokenFlags numericLiteralFlags = TokenFlags::None) -> NumericLiteral;
         // auto createNumericLiteral(number value, TokenFlags numericLiteralFlags = TokenFlags::None) -> NumericLiteral;
-        // auto createBigIntLiteral(string value) -> BigIntLiteral;
+         auto createBigIntLiteral(string value) -> BigIntLiteral;
         // auto createBigIntLiteral(PseudoBigInt value) -> BigIntLiteral;
         auto createBaseStringLiteral(string text, boolean isSingleQuote = false) -> StringLiteral;
         /* @internal*/ auto createStringLiteral(string text, boolean isSingleQuote = false, boolean hasExtendedUnicodeEscape = false) -> StringLiteral; // eslint-disable-line @typescript-eslint/unified-signatures
         // auto createStringLiteralFromNode(PropertyNameLiteral sourceNode, boolean isSingleQuote = false) -> StringLiteral;
-        // auto createRegularExpressionLiteral(string text) -> RegularExpressionLiteral;
+        auto createRegularExpressionLiteral(string text) -> RegularExpressionLiteral;
 
         //
         // Identifiers
@@ -672,8 +672,8 @@ namespace ts
          auto createTemplateTail(string text, string rawText = string(), TokenFlags templateFlags = TokenFlags::None) -> TemplateTail;
          auto createNoSubstitutionTemplateLiteral(string text, string rawText = string(), TokenFlags templateFlags = TokenFlags::None) -> NoSubstitutionTemplateLiteral;
         /* @internal */ auto createLiteralLikeNode(SyntaxKind kind, string text) -> LiteralLikeNode;
-        /* @internal */ auto createTemplateLiteralLikeNodeChecked(SyntaxKind kind, string text, string rawText, TokenFlags templateFlags = TokenFlags::None) -> TemplateLiteralLikeNode;
-        /* @internal */ auto createTemplateLiteralLikeNode(SyntaxKind kind, string text, string rawText, TokenFlags templateFlags) -> TemplateLiteralLikeNode;
+        /* @internal */ auto createTemplateLiteralLikeNodeChecked(SyntaxKind kind, string text, string rawText = string(), TokenFlags templateFlags = TokenFlags::None) -> TemplateLiteralLikeNode;
+        /* @internal */ auto createTemplateLiteralLikeNode(SyntaxKind kind, string text, string rawText = string(), TokenFlags templateFlags = TokenFlags::None) -> TemplateLiteralLikeNode;
         auto createYieldExpression(AsteriskToken asteriskToken, Expression expression) -> YieldExpression;
         // auto updateYieldExpression(YieldExpression node, AsteriskToken asteriskToken, Expression expression) -> YieldExpression;
         auto createSpreadElement(Expression expression) -> SpreadElement;

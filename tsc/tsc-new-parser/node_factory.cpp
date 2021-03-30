@@ -141,6 +141,17 @@ namespace ts
         return node;
     }
 
+    auto NodeFactory::createBigIntLiteral(string value) -> BigIntLiteral {
+        auto node = createBaseLiteral<BigIntLiteral>(SyntaxKind::BigIntLiteral, value);
+        node->transformFlags |= TransformFlags::ContainsESNext;
+        return node;
+    }
+
+    auto NodeFactory::createRegularExpressionLiteral(string text) -> RegularExpressionLiteral {
+        auto node = createBaseLiteral<RegularExpressionLiteral>(SyntaxKind::RegularExpressionLiteral, text);
+        return node;
+    }
+
     auto NodeFactory::createLiteralLikeNode(SyntaxKind kind, string text) -> LiteralLikeNode {
         switch (kind) {
             case SyntaxKind::NumericLiteral: return createNumericLiteral(text);
@@ -2425,12 +2436,54 @@ namespace ts
         return node;
     }
 
-    // @api
-    
-
     //
     // JSDoc
     //
+
+    auto NodeFactory::createJSDocAllType() -> JSDocAllType 
+    { 
+        return createBaseNode<JSDocAllType>(SyntaxKind::JSDocAllType); 
+    }
+
+    auto NodeFactory::createJSDocUnknownType() -> JSDocUnknownType 
+    { 
+        return createBaseNode<JSDocUnknownType>(SyntaxKind::JSDocUnknownType); 
+    }
+
+    auto NodeFactory::createJSDocNonNullableType(TypeNode type) -> JSDocNonNullableType 
+    { 
+        auto node = createBaseNode<JSDocNonNullableType>(SyntaxKind::JSDocNonNullableType);        
+        node->type = type; 
+        return node;
+    }
+    
+    auto NodeFactory::createJSDocNullableType(TypeNode type) -> JSDocNullableType 
+    { 
+        auto node = createBaseNode<JSDocNullableType>(SyntaxKind::JSDocNullableType); 
+        node->type = type; 
+        return node;
+    }
+    
+    auto NodeFactory::createJSDocOptionalType(TypeNode type) -> JSDocOptionalType 
+    { 
+        auto node = createBaseNode<JSDocOptionalType>(SyntaxKind::JSDocOptionalType); 
+        node->type = type; 
+        return node;
+    }
+    
+    auto NodeFactory::createJSDocVariadicType(TypeNode type) -> JSDocVariadicType 
+    { 
+        auto node = createBaseNode<JSDocVariadicType>(SyntaxKind::JSDocVariadicType); 
+        node->type = type; 
+        return node;
+    }
+    
+    auto NodeFactory::createJSDocNamepathType(TypeNode type) -> JSDocNamepathType 
+    { 
+        auto node = createBaseNode<JSDocNamepathType>(SyntaxKind::JSDocNamepathType); 
+        node->type = type; 
+        return node;
+    }
 
     // @api
     auto NodeFactory::createJSDocFunctionType(NodeArray<ParameterDeclaration> parameters, TypeNode type) -> JSDocFunctionType {
