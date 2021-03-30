@@ -153,19 +153,19 @@ namespace ts
         }
 
         template <typename T>
-        auto createJSDocPrimaryTypeWorker(T kind) {
+        auto createJSDocPrimaryTypeWorker(SyntaxKind kind) {
             return createBaseNode(kind);
         }
 
         template <typename T>
-        auto createJSDocUnaryTypeWorker(T kind, decltype(T()->type) type) -> T {
+        auto createJSDocUnaryTypeWorker(SyntaxKind kind, decltype(T()->type) type) -> T {
             auto node = createBaseNode<T>(kind);
             node->type = type;
             return node;
         }
 
         template <typename T>
-        auto createBaseJSDocTag(T kind, Identifier tagName, string comment) {
+        auto createBaseJSDocTag(SyntaxKind kind, Identifier tagName, string comment) {
             auto node = createBaseNode<T>(kind);
             node->tagName = tagName;
             node->comment = comment;
@@ -173,13 +173,13 @@ namespace ts
         }
 
         template <typename T>
-        auto createJSDocSimpleTagWorker(T kind, Identifier tagName, string comment) {
+        auto createJSDocSimpleTagWorker(SyntaxKind kind, Identifier tagName, string comment) {
             auto node = createBaseJSDocTag<T>(kind, tagName ?? createIdentifier(getDefaultTagNameForKind(kind)), comment);
             return node;
         }
 
         template <typename T>
-        auto createJSDocTypeLikeTagWorker(T kind, Identifier tagName, JSDocTypeExpression typeExpression, string comment) {
+        auto createJSDocTypeLikeTagWorker(SyntaxKind kind, Identifier tagName, JSDocTypeExpression typeExpression, string comment) {
             auto node = createBaseJSDocTag<T>(kind, tagName ? tagName : createIdentifier(getDefaultTagNameForKind(kind)), comment);
             node->typeExpression = typeExpression;
             return node;
@@ -479,7 +479,7 @@ namespace ts
         // // Modifiers
         // //
 
-        // template <typename T/*extends ModifierSyntaxKind*/> auto createModifier(T kind) -> Node;
+        // template <typename T/*extends ModifierSyntaxKind*/> auto createModifier(SyntaxKind kind) -> Node;
         // auto createModifiersFromModifierFlags(ModifierFlags flags) -> ModifiersArray;
 
         // //

@@ -1621,7 +1621,7 @@ namespace ts
                 node->transformFlags |= TransformFlags::ContainsESNext;
                 break;
             default:
-                return Debug::_assertNever<MetaProperty>(keywordToken);
+                return Debug::_assertNever(node);
         }
         return node;
     }
@@ -2804,7 +2804,7 @@ namespace ts
                 node->transformFlags |= TransformFlags::ContainsTypeScript;
                 break;
             default:
-                return Debug::_assertNever(token);
+                return Debug::_assertNever(node);
         }
         return node;
     }
@@ -2855,7 +2855,7 @@ namespace ts
             /*modifiers*/ undefined,
             name
         );
-        node->objectAssignmentInitializer = objectAssignmentInitializer && parenthesizerRules.parenthesizeExpressionForDisallowedComma(objectAssignmentInitializer);
+        node->objectAssignmentInitializer = objectAssignmentInitializer ? parenthesizerRules.parenthesizeExpressionForDisallowedComma(objectAssignmentInitializer) : undefined;
         node->transformFlags |=
             propagateChildFlags(node->objectAssignmentInitializer) |
             TransformFlags::ContainsES2015;
@@ -2881,7 +2881,7 @@ namespace ts
     auto NodeFactory::createEnumMember(PropertyName name, Expression initializer) -> EnumMember {
         auto node = createBaseNode<EnumMember>(SyntaxKind::EnumMember);
         node->name = asName(name);
-        node->initializer = initializer && parenthesizerRules.parenthesizeExpressionForDisallowedComma(initializer);
+        node->initializer = initializer ? parenthesizerRules.parenthesizeExpressionForDisallowedComma(initializer) : undefined;
         node->transformFlags |=
             propagateChildFlags(node->name) |
             propagateChildFlags(node->initializer) |
