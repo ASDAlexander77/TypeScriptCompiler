@@ -1472,7 +1472,7 @@ namespace ts
                 })));
     }
 
-    inline static auto isAssignmentPattern(Node node) -> AssignmentPattern {
+    inline static auto isAssignmentPattern(Node node) -> boolean {
         auto kind = node->kind;
         return kind == SyntaxKind::ArrayLiteralExpression
             || kind == SyntaxKind::ObjectLiteralExpression;

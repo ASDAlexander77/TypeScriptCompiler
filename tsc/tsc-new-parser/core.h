@@ -127,13 +127,13 @@ auto find(std::vector<T> array, std::function<boolean(T, number)> predicate) -> 
 }
 
 template <typename T>
-auto find(T array, std::function<boolean(decltype(array[0]))> predicate) -> decltype(array[0]) {
+auto find(T array, std::function<boolean(std::remove_reference_t<decltype(array[0])>)> predicate) -> std::remove_reference_t<decltype(array[0])> {
     for (auto value : array) {
         if (predicate(value)) {
             return value;
         }
     }
-    return decltype(array[0])();
+    return undefined;
 }
 
 template <typename T>
