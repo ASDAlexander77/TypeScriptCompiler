@@ -7644,13 +7644,13 @@ namespace ts
             //     return result;
             // }
 
-            regex tripleSlashXMLCommentStartRegEx = regex(S("^\\/\\/\\/\\s*<(\\S+)\\s.*?\\/>"), std::regex_constants::extended|std::regex_constants::icase);
-            regex singleLinePragmaRegEx = regex(S("^\\/\\/\\/?\\s*@(\\S+)\\s*(.*)\\s*$"), std::regex_constants::extended|std::regex_constants::icase);
-            regex multiLinePragmaRegEx = regex(S("\\s*@(\\S+)\\s*(.*)\\s*$"), std::regex_constants::extended|std::regex_constants::icase); // Defined inline since it uses the "g" flag, which keeps a persistent index (for iterating)
+            //regex tripleSlashXMLCommentStartRegEx = regex(S("^\\/\\/\\/\\s*<(\\S+)\\s.*?\\/"), std::regex_constants::extended|std::regex_constants::icase);
+            //regex singleLinePragmaRegEx = regex(S("^\\/\\/\\/?\\s*@(\\S+)\\s*(.*)\\s*$"), std::regex_constants::extended|std::regex_constants::icase);
+            //regex multiLinePragmaRegEx = regex(S("\\s*@(\\S+)\\s*(.*)\\s*$"), std::regex_constants::extended|std::regex_constants::icase); // Defined inline since it uses the "g" flag, which keeps a persistent index (for iterating)
             auto extractPragmas(std::vector<Pair> pragmas, CommentRange range, string text) -> void {
-                auto tripleSlash = range->kind == SyntaxKind::SingleLineCommentTrivia && regex_exec(text, tripleSlashXMLCommentStartRegEx);
-                if (tripleSlash) {
-                }
+                //auto tripleSlash = range->kind == SyntaxKind::SingleLineCommentTrivia && regex_exec(text, tripleSlashXMLCommentStartRegEx);
+                //if (tripleSlash) {
+                //}
 
                 // TODO: complete later
             }

@@ -34,7 +34,13 @@ namespace ts
 
     inline auto getScriptKindFromFileName(string fileName) -> ScriptKind
     {
-        auto ext = fileName.substr(fileName.find(S('.')));
+        auto pos = fileName.find(S('.'));
+        if (pos == string::npos)
+        {
+            return ScriptKind::Unknown;
+        }
+
+        auto ext = fileName.substr(pos);
         std::transform(ext.begin(), ext.end(), ext.begin(), [](char_t c) { return std::tolower(c); });
         if (ext == S("js"))
             return ScriptKind::JS;
