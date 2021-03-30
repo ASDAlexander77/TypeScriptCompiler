@@ -2178,8 +2178,8 @@ namespace data
     struct JSDocSignature : JSDocType, Declaration
     {
         // kind: SyntaxKind::JSDocSignature;
-        std::vector<JSDocTemplateTag> typeParameters;
-        std::vector<JSDocParameterTag> parameters;
+        NodeArray<PTR(JSDocTemplateTag)> typeParameters;
+        NodeArray<PTR(JSDocParameterTag)> parameters;
         PTR(Node) /**JSDocReturnTag | undefined*/ type;
     };
 
@@ -2206,7 +2206,7 @@ namespace data
     struct JSDocTypeLiteral : JSDocType
     {
         // kind: SyntaxKind::JSDocTypeLiteral;
-        std::vector<JSDocPropertyLikeTag> jsDocPropertyTags;
+        NodeArray<PTR(JSDocPropertyLikeTag)> jsDocPropertyTags;
         /** If true, then this type literal represents an *array* of its type. */
         boolean isArrayType;
     };

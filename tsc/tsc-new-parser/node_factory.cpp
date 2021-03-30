@@ -2059,12 +2059,11 @@ namespace ts
 
     // @api
     auto NodeFactory::createTypeAliasDeclaration(
-        DecoratorsArray decorators,
-        ModifiersArray modifiers,
-        name: string | Identifier,
-        NodeArray<TypeParameterDeclaration> typeParameters,
-        TypeNode type
-    ) {
+        DecoratorsArray decorators, 
+        ModifiersArray modifiers, 
+        Identifier name, 
+        NodeArray<TypeParameterDeclaration> typeParameters, 
+        TypeNode type) -> TypeAliasDeclaration {
         auto node = createBaseGenericNamedDeclaration<TypeAliasDeclaration>(
             SyntaxKind::TypeAliasDeclaration,
             decorators,
@@ -2082,11 +2081,10 @@ namespace ts
 
     // @api
     auto NodeFactory::createEnumDeclaration(
-        DecoratorsArray decorators,
-        ModifiersArray modifiers,
-        name: string | Identifier,
-        members: EnumMember[]
-    ) {
+        DecoratorsArray decorators, 
+        ModifiersArray modifiers, 
+        Identifier name, 
+        NodeArray<EnumMember> members) -> EnumDeclaration {
         auto node = createBaseNamedDeclaration<EnumDeclaration>(
             SyntaxKind::EnumDeclaration,
             decorators,
@@ -2106,12 +2104,11 @@ namespace ts
 
     // @api
     auto NodeFactory::createModuleDeclaration(
-        DecoratorsArray decorators,
-        ModifiersArray modifiers,
-        name: ModuleName,
-        body: ModuleBody,
-        flags = NodeFlags::None
-    ) {
+        DecoratorsArray decorators, 
+        ModifiersArray modifiers, 
+        ModuleName name, 
+        ModuleBody body, 
+        NodeFlags flags) -> ModuleDeclaration {
         auto node = createBaseDeclaration<ModuleDeclaration>(
             SyntaxKind::ModuleDeclaration,
             decorators,
@@ -2120,7 +2117,7 @@ namespace ts
         node->flags |= flags & (NodeFlags::Namespace | NodeFlags::NestedNamespace | NodeFlags::GlobalAugmentation);
         node->name = name;
         node->body = body;
-        if (modifiersToFlags(node->modifiers) & ModifierFlags::Ambient) {
+        if (!!(modifiersToFlags(node->modifiers) & ModifierFlags::Ambient)) {
             node->transformFlags = TransformFlags::ContainsTypeScript;
         }
         else {
@@ -2137,7 +2134,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createModuleBlock(statements: Statement[]) {
+    auto NodeFactory::createModuleBlock(NodeArray<Statement> statements) -> ModuleBlock {
         auto node = createBaseNode<ModuleBlock>(SyntaxKind::ModuleBlock);
         node->statements = createNodeArray(statements);
         node->transformFlags |= propagateChildrenFlags(node->statements);
@@ -2148,7 +2145,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createCaseBlock(clauses: CaseOrDefaultClause[]) -> CaseBlock {
+    auto NodeFactory::createCaseBlock(NodeArray<CaseOrDefaultClause> clauses) -> CaseBlock {
         auto node = createBaseNode<CaseBlock>(SyntaxKind::CaseBlock);
         node->clauses = createNodeArray(clauses);
         node->transformFlags |= propagateChildrenFlags(node->clauses);
@@ -2159,7 +2156,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createNamespaceExportDeclaration(name: string | Identifier) {
+    auto NodeFactory::createNamespaceExportDeclaration(Identifier name) -> NamespaceExportDeclaration {
         auto node = createBaseNamedDeclaration<NamespaceExportDeclaration>(
             SyntaxKind::NamespaceExportDeclaration,
             /*decorators*/ undefined,
@@ -2177,10 +2174,10 @@ namespace ts
     auto NodeFactory::createImportEqualsDeclaration(
         DecoratorsArray decorators,
         ModifiersArray modifiers,
-        isTypeOnly: boolean,
-        name: string | Identifier,
-        moduleReference: ModuleReference
-    ) {
+        boolean isTypeOnly,
+        Identifier name,
+        ModuleReference moduleReference
+    ) -> ImportEqualsDeclaration {
         auto node = createBaseNamedDeclaration<ImportEqualsDeclaration>(
             SyntaxKind::ImportEqualsDeclaration,
             decorators,
@@ -2202,8 +2199,8 @@ namespace ts
     auto NodeFactory::createImportDeclaration(
         DecoratorsArray decorators,
         ModifiersArray modifiers,
-        importClause: ImportClause,
-        moduleSpecifier: Expression
+        ImportClause importClause,
+        Expression moduleSpecifier
     ) -> ImportDeclaration {
         auto node = createBaseDeclaration<ImportDeclaration>(
             SyntaxKind::ImportDeclaration,
@@ -2223,7 +2220,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createImportClause(isTypeOnly: boolean, name: Identifier, namedBindings: NamedImportBindings) -> ImportClause {
+    auto NodeFactory::createImportClause(boolean isTypeOnly, Identifier name, NamedImportBindings namedBindings) -> ImportClause {
         auto node = createBaseNode<ImportClause>(SyntaxKind::ImportClause);
         node->isTypeOnly = isTypeOnly;
         node->name = name;
@@ -2242,7 +2239,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createNamespaceImport(name: Identifier) -> NamespaceImport {
+    auto NodeFactory::createNamespaceImport(Identifier name) -> NamespaceImport {
         auto node = createBaseNode<NamespaceImport>(SyntaxKind::NamespaceImport);
         node->name = name;
         node->transformFlags |= propagateChildFlags(node->name);
@@ -2254,7 +2251,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createNamespaceExport(name: Identifier) -> NamespaceExport {
+    auto NodeFactory::createNamespaceExport(Identifier name) -> NamespaceExport {
         auto node = createBaseNode<NamespaceExport>(SyntaxKind::NamespaceExport);
         node->name = name;
         node->transformFlags |=
@@ -2268,7 +2265,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createNamedImports(elements: ImportSpecifier[]) -> NamedImports {
+    auto NodeFactory::createNamedImports(NodeArray<ImportSpecifier> elements) -> NamedImports {
         auto node = createBaseNode<NamedImports>(SyntaxKind::NamedImports);
         node->elements = createNodeArray(elements);
         node->transformFlags |= propagateChildrenFlags(node->elements);
@@ -2280,7 +2277,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createImportSpecifier(propertyName: Identifier, name: Identifier) {
+    auto NodeFactory::createImportSpecifier(Identifier propertyName, Identifier name) -> ImportSpecifier {
         auto node = createBaseNode<ImportSpecifier>(SyntaxKind::ImportSpecifier);
         node->propertyName = propertyName;
         node->name = name;
@@ -2298,9 +2295,9 @@ namespace ts
     auto NodeFactory::createExportAssignment(
         DecoratorsArray decorators,
         ModifiersArray modifiers,
-        isExportEquals: boolean,
+        boolean isExportEquals,
         Expression expression
-    ) {
+    ) -> ExportAssignment {
         auto node = createBaseDeclaration<ExportAssignment>(
             SyntaxKind::ExportAssignment,
             decorators,
@@ -2322,10 +2319,10 @@ namespace ts
     auto NodeFactory::createExportDeclaration(
         DecoratorsArray decorators,
         ModifiersArray modifiers,
-        isTypeOnly: boolean,
-        exportClause: NamedExportBindings,
-        moduleSpecifier?: Expression
-    ) {
+        boolean isTypeOnly,
+        NamedExportBindings exportClause,
+        Expression moduleSpecifier
+    ) -> ExportDeclaration {
         auto node = createBaseDeclaration<ExportDeclaration>(
             SyntaxKind::ExportDeclaration,
             decorators,
@@ -2345,7 +2342,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createNamedExports(elements: ExportSpecifier[]) {
+    auto NodeFactory::createNamedExports(NodeArray<ExportSpecifier> elements) -> NamedExports {
         auto node = createBaseNode<NamedExports>(SyntaxKind::NamedExports);
         node->elements = createNodeArray(elements);
         node->transformFlags |= propagateChildrenFlags(node->elements);
@@ -2357,7 +2354,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createExportSpecifier(propertyName: string | Identifier, name: string | Identifier) {
+    auto NodeFactory::createExportSpecifier(Identifier propertyName, Identifier name) -> ExportSpecifier {
         auto node = createBaseNode<ExportSpecifier>(SyntaxKind::ExportSpecifier);
         node->propertyName = asName(propertyName);
         node->name = asName(name);
@@ -2372,7 +2369,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createMissingDeclaration() {
+    auto NodeFactory::createMissingDeclaration() -> MissingDeclaration {
         auto node = createBaseDeclaration<MissingDeclaration>(
             SyntaxKind::MissingDeclaration,
             /*decorators*/ undefined,
@@ -2386,7 +2383,7 @@ namespace ts
     //
 
     // @api
-    auto NodeFactory::createExternalModuleReference(Expression expression) {
+    auto NodeFactory::createExternalModuleReference(Expression expression) -> ExternalModuleReference {
         auto node = createBaseNode<ExternalModuleReference>(SyntaxKind::ExternalModuleReference);
         node->expression = expression;
         node->transformFlags |= propagateChildFlags(node->expression);
@@ -2400,26 +2397,6 @@ namespace ts
     //
     // JSDoc
     //
-
-    // @api
-    // createJSDocAllType
-    // createJSDocUnknownType
-    auto NodeFactory::createJSDocPrimaryTypeWorker<T extends JSDocType>(kind: T) {
-        return createBaseNode(kind);
-    }
-
-    // @api
-    // createJSDocNonNullableType
-    // createJSDocNullableType
-    // createJSDocOptionalType
-    // createJSDocVariadicType
-    // createJSDocNamepathType
-
-    auto NodeFactory::createJSDocUnaryTypeWorker<T extends JSDocType & { TypeNode type; }>(kind: T, type: T[S("type")]) -> T {
-        auto node = createBaseNode<T>(kind);
-        node->type = type;
-        return node;
-    }
 
     // @api
     auto NodeFactory::createJSDocFunctionType(NodeArray<ParameterDeclaration> parameters, TypeNode type) -> JSDocFunctionType {
@@ -2439,7 +2416,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createJSDocTypeLiteral(propertyTags?: JSDocPropertyLikeTag[], isArrayType = false) -> JSDocTypeLiteral {
+    auto NodeFactory::createJSDocTypeLiteral(NodeArray<JSDocPropertyLikeTag> propertyTags, boolean isArrayType) -> JSDocTypeLiteral {
         auto node = createBaseNode<JSDocTypeLiteral>(SyntaxKind::JSDocTypeLiteral);
         node->jsDocPropertyTags = asNodeArray(propertyTags);
         node->isArrayType = isArrayType;
@@ -2460,7 +2437,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createJSDocSignature(typeParameters: JSDocTemplateTag[], parameters: JSDocParameterTag[], type?: JSDocReturnTag) -> JSDocSignature {
+    auto NodeFactory::createJSDocSignature(NodeArray<JSDocTemplateTag> typeParameters, NodeArray<JSDocParameterTag> parameters, JSDocReturnTag type) -> JSDocSignature {
         auto node = createBaseNode<JSDocSignature>(SyntaxKind::JSDocSignature);
         node->typeParameters = asNodeArray(typeParameters);
         node->parameters = createNodeArray(parameters);
@@ -2469,26 +2446,40 @@ namespace ts
     }
 
     // @api
-    
+    auto static getDefaultTagNameForKind(SyntaxKind kind) -> string {
+        switch (kind) {
+            case SyntaxKind::JSDocTypeTag: return S("type");
+            case SyntaxKind::JSDocReturnTag: return S("returns");
+            case SyntaxKind::JSDocThisTag: return S("this");
+            case SyntaxKind::JSDocEnumTag: return S("enum");
+            case SyntaxKind::JSDocAuthorTag: return S("author");
+            case SyntaxKind::JSDocClassTag: return S("class");
+            case SyntaxKind::JSDocPublicTag: return S("public");
+            case SyntaxKind::JSDocPrivateTag: return S("private");
+            case SyntaxKind::JSDocProtectedTag: return S("protected");
+            case SyntaxKind::JSDocReadonlyTag: return S("readonly");
+            case SyntaxKind::JSDocTemplateTag: return S("template");
+            case SyntaxKind::JSDocTypedefTag: return S("typedef");
+            case SyntaxKind::JSDocParameterTag: return S("param");
+            case SyntaxKind::JSDocPropertyTag: return S("prop");
+            case SyntaxKind::JSDocCallbackTag: return S("callback");
+            case SyntaxKind::JSDocAugmentsTag: return S("augments");
+            case SyntaxKind::JSDocImplementsTag: return S("implements");
+            default:
+                return Debug::fail<string>(S("Unsupported kind"));
+        }
+    }
 
-    auto getDefaultTagName(node: JSDocTag) {
+    auto NodeFactory::getDefaultTagName(JSDocTag node) -> Identifier {
         auto defaultTagName = getDefaultTagNameForKind(node->kind);
-        return node->tagName.escapedText == escapeLeadingUnderscores(defaultTagName)
+        return node->tagName->escapedText == escapeLeadingUnderscores(defaultTagName)
             ? node->tagName
             : createIdentifier(defaultTagName);
     }
 
     // @api
-    auto NodeFactory::createBaseJSDocTag<T extends JSDocTag>(kind: T, tagName: Identifier, comment: string) {
-        auto node = createBaseNode<T>(kind);
-        node->tagName = tagName;
-        node->comment = comment;
-        return node;
-    }
-
-    // @api
-    auto NodeFactory::createJSDocTemplateTag(tagName: Identifier, constraint: JSDocTypeExpression, NodeArray<TypeParameterDeclaration> typeParameters, comment?: string) -> JSDocTemplateTag {
-        auto node = createBaseJSDocTag<JSDocTemplateTag>(SyntaxKind::JSDocTemplateTag, tagName ?? createIdentifier(S("template")), comment);
+    auto NodeFactory::createJSDocTemplateTag(Identifier tagName, JSDocTypeExpression constraint, NodeArray<TypeParameterDeclaration> typeParameters, string comment) -> JSDocTemplateTag {
+        auto node = createBaseJSDocTag<JSDocTemplateTag>(SyntaxKind::JSDocTemplateTag, tagName ? tagName : createIdentifier(S("template")), comment);
         node->constraint = constraint;
         node->typeParameters = createNodeArray(typeParameters);
         return node;
@@ -2498,8 +2489,8 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createJSDocTypedefTag(tagName: Identifier, typeExpression?: JSDocTypeExpression, fullName?: Identifier | JSDocNamespaceDeclaration, comment?: string) -> JSDocTypedefTag {
-        auto node = createBaseJSDocTag<JSDocTypedefTag>(SyntaxKind::JSDocTypedefTag, tagName ?? createIdentifier(S("typedef")), comment);
+    auto NodeFactory::createJSDocTypedefTag(Identifier tagName, Node typeExpression, Node fullName, string comment) -> JSDocTypedefTag {
+        auto node = createBaseJSDocTag<JSDocTypedefTag>(SyntaxKind::JSDocTypedefTag, tagName ? tagName : createIdentifier(S("typedef")), comment);
         node->typeExpression = typeExpression;
         node->fullName = fullName;
         node->name = getJSDocTypeAliasName(fullName);
@@ -2510,8 +2501,8 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createJSDocParameterTag(tagName: Identifier, name: EntityName, isBracketed: boolean, typeExpression?: JSDocTypeExpression, isNameFirst?: boolean, comment?: string) -> JSDocParameterTag {
-        auto node = createBaseJSDocTag<JSDocParameterTag>(SyntaxKind::JSDocParameterTag, tagName ?? createIdentifier(S("param")), comment);
+    auto NodeFactory::createJSDocParameterTag(Identifier tagName, EntityName name, boolean isBracketed, JSDocTypeExpression typeExpression, boolean isNameFirst, string comment) -> JSDocParameterTag {
+        auto node = createBaseJSDocTag<JSDocParameterTag>(SyntaxKind::JSDocParameterTag, tagName ? tagName : createIdentifier(S("param")), comment);
         node->typeExpression = typeExpression;
         node->name = name;
         node->isNameFirst = !!isNameFirst;
@@ -2523,8 +2514,8 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createJSDocPropertyTag(tagName: Identifier, name: EntityName, isBracketed: boolean, typeExpression?: JSDocTypeExpression, isNameFirst?: boolean, comment?: string) -> JSDocPropertyTag {
-        auto node = createBaseJSDocTag<JSDocPropertyTag>(SyntaxKind::JSDocPropertyTag, tagName ?? createIdentifier(S("prop")), comment);
+    auto NodeFactory::createJSDocPropertyTag(Identifier tagName, EntityName name, boolean isBracketed, JSDocTypeExpression typeExpression, boolean isNameFirst, string comment) -> JSDocPropertyTag {
+        auto node = createBaseJSDocTag<JSDocPropertyTag>(SyntaxKind::JSDocPropertyTag, tagName ? tagName : createIdentifier(S("prop")), comment);
         node->typeExpression = typeExpression;
         node->name = name;
         node->isNameFirst = !!isNameFirst;
@@ -2536,8 +2527,8 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createJSDocCallbackTag(tagName: Identifier, typeExpression: JSDocSignature, fullName?: Identifier | JSDocNamespaceDeclaration, comment?: string) -> JSDocCallbackTag {
-        auto node = createBaseJSDocTag<JSDocCallbackTag>(SyntaxKind::JSDocCallbackTag, tagName ?? createIdentifier(S("callback")), comment);
+    auto NodeFactory::createJSDocCallbackTag(Identifier tagName, JSDocSignature typeExpression, Node fullName, string comment) -> JSDocCallbackTag {
+        auto node = createBaseJSDocTag<JSDocCallbackTag>(SyntaxKind::JSDocCallbackTag, tagName ? tagName : createIdentifier(S("callback")), comment);
         node->typeExpression = typeExpression;
         node->fullName = fullName;
         node->name = getJSDocTypeAliasName(fullName);
@@ -2548,9 +2539,10 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createJSDocAugmentsTag(tagName: Identifier, className: JSDocAugmentsTag[S("class")], comment?: string) -> JSDocAugmentsTag {
-        auto node = createBaseJSDocTag<JSDocAugmentsTag>(SyntaxKind::JSDocAugmentsTag, tagName ?? createIdentifier(S("augments")), comment);
-        node->class = className;
+    auto NodeFactory::createJSDocAugmentsTag(Identifier tagName, JSDocAugmentsTag className, string comment) -> JSDocAugmentsTag {
+        auto node = createBaseJSDocTag<JSDocAugmentsTag>(SyntaxKind::JSDocAugmentsTag, tagName ? tagName : createIdentifier(S("augments")), comment);
+        // TODO: review 
+        //node->_class = className;
         return node;
     }
 
@@ -2558,15 +2550,16 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createJSDocImplementsTag(tagName: Identifier, className: JSDocImplementsTag[S("class")], comment?: string) -> JSDocImplementsTag {
-        auto node = createBaseJSDocTag<JSDocImplementsTag>(SyntaxKind::JSDocImplementsTag, tagName ?? createIdentifier(S("implements")), comment);
-        node->class = className;
+    auto NodeFactory::createJSDocImplementsTag(Identifier tagName, JSDocImplementsTag className, string comment) -> JSDocImplementsTag {
+        auto node = createBaseJSDocTag<JSDocImplementsTag>(SyntaxKind::JSDocImplementsTag, tagName ? tagName : createIdentifier(S("implements")), comment);
+        // TODO: review 
+        // node->class = className;
         return node;
     }
 
     // @api
-    auto NodeFactory::createJSDocSeeTag(tagName: Identifier, name: JSDocNameReference, comment?: string) -> JSDocSeeTag {
-        auto node = createBaseJSDocTag<JSDocSeeTag>(SyntaxKind::JSDocSeeTag, tagName ?? createIdentifier(S("see")), comment);
+    auto NodeFactory::createJSDocSeeTag(Identifier tagName, JSDocNameReference name, string comment) -> JSDocSeeTag {
+        auto node = createBaseJSDocTag<JSDocSeeTag>(SyntaxKind::JSDocSeeTag, tagName ? tagName : createIdentifier(S("see")), comment);
         node->name = name;
         return node;
     }
@@ -2575,79 +2568,32 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createJSDocNameReference(name: EntityName) -> JSDocNameReference {
+    auto NodeFactory::createJSDocNameReference(EntityName name) -> JSDocNameReference {
         auto node = createBaseNode<JSDocNameReference>(SyntaxKind::JSDocNameReference);
         node->name = name;
         return node;
     }
 
     // @api
-    
-
-    // @api
-    
-
-    // @api
-    // createJSDocAuthorTag
-    // createJSDocClassTag
-    // createJSDocPublicTag
-    // createJSDocPrivateTag
-    // createJSDocProtectedTag
-    // createJSDocReadonlyTag
-    // createJSDocDeprecatedTag
-    auto NodeFactory::createJSDocSimpleTagWorker<T extends JSDocTag>(kind: T, tagName: Identifier, comment?: string) {
-        auto node = createBaseJSDocTag<T>(kind, tagName ?? createIdentifier(getDefaultTagNameForKind(kind)), comment);
-        return node;
-    }
-
-    // @api
-    // updateJSDocAuthorTag
-    // updateJSDocClassTag
-    // updateJSDocPublicTag
-    // updateJSDocPrivateTag
-    // updateJSDocProtectedTag
-    // updateJSDocReadonlyTag
-    // updateJSDocDeprecatedTag
-    
-
-    // @api
-    // createJSDocTypeTag
-    // createJSDocReturnTag
-    // createJSDocThisTag
-    // createJSDocEnumTag
-    auto NodeFactory::createJSDocTypeLikeTagWorker<T extends JSDocTag & { typeExpression?: JSDocTypeExpression }>(kind: T, tagName: Identifier, typeExpression?: JSDocTypeExpression, comment?: string) {
-        auto node = createBaseJSDocTag<T>(kind, tagName ?? createIdentifier(getDefaultTagNameForKind(kind)), comment);
-        node->typeExpression = typeExpression;
-        return node;
-    }
-
-
-    // @api
-    auto NodeFactory::createJSDocUnknownTag(tagName: Identifier, comment?: string) -> JSDocUnknownTag {
+    auto NodeFactory::createJSDocUnknownTag(Identifier tagName, string comment) -> JSDocUnknownTag {
         auto node = createBaseJSDocTag<JSDocUnknownTag>(SyntaxKind::JSDocTag, tagName, comment);
         return node;
     }
 
     // @api
-    
-
-    // @api
-    auto NodeFactory::createJSDocComment(comment?: string, tags?: JSDocTag[]) {
+    auto NodeFactory::createJSDocComment(string comment, NodeArray<JSDocTag> tags) -> JSDoc {
         auto node = createBaseNode<JSDoc>(SyntaxKind::JSDocComment);
         node->comment = comment;
         node->tags = asNodeArray(tags);
         return node;
     }
 
-    // @api
-    
-
     //
     // JSX
     //
 
     // @api
-    auto NodeFactory::createJsxElement(openingElement: JsxOpeningElement, children: JsxChild[], closingElement: JsxClosingElement) {
+    auto NodeFactory::createJsxElement(JsxOpeningElement openingElement, NodeArray<JsxChild> children, JsxClosingElement closingElement) -> JsxElement {
         auto node = createBaseNode<JsxElement>(SyntaxKind::JsxElement);
         node->openingElement = openingElement;
         node->children = createNodeArray(children);
@@ -2664,7 +2610,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createJsxSelfClosingElement(tagName: JsxTagNameExpression, typeArguments: TypeNode[], attributes: JsxAttributes) {
+    auto NodeFactory::createJsxSelfClosingElement(JsxTagNameExpression tagName, NodeArray<TypeNode> typeArguments, JsxAttributes attributes) -> JsxSelfClosingElement {
         auto node = createBaseNode<JsxSelfClosingElement>(SyntaxKind::JsxSelfClosingElement);
         node->tagName = tagName;
         node->typeArguments = asNodeArray(typeArguments);
@@ -2684,7 +2630,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createJsxOpeningElement(tagName: JsxTagNameExpression, typeArguments: TypeNode[], attributes: JsxAttributes) {
+    auto NodeFactory::createJsxOpeningElement(JsxTagNameExpression tagName, NodeArray<TypeNode> typeArguments, JsxAttributes attributes) -> JsxOpeningElement {
         auto node = createBaseNode<JsxOpeningElement>(SyntaxKind::JsxOpeningElement);
         node->tagName = tagName;
         node->typeArguments = asNodeArray(typeArguments);
@@ -2704,7 +2650,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createJsxClosingElement(tagName: JsxTagNameExpression) {
+    auto NodeFactory::createJsxClosingElement(JsxTagNameExpression tagName) -> JsxClosingElement {
         auto node = createBaseNode<JsxClosingElement>(SyntaxKind::JsxClosingElement);
         node->tagName = tagName;
         node->transformFlags |=
@@ -2717,7 +2663,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createJsxFragment(openingFragment: JsxOpeningFragment, children: JsxChild[], closingFragment: JsxClosingFragment) {
+    auto NodeFactory::createJsxFragment(JsxOpeningFragment openingFragment, NodeArray<JsxChild> children, JsxClosingFragment closingFragment) -> JsxFragment {
         auto node = createBaseNode<JsxFragment>(SyntaxKind::JsxFragment);
         node->openingFragment = openingFragment;
         node->children = createNodeArray(children);
@@ -2734,7 +2680,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createJsxText(text: string, containsOnlyTriviaWhiteSpaces?: boolean) {
+    auto NodeFactory::createJsxText(string text, boolean containsOnlyTriviaWhiteSpaces) -> JsxText {
         auto node = createBaseNode<JsxText>(SyntaxKind::JsxText);
         node->text = text;
         node->containsOnlyTriviaWhiteSpaces = !!containsOnlyTriviaWhiteSpaces;
@@ -2746,21 +2692,21 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createJsxOpeningFragment() {
+    auto NodeFactory::createJsxOpeningFragment() -> JsxOpeningFragment {
         auto node = createBaseNode<JsxOpeningFragment>(SyntaxKind::JsxOpeningFragment);
         node->transformFlags |= TransformFlags::ContainsJsx;
         return node;
     }
 
     // @api
-    auto NodeFactory::createJsxJsxClosingFragment() {
+    auto NodeFactory::createJsxJsxClosingFragment() -> JsxClosingFragment {
         auto node = createBaseNode<JsxClosingFragment>(SyntaxKind::JsxClosingFragment);
         node->transformFlags |= TransformFlags::ContainsJsx;
         return node;
     }
 
     // @api
-    auto NodeFactory::createJsxAttribute(name: Identifier, initializer: StringLiteral | JsxExpression) {
+    auto NodeFactory::createJsxAttribute(Identifier name, Node initializer) -> JsxAttribute {
         auto node = createBaseNode<JsxAttribute>(SyntaxKind::JsxAttribute);
         node->name = name;
         node->initializer = initializer;
@@ -2775,7 +2721,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createJsxAttributes(properties: JsxAttributeLike[]) {
+    auto NodeFactory::createJsxAttributes(NodeArray<JsxAttributeLike> properties) -> JsxAttributes {
         auto node = createBaseNode<JsxAttributes>(SyntaxKind::JsxAttributes);
         node->properties = createNodeArray(properties);
         node->transformFlags |=
@@ -2788,7 +2734,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createJsxSpreadAttribute(Expression expression) {
+    auto NodeFactory::createJsxSpreadAttribute(Expression expression) -> JsxSpreadAttribute {
         auto node = createBaseNode<JsxSpreadAttribute>(SyntaxKind::JsxSpreadAttribute);
         node->expression = expression;
         node->transformFlags |=
@@ -2801,7 +2747,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createJsxExpression(dotDotDotToken: DotDotDotToken, Expression expression) {
+    auto NodeFactory::createJsxExpression(DotDotDotToken dotDotDotToken, Expression expression) -> JsxExpression {
         auto node = createBaseNode<JsxExpression>(SyntaxKind::JsxExpression);
         node->dotDotDotToken = dotDotDotToken;
         node->expression = expression;
@@ -2820,7 +2766,7 @@ namespace ts
     //
 
     // @api
-    auto NodeFactory::createCaseClause(Expression expression, statements: Statement[]) {
+    auto NodeFactory::createCaseClause(Expression expression, NodeArray<Statement> statements) -> CaseClause {
         auto node = createBaseNode<CaseClause>(SyntaxKind::CaseClause);
         node->expression = parenthesizerRules.parenthesizeExpressionForDisallowedComma(expression);
         node->statements = createNodeArray(statements);
@@ -2834,7 +2780,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createDefaultClause(statements: Statement[]) {
+    auto NodeFactory::createDefaultClause(NodeArray<Statement> statements) -> DefaultClause {
         auto node = createBaseNode<DefaultClause>(SyntaxKind::DefaultClause);
         node->statements = createNodeArray(statements);
         node->transformFlags = propagateChildrenFlags(node->statements);
@@ -2845,7 +2791,7 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createHeritageClause(token: HeritageClause[S("token")], types: ExpressionWithTypeArguments[]) {
+    auto NodeFactory::createHeritageClause(SyntaxKind token, NodeArray<ExpressionWithTypeArguments> types) -> HeritageClause {
         auto node = createBaseNode<HeritageClause>(SyntaxKind::HeritageClause);
         node->token = token;
         node->types = createNodeArray(types);
@@ -2867,14 +2813,9 @@ namespace ts
     
 
     // @api
-    auto NodeFactory::createCatchClause(variableDeclaration: string | VariableDeclaration, block: Block) {
+    auto NodeFactory::createCatchClause(VariableDeclaration variableDeclaration, Block block) -> CatchClause {
         auto node = createBaseNode<CatchClause>(SyntaxKind::CatchClause);
-        variableDeclaration = !isString(variableDeclaration) ? variableDeclaration : createVariableDeclaration(
-            variableDeclaration,
-            /*exclamationToken*/ undefined,
-            /*type*/ undefined,
-            /*initializer*/ undefined
-        );
+        variableDeclaration = variableDeclaration;
         node->variableDeclaration = variableDeclaration;
         node->block = block;
         node->transformFlags |=
@@ -2892,7 +2833,7 @@ namespace ts
     //
 
     // @api
-    auto NodeFactory::createPropertyAssignment(PropertyName name, Expression initializer) {
+    auto NodeFactory::createPropertyAssignment(PropertyName name, Expression initializer) -> PropertyAssignment {
         auto node = createBaseNamedDeclaration<PropertyAssignment>(
             SyntaxKind::PropertyAssignment,
             /*decorators*/ undefined,
@@ -2906,20 +2847,8 @@ namespace ts
         return node;
     }
 
-    auto finishUpdatePropertyAssignment(updated: Mutable<PropertyAssignment>, original: PropertyAssignment) {
-        // copy children used only for error reporting
-        if (original->decorators) updated.decorators = original->decorators;
-        if (original->modifiers) updated.modifiers = original->modifiers;
-        if (original->questionToken) updated.questionToken = original->questionToken;
-        if (original->exclamationToken) updated.exclamationToken = original->exclamationToken;
-        return update(updated, original);
-    }
-
     // @api
-    
-
-    // @api
-    auto NodeFactory::createShorthandPropertyAssignment(name: string | Identifier, objectAssignmentInitializer?: Expression) {
+    auto NodeFactory::createShorthandPropertyAssignment(Identifier name, Expression objectAssignmentInitializer) -> ShorthandPropertyAssignment {
         auto node = createBaseNamedDeclaration<ShorthandPropertyAssignment>(
             SyntaxKind::ShorthandPropertyAssignment,
             /*decorators*/ undefined,
@@ -2933,21 +2862,8 @@ namespace ts
         return node;
     }
 
-    auto finishUpdateShorthandPropertyAssignment(updated: Mutable<ShorthandPropertyAssignment>, original: ShorthandPropertyAssignment) {
-        // copy children used only for error reporting
-        if (original->decorators) updated.decorators = original->decorators;
-        if (original->modifiers) updated.modifiers = original->modifiers;
-        if (original->equalsToken) updated.equalsToken = original->equalsToken;
-        if (original->questionToken) updated.questionToken = original->questionToken;
-        if (original->exclamationToken) updated.exclamationToken = original->exclamationToken;
-        return update(updated, original);
-    }
-
     // @api
-    
-
-    // @api
-    auto NodeFactory::createSpreadAssignment(Expression expression) {
+    auto NodeFactory::createSpreadAssignment(Expression expression) -> SpreadAssignment {
         auto node = createBaseNode<SpreadAssignment>(SyntaxKind::SpreadAssignment);
         node->expression = parenthesizerRules.parenthesizeExpressionForDisallowedComma(expression);
         node->transformFlags |=
@@ -2957,15 +2873,12 @@ namespace ts
         return node;
     }
 
-    // @api
-    
-
     //
     // Enum
     //
 
     // @api
-    auto NodeFactory::createEnumMember(PropertyName name, initializer?: Expression) {
+    auto NodeFactory::createEnumMember(PropertyName name, Expression initializer) -> EnumMember {
         auto node = createBaseNode<EnumMember>(SyntaxKind::EnumMember);
         node->name = asName(name);
         node->initializer = initializer && parenthesizerRules.parenthesizeExpressionForDisallowedComma(initializer);
@@ -2976,28 +2889,24 @@ namespace ts
         return node;
     }
 
-    // @api
-    
-
     //
     // Top-level nodes
     //
 
     // @api
     auto NodeFactory::createSourceFile(
-        statements: Statement[],
-        endOfFileToken: EndOfFileToken,
-        flags: NodeFlags
-    ) {
-        auto node = baseFactory.createBaseSourceFileNode(SyntaxKind::SourceFile) as Mutable<SourceFile>;
+        NodeArray<Statement> statements, 
+        EndOfFileToken endOfFileToken, 
+        NodeFlags flags) -> SourceFile {
+        auto node = /*createBaseSourceFileNode*/createBaseNode<SourceFile>(SyntaxKind::SourceFile);
         node->statements = createNodeArray(statements);
         node->endOfFileToken = endOfFileToken;
         node->flags |= flags;
         node->fileName = string();
         node->text = string();
-        node->languageVersion = 0;
-        node->languageVariant = 0;
-        node->scriptKind = 0;
+        node->languageVersion = ScriptTarget::ES3;
+        node->languageVariant = LanguageVariant::Standard;
+        node->scriptKind = ScriptKind::Unknown;
         node->isDeclarationFile = false;
         node->hasNoDefaultLib = false;
         node->transformFlags |=
@@ -3005,6 +2914,4 @@ namespace ts
             propagateChildFlags(node->endOfFileToken);
         return node;
     }
-
-
 }

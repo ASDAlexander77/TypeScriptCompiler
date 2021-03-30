@@ -136,6 +136,38 @@ namespace ts
             return elements;
         }
 
+        template <typename T>
+        auto createJSDocPrimaryTypeWorker(T kind) {
+            return createBaseNode(kind);
+        }
+
+        template <typename T>
+        auto createJSDocUnaryTypeWorker(T kind, decltype(T()->type) type) -> T {
+            auto node = createBaseNode<T>(kind);
+            node->type = type;
+            return node;
+        }
+
+        template <typename T>
+        auto createBaseJSDocTag(T kind, Identifier tagName, string comment) {
+            auto node = createBaseNode<T>(kind);
+            node->tagName = tagName;
+            node->comment = comment;
+            return node;
+        }
+
+        template <typename T>
+        auto createJSDocSimpleTagWorker(T kind, Identifier tagName, string comment) {
+            auto node = createBaseJSDocTag<T>(kind, tagName ?? createIdentifier(getDefaultTagNameForKind(kind)), comment);
+            return node;
+        }
+
+        template <typename T>
+        auto createJSDocTypeLikeTagWorker(T kind, Identifier tagName, JSDocTypeExpression typeExpression, string comment) {
+            auto node = createBaseJSDocTag<T>(kind, tagName ? tagName : createIdentifier(getDefaultTagNameForKind(kind)), comment);
+            node->typeExpression = typeExpression;
+            return node;
+        }
 
         template <typename T>
         auto createBaseDeclaration(
@@ -763,6 +795,7 @@ namespace ts
         // // JSDoc
         // //
 
+        auto getDefaultTagName(JSDocTag node) -> Identifier;
         auto createJSDocAllType() -> JSDocAllType;
         auto createJSDocUnknownType() -> JSDocUnknownType;
         auto createJSDocNonNullableType(TypeNode type) -> JSDocNonNullableType;
@@ -781,51 +814,51 @@ namespace ts
         // auto updateJSDocTypeExpression(JSDocTypeExpression node, TypeNode type) -> JSDocTypeExpression;
         auto createJSDocNameReference(EntityName name) -> JSDocNameReference;
         // auto updateJSDocNameReference(JSDocNameReference node, EntityName name) -> JSDocNameReference;
-        // auto createJSDocTypeLiteral(NodeArray<JSDocPropertyLikeTag> jsDocPropertyTags = undefined, boolean isArrayType = false) -> JSDocTypeLiteral;
+         auto createJSDocTypeLiteral(NodeArray<JSDocPropertyLikeTag> jsDocPropertyTags = undefined, boolean isArrayType = false) -> JSDocTypeLiteral;
         // auto updateJSDocTypeLiteral(JSDocTypeLiteral node, NodeArray<JSDocPropertyLikeTag> jsDocPropertyTags, boolean isArrayType) -> JSDocTypeLiteral;
-        // auto createJSDocSignature(NodeArray<JSDocTemplateTag> typeParameters, NodeArray<JSDocParameterTag> parameters, JSDocReturnTag type = undefined) -> JSDocSignature;
+         auto createJSDocSignature(NodeArray<JSDocTemplateTag> typeParameters, NodeArray<JSDocParameterTag> parameters, JSDocReturnTag type = undefined) -> JSDocSignature;
         // auto updateJSDocSignature(JSDocSignature node, NodeArray<JSDocTemplateTag> typeParameters, NodeArray<JSDocParameterTag> parameters, JSDocReturnTag type) -> JSDocSignature;
-        // auto createJSDocTemplateTag(Identifier tagName, JSDocTypeExpression constraint, NodeArray<TypeParameterDeclaration> typeParameters, string comment = string()) -> JSDocTemplateTag;
+         auto createJSDocTemplateTag(Identifier tagName, JSDocTypeExpression constraint, NodeArray<TypeParameterDeclaration> typeParameters, string comment = string()) -> JSDocTemplateTag;
         // auto updateJSDocTemplateTag(JSDocTemplateTag node, Identifier tagName, JSDocTypeExpression constraint, NodeArray<TypeParameterDeclaration> typeParameters, string comment) -> JSDocTemplateTag;
-        // auto createJSDocTypedefTag(Identifier tagName, /*JSDocTypeExpression | JSDocTypeLiteral*/Node typeExpression = undefined, /*Identifier | JSDocNamespaceDeclaration*/Node fullName = undefined, string comment = string()) -> JSDocTypedefTag;
+         auto createJSDocTypedefTag(Identifier tagName, /*JSDocTypeExpression | JSDocTypeLiteral*/Node typeExpression = undefined, /*Identifier | JSDocNamespaceDeclaration*/Node fullName = undefined, string comment = string()) -> JSDocTypedefTag;
         // auto updateJSDocTypedefTag(JSDocTypedefTag node, Identifier tagName, /*JSDocTypeExpression | JSDocTypeLiteral*/Node typeExpression, /*Identifier | JSDocNamespaceDeclaration*/Node fullName, string comment) -> JSDocTypedefTag;
-        // auto createJSDocParameterTag(Identifier tagName, EntityName name, boolean isBracketed, JSDocTypeExpression typeExpression = undefined, boolean isNameFirst = false, string comment = string()) -> JSDocParameterTag;
+         auto createJSDocParameterTag(Identifier tagName, EntityName name, boolean isBracketed, JSDocTypeExpression typeExpression = undefined, boolean isNameFirst = false, string comment = string()) -> JSDocParameterTag;
         // auto updateJSDocParameterTag(JSDocParameterTag node, Identifier tagName, EntityName name, boolean isBracketed, JSDocTypeExpression typeExpression, boolean isNameFirst, string comment) -> JSDocParameterTag;
-        // auto createJSDocPropertyTag(Identifier tagName, EntityName name, boolean isBracketed, JSDocTypeExpression typeExpression = undefined, boolean isNameFirst = false, string comment = string()) -> JSDocPropertyTag;
+         auto createJSDocPropertyTag(Identifier tagName, EntityName name, boolean isBracketed, JSDocTypeExpression typeExpression = undefined, boolean isNameFirst = false, string comment = string()) -> JSDocPropertyTag;
         // auto updateJSDocPropertyTag(JSDocPropertyTag node, Identifier tagName, EntityName name, boolean isBracketed, JSDocTypeExpression typeExpression, boolean isNameFirst, string comment) -> JSDocPropertyTag;
-        // auto createJSDocTypeTag(Identifier tagName, JSDocTypeExpression typeExpression, string comment = string()) -> JSDocTypeTag;
+         auto createJSDocTypeTag(Identifier tagName, JSDocTypeExpression typeExpression, string comment = string()) -> JSDocTypeTag;
         // auto updateJSDocTypeTag(JSDocTypeTag node, Identifier tagName, JSDocTypeExpression typeExpression, string comment) -> JSDocTypeTag;
-        // auto createJSDocSeeTag(Identifier tagName, JSDocNameReference nameExpression, string comment = string()) -> JSDocSeeTag;
+         auto createJSDocSeeTag(Identifier tagName, JSDocNameReference nameExpression, string comment = string()) -> JSDocSeeTag;
         // auto updateJSDocSeeTag(JSDocSeeTag node, Identifier tagName, JSDocNameReference nameExpression, string comment = string()) -> JSDocSeeTag;
-        // auto createJSDocReturnTag(Identifier tagName, JSDocTypeExpression typeExpression = undefined, string comment = string()) -> JSDocReturnTag;
+         auto createJSDocReturnTag(Identifier tagName, JSDocTypeExpression typeExpression = undefined, string comment = string()) -> JSDocReturnTag;
         // auto updateJSDocReturnTag(JSDocReturnTag node, Identifier tagName, JSDocTypeExpression typeExpression, string comment) -> JSDocReturnTag;
-        // auto createJSDocThisTag(Identifier tagName, JSDocTypeExpression typeExpression, string comment = string()) -> JSDocThisTag;
+         auto createJSDocThisTag(Identifier tagName, JSDocTypeExpression typeExpression, string comment = string()) -> JSDocThisTag;
         // auto updateJSDocThisTag(JSDocThisTag node, Identifier tagName, JSDocTypeExpression typeExpression, string comment) -> JSDocThisTag;
-        // auto createJSDocEnumTag(Identifier tagName, JSDocTypeExpression typeExpression, string comment = string()) -> JSDocEnumTag;
+         auto createJSDocEnumTag(Identifier tagName, JSDocTypeExpression typeExpression, string comment = string()) -> JSDocEnumTag;
         // auto updateJSDocEnumTag(JSDocEnumTag node, Identifier tagName, JSDocTypeExpression typeExpression, string comment) -> JSDocEnumTag;
-        // auto createJSDocCallbackTag(Identifier tagName, JSDocSignature typeExpression, /*Identifier | JSDocNamespaceDeclaration*/Node fullName, string comment = string()) -> JSDocCallbackTag;
+         auto createJSDocCallbackTag(Identifier tagName, JSDocSignature typeExpression, /*Identifier | JSDocNamespaceDeclaration*/Node fullName, string comment = string()) -> JSDocCallbackTag;
         // auto updateJSDocCallbackTag(JSDocCallbackTag node, Identifier tagName, JSDocSignature typeExpression, /*Identifier | JSDocNamespaceDeclaration*/Node fullName, string comment) -> JSDocCallbackTag;
-        // auto createJSDocAugmentsTag(Identifier tagName, JSDocAugmentsTag className, string comment = string()) -> JSDocAugmentsTag;
+         auto createJSDocAugmentsTag(Identifier tagName, JSDocAugmentsTag className, string comment = string()) -> JSDocAugmentsTag;
         // auto updateJSDocAugmentsTag(JSDocAugmentsTag node, Identifier tagName, JSDocAugmentsTag className, string comment) -> JSDocAugmentsTag;
-        // auto createJSDocImplementsTag(Identifier tagName, JSDocImplementsTag className, string comment = string()) -> JSDocImplementsTag;
+         auto createJSDocImplementsTag(Identifier tagName, JSDocImplementsTag className, string comment = string()) -> JSDocImplementsTag;
         // auto updateJSDocImplementsTag(JSDocImplementsTag node, Identifier tagName, JSDocImplementsTag className, string comment) -> JSDocImplementsTag;
-        // auto createJSDocAuthorTag(Identifier tagName, string comment = string()) -> JSDocAuthorTag;
+         auto createJSDocAuthorTag(Identifier tagName, string comment = string()) -> JSDocAuthorTag;
         // auto updateJSDocAuthorTag(JSDocAuthorTag node, Identifier tagName, string comment) -> JSDocAuthorTag;
-        // auto createJSDocClassTag(Identifier tagName, string comment = string()) -> JSDocClassTag;
+         auto createJSDocClassTag(Identifier tagName, string comment = string()) -> JSDocClassTag;
         // auto updateJSDocClassTag(JSDocClassTag node, Identifier tagName, string comment) -> JSDocClassTag;
-        // auto createJSDocPublicTag(Identifier tagName, string comment = string()) -> JSDocPublicTag;
+         auto createJSDocPublicTag(Identifier tagName, string comment = string()) -> JSDocPublicTag;
         // auto updateJSDocPublicTag(JSDocPublicTag node, Identifier tagName, string comment) -> JSDocPublicTag;
-        // auto createJSDocPrivateTag(Identifier tagName, string comment = string()) -> JSDocPrivateTag;
+         auto createJSDocPrivateTag(Identifier tagName, string comment = string()) -> JSDocPrivateTag;
         // auto updateJSDocPrivateTag(JSDocPrivateTag node, Identifier tagName, string comment) -> JSDocPrivateTag;
-        // auto createJSDocProtectedTag(Identifier tagName, string comment = string()) -> JSDocProtectedTag;
+         auto createJSDocProtectedTag(Identifier tagName, string comment = string()) -> JSDocProtectedTag;
         // auto updateJSDocProtectedTag(JSDocProtectedTag node, Identifier tagName, string comment) -> JSDocProtectedTag;
-        // auto createJSDocReadonlyTag(Identifier tagName, string comment = string()) -> JSDocReadonlyTag;
+         auto createJSDocReadonlyTag(Identifier tagName, string comment = string()) -> JSDocReadonlyTag;
         // auto updateJSDocReadonlyTag(JSDocReadonlyTag node, Identifier tagName, string comment) -> JSDocReadonlyTag;
-        // auto createJSDocUnknownTag(Identifier tagName, string comment = string()) -> JSDocUnknownTag;
+         auto createJSDocUnknownTag(Identifier tagName, string comment = string()) -> JSDocUnknownTag;
         // auto updateJSDocUnknownTag(JSDocUnknownTag node, Identifier tagName, string comment) -> JSDocUnknownTag;
-        // auto createJSDocDeprecatedTag(Identifier tagName, string comment = string()) -> JSDocDeprecatedTag;
+         auto createJSDocDeprecatedTag(Identifier tagName, string comment = string()) -> JSDocDeprecatedTag;
         // auto updateJSDocDeprecatedTag(JSDocDeprecatedTag node, Identifier tagName, string comment = string()) -> JSDocDeprecatedTag;
-        // auto createJSDocComment(string comment = string(), NodeArray<JSDocTag> tags = undefined) -> JSDoc;
+         auto createJSDocComment(string comment = string(), NodeArray<JSDocTag> tags = undefined) -> JSDoc;
         // auto updateJSDocComment(JSDoc node, string comment, NodeArray<JSDocTag> tags) -> JSDoc;
 
         // //

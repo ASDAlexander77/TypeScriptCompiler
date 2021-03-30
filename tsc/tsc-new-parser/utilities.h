@@ -1850,6 +1850,21 @@ namespace ts
         return false;
     }
 
+    static auto getJSDocTypeAliasName(JSDocNamespaceBody fullName) -> Identifier {
+        // TODO: finish it: !rightNode.as<ModuleDeclaration>()->body
+        if (fullName) {
+            auto rightNode = fullName;
+            while (true) {
+                if (isIdentifier(rightNode) || !rightNode.as<ModuleDeclaration>()->body) {
+                    return isIdentifier(rightNode) ? rightNode : rightNode.as<ModuleDeclaration>()->name;
+                }
+                rightNode = rightNode.as<ModuleDeclaration>()->body;
+            }
+        }
+
+        return undefined;
+    }
+
     inline static auto regex_exec(string &text, regex regEx) -> boolean
     {
         auto words_begin = sregex_iterator(text.begin(), text.end(), regEx);
