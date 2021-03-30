@@ -69,14 +69,14 @@ struct ptr
 
 	ptr(undefined_t) : instance(nullptr) {};
 
+	ptr(const T& data) : instance(std::make_shared<T>(data)) {};
+
 	template <typename U>
 	ptr(ptr<U> otherPtr) : instance(std::dynamic_pointer_cast<T>(otherPtr.instance)) {
-#if _DEBUG        
         if (!instance)
         {
             throw S("wrong cast");
         }
-#endif        
     };
 
 protected:

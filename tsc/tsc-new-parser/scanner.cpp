@@ -1103,7 +1103,7 @@ namespace ts
             {
                 if (error)
                 {
-                    error(Diagnostics::Merge_conflict_marker_encountered, pos, mergeConflictMarkerLength);
+                    error(data::DiagnosticMessage(Diagnostics::Merge_conflict_marker_encountered), pos, mergeConflictMarkerLength);
                 }
 
                 auto ch = text[pos];
@@ -1339,7 +1339,7 @@ namespace ts
 
             auto appendCommentRange(number pos, number end, SyntaxKind kind, boolean hasTrailingNewLine, number state, std::vector<CommentRange> comments) -> std::vector<CommentRange>
             {
-                comments.push_back({pos, end, hasTrailingNewLine, kind});
+                comments.push_back(data::CommentRange{pos, end, hasTrailingNewLine, kind});
                 return comments;
             }
 
@@ -1504,11 +1504,11 @@ namespace ts
                         }
                         else if (isPreviousTokenSeparator)
                         {
-                            error(Diagnostics::Multiple_consecutive_numeric_separators_are_not_permitted, pos, 1);
+                            error(data::DiagnosticMessage(Diagnostics::Multiple_consecutive_numeric_separators_are_not_permitted), pos, 1);
                         }
                         else
                         {
-                            error(Diagnostics::Numeric_separators_are_not_allowed_here, pos, 1);
+                            error(data::DiagnosticMessage(Diagnostics::Numeric_separators_are_not_allowed_here), pos, 1);
                         }
                         pos++;
                         start = pos;
@@ -1525,7 +1525,7 @@ namespace ts
                 }
                 if (text[pos - 1] == CharacterCodes::_)
                 {
-                    error(Diagnostics::Numeric_separators_are_not_allowed_here, pos - 1, 1);
+                    error(data::DiagnosticMessage(Diagnostics::Numeric_separators_are_not_allowed_here), pos - 1, 1);
                 }
                 return result + text.substring(start, pos);
             }
@@ -1552,7 +1552,7 @@ namespace ts
                     auto finalFragment = scanNumberFragment();
                     if (finalFragment.empty())
                     {
-                        error(Diagnostics::Digit_expected);
+                        error(data::DiagnosticMessage(Diagnostics::Digit_expected));
                     }
                     else
                     {
@@ -1609,16 +1609,16 @@ namespace ts
                 {
                     if (isScientific)
                     {
-                        error(Diagnostics::A_bigint_literal_cannot_use_exponential_notation, numericStart, identifierStart - numericStart + 1);
+                        error(data::DiagnosticMessage(Diagnostics::A_bigint_literal_cannot_use_exponential_notation), numericStart, identifierStart - numericStart + 1);
                     }
                     else
                     {
-                        error(Diagnostics::A_bigint_literal_must_be_an_integer, numericStart, identifierStart - numericStart + 1);
+                        error(data::DiagnosticMessage(Diagnostics::A_bigint_literal_must_be_an_integer), numericStart, identifierStart - numericStart + 1);
                     }
                 }
                 else
                 {
-                    error(Diagnostics::An_identifier_or_keyword_cannot_immediately_follow_a_numeric_literal, identifierStart, length);
+                    error(data::DiagnosticMessage(Diagnostics::An_identifier_or_keyword_cannot_immediately_follow_a_numeric_literal), identifierStart, length);
                     pos = identifierStart;
                 }
             }
@@ -1670,11 +1670,11 @@ namespace ts
                         }
                         else if (isPreviousTokenSeparator)
                         {
-                            error(Diagnostics::Multiple_consecutive_numeric_separators_are_not_permitted, pos, 1);
+                            error(data::DiagnosticMessage(Diagnostics::Multiple_consecutive_numeric_separators_are_not_permitted), pos, 1);
                         }
                         else
                         {
-                            error(Diagnostics::Numeric_separators_are_not_allowed_here, pos, 1);
+                            error(data::DiagnosticMessage(Diagnostics::Numeric_separators_are_not_allowed_here), pos, 1);
                         }
                         pos++;
                         continue;
@@ -1699,7 +1699,7 @@ namespace ts
                 }
                 if (text[pos - 1] == CharacterCodes::_)
                 {
-                    error(Diagnostics::Numeric_separators_are_not_allowed_here, pos - 1, 1);
+                    error(data::DiagnosticMessage(Diagnostics::Numeric_separators_are_not_allowed_here), pos - 1, 1);
                 }
                 return string(valueChars.begin(), valueChars.end());
             }
@@ -1716,7 +1716,7 @@ namespace ts
                     {
                         result += text.substring(start, pos);
                         tokenFlags |= TokenFlags::Unterminated;
-                        error(Diagnostics::Unterminated_string_literal);
+                        error(data::DiagnosticMessage(Diagnostics::Unterminated_string_literal));
                         break;
                     }
                     auto ch = text[pos];
@@ -1737,7 +1737,7 @@ namespace ts
                     {
                         result += text.substring(start, pos);
                         tokenFlags |= TokenFlags::Unterminated;
-                        error(Diagnostics::Unterminated_string_literal);
+                        error(data::DiagnosticMessage(Diagnostics::Unterminated_string_literal));
                         break;
                     }
                     pos++;
@@ -1764,7 +1764,7 @@ namespace ts
                     {
                         contents += text.substring(start, pos);
                         tokenFlags |= TokenFlags::Unterminated;
-                        error(Diagnostics::Unterminated_template_literal);
+                        error(data::DiagnosticMessage(Diagnostics::Unterminated_template_literal));
                         resultingToken = startedWithBacktick ? SyntaxKind::NoSubstitutionTemplateLiteral : SyntaxKind::TemplateTail;
                         break;
                     }
@@ -1830,7 +1830,7 @@ namespace ts
                 pos++;
                 if (pos >= end)
                 {
-                    error(Diagnostics::Unexpected_end_of_text);
+                    error(data::DiagnosticMessage(Diagnostics::Unexpected_end_of_text));
                     return string();
                 }
                 auto ch = text[pos];
@@ -1958,7 +1958,7 @@ namespace ts
                 }
                 else
                 {
-                    error(Diagnostics::Hexadecimal_digit_expected);
+                    error(data::DiagnosticMessage(Diagnostics::Hexadecimal_digit_expected));
                     return string();
                 }
             }
@@ -1972,18 +1972,18 @@ namespace ts
                 // Validate the value of the digit
                 if (escapedValue < 0)
                 {
-                    error(Diagnostics::Hexadecimal_digit_expected);
+                    error(data::DiagnosticMessage(Diagnostics::Hexadecimal_digit_expected));
                     isInvalidExtendedEscape = true;
                 }
                 else if (escapedValue > 0x10FFFF)
                 {
-                    error(Diagnostics::An_extended_Unicode_escape_value_must_be_between_0x0_and_0x10FFFF_inclusive);
+                    error(data::DiagnosticMessage(Diagnostics::An_extended_Unicode_escape_value_must_be_between_0x0_and_0x10FFFF_inclusive));
                     isInvalidExtendedEscape = true;
                 }
 
                 if (pos >= end)
                 {
-                    error(Diagnostics::Unexpected_end_of_text);
+                    error(data::DiagnosticMessage(Diagnostics::Unexpected_end_of_text));
                     isInvalidExtendedEscape = true;
                 }
                 else if (text[pos] == CharacterCodes::closeBrace)
@@ -1993,7 +1993,7 @@ namespace ts
                 }
                 else
                 {
-                    error(Diagnostics::Unterminated_Unicode_escape_sequence);
+                    error(data::DiagnosticMessage(Diagnostics::Unterminated_Unicode_escape_sequence));
                     isInvalidExtendedEscape = true;
                 }
 
@@ -2117,11 +2117,11 @@ namespace ts
                         }
                         else if (isPreviousTokenSeparator)
                         {
-                            error(Diagnostics::Multiple_consecutive_numeric_separators_are_not_permitted, pos, 1);
+                            error(data::DiagnosticMessage(Diagnostics::Multiple_consecutive_numeric_separators_are_not_permitted), pos, 1);
                         }
                         else
                         {
-                            error(Diagnostics::Numeric_separators_are_not_allowed_here, pos, 1);
+                            error(data::DiagnosticMessage(Diagnostics::Numeric_separators_are_not_allowed_here), pos, 1);
                         }
                         pos++;
                         continue;
@@ -2138,7 +2138,7 @@ namespace ts
                 if (text[pos - 1] == CharacterCodes::_)
                 {
                     // Literal ends with underscore - not allowed
-                    error(Diagnostics::Numeric_separators_are_not_allowed_here, pos - 1, 1);
+                    error(data::DiagnosticMessage(Diagnostics::Numeric_separators_are_not_allowed_here), pos - 1, 1);
                 }
                 return value;
             }
@@ -2424,7 +2424,7 @@ namespace ts
 
                             if (!commentClosed)
                             {
-                                error(Diagnostics::Asterisk_Slash_expected);
+                                error(data::DiagnosticMessage(Diagnostics::Asterisk_Slash_expected));
                             }
 
                             if (_skipTrivia)
@@ -2456,7 +2456,7 @@ namespace ts
                             tokenValue = scanMinimumNumberOfHexDigits(1, /*canHaveSeparators*/ true);
                             if (tokenValue.empty())
                             {
-                                error(Diagnostics::Hexadecimal_digit_expected);
+                                error(data::DiagnosticMessage(Diagnostics::Hexadecimal_digit_expected));
                                 tokenValue = S("0");
                             }
                             tokenValue = S("0x") + tokenValue;
@@ -2469,7 +2469,7 @@ namespace ts
                             tokenValue = scanBinaryOrOctalDigits(/* base */ 2);
                             if (tokenValue.empty())
                             {
-                                error(Diagnostics::Binary_digit_expected);
+                                error(data::DiagnosticMessage(Diagnostics::Binary_digit_expected));
                                 tokenValue = S("0");
                             }
                             tokenValue = S("0b") + tokenValue;
@@ -2482,7 +2482,7 @@ namespace ts
                             tokenValue = scanBinaryOrOctalDigits(/* base */ 8);
                             if (tokenValue.empty())
                             {
-                                error(Diagnostics::Octal_digit_expected);
+                                error(data::DiagnosticMessage(Diagnostics::Octal_digit_expected));
                                 tokenValue = S("0");
                             }
                             tokenValue = S("0o") + tokenValue;
@@ -2687,14 +2687,14 @@ namespace ts
                             return token = getIdentifierToken();
                         }
 
-                        error(Diagnostics::Invalid_character);
+                        error(data::DiagnosticMessage(Diagnostics::Invalid_character));
                         pos++;
                         return token = SyntaxKind::Unknown;
                     }
                     case CharacterCodes::hash:
                         if (pos != 0 && text[pos + 1] == CharacterCodes::exclamation)
                         {
-                            error(Diagnostics::can_only_be_used_at_the_start_of_a_file);
+                            error(data::DiagnosticMessage(Diagnostics::can_only_be_used_at_the_start_of_a_file));
                             pos++;
                             return token = SyntaxKind::Unknown;
                         }
@@ -2713,7 +2713,7 @@ namespace ts
                         else
                         {
                             tokenValue = S("#");
-                            error(Diagnostics::Invalid_character);
+                            error(data::DiagnosticMessage(Diagnostics::Invalid_character));
                         }
                         return token = SyntaxKind::PrivateIdentifier;
                     default:
@@ -2733,7 +2733,7 @@ namespace ts
                             pos += charSize(ch);
                             continue;
                         }
-                        error(Diagnostics::Invalid_character);
+                        error(data::DiagnosticMessage(Diagnostics::Invalid_character));
                         pos += charSize(ch);
                         return token = SyntaxKind::Unknown;
                     }
@@ -2827,7 +2827,7 @@ namespace ts
                         if (p >= end)
                         {
                             tokenFlags |= TokenFlags::Unterminated;
-                            error(Diagnostics::Unterminated_regular_expression_literal);
+                            error(data::DiagnosticMessage(Diagnostics::Unterminated_regular_expression_literal));
                             break;
                         }
 
@@ -2835,7 +2835,7 @@ namespace ts
                         if (isLineBreak(ch))
                         {
                             tokenFlags |= TokenFlags::Unterminated;
-                            error(Diagnostics::Unterminated_regular_expression_literal);
+                            error(data::DiagnosticMessage(Diagnostics::Unterminated_regular_expression_literal));
                             break;
                         }
 
@@ -2891,7 +2891,7 @@ namespace ts
                     return commentDirectives;
                 }
 
-                commentDirectives.push_back({lineStart, pos, type});
+                commentDirectives.push_back(data::CommentDirective{lineStart, pos, type});
                 return commentDirectives;
             }
 
@@ -3008,11 +3008,11 @@ namespace ts
                     }
                     if (char_ == CharacterCodes::greaterThan)
                     {
-                        error(Diagnostics::Unexpected_token_Did_you_mean_or_gt, pos, 1);
+                        error(data::DiagnosticMessage(Diagnostics::Unexpected_token_Did_you_mean_or_gt), pos, 1);
                     }
                     if (char_ == CharacterCodes::closeBrace)
                     {
-                        error(Diagnostics::Unexpected_token_Did_you_mean_or_rbrace, pos, 1);
+                        error(data::DiagnosticMessage(Diagnostics::Unexpected_token_Did_you_mean_or_rbrace), pos, 1);
                     }
 
                     // FirstNonWhitespace is 0, then we only see whitespaces so far. If we see a linebreak, we want to ignore that whitespaces.

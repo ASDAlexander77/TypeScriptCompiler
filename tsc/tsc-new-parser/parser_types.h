@@ -65,7 +65,7 @@ namespace data
             return v;
         }
 
-        inline operator TextRange&()
+        inline operator TextRange()
         {
             return range;
         }

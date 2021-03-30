@@ -9,7 +9,7 @@ namespace ts
 
     auto ParenthesizerRules::parenthesizeExpressionsOfCommaDelimitedList(NodeArray<Expression> elements) -> NodeArray<Expression> {
         auto result = sameMap(elements, std::bind(&ParenthesizerRules::parenthesizeExpressionForDisallowedComma, this, std::placeholders::_1));
-        return setTextRange(factory->createNodeArray(result, elements->hasTrailingComma), elements);
+        return setTextRange(factory->createNodeArray(result, elements->hasTrailingComma), (data::TextRange) elements);
     }
 
     auto ParenthesizerRules::parenthesizeExpressionForDisallowedComma(Expression expression) -> Expression {

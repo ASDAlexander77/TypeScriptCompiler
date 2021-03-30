@@ -267,7 +267,7 @@ namespace ts
                         expressions.push_back(expression);
                         if (token() != SyntaxKind::EndOfFileToken)
                         {
-                            parseErrorAtCurrentToken(Diagnostics::Unexpected_token);
+                            parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::Unexpected_token));
                         }
                     }
 
@@ -275,7 +275,7 @@ namespace ts
                     auto statement = factory.createExpressionStatement(expression).as<Statement>();
                     finishNode(statement, pos);
                     statements = createNodeArray(NodeArray<Statement>(statement), pos);
-                    endOfFileToken = parseExpectedToken(SyntaxKind::EndOfFileToken, Diagnostics::Unexpected_token);
+                    endOfFileToken = parseExpectedToken(SyntaxKind::EndOfFileToken, data::DiagnosticMessage(Diagnostics::Unexpected_token));
                 }
 
                 // Set source file so that errors will be reported with this file name
@@ -557,7 +557,7 @@ namespace ts
                 }
 
                 syntaxCursor = savedSyntaxCursor;
-                return factory.updateSourceFile(sourceFile, setTextRange(factory.createNodeArray(statements), sourceFile->statements));
+                return factory.updateSourceFile(sourceFile, setTextRange(factory.createNodeArray(statements), (data::TextRange) sourceFile->statements));
             }
 
             auto createSourceFile(string fileName, ScriptTarget languageVersion, ScriptKind scriptKind, boolean isDeclarationFile, NodeArray<Statement> statements, Node endOfFileToken, NodeFlags flags) -> SourceFile
@@ -824,7 +824,7 @@ namespace ts
                 if (isKeyword(currentToken) && (scanner.hasUnicodeEscape() || scanner.hasExtendedUnicodeEscape()))
                 {
                     // issue a parse error for the escape
-                    parseErrorAt(scanner.getTokenPos(), scanner.getTextPos(), Diagnostics::Keywords_cannot_contain_escape_characters);
+                    parseErrorAt(scanner.getTokenPos(), scanner.getTextPos(), data::DiagnosticMessage(Diagnostics::Keywords_cannot_contain_escape_characters));
                 }
                 return nextTokenWithoutCheck();
             }
@@ -988,7 +988,7 @@ namespace ts
                 }
                 else
                 {
-                    parseErrorAtCurrentToken(Diagnostics::_0_expected, scanner.tokenToString(kind));
+                    parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::_0_expected), scanner.tokenToString(kind));
                 }
                 return false;
             }
@@ -1000,7 +1000,7 @@ namespace ts
                     nextTokenJSDoc();
                     return true;
                 }
-                parseErrorAtCurrentToken(Diagnostics::_0_expected, scanner.tokenToString(kind));
+                parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::_0_expected), scanner.tokenToString(kind));
                 return false;
             }
 
@@ -1041,7 +1041,7 @@ namespace ts
             auto parseExpectedTokenJSDoc(SyntaxKind t) -> Node
             {
                 return parseOptionalTokenJSDoc(t) ||
-                       createMissingNode(t, /*reportAtCurrentPosition*/ false, Diagnostics::_0_expected, scanner.tokenToString(t));
+                       createMissingNode(t, /*reportAtCurrentPosition*/ false, data::DiagnosticMessage(Diagnostics::_0_expected), scanner.tokenToString(t));
             }
 
             template <typename... T>
@@ -1176,7 +1176,7 @@ namespace ts
 
                 if (token() == SyntaxKind::PrivateIdentifier)
                 {
-                    parseErrorAtCurrentToken(!!privateIdentifierDiagnosticMessage ? privateIdentifierDiagnosticMessage : Diagnostics::Private_identifiers_are_not_allowed_outside_class_bodies);
+                    parseErrorAtCurrentToken(!!privateIdentifierDiagnosticMessage ? privateIdentifierDiagnosticMessage : data::DiagnosticMessage(Diagnostics::Private_identifiers_are_not_allowed_outside_class_bodies));
                     return createIdentifier(/*isIdentifier*/ true);
                 }
 
@@ -1193,7 +1193,7 @@ namespace ts
                 auto isReservedWord = scanner.isReservedWord();
                 auto msgArg = scanner.getTokenText();
 
-                auto defaultMessage = isReservedWord ? Diagnostics::Identifier_expected_0_is_a_reserved_word_that_cannot_be_used_here : Diagnostics::Identifier_expected;
+                auto defaultMessage = isReservedWord ? data::DiagnosticMessage(Diagnostics::Identifier_expected_0_is_a_reserved_word_that_cannot_be_used_here) : data::DiagnosticMessage(Diagnostics::Identifier_expected);
 
                 return createMissingNode<Identifier>(SyntaxKind::Identifier, reportAtCurrentPosition, !!diagnosticMessage ? diagnosticMessage : defaultMessage, msgArg);
             }
@@ -1992,54 +1992,54 @@ namespace ts
                 switch (context)
                 {
                 case ParsingContext::SourceElements:
-                    return parseErrorAtCurrentToken(Diagnostics::Declaration_or_statement_expected);
+                    return parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::Declaration_or_statement_expected));
                 case ParsingContext::BlockStatements:
-                    return parseErrorAtCurrentToken(Diagnostics::Declaration_or_statement_expected);
+                    return parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::Declaration_or_statement_expected));
                 case ParsingContext::SwitchClauses:
-                    return parseErrorAtCurrentToken(Diagnostics::case_or_default_expected);
+                    return parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::case_or_default_expected));
                 case ParsingContext::SwitchClauseStatements:
-                    return parseErrorAtCurrentToken(Diagnostics::Statement_expected);
+                    return parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::Statement_expected));
                 case ParsingContext::RestProperties: // fallthrough
                 case ParsingContext::TypeMembers:
-                    return parseErrorAtCurrentToken(Diagnostics::Property_or_signature_expected);
+                    return parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::Property_or_signature_expected));
                 case ParsingContext::ClassMembers:
-                    return parseErrorAtCurrentToken(Diagnostics::Unexpected_token_A_constructor_method_accessor_or_property_was_expected);
+                    return parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::Unexpected_token_A_constructor_method_accessor_or_property_was_expected));
                 case ParsingContext::EnumMembers:
-                    return parseErrorAtCurrentToken(Diagnostics::Enum_member_expected);
+                    return parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::Enum_member_expected));
                 case ParsingContext::HeritageClauseElement:
-                    return parseErrorAtCurrentToken(Diagnostics::Expression_expected);
+                    return parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::Expression_expected));
                 case ParsingContext::VariableDeclarations:
                     return isKeyword(token())
-                               ? parseErrorAtCurrentToken(Diagnostics::_0_is_not_allowed_as_a_variable_declaration_name, scanner.tokenToString(token()))
-                               : parseErrorAtCurrentToken(Diagnostics::Variable_declaration_expected);
+                               ? parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::_0_is_not_allowed_as_a_variable_declaration_name), scanner.tokenToString(token()))
+                               : parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::Variable_declaration_expected));
                 case ParsingContext::ObjectBindingElements:
-                    return parseErrorAtCurrentToken(Diagnostics::Property_destructuring_pattern_expected);
+                    return parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::Property_destructuring_pattern_expected));
                 case ParsingContext::ArrayBindingElements:
-                    return parseErrorAtCurrentToken(Diagnostics::Array_element_destructuring_pattern_expected);
+                    return parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::Array_element_destructuring_pattern_expected));
                 case ParsingContext::ArgumentExpressions:
-                    return parseErrorAtCurrentToken(Diagnostics::Argument_expression_expected);
+                    return parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::Argument_expression_expected));
                 case ParsingContext::ObjectLiteralMembers:
-                    return parseErrorAtCurrentToken(Diagnostics::Property_assignment_expected);
+                    return parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::Property_assignment_expected));
                 case ParsingContext::ArrayLiteralMembers:
-                    return parseErrorAtCurrentToken(Diagnostics::Expression_or_comma_expected);
+                    return parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::Expression_or_comma_expected));
                 case ParsingContext::JSDocParameters:
-                    return parseErrorAtCurrentToken(Diagnostics::Parameter_declaration_expected);
+                    return parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::Parameter_declaration_expected));
                 case ParsingContext::Parameters:
-                    return parseErrorAtCurrentToken(Diagnostics::Parameter_declaration_expected);
+                    return parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::Parameter_declaration_expected));
                 case ParsingContext::TypeParameters:
-                    return parseErrorAtCurrentToken(Diagnostics::Type_parameter_declaration_expected);
+                    return parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::Type_parameter_declaration_expected));
                 case ParsingContext::TypeArguments:
-                    return parseErrorAtCurrentToken(Diagnostics::Type_argument_expected);
+                    return parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::Type_argument_expected));
                 case ParsingContext::TupleElementTypes:
-                    return parseErrorAtCurrentToken(Diagnostics::Type_expected);
+                    return parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::Type_expected));
                 case ParsingContext::HeritageClauses:
-                    return parseErrorAtCurrentToken(Diagnostics::Unexpected_token_expected);
+                    return parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::Unexpected_token_expected));
                 case ParsingContext::ImportOrExportSpecifiers:
-                    return parseErrorAtCurrentToken(Diagnostics::Identifier_expected);
+                    return parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::Identifier_expected));
                 case ParsingContext::JsxAttributes:
-                    return parseErrorAtCurrentToken(Diagnostics::Identifier_expected);
+                    return parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::Identifier_expected));
                 case ParsingContext::JsxChildren:
-                    return parseErrorAtCurrentToken(Diagnostics::Identifier_expected);
+                    return parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::Identifier_expected));
                     return; // GH TODO#18217 `Debug::_assertNever default(context);`
                 }
             }
@@ -2121,7 +2121,7 @@ namespace ts
 
             auto getExpectedCommaDiagnostic(ParsingContext kind) -> DiagnosticMessage
             {
-                return kind == ParsingContext::EnumMembers ? DiagnosticMessage(Diagnostics::An_enum_member_name_must_be_followed_by_a_or) : undefined;
+                return kind == ParsingContext::EnumMembers ? DiagnosticMessage(data::DiagnosticMessage(Diagnostics::An_enum_member_name_must_be_followed_by_a_or)) : undefined;
             }
 
             template <typename T>
@@ -2212,14 +2212,14 @@ namespace ts
                         // Report that we need an identifier.  However, report it right after the dot,
                         // and not on the next token.  This is because the next token might actually
                         // be an identifier and the error would be quite confusing.
-                        return createMissingNode<Identifier>(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ true, Diagnostics::Identifier_expected);
+                        return createMissingNode<Identifier>(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ true, data::DiagnosticMessage(Diagnostics::Identifier_expected));
                     }
                 }
 
                 if (token() == SyntaxKind::PrivateIdentifier)
                 {
                     auto node = parsePrivateIdentifier();
-                    return allowPrivateIdentifiers ? node : createMissingNode<Identifier>(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ true, Diagnostics::Identifier_expected);
+                    return allowPrivateIdentifiers ? node : createMissingNode<Identifier>(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ true, data::DiagnosticMessage(Diagnostics::Identifier_expected));
                 }
 
                 return allowIdentifierNames ? parseIdentifierName() : parseIdentifier();
@@ -2291,7 +2291,7 @@ namespace ts
                 else
                 {
                     // TODO(rbuckton) -> Do we need to call `parseExpectedToken` or can we just call `createMissingNode` directly?
-                    return parseExpectedToken(SyntaxKind::TemplateTail, Diagnostics::_0_expected, scanner.tokenToString(SyntaxKind::CloseBraceToken));
+                    return parseExpectedToken(SyntaxKind::TemplateTail, data::DiagnosticMessage(Diagnostics::_0_expected), scanner.tokenToString(SyntaxKind::CloseBraceToken));
                 }
             }
 
@@ -2370,7 +2370,7 @@ namespace ts
 
             auto parseEntityNameOfTypeReference() -> Node
             {
-                return parseEntityName(/*allowReservedWords*/ true, Diagnostics::Type_expected);
+                return parseEntityName(/*allowReservedWords*/ true, data::DiagnosticMessage(Diagnostics::Type_expected));
             }
 
             auto parseTypeArgumentsOfTypeReference() -> NodeArray<TypeNode>
@@ -2622,7 +2622,7 @@ namespace ts
             {
                 // FormalParameter [Yield,Await]:
                 //      BindingElement[?Yield,?Await]
-                auto name = parseIdentifierOrPattern(Diagnostics::Private_identifiers_cannot_be_used_as_parameters);
+                auto name = parseIdentifierOrPattern(data::DiagnosticMessage(Diagnostics::Private_identifiers_cannot_be_used_as_parameters));
                 if (getFullWidth(name) == 0 && !some<ModifiersArray>(modifiers) && isModifierKind(token()))
                 {
                     // in cases like
@@ -2713,7 +2713,7 @@ namespace ts
                 else if (isType && token() == SyntaxKind::EqualsGreaterThanToken)
                 {
                     // This is easy to get backward, especially in type contexts, so parse the type anyway
-                    parseErrorAtCurrentToken(Diagnostics::_0_expected, scanner.tokenToString(SyntaxKind::ColonToken));
+                    parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::_0_expected), scanner.tokenToString(SyntaxKind::ColonToken));
                     nextToken();
                     return true;
                 }
@@ -3445,14 +3445,14 @@ namespace ts
                     if (isFunctionTypeNode(type))
                     {
                         diagnostic = isInUnionType
-                                         ? Diagnostics::Function_type_notation_must_be_parenthesized_when_used_in_a_union_type
-                                         : Diagnostics::Function_type_notation_must_be_parenthesized_when_used_in_an_intersection_type;
+                                         ? data::DiagnosticMessage(Diagnostics::Function_type_notation_must_be_parenthesized_when_used_in_a_union_type)
+                                         : data::DiagnosticMessage(Diagnostics::Function_type_notation_must_be_parenthesized_when_used_in_an_intersection_type);
                     }
                     else
                     {
                         diagnostic = isInUnionType
-                                         ? Diagnostics::Constructor_type_notation_must_be_parenthesized_when_used_in_a_union_type
-                                         : Diagnostics::Constructor_type_notation_must_be_parenthesized_when_used_in_an_intersection_type;
+                                         ? data::DiagnosticMessage(Diagnostics::Constructor_type_notation_must_be_parenthesized_when_used_in_a_union_type)
+                                         : data::DiagnosticMessage(Diagnostics::Constructor_type_notation_must_be_parenthesized_when_used_in_an_intersection_type);
                     }
                     parseErrorAtRange(type, diagnostic);
                     return type;
@@ -4278,7 +4278,7 @@ namespace ts
                         colonToken = parseExpectedToken(SyntaxKind::ColonToken),
                         nodeIsPresent(colonToken)
                             ? parseAssignmentExpressionOrHigher()
-                            : createMissingNode(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ false, Diagnostics::_0_expected, scanner.tokenToString(SyntaxKind::ColonToken))),
+                            : createMissingNode(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ false, data::DiagnosticMessage(Diagnostics::_0_expected), scanner.tokenToString(SyntaxKind::ColonToken))),
                     pos);
             }
 
@@ -4474,11 +4474,11 @@ namespace ts
                     auto end = simpleUnaryExpression->end;
                     if (simpleUnaryExpression->kind == SyntaxKind::TypeAssertionExpression)
                     {
-                        parseErrorAt(pos, end, Diagnostics::A_type_assertion_expression_is_not_allowed_in_the_left_hand_side_of_an_exponentiation_expression_Consider_enclosing_the_expression_in_parentheses);
+                        parseErrorAt(pos, end, data::DiagnosticMessage(Diagnostics::A_type_assertion_expression_is_not_allowed_in_the_left_hand_side_of_an_exponentiation_expression_Consider_enclosing_the_expression_in_parentheses));
                     }
                     else
                     {
-                        parseErrorAt(pos, end, Diagnostics::An_unary_expression_with_the_0_operator_is_not_allowed_in_the_left_hand_side_of_an_exponentiation_expression_Consider_enclosing_the_expression_in_parentheses, scanner.tokenToString(unaryOperator));
+                        parseErrorAt(pos, end, data::DiagnosticMessage(Diagnostics::An_unary_expression_with_the_0_operator_is_not_allowed_in_the_left_hand_side_of_an_exponentiation_expression_Consider_enclosing_the_expression_in_parentheses), scanner.tokenToString(unaryOperator));
                     }
                 }
                 return simpleUnaryExpression;
@@ -4739,7 +4739,7 @@ namespace ts
                     auto typeArguments = tryParse<NodeArray<TypeNode>>(std::bind(&Parser::parseTypeArgumentsInExpression, this));
                     if (typeArguments != undefined)
                     {
-                        parseErrorAt(startPos, getNodePos(), Diagnostics::super_may_not_use_type_arguments);
+                        parseErrorAt(startPos, getNodePos(), data::DiagnosticMessage(Diagnostics::super_may_not_use_type_arguments));
                     }
                 }
 
@@ -4750,7 +4750,7 @@ namespace ts
 
                 // If we have seen "super" it must be followed by '(' or '.'.
                 // If it wasn't then just try to parse out a '.' and report an error.
-                parseExpectedToken(SyntaxKind::DotToken, Diagnostics::super_must_be_followed_by_an_argument_list_or_member_access);
+                parseExpectedToken(SyntaxKind::DotToken, data::DiagnosticMessage(Diagnostics::super_must_be_followed_by_an_argument_list_or_member_access));
                 // private names will never work with `super` (`super.#foo`), but that's a semantic error, not syntactic
                 return finishNode(factory.createPropertyAccessExpression(expression, parseRightSideOfDot(/*allowIdentifierNames*/ true, /*allowPrivateIdentifiers*/ true)), pos);
             }
@@ -4767,7 +4767,7 @@ namespace ts
 
                     if (!tagNamesAreEquivalent(opening.as<JsxOpeningElement>()->tagName.as<JsxTagNameExpression>(), closingElement->tagName.as<JsxTagNameExpression>()))
                     {
-                        parseErrorAtRange(closingElement, Diagnostics::Expected_corresponding_JSX_closing_tag_for_0, getTextOfNodeFromSourceText(sourceText, opening.as<JsxOpeningElement>()->tagName));
+                        parseErrorAtRange(closingElement, data::DiagnosticMessage(Diagnostics::Expected_corresponding_JSX_closing_tag_for_0), getTextOfNodeFromSourceText(sourceText, opening.as<JsxOpeningElement>()->tagName));
                     }
 
                     result = finishNode(factory.createJsxElement(opening, children, closingElement), pos);
@@ -4799,7 +4799,7 @@ namespace ts
                         auto operatorToken = createMissingNode(SyntaxKind::CommaToken, /*reportAtCurrentPosition*/ false);
                         setTextRangePosWidth(operatorToken, invalidElement->pos, 0);
                         auto safe_str = safe_string(sourceText);
-                        parseErrorAt(scanner.skipTrivia(safe_str, topBadPos), invalidElement->end, Diagnostics::JSX_expressions_must_have_one_parent_element);
+                        parseErrorAt(scanner.skipTrivia(safe_str, topBadPos), invalidElement->end, data::DiagnosticMessage(Diagnostics::JSX_expressions_must_have_one_parent_element));
                         return finishNode(factory.createBinaryExpression(result, operatorToken, invalidElement), pos);
                     }
                 }
@@ -4824,7 +4824,7 @@ namespace ts
                     // rather than at the end of the file (which is useless)
                     if (isJsxOpeningFragment(openingTag))
                     {
-                        parseErrorAtRange(openingTag, Diagnostics::JSX_fragment_has_no_corresponding_closing_tag);
+                        parseErrorAtRange(openingTag, data::DiagnosticMessage(Diagnostics::JSX_fragment_has_no_corresponding_closing_tag));
                     }
                     else
                     {
@@ -4833,7 +4833,7 @@ namespace ts
                         auto tag = openingTag.as<JsxOpeningElement>()->tagName;
                         auto safe_str = safe_string(sourceText);
                         auto start = scanner.skipTrivia(safe_str, tag->pos);
-                        parseErrorAt(start, tag->end, Diagnostics::JSX_element_0_has_no_corresponding_closing_tag, getTextOfNodeFromSourceText(sourceText, openingTag.as<JsxOpeningElement>()->tagName));
+                        parseErrorAt(start, tag->end, data::DiagnosticMessage(Diagnostics::JSX_element_0_has_no_corresponding_closing_tag), getTextOfNodeFromSourceText(sourceText, openingTag.as<JsxOpeningElement>()->tagName));
                     }
                     return undefined;
                 case SyntaxKind::LessThanSlashToken:
@@ -5021,7 +5021,7 @@ namespace ts
                 parseExpected(SyntaxKind::LessThanSlashToken);
                 if (scanner.tokenIsIdentifierOrKeyword(token()))
                 {
-                    parseErrorAtRange(parseJsxElementName(), Diagnostics::Expected_corresponding_closing_tag_for_JSX_fragment);
+                    parseErrorAtRange(parseJsxElementName(), data::DiagnosticMessage(Diagnostics::Expected_corresponding_closing_tag_for_JSX_fragment));
                 }
                 if (inExpressionContext)
                 {
@@ -5091,7 +5091,7 @@ namespace ts
                 auto propertyAccess = isOptionalChain ? factory.createPropertyAccessChain(expression, questionDotToken, name) : factory.createPropertyAccessExpression(expression, name);
                 if (isOptionalChain && isPrivateIdentifier(propertyAccess->name))
                 {
-                    parseErrorAtRange(propertyAccess->name, Diagnostics::An_optional_chain_cannot_contain_private_identifiers);
+                    parseErrorAtRange(propertyAccess->name, data::DiagnosticMessage(Diagnostics::An_optional_chain_cannot_contain_private_identifiers));
                 }
                 return finishNode(propertyAccess, pos);
             }
@@ -5101,7 +5101,7 @@ namespace ts
                 Expression argumentExpression;
                 if (token() == SyntaxKind::CloseBracketToken)
                 {
-                    argumentExpression = createMissingNode(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ true, Diagnostics::An_element_access_expression_should_take_an_argument);
+                    argumentExpression = createMissingNode(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ true, data::DiagnosticMessage(Diagnostics::An_element_access_expression_should_take_an_argument));
                 }
                 else
                 {
@@ -5223,7 +5223,7 @@ namespace ts
                     if (questionDotToken)
                     {
                         // We failed to parse anything, so report a missing identifier here.
-                        auto name = createMissingNode<Identifier>(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ false, Diagnostics::Identifier_expected);
+                        auto name = createMissingNode<Identifier>(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ false, data::DiagnosticMessage(Diagnostics::Identifier_expected));
                         expression = finishNode(factory.createPropertyAccessChain(expression, questionDotToken, name), pos);
                     }
                     break;
@@ -5360,7 +5360,7 @@ namespace ts
                     return parseTemplateExpression(/* isTaggedTemplate */ false);
                 }
 
-                return parseIdentifier(Diagnostics::Expression_expected);
+                return parseIdentifier(data::DiagnosticMessage(Diagnostics::Expression_expected));
             }
 
             auto parseParenthesizedExpression() -> ParenthesizedExpression
@@ -5479,11 +5479,11 @@ namespace ts
                 if (!parseExpected(SyntaxKind::CloseBraceToken))
                 {
                     auto lastError = lastOrUndefined(parseDiagnostics);
-                    if (!!lastError && lastError->code == Diagnostics::_0_expected.code)
+                    if (!!lastError && lastError->code == data::DiagnosticMessage(Diagnostics::_0_expected).code)
                     {
                         addRelatedInfo(
                             lastError,
-                            createDetachedDiagnostic(fileName, openBracePosition, 1, Diagnostics::The_parser_expected_to_find_a_to_match_the_token_here));
+                            createDetachedDiagnostic(fileName, openBracePosition, 1, data::DiagnosticMessage(Diagnostics::The_parser_expected_to_find_a_to_match_the_token_here)));
                     }
                 }
                 return finishNode(factory.createObjectLiteralExpression(properties, multiLine), pos);
@@ -5567,7 +5567,7 @@ namespace ts
                 }
                 else if (!!typeArguments)
                 {
-                    parseErrorAt(pos, scanner.getStartPos(), Diagnostics::A_new_expression_with_type_arguments_must_always_be_followed_by_a_parenthesized_argument_list);
+                    parseErrorAt(pos, scanner.getStartPos(), data::DiagnosticMessage(Diagnostics::A_new_expression_with_type_arguments_must_always_be_followed_by_a_parenthesized_argument_list));
                 }
                 return finishNode(factory.createNewExpression(expression, typeArguments, argumentsArray), pos);
             }
@@ -5584,11 +5584,11 @@ namespace ts
                     if (!parseExpected(SyntaxKind::CloseBraceToken))
                     {
                         auto lastError = lastOrUndefined(parseDiagnostics);
-                        if (!!lastError && lastError->code == Diagnostics::_0_expected.code)
+                        if (!!lastError && lastError->code == data::DiagnosticMessage(Diagnostics::_0_expected).code)
                         {
                             addRelatedInfo(
                                 lastError,
-                                createDetachedDiagnostic(fileName, openBracePosition, 1, Diagnostics::The_parser_expected_to_find_a_to_match_the_token_here));
+                                createDetachedDiagnostic(fileName, openBracePosition, 1, data::DiagnosticMessage(Diagnostics::The_parser_expected_to_find_a_to_match_the_token_here)));
                         }
                     }
                     return finishNode(factory.createBlock(statements, multiLine), pos);
@@ -6274,7 +6274,7 @@ namespace ts
                     {
                         // We reached this point because we encountered decorators and/or modifiers and assumed a declaration
                         // would follow. For recovery and error reporting purposes, return an incomplete declaration.
-                        auto missing = createMissingNode<MissingDeclaration>(SyntaxKind::MissingDeclaration, /*reportAtCurrentPosition*/ true, Diagnostics::Declaration_expected);
+                        auto missing = createMissingNode<MissingDeclaration>(SyntaxKind::MissingDeclaration, /*reportAtCurrentPosition*/ true, data::DiagnosticMessage(Diagnostics::Declaration_expected));
                         setTextRangePos(missing, pos);
                         missing->decorators = decorators;
                         copy(missing->modifiers, modifiers);
@@ -6387,7 +6387,7 @@ namespace ts
             {
                 auto pos = getNodePos();
                 auto hasJSDoc = hasPrecedingJSDocComment();
-                auto name = parseIdentifierOrPattern(Diagnostics::Private_identifiers_are_not_allowed_in_variable_declarations);
+                auto name = parseIdentifierOrPattern(data::DiagnosticMessage(Diagnostics::Private_identifiers_are_not_allowed_in_variable_declarations));
                 ExclamationToken exclamationToken;
                 if (allowExclamation && name->kind == SyntaxKind::Identifier &&
                     token() == SyntaxKind::ExclamationToken && !scanner.hasPrecedingLineBreak())
@@ -6481,7 +6481,7 @@ namespace ts
                     setAwaitContext(/*value*/ true);
                 auto parameters = parseParameters(isGenerator | isAsync);
                 auto type = parseReturnType(SyntaxKind::ColonToken, /*isType*/ false);
-                auto body = parseFunctionBlockOrSemicolon(isGenerator | isAsync, Diagnostics::or_expected);
+                auto body = parseFunctionBlockOrSemicolon(isGenerator | isAsync, data::DiagnosticMessage(Diagnostics::or_expected));
                 setAwaitContext(savedAwaitContext);
                 auto node = factory.createFunctionDeclaration(decorators, modifiers, asteriskToken, name, typeParameters, parameters, type, body);
                 return withJSDoc(finishNode(node, pos), hasJSDoc);
@@ -6512,7 +6512,7 @@ namespace ts
                         auto typeParameters = parseTypeParameters();
                         auto parameters = parseParameters(SignatureFlags::None);
                         auto type = parseReturnType(SyntaxKind::ColonToken, /*isType*/ false);
-                        auto body = parseFunctionBlockOrSemicolon(SignatureFlags::None, Diagnostics::or_expected);
+                        auto body = parseFunctionBlockOrSemicolon(SignatureFlags::None, data::DiagnosticMessage(Diagnostics::or_expected));
                         auto node = factory.createConstructorDeclaration(decorators, modifiers, parameters, body);
                         // Attach `typeParameters` and `type` if they exist so that we can report them in the grammar checker.
                         node->typeParameters = typeParameters;
@@ -6570,7 +6570,7 @@ namespace ts
                 auto type = parseTypeAnnotation();
                 auto initializer = doOutsideOfContext<Expression>(NodeFlags::YieldContext | NodeFlags::AwaitContext | NodeFlags::DisallowInContext, std::bind(&Parser::parseInitializer, this));
                 parseSemicolon();
-                auto node = factory.createPropertyDeclaration(decorators, modifiers, name, Node(questionToken, 0, 0) || Node(exclamationToken, 0, 0), type, initializer);
+                auto node = factory.createPropertyDeclaration(decorators, modifiers, name, questionToken.as<Node>() || exclamationToken.as<Node>(), type, initializer);
                 return withJSDoc(finishNode(node, pos), hasJSDoc);
             }
 
@@ -6587,7 +6587,7 @@ namespace ts
                 auto questionToken = parseOptionalToken(SyntaxKind::QuestionToken);
                 if (asteriskToken || token() == SyntaxKind::OpenParenToken || token() == SyntaxKind::LessThanToken)
                 {
-                    return parseMethodDeclaration(pos, hasJSDoc, decorators, modifiers, asteriskToken, name, questionToken, /*exclamationToken*/ undefined, Diagnostics::or_expected);
+                    return parseMethodDeclaration(pos, hasJSDoc, decorators, modifiers, asteriskToken, name, questionToken, /*exclamationToken*/ undefined, data::DiagnosticMessage(Diagnostics::or_expected));
                 }
                 return parsePropertyDeclaration(pos, hasJSDoc, decorators, modifiers, name, questionToken);
             }
@@ -6695,7 +6695,7 @@ namespace ts
                     // `@await` is is disallowed in an [Await] context, but can cause parsing to go off the rails
                     // This simply parses the missing identifier and moves on.
                     auto pos = getNodePos();
-                    auto awaitExpression = parseIdentifier(Diagnostics::Expression_expected);
+                    auto awaitExpression = parseIdentifier(data::DiagnosticMessage(Diagnostics::Expression_expected));
                     nextToken();
                     auto memberExpression = parseMemberExpressionRest(pos, awaitExpression, /*allowOptionalChain*/ true);
                     return parseCallExpressionRest(pos, memberExpression);
@@ -6846,7 +6846,7 @@ namespace ts
                 if (!!decorators || !!modifiers)
                 {
                     // treat this.as<a>() property declaration with a missing name.
-                    auto name = createMissingNode<Identifier>(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ true, Diagnostics::Declaration_expected);
+                    auto name = createMissingNode<Identifier>(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ true, data::DiagnosticMessage(Diagnostics::Declaration_expected));
                     return parsePropertyDeclaration(pos, hasJSDoc, decorators, modifiers, name, /*questionToken*/ undefined);
                 }
 
@@ -7314,7 +7314,7 @@ namespace ts
                 }
                 if (kind == SyntaxKind::ImportSpecifier && checkIdentifierIsKeyword)
                 {
-                    parseErrorAt(checkIdentifierStart, checkIdentifierEnd, Diagnostics::Identifier_expected);
+                    parseErrorAt(checkIdentifierStart, checkIdentifierEnd, data::DiagnosticMessage(Diagnostics::Identifier_expected));
                 }
                 auto node = kind == SyntaxKind::ImportSpecifier
                                 ? factory.createImportSpecifier(propertyName, name)
