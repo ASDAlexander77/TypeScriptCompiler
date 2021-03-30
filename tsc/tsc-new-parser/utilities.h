@@ -1365,7 +1365,7 @@ namespace ts
         return tags;
     }
 
-    inline static auto getFirstJSDocTag(Node node, std::function<Node(JSDocTag)> predicate, boolean noCache = false) -> Node {
+    inline static auto getFirstJSDocTag(Node node, std::function<boolean(Node)> predicate, boolean noCache = false) -> Node {
         return find(getJSDocTagsWorker(node, noCache), predicate);
     }
 

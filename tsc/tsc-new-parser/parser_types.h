@@ -15,7 +15,10 @@ namespace data
     /* @internal */
     using TypeId = number;
 
-    using any = char *;
+    struct any 
+    {
+    };
+
     struct never
     {
     };
@@ -205,22 +208,12 @@ namespace data
         any _declarationBrand;
     };
 
-    struct DeclarationNoNode
-    {
-        any _declarationBrand;
-    };
-
     struct NamedDeclaration : Declaration
     {
         PTR(DeclarationName) name;
     };
 
-    struct NamedDeclarationNoNode : DeclarationNoNode
-    {
-        PTR(DeclarationName) name;
-    };
-
-    struct TypeElement : NamedDeclaration
+    struct TypeElement : virtual NamedDeclaration
     {
         any _typeElementBrand;
         PTR(PropertyName) name;
@@ -228,7 +221,7 @@ namespace data
     };
 
     /* @internal */
-    struct DynamicNamedDeclaration : NamedDeclaration
+    struct DynamicNamedDeclaration : virtual NamedDeclaration
     {
         PTR(ComputedPropertyName) name;
     };
@@ -245,7 +238,7 @@ namespace data
         any _statementBrand;
     };
 
-    struct DeclarationStatement : NamedDeclaration, Statement
+    struct DeclarationStatement : virtual NamedDeclaration, Statement
     {
         PTR(Node) /**Identifier | StringLiteral | NumericLiteral*/ name;
     };
@@ -282,7 +275,7 @@ namespace data
         PTR(LeftHandSideExpression) expression;
     };
 
-    struct TypeParameterDeclaration : NamedDeclaration
+    struct TypeParameterDeclaration : virtual NamedDeclaration
     {
         // kind: SyntaxKind::TypeParameter;
         PTR(Node) /**DeclarationWithTypeParameterChildren | InferTypeNode*/ parent;
@@ -295,18 +288,8 @@ namespace data
         PTR(Expression) expression;
     };
 
-    struct SignatureDeclarationBase : NamedDeclaration, JSDocContainer
+    struct SignatureDeclarationBase : virtual NamedDeclaration, JSDocContainer
     {
-        PTR(PropertyName) name;
-        NodeArray<PTR(TypeParameterDeclaration)> typeParameters;
-        NodeArray<PTR(ParameterDeclaration)> parameters;
-        PTR(TypeNode) type;
-        /* @internal */ NodeArray<PTR(TypeNode)> typeArguments; // Used for quick info, replaces typeParameters for instantiated signatures
-    };
-
-    struct SignatureDeclarationBaseNoNode : NamedDeclarationNoNode, JSDocContainer
-    {
-        PTR(PropertyName) name;
         NodeArray<PTR(TypeParameterDeclaration)> typeParameters;
         NodeArray<PTR(ParameterDeclaration)> parameters;
         PTR(TypeNode) type;
@@ -323,7 +306,7 @@ namespace data
         // kind: SyntaxKind::ConstructSignature;
     };
 
-    struct VariableDeclaration : NamedDeclaration, JSDocContainer
+    struct VariableDeclaration : virtual NamedDeclaration, JSDocContainer
     {
         // kind: SyntaxKind::VariableDeclaration;
         PTR(Node) /**VariableDeclarationList | CatchClause*/ parent;
@@ -346,7 +329,7 @@ namespace data
         NodeArray<PTR(VariableDeclaration)> declarations;
     };
 
-    struct ParameterDeclaration : NamedDeclaration, JSDocContainer
+    struct ParameterDeclaration : virtual NamedDeclaration, JSDocContainer
     {
         // kind: SyntaxKind::Parameter;
         PTR(SignatureDeclaration) parent;
@@ -357,7 +340,7 @@ namespace data
         PTR(Expression) initializer;        // Optional initializer
     };
 
-    struct BindingElement : NamedDeclaration
+    struct BindingElement : virtual NamedDeclaration
     {
         // kind: SyntaxKind::BindingElement;
         PTR(BindingPattern) parent;
@@ -376,10 +359,9 @@ namespace data
         PTR(Expression) initializer;      // Present for use with reporting a grammar error
     };
 
-    struct ClassElement : NamedDeclaration
+    // TODO
+    struct ClassElement : virtual NamedDeclaration
     {
-        any _classElementBrand;
-        PTR(PropertyName) name;
     };
 
     struct PropertyDeclaration : ClassElement, JSDocContainer
@@ -405,10 +387,8 @@ namespace data
         PTR(Expression) initializer;
     };
 
-    struct ObjectLiteralElement : NamedDeclaration
+    struct ObjectLiteralElement : virtual NamedDeclaration
     {
-        any _objectLiteralBrand;
-        PTR(PropertyName) name;
     };
 
     struct PropertyAssignment : ObjectLiteralElement, JSDocContainer
@@ -441,7 +421,7 @@ namespace data
         PTR(Expression) expression;
     };
 
-    struct PropertyLikeDeclaration : NamedDeclaration
+    struct PropertyLikeDeclaration : virtual NamedDeclaration
     {
         PTR(PropertyName) name;
     };
@@ -507,7 +487,6 @@ namespace data
     {
         // kind: SyntaxKind::MethodDeclaration;
         PTR(Node) /**ClassLikeDeclaration | ObjectLiteralExpression*/ parent;
-        PTR(PropertyName) name;
         PTR(FunctionBody) body;
         /* @internal*/ PTR(ExclamationToken) exclamationToken; // Present for use with reporting a grammar error
     };
@@ -766,7 +745,6 @@ namespace data
 
     struct Expression : virtual Node
     {
-        any _expressionBrand;
     };
 
     struct OmittedExpression : Expression
@@ -1094,7 +1072,6 @@ namespace data
         // kind: SyntaxKind::ArrowFunction;
         PTR(EqualsGreaterThanToken) equalsGreaterThanToken;
         PTR(ConciseBody) body;
-        never name;
     };
 
     struct TemplateLiteralLikeNode : LiteralLikeNode
@@ -1728,7 +1705,7 @@ namespace data
         PTR(Block) block;
     };
 
-    struct ClassLikeDeclarationBase : NamedDeclaration, JSDocContainer
+    struct ClassLikeDeclarationBase : virtual NamedDeclaration, JSDocContainer
     {
         // kind: SyntaxKind::ClassDeclaration | SyntaxKind::ClassExpression;
         PTR(Identifier) name;
@@ -1774,7 +1751,7 @@ namespace data
         PTR(TypeNode) type;
     };
 
-    struct EnumMember : NamedDeclaration, JSDocContainer
+    struct EnumMember : virtual NamedDeclaration, JSDocContainer
     {
         // kind: SyntaxKind::EnumMember;
         PTR(EnumDeclaration) parent;
@@ -1867,7 +1844,7 @@ namespace data
     // import d, * as ns from "mod" => name = d, namedBinding: NamespaceImport = { name: ns }
     // import { a, b as x } from "mod" => name = undefined, namedBinding: NamedImports = { elements: [{ name: a }, { name: x, propertyName: b}]}
     // import d, { a, b as x } from "mod" => name = d, namedBinding: NamedImports = { elements: [{ name: a }, { name: x, propertyName: b}]}
-    struct ImportClause : NamedDeclaration
+    struct ImportClause : virtual NamedDeclaration
     {
         // kind: SyntaxKind::ImportClause;
         PTR(ImportDeclaration) parent;
@@ -1876,14 +1853,14 @@ namespace data
         PTR(NamedImportBindings) namedBindings;
     };
 
-    struct NamespaceImport : NamedDeclaration
+    struct NamespaceImport : virtual NamedDeclaration
     {
         // kind: SyntaxKind::NamespaceImport;
         PTR(ImportClause) parent;
         PTR(Identifier) name;
     };
 
-    struct NamespaceExport : NamedDeclaration
+    struct NamespaceExport : virtual NamedDeclaration
     {
         // kind: SyntaxKind::NamespaceExport;
         PTR(ExportDeclaration) parent;
@@ -1923,7 +1900,7 @@ namespace data
         NodeArray<PTR(ExportSpecifier)> elements;
     };
 
-    struct ImportSpecifier : NamedDeclaration
+    struct ImportSpecifier : virtual NamedDeclaration
     {
         // kind: SyntaxKind::ImportSpecifier;
         PTR(NamedImports) parent;
@@ -1931,7 +1908,7 @@ namespace data
         PTR(Identifier) name;         // Declared name
     };
 
-    struct ExportSpecifier : NamedDeclaration
+    struct ExportSpecifier : virtual NamedDeclaration
     {
         // kind: SyntaxKind::ExportSpecifier;
         PTR(NamedExports) parent;
@@ -2025,7 +2002,7 @@ namespace data
         PTR(TypeNode) type;
     };
 
-    struct JSDocFunctionType : JSDocType, SignatureDeclarationBaseNoNode
+    struct JSDocFunctionType : JSDocType, SignatureDeclarationBase
     {
         // kind: SyntaxKind::JSDocFunctionType;
     };

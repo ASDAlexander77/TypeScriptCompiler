@@ -367,7 +367,7 @@ namespace ts
         if (isComputedPropertyName(node->name) || (hasStaticModifier(node) && node->initializer)) {
             node->transformFlags |= TransformFlags::ContainsTypeScriptClassSyntax;
         }
-        if (questionOrExclamationToken || modifiersToFlags(node->modifiers) & ModifierFlags::Ambient) {
+        if (questionOrExclamationToken || !!(modifiersToFlags(node->modifiers) & ModifierFlags::Ambient)) {
             node->transformFlags |= TransformFlags::ContainsTypeScript;
         }
         return node;
@@ -1494,7 +1494,7 @@ namespace ts
     auto NodeFactory::createYieldExpression(AsteriskToken asteriskToken, Expression expression) -> YieldExpression {
         Debug::_assert(!asteriskToken || !!expression, S("A `YieldExpression` with an asteriskToken must have an expression."));
         auto node = createBaseExpression<YieldExpression>(SyntaxKind::YieldExpression);
-        node->expression = expression && parenthesizerRules.parenthesizeExpressionForDisallowedComma(expression);
+        node->expression = expression ? parenthesizerRules.parenthesizeExpressionForDisallowedComma(expression) : undefined;
         node->asteriskToken = asteriskToken;
         node->transformFlags |=
             propagateChildFlags(node->expression) |
@@ -1621,7 +1621,7 @@ namespace ts
                 node->transformFlags |= TransformFlags::ContainsESNext;
                 break;
             default:
-                return Debug::_assertNever(keywordToken);
+                return Debug::_assertNever<MetaProperty>(keywordToken);
         }
         return node;
     }

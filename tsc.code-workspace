@@ -145,7 +145,8 @@
             "filesystem": "cpp",
             "*.def": "cpp",
             "regex": "cpp",
-            "optional": "cpp"
+            "optional": "cpp",
+            "*.rh": "cpp"
         },
         "antlr4.generation": {
             "mode": "external",

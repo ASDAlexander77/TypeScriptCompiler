@@ -42,6 +42,8 @@ namespace ts
         if (some(typeArguments)) {
             return factory->createNodeArray(sameMapWithNumber(typeArguments, std::bind(&ParenthesizerRules::parenthesizeOrdinalTypeArgument, this, std::placeholders::_1, std::placeholders::_2)));
         }
+
+        return undefined;
     }
 
     auto ParenthesizerRules::parenthesizeElementTypeOfArrayType(TypeNode member) -> TypeNode {
@@ -242,6 +244,8 @@ namespace ts
                     return operandAssociativity == Associativity::Left;
                 }
         }
+
+        return false;
     }
 
     auto ParenthesizerRules::parenthesizeBinaryOperand(SyntaxKind binaryOperator, Expression operand, boolean isLeftSideOfBinary, Expression leftOperand) -> Expression {

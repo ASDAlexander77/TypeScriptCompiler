@@ -59,6 +59,12 @@
 template <typename T>
 struct ptr
 {
+    enum class Cast
+    {
+        Static,
+        Dynamic
+    };
+
 	ptr() {};
 
 	ptr(undefined_t) : instance(nullptr) {};
@@ -72,7 +78,7 @@ struct ptr
 
 protected:
 	template <typename U>
-	ptr(ptr<U> otherPtr, boolean) : instance(std::static_pointer_cast<T>(otherPtr.instance)) {};
+	ptr(ptr<U> otherPtr, Cast) : instance(std::static_pointer_cast<T>(otherPtr.instance)) {};
 
 public:
 	template <typename I>
@@ -185,7 +191,7 @@ public:
     template <typename U> 
     inline auto cast() -> U
     {
-        return U(*this, true);
+        return U(*this, Cast::Static);
     }
 
     template <typename U> 
@@ -618,7 +624,6 @@ namespace data
 
     NODE_REF(FunctionOrConstructorTypeNode)
     NODE_REF(AssignmentPattern)
-
 } // namespace data
 
 POINTER(TextRange)

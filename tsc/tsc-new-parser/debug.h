@@ -56,7 +56,7 @@ struct Debug
     }
 
     template <typename T>
-    static T _assertNever(T value)
+    static auto _assertNever(T value) -> T
     {
         assert(false);
         return value;

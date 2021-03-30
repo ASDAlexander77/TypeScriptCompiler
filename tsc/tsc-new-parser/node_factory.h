@@ -14,17 +14,17 @@ namespace ts
         Scanner *scanner;
         Scanner rawTextScanner;
         ParenthesizerRules parenthesizerRules;
-        NodeFactoryFlags nodeFactoryFlags;
+        NodeFactoryFlags flags;
         NodeCreateCallbackFunc createNodeCallback;
 
     public:
         NodeFactory(ts::Scanner *scanner, NodeFactoryFlags nodeFactoryFlags, NodeCreateCallbackFunc createNodeCallback)
             : scanner(scanner), rawTextScanner(ScriptTarget::Latest, /*skipTrivia*/ false, LanguageVariant::Standard), 
-              parenthesizerRules(this), nodeFactoryFlags(nodeFactoryFlags), createNodeCallback(createNodeCallback) {}
+              parenthesizerRules(this), flags(nodeFactoryFlags), createNodeCallback(createNodeCallback) {}
 
         template <typename T>
         auto update(T updated, T original) -> T {
-            if (!!(flags & NodeFactoryFlags.NoOriginalNode))
+            if (!!(flags & NodeFactoryFlags::NoOriginalNode))
             {
                 return updateWithoutOriginal(updated, original);
             }
@@ -42,7 +42,7 @@ namespace ts
 
         template <typename T>
         auto updateWithOriginal(T updated, T original) -> T {
-            if (updated !== original) {
+            if (updated != original) {
                 setOriginalNode(updated, original);
                 setTextRange(updated, original);
             }
@@ -77,8 +77,9 @@ namespace ts
         auto setOriginalNode(T node, Node original) -> T {
             node->original = original;
             if (original) {
-                auto emitNode = original->emitNode;
-                if (emitNode) node->emitNode = mergeEmitNode(emitNode, node->emitNode);
+                // TODO: review it
+                //auto emitNode = original->emitNode;
+                //if (emitNode) node->emitNode = mergeEmitNode(emitNode, node->emitNode);
             }
             return node;
         }
