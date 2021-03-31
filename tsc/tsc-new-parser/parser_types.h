@@ -187,19 +187,19 @@ namespace data
         ///* @internal */ PTR(InferenceContext) inferenceContext;  // Inference context for contextual type
     };
 
-    // TODO(rbuckton): Constraint 'TKind' to 'TokenSyntaxKind'
-    template <SyntaxKind... TKind>
-    struct Token : Node
-    {
-    };
-
-    struct JSDocContainer
+    struct JSDocContainer : Node
     {
         /* @internal */ NodeArray<PTR(JSDoc)> jsDoc;         // JSDoc that directly precedes this node
         /* @internal */ NodeArray<PTR(JSDocTag)> jsDocCache; // Cache for getJSDocTags
     };
 
-    struct EndOfFileToken : Token<SyntaxKind::EndOfFileToken>, JSDocContainer
+    // TODO(rbuckton): Constraint 'TKind' to 'TokenSyntaxKind'
+    template <SyntaxKind... TKind>
+    struct Token : JSDocContainer
+    {
+    };
+
+    struct EndOfFileToken : Token<SyntaxKind::EndOfFileToken>
     {
     };
 
@@ -228,7 +228,7 @@ namespace data
         /*@internal*/ number jsdocDotPos; // QualifiedName occurs in JSDoc-style generic: Id1.Id2.<T>
     };
 
-    struct ClassElement : Node
+    struct ClassElement : JSDocContainer
     {
     };
 
@@ -325,7 +325,7 @@ namespace data
         PTR(Expression) expression;
     };
     
-    struct SignatureDeclarationBase : TypeElement, JSDocContainer
+    struct SignatureDeclarationBase : TypeElement
 
     {
         NodeArray<PTR(TypeParameterDeclaration)> typeParameters;
@@ -344,7 +344,7 @@ namespace data
         // kind: SyntaxKind::ConstructSignature;
     };
 
-    struct VariableDeclaration : NamedDeclaration, JSDocContainer
+    struct VariableDeclaration : NamedDeclaration
     {
         // kind: SyntaxKind::VariableDeclaration;
         PTR(Node) /**VariableDeclarationList | CatchClause*/ parent;
@@ -367,7 +367,7 @@ namespace data
         NodeArray<PTR(VariableDeclaration)> declarations;
     };
 
-    struct ParameterDeclaration : NamedDeclaration, JSDocContainer
+    struct ParameterDeclaration : NamedDeclaration
     {
         // kind: SyntaxKind::Parameter;
         PTR(SignatureDeclaration) parent;
@@ -388,7 +388,7 @@ namespace data
         PTR(Expression) initializer;        // Optional initializer
     };
 
-    struct PropertySignature : TypeElement, JSDocContainer
+    struct PropertySignature : TypeElement
     {
         // kind: SyntaxKind::PropertySignature;
         PTR(PropertyName) name;           // Declared property name
@@ -397,7 +397,7 @@ namespace data
         PTR(Expression) initializer;      // Present for use with reporting a grammar error
     };
 
-    struct PropertyDeclaration : NamedDeclaration, JSDocContainer
+    struct PropertyDeclaration : NamedDeclaration
     {
         // kind: SyntaxKind::PropertyDeclaration;
         PTR(ClassLikeDeclaration) parent;
@@ -424,7 +424,7 @@ namespace data
     {
     };
 
-    struct PropertyAssignment : ObjectLiteralElement, JSDocContainer
+    struct PropertyAssignment : ObjectLiteralElement
     {
         // kind: SyntaxKind::PropertyAssignment;
         PTR(ObjectLiteralExpression) parent;
@@ -434,7 +434,7 @@ namespace data
         PTR(Expression) initializer;
     };
 
-    struct ShorthandPropertyAssignment : ObjectLiteralElement, JSDocContainer
+    struct ShorthandPropertyAssignment : ObjectLiteralElement
     {
         // kind: SyntaxKind::ShorthandPropertyAssignment;
         PTR(ObjectLiteralExpression) parent;
@@ -447,7 +447,7 @@ namespace data
         PTR(Expression) objectAssignmentInitializer;
     };
 
-    struct SpreadAssignment : ObjectLiteralElement, JSDocContainer
+    struct SpreadAssignment : ObjectLiteralElement
     {
         // kind: SyntaxKind::SpreadAssignment;
         PTR(ObjectLiteralExpression) parent;
@@ -666,7 +666,7 @@ namespace data
         NodeArray<PTR(Node /*TypeNode | NamedTupleMember*/)> elements;
     };
 
-    struct NamedTupleMember : TypeNode, JSDocContainer
+    struct NamedTupleMember : TypeNode
     {
         // kind: SyntaxKind::NamedTupleMember;
         Token<SyntaxKind::DotDotDotToken> dotDotDotToken;
@@ -759,7 +759,7 @@ namespace data
     struct TemplateLiteralTypeSpan : TypeNode
     {
         PTR(TypeNode) type;
-        PTR(Node) /**TemplateMiddle | TemplateTail*/ literal;
+        PTR(TemplateLiteralLikeNode) /*TemplateMiddle | TemplateTail*/ literal;
     };
 
     // Note: 'brands' in our syntax nodes serve to give us a small amount of nominal typing.
@@ -1098,6 +1098,8 @@ namespace data
 
     struct TemplateLiteralLikeNode : LiteralLikeNode
     {
+        PTR(TemplateHead) head;
+        NodeArray<PTR(TemplateSpan)> templateSpans;
         string rawText;
         /* @internal */
         TokenFlags templateFlags;
@@ -1110,9 +1112,6 @@ namespace data
 
     struct NoSubstitutionTemplateLiteral : TemplateLiteralLikeNode
     {
-        // kind: SyntaxKind::NoSubstitutionTemplateLiteral;
-        /* @internal */
-        TokenFlags templateFlags;
     };
 
     struct NumericLiteral : LiteralExpression
@@ -1145,11 +1144,8 @@ namespace data
     {
     };
 
-    struct TemplateExpression : PrimaryExpression
+    struct TemplateExpression : TemplateLiteralTypeNode /*PrimaryExpression*/
     {
-        // kind: SyntaxKind::TemplateExpression;
-        PTR(TemplateHead) head;
-        NodeArray<PTR(TemplateSpan)> templateSpans;
     };
 
     // Each of these corresponds to a substitution expression and a template literal, in that order.
@@ -1159,10 +1155,10 @@ namespace data
         // kind: SyntaxKind::TemplateSpan;
         PTR(TemplateExpression) parent;
         PTR(Expression) expression;
-        PTR(Node) /**TemplateMiddle | TemplateTail*/ literal;
+        PTR(TemplateLiteralLikeNode) /**TemplateMiddle | TemplateTail*/ literal;
     };
 
-    struct ParenthesizedExpression : PrimaryExpression, JSDocContainer
+    struct ParenthesizedExpression : PrimaryExpression
     {
         // kind: SyntaxKind::ParenthesizedExpression;
         PTR(Expression) expression;
@@ -1574,14 +1570,14 @@ namespace data
         /*@internal*/ boolean multiLine;
     };
 
-    struct VariableStatement : Statement, JSDocContainer
+    struct VariableStatement : Statement
     {
         /* @internal*/ NodeArray<PTR(Decorator)> decorators; // Present for use with reporting a grammar error
         // kind: SyntaxKind::VariableStatement;
         PTR(VariableDeclarationList) declarationList;
     };
 
-    struct ExpressionStatement : Statement, JSDocContainer
+    struct ExpressionStatement : Statement
     {
         // kind: SyntaxKind::ExpressionStatement;
         PTR(Expression) expression;
@@ -1698,7 +1694,7 @@ namespace data
         ///* @internal */ PTR(FlowNode) fallthroughFlowNode;
     };
 
-    struct LabeledStatement : Statement, JSDocContainer
+    struct LabeledStatement : Statement
     {
         // kind: SyntaxKind::LabeledStatement;
         PTR(Identifier) label;
@@ -1727,7 +1723,7 @@ namespace data
         PTR(Block) block;
     };
 
-    struct ClassLikeDeclarationBase : NamedDeclaration, JSDocContainer
+    struct ClassLikeDeclarationBase : NamedDeclaration
     {
         // kind: SyntaxKind::ClassDeclaration | SyntaxKind::ClassExpression;
         PTR(Identifier) name;
@@ -1748,7 +1744,7 @@ namespace data
         // kind: SyntaxKind::ClassExpression;
     };
 
-    struct InterfaceDeclaration : DeclarationStatement, JSDocContainer
+    struct InterfaceDeclaration : DeclarationStatement
     {
         // kind: SyntaxKind::InterfaceDeclaration;
         PTR(Identifier) name;
@@ -1765,7 +1761,7 @@ namespace data
         NodeArray<PTR(ExpressionWithTypeArguments)> types;
     };
 
-    struct TypeAliasDeclaration : DeclarationStatement, JSDocContainer
+    struct TypeAliasDeclaration : DeclarationStatement
     {
         // kind: SyntaxKind::TypeAliasDeclaration;
         PTR(Identifier) name;
@@ -1773,7 +1769,7 @@ namespace data
         PTR(TypeNode) type;
     };
 
-    struct EnumMember : NamedDeclaration, JSDocContainer
+    struct EnumMember : NamedDeclaration
     {
         // kind: SyntaxKind::EnumMember;
         PTR(EnumDeclaration) parent;
@@ -1783,14 +1779,14 @@ namespace data
         PTR(Expression) initializer;
     };
 
-    struct EnumDeclaration : DeclarationStatement, JSDocContainer
+    struct EnumDeclaration : DeclarationStatement
     {
         // kind: SyntaxKind::EnumDeclaration;
         PTR(Identifier) name;
         NodeArray<PTR(EnumMember)> members;
     };
 
-    struct ModuleDeclaration : DeclarationStatement, JSDocContainer
+    struct ModuleDeclaration : DeclarationStatement
     {
         // kind: SyntaxKind::ModuleDeclaration;
         PTR(Node) /**ModuleBody | SourceFile*/ parent;
@@ -1828,7 +1824,7 @@ namespace data
  * - import x = require("mod");
  * - import x = M.x;
  */
-    struct ImportEqualsDeclaration : DeclarationStatement, JSDocContainer
+    struct ImportEqualsDeclaration : DeclarationStatement
     {
         // kind: SyntaxKind::ImportEqualsDeclaration;
         PTR(Node) /**SourceFile | ModuleBlock*/ parent;
@@ -1851,7 +1847,7 @@ namespace data
     // import "mod"  => importClause = undefined, moduleSpecifier = "mod"
     // In rest of the cases, module specifier is string literal corresponding to module
     // ImportClause information is shown at its declaration below.
-    struct ImportDeclaration : Statement, JSDocContainer
+    struct ImportDeclaration : Statement
     {
         // kind: SyntaxKind::ImportDeclaration;
         PTR(Node) /**SourceFile | ModuleBlock*/ parent;
@@ -1889,7 +1885,7 @@ namespace data
         PTR(Identifier) name;
     };
 
-    struct NamespaceExportDeclaration : DeclarationStatement, JSDocContainer
+    struct NamespaceExportDeclaration : DeclarationStatement
     {
         // kind: SyntaxKind::NamespaceExportDeclaration name;
         PTR(Identifier) name;
@@ -1897,7 +1893,7 @@ namespace data
         /* @internal */ ModifiersArray modifiers;        // Present for use with reporting a grammar error
     };
 
-    struct ExportDeclaration : DeclarationStatement, JSDocContainer
+    struct ExportDeclaration : DeclarationStatement
     {
         // kind: SyntaxKind::ExportDeclaration;
         PTR(Node) /**SourceFile | ModuleBlock*/ parent;
@@ -1942,7 +1938,7 @@ namespace data
  * This is either an `export =` or an `export default` declaration.
  * Unless `isExportEquals` is set, this node was parsed as an `export default`.
  */
-    struct ExportAssignment : DeclarationStatement, JSDocContainer
+    struct ExportAssignment : DeclarationStatement
     {
         // kind: SyntaxKind::ExportAssignment;
         PTR(SourceFile) parent;

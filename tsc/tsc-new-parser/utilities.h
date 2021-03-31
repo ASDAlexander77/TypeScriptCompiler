@@ -1471,10 +1471,10 @@ namespace ts
     inline static auto hasInvalidEscape(TemplateLiteral _template) -> boolean {
         return _template && !!(isNoSubstitutionTemplateLiteral(_template)
             ? !!_template->templateFlags
-            : (!!_template.as<TemplateLiteralTypeNode>()->head->templateFlags || some(_template.as<TemplateLiteralTypeNode>()->templateSpans, 
+            : (!!_template->head->templateFlags || some(_template->templateSpans, 
                 [](TemplateSpan span) 
                 { 
-                    return !!span->literal.as<TemplateMiddle>()->templateFlags; 
+                    return !!span->literal->templateFlags; 
                 })));
     }
 

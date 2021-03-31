@@ -3156,10 +3156,10 @@ namespace ts
                 auto parameters = parseParameters(SignatureFlags::Type);
                 auto type = parseReturnType(SyntaxKind::EqualsGreaterThanToken, /*isType*/ false);
                 auto node = isConstructorType
-                                ? factory.createConstructorTypeNode(modifiers, typeParameters, parameters, type)
-                                : factory.createFunctionTypeNode(typeParameters, parameters, type);
+                                ? factory.createConstructorTypeNode(modifiers, typeParameters, parameters, type).as<FunctionOrConstructorTypeNodeBase>()
+                                : factory.createFunctionTypeNode(typeParameters, parameters, type).as<FunctionOrConstructorTypeNodeBase>();
                 if (!isConstructorType)
-                    copy(node.as<FunctionTypeNode>()->modifiers, modifiers);
+                    copy(node->modifiers, modifiers);
                 return withJSDoc(finishNode(node, pos), hasJSDoc);
             }
 
@@ -3595,7 +3595,7 @@ namespace ts
             {
                 auto pos = getNodePos();
                 auto assertsModifier = parseExpectedToken(SyntaxKind::AssertsKeyword);
-                auto parameterName = token() == SyntaxKind::ThisKeyword ? parseThisTypeNode() : parseIdentifier();
+                auto parameterName = token() == SyntaxKind::ThisKeyword ? parseThisTypeNode().as<Node>() : parseIdentifier().as<Node>();
                 auto type = parseOptional(SyntaxKind::IsKeyword) ? parseType() : undefined;
                 return finishNode(factory.createTypePredicateNode(assertsModifier, parameterName, type), pos);
             }
@@ -4979,8 +4979,11 @@ namespace ts
                 return finishNode(
                     factory.createJsxAttribute(
                         parseIdentifierName(),
-                        token() != SyntaxKind::EqualsToken ? undefined : scanJsxAttributeValue() == SyntaxKind::StringLiteral ? parseLiteralNode().as<StringLiteral>()
-                                                                                                                              : parseJsxExpression(/*inExpressionContext*/ true)),
+                        token() != SyntaxKind::EqualsToken 
+                            ? undefined 
+                            : scanJsxAttributeValue() == SyntaxKind::StringLiteral 
+                                ? parseLiteralNode().as<Node>()
+                                : parseJsxExpression(/*inExpressionContext*/ true).as<Node>()),
                     pos);
             }
 

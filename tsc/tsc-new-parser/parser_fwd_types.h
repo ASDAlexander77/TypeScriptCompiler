@@ -8,6 +8,7 @@
 
 #include <memory>
 #include <functional>
+#include <type_traits>
 
 #define REF_NAME(x) x##Ref
 #define REF_TYPE(x) std::shared_ptr<x>
@@ -73,13 +74,23 @@ struct ptr
 
 	ptr(const T& data) : instance(std::make_shared<T>(data)) {};
 
-	template <typename U>
+    template <typename U>
+	ptr(ptr<U> otherPtr) : instance(std::static_pointer_cast<T>(otherPtr.instance)) {
+        if (!instance)
+        {
+            throw S("wrong cast");
+        }
+    };
+
+/*
+	template <typename U, class = typename std::enable_if<std::is_base_of_v<U, T> > >
 	ptr(ptr<U> otherPtr) : instance(std::dynamic_pointer_cast<T>(otherPtr.instance)) {
         if (!instance)
         {
             throw S("wrong cast");
         }
     };
+*/
 
 protected:
 	template <typename U>
