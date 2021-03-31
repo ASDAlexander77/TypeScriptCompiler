@@ -296,20 +296,17 @@ namespace data
     /* @internal */
     struct DynamicNamedDeclaration : NamedDeclaration
     {
-        PTR(ComputedPropertyName) name;
     };
 
     /* @internal */
     // A declaration that supports late-binding (used in checker)
     struct LateBoundDeclaration : DynamicNamedDeclaration
     {
-        PTR(LateBoundName) name;
     };
 
     struct ComputedPropertyName : Node
     {
         // kind: SyntaxKind::ComputedPropertyName;
-        PTR(Declaration) parent;
         PTR(Expression) expression;
     };
 
@@ -334,15 +331,12 @@ namespace data
     struct Decorator : Node
     {
         // kind: SyntaxKind::Decorator;
-        PTR(NamedDeclaration) parent;
         PTR(LeftHandSideExpression) expression;
     };
 
     struct TypeParameterDeclaration : NamedDeclaration
     {
         // kind: SyntaxKind::TypeParameter;
-        PTR(Node) /**DeclarationWithTypeParameterChildren | InferTypeNode*/ parent;
-        PTR(Identifier) name;
         /** Note: Consider calling `getEffectiveConstraintOfTypeParameter` */
         PTR(TypeNode) constraint;
         PTR(TypeNode) _default;
@@ -373,8 +367,6 @@ namespace data
     struct VariableDeclaration : NamedDeclaration
     {
         // kind: SyntaxKind::VariableDeclaration;
-        PTR(Node) /**VariableDeclarationList | CatchClause*/ parent;
-        PTR(BindingName) name;                  // Declared variable name
         PTR(ExclamationToken) exclamationToken; // Optional definite assignment assertion
         PTR(TypeNode) type;                     // Optional type annotation
         PTR(Expression) initializer;            // Optional initializer
@@ -389,16 +381,13 @@ namespace data
     struct VariableDeclarationList : Node
     {
         // kind: SyntaxKind::VariableDeclarationList;
-        PTR(Node) /**VariableStatement | ForStatement | ForOfStatement | ForInStatement*/ parent;
         NodeArray<PTR(VariableDeclaration)> declarations;
     };
 
     struct ParameterDeclaration : NamedDeclaration
     {
         // kind: SyntaxKind::Parameter;
-        PTR(SignatureDeclaration) parent;
         PTR(DotDotDotToken) dotDotDotToken; // Present on rest parameter
-        PTR(BindingName) name;              // Declared parameter name.
         PTR(QuestionToken) questionToken;   // Present on optional parameter
         PTR(TypeNode) type;                 // Optional type annotation
         PTR(Expression) initializer;        // Optional initializer
@@ -407,17 +396,14 @@ namespace data
     struct BindingElement : NamedDeclaration
     {
         // kind: SyntaxKind::BindingElement;
-        PTR(BindingPattern) parent;
         PTR(PropertyName) propertyName;     // Binding property name (in object binding pattern)
         PTR(DotDotDotToken) dotDotDotToken; // Present on rest element (in object binding pattern)
-        PTR(BindingName) name;              // Declared binding element name
         PTR(Expression) initializer;        // Optional initializer
     };
 
     struct PropertySignature : TypeElement
     {
         // kind: SyntaxKind::PropertySignature;
-        PTR(PropertyName) name;           // Declared property name
         PTR(QuestionToken) questionToken; // Present on optional property
         PTR(TypeNode) type;               // Optional type annotation
         PTR(Expression) initializer;      // Present for use with reporting a grammar error
@@ -426,8 +412,6 @@ namespace data
     struct PropertyDeclaration : NamedDeclaration
     {
         // kind: SyntaxKind::PropertyDeclaration;
-        PTR(ClassLikeDeclaration) parent;
-        PTR(PropertyName) name;
         PTR(QuestionToken) questionToken; // Present for use with reporting a grammar error
         PTR(ExclamationToken) exclamationToken;
         PTR(TypeNode) type;
@@ -437,7 +421,6 @@ namespace data
     /*@internal*/
     struct PrivateIdentifierPropertyDeclaration : PropertyDeclaration
     {
-        PTR(PrivateIdentifier) name;
     };
 
     /* @internal */
@@ -453,8 +436,6 @@ namespace data
     struct PropertyAssignment : ObjectLiteralElement
     {
         // kind: SyntaxKind::PropertyAssignment;
-        PTR(ObjectLiteralExpression) parent;
-        PTR(PropertyName) name;
         PTR(QuestionToken) questionToken;       // Present for use with reporting a grammar error
         PTR(ExclamationToken) exclamationToken; // Present for use with reporting a grammar error
         PTR(Expression) initializer;
@@ -472,26 +453,22 @@ namespace data
     struct SpreadAssignment : ObjectLiteralElement
     {
         // kind: SyntaxKind::SpreadAssignment;
-        PTR(ObjectLiteralExpression) parent;
         PTR(Expression) expression;
     };
 
     struct PropertyLikeDeclaration : NamedDeclaration
     {
-        PTR(PropertyName) name;
     };
 
     struct ObjectBindingPattern : Node
     {
         // kind: SyntaxKind::ObjectBindingPattern;
-        PTR(Node) /**VariableDeclaration | ParameterDeclaration | BindingElement*/ parent;
         NodeArray<PTR(BindingElement)> elements;
     };
 
     struct ArrayBindingPattern : Node
     {
         // kind: SyntaxKind::ArrayBindingPattern;
-        PTR(Node) /**VariableDeclaration | ParameterDeclaration | BindingElement*/ parent;
         NodeArray<PTR(ArrayBindingElement)> elements;
     };
 
@@ -518,15 +495,12 @@ namespace data
     struct FunctionDeclaration : FunctionLikeDeclarationBase
     {
         // kind: SyntaxKind::FunctionDeclaration;
-        PTR(Identifier) name;
         PTR(FunctionBody) body;
     };
 
     struct MethodSignature : SignatureDeclarationBase
     {
         // kind: SyntaxKind::MethodSignature;
-        PTR(ObjectTypeDeclaration) parent;
-        PTR(PropertyName) name;
     };
 
     // Note that a MethodDeclaration is considered both a ClassElement and an ObjectLiteralElement.
@@ -541,7 +515,6 @@ namespace data
     struct MethodDeclaration : FunctionLikeDeclarationBase/*, ObjectLiteralElement*/
     {
         // kind: SyntaxKind::MethodDeclaration;
-        PTR(Node) /**ClassLikeDeclaration | ObjectLiteralExpression*/ parent;
         PTR(FunctionBody) body;
         /* @internal*/ PTR(ExclamationToken) exclamationToken; // Present for use with reporting a grammar error
     };
@@ -549,7 +522,6 @@ namespace data
     struct ConstructorDeclaration : FunctionLikeDeclarationBase
     {
         // kind: SyntaxKind::Constructor;
-        PTR(ClassLikeDeclaration) parent;
         PTR(FunctionBody) body;
         /* @internal */ NodeArray<PTR(TypeParameterDeclaration)> typeParameters; // Present for use with reporting a grammar error
         /* @internal */ PTR(TypeNode) type;                                      // Present for use with reporting a grammar error
@@ -559,13 +531,10 @@ namespace data
     struct SemicolonClassElement : ClassElement
     {
         // kind: SyntaxKind::SemicolonClassElement;
-        PTR(ClassLikeDeclaration) parent;
     };
 
     struct AccessorDeclaration : FunctionLikeDeclarationBase/*, ObjectLiteralElement*/ // ClassElement and ObjectLiteralElement contains all fields in FunctionLikeDeclarationBase
     {
-        PTR(Node) /**ClassLikeDeclaration | ObjectLiteralExpression*/ parent;
-        PTR(PropertyName) name;
         PTR(FunctionBody) body;
         /* @internal */ NodeArray<PTR(TypeParameterDeclaration)> typeParameters; // Present for use with reporting a grammar error
     };
@@ -587,7 +556,6 @@ namespace data
     struct IndexSignatureDeclaration : SignatureDeclarationBase
     {
         // kind: SyntaxKind::IndexSignature;
-        PTR(ObjectTypeDeclaration) parent;
         PTR(TypeNode) type;
     };
 
@@ -656,7 +624,6 @@ namespace data
     struct TypePredicateNode : TypeNode
     {
         // kind: SyntaxKind::TypePredicate;
-        PTR(Node) /**SignatureDeclaration | JSDocTypeExpression*/ parent;
         PTR(AssertsToken) assertsModifier;
         PTR(Node) /**Identifier | ThisTypeNode*/ parameterName;
         PTR(TypeNode) type;
@@ -1075,7 +1042,6 @@ namespace data
     struct FunctionExpression : /*PrimaryExpression, */ FunctionLikeDeclarationBase
     {
         // kind: SyntaxKind::FunctionExpression;
-        PTR(Identifier) name;
         PTR(FunctionBody) body; // Required, whereas the member inherited from FunctionDeclaration is optional
     };
 
@@ -1143,7 +1109,6 @@ namespace data
     struct TemplateSpan : Node
     {
         // kind: SyntaxKind::TemplateSpan;
-        PTR(TemplateExpression) parent;
         PTR(Expression) expression;
         PTR(TemplateLiteralLikeNode) /**TemplateMiddle | TemplateTail*/ literal;
     };
@@ -1165,7 +1130,6 @@ namespace data
     struct SpreadElement : Expression
     {
         // kind: SyntaxKind::SpreadElement;
-        PTR(Node) /**ArrayLiteralExpression | CallExpression | NewExpression*/ parent;
         PTR(Expression) expression;
     };
 
@@ -1200,13 +1164,11 @@ namespace data
     /*@internal*/
     struct PrivateIdentifierPropertyAccessExpression : PropertyAccessExpression
     {
-        PTR(PrivateIdentifier) name;
     };
 
     struct PropertyAccessChain : PropertyAccessExpression
     {
         any _optionalChainBrand;
-        PTR(MemberName) name;
     };
 
     /* @internal */
@@ -1225,7 +1187,6 @@ namespace data
     {
         any _propertyAccessExpressionLikeQualifiedNameBrand;
         PTR(EntityNameExpression) expression;
-        PTR(Identifier) name;
     };
 
     struct ElementAccessExpression : MemberExpression
@@ -1328,7 +1289,6 @@ namespace data
     struct ExpressionWithTypeArguments : NodeWithTypeArguments
     {
         // kind: SyntaxKind::ExpressionWithTypeArguments;
-        PTR(Node) /**HeritageClause | JSDocAugmentsTag | JSDocImplementsTag*/ parent;
         PTR(LeftHandSideExpression) expression;
     };
 
@@ -1387,10 +1347,6 @@ namespace data
     struct ImportMetaProperty : MetaProperty
     {
         SyntaxKind keywordToken;
-        struct _name : Identifier
-        {
-            string escapedText;
-        } name;
     };
 
     /// A JSX expression of the form <TagName attrs>...</TagName>
@@ -1410,14 +1366,12 @@ namespace data
     struct JsxAttributes : ObjectLiteralExpressionBase<JsxAttributeLike>
     {
         // kind: SyntaxKind::JsxAttributes;
-        PTR(JsxOpeningLikeElement) parent;
     };
 
     /// The opening element of a <Tag>...</Tag> JsxElement
     struct JsxOpeningElement : Expression
     {
         // kind: SyntaxKind::JsxOpeningElement;
-        PTR(JsxElement) parent;
         PTR(JsxTagNameExpression) tagName;
         NodeArray<PTR(TypeNode)> typeArguments;
         PTR(JsxAttributes) attributes;
@@ -1445,21 +1399,17 @@ namespace data
     struct JsxOpeningFragment : Expression
     {
         // kind: SyntaxKind::JsxOpeningFragment;
-        PTR(JsxFragment) parent;
     };
 
     /// The closing element of a <>...</> JsxFragment
     struct JsxClosingFragment : Expression
     {
         // kind: SyntaxKind::JsxClosingFragment;
-        PTR(JsxFragment) parent;
     };
 
     struct JsxAttribute : ObjectLiteralElement
     {
         // kind: SyntaxKind::JsxAttribute;
-        PTR(JsxAttributes) parent;
-        PTR(Identifier) name;
         /// JSX attribute initializers are optional; <X y /> is sugar for <X y={true} />
         PTR(Node) /**StringLiteral | JsxExpression*/ initializer;
     };
@@ -1467,21 +1417,18 @@ namespace data
     struct JsxSpreadAttribute : ObjectLiteralElement
     {
         // kind: SyntaxKind::JsxSpreadAttribute;
-        PTR(JsxAttributes) parent;
         PTR(Expression) expression;
     };
 
     struct JsxClosingElement : Node
     {
         // kind: SyntaxKind::JsxClosingElement;
-        PTR(JsxElement) parent;
         PTR(JsxTagNameExpression) tagName;
     };
 
     struct JsxExpression : Expression
     {
         // kind: SyntaxKind::JsxExpression;
-        PTR(Node) /**JsxElement | JsxAttributeLike*/ parent;
         Token<SyntaxKind::DotDotDotToken> dotDotDotToken;
         PTR(Expression) expression;
     };
@@ -1489,7 +1436,6 @@ namespace data
     struct JsxText : LiteralLikeNode
     {
         // kind: SyntaxKind::JsxText;
-        PTR(JsxElement) parent;
         boolean containsOnlyTriviaWhiteSpaces;
     };
 
@@ -1667,25 +1613,23 @@ namespace data
     struct CaseBlock : Node
     {
         // kind: SyntaxKind::CaseBlock;
-        PTR(SwitchStatement) parent;
         NodeArray<PTR(CaseOrDefaultClause)> clauses;
     };
 
-    struct CaseClause : Node
+    struct CaseOrDefaultClause : Node
     {
-        // kind: SyntaxKind::CaseClause;
-        PTR(CaseBlock) parent;
-        PTR(Expression) expression;
         NodeArray<PTR(Statement)> statements;
         ///* @internal */ PTR(FlowNode) fallthroughFlowNode;
     };
 
-    struct DefaultClause : Node
+    struct CaseClause : CaseOrDefaultClause
     {
-        // kind: SyntaxKind::DefaultClause;
-        PTR(CaseBlock) parent;
-        NodeArray<PTR(Statement)> statements;
-        ///* @internal */ PTR(FlowNode) fallthroughFlowNode;
+        // kind: SyntaxKind::CaseClause;
+        PTR(Expression) expression;
+    };
+
+    struct DefaultClause : CaseOrDefaultClause
+    {
     };
 
     struct LabeledStatement : Statement
@@ -1712,7 +1656,6 @@ namespace data
     struct CatchClause : Node
     {
         // kind: SyntaxKind::CatchClause;
-        PTR(TryStatement) parent;
         PTR(VariableDeclaration) variableDeclaration;
         PTR(Block) block;
     };
@@ -1720,7 +1663,6 @@ namespace data
     struct ClassLikeDeclaration : NamedDeclaration
     {
         // kind: SyntaxKind::ClassDeclaration | SyntaxKind::ClassExpression;
-        PTR(Identifier) name;
         NodeArray<PTR(TypeParameterDeclaration)> typeParameters;
         NodeArray<PTR(HeritageClause)> heritageClauses;
         NodeArray<PTR(ClassElement)> members;
@@ -1730,7 +1672,6 @@ namespace data
     {
         // kind: SyntaxKind::ClassDeclaration;
         /** May be undefined in `export default class { ... }`. */
-        PTR(Identifier) name;
     };
 
     struct ClassExpression : ClassLikeDeclaration/*, PrimaryExpression*/
@@ -1750,7 +1691,6 @@ namespace data
     struct HeritageClause : Node
     {
         // kind: SyntaxKind::HeritageClause;
-        NodeRef /*InterfaceDeclaration | ClassLikeDeclaration*/ parent;
         SyntaxKind token;
         NodeArray<PTR(ExpressionWithTypeArguments)> types;
     };
@@ -1766,10 +1706,8 @@ namespace data
     struct EnumMember : NamedDeclaration
     {
         // kind: SyntaxKind::EnumMember;
-        PTR(EnumDeclaration) parent;
         // This does include ComputedPropertyName, but the parser will give an error
         // if it parses a ComputedPropertyName in an EnumMember
-        PTR(PropertyName) name;
         PTR(Expression) initializer;
     };
 
@@ -1788,7 +1726,6 @@ namespace data
     struct ModuleDeclaration : ModuleBody
     {
         // kind: SyntaxKind::ModuleDeclaration;
-        PTR(Node) /**ModuleBody | SourceFile*/ parent;
         PTR(ModuleName) name;
         PTR(Node) /**ModuleBody | JSDocNamespaceDeclaration*/ body;
     };
@@ -1796,25 +1733,19 @@ namespace data
     /* @internal */
     struct AmbientModuleDeclaration : ModuleDeclaration
     {
-        PTR(ModuleBlock) body;
     };
 
     struct NamespaceDeclaration : ModuleDeclaration
     {
-        PTR(Identifier) name;
-        PTR(NamespaceBody) body;
     };
 
     struct JSDocNamespaceDeclaration : ModuleDeclaration
     {
-        PTR(Identifier) name;
-        PTR(JSDocNamespaceBody) body;
     };
 
     struct ModuleBlock : ModuleBody
     {
         // kind: SyntaxKind::ModuleBlock;
-        PTR(ModuleDeclaration) parent;
         NodeArray<PTR(Statement)> statements;
     };
 
@@ -1826,7 +1757,6 @@ namespace data
     struct ImportEqualsDeclaration : DeclarationStatement
     {
         // kind: SyntaxKind::ImportEqualsDeclaration;
-        PTR(Node) /**SourceFile | ModuleBlock*/ parent;
         PTR(Identifier) name;
         boolean isTypeOnly;
 
@@ -1838,7 +1768,6 @@ namespace data
     struct ExternalModuleReference : Node
     {
         // kind: SyntaxKind::ExternalModuleReference;
-        PTR(ImportEqualsDeclaration) parent;
         PTR(Expression) expression;
     };
 
@@ -1849,7 +1778,6 @@ namespace data
     struct ImportDeclaration : Statement
     {
         // kind: SyntaxKind::ImportDeclaration;
-        PTR(Node) /**SourceFile | ModuleBlock*/ parent;
         PTR(ImportClause) importClause;
         /** If this is not a StringLiteral it will be a grammar error. */
         PTR(Expression) moduleSpecifier;
@@ -1864,24 +1792,18 @@ namespace data
     struct ImportClause : NamedDeclaration
     {
         // kind: SyntaxKind::ImportClause;
-        PTR(ImportDeclaration) parent;
         boolean isTypeOnly;
-        PTR(Identifier) name; // Default binding
         PTR(NamedImportBindings) namedBindings;
     };
 
     struct NamespaceImport : NamedDeclaration
     {
         // kind: SyntaxKind::NamespaceImport;
-        PTR(ImportClause) parent;
-        PTR(Identifier) name;
     };
 
     struct NamespaceExport : NamedDeclaration
     {
         // kind: SyntaxKind::NamespaceExport;
-        PTR(ExportDeclaration) parent;
-        PTR(Identifier) name;
     };
 
     struct NamespaceExportDeclaration : DeclarationStatement
@@ -1895,7 +1817,6 @@ namespace data
     struct ExportDeclaration : DeclarationStatement
     {
         // kind: SyntaxKind::ExportDeclaration;
-        PTR(Node) /**SourceFile | ModuleBlock*/ parent;
         boolean isTypeOnly;
         /** Will not be assigned in the case of `export * from "foo";` */
         PTR(NamedExportBindings) exportClause;
@@ -1910,22 +1831,18 @@ namespace data
     struct NamedImports : NamedImportsOrExports
     {
         // kind: SyntaxKind::NamedImports;
-        PTR(ImportClause) parent;
         NodeArray<PTR(ImportSpecifier)> elements;
     };
 
     struct NamedExports : NamedImportsOrExports
     {
         // kind: SyntaxKind::NamedExports;
-        PTR(ExportDeclaration) parent;
         NodeArray<PTR(ExportSpecifier)> elements;
     };
 
     struct ImportOrExportSpecifier : NamedDeclaration
     {
-        PTR(NamedImports) parent;
         PTR(Identifier) propertyName; // Name preceding "as" keyword (or undefined when "as" is absent)
-        PTR(Identifier) name;         // Declared name
     };
 
     struct ImportSpecifier : ImportOrExportSpecifier
@@ -1945,7 +1862,6 @@ namespace data
     struct ExportAssignment : DeclarationStatement
     {
         // kind: SyntaxKind::ExportAssignment;
-        PTR(SourceFile) parent;
         boolean isExportEquals;
         PTR(Expression) expression;
     };
@@ -2054,14 +1970,12 @@ namespace data
     struct JSDoc : Node
     {
         // kind: SyntaxKind::JSDocComment;
-        PTR(HasJSDoc) parent;
         NodeArray<PTR(JSDocTag)> tags;
         string comment;
     };
 
     struct JSDocTag : Declaration
     {
-        PTR(Node) /**JSDoc | JSDocTypeLiteral*/ parent;
         PTR(Identifier) tagName;
         string comment;
     };
@@ -2131,7 +2045,6 @@ namespace data
     struct JSDocEnumTag : JSDocTag
     {
         // kind: SyntaxKind::JSDocEnumTag;
-        PTR(JSDoc) parent;
         PTR(JSDocTypeExpression) typeExpression;
     };
 
@@ -2169,7 +2082,6 @@ namespace data
     struct JSDocTypedefTag : JSDocTag
     {
         // kind: SyntaxKind::JSDocTypedefTag;
-        PTR(JSDoc) parent;
         PTR(Node) /**JSDocNamespaceDeclaration | Identifier*/ fullName;
         PTR(Identifier) name;
         PTR(Node) /**JSDocTypeExpression | JSDocTypeLiteral*/ typeExpression;
@@ -2178,7 +2090,6 @@ namespace data
     struct JSDocCallbackTag : JSDocTag
     {
         // kind: SyntaxKind::JSDocCallbackTag;
-        PTR(JSDoc) parent;
         PTR(Node) /**JSDocNamespaceDeclaration | Identifier*/ fullName;
         PTR(Identifier) name;
         PTR(JSDocSignature) typeExpression;
@@ -2194,7 +2105,6 @@ namespace data
 
     struct JSDocPropertyLikeTag : JSDocTag
     {
-        PTR(JSDoc) parent;
         PTR(EntityName) name;
         PTR(JSDocTypeExpression) typeExpression;
         /** Whether the property name came before the type -- non-standard for JSDoc, but Typescript-like */
@@ -2497,32 +2407,27 @@ namespace data
 
     struct UnparsedSection : Node 
     {
-        PTR(UnparsedSource) parent;
         string data;
     };
 
     struct UnparsedPrologue : UnparsedSection 
     {
-        PTR(UnparsedSource) parent;
         string data;
     };
 
     struct UnparsedPrepend : UnparsedSection 
     {
-        PTR(UnparsedSource) parent;
         string data;
         NodeArray<PTR(UnparsedTextLike)> texts;
     };
 
     struct UnparsedTextLike : UnparsedSection 
     {
-        PTR(UnparsedSource) parent;
     };
 
     struct UnparsedSyntheticReference : UnparsedSection 
     {
-        PTR(UnparsedSource) parent;
-        /*@internal*/ Node /*BundleFileHasNoDefaultLib | BundleFileReference*/ section;
+        /*@internal*/ PTR(Node) /*BundleFileHasNoDefaultLib | BundleFileReference*/ section;
     };  
 
     struct EmitHelperBase 

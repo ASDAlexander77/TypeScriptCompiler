@@ -434,6 +434,7 @@ namespace data
     FORWARD_DECLARATION(WithStatement)
     FORWARD_DECLARATION(SwitchStatement)
     FORWARD_DECLARATION(CaseBlock)
+    FORWARD_DECLARATION(CaseOrDefaultClause)
     FORWARD_DECLARATION(CaseClause)
     FORWARD_DECLARATION(DefaultClause)
     FORWARD_DECLARATION(LabeledStatement)
@@ -614,8 +615,7 @@ namespace data
     NODE_REF(JsxTagNameExpression)
 
     NODE_REF(ForInitializer)
-    NODE_REF(CaseOrDefaultClause)
-
+    
     NODE_REF(ModuleName)
     NODE_REF(ModuleReference)
     NODE_REF(NamespaceBody)
