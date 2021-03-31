@@ -62,12 +62,6 @@ struct ptr
 {
     typedef T data;
 
-    enum class Cast
-    {
-        Static,
-        Dynamic
-    };
-
     ptr() : instance(nullptr) {};
 
 	ptr(undefined_t) : instance(nullptr) {};
@@ -75,28 +69,8 @@ struct ptr
 	ptr(const T& data) : instance(std::make_shared<T>(data)) {};
 
     template <typename U>
-	ptr(ptr<U> otherPtr) : instance(std::static_pointer_cast<T>(otherPtr.instance)) {
-        if (!instance)
-        {
-            throw S("wrong cast");
-        }
-    };
+	ptr(ptr<U> otherPtr) : instance(std::static_pointer_cast<T>(otherPtr.instance)) {};
 
-/*
-	template <typename U, class = typename std::enable_if<std::is_base_of_v<U, T> > >
-	ptr(ptr<U> otherPtr) : instance(std::dynamic_pointer_cast<T>(otherPtr.instance)) {
-        if (!instance)
-        {
-            throw S("wrong cast");
-        }
-    };
-*/
-
-protected:
-	template <typename U>
-	ptr(ptr<U> otherPtr, Cast) : instance(std::static_pointer_cast<T>(otherPtr.instance)) {};
-
-public:
     inline auto operator->()
     {
         return instance.operator->();
@@ -239,12 +213,6 @@ public:
     {
         return U(*this);
     }    
-
-    template <typename U> 
-    inline auto cast() -> U
-    {
-        return U(*this, Cast::Static);
-    }
 
     template <typename U> 
     inline auto is() -> boolean
