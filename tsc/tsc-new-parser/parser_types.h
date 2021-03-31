@@ -1493,8 +1493,6 @@ namespace data
 
     struct MissingDeclaration : DeclarationStatement
     {
-        /*@internal*/ NodeArray<PTR(Decorator)> decorators; // Present for use with reporting a grammar error
-        /*@internal*/ ModifiersArray modifiers;        // Present for use with reporting a grammar error
         // kind: SyntaxKind::MissingDeclaration;
         PTR(Identifier) name;
     };
@@ -1508,7 +1506,6 @@ namespace data
 
     struct VariableStatement : Statement
     {
-        /* @internal*/ NodeArray<PTR(Decorator)> decorators; // Present for use with reporting a grammar error
         // kind: SyntaxKind::VariableStatement;
         PTR(VariableDeclarationList) declarationList;
     };
@@ -1810,8 +1807,6 @@ namespace data
     {
         // kind: SyntaxKind::NamespaceExportDeclaration name;
         PTR(Identifier) name;
-        /* @internal */ NodeArray<PTR(Decorator)> decorators; // Present for use with reporting a grammar error
-        /* @internal */ ModifiersArray modifiers;        // Present for use with reporting a grammar error
     };
 
     struct ExportDeclaration : DeclarationStatement

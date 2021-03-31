@@ -237,8 +237,10 @@ namespace ts
                             break;
                         case SyntaxKind::TrueKeyword:
                         case SyntaxKind::FalseKeyword:
+                            expression = parseTokenNode<BooleanLiteral>();
+                            break;
                         case SyntaxKind::NullKeyword:
-                            expression = parseTokenNode<BooleanLiteral, NullLiteral>();
+                            expression = parseTokenNode<NullLiteral>();
                             break;
                         case SyntaxKind::MinusToken:
                             if (lookAhead<boolean>([&]() { return nextToken() == SyntaxKind::NumericLiteral && nextToken() != SyntaxKind::ColonToken; }))
@@ -1018,7 +1020,7 @@ namespace ts
             {
                 if (token() == t)
                 {
-                    return parseTokenNode();
+                    return parseTokenNode<Node>();
                 }
                 return Node();
             }
@@ -1044,13 +1046,13 @@ namespace ts
                        createMissingNode(t, /*reportAtCurrentPosition*/ false, data::DiagnosticMessage(Diagnostics::_0_expected), scanner.tokenToString(t));
             }
 
-            template <typename... T>
+            template <typename T>
             auto parseTokenNode() -> Node
             {
                 auto pos = getNodePos();
                 auto kind = token();
                 nextToken();
-                return finishNode(factory.createToken(kind), pos);
+                return finishNode(factory.createToken<T>(kind), pos);
             }
 
             auto parseTokenNodeJSDoc() -> Node
@@ -1058,7 +1060,7 @@ namespace ts
                 auto pos = getNodePos();
                 auto kind = token();
                 nextTokenJSDoc();
-                return finishNode(factory.createToken(kind), pos);
+                return finishNode(factory.createToken<Node>(kind), pos);
             }
 
             auto canParseSemicolon()
@@ -1145,7 +1147,7 @@ namespace ts
                                                                                                  : kind == SyntaxKind::NumericLiteral     ? factory.createNumericLiteral(string(), /*numericLiteralFlags*/ TokenFlags::None).as<Node>()
                                                                                                  : kind == SyntaxKind::StringLiteral      ? factory.createStringLiteral(string(), /*isSingleQuote*/ false).as<Node>()
                                                                                                  : kind == SyntaxKind::MissingDeclaration ? factory.createMissingDeclaration().as<Node>()
-                                                                                                                                          : factory.createToken(kind).as<Node>();
+                                                                                                                                          : factory.createToken<T>(kind).as<Node>();
                 return finishNode(result, pos);
             }
 
@@ -3042,7 +3044,8 @@ namespace ts
                 Node readonlyToken;
                 if (token() == SyntaxKind::ReadonlyKeyword || token() == SyntaxKind::PlusToken || token() == SyntaxKind::MinusToken)
                 {
-                    readonlyToken = parseTokenNode<ReadonlyKeyword, PlusToken, MinusToken>();
+                    //readonlyToken = parseTokenNode<ReadonlyKeyword, PlusToken, MinusToken>();
+                    readonlyToken = parseTokenNode<Node>();
                     if (readonlyToken->kind != SyntaxKind::ReadonlyKeyword)
                     {
                         parseExpected(SyntaxKind::ReadonlyKeyword);
@@ -3055,7 +3058,8 @@ namespace ts
                 Node questionToken;
                 if (token() == SyntaxKind::QuestionToken || token() == SyntaxKind::PlusToken || token() == SyntaxKind::MinusToken)
                 {
-                    questionToken = parseTokenNode<QuestionToken, PlusToken, MinusToken>();
+                    //questionToken = parseTokenNode<QuestionToken, PlusToken, MinusToken>();
+                    questionToken = parseTokenNode<Node>();
                     if (questionToken->kind != SyntaxKind::QuestionToken)
                     {
                         parseExpected(SyntaxKind::QuestionToken);
@@ -3178,7 +3182,7 @@ namespace ts
                     nextToken();
                 }
                 Node expression =
-                    token() == SyntaxKind::TrueKeyword || token() == SyntaxKind::FalseKeyword || token() == SyntaxKind::NullKeyword ? parseTokenNode<BooleanLiteral, NullLiteral>() : parseLiteralLikeNode(token()).as<LiteralExpression>();
+                    token() == SyntaxKind::TrueKeyword || token() == SyntaxKind::FalseKeyword || token() == SyntaxKind::NullKeyword ? parseTokenNode</*BooleanLiteral, NullLiteral*/Node>() : parseLiteralLikeNode(token()).as<LiteralExpression>();
                 if (negative)
                 {
                     expression = finishNode(factory.createPrefixUnaryExpression(SyntaxKind::MinusToken, expression), pos);
@@ -3818,7 +3822,7 @@ namespace ts
                 // for cases like `> > =` becoming `>>=`
                 if (isLeftHandSideExpression(expr) && isAssignmentOperator(reScanGreaterToken()))
                 {
-                    return makeBinaryExpression(expr, parseTokenNode(), parseAssignmentExpressionOrHigher(), pos);
+                    return makeBinaryExpression(expr, parseTokenNode<Node>(), parseAssignmentExpressionOrHigher(), pos);
                 }
 
                 // It wasn't an assignment or a lambda.  This is a conditional expression:
@@ -4275,7 +4279,7 @@ namespace ts
                         colonToken = parseExpectedToken(SyntaxKind::ColonToken),
                         nodeIsPresent(colonToken)
                             ? parseAssignmentExpressionOrHigher()
-                            : createMissingNode(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ false, data::DiagnosticMessage(Diagnostics::_0_expected), scanner.tokenToString(SyntaxKind::ColonToken))),
+                            : createMissingNode<Identifier>(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ false, data::DiagnosticMessage(Diagnostics::_0_expected), scanner.tokenToString(SyntaxKind::ColonToken))),
                     pos);
             }
 
@@ -4353,7 +4357,7 @@ namespace ts
                     }
                     else
                     {
-                        leftOperand = makeBinaryExpression(leftOperand, parseTokenNode(), parseBinaryExpressionOrHigher(newPrecedence), pos);
+                        leftOperand = makeBinaryExpression(leftOperand, parseTokenNode<Node>(), parseBinaryExpressionOrHigher(newPrecedence), pos);
                     }
                 }
 
@@ -5101,7 +5105,7 @@ namespace ts
                 Expression argumentExpression;
                 if (token() == SyntaxKind::CloseBracketToken)
                 {
-                    argumentExpression = createMissingNode(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ true, data::DiagnosticMessage(Diagnostics::An_element_access_expression_should_take_an_argument));
+                    argumentExpression = createMissingNode<Identifier>(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ true, data::DiagnosticMessage(Diagnostics::An_element_access_expression_should_take_an_argument));
                 }
                 else
                 {

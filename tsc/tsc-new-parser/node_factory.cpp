@@ -207,60 +207,6 @@ namespace ts
         return node;
     }
 
-    auto NodeFactory::createToken(SyntaxKind token) -> Node
-    {
-        Debug::_assert(token >= SyntaxKind::FirstToken && token <= SyntaxKind::LastToken, S("Invalid token"));
-        Debug::_assert(token <= SyntaxKind::FirstTemplateToken || token >= SyntaxKind::LastTemplateToken, S("Invalid token. Use 'createTemplateLiteralLikeNode' to create template literals."));
-        Debug::_assert(token <= SyntaxKind::FirstLiteralToken || token >= SyntaxKind::LastLiteralToken, S("Invalid token. Use 'createLiteralLikeNode' to create literals."));
-        Debug::_assert(token != SyntaxKind::Identifier, S("Invalid token. Use 'createIdentifier' to create identifiers"));
-        //auto node = createBaseTokenNode<Token<TKind>>(token);
-        auto node = createBaseNode<Node>(token);
-        auto transformFlags = TransformFlags::None;
-        switch (token)
-        {
-        case SyntaxKind::AsyncKeyword:
-            // 'async' modifier is ES2017 (async functions) or ES2018 (async generators)
-            transformFlags =
-                TransformFlags::ContainsES2017 |
-                TransformFlags::ContainsES2018;
-            break;
-
-        case SyntaxKind::PublicKeyword:
-        case SyntaxKind::PrivateKeyword:
-        case SyntaxKind::ProtectedKeyword:
-        case SyntaxKind::ReadonlyKeyword:
-        case SyntaxKind::AbstractKeyword:
-        case SyntaxKind::DeclareKeyword:
-        case SyntaxKind::ConstKeyword:
-        case SyntaxKind::AnyKeyword:
-        case SyntaxKind::NumberKeyword:
-        case SyntaxKind::BigIntKeyword:
-        case SyntaxKind::NeverKeyword:
-        case SyntaxKind::ObjectKeyword:
-        case SyntaxKind::StringKeyword:
-        case SyntaxKind::BooleanKeyword:
-        case SyntaxKind::SymbolKeyword:
-        case SyntaxKind::VoidKeyword:
-        case SyntaxKind::UnknownKeyword:
-        case SyntaxKind::UndefinedKeyword: // `undefined` is an Identifier in the expression case.
-            transformFlags = TransformFlags::ContainsTypeScript;
-            break;
-        case SyntaxKind::StaticKeyword:
-        case SyntaxKind::SuperKeyword:
-            transformFlags = TransformFlags::ContainsES2015;
-            break;
-        case SyntaxKind::ThisKeyword:
-            // 'this' indicates a lexical 'this'
-            transformFlags = TransformFlags::ContainsLexicalThis;
-            break;
-        }
-        if (!!transformFlags)
-        {
-            node->transformFlags |= transformFlags;
-        }
-        return node;
-    }
-
     auto NodeFactory::createQualifiedName(EntityName left, Identifier right) -> QualifiedName
     {
         auto node = createBaseNode<QualifiedName>(SyntaxKind::QualifiedName);
