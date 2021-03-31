@@ -5739,8 +5739,8 @@ namespace ts
 
                 parseSemicolon();
                 auto node = kind == SyntaxKind::BreakStatement
-                                ? factory.createBreakStatement(label)
-                                : factory.createContinueStatement(label);
+                                ? factory.createBreakStatement(label).as<BreakOrContinueStatement>()
+                                : factory.createContinueStatement(label).as<BreakOrContinueStatement>();
                 return finishNode(node, pos);
             }
 

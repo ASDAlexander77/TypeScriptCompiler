@@ -438,6 +438,7 @@ namespace data
     FORWARD_DECLARATION(JsxExpression)
     FORWARD_DECLARATION(JsxText)
     FORWARD_DECLARATION(Statement)
+    FORWARD_DECLARATION(BreakOrContinueStatement)
     FORWARD_DECLARATION(NotEmittedStatement)
     FORWARD_DECLARATION(EndOfDeclarationMarker)
     FORWARD_DECLARATION(CommaListExpression)
@@ -641,7 +642,6 @@ namespace data
     NODE_REF(JsxTagNameExpression)
 
     NODE_REF(ForInitializer)
-    NODE_REF(BreakOrContinueStatement)
     NODE_REF(CaseOrDefaultClause)
 
     NODE_REF(ModuleName)
@@ -850,6 +850,7 @@ POINTER(JsxClosingElement)
 POINTER(JsxExpression)
 POINTER(JsxText)
 POINTER(Statement)
+POINTER(BreakOrContinueStatement)
 POINTER(NotEmittedStatement)
 POINTER(EndOfDeclarationMarker)
 POINTER(CommaListExpression)

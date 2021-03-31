@@ -242,14 +242,46 @@ namespace data
     {
     };
 
-    struct Declaration : Expression
+    struct OmittedExpression : Expression
     {
-        any _declarationBrand;
+        // kind: SyntaxKind::OmittedExpression;
     };
 
-    struct Statement : Declaration
+    struct UnaryExpression : Expression
+    {
+        any _unaryExpressionBrand;
+    };
+
+
+    /** Deprecated, please use UpdateExpression */
+    struct UpdateExpression : UnaryExpression
+    {
+        any _updateExpressionBrand;
+    };
+
+    struct LeftHandSideExpression : UpdateExpression
+    {
+        any _leftHandSideExpressionBrand;
+    };
+
+    struct MemberExpression : LeftHandSideExpression
+    {
+        any _memberExpressionBrand;
+    };
+
+    struct PrimaryExpression : MemberExpression
+    {
+        any _primaryExpressionBrand;
+    };
+
+    struct Statement : PrimaryExpression
     {
         any _statementBrand;
+    };
+
+    struct Declaration : Statement
+    {
+        any _declarationBrand;
     };
 
     struct DeclarationStatement : Statement
@@ -769,22 +801,6 @@ namespace data
     // checker actually thinks you have something of the right type.  Note: the brands are
     // never actually given values.  At runtime they have zero cost.
 
-    struct OmittedExpression : Expression
-    {
-        // kind: SyntaxKind::OmittedExpression;
-    };
-
-    struct UnaryExpression : Expression
-    {
-        any _unaryExpressionBrand;
-    };
-
-    /** Deprecated, please use UpdateExpression */
-    struct UpdateExpression : UnaryExpression
-    {
-        any _updateExpressionBrand;
-    };
-
     // see: https://tc39.github.io/ecma262/#prod-UpdateExpression
     // see: https://tc39.github.io/ecma262/#prod-UnaryExpression
     using PrefixUnaryOperator = SyntaxKind;
@@ -806,27 +822,12 @@ namespace data
         PostfixUnaryOperator _operator;
     };
 
-    struct LeftHandSideExpression : UpdateExpression
-    {
-        any _leftHandSideExpressionBrand;
-    };
-
     // Represents an expression that is elided as part of a transformation to emit comments on a
     // not-emitted node. The 'expression' property of a PartiallyEmittedExpression should be emitted.
     struct PartiallyEmittedExpression : LeftHandSideExpression
     {
         // kind: SyntaxKind::PartiallyEmittedExpression;
         PTR(Expression) expression;
-    };
-
-    struct MemberExpression : LeftHandSideExpression
-    {
-        any _memberExpressionBrand;
-    };
-
-    struct PrimaryExpression : MemberExpression
-    {
-        any _primaryExpressionBrand;
     };
 
     // The text property of a LiteralExpression stores the interpreted value of the literal in text form. For a StringLiteral,
@@ -1110,10 +1111,6 @@ namespace data
         // kind: SyntaxKind::RegularExpressionLiteral;
     };
 
-    struct NoSubstitutionTemplateLiteral : TemplateLiteralLikeNode
-    {
-    };
-
     struct NumericLiteral : LiteralExpression
     {
         // kind: SyntaxKind::NumericLiteral;
@@ -1144,7 +1141,11 @@ namespace data
     {
     };
 
-    struct TemplateExpression : TemplateLiteralTypeNode /*PrimaryExpression*/
+    struct TemplateExpression :  TemplateLiteralLikeNode /*TemplateLiteralTypeNode*/ /*PrimaryExpression*/
+    {
+    };
+
+    struct NoSubstitutionTemplateLiteral : TemplateExpression    
     {
     };
 
@@ -1637,13 +1638,17 @@ namespace data
         PTR(Expression) expression;
     };
 
-    struct BreakStatement : Statement
+    struct BreakOrContinueStatement : Statement
+    {
+    };
+
+    struct BreakStatement : BreakOrContinueStatement
     {
         // kind: SyntaxKind::BreakStatement;
         PTR(Identifier) label;
     };
 
-    struct ContinueStatement : Statement
+    struct ContinueStatement : BreakOrContinueStatement
     {
         // kind: SyntaxKind::ContinueStatement;
         PTR(Identifier) label;
