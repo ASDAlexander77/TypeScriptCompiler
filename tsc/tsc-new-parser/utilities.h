@@ -619,10 +619,10 @@ namespace ts
         case SyntaxKind::ClassExpression:
             return visitNodes(cbNode, cbNodes, node->decorators) ||
                    visitNodes(cbNode, cbNodes, node->modifiers) ||
-                   visitNode(cbNode, node.as<ClassLikeDeclarationBase>()->name) ||
-                   visitNodes(cbNode, cbNodes, node.as<ClassLikeDeclarationBase>()->typeParameters) ||
-                   visitNodes(cbNode, cbNodes, node.as<ClassLikeDeclarationBase>()->heritageClauses) ||
-                   visitNodes(cbNode, cbNodes, node.as<ClassLikeDeclarationBase>()->members);
+                   visitNode(cbNode, node.as<ClassLikeDeclaration>()->name) ||
+                   visitNodes(cbNode, cbNodes, node.as<ClassLikeDeclaration>()->typeParameters) ||
+                   visitNodes(cbNode, cbNodes, node.as<ClassLikeDeclaration>()->heritageClauses) ||
+                   visitNodes(cbNode, cbNodes, node.as<ClassLikeDeclaration>()->members);
         case SyntaxKind::InterfaceDeclaration:
             return visitNodes(cbNode, cbNodes, node->decorators) ||
                    visitNodes(cbNode, cbNodes, node->modifiers) ||

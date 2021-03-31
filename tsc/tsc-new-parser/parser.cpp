@@ -1106,6 +1106,7 @@ namespace ts
                 return array;
             }
 
+            // TODO: use template instead of Node method to avoid casts
             auto finishNode(Node node, number pos, number end = -1) -> Node
             {
                 setTextRangePosEnd(node, pos, end != -1 ? end : scanner.getStartPos());
@@ -5169,12 +5170,20 @@ namespace ts
                 return token() == SyntaxKind::NoSubstitutionTemplateLiteral || token() == SyntaxKind::TemplateHead;
             }
 
+            static auto toNoSubstitutionTemplateLiteral(LiteralExpression literalExpression) -> NoSubstitutionTemplateLiteral
+            {
+                auto node = NoSubstitutionTemplateLiteral();
+                setTextRange(node, literalExpression);
+                node->rawText = literalExpression->text;
+                return node;
+            }
+
             auto parseTaggedTemplateRest(number pos, LeftHandSideExpression tag, QuestionDotToken questionDotToken, NodeArray<TypeNode> typeArguments) -> Node
             {
                 auto tagExpression = factory.createTaggedTemplateExpression(
                     tag,
                     typeArguments,
-                    token() == SyntaxKind::NoSubstitutionTemplateLiteral ? (reScanTemplateHeadOrNoSubstitutionTemplate(), parseLiteralNode().as<NoSubstitutionTemplateLiteral>()) : parseTemplateExpression(/*isTaggedTemplate*/ true));
+                    token() == SyntaxKind::NoSubstitutionTemplateLiteral ? (reScanTemplateHeadOrNoSubstitutionTemplate(), toNoSubstitutionTemplateLiteral(parseLiteralNode()).as<TemplateLiteralLikeNode>()) : parseTemplateExpression(/*isTaggedTemplate*/ true).as<TemplateLiteralLikeNode>());
                 if ((number)questionDotToken || !!(tag->flags & NodeFlags::OptionalChain))
                 {
                     (tagExpression.asMutable<Node>())->flags |= NodeFlags::OptionalChain;
@@ -6532,7 +6541,7 @@ namespace ts
                 NodeArray<Modifier> modifiers,
                 AsteriskToken asteriskToken,
                 PropertyName name,
-                QuestionDotToken questionToken,
+                QuestionToken questionToken,
                 ExclamationToken exclamationToken,
                 DiagnosticMessage diagnosticMessage = undefined) -> MethodDeclaration
             {
@@ -6599,8 +6608,8 @@ namespace ts
                 auto type = parseReturnType(SyntaxKind::ColonToken, /*isType*/ false);
                 auto body = parseFunctionBlockOrSemicolon(SignatureFlags::None);
                 auto node = kind == SyntaxKind::GetAccessor
-                                ? factory.createGetAccessorDeclaration(decorators, modifiers, name, parameters, type, body)
-                                : factory.createSetAccessorDeclaration(decorators, modifiers, name, parameters, body);
+                                ? factory.createGetAccessorDeclaration(decorators, modifiers, name, parameters, type, body).as<AccessorDeclaration>()
+                                : factory.createSetAccessorDeclaration(decorators, modifiers, name, parameters, body).as<AccessorDeclaration>();
                 // Keep track of `typeParameters` (for both) and `type` (for setters) if they were parsed those indicate grammar errors
                 node->typeParameters = typeParameters;
                 if (!!type && node->kind == SyntaxKind::SetAccessor)
@@ -6890,8 +6899,8 @@ namespace ts
                 }
                 setAwaitContext(savedAwaitContext);
                 auto node = kind == SyntaxKind::ClassDeclaration
-                                ? factory.createClassDeclaration(decorators, modifiers, name, typeParameters, heritageClauses, members)
-                                : factory.createClassExpression(decorators, modifiers, name, typeParameters, heritageClauses, members);
+                                ? factory.createClassDeclaration(decorators, modifiers, name, typeParameters, heritageClauses, members).as<ClassLikeDeclaration>()
+                                : factory.createClassExpression(decorators, modifiers, name, typeParameters, heritageClauses, members).as<ClassLikeDeclaration>();
                 return withJSDoc(finishNode(node, pos), hasJSDoc);
             }
 
@@ -7035,8 +7044,8 @@ namespace ts
                 auto namespaceFlag = flags & NodeFlags::Namespace;
                 auto name = parseIdentifier();
                 auto body = parseOptional(SyntaxKind::DotToken)
-                                ? parseModuleOrNamespaceDeclaration(getNodePos(), /*hasJSDoc*/ false, /*decorators*/ undefined, /*modifiers*/ undefined, NodeFlags::NestedNamespace | namespaceFlag)
-                                : parseModuleBlock();
+                                ? parseModuleOrNamespaceDeclaration(getNodePos(), /*hasJSDoc*/ false, /*decorators*/ undefined, /*modifiers*/ undefined, NodeFlags::NestedNamespace | namespaceFlag).as<ModuleBody>()
+                                : parseModuleBlock().as<ModuleBody>();
                 auto node = factory.createModuleDeclaration(decorators, modifiers, name, body, flags);
                 return withJSDoc(finishNode(node, pos), hasJSDoc);
             }
@@ -7268,8 +7277,8 @@ namespace ts
                 //  ImportSpecifier
                 //  ImportsList, ImportSpecifier
                 auto node = kind == SyntaxKind::NamedImports
-                                ? factory.createNamedImports(parseBracketedList<ImportSpecifier>(ParsingContext::ImportOrExportSpecifiers, std::bind(&Parser::parseImportSpecifier, this), SyntaxKind::OpenBraceToken, SyntaxKind::CloseBraceToken))
-                                : factory.createNamedExports(parseBracketedList<ExportSpecifier>(ParsingContext::ImportOrExportSpecifiers, std::bind(&Parser::parseExportSpecifier, this), SyntaxKind::OpenBraceToken, SyntaxKind::CloseBraceToken));
+                                ? factory.createNamedImports(parseBracketedList<ImportSpecifier>(ParsingContext::ImportOrExportSpecifiers, std::bind(&Parser::parseImportSpecifier, this), SyntaxKind::OpenBraceToken, SyntaxKind::CloseBraceToken)).as<NamedImportsOrExports>()
+                                : factory.createNamedExports(parseBracketedList<ExportSpecifier>(ParsingContext::ImportOrExportSpecifiers, std::bind(&Parser::parseExportSpecifier, this), SyntaxKind::OpenBraceToken, SyntaxKind::CloseBraceToken)).as<NamedImportsOrExports>();
                 return finishNode(node, pos);
             }
 
@@ -7316,8 +7325,8 @@ namespace ts
                     parseErrorAt(checkIdentifierStart, checkIdentifierEnd, data::DiagnosticMessage(Diagnostics::Identifier_expected));
                 }
                 auto node = kind == SyntaxKind::ImportSpecifier
-                                ? factory.createImportSpecifier(propertyName, name)
-                                : factory.createExportSpecifier(propertyName, name);
+                                ? factory.createImportSpecifier(propertyName, name).as<ImportOrExportSpecifier>()
+                                : factory.createExportSpecifier(propertyName, name).as<ImportOrExportSpecifier>();
                 return finishNode(node, pos);
             }
 
