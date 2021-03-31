@@ -424,7 +424,7 @@ namespace ts
                 // TODO:
                 Debug::_assert(!node.as<JSDocContainer>()->jsDoc); // Should only be called once per node
                 /*
-                auto jsDoc = mapDefined(getJSDocCommentRanges(node, sourceText), [&] (auto comment) { return JSDocParser::parseJSDocComment(node, comment->pos, comment->end - comment->pos); });
+                auto jsDoc = mapDefined(getJSDocCommentRanges(node, sourceText), [&] (auto comment) { return JSDocParser::parseJSDocComment(node, comment->pos, comment->_end - comment->pos); });
                 if (jsDoc.size()) node->jsDoc = jsDoc;
                 if (hasDeprecatedTag) {
                     hasDeprecatedTag = false;
@@ -519,12 +519,12 @@ namespace ts
                             if (pos >= 0)
                             {
                                 auto nonAwaitStatement = sourceFile->statements[pos];
-                                if (statement->end == nonAwaitStatement->pos)
+                                if (statement->_end == nonAwaitStatement->pos)
                                 {
                                     // done reparsing this section
                                     break;
                                 }
-                                if (statement->end > nonAwaitStatement->pos)
+                                if (statement->_end > nonAwaitStatement->pos)
                                 {
                                     // we ate into the next statement, so we must reparse it.
                                     pos = findNextStatementWithoutAwait(sourceFile->statements, pos + 1);
@@ -765,7 +765,7 @@ namespace ts
 
             auto parseErrorAtRange(TextRange range, DiagnosticMessage message) -> void
             {
-                parseErrorAt(range->pos, range->end, message);
+                parseErrorAt(range->pos, range->_end, message);
             }
 
             template <typename T>
@@ -777,7 +777,7 @@ namespace ts
             template <typename T>
             auto parseErrorAtRange(TextRange range, DiagnosticMessage message, T arg0) -> void
             {
-                parseErrorAt(range->pos, range->end, message, arg0);
+                parseErrorAt(range->pos, range->_end, message, arg0);
             }
 
             auto scanError(DiagnosticMessage message, number length) -> void
@@ -1722,7 +1722,7 @@ namespace ts
             auto consumeNode(Node node)
             {
                 // Move the scanner so it is after the node we just consumed.
-                scanner.setTextPos(node->end);
+                scanner.setTextPos(node->_end);
                 nextToken();
                 return node;
             }
@@ -3902,7 +3902,7 @@ namespace ts
                     /*initializer*/ undefined);
                 finishNode(parameter, identifier->pos);
 
-                auto parameters = createNodeArray<ParameterDeclaration>(NodeArray<ParameterDeclaration>({parameter}), parameter->pos, parameter->end);
+                auto parameters = createNodeArray<ParameterDeclaration>(NodeArray<ParameterDeclaration>({parameter}), parameter->pos, parameter->_end);
                 auto equalsGreaterThanToken = parseExpectedToken(SyntaxKind::EqualsGreaterThanToken);
                 auto body = parseArrowFunctionExpressionBody(/*isAsync*/ !!asyncModifier);
                 auto node = factory.createArrowFunction(asyncModifier, /*typeParameters*/ undefined, parameters, /*type*/ undefined, equalsGreaterThanToken, body);
@@ -4468,7 +4468,7 @@ namespace ts
                 {
                     auto safe_sourceText = safe_string(sourceText);
                     auto pos = scanner.skipTrivia(safe_sourceText, simpleUnaryExpression->pos);
-                    auto end = simpleUnaryExpression->end;
+                    auto end = simpleUnaryExpression->_end;
                     if (simpleUnaryExpression->kind == SyntaxKind::TypeAssertionExpression)
                     {
                         parseErrorAt(pos, end, data::DiagnosticMessage(Diagnostics::A_type_assertion_expression_is_not_allowed_in_the_left_hand_side_of_an_exponentiation_expression_Consider_enclosing_the_expression_in_parentheses));
@@ -4796,7 +4796,7 @@ namespace ts
                         auto operatorToken = createMissingNode(SyntaxKind::CommaToken, /*reportAtCurrentPosition*/ false);
                         setTextRangePosWidth(operatorToken, invalidElement->pos, 0);
                         auto safe_str = safe_string(sourceText);
-                        parseErrorAt(scanner.skipTrivia(safe_str, topBadPos), invalidElement->end, data::DiagnosticMessage(Diagnostics::JSX_expressions_must_have_one_parent_element));
+                        parseErrorAt(scanner.skipTrivia(safe_str, topBadPos), invalidElement->_end, data::DiagnosticMessage(Diagnostics::JSX_expressions_must_have_one_parent_element));
                         return finishNode(factory.createBinaryExpression(result, operatorToken, invalidElement), pos);
                     }
                 }
@@ -4830,7 +4830,7 @@ namespace ts
                         auto tag = openingTag.as<JsxOpeningElement>()->tagName;
                         auto safe_str = safe_string(sourceText);
                         auto start = scanner.skipTrivia(safe_str, tag->pos);
-                        parseErrorAt(start, tag->end, data::DiagnosticMessage(Diagnostics::JSX_element_0_has_no_corresponding_closing_tag), getTextOfNodeFromSourceText(sourceText, openingTag.as<JsxOpeningElement>()->tagName));
+                        parseErrorAt(start, tag->_end, data::DiagnosticMessage(Diagnostics::JSX_element_0_has_no_corresponding_closing_tag), getTextOfNodeFromSourceText(sourceText, openingTag.as<JsxOpeningElement>()->tagName));
                     }
                     return undefined;
                 case SyntaxKind::LessThanSlashToken:
@@ -7579,7 +7579,7 @@ namespace ts
                 std::vector<Pair> pragmas;
 
                 for (auto &range : scanner.getLeadingCommentRanges(sourceText, 0)) {
-                    auto comment = safe_string(sourceText).substring(range->pos, range->end);
+                    auto comment = safe_string(sourceText).substring(range->pos, range->_end);
                     extractPragmas(pragmas, range, comment);
                 }
 

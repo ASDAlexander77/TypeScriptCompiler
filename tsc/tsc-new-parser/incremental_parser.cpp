@@ -167,7 +167,7 @@ namespace IncrementalParser
                 auto text = string();
                 if (aggressiveChecks && shouldCheckNode(node))
                 {
-                    text = safe_string(oldText).substring(node->pos, node->end);
+                    text = safe_string(oldText).substring(node->pos, node->_end);
                 }
 
                 // Ditch any existing LS children we may have created.  This way we can avoid
@@ -177,11 +177,11 @@ namespace IncrementalParser
                     node->_children = undefined;
                 }
 
-                setTextRangePosEnd(node, node->pos + delta, node->end + delta);
+                setTextRangePosEnd(node, node->pos + delta, node->_end + delta);
 
                 if (aggressiveChecks && shouldCheckNode(node))
                 {
-                    Debug::_assert(text == safe_string(newText).substring(node->pos, node->end));
+                    Debug::_assert(text == safe_string(newText).substring(node->pos, node->_end));
                 }
 
                 forEachChild(node, visitNode, visitArray);
@@ -324,7 +324,7 @@ namespace IncrementalParser
                     }
                 }
                 forEachChild(node, visitNode);
-                Debug::_assert(pos <= node->end);
+                Debug::_assert(pos <= node->_end);
             }
         }
 
@@ -584,7 +584,7 @@ namespace IncrementalParser
                 std::function<boolean(NodeArray<Node>)> visitArray;
 
                 visitNode = [&](Node node) {
-                    if (position >= node->pos && position < node->end)
+                    if (position >= node->pos && position < node->_end)
                     {
                         // Position was within this node->  Keep searching deeper to find the node->
                         forEachChild(node, visitNode, visitArray);

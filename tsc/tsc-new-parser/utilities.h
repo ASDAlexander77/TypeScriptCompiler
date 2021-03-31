@@ -222,14 +222,14 @@ namespace ts
     template <typename T>
     inline auto setTextRangePos(T range, number pos)
     {
-        ((TextRange &)range)->pos = pos;
+        range->pos = pos;
         return range;
     }
 
     template <typename T>
     inline auto setTextRangeEnd(T range, number end) -> T
     {
-        ((TextRange &)range)->end = end;
+        range->_end = end;
         return range;
     }
 
@@ -248,7 +248,7 @@ namespace ts
     template <typename T>
     inline auto setTextRange(T range, TextRange location) -> T
     {
-        return !!location ? setTextRangePosEnd(range, location->pos, location->end) : range;
+        return !!location ? setTextRangePosEnd(range, location->pos, location->_end) : range;
     }
 
     inline static auto hasJSDocNodes(Node node) -> boolean
@@ -986,7 +986,7 @@ namespace ts
             return true;
         }
 
-        return node->pos == node->end && node->pos >= 0 && node->kind != SyntaxKind::EndOfFileToken;
+        return node->pos == node->_end && node->pos >= 0 && node->kind != SyntaxKind::EndOfFileToken;
     }
 
     inline auto nodeIsPresent(Node node) -> boolean
@@ -1006,7 +1006,7 @@ namespace ts
 
     inline auto getFullWidth(Node node) -> number
     {
-        return node->end - node->pos;
+        return node->_end - node->pos;
     }
 
     inline auto isOuterExpression(Node node, OuterExpressionKinds kinds = OuterExpressionKinds::All) -> boolean
@@ -1180,7 +1180,7 @@ namespace ts
             return string();
         }
 
-        auto text = sourceText.substring(includeTrivia ? node->pos : scanner->skipTrivia(sourceText, node->pos), node->end);
+        auto text = sourceText.substring(includeTrivia ? node->pos : scanner->skipTrivia(sourceText, node->pos), node->_end);
 
         if (isJSDocTypeExpressionOrChild(node))
         {

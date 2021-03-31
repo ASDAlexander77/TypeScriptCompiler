@@ -395,7 +395,7 @@ struct ParseJSDocCommentClass
         else {
             tags.push_back(tag);
         }
-        tagsEnd = tag->end;
+        tagsEnd = tag->_end;
     }
 
     auto tryParseTypeExpression() -> JSDocTypeExpression {
@@ -635,14 +635,14 @@ struct ParseJSDocCommentClass
                 typeExpression = !!childTypeTag && childTypeTag->typeExpression && !isObjectOrObjectArrayTypeReference(childTypeTag->typeExpression->type) ?
                     childTypeTag->typeExpression :
                     parser->finishNode(jsdocTypeLiteral, start);
-                end = typeExpression->end;
+                end = typeExpression->_end;
             }
         }
 
         // Only include the characters between the name end and the next token if a comment was actually parsed out - otherwise it's just whitespace
         end = end || !comment.empty() ?
             getNodePos() :
-            (fullName ?? typeExpression ?? tagName)->end;
+            (fullName ?? typeExpression ?? tagName)->_end;
 
         if (!comment) {
             comment = parseTrailingTagComments(start, end, indent, indentText);

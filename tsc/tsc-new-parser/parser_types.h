@@ -32,7 +32,7 @@ namespace data
         TextRange() = default;
 
         number pos;
-        number end;
+        number _end;
     };
 
     struct ReadonlyTextRange : TextRange
@@ -46,7 +46,7 @@ namespace data
     };
 
     template <typename T /*extends Node*/>
-    struct NodeArray : ReadonlyArray<T>
+    struct NodeArray : ReadonlyArray<T>, TextRange
     {
         NodeArray() : ReadonlyArray() {}
         NodeArray(undefined_t) : ReadonlyArray() {}
@@ -63,11 +63,6 @@ namespace data
             auto v = back();
             pop_back();
             return v;
-        }
-
-        inline operator TextRange()
-        {
-            return range;
         }
 
         inline operator bool()
@@ -111,7 +106,6 @@ namespace data
             return size() != 0;
         }        
 
-        ReadonlyTextRange range;
         boolean hasTrailingComma;
         /* @internal */ TransformFlags transformFlags; // Flags for transforms, possibly undefined
         // to support MissingList
@@ -864,7 +858,7 @@ namespace data
         {
             kind = kind_;
             pos = pos_;
-            end = end_;
+            _end = end_;
         }
 
         // kind: SyntaxKind::Identifier;
@@ -2389,7 +2383,7 @@ namespace data
         {
             kind = kind_;
             pos = pos_;
-            end = end_;
+            _end = end_;
         }
 
         // kind: SyntaxKind::SourceFile;
