@@ -65,7 +65,7 @@ namespace ts
         }
 
         inline auto asToken(Node value) -> Node {
-            return createToken(value);
+            return value;
         }
 
         auto mergeEmitNode(/*EmitNode*/ Node sourceEmitNode, /*EmitNode*/ Node destEmitNode) -> /* EmitNode */ Node {
@@ -152,7 +152,7 @@ namespace ts
             return elements;
         }
 
-        template <typename T>
+        template <typename T = Node>
         auto createToken(SyntaxKind token) -> T
         {
             Debug::_assert(token >= SyntaxKind::FirstToken && token <= SyntaxKind::LastToken, S("Invalid token"));
@@ -517,8 +517,6 @@ namespace ts
         // //
         // // Punctuation
         // //
-
-        /*@internal*/ auto createToken(SyntaxKind token) -> Node;
 
         // //
         // // Reserved words
