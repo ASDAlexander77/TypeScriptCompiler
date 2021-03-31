@@ -1992,19 +1992,13 @@ namespace data
     struct JSDocAugmentsTag : JSDocTag
     {
         // kind: SyntaxKind::JSDocAugmentsTag;
-        struct _classArg : ExpressionWithTypeArguments
-        {
-            PTR(Node) /**Identifier | PropertyAccessEntityNameExpression*/ expression;
-        } _class;
+        PTR(ExpressionWithTypeArguments) _class;
     };
 
     struct JSDocImplementsTag : JSDocTag
     {
         // kind: SyntaxKind::JSDocImplementsTag;
-        struct _classArg : ExpressionWithTypeArguments
-        {
-            PTR(Node) /**Identifier | PropertyAccessEntityNameExpression*/ expression;
-        } _class;
+        PTR(ExpressionWithTypeArguments) _class;
     };
 
     struct JSDocAuthorTag : JSDocTag
@@ -2087,12 +2081,9 @@ namespace data
         PTR(Node) /**JSDocTypeExpression | JSDocTypeLiteral*/ typeExpression;
     };
 
-    struct JSDocCallbackTag : JSDocTag
+    struct JSDocCallbackTag : JSDocTypedefTag
     {
         // kind: SyntaxKind::JSDocCallbackTag;
-        PTR(Node) /**JSDocNamespaceDeclaration | Identifier*/ fullName;
-        PTR(Identifier) name;
-        PTR(JSDocSignature) typeExpression;
     };
 
     struct JSDocSignature : JSDocType
