@@ -29,11 +29,12 @@ void printParser(const wchar_t *str)
 {
     // TODO:
     ts::Parser parser;
-    auto sourceFile = parser.parseSourceFile(S("function f() {}"), ScriptTarget::Latest);
+    auto sourceFile = parser.parseSourceFile(S("function f() { let i = 10; }"), ScriptTarget::Latest);
+    //auto sourceFile = parser.parseSourceFile(str, ScriptTarget::Latest);
 
     auto visit = [&](Node child) {
 
-        std::cout << "Node: " << wtoc(parser.syntaxKindString(child->kind).c_str()) << std::endl;
+        std::cout << "Node: " << wtoc(parser.syntaxKindString(child->kind).c_str()) << " at [" << child->pos << "-" << child->_end << "]" << std::endl;
 
         return child;
     };

@@ -205,12 +205,22 @@ struct ptr
     template <typename U> 
     inline auto as() -> U
     {
+        if (!*this)
+        {
+            return U();
+        }
+
         return U(*this);
     }
 
     template <typename U> 
     inline auto asMutable() -> U
     {
+        if (!*this)
+        {
+            return U();
+        }
+
         return U(*this);
     }    
 
