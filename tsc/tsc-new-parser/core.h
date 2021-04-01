@@ -217,7 +217,7 @@ auto lastOrUndefined(T array) -> std::remove_reference_t<decltype(array[0])>
     auto len = array.size();
     if (len > 0)
     {
-        return array[len];
+        return array[len - 1];
     }
 
     return undefined;

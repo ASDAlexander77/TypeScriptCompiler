@@ -177,7 +177,7 @@ namespace ts
     }
     */
 
-        DiagnosticWithDetachedLocation d;
+        DiagnosticWithDetachedLocation d{data::DiagnosticWithDetachedLocation()};
         d->start = start;
         d->length = length;
 
