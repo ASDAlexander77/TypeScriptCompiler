@@ -7763,6 +7763,16 @@ namespace ts
         return impl->parseSourceFile(fileName, sourceText, languageVersion, syntaxCursor, setParentNodes, scriptKind);
     }    
 
+    auto Parser::tokenToText(SyntaxKind kind) -> string
+    {
+        return impl->scanner.tokenToString(kind);
+    }
+
+    auto Parser::syntaxKindString(SyntaxKind kind) -> string
+    {
+        return impl->scanner.syntaxKindString(kind);
+    }
+
     Parser::~Parser()
     {
         delete impl;

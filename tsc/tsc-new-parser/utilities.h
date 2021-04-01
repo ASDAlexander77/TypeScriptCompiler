@@ -269,7 +269,7 @@ namespace ts
     template <typename T>
     static auto visitNode(NodeFuncT<T> cbNode, Node node) -> T
     {
-        return node ? cbNode(node) : T();
+        return node ? cbNode(node) : undefined;
     }
 
     template <typename T>

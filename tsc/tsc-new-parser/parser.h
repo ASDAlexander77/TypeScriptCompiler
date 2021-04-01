@@ -47,9 +47,13 @@ namespace ts
     public:
         Parser();
 
-        auto Parser::parseSourceFile(string, ScriptTarget) -> SourceFile;
+        auto parseSourceFile(string, ScriptTarget) -> SourceFile;
 
-        auto Parser::parseSourceFile(string, string, ScriptTarget, IncrementalParser::SyntaxCursor, boolean = false, ScriptKind = ScriptKind::Unknown) -> SourceFile;
+        auto parseSourceFile(string, string, ScriptTarget, IncrementalParser::SyntaxCursor, boolean = false, ScriptKind = ScriptKind::Unknown) -> SourceFile;
+
+        auto tokenToText(SyntaxKind kind) -> string;
+
+        auto syntaxKindString(SyntaxKind kind) -> string;
 
         ~Parser();
     };

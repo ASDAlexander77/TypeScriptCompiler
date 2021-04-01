@@ -22,6 +22,7 @@ namespace fs = std::experimental::filesystem;
 #endif
 
 #include "parser.h"
+#include "utilities.h"
 #include "file_helper.h"
 
 void printParser(const wchar_t *str)
@@ -29,6 +30,15 @@ void printParser(const wchar_t *str)
     // TODO:
     ts::Parser parser;
     auto sourceFile = parser.parseSourceFile(S("function f() {}"), ScriptTarget::Latest);
+
+    auto visit = [&](Node child) {
+
+        std::cout << "Node: " << wtoc(parser.syntaxKindString(child->kind).c_str()) << std::endl;
+
+        return child;
+    };
+
+    auto result = ts::forEachChild<Node>(sourceFile, visit);
 }
 
 int main(int argc, char **args)
@@ -44,7 +54,7 @@ int main(int argc, char **args)
         }
         else
         {
-            printParser(wtoc(args[1]).c_str());
+            printParser(ctow(args[1]).c_str());
         }
     }
 

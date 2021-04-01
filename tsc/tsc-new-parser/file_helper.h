@@ -30,11 +30,18 @@ enum Encoding
     ENCODING_UTF8
 };
 
-static auto wtoc(char *in)
+static auto ctow(const char *in)
 {
     std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
     auto wide = converter.from_bytes(in);
     return wide;
+}
+
+static auto wtoc(const wchar_t *in)
+{
+    std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
+    auto chars = converter.to_bytes(in);
+    return chars;
 }
 
 static int readEncoding(std::string file)
