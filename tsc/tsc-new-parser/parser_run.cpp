@@ -36,7 +36,7 @@ void printParser(const wchar_t *str)
 
         std::cout << "Node: " << wtoc(parser.syntaxKindString(child->kind).c_str()) << " at [" << child->pos << "-" << child->_end << "]" << std::endl;
 
-        return child;
+        return undefined;
     };
 
     auto result = ts::forEachChild<Node>(sourceFile, visit);
