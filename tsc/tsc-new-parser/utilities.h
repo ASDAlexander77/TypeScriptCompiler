@@ -81,7 +81,7 @@ namespace ts
         //Debug::assertEqual(diagnostic->fileName, fileName);
         Debug::assertLessThanOrEqual(diagnostic->start, length);
         Debug::assertLessThanOrEqual(diagnostic->start + diagnostic->length, length);
-        DiagnosticWithLocation diagnosticWithLocation;
+        DiagnosticWithLocation diagnosticWithLocation{data::DiagnosticWithLocation()};
         // TODO: review it
         //diagnosticWithLocation->file = file;
         diagnosticWithLocation->start = diagnostic->start;

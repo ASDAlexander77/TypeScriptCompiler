@@ -3822,7 +3822,9 @@ namespace ts
                 // for cases like `> > =` becoming `>>=`
                 if (isLeftHandSideExpression(expr) && isAssignmentOperator(reScanGreaterToken()))
                 {
-                    return makeBinaryExpression(expr, parseTokenNode<Node>(), parseAssignmentExpressionOrHigher(), pos);
+                    auto operatorToken = parseTokenNode<Node>();
+                    auto rightExpr = parseAssignmentExpressionOrHigher();
+                    return makeBinaryExpression(expr, operatorToken, rightExpr, pos);
                 }
 
                 // It wasn't an assignment or a lambda.  This is a conditional expression:
