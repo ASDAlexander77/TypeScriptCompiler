@@ -1037,13 +1037,13 @@ namespace ts
             auto parseExpectedToken(SyntaxKind t, DiagnosticMessage diagnosticMessage = undefined, string arg0 = string()) -> Node
             {
                 return parseOptionalToken(t) ||
-                       createMissingNode(t, /*reportAtCurrentPosition*/ false, diagnosticMessage, arg0);
+                       [&] () { return createMissingNode(t, /*reportAtCurrentPosition*/ false, diagnosticMessage, arg0); };
             }
 
             auto parseExpectedTokenJSDoc(SyntaxKind t) -> Node
             {
                 return parseOptionalTokenJSDoc(t) ||
-                       createMissingNode(t, /*reportAtCurrentPosition*/ false, data::DiagnosticMessage(Diagnostics::_0_expected), scanner.tokenToString(t));
+                       [&] () { return createMissingNode(t, /*reportAtCurrentPosition*/ false, data::DiagnosticMessage(Diagnostics::_0_expected), scanner.tokenToString(t)); };
             }
 
             template <typename T>
@@ -3231,7 +3231,7 @@ namespace ts
                 case SyntaxKind::NeverKeyword:
                 case SyntaxKind::ObjectKeyword:
                     // If these are followed by a dot, then parse these out.as<a>() dotted type reference instead.
-                    return tryParse<TypeNode>(std::bind(&Parser::parseKeywordAndNoDot, this)) || parseTypeReference();
+                    return tryParse<TypeNode>(std::bind(&Parser::parseKeywordAndNoDot, this)) || [&] () { return parseTypeReference(); };
                 case SyntaxKind::AsteriskEqualsToken:
                     // If there is '*=', treat it as * followed by postfix =
                     scanner.reScanAsteriskEqualsToken();
@@ -3469,13 +3469,13 @@ namespace ts
                 auto pos = getNodePos();
                 auto isUnionType = operator_ == SyntaxKind::BarToken;
                 auto hasLeadingOperator = parseOptional(operator_);
-                Node type = (hasLeadingOperator ? parseFunctionOrConstructorTypeToError(isUnionType) : undefined) || parseConstituentType();
+                Node type = (hasLeadingOperator ? parseFunctionOrConstructorTypeToError(isUnionType) : undefined) || [&] () { return parseConstituentType(); };
                 if (token() == operator_ || hasLeadingOperator)
                 {
                     auto types = NodeArray<TypeNode>(type);
                     while (parseOptional(operator_))
                     {
-                        types.push_back(parseFunctionOrConstructorTypeToError(isUnionType) || parseConstituentType());
+                        types.push_back(parseFunctionOrConstructorTypeToError(isUnionType) || [&] () { return parseConstituentType(); });
                     }
                     type = finishNode(createTypeNode(createNodeArray(types, pos)), pos);
                 }
@@ -3788,7 +3788,7 @@ namespace ts
                 // If we do successfully parse arrow-function, we must *not* recurse for productions 1, 2 or 3. An ArrowFunction is
                 // not a LeftHandSideExpression, nor does it start a ConditionalExpression.  So we are done
                 // with AssignmentExpression if we see one.
-                auto arrowExpression = tryParseParenthesizedArrowFunctionExpression() || tryParseAsyncSimpleArrowFunctionExpression();
+                auto arrowExpression = tryParseParenthesizedArrowFunctionExpression() || [&] () { return tryParseAsyncSimpleArrowFunctionExpression(); };
                 if (arrowExpression)
                 {
                     return arrowExpression;
@@ -6584,7 +6584,7 @@ namespace ts
                 auto type = parseTypeAnnotation();
                 auto initializer = doOutsideOfContext<Expression>(NodeFlags::YieldContext | NodeFlags::AwaitContext | NodeFlags::DisallowInContext, std::bind(&Parser::parseInitializer, this));
                 parseSemicolon();
-                auto node = factory.createPropertyDeclaration(decorators, modifiers, name, questionToken.as<Node>() || exclamationToken.as<Node>(), type, initializer);
+                auto node = factory.createPropertyDeclaration(decorators, modifiers, name, questionToken.as<Node>() || [&] () { return exclamationToken.as<Node>(); }, type, initializer);
                 return withJSDoc(finishNode(node, pos), hasJSDoc);
             }
 
@@ -6990,7 +6990,7 @@ namespace ts
                 auto name = parseIdentifier();
                 auto typeParameters = parseTypeParameters();
                 parseExpected(SyntaxKind::EqualsToken);
-                auto type = (token() == SyntaxKind::IntrinsicKeyword ? tryParse<TypeNode>(std::bind(&Parser::parseKeywordAndNoDot, this)) : undefined) || parseType();
+                auto type = (token() == SyntaxKind::IntrinsicKeyword ? tryParse<TypeNode>(std::bind(&Parser::parseKeywordAndNoDot, this)) : undefined) || [&] () { return parseType(); };
                 parseSemicolon();
                 auto node = factory.createTypeAliasDeclaration(decorators, modifiers, name, typeParameters, type);
                 return withJSDoc(finishNode(node, pos), hasJSDoc);
@@ -7402,7 +7402,7 @@ namespace ts
                 // fall back to looking for an 'import.meta' somewhere in the tree if necessary.
                 sourceFile->externalModuleIndicator =
                     forEach<decltype(sourceFile->statements), Node>(sourceFile->statements, (NodeFuncT<Node>)std::bind(&Parser::isAnExternalModuleIndicatorNode, this, std::placeholders::_1)) ||
-                    getImportMetaIfNecessary(sourceFile);
+                    [&] () { return getImportMetaIfNecessary(sourceFile); };
             }
 
             auto isAnExternalModuleIndicatorNode(Node node) -> Node

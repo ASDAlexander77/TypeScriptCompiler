@@ -181,25 +181,15 @@ struct ptr
         return this->operator bool() || rhs;
     }    
 
-    inline auto operator||(ptr rhs) -> ptr
+    template <typename L> 
+    inline auto operator||(L rhs) -> ptr<T>
     {
         if (this->operator bool())
         {
             return *this;
         }
 
-        return rhs;
-    }    
-
-    template <typename U> 
-    inline auto operator||(ptr<U> rhs) -> ptr
-    {
-        if (this->operator bool())
-        {
-            return *this;
-        }
-
-        return rhs.as<U>();
+        return rhs().as<T>();
     }    
 
     template <typename U> 
