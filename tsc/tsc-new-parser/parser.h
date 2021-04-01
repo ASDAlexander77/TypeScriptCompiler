@@ -11,10 +11,10 @@
 
 #include "parser_types.h"
 
-template <typename T>
-using NodeFuncT = std::function<T(Node)>;
-template <typename T>
-using NodeWithParentFuncT = std::function<T(Node, Node)>;
+template <typename R = Node, typename T = Node>
+using FuncT = std::function<R(T)>;
+template <typename R = Node, typename T = Node>
+using FuncWithParentT = std::function<R(T, T)>;
 
 typedef std::function<Node(SyntaxKind, number, number)> NodeCreateFunc;
 

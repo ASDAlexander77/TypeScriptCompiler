@@ -1067,10 +1067,10 @@ using NodeArray = data::NodeArray<T>;
 using ModifiersArray = NodeArray<Modifier>;
 using DecoratorsArray = NodeArray<Decorator>;
 
-template <typename T>
-using NodeArrayFuncT = std::function<T(NodeArray<T>)>;
+template <typename R = Node, typename T = Node>
+using ArrayFuncT = std::function<R(NodeArray<T>)>;
 
-template <typename T>
-using NodeWithParentArrayFuncT = std::function<T(NodeArray<T>, Node)>;
+template <typename R = Node, typename T = Node>
+using ArrayFuncWithParentT = std::function<R(NodeArray<T>, T)>;
 
 #endif // NEW_PARSER_FWRD_TYPES2_H

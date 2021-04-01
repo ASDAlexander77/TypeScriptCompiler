@@ -32,14 +32,23 @@ void printParser(const wchar_t *str)
     auto sourceFile = parser.parseSourceFile(S("function f() { let i = 10; }"), ScriptTarget::Latest);
     //auto sourceFile = parser.parseSourceFile(str, ScriptTarget::Latest);
 
-    auto visit = [&](Node child) {
+    FuncT<> visitNode;
+    ArrayFuncT<> visitArray;
 
+    visitNode = [&](Node child) -> Node {
         std::cout << "Node: " << wtoc(parser.syntaxKindString(child->kind).c_str()) << " at [" << child->pos << "-" << child->_end << "]" << std::endl;
-
         return undefined;
     };
 
-    auto result = ts::forEachChild<Node>(sourceFile, visit);
+    visitArray = [&](NodeArray<Node> array) -> Node {
+        for (auto node : array)
+        {
+            visitNode(node);
+        }
+        return undefined;
+    };
+
+    auto result = ts::forEachChild(sourceFile.as<Node>(), visitNode, visitArray);
 }
 
 int main(int argc, char **args)

@@ -28,7 +28,7 @@ namespace ts
             // a syntax tree, and no semantic features, then the binding process is an unnecessary
             // overhead.  This functions allows us to set all the parents, without all the expense of
             // binding.
-            setParentRecursive(rootNode, /*incremental*/ true);
+            setParentRecursive<boolean>(rootNode, /*incremental*/ true);
         }
 
         // Implement the parser.as<a>() singleton module.  We do this for perf reasons because creating
@@ -7401,7 +7401,7 @@ namespace ts
                 // Try to use the first top-level import/when available, then
                 // fall back to looking for an 'import.meta' somewhere in the tree if necessary.
                 sourceFile->externalModuleIndicator =
-                    forEach<decltype(sourceFile->statements), Node>(sourceFile->statements, (NodeFuncT<Node>)std::bind(&Parser::isAnExternalModuleIndicatorNode, this, std::placeholders::_1)) ||
+                    forEach<decltype(sourceFile->statements), Node>(sourceFile->statements, (FuncT<Node>)std::bind(&Parser::isAnExternalModuleIndicatorNode, this, std::placeholders::_1)) ||
                     [&] () { return getImportMetaIfNecessary(sourceFile); };
             }
 
@@ -7417,7 +7417,7 @@ namespace ts
 
             auto walkTreeForExternalModuleIndicators(Node node) -> Node
             {
-                return isImportMeta(node) ? node : forEachChild<Node>(node, std::bind(&Parser::walkTreeForExternalModuleIndicators, this, std::placeholders::_1));
+                return isImportMeta(node) ? node : forEachChild<Node, Node>(node, std::bind(&Parser::walkTreeForExternalModuleIndicators, this, std::placeholders::_1));
             }
 
             /** Do not use hasModifier inside the parser; it relies on parent pointers. Use this instead. */

@@ -266,14 +266,14 @@ namespace ts
         return node->kind >= SyntaxKind::FirstJSDocNode && node->kind <= SyntaxKind::LastJSDocNode;
     }
 
-    template <typename T>
-    static auto visitNode(NodeFuncT<T> cbNode, Node node) -> T
+    template <typename R = Node, typename T = Node>
+    static auto visitNode(FuncT<R, T> cbNode, T node) -> R
     {
-        return node ? cbNode(node) : undefined;
+        return node ? cbNode(node) : T{};
     }
 
-    template <typename T>
-    static auto visitNodes(NodeFuncT<T> cbNode, NodeArrayFuncT<T> cbNodes, NodeArray<T> nodes) -> T
+    template <typename R = Node, typename T = Node>
+    static auto visitNodes(FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes, NodeArray<T> nodes) -> R
     {
         if (!!nodes)
         {
@@ -294,8 +294,8 @@ namespace ts
         return undefined;
     }
 
-    template <typename T, typename U>
-    static auto visitNodes(NodeFuncT<T> cbNode, NodeArrayFuncT<T> cbNodes, NodeArray<U> nodes) -> T
+    template <typename R, typename T, typename U>
+    static auto visitNodes(FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes, NodeArray<U> nodes) -> R
     {
         if (!!nodes)
         {
@@ -329,79 +329,79 @@ namespace ts
  * @remarks `forEachChild` must visit the children of a node in the order
  * that they appear in the source code. The language service depends on this property to locate nodes by position.
  */
-    template <typename T>
-    static auto forEachChild(Node node, NodeFuncT<T> cbNode, NodeArrayFuncT<T> cbNodes = nullptr) -> T
+    template <typename R = Node, typename T = Node>
+    static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = nullptr) -> R
     {
         if (!node || node->kind <= SyntaxKind::LastToken)
         {
-            return undefined;
+            return R{};
         }
 
         // fake positive result to allow to run first command
-        Node result;
+        R result;
         switch (node->kind)
         {
         case SyntaxKind::QualifiedName:
-            if (!result) result = visitNode(cbNode, node.as<QualifiedName>()->left);
-                   if (!result) result = visitNode(cbNode, node.as<QualifiedName>()->right); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<QualifiedName>()->left);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<QualifiedName>()->right); return result;
         case SyntaxKind::TypeParameter:
-            if (!result) result = visitNode(cbNode, node.as<TypeParameterDeclaration>()->name);
-                   if (!result) result = visitNode(cbNode, node.as<TypeParameterDeclaration>()->constraint);
-                   if (!result) result = visitNode(cbNode, node.as<TypeParameterDeclaration>()->_default);
-                   if (!result) result = visitNode(cbNode, node.as<TypeParameterDeclaration>()->expression); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<TypeParameterDeclaration>()->name);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<TypeParameterDeclaration>()->constraint);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<TypeParameterDeclaration>()->_default);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<TypeParameterDeclaration>()->expression); return result;
         case SyntaxKind::ShorthandPropertyAssignment:
             if (!result) result = visitNodes(cbNode, cbNodes, node->decorators);
                    if (!result) result = visitNodes(cbNode, cbNodes, node->modifiers);
-                   if (!result) result = visitNode(cbNode, node.as<ShorthandPropertyAssignment>()->name);
-                   if (!result) result = visitNode(cbNode, node.as<ShorthandPropertyAssignment>()->questionToken);
-                   if (!result) result = visitNode(cbNode, node.as<ShorthandPropertyAssignment>()->exclamationToken);
-                   if (!result) result = visitNode(cbNode, node.as<ShorthandPropertyAssignment>()->equalsToken);
-                   if (!result) result = visitNode(cbNode, node.as<ShorthandPropertyAssignment>()->objectAssignmentInitializer); return result;
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ShorthandPropertyAssignment>()->name);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ShorthandPropertyAssignment>()->questionToken);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ShorthandPropertyAssignment>()->exclamationToken);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ShorthandPropertyAssignment>()->equalsToken);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ShorthandPropertyAssignment>()->objectAssignmentInitializer); return result;
         case SyntaxKind::SpreadAssignment:
-            if (!result) result = visitNode(cbNode, node.as<SpreadAssignment>()->expression); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<SpreadAssignment>()->expression); return result;
         case SyntaxKind::Parameter:
             if (!result) result = visitNodes(cbNode, cbNodes, node->decorators);
                    if (!result) result = visitNodes(cbNode, cbNodes, node->modifiers);
-                   if (!result) result = visitNode(cbNode, node.as<ParameterDeclaration>()->dotDotDotToken);
-                   if (!result) result = visitNode(cbNode, node.as<ParameterDeclaration>()->name);
-                   if (!result) result = visitNode(cbNode, node.as<ParameterDeclaration>()->questionToken);
-                   if (!result) result = visitNode(cbNode, node.as<ParameterDeclaration>()->type);
-                   if (!result) result = visitNode(cbNode, node.as<ParameterDeclaration>()->initializer); return result;
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ParameterDeclaration>()->dotDotDotToken);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ParameterDeclaration>()->name);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ParameterDeclaration>()->questionToken);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ParameterDeclaration>()->type);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ParameterDeclaration>()->initializer); return result;
         case SyntaxKind::PropertyDeclaration:
             if (!result) result = visitNodes(cbNode, cbNodes, node->decorators);
                    if (!result) result = visitNodes(cbNode, cbNodes, node->modifiers);
-                   if (!result) result = visitNode(cbNode, node.as<PropertyDeclaration>()->name);
-                   if (!result) result = visitNode(cbNode, node.as<PropertyDeclaration>()->questionToken);
-                   if (!result) result = visitNode(cbNode, node.as<PropertyDeclaration>()->exclamationToken);
-                   if (!result) result = visitNode(cbNode, node.as<PropertyDeclaration>()->type);
-                   if (!result) result = visitNode(cbNode, node.as<PropertyDeclaration>()->initializer); return result;
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<PropertyDeclaration>()->name);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<PropertyDeclaration>()->questionToken);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<PropertyDeclaration>()->exclamationToken);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<PropertyDeclaration>()->type);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<PropertyDeclaration>()->initializer); return result;
         case SyntaxKind::PropertySignature:
             if (!result) result = visitNodes(cbNode, cbNodes, node->decorators);
                    if (!result) result = visitNodes(cbNode, cbNodes, node->modifiers);
-                   if (!result) result = visitNode(cbNode, node.as<PropertySignature>()->name);
-                   if (!result) result = visitNode(cbNode, node.as<PropertySignature>()->questionToken);
-                   if (!result) result = visitNode(cbNode, node.as<PropertySignature>()->type);
-                   if (!result) result = visitNode(cbNode, node.as<PropertySignature>()->initializer); return result;
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<PropertySignature>()->name);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<PropertySignature>()->questionToken);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<PropertySignature>()->type);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<PropertySignature>()->initializer); return result;
         case SyntaxKind::PropertyAssignment:
             if (!result) result = visitNodes(cbNode, cbNodes, node->decorators);
                    if (!result) result = visitNodes(cbNode, cbNodes, node->modifiers);
-                   if (!result) result = visitNode(cbNode, node.as<PropertyAssignment>()->name);
-                   if (!result) result = visitNode(cbNode, node.as<PropertyAssignment>()->questionToken);
-                   if (!result) result = visitNode(cbNode, node.as<PropertyAssignment>()->initializer); return result;
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<PropertyAssignment>()->name);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<PropertyAssignment>()->questionToken);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<PropertyAssignment>()->initializer); return result;
         case SyntaxKind::VariableDeclaration:
             if (!result) result = visitNodes(cbNode, cbNodes, node->decorators);
                    if (!result) result = visitNodes(cbNode, cbNodes, node->modifiers);
-                   if (!result) result = visitNode(cbNode, node.as<VariableDeclaration>()->name);
-                   if (!result) result = visitNode(cbNode, node.as<VariableDeclaration>()->exclamationToken);
-                   if (!result) result = visitNode(cbNode, node.as<VariableDeclaration>()->type);
-                   if (!result) result = visitNode(cbNode, node.as<VariableDeclaration>()->initializer); return result;
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<VariableDeclaration>()->name);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<VariableDeclaration>()->exclamationToken);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<VariableDeclaration>()->type);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<VariableDeclaration>()->initializer); return result;
         case SyntaxKind::BindingElement:
             if (!result) result = visitNodes(cbNode, cbNodes, node->decorators);
                    if (!result) result = visitNodes(cbNode, cbNodes, node->modifiers);
-                   if (!result) result = visitNode(cbNode, node.as<BindingElement>()->dotDotDotToken);
-                   if (!result) result = visitNode(cbNode, node.as<BindingElement>()->propertyName);
-                   if (!result) result = visitNode(cbNode, node.as<BindingElement>()->name);
-                   if (!result) result = visitNode(cbNode, node.as<BindingElement>()->initializer); return result;
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<BindingElement>()->dotDotDotToken);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<BindingElement>()->propertyName);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<BindingElement>()->name);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<BindingElement>()->initializer); return result;
         case SyntaxKind::FunctionType:
         case SyntaxKind::ConstructorType:
         case SyntaxKind::CallSignature:
@@ -411,7 +411,7 @@ namespace ts
                    if (!result) result = visitNodes(cbNode, cbNodes, node->modifiers);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<SignatureDeclarationBase>()->typeParameters);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<SignatureDeclarationBase>()->parameters);
-                   if (!result) result = visitNode(cbNode, node.as<SignatureDeclarationBase>()->type); return result;
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<SignatureDeclarationBase>()->type); return result;
         case SyntaxKind::MethodDeclaration:
         case SyntaxKind::MethodSignature:
         case SyntaxKind::Constructor:
@@ -422,28 +422,28 @@ namespace ts
         case SyntaxKind::ArrowFunction:
             if (!result) result = visitNodes(cbNode, cbNodes, node->decorators);
                    if (!result) result = visitNodes(cbNode, cbNodes, node->modifiers);
-                   if (!result) result = visitNode(cbNode, node.as<FunctionLikeDeclarationBase>()->asteriskToken);
-                   if (!result) result = visitNode(cbNode, node.as<FunctionLikeDeclarationBase>()->name);
-                   if (!result) result = visitNode(cbNode, node.as<FunctionLikeDeclarationBase>()->questionToken);
-                   if (!result) result = visitNode(cbNode, node.as<FunctionLikeDeclarationBase>()->exclamationToken);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<FunctionLikeDeclarationBase>()->asteriskToken);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<FunctionLikeDeclarationBase>()->name);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<FunctionLikeDeclarationBase>()->questionToken);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<FunctionLikeDeclarationBase>()->exclamationToken);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<FunctionLikeDeclarationBase>()->typeParameters);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<FunctionLikeDeclarationBase>()->parameters);
-                   if (!result) result = visitNode(cbNode, node.as<FunctionLikeDeclarationBase>()->type);
-                   if (!result) result = visitNode(cbNode, node.as<ArrowFunction>()->equalsGreaterThanToken);
-                   if (!result) result = visitNode(cbNode, node.as<FunctionLikeDeclarationBase>()->body); return result;
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<FunctionLikeDeclarationBase>()->type);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ArrowFunction>()->equalsGreaterThanToken);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<FunctionLikeDeclarationBase>()->body); return result;
         case SyntaxKind::TypeReference:
-            if (!result) result = visitNode(cbNode, node.as<TypeReferenceNode>()->typeName);
+            if (!result) result = visitNode<R, T>(cbNode, node.as<TypeReferenceNode>()->typeName);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<TypeReferenceNode>()->typeArguments); return result;
         case SyntaxKind::TypePredicate:
-            if (!result) result = visitNode(cbNode, node.as<TypePredicateNode>()->assertsModifier);
-                   if (!result) result = visitNode(cbNode, node.as<TypePredicateNode>()->parameterName);
-                   if (!result) result = visitNode(cbNode, node.as<TypePredicateNode>()->type); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<TypePredicateNode>()->assertsModifier);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<TypePredicateNode>()->parameterName);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<TypePredicateNode>()->type); return result;
         case SyntaxKind::TypeQuery:
-            if (!result) result = visitNode(cbNode, node.as<TypeQueryNode>()->exprName); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<TypeQueryNode>()->exprName); return result;
         case SyntaxKind::TypeLiteral:
             if (!result) result = visitNodes(cbNode, cbNodes, node.as<TypeLiteralNode>()->members); return result;
         case SyntaxKind::ArrayType:
-            if (!result) result = visitNode(cbNode, node.as<ArrayTypeNode>()->elementType); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<ArrayTypeNode>()->elementType); return result;
         case SyntaxKind::TupleType:
             if (!result) result = visitNodes(cbNode, cbNodes, node.as<TupleTypeNode>()->elements); return result;
         case SyntaxKind::UnionType:
@@ -451,36 +451,36 @@ namespace ts
         case SyntaxKind::IntersectionType:
             if (!result) result = visitNodes(cbNode, cbNodes, node.as<IntersectionTypeNode>()->types); return result;
         case SyntaxKind::ConditionalType:
-            if (!result) result = visitNode(cbNode, node.as<ConditionalTypeNode>()->checkType);
-                   if (!result) result = visitNode(cbNode, node.as<ConditionalTypeNode>()->extendsType);
-                   if (!result) result = visitNode(cbNode, node.as<ConditionalTypeNode>()->trueType);
-                   if (!result) result = visitNode(cbNode, node.as<ConditionalTypeNode>()->falseType); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<ConditionalTypeNode>()->checkType);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ConditionalTypeNode>()->extendsType);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ConditionalTypeNode>()->trueType);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ConditionalTypeNode>()->falseType); return result;
         case SyntaxKind::InferType:
-            if (!result) result = visitNode(cbNode, node.as<InferTypeNode>()->typeParameter); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<InferTypeNode>()->typeParameter); return result;
         case SyntaxKind::ImportType:
-            if (!result) result = visitNode(cbNode, node.as<ImportTypeNode>()->argument);
-                   if (!result) result = visitNode(cbNode, node.as<ImportTypeNode>()->qualifier);
+            if (!result) result = visitNode<R, T>(cbNode, node.as<ImportTypeNode>()->argument);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ImportTypeNode>()->qualifier);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<ImportTypeNode>()->typeArguments); return result;
         case SyntaxKind::ParenthesizedType:
-            if (!result) result = visitNode(cbNode, node.as<ParenthesizedTypeNode>()->type); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<ParenthesizedTypeNode>()->type); return result;
         case SyntaxKind::TypeOperator:
-            if (!result) result = visitNode(cbNode, node.as<TypeOperatorNode>()->type); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<TypeOperatorNode>()->type); return result;
         case SyntaxKind::IndexedAccessType:
-            if (!result) result = visitNode(cbNode, node.as<IndexedAccessTypeNode>()->objectType);
-                   if (!result) result = visitNode(cbNode, node.as<IndexedAccessTypeNode>()->indexType); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<IndexedAccessTypeNode>()->objectType);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<IndexedAccessTypeNode>()->indexType); return result;
         case SyntaxKind::MappedType:
-            if (!result) result = visitNode(cbNode, node.as<MappedTypeNode>()->readonlyToken);
-                   if (!result) result = visitNode(cbNode, node.as<MappedTypeNode>()->typeParameter);
-                   if (!result) result = visitNode(cbNode, node.as<MappedTypeNode>()->nameType);
-                   if (!result) result = visitNode(cbNode, node.as<MappedTypeNode>()->questionToken);
-                   if (!result) result = visitNode(cbNode, node.as<MappedTypeNode>()->type); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<MappedTypeNode>()->readonlyToken);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<MappedTypeNode>()->typeParameter);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<MappedTypeNode>()->nameType);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<MappedTypeNode>()->questionToken);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<MappedTypeNode>()->type); return result;
         case SyntaxKind::LiteralType:
-            if (!result) result = visitNode(cbNode, node.as<LiteralTypeNode>()->literal); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<LiteralTypeNode>()->literal); return result;
         case SyntaxKind::NamedTupleMember:
-            if (!result) result = visitNode(cbNode, node.as<NamedTupleMember>()->dotDotDotToken);
-                   if (!result) result = visitNode(cbNode, node.as<NamedTupleMember>()->name);
-                   if (!result) result = visitNode(cbNode, node.as<NamedTupleMember>()->questionToken);
-                   if (!result) result = visitNode(cbNode, node.as<NamedTupleMember>()->type); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<NamedTupleMember>()->dotDotDotToken);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<NamedTupleMember>()->name);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<NamedTupleMember>()->questionToken);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<NamedTupleMember>()->type); return result;
         case SyntaxKind::ObjectBindingPattern:
             if (!result) result = visitNodes(cbNode, cbNodes, node.as<ObjectBindingPattern>()->elements); return result;
         case SyntaxKind::ArrayBindingPattern:
@@ -490,188 +490,188 @@ namespace ts
         case SyntaxKind::ObjectLiteralExpression:
             if (!result) result = visitNodes(cbNode, cbNodes, node.as<ObjectLiteralExpression>()->properties); return result;
         case SyntaxKind::PropertyAccessExpression:
-            if (!result) result = visitNode(cbNode, node.as<PropertyAccessExpression>()->expression);
-                   if (!result) result = visitNode(cbNode, node.as<PropertyAccessExpression>()->questionDotToken);
-                   if (!result) result = visitNode(cbNode, node.as<PropertyAccessExpression>()->name); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<PropertyAccessExpression>()->expression);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<PropertyAccessExpression>()->questionDotToken);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<PropertyAccessExpression>()->name); return result;
         case SyntaxKind::ElementAccessExpression:
-            if (!result) result = visitNode(cbNode, node.as<ElementAccessExpression>()->expression);
-                   if (!result) result = visitNode(cbNode, node.as<ElementAccessExpression>()->questionDotToken);
-                   if (!result) result = visitNode(cbNode, node.as<ElementAccessExpression>()->argumentExpression); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<ElementAccessExpression>()->expression);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ElementAccessExpression>()->questionDotToken);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ElementAccessExpression>()->argumentExpression); return result;
         case SyntaxKind::CallExpression:
         case SyntaxKind::NewExpression:
-            if (!result) result = visitNode(cbNode, node.as<CallExpression>()->expression);
-                   if (!result) result = visitNode(cbNode, node.as<CallExpression>()->questionDotToken);
+            if (!result) result = visitNode<R, T>(cbNode, node.as<CallExpression>()->expression);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<CallExpression>()->questionDotToken);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<CallExpression>()->typeArguments);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<CallExpression>()->arguments); return result;
         case SyntaxKind::TaggedTemplateExpression:
-            if (!result) result = visitNode(cbNode, node.as<TaggedTemplateExpression>()->tag);
-                   if (!result) result = visitNode(cbNode, node.as<TaggedTemplateExpression>()->questionDotToken);
+            if (!result) result = visitNode<R, T>(cbNode, node.as<TaggedTemplateExpression>()->tag);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<TaggedTemplateExpression>()->questionDotToken);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<TaggedTemplateExpression>()->typeArguments);
-                   if (!result) result = visitNode(cbNode, node.as<TaggedTemplateExpression>()->_template); return result;
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<TaggedTemplateExpression>()->_template); return result;
         case SyntaxKind::TypeAssertionExpression:
-            if (!result) result = visitNode(cbNode, node.as<TypeAssertion>()->type);
-                   if (!result) result = visitNode(cbNode, node.as<TypeAssertion>()->expression); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<TypeAssertion>()->type);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<TypeAssertion>()->expression); return result;
         case SyntaxKind::ParenthesizedExpression:
-            if (!result) result = visitNode(cbNode, node.as<ParenthesizedExpression>()->expression); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<ParenthesizedExpression>()->expression); return result;
         case SyntaxKind::DeleteExpression:
-            if (!result) result = visitNode(cbNode, node.as<DeleteExpression>()->expression); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<DeleteExpression>()->expression); return result;
         case SyntaxKind::TypeOfExpression:
-            if (!result) result = visitNode(cbNode, node.as<TypeOfExpression>()->expression); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<TypeOfExpression>()->expression); return result;
         case SyntaxKind::VoidExpression:
-            if (!result) result = visitNode(cbNode, node.as<VoidExpression>()->expression); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<VoidExpression>()->expression); return result;
         case SyntaxKind::PrefixUnaryExpression:
-            if (!result) result = visitNode(cbNode, node.as<PrefixUnaryExpression>()->operand); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<PrefixUnaryExpression>()->operand); return result;
         case SyntaxKind::YieldExpression:
-            if (!result) result = visitNode(cbNode, node.as<YieldExpression>()->asteriskToken);
-                   if (!result) result = visitNode(cbNode, node.as<YieldExpression>()->expression); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<YieldExpression>()->asteriskToken);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<YieldExpression>()->expression); return result;
         case SyntaxKind::AwaitExpression:
-            if (!result) result = visitNode(cbNode, node.as<AwaitExpression>()->expression); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<AwaitExpression>()->expression); return result;
         case SyntaxKind::PostfixUnaryExpression:
-            if (!result) result = visitNode(cbNode, node.as<PostfixUnaryExpression>()->operand); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<PostfixUnaryExpression>()->operand); return result;
         case SyntaxKind::BinaryExpression:
-            if (!result) result = visitNode(cbNode, node.as<BinaryExpression>()->left);
-                   if (!result) result = visitNode(cbNode, node.as<BinaryExpression>()->operatorToken);
-                   if (!result) result = visitNode(cbNode, node.as<BinaryExpression>()->right); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<BinaryExpression>()->left);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<BinaryExpression>()->operatorToken);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<BinaryExpression>()->right); return result;
         case SyntaxKind::AsExpression:
-            if (!result) result = visitNode(cbNode, node.as<AsExpression>()->expression);
-                   if (!result) result = visitNode(cbNode, node.as<AsExpression>()->type); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<AsExpression>()->expression);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<AsExpression>()->type); return result;
         case SyntaxKind::NonNullExpression:
-            if (!result) result = visitNode(cbNode, node.as<NonNullExpression>()->expression); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<NonNullExpression>()->expression); return result;
         case SyntaxKind::MetaProperty:
-            if (!result) result = visitNode(cbNode, node.as<MetaProperty>()->name); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<MetaProperty>()->name); return result;
         case SyntaxKind::ConditionalExpression:
-            if (!result) result = visitNode(cbNode, node.as<ConditionalExpression>()->condition);
-                   if (!result) result = visitNode(cbNode, node.as<ConditionalExpression>()->questionToken);
-                   if (!result) result = visitNode(cbNode, node.as<ConditionalExpression>()->whenTrue);
-                   if (!result) result = visitNode(cbNode, node.as<ConditionalExpression>()->colonToken);
-                   if (!result) result = visitNode(cbNode, node.as<ConditionalExpression>()->whenFalse); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<ConditionalExpression>()->condition);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ConditionalExpression>()->questionToken);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ConditionalExpression>()->whenTrue);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ConditionalExpression>()->colonToken);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ConditionalExpression>()->whenFalse); return result;
         case SyntaxKind::SpreadElement:
-            if (!result) result = visitNode(cbNode, node.as<SpreadElement>()->expression); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<SpreadElement>()->expression); return result;
         case SyntaxKind::Block:
         case SyntaxKind::ModuleBlock:
             if (!result) result = visitNodes(cbNode, cbNodes, node.as<Block>()->statements); return result;
         case SyntaxKind::SourceFile:
             if (!result) result = visitNodes(cbNode, cbNodes, node.as<SourceFile>()->statements);
-                   if (!result) result = visitNode(cbNode, node.as<SourceFile>()->endOfFileToken); return result;
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<SourceFile>()->endOfFileToken); return result;
         case SyntaxKind::VariableStatement:
             if (!result) result = visitNodes(cbNode, cbNodes, node->decorators);
                    if (!result) result = visitNodes(cbNode, cbNodes, node->modifiers);
-                   if (!result) result = visitNode(cbNode, node.as<VariableStatement>()->declarationList); return result;
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<VariableStatement>()->declarationList); return result;
         case SyntaxKind::VariableDeclarationList:
             if (!result) result = visitNodes(cbNode, cbNodes, node.as<VariableDeclarationList>()->declarations); return result;
         case SyntaxKind::ExpressionStatement:
-            if (!result) result = visitNode(cbNode, node.as<ExpressionStatement>()->expression); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<ExpressionStatement>()->expression); return result;
         case SyntaxKind::IfStatement:
-            if (!result) result = visitNode(cbNode, node.as<IfStatement>()->expression);
-                   if (!result) result = visitNode(cbNode, node.as<IfStatement>()->thenStatement);
-                   if (!result) result = visitNode(cbNode, node.as<IfStatement>()->elseStatement); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<IfStatement>()->expression);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<IfStatement>()->thenStatement);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<IfStatement>()->elseStatement); return result;
         case SyntaxKind::DoStatement:
-            if (!result) result = visitNode(cbNode, node.as<DoStatement>()->statement);
-                   if (!result) result = visitNode(cbNode, node.as<DoStatement>()->expression); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<DoStatement>()->statement);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<DoStatement>()->expression); return result;
         case SyntaxKind::WhileStatement:
-            if (!result) result = visitNode(cbNode, node.as<WhileStatement>()->expression);
-                   if (!result) result = visitNode(cbNode, node.as<WhileStatement>()->statement); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<WhileStatement>()->expression);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<WhileStatement>()->statement); return result;
         case SyntaxKind::ForStatement:
-            if (!result) result = visitNode(cbNode, node.as<ForStatement>()->initializer);
-                   if (!result) result = visitNode(cbNode, node.as<ForStatement>()->condition);
-                   if (!result) result = visitNode(cbNode, node.as<ForStatement>()->incrementor);
-                   if (!result) result = visitNode(cbNode, node.as<ForStatement>()->statement); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<ForStatement>()->initializer);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ForStatement>()->condition);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ForStatement>()->incrementor);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ForStatement>()->statement); return result;
         case SyntaxKind::ForInStatement:
-            if (!result) result = visitNode(cbNode, node.as<ForInStatement>()->initializer);
-                   if (!result) result = visitNode(cbNode, node.as<ForInStatement>()->expression);
-                   if (!result) result = visitNode(cbNode, node.as<ForInStatement>()->statement); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<ForInStatement>()->initializer);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ForInStatement>()->expression);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ForInStatement>()->statement); return result;
         case SyntaxKind::ForOfStatement:
-            if (!result) result = visitNode(cbNode, node.as<ForOfStatement>()->awaitModifier);
-                   if (!result) result = visitNode(cbNode, node.as<ForOfStatement>()->initializer);
-                   if (!result) result = visitNode(cbNode, node.as<ForOfStatement>()->expression);
-                   if (!result) result = visitNode(cbNode, node.as<ForOfStatement>()->statement); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<ForOfStatement>()->awaitModifier);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ForOfStatement>()->initializer);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ForOfStatement>()->expression);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ForOfStatement>()->statement); return result;
         case SyntaxKind::ContinueStatement:
-            if (!result) result = visitNode(cbNode, node.as<ContinueStatement>()->label); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<ContinueStatement>()->label); return result;
         case SyntaxKind::BreakStatement:
-            if (!result) result = visitNode(cbNode, node.as<BreakStatement>()->label); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<BreakStatement>()->label); return result;
         case SyntaxKind::ReturnStatement:
-            if (!result) result = visitNode(cbNode, node.as<ReturnStatement>()->expression); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<ReturnStatement>()->expression); return result;
         case SyntaxKind::WithStatement:
-            if (!result) result = visitNode(cbNode, node.as<WithStatement>()->expression);
-                   if (!result) result = visitNode(cbNode, node.as<WithStatement>()->statement); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<WithStatement>()->expression);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<WithStatement>()->statement); return result;
         case SyntaxKind::SwitchStatement:
-            if (!result) result = visitNode(cbNode, node.as<SwitchStatement>()->expression);
-                   if (!result) result = visitNode(cbNode, node.as<SwitchStatement>()->caseBlock); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<SwitchStatement>()->expression);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<SwitchStatement>()->caseBlock); return result;
         case SyntaxKind::CaseBlock:
             if (!result) result = visitNodes(cbNode, cbNodes, node.as<CaseBlock>()->clauses); return result;
         case SyntaxKind::CaseClause:
-            if (!result) result = visitNode(cbNode, node.as<CaseClause>()->expression);
+            if (!result) result = visitNode<R, T>(cbNode, node.as<CaseClause>()->expression);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<CaseClause>()->statements); return result;
         case SyntaxKind::DefaultClause:
             if (!result) result = visitNodes(cbNode, cbNodes, node.as<DefaultClause>()->statements); return result;
         case SyntaxKind::LabeledStatement:
-            if (!result) result = visitNode(cbNode, node.as<LabeledStatement>()->label);
-                   if (!result) result = visitNode(cbNode, node.as<LabeledStatement>()->statement); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<LabeledStatement>()->label);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<LabeledStatement>()->statement); return result;
         case SyntaxKind::ThrowStatement:
-            if (!result) result = visitNode(cbNode, node.as<ThrowStatement>()->expression); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<ThrowStatement>()->expression); return result;
         case SyntaxKind::TryStatement:
-            if (!result) result = visitNode(cbNode, node.as<TryStatement>()->tryBlock);
-                   if (!result) result = visitNode(cbNode, node.as<TryStatement>()->catchClause);
-                   if (!result) result = visitNode(cbNode, node.as<TryStatement>()->finallyBlock); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<TryStatement>()->tryBlock);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<TryStatement>()->catchClause);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<TryStatement>()->finallyBlock); return result;
         case SyntaxKind::CatchClause:
-            if (!result) result = visitNode(cbNode, node.as<CatchClause>()->variableDeclaration);
-                   if (!result) result = visitNode(cbNode, node.as<CatchClause>()->block); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<CatchClause>()->variableDeclaration);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<CatchClause>()->block); return result;
         case SyntaxKind::Decorator:
-            if (!result) result = visitNode(cbNode, node.as<Decorator>()->expression); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<Decorator>()->expression); return result;
         case SyntaxKind::ClassDeclaration:
         case SyntaxKind::ClassExpression:
             if (!result) result = visitNodes(cbNode, cbNodes, node->decorators);
                    if (!result) result = visitNodes(cbNode, cbNodes, node->modifiers);
-                   if (!result) result = visitNode(cbNode, node.as<ClassLikeDeclaration>()->name);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ClassLikeDeclaration>()->name);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<ClassLikeDeclaration>()->typeParameters);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<ClassLikeDeclaration>()->heritageClauses);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<ClassLikeDeclaration>()->members); return result;
         case SyntaxKind::InterfaceDeclaration:
             if (!result) result = visitNodes(cbNode, cbNodes, node->decorators);
                    if (!result) result = visitNodes(cbNode, cbNodes, node->modifiers);
-                   if (!result) result = visitNode(cbNode, node.as<InterfaceDeclaration>()->name);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<InterfaceDeclaration>()->name);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<InterfaceDeclaration>()->typeParameters);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<ClassDeclaration>()->heritageClauses);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<InterfaceDeclaration>()->members); return result;
         case SyntaxKind::TypeAliasDeclaration:
             if (!result) result = visitNodes(cbNode, cbNodes, node->decorators);
                    if (!result) result = visitNodes(cbNode, cbNodes, node->modifiers);
-                   if (!result) result = visitNode(cbNode, node.as<TypeAliasDeclaration>()->name);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<TypeAliasDeclaration>()->name);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<TypeAliasDeclaration>()->typeParameters);
-                   if (!result) result = visitNode(cbNode, node.as<TypeAliasDeclaration>()->type); return result;
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<TypeAliasDeclaration>()->type); return result;
         case SyntaxKind::EnumDeclaration:
             if (!result) result = visitNodes(cbNode, cbNodes, node->decorators);
                    if (!result) result = visitNodes(cbNode, cbNodes, node->modifiers);
-                   if (!result) result = visitNode(cbNode, node.as<EnumDeclaration>()->name);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<EnumDeclaration>()->name);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<EnumDeclaration>()->members); return result;
         case SyntaxKind::EnumMember:
-            if (!result) result = visitNode(cbNode, node.as<EnumMember>()->name);
-                   if (!result) result = visitNode(cbNode, node.as<EnumMember>()->initializer); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<EnumMember>()->name);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<EnumMember>()->initializer); return result;
         case SyntaxKind::ModuleDeclaration:
             if (!result) result = visitNodes(cbNode, cbNodes, node->decorators);
                    if (!result) result = visitNodes(cbNode, cbNodes, node->modifiers);
-                   if (!result) result = visitNode(cbNode, node.as<ModuleDeclaration>()->name);
-                   if (!result) result = visitNode(cbNode, node.as<ModuleDeclaration>()->body); return result;
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ModuleDeclaration>()->name);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ModuleDeclaration>()->body); return result;
         case SyntaxKind::ImportEqualsDeclaration:
             if (!result) result = visitNodes(cbNode, cbNodes, node->decorators);
                    if (!result) result = visitNodes(cbNode, cbNodes, node->modifiers);
-                   if (!result) result = visitNode(cbNode, node.as<ImportEqualsDeclaration>()->name);
-                   if (!result) result = visitNode(cbNode, node.as<ImportEqualsDeclaration>()->moduleReference); return result;
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ImportEqualsDeclaration>()->name);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ImportEqualsDeclaration>()->moduleReference); return result;
         case SyntaxKind::ImportDeclaration:
             if (!result) result = visitNodes(cbNode, cbNodes, node->decorators);
                    if (!result) result = visitNodes(cbNode, cbNodes, node->modifiers);
-                   if (!result) result = visitNode(cbNode, node.as<ImportDeclaration>()->importClause);
-                   if (!result) result = visitNode(cbNode, node.as<ImportDeclaration>()->moduleSpecifier); return result;
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ImportDeclaration>()->importClause);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ImportDeclaration>()->moduleSpecifier); return result;
         case SyntaxKind::ImportClause:
-            if (!result) result = visitNode(cbNode, node.as<ImportClause>()->name);
-                   if (!result) result = visitNode(cbNode, node.as<ImportClause>()->namedBindings); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<ImportClause>()->name);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ImportClause>()->namedBindings); return result;
         case SyntaxKind::NamespaceExportDeclaration:
-            if (!result) result = visitNode(cbNode, node.as<NamespaceExportDeclaration>()->name); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<NamespaceExportDeclaration>()->name); return result;
 
         case SyntaxKind::NamespaceImport:
-            if (!result) result = visitNode(cbNode, node.as<NamespaceImport>()->name); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<NamespaceImport>()->name); return result;
         case SyntaxKind::NamespaceExport:
-            if (!result) result = visitNode(cbNode, node.as<NamespaceExport>()->name); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<NamespaceExport>()->name); return result;
         case SyntaxKind::NamedImports:
             if (!result) result = visitNodes(cbNode, cbNodes, node.as<NamedImports>()->elements); return result;
         case SyntaxKind::NamedExports:
@@ -679,153 +679,153 @@ namespace ts
         case SyntaxKind::ExportDeclaration:
             if (!result) result = visitNodes(cbNode, cbNodes, node->decorators);
                    if (!result) result = visitNodes(cbNode, cbNodes, node->modifiers);
-                   if (!result) result = visitNode(cbNode, node.as<ExportDeclaration>()->exportClause);
-                   if (!result) result = visitNode(cbNode, node.as<ExportDeclaration>()->moduleSpecifier); return result;
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ExportDeclaration>()->exportClause);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ExportDeclaration>()->moduleSpecifier); return result;
         case SyntaxKind::ImportSpecifier:
-            if (!result) result = visitNode(cbNode, node.as<ImportSpecifier>()->propertyName);
-                   if (!result) result = visitNode(cbNode, node.as<ImportSpecifier>()->name); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<ImportSpecifier>()->propertyName);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ImportSpecifier>()->name); return result;
         case SyntaxKind::ExportSpecifier:
-            if (!result) result = visitNode(cbNode, node.as<ExportSpecifier>()->propertyName);
-                   if (!result) result = visitNode(cbNode, node.as<ExportSpecifier>()->name); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<ExportSpecifier>()->propertyName);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ExportSpecifier>()->name); return result;
         case SyntaxKind::ExportAssignment:
             if (!result) result = visitNodes(cbNode, cbNodes, node->decorators);
                    if (!result) result = visitNodes(cbNode, cbNodes, node->modifiers);
-                   if (!result) result = visitNode(cbNode, node.as<ExportAssignment>()->expression); return result;
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<ExportAssignment>()->expression); return result;
         case SyntaxKind::TemplateExpression:
-            if (!result) result = visitNode(cbNode, node.as<TemplateExpression>()->head); if (!result) result = visitNodes(cbNode, cbNodes, node.as<TemplateExpression>()->templateSpans); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<TemplateExpression>()->head); if (!result) result = visitNodes(cbNode, cbNodes, node.as<TemplateExpression>()->templateSpans); return result;
         case SyntaxKind::TemplateSpan:
-            if (!result) result = visitNode(cbNode, node.as<TemplateSpan>()->expression); if (!result) result = visitNode(cbNode, node.as<TemplateSpan>()->literal); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<TemplateSpan>()->expression); if (!result) result = visitNode<R, T>(cbNode, node.as<TemplateSpan>()->literal); return result;
         case SyntaxKind::TemplateLiteralType:
-            if (!result) result = visitNode(cbNode, node.as<TemplateLiteralTypeNode>()->head); if (!result) result = visitNodes(cbNode, cbNodes, node.as<TemplateLiteralTypeNode>()->templateSpans); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<TemplateLiteralTypeNode>()->head); if (!result) result = visitNodes(cbNode, cbNodes, node.as<TemplateLiteralTypeNode>()->templateSpans); return result;
         case SyntaxKind::TemplateLiteralTypeSpan:
-            if (!result) result = visitNode(cbNode, node.as<TemplateLiteralTypeSpan>()->type); if (!result) result = visitNode(cbNode, node.as<TemplateLiteralTypeSpan>()->literal); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<TemplateLiteralTypeSpan>()->type); if (!result) result = visitNode<R, T>(cbNode, node.as<TemplateLiteralTypeSpan>()->literal); return result;
         case SyntaxKind::ComputedPropertyName:
-            if (!result) result = visitNode(cbNode, node.as<ComputedPropertyName>()->expression); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<ComputedPropertyName>()->expression); return result;
         case SyntaxKind::HeritageClause:
             if (!result) result = visitNodes(cbNode, cbNodes, node.as<HeritageClause>()->types); return result;
         case SyntaxKind::ExpressionWithTypeArguments:
-            if (!result) result = visitNode(cbNode, node.as<ExpressionWithTypeArguments>()->expression);
+            if (!result) result = visitNode<R, T>(cbNode, node.as<ExpressionWithTypeArguments>()->expression);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<ExpressionWithTypeArguments>()->typeArguments); return result;
         case SyntaxKind::ExternalModuleReference:
-            if (!result) result = visitNode(cbNode, node.as<ExternalModuleReference>()->expression); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<ExternalModuleReference>()->expression); return result;
         case SyntaxKind::MissingDeclaration:
             if (!result) result = visitNodes(cbNode, cbNodes, node->decorators); return result;
         case SyntaxKind::CommaListExpression:
             if (!result) result = visitNodes(cbNode, cbNodes, node.as<CommaListExpression>()->elements); return result;
 
         case SyntaxKind::JsxElement:
-            if (!result) result = visitNode(cbNode, node.as<JsxElement>()->openingElement);
+            if (!result) result = visitNode<R, T>(cbNode, node.as<JsxElement>()->openingElement);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<JsxElement>()->children);
-                   if (!result) result = visitNode(cbNode, node.as<JsxElement>()->closingElement); return result;
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<JsxElement>()->closingElement); return result;
         case SyntaxKind::JsxFragment:
-            if (!result) result = visitNode(cbNode, node.as<JsxFragment>()->openingFragment);
+            if (!result) result = visitNode<R, T>(cbNode, node.as<JsxFragment>()->openingFragment);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<JsxFragment>()->children);
-                   if (!result) result = visitNode(cbNode, node.as<JsxFragment>()->closingFragment); return result;
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<JsxFragment>()->closingFragment); return result;
         case SyntaxKind::JsxSelfClosingElement:
-            if (!result) result = visitNode(cbNode, node.as<JsxSelfClosingElement>()->tagName);
+            if (!result) result = visitNode<R, T>(cbNode, node.as<JsxSelfClosingElement>()->tagName);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<JsxSelfClosingElement>()->typeArguments);
-                   if (!result) result = visitNode(cbNode, node.as<JsxSelfClosingElement>()->attributes); return result;
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<JsxSelfClosingElement>()->attributes); return result;
         case SyntaxKind::JsxOpeningElement:
-            if (!result) result = visitNode(cbNode, node.as<JsxOpeningElement>()->tagName);
+            if (!result) result = visitNode<R, T>(cbNode, node.as<JsxOpeningElement>()->tagName);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<JsxOpeningElement>()->typeArguments);
-                   if (!result) result = visitNode(cbNode, node.as<JsxOpeningElement>()->attributes); return result;
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<JsxOpeningElement>()->attributes); return result;
         case SyntaxKind::JsxAttributes:
             if (!result) result = visitNodes(cbNode, cbNodes, node.as<JsxAttributes>()->properties); return result;
         case SyntaxKind::JsxAttribute:
-            if (!result) result = visitNode(cbNode, node.as<JsxAttribute>()->name);
-                   if (!result) result = visitNode(cbNode, node.as<JsxAttribute>()->initializer); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<JsxAttribute>()->name);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<JsxAttribute>()->initializer); return result;
         case SyntaxKind::JsxSpreadAttribute:
-            if (!result) result = visitNode(cbNode, node.as<JsxSpreadAttribute>()->expression); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<JsxSpreadAttribute>()->expression); return result;
         case SyntaxKind::JsxExpression:
-            if (!result) result = visitNode(cbNode, node.as<JsxExpression>()->dotDotDotToken);
-                   if (!result) result = visitNode(cbNode, node.as<JsxExpression>()->expression); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<JsxExpression>()->dotDotDotToken);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<JsxExpression>()->expression); return result;
         case SyntaxKind::JsxClosingElement:
-            if (!result) result = visitNode(cbNode, node.as<JsxClosingElement>()->tagName); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<JsxClosingElement>()->tagName); return result;
 
         case SyntaxKind::OptionalType:
-            if (!result) result = visitNode(cbNode, node.as<OptionalTypeNode>()->type); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<OptionalTypeNode>()->type); return result;
         case SyntaxKind::RestType:
-            if (!result) result = visitNode(cbNode, node.as<RestTypeNode>()->type); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<RestTypeNode>()->type); return result;
         case SyntaxKind::JSDocTypeExpression:
-            if (!result) result = visitNode(cbNode, node.as<JSDocTypeExpression>()->type); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocTypeExpression>()->type); return result;
         case SyntaxKind::JSDocNonNullableType:
-            if (!result) result = visitNode(cbNode, node.as<JSDocNonNullableType>()->type); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocNonNullableType>()->type); return result;
         case SyntaxKind::JSDocNullableType:
-            if (!result) result = visitNode(cbNode, node.as<JSDocNullableType>()->type); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocNullableType>()->type); return result;
         case SyntaxKind::JSDocOptionalType:
-            if (!result) result = visitNode(cbNode, node.as<JSDocOptionalType>()->type); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocOptionalType>()->type); return result;
         case SyntaxKind::JSDocVariadicType:
-            if (!result) result = visitNode(cbNode, node.as<JSDocVariadicType>()->type); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocVariadicType>()->type); return result;
         case SyntaxKind::JSDocFunctionType:
             if (!result) result = visitNodes(cbNode, cbNodes, node.as<JSDocFunctionType>()->parameters);
-                   if (!result) result = visitNode(cbNode, node.as<JSDocFunctionType>()->type); return result;
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocFunctionType>()->type); return result;
         case SyntaxKind::JSDocComment:
             if (!result) result = visitNodes(cbNode, cbNodes, node.as<JSDoc>()->tags); return result;
         case SyntaxKind::JSDocSeeTag:
-            if (!result) result = visitNode(cbNode, node.as<JSDocSeeTag>()->tagName);
-                   if (!result) result = visitNode(cbNode, node.as<JSDocSeeTag>()->name); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocSeeTag>()->tagName);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocSeeTag>()->name); return result;
         case SyntaxKind::JSDocNameReference:
-            if (!result) result = visitNode(cbNode, node.as<JSDocNameReference>()->name); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocNameReference>()->name); return result;
         case SyntaxKind::JSDocParameterTag:
         case SyntaxKind::JSDocPropertyTag:
-            if (!result) result = visitNode(cbNode, node.as<JSDocTag>()->tagName);
+            if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocTag>()->tagName);
                 if (node.as<JSDocPropertyLikeTag>()->isNameFirst)
                 {
-                    if (!result) result = visitNode(cbNode, node.as<JSDocPropertyLikeTag>()->name);
-                    if (!result) result = visitNode(cbNode, node.as<JSDocPropertyLikeTag>()->typeExpression);
+                    if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocPropertyLikeTag>()->name);
+                    if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocPropertyLikeTag>()->typeExpression);
                 }
                 else
                 {
-                    if (!result) result = visitNode(cbNode, node.as<JSDocPropertyLikeTag>()->typeExpression);
-                    if (!result) result = visitNode(cbNode, node.as<JSDocPropertyLikeTag>()->name); 
+                    if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocPropertyLikeTag>()->typeExpression);
+                    if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocPropertyLikeTag>()->name); 
                 }
                 return result;
         case SyntaxKind::JSDocAuthorTag:
-            if (!result) result = visitNode(cbNode, node.as<JSDocTag>()->tagName); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocTag>()->tagName); return result;
         case SyntaxKind::JSDocImplementsTag:
-            if (!result) result = visitNode(cbNode, node.as<JSDocTag>()->tagName);
-                   if (!result) result = visitNode(cbNode, node.as<JSDocImplementsTag>()->_class); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocTag>()->tagName);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocImplementsTag>()->_class); return result;
         case SyntaxKind::JSDocAugmentsTag:
-            if (!result) result = visitNode(cbNode, node.as<JSDocTag>()->tagName);
-                   if (!result) result = visitNode(cbNode, node.as<JSDocAugmentsTag>()->_class); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocTag>()->tagName);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocAugmentsTag>()->_class); return result;
         case SyntaxKind::JSDocTemplateTag:
-            if (!result) result = visitNode(cbNode, node.as<JSDocTag>()->tagName);
-                   if (!result) result = visitNode(cbNode, node.as<JSDocTemplateTag>()->constraint);
+            if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocTag>()->tagName);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocTemplateTag>()->constraint);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<JSDocTemplateTag>()->typeParameters); return result;
         case SyntaxKind::JSDocTypedefTag:
-            if (!result) result = visitNode(cbNode, node.as<JSDocTag>()->tagName);
+            if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocTag>()->tagName);
                    if (node.as<JSDocTypedefTag>()->typeExpression &&
                             node.as<JSDocTypedefTag>()->typeExpression->kind == SyntaxKind::JSDocTypeExpression)
                             {
-                                if (!result) result = visitNode(cbNode, node.as<JSDocTypedefTag>()->typeExpression);
-                                if (!result) result = visitNode(cbNode, node.as<JSDocTypedefTag>()->fullName);
+                                if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocTypedefTag>()->typeExpression);
+                                if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocTypedefTag>()->fullName);
                             }
                             else
                             {
-                                if (!result) result = visitNode(cbNode, node.as<JSDocTypedefTag>()->fullName);
-                                if (!result) result = visitNode(cbNode, node.as<JSDocTypedefTag>()->typeExpression); 
+                                if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocTypedefTag>()->fullName);
+                                if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocTypedefTag>()->typeExpression); 
                             }
                             return result;
         case SyntaxKind::JSDocCallbackTag:
-            if (!result) result = visitNode(cbNode, node.as<JSDocTag>()->tagName);
-                   if (!result) result = visitNode(cbNode, node.as<JSDocCallbackTag>()->fullName);
-                   if (!result) result = visitNode(cbNode, node.as<JSDocCallbackTag>()->typeExpression); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocTag>()->tagName);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocCallbackTag>()->fullName);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocCallbackTag>()->typeExpression); return result;
         case SyntaxKind::JSDocReturnTag:
-            if (!result) result = visitNode(cbNode, node.as<JSDocTag>()->tagName);
-                   if (!result) result = visitNode(cbNode, node.as<JSDocReturnTag>()->typeExpression); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocTag>()->tagName);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocReturnTag>()->typeExpression); return result;
         case SyntaxKind::JSDocTypeTag:
-            if (!result) result = visitNode(cbNode, node.as<JSDocTag>()->tagName);
-                   if (!result) result = visitNode(cbNode, node.as<JSDocTypeTag>()->typeExpression); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocTag>()->tagName);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocTypeTag>()->typeExpression); return result;
         case SyntaxKind::JSDocThisTag:
-            if (!result) result = visitNode(cbNode, node.as<JSDocTag>()->tagName);
-                   if (!result) result = visitNode(cbNode, node.as<JSDocThisTag>()->typeExpression); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocTag>()->tagName);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocThisTag>()->typeExpression); return result;
         case SyntaxKind::JSDocEnumTag:
-            if (!result) result = visitNode(cbNode, node.as<JSDocTag>()->tagName);
-                   if (!result) result = visitNode(cbNode, node.as<JSDocEnumTag>()->typeExpression); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocTag>()->tagName);
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocEnumTag>()->typeExpression); return result;
         case SyntaxKind::JSDocSignature:
             return forEach<decltype(node.as<JSDocSignature>()->typeParameters), T>(node.as<JSDocSignature>()->typeParameters, cbNode);
                    forEach<decltype(node.as<JSDocSignature>()->parameters), T>(node.as<JSDocSignature>()->parameters, cbNode);
-                   if (!result) result = visitNode(cbNode, node.as<JSDocSignature>()->type); return result;
+                   if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocSignature>()->type); return result;
         case SyntaxKind::JSDocTypeLiteral:
             return forEach<decltype(node.as<JSDocTypeLiteral>()->jsDocPropertyTags), T>(node.as<JSDocTypeLiteral>()->jsDocPropertyTags, cbNode); return result;
         case SyntaxKind::JSDocTag:
@@ -834,12 +834,12 @@ namespace ts
         case SyntaxKind::JSDocPrivateTag:
         case SyntaxKind::JSDocProtectedTag:
         case SyntaxKind::JSDocReadonlyTag:
-            if (!result) result = visitNode(cbNode, node.as<JSDocTag>()->tagName); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocTag>()->tagName); return result;
         case SyntaxKind::PartiallyEmittedExpression:
-            if (!result) result = visitNode(cbNode, node.as<PartiallyEmittedExpression>()->expression); return result;
+            if (!result) result = visitNode<R, T>(cbNode, node.as<PartiallyEmittedExpression>()->expression); return result;
         }
 
-        return undefined;
+        return R{};
     }
 
     static auto gatherPossibleChildren(Node node) -> NodeArray<Node>
@@ -870,8 +870,8 @@ namespace ts
     * @remarks Unlike `forEachChild`, `forEachChildRecursively` handles recursively invoking the traversal on each child node found,
     * and while doing so, handles traversing the structure without relying on the callstack to encode the tree structure.
     */
-    template <typename T>
-    static auto forEachChildRecursively(Node rootNode, NodeWithParentFuncT<T> cbNode, NodeWithParentArrayFuncT<T> cbNodes = nullptr) -> T
+    template <typename R = Node, typename T = Node>
+    static auto forEachChildRecursively(T rootNode, FuncWithParentT<R, T> cbNode, ArrayFuncWithParentT<R, T> cbNodes = nullptr) -> R
     {
         auto queue = gatherPossibleChildren(rootNode);
         NodeArray<Node> parents; // tracks parent references for elements in queue
@@ -923,8 +923,8 @@ namespace ts
         return false;
     }
 
-    template <typename T>
-    static auto setParentRecursive(T rootNode, boolean incremental) -> T
+    template <typename R, typename T>
+    static auto setParentRecursive(T rootNode, boolean incremental) -> R
     {
         auto bindParentToChildIgnoringJSDoc = [&](auto child, auto parent) /*true is skip*/ {
             if (incremental && child->parent == parent)
@@ -941,7 +941,7 @@ namespace ts
                 for (auto &doc : child.as<JSDocContainer>()->jsDoc)
                 {
                     bindParentToChildIgnoringJSDoc(doc, child);
-                    forEachChildRecursively<boolean>(doc, bindParentToChildIgnoringJSDoc);
+                    forEachChildRecursively<boolean, T>(doc, bindParentToChildIgnoringJSDoc);
                 }
             }
 
@@ -958,9 +958,9 @@ namespace ts
         }
 
         if (isJSDocNode(rootNode))
-            forEachChildRecursively<boolean>(rootNode, bindParentToChildIgnoringJSDoc);
+            forEachChildRecursively<boolean, T>(rootNode, bindParentToChildIgnoringJSDoc);
         else
-            forEachChildRecursively<boolean>(rootNode, bindParentToChild);
+            forEachChildRecursively<boolean, T>(rootNode, bindParentToChild);
         return rootNode;
     }
 
