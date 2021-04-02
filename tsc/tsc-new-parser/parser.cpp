@@ -1832,7 +1832,7 @@ namespace ts
             {
                 if (node)
                 {
-                    switch (node->kind)
+                    switch ((SyntaxKind)node)
                     {
                     case SyntaxKind::Constructor:
                     case SyntaxKind::IndexSignature:
@@ -1846,7 +1846,7 @@ namespace ts
                         // may have a method calls "constructor(...)" and we must reparse that
                         // into an actual .ConstructorDeclaration.
                         auto methodDeclaration = node.as<MethodDeclaration>();
-                        auto nameIsConstructor = methodDeclaration->name->kind == SyntaxKind::Identifier &&
+                        auto nameIsConstructor = methodDeclaration->name == SyntaxKind::Identifier &&
                                                  methodDeclaration->name.as<Identifier>()->originalKeywordKind == SyntaxKind::ConstructorKeyword;
 
                         return !nameIsConstructor;
@@ -1860,7 +1860,7 @@ namespace ts
             {
                 if (node)
                 {
-                    switch (node->kind)
+                    switch ((SyntaxKind)node)
                     {
                     case SyntaxKind::CaseClause:
                     case SyntaxKind::DefaultClause:
@@ -1875,7 +1875,7 @@ namespace ts
             {
                 if (node)
                 {
-                    switch (node->kind)
+                    switch ((SyntaxKind)node)
                     {
                     case SyntaxKind::FunctionDeclaration:
                     case SyntaxKind::VariableStatement:
@@ -1915,14 +1915,14 @@ namespace ts
 
             auto isReusableEnumMember(Node node) -> boolean
             {
-                return node->kind == SyntaxKind::EnumMember;
+                return node == SyntaxKind::EnumMember;
             }
 
             auto isReusableTypeMember(Node node) -> boolean
             {
                 if (node)
                 {
-                    switch (node->kind)
+                    switch ((SyntaxKind)node)
                     {
                     case SyntaxKind::ConstructSignature:
                     case SyntaxKind::MethodSignature:
@@ -1938,7 +1938,7 @@ namespace ts
 
             auto isReusableVariableDeclaration(Node node) -> boolean
             {
-                if (node->kind != SyntaxKind::VariableDeclaration)
+                if (node != SyntaxKind::VariableDeclaration)
                 {
                     return false;
                 }
@@ -1963,7 +1963,7 @@ namespace ts
 
             auto isReusableParameter(Node node) -> boolean
             {
-                if (node->kind != SyntaxKind::Parameter)
+                if (node != SyntaxKind::Parameter)
                 {
                     return false;
                 }
@@ -2233,7 +2233,7 @@ namespace ts
                 {
                     node = parseTemplateSpan(isTaggedTemplate);
                     list.push_back(node);
-                } while (node->literal->kind == SyntaxKind::TemplateMiddle);
+                } while (node->literal == SyntaxKind::TemplateMiddle);
                 return createNodeArray(list, pos);
             }
 
@@ -2266,7 +2266,7 @@ namespace ts
                 {
                     node = parseTemplateTypeSpan();
                     list.push_back(node);
-                } while (node->literal->kind == SyntaxKind::TemplateMiddle);
+                } while (node->literal == SyntaxKind::TemplateMiddle);
                 return createNodeArray(list, pos);
             }
 
@@ -2316,14 +2316,14 @@ namespace ts
                     reScanTemplateHeadOrNoSubstitutionTemplate();
                 }
                 auto fragment = parseLiteralLikeNode(token());
-                Debug::_assert(fragment->kind == SyntaxKind::TemplateHead, S("Template head has wrong token kind"));
+                Debug::_assert(fragment == SyntaxKind::TemplateHead, S("Template head has wrong token kind"));
                 return fragment.as<TemplateHead>();
             }
 
             auto parseTemplateMiddleOrTemplateTail() -> Node
             {
                 auto fragment = parseLiteralLikeNode(token());
-                Debug::_assert(fragment->kind == SyntaxKind::TemplateMiddle || fragment->kind == SyntaxKind::TemplateTail, S("Template fragment has wrong token kind"));
+                Debug::_assert(fragment == SyntaxKind::TemplateMiddle || fragment == SyntaxKind::TemplateTail, S("Template fragment has wrong token kind"));
                 return fragment;
             }
 
@@ -2395,7 +2395,7 @@ namespace ts
             // If true, we should abort parsing an error function.
             auto typeHasArrowFunctionBlockingParseError(TypeNode node) -> boolean
             {
-                switch (node->kind)
+                switch ((SyntaxKind)node)
                 {
                 case SyntaxKind::TypeReference:
                     return nodeIsMissing(node.as<TypeReferenceNode>()->typeName);
@@ -2403,7 +2403,7 @@ namespace ts
                 case SyntaxKind::ConstructorType:
                 {
                     auto res = node.as<FunctionOrConstructorTypeNode>();
-                    if (res->kind == SyntaxKind::FunctionType)
+                    if (res == SyntaxKind::FunctionType)
                     {
                         auto res1 = res.as<FunctionTypeNode>();
                         return isMissingList(res1->parameters) || typeHasArrowFunctionBlockingParseError(res1->type);
@@ -3046,7 +3046,7 @@ namespace ts
                 {
                     //readonlyToken = parseTokenNode<ReadonlyKeyword, PlusToken, MinusToken>();
                     readonlyToken = parseTokenNode<Node>();
-                    if (readonlyToken->kind != SyntaxKind::ReadonlyKeyword)
+                    if (readonlyToken != SyntaxKind::ReadonlyKeyword)
                     {
                         parseExpected(SyntaxKind::ReadonlyKeyword);
                     }
@@ -3060,7 +3060,7 @@ namespace ts
                 {
                     //questionToken = parseTokenNode<QuestionToken, PlusToken, MinusToken>();
                     questionToken = parseTokenNode<Node>();
-                    if (questionToken->kind != SyntaxKind::QuestionToken)
+                    if (questionToken != SyntaxKind::QuestionToken)
                     {
                         parseExpected(SyntaxKind::QuestionToken);
                     }
@@ -3809,7 +3809,7 @@ namespace ts
                 // To avoid a look-ahead, we did not handle the case of an arrow auto with a single un-parenthesized
                 // parameter ('x => ...') above. We handle it here by checking if the parsed expression was a single
                 // identifier and the current token is an arrow.
-                if (expr->kind == SyntaxKind::Identifier && token() == SyntaxKind::EqualsGreaterThanToken)
+                if (expr == SyntaxKind::Identifier && token() == SyntaxKind::EqualsGreaterThanToken)
                 {
                     return parseSimpleArrowFunctionExpression(pos, expr.as<Identifier>(), /*asyncModifier*/ undefined);
                 }
@@ -4146,7 +4146,7 @@ namespace ts
                     }
                     // Check for un-parenthesized AsyncArrowFunction
                     auto expr = parseBinaryExpressionOrHigher(OperatorPrecedence::Lowest);
-                    if (!scanner.hasPrecedingLineBreak() && expr->kind == SyntaxKind::Identifier && token() == SyntaxKind::EqualsGreaterThanToken)
+                    if (!scanner.hasPrecedingLineBreak() && expr == SyntaxKind::Identifier && token() == SyntaxKind::EqualsGreaterThanToken)
                     {
                         return Tristate::True;
                     }
@@ -4475,7 +4475,7 @@ namespace ts
                     auto safe_sourceText = safe_string(sourceText);
                     auto pos = scanner.skipTrivia(safe_sourceText, simpleUnaryExpression->pos);
                     auto end = simpleUnaryExpression->_end;
-                    if (simpleUnaryExpression->kind == SyntaxKind::TypeAssertionExpression)
+                    if (simpleUnaryExpression == SyntaxKind::TypeAssertionExpression)
                     {
                         parseErrorAt(pos, end, data::DiagnosticMessage(Diagnostics::A_type_assertion_expression_is_not_allowed_in_the_left_hand_side_of_an_exponentiation_expression_Consider_enclosing_the_expression_in_parentheses));
                     }
@@ -4763,7 +4763,7 @@ namespace ts
                 auto pos = getNodePos();
                 auto opening = parseJsxOpeningOrSelfClosingElementOrOpeningFragment(inExpressionContext);
                 Node result;
-                if (opening->kind == SyntaxKind::JsxOpeningElement)
+                if (opening == SyntaxKind::JsxOpeningElement)
                 {
                     auto children = parseJsxChildren(opening);
                     auto closingElement = parseJsxClosingElement(inExpressionContext);
@@ -4775,13 +4775,13 @@ namespace ts
 
                     result = finishNode(factory.createJsxElement(opening, children, closingElement), pos);
                 }
-                else if (opening->kind == SyntaxKind::JsxOpeningFragment)
+                else if (opening == SyntaxKind::JsxOpeningFragment)
                 {
                     result = finishNode(factory.createJsxFragment(opening, parseJsxChildren(opening), parseJsxClosingFragment(inExpressionContext)), pos);
                 }
                 else
                 {
-                    Debug::_assert(opening->kind == SyntaxKind::JsxSelfClosingElement);
+                    Debug::_assert(opening == SyntaxKind::JsxSelfClosingElement);
                     // Nothing else to do for self-closing elements
                     result = opening;
                 }
@@ -6194,7 +6194,7 @@ namespace ts
 
             auto isDeclareModifier(Modifier modifier) -> boolean
             {
-                return modifier->kind == SyntaxKind::DeclareKeyword;
+                return modifier == SyntaxKind::DeclareKeyword;
             }
 
             auto parseDeclaration() -> Statement
@@ -6403,7 +6403,7 @@ namespace ts
                 auto hasJSDoc = hasPrecedingJSDocComment();
                 auto name = parseIdentifierOrPattern(data::DiagnosticMessage(Diagnostics::Private_identifiers_are_not_allowed_in_variable_declarations));
                 ExclamationToken exclamationToken;
-                if (allowExclamation && name->kind == SyntaxKind::Identifier &&
+                if (allowExclamation && name == SyntaxKind::Identifier &&
                     token() == SyntaxKind::ExclamationToken && !scanner.hasPrecedingLineBreak())
                 {
                     exclamationToken = parseTokenNode<Token<SyntaxKind::ExclamationToken>>();
@@ -6618,7 +6618,7 @@ namespace ts
                                 : factory.createSetAccessorDeclaration(decorators, modifiers, name, parameters, body).as<AccessorDeclaration>();
                 // Keep track of `typeParameters` (for both) and `type` (for setters) if they were parsed those indicate grammar errors
                 node->typeParameters = typeParameters;
-                if (!!type && node->kind == SyntaxKind::SetAccessor)
+                if (!!type && node == SyntaxKind::SetAccessor)
                     (node.asMutable<SetAccessorDeclaration>())->type = type;
                 return withJSDoc(finishNode(node, pos), hasJSDoc);
             }
@@ -7423,7 +7423,7 @@ namespace ts
             /** Do not use hasModifier inside the parser; it relies on parent pointers. Use this instead. */
             auto hasModifierOfKind(Node node, SyntaxKind kind) -> boolean
             {
-                return some(node->modifiers, [=](auto m) { return m->kind == kind; });
+                return some(node->modifiers, [=](auto m) { return m == kind; });
             }
 
             auto isImportMeta(Node node) -> boolean
@@ -7703,15 +7703,15 @@ namespace ts
 
             /** @internal */
             auto tagNamesAreEquivalent(JsxTagNameExpression lhs, JsxTagNameExpression rhs) -> boolean {
-                if (lhs->kind != rhs->kind) {
+                if (lhs != rhs) {
                     return false;
                 }
 
-                if (lhs->kind == SyntaxKind::Identifier) {
+                if (lhs == SyntaxKind::Identifier) {
                     return lhs.as<Identifier>()->escapedText == rhs.as<Identifier>()->escapedText;
                 }
 
-                if (lhs->kind == SyntaxKind::ThisKeyword) {
+                if (lhs == SyntaxKind::ThisKeyword) {
                     return true;
                 }
 

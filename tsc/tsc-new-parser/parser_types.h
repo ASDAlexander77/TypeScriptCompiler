@@ -160,9 +160,9 @@ namespace data
         virtual ~Node() {}
 
         Node() = default;
-        Node(SyntaxKind kind, number pos, number end) : kind(kind), TextRange{pos, end} {}
+        Node(SyntaxKind kind, number pos, number end) : _kind(kind), TextRange{pos, end} {}
 
-        SyntaxKind kind;
+        SyntaxKind _kind;
         NodeFlags flags;
         /* @internal */ ModifierFlags modifierFlagsCache;
         /* @internal */ TransformFlags transformFlags; // Flags for transforms
@@ -823,7 +823,7 @@ namespace data
         Identifier() = default;
         Identifier(SyntaxKind kind_, number pos_, number end_) 
         {
-            kind = kind_;
+            _kind = kind_;
             pos = pos_;
             _end = end_;
         }
@@ -2277,7 +2277,7 @@ namespace data
         SourceFile() = default;
         SourceFile(SyntaxKind kind_, number pos_, number end_)
         {
-            kind = kind_;
+           _kind = kind_;
             pos = pos_;
             _end = end_;
         }

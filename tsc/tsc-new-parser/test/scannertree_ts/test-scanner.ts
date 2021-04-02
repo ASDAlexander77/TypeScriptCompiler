@@ -467,7 +467,7 @@ try {
         console.log("printing file TS ... read file: " + file);
         const output1 = printTree(fld + "/" + file);
         console.log("executing file C++ ... read file: " + file);
-        const output2 = execSync("C:/dev/TypeScriptCompiler/__build/tsc/tsc-new-parser/Debug/tsc-new-scanner.exe " + fld + "/" + file);
+        const output2 = execSync("C:/dev/TypeScriptCompiler/__build/tsc/tsc-new-parser/Debug/tsc-new-parser.exe " + fld + "/" + file);
         console.log("testing file ... file: " + file);
 
         const output1_str = output1.toString().split("\n");

@@ -17,7 +17,7 @@ namespace ts
     {
         if (!child)
             return TransformFlags::None;
-        auto childFlags = child->transformFlags & ~getTransformFlagsSubtreeExclusions(child->kind);
+        auto childFlags = child->transformFlags & ~getTransformFlagsSubtreeExclusions(child);
         return isNamedDeclaration(child) && isPropertyName(child.as<NamedDeclaration>()->name) ? propagatePropertyNameFlagsOfChild(child.as<NamedDeclaration>()->name, childFlags) : childFlags;
     }
 
@@ -1284,7 +1284,7 @@ namespace ts
     auto NodeFactory::createBinaryExpression(Expression left, Node _operator, Expression right) -> BinaryExpression {
         auto node = createBaseExpression<BinaryExpression>(SyntaxKind::BinaryExpression);
         auto operatorToken = asToken(_operator);
-        auto operatorKind = operatorToken->kind;
+        auto operatorKind = (SyntaxKind)operatorToken;
         node->left = parenthesizerRules.parenthesizeLeftSideOfBinary(operatorKind, left);
         node->operatorToken = operatorToken;
         node->right = parenthesizerRules.parenthesizeRightSideOfBinary(operatorKind, node->left, right);
@@ -2504,7 +2504,7 @@ namespace ts
     }
 
     auto NodeFactory::getDefaultTagName(JSDocTag node) -> Identifier {
-        auto defaultTagName = getDefaultTagNameForKind(node->kind);
+        auto defaultTagName = getDefaultTagNameForKind(node);
         return node->tagName->escapedText == escapeLeadingUnderscores(defaultTagName)
             ? node->tagName
             : createIdentifier(defaultTagName);

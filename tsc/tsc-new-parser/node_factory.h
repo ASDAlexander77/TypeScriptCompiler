@@ -122,7 +122,7 @@ namespace ts
         auto createBaseNode(SyntaxKind kind)
         {
             auto newNode = T(T::data());
-            newNode->kind = kind;
+            newNode->_kind = kind;
             createNodeCallback(newNode);
             return newNode;
         }
@@ -280,7 +280,7 @@ namespace ts
             // don't propagate child flags.
             if (name)
             {
-                switch (node->kind)
+                switch ((SyntaxKind)node)
                 {
                 case SyntaxKind::MethodDeclaration:
                 case SyntaxKind::GetAccessor:

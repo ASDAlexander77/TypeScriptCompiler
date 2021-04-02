@@ -89,12 +89,12 @@ struct ptr
 
     inline operator bool()
     {
-        return instance ? instance->kind != SyntaxKind::Unknown : false;
+        return instance ? instance->_kind != SyntaxKind::Unknown : false;
     }
 
     inline operator SyntaxKind()
     {
-        return instance ? instance->kind : SyntaxKind::Unknown;
+        return instance ? instance->_kind : SyntaxKind::Unknown;
     }    
 
     inline operator const T &() const
@@ -148,12 +148,12 @@ struct ptr
 
     inline auto operator==(SyntaxKind kind) -> boolean
     {
-        return instance->kind == kind;
+        return this->operator SyntaxKind() == kind;
     }
 
     inline auto operator!=(SyntaxKind kind) -> boolean
     {
-        return instance->kind != kind;
+        return this->operator SyntaxKind() != kind;
     }    
 
     inline auto operator==(undefined_t) -> boolean

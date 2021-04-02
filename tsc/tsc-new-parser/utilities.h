@@ -263,7 +263,7 @@ namespace ts
     /* @internal */
     inline static auto isJSDocNode(Node node) -> boolean
     {
-        return node->kind >= SyntaxKind::FirstJSDocNode && node->kind <= SyntaxKind::LastJSDocNode;
+        return node >= SyntaxKind::FirstJSDocNode && node <= SyntaxKind::LastJSDocNode;
     }
 
     template <typename R = Node, typename T = Node>
@@ -332,14 +332,14 @@ namespace ts
     template <typename R = Node, typename T = Node>
     static auto forEachChild(T node, FuncT<R, T> cbNode, ArrayFuncT<R, T> cbNodes = nullptr) -> R
     {
-        if (!node || node->kind <= SyntaxKind::LastToken)
+        if (!node || node <= SyntaxKind::LastToken)
         {
             return R{};
         }
 
         // fake positive result to allow to run first command
         R result;
-        switch (node->kind)
+        switch ((SyntaxKind)node)
         {
         case SyntaxKind::QualifiedName:
             if (!result) result = visitNode<R, T>(cbNode, node.as<QualifiedName>()->left);
@@ -795,7 +795,7 @@ namespace ts
         case SyntaxKind::JSDocTypedefTag:
             if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocTag>()->tagName);
                    if (node.as<JSDocTypedefTag>()->typeExpression &&
-                            node.as<JSDocTypedefTag>()->typeExpression->kind == SyntaxKind::JSDocTypeExpression)
+                            node.as<JSDocTypedefTag>()->typeExpression == SyntaxKind::JSDocTypeExpression)
                             {
                                 if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocTypedefTag>()->typeExpression);
                                 if (!result) result = visitNode<R, T>(cbNode, node.as<JSDocTypedefTag>()->fullName);
@@ -908,7 +908,7 @@ namespace ts
                 //if (res == "skip") continue;
                 return res;
             }
-            if (current->kind >= SyntaxKind::FirstNode)
+            if (current >= SyntaxKind::FirstNode)
             {
                 // add children in reverse order to the queue, so popping gives the first child
                 for (auto child : gatherPossibleChildren(current))
@@ -1001,7 +1001,7 @@ namespace ts
             return true;
         }
 
-        return node->pos == node->_end && node->pos >= 0 && node->kind != SyntaxKind::EndOfFileToken;
+        return node->pos == node->_end && node->pos >= 0 && node != SyntaxKind::EndOfFileToken;
     }
 
     inline auto nodeIsPresent(Node node) -> boolean
@@ -1026,7 +1026,7 @@ namespace ts
 
     inline auto isOuterExpression(Node node, OuterExpressionKinds kinds = OuterExpressionKinds::All) -> boolean
     {
-        switch (node->kind)
+        switch ((SyntaxKind)node)
         {
         case SyntaxKind::ParenthesizedExpression:
             return (kinds & OuterExpressionKinds::Parentheses) != OuterExpressionKinds::None;
@@ -1045,7 +1045,7 @@ namespace ts
     {
         while (isOuterExpression(node, kinds))
         {
-            switch (node->kind)
+            switch ((SyntaxKind)node)
             {
             case SyntaxKind::ParenthesizedExpression:
                 node = node.as<ParenthesizedExpression>()->expression;
@@ -1112,7 +1112,7 @@ namespace ts
 
     inline auto isLeftHandSideExpression(Node node) -> boolean
     {
-        return isLeftHandSideExpressionKind(skipPartiallyEmittedExpressions(node)->kind);
+        return isLeftHandSideExpressionKind(skipPartiallyEmittedExpressions(node));
     }
 
     inline auto isAssignmentOperator(SyntaxKind token) -> boolean
@@ -1209,7 +1209,7 @@ namespace ts
 
     static auto isStringLiteralLike(Node node) -> boolean
     {
-        return node->kind == SyntaxKind::StringLiteral || node->kind == SyntaxKind::NoSubstitutionTemplateLiteral;
+        return node == SyntaxKind::StringLiteral || node == SyntaxKind::NoSubstitutionTemplateLiteral;
     }
 
     static auto isStringOrNumericLiteralLike(Node node) -> boolean
@@ -1291,7 +1291,7 @@ namespace ts
         {
             for (auto &modifier : modifiers)
             {
-                flags |= modifierToFlag(modifier->kind);
+                flags |= modifierToFlag(modifier);
             }
         }
         return flags;
@@ -1324,7 +1324,7 @@ namespace ts
 
     inline static auto isPropertyName(Node node) -> boolean
     {
-        auto kind = node->kind;
+        auto kind = (SyntaxKind)node;
         return kind == SyntaxKind::Identifier || kind == SyntaxKind::PrivateIdentifier || kind == SyntaxKind::StringLiteral || kind == SyntaxKind::NumericLiteral || kind == SyntaxKind::ComputedPropertyName;
     }
 
@@ -1335,13 +1335,13 @@ namespace ts
 
     inline static auto isCommaSequence(Expression node) -> boolean
     {
-        return node->kind == SyntaxKind::BinaryExpression && node.as<BinaryExpression>()->operatorToken->kind == SyntaxKind::CommaToken ||
-               node->kind == SyntaxKind::CommaListExpression;
+        return node == SyntaxKind::BinaryExpression && node.as<BinaryExpression>()->operatorToken == SyntaxKind::CommaToken ||
+               node == SyntaxKind::CommaListExpression;
     }
 
     inline static auto isIdentifierTypePredicate(TypePredicateNode predicate) -> boolean
     {
-        return predicate && predicate->kind == SyntaxKind::Identifier;
+        return predicate && predicate == SyntaxKind::Identifier;
     }
 
     inline static auto identifierIsThisKeyword(Identifier id) -> boolean
@@ -1351,7 +1351,7 @@ namespace ts
 
     inline static auto isThisIdentifier(Node node) -> boolean
     {
-        return !!node && node->kind == SyntaxKind::Identifier && identifierIsThisKeyword(node.as<Identifier>());
+        return !!node && node == SyntaxKind::Identifier && identifierIsThisKeyword(node.as<Identifier>());
     }
 
     inline static auto isInJSFile(Node node) -> boolean
@@ -1362,7 +1362,7 @@ namespace ts
     inline static auto getSyntacticModifierFlagsNoCache(Node node) -> ModifierFlags
     {
         auto flags = modifiersToFlags(node->modifiers);
-        if (!!(node->flags & NodeFlags::NestedNamespace) || (node->kind == SyntaxKind::Identifier && node.as<Identifier>()->isInJSDocNamespace))
+        if (!!(node->flags & NodeFlags::NestedNamespace) || (node == SyntaxKind::Identifier && node.as<Identifier>()->isInJSDocNamespace))
         {
             flags |= ModifierFlags::Export;
         }
@@ -1435,7 +1435,7 @@ namespace ts
 
     inline static auto getModifierFlagsWorker(Node node, boolean includeJSDoc, boolean alwaysIncludeJSDoc = false) -> ModifierFlags
     {
-        if (node->kind >= SyntaxKind::FirstToken && node->kind <= SyntaxKind::LastToken)
+        if (node >= SyntaxKind::FirstToken && node <= SyntaxKind::LastToken)
         {
             return ModifierFlags::None;
         }
@@ -1477,9 +1477,9 @@ namespace ts
     }
 
     inline static auto isSuperProperty(Node node) -> boolean {
-        auto kind = node->kind;
-        if (kind == SyntaxKind::PropertyAccessExpression) return node.as<PropertyAccessExpression>()->expression->kind == SyntaxKind::SuperKeyword;        
-        if (kind == SyntaxKind::ElementAccessExpression) return node.as<ElementAccessExpression>()->expression->kind == SyntaxKind::SuperKeyword;        
+        auto kind = (SyntaxKind)node;
+        if (kind == SyntaxKind::PropertyAccessExpression) return node.as<PropertyAccessExpression>()->expression == SyntaxKind::SuperKeyword;        
+        if (kind == SyntaxKind::ElementAccessExpression) return node.as<ElementAccessExpression>()->expression == SyntaxKind::SuperKeyword;        
         return false;
     }
 
@@ -1494,13 +1494,13 @@ namespace ts
     }
 
     inline static auto isAssignmentPattern(Node node) -> boolean {
-        auto kind = node->kind;
+        auto kind = (SyntaxKind)node;
         return kind == SyntaxKind::ArrayLiteralExpression
             || kind == SyntaxKind::ObjectLiteralExpression;
     }
 
     inline static auto isDeclarationBindingElement(Node bindingElement) -> boolean {
-        switch (bindingElement->kind) {
+        switch ((SyntaxKind)bindingElement) {
             case SyntaxKind::VariableDeclaration:
             case SyntaxKind::Parameter:
             case SyntaxKind::BindingElement:
@@ -1511,7 +1511,7 @@ namespace ts
     }
 
     inline static auto isObjectLiteralElementLike(Node node) -> boolean {
-        auto kind = node->kind;
+        auto kind = (SyntaxKind)node;
         return kind == SyntaxKind::PropertyAssignment
             || kind == SyntaxKind::ShorthandPropertyAssignment
             || kind == SyntaxKind::SpreadAssignment
@@ -1521,7 +1521,7 @@ namespace ts
     }
 
     inline static auto getElementsOfBindingOrAssignmentPattern(Node name) -> NodeArray<BindingElement> {
-        switch (name->kind) {
+        switch ((SyntaxKind)name) {
             case SyntaxKind::ObjectBindingPattern:
                 // `a` in `{a}`
                 // `a` in `[a]`
@@ -1546,8 +1546,8 @@ namespace ts
     inline static auto isAssignmentExpression(Node node, boolean excludeCompoundAssignment = false) -> boolean {
         return isBinaryExpression(node)
             && (excludeCompoundAssignment
-                ? node.as<BinaryExpression>()->operatorToken->kind == SyntaxKind::EqualsToken
-                : isAssignmentOperator(node.as<BinaryExpression>()->operatorToken->kind))
+                ? node.as<BinaryExpression>()->operatorToken == SyntaxKind::EqualsToken
+                : isAssignmentOperator(node.as<BinaryExpression>()->operatorToken))
             && isLeftHandSideExpression(node.as<BinaryExpression>()->left);
     }
 
@@ -1579,7 +1579,7 @@ namespace ts
         }
 
         if (isObjectLiteralElementLike(bindingElement)) {
-            switch (bindingElement->kind) {
+            switch ((SyntaxKind)bindingElement) {
                 case SyntaxKind::PropertyAssignment:
                     // `b` in `({ a: b } = ...)`
                     // `b` in `({ a: b = 1 } = ...)`
@@ -1630,17 +1630,17 @@ namespace ts
     }
 
     inline static auto getOperator(Expression expression) -> SyntaxKind {
-        if (expression->kind == SyntaxKind::BinaryExpression) {
-            return expression.as<BinaryExpression>()->operatorToken->kind;
+        if (expression == SyntaxKind::BinaryExpression) {
+            return expression.as<BinaryExpression>()->operatorToken;
         }
-        else if (expression->kind == SyntaxKind::PrefixUnaryExpression) {
+        else if (expression == SyntaxKind::PrefixUnaryExpression) {
             return expression.as<PrefixUnaryExpression>()->_operator;
         }
-        else if (expression->kind == SyntaxKind::PostfixUnaryExpression) {
+        else if (expression == SyntaxKind::PostfixUnaryExpression) {
             return expression.as<PostfixUnaryExpression>()->_operator;
         }
         else {
-            return expression->kind;
+            return expression;
         }
 
         return SyntaxKind::Unknown;
@@ -1748,13 +1748,13 @@ namespace ts
 
     inline static auto getExpressionPrecedence(Expression expression) {
         auto _operator = getOperator(expression);
-        auto hasArguments = expression->kind == SyntaxKind::NewExpression && !!expression.as<NewExpression>()->arguments;
-        return getOperatorPrecedence(expression->kind, _operator, hasArguments);
+        auto hasArguments = expression == SyntaxKind::NewExpression && !!expression.as<NewExpression>()->arguments;
+        return getOperatorPrecedence(expression, _operator, hasArguments);
     }
 
     inline static auto getLeftmostExpression(Expression node, boolean stopAtCallExpressions) -> Node {
         while (true) {
-            switch (node->kind) {
+            switch ((SyntaxKind)node) {
                 case SyntaxKind::PostfixUnaryExpression:
                     node = node.as<PostfixUnaryExpression>()->operand;
                     continue;
@@ -1815,7 +1815,7 @@ namespace ts
     }
 
     inline static auto isUnaryExpression(Node node) -> boolean {
-        return isUnaryExpressionKind(skipPartiallyEmittedExpressions(node)->kind);
+        return isUnaryExpressionKind(skipPartiallyEmittedExpressions(node));
     }
 
     inline static auto getOperatorAssociativity(SyntaxKind kind, SyntaxKind _operator, boolean hasArguments = false) -> Associativity {
@@ -1859,12 +1859,12 @@ namespace ts
 
     inline static auto getExpressionAssociativity(Expression expression) {
         auto _operator = getOperator(expression);
-        auto hasArguments = expression->kind == SyntaxKind::NewExpression && !!expression.as<NewExpression>()->arguments;
-        return getOperatorAssociativity(expression->kind, _operator, hasArguments);
+        auto hasArguments = expression == SyntaxKind::NewExpression && !!expression.as<NewExpression>()->arguments;
+        return getOperatorAssociativity(expression, _operator, hasArguments);
     }
 
     inline static auto isFunctionOrConstructorTypeNode(Node node) -> boolean {
-        switch (node->kind) {
+        switch ((SyntaxKind)node) {
             case SyntaxKind::FunctionType:
             case SyntaxKind::ConstructorType:
                 return true;

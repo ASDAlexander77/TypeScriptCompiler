@@ -37,20 +37,11 @@
             "protocol": "inspector"
         },        
         {
-            "name": "Launch Program - match",
-            "program": "${workspaceFolder}/match.mjs",
-            "request": "launch",
-            "skipFiles": [
-                "<node_internals>/**"
-            ],
-            "type": "pwa-node"
-        },
-        {
             "type": "node",
             "request": "launch",
-            "name": "Launch TS-Node - match",
+            "name": "Launch TS-Node - test scanner",
             "runtimeExecutable": "ts-node",
-            "program": "${workspaceFolder}/match.ts",
+            "program": "${workspaceFolder}/test-scanner.ts",
             "cwd": "${workspaceFolder}",
             "args": [
             ],
@@ -59,5 +50,19 @@
             ],
             "protocol": "inspector"
         },        
+        {
+            "type": "node",
+            "request": "launch",
+            "name": "Launch TS-Node - test parser",
+            "runtimeExecutable": "ts-node",
+            "program": "${workspaceFolder}/test-parser.ts",
+            "cwd": "${workspaceFolder}",
+            "args": [
+            ],
+            "sourceMaps": true,
+            "outFiles": [
+            ],
+            "protocol": "inspector"
+        }
     ]
 }

@@ -29,7 +29,7 @@ namespace ts
         //
         auto emittedExpression = skipPartiallyEmittedExpressions(expression);
         if (isLeftHandSideExpression(emittedExpression)
-            && (emittedExpression->kind != SyntaxKind::NewExpression || emittedExpression.as<NewExpression>()->arguments)) {
+            && (emittedExpression != SyntaxKind::NewExpression || emittedExpression.as<NewExpression>()->arguments)) {
             // TODO(rbuckton) -> Verify whether this assertion holds.
             return expression.as<LeftHandSideExpression>();
         }
@@ -47,7 +47,7 @@ namespace ts
     }
 
     auto ParenthesizerRules::parenthesizeElementTypeOfArrayType(TypeNode member) -> TypeNode {
-        switch (member->kind) {
+        switch ((SyntaxKind)member) {
             case SyntaxKind::TypeQuery:
             case SyntaxKind::TypeOperator:
             case SyntaxKind::InferType:
@@ -61,11 +61,11 @@ namespace ts
     }
 
     auto ParenthesizerRules::parenthesizeMemberOfConditionalType(TypeNode member) -> TypeNode {
-        return member->kind == SyntaxKind::ConditionalType ? factory->createParenthesizedType(member) : member;
+        return member == SyntaxKind::ConditionalType ? factory->createParenthesizedType(member) : member;
     }
 
     auto ParenthesizerRules::parenthesizeMemberOfElementType(TypeNode member) -> TypeNode {
-        switch (member->kind) {
+        switch ((SyntaxKind)member) {
             case SyntaxKind::UnionType:
             case SyntaxKind::IntersectionType:
             case SyntaxKind::FunctionType:
@@ -77,7 +77,7 @@ namespace ts
 
     auto ParenthesizerRules::parenthesizeExpressionOfNew(Expression expression) -> LeftHandSideExpression {
         auto leftmostExpr = getLeftmostExpression(expression, /*stopAtCallExpressions*/ true);
-        switch (leftmostExpr->kind) {
+        switch ((SyntaxKind)leftmostExpr) {
             case SyntaxKind::CallExpression:
                 return factory->createParenthesizedExpression(expression);
 
@@ -96,7 +96,7 @@ namespace ts
     }
 
     auto ParenthesizerRules::parenthesizeConciseBodyOfArrowFunction(ConciseBody body) -> ConciseBody {
-        if (!isBlock(body) && (isCommaSequence(body) || getLeftmostExpression(body, /*stopAtCallExpressions*/ false)->kind == SyntaxKind::ObjectLiteralExpression)) {
+        if (!isBlock(body) && (isCommaSequence(body) || getLeftmostExpression(body, /*stopAtCallExpressions*/ false) == SyntaxKind::ObjectLiteralExpression)) {
             // TODO(rbuckton) -> Verifiy whether `setTextRange` is needed.
             return setTextRange(factory->createParenthesizedExpression(body), body);
         }
@@ -127,11 +127,11 @@ namespace ts
     auto getLiteralKindOfBinaryPlusOperand(Expression node1) -> SyntaxKind {
         auto node = skipPartiallyEmittedExpressions(node1);
 
-        if (isLiteralKind(node->kind)) {
-            return node->kind;
+        if (isLiteralKind(node)) {
+            return node;
         }
 
-        if (node->kind == SyntaxKind::BinaryExpression && (node.as<BinaryExpression>())->operatorToken->kind == SyntaxKind::PlusToken) {
+        if (node == SyntaxKind::BinaryExpression && (node.as<BinaryExpression>())->operatorToken == SyntaxKind::PlusToken) {
             if (node.as<BinaryExpression>()->cachedLiteralKind != SyntaxKind::Unknown) {
                 return node.as<BinaryExpression>()->cachedLiteralKind;
             }
@@ -170,7 +170,7 @@ namespace ts
         auto binaryOperatorPrecedence = getOperatorPrecedence(SyntaxKind::BinaryExpression, binaryOperator);
         auto binaryOperatorAssociativity = getOperatorAssociativity(SyntaxKind::BinaryExpression, binaryOperator);
         auto emittedOperand = skipPartiallyEmittedExpressions(operand);
-        if (!isLeftSideOfBinary && operand->kind == SyntaxKind::ArrowFunction && binaryOperatorPrecedence > OperatorPrecedence::Assignment) {
+        if (!isLeftSideOfBinary && operand == SyntaxKind::ArrowFunction && binaryOperatorPrecedence > OperatorPrecedence::Assignment) {
             // We need to parenthesize arrow functions on the right side to avoid it being
             // parsed as parenthesized expression: `a && (() => {})`
             return true;
@@ -182,7 +182,7 @@ namespace ts
                 // and is a yield expression, then we do not need parentheses.
                 if (!isLeftSideOfBinary
                     && binaryOperatorAssociativity == Associativity::Right
-                    && operand->kind == SyntaxKind::YieldExpression) {
+                    && operand == SyntaxKind::YieldExpression) {
                     return false;
                 }
 
@@ -206,7 +206,7 @@ namespace ts
                 }
                 else {
                     if (isBinaryExpression(emittedOperand)
-                        && emittedOperand.as<BinaryExpression>()->operatorToken->kind == binaryOperator) {
+                        && emittedOperand.as<BinaryExpression>()->operatorToken == binaryOperator) {
                         // No need to parenthesize the right operand when the binary operator and
                         // operand are the same and one of the following:
                         //  x*(a*b)     => x*a*b
@@ -252,7 +252,7 @@ namespace ts
         auto skipped = skipPartiallyEmittedExpressions(operand);
 
         // If the resulting expression is already parenthesized, we do not need to do any further processing.
-        if (skipped->kind == SyntaxKind::ParenthesizedExpression) {
+        if (skipped == SyntaxKind::ParenthesizedExpression) {
             return operand;
         }
 
@@ -304,7 +304,7 @@ namespace ts
         auto check = skipPartiallyEmittedExpressions(expression);
         auto needsParens = isCommaSequence(check);
         if (!needsParens) {
-            switch (getLeftmostExpression(check, /*stopAtCallExpression*/ false)->kind) {
+            switch ((SyntaxKind)getLeftmostExpression(check, /*stopAtCallExpression*/ false)) {
                 case SyntaxKind::ClassExpression:
                 case SyntaxKind::FunctionExpression:
                     needsParens = true;
@@ -317,7 +317,7 @@ namespace ts
         auto emittedExpression = skipPartiallyEmittedExpressions(expression);
         if (isCallExpression(emittedExpression)) {
             auto callee = emittedExpression.as<CallExpression>()->expression;
-            auto kind = skipPartiallyEmittedExpressions(callee)->kind;
+            auto kind = skipPartiallyEmittedExpressions(callee);
             if (kind == SyntaxKind::FunctionExpression || kind == SyntaxKind::ArrowFunction) {
                 // TODO(rbuckton) -> Verifiy whether `setTextRange` is needed.
                 auto updated = factory->updateCallExpression(
@@ -332,7 +332,7 @@ namespace ts
             }
         }
 
-        auto leftmostExpressionKind = getLeftmostExpression(emittedExpression, /*stopAtCallExpressions*/ false)->kind;
+        auto leftmostExpressionKind = getLeftmostExpression(emittedExpression, /*stopAtCallExpressions*/ false);
         if (leftmostExpressionKind == SyntaxKind::ObjectLiteralExpression || leftmostExpressionKind == SyntaxKind::FunctionExpression) {
             // TODO(rbuckton) -> Verifiy whether `setTextRange` is needed.
             return setTextRange(factory->createParenthesizedExpression(expression), expression);
