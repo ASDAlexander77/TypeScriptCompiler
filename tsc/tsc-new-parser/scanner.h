@@ -174,81 +174,563 @@ static auto parsePseudoBigInt(string stringValue) -> string {
 
 namespace ts
 {
-    namespace Impl
-    {
-        class Scanner;
-    }
-
     class Scanner
     {
-        Impl::Scanner* impl;
-    public:
-        Scanner(ScriptTarget, boolean, LanguageVariant = LanguageVariant::Standard, string = string(), ErrorCallback = nullptr, number = 0, number = -1);
+    private:
+        static std::map<string, SyntaxKind> textToKeyword;
 
-        auto setText(string, number = 0, number = -1) -> void;
-        auto setOnError(ErrorCallback) -> void;
-        auto setScriptTarget(ScriptTarget) -> void;
-        auto setLanguageVariant(LanguageVariant) -> void;
-        auto scan() -> SyntaxKind;
+        static std::map<string, SyntaxKind> textToToken;
+
+        static std::map<SyntaxKind, string> tokenToText;
+
+        static std::vector<number> unicodeES3IdentifierStart;
+
+        static std::vector<number> unicodeES3IdentifierPart;
+
+        static std::vector<number> unicodeES5IdentifierStart;
+
+        static std::vector<number> unicodeES5IdentifierPart;
+
+        static std::vector<number> unicodeESNextIdentifierStart;
+
+        static std::vector<number> unicodeESNextIdentifierPart;
+
+        static std::map<SyntaxKind, string> tokenStrings;
+
+        static regex commentDirectiveRegExSingleLine;
+
+        static regex commentDirectiveRegExMultiLine;
+
+        static number mergeConflictMarkerLength;
+
+        static regex shebangTriviaRegex;
+
+    protected:
+        ScriptTarget languageVersion;
+
+        boolean _skipTrivia;
+
+        LanguageVariant languageVariant;
+
+        // scanner text
+        safe_string text;
+
+        // Current position (end position of text of current token)
+        number pos;
+
+        // end of text
+        number end;
+
+        // Start position of whitespace before current token
+        number startPos;
+
+        // Start position of text of current token
+        number tokenPos;
+
+        SyntaxKind token;
+        string tokenValue;
+        TokenFlags tokenFlags;
+
+        std::vector<CommentDirective> commentDirectives;
+        number inJSDocType = 0;
+
+        ErrorCallback onError = nullptr;
+
+    public:
+        // Creates a scanner over a (possibly unspecified) range of a piece of text.
+        Scanner(ScriptTarget languageVersion,
+                boolean skipTrivia,
+                LanguageVariant languageVariant = LanguageVariant::Standard,
+                string textInitial = string(),
+                ErrorCallback onError = nullptr,
+                number start = 0,
+                number length = -1);
+
         auto getToken() -> SyntaxKind;
+
         auto getTextPos() -> number;
+
         auto getStartPos() -> number;
+
         auto getTokenPos() -> number;
+
         auto getTokenText() -> string;
+
         auto getTokenValue() -> string;
-        auto tokenToString(SyntaxKind) -> string;
-        auto syntaxKindString(SyntaxKind) -> string;
-        auto setTextPos(number textPos) -> void;
-        auto getCommentDirectives() -> std::vector<CommentDirective>;
-        auto clearCommentDirectives() -> void;
+
         auto hasUnicodeEscape() -> boolean;
+
         auto hasExtendedUnicodeEscape() -> boolean;
+
         auto hasPrecedingLineBreak() -> boolean;
+
         auto hasPrecedingJSDocComment() -> boolean;
+
         auto isIdentifier() -> boolean;
+
         auto isReservedWord() -> boolean;
+
         auto isUnterminated() -> boolean;
-        auto scanJsDocToken() -> SyntaxKind;
-        auto reScanGreaterToken() -> SyntaxKind;
-        auto reScanSlashToken() -> SyntaxKind;
-        auto reScanTemplateToken(boolean isTaggedTemplate) -> SyntaxKind;
-        auto reScanTemplateHeadOrNoSubstitutionTemplate() -> SyntaxKind;
-        auto reScanLessThanToken() -> SyntaxKind;
-        auto scanJsxIdentifier() -> SyntaxKind;
-        auto scanJsxToken() -> SyntaxKind;
-        auto scanJsxAttributeValue() -> SyntaxKind;
-        auto reScanInvalidIdentifier() -> SyntaxKind;
-        auto reScanJsxToken() -> SyntaxKind;
-        auto tokenIsIdentifierOrKeyword(SyntaxKind token) -> boolean;
-        auto tokenIsIdentifierOrKeywordOrGreaterThan(SyntaxKind token) -> boolean;
+
         auto getTokenFlags() -> TokenFlags;
+
         auto getNumericLiteralFlags() -> TokenFlags;
-        auto setInJSDocType(boolean inType) -> void;
-        auto reScanAsteriskEqualsToken() -> void;
-        auto reScanQuestionToken() -> void;
-        auto skipTrivia(safe_string &text, number pos, bool stopAfterLineBreak = false, bool stopAtComments = false) -> number;
-        auto getLeadingCommentRanges(string &text, number pos) -> std::vector<CommentRange>;
+
+        /* @internal */
+        auto tokenIsIdentifierOrKeyword(SyntaxKind token) -> boolean;
+
+        /* @internal */
+        auto tokenIsIdentifierOrKeywordOrGreaterThan(SyntaxKind token) -> boolean;
+
+        auto lookupInUnicodeMap(number code, std::vector<number> map) -> boolean;
+
+        /* @internal */ auto isUnicodeIdentifierStart(CharacterCodes code, ScriptTarget languageVersion);
+
+        auto isUnicodeIdentifierPart(CharacterCodes code, ScriptTarget languageVersion);
+
+        static auto makeReverseMap(std::map<string, SyntaxKind> source) -> std::map<SyntaxKind, string>;
+
+        auto tokenToString(SyntaxKind t) -> string;
+
+        auto syntaxKindString(SyntaxKind t) -> string;
+
+        /* @internal */
         auto stringToToken(string s) -> SyntaxKind;
+
+        /* @internal */
+        auto computeLineStarts(safe_string text) -> std::vector<number>;
+
+        auto getPositionOfLineAndCharacter(SourceFileLike sourceFile, number line, number character, bool allowEdits = true) -> number;
+
+        /* @internal */
+        auto computePositionOfLineAndCharacter(std::vector<number> lineStarts, number line, number character, string debugText, bool allowEdits = true) -> number;
+
+        /* @internal */
+        auto getLineStarts(SourceFileLike sourceFile) -> std::vector<number>;
+
+        /* @internal */
+        auto computeLineAndCharacterOfPosition(std::vector<number> lineStarts, number position) -> LineAndCharacter;
+
+        /**
+     * @internal
+     * We assume the first line starts at position 0 and 'position' is non-negative.
+     */
+        auto computeLineOfPosition(std::vector<number> lineStarts, number position, number lowerBound = 0) -> number;
+
+        /** @internal */
+        auto getLinesBetweenPositions(SourceFileLike sourceFile, number pos1, number pos2);
+
+        auto getLineAndCharacterOfPosition(SourceFileLike sourceFile, number position) -> LineAndCharacter;
+
+        auto isWhiteSpaceLike(CharacterCodes ch) -> boolean;
+
+        /** Does not include line breaks. For that, see isWhiteSpaceLike. */
+        auto isWhiteSpaceSingleLine(CharacterCodes ch) -> boolean;
+
+        auto isLineBreak(CharacterCodes ch) -> boolean;
+
+        auto isDigit(CharacterCodes ch) -> boolean;
+
+        auto isHexDigit(CharacterCodes ch) -> boolean;
+
+        auto isCodePoint(number code) -> boolean;
+
+        /* @internal */
+        auto isOctalDigit(CharacterCodes ch) -> boolean;
+
+        auto couldStartTrivia(safe_string &text, number pos) -> boolean;
+
+        /* @internal */
+        auto skipTrivia(safe_string &text, number pos, bool stopAfterLineBreak = false, bool stopAtComments = false) -> number;
+
+        auto isConflictMarkerTrivia(safe_string &text, number pos) -> boolean;
+
+        auto scanConflictMarkerTrivia(safe_string &text, number pos, std::function<void(DiagnosticMessage, number, number)> error = nullptr) -> number;
+
+        /*@internal*/
+        auto isShebangTrivia(string &text, number pos) -> boolean;
+
+        /*@internal*/
+        auto scanShebangTrivia(string &text, number pos) -> number;
+
+        /**
+     * Invokes a callback for each comment range following the provided position.
+     *
+     * Single-line comment ranges include the leading double-slash characters but not the ending
+     * line break. Multi-line comment ranges include the leading slash-asterisk and trailing
+     * asterisk-slash characters.
+     *
+     * @param reduce If true, accumulates the result of calling the callback in a fashion similar
+     *      to reduceLeft. If false, iteration stops when the callback returns a truthy value.
+     * @param text The source text to scan.
+     * @param pos The position at which to start scanning.
+     * @param trailing If false, whitespace is skipped until the first line break and comments
+     *      between that location and the next token are returned. If true, comments occurring
+     *      between the given position and the next line break are returned.
+     * @param cb The callback to execute as each comment range is encountered.
+     * @param state A state value to pass to each iteration of the callback.
+     * @param initial An initial value to pass when accumulating results (when "reduce" is true).
+     * @returns If "reduce" is true, the accumulated value. If "reduce" is false, the first truthy
+     *      return value of the callback.
+     */
+        template <typename T, typename U>
+        auto iterateCommentRanges(boolean reduce, safe_string text, number pos, boolean trailing, cb_type<T, U> cb, T state, U initial = U()) -> U
+        {
+            number pendingPos;
+            number pendingEnd;
+            SyntaxKind pendingKind;
+            boolean pendingHasTrailingNewLine;
+            auto hasPendingCommentRange = false;
+            auto collecting = trailing;
+            auto accumulator = initial;
+            if (pos == 0)
+            {
+                collecting = true;
+                auto shebang = getShebang(text);
+                if (!shebang.empty())
+                {
+                    pos = shebang.length();
+                }
+            }
+
+            while (pos >= 0 && pos < text.length())
+            {
+                auto ch = text[pos];
+                switch (ch)
+                {
+                case CharacterCodes::carriageReturn:
+                    if (text[pos + 1] == CharacterCodes::lineFeed)
+                    {
+                        pos++;
+                    }
+                // falls through
+                case CharacterCodes::lineFeed:
+                    pos++;
+                    if (trailing)
+                    {
+                        goto scan;
+                    }
+
+                    collecting = true;
+                    if (hasPendingCommentRange)
+                    {
+                        pendingHasTrailingNewLine = true;
+                    }
+
+                    continue;
+                case CharacterCodes::tab:
+                case CharacterCodes::verticalTab:
+                case CharacterCodes::formFeed:
+                case CharacterCodes::space:
+                    pos++;
+                    continue;
+                case CharacterCodes::slash:
+                {
+                    auto nextChar = text[pos + 1];
+                    auto hasTrailingNewLine = false;
+                    if (nextChar == CharacterCodes::slash || nextChar == CharacterCodes::asterisk)
+                    {
+                        auto kind = nextChar == CharacterCodes::slash ? SyntaxKind::SingleLineCommentTrivia : SyntaxKind::MultiLineCommentTrivia;
+                        auto startPos = pos;
+                        pos += 2;
+                        if (nextChar == CharacterCodes::slash)
+                        {
+                            while (pos < text.length())
+                            {
+                                if (isLineBreak(text[pos]))
+                                {
+                                    hasTrailingNewLine = true;
+                                    break;
+                                }
+                                pos++;
+                            }
+                        }
+                        else
+                        {
+                            while (pos < text.length())
+                            {
+                                if (text[pos] == CharacterCodes::asterisk && text[pos + 1] == CharacterCodes::slash)
+                                {
+                                    pos += 2;
+                                    break;
+                                }
+                                pos++;
+                            }
+                        }
+
+                        if (collecting)
+                        {
+                            if (hasPendingCommentRange)
+                            {
+                                accumulator = cb(pendingPos, pendingEnd, pendingKind, pendingHasTrailingNewLine, state, accumulator);
+                                if (!reduce && !!accumulator)
+                                {
+                                    // If we are not reducing and we have a truthy result, return it.
+                                    return accumulator;
+                                }
+                            }
+
+                            pendingPos = startPos;
+                            pendingEnd = pos;
+                            pendingKind = kind;
+                            pendingHasTrailingNewLine = hasTrailingNewLine;
+                            hasPendingCommentRange = true;
+                        }
+
+                        continue;
+                    }
+                    goto scan;
+                }
+                default:
+                    if (ch > CharacterCodes::maxAsciiCharacter && (isWhiteSpaceLike(ch)))
+                    {
+                        if (hasPendingCommentRange && isLineBreak(ch))
+                        {
+                            pendingHasTrailingNewLine = true;
+                        }
+                        pos++;
+                        continue;
+                    }
+                    goto scan;
+                }
+            }
+        scan:
+
+            if (hasPendingCommentRange)
+            {
+                accumulator = cb(pendingPos, pendingEnd, pendingKind, pendingHasTrailingNewLine, state, accumulator);
+            }
+
+            return accumulator;
+        }
+
+        template <typename T, typename U>
+        auto forEachLeadingCommentRange(string &text, number pos, cb_type<T, U> cb, T state = T()) -> U
+        {
+            return iterateCommentRanges(/*reduce*/ false, text, pos, /*trailing*/ false, cb, state);
+        }
+
+        template <typename T, typename U>
+        auto forEachTrailingCommentRange(string &text, number pos, cb_type<T, U> cb, T state = T()) -> U
+        {
+            return iterateCommentRanges(/*reduce*/ false, text, pos, /*trailing*/ true, cb, state);
+        }
+
+        template <typename T, typename U>
+        auto reduceEachLeadingCommentRange(string &text, number pos, cb_type<T, U> cb, T state, U initial)
+        {
+            return iterateCommentRanges(/*reduce*/ true, text, pos, /*trailing*/ false, cb, state, initial);
+        }
+
+        template <typename T, typename U>
+        auto reduceEachTrailingCommentRange(string &text, number pos, cb_type<T, U> cb, T state, U initial)
+        {
+            return iterateCommentRanges(/*reduce*/ true, text, pos, /*trailing*/ true, cb, state, initial);
+        }
+
+        auto appendCommentRange(number pos, number end, SyntaxKind kind, boolean hasTrailingNewLine, number state, std::vector<CommentRange> comments) -> std::vector<CommentRange>;
+
+        auto getLeadingCommentRanges(string &text, number pos) -> std::vector<CommentRange>;
+
+        auto getTrailingCommentRanges(string &text, number pos) -> std::vector<CommentRange>;
+
+        /** Optionally, get the shebang */
+        auto getShebang(string &text) -> string;
+
+        auto isIdentifierStart(CharacterCodes ch, ScriptTarget languageVersion) -> boolean;
+
+        auto isIdentifierPart(CharacterCodes ch, ScriptTarget languageVersion, LanguageVariant identifierVariant = LanguageVariant::Standard) -> boolean;
+
+        /* @internal */
+        auto isIdentifierText(safe_string &name, ScriptTarget languageVersion, LanguageVariant identifierVariant = LanguageVariant::Standard) -> boolean;
+
+        auto error(DiagnosticMessage message, number errPos = -1, number length = 0) -> void;
+
+        auto scanNumberFragment() -> string;
+
+        auto scanNumber() -> ScanResult;
+
+        auto checkForIdentifierStartAfterNumericLiteral(number numericStart, bool isScientific = false) -> void;
+
+        auto scanOctalDigits() -> number;
+
+        /**
+     * Scans the given number of hexadecimal digits in the text,
+     * returning -1 if the given number is unavailable.
+     */
+        auto scanExactNumberOfHexDigits(number count, boolean canHaveSeparators) -> number;
+
+        /**
+     * Scans as many hexadecimal digits as are available in the text,
+     * returning string() if the given number of digits was unavailable.
+     */
+        auto scanMinimumNumberOfHexDigits(number count, boolean canHaveSeparators) -> string;
+
+        auto scanHexDigits(number minCount, boolean scanAsManyAsPossible, boolean canHaveSeparators) -> string;
+
+        auto scanString(boolean jsxAttributeString = false) -> string;
+
+        /**
+     * Sets the current 'tokenValue' and returns a NoSubstitutionTemplateLiteral or
+     * a literal component of a TemplateExpression.
+     */
+        auto scanTemplateAndSetTokenValue(boolean isTaggedTemplate) -> SyntaxKind;
+
+        auto scanEscapeSequence(boolean isTaggedTemplate = false) -> string;
+
+        auto scanHexadecimalEscape(number numDigits) -> string;
+
+        auto scanExtendedUnicodeEscape() -> string;
+
+        // Current character is known to be a backslash. Check for Unicode escape of the form '\uXXXX'
+        // and return code point value if valid Unicode escape is found. Otherwise return -1.
+        auto peekUnicodeEscape() -> CharacterCodes;
+
+        auto peekExtendedUnicodeEscape() -> CharacterCodes;
+
+        auto scanIdentifierParts() -> string;
+
+        auto getIdentifierToken() -> SyntaxKind;
+
+        auto scanBinaryOrOctalDigits(number base) -> string;
+
+        auto checkBigIntSuffix() -> SyntaxKind;
+
+        auto scan() -> SyntaxKind;
+
+        auto reScanInvalidIdentifier() -> SyntaxKind;
+
+        auto scanIdentifier(CharacterCodes startCharacter, ScriptTarget languageVersion) -> SyntaxKind;
+
+        auto reScanGreaterToken() -> SyntaxKind;
+
+        auto reScanAsteriskEqualsToken() -> SyntaxKind;
+
+        auto reScanSlashToken() -> SyntaxKind;
+
+        auto appendIfCommentDirective(
+            std::vector<CommentDirective> commentDirectives,
+            string text,
+            regex commentDirectiveRegEx,
+            number lineStart) -> std::vector<CommentDirective>;
+
+        auto getDirectiveFromComment(string &text, regex commentDirectiveRegEx) -> CommentDirectiveType;
+
+        auto reScanTemplateToken(boolean isTaggedTemplate) -> SyntaxKind;
+
+        auto reScanTemplateHeadOrNoSubstitutionTemplate() -> SyntaxKind;
+
+        auto reScanJsxToken(boolean allowMultilineJsxText = true) -> SyntaxKind;
+
+        auto reScanLessThanToken() -> SyntaxKind;
+
+        auto reScanQuestionToken() -> SyntaxKind;
+
+        auto scanJsxToken(boolean allowMultilineJsxText = true) -> SyntaxKind;
+
+        // Scans a JSX identifier; these differ from normal identifiers in that
+        // they allow dashes
+        auto scanJsxIdentifier() -> SyntaxKind;
+
+        auto scanJsxAttributeValue() -> SyntaxKind;
+
+        auto reScanJsxAttributeValue() -> SyntaxKind;
+
+        auto scanJsDocToken() -> SyntaxKind;
+
+        template <typename T>
+        auto speculationHelper(std::function<T()> callback, boolean isLookahead) -> T
+        {
+            auto savePos = pos;
+            auto saveStartPos = startPos;
+            auto saveTokenPos = tokenPos;
+            auto saveToken = token;
+            auto saveTokenValue = tokenValue;
+            auto saveTokenFlags = tokenFlags;
+            auto result = callback();
+
+            // If our callback returned something 'falsy' or we're just looking ahead,
+            // then unconditionally restore us to where we were.
+            if (!result || isLookahead)
+            {
+                pos = savePos;
+                startPos = saveStartPos;
+                tokenPos = saveTokenPos;
+                token = saveToken;
+                tokenValue = saveTokenValue;
+                tokenFlags = saveTokenFlags;
+            }
+            return result;
+        }
 
         template <typename T>
         auto scanRange(number start, number length, std::function<T()> callback) -> T
         {
-            return impl->scanRange<T>(start, length, callback);
-        }
+            auto saveEnd = end;
+            auto savePos = pos;
+            auto saveStartPos = startPos;
+            auto saveTokenPos = tokenPos;
+            auto saveToken = token;
+            auto saveTokenValue = tokenValue;
+            auto saveTokenFlags = tokenFlags;
+            auto saveErrorExpectations = commentDirectives;
 
-        template <typename T>
-        auto tryScan(std::function<T()> callback) -> T
-        {
-            return impl->tryScan<T>(callback);
+            setText(text, start, length);
+            auto result = callback();
+
+            end = saveEnd;
+            pos = savePos;
+            startPos = saveStartPos;
+            tokenPos = saveTokenPos;
+            token = saveToken;
+            tokenValue = saveTokenValue;
+            tokenFlags = saveTokenFlags;
+            commentDirectives = saveErrorExpectations;
+
+            return result;
         }
 
         template <typename T>
         auto lookAhead(std::function<T()> callback) -> T
         {
-            return impl->lookAhead<T>(callback);
+            return speculationHelper<T>(callback, /*isLookahead*/ true);
         }
 
-        ~Scanner();
+        template <typename T>
+        auto tryScan(std::function<T()> callback) -> T
+        {
+            return speculationHelper<T>(callback, /*isLookahead*/ false);
+        }
+
+        auto getText() -> string;
+
+        auto getCommentDirectives() -> std::vector<CommentDirective>;
+
+        auto clearCommentDirectives() -> void;
+
+        auto setText(string newText, number start = 0, number length = -1) -> void;
+
+        auto setOnError(ErrorCallback errorCallback) -> void;
+
+        auto setScriptTarget(ScriptTarget scriptTarget) -> void;
+
+        auto setLanguageVariant(LanguageVariant variant) -> void;
+
+        auto setTextPos(number textPos) -> void;
+
+        auto setInJSDocType(boolean inType) -> void;
+
+        /* @internal */
+        auto codePointAt(safe_string &str, number i) -> CharacterCodes;
+
+        /* @internal */
+        auto charSize(CharacterCodes ch) -> number;
+
+        // Derived from the 10.1.1 UTF16Encoding of the ES6 Spec.
+        auto utf16EncodeAsStringFallback(number codePoint) -> string;
+
+        /* @internal */
+        auto utf16EncodeAsString(CharacterCodes codePoint) -> string;
     };
 }
 
