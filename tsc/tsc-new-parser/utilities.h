@@ -498,11 +498,14 @@ namespace ts
                    if (!result) result = visitNode<R, T>(cbNode, node.as<ElementAccessExpression>()->questionDotToken);
                    if (!result) result = visitNode<R, T>(cbNode, node.as<ElementAccessExpression>()->argumentExpression); return result;
         case SyntaxKind::CallExpression:
-        case SyntaxKind::NewExpression:
             if (!result) result = visitNode<R, T>(cbNode, node.as<CallExpression>()->expression);
                    if (!result) result = visitNode<R, T>(cbNode, node.as<CallExpression>()->questionDotToken);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<CallExpression>()->typeArguments);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<CallExpression>()->arguments); return result;
+        case SyntaxKind::NewExpression:
+            if (!result) result = visitNode<R, T>(cbNode, node.as<NewExpression>()->expression);
+                   if (!result) result = visitNodes(cbNode, cbNodes, node.as<NewExpression>()->typeArguments);
+                   if (!result) result = visitNodes(cbNode, cbNodes, node.as<NewExpression>()->arguments); return result;
         case SyntaxKind::TaggedTemplateExpression:
             if (!result) result = visitNode<R, T>(cbNode, node.as<TaggedTemplateExpression>()->tag);
                    if (!result) result = visitNode<R, T>(cbNode, node.as<TaggedTemplateExpression>()->questionDotToken);
