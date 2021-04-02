@@ -71,6 +71,9 @@ struct ptr
     template <typename U>
 	ptr(ptr<U> otherPtr) : instance(std::static_pointer_cast<T>(otherPtr.instance)) {};
 
+    template <typename U>
+	ptr(REF_TYPE(U) &otherInstance) : instance(std::static_pointer_cast<T>(otherInstance)) {};
+
     inline auto operator->()
     {
         return instance.operator->();
@@ -189,7 +192,7 @@ struct ptr
             return *this;
         }
 
-        return rhs().as<T>();
+        return rhs().as<ptr<T>>();
     }    
 
     template <typename U> 
@@ -200,7 +203,7 @@ struct ptr
             return U();
         }
 
-        return U(*this);
+        return U(instance);
     }
 
     template <typename U> 
