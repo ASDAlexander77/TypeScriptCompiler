@@ -408,13 +408,13 @@ namespace ts
         case SyntaxKind::CallSignature:
         case SyntaxKind::ConstructSignature:
         case SyntaxKind::IndexSignature:
+        case SyntaxKind::MethodSignature:
             if (!result) result = visitNodes(cbNode, cbNodes, node->decorators);
                    if (!result) result = visitNodes(cbNode, cbNodes, node->modifiers);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<SignatureDeclarationBase>()->typeParameters);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<SignatureDeclarationBase>()->parameters);
                    if (!result) result = visitNode<R, T>(cbNode, node.as<SignatureDeclarationBase>()->type); return result;
         case SyntaxKind::MethodDeclaration:
-        case SyntaxKind::MethodSignature:
         case SyntaxKind::Constructor:
         case SyntaxKind::GetAccessor:
         case SyntaxKind::SetAccessor:
