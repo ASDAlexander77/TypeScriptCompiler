@@ -21,6 +21,22 @@
             "protocol": "inspector"
         },
         {
+            "type": "node",
+            "request": "launch",
+            "name": "Launch TS-Node - parsertree",
+            "runtimeExecutable": "ts-node",
+            "program": "${workspaceFolder}/parsertree.ts",
+            "cwd": "${workspaceFolder}",
+            "args": [
+                "G:/Dev/TypeScript/tests/cases/compiler/error___.ts"
+            ],
+            "sourceMaps": true,
+            "outFiles": [
+              "${workspaceRoot}/*.js"
+            ],
+            "protocol": "inspector"
+        },        
+        {
             "name": "Launch Program - match",
             "program": "${workspaceFolder}/match.mjs",
             "request": "launch",
