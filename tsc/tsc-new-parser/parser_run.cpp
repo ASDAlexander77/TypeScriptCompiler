@@ -44,7 +44,7 @@ void printParser(const wchar_t *str)
             std::cout << "\t";
         }
 
-        std::cout << "Node: " << wtoc(parser.syntaxKindString(child->kind).c_str()) << " at [" << child->pos << "-" << child->_end << "]" << std::endl;
+        std::cout << "Node: " << wtoc(parser.syntaxKindString(child->kind).c_str()) << " @ [ " << child->pos << " - " << child->_end << " ]" << std::endl;
 
         intent++;
         ts::forEachChild(child, visitNode, visitArray);    
