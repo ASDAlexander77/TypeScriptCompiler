@@ -62,8 +62,6 @@ void printParser(const wchar_t *str)
     };
 
     auto result = ts::forEachChild(sourceFile.as<Node>(), visitNode, visitArray);
-    
-    std::cout << "Done." << std::endl;
 }
 
 int main(int argc, char **args)

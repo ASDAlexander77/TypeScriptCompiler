@@ -495,7 +495,6 @@ namespace data
     struct FunctionDeclaration : FunctionLikeDeclarationBase
     {
         // kind: SyntaxKind::FunctionDeclaration;
-        PTR(FunctionBody) body;
     };
 
     struct MethodSignature : SignatureDeclarationBase
@@ -515,14 +514,12 @@ namespace data
     struct MethodDeclaration : FunctionLikeDeclarationBase/*, ObjectLiteralElement*/
     {
         // kind: SyntaxKind::MethodDeclaration;
-        PTR(FunctionBody) body;
         /* @internal*/ PTR(ExclamationToken) exclamationToken; // Present for use with reporting a grammar error
     };
 
     struct ConstructorDeclaration : FunctionLikeDeclarationBase
     {
         // kind: SyntaxKind::Constructor;
-        PTR(FunctionBody) body;
         /* @internal */ NodeArray<PTR(TypeParameterDeclaration)> typeParameters; // Present for use with reporting a grammar error
         /* @internal */ PTR(TypeNode) type;                                      // Present for use with reporting a grammar error
     };
@@ -535,7 +532,6 @@ namespace data
 
     struct AccessorDeclaration : FunctionLikeDeclarationBase/*, ObjectLiteralElement*/ // ClassElement and ObjectLiteralElement contains all fields in FunctionLikeDeclarationBase
     {
-        PTR(FunctionBody) body;
         /* @internal */ NodeArray<PTR(TypeParameterDeclaration)> typeParameters; // Present for use with reporting a grammar error
     };
 
@@ -1042,14 +1038,12 @@ namespace data
     struct FunctionExpression : /*PrimaryExpression, */ FunctionLikeDeclarationBase
     {
         // kind: SyntaxKind::FunctionExpression;
-        PTR(FunctionBody) body; // Required, whereas the member inherited from FunctionDeclaration is optional
     };
 
     struct ArrowFunction : /*Expression, */ FunctionLikeDeclarationBase
     {
         // kind: SyntaxKind::ArrowFunction;
         PTR(EqualsGreaterThanToken) equalsGreaterThanToken;
-        PTR(ConciseBody) body;
     };
 
     struct TemplateLiteralLikeNode : LiteralLikeNode
