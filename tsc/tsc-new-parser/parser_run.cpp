@@ -35,8 +35,21 @@ void printParser(const wchar_t *str)
     FuncT<> visitNode;
     ArrayFuncT<> visitArray;
 
+    auto intent = 0;
+
     visitNode = [&](Node child) -> Node {
+
+        for (auto i = 0; i < intent; i++)
+        {
+            std::cout << "\t";
+        }
+
         std::cout << "Node: " << wtoc(parser.syntaxKindString(child->kind).c_str()) << " at [" << child->pos << "-" << child->_end << "]" << std::endl;
+
+        intent++;
+        ts::forEachChild(child, visitNode, visitArray);    
+        intent--;
+
         return undefined;
     };
 
@@ -45,6 +58,7 @@ void printParser(const wchar_t *str)
         {
             visitNode(node);
         }
+
         return undefined;
     };
 
