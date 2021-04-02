@@ -6134,8 +6134,7 @@ namespace ts
                 case SyntaxKind::FunctionKeyword:
                     return parseFunctionDeclaration(getNodePos(), hasPrecedingJSDocComment(), /*decorators*/ undefined, /*modifiers*/ undefined);
                 case SyntaxKind::ClassKeyword:
-                    // TODO:
-                    //return parseClassDeclaration(getNodePos(), hasPrecedingJSDocComment(), /*decorators*/ undefined, /*modifiers*/ undefined);
+                    return parseClassDeclaration(getNodePos(), hasPrecedingJSDocComment(), /*decorators*/ undefined, /*modifiers*/ undefined);
                 case SyntaxKind::IfKeyword:
                     return parseIfStatement();
                 case SyntaxKind::DoKeyword:
@@ -6257,8 +6256,7 @@ namespace ts
                 case SyntaxKind::FunctionKeyword:
                     return parseFunctionDeclaration(pos, hasJSDoc, decorators, modifiers);
                 case SyntaxKind::ClassKeyword:
-                    // TODO:
-                    //return parseClassDeclaration(pos, hasJSDoc, decorators, modifiers);
+                    return parseClassDeclaration(pos, hasJSDoc, decorators, modifiers);
                 case SyntaxKind::InterfaceKeyword:
                     return parseInterfaceDeclaration(pos, hasJSDoc, decorators, modifiers);
                 case SyntaxKind::TypeKeyword:
@@ -6873,12 +6871,9 @@ namespace ts
                 return parseClassDeclarationOrExpression(getNodePos(), hasPrecedingJSDocComment(), /*decorators*/ undefined, /*modifiers*/ undefined, SyntaxKind::ClassExpression);
             }
 
-            // TODO:
-            /*
             auto parseClassDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers) -> ClassDeclaration {
                 return parseClassDeclarationOrExpression(pos, hasJSDoc, decorators, modifiers, SyntaxKind::ClassDeclaration);
             }
-            */
 
             auto parseClassDeclarationOrExpression(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers, SyntaxKind kind) -> ClassLikeDeclaration
             {

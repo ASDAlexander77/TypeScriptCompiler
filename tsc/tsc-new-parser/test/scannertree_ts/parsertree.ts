@@ -47,7 +47,7 @@ catch (e) {
 }
 
 const dataStr = "" + data;
-const source = ts.createSourceFile("", "function f() { let i = 10; }", ts.ScriptTarget.Latest);
+const source = ts.createSourceFile("", dataStr, ts.ScriptTarget.Latest);
 
 let intent = 0;
 const visitNode = (child) => {

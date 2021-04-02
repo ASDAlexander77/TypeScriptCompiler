@@ -27,7 +27,6 @@ namespace fs = std::experimental::filesystem;
 
 void printParser(const wchar_t *str)
 {
-    // TODO:
     ts::Parser parser;
     //auto sourceFile = parser.parseSourceFile(S("function f() { let i = 10; }"), ScriptTarget::Latest);
     auto sourceFile = parser.parseSourceFile(str, ScriptTarget::Latest);

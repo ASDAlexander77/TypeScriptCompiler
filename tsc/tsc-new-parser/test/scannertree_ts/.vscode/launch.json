@@ -12,7 +12,7 @@
             "program": "${workspaceFolder}/scannertree.ts",
             "cwd": "${workspaceFolder}",
             "args": [
-                "G:/Dev/TypeScript/tests/cases/compiler/error___.ts"
+                "G:/Dev/TypeScript/tests/cases/compiler/___error.ts"
             ],
             "sourceMaps": true,
             "outFiles": [
@@ -28,7 +28,7 @@
             "program": "${workspaceFolder}/parsertree.ts",
             "cwd": "${workspaceFolder}",
             "args": [
-                "G:/Dev/TypeScript/tests/cases/compiler/error___.ts"
+                "G:/Dev/TypeScript/tests/cases/compiler/___error.ts"
             ],
             "sourceMaps": true,
             "outFiles": [

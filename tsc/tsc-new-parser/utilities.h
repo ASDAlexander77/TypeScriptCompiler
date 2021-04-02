@@ -846,13 +846,21 @@ namespace ts
     {
         NodeArray<Node> children;
 
-        auto addWorkItem = [&](auto n) -> Node {
+        auto addWorkItem = [&](Node n) -> Node {
             children.emplace(children.begin(), n);
-            return Node();
+            return undefined;
         };
 
-        // TODO:
-        //forEachChild<Node>(node, addWorkItem, addWorkItem); // By using a stack above and `unshift` here, we emulate a depth-first preorder traversal
+        auto addWorkItems = [&](NodeArray<Node> arr) -> Node {
+            for (auto n : arr)
+            {
+                children.emplace(children.begin(), n);
+            }
+
+            return undefined;
+        };        
+
+        forEachChild<Node, Node>(node, addWorkItem, addWorkItems); // By using a stack above and `unshift` here, we emulate a depth-first preorder traversal
         return children;
     }
 
