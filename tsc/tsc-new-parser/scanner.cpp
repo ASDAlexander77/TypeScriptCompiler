@@ -3261,17 +3261,16 @@ namespace ts
                 return result;
             }
 
-        private:
             template <typename T>
             auto lookAhead(std::function<T()> callback) -> T
             {
-                return speculationHelper(callback, /*isLookahead*/ true);
+                return speculationHelper<T>(callback, /*isLookahead*/ true);
             }
 
             template <typename T>
             auto tryScan(std::function<T()> callback) -> T
             {
-                return speculationHelper(callback, /*isLookahead*/ false);
+                return speculationHelper<T>(callback, /*isLookahead*/ false);
             }
 
             auto getText() -> string
@@ -3279,7 +3278,6 @@ namespace ts
                 return text;
             }
 
-        public:
             auto getCommentDirectives() -> std::vector<CommentDirective>
             {
                 return commentDirectives;

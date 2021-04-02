@@ -239,17 +239,13 @@ namespace ts
         template <typename T>
         auto tryScan(std::function<T()> callback) -> T
         {
-            // TODO: can't use template method from pointer
-            //return impl->tryScan<T>(callback);
-            return T();
+            return impl->tryScan<T>(callback);
         }
 
         template <typename T>
         auto lookAhead(std::function<T()> callback) -> T
         {
-            // TODO: can't use template method from pointer
-            //return impl->lookAhead<T>(callback);
-            return T();
+            return impl->lookAhead<T>(callback);
         }
 
         ~Scanner();
