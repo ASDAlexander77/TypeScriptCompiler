@@ -39,7 +39,7 @@ enum SyntaxKindMapped2 {
 };
 
 function printTree(filePath) {
-    const dataStr = ts.sys.readFile(filePath);
+    const dataStr = ts.sys.readFile(filePath).replace(/\r\n/g, "\n");
     const source = ts.createSourceFile("", dataStr, ts.ScriptTarget.Latest);
 
     let result = "";
@@ -55,7 +55,7 @@ function printTree(filePath) {
     
         const strToken = ts.SyntaxKind[child.kind];
         const str2 = SyntaxKindMapped2[strToken];
-        result += s + "Node: " + (str2 || strToken) + " @ [ " + child.pos + " - " + child.end + " ]\r\n";
+        result += s + "Node: " + (str2 || strToken) + " @ [ " + child.pos + " - " + child.end + " ]\n";
     
         intent++;
         ts.forEachChild(child, visitNode, visitArray);

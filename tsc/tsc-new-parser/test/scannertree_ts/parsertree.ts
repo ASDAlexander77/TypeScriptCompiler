@@ -46,7 +46,7 @@ catch (e) {
     data = process.argv[2];
 }
 
-const dataStr = "" + data;
+const dataStr = ("" + data).replace(/\r\n/g, "\n");
 const source = ts.createSourceFile("", dataStr, ts.ScriptTarget.Latest);
 
 let intent = 0;

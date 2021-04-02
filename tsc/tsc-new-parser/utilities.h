@@ -339,7 +339,8 @@ namespace ts
 
         // fake positive result to allow to run first command
         R result;
-        switch ((SyntaxKind)node)
+        auto kind = (SyntaxKind)node;
+        switch (kind)
         {
         case SyntaxKind::QualifiedName:
             if (!result) result = visitNode<R, T>(cbNode, node.as<QualifiedName>()->left);
@@ -429,7 +430,7 @@ namespace ts
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<FunctionLikeDeclarationBase>()->typeParameters);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<FunctionLikeDeclarationBase>()->parameters);
                    if (!result) result = visitNode<R, T>(cbNode, node.as<FunctionLikeDeclarationBase>()->type);
-                   if (!result) result = visitNode<R, T>(cbNode, node.as<ArrowFunction>()->equalsGreaterThanToken);
+                   if (kind == SyntaxKind::ArrowFunction && !result) result = visitNode<R, T>(cbNode, node.as<ArrowFunction>()->equalsGreaterThanToken);
                    if (!result) result = visitNode<R, T>(cbNode, node.as<FunctionLikeDeclarationBase>()->body); return result;
         case SyntaxKind::TypeReference:
             if (!result) result = visitNode<R, T>(cbNode, node.as<TypeReferenceNode>()->typeName);
