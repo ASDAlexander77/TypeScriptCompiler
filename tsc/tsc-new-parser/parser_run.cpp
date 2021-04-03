@@ -43,6 +43,9 @@ void printParser(const wchar_t *str)
             std::cout << "\t";
         }
 
+        auto posLineChar = parser.getLineAndCharacterOfPosition(sourceFile, child->pos);
+        auto endLineChar = parser.getLineAndCharacterOfPosition(sourceFile, child->_end);
+
         std::cout << "Node: " << wtoc(parser.syntaxKindString(child).c_str()) << " @ [ " << child->pos << " - " << child->_end << " ]" << std::endl;
 
         intent++;

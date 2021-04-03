@@ -7777,6 +7777,11 @@ namespace ts
         return impl->scanner.syntaxKindString(kind);
     }
 
+    auto Parser::getLineAndCharacterOfPosition(SourceFileLike sourceFile, number position) -> LineAndCharacter
+    {
+        return impl->scanner.getLineAndCharacterOfPosition(sourceFile, position);
+    }
+
     Parser::~Parser()
     {
         delete impl;

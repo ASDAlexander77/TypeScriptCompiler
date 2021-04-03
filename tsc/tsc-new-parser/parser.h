@@ -55,6 +55,8 @@ namespace ts
 
         auto syntaxKindString(SyntaxKind kind) -> string;
 
+        auto getLineAndCharacterOfPosition(SourceFileLike sourceFile, number position) -> LineAndCharacter;
+
         ~Parser();
     };
 
