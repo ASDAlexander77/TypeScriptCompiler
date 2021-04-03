@@ -6624,7 +6624,7 @@ namespace ts
 
             auto isClassMemberStart() -> boolean
             {
-                SyntaxKind idToken;
+                auto idToken = SyntaxKind::Unknown;
 
                 if (token() == SyntaxKind::AtToken)
                 {
