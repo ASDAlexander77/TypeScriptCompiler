@@ -7147,7 +7147,7 @@ namespace ts
 
                 auto isTypeOnly = false;
                 if (token() != SyntaxKind::FromKeyword &&
-                    identifier->escapedText == S("type") &&
+                    (!!identifier && identifier->escapedText == S("type")) &&
                     (isIdentifier() || tokenAfterImportDefinitelyProducesImportDeclaration()))
                 {
                     isTypeOnly = true;

@@ -636,7 +636,7 @@ namespace ts
                    if (!result) result = visitNodes(cbNode, cbNodes, node->modifiers);
                    if (!result) result = visitNode<R, T>(cbNode, node.as<InterfaceDeclaration>()->name);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<InterfaceDeclaration>()->typeParameters);
-                   if (!result) result = visitNodes(cbNode, cbNodes, node.as<ClassDeclaration>()->heritageClauses);
+                   if (!result) result = visitNodes(cbNode, cbNodes, node.as<InterfaceDeclaration>()->heritageClauses);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<InterfaceDeclaration>()->members); return result;
         case SyntaxKind::TypeAliasDeclaration:
             if (!result) result = visitNodes(cbNode, cbNodes, node->decorators);
