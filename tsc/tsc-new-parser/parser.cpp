@@ -4358,7 +4358,9 @@ namespace ts
                     }
                     else
                     {
-                        leftOperand = makeBinaryExpression(leftOperand, parseTokenNode<Node>(), parseBinaryExpressionOrHigher(newPrecedence), pos);
+                        auto tokenNode = parseTokenNode<Node>();
+                        auto binaryExpressionOrHigher = parseBinaryExpressionOrHigher(newPrecedence);
+                        leftOperand = makeBinaryExpression(leftOperand, tokenNode, binaryExpressionOrHigher, pos);
                     }
                 }
 
