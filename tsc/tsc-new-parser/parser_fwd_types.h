@@ -214,7 +214,7 @@ struct ptr
             return U();
         }
 
-        return U(*this);
+        return U(instance);
     }    
 
     template <typename U> 

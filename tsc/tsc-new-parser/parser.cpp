@@ -1022,7 +1022,7 @@ namespace ts
                 {
                     return parseTokenNode<Node>();
                 }
-                return Node();
+                return undefined;
             }
 
             auto parseOptionalTokenJSDoc(SyntaxKind t) -> Node
@@ -1031,7 +1031,7 @@ namespace ts
                 {
                     return parseTokenNodeJSDoc();
                 }
-                return Node();
+                return undefined;
             }
 
             auto parseExpectedToken(SyntaxKind t, DiagnosticMessage diagnosticMessage = undefined, string arg0 = string()) -> Node
@@ -2672,16 +2672,23 @@ namespace ts
                 auto savedTopLevel = topLevel;
                 topLevel = false;
                 auto modifiers = parseModifiers();
+
+                auto dotDotDotToken = parseOptionalToken(SyntaxKind::DotDotDotToken);
+                auto nameOfParameter = parseNameOfParameter(modifiers);
+                auto questionToken = parseOptionalToken(SyntaxKind::QuestionToken);
+                auto typeAnnotation = parseTypeAnnotation();
+                auto initializer = parseInitializer();
+
                 auto node = withJSDoc(
                     finishNode(
                         factory.createParameterDeclaration(
                             decorators,
                             modifiers,
-                            parseOptionalToken(SyntaxKind::DotDotDotToken),
-                            parseNameOfParameter(modifiers),
-                            parseOptionalToken(SyntaxKind::QuestionToken),
-                            parseTypeAnnotation(),
-                            parseInitializer()),
+                            dotDotDotToken,
+                            nameOfParameter,
+                            questionToken,
+                            typeAnnotation,
+                            initializer),
                         pos),
                     hasJSDoc);
                 topLevel = savedTopLevel;
@@ -3609,15 +3616,15 @@ namespace ts
             {
                 // The rules about 'yield' only apply to actual code/expression contexts.  They don't
                 // apply to 'type' contexts.  So we disable these parameters here before moving on.
-                return doOutsideOfContext<TypeNode>(NodeFlags::TypeExcludesFlags, std::bind((TypeNode(Parser::*)()) & Parser::parseTypeWorker, this));
+                return doOutsideOfContext<TypeNode>(NodeFlags::TypeExcludesFlags, std::bind(&Parser::parseTypeWorker0, this));
             }
 
-            auto parseTypeWorker() -> TypeNode
+            auto parseTypeWorker0() -> TypeNode
             {
-                return parseTypeWorker(false);
+                return parseTypeWorker();
             }
 
-            auto parseTypeWorker(boolean noConditionalTypes) -> TypeNode
+            auto parseTypeWorker(boolean noConditionalTypes = false) -> TypeNode
             {
                 if (isStartOfFunctionTypeOrConstructorType())
                 {
