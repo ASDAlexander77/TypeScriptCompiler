@@ -20,6 +20,14 @@ struct ParseJSDocCommentClass
     {
     }
 
+    /*@internal*/
+    auto isJSDocLikeText(safe_string text, number start)
+    {
+        return text[start + 1] == CharacterCodes::asterisk &&
+                text[start + 2] == CharacterCodes::asterisk &&
+                text[start + 3] != CharacterCodes::slash;
+    }
+
     auto parseJSDocCommentWorker(number start = 0, number length = -1) -> JSDoc {
         end = length == -1 ? content.size() : start + length;
         length = end - start;

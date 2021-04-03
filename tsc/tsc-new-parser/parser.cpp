@@ -8,29 +8,6 @@ namespace ts
 {
     namespace Impl
     {
-        /*@internal*/
-        auto isJSDocLikeText(safe_string text, number start)
-        {
-            return text[start + 1] == CharacterCodes::asterisk &&
-                   text[start + 2] == CharacterCodes::asterisk &&
-                   text[start + 3] != CharacterCodes::slash;
-        }
-
-        /** @internal */
-        auto isDeclarationFileName(string fileName) -> boolean
-        {
-            return fileExtensionIs(fileName, Extension::Dts);
-        }
-
-        auto fixupParentReferences(Node rootNode) -> void
-        {
-            // normally parent references are set during binding. However, for clients that only need
-            // a syntax tree, and no semantic features, then the binding process is an unnecessary
-            // overhead.  This functions allows us to set all the parents, without all the expense of
-            // binding.
-            setParentRecursive<boolean>(rootNode, /*incremental*/ true);
-        }
-
         // Implement the parser.as<a>() singleton module.  We do this for perf reasons because creating
         // parser instances can actually be expensive enough to impact us on projects with many source
         // files.
@@ -202,6 +179,15 @@ namespace ts
                 return isInvalid ? entityName : undefined;
             }
 
+            auto fixupParentReferences(Node rootNode) -> void
+            {
+                // normally parent references are set during binding. However, for clients that only need
+                // a syntax tree, and no semantic features, then the binding process is an unnecessary
+                // overhead.  This functions allows us to set all the parents, without all the expense of
+                // binding.
+                setParentRecursive<boolean>(rootNode, /*incremental*/ true);
+            }
+
             /**
              * Parse json text into SyntaxTree and return node and parse errors if any
              * @param fileName
@@ -364,6 +350,12 @@ namespace ts
                 identifiers.clear();
                 notParenthesizedArrow.clear();
                 topLevel = true;
+            }
+
+            /** @internal */
+            auto isDeclarationFileName(string fileName) -> boolean
+            {
+                return fileExtensionIs(fileName, Extension::Dts);
             }
 
             auto parseSourceFileWorker(ScriptTarget languageVersion, boolean setParentNodes, ScriptKind scriptKind) -> SourceFile

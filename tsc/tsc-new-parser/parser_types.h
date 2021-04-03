@@ -552,7 +552,6 @@ namespace data
     struct IndexSignatureDeclaration : SignatureDeclarationBase
     {
         // kind: SyntaxKind::IndexSignature;
-        PTR(TypeNode) type;
     };
 
     template <SyntaxKind TKind>
@@ -598,7 +597,6 @@ namespace data
     struct FunctionOrConstructorTypeNodeBase : SignatureDeclarationBase/*, TypeNode*/
     {
         // kind: SyntaxKind::FunctionType | SyntaxKind::ConstructorType;
-        PTR(TypeNode) type;
     };
 
     struct FunctionTypeNode : FunctionOrConstructorTypeNodeBase
