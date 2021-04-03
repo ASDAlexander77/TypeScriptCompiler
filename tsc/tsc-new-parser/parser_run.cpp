@@ -25,7 +25,7 @@ namespace fs = std::experimental::filesystem;
 #include "utilities.h"
 #include "file_helper.h"
 
-void printParser(const wchar_t *str)
+void printParser(const wchar_t *str, boolean showLineCharPos)
 {
     ts::Parser parser;
     //auto sourceFile = parser.parseSourceFile(S("function f() { let i = 10; }"), ScriptTarget::Latest);
@@ -43,10 +43,21 @@ void printParser(const wchar_t *str)
             std::cout << "\t";
         }
 
-        auto posLineChar = parser.getLineAndCharacterOfPosition(sourceFile, child->pos);
-        auto endLineChar = parser.getLineAndCharacterOfPosition(sourceFile, child->_end);
+        if (showLineCharPos)
+        {
+            auto posLineChar = parser.getLineAndCharacterOfPosition(sourceFile, child->pos);
+            auto endLineChar = parser.getLineAndCharacterOfPosition(sourceFile, child->_end);
 
-        std::cout << "Node: " << wtoc(parser.syntaxKindString(child).c_str()) << " @ [ " << child->pos << " - " << child->_end << " ]" << std::endl;
+            std::cout 
+                << "Node: " 
+                << wtoc(parser.syntaxKindString(child).c_str()) 
+                << " @ [ " << child->pos << "(" << posLineChar.line + 1 << ":" << posLineChar.character  << ") - " 
+                << child->_end << "(" << endLineChar.line + 1  << ":" << endLineChar.character  << ") ]" << std::endl;
+        }
+        else
+        {
+            std::cout << "Node: " << wtoc(parser.syntaxKindString(child).c_str()) << " @ [ " << child->pos << " - " << child->_end << " ]" << std::endl;
+        }
 
         intent++;
         ts::forEachChild(child, visitNode, visitArray);    
@@ -67,20 +78,56 @@ void printParser(const wchar_t *str)
     auto result = ts::forEachChild(sourceFile.as<Node>(), visitNode, visitArray);
 }
 
+boolean hasOption(int argc, char **args, const char* option)
+{
+    for (auto i = 1; i < argc; i++)
+    {
+        if (std::strlen(args[i]) < 3)
+        {
+            continue;
+        }
+
+        if (std::strcmp(option, args[i]) == 0)
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+char* firstNonOption(int argc, char **args)
+{
+    for (auto i = 1; i < argc; i++)
+    {
+        if (std::strlen(args[i]) < 3)
+        {
+            return args[i];
+        }
+
+        if (args[i][0] != '-' || args[i][1] != '-')
+        {
+            return args[i];
+        }
+    }
+
+    return nullptr;
+}
+
 int main(int argc, char **args)
 {
     if (argc > 1)
     {
-        auto file = args[1];
-        auto exists = fs::exists(file);
+        auto file = firstNonOption(argc, args);
+        auto exists = file != nullptr && fs::exists(file);
         if (exists)
         {
             auto str = readFile(std::string(file));
-            printParser(str.c_str());
+            printParser(str.c_str(), hasOption(argc, args, "--line"));
         }
         else
         {
-            printParser(ctow(args[1]).c_str());
+            printParser(ctow(file).c_str(), hasOption(argc, args, "--line"));
         }
     }
 

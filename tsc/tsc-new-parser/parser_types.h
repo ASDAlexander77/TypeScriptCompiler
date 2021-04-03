@@ -2134,9 +2134,11 @@ namespace data
     /**
  * Subset of properties from SourceFile that are used in multiple utility functions
  */
-    struct SourceFileLike
+    struct SourceFileLike : Declaration
     {
         string text;
+        // Stores a line map for the file.
+        // This field should never be used directly to obtain line map, use getLineMap function instead.
         std::vector<number> lineMap;
         /* @internal */
         std::function<number(number, number, boolean allowEdits)> getPositionOfLineAndCharacter;
@@ -2266,7 +2268,7 @@ namespace data
         PTR(Symbol) symbol;
     };
 
-    struct SourceFile : Declaration
+    struct SourceFile : SourceFileLike
     {
         SourceFile() = default;
         SourceFile(SyntaxKind kind_, number pos_, number end_)
@@ -2282,7 +2284,6 @@ namespace data
 
         string fileName;
         /* @internal */ Path path;
-        string text;
         /** Resolved path can be different from path property,
      * when file is included through project reference is mapped to its output instead of source
      * in that case resolvedPath = path to output file
@@ -2358,9 +2359,6 @@ namespace data
         // Stores additional file-level diagnostics reported by the program
         /* @internal */ std::vector<DiagnosticWithLocation> additionalSyntacticDiagnostics;
 
-        // Stores a line map for the file.
-        // This field should never be used directly to obtain line map, use getLineMap function instead.
-        /* @internal */ std::vector<number> lineMap;
         /* @internal */ std::set<string> classifiableNames;
         // Comments containing @ts-* directives, in order.
         /* @internal */ std::vector<CommentDirective> commentDirectives;
