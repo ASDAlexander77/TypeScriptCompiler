@@ -16,11 +16,14 @@ namespace ts
         ParenthesizerRules parenthesizerRules;
         NodeFactoryFlags flags;
         NodeCreateCallbackFunc createNodeCallback;
-
+       
     public:
+
         NodeFactory(ts::Scanner *scanner, NodeFactoryFlags nodeFactoryFlags, NodeCreateCallbackFunc createNodeCallback)
             : scanner(scanner), rawTextScanner(ScriptTarget::Latest, /*skipTrivia*/ false, LanguageVariant::Standard), 
               parenthesizerRules(this), flags(nodeFactoryFlags), createNodeCallback(createNodeCallback) {}
+
+        auto NoParenthesizerRules() -> boolean;
 
         template <typename T>
         auto update(T updated, T original) -> T {

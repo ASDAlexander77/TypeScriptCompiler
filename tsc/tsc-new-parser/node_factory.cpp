@@ -2,6 +2,11 @@
 
 namespace ts
 {
+    auto NodeFactory::NoParenthesizerRules() -> boolean
+    {
+        return !!(flags & NodeFactoryFlags::NoParenthesizerRules);
+    }
+
     auto NodeFactory::propagateIdentifierNameFlags(Identifier node) -> TransformFlags
     {
         // An IdentifierName is allowed to be `await`

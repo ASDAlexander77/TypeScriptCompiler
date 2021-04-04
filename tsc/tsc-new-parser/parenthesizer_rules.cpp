@@ -4,15 +4,30 @@
 namespace ts 
 {
     auto ParenthesizerRules::parenthesizeExpressionOfComputedPropertyName(Expression expression) -> Expression {
+        if (factory->NoParenthesizerRules())
+        {
+            return expression;
+        }
+
         return isCommaSequence(expression) ? factory->createParenthesizedExpression(expression) : expression;
     }
 
     auto ParenthesizerRules::parenthesizeExpressionsOfCommaDelimitedList(NodeArray<Expression> elements) -> NodeArray<Expression> {
+        if (factory->NoParenthesizerRules())
+        {
+            return elements;
+        }
+
         auto result = sameMap(elements, std::bind(&ParenthesizerRules::parenthesizeExpressionForDisallowedComma, this, std::placeholders::_1));
         return setTextRange(factory->createNodeArray(result, elements->hasTrailingComma), static_cast<data::TextRange>(elements));
     }
 
     auto ParenthesizerRules::parenthesizeExpressionForDisallowedComma(Expression expression) -> Expression {
+        if (factory->NoParenthesizerRules())
+        {
+            return expression;
+        }
+
         auto emittedExpression = skipPartiallyEmittedExpressions(expression);
         auto expressionPrecedence = getExpressionPrecedence(emittedExpression);
         auto commaPrecedence = getOperatorPrecedence(SyntaxKind::BinaryExpression, SyntaxKind::CommaToken);
@@ -21,6 +36,11 @@ namespace ts
     }
 
     auto ParenthesizerRules::parenthesizeLeftSideOfAccess(Expression expression) -> LeftHandSideExpression {
+        if (factory->NoParenthesizerRules())
+        {
+            return expression;
+        }
+
         // isLeftHandSideExpression is almost the correct criterion for when it is not necessary
         // to parenthesize the expression before a dot. The known exception is:
         //
@@ -39,6 +59,11 @@ namespace ts
     }
 
     auto ParenthesizerRules::parenthesizeTypeArguments(NodeArray<TypeNode> typeArguments) -> NodeArray<TypeNode> {
+        if (factory->NoParenthesizerRules())
+        {
+            return typeArguments;
+        }
+
         if (some(typeArguments)) {
             return factory->createNodeArray(sameMapWithNumber(typeArguments, std::bind(&ParenthesizerRules::parenthesizeOrdinalTypeArgument, this, std::placeholders::_1, std::placeholders::_2)));
         }
@@ -47,6 +72,11 @@ namespace ts
     }
 
     auto ParenthesizerRules::parenthesizeElementTypeOfArrayType(TypeNode member) -> TypeNode {
+        if (factory->NoParenthesizerRules())
+        {
+            return member;
+        }
+
         switch ((SyntaxKind)member) {
             case SyntaxKind::TypeQuery:
             case SyntaxKind::TypeOperator:
@@ -57,14 +87,29 @@ namespace ts
     }
 
     auto ParenthesizerRules::parenthesizeConstituentTypesOfUnionOrIntersectionType(NodeArray<TypeNode> members) -> NodeArray<TypeNode> {
+        if (factory->NoParenthesizerRules())
+        {
+            return members;
+        }
+
         return factory->createNodeArray(sameMap(members, std::bind(&ParenthesizerRules::parenthesizeMemberOfElementType, this, std::placeholders::_1)));
     }
 
     auto ParenthesizerRules::parenthesizeMemberOfConditionalType(TypeNode member) -> TypeNode {
+        if (factory->NoParenthesizerRules())
+        {
+            return member;
+        }
+
         return member == SyntaxKind::ConditionalType ? factory->createParenthesizedType(member) : member;
     }
 
     auto ParenthesizerRules::parenthesizeMemberOfElementType(TypeNode member) -> TypeNode {
+        if (factory->NoParenthesizerRules())
+        {
+            return member;
+        }
+
         switch ((SyntaxKind)member) {
             case SyntaxKind::UnionType:
             case SyntaxKind::IntersectionType:
@@ -76,6 +121,11 @@ namespace ts
     }
 
     auto ParenthesizerRules::parenthesizeExpressionOfNew(Expression expression) -> LeftHandSideExpression {
+        if (factory->NoParenthesizerRules())
+        {
+            return expression;
+        }
+
         auto leftmostExpr = getLeftmostExpression(expression, /*stopAtCallExpressions*/ true);
         switch ((SyntaxKind)leftmostExpr) {
             case SyntaxKind::CallExpression:
@@ -91,11 +141,21 @@ namespace ts
     }
 
     auto ParenthesizerRules::parenthesizeOperandOfPrefixUnary(Expression operand) -> UnaryExpression {
+        if (factory->NoParenthesizerRules())
+        {
+            return operand;
+        }
+
         // TODO(rbuckton) -> Verifiy whether `setTextRange` is needed.
         return isUnaryExpression(operand) ? operand : setTextRange(factory->createParenthesizedExpression(operand), operand);
     }
 
     auto ParenthesizerRules::parenthesizeConciseBodyOfArrowFunction(ConciseBody body) -> ConciseBody {
+        if (factory->NoParenthesizerRules())
+        {
+            return body;
+        }
+
         if (!isBlock(body) && (isCommaSequence(body) || getLeftmostExpression(body, /*stopAtCallExpressions*/ false) == SyntaxKind::ObjectLiteralExpression)) {
             // TODO(rbuckton) -> Verifiy whether `setTextRange` is needed.
             return setTextRange(factory->createParenthesizedExpression(body), body);
@@ -105,6 +165,11 @@ namespace ts
     }
 
     auto ParenthesizerRules::parenthesizeOperandOfPostfixUnary(Expression operand) -> LeftHandSideExpression {
+        if (factory->NoParenthesizerRules())
+        {
+            return operand;
+        }
+
         // TODO(rbuckton) -> Verifiy whether `setTextRange` is needed.
         return isLeftHandSideExpression(operand) ? operand : setTextRange(factory->createParenthesizedExpression(operand), operand);
     }
@@ -150,6 +215,11 @@ namespace ts
     }
 
     auto ParenthesizerRules::binaryOperandNeedsParentheses(SyntaxKind binaryOperator, Expression operand, boolean isLeftSideOfBinary, Expression leftOperand) -> boolean {
+        if (factory->NoParenthesizerRules())
+        {
+            return false;
+        }
+
         // If the operand has lower precedence, then it needs to be parenthesized to preserve the
         // intent of the expression. For example, if the operand is `a + b` and the operator is
         // `*`, then we need to parenthesize the operand to preserve the intended order of
@@ -270,6 +340,11 @@ namespace ts
     }
 
     auto ParenthesizerRules::parenthesizeConditionOfConditionalExpression(Expression condition) -> Expression {
+        if (factory->NoParenthesizerRules())
+        {
+            return condition;
+        }
+
         auto conditionalPrecedence = getOperatorPrecedence(SyntaxKind::ConditionalExpression, SyntaxKind::QuestionToken);
         auto emittedCondition = skipPartiallyEmittedExpressions(condition);
         auto conditionPrecedence = getExpressionPrecedence(emittedCondition);
@@ -280,6 +355,11 @@ namespace ts
     }
 
     auto ParenthesizerRules::parenthesizeBranchOfConditionalExpression(Expression branch) -> Expression {
+        if (factory->NoParenthesizerRules())
+        {
+            return branch;
+        }
+
         // per ES grammar both 'whenTrue' and 'whenFalse' parts of conditional expression are assignment expressions
         // so in case when comma expression is introduced as a part of previous transformations
         // if should be wrapped in parens since comma operator has the lowest precedence
@@ -301,6 +381,11 @@ namespace ts
         * - ClassExpression
         */
     auto ParenthesizerRules::parenthesizeExpressionOfExportDefault(Expression expression) -> Expression {
+        if (factory->NoParenthesizerRules())
+        {
+            return expression;
+        }
+
         auto check = skipPartiallyEmittedExpressions(expression);
         auto needsParens = isCommaSequence(check);
         if (!needsParens) {
@@ -314,6 +399,11 @@ namespace ts
     }
 
     auto ParenthesizerRules::parenthesizeExpressionOfExpressionStatement(Expression expression) -> Expression {
+        if (factory->NoParenthesizerRules())
+        {
+            return expression;
+        }
+
         auto emittedExpression = skipPartiallyEmittedExpressions(expression);
         if (isCallExpression(emittedExpression)) {
             auto callee = emittedExpression.as<CallExpression>()->expression;
@@ -342,6 +432,11 @@ namespace ts
     }
 
     auto ParenthesizerRules::parenthesizeOrdinalTypeArgument(TypeNode node, number i) -> TypeNode {
+        if (factory->NoParenthesizerRules())
+        {
+            return node;
+        }
+
         return i == 0 && isFunctionOrConstructorTypeNode(node) && node.as<FunctionOrConstructorTypeNodeBase>()->typeParameters ? factory->createParenthesizedType(node) : node;
     }
 }
