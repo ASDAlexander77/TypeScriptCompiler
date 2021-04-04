@@ -2232,20 +2232,24 @@ namespace ts
             auto parseTemplateExpression(boolean isTaggedTemplate) -> TemplateExpression
             {
                 auto pos = getNodePos();
+                auto head = parseTemplateHead(isTaggedTemplate);
+                auto spans = parseTemplateSpans(isTaggedTemplate);
                 return finishNode(
                     factory.createTemplateExpression(
-                        parseTemplateHead(isTaggedTemplate),
-                        parseTemplateSpans(isTaggedTemplate)),
+                        head,
+                        spans),
                     pos);
             }
 
             auto parseTemplateType() -> TemplateLiteralTypeNode
             {
                 auto pos = getNodePos();
+                auto head = parseTemplateHead(/*isTaggedTemplate*/ false);
+                auto spans = parseTemplateTypeSpans();
                 return finishNode(
                     factory.createTemplateLiteralType(
-                        parseTemplateHead(/*isTaggedTemplate*/ false),
-                        parseTemplateTypeSpans()),
+                        head,
+                        spans),
                     pos);
             }
 
@@ -2265,10 +2269,12 @@ namespace ts
             auto parseTemplateTypeSpan() -> TemplateLiteralTypeSpan
             {
                 auto pos = getNodePos();
+                auto type = parseType();
+                auto span = parseLiteralOfTemplateSpan(/*isTaggedTemplate*/ false);
                 return finishNode(
                     factory.createTemplateLiteralTypeSpan(
-                        parseType(),
-                        parseLiteralOfTemplateSpan(/*isTaggedTemplate*/ false)),
+                        type,
+                        span),
                     pos);
             }
 
@@ -2289,10 +2295,12 @@ namespace ts
             auto parseTemplateSpan(boolean isTaggedTemplate) -> TemplateSpan
             {
                 auto pos = getNodePos();
+                auto expression = allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
+                auto span = parseLiteralOfTemplateSpan(isTaggedTemplate);
                 return finishNode(
                     factory.createTemplateSpan(
-                        allowInAnd<Expression>(std::bind(&Parser::parseExpression, this)),
-                        parseLiteralOfTemplateSpan(isTaggedTemplate)),
+                        expression,
+                        span),
                     pos);
             }
 
@@ -2647,13 +2655,15 @@ namespace ts
                 auto hasJSDoc = hasPrecedingJSDocComment();
                 if (token() == SyntaxKind::ThisKeyword)
                 {
+                    auto identifier = createIdentifier(/*isIdentifier*/ true);
+                    auto typeAnnotation = parseTypeAnnotation();
                     auto node = factory.createParameterDeclaration(
                         /*decorators*/ undefined,
                         /*modifiers*/ undefined,
                         /*dotDotDotToken*/ undefined,
-                        createIdentifier(/*isIdentifier*/ true),
+                        identifier,
                         /*questionToken*/ undefined,
-                        parseTypeAnnotation(),
+                        typeAnnotation,
                         /*initializer*/ undefined);
                     return withJSDoc(finishNode(node, pos), hasJSDoc);
                 }
