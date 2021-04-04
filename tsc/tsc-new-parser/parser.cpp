@@ -2751,7 +2751,13 @@ namespace ts
                 setYieldContext(!!(flags & SignatureFlags::Yield));
                 setAwaitContext(!!(flags & SignatureFlags::Await));
 
-                auto parameters = !!(flags & SignatureFlags::JSDoc) ? parseDelimitedList<ParameterDeclaration>(ParsingContext::JSDocParameters, std::bind(&Parser::parseJSDocParameter, this)) : parseDelimitedList<ParameterDeclaration>(ParsingContext::Parameters, savedAwaitContext ? std::bind(&Parser::parseParameterInOuterAwaitContext, this) : std::bind(&Parser::parseParameter, this));
+                auto parameters = !!(flags & SignatureFlags::JSDoc) 
+                    ? parseDelimitedList<ParameterDeclaration>(ParsingContext::JSDocParameters, std::bind(&Parser::parseJSDocParameter, this)) 
+                    : parseDelimitedList<ParameterDeclaration>(
+                        ParsingContext::Parameters, 
+                        savedAwaitContext 
+                            ? std::bind(&Parser::parseParameterInOuterAwaitContext, this) 
+                            : std::bind(&Parser::parseParameter, this));
 
                 setYieldContext(savedYieldContext);
                 setAwaitContext(savedAwaitContext);
@@ -4111,7 +4117,7 @@ namespace ts
             auto parsePossibleParenthesizedArrowFunctionExpression() -> ArrowFunction
             {
                 auto tokenPos = scanner.getTokenPos();
-                if (std::find(notParenthesizedArrow.begin(), notParenthesizedArrow.end(), tokenPos) != notParenthesizedArrow.begin())
+                if (std::find(notParenthesizedArrow.begin(), notParenthesizedArrow.end(), tokenPos) != notParenthesizedArrow.end())
                 {
                     return undefined;
                 }
@@ -4604,7 +4610,13 @@ namespace ts
                 if (token() == SyntaxKind::PlusPlusToken || token() == SyntaxKind::MinusMinusToken)
                 {
                     auto pos = getNodePos();
-                    return finishNode(factory.createPrefixUnaryExpression(token(), nextTokenAnd<LeftHandSideExpression>(std::bind(&Parser::parseLeftHandSideExpressionOrHigher, this))), pos);
+                    auto _operator = token();
+                    auto leftHandSideExpressionOrHigher = nextTokenAnd<LeftHandSideExpression>(std::bind(&Parser::parseLeftHandSideExpressionOrHigher, this));
+                    return finishNode(
+                        factory.createPrefixUnaryExpression(
+                            _operator, 
+                            leftHandSideExpressionOrHigher), 
+                        pos);
                 }
                 else if (languageVariant == LanguageVariant::JSX && token() == SyntaxKind::LessThanToken && lookAhead<boolean>(std::bind(&Parser::nextTokenIsIdentifierOrKeywordOrGreaterThan, this)))
                 {
@@ -5240,7 +5252,9 @@ namespace ts
                             }
 
                             auto argumentList = parseArgumentList();
-                            auto callExpr = questionDotToken || tryReparseOptionalChain(expression) ? factory.createCallChain(expression, questionDotToken, typeArguments, argumentList) : factory.createCallExpression(expression, typeArguments, argumentList);
+                            auto callExpr = questionDotToken || tryReparseOptionalChain(expression) 
+                                ? factory.createCallChain(expression, questionDotToken, typeArguments, argumentList) 
+                                : factory.createCallExpression(expression, typeArguments, argumentList);
                             expression = finishNode(callExpr, pos);
                             continue;
                         }
@@ -5248,7 +5262,9 @@ namespace ts
                     else if (token() == SyntaxKind::OpenParenToken)
                     {
                         auto argumentList = parseArgumentList();
-                        auto callExpr = questionDotToken || tryReparseOptionalChain(expression) ? factory.createCallChain(expression, questionDotToken, /*typeArguments*/ undefined, argumentList) : factory.createCallExpression(expression, /*typeArguments*/ undefined, argumentList);
+                        auto callExpr = questionDotToken || tryReparseOptionalChain(expression) 
+                            ? factory.createCallChain(expression, questionDotToken, /*typeArguments*/ undefined, argumentList) 
+                            : factory.createCallExpression(expression, /*typeArguments*/ undefined, argumentList);
                         expression = finishNode(callExpr, pos);
                         continue;
                     }
@@ -5415,8 +5431,11 @@ namespace ts
 
             auto parseArgumentOrArrayLiteralElement() -> Expression
             {
-                return token() == SyntaxKind::DotDotDotToken ? parseSpreadElement() : token() == SyntaxKind::CommaToken ? finishNode(factory.createOmittedExpression(), getNodePos())
-                                                                                                                        : parseAssignmentExpressionOrHigher();
+                return token() == SyntaxKind::DotDotDotToken 
+                    ? parseSpreadElement() 
+                    : token() == SyntaxKind::CommaToken 
+                        ? finishNode(factory.createOmittedExpression(), getNodePos())
+                        : parseAssignmentExpressionOrHigher();
             }
 
             auto parseArgumentExpression() -> Expression
