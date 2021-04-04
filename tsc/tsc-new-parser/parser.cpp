@@ -4273,16 +4273,19 @@ namespace ts
 
                 // we Note explicitly 'allowIn' in the whenTrue part of the condition expression, and
                 // we do not that for the 'whenFalse' part.
-                Node colonToken;
+
+                auto whenTrue = doOutsideOfContext<Expression>(disallowInAndDecoratorContext, std::bind(&Parser::parseAssignmentExpressionOrHigher, this));
+                auto colonToken = parseExpectedToken(SyntaxKind::ColonToken);
+                auto whenFalse = nodeIsPresent(colonToken)
+                            ? parseAssignmentExpressionOrHigher()
+                            : createMissingNode<Identifier>(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ false, data::DiagnosticMessage(Diagnostics::_0_expected), scanner.tokenToString(SyntaxKind::ColonToken));
                 return finishNode(
                     factory.createConditionalExpression(
                         leftOperand,
                         questionToken,
-                        doOutsideOfContext<Expression>(disallowInAndDecoratorContext, std::bind(&Parser::parseAssignmentExpressionOrHigher, this)),
-                        colonToken = parseExpectedToken(SyntaxKind::ColonToken),
-                        nodeIsPresent(colonToken)
-                            ? parseAssignmentExpressionOrHigher()
-                            : createMissingNode<Identifier>(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ false, data::DiagnosticMessage(Diagnostics::_0_expected), scanner.tokenToString(SyntaxKind::ColonToken))),
+                        whenTrue,
+                        colonToken,
+                        whenFalse),
                     pos);
             }
 
@@ -7378,7 +7381,7 @@ namespace ts
             {
                 auto savedAwaitContext = inAwaitContext();
                 setAwaitContext(/*value*/ true);
-                boolean isExportEquals;
+                auto isExportEquals = false;
                 if (parseOptional(SyntaxKind::EqualsToken))
                 {
                     isExportEquals = true;
