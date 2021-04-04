@@ -4405,7 +4405,9 @@ namespace ts
             auto parsePrefixUnaryExpression() -> Node
             {
                 auto pos = getNodePos();
-                return finishNode(factory.createPrefixUnaryExpression(token(), nextTokenAnd<UnaryExpression>(std::bind(&Parser::parseSimpleUnaryExpression, this))), pos);
+                auto _operator = token();
+                auto unaryExpression = nextTokenAnd<UnaryExpression>(std::bind(&Parser::parseSimpleUnaryExpression, this));
+                return finishNode(factory.createPrefixUnaryExpression(_operator, unaryExpression), pos);
             }
 
             auto parseDeleteExpression() -> Node
