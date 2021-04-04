@@ -412,6 +412,7 @@ namespace ts
             if (!result) result = visitNodes(cbNode, cbNodes, node->decorators);
                    if (!result) result = visitNodes(cbNode, cbNodes, node->modifiers);
                    if (kind == SyntaxKind::MethodSignature && !result) result = visitNode<R, T>(cbNode, node.as<SignatureDeclarationBase>()->name);
+                   if (kind == SyntaxKind::MethodSignature && !result) result = visitNode<R, T>(cbNode, node.as<SignatureDeclarationBase>()->questionToken);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<SignatureDeclarationBase>()->typeParameters);
                    if (!result) result = visitNodes(cbNode, cbNodes, node.as<SignatureDeclarationBase>()->parameters);
                    if (!result) result = visitNode<R, T>(cbNode, node.as<SignatureDeclarationBase>()->type); return result;
