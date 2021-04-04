@@ -2377,10 +2377,12 @@ namespace ts
             auto parseTypeReference() -> TypeReferenceNode
             {
                 auto pos = getNodePos();
+                auto entityNameOfTypeReference = parseEntityNameOfTypeReference();
+                auto typeArgumentsOfTypeReference = parseTypeArgumentsOfTypeReference();
                 return finishNode(
                     factory.createTypeReferenceNode(
-                        parseEntityNameOfTypeReference(),
-                        parseTypeArgumentsOfTypeReference()),
+                        entityNameOfTypeReference,
+                        typeArgumentsOfTypeReference),
                     pos);
             }
 
