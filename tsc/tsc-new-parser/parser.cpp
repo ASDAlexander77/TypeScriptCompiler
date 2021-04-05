@@ -5009,14 +5009,16 @@ namespace ts
 
                 scanJsxIdentifier();
                 auto pos = getNodePos();
+                auto identifierName = parseIdentifierName();
+                auto initializer = token() != SyntaxKind::EqualsToken 
+                    ? undefined 
+                    : scanJsxAttributeValue() == SyntaxKind::StringLiteral 
+                        ? parseLiteralNode().as<Node>()
+                        : parseJsxExpression(/*inExpressionContext*/ true).as<Node>();
                 return finishNode(
                     factory.createJsxAttribute(
-                        parseIdentifierName(),
-                        token() != SyntaxKind::EqualsToken 
-                            ? undefined 
-                            : scanJsxAttributeValue() == SyntaxKind::StringLiteral 
-                                ? parseLiteralNode().as<Node>()
-                                : parseJsxExpression(/*inExpressionContext*/ true).as<Node>()),
+                        identifierName,
+                        initializer),
                     pos);
             }
 
