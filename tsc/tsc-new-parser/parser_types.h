@@ -67,6 +67,12 @@ namespace data
 
         inline operator bool()
         {
+            // TODO: temp fix
+            if (isUndefined && size())
+            {
+                isUndefined = false;
+            }
+
             return !isUndefined;
         }
 

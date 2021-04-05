@@ -80,6 +80,11 @@ try {
     for (const file of files) {
         //const data = await fs.readFile(fld + "/" + file);
 
+        if (file.endsWith(".tsx"))
+        {
+            continue;
+        }
+
         if (file == "collisionCodeGenModuleWithUnicodeNames.ts"
             || file == "constructorWithIncompleteTypeAnnotation.ts"
             || file == "extendedUnicodePlaneIdentifiers.ts"
@@ -97,13 +102,20 @@ try {
         if (file == "binaryArithmeticControlFlowGraphNotTooLarge.ts"
             || file == "binderBinaryExpressionStress.ts" 
             || file == "binderBinaryExpressionStressJs.ts"
-            || file == "errorRecoveryWithDotFollowedByNamespaceKeyword.ts") {
+            || file == "errorRecoveryWithDotFollowedByNamespaceKeyword.ts"
+            || file == "largeControlFlowGraph.ts"
+            || file == "manyConstExports.ts"
+            || file == "parsingDeepParenthensizedExpression.ts"
+            || file == "resolvingClassDeclarationWhenInBaseTypeResolution.ts"
+            || file == "targetTypeBaseCalls.ts"
+            || file == "unionSubtypeReductionErrors.ts") {
             continue;
         }
 
         // review later, can be due to unicode
         if (file == "bom-utf16be.ts"
-            || file == "bom-utf16le.ts") {
+            || file == "bom-utf16le.ts"
+            || file == "instanceofOperator.ts") {
             continue;
         }
 
