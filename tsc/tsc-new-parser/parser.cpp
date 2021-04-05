@@ -416,7 +416,7 @@ namespace ts
             auto addJSDocComment(T node) -> T
             {
                 // TODO:
-                Debug::_assert(!node.as<JSDocContainer>()->jsDoc); // Should only be called once per node
+                //Debug::_assert(!node.as<JSDocContainer>()->jsDoc); // Should only be called once per node
                 /*
                 auto jsDoc = mapDefined(getJSDocCommentRanges(node, sourceText), [&] (auto comment) { return JSDocParser::parseJSDocComment(node, comment->pos, comment->_end - comment->pos); });
                 if (jsDoc.size()) node->jsDoc = jsDoc;
@@ -5204,9 +5204,9 @@ namespace ts
                 return token() == SyntaxKind::NoSubstitutionTemplateLiteral || token() == SyntaxKind::TemplateHead;
             }
 
-            static auto toNoSubstitutionTemplateLiteral(LiteralExpression literalExpression) -> NoSubstitutionTemplateLiteral
+            auto toNoSubstitutionTemplateLiteral(LiteralExpression literalExpression) -> NoSubstitutionTemplateLiteral
             {
-                auto node = NoSubstitutionTemplateLiteral();
+                auto node = factory.createBaseNode<NoSubstitutionTemplateLiteral>(SyntaxKind::NoSubstitutionTemplateLiteral);
                 setTextRange(node, literalExpression);
                 node->rawText = literalExpression->text;
                 return node;

@@ -48,14 +48,14 @@ namespace data
     template <typename T /*extends Node*/>
     struct NodeArray : ReadonlyArray<T>, TextRange
     {
-        NodeArray() : hasTrailingComma{false}, isMissingList{false}, transformFlags{TransformFlags::None}, ReadonlyArray() {}
-        NodeArray(undefined_t) : hasTrailingComma{false}, isMissingList{false}, transformFlags{TransformFlags::None}, ReadonlyArray() {}
+        NodeArray() : isUndefined{false}, hasTrailingComma{false}, isMissingList{false}, transformFlags{TransformFlags::None}, ReadonlyArray() {}
+        NodeArray(undefined_t) : isUndefined{true}, hasTrailingComma{false}, isMissingList{false}, transformFlags{TransformFlags::None}, ReadonlyArray() {}
 
         template <typename U>
-        NodeArray(NodeArray<U> other) : hasTrailingComma{other.hasTrailingComma}, isMissingList{other.isMissingList}, transformFlags{other.transformFlags}, ReadonlyArray(other.begin(), other.end()) {
+        NodeArray(NodeArray<U> other) : isUndefined{other.isUndefined}, hasTrailingComma{other.hasTrailingComma}, isMissingList{other.isMissingList}, transformFlags{other.transformFlags}, ReadonlyArray(other.begin(), other.end()) {
         }
 
-        NodeArray(T item) : hasTrailingComma{false}, isMissingList{false}, transformFlags{TransformFlags::None}, ReadonlyArray({item}) {
+        NodeArray(T item) : isUndefined{false}, hasTrailingComma{false}, isMissingList{false}, transformFlags{TransformFlags::None}, ReadonlyArray({item}) {
         }    
 
         auto pop() -> T
@@ -67,7 +67,7 @@ namespace data
 
         inline operator bool()
         {
-            return !empty();
+            return !isUndefined;
         }
 
         inline auto operator->()
@@ -98,18 +98,19 @@ namespace data
         inline auto operator==(undefined_t)
         {
             // TODO: review it
-            return size() == 0;
+            return isUndefined;
         }
 
         inline auto operator!=(undefined_t)
         {
-            return size() != 0;
+            return !isUndefined;
         }        
 
         boolean hasTrailingComma;
         /* @internal */ TransformFlags transformFlags; // Flags for transforms, possibly undefined
         // to support MissingList
         boolean isMissingList;
+        boolean isUndefined;
     };
 
     using ModifiersArray = NodeArray<PTR(Modifier)>;
@@ -651,9 +652,9 @@ namespace data
     struct NamedTupleMember : TypeNode
     {
         // kind: SyntaxKind::NamedTupleMember;
-        Token<SyntaxKind::DotDotDotToken> dotDotDotToken;
+        PTR(DotDotDotToken) dotDotDotToken;
         PTR(Identifier) name;
-        Token<SyntaxKind::QuestionToken> questionToken;
+        PTR(QuestionToken) questionToken;
         PTR(TypeNode) type;
     };
 
@@ -1421,7 +1422,7 @@ namespace data
     struct JsxExpression : Expression
     {
         // kind: SyntaxKind::JsxExpression;
-        Token<SyntaxKind::DotDotDotToken> dotDotDotToken;
+        PTR(DotDotDotToken) dotDotDotToken;
         PTR(Expression) expression;
     };
 
@@ -2278,7 +2279,7 @@ namespace data
 
         // kind: SyntaxKind::SourceFile;
         NodeArray<PTR(Statement)> statements;
-        Token<SyntaxKind::EndOfFileToken> endOfFileToken;
+        PTR(EndOfFileToken) endOfFileToken;
 
         string fileName;
         /* @internal */ Path path;

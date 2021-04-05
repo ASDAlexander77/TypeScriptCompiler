@@ -60,7 +60,13 @@ struct safe_string
 };
 
 template <typename T>
-bool operator!(const std::vector<T>& values)
+bool operator!(NodeArray<T> &values)
+{
+    return !values.operator bool();
+}
+
+template <typename T>
+bool operator!(const std::vector<T> &values)
 {
     return values.empty();
 }
