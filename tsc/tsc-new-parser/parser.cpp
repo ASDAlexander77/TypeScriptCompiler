@@ -3894,10 +3894,12 @@ namespace ts
                 if (!scanner.hasPrecedingLineBreak() &&
                     (token() == SyntaxKind::AsteriskToken || isStartOfExpression()))
                 {
+                    auto asteriskToken = parseOptionalToken(SyntaxKind::AsteriskToken);
+                    auto expression = parseAssignmentExpressionOrHigher();
                     return finishNode(
                         factory.createYieldExpression(
-                            parseOptionalToken(SyntaxKind::AsteriskToken),
-                            parseAssignmentExpressionOrHigher()),
+                            asteriskToken,
+                            expression),
                         pos);
                 }
                 else
