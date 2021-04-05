@@ -34,7 +34,7 @@ namespace ts
 
     inline auto getScriptKindFromFileName(string fileName) -> ScriptKind
     {
-        auto pos = fileName.find(S('.'));
+        auto pos = fileName.rfind(S('.'));
         if (pos == string::npos)
         {
             return ScriptKind::Unknown;

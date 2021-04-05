@@ -80,7 +80,7 @@ try {
     for (const file of files) {
         //const data = await fs.readFile(fld + "/" + file);
 
-        if (file.endsWith(".tsx"))
+        if (file.endsWith(".ts"))
         {
             continue;
         }

@@ -4805,7 +4805,14 @@ namespace ts
                 }
                 else if (opening == SyntaxKind::JsxOpeningFragment)
                 {
-                    result = finishNode(factory.createJsxFragment(opening, parseJsxChildren(opening), parseJsxClosingFragment(inExpressionContext)), pos);
+                    auto jsxChildren = parseJsxChildren(opening);
+                    auto jsxClosingFragment = parseJsxClosingFragment(inExpressionContext);
+                    result = finishNode(
+                        factory.createJsxFragment(
+                            opening, 
+                            jsxChildren, 
+                            jsxClosingFragment), 
+                        pos);
                 }
                 else
                 {
@@ -4841,7 +4848,9 @@ namespace ts
             auto parseJsxText() -> JsxText
             {
                 auto pos = getNodePos();
-                auto node = factory.createJsxText(scanner.getTokenValue(), currentToken == SyntaxKind::JsxTextAllWhiteSpaces);
+                auto tokenValue = scanner.getTokenValue();
+                auto containsOnlyTriviaWhiteSpaces = currentToken == SyntaxKind::JsxTextAllWhiteSpaces;
+                auto node = factory.createJsxText(tokenValue, containsOnlyTriviaWhiteSpaces);
                 currentToken = scanner.scanJsxToken();
                 return finishNode(node, pos);
             }

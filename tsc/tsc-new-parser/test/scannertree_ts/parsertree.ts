@@ -47,7 +47,7 @@ catch (e) {
 }
 
 const dataStr = ("" + data).replace(/\r\n/g, "\n");
-const source = ts.createSourceFile("", dataStr, ts.ScriptTarget.Latest);
+const source = ts.createSourceFile(process.argv[2], dataStr, ts.ScriptTarget.Latest);
 
 let intent = 0;
 const visitNode = (child) => {
