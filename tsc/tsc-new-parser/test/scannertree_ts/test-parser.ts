@@ -40,7 +40,7 @@ enum SyntaxKindMapped2 {
 
 function printTree(filePath) {
     const dataStr = ts.sys.readFile(filePath).replace(/\r\n/g, "\n");
-    const source = ts.createSourceFile("", dataStr, ts.ScriptTarget.Latest);
+    const source = ts.createSourceFile(filePath, dataStr, ts.ScriptTarget.Latest);
 
     let result = "";
 
