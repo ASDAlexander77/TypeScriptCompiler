@@ -1252,12 +1252,8 @@ namespace ts
 
             auto internPrivateIdentifier(string text) -> string
             {
-                auto privateIdentifier = privateIdentifiers.at(text);
-                if (!privateIdentifier.empty())
-                {
-                    privateIdentifiers[text] = (privateIdentifier = text);
-                }
-                return privateIdentifier;
+                privateIdentifiers[text] = text;
+                return privateIdentifiers.at(text);                
             }
 
             auto parsePrivateIdentifier() -> Node
@@ -7751,9 +7747,20 @@ namespace ts
                 // take forms of JsxTagNameExpression which includes an identifier, "this" expression, or another propertyAccessExpression
                 // it is safe to case the expression property.as<such>(). See parseJsxElementName for how we parse tag name in Jsx element
 
-                // TODO: finish it for privateIdentifier
-                return lhs.as<PropertyAccessExpression>()->name.as<Identifier>()->escapedText == rhs.as<PropertyAccessExpression>()->name.as<Identifier>()->escapedText &&
-                    tagNamesAreEquivalent(lhs.as<PropertyAccessExpression>()->expression.as<JsxTagNameExpression>(), rhs.as<PropertyAccessExpression>()->expression.as<JsxTagNameExpression>());
+                auto lhsName = ts::isIdentifier(lhs.as<PropertyAccessExpression>()->name) 
+                    ? lhs.as<PropertyAccessExpression>()->name.as<Identifier>()->escapedText 
+                    : isPrivateIdentifier(lhs.as<PropertyAccessExpression>()->name) 
+                        ? lhs.as<PropertyAccessExpression>()->name.as<PrivateIdentifier>()->escapedText 
+                        : string();
+                auto rhsName = ts::isIdentifier(rhs.as<PropertyAccessExpression>()->name) 
+                    ? rhs.as<PropertyAccessExpression>()->name.as<Identifier>()->escapedText 
+                    : isPrivateIdentifier(rhs.as<PropertyAccessExpression>()->name) 
+                        ? rhs.as<PropertyAccessExpression>()->name.as<PrivateIdentifier>()->escapedText 
+                        : string();                        
+                return lhsName == rhsName 
+                    && tagNamesAreEquivalent(
+                        lhs.as<PropertyAccessExpression>()->expression.as<JsxTagNameExpression>(), 
+                        rhs.as<PropertyAccessExpression>()->expression.as<JsxTagNameExpression>());
             }
 
         }; // End of Scanner
