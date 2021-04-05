@@ -74,6 +74,8 @@ struct ptr
     template <typename U>
 	ptr(REF_TYPE(U) &otherInstance) : instance(std::static_pointer_cast<T>(otherInstance)) {};
 
+    ~ptr() = default;
+
     inline auto operator->()
     {
         return instance.operator->();
