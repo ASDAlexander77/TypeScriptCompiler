@@ -80,11 +80,6 @@ try {
     for (const file of files) {
         //const data = await fs.readFile(fld + "/" + file);
 
-        if (file.endsWith(".ts"))
-        {
-            continue;
-        }
-
         if (file == "collisionCodeGenModuleWithUnicodeNames.ts"
             || file == "constructorWithIncompleteTypeAnnotation.ts"
             || file == "extendedUnicodePlaneIdentifiers.ts"
