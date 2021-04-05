@@ -48,14 +48,14 @@ namespace data
     template <typename T /*extends Node*/>
     struct NodeArray : ReadonlyArray<T>, TextRange
     {
-        NodeArray() : ReadonlyArray() {}
-        NodeArray(undefined_t) : ReadonlyArray() {}
+        NodeArray() : hasTrailingComma{false}, isMissingList{false}, transformFlags{TransformFlags::None}, ReadonlyArray() {}
+        NodeArray(undefined_t) : hasTrailingComma{false}, isMissingList{false}, transformFlags{TransformFlags::None}, ReadonlyArray() {}
 
         template <typename U>
-        NodeArray(NodeArray<U> other) : ReadonlyArray(other.begin(), other.end()) {
+        NodeArray(NodeArray<U> other) : hasTrailingComma{other.hasTrailingComma}, isMissingList{other.isMissingList}, transformFlags{other.transformFlags}, ReadonlyArray(other.begin(), other.end()) {
         }
 
-        NodeArray(T item) : ReadonlyArray({item}) {
+        NodeArray(T item) : hasTrailingComma{false}, isMissingList{false}, transformFlags{TransformFlags::None}, ReadonlyArray({item}) {
         }    
 
         auto pop() -> T
