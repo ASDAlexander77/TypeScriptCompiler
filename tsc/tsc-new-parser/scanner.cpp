@@ -2920,9 +2920,9 @@ namespace ts
                 }
             }
             // Do not include a trailing namespace separator in the token, since this is against the spec.
-            if (tokenValue.substr(-1) == S(":"))
+            if (tokenValue.substr(tokenValue.length()-1) == S(":"))
             {
-                tokenValue = tokenValue.substr(0, -1);
+                tokenValue = tokenValue.substr(0, tokenValue.length()-1);
                 pos--;
             }
         }

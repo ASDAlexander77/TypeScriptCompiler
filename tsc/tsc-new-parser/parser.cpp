@@ -7799,6 +7799,11 @@ namespace ts
         return impl->parseSourceFile(string(), sourceText, languageVersion, IncrementalParser::SyntaxCursor());
     }    
 
+    auto Parser::parseSourceFile(string fileName, string sourceText, ScriptTarget languageVersion) -> SourceFile
+    {
+        return impl->parseSourceFile(fileName, sourceText, languageVersion, IncrementalParser::SyntaxCursor());
+    }    
+
     auto Parser::parseSourceFile(string fileName, string sourceText, ScriptTarget languageVersion, IncrementalParser::SyntaxCursor syntaxCursor, boolean setParentNodes, ScriptKind scriptKind) -> SourceFile
     {
         return impl->parseSourceFile(fileName, sourceText, languageVersion, syntaxCursor, setParentNodes, scriptKind);

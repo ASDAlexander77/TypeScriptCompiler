@@ -25,11 +25,11 @@ namespace fs = std::experimental::filesystem;
 #include "utilities.h"
 #include "file_helper.h"
 
-void printParser(const wchar_t *str, boolean showLineCharPos)
+void printParser(const wchar_t *fileName, const wchar_t *str, boolean showLineCharPos)
 {
     ts::Parser parser;
     //auto sourceFile = parser.parseSourceFile(S("function f() { let i = 10; }"), ScriptTarget::Latest);
-    auto sourceFile = parser.parseSourceFile(str, ScriptTarget::Latest);
+    auto sourceFile = parser.parseSourceFile(fileName, str, ScriptTarget::Latest);
 
     FuncT<> visitNode;
     ArrayFuncT<> visitArray;
@@ -123,11 +123,11 @@ int main(int argc, char **args)
         if (exists)
         {
             auto str = readFile(std::string(file));
-            printParser(str.c_str(), hasOption(argc, args, "--line"));
+            printParser(ctow(file).c_str(), str.c_str(), hasOption(argc, args, "--line"));
         }
         else
         {
-            printParser(ctow(file).c_str(), hasOption(argc, args, "--line"));
+            printParser(S(""), ctow(file).c_str(), hasOption(argc, args, "--line"));
         }
     }
 

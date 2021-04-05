@@ -49,6 +49,8 @@ namespace ts
 
         auto parseSourceFile(string, ScriptTarget) -> SourceFile;
 
+        auto parseSourceFile(string, string, ScriptTarget) -> SourceFile;
+
         auto parseSourceFile(string, string, ScriptTarget, IncrementalParser::SyntaxCursor, boolean = false, ScriptKind = ScriptKind::Unknown) -> SourceFile;
 
         auto tokenToText(SyntaxKind kind) -> string;

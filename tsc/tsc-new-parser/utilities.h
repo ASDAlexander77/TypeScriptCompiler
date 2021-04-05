@@ -40,7 +40,7 @@ namespace ts
             return ScriptKind::Unknown;
         }
 
-        auto ext = fileName.substr(pos);
+        auto ext = fileName.substr(pos + 1);
         std::transform(ext.begin(), ext.end(), ext.begin(), [](char_t c) { return std::tolower(c); });
         if (ext == S("js"))
             return ScriptKind::JS;
@@ -152,7 +152,7 @@ namespace ts
     }
     */
 
-        DiagnosticWithDetachedLocation d;
+        DiagnosticWithDetachedLocation d{data::DiagnosticWithDetachedLocation()};
         d->start = start;
         d->length = length;
 
