@@ -6611,7 +6611,7 @@ namespace ts
                 PropertyName name,
                 QuestionToken questionToken) -> PropertyDeclaration
             {
-                auto exclamationToken = (number)questionToken && !scanner.hasPrecedingLineBreak() ? parseOptionalToken(SyntaxKind::ExclamationToken) : undefined;
+                auto exclamationToken = !questionToken && !scanner.hasPrecedingLineBreak() ? parseOptionalToken(SyntaxKind::ExclamationToken) : undefined;
                 auto type = parseTypeAnnotation();
                 auto initializer = doOutsideOfContext<Expression>(NodeFlags::YieldContext | NodeFlags::AwaitContext | NodeFlags::DisallowInContext, std::bind(&Parser::parseInitializer, this));
                 parseSemicolon();
