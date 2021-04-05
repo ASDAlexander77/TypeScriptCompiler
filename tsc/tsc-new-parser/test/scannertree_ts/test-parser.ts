@@ -96,7 +96,8 @@ try {
         // temporary ignore as too big for TS test app
         if (file == "binaryArithmeticControlFlowGraphNotTooLarge.ts"
             || file == "binderBinaryExpressionStress.ts" 
-            || file == "binderBinaryExpressionStressJs.ts") {
+            || file == "binderBinaryExpressionStressJs.ts"
+            || file == "errorRecoveryWithDotFollowedByNamespaceKeyword.ts") {
             continue;
         }
 

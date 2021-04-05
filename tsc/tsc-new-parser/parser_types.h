@@ -547,7 +547,7 @@ namespace data
     // ClassElement and an ObjectLiteralElement.
     struct SetAccessorDeclaration : AccessorDeclaration
     {
-        /* @internal */ PTR(TypeNode) type;                                      // Present for use with reporting a grammar error
+        // kind: SyntaxKind::SetAccessor;
     };
 
     struct IndexSignatureDeclaration : SignatureDeclarationBase

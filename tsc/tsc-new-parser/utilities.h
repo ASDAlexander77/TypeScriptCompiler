@@ -1262,7 +1262,8 @@ namespace ts
         {
             diagnostic->relatedInformation.clear();
         }
-        Debug::_assert(diagnostic->relatedInformation.size() != 0, S("Diagnostic had empty array singleton for related info, but is still being constructed!"));
+        // TODO: review next assert
+        //Debug::_assert(diagnostic->relatedInformation.size() != 0, S("Diagnostic had empty array singleton for related info, but is still being constructed!"));
         diagnostic->relatedInformation.push_back(relatedInformation);
 
         return diagnostic;
