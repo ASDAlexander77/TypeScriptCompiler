@@ -25,18 +25,20 @@ namespace fs = std::experimental::filesystem;
 #include "utilities.h"
 #include "file_helper.h"
 
+using namespace ts;
+
 void printParser(const wchar_t *fileName, const wchar_t *str, boolean showLineCharPos)
 {
     ts::Parser parser;
     //auto sourceFile = parser.parseSourceFile(S("function f() { let i = 10; }"), ScriptTarget::Latest);
     auto sourceFile = parser.parseSourceFile(fileName, str, ScriptTarget::Latest);
 
-    FuncT<> visitNode;
-    ArrayFuncT<> visitArray;
+    ts::FuncT<> visitNode;
+    ts::ArrayFuncT<> visitArray;
 
     auto intent = 0;
 
-    visitNode = [&](Node child) -> Node {
+    visitNode = [&](ts::Node child) -> ts::Node {
 
         for (auto i = 0; i < intent; i++)
         {
@@ -66,7 +68,7 @@ void printParser(const wchar_t *fileName, const wchar_t *str, boolean showLineCh
         return undefined;
     };
 
-    visitArray = [&](NodeArray<Node> array) -> Node {
+    visitArray = [&](ts::NodeArray<ts::Node> array) -> ts::Node {
         for (auto node : array)
         {
             visitNode(node);
@@ -75,7 +77,7 @@ void printParser(const wchar_t *fileName, const wchar_t *str, boolean showLineCh
         return undefined;
     };
 
-    auto result = ts::forEachChild(sourceFile.as<Node>(), visitNode, visitArray);
+    auto result = ts::forEachChild(sourceFile.as<ts::Node>(), visitNode, visitArray);
 }
 
 boolean hasOption(int argc, char **args, const char* option)

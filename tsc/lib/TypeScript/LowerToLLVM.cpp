@@ -2,7 +2,6 @@
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/Passes.h"
 #include "TypeScript/Defines.h"
-#include "TypeScript/EnumsAST.h"
 
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 #include "mlir/Conversion/SCFToStandard/SCFToStandard.h"
@@ -19,9 +18,11 @@
 
 #include "TypeScript/LowerToLLVMLogic.h"
 
+#include "scanner_enums.h"
+
 using namespace mlir;
 using namespace ::typescript;
-namespace ts = mlir::typescript;
+namespace mlir_ts = mlir::typescript;
 
 //===----------------------------------------------------------------------===//
 // TypeScriptToLLVM RewritePatterns
@@ -29,12 +30,12 @@ namespace ts = mlir::typescript;
 
 namespace
 {
-    class PrintOpLowering : public OpConversionPattern<ts::PrintOp>
+    class PrintOpLowering : public OpConversionPattern<mlir_ts::PrintOp>
     {
     public:
-        using OpConversionPattern<ts::PrintOp>::OpConversionPattern;
+        using OpConversionPattern<mlir_ts::PrintOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite(ts::PrintOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::PrintOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             TypeHelper th(rewriter);
             LLVMCodeHelper ch(op, rewriter);
@@ -73,7 +74,7 @@ namespace
                         format << "%d";
                     }
                 }
-                else if (auto s = type.dyn_cast_or_null<ts::StringType>())
+                else if (auto s = type.dyn_cast_or_null<mlir_ts::StringType>())
                 {
                     format << "%s";
                 }
@@ -143,12 +144,12 @@ namespace
         }
     };
 
-    class AssertOpLowering : public OpConversionPattern<ts::AssertOp>
+    class AssertOpLowering : public OpConversionPattern<mlir_ts::AssertOp>
     {
     public:
-        using OpConversionPattern<ts::AssertOp>::OpConversionPattern;
+        using OpConversionPattern<mlir_ts::AssertOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite(ts::AssertOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::AssertOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             TypeHelper th(rewriter);
             LLVMCodeHelper ch(op, rewriter);
@@ -221,12 +222,12 @@ namespace
         }
     };
 
-    class ParseIntOpLowering : public OpConversionPattern<ts::ParseIntOp>
+    class ParseIntOpLowering : public OpConversionPattern<mlir_ts::ParseIntOp>
     {
     public:
-        using OpConversionPattern<ts::ParseIntOp>::OpConversionPattern;
+        using OpConversionPattern<mlir_ts::ParseIntOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite(ts::ParseIntOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::ParseIntOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             TypeHelper th(rewriter);
             LLVMCodeHelper ch(op, rewriter);
@@ -247,12 +248,12 @@ namespace
         }
     };
 
-    class ParseFloatOpLowering : public OpConversionPattern<ts::ParseFloatOp>
+    class ParseFloatOpLowering : public OpConversionPattern<mlir_ts::ParseFloatOp>
     {
     public:
-        using OpConversionPattern<ts::ParseFloatOp>::OpConversionPattern;
+        using OpConversionPattern<mlir_ts::ParseFloatOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite(ts::ParseFloatOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::ParseFloatOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             TypeHelper th(rewriter);
             LLVMCodeHelper ch(op, rewriter);
@@ -273,11 +274,11 @@ namespace
         }
     };
 
-    struct NullOpLowering : public OpConversionPattern<ts::NullOp>
+    struct NullOpLowering : public OpConversionPattern<mlir_ts::NullOp>
     {
-        using OpConversionPattern<ts::NullOp>::OpConversionPattern;
+        using OpConversionPattern<mlir_ts::NullOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite(ts::NullOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::NullOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             TypeConverterHelper tch(*getTypeConverter());
             rewriter.replaceOpWithNewOp<LLVM::NullOp>(op, tch.convertType(op.getType()));
@@ -285,12 +286,12 @@ namespace
         }
     };
 
-    class StringOpLowering : public OpConversionPattern<ts::StringOp>
+    class StringOpLowering : public OpConversionPattern<mlir_ts::StringOp>
     {
     public:
-        using OpConversionPattern<ts::StringOp>::OpConversionPattern;
+        using OpConversionPattern<mlir_ts::StringOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite(ts::StringOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::StringOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             LLVMCodeHelper ch(op, rewriter);
 
@@ -310,12 +311,12 @@ namespace
         }
     };
 
-    class UndefOpLowering : public OpConversionPattern<ts::UndefOp>
+    class UndefOpLowering : public OpConversionPattern<mlir_ts::UndefOp>
     {
     public:
-        using OpConversionPattern<ts::UndefOp>::OpConversionPattern;
+        using OpConversionPattern<mlir_ts::UndefOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite(ts::UndefOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::UndefOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             TypeConverterHelper tch(*getTypeConverter());
             rewriter.replaceOpWithNewOp<LLVM::UndefOp>(op, tch.convertType(op.getType()));
@@ -323,16 +324,16 @@ namespace
         }
     };
 
-    struct EntryOpLowering : public OpConversionPattern<ts::EntryOp>
+    struct EntryOpLowering : public OpConversionPattern<mlir_ts::EntryOp>
     {
-        using OpConversionPattern<ts::EntryOp>::OpConversionPattern;
+        using OpConversionPattern<mlir_ts::EntryOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite(ts::EntryOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::EntryOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             CodeLogicHelper clh(op, rewriter);
             TypeConverterHelper tch(*getTypeConverter());
 
-            auto opTyped = ts::EntryOpAdaptor(op);
+            auto opTyped = mlir_ts::EntryOpAdaptor(op);
             auto location = op.getLoc();
 
             mlir::Value allocValue;
@@ -398,11 +399,11 @@ namespace
         return &*result;
     }
 
-    struct ReturnOpLowering : public OpRewritePattern<ts::ReturnOp>
+    struct ReturnOpLowering : public OpRewritePattern<mlir_ts::ReturnOp>
     {
-        using OpRewritePattern<ts::ReturnOp>::OpRewritePattern;
+        using OpRewritePattern<mlir_ts::ReturnOp>::OpRewritePattern;
 
-        LogicalResult matchAndRewrite(ts::ReturnOp op, PatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::ReturnOp op, PatternRewriter &rewriter) const final
         {
             auto retBlock = FindReturnBlock(rewriter);
 
@@ -422,11 +423,11 @@ namespace
         }
     };
 
-    struct ReturnValOpLowering : public OpRewritePattern<ts::ReturnValOp>
+    struct ReturnValOpLowering : public OpRewritePattern<mlir_ts::ReturnValOp>
     {
-        using OpRewritePattern<ts::ReturnValOp>::OpRewritePattern;
+        using OpRewritePattern<mlir_ts::ReturnValOp>::OpRewritePattern;
 
-        LogicalResult matchAndRewrite(ts::ReturnValOp op, PatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::ReturnValOp op, PatternRewriter &rewriter) const final
         {
             auto retBlock = FindReturnBlock(rewriter);
 
@@ -450,11 +451,11 @@ namespace
         }
     };
 
-    struct ExitOpLowering : public OpConversionPattern<ts::ExitOp>
+    struct ExitOpLowering : public OpConversionPattern<mlir_ts::ExitOp>
     {
-        using OpConversionPattern<ts::ExitOp>::OpConversionPattern;
+        using OpConversionPattern<mlir_ts::ExitOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite(ts::ExitOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::ExitOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             auto retBlock = FindReturnBlock(rewriter);
 
@@ -465,11 +466,11 @@ namespace
         }
     };
 
-    struct FuncOpLowering : public OpConversionPattern<ts::FuncOp>
+    struct FuncOpLowering : public OpConversionPattern<mlir_ts::FuncOp>
     {
-        using OpConversionPattern<ts::FuncOp>::OpConversionPattern;
+        using OpConversionPattern<mlir_ts::FuncOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite(ts::FuncOp funcOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::FuncOp funcOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             auto &typeConverter = *getTypeConverter();
             auto fnType = funcOp.getType();
@@ -488,7 +489,7 @@ namespace
                 signatureResultsConverter.addInputs(argType.index(), convertedType);
             }
 
-            auto newFuncOp = rewriter.create<FuncOp>(
+            auto newFuncOp = rewriter.create<mlir::FuncOp>(
                 funcOp.getLoc(),
                 funcOp.getName(),
                 rewriter.getFunctionType(signatureInputsConverter.getConvertedTypes(), signatureResultsConverter.getConvertedTypes()));
@@ -515,14 +516,14 @@ namespace
         }
     };
 
-    struct CallOpLowering : public OpRewritePattern<ts::CallOp>
+    struct CallOpLowering : public OpRewritePattern<mlir_ts::CallOp>
     {
-        using OpRewritePattern<ts::CallOp>::OpRewritePattern;
+        using OpRewritePattern<mlir_ts::CallOp>::OpRewritePattern;
 
-        LogicalResult matchAndRewrite(ts::CallOp op, PatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::CallOp op, PatternRewriter &rewriter) const final
         {
             // just replace
-            rewriter.replaceOpWithNewOp<CallOp>(
+            rewriter.replaceOpWithNewOp<mlir::CallOp>(
                 op,
                 op.getCallee(),
                 op.getResultTypes(),
@@ -531,11 +532,11 @@ namespace
         }
     };
 
-    struct CastOpLowering : public OpRewritePattern<ts::CastOp>
+    struct CastOpLowering : public OpRewritePattern<mlir_ts::CastOp>
     {
-        using OpRewritePattern<ts::CastOp>::OpRewritePattern;
+        using OpRewritePattern<mlir_ts::CastOp>::OpRewritePattern;
 
-        LogicalResult matchAndRewrite(ts::CastOp op, PatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::CastOp op, PatternRewriter &rewriter) const final
         {
             auto in = op.in();
             auto res = op.res();
@@ -560,8 +561,8 @@ namespace
                 return success();
             }
 
-            auto op1Any = op1.dyn_cast_or_null<ts::AnyType>();
-            auto op2String = op2.dyn_cast_or_null<ts::StringType>();
+            auto op1Any = op1.dyn_cast_or_null<mlir_ts::AnyType>();
+            auto op2String = op2.dyn_cast_or_null<mlir_ts::StringType>();
             if (op1Any && op2String)
             {
                 rewriter.replaceOp(op, op.in());
@@ -573,11 +574,11 @@ namespace
         }
     };
 
-    struct VariableOpLowering : public OpConversionPattern<ts::VariableOp>
+    struct VariableOpLowering : public OpConversionPattern<mlir_ts::VariableOp>
     {
-        using OpConversionPattern<ts::VariableOp>::OpConversionPattern;
+        using OpConversionPattern<mlir_ts::VariableOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite(ts::VariableOp varOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::VariableOp varOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             CodeLogicHelper clh(varOp, rewriter);
             TypeConverterHelper tch(*getTypeConverter());
@@ -600,7 +601,7 @@ namespace
         }
     };
 
-    void NegativeOp(ts::ArithmeticUnaryOp &unaryOp, mlir::PatternRewriter &builder)
+    void NegativeOp(mlir_ts::ArithmeticUnaryOp &unaryOp, mlir::PatternRewriter &builder)
     {
         CodeLogicHelper clh(unaryOp, builder);
 
@@ -630,11 +631,11 @@ namespace
         }
     }
 
-    struct ArithmeticUnaryOpLowering : public OpConversionPattern<ts::ArithmeticUnaryOp>
+    struct ArithmeticUnaryOpLowering : public OpConversionPattern<mlir_ts::ArithmeticUnaryOp>
     {
-        using OpConversionPattern<ts::ArithmeticUnaryOp>::OpConversionPattern;
+        using OpConversionPattern<mlir_ts::ArithmeticUnaryOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite(ts::ArithmeticUnaryOp arithmeticUnaryOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::ArithmeticUnaryOp arithmeticUnaryOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             switch ((SyntaxKind)arithmeticUnaryOp.opCode())
             {
@@ -648,28 +649,28 @@ namespace
         }
     };
 
-    struct ArithmeticBinaryOpLowering : public OpConversionPattern<ts::ArithmeticBinaryOp>
+    struct ArithmeticBinaryOpLowering : public OpConversionPattern<mlir_ts::ArithmeticBinaryOp>
     {
-        using OpConversionPattern<ts::ArithmeticBinaryOp>::OpConversionPattern;
+        using OpConversionPattern<mlir_ts::ArithmeticBinaryOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite(ts::ArithmeticBinaryOp arithmeticBinaryOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::ArithmeticBinaryOp arithmeticBinaryOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             switch ((SyntaxKind)arithmeticBinaryOp.opCode())
             {
             case SyntaxKind::PlusToken:
-                BinOp<ts::ArithmeticBinaryOp, AddIOp, AddFOp>(arithmeticBinaryOp, rewriter);
+                BinOp<mlir_ts::ArithmeticBinaryOp, AddIOp, AddFOp>(arithmeticBinaryOp, rewriter);
                 return success();
 
             case SyntaxKind::MinusToken:
-                BinOp<ts::ArithmeticBinaryOp, SubIOp, SubFOp>(arithmeticBinaryOp, rewriter);
+                BinOp<mlir_ts::ArithmeticBinaryOp, SubIOp, SubFOp>(arithmeticBinaryOp, rewriter);
                 return success();
 
             case SyntaxKind::AsteriskToken:
-                BinOp<ts::ArithmeticBinaryOp, MulIOp, MulFOp>(arithmeticBinaryOp, rewriter);
+                BinOp<mlir_ts::ArithmeticBinaryOp, MulIOp, MulFOp>(arithmeticBinaryOp, rewriter);
                 return success();
 
             case SyntaxKind::SlashToken:
-                BinOp<ts::ArithmeticBinaryOp, DivFOp, DivFOp>(arithmeticBinaryOp, rewriter);
+                BinOp<mlir_ts::ArithmeticBinaryOp, DivFOp, DivFOp>(arithmeticBinaryOp, rewriter);
                 return success();
 
             default:
@@ -678,23 +679,23 @@ namespace
         }
     };
 
-    struct LogicalBinaryOpLowering : public OpConversionPattern<ts::LogicalBinaryOp>
+    struct LogicalBinaryOpLowering : public OpConversionPattern<mlir_ts::LogicalBinaryOp>
     {
-        using OpConversionPattern<ts::LogicalBinaryOp>::OpConversionPattern;
+        using OpConversionPattern<mlir_ts::LogicalBinaryOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite(ts::LogicalBinaryOp logicalBinaryOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::LogicalBinaryOp logicalBinaryOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             switch ((SyntaxKind)logicalBinaryOp.opCode())
             {
             case SyntaxKind::EqualsEqualsToken:
             case SyntaxKind::EqualsEqualsEqualsToken:
-                LogicOp<ts::LogicalBinaryOp,
+                LogicOp<mlir_ts::LogicalBinaryOp,
                         CmpIOp, CmpIPredicate, CmpIPredicate::eq,
                         CmpFOp, CmpFPredicate, CmpFPredicate::OEQ>(logicalBinaryOp, rewriter, *(LLVMTypeConverter *)getTypeConverter());
                 return success();
             case SyntaxKind::ExclamationEqualsToken:
             case SyntaxKind::ExclamationEqualsEqualsToken:
-                LogicOp<ts::LogicalBinaryOp,
+                LogicOp<mlir_ts::LogicalBinaryOp,
                         CmpIOp, CmpIPredicate, CmpIPredicate::ne,
                         CmpFOp, CmpFPredicate, CmpFPredicate::ONE>(logicalBinaryOp, rewriter, *(LLVMTypeConverter *)getTypeConverter());
                 return success();
@@ -704,17 +705,17 @@ namespace
         }
     };
 
-    struct LoadOpLowering : public OpConversionPattern<ts::LoadOp>
+    struct LoadOpLowering : public OpConversionPattern<mlir_ts::LoadOp>
     {
-        using OpConversionPattern<ts::LoadOp>::OpConversionPattern;
+        using OpConversionPattern<mlir_ts::LoadOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite(ts::LoadOp loadOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::LoadOp loadOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             TypeHelper th(rewriter);
             TypeConverterHelper tch(*getTypeConverter());
             CodeLogicHelper clh(loadOp, rewriter);
 
-            auto elementType = loadOp.reference().getType().cast<ts::RefType>().getElementType();
+            auto elementType = loadOp.reference().getType().cast<mlir_ts::RefType>().getElementType();
             auto elementTypeConverted = tch.convertType(elementType);
 
             rewriter.replaceOpWithNewOp<LLVM::LoadOp>(
@@ -725,22 +726,22 @@ namespace
         }
     };
 
-    struct StoreOpLowering : public OpConversionPattern<ts::StoreOp>
+    struct StoreOpLowering : public OpConversionPattern<mlir_ts::StoreOp>
     {
-        using OpConversionPattern<ts::StoreOp>::OpConversionPattern;
+        using OpConversionPattern<mlir_ts::StoreOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite(ts::StoreOp storeOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::StoreOp storeOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             rewriter.replaceOpWithNewOp<LLVM::StoreOp>(storeOp, storeOp.value(), storeOp.reference());
             return success();
         }
     };
 
-    struct IfOpLowering : public OpConversionPattern<ts::IfOp>
+    struct IfOpLowering : public OpConversionPattern<mlir_ts::IfOp>
     {
-        using OpConversionPattern<ts::IfOp>::OpConversionPattern;
+        using OpConversionPattern<mlir_ts::IfOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite(ts::IfOp ifOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const override
+        LogicalResult matchAndRewrite(mlir_ts::IfOp ifOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const override
         {
             auto loc = ifOp.getLoc();
 
@@ -813,11 +814,11 @@ namespace
         }
     };
 
-    struct GlobalOpLowering : public OpConversionPattern<ts::GlobalOp>
+    struct GlobalOpLowering : public OpConversionPattern<mlir_ts::GlobalOp>
     {
-        using OpConversionPattern<ts::GlobalOp>::OpConversionPattern;
+        using OpConversionPattern<mlir_ts::GlobalOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite(ts::GlobalOp globalOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::GlobalOp globalOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             TypeHelper th(rewriter);
             TypeConverterHelper tch(*getTypeConverter());
@@ -826,7 +827,7 @@ namespace
             auto hasValue = globalOp.value().hasValue();
             auto value = hasValue ? globalOp.value().getValue() : Attribute();
             Type argType = globalOp.getType();
-            if (hasValue && argType.dyn_cast_or_null<ts::StringType>())
+            if (hasValue && argType.dyn_cast_or_null<mlir_ts::StringType>())
             {
                 type = th.getArrayType(th.getI8Type(), value.cast<StringAttr>().getValue().size());
             }
@@ -846,11 +847,11 @@ namespace
         }
     };
 
-    struct AddressOfOpLowering : public OpConversionPattern<ts::AddressOfOp>
+    struct AddressOfOpLowering : public OpConversionPattern<mlir_ts::AddressOfOp>
     {
-        using OpConversionPattern<ts::AddressOfOp>::OpConversionPattern;
+        using OpConversionPattern<mlir_ts::AddressOfOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite(ts::AddressOfOp addressOfOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::AddressOfOp addressOfOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             TypeHelper th(rewriter);            
             TypeConverterHelper tch(*getTypeConverter());
@@ -866,11 +867,11 @@ namespace
         }
     };
 
-    struct AddressOfConstStringOpLowering : public OpConversionPattern<ts::AddressOfConstStringOp>
+    struct AddressOfConstStringOpLowering : public OpConversionPattern<mlir_ts::AddressOfConstStringOp>
     {
-        using OpConversionPattern<ts::AddressOfConstStringOp>::OpConversionPattern;
+        using OpConversionPattern<mlir_ts::AddressOfConstStringOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite(ts::AddressOfConstStringOp addressOfConstStringOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::AddressOfConstStringOp addressOfConstStringOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             TypeHelper th(rewriter);            
             TypeConverterHelper tch(*getTypeConverter());
@@ -894,19 +895,19 @@ namespace
 
     static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, mlir::ModuleOp &m)
     {
-        converter.addConversion([&](ts::AnyType type) {
+        converter.addConversion([&](mlir_ts::AnyType type) {
             return LLVM::LLVMPointerType::get(IntegerType::get(m.getContext(), 8));
         });
 
-        converter.addConversion([&](ts::VoidType type) {
+        converter.addConversion([&](mlir_ts::VoidType type) {
             return LLVM::LLVMVoidType::get(m.getContext());
         });
 
-        converter.addConversion([&](ts::StringType type) {
+        converter.addConversion([&](mlir_ts::StringType type) {
             return LLVM::LLVMPointerType::get(IntegerType::get(m.getContext(), 8));
         });
 
-        converter.addConversion([&](ts::RefType type) {
+        converter.addConversion([&](mlir_ts::RefType type) {
             return LLVM::LLVMPointerType::get(converter.convertType(type.getElementType()));
         });
     };

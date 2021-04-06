@@ -193,7 +193,7 @@ int dumpAST()
         return 0;
     }
 
-    dumpFromSource(fileOrErr.get()->getBuffer());
+    dumpFromSource(inputFilename, fileOrErr.get()->getBuffer());
 
     return 0;
 }

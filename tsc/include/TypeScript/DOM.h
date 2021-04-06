@@ -2,15 +2,11 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
 
-#include "TypeScriptLexerANTLR.h"
-#include "TypeScriptParserANTLR.h"
-
 #include <string>
 #include <vector>
 #include <memory>
 
 using namespace llvm;
-using namespace antlr4;
 using namespace typescript;
 
 namespace typescript

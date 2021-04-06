@@ -3,54 +3,57 @@
 
 #include "config.h"
 
-namespace IncrementalParser
+namespace ts
 {
-    struct IncrementalElement : TextRange
+    namespace IncrementalParser
     {
-        Node parent;
-        boolean intersectsChange;
-        number length;
-        NodeArray<PTR(Node)> _children;
-    };
-
-    struct IncrementalNode : Node, IncrementalElement
-    {
-        boolean hasBeenIncrementallyParsed;
-
-        inline auto operator->()
+        struct IncrementalElement : TextRange
         {
-            return Node::operator->();
-        }
+            Node parent;
+            boolean intersectsChange;
+            number length;
+            NodeArray<PTR(Node)> _children;
+        };
 
-        inline operator bool()
+        struct IncrementalNode : Node, IncrementalElement
         {
-            return Node::operator bool();
-        }
-    };
+            boolean hasBeenIncrementallyParsed;
 
-    struct IncrementalNodeArray : NodeArray<IncrementalNode>, IncrementalElement
-    {
-        number length;
-    };
+            inline auto operator->()
+            {
+                return Node::operator->();
+            }
 
-    // Allows finding nodes in the source file at a certain position in an efficient manner.
-    // The implementation takes advantage of the calling pattern it knows the parser will
-    // make in order to optimize finding nodes as quickly as possible.
-    struct SyntaxCursor
-    {
-        SyntaxCursor(){};
-        SyntaxCursor(std::function<IncrementalNode(number)> currentNode) : currentNode{currentNode} {};
-        SyntaxCursor(undefined_t){};
+            inline operator bool()
+            {
+                return Node::operator bool();
+            }
+        };
 
-        inline operator bool()
+        struct IncrementalNodeArray : NodeArray<IncrementalNode>, IncrementalElement
         {
-            return !!currentNode;
-        }
+            number length;
+        };
 
-        std::function<IncrementalNode(number)> currentNode;
-    };
+        // Allows finding nodes in the source file at a certain position in an efficient manner.
+        // The implementation takes advantage of the calling pattern it knows the parser will
+        // make in order to optimize finding nodes as quickly as possible.
+        struct SyntaxCursor
+        {
+            SyntaxCursor(){};
+            SyntaxCursor(std::function<IncrementalNode(number)> currentNode) : currentNode{currentNode} {};
+            SyntaxCursor(undefined_t){};
 
-    auto createSyntaxCursor(SourceFile sourceFile) -> SyntaxCursor;
-}
+            inline operator bool()
+            {
+                return !!currentNode;
+            }
+
+            std::function<IncrementalNode(number)> currentNode;
+        };
+
+        auto createSyntaxCursor(SourceFile sourceFile) -> SyntaxCursor;
+    }
+} // namespace ts
 
 #endif // INCREMENTAL_PARSER_H

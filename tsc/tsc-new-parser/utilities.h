@@ -1199,7 +1199,7 @@ namespace ts
 
     static auto isJSDocTypeExpressionOrChild(Node node) -> boolean
     {
-        return !!findAncestor(node, [](Node n) { return ts::isJSDocTypeExpression(n); });
+        return !!findAncestor(node, [](Node n) { return isJSDocTypeExpression(n); });
     }
 
     static auto getTextOfNodeFromSourceText(safe_string sourceText, Node node, boolean includeTrivia = false, ts::Scanner *scanner = nullptr) -> string
@@ -1228,7 +1228,7 @@ namespace ts
 
     static auto isStringOrNumericLiteralLike(Node node) -> boolean
     {
-        return isStringLiteralLike(node) || ts::isNumericLiteral(node);
+        return isStringLiteralLike(node) || isNumericLiteral(node);
     }
 
     template <typename T>
@@ -1401,8 +1401,8 @@ namespace ts
         return tags;
     }
 
-    inline static auto getFirstJSDocTag(Node node, std::function<boolean(Node)> predicate, boolean noCache = false) -> Node {
-        return find(getJSDocTagsWorker(node, noCache), predicate);
+    inline static auto getFirstJSDocTag(Node node, std::function<boolean(Node)> predicate_, boolean noCache = false) -> Node {
+        return find(getJSDocTagsWorker(node, noCache), predicate_);
     }
 
     inline static auto getJSDocPublicTagNoCache(Node node) -> JSDocPublicTag {

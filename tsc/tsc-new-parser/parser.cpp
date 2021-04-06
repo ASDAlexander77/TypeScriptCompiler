@@ -7841,13 +7841,13 @@ namespace ts
     {
         delete impl;
     }
-}
 
-// TODO: temporary solution
-namespace IncrementalParser
-{
-    auto createSyntaxCursor(SourceFile sourceFile) -> SyntaxCursor
+    // TODO: temporary solution
+    namespace IncrementalParser
     {
-        return SyntaxCursor();
+        auto createSyntaxCursor(SourceFile sourceFile) -> SyntaxCursor
+        {
+            return SyntaxCursor();
+        }
     }
 }

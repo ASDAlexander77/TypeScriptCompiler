@@ -4,7 +4,6 @@
 
 #include "TypeScript/DOM.h"
 #include "TypeScript/Defines.h"
-#include "TypeScript/AST.h"
 
 #include "mlir/IR/Types.h"
 #include "mlir/IR/Attributes.h"
@@ -23,15 +22,18 @@
 #include "llvm/ADT/ScopedHashTable.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include "TypeScriptLexerANTLR.h"
-#include "TypeScriptParserANTLR.h"
 #include "TypeScript/VisitorAST.h"
+
+// parser includes
+#include "parser.h"
+#include "utilities.h"
+#include "file_helper.h"
 
 #include <numeric>
 
-using namespace mlir::typescript;
 using namespace typescript;
-namespace ts = mlir::typescript;
+using namespace ts;
+namespace mlir_ts = mlir::typescript;
 
 using llvm::ArrayRef;
 using llvm::cast;
@@ -78,24 +80,11 @@ namespace
             fileName = fileNameParam;
         }
 
-        mlir::ModuleOp mlirGen(TypeScriptParserANTLR::MainContext *module)
-        {
-            auto moduleAST = parse(module);
-            if (moduleAST)
-            {
-                return mlirGen(moduleAST);
-            }
-
-            return mlir::ModuleOp();
-        }
-
-        /// Public API: convert the AST for a TypeScript module (source file) to an MLIR
-        /// Module operation.
-        mlir::ModuleOp mlirGen(ModuleAST::TypePtr module)
+        mlir::ModuleOp mlirGen(SourceFile module)
         {
             // We create an empty MLIR module and codegen functions one at a time and
             // add them to the module.
-            theModule = mlir::ModuleOp::create(loc(module->getLoc()), fileName);
+            theModule = mlir::ModuleOp::create(loc(module), fileName);
             builder.setInsertionPointToStart(theModule.getBody());
 
             declareAllFunctionDeclarations(module);
@@ -104,7 +93,7 @@ namespace
 
             // Process generating here
             GenContext genContext = {0};
-            for (auto &statement : *module.get())
+            for (auto &statement : module->statements)
             {
                 if (failed(mlirGenStatement(statement, genContext)))
                 {
@@ -125,7 +114,7 @@ namespace
             return theModule;
         }
 
-        mlir::LogicalResult declareAllFunctionDeclarations(ModuleAST::TypePtr module)
+        mlir::LogicalResult declareAllFunctionDeclarations(SourceFile module)
         {
             auto unresolvedFunctions = -1;
 
@@ -134,9 +123,9 @@ namespace
             do
             {
                 auto unresolvedFunctionsCurrentRun = 0;
-                FilterVisitorAST<FunctionDeclarationAST> visitorAST(
+                FilterVisitorAST<FunctionDeclaration> visitorAST(
                     SyntaxKind::FunctionDeclaration,
-                    [&](auto *funcDecl) {
+                    [&](auto funcDecl) {
                         GenContext genContextDecl = {0};
                         genContextDecl.allowPartialResolve = true;
 
@@ -157,11 +146,11 @@ namespace
 
                         functionMap.insert({funcOp.getName(), funcOp});
                     });
-                module->accept(&visitorAST);
+                visitorAST.visit(module);
 
                 if (unresolvedFunctionsCurrentRun == unresolvedFunctions)
                 {
-                    emitError(loc(module->getLoc())) << "can't resolve recursive references of functions'" << fileName << "'";
+                    emitError(loc(module)) << "can't resolve recursive references of functions'" << fileName << "'";
                     return mlir::failure();
                 }
 
@@ -171,6 +160,7 @@ namespace
             return mlir::success();
         }
 
+        /*
         mlir::LogicalResult mlirGen(BlockAST::TypePtr blockAST, const GenContext &genContext)
         {
             for (auto &statement : *blockAST)
@@ -183,9 +173,11 @@ namespace
 
             return mlir::success();
         }
+        */
 
-        mlir::LogicalResult mlirGenStatement(NodeAST::TypePtr statementAST, const GenContext &genContext)
+        mlir::LogicalResult mlirGenStatement(Statement statementAST, const GenContext &genContext)
         {
+            /*
             // TODO:
             if (statementAST->getKind() == SyntaxKind::FunctionDeclaration)
             {
@@ -215,10 +207,12 @@ namespace
             {
                 return mlir::success();
             }
+            */
 
             llvm_unreachable("unknown statement type");
         }
 
+        /*
         mlir::Value mlirGenExpression(NodeAST::TypePtr expressionAST, const GenContext &genContext)
         {
             if (expressionAST->getKind() == SyntaxKind::NumericLiteral)
@@ -446,10 +440,12 @@ namespace
 
             return params;
         }
+        */
 
-        std::tuple<FuncOp, FunctionPrototypeDOM::TypePtr, bool> mlirGenFunctionPrototype(
-            FunctionDeclarationAST *functionDeclarationAST, const GenContext &genContext)
+        std::tuple<mlir_ts::FuncOp, FunctionPrototypeDOM::TypePtr, bool> mlirGenFunctionPrototype(
+            FunctionDeclaration functionDeclarationAST, const GenContext &genContext)
         {
+            /*
             auto location = loc(functionDeclarationAST->getLoc());
 
             std::vector<FunctionParamDOM::TypePtr> params = mlirGen(functionDeclarationAST->getParameters(), genContext);
@@ -516,8 +512,12 @@ namespace
             auto funcOp = FuncOp::create(location, StringRef(name), funcType, ArrayRef<mlir::NamedAttribute>(attrs));
 
             return std::make_tuple(funcOp, std::move(funcProto), true);
+            */
+
+           llvm_unreachable("Not implemented");
         }
 
+        /*
         mlir::Type getReturnType(FunctionDeclarationAST *functionDeclarationAST, std::string name,
                                  const SmallVector<mlir::Type> &argTypes, const FunctionPrototypeDOM::TypePtr &funcProto, const GenContext &genContext)
         {
@@ -1230,12 +1230,13 @@ namespace
             symbolTable.insert(name, {value, var});
             return mlir::success();
         }
+*/
 
     private:
         /// Helper conversion for a TypeScript AST location to an MLIR location.
-        mlir::Location loc(const typescript::TextRange &loc)
+        mlir::Location loc(TextRange loc)
         {
-            return builder.getFileLineColLoc(builder.getIdentifier(fileName), loc.pos, loc.end);
+            return builder.getFileLineColLoc(builder.getIdentifier(fileName), loc->pos, loc->_end);
         }
 
         /// A "module" matches a TypeScript source file: containing a list of functions.
@@ -1250,30 +1251,75 @@ namespace
 
         llvm::ScopedHashTable<StringRef, VariablePairT> symbolTable;
 
-        llvm::StringMap<FuncOp> functionMap;
+        llvm::StringMap<mlir_ts::FuncOp> functionMap;
     };
-
 } // namespace
 
 namespace typescript
 {
-    llvm::StringRef dumpFromSource(const llvm::StringRef &source)
+    llvm::StringRef dumpFromSource(const llvm::StringRef &fileName, const llvm::StringRef &source)
     {
-        antlr4::ANTLRInputStream input((std::string)source);
-        typescript::TypeScriptLexerANTLR lexer(&input);
-        antlr4::CommonTokenStream tokens(&lexer);
-        typescript::TypeScriptParserANTLR parser(&tokens);
-        auto *moduleAST = parser.main();
-        return llvm::StringRef(moduleAST->toStringTree());
+        auto showLineCharPos = false;
+
+        Parser parser;
+        auto sourceFile = parser.parseSourceFile(stows(static_cast<std::string>(fileName)), stows(static_cast<std::string>(source)), ScriptTarget::Latest);
+
+        stringstream s;
+
+        FuncT<> visitNode;
+        ArrayFuncT<> visitArray;
+
+        auto intent = 0;
+
+        visitNode = [&](Node child) -> Node {
+
+            for (auto i = 0; i < intent; i++)
+            {
+                s << "\t";
+            }
+
+            if (showLineCharPos)
+            {
+                auto posLineChar = parser.getLineAndCharacterOfPosition(sourceFile, child->pos);
+                auto endLineChar = parser.getLineAndCharacterOfPosition(sourceFile, child->_end);
+
+                s 
+                    << S("Node: ")
+                    << parser.syntaxKindString(child).c_str()
+                    << S(" @ [ ") << child->pos << S("(") << posLineChar.line + 1 << S(":") << posLineChar.character  << S(") - ") 
+                    << child->_end << S("(") << endLineChar.line + 1  << S(":") << endLineChar.character  << S(") ]") << std::endl;
+            }
+            else
+            {
+                s << S("Node: ") << parser.syntaxKindString(child).c_str() << S(" @ [ ") << child->pos << S(" - ") << child->_end << S(" ]") << std::endl;
+            }
+
+            intent++;
+            ts::forEachChild(child, visitNode, visitArray);    
+            intent--;
+
+            return undefined;
+        };
+
+        visitArray = [&](NodeArray<Node> array) -> Node {
+            for (auto node : array)
+            {
+                visitNode(node);
+            }
+
+            return undefined;
+        };
+
+        auto result = forEachChild(sourceFile.as<Node>(), visitNode, visitArray);
+    
+        return llvm::StringRef(wstos(s.str()));
     }
 
-    mlir::OwningModuleRef mlirGenFromSource(const mlir::MLIRContext &context, const llvm::StringRef &source, const llvm::StringRef &fileName)
+    mlir::OwningModuleRef mlirGenFromSource(const mlir::MLIRContext &context, const llvm::StringRef &fileName, const llvm::StringRef &source)
     {
-        antlr4::ANTLRInputStream input((std::string)source);
-        typescript::TypeScriptLexerANTLR lexer(&input);
-        antlr4::CommonTokenStream tokens(&lexer);
-        typescript::TypeScriptParserANTLR parser(&tokens);
-        return MLIRGenImpl(context, fileName).mlirGen(parser.main());
+        Parser parser;
+        auto sourceFile = parser.parseSourceFile(stows(static_cast<std::string>(fileName)), stows(static_cast<std::string>(source)), ScriptTarget::Latest);
+        return MLIRGenImpl(context, fileName).mlirGen(sourceFile);
     }
 
 } // namespace typescript

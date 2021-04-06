@@ -22,6 +22,8 @@ namespace fs = std::filesystem;
 namespace fs = std::experimental::filesystem;
 #endif
 
+#include "config.h"
+
 enum Encoding
 {
     ENCODING_ASCII,
@@ -42,6 +44,18 @@ static auto wtoc(const wchar_t *in)
     std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>> converter;
     auto chars = converter.to_bytes(in);
     return chars;
+}
+
+static std::wstring stows(const std::string &s)
+{
+    std::wstring ws(ctow(s.c_str()));
+    return ws;
+}
+
+static std::string wstos(const std::wstring &ws)
+{
+    std::string s(wtoc(ws.c_str()));
+    return s;
 }
 
 static int readEncoding(std::string file)

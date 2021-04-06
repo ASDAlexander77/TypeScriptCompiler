@@ -1,26 +1,61 @@
 #ifndef VISITOR_AST_H
 #define VISITOR_AST_H
 
-#include "AST.h"
+#include "parser.h"
+#include "utilities.h"
 
-template< typename T >
-class FilterVisitorAST: public VisitorAST
+namespace ts
 {
-    SyntaxKind kind;
-    std::function<void (T*)> functor;
-public:
-    FilterVisitorAST(SyntaxKind kind, std::function<void (T*)> functor) 
-        : kind(kind), functor(functor)
-    {
-    }
+    class VisitorAST {
+    public:
+        virtual ~VisitorAST() {};
+        virtual void visitNode(Node tree) = 0;
 
-    virtual void visit(NodeAST *node) override
-    {
-        if (node && kind == node->getKind())
+        void visit(Node node)
         {
-            functor(dynamic_cast<T*>(node));
+            ts::FuncT<> visitNode;
+            ts::ArrayFuncT<> visitArray;
+
+            visitNode = [&](ts::Node child) -> ts::Node 
+            {
+                visitNode(child);
+                ts::forEachChild(child, visitNode, visitArray);    
+                return undefined;
+            };
+
+            visitArray = [&](ts::NodeArray<ts::Node> array) -> ts::Node {
+                for (auto node : array)
+                {
+                    visitNode(node);
+                }
+
+                return undefined;
+            };
+
+            auto result = ts::forEachChild(node, visitNode, visitArray);
         }
-    }
-};
+    }; 
+
+    template< typename T >
+    class FilterVisitorAST: public VisitorAST
+    {
+        SyntaxKind kind;
+        std::function<void (T)> functor;
+    public:
+        FilterVisitorAST(SyntaxKind kind, std::function<void (T)> functor) 
+            : kind(kind), functor(functor)
+        {
+        }
+
+        virtual void visitNode(Node node) override
+        {
+            if (kind == node)
+            {
+                functor(node.as<T>());
+            }
+        }
+    };
+
+}
 
 #endif // VISITOR_AST_H

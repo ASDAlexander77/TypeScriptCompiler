@@ -21,6 +21,8 @@ set(CMAKE_MODULE_PATH
   "${CMAKE_CURRENT_SOURCE_DIR}/cmake"
   )
 
+include(config_macros)
+
 set(CMAKE_CXX_STANDARD 14 CACHE STRING "C++ standard to conform to")
 
 ##### LLVM config ########
@@ -72,32 +74,6 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 include_directories(${PROJECT_BINARY_DIR}/include)
 link_directories(${LLVM_BUILD_LIBRARY_DIR})
 add_definitions(${LLVM_DEFINITIONS})
-
-###### ANTLR4 config ########
-
-# required if linking to static library
-add_definitions(-DANTLR4CPP_STATIC)
-
-# set variable pointing to the antlr tool that supports C++
-# this is not required if the jar file can be found under PATH environment
-file(REAL_PATH "${CMAKE_SOURCE_DIR}/../3rdParty/antlr-bin/antlr-4.9.1-complete.jar" ANTLR_EXECUTABLE)
-message(STATUS "ANTLR_EXECUTABLE is ${ANTLR_EXECUTABLE}, Java executable is ${Java_JAVA_EXECUTABLE}")
-
-# Set path to generator
-set(ANTLR4_JAR_LOCATION ${ANTLR_EXECUTABLE})
-
-file(REAL_PATH "${CMAKE_SOURCE_DIR}/../3rdParty/antlr4/${CMAKE_BUILD_TYPE}/lib/cmake/antlr4-runtime" antlr4-runtime_DIR)
-file(REAL_PATH "${CMAKE_SOURCE_DIR}/../3rdParty/antlr4/${CMAKE_BUILD_TYPE}/lib/cmake/antlr4-generator" antlr4-generator_DIR)
-
-# Bring in the required packages
-find_package(antlr4-runtime REQUIRED)
-find_package(antlr4-generator REQUIRED)
-
-# add antrl4cpp artifacts to project environment
-include_directories(${ANTLR4_INCLUDE_DIR})
-link_directories(${ANTLR4_LIB_DIR})
-
-include(grammar_generator)
 
 # enabling testing
 enable_testing()

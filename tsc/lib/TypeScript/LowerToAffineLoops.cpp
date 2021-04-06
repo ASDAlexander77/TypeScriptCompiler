@@ -1,7 +1,6 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/Passes.h"
-#include "TypeScript/EnumsAST.h"
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/SCF/SCF.h"

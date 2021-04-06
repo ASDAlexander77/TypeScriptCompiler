@@ -4,33 +4,37 @@
 #include "config.h"
 #include "undefined.h"
 
-struct LineAndCharacter {
-
-    LineAndCharacter() = default;
-
-    /** 0-based. */
-    number line;
-    /*
-        * 0-based. This value denotes the character position in line and is different from the 'column' because of tab characters.
-        */
-    number character;
-};
-
-struct DiagnosticMessageStore
+namespace ts
 {
-    DiagnosticMessageStore() = default;
-    DiagnosticMessageStore(int code, DiagnosticCategory category, string label, string message) : code(code), category(category), label(label), message(message) {};
-    DiagnosticMessageStore(undefined_t) : category{DiagnosticCategory::Undefined} {}
+    struct LineAndCharacter {
 
-    int code;
-    DiagnosticCategory category;
-    string label;
-    string message;
+        LineAndCharacter() = default;
 
-    bool operator !()
+        /** 0-based. */
+        number line;
+        /*
+            * 0-based. This value denotes the character position in line and is different from the 'column' because of tab characters.
+            */
+        number character;
+    };
+
+    struct DiagnosticMessageStore
     {
-        return category == DiagnosticCategory::Undefined;
-    }
-};
+        DiagnosticMessageStore() = default;
+        DiagnosticMessageStore(int code, DiagnosticCategory category, string label, string message) : code(code), category(category), label(label), message(message) {};
+        DiagnosticMessageStore(undefined_t) : category{DiagnosticCategory::Undefined} {}
+
+        int code;
+        DiagnosticCategory category;
+        string label;
+        string message;
+
+        bool operator !()
+        {
+            return category == DiagnosticCategory::Undefined;
+        }
+    };
+
+} // namespace ts
 
 #endif // ENUMS_H

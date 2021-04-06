@@ -5,7 +5,6 @@
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/Passes.h"
 #include "TypeScript/Defines.h"
-#include "TypeScript/EnumsAST.h"
 
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 #include "mlir/Conversion/SCFToStandard/SCFToStandard.h"
@@ -22,7 +21,7 @@
 
 using namespace mlir;
 using namespace ::typescript;
-namespace ts = mlir::typescript;
+namespace mlir_ts = mlir::typescript;
 
 namespace typescript
 {
@@ -270,7 +269,7 @@ namespace typescript
         {
             builder.replaceOpWithNewOp<StdFOpTy>(binOp, v2, binOp.getOperand(0), binOp.getOperand(1));
         }
-        else if (leftType.dyn_cast_or_null<ts::StringType>() || leftType.dyn_cast_or_null<ts::AnyType>())
+        else if (leftType.dyn_cast_or_null<mlir_ts::StringType>() || leftType.dyn_cast_or_null<mlir_ts::AnyType>())
         {
             auto left = binOp.getOperand(0);
             auto right = binOp.getOperand(1);

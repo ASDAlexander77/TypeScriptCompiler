@@ -1,9 +1,5 @@
 set_MSVC_Options()
 
-include_directories(
-    ${GRAMMAR_GENERATED_DIRS}
-    )
-
 set(LLVM_LINK_COMPONENTS
     Core
     Support

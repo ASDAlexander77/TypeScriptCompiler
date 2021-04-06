@@ -9,10 +9,6 @@
             "path": "./tsc/include"
         },
         {
-            "name": "TypeScript Grammar",
-            "path": "./tsc/tsc-grammar"
-        },
-        {
             "name": "TypeScript Compiler",
             "path": "./tsc/tsc"
         },

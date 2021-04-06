@@ -19,167 +19,167 @@
 
 #include "parser_types.h"
 
-struct safe_string
+namespace ts
 {
-    string value;
-
-    safe_string () : value{S("")} {}
-
-    safe_string (string value) : value{value} {}
-
-    safe_string& operator=(string& value_)
+    struct safe_string
     {
-        value = value_;
-        return *this;
-    }
+        string value;
 
-    CharacterCodes operator [](number index)
-    {
-        if (index >= value.length())
+        safe_string () : value{S("")} {}
+
+        safe_string (string value) : value{value} {}
+
+        safe_string& operator=(string& value_)
         {
-            return CharacterCodes::outOfBoundary;
+            value = value_;
+            return *this;
         }
 
-        return (CharacterCodes) value[index];
-    }
+        CharacterCodes operator [](number index)
+        {
+            if (index >= value.length())
+            {
+                return CharacterCodes::outOfBoundary;
+            }
 
-    auto substring(number from, number to) -> string
+            return (CharacterCodes) value[index];
+        }
+
+        auto substring(number from, number to) -> string
+        {
+            return value.substr(from, to - from);
+        }
+
+        auto length() -> number
+        {
+            return value.length();
+        }
+
+        operator string&()
+        {
+            return value;
+        }
+    };
+
+    template <typename T>
+    bool operator!(NodeArray<T> &values)
     {
-        return value.substr(from, to - from);
+        return !values.operator bool();
     }
 
-    auto length() -> number
+    template <typename T>
+    bool operator!(const std::vector<T> &values)
     {
-        return value.length();
+        return values.empty();
     }
 
-    operator string&()
+    static void debug(bool cond)
     {
-        return value;
+        assert(cond);
     }
-};
 
-template <typename T>
-bool operator!(NodeArray<T> &values)
-{
-    return !values.operator bool();
-}
-
-template <typename T>
-bool operator!(const std::vector<T> &values)
-{
-    return values.empty();
-}
-
-static void debug(bool cond)
-{
-    assert(cond);
-}
-
-static void debug(string msg)
-{
-    std::wcerr << msg.c_str();
-}
-
-static void debug(bool cond, string msg)
-{
-    if (!cond)
+    static void debug(string msg)
     {
         std::wcerr << msg.c_str();
     }
-    
-    assert(cond);
-}
 
-static void error(string msg)
-{
-    std::wcerr << msg;
-}
-
-struct ScanResult {
-    ScanResult() = default;
-
-    SyntaxKind kind;
-    string value;
-};
-
-template <typename T, typename U>
-using cb_type = std::function<U(number, number, SyntaxKind, boolean, T, U)>;
-
-using ErrorCallback = std::function<void(DiagnosticMessage, number)>;
-
-template <typename T>
-auto identity(T x, number i) -> T { return x; }
-
-static auto parsePseudoBigInt(string stringValue) -> string {
-    number log2Base;
-    switch ((CharacterCodes)stringValue[1]) { // "x" in "0x123"
-        case CharacterCodes::b:
-        case CharacterCodes::B: // 0b or 0B
-            log2Base = 1;
-            break;
-        case CharacterCodes::o:
-        case CharacterCodes::O: // 0o or 0O
-            log2Base = 3;
-            break;
-        case CharacterCodes::x:
-        case CharacterCodes::X: // 0x or 0X
-            log2Base = 4;
-            break;
-        default: // already in decimal; omit trailing "n"
-            auto nIndex = stringValue.length() - 1;
-            // Skip leading 0s
-            auto nonZeroStart = 0;
-            while ((CharacterCodes)stringValue[nonZeroStart] == CharacterCodes::_0) {
-                nonZeroStart++;
-            }
-            return nonZeroStart > nIndex ? stringValue.substr(nonZeroStart, nIndex-nonZeroStart) : S("0");
-    }
-
-    // Omit leading "0b", "0o", or "0x", and trailing "n"
-    auto startIndex = 2;
-    auto endIndex = stringValue.length() - 1;
-    auto bitsNeeded = (endIndex - startIndex) * log2Base;
-    // Stores the value specified by the string as a LE array of 16-bit integers
-    // using Uint16 instead of Uint32 so combining steps can use bitwise operators
-    std::vector<uint16_t> segments((bitsNeeded >> 4) + (bitsNeeded & 15 ? 1 : 0));
-    // Add the digits, one at a time
-    for (int i = endIndex - 1, bitOffset = 0; i >= startIndex; i--, bitOffset += log2Base) {
-        auto segment = bitOffset >> 4;
-        auto digitChar = (number)stringValue[i];
-        // Find character range: 0-9 < A-F < a-f
-        auto digit = digitChar <= (number)CharacterCodes::_9
-            ? digitChar - (number)CharacterCodes::_0
-            : 10 + digitChar - (digitChar <= (number)CharacterCodes::F ? (number)CharacterCodes::A : (number)CharacterCodes::a);
-        auto shiftedDigit = digit << (bitOffset & 15);
-        segments[segment] |= shiftedDigit;
-        auto residual = shiftedDigit >> 16;
-        if (residual) segments[segment + 1] |= residual; // overflows segment
-    }
-    // Repeatedly divide segments by 10 and add remainder to base10Value
-    auto base10Value = string(S(""));
-    int firstNonzeroSegment = segments.size() - 1;
-    auto segmentsRemaining = true;
-    while (segmentsRemaining) {
-        auto mod10 = 0;
-        segmentsRemaining = false;
-        for (auto segment = firstNonzeroSegment; segment >= 0; segment--) {
-            auto newSegment = mod10 << 16 | segments[segment];
-            auto segmentValue = (newSegment / 10) | 0;
-            segments[segment] = segmentValue;
-            mod10 = newSegment - segmentValue * 10;
-            if (segmentValue && !segmentsRemaining) {
-                firstNonzeroSegment = segment;
-                segmentsRemaining = true;
-            }
+    static void debug(bool cond, string msg)
+    {
+        if (!cond)
+        {
+            std::wcerr << msg.c_str();
         }
-        base10Value = to_string(mod10) + base10Value;
+        
+        assert(cond);
     }
-    return base10Value;
-}
 
-namespace ts
-{
+    static void error(string msg)
+    {
+        std::wcerr << msg;
+    }
+
+    struct ScanResult {
+        ScanResult() = default;
+
+        SyntaxKind kind;
+        string value;
+    };
+
+    template <typename T, typename U>
+    using cb_type = std::function<U(number, number, SyntaxKind, boolean, T, U)>;
+
+    using ErrorCallback = std::function<void(DiagnosticMessage, number)>;
+
+    template <typename T>
+    auto identity(T x, number i) -> T { return x; }
+
+    static auto parsePseudoBigInt(string stringValue) -> string {
+        number log2Base;
+        switch ((CharacterCodes)stringValue[1]) { // "x" in "0x123"
+            case CharacterCodes::b:
+            case CharacterCodes::B: // 0b or 0B
+                log2Base = 1;
+                break;
+            case CharacterCodes::o:
+            case CharacterCodes::O: // 0o or 0O
+                log2Base = 3;
+                break;
+            case CharacterCodes::x:
+            case CharacterCodes::X: // 0x or 0X
+                log2Base = 4;
+                break;
+            default: // already in decimal; omit trailing "n"
+                auto nIndex = stringValue.length() - 1;
+                // Skip leading 0s
+                auto nonZeroStart = 0;
+                while ((CharacterCodes)stringValue[nonZeroStart] == CharacterCodes::_0) {
+                    nonZeroStart++;
+                }
+                return nonZeroStart > nIndex ? stringValue.substr(nonZeroStart, nIndex-nonZeroStart) : S("0");
+        }
+
+        // Omit leading "0b", "0o", or "0x", and trailing "n"
+        auto startIndex = 2;
+        auto endIndex = stringValue.length() - 1;
+        auto bitsNeeded = (endIndex - startIndex) * log2Base;
+        // Stores the value specified by the string as a LE array of 16-bit integers
+        // using Uint16 instead of Uint32 so combining steps can use bitwise operators
+        std::vector<uint16_t> segments((bitsNeeded >> 4) + (bitsNeeded & 15 ? 1 : 0));
+        // Add the digits, one at a time
+        for (int i = endIndex - 1, bitOffset = 0; i >= startIndex; i--, bitOffset += log2Base) {
+            auto segment = bitOffset >> 4;
+            auto digitChar = (number)stringValue[i];
+            // Find character range: 0-9 < A-F < a-f
+            auto digit = digitChar <= (number)CharacterCodes::_9
+                ? digitChar - (number)CharacterCodes::_0
+                : 10 + digitChar - (digitChar <= (number)CharacterCodes::F ? (number)CharacterCodes::A : (number)CharacterCodes::a);
+            auto shiftedDigit = digit << (bitOffset & 15);
+            segments[segment] |= shiftedDigit;
+            auto residual = shiftedDigit >> 16;
+            if (residual) segments[segment + 1] |= residual; // overflows segment
+        }
+        // Repeatedly divide segments by 10 and add remainder to base10Value
+        auto base10Value = string(S(""));
+        int firstNonzeroSegment = segments.size() - 1;
+        auto segmentsRemaining = true;
+        while (segmentsRemaining) {
+            auto mod10 = 0;
+            segmentsRemaining = false;
+            for (auto segment = firstNonzeroSegment; segment >= 0; segment--) {
+                auto newSegment = mod10 << 16 | segments[segment];
+                auto segmentValue = (newSegment / 10) | 0;
+                segments[segment] = segmentValue;
+                mod10 = newSegment - segmentValue * 10;
+                if (segmentValue && !segmentsRemaining) {
+                    firstNonzeroSegment = segment;
+                    segmentsRemaining = true;
+                }
+            }
+            base10Value = to_string(mod10) + base10Value;
+        }
+        return base10Value;
+    }
+
     class Scanner
     {
     private:
@@ -738,6 +738,6 @@ namespace ts
         /* @internal */
         auto utf16EncodeAsString(CharacterCodes codePoint) -> string;
     };
-}
+} // namespace ts
 
 #endif // SCANNER_H
