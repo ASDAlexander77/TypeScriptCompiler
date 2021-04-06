@@ -160,6 +160,17 @@ namespace
             return mlir::success();
         }
 
+        mlir::LogicalResult mlirGenBody(Node body, const GenContext &genContext)
+        {
+            auto kind = (SyntaxKind)body;
+            if (kind == SyntaxKind::Block)
+            {
+                return mlirGen(body.as<Block>(), genContext);
+            }
+
+            llvm_unreachable("unknown body type");
+        }        
+
         mlir::LogicalResult mlirGen(Block blockAST, const GenContext &genContext)
         {
             for (auto &statement : blockAST->statements)
@@ -278,7 +289,7 @@ namespace
             {
                 mlir::Type type;
 
-                auto name = item->name.as<Identifier>()->text;
+                auto name = StringRef(wstos(item->name.as<Identifier>()->text));
 
                 if (item->type)
                 {
@@ -347,7 +358,7 @@ namespace
                         location,
                         type,
                         isConst,
-                        StringRef(wstos(name)),
+                        name,
                         value);
 
                     declare(varDecl, mlir::Value());
@@ -357,7 +368,7 @@ namespace
             return mlir::success();
         }
         
-        std::vector<std::shared_ptr<FunctionParamDOM>> mlirGen(SignatureDeclarationBase parametersContextAST,
+        std::vector<std::shared_ptr<FunctionParamDOM>> mlirGenParameters(SignatureDeclarationBase parametersContextAST,
                                                                const GenContext &genContext)
         {
             std::vector<std::shared_ptr<FunctionParamDOM>> params;
@@ -370,7 +381,7 @@ namespace
 
             // add extra parameter to send number of parameters
             auto anyOptionalParam =
-                formalParams.end() != std::find_if(formalParams.begin(), formalParams.end(), [](auto &param) {
+                formalParams.end() != std::find_if(formalParams.begin(), formalParams.end(), [](auto param) {
                     return std::get<0>(param)->questionToken || !!std::get<0>(param)->initializer;
                 });
 
@@ -381,7 +392,7 @@ namespace
 
             for (auto arg : formalParams)
             {
-                auto name = std::get<0>(arg)->name.as<Identifier>()->text;
+                auto name = StringRef(wstos(std::get<0>(arg)->name.as<Identifier>()->text));
                 mlir::Type type;
                 auto isOptional = !!std::get<0>(arg)->questionToken;
                 auto typeParameter = std::get<1>(arg);
@@ -405,7 +416,7 @@ namespace
                 {
                     // we need to add temporary block
                     auto tempFuncType = builder.getFunctionType(llvm::None, llvm::None);
-                    auto tempFuncOp = mlir::FuncOp::create(loc(initializer), StringRef(wstos(name)), tempFuncType);
+                    auto tempFuncOp = mlir::FuncOp::create(loc(initializer), name, tempFuncType);
                     auto &entryBlock = *tempFuncOp.addEntryBlock();
 
                     auto insertPoint = builder.saveInsertionPoint();
@@ -465,11 +476,11 @@ namespace
                 argNumber++;
             }
 
-            string name;
+            StringRef name;
             auto identifier = functionDeclarationAST->name.as<Identifier>();
             if (identifier)
             {
-                name = identifier->text;
+                name = StringRef(wstos(identifier->text));
             }
             else
             {
@@ -504,12 +515,12 @@ namespace
                 attrs.push_back(builder.getNamedAttr(FUNC_OPTIONAL_ATTR_NAME, builder.getI8IntegerAttr(argOptionalFrom)));
             }
 
-            auto funcOp = mlir_ts::FuncOp::create(location, StringRef(name), funcType, ArrayRef<mlir::NamedAttribute>(attrs));
+            auto funcOp = mlir_ts::FuncOp::create(location, name, funcType, ArrayRef<mlir::NamedAttribute>(attrs));
 
             return std::make_tuple(funcOp, std::move(funcProto), true);
         }
 
-        mlir::Type getReturnType(FunctionDeclaration functionDeclarationAST, string name,
+        mlir::Type getReturnType(FunctionDeclaration functionDeclarationAST, StringRef name,
                                  const SmallVector<mlir::Type> &argTypes, const FunctionPrototypeDOM::TypePtr &funcProto, const GenContext &genContext)
         {
             mlir::Type returnType;
@@ -518,8 +529,8 @@ namespace
             auto hasReturnStatementWithExpr = false;
             FilterVisitorAST<ReturnStatement> visitorAST1(
                 SyntaxKind::ReturnStatement,
-                [&](auto *retStatement) {
-                    if (retStatement->getExpression())
+                [&](auto retStatement) {
+                    if (retStatement->expression)
                     {
                         hasReturnStatementWithExpr = true;
                     }
@@ -533,7 +544,7 @@ namespace
             }
 
             auto partialDeclFuncType = builder.getFunctionType(argTypes, llvm::None);
-            auto dummyFuncOp = mlir_ts::FuncOp::create(loc(functionDeclarationAST), StringRef(wstos(name)), partialDeclFuncType);
+            auto dummyFuncOp = mlir_ts::FuncOp::create(loc(functionDeclarationAST), name, partialDeclFuncType);
 
             // simulate scope
             SymbolTableScopeT varScope(symbolTable);
@@ -541,7 +552,7 @@ namespace
             GenContext genContextWithPassResult(genContext);
             genContextWithPassResult.allowPartialResolve = true;
             genContextWithPassResult.passResult = new PassResult();
-            if (failed(mlirGenFunctionBody(functionDeclarationAST->body, dummyFuncOp, funcProto, genContextWithPassResult, true)))
+            if (failed(mlirGenFunctionBody(functionDeclarationAST, dummyFuncOp, funcProto, genContextWithPassResult, true)))
             {
                 return mlir::Type();
             }
@@ -571,7 +582,7 @@ namespace
             auto returnType = mlirGenFunctionBody(functionDeclarationAST, funcOp, funcProto, funcGenContext);
 
             // set visibility index
-            if (functionDeclarationAST->getIdentifier()->getName() != "main")
+            if (functionDeclarationAST->name.as<Identifier>()->text != S("main"))
             {
                 funcOp.setPrivate();
             }
@@ -588,7 +599,7 @@ namespace
             auto &entryBlock = *funcOp.addEntryBlock();
 
             // process function params
-            for (const auto paramPairs : llvm::zip(funcProto->getArgs(), entryBlock.getArguments()))
+            for (auto paramPairs : llvm::zip(funcProto->getArgs(), entryBlock.getArguments()))
             {
                 if (failed(declare(std::get<0>(paramPairs), std::get<1>(paramPairs))))
                 {
@@ -602,11 +613,11 @@ namespace
 
             // add exit code
             auto retType = funcProto->getReturnType();
-            auto hasReturn = retType && !retType.isa<ts::VoidType>();
+            auto hasReturn = retType && !retType.isa<mlir_ts::VoidType>();
             if (hasReturn)
             {
                 auto location = loc(functionDeclarationAST);
-                auto entryOp = builder.create<mlir_ts::EntryOp>(location, ts::RefType::get(retType));
+                auto entryOp = builder.create<mlir_ts::EntryOp>(location, mlir_ts::RefType::get(retType));
                 auto varDecl = std::make_shared<VariableDeclarationDOM>(RETURN_VARIABLE_NAME, retType, location);
                 varDecl->setReadWriteAccess();
                 declare(varDecl, entryOp.reference());
@@ -636,13 +647,13 @@ namespace
                 if (param->getIsOptional() || param->hasInitValue())
                 {
                     // process init expression
-                    auto location = param;
+                    auto location = param->getLoc();
 
                     auto countArgsValue = arguments[0];
 
                     auto paramOptionalOp = builder.create<mlir_ts::ParamOptionalOp>(
                         location,
-                        ts::RefType::get(param->getType()),
+                        mlir_ts::RefType::get(param->getType()),
                         arguments[index],
                         countArgsValue,
                         builder.getI32IntegerAttr(index));
@@ -681,8 +692,8 @@ namespace
                 else
                 {
                     paramValue = builder.create<mlir_ts::ParamOp>(
-                        param,
-                        ts::RefType::get(param->getType()),
+                        param->getLoc(),
+                        mlir_ts::RefType::get(param->getType()),
                         arguments[index]);
                 }
 
@@ -694,7 +705,7 @@ namespace
                 }
             }
 
-            if (failed(mlirGen(functionDeclarationAST->getFunctionBody(), genContext)))
+            if (failed(mlirGenBody(functionDeclarationAST->body, genContext)))
             {
                 return mlir::failure();
             }
@@ -772,6 +783,17 @@ namespace
             builder.setInsertionPointAfter(ifOp);
 
             return mlir::success();
+        }
+
+        mlir::Value mlirGen(UnaryExpression unaryExpressionAST, const GenContext &genContext)
+        {
+            auto kind = (SyntaxKind)unaryExpressionAST;
+            if (kind == SyntaxKind::PrefixUnaryExpression)
+            {
+                return mlirGen(unaryExpressionAST.as<PrefixUnaryExpression>(), genContext);
+            }
+
+            llvm_unreachable("unknown statement type");            
         }
 
         mlir::Value mlirGen(PrefixUnaryExpression prefixUnaryExpressionAST, const GenContext &genContext)
@@ -872,7 +894,7 @@ namespace
             auto location = loc(callExpression);
 
             // get function ref.
-            auto result = mlirGen(callExpression->expression, genContext);
+            auto result = mlirGen(callExpression->expression.as<Expression>(), genContext);
 
             auto definingOp = result.getDefiningOp();
             if (definingOp)
@@ -883,7 +905,7 @@ namespace
                 {
                     auto calleeName = definingOp->getAttrOfType<mlir::FlatSymbolRefAttr>(attrName);
                     auto functionName = calleeName.getValue();
-                    auto argumentsContext = llvm::zip(callExpression->arguments, callExpression->typeArguments);
+                    auto argumentsContext = callExpression->arguments;
                     auto opArgsCount = std::distance(argumentsContext.begin(), argumentsContext.end());
 
                     // resolve function
@@ -1102,20 +1124,20 @@ namespace
 
         mlir::Value mlirGen(NumericLiteral numericLiteral, const GenContext &genContext)
         {
-            if (numericLiteral->getIsInt())
+            if (!!(numericLiteral->numericLiteralFlags & TokenFlags::NumericLiteralFlags))
             {
                 return builder.create<mlir::ConstantOp>(
                     loc(numericLiteral),
                     builder.getI32Type(),
-                    builder.getI32IntegerAttr(numericLiteral->getIntValue()));
+                    builder.getI32IntegerAttr(to_integer(numericLiteral->text)));
             }
 
-            if (numericLiteral->getIsFloat())
+            if (!(numericLiteral->numericLiteralFlags & TokenFlags::NumericLiteralFlags))
             {
                 return builder.create<mlir::ConstantOp>(
                     loc(numericLiteral),
                     builder.getF32Type(),
-                    builder.getF32FloatAttr(numericLiteral->getFloatValue()));
+                    builder.getF32FloatAttr(to_float(numericLiteral->text)));
             }
 
             llvm_unreachable("unknown numeric literal");
@@ -1123,7 +1145,7 @@ namespace
 
         mlir::Value mlirGen(ts::StringLiteral stringLiteral, const GenContext &genContext)
         {
-            auto text = stringLiteral->getString();
+            auto text = wstos(stringLiteral->text);
             auto innerText = text.substr(1, text.length() - 2);
 
             return builder.create<mlir_ts::StringOp>(
@@ -1135,7 +1157,7 @@ namespace
         mlir::Value mlirGen(Identifier identifier, const GenContext &genContext)
         {
             // resolve name
-            auto name = identifier->getName();
+            auto name = StringRef(wstos(identifier->text));
 
             auto value = symbolTable.lookup(name);
             if (value.second)
@@ -1161,14 +1183,14 @@ namespace
                     }
                     else
                     {
-                        auto address = builder.create<mlir_ts::AddressOfOp>(location, RefType::get(value.second->getType()), value.second->getName());
+                        auto address = builder.create<mlir_ts::AddressOfOp>(location, mlir_ts::RefType::get(value.second->getType()), value.second->getName());
                         return builder.create<mlir_ts::LoadOp>(location, value.second->getType(), address);
                     }
                 }
             }
 
             // unresolved reference (for call for example)
-            return IdentifierReference::create(loc(identifier), name);
+            return mlir_ts::IdentifierReference::create(loc(identifier), name);
         }
 
         mlir::Type getType(Node typeReferenceAST)
@@ -1213,7 +1235,7 @@ namespace
             return mlir_ts::AnyType::get(builder.getContext());
         }
 
-        mlir::LogicalResult declare(VariableDeclaration var, mlir::Value value, bool redeclare = false)
+        mlir::LogicalResult declare(VariableDeclarationDOM::TypePtr var, mlir::Value value, bool redeclare = false)
         {
             const auto &name = var->getName();
             if (!redeclare && symbolTable.count(name))

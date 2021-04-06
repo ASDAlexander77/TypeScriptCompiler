@@ -39,7 +39,7 @@ namespace ts
 
     class VariableDeclarationDOM : public BaseDOM
     {
-        std::string name;
+        StringRef name;
         mlir::Type type;
         mlir::Location loc;
         Expression initValue;
@@ -93,7 +93,7 @@ namespace ts
 
     class FunctionPrototypeDOM
     {
-        std::string name;
+        StringRef name;
         std::vector<FunctionParamDOM::TypePtr> args;    
         mlir::Type returnType;
 
@@ -101,7 +101,7 @@ namespace ts
 
         using TypePtr = std::shared_ptr<FunctionPrototypeDOM>;
 
-        FunctionPrototypeDOM(const std::string &name, std::vector<FunctionParamDOM::TypePtr> args)
+        FunctionPrototypeDOM(StringRef name, std::vector<FunctionParamDOM::TypePtr> args)
             : name(name), args(args)
         {
         }
