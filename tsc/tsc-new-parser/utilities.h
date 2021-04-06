@@ -1312,11 +1312,6 @@ namespace ts
         return flags;
     }
 
-    inline auto isConst(Node node) -> boolean
-    {
-        return !!(modifierToFlag(node->modifiers) & ModifierFlags::ParameterPropertyModifier);
-    }    
-
     inline auto isParameterPropertyModifier(SyntaxKind kind) -> boolean
     {
         return !!(modifierToFlag(kind) & ModifierFlags::ParameterPropertyModifier);

@@ -2,9 +2,6 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 
-#include "TypeScript/DOM.h"
-#include "TypeScript/Defines.h"
-
 #include "mlir/IR/Types.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
@@ -23,6 +20,9 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include "TypeScript/VisitorAST.h"
+
+#include "TypeScript/DOM.h"
+#include "TypeScript/Defines.h"
 
 // parser includes
 #include "parser.h"
@@ -223,7 +223,7 @@ namespace
             }
             else if (kind == SyntaxKind::StringLiteral)
             {
-                return mlirGen(expressionAST.as<StringLiteral>(), genContext);
+                return mlirGen(expressionAST.as<ts::StringLiteral>(), genContext);
             }
             else if (kind == SyntaxKind::NullKeyword)
             {
@@ -231,7 +231,8 @@ namespace
             }
             else if (kind == SyntaxKind::UndefinedKeyword)
             {
-                return mlirGen(expressionAST.as<UndefinedLiteral>(), genContext);
+                // TODO: finish it
+                //return mlirGen(expressionAST.as<UndefinedLiteral>(), genContext);
             }
             else if (kind == SyntaxKind::TrueKeyword)
             {
@@ -320,7 +321,7 @@ namespace
                     {
                         auto variableOp = builder.create<mlir_ts::VariableOp>(
                             location,
-                            ts::RefType::get(type),
+                            mlir_ts::RefType::get(type),
                             init);
 
                         declare(varDecl, variableOp);
@@ -346,7 +347,7 @@ namespace
                         location,
                         type,
                         isConst,
-                        StringRef(name),
+                        StringRef(wstos(name)),
                         value);
 
                     declare(varDecl, mlir::Value());
@@ -378,7 +379,7 @@ namespace
                 params.push_back(std::make_shared<FunctionParamDOM>(COUNT_PARAMS_PARAMETERNAME, builder.getI32Type(), loc(parametersContextAST), false));
             }
 
-            for (auto &arg : formalParams)
+            for (auto arg : formalParams)
             {
                 auto name = std::get<0>(arg)->name.as<Identifier>()->text;
                 mlir::Type type;
@@ -404,7 +405,7 @@ namespace
                 {
                     // we need to add temporary block
                     auto tempFuncType = builder.getFunctionType(llvm::None, llvm::None);
-                    auto tempFuncOp = mlir::FuncOp::create(loc(initializer), StringRef(name), tempFuncType);
+                    auto tempFuncOp = mlir::FuncOp::create(loc(initializer), StringRef(wstos(name)), tempFuncType);
                     auto &entryBlock = *tempFuncOp.addEntryBlock();
 
                     auto insertPoint = builder.saveInsertionPoint();
@@ -437,7 +438,7 @@ namespace
             return params;
         }
 
-        std::tuple<mlir_ts::FuncOp, FunctionPrototypeDOM::TypePtr, bool> mlirGen(
+        std::tuple<mlir_ts::FuncOp, FunctionPrototypeDOM::TypePtr, bool> mlirGenFunctionPrototype(
             FunctionDeclaration functionDeclarationAST, const GenContext &genContext)
         {
             auto location = loc(functionDeclarationAST);
@@ -1074,12 +1075,14 @@ namespace
                 getAnyType());
         }
 
+        /*
         mlir::Value mlirGen(UndefinedLiteral undefinedLiteral, const GenContext &genContext)
         {
             return builder.create<mlir_ts::UndefOp>(
                 loc(undefinedLiteral),
                 getAnyType());
         }
+        */
 
         mlir::Value mlirGen(TrueLiteral trueLiteral, const GenContext &genContext)
         {
@@ -1118,7 +1121,7 @@ namespace
             llvm_unreachable("unknown numeric literal");
         }
 
-        mlir::Value mlirGen(StringLiteral stringLiteral, const GenContext &genContext)
+        mlir::Value mlirGen(ts::StringLiteral stringLiteral, const GenContext &genContext)
         {
             auto text = stringLiteral->getString();
             auto innerText = text.substr(1, text.length() - 2);
@@ -1168,7 +1171,7 @@ namespace
             return IdentifierReference::create(loc(identifier), name);
         }
 
-        mlir::Type getType(TypeReference typeReferenceAST)
+        mlir::Type getType(Node typeReferenceAST)
         {
             auto kind = (SyntaxKind) typeReferenceAST;
             if (kind == SyntaxKind::BooleanKeyword)
