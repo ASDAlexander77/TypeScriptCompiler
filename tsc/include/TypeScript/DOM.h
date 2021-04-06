@@ -43,13 +43,13 @@ class VariableDeclarationDOM : public BaseDOM
     std::string name;
     mlir::Type type;
     mlir::Location loc;
-    std::shared_ptr<NodeAST> initValue;
+    Expression initValue;
 
 public:
 
     using TypePtr = std::shared_ptr<VariableDeclarationDOM>;
 
-    VariableDeclarationDOM(StringRef name, mlir::Type type, mlir::Location loc, std::shared_ptr<NodeAST> initValue = nullptr)
+    VariableDeclarationDOM(StringRef name, mlir::Type type, mlir::Location loc, Expression initValue = Expression())
         : BaseDOM(Base_VariableDeclaration), name(name), type(type), loc(loc), initValue(initValue), readWrite(false)
     {
     }
@@ -57,7 +57,7 @@ public:
     StringRef getName() const { return name; }
     const mlir::Type &getType() const { return type; }
     const mlir::Location &getLoc() const { return loc; }
-    const std::shared_ptr<NodeAST> &getInitValue() const { return initValue; }
+    const Expression &getInitValue() const { return initValue; }
     bool hasInitValue() const { return !!initValue; }
     bool getReadWriteAccess() const { return readWrite; };
     void setReadWriteAccess(bool value = true) { readWrite = value; };

@@ -1312,6 +1312,11 @@ namespace ts
         return flags;
     }
 
+    inline auto isConst(Node node) -> boolean
+    {
+        return !!(modifierToFlag(node->modifiers) & ModifierFlags::ParameterPropertyModifier);
+    }    
+
     inline auto isParameterPropertyModifier(SyntaxKind kind) -> boolean
     {
         return !!(modifierToFlag(kind) & ModifierFlags::ParameterPropertyModifier);
@@ -1490,6 +1495,11 @@ namespace ts
     {
         return hasSyntacticModifier(node, ModifierFlags::Static);
     }
+
+    inline static auto hasConstModifier(Node node) -> boolean
+    {
+        return hasSyntacticModifier(node, ModifierFlags::Const);
+    }    
 
     inline static auto isSuperProperty(Node node) -> boolean {
         auto kind = (SyntaxKind)node;
