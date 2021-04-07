@@ -2,6 +2,7 @@
 #define MLIR_TYPESCRIPT_MLIRGEN_H_
 
 #include <memory>
+#include <string>
 
 namespace mlir
 {
@@ -16,7 +17,7 @@ namespace llvm
 
 namespace typescript
 {
-    llvm::StringRef dumpFromSource(const llvm::StringRef &fileName, const llvm::StringRef &source);
+    ::std::string dumpFromSource(const llvm::StringRef &fileName, const llvm::StringRef &source);
     mlir::OwningModuleRef mlirGenFromSource(const mlir::MLIRContext &context, const llvm::StringRef &fileName, const llvm::StringRef &source);
 } // namespace typescript
 

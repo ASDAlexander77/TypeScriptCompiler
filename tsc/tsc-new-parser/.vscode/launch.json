@@ -5,6 +5,18 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "(Windows) tsc.exe - DUMP",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
+            "args": ["-emit=ast", "C:/temp/1.ts"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": true,
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+        },            
+        {
             "name": "(Windows) tsc.exe - MLIR",
             "type": "cppvsdbg",
             "request": "launch",

@@ -193,7 +193,7 @@ int dumpAST()
         return 0;
     }
 
-    dumpFromSource(inputFilename, fileOrErr.get()->getBuffer());
+    llvm::outs() << dumpFromSource(inputFilename, fileOrErr.get()->getBuffer());
 
     return 0;
 }

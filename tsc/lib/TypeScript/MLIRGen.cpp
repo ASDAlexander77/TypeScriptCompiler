@@ -1294,7 +1294,7 @@ namespace
 
 namespace typescript
 {
-    llvm::StringRef dumpFromSource(const llvm::StringRef &fileName, const llvm::StringRef &source)
+    ::std::string dumpFromSource(const llvm::StringRef &fileName, const llvm::StringRef &source)
     {
         auto showLineCharPos = false;
 
@@ -1348,9 +1348,7 @@ namespace typescript
         };
 
         auto result = forEachChild(sourceFile.as<Node>(), visitNode, visitArray);
-    
-        auto resultStr = wstos(s.str());
-        return llvm::StringRef(resultStr);
+        return wstos(s.str());
     }
 
     mlir::OwningModuleRef mlirGenFromSource(const mlir::MLIRContext &context, const llvm::StringRef &fileName, const llvm::StringRef &source)
