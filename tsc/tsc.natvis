@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<AutoVisualizer xmlns="http://schemas.microsoft.com/vstudio/debugger/natvis/2010">
+  <Type Name="ptr&lt;ts::data::Node&gt;">
+	<DisplayString>{instance->_kind} [{instance->pos}-{instance->_end}]</DisplayString>
+  </Type>
+  <Type Name="ptr&lt;ts::data::VariableDeclaration&gt;">
+	<DisplayString>{instance->_kind} [{instance->pos}-{instance->_end}] name={(*((ts::data::Identifier*)(*((ts::data::NamedDeclaration*)&amp;(*((ts::data::VariableDeclaration*)instance._Ptr)))).name.instance._Ptr)).escapedText}</DisplayString>
+  </Type>
+  <Type Name="ptr&lt;ts::data::StringLiteral&gt;">
+	<DisplayString>{instance->_kind} [{instance->pos}-{instance->_end}] text={instance->text}</DisplayString>
+  </Type>
+</AutoVisualizer>

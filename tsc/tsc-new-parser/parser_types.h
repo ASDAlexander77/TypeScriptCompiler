@@ -254,6 +254,7 @@ namespace ts
         struct UnaryExpression : Expression
         {
             any _unaryExpressionBrand;
+            PTR(Expression) expression;
         };
 
 
@@ -892,32 +893,27 @@ namespace ts
         struct DeleteExpression : UnaryExpression
         {
             // kind: SyntaxKind::DeleteExpression;
-            PTR(UnaryExpression) expression;
         };
 
         struct TypeOfExpression : UnaryExpression
         {
             // kind: SyntaxKind::TypeOfExpression;
-            PTR(UnaryExpression) expression;
         };
 
         struct VoidExpression : UnaryExpression
         {
             // kind: SyntaxKind::VoidExpression;
-            PTR(UnaryExpression) expression;
         };
 
         struct AwaitExpression : UnaryExpression
         {
             // kind: SyntaxKind::AwaitExpression;
-            PTR(UnaryExpression) expression;
         };
 
-        struct YieldExpression : Expression
+        struct YieldExpression : UnaryExpression
         {
             // kind: SyntaxKind::YieldExpression;
             PTR(AsteriskToken) asteriskToken;
-            PTR(Expression) expression;
         };
 
         struct SyntheticExpression : Expression

@@ -244,6 +244,7 @@ namespace
             {
                 // TODO: finish it
                 //return mlirGen(expressionAST.as<UndefinedLiteral>(), genContext);
+                llvm_unreachable("unknown expression");
             }
             else if (kind == SyntaxKind::TrueKeyword)
             {
@@ -276,6 +277,10 @@ namespace
             else if (kind == SyntaxKind::ParenthesizedExpression)
             {
                 return mlirGen(expressionAST.as<ParenthesizedExpression>(), genContext);
+            }
+            else if (kind == SyntaxKind::TypeOfExpression)
+            {
+                return mlirGen(expressionAST.as<TypeOfExpression>(), genContext);
             }
 
             llvm_unreachable("unknown expression");
@@ -342,24 +347,28 @@ namespace
                 {
                     // get constant
                     auto value = mlir::Attribute();
-                    if (auto constOp = dyn_cast_or_null<mlir::ConstantOp>(init.getDefiningOp()))
+                    if (init)
                     {
-                        value = constOp.value();
-                    }
-                    else if (auto stringOp = dyn_cast_or_null<mlir_ts::StringOp>(init.getDefiningOp()))
-                    {
-                        value = stringOp.txtAttr();
+                        if (auto constOp = dyn_cast_or_null<mlir::ConstantOp>(init.getDefiningOp()))
+                        {
+                            value = constOp.value();
+                        }
+                        else if (auto stringOp = dyn_cast_or_null<mlir_ts::StringOp>(init.getDefiningOp()))
+                        {
+                            value = stringOp.txtAttr();
+                        }
+
+                        // TODO global init value
+                        init.getDefiningOp()->erase();
                     }
 
-                    // TODO global init value
-                    init.getDefiningOp()->erase();
-
-                    auto globalOp = builder.create<mlir_ts::GlobalOp>(
-                        location,
-                        type,
-                        isConst,
-                        name,
-                        value);
+                    auto globalOp = 
+                        builder.create<mlir_ts::GlobalOp>(
+                            location,
+                            type,
+                            isConst,
+                            name,
+                            value);
 
                     declare(varDecl, mlir::Value());
                 }
@@ -1090,6 +1099,20 @@ namespace
             return mlir::success();
         }
 
+        mlir::Value mlirGen(TypeOfExpression typeOfExpression, const GenContext &genContext)
+        {
+            auto result = mlirGen(typeOfExpression->expression, genContext);
+            auto type = result.getType();
+            if (type.isIntOrIndexOrFloat() && !type.isIntOrIndex())
+            {
+                // return "number"
+                auto typeOfValue = builder.create<mlir_ts::StringOp>(loc(typeOfExpression), getStringType(), StringRef("number"));
+                return typeOfValue;
+            }
+
+            llvm_unreachable("not implemented");
+        }
+
         mlir::Value mlirGen(NullLiteral nullLiteral, const GenContext &genContext)
         {
             return builder.create<mlir_ts::NullOp>(
@@ -1146,12 +1169,11 @@ namespace
         mlir::Value mlirGen(ts::StringLiteral stringLiteral, const GenContext &genContext)
         {
             auto text = wstos(stringLiteral->text);
-            auto innerText = text.substr(1, text.length() - 2);
 
             return builder.create<mlir_ts::StringOp>(
                 loc(stringLiteral),
                 getStringType(),
-                builder.getStringAttr(StringRef(innerText.data(), innerText.length() + 1)));
+                builder.getStringAttr(StringRef(text.data(), text.length() + 1)));
         }
 
         mlir::Value mlirGen(Identifier identifier, const GenContext &genContext)

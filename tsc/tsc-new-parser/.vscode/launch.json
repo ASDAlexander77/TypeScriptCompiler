@@ -13,7 +13,8 @@
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "externalConsole": true
+            "externalConsole": true,
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
         },        
         {
             "name": "(Windows) tsc.exe - MLIR-AFFINE",
@@ -24,7 +25,8 @@
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "externalConsole": true
+            "externalConsole": true,
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
         },        
         {
             "name": "(Windows) tsc.exe - MLIR-LLVM",
@@ -35,7 +37,8 @@
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "externalConsole": true
+            "externalConsole": true,
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
         },        
         {
             "name": "(Windows) test-runner.exe - Launch",
@@ -46,7 +49,8 @@
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "externalConsole": true
+            "externalConsole": true,
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
         },
         {
             "name": "(Windows) test-new-parser.exe - Launch",
@@ -57,7 +61,8 @@
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "externalConsole": true
+            "externalConsole": true,
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
         },        
         {
             "name": "(Windows) CMake current - Launch",
