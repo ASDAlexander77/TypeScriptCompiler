@@ -9,7 +9,7 @@ namespace ts
     class VisitorAST {
     public:
         virtual ~VisitorAST() {};
-        virtual void visitNode(Node tree) = 0;
+        virtual void visitTree(Node tree) = 0;
 
         void visit(Node node)
         {
@@ -18,7 +18,7 @@ namespace ts
 
             visitNode = [&](ts::Node child) -> ts::Node 
             {
-                visitNode(child);
+                visitTree(child);
                 ts::forEachChild(child, visitNode, visitArray);    
                 return undefined;
             };
@@ -47,7 +47,7 @@ namespace ts
         {
         }
 
-        virtual void visitNode(Node node) override
+        virtual void visitTree(Node node) override
         {
             if (kind == node)
             {

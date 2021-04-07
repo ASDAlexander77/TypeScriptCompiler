@@ -91,7 +91,7 @@ int loadMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module)
             return -1;
         }
 
-        module = mlirGenFromSource(context, fileOrErr.get()->getBuffer(), fileName);
+        module = mlirGenFromSource(context, fileName, fileOrErr.get()->getBuffer());
         return !module ? 1 : 0;
     }
 

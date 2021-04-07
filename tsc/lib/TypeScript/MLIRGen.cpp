@@ -150,7 +150,7 @@ namespace
 
                 if (unresolvedFunctionsCurrentRun == unresolvedFunctions)
                 {
-                    emitError(loc(module)) << "can't resolve recursive references of functions'" << fileName << "'";
+                    emitError(loc(module)) << "can't resolve recursive references of functions '" << fileName << "'";
                     return mlir::failure();
                 }
 
@@ -289,7 +289,7 @@ namespace
             {
                 mlir::Type type;
 
-                auto name = StringRef(wstos(item->name.as<Identifier>()->text));
+                auto name = wstos(item->name.as<Identifier>()->escapedText);
 
                 if (item->type)
                 {
@@ -377,12 +377,12 @@ namespace
                 return params;
             }
 
-            auto formalParams = llvm::zip(parametersContextAST->parameters, parametersContextAST->typeParameters);
+            auto formalParams = parametersContextAST->parameters;
 
             // add extra parameter to send number of parameters
             auto anyOptionalParam =
                 formalParams.end() != std::find_if(formalParams.begin(), formalParams.end(), [](auto param) {
-                    return std::get<0>(param)->questionToken || !!std::get<0>(param)->initializer;
+                    return param->questionToken || !!param->initializer;
                 });
 
             if (anyOptionalParam)
@@ -392,10 +392,10 @@ namespace
 
             for (auto arg : formalParams)
             {
-                auto name = StringRef(wstos(std::get<0>(arg)->name.as<Identifier>()->text));
+                auto name = wstos(arg->name.as<Identifier>()->escapedText);
                 mlir::Type type;
-                auto isOptional = !!std::get<0>(arg)->questionToken;
-                auto typeParameter = std::get<1>(arg);
+                auto isOptional = !!arg->questionToken;
+                auto typeParameter = arg->type;
                 if (typeParameter)
                 {
                     type = getType(typeParameter);
@@ -411,7 +411,7 @@ namespace
                 }
 
                 // process init value
-                auto initializer = std::get<0>(arg)->initializer;
+                auto initializer = arg->initializer;
                 if (initializer)
                 {
                     // we need to add temporary block
@@ -443,7 +443,7 @@ namespace
                     entryBlock.erase();
                 }
 
-                params.push_back(std::make_shared<FunctionParamDOM>(name, type, loc(std::get<0>(arg)), isOptional, initializer));
+                params.push_back(std::make_shared<FunctionParamDOM>(name, type, loc(arg), isOptional, initializer));
             }
 
             return params;
@@ -476,11 +476,11 @@ namespace
                 argNumber++;
             }
 
-            StringRef name;
+            std::string name;
             auto identifier = functionDeclarationAST->name.as<Identifier>();
             if (identifier)
             {
-                name = StringRef(wstos(identifier->text));
+                name = wstos(identifier->escapedText);
             }
             else
             {
@@ -582,7 +582,7 @@ namespace
             auto returnType = mlirGenFunctionBody(functionDeclarationAST, funcOp, funcProto, funcGenContext);
 
             // set visibility index
-            if (functionDeclarationAST->name.as<Identifier>()->text != S("main"))
+            if (functionDeclarationAST->name.as<Identifier>()->escapedText != S("main"))
             {
                 funcOp.setPrivate();
             }
@@ -1157,7 +1157,7 @@ namespace
         mlir::Value mlirGen(Identifier identifier, const GenContext &genContext)
         {
             // resolve name
-            auto name = StringRef(wstos(identifier->text));
+            auto name = wstos(identifier->escapedText);
 
             auto value = symbolTable.lookup(name);
             if (value.second)
@@ -1327,7 +1327,8 @@ namespace typescript
 
         auto result = forEachChild(sourceFile.as<Node>(), visitNode, visitArray);
     
-        return llvm::StringRef(wstos(s.str()));
+        auto resultStr = wstos(s.str());
+        return llvm::StringRef(resultStr);
     }
 
     mlir::OwningModuleRef mlirGenFromSource(const mlir::MLIRContext &context, const llvm::StringRef &fileName, const llvm::StringRef &source)

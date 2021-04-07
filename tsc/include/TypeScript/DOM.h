@@ -39,7 +39,7 @@ namespace ts
 
     class VariableDeclarationDOM : public BaseDOM
     {
-        StringRef name;
+        std::string name;
         mlir::Type type;
         mlir::Location loc;
         Expression initValue;
@@ -93,7 +93,7 @@ namespace ts
 
     class FunctionPrototypeDOM
     {
-        StringRef name;
+        std::string name;
         std::vector<FunctionParamDOM::TypePtr> args;    
         mlir::Type returnType;
 
