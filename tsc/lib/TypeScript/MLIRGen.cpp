@@ -1124,7 +1124,7 @@ namespace
 
         mlir::Value mlirGen(NumericLiteral numericLiteral, const GenContext &genContext)
         {
-            if (!!(numericLiteral->numericLiteralFlags & TokenFlags::NumericLiteralFlags))
+            if (numericLiteral->text.find(S(".")) == string::npos)
             {
                 return builder.create<mlir::ConstantOp>(
                     loc(numericLiteral),
