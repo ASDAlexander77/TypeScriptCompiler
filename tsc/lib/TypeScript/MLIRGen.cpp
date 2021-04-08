@@ -872,6 +872,34 @@ namespace
             return ifOp.getResult(0);
         }
 
+        mlir::Value mlirGenAndOrLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext, bool andOp)
+        {
+            auto location = loc(binaryExpressionAST);
+
+            auto leftExpression = binaryExpressionAST->left;
+            auto rightExpression = binaryExpressionAST->right;
+
+            // condition
+            auto leftExpressionValue = mlirGen(leftExpression, genContext);
+            auto resultType = leftExpressionValue.getType();
+
+            auto condValue = builder.create<mlir_ts::CastOp>(location, builder.getI1Type(), leftExpressionValue);
+
+            auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{resultType}, condValue, true);
+
+            builder.setInsertionPointToStart(&ifOp.thenRegion().front());
+            auto resultTrue = andOp ? mlirGen(rightExpression, genContext) : leftExpressionValue;
+            builder.create<mlir_ts::YieldOp>(location, mlir::ValueRange{resultTrue});
+
+            builder.setInsertionPointToStart(&ifOp.elseRegion().front());
+            auto resultFalse = andOp ? leftExpressionValue : mlirGen(rightExpression, genContext);
+            builder.create<mlir_ts::YieldOp>(location, mlir::ValueRange{resultFalse});
+
+            builder.setInsertionPointAfter(ifOp);
+
+            return ifOp.getResult(0);            
+        }
+
         mlir::Value mlirGen(BinaryExpression binaryExpressionAST, const GenContext &genContext)
         {
             auto location = loc(binaryExpressionAST);
@@ -880,6 +908,11 @@ namespace
 
             auto leftExpression = binaryExpressionAST->left;
             auto rightExpression = binaryExpressionAST->right;
+
+            if (opCode == SyntaxKind::AmpersandAmpersandToken || opCode == SyntaxKind::BarBarToken)
+            {
+                return mlirGenAndOrLogic(binaryExpressionAST, genContext, opCode == SyntaxKind::AmpersandAmpersandToken);
+            }
 
             auto leftExpressionValue = mlirGen(leftExpression, genContext);
             auto rightExpressionValue = mlirGen(rightExpression, genContext);
@@ -917,8 +950,6 @@ namespace
             case SyntaxKind::EqualsEqualsEqualsToken:
             case SyntaxKind::ExclamationEqualsToken:
             case SyntaxKind::ExclamationEqualsEqualsToken:
-            case SyntaxKind::AmpersandAmpersandToken:
-            case SyntaxKind::BarBarToken:
             case SyntaxKind::GreaterThanToken:
             case SyntaxKind::GreaterThanEqualsToken:
             case SyntaxKind::LessThanToken:
