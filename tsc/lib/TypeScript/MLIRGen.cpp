@@ -819,12 +819,17 @@ namespace
             switch (opCode)
             {
             case SyntaxKind::ExclamationToken:
+                return builder.create<mlir_ts::ArithmeticUnaryOp>(
+                    location,
+                    builder.getI1Type(),
+                    builder.getI32IntegerAttr((int)opCode),
+                    expressionValue);            
             case SyntaxKind::TildeToken:
             case SyntaxKind::PlusToken:
             case SyntaxKind::MinusToken:
                 return builder.create<mlir_ts::ArithmeticUnaryOp>(
                     location,
-                    builder.getI1Type(),
+                    expressionValue.getType(),
                     builder.getI32IntegerAttr((int)opCode),
                     expressionValue);
             default:
@@ -846,7 +851,7 @@ namespace
 
             auto rightExpressionValueBeforeCast = rightExpressionValue;
 
-            if (leftExpressionValue.getType() != rightExpressionValue.getType())
+            if (opCode != SyntaxKind::CommaToken && leftExpressionValue.getType() != rightExpressionValue.getType())
             {
                 rightExpressionValue = builder.create<mlir_ts::CastOp>(loc(rightExpression), leftExpressionValue.getType(), rightExpressionValue);
             }
@@ -879,12 +884,18 @@ namespace
             case SyntaxKind::ExclamationEqualsEqualsToken:
             case SyntaxKind::AmpersandAmpersandToken:
             case SyntaxKind::BarBarToken:
+            case SyntaxKind::GreaterThanToken:
+            case SyntaxKind::GreaterThanEqualsToken:
+            case SyntaxKind::LessThanToken:
+            case SyntaxKind::LessThanEqualsToken:
                 return builder.create<mlir_ts::LogicalBinaryOp>(
                     location,
                     builder.getI1Type(),
                     builder.getI32IntegerAttr((int)opCode),
                     leftExpressionValue,
                     rightExpressionValue);
+            case SyntaxKind::CommaToken:
+                return rightExpressionValue;
             default:
                 return builder.create<mlir_ts::ArithmeticBinaryOp>(
                     location,
@@ -959,6 +970,13 @@ namespace
                             SmallVector<mlir::Value, 4> operands;
                             mlirGen(argumentsContext, operands, genContext);
                             return mlirGenParseFloat(location, operands);
+                        }
+
+                        if (functionName.compare(StringRef("isNaN")) == 0 && opArgsCount > 0)
+                        {
+                            SmallVector<mlir::Value, 4> operands;
+                            mlirGen(argumentsContext, operands, genContext);
+                            return mlirGenIsNaN(location, operands);
                         }
 
                         if (!genContext.allowPartialResolve)
@@ -1068,6 +1086,17 @@ namespace
                 builder.create<mlir_ts::ParseFloatOp>(
                     location,
                     builder.getF32Type(),
+                    operands.front());
+
+            return parseFloatOp;
+        }
+
+        mlir::Value mlirGenIsNaN(const mlir::Location &location, const SmallVector<mlir::Value, 4> &operands)
+        {
+            auto parseFloatOp =
+                builder.create<mlir_ts::IsNaNOp>(
+                    location,
+                    builder.getI1Type(),
                     operands.front());
 
             return parseFloatOp;

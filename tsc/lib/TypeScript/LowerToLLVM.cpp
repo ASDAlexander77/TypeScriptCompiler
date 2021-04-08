@@ -601,7 +601,27 @@ namespace
         }
     };
 
-    void NegativeOp(mlir_ts::ArithmeticUnaryOp &unaryOp, mlir::PatternRewriter &builder)
+    void NegativeOpValue(mlir_ts::ArithmeticUnaryOp &unaryOp, mlir::PatternRewriter &builder)
+    {
+        CodeLogicHelper clh(unaryOp, builder);
+
+        auto oper = unaryOp.operand1();
+        auto type = oper.getType();
+        if (type.isIntOrIndex())
+        {
+            builder.replaceOpWithNewOp<LLVM::XOrOp>(unaryOp, type, oper, clh.createI32ConstantOf(0));
+        }
+        else if (!type.isIntOrIndex() && type.isIntOrIndexOrFloat())
+        {
+            builder.replaceOpWithNewOp<LLVM::XOrOp>(unaryOp, type, oper, clh.createF32ConstantOf(0.0));
+        }
+        else
+        {
+            llvm_unreachable("not implemented");
+        }
+    }
+
+    void NegativeOpBin(mlir_ts::ArithmeticUnaryOp &unaryOp, mlir::PatternRewriter &builder)
     {
         CodeLogicHelper clh(unaryOp, builder);
 
@@ -637,12 +657,21 @@ namespace
 
         LogicalResult matchAndRewrite(mlir_ts::ArithmeticUnaryOp arithmeticUnaryOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            switch ((SyntaxKind)arithmeticUnaryOp.opCode())
+            auto op = (SyntaxKind)arithmeticUnaryOp.opCode();
+            switch (op)
             {
             case SyntaxKind::ExclamationToken:
-                NegativeOp(arithmeticUnaryOp, rewriter);
+                NegativeOpBin(arithmeticUnaryOp, rewriter);
                 return success();
-
+            case SyntaxKind::PlusToken:
+                rewriter.replaceOp(arithmeticUnaryOp, arithmeticUnaryOp.operand1());
+                return success();
+            case SyntaxKind::MinusToken:
+                NegativeOpValue(arithmeticUnaryOp, rewriter);
+                return success();
+            case SyntaxKind::TildeToken:
+                NegativeOpBin(arithmeticUnaryOp, rewriter);
+                return success();
             default:
                 llvm_unreachable("not implemented");
             }
@@ -655,7 +684,8 @@ namespace
 
         LogicalResult matchAndRewrite(mlir_ts::ArithmeticBinaryOp arithmeticBinaryOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            switch ((SyntaxKind)arithmeticBinaryOp.opCode())
+            auto op = (SyntaxKind)arithmeticBinaryOp.opCode();
+            switch (op)
             {
             case SyntaxKind::PlusToken:
                 BinOp<mlir_ts::ArithmeticBinaryOp, AddIOp, AddFOp>(arithmeticBinaryOp, rewriter);
@@ -673,6 +703,38 @@ namespace
                 BinOp<mlir_ts::ArithmeticBinaryOp, DivFOp, DivFOp>(arithmeticBinaryOp, rewriter);
                 return success();
 
+            case SyntaxKind::GreaterThanGreaterThanToken:
+                BinOp<mlir_ts::ArithmeticBinaryOp, LLVM::LShrOp, LLVM::LShrOp>(arithmeticBinaryOp, rewriter);
+                return success();
+
+            case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
+                BinOp<mlir_ts::ArithmeticBinaryOp, LLVM::AShrOp, LLVM::AShrOp>(arithmeticBinaryOp, rewriter);
+                return success();
+
+            case SyntaxKind::LessThanLessThanToken:
+                BinOp<mlir_ts::ArithmeticBinaryOp, LLVM::ShlOp, LLVM::ShlOp>(arithmeticBinaryOp, rewriter);
+                return success();                
+
+            case SyntaxKind::AmpersandToken:
+                BinOp<mlir_ts::ArithmeticBinaryOp, LLVM::AndOp, LLVM::AndOp>(arithmeticBinaryOp, rewriter);
+                return success();                    
+
+            case SyntaxKind::BarToken:
+                BinOp<mlir_ts::ArithmeticBinaryOp, LLVM::OrOp, LLVM::OrOp>(arithmeticBinaryOp, rewriter);
+                return success();                    
+
+            case SyntaxKind::CaretToken:
+                BinOp<mlir_ts::ArithmeticBinaryOp, LLVM::XOrOp, LLVM::XOrOp>(arithmeticBinaryOp, rewriter);
+                return success();                    
+
+            case SyntaxKind::PercentToken:
+                BinOp<mlir_ts::ArithmeticBinaryOp, LLVM::SRemOp, LLVM::SRemOp>(arithmeticBinaryOp, rewriter);
+                return success();                    
+
+            case SyntaxKind::AsteriskAsteriskToken:
+                BinOp<mlir_ts::ArithmeticBinaryOp, LLVM::PowOp, LLVM::PowOp>(arithmeticBinaryOp, rewriter);
+                return success();                    
+
             default:
                 llvm_unreachable("not implemented");
             }
@@ -685,7 +747,8 @@ namespace
 
         LogicalResult matchAndRewrite(mlir_ts::LogicalBinaryOp logicalBinaryOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            switch ((SyntaxKind)logicalBinaryOp.opCode())
+            auto op = (SyntaxKind)logicalBinaryOp.opCode();
+            switch (op)
             {
             case SyntaxKind::EqualsEqualsToken:
             case SyntaxKind::EqualsEqualsEqualsToken:
@@ -698,6 +761,26 @@ namespace
                 LogicOp<mlir_ts::LogicalBinaryOp,
                         CmpIOp, CmpIPredicate, CmpIPredicate::ne,
                         CmpFOp, CmpFPredicate, CmpFPredicate::ONE>(logicalBinaryOp, rewriter, *(LLVMTypeConverter *)getTypeConverter());
+                return success();
+            case SyntaxKind::GreaterThanToken:
+                LogicOp<mlir_ts::LogicalBinaryOp,
+                        CmpIOp, CmpIPredicate, CmpIPredicate::sgt,
+                        CmpFOp, CmpFPredicate, CmpFPredicate::OGT>(logicalBinaryOp, rewriter, *(LLVMTypeConverter *)getTypeConverter());
+                return success();
+            case SyntaxKind::GreaterThanEqualsToken:
+                LogicOp<mlir_ts::LogicalBinaryOp,
+                        CmpIOp, CmpIPredicate, CmpIPredicate::sge,
+                        CmpFOp, CmpFPredicate, CmpFPredicate::OGE>(logicalBinaryOp, rewriter, *(LLVMTypeConverter *)getTypeConverter());
+                return success();
+            case SyntaxKind::LessThanToken:
+                LogicOp<mlir_ts::LogicalBinaryOp,
+                        CmpIOp, CmpIPredicate, CmpIPredicate::slt,
+                        CmpFOp, CmpFPredicate, CmpFPredicate::OLT>(logicalBinaryOp, rewriter, *(LLVMTypeConverter *)getTypeConverter());
+                return success();
+            case SyntaxKind::LessThanEqualsToken:
+                LogicOp<mlir_ts::LogicalBinaryOp,
+                        CmpIOp, CmpIPredicate, CmpIPredicate::sle,
+                        CmpFOp, CmpFPredicate, CmpFPredicate::OLE>(logicalBinaryOp, rewriter, *(LLVMTypeConverter *)getTypeConverter());
                 return success();
             default:
                 llvm_unreachable("not implemented");

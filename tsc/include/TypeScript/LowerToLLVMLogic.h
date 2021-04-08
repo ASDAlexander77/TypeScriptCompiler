@@ -165,6 +165,11 @@ namespace typescript
             return rewriter.create<LLVM::ConstantOp>(op->getLoc(), rewriter.getIntegerType(1), rewriter.getIntegerAttr(rewriter.getI1Type(), value));
         }    
 
+        Value createF32ConstantOf(float value)
+        {
+            return rewriter.create<LLVM::ConstantOp>(op->getLoc(), rewriter.getF32Type(), rewriter.getIntegerAttr(rewriter.getF32Type(), value));
+        }
+
         Value conditionalExpressionLowering(
             Type type, Value condition,
             function_ref<Value(OpBuilder &, Location)> thenBuilder,
