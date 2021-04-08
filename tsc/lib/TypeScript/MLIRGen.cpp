@@ -534,7 +534,7 @@ namespace
         {
             mlir::Type returnType;
 
-            // check if we have any return with expration
+            // check if we have any return with expression
             auto hasReturnStatementWithExpr = false;
             FilterVisitorAST<ReturnStatement> visitorAST1(
                 SyntaxKind::ReturnStatement,
@@ -551,6 +551,8 @@ namespace
             {
                 return returnType;
             }
+
+            mlir::OpBuilder::InsertionGuard guard(builder);
 
             auto partialDeclFuncType = builder.getFunctionType(argTypes, llvm::None);
             auto dummyFuncOp = mlir_ts::FuncOp::create(loc(functionDeclarationAST), name, partialDeclFuncType);
@@ -817,6 +819,9 @@ namespace
             switch (opCode)
             {
             case SyntaxKind::ExclamationToken:
+            case SyntaxKind::TildeToken:
+            case SyntaxKind::PlusToken:
+            case SyntaxKind::MinusToken:
                 return builder.create<mlir_ts::ArithmeticUnaryOp>(
                     location,
                     builder.getI1Type(),
@@ -872,6 +877,8 @@ namespace
             case SyntaxKind::EqualsEqualsEqualsToken:
             case SyntaxKind::ExclamationEqualsToken:
             case SyntaxKind::ExclamationEqualsEqualsToken:
+            case SyntaxKind::AmpersandAmpersandToken:
+            case SyntaxKind::BarBarToken:
                 return builder.create<mlir_ts::LogicalBinaryOp>(
                     location,
                     builder.getI1Type(),

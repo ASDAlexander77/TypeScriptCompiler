@@ -770,7 +770,7 @@ namespace ts
         {
             // kind: SyntaxKind::PrefixUnaryExpression;
             PrefixUnaryOperator _operator;
-            PTR(UnaryExpression) operand;
+            PTR(Expression) operand;
         };
 
         // see: https://tc39.github.io/ecma262/#prod-UpdateExpression
@@ -1307,10 +1307,9 @@ namespace ts
             /*@internal*/ PTR(QuestionDotToken) questionDotToken; // NOTE: Invalid syntax, only used to report a grammar error.
         };
 
-        struct AsExpression : Expression
+        struct AsExpression : UnaryExpression
         {
             // kind: SyntaxKind::AsExpression;
-            PTR(Expression) expression;
             PTR(TypeNode) type;
         };
 
@@ -1318,13 +1317,11 @@ namespace ts
         {
             // kind: SyntaxKind::TypeAssertionExpression;
             PTR(TypeNode) type;
-            PTR(UnaryExpression) expression;
         };
 
         struct NonNullExpression : LeftHandSideExpression
         {
             // kind: SyntaxKind::NonNullExpression;
-            PTR(Expression) expression;
         };
 
         struct NonNullChain : NonNullExpression
@@ -1475,7 +1472,6 @@ namespace ts
         struct SyntheticReferenceExpression : LeftHandSideExpression
         {
             // kind: SyntaxKind::SyntheticReferenceExpression;
-            PTR(Expression) expression;
             PTR(Expression) thisArg;
         };
 
