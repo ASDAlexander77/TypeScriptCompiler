@@ -282,6 +282,10 @@ namespace
             {
                 return mlirGen(expressionAST.as<TypeOfExpression>(), genContext);
             }
+            else if (kind == SyntaxKind::ConditionalExpression)
+            {
+                return mlirGen(expressionAST.as<ConditionalExpression>(), genContext);
+            }
 
             llvm_unreachable("unknown expression");
         }
@@ -837,6 +841,37 @@ namespace
             }
         }        
 
+        mlir::Value mlirGen(ConditionalExpression conditionalExpressionAST, const GenContext &genContext)
+        {
+            auto location = loc(conditionalExpressionAST);
+
+            // condition
+            auto condValue = mlirGen(conditionalExpressionAST->condition, genContext);
+
+            // detect value type
+            mlir::Type resultType;
+            {
+                mlir::OpBuilder::InsertionGuard guard(builder);
+                auto resultTrueTemp = mlirGen(conditionalExpressionAST->whenTrue, genContext);
+                resultType = resultTrueTemp.getType();
+                resultTrueTemp.getDefiningOp()->erase();
+            }
+
+            auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{resultType}, condValue, true);
+
+            builder.setInsertionPointToStart(&ifOp.thenRegion().front());
+            auto resultTrue = mlirGen(conditionalExpressionAST->whenTrue, genContext);
+            builder.create<mlir_ts::YieldOp>(location, mlir::ValueRange{resultTrue});
+
+            builder.setInsertionPointToStart(&ifOp.elseRegion().front());
+            auto resultFalse = mlirGen(conditionalExpressionAST->whenFalse, genContext);
+            builder.create<mlir_ts::YieldOp>(location, mlir::ValueRange{resultFalse});
+
+            builder.setInsertionPointAfter(ifOp);
+
+            return ifOp.getResult(0);
+        }
+
         mlir::Value mlirGen(BinaryExpression binaryExpressionAST, const GenContext &genContext)
         {
             auto location = loc(binaryExpressionAST);
@@ -972,13 +1007,6 @@ namespace
                             return mlirGenParseFloat(location, operands);
                         }
 
-                        if (functionName.compare(StringRef("isNaN")) == 0 && opArgsCount > 0)
-                        {
-                            SmallVector<mlir::Value, 4> operands;
-                            mlirGen(argumentsContext, operands, genContext);
-                            return mlirGenIsNaN(location, operands);
-                        }
-
                         if (!genContext.allowPartialResolve)
                         {
                             emitError(location) << "no defined function found for '" << functionName << "'";
@@ -1086,17 +1114,6 @@ namespace
                 builder.create<mlir_ts::ParseFloatOp>(
                     location,
                     builder.getF32Type(),
-                    operands.front());
-
-            return parseFloatOp;
-        }
-
-        mlir::Value mlirGenIsNaN(const mlir::Location &location, const SmallVector<mlir::Value, 4> &operands)
-        {
-            auto parseFloatOp =
-                builder.create<mlir_ts::IsNaNOp>(
-                    location,
-                    builder.getI1Type(),
                     operands.front());
 
             return parseFloatOp;

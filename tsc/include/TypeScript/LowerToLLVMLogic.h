@@ -238,6 +238,7 @@ namespace typescript
         }
         else
         {
+            emitError(binOp.getLoc(), "Not implemented operator for type 1: '") << type << "'";
             llvm_unreachable("not implemented");
         }
     }  
@@ -256,6 +257,7 @@ namespace typescript
         }
         else
         {
+            emitError(binOp.getLoc(), "Not implemented operator for type 1: '") << leftType << "'";
             llvm_unreachable("not implemented");
         }
     }

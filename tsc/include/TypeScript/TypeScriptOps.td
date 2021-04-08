@@ -246,22 +246,6 @@ def TypeScript_ParseFloatOp : TypeScript_Op<"parseFloat"> {
   let results = (outs F32:$res);
 }
 
-def TypeScript_IsNaNOp : TypeScript_Op<"isNaN"> {
-  let summary = "IsNaN operation";
-  let description = [{
-    IsNaN operation
-
-    Example:
-
-    ```mlir
-    %0 = isNaN %b
-    ```
-  }];
-
-  let arguments = (ins AnyType:$arg);
-  let results = (outs I1:$res);
-}
-
 def TypeScript_CallOp : TypeScript_Op<"call",
     [CallOpInterface, MemRefsNormalizable,
      DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
