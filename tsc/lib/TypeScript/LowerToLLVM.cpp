@@ -616,11 +616,11 @@ namespace
         auto type = oper.getType();
         if (type.isIntOrIndex())
         {
-            builder.replaceOpWithNewOp<LLVM::XOrOp>(unaryOp, type, oper, clh.createI32ConstantOf(0));
+            builder.replaceOpWithNewOp<SubIOp>(unaryOp, type, oper, clh.createI32ConstantOf(0));
         }
         else if (!type.isIntOrIndex() && type.isIntOrIndexOrFloat())
         {
-            builder.replaceOpWithNewOp<LLVM::XOrOp>(unaryOp, type, oper, clh.createF32ConstantOf(0.0));
+            builder.replaceOpWithNewOp<SubFOp>(unaryOp, type, oper, clh.createF32ConstantOf(0.0));
         }
         else
         {
@@ -711,35 +711,35 @@ namespace
                 return success();
 
             case SyntaxKind::GreaterThanGreaterThanToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, LLVM::LShrOp, LLVM::LShrOp>(arithmeticBinaryOp, rewriter);
+                BinOp<mlir_ts::ArithmeticBinaryOp, SignedShiftRightOp, SignedShiftRightOp>(arithmeticBinaryOp, rewriter);
                 return success();
 
             case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, LLVM::AShrOp, LLVM::AShrOp>(arithmeticBinaryOp, rewriter);
+                BinOp<mlir_ts::ArithmeticBinaryOp, UnsignedShiftRightOp, UnsignedShiftRightOp>(arithmeticBinaryOp, rewriter);
                 return success();
 
             case SyntaxKind::LessThanLessThanToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, LLVM::ShlOp, LLVM::ShlOp>(arithmeticBinaryOp, rewriter);
+                BinOp<mlir_ts::ArithmeticBinaryOp, ShiftLeftOp, ShiftLeftOp>(arithmeticBinaryOp, rewriter);
                 return success();                
 
             case SyntaxKind::AmpersandToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, LLVM::AndOp, LLVM::AndOp>(arithmeticBinaryOp, rewriter);
+                BinOp<mlir_ts::ArithmeticBinaryOp, AndOp, AndOp>(arithmeticBinaryOp, rewriter);
                 return success();                    
 
             case SyntaxKind::BarToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, LLVM::OrOp, LLVM::OrOp>(arithmeticBinaryOp, rewriter);
+                BinOp<mlir_ts::ArithmeticBinaryOp, OrOp, OrOp>(arithmeticBinaryOp, rewriter);
                 return success();                    
 
             case SyntaxKind::CaretToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, LLVM::XOrOp, LLVM::XOrOp>(arithmeticBinaryOp, rewriter);
+                BinOp<mlir_ts::ArithmeticBinaryOp, XOrOp, XOrOp>(arithmeticBinaryOp, rewriter);
                 return success();                    
 
             case SyntaxKind::PercentToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, LLVM::SRemOp, LLVM::SRemOp>(arithmeticBinaryOp, rewriter);
+                BinOp<mlir_ts::ArithmeticBinaryOp, RemFOp, RemFOp>(arithmeticBinaryOp, rewriter);
                 return success();                    
 
             case SyntaxKind::AsteriskAsteriskToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, LLVM::PowOp, LLVM::PowOp>(arithmeticBinaryOp, rewriter);
+                BinOp<mlir_ts::ArithmeticBinaryOp, PowFOp, PowFOp>(arithmeticBinaryOp, rewriter);
                 return success();                    
 
             default:

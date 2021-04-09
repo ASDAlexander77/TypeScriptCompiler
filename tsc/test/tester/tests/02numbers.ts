@@ -47,7 +47,7 @@ function testRightU(a: number, b: number, c: number) {
 function testNums(): void {
     print("TN")
     let z = 12
-    print("ZZ" + z);
+    //print("ZZ" + z);
     let tt = 2;
     let x = 40 + tt;
     assert(x == 42, "add");
@@ -62,9 +62,9 @@ function testNums(): void {
     incrBy_2();
     print("nums#1")
     assert(glb1 == 9, "glb2");
-    assert(Math.abs(-42) == 42, "abs");
-    assert(Math.abs(42) == 42, "abs");
-    assert(Math.sign(42) == 1, "abs");
+    //assert(Math.abs(-42) == 42, "abs");
+    //assert(Math.abs(42) == 42, "abs");
+    //assert(Math.sign(42) == 1, "abs");
     print("nums#3")
     testIf();
 
@@ -134,7 +134,7 @@ function testNums(): void {
 
     let r = fib(15);
     print("FB")
-    print("FIB" + r);
+    //print("FIB" + r);
     assert(r == 987, "fib");
 
     print("nums#5")
@@ -170,8 +170,8 @@ function testComma() {
     assert(x == 77, "x")
     assert(glb1 == 2, "g")
     // make sure there are no leaks
-    let y = ("aaa" + "zz", "x" + "yyy")
-    assert(y.length == 4, "y")
+    //let y = ("aaa" + "zz", "x" + "yyy")
+    //assert(y.length == 4, "y")
 }
 
 function isnan(x: number) {
@@ -186,14 +186,15 @@ function testNaN() {
     assert(isnan(mydiv(0, 0)))
     assert(isnan(0 / 0))
     assert(isnan(parseFloat("foobar")))
-    assert(isnan(NaN))
+    //assert(isnan(NaN))
     assert(!isnan(0))
-    assert(!isnan(Infinity))
-    let inf = Infinity
-    assert(1 / Infinity == 0)
-    assert(1 / inf == 0)
+    //assert(!isnan(Infinity))
+    //let inf = Infinity
+    //assert(1 / Infinity == 0)
+    //assert(1 / inf == 0)
 }
 
+/*
 function testUnaryPlus() {
     function testOne(v: any) {
         assert(+v + 1 == 2, "t1")
@@ -217,13 +218,14 @@ function testUnaryPlus() {
     test35(3.5)
     test35("3.5")
     let qq: any = undefined
-    assert(isNaN(+qq))
+    //assert(isNaN(+qq))
 }
+*/
 
 function main()
 {
    testComma();
    testNums();
    testNaN();
-   testUnaryPlus();
+   //testUnaryPlus();
 }
