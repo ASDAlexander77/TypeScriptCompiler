@@ -41,6 +41,16 @@ namespace typescript
             return rewriter.getIntegerType(8);
         }
 
+        Type getI32Type()
+        {
+            return rewriter.getIntegerType(32);
+        }
+
+        Type getF32Type()
+        {
+            return rewriter.getF32Type();
+        }
+
         LLVM::LLVMPointerType getI8PtrType()
         {
             return LLVM::LLVMPointerType::get(rewriter.getIntegerType(8));

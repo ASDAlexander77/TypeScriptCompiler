@@ -949,6 +949,7 @@ namespace
 
                     break;
                 case SyntaxKind::SlashToken:
+                case SyntaxKind::AsteriskAsteriskToken:
 
                     if (leftExpressionValue.getType() != builder.getF32Type())
                     {

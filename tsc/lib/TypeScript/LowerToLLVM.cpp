@@ -664,8 +664,8 @@ namespace
 
         LogicalResult matchAndRewrite(mlir_ts::ArithmeticUnaryOp arithmeticUnaryOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            auto op = (SyntaxKind)arithmeticUnaryOp.opCode();
-            switch (op)
+            auto opCode = (SyntaxKind)arithmeticUnaryOp.opCode();
+            switch (opCode)
             {
             case SyntaxKind::ExclamationToken:
                 NegativeOpBin(arithmeticUnaryOp, rewriter);
@@ -691,8 +691,8 @@ namespace
 
         LogicalResult matchAndRewrite(mlir_ts::ArithmeticBinaryOp arithmeticBinaryOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            auto op = (SyntaxKind)arithmeticBinaryOp.opCode();
-            switch (op)
+            auto opCode = (SyntaxKind)arithmeticBinaryOp.opCode();
+            switch (opCode)
             {
             case SyntaxKind::PlusToken:
                 BinOp<mlir_ts::ArithmeticBinaryOp, AddIOp, AddFOp>(arithmeticBinaryOp, rewriter);
