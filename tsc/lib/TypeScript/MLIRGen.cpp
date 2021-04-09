@@ -819,15 +819,22 @@ namespace
 
             auto expression = prefixUnaryExpressionAST->operand;
             auto expressionValue = mlirGen(expression, genContext);
+            auto boolValue = expressionValue;
 
             switch (opCode)
             {
             case SyntaxKind::ExclamationToken:
+                
+                if (expressionValue.getType() != getBooleanType())
+                {
+                    boolValue = builder.create<mlir_ts::CastOp>(location, getBooleanType(), expressionValue);
+                }
+
                 return builder.create<mlir_ts::ArithmeticUnaryOp>(
                     location,
-                    builder.getI1Type(),
+                    getBooleanType(),
                     builder.getI32IntegerAttr((int)opCode),
-                    expressionValue);            
+                    boolValue);            
             case SyntaxKind::TildeToken:
             case SyntaxKind::PlusToken:
             case SyntaxKind::MinusToken:
@@ -883,7 +890,7 @@ namespace
             auto leftExpressionValue = mlirGen(leftExpression, genContext);
             auto resultType = leftExpressionValue.getType();
 
-            auto condValue = builder.create<mlir_ts::CastOp>(location, builder.getI1Type(), leftExpressionValue);
+            auto condValue = builder.create<mlir_ts::CastOp>(location, getBooleanType(), leftExpressionValue);
 
             auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{resultType}, condValue, true);
 
@@ -917,11 +924,50 @@ namespace
             auto leftExpressionValue = mlirGen(leftExpression, genContext);
             auto rightExpressionValue = mlirGen(rightExpression, genContext);
 
+            auto leftExpressionValueBeforeCast = leftExpressionValue;
             auto rightExpressionValueBeforeCast = rightExpressionValue;
 
-            if (opCode != SyntaxKind::CommaToken && leftExpressionValue.getType() != rightExpressionValue.getType())
+            // cast step
+            switch (opCode)
             {
-                rightExpressionValue = builder.create<mlir_ts::CastOp>(loc(rightExpression), leftExpressionValue.getType(), rightExpressionValue);
+                case SyntaxKind::CommaToken:
+                    // no cast needed
+                    break;
+                case SyntaxKind::LessThanLessThanToken:
+                case SyntaxKind::GreaterThanGreaterThanToken:
+                case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
+                    // cast to int
+                    if (leftExpressionValue.getType() != builder.getI32Type())
+                    {
+                        leftExpressionValue = builder.create<mlir_ts::CastOp>(loc(leftExpression), builder.getI32Type(), leftExpressionValue);
+                    }
+
+                    if (rightExpressionValue.getType() != builder.getI32Type())
+                    {
+                        rightExpressionValue = builder.create<mlir_ts::CastOp>(loc(rightExpression), builder.getI32Type(), rightExpressionValue);
+                    }                    
+
+                    break;
+                case SyntaxKind::SlashToken:
+
+                    if (leftExpressionValue.getType() != builder.getF32Type())
+                    {
+                        leftExpressionValue = builder.create<mlir_ts::CastOp>(loc(leftExpression), builder.getF32Type(), leftExpressionValue);
+                    }                
+
+                    if (rightExpressionValue.getType() != builder.getF32Type())
+                    {
+                        rightExpressionValue = builder.create<mlir_ts::CastOp>(loc(rightExpression), builder.getF32Type(), rightExpressionValue);
+                    }    
+
+                    break;
+                default:
+                    if (leftExpressionValue.getType() != rightExpressionValue.getType())
+                    {
+                        rightExpressionValue = builder.create<mlir_ts::CastOp>(loc(rightExpression), leftExpressionValue.getType(), rightExpressionValue);
+                    }
+
+                    break;
             }
 
             switch (opCode)
@@ -956,7 +1002,7 @@ namespace
             case SyntaxKind::LessThanEqualsToken:
                 return builder.create<mlir_ts::LogicalBinaryOp>(
                     location,
-                    builder.getI1Type(),
+                    getBooleanType(),
                     builder.getI32IntegerAttr((int)opCode),
                     leftExpressionValue,
                     rightExpressionValue);
@@ -1217,7 +1263,7 @@ namespace
         {
             return builder.create<mlir::ConstantOp>(
                 loc(trueLiteral),
-                builder.getI1Type(),
+                getBooleanType(),
                 mlir::BoolAttr::get(true, theModule.getContext()));
         }
 
@@ -1225,7 +1271,7 @@ namespace
         {
             return builder.create<mlir::ConstantOp>(
                 loc(falseLiteral),
-                builder.getI1Type(),
+                getBooleanType(),
                 mlir::BoolAttr::get(false, theModule.getContext()));
         }
 
@@ -1304,7 +1350,7 @@ namespace
             auto kind = (SyntaxKind) typeReferenceAST;
             if (kind == SyntaxKind::BooleanKeyword)
             {
-                return builder.getI1Type();
+                return getBooleanType();
             }
             else if (kind == SyntaxKind::NumberKeyword)
             {
@@ -1329,6 +1375,11 @@ namespace
         mlir_ts::VoidType getVoidType()
         {
             return mlir_ts::VoidType::get(builder.getContext());
+        }
+
+        mlir::Type getBooleanType()
+        {
+            return builder.getI1Type();
         }
         
         mlir_ts::StringType getStringType()

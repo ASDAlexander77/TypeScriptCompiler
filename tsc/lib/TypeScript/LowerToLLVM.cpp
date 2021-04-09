@@ -543,6 +543,13 @@ namespace
             auto op1 = in.getType();
             auto op2 = res.getType();
 
+            if (op1 == op2)
+            {
+                // types are equals
+                rewriter.replaceOp(op, in);
+                return success();
+            }
+
             if (op1.isInteger(32) && op2.isF32())
             {
                 rewriter.replaceOpWithNewOp<SIToFPOp>(op, op2, in);
