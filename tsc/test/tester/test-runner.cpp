@@ -81,12 +81,12 @@ std::string exec(std::string cmd)
         auto code = PCLOSE(pipe);
         if (code)
         {
-            std::cerr << "Error: return code is not 0";
+            std::cerr << "Error: return code is not 0" << std::endl;
         }
     }
     else
     {
-        std::cerr << "Error: Failed to read the pipe to the end";
+        std::cerr << "Error: Failed to read the pipe to the end" << std::endl;
     }
 
     return result;
@@ -117,7 +117,13 @@ int runFolder(const char *folder)
 
 void createBatchFile()
 {
+    if (exists("compile.bat"))
+    {
+        return;
+    }
+
     std::ofstream batFile("compile.bat");
+    batFile << "echo off" << std::endl;
     batFile << "set FILENAME=%1" << std::endl;
     batFile << "set VCPATH=" << TEST_VCPATH << std::endl;
     batFile << "set SDKPATH=" << TEST_SDKPATH << std::endl;
@@ -129,6 +135,7 @@ void createBatchFile()
     batFile << "del %FILENAME%.il" << std::endl;
     batFile << "del %FILENAME%.o" << std::endl;
     batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
+    batFile << "echo on" << std::endl;
     batFile.close();
 }
 
@@ -153,11 +160,12 @@ void testFile(const char *file)
 
     auto cleanup = [&]() {
         std::stringstream mask;
-        mask << "del " << stem << ms.count() << "*.*";
+        mask << "del " << stem << ms.count() << ".*";
         auto delCmd = mask.str();
 
         // read test result
-        std::ifstream infile(errFile);
+        std::ifstream infile;
+        infile.open(errFile, std::fstream::in);
         std::string line;
         std::stringstream errors;
         auto anyError = false;
@@ -167,12 +175,13 @@ void testFile(const char *file)
             anyError = true;
         }        
 
+        infile.close();
+
         exec(delCmd);       
 
         if (anyError)
         {
             auto errStr = errors.str();
-            std::cerr << errStr << std::endl;
             return errStr;
         } 
 
@@ -186,8 +195,8 @@ void testFile(const char *file)
     {
         auto compileResult = exec(ss.str());
 
-        std::cout << "Compiling: " << std::endl;
-        std::cout << compileResult << std::endl;
+        //std::cout << std::endl << "Compiling: " << std::endl;
+        //std::cout << compileResult << std::endl;
 
         auto index = compileResult.find("error:");
         if (index != std::string::npos)
