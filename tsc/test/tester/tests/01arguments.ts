@@ -12,7 +12,7 @@ function main() {
     //assert(optargs(1, 2) == 3, "opt1");
     //assert(optargs(1, 2, 3) == 3, "opt2");
 
-    assert(optstring(3) == 6, "os0")
+    //assert(optstring(3) == 6, "os0")
     assert(optstring(3, "7") == 10, "os1")
     assert(optstring2(3) == 6, "os0")
     assert(optstring2(3, "7") == 10, "os1")
