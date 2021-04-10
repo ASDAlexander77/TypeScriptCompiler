@@ -36,6 +36,11 @@ namespace typescript
             return LLVM::LLVMVoidType::get(rewriter.getContext());
         }
 
+        Type getBooleanType()
+        {
+            return mlir_ts::BooleanType::get(rewriter.getContext());
+        }
+
         Type getI8Type()
         {
             return rewriter.getIntegerType(8);

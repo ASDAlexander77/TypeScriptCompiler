@@ -1104,7 +1104,7 @@ namespace
                     auto hasOptionalFrom = calledFunc.getOperation()->hasAttrOfType<mlir::IntegerAttr>(FUNC_OPTIONAL_ATTR_NAME);
                     if (hasOptionalFrom)
                     {
-                        auto constNumOfParams = builder.create<mlir::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(opArgsCount));
+                        auto constNumOfParams = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(opArgsCount));
                         operands.push_back(constNumOfParams);
                     }
 
@@ -1263,7 +1263,7 @@ namespace
 
         mlir::Value mlirGen(TrueLiteral trueLiteral, const GenContext &genContext)
         {
-            return builder.create<mlir::ConstantOp>(
+            return builder.create<mlir_ts::ConstantOp>(
                 loc(trueLiteral),
                 getBooleanType(),
                 mlir::BoolAttr::get(true, theModule.getContext()));
@@ -1271,7 +1271,7 @@ namespace
 
         mlir::Value mlirGen(FalseLiteral falseLiteral, const GenContext &genContext)
         {
-            return builder.create<mlir::ConstantOp>(
+            return builder.create<mlir_ts::ConstantOp>(
                 loc(falseLiteral),
                 getBooleanType(),
                 mlir::BoolAttr::get(false, theModule.getContext()));
@@ -1381,7 +1381,7 @@ namespace
 
         mlir::Type getBooleanType()
         {
-            return builder.getI1Type();
+            return mlir_ts::BooleanType::get(builder.getContext());
         }
         
         mlir_ts::StringType getStringType()

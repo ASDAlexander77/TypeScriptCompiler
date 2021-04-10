@@ -274,6 +274,18 @@ namespace
         }
     };
 
+    struct ConstantOpLowering : public OpConversionPattern<mlir_ts::ConstantOp>
+    {
+        using OpConversionPattern<mlir_ts::ConstantOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::ConstantOp constantOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            TypeConverterHelper tch(*getTypeConverter());
+            rewriter.replaceOpWithNewOp<mlir::ConstantOp>(constantOp, tch.convertType(constantOp.getType()), constantOp.getValue());
+            return success();
+        }
+    };
+
     struct NullOpLowering : public OpConversionPattern<mlir_ts::NullOp>
     {
         using OpConversionPattern<mlir_ts::NullOp>::OpConversionPattern;
@@ -616,11 +628,11 @@ namespace
         auto type = oper.getType();
         if (type.isIntOrIndex())
         {
-            builder.replaceOpWithNewOp<SubIOp>(unaryOp, type, oper, clh.createI32ConstantOf(0));
+            builder.replaceOpWithNewOp<SubIOp>(unaryOp, type, clh.createI32ConstantOf(0), oper);
         }
         else if (!type.isIntOrIndex() && type.isIntOrIndexOrFloat())
         {
-            builder.replaceOpWithNewOp<SubFOp>(unaryOp, type, oper, clh.createF32ConstantOf(0.0));
+            builder.replaceOpWithNewOp<SubFOp>(unaryOp, type, clh.createF32ConstantOf(0.0), oper);
         }
         else
         {
@@ -993,6 +1005,10 @@ namespace
             return LLVM::LLVMVoidType::get(m.getContext());
         });
 
+        converter.addConversion([&](mlir_ts::BooleanType type) {
+            return IntegerType::get(m.getContext(), 1);
+        });
+
         converter.addConversion([&](mlir_ts::StringType type) {
             return LLVM::LLVMPointerType::get(IntegerType::get(m.getContext(), 8));
         });
@@ -1066,6 +1082,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         ArithmeticBinaryOpLowering,
         ArithmeticUnaryOpLowering,
         AssertOpLowering,
+        ConstantOpLowering,
         GlobalOpLowering,
         EntryOpLowering,
         FuncOpLowering,

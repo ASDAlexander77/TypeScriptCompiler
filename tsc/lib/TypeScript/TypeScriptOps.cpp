@@ -76,6 +76,14 @@ LogicalResult ts::OptionalType::verifyConstructionInvariants(Location loc, Type 
 }
 
 //===----------------------------------------------------------------------===//
+// ConstantOp
+//===----------------------------------------------------------------------===//
+OpFoldResult ts::ConstantOp::fold(ArrayRef<Attribute> operands) {
+  assert(operands.empty() && "constant has no operands");
+  return getValue();
+}
+
+//===----------------------------------------------------------------------===//
 // FuncOp
 //===----------------------------------------------------------------------===//
 ts::FuncOp ts::FuncOp::create(Location location, StringRef name, FunctionType type,

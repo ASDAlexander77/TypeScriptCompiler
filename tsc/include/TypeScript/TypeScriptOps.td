@@ -13,6 +13,53 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 // TypeScript op definitions
 //===----------------------------------------------------------------------===//
 
+//===----------------------------------------------------------------------===//
+// ConstantOp
+//===----------------------------------------------------------------------===//
+
+def ConstantOp : TypeScript_Op<"constant",
+    [ConstantLike, NoSideEffect]> {
+  let summary = "constant";
+  let description = [{
+    Syntax:
+
+    ```
+    operation ::= ssa-id `=` `std.constant` attribute-value `:` type
+    ```
+
+    The `constant` operation produces an SSA value equal to some constant
+    specified by an attribute.
+
+    Example:
+
+    ```mlir
+    // Integer constant
+    %1 = constant 42 : i32
+
+    // Reference to function @myfn.
+    %3 = constant @myfn : (tensor<16xf32>, f32) -> tensor<16xf32>
+
+    // Equivalent generic forms
+    %1 = "std.constant"() {value = 42 : i32} : () -> i32
+    %3 = "std.constant"() {value = @myfn}
+       : () -> ((tensor<16xf32>, f32) -> tensor<16xf32>)
+    ```
+  }];
+
+  let arguments = (ins AnyAttr:$value);
+  let results = (outs AnyType);
+
+  let builders = [
+    OpBuilderDAG<(ins "Attribute":$value),
+    [{ build($_builder, $_state, value.getType(), value); }]>];
+
+  let extraClassDeclaration = [{
+    Attribute getValue() { return (*this)->getAttr("value"); }
+  }];
+
+  let hasFolder = 1;
+}
+
 def TypeScript_FuncOp : TypeScript_Op<"func", [
   AffineScope, AutomaticAllocationScope, CallableOpInterface, FunctionLike,
   IsolatedFromAbove, Symbol
@@ -188,7 +235,7 @@ def TypeScript_AssertOp : TypeScript_Op<"assert"> {
     ```
   }];
 
-  let arguments = (ins I1:$arg, StrAttr:$msg);
+  let arguments = (ins TypeScript_Boolean:$arg, StrAttr:$msg);
 
   let assemblyFormat = "$arg `,` $msg attr-dict";
 
@@ -455,7 +502,7 @@ def TypeScript_ArithmeticBinaryOp : TypeScript_Op<"arithmetic_binary"> {
 def TypeScript_LogicalBinaryOp : TypeScript_Op<"logical_binary"> {
   let description = [{
     ```mlir
-    %2 = ts.logical_binary 1, %0, %1 : i1
+    %2 = ts.logical_binary 1, %0, %1 : ts.boolean
     ```
   }];
 
@@ -466,7 +513,7 @@ def TypeScript_LogicalBinaryOp : TypeScript_Op<"logical_binary"> {
   );
 
   let results = (outs
-    I1:$result
+    TypeScript_Boolean:$result
   );
 }
 
@@ -556,7 +603,7 @@ def TypeScript_IfOp : TypeScript_Op<"if",
        NoRegionArguments]> {
   let summary = "if-then-else operation";
 
-  let arguments = (ins I1:$condition);
+  let arguments = (ins TypeScript_Boolean:$condition);
   let results = (outs Variadic<AnyType>:$results);
   let regions = (region SizedRegion<1>:$thenRegion, AnyRegion:$elseRegion);
 
