@@ -9,6 +9,7 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
+#include <chrono>
 
 #if __cplusplus >= 201703L
 #include <filesystem>
@@ -44,7 +45,7 @@ namespace fs = std::experimental::filesystem;
 #endif
 
 #ifndef TEST_FILE
-#define TEST_FILE "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/01arguments.ts"
+#define TEST_FILE "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/02numbers.ts"
 #endif
 
 bool hasEnding(std::string const &fullString, std::string const &ending)
@@ -63,15 +64,29 @@ std::string exec(std::string cmd)
 {
     std::array<char, 128> buffer;
     std::string result;
-    std::unique_ptr<FILE, decltype(&PCLOSE)> pipe(POPEN(cmd.c_str(), "rt"), PCLOSE);
+
+    FILE *pipe = POPEN(cmd.c_str(), "rt");
     if (!pipe)
     {
         throw std::runtime_error("popen() failed!");
     }
 
-    while (fgets(buffer.data(), buffer.size(), pipe.get()) != nullptr)
+    while (fgets(buffer.data(), buffer.size(), pipe) != nullptr)
     {
         result += buffer.data();
+    }
+
+    if (feof(pipe))
+    {
+        auto code = PCLOSE(pipe);
+        if (code)
+        {
+            std::cerr << "Error: return code is not 0";
+        }
+    }
+    else
+    {
+        std::cerr << "Error: Failed to read the pipe to the end";
     }
 
     return result;
@@ -113,47 +128,88 @@ void createBatchFile()
     batFile << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o \"%VCPATH%\\libcmt.lib\" \"%VCPATH%\\libvcruntime.lib\" \"%SDKPATH%\\kernel32.lib\" \"%SDKPATH%\\libucrt.lib\" \"%SDKPATH%\\uuid.lib\"" << std::endl;
     batFile << "del %FILENAME%.il" << std::endl;
     batFile << "del %FILENAME%.o" << std::endl;
+    batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
     batFile.close();
 }
 
 void testFile(const char *file)
 {
+    std::chrono::milliseconds ms = std::chrono::duration_cast< std::chrono::milliseconds >(
+        std::chrono::system_clock::now().time_since_epoch()
+    );
+
     auto fileName = fs::path(file).filename();
     auto stem = fs::path(file).stem();
     
     std::stringstream sfn;
-    sfn << stem << ".exe";
+    sfn << stem << ms.count() << ".exe";
     auto exeFile = sfn.str();
+
+    std::stringstream efn;
+    efn << stem << ms.count() << ".err";
+    auto errFile = efn.str();    
 
     std::cout << "Test file: " << fileName << " path: " << file << std::endl;
 
+    auto cleanup = [&]() {
+        std::stringstream mask;
+        mask << "del " << stem << ms.count() << "*.*";
+        auto delCmd = mask.str();
+
+        // read test result
+        std::ifstream infile(errFile);
+        std::string line;
+        std::stringstream errors;
+        auto anyError = false;
+        while (std::getline(infile, line))
+        {
+            errors << line << std::endl;
+            anyError = true;
+        }        
+
+        exec(delCmd);       
+
+        if (anyError)
+        {
+            auto errStr = errors.str();
+            std::cerr << errStr << std::endl;
+            return errStr;
+        } 
+
+        return std::string();
+    };
+
     // compile
     std::stringstream ss;
-    ss << "compile.bat " << stem << " " << file;
-    auto compileResult = exec(ss.str());
-
-    std::cout << "Compiling: " << std::endl;
-    std::cout << compileResult << std::endl;
-
-    auto index = compileResult.find("error:");
-    if (index != std::string::npos)
+    ss << "compile.bat " << stem << ms.count() << " " << file;
+    try
     {
-        throw "compile error";
+        auto compileResult = exec(ss.str());
+
+        std::cout << "Compiling: " << std::endl;
+        std::cout << compileResult << std::endl;
+
+        auto index = compileResult.find("error:");
+        if (index != std::string::npos)
+        {
+            throw "compile error";
+        }
+
+        index = compileResult.find("failed");
+        if (index != std::string::npos)
+        {
+            throw "run error";
+        }
+    }
+    catch (const std::exception &)
+    {
     }
 
-    ASSERT_THROW_MSG(exists(exeFile), "compile error");
-
-    // run
-    auto result = exec(exeFile);
-
-    std::cout << "Test result: " << std::endl;
-    std::cout << result << std::endl;
-
-    std::stringstream mask;
-    mask << "del " << stem << ".*";
-    auto delCmd = mask.str();
-
-    exec(delCmd);
+    auto res = cleanup();
+    if (!res.empty())
+    {
+        throw std::exception(res.c_str());
+    }    
 }
 
 int main(int argc, char **argv)
@@ -173,7 +229,7 @@ int main(int argc, char **argv)
     }
     catch (const std::exception &e)
     {
-        std::cerr << e.what() << std::endl;
+        std::cout << e.what() << std::endl;
         return 1;
     }
 
