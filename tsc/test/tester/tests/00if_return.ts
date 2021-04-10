@@ -1,7 +1,7 @@
 function main() {    
     assert(test(1) == 3, "failed. 1");
     test2(1);
-    assert(test3(1) == 4, "failed. 3");
+    assert(test3(1) == 5, "failed. 3");
     assert(test4(1) == 3, "failed. 4");
 }
 
