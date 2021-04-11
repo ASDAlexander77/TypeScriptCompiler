@@ -1997,7 +1997,9 @@ namespace ts
                                     ? to_string(to_bignumber_base(tokenValue, 2)) // skip "0b"
                                 : !!(tokenFlags & TokenFlags::OctalSpecifier)
                                     ? to_string(to_bignumber_base(tokenValue, 8)) // skip "0o"
-                                    : to_string(to_bignumber_base(tokenValue, 16));
+                                : !!(tokenFlags & TokenFlags::HexSpecifier)
+                                    ? to_string(to_bignumber_base(tokenValue, 16)) // skip "0x"
+                                    : to_string(to_bignumber(tokenValue));
             tokenValue = numericValue;
             return SyntaxKind::NumericLiteral;
         }
