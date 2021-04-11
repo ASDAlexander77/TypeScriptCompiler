@@ -2307,7 +2307,8 @@ namespace ts
                         error(data::DiagnosticMessage(Diagnostics::Binary_digit_expected));
                         tokenValue = S("0");
                     }
-                    tokenValue = S("0b") + tokenValue;
+                    //tokenValue = S("0b") + tokenValue;
+                    tokenValue = S("0") + tokenValue;
                     tokenFlags |= TokenFlags::BinarySpecifier;
                     return token = checkBigIntSuffix();
                 }
