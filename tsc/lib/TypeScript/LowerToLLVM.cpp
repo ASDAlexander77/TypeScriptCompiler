@@ -39,6 +39,7 @@ namespace
         {
             TypeHelper th(rewriter);
             LLVMCodeHelper ch(op, rewriter);
+            TypeConverterHelper tch(*getTypeConverter());
 
             auto loc = op->getLoc();
 
@@ -52,7 +53,7 @@ namespace
             auto count = 0;
             for (auto item : op->getOperands())
             {
-                auto type = item.getType();
+                auto type = tch.convertType(item.getType());
 
                 if (count++ > 0)
                 {
@@ -99,7 +100,7 @@ namespace
             values.push_back(formatSpecifierCst);
             for (auto item : op->getOperands())
             {
-                auto type = item.getType();
+                auto type = tch.convertType(item.getType());
                 if (type.isIntOrIndexOrFloat() && !type.isIntOrIndex())
                 {
                     values.push_back(rewriter.create<LLVM::FPExtOp>(loc, rewriter.getF64Type(), item));

@@ -6,9 +6,8 @@
                 "${workspaceFolder}/**",
                 "${workspaceFolder}/../include",
                 "${workspaceFolder}/../../3rdParty/llvm/debug/include",
-                "${workspaceFolder}/../../3rdParty/antlr/runtime/Cpp/runtime/src",
                 "${workspaceFolder}/../../__build/tsc/include",
-                "${workspaceFolder}/../../tsc/tsc-grammar/.antlr/generated"
+                "${workspaceFolder}/../tsc-new-parser"
             ],
             "defines": [
                 "_DEBUG",

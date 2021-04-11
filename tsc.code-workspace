@@ -144,14 +144,6 @@
             "optional": "cpp",
             "*.rh": "cpp"
         },
-        "antlr4.generation": {
-            "mode": "external",
-            "language": "Cpp",
-            "visitors": true,
-            "listeners": false,
-            "outputDir": "./.antlr/generated",
-            "package": "typescript"
-        },
     	"cmake.buildDirectory": "${workspaceRoot}/../../__build/tsc",
     	"cmake.sourceDirectory": "${workspaceFolder}/.."
     }
