@@ -292,7 +292,7 @@ namespace typescript
         LLVMTypeConverterHelper llvmtch(typeConverter);
 
         auto leftType = binOp.getOperand(0).getType();
-        if (leftType.isIntOrIndex())
+        if (leftType.isIntOrIndex() || leftType.dyn_cast_or_null<mlir_ts::BooleanType>())
         {
             builder.replaceOpWithNewOp<StdIOpTy>(binOp, v1, binOp.getOperand(0), binOp.getOperand(1));
         }
