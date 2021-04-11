@@ -53,20 +53,21 @@ namespace
             auto count = 0;
             for (auto item : op->getOperands())
             {
-                auto type = tch.convertType(item.getType());
+                auto type = item.getType();
+                auto llvmType = tch.convertType(type);
 
                 if (count++ > 0)
                 {
                     format << " ";
                 }
 
-                if (type.isIntOrIndexOrFloat() && !type.isIntOrIndex())
+                if (llvmType.isIntOrIndexOrFloat() && !llvmType.isIntOrIndex())
                 {
                     format << "%f";
                 }
-                else if (type.isIntOrIndex())
+                else if (llvmType.isIntOrIndex())
                 {
-                    if (type.isInteger(1))
+                    if (llvmType.isInteger(1))
                     {
                         format << "%s";
                     }
@@ -100,12 +101,14 @@ namespace
             values.push_back(formatSpecifierCst);
             for (auto item : op->getOperands())
             {
-                auto type = tch.convertType(item.getType());
-                if (type.isIntOrIndexOrFloat() && !type.isIntOrIndex())
+                auto type = item.getType();
+                auto llvmType = tch.convertType(type);
+
+                if (llvmType.isIntOrIndexOrFloat() && !llvmType.isIntOrIndex())
                 {
                     values.push_back(rewriter.create<LLVM::FPExtOp>(loc, rewriter.getF64Type(), item));
                 }
-                else if (type.isInteger(1))
+                else if (llvmType.isInteger(1))
                 {
                     values.push_back(rewriter.create<LLVM::SelectOp>(
                         item.getLoc(),
