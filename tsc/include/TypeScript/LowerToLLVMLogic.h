@@ -85,9 +85,18 @@ namespace typescript
 
         mlir::Type convertType(mlir::Type type)
         {
-            auto convertedType = typeConverter.convertType(type);
-            assert(convertedType);
-            return convertedType;
+            if (type)
+            {
+                if (auto convertedType = typeConverter.convertType(type))
+                {
+                    return convertedType;
+                }
+
+                // TODO: should we show warning here?
+                assert(false);
+            }
+
+            return type;
         }
     };
 

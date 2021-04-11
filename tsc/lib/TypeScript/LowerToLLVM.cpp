@@ -544,16 +544,18 @@ namespace
         }
     };
 
-    struct CastOpLowering : public OpRewritePattern<mlir_ts::CastOp>
+    struct CastOpLowering : public OpConversionPattern<mlir_ts::CastOp>
     {
-        using OpRewritePattern<mlir_ts::CastOp>::OpRewritePattern;
+        using OpConversionPattern<mlir_ts::CastOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite(mlir_ts::CastOp op, PatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::CastOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
+            TypeConverterHelper tch(*getTypeConverter());
+
             auto in = op.in();
             auto res = op.res();
-            auto op1 = in.getType();
-            auto op2 = res.getType();
+            auto op1 = tch.convertType(in.getType());
+            auto op2 = tch.convertType(res.getType());
 
             if (op1 == op2)
             {
@@ -640,12 +642,13 @@ namespace
         }
     }
 
-    void NegativeOpBin(mlir_ts::ArithmeticUnaryOp &unaryOp, mlir::PatternRewriter &builder)
+    void NegativeOpBin(mlir_ts::ArithmeticUnaryOp &unaryOp, mlir::PatternRewriter &builder, TypeConverter &typeConverter)
     {
         CodeLogicHelper clh(unaryOp, builder);
+        TypeConverterHelper tch(typeConverter);
 
         auto oper = unaryOp.operand1();
-        auto type = oper.getType();
+        auto type = tch.convertType(oper.getType());
         if (type.isIntOrIndex())
         {
             mlir::Value lhs;
@@ -655,7 +658,8 @@ namespace
             }
             else
             {
-                lhs = clh.createI32ConstantOf(0xffff);
+                //lhs = clh.createI32ConstantOf(0xffff);
+                lhs = clh.createI32ConstantOf(-1);
             }
 
             builder.replaceOpWithNewOp<LLVM::XOrOp>(unaryOp, type, oper, lhs);
@@ -680,7 +684,7 @@ namespace
             switch (opCode)
             {
             case SyntaxKind::ExclamationToken:
-                NegativeOpBin(arithmeticUnaryOp, rewriter);
+                NegativeOpBin(arithmeticUnaryOp, rewriter, *getTypeConverter());
                 return success();
             case SyntaxKind::PlusToken:
                 rewriter.replaceOp(arithmeticUnaryOp, arithmeticUnaryOp.operand1());
@@ -689,7 +693,7 @@ namespace
                 NegativeOpValue(arithmeticUnaryOp, rewriter);
                 return success();
             case SyntaxKind::TildeToken:
-                NegativeOpBin(arithmeticUnaryOp, rewriter);
+                NegativeOpBin(arithmeticUnaryOp, rewriter, *getTypeConverter());
                 return success();
             default:
                 llvm_unreachable("not implemented");
@@ -1071,7 +1075,6 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     // The only remaining operation to lower from the `typescript` dialect, is the PrintOp.
     patterns.insert<
         CallOpLowering,
-        CastOpLowering,
         ExitOpLowering,
         ReturnOpLowering,
         ReturnValOpLowering>(&getContext());
@@ -1082,6 +1085,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         ArithmeticBinaryOpLowering,
         ArithmeticUnaryOpLowering,
         AssertOpLowering,
+        CastOpLowering,
         ConstantOpLowering,
         GlobalOpLowering,
         EntryOpLowering,

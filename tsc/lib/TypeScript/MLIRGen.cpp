@@ -1284,7 +1284,7 @@ namespace
                 return builder.create<mlir::ConstantOp>(
                     loc(numericLiteral),
                     builder.getI32Type(),
-                    builder.getI32IntegerAttr(to_integer(numericLiteral->text)));
+                    builder.getI32IntegerAttr(to_unsigned_integer(numericLiteral->text)));
             }
 
             if (!(numericLiteral->numericLiteralFlags & TokenFlags::NumericLiteralFlags))

@@ -1994,10 +1994,10 @@ namespace ts
         { // not a bigint, so can convert to number in simplified form
             // Number() may not support 0b or 0o, so use stoi() instead
             auto numericValue = !!(tokenFlags & TokenFlags::BinarySpecifier)
-                                    ? to_string(to_bignumber_base(tokenValue.substr(2), 2)) // skip "0b"
+                                    ? to_string(to_bignumber_base(tokenValue, 2)) // skip "0b"
                                 : !!(tokenFlags & TokenFlags::OctalSpecifier)
-                                    ? to_string(to_bignumber_base(tokenValue.substr(2), 8)) // skip "0o"
-                                    : to_string(+to_bignumber(tokenValue));
+                                    ? to_string(to_bignumber_base(tokenValue, 8)) // skip "0o"
+                                    : to_string(to_bignumber_base(tokenValue, 16));
             tokenValue = numericValue;
             return SyntaxKind::NumericLiteral;
         }
