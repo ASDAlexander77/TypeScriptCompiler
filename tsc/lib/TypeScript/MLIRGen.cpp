@@ -963,6 +963,50 @@ namespace
                     }    
 
                     break;
+            case SyntaxKind::EqualsEqualsToken:
+            case SyntaxKind::EqualsEqualsEqualsToken:
+            case SyntaxKind::ExclamationEqualsToken:
+            case SyntaxKind::ExclamationEqualsEqualsToken:
+            case SyntaxKind::GreaterThanToken:
+            case SyntaxKind::GreaterThanEqualsToken:
+            case SyntaxKind::LessThanToken:
+            case SyntaxKind::LessThanEqualsToken:
+
+                    if (leftExpressionValue.getType() != rightExpressionValue.getType())
+                    {
+                        // cast to base type
+                        auto hasF32 = leftExpressionValue.getType() == builder.getF32Type() || rightExpressionValue.getType() == builder.getF32Type();
+                        if (hasF32)
+                        {
+                            if (leftExpressionValue.getType() != builder.getF32Type())
+                            {
+                                leftExpressionValue = builder.create<mlir_ts::CastOp>(loc(leftExpression), builder.getF32Type(), leftExpressionValue);
+                            }                            
+                            
+                            if (rightExpressionValue.getType() != builder.getF32Type())
+                            {
+                                rightExpressionValue = builder.create<mlir_ts::CastOp>(loc(rightExpression), builder.getF32Type(), rightExpressionValue);
+                            }                              
+                        }
+                        else
+                        {
+                            auto hasI32 = leftExpressionValue.getType() == builder.getI32Type() || rightExpressionValue.getType() == builder.getI32Type();
+                            if (hasI32)
+                            {
+                                if (leftExpressionValue.getType() != builder.getI32Type())
+                                {
+                                    leftExpressionValue = builder.create<mlir_ts::CastOp>(loc(leftExpression), builder.getI32Type(), leftExpressionValue);
+                                }                            
+                                
+                                if (rightExpressionValue.getType() != builder.getI32Type())
+                                {
+                                    rightExpressionValue = builder.create<mlir_ts::CastOp>(loc(rightExpression), builder.getI32Type(), rightExpressionValue);
+                                }                                   
+                            }
+                        }
+                    }
+
+                    break;                    
                 default:
                     if (leftExpressionValue.getType() != rightExpressionValue.getType())
                     {

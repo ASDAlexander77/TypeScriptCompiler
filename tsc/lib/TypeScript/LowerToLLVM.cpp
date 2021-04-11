@@ -554,6 +554,7 @@ namespace
 
         LogicalResult matchAndRewrite(mlir_ts::CastOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
+            CodeLogicHelper clh(op, rewriter);
             TypeConverterHelper tch(*getTypeConverter());
 
             auto in = op.in();
@@ -582,9 +583,18 @@ namespace
 
             if ((op1.isInteger(32) || op1.isInteger(8)) && op2.isInteger(1))
             {
+                //rewriter.replaceOpWithNewOp<TruncateIOp>(op, op2, in);
+                rewriter.replaceOpWithNewOp<CmpIOp>(op, CmpIPredicate::ne, op.in(), clh.createI32ConstantOf(0));
+                return success();
+            }
+
+            /*
+            if ((op1.isInteger(64) || op1.isInteger(32) || op1.isInteger(16)) && op2.isInteger(8))
+            {
                 rewriter.replaceOpWithNewOp<TruncateIOp>(op, op2, in);
                 return success();
             }
+            */
 
             auto op1Any = op1.dyn_cast_or_null<mlir_ts::AnyType>();
             auto op2String = op2.dyn_cast_or_null<mlir_ts::StringType>();
