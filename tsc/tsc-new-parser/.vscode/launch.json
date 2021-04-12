@@ -69,7 +69,7 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/../../__build/tsc/tsc-new-parser/Debug/tsc-new-parser.exe",
-            "args": ["G:/Dev/TypeScript/tests/cases/compiler/___error.tsx", "--line1"],
+            "args": ["c:/temp/2.ts", "--line"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],

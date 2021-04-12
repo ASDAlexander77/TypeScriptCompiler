@@ -53,8 +53,8 @@ void printParser(const wchar_t *fileName, const wchar_t *str, boolean showLineCh
             std::cout 
                 << "Node: " 
                 << wtoc(parser.syntaxKindString(child).c_str()) 
-                << " @ [ " << child->pos << "(" << posLineChar.line + 1 << ":" << posLineChar.character  << ") - " 
-                << child->_end << "(" << endLineChar.line + 1  << ":" << endLineChar.character  << ") ]" << std::endl;
+                << " @ [ " << child->pos << "(" << posLineChar.line + 1 << ":" << posLineChar.character + 1 << ") - " 
+                << child->_end << "(" << endLineChar.line + 1 << ":" << endLineChar.character << ") ]" << std::endl;
         }
         else
         {

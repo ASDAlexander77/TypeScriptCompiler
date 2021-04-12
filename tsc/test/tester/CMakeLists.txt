@@ -16,3 +16,4 @@ add_test(NAME test-runner-00-vars COMMAND test-runner "C:/dev/TypeScriptCompiler
 add_test(NAME test-runner-00-globals COMMAND test-runner "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/00globals.ts")
 add_test(NAME test-runner-01-arguments COMMAND test-runner "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/01arguments.ts")
 add_test(NAME test-runner-02-numbers COMMAND test-runner "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/02numbers.ts")
+add_test(NAME test-runner-05-strings COMMAND test-runner "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/05strings.ts")
