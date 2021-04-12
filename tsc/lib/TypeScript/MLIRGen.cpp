@@ -82,6 +82,8 @@ namespace
 
         mlir::ModuleOp mlirGen(SourceFile module)
         {
+            sourceFile = module;
+
             // We create an empty MLIR module and codegen functions one at a time and
             // add them to the module.
             theModule = mlir::ModuleOp::create(loc(module), fileName);
@@ -1454,7 +1456,9 @@ namespace
         /// Helper conversion for a TypeScript AST location to an MLIR location.
         mlir::Location loc(TextRange loc)
         {
-            return builder.getFileLineColLoc(builder.getIdentifier(fileName), loc->pos, loc->_end);
+            //return builder.getFileLineColLoc(builder.getIdentifier(fileName), loc->pos, loc->_end);
+            auto posLineChar = parser.getLineAndCharacterOfPosition(sourceFile, loc->pos);
+            return builder.getFileLineColLoc(builder.getIdentifier(fileName), posLineChar.line + 1, posLineChar.character + 1);
         }
 
         /// A "module" matches a TypeScript source file: containing a list of functions.
@@ -1470,6 +1474,10 @@ namespace
         llvm::ScopedHashTable<StringRef, VariablePairT> symbolTable;
 
         llvm::StringMap<mlir_ts::FuncOp> functionMap;
+
+        // helper to get line number
+        Parser parser;
+        ts::SourceFile sourceFile;
     };
 } // namespace
 
@@ -1504,7 +1512,7 @@ namespace typescript
                 s 
                     << S("Node: ")
                     << parser.syntaxKindString(child).c_str()
-                    << S(" @ [ ") << child->pos << S("(") << posLineChar.line + 1 << S(":") << posLineChar.character  << S(") - ") 
+                    << S(" @ [ ") << child->pos << S("(") << posLineChar.line + 1 << S(":") << posLineChar.character + 1 << S(") - ") 
                     << child->_end << S("(") << endLineChar.line + 1  << S(":") << endLineChar.character  << S(") ]") << std::endl;
             }
             else
