@@ -983,6 +983,27 @@ namespace
         }
     };
 
+    struct AddressOfElementOpLowering : public OpConversionPattern<mlir_ts::AddressOfElementOp>
+    {
+        using OpConversionPattern<mlir_ts::AddressOfElementOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::AddressOfElementOp addressOfElementOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            TypeHelper th(rewriter);            
+            TypeConverterHelper tch(*getTypeConverter());
+
+            auto loc = addressOfElementOp->getLoc();
+            auto globalPtr = addressOfElementOp.reference();
+            rewriter.replaceOpWithNewOp<LLVM::GEPOp>(
+                addressOfElementOp, 
+                tch.convertType(addressOfElementOp.getType()), 
+                globalPtr,
+                ValueRange{addressOfElementOp.elementIndex(), addressOfElementOp.elementIndex()});
+
+            return success();
+        }
+    };
+
     struct AddressOfConstStringOpLowering : public OpConversionPattern<mlir_ts::AddressOfConstStringOp>
     {
         using OpConversionPattern<mlir_ts::AddressOfConstStringOp>::OpConversionPattern;
@@ -1007,8 +1028,6 @@ namespace
             return failure();
         }
     };
-
-
     static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, mlir::ModuleOp &m)
     {
         converter.addConversion([&](mlir_ts::AnyType type) {
@@ -1092,6 +1111,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     patterns.insert<
         AddressOfOpLowering,
         AddressOfConstStringOpLowering,
+        AddressOfElementOpLowering,
         ArithmeticBinaryOpLowering,
         ArithmeticUnaryOpLowering,
         AssertOpLowering,

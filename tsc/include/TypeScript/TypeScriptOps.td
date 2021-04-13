@@ -789,6 +789,14 @@ def TypeScript_AddressOfConstStringOp : TypeScript_Op<"addressof_conststring"> {
   let results = (outs TypeScript_String:$instance);
 }
 
+def TypeScript_AddressOfElementOp : TypeScript_Op<"addressof_element"> {
+  let arguments = (ins 
+        TypeScript_AnyRef:$reference,
+        Index:$elementIndex
+  );
+  let results = (outs TypeScript_AnyRef:$reference_of_element);
+}
+
 def TypeScript_GlobalOp : TypeScript_Op<"global",
     [IsolatedFromAbove, SingleBlockImplicitTerminator<"ReturnOp">, Symbol]> {
   let arguments = (ins

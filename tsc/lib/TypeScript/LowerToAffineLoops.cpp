@@ -173,6 +173,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     target.addLegalOp<
         mlir_ts::AddressOfOp,
         mlir_ts::AddressOfConstStringOp,
+        mlir_ts::AddressOfElementOp,
         mlir_ts::ArithmeticBinaryOp,
         mlir_ts::ArithmeticUnaryOp,
         mlir_ts::AssertOp,
