@@ -284,6 +284,27 @@ namespace
 
         LogicalResult matchAndRewrite(mlir_ts::ConstantOp constantOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
+            // load address of const string
+            auto type = constantOp.getType();
+            if (type.isa<mlir_ts::StringType>())
+            {
+                LLVMCodeHelper ch(constantOp, rewriter);
+
+                std::stringstream strWithNUL;
+                strWithNUL << constantOp.value().cast<StringAttr>().getValue().str();
+
+                auto opHash = std::hash<std::string>{}(strWithNUL.str());
+
+                std::stringstream strVarName;
+                strVarName << "s_" << opHash;
+
+                auto txtCst = ch.getOrCreateGlobalString(strVarName.str(), strWithNUL.str());
+
+                rewriter.replaceOp(constantOp, txtCst);
+
+                return success();
+            }
+
             TypeConverterHelper tch(*getTypeConverter());
             rewriter.replaceOpWithNewOp<mlir::ConstantOp>(constantOp, tch.convertType(constantOp.getType()), constantOp.getValue());
             return success();
@@ -298,31 +319,6 @@ namespace
         {
             TypeConverterHelper tch(*getTypeConverter());
             rewriter.replaceOpWithNewOp<LLVM::NullOp>(op, tch.convertType(op.getType()));
-            return success();
-        }
-    };
-
-    class StringOpLowering : public OpConversionPattern<mlir_ts::StringOp>
-    {
-    public:
-        using OpConversionPattern<mlir_ts::StringOp>::OpConversionPattern;
-
-        LogicalResult matchAndRewrite(mlir_ts::StringOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
-        {
-            LLVMCodeHelper ch(op, rewriter);
-
-            std::stringstream strWithNUL;
-            strWithNUL << op.txt().str();
-
-            auto opHash = std::hash<std::string>{}(strWithNUL.str());
-
-            std::stringstream strVarName;
-            strVarName << "s_" << opHash;
-
-            auto txtCst = ch.getOrCreateGlobalString(strVarName.str(), strWithNUL.str());
-
-            rewriter.replaceOp(op, txtCst);
-
             return success();
         }
     };
@@ -1112,7 +1108,6 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         ParseIntOpLowering,
         PrintOpLowering,
         StoreOpLowering,
-        StringOpLowering,
         UndefOpLowering,
         VariableOpLowering>(typeConverter, &getContext());
 

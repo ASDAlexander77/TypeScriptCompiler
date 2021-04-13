@@ -256,6 +256,10 @@ namespace
             {
                 return mlirGen(expressionAST.as<FalseLiteral>(), genContext);
             }
+            else if (kind == SyntaxKind::ArrayLiteralExpression)
+            {
+                return mlirGen(expressionAST.as<ArrayLiteralExpression>(), genContext);
+            }
             else if (kind == SyntaxKind::Identifier)
             {
                 return mlirGen(expressionAST.as<Identifier>(), genContext);
@@ -366,10 +370,6 @@ namespace
                         if (auto constOp = dyn_cast_or_null<mlir::ConstantOp>(init.getDefiningOp()))
                         {
                             value = constOp.value();
-                        }
-                        else if (auto stringOp = dyn_cast_or_null<mlir_ts::StringOp>(init.getDefiningOp()))
-                        {
-                            value = stringOp.txtAttr();
                         }
 
                         // TODO global init value
@@ -1086,18 +1086,28 @@ namespace
 
         mlir::Value mlirGen(PropertyAccessExpression propertyAccessExpression, const GenContext &genContext)
         {
+            auto location = loc(propertyAccessExpression);
+
             auto expression = mlirGen(propertyAccessExpression->expression.as<Expression>(), genContext);
             // propertyAccessExpression->name
+
+            auto elementType = expression.getType().cast<mlir_ts::RefType>().getElementType();
+
+            //return builder.create<mlir_ts::LoadPropertyOp>(location, elementType, expression, propertyIndexExpression);
 
             llvm_unreachable("not implemented");
         }
 
         mlir::Value mlirGen(ElementAccessExpression elementAccessExpression, const GenContext &genContext)
         {
+            auto location = loc(elementAccessExpression);
+
             auto expression = mlirGen(elementAccessExpression->expression.as<Expression>(), genContext);
             auto argumentExpression = mlirGen(elementAccessExpression->argumentExpression.as<Expression>(), genContext);
 
-            llvm_unreachable("not implemented");
+            auto elementType = expression.getType().cast<mlir_ts::RefType>().getElementType();
+
+            return builder.create<mlir_ts::LoadElementOp>(location, elementType, expression, argumentExpression);
         }
 
         mlir::Value mlirGen(CallExpression callExpression, const GenContext &genContext)
@@ -1228,10 +1238,10 @@ namespace
             if (operands.size() > 1)
             {
                 auto param2 = operands[1];
-                auto stringOp = dyn_cast_or_null<mlir_ts::StringOp>(param2.getDefiningOp());
-                if (stringOp)
+                auto constantOp = dyn_cast_or_null<mlir_ts::ConstantOp>(param2.getDefiningOp());
+                if (constantOp && constantOp.getType().isa<mlir_ts::StringType>())
                 {
-                    msg = stringOp.txtAttr().getValue();
+                    msg = constantOp.value().cast<mlir::StringAttr>().getValue();
                 }
 
                 param2.getDefiningOp()->erase();
@@ -1308,7 +1318,7 @@ namespace
             if (type.isIntOrIndexOrFloat() && !type.isIntOrIndex())
             {
                 // return "number"
-                auto typeOfValue = builder.create<mlir_ts::StringOp>(loc(typeOfExpression), getStringType(), StringRef("number"));
+                auto typeOfValue = builder.create<mlir_ts::ConstantOp>(loc(typeOfExpression), getStringType(), getStringAttr(std::string("number")));
                 return typeOfValue;
             }
 
@@ -1372,10 +1382,15 @@ namespace
         {
             auto text = wstos(stringLiteral->text);
 
-            return builder.create<mlir_ts::StringOp>(
+            return builder.create<mlir_ts::ConstantOp>(
                 loc(stringLiteral),
                 getStringType(),
-                builder.getStringAttr(StringRef(text.data(), text.length() + 1)));
+                getStringAttr(text));
+        }
+
+        mlir::Value mlirGen(ts::ArrayLiteralExpression arrayLiteral, const GenContext &genContext)
+        {
+            llvm_unreachable("not implemented");
         }
 
         mlir::Value mlirGen(Identifier identifier, const GenContext &genContext)
@@ -1477,6 +1492,12 @@ namespace
         }
 
     private:
+
+        mlir::StringAttr getStringAttr(std::string text)
+        {
+            return builder.getStringAttr(StringRef(text.data(), text.length() + 1));
+        }
+
         /// Helper conversion for a TypeScript AST location to an MLIR location.
         mlir::Location loc(TextRange loc)
         {

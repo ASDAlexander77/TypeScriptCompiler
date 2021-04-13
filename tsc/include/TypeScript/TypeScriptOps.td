@@ -249,22 +249,6 @@ def TypeScript_AssertOp : TypeScript_Op<"assert"> {
   let hasCanonicalizer = 1;
 }
 
-def TypeScript_StringOp : TypeScript_Op<"string", [NoSideEffect]> {
-  let summary = "Constant string";
-  let description = [{
-    Constant string
-
-    Example:
-
-    ```mlir
-    %0 = string "text here"
-    ```
-  }];
-
-  let arguments = (ins StrAttr:$txt);
-  let results = (outs TypeScript_String:$str);
-}
-
 def TypeScript_ParseIntOp : TypeScript_Op<"parseInt"> {
   let summary = "Parse int operation";
   let description = [{
