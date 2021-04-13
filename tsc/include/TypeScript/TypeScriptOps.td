@@ -186,6 +186,8 @@ def TypeScript_NullOp : TypeScript_Op<"null", []> {
   );
 
   let verifier = [{ return success(); }];
+
+  let assemblyFormat = "attr-dict `:` type($result)";
 }
 
 def TypeScript_UndefOp : TypeScript_Op<"undef", []> {
@@ -212,6 +214,8 @@ def TypeScript_UndefOp : TypeScript_Op<"undef", []> {
   );
 
   let verifier = [{ return success(); }];
+
+  let assemblyFormat = "attr-dict `:` type($result)";
 }
 
 def TypeScript_PrintOp : TypeScript_Op<"print"> {
@@ -464,6 +468,118 @@ def TypeScript_LoadOp : TypeScript_Op<"load",
   let assemblyFormat = "$reference attr-dict `:` type($reference) `->` type($result)";
 }
 
+def TypeScript_LoadElementOp : TypeScript_Op<"LoadElement"> {
+  let description = [{
+    ```mlir
+    %3 = ts.load_element %1, %2 : f32
+    ```
+  }];
+
+  let arguments = (ins
+    TypeScript_AnyRef:$array_reference,
+    Index:$index
+  );
+
+  let results = (outs
+    AnyType:$result
+  );
+
+  //let assemblyFormat = "$array_reference `[` $index `]` attr-dict `:` type($result)";
+}
+
+def TypeScript_SaveElementOp : TypeScript_Op<"SaveElement"> {
+  let description = [{
+    ```mlir
+    ts.save_element %1, %2, %3
+    ```
+  }];
+
+  let arguments = (ins
+    TypeScript_AnyRef:$array_reference,
+    Index:$index,
+    AnyType:$value
+  );
+
+  let results = (outs
+  );
+
+  //let assemblyFormat = "$array_reference `[` $index `]` `=` $value attr-dict `:` type($result)";
+}
+
+def TypeScript_ElementAccessOp : TypeScript_Op<"ElementAccess"> {
+  let description = [{
+    ```mlir
+    %2 = ts.element_access %1, %2 : f32
+    ```
+  }];
+
+  let arguments = (ins
+    TypeScript_AnyRef:$array_reference,
+    Index:$index
+  );
+
+  let results = (outs
+    TypeScript_AnyRef:$result
+  );
+
+  //let assemblyFormat = "$array_reference `[` $index `]` attr-dict `:` type($result)";
+}
+
+def TypeScript_LoadPropertyOp : TypeScript_Op<"LoadProperty"> {
+  let description = [{
+    ```mlir
+    %2 = ts.load_property %1, %2 : f32
+    ```
+  }];
+
+  let arguments = (ins
+    TypeScript_AnyRef:$object_reference,
+    Index:$propertyIndex
+  );
+
+  let results = (outs
+    AnyType:$result
+  );
+
+  //let assemblyFormat = "$object_reference `,` $propertyIndex attr-dict `:` type($result)";
+}
+
+def TypeScript_SavePropertyOp : TypeScript_Op<"SaveProperty"> {
+  let description = [{
+    ```mlir
+    ts.save_property %1, %2, %3
+    ```
+  }];
+
+  let arguments = (ins
+    TypeScript_AnyRef:$object_reference,
+    Index:$propertyIndex,
+    AnyType:$value
+  );
+
+  let results = (outs
+  );
+}
+
+def TypeScript_PropertyAccessOp : TypeScript_Op<"PropertyAccess"> {
+  let description = [{
+    ```mlir
+    %2 = ts.property_access %1, %2 : f32
+    ```
+  }];
+
+  let arguments = (ins
+    TypeScript_AnyRef:$object_reference,
+    Index:$propertyIndex
+  );
+
+  let results = (outs
+    TypeScript_AnyRef:$result
+  );
+
+  //let assemblyFormat = "$object_reference `,` $propertyIndex attr-dict `:` type($result)";
+}
+
 def TypeScript_ArithmeticUnaryOp : TypeScript_Op<"arithmetic_unary"> {
   let description = [{
     ```mlir
@@ -479,6 +595,8 @@ def TypeScript_ArithmeticUnaryOp : TypeScript_Op<"arithmetic_unary"> {
   let results = (outs
     AnyType:$result
   );
+
+  let assemblyFormat = "$operand1 `(` $opCode `)` attr-dict `:` type($operand1) `->` type($result)";
 }
 
 def TypeScript_ArithmeticBinaryOp : TypeScript_Op<"arithmetic_binary"> {
@@ -497,6 +615,8 @@ def TypeScript_ArithmeticBinaryOp : TypeScript_Op<"arithmetic_binary"> {
   let results = (outs
     AnyType:$result
   );
+
+  let assemblyFormat = "$operand1 `(` $opCode `)` $operand2 attr-dict `:` type($operand1) `,` type($operand2) `->` type($result)";
 }
 
 def TypeScript_LogicalBinaryOp : TypeScript_Op<"logical_binary"> {
@@ -515,6 +635,8 @@ def TypeScript_LogicalBinaryOp : TypeScript_Op<"logical_binary"> {
   let results = (outs
     TypeScript_Boolean:$result
   );
+
+  let assemblyFormat = "$operand1 `(` $opCode `)` $operand2 attr-dict `:` type($operand1) `,` type($operand2) `->` type($result)";
 }
 
 def TypeScript_CastOp : TypeScript_Op<"cast"> {

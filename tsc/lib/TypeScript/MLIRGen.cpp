@@ -288,6 +288,14 @@ namespace
             {
                 return mlirGen(expressionAST.as<ConditionalExpression>(), genContext);
             }
+            else if (kind == SyntaxKind::PropertyAccessExpression)
+            {
+                return mlirGen(expressionAST.as<PropertyAccessExpression>(), genContext);
+            }
+            else if (kind == SyntaxKind::ElementAccessExpression)
+            {
+                return mlirGen(expressionAST.as<ElementAccessExpression>(), genContext);
+            }
 
             llvm_unreachable("unknown expression");
         }
@@ -1074,6 +1082,22 @@ namespace
         mlir::Value mlirGen(ParenthesizedExpression parenthesizedExpression, const GenContext &genContext)
         {
             return mlirGen(parenthesizedExpression->expression, genContext);
+        }
+
+        mlir::Value mlirGen(PropertyAccessExpression propertyAccessExpression, const GenContext &genContext)
+        {
+            auto expression = mlirGen(propertyAccessExpression->expression.as<Expression>(), genContext);
+            // propertyAccessExpression->name
+
+            llvm_unreachable("not implemented");
+        }
+
+        mlir::Value mlirGen(ElementAccessExpression elementAccessExpression, const GenContext &genContext)
+        {
+            auto expression = mlirGen(elementAccessExpression->expression.as<Expression>(), genContext);
+            auto argumentExpression = mlirGen(elementAccessExpression->argumentExpression.as<Expression>(), genContext);
+
+            llvm_unreachable("not implemented");
         }
 
         mlir::Value mlirGen(CallExpression callExpression, const GenContext &genContext)
