@@ -1018,8 +1018,7 @@ namespace
             {
                 auto loc = addressOfConstStringOp->getLoc();
                 auto globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
-                auto cst0 = rewriter.create<LLVM::ConstantOp>(loc, IntegerType::get(rewriter.getContext(), 64), 
-                    rewriter.getIntegerAttr(rewriter.getIndexType(), 0));
+                auto cst0 = rewriter.create<LLVM::ConstantOp>(loc, th.getI64Type(), th.getIndexAttrValue(0));
                 rewriter.replaceOpWithNewOp<LLVM::GEPOp>(addressOfConstStringOp, th.getI8PtrType(), globalPtr, ArrayRef<Value>({cst0, cst0}));
 
                 return success();
