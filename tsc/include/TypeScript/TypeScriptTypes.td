@@ -124,4 +124,50 @@ def TypeScript_Optional : TypeScript_Type<"Optional"> {
 
 }
 
+def TypeScript_Array : TypeScript_Type<"Array"> {
+  let mnemonic = "array";
+
+  let description = [{
+    Syntax:
+
+    ```
+    array-type ::= `array` `<` type `>`
+    ```
+
+    Examples:
+
+    ```mlir
+    array<f32>
+    array<i32>
+    ```
+  }];
+  let parameters = (ins "Type":$elementType);
+
+  // We define the printer inline.
+  let printer = [{ $_printer << "array<" << getImpl()->elementType << ">"; }];
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "Type":$elementType), [{
+      return Base::get(elementType.getContext(), elementType);
+    }], [{
+      return Base::getChecked($_loc, elementType);
+    }]>
+  ];
+
+  // Parses the above format
+  let parser = [{
+    Type elementType;
+    if ($_parser.parseLess()) return Type();
+    if ($_parser.parseLBrace()) return Type();
+    if ($_parser.parseType(elementType)) return Type();
+    if ($_parser.parseRBrace()) return Type();
+    if ($_parser.parseGreater()) return Type();
+    return get(elementType);
+  }];
+
+  let skipDefaultBuilders = 1;
+  let genVerifyInvariantsDecl = 1;
+
+}
+
 #endif // TYPESCRIPT_TYPEDEFS

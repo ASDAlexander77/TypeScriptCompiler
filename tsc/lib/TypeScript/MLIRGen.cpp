@@ -1390,6 +1390,29 @@ namespace
 
         mlir::Value mlirGen(ts::ArrayLiteralExpression arrayLiteral, const GenContext &genContext)
         {
+            // first value
+            SmallVector<mlir::Value> arrayValues;
+            for (auto &item : arrayLiteral->elements)
+            {
+                auto itemValue = mlirGen(item, genContext);
+                arrayValues.push_back(itemValue);
+            }
+
+            // convert to const values
+            if (arrayValues.front().getType().isInteger(32))
+            {
+                SmallVector<int32_t> intValues;
+                for (auto &item : arrayLiteral->elements)
+                {
+                    intValues.push_back(item);
+                }
+
+                return builder.create<mlir_ts::ConstantOp>(
+                    loc(arrayLiteral),
+                    mlir::LLVM::getFixedVectorType(builder.getI32Type(), std::distance(arrayValues.begin(), arrayValues.end())),
+                    builder.getI32ArrayAttr(intValues));
+            }
+
             llvm_unreachable("not implemented");
         }
 

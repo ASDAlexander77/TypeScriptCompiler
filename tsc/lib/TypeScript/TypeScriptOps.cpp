@@ -34,7 +34,7 @@ void ts::buildTerminatedBody(OpBuilder &builder, Location loc)
 }
 
 //===----------------------------------------------------------------------===//
-// OptionalType
+// Types
 //===----------------------------------------------------------------------===//
 
 Type ts::TypeScriptDialect::parseType(DialectAsmParser &parser) const
@@ -70,7 +70,20 @@ void ts::TypeScriptDialect::printType(Type type, DialectAsmPrinter &os) const
     }
 }
 
+//===----------------------------------------------------------------------===//
+// OptionalType
+//===----------------------------------------------------------------------===//
+
 LogicalResult ts::OptionalType::verifyConstructionInvariants(Location loc, Type elementType)
+{
+    return success();
+}
+
+//===----------------------------------------------------------------------===//
+// ArrayType
+//===----------------------------------------------------------------------===//
+
+LogicalResult ts::ArrayType::verifyConstructionInvariants(Location loc, Type elementType)
 {
     return success();
 }
