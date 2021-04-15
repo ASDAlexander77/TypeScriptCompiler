@@ -367,7 +367,7 @@ namespace
                     auto value = mlir::Attribute();
                     if (init)
                     {
-                        if (auto constOp = dyn_cast_or_null<mlir::ConstantOp>(init.getDefiningOp()))
+                        if (auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(init.getDefiningOp()))
                         {
                             value = constOp.value();
                         }
@@ -1361,7 +1361,7 @@ namespace
         {
             if (numericLiteral->text.find(S(".")) == string::npos)
             {
-                return builder.create<mlir::ConstantOp>(
+                return builder.create<mlir_ts::ConstantOp>(
                     loc(numericLiteral),
                     builder.getI32Type(),
                     builder.getI32IntegerAttr(to_unsigned_integer(numericLiteral->text)));
@@ -1369,7 +1369,7 @@ namespace
 
             if (!(numericLiteral->numericLiteralFlags & TokenFlags::NumericLiteralFlags))
             {
-                return builder.create<mlir::ConstantOp>(
+                return builder.create<mlir_ts::ConstantOp>(
                     loc(numericLiteral),
                     builder.getF32Type(),
                     builder.getF32FloatAttr(to_float(numericLiteral->text)));
@@ -1402,9 +1402,33 @@ namespace
             if (arrayValues.front().getType().isInteger(32))
             {
                 SmallVector<int32_t> intValues;
-                for (auto &item : arrayLiteral->elements)
+                for (auto &item : arrayValues)
                 {
-                    intValues.push_back(item);
+                    auto constOp = cast<mlir_ts::ConstantOp>(item.getDefiningOp());
+                    if (!constOp)
+                    {
+                        llvm_unreachable("array literal is not implemented(1)");
+                        return mlir::Value();
+                    }
+
+                    auto constValue = constOp.getValue();
+                    if (!constValue)
+                    {
+                        llvm_unreachable("array literal is not implemented(2)");
+                        return mlir::Value();                        
+                    }
+
+                    auto integerAttr = constOp.getValue().dyn_cast_or_null<mlir::IntegerAttr>();
+                    if (!integerAttr)
+                    {
+                        llvm_unreachable("array literal is not implemented(3)");
+                        return mlir::Value();
+                    }
+
+                    auto value = integerAttr.getInt();
+
+                    intValues.push_back(value);
+                    item.getDefiningOp()->erase();
                 }
 
                 return builder.create<mlir_ts::ConstantOp>(

@@ -40,6 +40,13 @@ void ts::buildTerminatedBody(OpBuilder &builder, Location loc)
 Type ts::TypeScriptDialect::parseType(DialectAsmParser &parser) const
 {
     llvm::SMLoc typeLoc = parser.getCurrentLocation();
+
+    auto booleanType = generatedTypeParser(getContext(), parser, "boolean");
+    if (booleanType != Type())
+    {
+        return booleanType;
+    }
+
     auto stringType = generatedTypeParser(getContext(), parser, "string");
     if (stringType != Type())
     {
@@ -56,6 +63,12 @@ Type ts::TypeScriptDialect::parseType(DialectAsmParser &parser) const
     if (optionalType != Type())
     {
         return optionalType;
+    }
+
+    auto arrayType = generatedTypeParser(getContext(), parser, "array");
+    if (arrayType != Type())
+    {
+        return arrayType;
     }
 
     parser.emitError(typeLoc, "unknown type in TypeScript dialect");
