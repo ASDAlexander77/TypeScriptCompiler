@@ -157,7 +157,8 @@ namespace typescript
             return rewriter.create<LLVM::GEPOp>(
                 loc,
                 th.getI8PtrType(),
-                globalPtr, ArrayRef<Value>({cst0, cst0}));
+                globalPtr, 
+                ArrayRef<Value>({cst0, cst0}));
         }
 
     public:
@@ -191,8 +192,9 @@ namespace typescript
                 rewriter.getIntegerAttr(rewriter.getIndexType(), 0));
             return rewriter.create<LLVM::GEPOp>(
                 loc,
-                elementType,
-                globalPtr, ArrayRef<Value>({cst0, cst0}));            
+                LLVM::LLVMPointerType::get(elementType),
+                globalPtr, 
+                ArrayRef<Value>({cst0, cst0}));            
         }        
 
         LLVM::LLVMFuncOp getOrInsertFunction(const StringRef &name, const LLVM::LLVMFunctionType &llvmFnType)
