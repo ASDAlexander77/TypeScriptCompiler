@@ -129,6 +129,7 @@ namespace typescript
     public:        
         LLVMCodeHelper(Operation *op, PatternRewriter &rewriter) : op(op), rewriter(rewriter) {}
 
+    private:
         /// Return a value representing an access into a global string with the given
         /// name, creating the string if necessary.
         Value getOrCreateGlobalString_(StringRef name, StringRef value)
@@ -159,10 +160,40 @@ namespace typescript
                 globalPtr, ArrayRef<Value>({cst0, cst0}));
         }
 
+    public:
         Value getOrCreateGlobalString(StringRef name, std::string value)
         {
             return getOrCreateGlobalString_(name, StringRef(value.data(), value.length() + 1));
         }
+
+        Value getOrCreateGlobalVector(StringRef name, mlir::VectorType arrayType, mlir::Attribute value)
+        {
+            auto loc = op->getLoc();
+            auto parentModule = op->getParentOfType<ModuleOp>();
+
+            TypeHelper th(rewriter);
+
+            mlir::Type elementType = arrayType.getElementType();
+
+            // Create the global at the entry of the module.
+            LLVM::GlobalOp global;
+            if (!(global = parentModule.lookupSymbol<LLVM::GlobalOp>(name)))
+            {
+                OpBuilder::InsertionGuard insertGuard(rewriter);
+                rewriter.setInsertionPointToStart(parentModule.getBody());
+                global = rewriter.create<LLVM::GlobalOp>(loc, elementType, true, LLVM::Linkage::Internal, name, value);
+            }
+
+            // Get the pointer to the first character in the global string.
+            Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
+            Value cst0 = rewriter.create<LLVM::ConstantOp>(
+                loc, IntegerType::get(rewriter.getContext(), 64),
+                rewriter.getIntegerAttr(rewriter.getIndexType(), 0));
+            return rewriter.create<LLVM::GEPOp>(
+                loc,
+                elementType,
+                globalPtr, ArrayRef<Value>({cst0, cst0}));            
+        }        
 
         LLVM::LLVMFuncOp getOrInsertFunction(const StringRef &name, const LLVM::LLVMFunctionType &llvmFnType)
         {

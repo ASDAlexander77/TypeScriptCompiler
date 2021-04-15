@@ -305,6 +305,22 @@ namespace
                 return success();
             }
 
+            if (type.isa<mlir::VectorType>())
+            {
+                LLVMCodeHelper ch(constantOp, rewriter);
+
+                auto opHash = 1;
+
+                std::stringstream vecVarName;
+                vecVarName << "a_" << opHash;
+
+                auto arrayFirstElementAddrCst = ch.getOrCreateGlobalVector(vecVarName.str(), type.cast<mlir::VectorType>(), constantOp.value());
+
+                rewriter.replaceOp(constantOp, arrayFirstElementAddrCst);
+
+                return success();
+            }            
+
             TypeConverterHelper tch(*getTypeConverter());
             rewriter.replaceOpWithNewOp<mlir::ConstantOp>(constantOp, tch.convertType(constantOp.getType()), constantOp.getValue());
             return success();
