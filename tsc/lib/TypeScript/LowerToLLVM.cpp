@@ -305,7 +305,7 @@ namespace
                 return success();
             }
 
-            if (type.isa<mlir::VectorType>())
+            if (type.isa<mlir_ts::ArrayType>())
             {
                 LLVMCodeHelper ch(constantOp, rewriter);
 
@@ -320,7 +320,7 @@ namespace
                 std::stringstream vecVarName;
                 vecVarName << "a_" << opHash;                
 
-                auto arrayFirstElementAddrCst = ch.getOrCreateGlobalVector(vecVarName.str(), type.cast<mlir::VectorType>(), constantOp.value());
+                auto arrayFirstElementAddrCst = ch.getOrCreateGlobalArray(vecVarName.str(), type.cast<mlir_ts::ArrayType>(), constantOp.value());
 
                 rewriter.replaceOp(constantOp, arrayFirstElementAddrCst);
 
@@ -1067,9 +1067,9 @@ namespace
             return LLVM::LLVMPointerType::get(IntegerType::get(m.getContext(), 8));
         });
 
-        converter.addConversion([&](mlir::VectorType type) {
+        converter.addConversion([&](mlir_ts::ArrayType type) {
             return LLVM::LLVMPointerType::get(converter.convertType(type.getElementType()));
-        });
+        });        
 
         converter.addConversion([&](mlir_ts::RefType type) {
             return LLVM::LLVMPointerType::get(converter.convertType(type.getElementType()));

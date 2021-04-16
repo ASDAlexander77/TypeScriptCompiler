@@ -1447,7 +1447,7 @@ namespace
 
                 return builder.create<mlir_ts::ConstantOp>(
                     loc(arrayLiteral),
-                    mlir::LLVM::getFixedVectorType(builder.getI32Type(), std::distance(arrayValues.begin(), arrayValues.end())),
+                    getArrayType(builder.getI32Type()),
                     builder.getI32ArrayAttr(intValues));
             }
 
@@ -1533,6 +1533,11 @@ namespace
         mlir_ts::StringType getStringType()
         {
             return mlir_ts::StringType::get(builder.getContext());
+        }
+
+        mlir_ts::ArrayType getArrayType(mlir::Type elementType)
+        {
+            return mlir_ts::ArrayType::get(elementType);
         }
 
         mlir::Type getAnyType()

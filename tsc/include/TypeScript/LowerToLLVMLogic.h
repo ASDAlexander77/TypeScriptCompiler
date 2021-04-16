@@ -102,6 +102,8 @@ namespace typescript
                     return convertedType;
                 }
 
+                emitError(mlir::Location(mlir::LocationAttr()), "invalid cast type: '") << type << "'";
+
                 // TODO: should we show warning here?
                 assert(false);
             }
@@ -167,7 +169,7 @@ namespace typescript
             return getOrCreateGlobalString_(name, StringRef(value.data(), value.length() + 1));
         }
 
-        Value getOrCreateGlobalVector(StringRef name, mlir::VectorType arrayType, mlir::Attribute value)
+        Value getOrCreateGlobalArray(StringRef name, mlir_ts::ArrayType arrayType, mlir::Attribute value)
         {
             auto loc = op->getLoc();
             auto parentModule = op->getParentOfType<ModuleOp>();
