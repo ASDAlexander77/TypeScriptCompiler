@@ -131,7 +131,7 @@ def TypeScript_Array : TypeScript_Type<"Array"> {
     Syntax:
 
     ```
-    array-type ::= `array` `<` type `>`
+    array-type ::= `array<` type `>`
     ```
 
     Examples:
@@ -158,11 +158,56 @@ def TypeScript_Array : TypeScript_Type<"Array"> {
   let parser = [{
     Type elementType;
     if ($_parser.parseLess()) return Type();
-    if ($_parser.parseLBrace()) return Type();
     if ($_parser.parseType(elementType)) return Type();
-    if ($_parser.parseRBrace()) return Type();
     if ($_parser.parseGreater()) return Type();
     return get(elementType);
+  }];
+
+  let skipDefaultBuilders = 1;
+  let genVerifyInvariantsDecl = 1;
+
+}
+
+def TypeScript_SizedArray : TypeScript_Type<"SizedArray"> {
+  let mnemonic = "sized_array";
+
+  let description = [{
+    Syntax:
+
+    ```
+    array-type ::= `sized_array<` size `,` type `>`
+    ```
+
+    Examples:
+
+    ```mlir
+    sized_array<1, f32>
+    sized_array<2, i32>
+    ```
+  }];
+  let parameters = (ins "unsigned":$size, "Type":$elementType);
+
+  // We define the printer inline.
+  let printer = [{ $_printer << "sized_array<" << getImpl()->size << ", " << getImpl()->elementType << ">"; }];
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "unsigned":$size, "Type":$elementType), [{
+      return Base::get(elementType.getContext(), size, elementType);
+    }], [{
+      return Base::getChecked($_loc, size, elementType);
+    }]>
+  ];
+
+  // Parses the above format
+  let parser = [{
+    unsigned size;
+    Type elementType;
+    if ($_parser.parseLess()) return Type();
+    if ($_parser.parseInteger(size)) return Type();
+    if ($_parser.parseComma()) return Type();
+    if ($_parser.parseType(elementType)) return Type();
+    if ($_parser.parseGreater()) return Type();
+    return get(size, elementType);
   }];
 
   let skipDefaultBuilders = 1;

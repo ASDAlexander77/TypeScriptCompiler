@@ -460,7 +460,7 @@ def TypeScript_LoadElementOp : TypeScript_Op<"LoadElement"> {
   }];
 
   let arguments = (ins
-    TypeScript_AnyRef:$array_reference,
+    TypeScript_Array:$array,
     Index:$index
   );
 
