@@ -309,10 +309,16 @@ namespace
             {
                 LLVMCodeHelper ch(constantOp, rewriter);
 
-                auto opHash = 1;
+                auto arrayAttr = constantOp.value().dyn_cast_or_null<ArrayAttr>();
+                auto opHash = 0ULL;
+                for (auto val : arrayAttr.getAsRange<IntegerAttr>())
+                {
+                    auto intVal = val.getInt();
+                    opHash ^= std::hash<int32_t>()(intVal) + 0x9e3779b9 + (opHash<<6) + (opHash>>2);
+                }
 
                 std::stringstream vecVarName;
-                vecVarName << "a_" << opHash;
+                vecVarName << "a_" << opHash;                
 
                 auto arrayFirstElementAddrCst = ch.getOrCreateGlobalVector(vecVarName.str(), type.cast<mlir::VectorType>(), constantOp.value());
 

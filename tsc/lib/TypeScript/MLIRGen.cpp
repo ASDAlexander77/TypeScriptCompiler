@@ -1105,7 +1105,21 @@ namespace
             auto expression = mlirGen(elementAccessExpression->expression.as<Expression>(), genContext);
             auto argumentExpression = mlirGen(elementAccessExpression->argumentExpression.as<Expression>(), genContext);
 
-            auto elementType = expression.getType().cast<mlir_ts::RefType>().getElementType();
+            auto arrayType = expression.getType();
+
+            mlir::Type elementType;
+            if (arrayType.isa<mlir_ts::ArrayType>())
+            {
+                elementType = arrayType.cast<mlir_ts::ArrayType>().getElementType();
+            }
+            else if (arrayType.isa<mlir::VectorType>())
+            {
+                elementType = arrayType.cast<mlir::VectorType>().getElementType();
+            }
+            else 
+            {
+                llvm_unreachable("not implemented");
+            }
 
             return builder.create<mlir_ts::LoadElementOp>(location, elementType, expression, argumentExpression);
         }
