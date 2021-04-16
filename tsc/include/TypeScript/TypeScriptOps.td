@@ -434,7 +434,7 @@ def TypeScript_StoreOp : TypeScript_Op<"store",
     The `store` operation stores the value into the reference storage.
   }];
 
-  let arguments = (ins AnyType:$value, TypeScript_AnyRef:$reference);
+  let arguments = (ins AnyType:$value, Arg<TypeScript_AnyRef, "the reference to store to", [MemWrite]>:$reference);
   let assemblyFormat = "$value `,` $reference attr-dict `:` type($reference)";
 }
 
@@ -447,7 +447,7 @@ def TypeScript_LoadOp : TypeScript_Op<"load",
     The `load` operation loads the value from the reference value.
   }];
 
-  let arguments = (ins TypeScript_AnyRef:$reference);
+  let arguments = (ins Arg<TypeScript_AnyRef, "the reference to load from", [MemRead]>:$reference);
   let results = (outs AnyType:$result);
   let assemblyFormat = "$reference attr-dict `:` type($reference) `->` type($result)";
 }
@@ -461,7 +461,7 @@ def TypeScript_LoadElementOp : TypeScript_Op<"LoadElement"> {
 
   let arguments = (ins
     TypeScript_Array:$array,
-    Index:$index
+    I32:$index
   );
 
   let results = (outs
@@ -479,8 +479,8 @@ def TypeScript_SaveElementOp : TypeScript_Op<"SaveElement"> {
   }];
 
   let arguments = (ins
-    TypeScript_AnyRef:$array_reference,
-    Index:$index,
+    TypeScript_Array:$array,
+    I32:$index,
     AnyType:$value
   );
 
@@ -498,8 +498,8 @@ def TypeScript_ElementAccessOp : TypeScript_Op<"ElementAccess"> {
   }];
 
   let arguments = (ins
-    TypeScript_AnyRef:$array_reference,
-    Index:$index
+    TypeScript_Array:$array,
+    I32:$index
   );
 
   let results = (outs
@@ -517,8 +517,8 @@ def TypeScript_LoadPropertyOp : TypeScript_Op<"LoadProperty"> {
   }];
 
   let arguments = (ins
-    TypeScript_AnyRef:$object_reference,
-    Index:$propertyIndex
+    TypeScript_Object:$object,
+    I32:$propertyIndex
   );
 
   let results = (outs
@@ -536,8 +536,8 @@ def TypeScript_SavePropertyOp : TypeScript_Op<"SaveProperty"> {
   }];
 
   let arguments = (ins
-    TypeScript_AnyRef:$object_reference,
-    Index:$propertyIndex,
+    TypeScript_Object:$object,
+    I32:$propertyIndex,
     AnyType:$value
   );
 
@@ -553,8 +553,8 @@ def TypeScript_PropertyAccessOp : TypeScript_Op<"PropertyAccess"> {
   }];
 
   let arguments = (ins
-    TypeScript_AnyRef:$object_reference,
-    Index:$propertyIndex
+    TypeScript_Object:$object,
+    I32:$propertyIndex
   );
 
   let results = (outs

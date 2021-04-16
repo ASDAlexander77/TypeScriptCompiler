@@ -29,6 +29,10 @@ def TypeScript_String : TypeScript_Type<"String"> {
     let mnemonic = "string";
 }
 
+def TypeScript_Object : TypeScript_Type<"Object"> {
+    let mnemonic = "object";
+}
+
 def TypeScript_Ref : TypeScript_Type<"Ref"> {
   let mnemonic = "ref";
 
