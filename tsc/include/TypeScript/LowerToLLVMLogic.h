@@ -176,7 +176,7 @@ namespace typescript
             return getOrCreateGlobalString_(name, StringRef(value.data(), value.length() + 1));
         }
 
-        Value getOrCreateGlobalArray(StringRef name, mlir::Type elementType, unsigned size, mlir::Attribute value)
+        Value getOrCreateGlobalArray(StringRef name, mlir::Type elementType, unsigned size, mlir::DenseElementsAttr value)
         {
             auto loc = op->getLoc();
             auto parentModule = op->getParentOfType<ModuleOp>();
