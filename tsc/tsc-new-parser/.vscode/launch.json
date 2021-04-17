@@ -5,78 +5,6 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "(Windows) tsc.exe - DUMP",
-            "type": "cppvsdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
-            "args": ["-emit=ast", "C:/temp/1.ts"],
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
-            "environment": [],
-            "externalConsole": true,
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
-        },            
-        {
-            "name": "(Windows) tsc.exe - MLIR",
-            "type": "cppvsdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
-            "args": ["-emit=mlir", "C:/temp/1.ts"],
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
-            "environment": [],
-            "externalConsole": true,
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
-        },        
-        {
-            "name": "(Windows) tsc.exe - MLIR-AFFINE",
-            "type": "cppvsdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
-            "args": ["-emit=mlir-affine", "C:/temp/1.ts"],
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
-            "environment": [],
-            "externalConsole": true,
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
-        },        
-        {
-            "name": "(Windows) tsc.exe - MLIR-LLVM",
-            "type": "cppvsdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
-            "args": ["-emit=mlir-llvm", "C:/temp/1.ts"],
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
-            "environment": [],
-            "externalConsole": true,
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
-        },        
-        {
-            "name": "(Windows) tsc.exe - LLVM",
-            "type": "cppvsdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
-            "args": ["-emit=llvm", "C:/temp/1.ts"],
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
-            "environment": [],
-            "externalConsole": true,
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
-        },          
-        {
-            "name": "(Windows) test-runner.exe - Launch",
-            "type": "cppvsdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/test/tester/Debug/test-runner.exe",
-            "args": [],
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}/../../__build/tsc/test/tester/Debug/",
-            "environment": [],
-            "externalConsole": true,
-            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
-        },
-        {
             "name": "(Windows) test-new-parser.exe - Launch",
             "type": "cppvsdbg",
             "request": "launch",
@@ -87,17 +15,6 @@
             "environment": [],
             "externalConsole": true,
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
-        },        
-        {
-            "name": "(Windows) CMake current - Launch",
-            "type": "cppvsdbg",
-            "request": "launch",
-            "program": "${command:cmake.launchTargetPath}",
-            "args": ["-emit=mlir", "C:/temp/1.ts"],
-            "stopAtEntry": false,
-            "cwd": "${workspaceFolder}",
-            "environment": [],
-            "externalConsole": true
         }
    ]
 }

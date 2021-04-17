@@ -23,6 +23,7 @@
 
 #include "TypeScript/DOM.h"
 #include "TypeScript/Defines.h"
+#include "TypeScript/MLIRGenHelpers.h"
 
 // parser includes
 #include "parser.h"
@@ -1413,42 +1414,26 @@ namespace
             }
 
             // convert to const values
-            if (arrayValues.front().getType().isInteger(32))
+            auto firstValueType = arrayValues.front().getType();
+            if (firstValueType.isInteger(32))
             {
-                SmallVector<int32_t> intValues;
-                for (auto &item : arrayValues)
-                {
-                    auto constOp = cast<mlir_ts::ConstantOp>(item.getDefiningOp());
-                    if (!constOp)
-                    {
-                        llvm_unreachable("array literal is not implemented(1)");
-                        return mlir::Value();
-                    }
-
-                    auto constValue = constOp.getValue();
-                    if (!constValue)
-                    {
-                        llvm_unreachable("array literal is not implemented(2)");
-                        return mlir::Value();                        
-                    }
-
-                    auto integerAttr = constOp.getValue().dyn_cast_or_null<mlir::IntegerAttr>();
-                    if (!integerAttr)
-                    {
-                        llvm_unreachable("array literal is not implemented(3)");
-                        return mlir::Value();
-                    }
-
-                    auto value = integerAttr.getInt();
-
-                    intValues.push_back(value);
-                    item.getDefiningOp()->erase();
-                }
+                CreateArrayAttrFromConstantOpsHelper<int32_t, mlir::IntegerAttr> c;
+                auto values = c.createArray(arrayValues);
 
                 return builder.create<mlir_ts::ConstantOp>(
                     loc(arrayLiteral),
                     getArrayType(builder.getI32Type()),
-                    builder.getI32ArrayAttr(intValues));
+                    builder.getI32ArrayAttr(values));
+            }
+            else if (firstValueType.isF32())
+            {
+                CreateArrayAttrFromConstantOpsHelper<float, mlir::FloatAttr> c;
+                auto values = c.createArray(arrayValues);
+
+                return builder.create<mlir_ts::ConstantOp>(
+                    loc(arrayLiteral),
+                    getArrayType(builder.getF32Type()),
+                    builder.getF32ArrayAttr(values));
             }
 
             llvm_unreachable("not implemented");

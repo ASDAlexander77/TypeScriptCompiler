@@ -5,6 +5,18 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "(Windows) tsc.exe - DUMP",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
+            "args": ["-emit=ast", "C:/temp/1.ts"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "externalConsole": true,
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+        },            
+        {
             "name": "(Windows) tsc.exe - MLIR",
             "type": "cppvsdbg",
             "request": "launch",
@@ -13,7 +25,8 @@
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "externalConsole": true
+            "externalConsole": true,
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
         },        
         {
             "name": "(Windows) tsc.exe - MLIR-AFFINE",
@@ -24,7 +37,8 @@
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "externalConsole": true
+            "externalConsole": true,
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
         },        
         {
             "name": "(Windows) tsc.exe - MLIR-LLVM",
@@ -35,19 +49,21 @@
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "externalConsole": true
+            "externalConsole": true,
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
         },        
         {
-            "name": "(Windows) test-runner.exe - Launch",
+            "name": "(Windows) tsc.exe - LLVM",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/../../__build/tsc/test/tester/Debug/test-runner.exe",
-            "args": [],
+            "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
+            "args": ["-emit=llvm", "C:/temp/1.ts"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "externalConsole": true
-        },
+            "externalConsole": true,
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+        },          
         {
             "name": "(Windows) CMake current - Launch",
             "type": "cppvsdbg",
