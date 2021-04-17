@@ -874,6 +874,38 @@ namespace
             return success();
         }
     };
+    
+    struct LoadElementOpLowering : public OpConversionPattern<mlir_ts::LoadElementOp>
+    {
+        using OpConversionPattern<mlir_ts::LoadElementOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::LoadElementOp loadElementOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            TypeHelper th(rewriter);
+            TypeConverterHelper tch(*getTypeConverter());
+            LLVMCodeHelper ch(loadElementOp, rewriter, getTypeConverter());
+
+            auto addr = ch.GetAddressOfElement(loadElementOp.array(), loadElementOp.index());
+            rewriter.replaceOpWithNewOp<LLVM::LoadOp>(loadElementOp, addr);
+            return success();
+        }
+    };
+
+    struct StoreElementOpLowering : public OpConversionPattern<mlir_ts::StoreElementOp>
+    {
+        using OpConversionPattern<mlir_ts::StoreElementOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::StoreElementOp storeElementOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            TypeHelper th(rewriter);
+            TypeConverterHelper tch(*getTypeConverter());
+            LLVMCodeHelper ch(storeElementOp, rewriter, getTypeConverter());
+
+            auto addr = ch.GetAddressOfElement(storeElementOp.array(), storeElementOp.index());
+            rewriter.replaceOpWithNewOp<LLVM::StoreOp>(storeElementOp, storeElementOp.value(), addr);
+            return success();
+        }
+    };    
 
     struct IfOpLowering : public OpConversionPattern<mlir_ts::IfOp>
     {
@@ -1011,16 +1043,12 @@ namespace
 
         LogicalResult matchAndRewrite(mlir_ts::AddressOfElementOp addressOfElementOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            TypeHelper th(rewriter);            
+            TypeHelper th(rewriter);
             TypeConverterHelper tch(*getTypeConverter());
+            LLVMCodeHelper ch(addressOfElementOp, rewriter, getTypeConverter());
 
-            auto loc = addressOfElementOp->getLoc();
-            auto globalPtr = addressOfElementOp.reference();
-            rewriter.replaceOpWithNewOp<LLVM::GEPOp>(
-                addressOfElementOp, 
-                tch.convertType(addressOfElementOp.getType()), 
-                globalPtr,
-                ValueRange{addressOfElementOp.elementIndex(), addressOfElementOp.elementIndex()});
+            auto addr = ch.GetAddressOfElement(addressOfElementOp.reference(), addressOfElementOp.elementIndex());
+            addressOfElementOp.erase();
 
             return success();
         }
@@ -1147,12 +1175,14 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         FuncOpLowering,
         IfOpLowering,
         LoadOpLowering,
+        LoadElementOpLowering,
         LogicalBinaryOpLowering,
         NullOpLowering,
         ParseFloatOpLowering,
         ParseIntOpLowering,
         PrintOpLowering,
         StoreOpLowering,
+        StoreElementOpLowering,
         UndefOpLowering,
         VariableOpLowering>(typeConverter, &getContext());
 

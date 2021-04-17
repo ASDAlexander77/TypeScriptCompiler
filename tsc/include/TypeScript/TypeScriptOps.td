@@ -471,10 +471,10 @@ def TypeScript_LoadElementOp : TypeScript_Op<"LoadElement"> {
   //let assemblyFormat = "$array_reference `[` $index `]` attr-dict `:` type($result)";
 }
 
-def TypeScript_SaveElementOp : TypeScript_Op<"SaveElement"> {
+def TypeScript_StoreElementOp : TypeScript_Op<"StoreElement"> {
   let description = [{
     ```mlir
-    ts.save_element %1, %2, %3
+    ts.store_element %1, %2, %3
     ```
   }];
 
@@ -528,10 +528,10 @@ def TypeScript_LoadPropertyOp : TypeScript_Op<"LoadProperty"> {
   //let assemblyFormat = "$object_reference `,` $propertyIndex attr-dict `:` type($result)";
 }
 
-def TypeScript_SavePropertyOp : TypeScript_Op<"SaveProperty"> {
+def TypeScript_StorePropertyOp : TypeScript_Op<"StoreProperty"> {
   let description = [{
     ```mlir
-    ts.save_property %1, %2, %3
+    ts.store_property %1, %2, %3
     ```
   }];
 

@@ -71,6 +71,11 @@ namespace typescript
             return LLVM::LLVMPointerType::get(rewriter.getIntegerType(8));
         }
 
+        LLVM::LLVMPointerType getPointerType(Type elementType)
+        {
+            return LLVM::LLVMPointerType::get(elementType);
+        }
+
         LLVM::LLVMArrayType getArrayType(Type elementType, size_t size)
         {
             return LLVM::LLVMArrayType::get(elementType, size);
@@ -128,8 +133,10 @@ namespace typescript
     {
         Operation *op;
         PatternRewriter &rewriter;
+        TypeConverter *typeConverter;
     public:        
         LLVMCodeHelper(Operation *op, PatternRewriter &rewriter) : op(op), rewriter(rewriter) {}
+        LLVMCodeHelper(Operation *op, PatternRewriter &rewriter, TypeConverter *typeConverter) : op(op), rewriter(rewriter), typeConverter(typeConverter) {}
 
     private:
         /// Return a value representing an access into a global string with the given
@@ -214,7 +221,23 @@ namespace typescript
             PatternRewriter::InsertionGuard insertGuard(rewriter);
             rewriter.setInsertionPointToStart(parentModule.getBody());
             return rewriter.create<LLVM::LLVMFuncOp>(loc, name, llvmFnType);
-        }        
+        }   
+
+        mlir::Value GetAddressOfElement(mlir::Value array, mlir::Value index)
+        {
+            TypeHelper th(rewriter);
+            TypeConverterHelper tch(*typeConverter);
+
+            auto loc = op->getLoc();
+            auto globalPtr = array;
+            auto addr = rewriter.create<LLVM::GEPOp>(
+                loc,
+                th.getPointerType(tch.convertType(array.getType().cast<mlir_ts::ArrayType>().getElementType())), 
+                globalPtr,
+                ValueRange{index});
+
+            return addr;            
+        }     
     };
 
     class CodeLogicHelper
