@@ -176,14 +176,15 @@ namespace typescript
             return getOrCreateGlobalString_(name, StringRef(value.data(), value.length() + 1));
         }
 
-        Value getOrCreateGlobalArray(StringRef name, mlir_ts::ArrayType arrayType, mlir::Attribute value)
+        Value getOrCreateGlobalArray(StringRef name, mlir::Type elementType, unsigned size, mlir::Attribute value)
         {
             auto loc = op->getLoc();
             auto parentModule = op->getParentOfType<ModuleOp>();
 
             TypeHelper th(rewriter);
 
-            mlir::Type elementType = arrayType.getElementType();
+            auto pointerType = LLVM::LLVMPointerType::get(elementType);
+            auto arrayType = th.getArrayType(elementType, size);
 
             // Create the global at the entry of the module.
             LLVM::GlobalOp global;
@@ -191,7 +192,7 @@ namespace typescript
             {
                 OpBuilder::InsertionGuard insertGuard(rewriter);
                 rewriter.setInsertionPointToStart(parentModule.getBody());
-                global = rewriter.create<LLVM::GlobalOp>(loc, elementType, true, LLVM::Linkage::Internal, name, value);
+                global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, value);
             }
 
             // Get the pointer to the first character in the global string.
@@ -201,9 +202,9 @@ namespace typescript
                 rewriter.getIntegerAttr(rewriter.getIndexType(), 0));
             return rewriter.create<LLVM::GEPOp>(
                 loc,
-                LLVM::LLVMPointerType::get(elementType),
+                pointerType,
                 globalPtr, 
-                ArrayRef<Value>({cst0, cst0}));            
+                ArrayRef<Value>({cst0}));            
         }        
 
         LLVM::LLVMFuncOp getOrInsertFunction(const StringRef &name, const LLVM::LLVMFunctionType &llvmFnType)
