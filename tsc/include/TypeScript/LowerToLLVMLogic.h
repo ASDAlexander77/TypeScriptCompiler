@@ -204,7 +204,7 @@ namespace typescript
                 loc,
                 pointerType,
                 globalPtr, 
-                ArrayRef<Value>({cst0}));            
+                ArrayRef<Value>({cst0, cst0}));            
         }        
 
         LLVM::LLVMFuncOp getOrInsertFunction(const StringRef &name, const LLVM::LLVMFunctionType &llvmFnType)
