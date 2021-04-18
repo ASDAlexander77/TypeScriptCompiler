@@ -310,32 +310,24 @@ namespace
             {
                 LLVMCodeHelper ch(constantOp, rewriter);
 
-                std::vector<int32_t> data;
+                auto elementType = tch.convertType(type.cast<mlir_ts::ArrayType>().getElementType());
+                auto denseElementsAttr = constantOp.value().dyn_cast_or_null<DenseElementsAttr>();
 
-                auto arrayAttr = constantOp.value().dyn_cast_or_null<ArrayAttr>();
                 auto opHash = 0ULL;
-                for (auto val : arrayAttr.getAsRange<IntegerAttr>())
+                for (auto item : denseElementsAttr.getValues<mlir::Attribute>())
                 {
-                    auto intVal = val.getInt();
-
-                    data.push_back(intVal);
-
-                    opHash ^= std::hash<int32_t>()(intVal) + 0x9e3779b9 + (opHash<<6) + (opHash>>2);
+                    opHash ^= hash_value(item) + 0x9e3779b9 + (opHash<<6) + (opHash>>2);
                 }
 
+                // calculate name;
                 std::stringstream vecVarName;
-                vecVarName << "a_" << opHash;                
-
-                mlir::Type elementType = tch.convertType(type.cast<mlir_ts::ArrayType>().getElementType());
-                auto dataType = mlir::VectorType::get({static_cast<int64_t>(arrayAttr.size())}, elementType);
-
-                auto dataAttribute = mlir::DenseElementsAttr::get(dataType, llvm::makeArrayRef(data));
+                vecVarName << "a_" << opHash;                    
 
                 auto arrayFirstElementAddrCst = ch.getOrCreateGlobalArray(
                     vecVarName.str(), 
                     elementType, 
-                    arrayAttr.size(), 
-                    dataAttribute);
+                    denseElementsAttr.size(), 
+                    denseElementsAttr);
 
                 rewriter.replaceOp(constantOp, arrayFirstElementAddrCst);
 

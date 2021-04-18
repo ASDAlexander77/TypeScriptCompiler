@@ -23,7 +23,6 @@
 
 #include "TypeScript/DOM.h"
 #include "TypeScript/Defines.h"
-#include "TypeScript/MLIRGenHelpers.h"
 
 // parser includes
 #include "parser.h"
@@ -1406,37 +1405,28 @@ namespace
         mlir::Value mlirGen(ts::ArrayLiteralExpression arrayLiteral, const GenContext &genContext)
         {
             // first value
-            SmallVector<mlir::Value> arrayValues;
+            SmallVector<mlir::Attribute> values;
             for (auto &item : arrayLiteral->elements)
             {
                 auto itemValue = mlirGen(item, genContext);
-                arrayValues.push_back(itemValue);
+                auto constOp = cast<mlir_ts::ConstantOp>(itemValue.getDefiningOp());
+                if (!constOp)
+                {
+                    llvm_unreachable("array literal is not implemented(1)");
+                    continue;
+                }
+
+                values.push_back(constOp.valueAttr());
+                itemValue.getDefiningOp()->erase();            
             }
 
-            // convert to const values
-            auto firstValueType = arrayValues.front().getType();
-            if (firstValueType.isInteger(32))
-            {
-                CreateArrayAttrFromConstantOpsHelper<int32_t, mlir::IntegerAttr> c;
-                auto values = c.createArray(arrayValues);
-
-                return builder.create<mlir_ts::ConstantOp>(
-                    loc(arrayLiteral),
-                    getArrayType(builder.getI32Type()),
-                    builder.getI32ArrayAttr(values));
-            }
-            else if (firstValueType.isF32())
-            {
-                CreateArrayAttrFromConstantOpsHelper<float, mlir::FloatAttr> c;
-                auto values = c.createArray(arrayValues);
-
-                return builder.create<mlir_ts::ConstantOp>(
-                    loc(arrayLiteral),
-                    getArrayType(builder.getF32Type()),
-                    builder.getF32ArrayAttr(values));
-            }
-
-            llvm_unreachable("not implemented");
+            auto elementType = values.front().getType();
+            auto dataType = mlir::VectorType::get({static_cast<int64_t>(values.size())}, elementType);
+            auto denseElementsAttr = mlir::DenseElementsAttr::get(dataType, llvm::makeArrayRef(values));            
+            return builder.create<mlir_ts::ConstantOp>(
+                loc(arrayLiteral),
+                getArrayType(elementType),
+                denseElementsAttr);
         }
 
         mlir::Value mlirGen(Identifier identifier, const GenContext &genContext)

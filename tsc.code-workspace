@@ -142,7 +142,8 @@
             "*.def": "cpp",
             "regex": "cpp",
             "optional": "cpp",
-            "*.rh": "cpp"
+            "*.rh": "cpp",
+            "forward_list": "cpp"
         },
     	"cmake.buildDirectory": "${workspaceRoot}/../../__build/tsc",
     	"cmake.sourceDirectory": "${workspaceFolder}/.."
