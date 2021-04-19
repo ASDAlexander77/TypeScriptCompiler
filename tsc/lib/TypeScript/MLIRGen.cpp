@@ -1405,6 +1405,7 @@ namespace
         mlir::Value mlirGen(ts::ArrayLiteralExpression arrayLiteral, const GenContext &genContext)
         {
             // first value
+            mlir::Type elementType;
             SmallVector<mlir::Attribute> values;
             for (auto &item : arrayLiteral->elements)
             {
@@ -1417,16 +1418,22 @@ namespace
                 }
 
                 values.push_back(constOp.valueAttr());
+                if (!elementType)
+                {
+                    elementType = constOp.getType();
+                }
+
                 itemValue.getDefiningOp()->erase();            
             }
 
-            auto elementType = values.front().getType();
-            auto dataType = mlir::VectorType::get({static_cast<int64_t>(values.size())}, elementType);
-            auto denseElementsAttr = mlir::DenseElementsAttr::get(dataType, llvm::makeArrayRef(values));            
+            //auto dataType = mlir::VectorType::get({static_cast<int64_t>(values.size())}, elementType);
+            //auto denseElementsAttr = mlir::DenseElementsAttr::get(dataType, llvm::makeArrayRef(values));
+            auto arrayAttr = mlir::ArrayAttr::get(llvm::makeArrayRef(values), builder.getContext());            
             return builder.create<mlir_ts::ConstantOp>(
                 loc(arrayLiteral),
                 getArrayType(elementType),
-                denseElementsAttr);
+                //denseElementsAttr);
+                arrayAttr);
         }
 
         mlir::Value mlirGen(Identifier identifier, const GenContext &genContext)
