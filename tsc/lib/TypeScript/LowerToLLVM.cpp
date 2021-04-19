@@ -311,10 +311,10 @@ namespace
                 LLVMCodeHelper ch(constantOp, rewriter);
 
                 auto elementType = tch.convertType(type.cast<mlir_ts::ArrayType>().getElementType());
-                auto denseElementsAttr = constantOp.value().dyn_cast_or_null<DenseElementsAttr>();
+                auto arrayAttr = constantOp.value().dyn_cast_or_null<ArrayAttr>();
 
                 auto opHash = 0ULL;
-                for (auto item : denseElementsAttr.getValues<mlir::Attribute>())
+                for (auto item : arrayAttr)
                 {
                     opHash ^= hash_value(item) + 0x9e3779b9 + (opHash<<6) + (opHash>>2);
                 }
@@ -326,8 +326,8 @@ namespace
                 auto arrayFirstElementAddrCst = ch.getOrCreateGlobalArray(
                     vecVarName.str(), 
                     elementType, 
-                    denseElementsAttr.size(), 
-                    denseElementsAttr);
+                    arrayAttr.size(),
+                    arrayAttr);
 
                 rewriter.replaceOp(constantOp, arrayFirstElementAddrCst);
 

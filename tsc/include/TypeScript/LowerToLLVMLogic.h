@@ -176,7 +176,7 @@ namespace typescript
             return getOrCreateGlobalString_(name, StringRef(value.data(), value.length() + 1));
         }
 
-        Value getOrCreateGlobalArray(StringRef name, mlir::Type elementType, unsigned size, mlir::DenseElementsAttr value)
+        Value getOrCreateGlobalArray(StringRef name, mlir::Type elementType, unsigned size, ArrayAttr arrayAttr)
         {
             auto loc = op->getLoc();
             auto parentModule = op->getParentOfType<ModuleOp>();
@@ -192,7 +192,21 @@ namespace typescript
             {
                 OpBuilder::InsertionGuard insertGuard(rewriter);
                 rewriter.setInsertionPointToStart(parentModule.getBody());
-                global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, value);
+
+                // dense value
+                auto value = arrayAttr.getValue();
+                Attribute attr;
+                if (elementType.isIntOrFloat())
+                {
+                    auto dataType = mlir::VectorType::get({static_cast<int64_t>(value.size())}, elementType);
+                    attr = mlir::DenseElementsAttr::get(dataType, value);                
+                }
+                else
+                {
+                    llvm_unreachable("array literal is not implemented(1)");
+                }
+
+                global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, attr);
             }
 
             // Get the pointer to the first character in the global string.

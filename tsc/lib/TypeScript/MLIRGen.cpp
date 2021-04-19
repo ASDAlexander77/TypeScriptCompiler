@@ -1426,13 +1426,10 @@ namespace
                 itemValue.getDefiningOp()->erase();            
             }
 
-            //auto dataType = mlir::VectorType::get({static_cast<int64_t>(values.size())}, elementType);
-            //auto denseElementsAttr = mlir::DenseElementsAttr::get(dataType, llvm::makeArrayRef(values));
             auto arrayAttr = mlir::ArrayAttr::get(llvm::makeArrayRef(values), builder.getContext());            
             return builder.create<mlir_ts::ConstantOp>(
                 loc(arrayLiteral),
                 getArrayType(elementType),
-                //denseElementsAttr);
                 arrayAttr);
         }
 
