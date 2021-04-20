@@ -291,9 +291,7 @@ namespace
                 LLVMCodeHelper ch(constantOp, rewriter);
 
                 auto strValue = constantOp.value().cast<StringAttr>().getValue().str();
-                auto txtCst = ch.getOrCreateGlobalString(
-                    ch.getStorageStringName(strValue), 
-                    strValue);
+                auto txtCst = ch.getOrCreateGlobalString(strValue);
 
                 rewriter.replaceOp(constantOp, txtCst);
 

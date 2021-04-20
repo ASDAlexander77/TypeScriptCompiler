@@ -182,6 +182,11 @@ namespace typescript
             return strVarName.str();
         }
 
+        Value getOrCreateGlobalString(std::string value)
+        {
+            return getOrCreateGlobalString(getStorageStringName(value), value);
+        }        
+
         Value getOrCreateGlobalString(StringRef name, std::string value)
         {
             return getOrCreateGlobalString_(name, StringRef(value.data(), value.length() + 1));
@@ -228,11 +233,8 @@ namespace typescript
                     for (auto item : arrayAttr.getValue())
                     {
                         auto strValue = item.cast<StringAttr>().getValue().str();
-                        auto itemVal = getOrCreateGlobalString(
-                            getStorageStringName(strValue), 
-                            strValue);                        
+                        auto itemVal = getOrCreateGlobalString(strValue);                        
 
-                        //auto itemVal = rewriter.create<LLVM::NullOp>(loc, llvmElementType);
                         arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, itemVal, rewriter.getI64ArrayAttr(position++));
                     }
 
