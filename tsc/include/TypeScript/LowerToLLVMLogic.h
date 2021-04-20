@@ -171,20 +171,31 @@ namespace typescript
         }
 
     public:
+
+        std::string getStorageStringName(std::string value)
+        {
+            auto opHash = std::hash<std::string>{}(value);
+
+            std::stringstream strVarName;
+            strVarName << "s_" << opHash;
+
+            return strVarName.str();
+        }
+
         Value getOrCreateGlobalString(StringRef name, std::string value)
         {
             return getOrCreateGlobalString_(name, StringRef(value.data(), value.length() + 1));
         }
 
-        Value getOrCreateGlobalArray(StringRef name, mlir::Type elementType, unsigned size, ArrayAttr arrayAttr)
+        Value getOrCreateGlobalArray(mlir::Type originalElementType, StringRef name, mlir::Type llvmElementType, unsigned size, ArrayAttr arrayAttr)
         {
             auto loc = op->getLoc();
             auto parentModule = op->getParentOfType<ModuleOp>();
 
             TypeHelper th(rewriter);
 
-            auto pointerType = LLVM::LLVMPointerType::get(elementType);
-            auto arrayType = th.getArrayType(elementType, size);
+            auto pointerType = LLVM::LLVMPointerType::get(llvmElementType);
+            auto arrayType = th.getArrayType(llvmElementType, size);
 
             // Create the global at the entry of the module.
             LLVM::GlobalOp global;
@@ -195,18 +206,42 @@ namespace typescript
 
                 // dense value
                 auto value = arrayAttr.getValue();
-                Attribute attr;
-                if (elementType.isIntOrFloat())
+                if (llvmElementType.isIntOrFloat())
                 {
-                    auto dataType = mlir::VectorType::get({static_cast<int64_t>(value.size())}, elementType);
-                    attr = mlir::DenseElementsAttr::get(dataType, value);                
+                    // end
+                    auto dataType = mlir::VectorType::get({static_cast<int64_t>(value.size())}, llvmElementType);
+                    auto attr = mlir::DenseElementsAttr::get(dataType, value);                
+                    global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, attr);
+                }
+                else if (originalElementType.dyn_cast_or_null<mlir_ts::StringType>())
+                {
+                    mlir::OpBuilder::InsertionGuard guard(rewriter);
+                    
+                    global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, Attribute{});
+
+                    global.getInitializerRegion().push_back(new Block());
+                    rewriter.setInsertionPointToStart(global.getInitializerBlock());
+
+                    mlir::Value arrayVal = rewriter.create<LLVM::UndefOp>(loc, arrayType);
+
+                    auto position = 0;
+                    for (auto item : arrayAttr.getValue())
+                    {
+                        auto strValue = item.cast<StringAttr>().getValue().str();
+                        auto itemVal = getOrCreateGlobalString(
+                            getStorageStringName(strValue), 
+                            strValue);                        
+
+                        //auto itemVal = rewriter.create<LLVM::NullOp>(loc, llvmElementType);
+                        arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, itemVal, rewriter.getI64ArrayAttr(position++));
+                    }
+
+                    rewriter.create<LLVM::ReturnOp>(loc, ValueRange{arrayVal});
                 }
                 else
                 {
                     llvm_unreachable("array literal is not implemented(1)");
                 }
-
-                global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, attr);
             }
 
             // Get the pointer to the first character in the global string.

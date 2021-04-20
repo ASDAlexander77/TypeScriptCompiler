@@ -290,15 +290,10 @@ namespace
             {
                 LLVMCodeHelper ch(constantOp, rewriter);
 
-                std::stringstream strWithNUL;
-                strWithNUL << constantOp.value().cast<StringAttr>().getValue().str();
-
-                auto opHash = std::hash<std::string>{}(strWithNUL.str());
-
-                std::stringstream strVarName;
-                strVarName << "s_" << opHash;
-
-                auto txtCst = ch.getOrCreateGlobalString(strVarName.str(), strWithNUL.str());
+                auto strValue = constantOp.value().cast<StringAttr>().getValue().str();
+                auto txtCst = ch.getOrCreateGlobalString(
+                    ch.getStorageStringName(strValue), 
+                    strValue);
 
                 rewriter.replaceOp(constantOp, txtCst);
 
@@ -310,7 +305,8 @@ namespace
             {
                 LLVMCodeHelper ch(constantOp, rewriter);
 
-                auto elementType = tch.convertType(type.cast<mlir_ts::ArrayType>().getElementType());
+                auto elementType = type.cast<mlir_ts::ArrayType>().getElementType();
+                auto llvmElementType = tch.convertType(elementType);
                 auto arrayAttr = constantOp.value().dyn_cast_or_null<ArrayAttr>();
 
                 auto opHash = 0ULL;
@@ -324,8 +320,9 @@ namespace
                 vecVarName << "a_" << opHash;                    
 
                 auto arrayFirstElementAddrCst = ch.getOrCreateGlobalArray(
+                    elementType,
                     vecVarName.str(), 
-                    elementType, 
+                    llvmElementType,
                     arrayAttr.size(),
                     arrayAttr);
 
