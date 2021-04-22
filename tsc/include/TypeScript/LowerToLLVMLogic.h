@@ -365,6 +365,25 @@ namespace typescript
 
             return resultBlock->getArguments().front();
         }
+
+        template <typename OpTy>
+        void saveResult(OpTy& op, mlir::Value result)
+        {
+            auto name = op.operand1().getDefiningOp()->getName().getStringRef();
+            // TODO: finish it for field access
+            if (name == "ts.load")
+            {
+                rewriter.create<mlir_ts::StoreOp>(op->getLoc(), result, op.operand1().getDefiningOp()->getOperand(0));
+            }
+            else if (name == "ts.load_element")
+            {
+                rewriter.create<mlir_ts::StoreElementOp>(op->getLoc(), result, op.operand1().getDefiningOp()->getOperand(0), op.operand1().getDefiningOp()->getOperand(1));
+            }
+            else
+            {
+                llvm_unreachable("not implemented");
+            }
+        }
     };
 
     template <typename UnaryOpTy, typename StdIOpTy, typename StdFOpTy>

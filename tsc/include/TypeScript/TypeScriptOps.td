@@ -452,7 +452,7 @@ def TypeScript_LoadOp : TypeScript_Op<"load",
   let assemblyFormat = "$reference attr-dict `:` type($reference) `->` type($result)";
 }
 
-def TypeScript_LoadElementOp : TypeScript_Op<"LoadElement"> {
+def TypeScript_LoadElementOp : TypeScript_Op<"load_element"> {
   let description = [{
     ```mlir
     %3 = ts.load_element %1, %2 : f32

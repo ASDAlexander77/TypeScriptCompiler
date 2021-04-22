@@ -122,7 +122,8 @@ struct PrefixUnaryOpLowering : public OpRewritePattern<mlir_ts::PrefixUnaryOp>
         }
 
         rewriter.replaceOpWithNewOp<mlir_ts::ArithmeticBinaryOp>(op, op.getType(), rewriter.getI32IntegerAttr(static_cast<int32_t>(opCode)), op.operand1(), cst1);
-        rewriter.create<mlir_ts::StoreOp>(op->getLoc(), op->getResult(0), op.operand1().getDefiningOp()->getOperand(0));
+        clh.saveResult(op, op->getResult(0));
+
         return success();        
     }
 };  
@@ -148,7 +149,8 @@ struct PostfixUnaryOpLowering : public OpRewritePattern<mlir_ts::PostfixUnaryOp>
         }
 
         auto result = rewriter.create<mlir_ts::ArithmeticBinaryOp>(op->getLoc(), op.getType(), rewriter.getI32IntegerAttr(static_cast<int32_t>(opCode)), op.operand1(), cst1);
-        rewriter.create<mlir_ts::StoreOp>(op->getLoc(), result, op.operand1().getDefiningOp()->getOperand(0));
+        clh.saveResult(op, result);
+
         rewriter.replaceOp(op, op.operand1());
         return success();  
     }
