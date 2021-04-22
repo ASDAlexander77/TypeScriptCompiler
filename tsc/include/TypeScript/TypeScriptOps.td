@@ -583,6 +583,44 @@ def TypeScript_ArithmeticUnaryOp : TypeScript_Op<"arithmetic_unary"> {
   let assemblyFormat = "$operand1 `(` $opCode `)` attr-dict `:` type($operand1) `->` type($result)";
 }
 
+def TypeScript_PrefixUnaryOp : TypeScript_Op<"prefix_unary"> {
+  let description = [{
+    ```mlir
+    %2 = ts.prefix_unary 1, %1 : f32
+    ```
+  }];
+
+  let arguments = (ins
+    I32Attr:$opCode,
+    AnyType:$operand1
+  );
+
+  let results = (outs
+    AnyType:$result
+  );
+
+  let assemblyFormat = "$operand1 `(` $opCode `)` attr-dict `:` type($operand1) `->` type($result)";
+}
+
+def TypeScript_PostfixUnaryOp : TypeScript_Op<"postfix_unary"> {
+  let description = [{
+    ```mlir
+    %2 = ts.postfix_unary 1, %1 : f32
+    ```
+  }];
+
+  let arguments = (ins
+    I32Attr:$opCode,
+    AnyType:$operand1
+  );
+
+  let results = (outs
+    AnyType:$result
+  );
+
+  let assemblyFormat = "$operand1 `(` $opCode `)` attr-dict `:` type($operand1) `->` type($result)";
+}
+
 def TypeScript_ArithmeticBinaryOp : TypeScript_Op<"arithmetic_binary"> {
   let description = [{
     ```mlir

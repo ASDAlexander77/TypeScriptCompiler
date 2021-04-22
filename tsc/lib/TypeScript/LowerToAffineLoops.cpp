@@ -101,6 +101,59 @@ struct ParamDefaultValueOpLowering : public OpRewritePattern<mlir_ts::ParamDefau
     }
 };
 
+struct PrefixUnaryOpLowering : public OpRewritePattern<mlir_ts::PrefixUnaryOp>
+{
+    using OpRewritePattern<mlir_ts::PrefixUnaryOp>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::PrefixUnaryOp op, PatternRewriter &rewriter) const final
+    {
+        CodeLogicHelper clh(op, rewriter);
+        auto cst1 = rewriter.create<mlir_ts::ConstantOp>(op->getLoc(), rewriter.getI32IntegerAttr(1));
+
+        SyntaxKind opCode;
+        switch (op.opCode())
+        {
+            case SyntaxKind::PlusPlusToken:
+                opCode = SyntaxKind::PlusToken;
+                break;
+            case SyntaxKind::MinusMinusToken:
+                opCode = SyntaxKind::MinusToken;
+                break;
+        }
+
+        rewriter.replaceOpWithNewOp<mlir_ts::ArithmeticBinaryOp>(op, op.getType(), rewriter.getI32IntegerAttr(static_cast<int32_t>(opCode)), op.operand1(), cst1);
+        rewriter.create<mlir_ts::StoreOp>(op->getLoc(), op->getResult(0), op.operand1().getDefiningOp()->getOperand(0));
+        return success();        
+    }
+};  
+
+struct PostfixUnaryOpLowering : public OpRewritePattern<mlir_ts::PostfixUnaryOp>
+{
+    using OpRewritePattern<mlir_ts::PostfixUnaryOp>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::PostfixUnaryOp op, PatternRewriter &rewriter) const final
+    {
+        CodeLogicHelper clh(op, rewriter);
+        auto cst1 = rewriter.create<mlir_ts::ConstantOp>(op->getLoc(), rewriter.getI32IntegerAttr(1));
+
+        SyntaxKind opCode;
+        switch (op.opCode())
+        {
+            case SyntaxKind::PlusPlusToken:
+                opCode = SyntaxKind::PlusToken;
+                break;
+            case SyntaxKind::MinusMinusToken:
+                opCode = SyntaxKind::MinusToken;
+                break;
+        }
+
+        auto result = rewriter.create<mlir_ts::ArithmeticBinaryOp>(op->getLoc(), op.getType(), rewriter.getI32IntegerAttr(static_cast<int32_t>(opCode)), op.operand1(), cst1);
+        rewriter.create<mlir_ts::StoreOp>(op->getLoc(), result, op.operand1().getDefiningOp()->getOperand(0));
+        rewriter.replaceOp(op, op.operand1());
+        return success();  
+    }
+};  
+
 //===----------------------------------------------------------------------===//
 // TypeScriptToAffineLoweringPass
 //===----------------------------------------------------------------------===//
@@ -205,7 +258,9 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     patterns.insert<
         ParamOpLowering,
         ParamOptionalOpLowering,
-        ParamDefaultValueOpLowering
+        ParamDefaultValueOpLowering,
+        PrefixUnaryOpLowering,
+        PostfixUnaryOpLowering
     >(&getContext());
 
     // With the target and rewrite patterns defined, we can now attempt the

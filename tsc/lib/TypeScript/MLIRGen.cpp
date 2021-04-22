@@ -280,6 +280,10 @@ namespace
             {
                 return mlirGen(expressionAST.as<PrefixUnaryExpression>(), genContext);
             }
+            else if (kind == SyntaxKind::PostfixUnaryExpression)
+            {
+                return mlirGen(expressionAST.as<PostfixUnaryExpression>(), genContext);
+            }
             else if (kind == SyntaxKind::ParenthesizedExpression)
             {
                 return mlirGen(expressionAST.as<ParenthesizedExpression>(), genContext);
@@ -812,14 +816,13 @@ namespace
 
         mlir::Value mlirGen(UnaryExpression unaryExpressionAST, const GenContext &genContext)
         {
-            auto kind = (SyntaxKind)unaryExpressionAST;
-            if (kind == SyntaxKind::PrefixUnaryExpression)
-            {
-                return mlirGen(unaryExpressionAST.as<PrefixUnaryExpression>(), genContext);
-            }
-
-            llvm_unreachable("unknown statement type");            
+            return mlirGen(unaryExpressionAST.as<Expression>(), genContext);               
         }
+
+        mlir::Value mlirGen(LeftHandSideExpression leftHandSideExpressionAST, const GenContext &genContext)
+        {
+            return mlirGen(leftHandSideExpressionAST.as<Expression>(), genContext);
+        }        
 
         mlir::Value mlirGen(PrefixUnaryExpression prefixUnaryExpressionAST, const GenContext &genContext)
         {
@@ -853,10 +856,40 @@ namespace
                     expressionValue.getType(),
                     builder.getI32IntegerAttr((int)opCode),
                     expressionValue);
+            case SyntaxKind::PlusPlusToken:
+            case SyntaxKind::MinusMinusToken:
+                return builder.create<mlir_ts::PrefixUnaryOp>(
+                    location,
+                    expressionValue.getType(),
+                    builder.getI32IntegerAttr((int)opCode),
+                    expressionValue);
             default:
                 llvm_unreachable("not implemented");
             }
         }        
+
+        mlir::Value mlirGen(PostfixUnaryExpression postfixUnaryExpressionAST, const GenContext &genContext)
+        {
+            auto location = loc(postfixUnaryExpressionAST);
+
+            auto opCode = postfixUnaryExpressionAST->_operator;
+
+            auto expression = postfixUnaryExpressionAST->operand;
+            auto expressionValue = mlirGen(expression, genContext);
+
+            switch (opCode)
+            {
+            case SyntaxKind::PlusPlusToken:
+            case SyntaxKind::MinusMinusToken:
+                return builder.create<mlir_ts::PostfixUnaryOp>(
+                    location,
+                    expressionValue.getType(),
+                    builder.getI32IntegerAttr((int)opCode),
+                    expressionValue);
+            default:
+                llvm_unreachable("not implemented");
+            }
+        } 
 
         mlir::Value mlirGen(ConditionalExpression conditionalExpressionAST, const GenContext &genContext)
         {
