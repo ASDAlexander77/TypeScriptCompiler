@@ -479,9 +479,9 @@ def TypeScript_StoreElementOp : TypeScript_Op<"StoreElement"> {
   }];
 
   let arguments = (ins
+    AnyType:$value,
     TypeScript_Array:$array,
-    I32:$index,
-    AnyType:$value
+    I32:$index
   );
 
   let results = (outs
@@ -536,9 +536,9 @@ def TypeScript_StorePropertyOp : TypeScript_Op<"StoreProperty"> {
   }];
 
   let arguments = (ins
+    AnyType:$value,
     TypeScript_Object:$object,
-    I32:$propertyIndex,
-    AnyType:$value
+    I32:$propertyIndex
   );
 
   let results = (outs

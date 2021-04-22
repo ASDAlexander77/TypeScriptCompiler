@@ -1063,13 +1063,23 @@ namespace
             {
             case SyntaxKind::EqualsToken:
             {
-                auto loadOp = dyn_cast<mlir_ts::LoadOp>(leftExpressionValue.getDefiningOp());
-                if (loadOp)
+                if (auto loadOp = dyn_cast<mlir_ts::LoadOp>(leftExpressionValue.getDefiningOp()))
                 {
+                    // TODO: when saving const array into variable we need to allocate space and copy array as we need to have writable array
                     builder.create<mlir_ts::StoreOp>(
                         location,
                         rightExpressionValue,
                         loadOp.reference());
+                    loadOp.erase();
+                }
+                else if (auto loadElementOp = dyn_cast<mlir_ts::LoadElementOp>(leftExpressionValue.getDefiningOp()))
+                {
+                    builder.create<mlir_ts::StoreElementOp>(
+                        location,
+                        rightExpressionValue,
+                        loadElementOp.array(),
+                        loadElementOp.index());        
+                    loadElementOp.erase();            
                 }
                 else
                 {

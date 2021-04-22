@@ -246,6 +246,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         mlir_ts::ReturnOp,
         mlir_ts::ReturnValOp,
         mlir_ts::StoreOp,
+        mlir_ts::StoreElementOp,
         mlir_ts::LoadOp,
         mlir_ts::LoadElementOp,
         mlir_ts::LogicalBinaryOp,
