@@ -908,83 +908,6 @@ namespace
         }
     };    
 
-    struct IfOpLowering : public OpConversionPattern<mlir_ts::IfOp>
-    {
-        using OpConversionPattern<mlir_ts::IfOp>::OpConversionPattern;
-
-        LogicalResult matchAndRewrite(mlir_ts::IfOp ifOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const override
-        {
-            auto loc = ifOp.getLoc();
-
-            auto &typeConverter = *getTypeConverter();
-
-            // Start by splitting the block containing the 'scf.if' into two parts.
-            // The part before will contain the condition, the part after will be the
-            // continuation point.
-            auto *condBlock = rewriter.getInsertionBlock();
-            auto opPosition = rewriter.getInsertionPoint();
-            auto *remainingOpsBlock = rewriter.splitBlock(condBlock, opPosition);
-            Block *continueBlock;
-            if (ifOp.getNumResults() == 0)
-            {
-                continueBlock = remainingOpsBlock;
-            }
-            else
-            {
-                continueBlock = rewriter.createBlock(remainingOpsBlock, ifOp.getResultTypes());
-                rewriter.create<LLVM::BrOp>(loc, ArrayRef<Value>(), remainingOpsBlock);
-            }
-
-            // Move blocks from the "then" region to the region containing 'if',
-            // place it before the continuation block, and branch to it.
-            auto &thenRegion = ifOp.thenRegion();
-            auto *thenBlock = &thenRegion.front();
-            Operation *thenTerminator = thenRegion.back().getTerminator();
-            ValueRange thenTerminatorOperands = thenTerminator->getOperands();
-            rewriter.setInsertionPointToEnd(&thenRegion.back());
-            rewriter.create<LLVM::BrOp>(loc, thenTerminatorOperands, continueBlock);
-            rewriter.eraseOp(thenTerminator);
-            rewriter.inlineRegionBefore(thenRegion, continueBlock);
-
-            if (failed(rewriter.convertRegionTypes(&thenRegion, typeConverter)))
-            {
-                return failure();
-            }
-
-            // Move blocks from the "else" region (if present) to the region containing
-            // 'scf.if', place it before the continuation block and branch to it.  It
-            // will be placed after the "then" regions.
-            auto *elseBlock = continueBlock;
-            auto &elseRegion = ifOp.elseRegion();
-            if (!elseRegion.empty())
-            {
-                elseBlock = &elseRegion.front();
-                Operation *elseTerminator = elseRegion.back().getTerminator();
-                ValueRange elseTerminatorOperands = elseTerminator->getOperands();
-                rewriter.setInsertionPointToEnd(&elseRegion.back());
-                rewriter.create<LLVM::BrOp>(loc, elseTerminatorOperands, continueBlock);
-                rewriter.eraseOp(elseTerminator);
-                rewriter.inlineRegionBefore(elseRegion, continueBlock);
-
-                if (failed(rewriter.convertRegionTypes(&elseRegion, typeConverter)))
-                {
-                    return failure();
-                }
-            }
-
-            rewriter.setInsertionPointToEnd(condBlock);
-            rewriter.create<LLVM::CondBrOp>(
-                loc,
-                ifOp.condition(),
-                thenBlock, /*trueArgs=*/ArrayRef<Value>(),
-                elseBlock, /*falseArgs=*/ArrayRef<Value>());
-
-            // Ok, we're done!
-            rewriter.replaceOp(ifOp, continueBlock->getArguments());
-            return success();
-        }
-    };
-
     struct GlobalOpLowering : public OpConversionPattern<mlir_ts::GlobalOp>
     {
         using OpConversionPattern<mlir_ts::GlobalOp>::OpConversionPattern;
@@ -1174,7 +1097,6 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         GlobalOpLowering,
         EntryOpLowering,
         FuncOpLowering,
-        IfOpLowering,
         LoadOpLowering,
         LoadElementOpLowering,
         LogicalBinaryOpLowering,
