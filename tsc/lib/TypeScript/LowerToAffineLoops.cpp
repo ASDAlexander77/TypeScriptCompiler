@@ -156,6 +156,67 @@ struct PostfixUnaryOpLowering : public OpRewritePattern<mlir_ts::PostfixUnaryOp>
     }
 };  
 
+struct IfOpLowering : public OpRewritePattern<mlir_ts::IfOp>
+{
+    using OpRewritePattern<mlir_ts::IfOp>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::IfOp ifOp, PatternRewriter &rewriter) const final
+    {
+        auto loc = ifOp.getLoc();
+
+        // Start by splitting the block containing the 'scf.if' into two parts.
+        // The part before will contain the condition, the part after will be the
+        // continuation point.
+        auto *condBlock = rewriter.getInsertionBlock();
+        auto opPosition = rewriter.getInsertionPoint();
+        auto *remainingOpsBlock = rewriter.splitBlock(condBlock, opPosition);
+        Block *continueBlock;
+        if (ifOp.getNumResults() == 0) {
+            continueBlock = remainingOpsBlock;
+        } else {
+            continueBlock =
+                rewriter.createBlock(remainingOpsBlock, ifOp.getResultTypes());
+            rewriter.create<BranchOp>(loc, remainingOpsBlock);
+        }
+
+        // Move blocks from the "then" region to the region containing 'scf.if',
+        // place it before the continuation block, and branch to it.
+        auto &thenRegion = ifOp.thenRegion();
+        auto *thenBlock = &thenRegion.front();
+        Operation *thenTerminator = thenRegion.back().getTerminator();
+        ValueRange thenTerminatorOperands = thenTerminator->getOperands();
+        rewriter.setInsertionPointToEnd(&thenRegion.back());
+        rewriter.create<BranchOp>(loc, continueBlock, thenTerminatorOperands);
+        rewriter.eraseOp(thenTerminator);
+        rewriter.inlineRegionBefore(thenRegion, continueBlock);
+
+        // Move blocks from the "else" region (if present) to the region containing
+        // 'scf.if', place it before the continuation block and branch to it.  It
+        // will be placed after the "then" regions.
+        auto *elseBlock = continueBlock;
+        auto &elseRegion = ifOp.elseRegion();
+        if (!elseRegion.empty()) {
+            elseBlock = &elseRegion.front();
+            Operation *elseTerminator = elseRegion.back().getTerminator();
+            ValueRange elseTerminatorOperands = elseTerminator->getOperands();
+            rewriter.setInsertionPointToEnd(&elseRegion.back());
+            rewriter.create<BranchOp>(loc, continueBlock, elseTerminatorOperands);
+            rewriter.eraseOp(elseTerminator);
+            rewriter.inlineRegionBefore(elseRegion, continueBlock);
+        }
+
+        rewriter.setInsertionPointToEnd(condBlock);
+        auto castToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), ifOp.condition());
+        rewriter.create<CondBranchOp>(loc, castToI1, thenBlock,
+                                        /*trueArgs=*/ArrayRef<Value>(), elseBlock,
+                                        /*falseArgs=*/ArrayRef<Value>());
+
+        // Ok, we're done!
+        rewriter.replaceOp(ifOp, continueBlock->getArguments());
+        return success();
+    }
+};
+
 struct WhileOpLowering : public OpRewritePattern<mlir_ts::WhileOp>
 {
     using OpRewritePattern<mlir_ts::WhileOp>::OpRewritePattern;
@@ -283,7 +344,6 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         mlir_ts::EntryOp,
         mlir_ts::ExitOp,
         mlir_ts::FuncOp,
-        mlir_ts::IfOp,
         mlir_ts::NullOp,
         mlir_ts::ParseFloatOp,
         mlir_ts::ParseIntOp,
@@ -309,6 +369,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         ParamDefaultValueOpLowering,
         PrefixUnaryOpLowering,
         PostfixUnaryOpLowering,
+        IfOpLowering,
         WhileOpLowering
     >(&getContext());
 
