@@ -435,6 +435,38 @@ void ts::IfOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attribute>
     regions.push_back(RegionSuccessor(condition ? &thenRegion() : elseRegion));
 }
 
+//===----------------------------------------------------------------------===//
+// WhileOp
+//===----------------------------------------------------------------------===//
+
+OperandRange ts::WhileOp::getSuccessorEntryOperands(unsigned index) {
+  assert(index == 0 &&
+         "WhileOp is expected to branch only to the first region");
+
+  return inits();
+}
+
+void ts::WhileOp::getSuccessorRegions(Optional<unsigned> index,
+                                  ArrayRef<Attribute> operands,
+                                  SmallVectorImpl<RegionSuccessor> &regions) {
+  (void)operands;
+
+  if (!index.hasValue()) {
+    regions.emplace_back(&before(), before().getArguments());
+    return;
+  }
+
+  assert(*index < 2 && "there are only two regions in a WhileOp");
+  if (*index == 0) {
+    regions.emplace_back(&after(), after().getArguments());
+    regions.emplace_back(getResults());
+    return;
+  }
+
+  regions.emplace_back(&before(), before().getArguments());
+}
+
+
 namespace
 {
     // Pattern to remove unused IfOp results.

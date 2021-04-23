@@ -785,13 +785,67 @@ def TypeScript_IfOp : TypeScript_Op<"if",
 }
 
 def TypeScript_YieldOp : TypeScript_Op<"yield", [NoSideEffect, ReturnLike, Terminator,
-                               ParentOneOf<["IfOp"]>]> {
+                               ParentOneOf<["IfOp", "WhileOp"]>]> {
   let summary = "loop yield and termination operation";
 
   let arguments = (ins Variadic<AnyType>:$results);
   let builders = [OpBuilderDAG<(ins), [{ /* nothing to do */ }]>];
   // Override default verifier, no custom verification
   // needed.
+  let verifier = ?;
+}
+
+def TypeScript_WhileOp : TypeScript_Op<"while",
+    [DeclareOpInterfaceMethods<RegionBranchOpInterface>,
+     RecursiveSideEffects]> {
+  let summary = "a generic 'while' loop";
+  let description = [{
+    This operation represents a generic "while"/"do-while" loop that keeps
+    iterating as long as a condition is satisfied. There is no restriction on
+    the complexity of the condition. It consists of two regions (with single
+    block each): "before" region and "after" region. The names of regions
+    indicates whether they execute before or after the condition check.
+    Therefore, if the main loop payload is located in the "before" region, the
+    operation is a "do-while" loop. Otherwise, it is a "while" loop.
+
+    The "before" region terminates with a special operation, `ts.condition`,
+    that accepts as its first operand an `i1` value indicating whether to
+    proceed to the "after" region (value is `true`) or not. The two regions
+    communicate by means of region arguments. Initially, the "before" region
+    accepts as arguments the operands of the `scf.while` operation and uses them
+    to evaluate the condition. It forwards the trailing, non-condition operands
+    of the `scf.condition` terminator either to the "after" region if the
+    control flow is transferred there or to results of the `scf.while` operation
+    otherwise. The "after" region takes as arguments the values produced by the
+    "before" region and uses `scf.yield` to supply new arguments for the "after"
+    region, into which it transfers the control flow unconditionally.
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$inits);
+  let results = (outs Variadic<AnyType>:$results);
+  let regions = (region SizedRegion<1>:$before, SizedRegion<1>:$after);
+
+  let extraClassDeclaration = [{
+    OperandRange getSuccessorEntryOperands(unsigned index);
+  }];
+}
+
+def TypeScript_ConditionOp : TypeScript_Op<"condition",
+                         [HasParent<"WhileOp">, NoSideEffect, Terminator]> {
+  let summary = "loop continuation condition";
+  let description = [{
+    This operation accepts the continuation (i.e., inverse of exit) condition
+    of the `scf.while` construct. If its first argument is true, the "after"
+    region of `scf.while` is executed, with the remaining arguments forwarded
+    to the entry block of the region. Otherwise, the loop terminates.
+  }];
+
+  let arguments = (ins TypeScript_Boolean:$condition, Variadic<AnyType>:$args);
+
+  let assemblyFormat =
+      [{ `(` $condition `)` attr-dict ($args^ `:` type($args))? }];
+
+  // Override the default verifier, everything is checked by traits.
   let verifier = ?;
 }
 

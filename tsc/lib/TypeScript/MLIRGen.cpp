@@ -80,7 +80,7 @@ namespace
             fileName = fileNameParam;
         }
 
-        mlir::ModuleOp mlirGen(SourceFile module)
+        mlir::ModuleOp mlirGenSourceFile(SourceFile module)
         {
             sourceFile = module;
 
@@ -208,6 +208,10 @@ namespace
             else if (kind == SyntaxKind::ReturnStatement)
             {
                 return mlirGen(statementAST.as<ReturnStatement>(), genContext);
+            }
+            else if (kind == SyntaxKind::DoStatement)
+            {
+                return mlirGen(statementAST.as<DoStatement>(), genContext);
             }
             else if (kind == SyntaxKind::Block)
             {
@@ -810,9 +814,35 @@ namespace
             }
 
             builder.setInsertionPointAfter(ifOp);
-
             return mlir::success();
         }
+
+        mlir::LogicalResult mlirGen(DoStatement doStatementAST, const GenContext &genContext)
+        {
+            auto location = loc(doStatementAST);
+
+            SmallVector<mlir::Type, 0> types;
+            SmallVector<mlir::Value, 0> operands;
+
+            auto whileOp = builder.create<mlir_ts::WhileOp>(location, types, operands);
+            /*auto *before =*/ builder.createBlock(&whileOp.before(), {}, types);
+            /*auto *after =*/ builder.createBlock(&whileOp.after(), {}, types);
+
+            builder.setInsertionPointToStart(&whileOp.before().front());
+
+            // body
+            mlirGen(doStatementAST->statement, genContext);
+
+            auto conditionValue = mlirGen(doStatementAST->expression, genContext);
+            builder.create<mlir_ts::ConditionOp>(location, conditionValue, mlir::ValueRange{});
+
+            // just simple return
+            builder.setInsertionPointToStart(&whileOp.after().front());
+            builder.create<mlir_ts::YieldOp>(location);
+
+            builder.setInsertionPointAfter(whileOp);
+            return mlir::success();
+        }        
 
         mlir::Value mlirGen(UnaryExpression unaryExpressionAST, const GenContext &genContext)
         {
@@ -1677,7 +1707,7 @@ namespace typescript
     {
         Parser parser;
         auto sourceFile = parser.parseSourceFile(stows(static_cast<std::string>(fileName)), stows(static_cast<std::string>(source)), ScriptTarget::Latest);
-        return MLIRGenImpl(context, fileName).mlirGen(sourceFile);
+        return MLIRGenImpl(context, fileName).mlirGenSourceFile(sourceFile);
     }
 
 } // namespace typescript

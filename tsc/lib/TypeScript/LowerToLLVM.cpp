@@ -935,7 +935,7 @@ namespace
                 rewriter.create<LLVM::BrOp>(loc, ArrayRef<Value>(), remainingOpsBlock);
             }
 
-            // Move blocks from the "then" region to the region containing 'scf.if',
+            // Move blocks from the "then" region to the region containing 'if',
             // place it before the continuation block, and branch to it.
             auto &thenRegion = ifOp.thenRegion();
             auto *thenBlock = &thenRegion.front();

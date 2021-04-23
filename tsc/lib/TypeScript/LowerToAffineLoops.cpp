@@ -156,6 +156,51 @@ struct PostfixUnaryOpLowering : public OpRewritePattern<mlir_ts::PostfixUnaryOp>
     }
 };  
 
+struct WhileOpLowering : public OpRewritePattern<mlir_ts::WhileOp>
+{
+    using OpRewritePattern<mlir_ts::WhileOp>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::WhileOp whileOp, PatternRewriter &rewriter) const final
+    {
+        OpBuilder::InsertionGuard guard(rewriter);
+        Location loc = whileOp.getLoc();
+
+        // Split the current block before the WhileOp to create the inlining point.
+        auto *currentBlock = rewriter.getInsertionBlock();
+        auto *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+
+        // Inline both regions.
+        auto *after = &whileOp.after().front();
+        auto *afterLast = &whileOp.after().back();
+        auto *before = &whileOp.before().front();
+        auto *beforeLast = &whileOp.before().back();
+        rewriter.inlineRegionBefore(whileOp.after(), continuation);
+        rewriter.inlineRegionBefore(whileOp.before(), after);
+
+        // Branch to the "before" region.
+        rewriter.setInsertionPointToEnd(currentBlock);
+        rewriter.create<BranchOp>(loc, before, whileOp.inits());
+
+        // Replace terminators with branches. Assuming bodies are SESE, which holds
+        // given only the patterns from this file, we only need to look at the last
+        // block. This should be reconsidered if we allow break/continue.
+        rewriter.setInsertionPointToEnd(beforeLast);
+        auto condOp = cast<ConditionOp>(beforeLast->getTerminator());
+        auto castToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), condOp.condition());
+        rewriter.replaceOpWithNewOp<CondBranchOp>(condOp, castToI1, after, condOp.args(), continuation, ValueRange());
+
+        rewriter.setInsertionPointToEnd(afterLast);
+        auto yieldOp = cast<mlir_ts::YieldOp>(afterLast->getTerminator());
+        rewriter.replaceOpWithNewOp<BranchOp>(yieldOp, before, yieldOp.results());
+
+        // Replace the op with values "yielded" from the "before" region, which are
+        // visible by dominance.
+        rewriter.replaceOp(whileOp, condOp.args());
+
+        return success();  
+    }
+};  
+
 //===----------------------------------------------------------------------===//
 // TypeScriptToAffineLoweringPass
 //===----------------------------------------------------------------------===//
@@ -263,7 +308,8 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         ParamOptionalOpLowering,
         ParamDefaultValueOpLowering,
         PrefixUnaryOpLowering,
-        PostfixUnaryOpLowering
+        PostfixUnaryOpLowering,
+        WhileOpLowering
     >(&getContext());
 
     // With the target and rewrite patterns defined, we can now attempt the
