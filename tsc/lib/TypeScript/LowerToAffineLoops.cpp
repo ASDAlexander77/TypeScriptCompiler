@@ -156,6 +156,69 @@ struct PostfixUnaryOpLowering : public OpRewritePattern<mlir_ts::PostfixUnaryOp>
     }
 };  
 
+struct ArithmeticBinaryOpLowering : public OpRewritePattern<mlir_ts::ArithmeticBinaryOp>
+{
+    using OpRewritePattern<mlir_ts::ArithmeticBinaryOp>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ArithmeticBinaryOp arithmeticBinaryOp, PatternRewriter &rewriter) const final
+    {
+        auto opCode = (SyntaxKind)arithmeticBinaryOp.opCode();
+        switch (opCode)
+        {
+        case SyntaxKind::PlusToken:
+            BinOp<mlir_ts::ArithmeticBinaryOp, AddIOp, AddFOp>(arithmeticBinaryOp, rewriter);
+            return success();
+
+        case SyntaxKind::MinusToken:
+            BinOp<mlir_ts::ArithmeticBinaryOp, SubIOp, SubFOp>(arithmeticBinaryOp, rewriter);
+            return success();
+
+        case SyntaxKind::AsteriskToken:
+            BinOp<mlir_ts::ArithmeticBinaryOp, MulIOp, MulFOp>(arithmeticBinaryOp, rewriter);
+            return success();
+
+        case SyntaxKind::SlashToken:
+            BinOp<mlir_ts::ArithmeticBinaryOp, DivFOp, DivFOp>(arithmeticBinaryOp, rewriter);
+            return success();
+
+        case SyntaxKind::GreaterThanGreaterThanToken:
+            BinOp<mlir_ts::ArithmeticBinaryOp, SignedShiftRightOp, SignedShiftRightOp>(arithmeticBinaryOp, rewriter);
+            return success();
+
+        case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
+            BinOp<mlir_ts::ArithmeticBinaryOp, UnsignedShiftRightOp, UnsignedShiftRightOp>(arithmeticBinaryOp, rewriter);
+            return success();
+
+        case SyntaxKind::LessThanLessThanToken:
+            BinOp<mlir_ts::ArithmeticBinaryOp, ShiftLeftOp, ShiftLeftOp>(arithmeticBinaryOp, rewriter);
+            return success();                
+
+        case SyntaxKind::AmpersandToken:
+            BinOp<mlir_ts::ArithmeticBinaryOp, AndOp, AndOp>(arithmeticBinaryOp, rewriter);
+            return success();                    
+
+        case SyntaxKind::BarToken:
+            BinOp<mlir_ts::ArithmeticBinaryOp, OrOp, OrOp>(arithmeticBinaryOp, rewriter);
+            return success();                    
+
+        case SyntaxKind::CaretToken:
+            BinOp<mlir_ts::ArithmeticBinaryOp, XOrOp, XOrOp>(arithmeticBinaryOp, rewriter);
+            return success();                    
+
+        case SyntaxKind::PercentToken:
+            BinOp<mlir_ts::ArithmeticBinaryOp, RemFOp, RemFOp>(arithmeticBinaryOp, rewriter);
+            return success();                    
+
+        case SyntaxKind::AsteriskAsteriskToken:
+            BinOp<mlir_ts::ArithmeticBinaryOp, PowFOp, PowFOp>(arithmeticBinaryOp, rewriter);
+            return success();                    
+
+        default:
+            llvm_unreachable("not implemented");
+        }
+    }
+};
+
 struct IfOpLowering : public OpRewritePattern<mlir_ts::IfOp>
 {
     using OpRewritePattern<mlir_ts::IfOp>::OpRewritePattern;
@@ -395,7 +458,6 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         mlir_ts::AddressOfOp,
         mlir_ts::AddressOfConstStringOp,
         mlir_ts::AddressOfElementOp,
-        mlir_ts::ArithmeticBinaryOp,
         mlir_ts::ArithmeticUnaryOp,
         mlir_ts::AssertOp,
         mlir_ts::CallOp,
@@ -424,6 +486,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     // the set of patterns that will lower the TypeScript operations.
     OwningRewritePatternList patterns;
     patterns.insert<
+        ArithmeticBinaryOpLowering,
         ParamOpLowering,
         ParamOptionalOpLowering,
         ParamDefaultValueOpLowering,

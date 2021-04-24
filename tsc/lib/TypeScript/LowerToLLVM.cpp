@@ -734,69 +734,6 @@ namespace
         }
     };
 
-    struct ArithmeticBinaryOpLowering : public OpConversionPattern<mlir_ts::ArithmeticBinaryOp>
-    {
-        using OpConversionPattern<mlir_ts::ArithmeticBinaryOp>::OpConversionPattern;
-
-        LogicalResult matchAndRewrite(mlir_ts::ArithmeticBinaryOp arithmeticBinaryOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
-        {
-            auto opCode = (SyntaxKind)arithmeticBinaryOp.opCode();
-            switch (opCode)
-            {
-            case SyntaxKind::PlusToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, AddIOp, AddFOp>(arithmeticBinaryOp, rewriter);
-                return success();
-
-            case SyntaxKind::MinusToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, SubIOp, SubFOp>(arithmeticBinaryOp, rewriter);
-                return success();
-
-            case SyntaxKind::AsteriskToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, MulIOp, MulFOp>(arithmeticBinaryOp, rewriter);
-                return success();
-
-            case SyntaxKind::SlashToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, DivFOp, DivFOp>(arithmeticBinaryOp, rewriter);
-                return success();
-
-            case SyntaxKind::GreaterThanGreaterThanToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, SignedShiftRightOp, SignedShiftRightOp>(arithmeticBinaryOp, rewriter);
-                return success();
-
-            case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, UnsignedShiftRightOp, UnsignedShiftRightOp>(arithmeticBinaryOp, rewriter);
-                return success();
-
-            case SyntaxKind::LessThanLessThanToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, ShiftLeftOp, ShiftLeftOp>(arithmeticBinaryOp, rewriter);
-                return success();                
-
-            case SyntaxKind::AmpersandToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, AndOp, AndOp>(arithmeticBinaryOp, rewriter);
-                return success();                    
-
-            case SyntaxKind::BarToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, OrOp, OrOp>(arithmeticBinaryOp, rewriter);
-                return success();                    
-
-            case SyntaxKind::CaretToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, XOrOp, XOrOp>(arithmeticBinaryOp, rewriter);
-                return success();                    
-
-            case SyntaxKind::PercentToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, RemFOp, RemFOp>(arithmeticBinaryOp, rewriter);
-                return success();                    
-
-            case SyntaxKind::AsteriskAsteriskToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, PowFOp, PowFOp>(arithmeticBinaryOp, rewriter);
-                return success();                    
-
-            default:
-                llvm_unreachable("not implemented");
-            }
-        }
-    };
-
     struct LogicalBinaryOpLowering : public OpConversionPattern<mlir_ts::LogicalBinaryOp>
     {
         using OpConversionPattern<mlir_ts::LogicalBinaryOp>::OpConversionPattern;
@@ -1089,7 +1026,6 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         AddressOfOpLowering,
         AddressOfConstStringOpLowering,
         AddressOfElementOpLowering,
-        ArithmeticBinaryOpLowering,
         ArithmeticUnaryOpLowering,
         AssertOpLowering,
         CastOpLowering,
