@@ -213,6 +213,10 @@ namespace
             {
                 return mlirGen(statementAST.as<DoStatement>(), genContext);
             }
+            else if (kind == SyntaxKind::WhileStatement)
+            {
+                return mlirGen(statementAST.as<WhileStatement>(), genContext);
+            }
             else if (kind == SyntaxKind::Block)
             {
                 return mlirGen(statementAST.as<Block>(), genContext);
@@ -843,6 +847,33 @@ namespace
             builder.setInsertionPointAfter(whileOp);
             return mlir::success();
         }        
+
+        mlir::LogicalResult mlirGen(WhileStatement whileStatementAST, const GenContext &genContext)
+        {
+            auto location = loc(whileStatementAST);
+
+            SmallVector<mlir::Type, 0> types;
+            SmallVector<mlir::Value, 0> operands;
+
+            auto whileOp = builder.create<mlir_ts::WhileOp>(location, types, operands);
+            /*auto *before =*/ builder.createBlock(&whileOp.before(), {}, types);
+            /*auto *after =*/ builder.createBlock(&whileOp.after(), {}, types);
+
+            builder.setInsertionPointToStart(&whileOp.before().front());
+
+            auto conditionValue = mlirGen(whileStatementAST->expression, genContext);
+            builder.create<mlir_ts::ConditionOp>(location, conditionValue, mlir::ValueRange{});
+
+            builder.setInsertionPointToStart(&whileOp.after().front());
+
+            // body
+            mlirGen(whileStatementAST->statement, genContext);
+
+            builder.create<mlir_ts::YieldOp>(location);
+
+            builder.setInsertionPointAfter(whileOp);
+            return mlir::success();
+        }           
 
         mlir::Value mlirGen(UnaryExpression unaryExpressionAST, const GenContext &genContext)
         {
