@@ -217,6 +217,10 @@ namespace
             {
                 return mlirGen(statementAST.as<WhileStatement>(), genContext);
             }
+            else if (kind == SyntaxKind::ForStatement)
+            {
+                return mlirGen(statementAST.as<ForStatement>(), genContext);
+            }
             else if (kind == SyntaxKind::Block)
             {
                 return mlirGen(statementAST.as<Block>(), genContext);
@@ -316,11 +320,11 @@ namespace
             llvm_unreachable("unknown expression");
         }
 
-        mlir::LogicalResult mlirGen(VariableStatement variableStatementAST, const GenContext &genContext)
+        mlir::LogicalResult mlirGen(VariableDeclarationList variableDeclarationListAST, bool isConst, const GenContext &genContext)
         {
-            auto location = loc(variableStatementAST);
+            auto location = loc(variableDeclarationListAST);
 
-            for (auto &item : variableStatementAST->declarationList->declarations)
+            for (auto &item : variableDeclarationListAST->declarations)
             {
                 mlir::Type type;
 
@@ -349,7 +353,7 @@ namespace
                 auto isGlobal = symbolTable.getCurScope()->getParentScope() == nullptr;
 
                 auto varDecl = std::make_shared<VariableDeclarationDOM>(name, type, location);
-                auto isConst = hasConstModifier(variableStatementAST);
+                auto isConst = isConst;
                 if (!isConst)
                 {
                     varDecl->setReadWriteAccess();
@@ -401,6 +405,12 @@ namespace
             }
 
             return mlir::success();
+
+        }
+
+        mlir::LogicalResult mlirGen(VariableStatement variableStatementAST, const GenContext &genContext)
+        {
+            return mlirGen(variableStatementAST->declarationList, hasConstModifier(variableStatementAST), genContext);
         }
         
         std::vector<std::shared_ptr<FunctionParamDOM>> mlirGenParameters(SignatureDeclarationBase parametersContextAST,
@@ -874,6 +884,55 @@ namespace
             builder.setInsertionPointAfter(whileOp);
             return mlir::success();
         }           
+
+        mlir::LogicalResult mlirGen(ForStatement forStatementAST, const GenContext &genContext)
+        {
+            auto location = loc(forStatementAST);
+
+            // initializer
+            // TODO: why do we have ForInitialier
+            if (forStatementAST->initializer.is<Expression>())
+            {
+                auto init = mlirGen(forStatementAST->initializer.as<Expression>(), genContext);
+                if (!init)
+                {
+                    return mlir::failure();
+                }
+            }
+            else if (forStatementAST->initializer.is<VariableDeclarationList>())
+            {
+                auto result = mlirGen(forStatementAST->initializer.as<VariableDeclarationList>(), false, genContext);
+                if (!result)
+                {
+                    return result;
+                }
+            }
+
+            SmallVector<mlir::Type, 0> types;
+            SmallVector<mlir::Value, 0> operands;
+
+            auto whileOp = builder.create<mlir_ts::WhileOp>(location, types, operands);
+            /*auto *before =*/ builder.createBlock(&whileOp.before(), {}, types);
+            /*auto *after =*/ builder.createBlock(&whileOp.after(), {}, types);
+
+            builder.setInsertionPointToStart(&whileOp.before().front());
+
+            auto conditionValue = mlirGen(forStatementAST->condition, genContext);
+            builder.create<mlir_ts::ConditionOp>(location, conditionValue, mlir::ValueRange{});
+
+            builder.setInsertionPointToStart(&whileOp.after().front());
+
+            // body
+            mlirGen(forStatementAST->statement, genContext);
+
+            // increment
+            mlirGen(forStatementAST->incrementor, genContext);
+
+            builder.create<mlir_ts::YieldOp>(location);
+
+            builder.setInsertionPointAfter(whileOp);
+            return mlir::success();
+        }         
 
         mlir::Value mlirGen(UnaryExpression unaryExpressionAST, const GenContext &genContext)
         {
