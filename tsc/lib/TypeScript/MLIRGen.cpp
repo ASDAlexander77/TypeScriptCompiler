@@ -221,6 +221,14 @@ namespace
             {
                 return mlirGen(statementAST.as<ForStatement>(), genContext);
             }
+            else if (kind == SyntaxKind::ContinueStatement)
+            {
+                return mlirGen(statementAST.as<ContinueStatement>(), genContext);
+            }
+            else if (kind == SyntaxKind::BreakStatement)
+            {
+                return mlirGen(statementAST.as<BreakStatement>(), genContext);
+            }            
             else if (kind == SyntaxKind::Block)
             {
                 return mlirGen(statementAST.as<Block>(), genContext);
@@ -932,6 +940,20 @@ namespace
             builder.setInsertionPointAfter(whileOp);
             return mlir::success();
         }         
+
+        mlir::LogicalResult mlirGen(ContinueStatement continueStatementAST, const GenContext &genContext)
+        {
+            auto location = loc(continueStatementAST);
+
+            llvm_unreachable("not implemented");
+        }
+
+        mlir::LogicalResult mlirGen(BreakStatement breakStatementAST, const GenContext &genContext)
+        {
+            auto location = loc(breakStatementAST);
+
+            llvm_unreachable("not implemented");
+        }
 
         mlir::Value mlirGen(UnaryExpression unaryExpressionAST, const GenContext &genContext)
         {

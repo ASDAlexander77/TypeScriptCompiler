@@ -849,6 +849,16 @@ def TypeScript_ConditionOp : TypeScript_Op<"condition",
   let verifier = ?;
 }
 
+def TypeScript_ContinueOp : TypeScript_Op<"continue",
+                         [HasParent<"WhileOp">, NoSideEffect, Terminator]> {
+  let summary = "loop continuation";
+}
+
+def TypeScript_BreakOp : TypeScript_Op<"break",
+                         [HasParent<"WhileOp">, NoSideEffect, Terminator]> {
+  let summary = "loop termination";
+}
+
 def TypeScript_AddressOfOp : TypeScript_Op<"addressof"> {
   let arguments = (ins FlatSymbolRefAttr:$global_name);
   let results = (outs TypeScript_AnyRef:$reference);
