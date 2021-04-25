@@ -353,7 +353,6 @@ namespace
                 auto isGlobal = symbolTable.getCurScope()->getParentScope() == nullptr;
 
                 auto varDecl = std::make_shared<VariableDeclarationDOM>(name, type, location);
-                auto isConst = isConst;
                 if (!isConst)
                 {
                     varDecl->setReadWriteAccess();
@@ -902,7 +901,7 @@ namespace
             else if (forStatementAST->initializer.is<VariableDeclarationList>())
             {
                 auto result = mlirGen(forStatementAST->initializer.as<VariableDeclarationList>(), false, genContext);
-                if (!result)
+                if (failed(result))
                 {
                     return result;
                 }
