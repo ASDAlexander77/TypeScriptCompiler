@@ -368,7 +368,6 @@ namespace
             CodeLogicHelper clh(op, rewriter);
             TypeConverterHelper tch(*getTypeConverter());
 
-            auto opTyped = mlir_ts::EntryOpAdaptor(op);
             auto location = op.getLoc();
 
             mlir::Value allocValue;

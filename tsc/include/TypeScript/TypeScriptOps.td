@@ -850,12 +850,12 @@ def TypeScript_ConditionOp : TypeScript_Op<"condition",
 }
 
 def TypeScript_ContinueOp : TypeScript_Op<"continue",
-                         [HasParent<"WhileOp">, NoSideEffect, Terminator]> {
+                         [NoSideEffect]> {
   let summary = "loop continuation";
 }
 
 def TypeScript_BreakOp : TypeScript_Op<"break",
-                         [HasParent<"WhileOp">, NoSideEffect, Terminator]> {
+                         [NoSideEffect]> {
   let summary = "loop termination";
 }
 

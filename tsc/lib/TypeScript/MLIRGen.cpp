@@ -945,14 +945,16 @@ namespace
         {
             auto location = loc(continueStatementAST);
 
-            llvm_unreachable("not implemented");
+            builder.create<mlir_ts::ContinueOp>(location);
+            return mlir::success();
         }
 
         mlir::LogicalResult mlirGen(BreakStatement breakStatementAST, const GenContext &genContext)
         {
             auto location = loc(breakStatementAST);
 
-            llvm_unreachable("not implemented");
+            builder.create<mlir_ts::BreakOp>(location);
+            return mlir::success();
         }
 
         mlir::Value mlirGen(UnaryExpression unaryExpressionAST, const GenContext &genContext)

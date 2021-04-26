@@ -18,372 +18,437 @@ using namespace mlir;
 using namespace ::typescript;
 namespace mlir_ts = mlir::typescript;
 
-//===----------------------------------------------------------------------===//
-// TypeScriptToAffine RewritePatterns
-//===----------------------------------------------------------------------===//
-
-struct ParamOpLowering : public OpRewritePattern<mlir_ts::ParamOp>
+namespace
 {
-    using OpRewritePattern<mlir_ts::ParamOp>::OpRewritePattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::ParamOp paramOp, PatternRewriter &rewriter) const final
+    struct TSContextImpl 
     {
-        rewriter.replaceOpWithNewOp<mlir_ts::VariableOp>(paramOp, paramOp.getType(), paramOp.argValue());
-        return success();
+        SmallVector<mlir::Block *, 8> breakLoops;
+    };
+
+    struct TSContext 
+    {
+        TSContext();
+        ~TSContext();
+
+        TSContextImpl *getImpl() { return impl.get(); }
+
+    private:
+        std::unique_ptr<TSContextImpl> impl;
+    };
+
+    TSContext::TSContext() 
+    {
+        impl = std::make_unique<TSContextImpl>();
     }
-};
 
-struct ParamOptionalOpLowering : public OpRewritePattern<mlir_ts::ParamOptionalOp>
-{
-    using OpRewritePattern<mlir_ts::ParamOptionalOp>::OpRewritePattern;
+    TSContext::~TSContext() = default;
 
-    LogicalResult matchAndRewrite(mlir_ts::ParamOptionalOp paramOp, PatternRewriter &rewriter) const final
+    class TSTypeConverter : public TypeConverter {
+    public:
+        explicit TSTypeConverter();
+    };
+
+    TSTypeConverter::TSTypeConverter() : TypeConverter()
     {
-        TypeHelper th(rewriter); 
+    }    
 
-        auto location = paramOp.getLoc();
+    template <typename OpTy>
+    class TsPattern : public OpConversionPattern<OpTy> 
+    {
+    public:
+        TsPattern<OpTy>(MLIRContext *context, TSTypeConverter &converter, TSContextImpl *tsContext, PatternBenefit benefit = 1) 
+            : OpConversionPattern<OpTy>::OpConversionPattern(context, benefit), tsContext(tsContext), typeConverter(converter) {}
 
-        if (paramOp.defaultValueRegion().empty())
+    protected:
+        TSContextImpl *tsContext;
+        TSTypeConverter &typeConverter;
+    };
+
+    //===----------------------------------------------------------------------===//
+    // TypeScriptToAffine RewritePatterns
+    //===----------------------------------------------------------------------===//
+
+    struct ParamOpLowering : public OpRewritePattern<mlir_ts::ParamOp>
+    {
+        using OpRewritePattern<mlir_ts::ParamOp>::OpRewritePattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::ParamOp paramOp, PatternRewriter &rewriter) const final
         {
             rewriter.replaceOpWithNewOp<mlir_ts::VariableOp>(paramOp, paramOp.getType(), paramOp.argValue());
-            return success();            
+            return success();
         }
+    };
 
-        Value variable = rewriter.create<mlir_ts::VariableOp>(location, paramOp.getType(), mlir::Value());
-
-        // scf.if
-        auto index = paramOp.paramIndex();
-        auto indexConstant = rewriter.create<mlir_ts::ConstantOp>(location, rewriter.getI32IntegerAttr(index.getValue()));
-        // replace with ts op to avoid cast
-        auto condValue = rewriter.create<CmpIOp>(location, CmpIPredicate::ult, paramOp.params_count(), indexConstant);
-        auto compare = rewriter.create<mlir_ts::LogicalBinaryOp>(
-            location,
-            th.getBooleanType(),
-            rewriter.getI32IntegerAttr((int)SyntaxKind::LessThanToken),
-            paramOp.params_count(),
-            indexConstant);
-        auto ifOp = rewriter.create<mlir_ts::IfOp>(location, paramOp.argValue().getType(), compare, true);
-
-        auto sp = rewriter.saveInsertionPoint();
-
-        // then block
-        auto &thenRegion = ifOp.thenRegion();
-
-        rewriter.setInsertionPointToStart(&thenRegion.back());
-
-        rewriter.inlineRegionBefore(paramOp.defaultValueRegion(), &ifOp.thenRegion().back());
-        rewriter.eraseBlock(&ifOp.thenRegion().back());
-
-        // else block
-        auto &elseRegion = ifOp.elseRegion();
-
-        rewriter.setInsertionPointToStart(&elseRegion.back());
-
-        rewriter.create<mlir_ts::YieldOp>(location, paramOp.argValue());
-
-        rewriter.restoreInsertionPoint(sp);
-
-        // save op
-        rewriter.create<mlir_ts::StoreOp>(location, ifOp.results().front(), variable);
-        rewriter.replaceOp(paramOp, variable);
-        return success();
-    }
-};
-
-struct ParamDefaultValueOpLowering : public OpRewritePattern<mlir_ts::ParamDefaultValueOp>
-{
-    using OpRewritePattern<mlir_ts::ParamDefaultValueOp>::OpRewritePattern;
-
-    LogicalResult matchAndRewrite(mlir_ts::ParamDefaultValueOp op, PatternRewriter &rewriter) const final
+    struct ParamOptionalOpLowering : public OpRewritePattern<mlir_ts::ParamOptionalOp>
     {
-        rewriter.replaceOpWithNewOp<mlir_ts::YieldOp>(op, op.results());
-        return success();
-    }
-};
+        using OpRewritePattern<mlir_ts::ParamOptionalOp>::OpRewritePattern;
 
-struct PrefixUnaryOpLowering : public OpRewritePattern<mlir_ts::PrefixUnaryOp>
-{
-    using OpRewritePattern<mlir_ts::PrefixUnaryOp>::OpRewritePattern;
-
-    LogicalResult matchAndRewrite(mlir_ts::PrefixUnaryOp op, PatternRewriter &rewriter) const final
-    {
-        CodeLogicHelper clh(op, rewriter);
-        auto cst1 = rewriter.create<mlir_ts::ConstantOp>(op->getLoc(), rewriter.getI32IntegerAttr(1));
-
-        SyntaxKind opCode;
-        switch (op.opCode())
+        LogicalResult matchAndRewrite(mlir_ts::ParamOptionalOp paramOp, PatternRewriter &rewriter) const final
         {
-            case SyntaxKind::PlusPlusToken:
-                opCode = SyntaxKind::PlusToken;
-                break;
-            case SyntaxKind::MinusMinusToken:
-                opCode = SyntaxKind::MinusToken;
-                break;
+            TypeHelper th(rewriter); 
+
+            auto location = paramOp.getLoc();
+
+            if (paramOp.defaultValueRegion().empty())
+            {
+                rewriter.replaceOpWithNewOp<mlir_ts::VariableOp>(paramOp, paramOp.getType(), paramOp.argValue());
+                return success();            
+            }
+
+            Value variable = rewriter.create<mlir_ts::VariableOp>(location, paramOp.getType(), mlir::Value());
+
+            // scf.if
+            auto index = paramOp.paramIndex();
+            auto indexConstant = rewriter.create<mlir_ts::ConstantOp>(location, rewriter.getI32IntegerAttr(index.getValue()));
+            // replace with ts op to avoid cast
+            auto condValue = rewriter.create<CmpIOp>(location, CmpIPredicate::ult, paramOp.params_count(), indexConstant);
+            auto compare = rewriter.create<mlir_ts::LogicalBinaryOp>(
+                location,
+                th.getBooleanType(),
+                rewriter.getI32IntegerAttr((int)SyntaxKind::LessThanToken),
+                paramOp.params_count(),
+                indexConstant);
+            auto ifOp = rewriter.create<mlir_ts::IfOp>(location, paramOp.argValue().getType(), compare, true);
+
+            auto sp = rewriter.saveInsertionPoint();
+
+            // then block
+            auto &thenRegion = ifOp.thenRegion();
+
+            rewriter.setInsertionPointToStart(&thenRegion.back());
+
+            rewriter.inlineRegionBefore(paramOp.defaultValueRegion(), &ifOp.thenRegion().back());
+            rewriter.eraseBlock(&ifOp.thenRegion().back());
+
+            // else block
+            auto &elseRegion = ifOp.elseRegion();
+
+            rewriter.setInsertionPointToStart(&elseRegion.back());
+
+            rewriter.create<mlir_ts::YieldOp>(location, paramOp.argValue());
+
+            rewriter.restoreInsertionPoint(sp);
+
+            // save op
+            rewriter.create<mlir_ts::StoreOp>(location, ifOp.results().front(), variable);
+            rewriter.replaceOp(paramOp, variable);
+            return success();
         }
+    };
 
-        rewriter.replaceOpWithNewOp<mlir_ts::ArithmeticBinaryOp>(op, op.getType(), rewriter.getI32IntegerAttr(static_cast<int32_t>(opCode)), op.operand1(), cst1);
-        clh.saveResult(op, op->getResult(0));
-
-        return success();        
-    }
-};  
-
-struct PostfixUnaryOpLowering : public OpRewritePattern<mlir_ts::PostfixUnaryOp>
-{
-    using OpRewritePattern<mlir_ts::PostfixUnaryOp>::OpRewritePattern;
-
-    LogicalResult matchAndRewrite(mlir_ts::PostfixUnaryOp op, PatternRewriter &rewriter) const final
+    struct ParamDefaultValueOpLowering : public OpRewritePattern<mlir_ts::ParamDefaultValueOp>
     {
-        CodeLogicHelper clh(op, rewriter);
-        auto cst1 = rewriter.create<mlir_ts::ConstantOp>(op->getLoc(), rewriter.getI32IntegerAttr(1));
+        using OpRewritePattern<mlir_ts::ParamDefaultValueOp>::OpRewritePattern;
 
-        SyntaxKind opCode;
-        switch (op.opCode())
+        LogicalResult matchAndRewrite(mlir_ts::ParamDefaultValueOp op, PatternRewriter &rewriter) const final
         {
-            case SyntaxKind::PlusPlusToken:
-                opCode = SyntaxKind::PlusToken;
-                break;
-            case SyntaxKind::MinusMinusToken:
-                opCode = SyntaxKind::MinusToken;
-                break;
+            rewriter.replaceOpWithNewOp<mlir_ts::YieldOp>(op, op.results());
+            return success();
         }
+    };
 
-        auto result = rewriter.create<mlir_ts::ArithmeticBinaryOp>(op->getLoc(), op.getType(), rewriter.getI32IntegerAttr(static_cast<int32_t>(opCode)), op.operand1(), cst1);
-        clh.saveResult(op, result);
-
-        rewriter.replaceOp(op, op.operand1());
-        return success();  
-    }
-};  
-
-struct ArithmeticBinaryOpLowering : public OpRewritePattern<mlir_ts::ArithmeticBinaryOp>
-{
-    using OpRewritePattern<mlir_ts::ArithmeticBinaryOp>::OpRewritePattern;
-
-    LogicalResult matchAndRewrite(mlir_ts::ArithmeticBinaryOp arithmeticBinaryOp, PatternRewriter &rewriter) const final
+    struct PrefixUnaryOpLowering : public OpRewritePattern<mlir_ts::PrefixUnaryOp>
     {
-        auto opCode = (SyntaxKind)arithmeticBinaryOp.opCode();
-        switch (opCode)
+        using OpRewritePattern<mlir_ts::PrefixUnaryOp>::OpRewritePattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::PrefixUnaryOp op, PatternRewriter &rewriter) const final
         {
-        case SyntaxKind::PlusToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, AddIOp, AddFOp>(arithmeticBinaryOp, rewriter);
-            return success();
+            CodeLogicHelper clh(op, rewriter);
+            auto cst1 = rewriter.create<mlir_ts::ConstantOp>(op->getLoc(), rewriter.getI32IntegerAttr(1));
 
-        case SyntaxKind::MinusToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, SubIOp, SubFOp>(arithmeticBinaryOp, rewriter);
-            return success();
+            SyntaxKind opCode;
+            switch (op.opCode())
+            {
+                case SyntaxKind::PlusPlusToken:
+                    opCode = SyntaxKind::PlusToken;
+                    break;
+                case SyntaxKind::MinusMinusToken:
+                    opCode = SyntaxKind::MinusToken;
+                    break;
+            }
 
-        case SyntaxKind::AsteriskToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, MulIOp, MulFOp>(arithmeticBinaryOp, rewriter);
-            return success();
+            rewriter.replaceOpWithNewOp<mlir_ts::ArithmeticBinaryOp>(op, op.getType(), rewriter.getI32IntegerAttr(static_cast<int32_t>(opCode)), op.operand1(), cst1);
+            clh.saveResult(op, op->getResult(0));
 
-        case SyntaxKind::SlashToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, DivFOp, DivFOp>(arithmeticBinaryOp, rewriter);
-            return success();
-
-        case SyntaxKind::GreaterThanGreaterThanToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, SignedShiftRightOp, SignedShiftRightOp>(arithmeticBinaryOp, rewriter);
-            return success();
-
-        case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, UnsignedShiftRightOp, UnsignedShiftRightOp>(arithmeticBinaryOp, rewriter);
-            return success();
-
-        case SyntaxKind::LessThanLessThanToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, ShiftLeftOp, ShiftLeftOp>(arithmeticBinaryOp, rewriter);
-            return success();                
-
-        case SyntaxKind::AmpersandToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, AndOp, AndOp>(arithmeticBinaryOp, rewriter);
-            return success();                    
-
-        case SyntaxKind::BarToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, OrOp, OrOp>(arithmeticBinaryOp, rewriter);
-            return success();                    
-
-        case SyntaxKind::CaretToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, XOrOp, XOrOp>(arithmeticBinaryOp, rewriter);
-            return success();                    
-
-        case SyntaxKind::PercentToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, RemFOp, RemFOp>(arithmeticBinaryOp, rewriter);
-            return success();                    
-
-        case SyntaxKind::AsteriskAsteriskToken:
-            BinOp<mlir_ts::ArithmeticBinaryOp, PowFOp, PowFOp>(arithmeticBinaryOp, rewriter);
-            return success();                    
-
-        default:
-            llvm_unreachable("not implemented");
+            return success();        
         }
-    }
-};
+    };  
 
-struct IfOpLowering : public OpRewritePattern<mlir_ts::IfOp>
-{
-    using OpRewritePattern<mlir_ts::IfOp>::OpRewritePattern;
-
-    LogicalResult matchAndRewrite(mlir_ts::IfOp ifOp, PatternRewriter &rewriter) const final
+    struct PostfixUnaryOpLowering : public OpRewritePattern<mlir_ts::PostfixUnaryOp>
     {
-        auto loc = ifOp.getLoc();
+        using OpRewritePattern<mlir_ts::PostfixUnaryOp>::OpRewritePattern;
 
-        // Start by splitting the block containing the 'scf.if' into two parts.
-        // The part before will contain the condition, the part after will be the
-        // continuation point.
-        auto *condBlock = rewriter.getInsertionBlock();
-        auto opPosition = rewriter.getInsertionPoint();
-        auto *remainingOpsBlock = rewriter.splitBlock(condBlock, opPosition);
-        Block *continueBlock;
-        if (ifOp.getNumResults() == 0) {
-            continueBlock = remainingOpsBlock;
-        } else {
-            continueBlock =
-                rewriter.createBlock(remainingOpsBlock, ifOp.getResultTypes());
-            rewriter.create<BranchOp>(loc, remainingOpsBlock);
+        LogicalResult matchAndRewrite(mlir_ts::PostfixUnaryOp op, PatternRewriter &rewriter) const final
+        {
+            CodeLogicHelper clh(op, rewriter);
+            auto cst1 = rewriter.create<mlir_ts::ConstantOp>(op->getLoc(), rewriter.getI32IntegerAttr(1));
+
+            SyntaxKind opCode;
+            switch (op.opCode())
+            {
+                case SyntaxKind::PlusPlusToken:
+                    opCode = SyntaxKind::PlusToken;
+                    break;
+                case SyntaxKind::MinusMinusToken:
+                    opCode = SyntaxKind::MinusToken;
+                    break;
+            }
+
+            auto result = rewriter.create<mlir_ts::ArithmeticBinaryOp>(op->getLoc(), op.getType(), rewriter.getI32IntegerAttr(static_cast<int32_t>(opCode)), op.operand1(), cst1);
+            clh.saveResult(op, result);
+
+            rewriter.replaceOp(op, op.operand1());
+            return success();  
         }
+    };  
 
-        // Move blocks from the "then" region to the region containing 'scf.if',
-        // place it before the continuation block, and branch to it.
-        auto &thenRegion = ifOp.thenRegion();
-        auto *thenBlock = &thenRegion.front();
-        Operation *thenTerminator = thenRegion.back().getTerminator();
-        ValueRange thenTerminatorOperands = thenTerminator->getOperands();
-        rewriter.setInsertionPointToEnd(&thenRegion.back());
-        rewriter.create<BranchOp>(loc, continueBlock, thenTerminatorOperands);
-        rewriter.eraseOp(thenTerminator);
-        rewriter.inlineRegionBefore(thenRegion, continueBlock);
+    struct ArithmeticBinaryOpLowering : public OpRewritePattern<mlir_ts::ArithmeticBinaryOp>
+    {
+        using OpRewritePattern<mlir_ts::ArithmeticBinaryOp>::OpRewritePattern;
 
-        // Move blocks from the "else" region (if present) to the region containing
-        // 'scf.if', place it before the continuation block and branch to it.  It
-        // will be placed after the "then" regions.
-        auto *elseBlock = continueBlock;
-        auto &elseRegion = ifOp.elseRegion();
-        if (!elseRegion.empty()) {
-            elseBlock = &elseRegion.front();
-            Operation *elseTerminator = elseRegion.back().getTerminator();
-            ValueRange elseTerminatorOperands = elseTerminator->getOperands();
-            rewriter.setInsertionPointToEnd(&elseRegion.back());
-            rewriter.create<BranchOp>(loc, continueBlock, elseTerminatorOperands);
-            rewriter.eraseOp(elseTerminator);
-            rewriter.inlineRegionBefore(elseRegion, continueBlock);
+        LogicalResult matchAndRewrite(mlir_ts::ArithmeticBinaryOp arithmeticBinaryOp, PatternRewriter &rewriter) const final
+        {
+            auto opCode = (SyntaxKind)arithmeticBinaryOp.opCode();
+            switch (opCode)
+            {
+            case SyntaxKind::PlusToken:
+                BinOp<mlir_ts::ArithmeticBinaryOp, AddIOp, AddFOp>(arithmeticBinaryOp, rewriter);
+                return success();
+
+            case SyntaxKind::MinusToken:
+                BinOp<mlir_ts::ArithmeticBinaryOp, SubIOp, SubFOp>(arithmeticBinaryOp, rewriter);
+                return success();
+
+            case SyntaxKind::AsteriskToken:
+                BinOp<mlir_ts::ArithmeticBinaryOp, MulIOp, MulFOp>(arithmeticBinaryOp, rewriter);
+                return success();
+
+            case SyntaxKind::SlashToken:
+                BinOp<mlir_ts::ArithmeticBinaryOp, DivFOp, DivFOp>(arithmeticBinaryOp, rewriter);
+                return success();
+
+            case SyntaxKind::GreaterThanGreaterThanToken:
+                BinOp<mlir_ts::ArithmeticBinaryOp, SignedShiftRightOp, SignedShiftRightOp>(arithmeticBinaryOp, rewriter);
+                return success();
+
+            case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
+                BinOp<mlir_ts::ArithmeticBinaryOp, UnsignedShiftRightOp, UnsignedShiftRightOp>(arithmeticBinaryOp, rewriter);
+                return success();
+
+            case SyntaxKind::LessThanLessThanToken:
+                BinOp<mlir_ts::ArithmeticBinaryOp, ShiftLeftOp, ShiftLeftOp>(arithmeticBinaryOp, rewriter);
+                return success();                
+
+            case SyntaxKind::AmpersandToken:
+                BinOp<mlir_ts::ArithmeticBinaryOp, AndOp, AndOp>(arithmeticBinaryOp, rewriter);
+                return success();                    
+
+            case SyntaxKind::BarToken:
+                BinOp<mlir_ts::ArithmeticBinaryOp, OrOp, OrOp>(arithmeticBinaryOp, rewriter);
+                return success();                    
+
+            case SyntaxKind::CaretToken:
+                BinOp<mlir_ts::ArithmeticBinaryOp, XOrOp, XOrOp>(arithmeticBinaryOp, rewriter);
+                return success();                    
+
+            case SyntaxKind::PercentToken:
+                BinOp<mlir_ts::ArithmeticBinaryOp, RemFOp, RemFOp>(arithmeticBinaryOp, rewriter);
+                return success();                    
+
+            case SyntaxKind::AsteriskAsteriskToken:
+                BinOp<mlir_ts::ArithmeticBinaryOp, PowFOp, PowFOp>(arithmeticBinaryOp, rewriter);
+                return success();                    
+
+            default:
+                llvm_unreachable("not implemented");
+            }
         }
+    };
 
-        rewriter.setInsertionPointToEnd(condBlock);
-        auto castToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), ifOp.condition());
-        rewriter.create<CondBranchOp>(loc, castToI1, thenBlock,
-                                        /*trueArgs=*/ArrayRef<Value>(), elseBlock,
-                                        /*falseArgs=*/ArrayRef<Value>());
-
-        // Ok, we're done!
-        rewriter.replaceOp(ifOp, continueBlock->getArguments());
-        return success();
-    }
-};
-
-struct WhileOpLowering : public OpRewritePattern<mlir_ts::WhileOp>
-{
-    using OpRewritePattern<mlir_ts::WhileOp>::OpRewritePattern;
-
-    LogicalResult matchAndRewrite(mlir_ts::WhileOp whileOp, PatternRewriter &rewriter) const final
+    struct IfOpLowering : public OpRewritePattern<mlir_ts::IfOp>
     {
-        OpBuilder::InsertionGuard guard(rewriter);
-        Location loc = whileOp.getLoc();
+        using OpRewritePattern<mlir_ts::IfOp>::OpRewritePattern;
 
-        // Split the current block before the WhileOp to create the inlining point.
-        auto *currentBlock = rewriter.getInsertionBlock();
-        auto *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+        LogicalResult matchAndRewrite(mlir_ts::IfOp ifOp, PatternRewriter &rewriter) const final
+        {
+            auto loc = ifOp.getLoc();
 
-        // Inline both regions.
-        auto *after = &whileOp.after().front();
-        auto *afterLast = &whileOp.after().back();
-        auto *before = &whileOp.before().front();
-        auto *beforeLast = &whileOp.before().back();
-        rewriter.inlineRegionBefore(whileOp.after(), continuation);
-        rewriter.inlineRegionBefore(whileOp.before(), after);
+            // Start by splitting the block containing the 'scf.if' into two parts.
+            // The part before will contain the condition, the part after will be the
+            // continuation point.
+            auto *condBlock = rewriter.getInsertionBlock();
+            auto opPosition = rewriter.getInsertionPoint();
+            auto *remainingOpsBlock = rewriter.splitBlock(condBlock, opPosition);
+            Block *continueBlock;
+            if (ifOp.getNumResults() == 0) {
+                continueBlock = remainingOpsBlock;
+            } else {
+                continueBlock =
+                    rewriter.createBlock(remainingOpsBlock, ifOp.getResultTypes());
+                rewriter.create<BranchOp>(loc, remainingOpsBlock);
+            }
 
-        // Branch to the "before" region.
-        rewriter.setInsertionPointToEnd(currentBlock);
-        rewriter.create<BranchOp>(loc, before, whileOp.inits());
+            // Move blocks from the "then" region to the region containing 'scf.if',
+            // place it before the continuation block, and branch to it.
+            auto &thenRegion = ifOp.thenRegion();
+            auto *thenBlock = &thenRegion.front();
+            Operation *thenTerminator = thenRegion.back().getTerminator();
+            ValueRange thenTerminatorOperands = thenTerminator->getOperands();
+            rewriter.setInsertionPointToEnd(&thenRegion.back());
+            rewriter.create<BranchOp>(loc, continueBlock, thenTerminatorOperands);
+            rewriter.eraseOp(thenTerminator);
+            rewriter.inlineRegionBefore(thenRegion, continueBlock);
 
-        // Replace terminators with branches. Assuming bodies are SESE, which holds
-        // given only the patterns from this file, we only need to look at the last
-        // block. This should be reconsidered if we allow break/continue.
-        rewriter.setInsertionPointToEnd(beforeLast);
-        auto condOp = cast<ConditionOp>(beforeLast->getTerminator());
-        auto castToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), condOp.condition());
-        rewriter.replaceOpWithNewOp<CondBranchOp>(condOp, castToI1, after, condOp.args(), continuation, ValueRange());
+            // Move blocks from the "else" region (if present) to the region containing
+            // 'scf.if', place it before the continuation block and branch to it.  It
+            // will be placed after the "then" regions.
+            auto *elseBlock = continueBlock;
+            auto &elseRegion = ifOp.elseRegion();
+            if (!elseRegion.empty()) {
+                elseBlock = &elseRegion.front();
+                Operation *elseTerminator = elseRegion.back().getTerminator();
+                ValueRange elseTerminatorOperands = elseTerminator->getOperands();
+                rewriter.setInsertionPointToEnd(&elseRegion.back());
+                rewriter.create<BranchOp>(loc, continueBlock, elseTerminatorOperands);
+                rewriter.eraseOp(elseTerminator);
+                rewriter.inlineRegionBefore(elseRegion, continueBlock);
+            }
 
-        rewriter.setInsertionPointToEnd(afterLast);
-        auto yieldOp = cast<mlir_ts::YieldOp>(afterLast->getTerminator());
-        rewriter.replaceOpWithNewOp<BranchOp>(yieldOp, before, yieldOp.results());
+            rewriter.setInsertionPointToEnd(condBlock);
+            auto castToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), ifOp.condition());
+            rewriter.create<CondBranchOp>(loc, castToI1, thenBlock,
+                                            /*trueArgs=*/ArrayRef<Value>(), elseBlock,
+                                            /*falseArgs=*/ArrayRef<Value>());
 
-        // Replace the op with values "yielded" from the "before" region, which are
-        // visible by dominance.
-        rewriter.replaceOp(whileOp, condOp.args());
+            // Ok, we're done!
+            rewriter.replaceOp(ifOp, continueBlock->getArguments());
+            return success();
+        }
+    };
 
-        return success();  
-    }
-};  
-
-/// Optimized version of the above for the case of the "after" region merely
-/// forwarding its arguments back to the "before" region (i.e., a "do-while"
-/// loop). This avoid inlining the "after" region completely and branches back
-/// to the "before" entry instead.
-struct DoWhileOpLowering : public OpRewritePattern<mlir_ts::WhileOp>
-{
-    using OpRewritePattern<mlir_ts::WhileOp>::OpRewritePattern;
-
-    LogicalResult matchAndRewrite(mlir_ts::WhileOp whileOp, PatternRewriter &rewriter) const final
+    struct WhileOpLowering : public TsPattern<mlir_ts::WhileOp>
     {
-        Location loc = whileOp.getLoc();
-        
-        if (!llvm::hasSingleElement(whileOp.after()))
-            return rewriter.notifyMatchFailure(whileOp,
-                                            "do-while simplification applicable to "
-                                            "single-block 'after' region only");
+        using TsPattern<mlir_ts::WhileOp>::TsPattern;
 
-        Block &afterBlock = whileOp.after().front();
-        if (!llvm::hasSingleElement(afterBlock))
-            return rewriter.notifyMatchFailure(whileOp,
-                                            "do-while simplification applicable "
-                                            "only if 'after' region has no payload");
+        LogicalResult matchAndRewrite(mlir_ts::WhileOp whileOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            OpBuilder::InsertionGuard guard(rewriter);
+            Location loc = whileOp.getLoc();
 
-        auto yield = dyn_cast<mlir_ts::YieldOp>(&afterBlock.front());
-        if (!yield || yield.results() != afterBlock.getArguments())
-            return rewriter.notifyMatchFailure(whileOp,
-                                            "do-while simplification applicable "
-                                            "only to forwarding 'after' regions");
+            // Split the current block before the WhileOp to create the inlining point.
+            auto *currentBlock = rewriter.getInsertionBlock();
+            auto *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
 
-        // Split the current block before the WhileOp to create the inlining point.
-        OpBuilder::InsertionGuard guard(rewriter);
-        Block *currentBlock = rewriter.getInsertionBlock();
-        Block *continuation =
-            rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+            tsContext->breakLoops.push_back(continuation);
 
-        // Only the "before" region should be inlined.
-        Block *before = &whileOp.before().front();
-        Block *beforeLast = &whileOp.before().back();
-        rewriter.inlineRegionBefore(whileOp.before(), continuation);
+            // Inline both regions.
+            auto *after = &whileOp.after().front();
+            auto *afterLast = &whileOp.after().back();
+            auto *before = &whileOp.before().front();
+            auto *beforeLast = &whileOp.before().back();
 
-        // Branch to the "before" region.
-        rewriter.setInsertionPointToEnd(currentBlock);
-        rewriter.create<BranchOp>(whileOp.getLoc(), before, whileOp.inits());
+            rewriter.inlineRegionBefore(whileOp.after(), continuation);
+            rewriter.inlineRegionBefore(whileOp.before(), after);
 
-        // Loop around the "before" region based on condition.
-        rewriter.setInsertionPointToEnd(beforeLast);
-        auto condOp = cast<ConditionOp>(beforeLast->getTerminator());
-        auto castToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), condOp.condition());
-        rewriter.replaceOpWithNewOp<CondBranchOp>(condOp, castToI1, before,
-                                                condOp.args(), continuation,
-                                                ValueRange());
+            // Branch to the "before" region.
+            rewriter.setInsertionPointToEnd(currentBlock);
+            rewriter.create<BranchOp>(loc, before, whileOp.inits());
 
-        // Replace the op with values "yielded" from the "before" region, which are
-        // visible by dominance.
-        rewriter.replaceOp(whileOp, condOp.args());
+            // Replace terminators with branches. Assuming bodies are SESE, which holds
+            // given only the patterns from this file, we only need to look at the last
+            // block. This should be reconsidered if we allow break/continue.
+            rewriter.setInsertionPointToEnd(beforeLast);
+            auto condOp = cast<mlir_ts::ConditionOp>(beforeLast->getTerminator());
+            auto castToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), condOp.condition());
+            rewriter.replaceOpWithNewOp<CondBranchOp>(condOp, castToI1, after, condOp.args(), continuation, ValueRange());
 
-        return success();
-    }
-};
+            rewriter.setInsertionPointToEnd(afterLast);
+
+            auto yieldOp = cast<mlir_ts::YieldOp>(afterLast->getTerminator());
+            rewriter.replaceOpWithNewOp<BranchOp>(yieldOp, before, yieldOp.results());
+
+            // Replace the op with values "yielded" from the "before" region, which are
+            // visible by dominance.
+            rewriter.replaceOp(whileOp, condOp.args());
+
+            tsContext->breakLoops.pop_back();
+
+            return success();  
+        }
+    };  
+
+    /// Optimized version of the above for the case of the "after" region merely
+    /// forwarding its arguments back to the "before" region (i.e., a "do-while"
+    /// loop). This avoid inlining the "after" region completely and branches back
+    /// to the "before" entry instead.
+    struct DoWhileOpLowering : public TsPattern<mlir_ts::WhileOp>
+    {
+        using TsPattern<mlir_ts::WhileOp>::TsPattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::WhileOp whileOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            Location loc = whileOp.getLoc();
+            
+            if (!llvm::hasSingleElement(whileOp.after()))
+                return rewriter.notifyMatchFailure(whileOp,
+                                                "do-while simplification applicable to "
+                                                "single-block 'after' region only");
+
+            Block &afterBlock = whileOp.after().front();
+            if (!llvm::hasSingleElement(afterBlock))
+                return rewriter.notifyMatchFailure(whileOp,
+                                                "do-while simplification applicable "
+                                                "only if 'after' region has no payload");
+
+            auto yield = dyn_cast<mlir_ts::YieldOp>(&afterBlock.front());
+            if (!yield || yield.results() != afterBlock.getArguments())
+                return rewriter.notifyMatchFailure(whileOp,
+                                                "do-while simplification applicable "
+                                                "only to forwarding 'after' regions");
+
+            // Split the current block before the WhileOp to create the inlining point.
+            OpBuilder::InsertionGuard guard(rewriter);
+            Block *currentBlock = rewriter.getInsertionBlock();
+            Block *continuation =
+                rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+
+            // Only the "before" region should be inlined.
+            Block *before = &whileOp.before().front();
+            Block *beforeLast = &whileOp.before().back();
+            rewriter.inlineRegionBefore(whileOp.before(), continuation);
+
+            // Branch to the "before" region.
+            rewriter.setInsertionPointToEnd(currentBlock);
+            rewriter.create<BranchOp>(whileOp.getLoc(), before, whileOp.inits());
+
+            // Loop around the "before" region based on condition.
+            rewriter.setInsertionPointToEnd(beforeLast);
+            auto condOp = cast<mlir_ts::ConditionOp>(beforeLast->getTerminator());
+            auto castToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), condOp.condition());
+            rewriter.replaceOpWithNewOp<CondBranchOp>(condOp, castToI1, before,
+                                                    condOp.args(), continuation,
+                                                    ValueRange());
+
+            // Replace the op with values "yielded" from the "before" region, which are
+            // visible by dominance.
+            rewriter.replaceOp(whileOp, condOp.args());
+
+            return success();
+        }
+    };
+
+    struct BreakOpLowering : public TsPattern<mlir_ts::BreakOp>
+    {
+        using TsPattern<mlir_ts::BreakOp>::TsPattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::BreakOp breakOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            return success();
+        }
+    };
+
+} // end anonymous namespace
 
 //===----------------------------------------------------------------------===//
 // TypeScriptToAffineLoweringPass
@@ -482,6 +547,9 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         mlir_ts::YieldOp
     >();
 
+    TSTypeConverter typeConverter;
+    TSContext tsContext;
+
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.
     OwningRewritePatternList patterns;
@@ -492,13 +560,17 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         ParamDefaultValueOpLowering,
         PrefixUnaryOpLowering,
         PostfixUnaryOpLowering,
-        IfOpLowering,
-        WhileOpLowering
+        IfOpLowering
     >(&getContext());
 
     patterns.insert<
+        WhileOpLowering,
+        BreakOpLowering
+    >(&getContext(), typeConverter, tsContext.getImpl());    
+
+    patterns.insert<
         DoWhileOpLowering
-    >(&getContext(), /*benefit=*/2);
+    >(&getContext(), typeConverter, tsContext.getImpl(), /*benefit=*/2);
 
     // With the target and rewrite patterns defined, we can now attempt the
     // conversion. The conversion will signal failure if any of our `illegal`
