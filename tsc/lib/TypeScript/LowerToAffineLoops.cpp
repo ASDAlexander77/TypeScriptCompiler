@@ -391,9 +391,14 @@ namespace
             // Split the current block before the WhileOp to create the inlining point.
             OpBuilder::InsertionGuard guard(rewriter);
             Block *currentBlock = rewriter.getInsertionBlock();
-            Block *continuation =
-                rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+            Block *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
 
+            whileOp.after().walk([&](Operation* op) {
+                if (op->getName().getStringRef() == "ts.break") {
+                    tsContext->jumps[op] = std::make_tuple(StringRef(""), continuation);
+                }
+            });
+            
             // Only the "before" region should be inlined.
             Block *before = &whileOp.before().front();
             Block *beforeLast = &whileOp.before().back();
@@ -425,8 +430,15 @@ namespace
 
         LogicalResult matchAndRewrite(mlir_ts::BreakOp breakOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
+            OpBuilder::InsertionGuard guard(rewriter);
+
             auto jump = tsContext->jumps[breakOp];
             rewriter.replaceOpWithNewOp<BranchOp>(breakOp, std::get<1>(jump)/*break=continuation*/);
+
+            auto *opBlock = rewriter.getInsertionBlock();
+            auto opPosition = rewriter.getInsertionPoint();
+            /*auto *continuationBlock = */ rewriter.splitBlock(opBlock, opPosition);
+
             return success();
         }
     };
