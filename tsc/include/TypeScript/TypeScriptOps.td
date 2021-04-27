@@ -812,12 +812,12 @@ def TypeScript_WhileOp : TypeScript_Op<"while",
     that accepts as its first operand an `i1` value indicating whether to
     proceed to the "after" region (value is `true`) or not. The two regions
     communicate by means of region arguments. Initially, the "before" region
-    accepts as arguments the operands of the `scf.while` operation and uses them
+    accepts as arguments the operands of the `ts.while` operation and uses them
     to evaluate the condition. It forwards the trailing, non-condition operands
-    of the `scf.condition` terminator either to the "after" region if the
-    control flow is transferred there or to results of the `scf.while` operation
+    of the `ts.condition` terminator either to the "after" region if the
+    control flow is transferred there or to results of the `ts.while` operation
     otherwise. The "after" region takes as arguments the values produced by the
-    "before" region and uses `scf.yield` to supply new arguments for the "after"
+    "before" region and uses `ts.yield` to supply new arguments for the "after"
     region, into which it transfers the control flow unconditionally.
   }];
 
@@ -835,8 +835,8 @@ def TypeScript_ConditionOp : TypeScript_Op<"condition",
   let summary = "loop continuation condition";
   let description = [{
     This operation accepts the continuation (i.e., inverse of exit) condition
-    of the `scf.while` construct. If its first argument is true, the "after"
-    region of `scf.while` is executed, with the remaining arguments forwarded
+    of the `ts.while` construct. If its first argument is true, the "after"
+    region of `ts.while` is executed, with the remaining arguments forwarded
     to the entry block of the region. Otherwise, the loop terminates.
   }];
 
@@ -855,6 +855,11 @@ def TypeScript_ContinueOp : TypeScript_Op<"continue"> {
 
 def TypeScript_BreakOp : TypeScript_Op<"break"> {
   let summary = "loop termination";
+}
+
+def TypeScript_ContinuePlaceHolderOp : TypeScript_Op<"continue_placeholder", 
+                        [HasParent<"WhileOp">]> {
+  let summary = "loop continue placeholder";
 }
 
 def TypeScript_AddressOfOp : TypeScript_Op<"addressof"> {

@@ -854,6 +854,8 @@ namespace
             // body
             mlirGen(doStatementAST->statement, genContext);
 
+            builder.create<mlir_ts::ContinuePlaceHolderOp>(location);
+
             auto conditionValue = mlirGen(doStatementAST->expression, genContext);
             builder.create<mlir_ts::ConditionOp>(location, conditionValue, mlir::ValueRange{});
 
@@ -885,6 +887,8 @@ namespace
 
             // body
             mlirGen(whileStatementAST->statement, genContext);
+
+            builder.create<mlir_ts::ContinuePlaceHolderOp>(location);
 
             builder.create<mlir_ts::YieldOp>(location);
 
@@ -931,6 +935,8 @@ namespace
 
             // body
             mlirGen(forStatementAST->statement, genContext);
+
+            builder.create<mlir_ts::ContinuePlaceHolderOp>(location);
 
             // increment
             mlirGen(forStatementAST->incrementor, genContext);
