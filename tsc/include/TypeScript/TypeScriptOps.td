@@ -785,7 +785,7 @@ def TypeScript_IfOp : TypeScript_Op<"if",
 }
 
 def TypeScript_YieldOp : TypeScript_Op<"yield", [NoSideEffect, ReturnLike, Terminator,
-                               ParentOneOf<["IfOp", "WhileOp"]>]> {
+                               ParentOneOf<["IfOp", "WhileOp", "ForOp"]>]> {
   let summary = "loop yield and termination operation";
 
   let arguments = (ins Variadic<AnyType>:$results);
@@ -830,8 +830,22 @@ def TypeScript_WhileOp : TypeScript_Op<"while",
   }];
 }
 
+def TypeScript_ForOp : TypeScript_Op<"for",
+    [DeclareOpInterfaceMethods<RegionBranchOpInterface>,
+     RecursiveSideEffects]> {
+  let summary = "a generic 'for' loop";
+
+  let arguments = (ins Variadic<AnyType>:$inits);
+  let results = (outs Variadic<AnyType>:$results);
+  let regions = (region SizedRegion<1>:$cond, SizedRegion<1>:$body, SizedRegion<1>:$incr);
+
+  let extraClassDeclaration = [{
+    OperandRange getSuccessorEntryOperands(unsigned index);
+  }];
+}
+
 def TypeScript_ConditionOp : TypeScript_Op<"condition",
-                         [HasParent<"WhileOp">, NoSideEffect, Terminator]> {
+                         [HasParent<"WhileOp, ForOp">, NoSideEffect, Terminator]> {
   let summary = "loop continuation condition";
   let description = [{
     This operation accepts the continuation (i.e., inverse of exit) condition
@@ -855,10 +869,6 @@ def TypeScript_ContinueOp : TypeScript_Op<"continue"> {
 
 def TypeScript_BreakOp : TypeScript_Op<"break"> {
   let summary = "loop termination";
-}
-
-def TypeScript_ContinuePlaceHolderOp : TypeScript_Op<"continue_placeholder"> {
-  let summary = "loop continue placeholder";
 }
 
 def TypeScript_AddressOfOp : TypeScript_Op<"addressof"> {

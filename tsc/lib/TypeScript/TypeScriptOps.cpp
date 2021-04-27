@@ -466,6 +466,45 @@ void ts::WhileOp::getSuccessorRegions(Optional<unsigned> index,
   regions.emplace_back(&before(), before().getArguments());
 }
 
+//===----------------------------------------------------------------------===//
+// ForOp
+//===----------------------------------------------------------------------===//
+
+OperandRange ts::ForOp::getSuccessorEntryOperands(unsigned index) {
+  assert(index == 0 &&
+         "ForOp is expected to branch only to the first region");
+
+  return inits();
+}
+
+void ts::ForOp::getSuccessorRegions(Optional<unsigned> index,
+                                  ArrayRef<Attribute> operands,
+                                  SmallVectorImpl<RegionSuccessor> &regions) {
+  (void)operands;
+
+  if (!index.hasValue()) {
+    regions.emplace_back(getResults());
+    return;
+  }
+
+  assert(*index < 3 && "there are only tree regions in a ForOp");
+  if (*index == 2)
+  {
+    regions.emplace_back(&incr(), incr().getArguments());
+  }
+
+  if (*index == 1)
+  {
+    regions.emplace_back(&body(), body().getArguments());
+  }
+
+  if (*index == 0)
+  {
+    regions.emplace_back(&cond(), cond().getArguments());
+    regions.emplace_back(getResults());
+  }
+}
+
 
 namespace
 {
