@@ -15,6 +15,7 @@ add_test(NAME test-runner-00-if_return COMMAND test-runner "C:/dev/TypeScriptCom
 add_test(NAME test-runner-00-dowhile COMMAND test-runner "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/00dowhile.ts")
 add_test(NAME test-runner-00-while COMMAND test-runner "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/00while.ts")
 add_test(NAME test-runner-00-for COMMAND test-runner "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/00for.ts")
+add_test(NAME test-runner-00-break-continue COMMAND test-runner "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/00break_continue.ts")
 add_test(NAME test-runner-00-vars COMMAND test-runner "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/00vars.ts")
 add_test(NAME test-runner-00-globals COMMAND test-runner "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/00globals.ts")
 add_test(NAME test-runner-00-arrays COMMAND test-runner "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/00array.ts")
