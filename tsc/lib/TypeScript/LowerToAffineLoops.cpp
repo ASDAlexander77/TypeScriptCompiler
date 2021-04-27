@@ -77,7 +77,7 @@ namespace
 
             Value variable = rewriter.create<mlir_ts::VariableOp>(location, paramOp.getType(), mlir::Value());
 
-            // scf.if
+            // ts.if
             auto index = paramOp.paramIndex();
             auto indexConstant = rewriter.create<mlir_ts::ConstantOp>(location, rewriter.getI32IntegerAttr(index.getValue()));
             // replace with ts op to avoid cast
@@ -253,7 +253,7 @@ namespace
         {
             auto loc = ifOp.getLoc();
 
-            // Start by splitting the block containing the 'scf.if' into two parts.
+            // Start by splitting the block containing the 'ts.if' into two parts.
             // The part before will contain the condition, the part after will be the
             // continuation point.
             auto *condBlock = rewriter.getInsertionBlock();
@@ -268,7 +268,7 @@ namespace
                 rewriter.create<BranchOp>(loc, remainingOpsBlock);
             }
 
-            // Move blocks from the "then" region to the region containing 'scf.if',
+            // Move blocks from the "then" region to the region containing 'ts.if',
             // place it before the continuation block, and branch to it.
             auto &thenRegion = ifOp.thenRegion();
             auto *thenBlock = &thenRegion.front();
@@ -280,7 +280,7 @@ namespace
             rewriter.inlineRegionBefore(thenRegion, continueBlock);
 
             // Move blocks from the "else" region (if present) to the region containing
-            // 'scf.if', place it before the continuation block and branch to it.  It
+            // 'ts.if', place it before the continuation block and branch to it.  It
             // will be placed after the "then" regions.
             auto *elseBlock = continueBlock;
             auto &elseRegion = ifOp.elseRegion();
@@ -325,11 +325,14 @@ namespace
             auto *before = &whileOp.before().front();
             auto *beforeLast = &whileOp.before().back();
 
-            whileOp.after().walk([&](Operation* op) {
+            auto visitor = [&](Operation* op) {
                 if (op->getName().getStringRef() == "ts.break") {
                     tsContext->jumps[op] = std::make_tuple(StringRef(""), continuation);
                 }
-            });
+            };
+
+            whileOp.before().walk(visitor);
+            whileOp.after().walk(visitor);
 
             rewriter.inlineRegionBefore(whileOp.after(), continuation);
             rewriter.inlineRegionBefore(whileOp.before(), after);
@@ -393,12 +396,15 @@ namespace
             Block *currentBlock = rewriter.getInsertionBlock();
             Block *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
 
-            whileOp.after().walk([&](Operation* op) {
+            auto visitor = [&](Operation* op) {
                 if (op->getName().getStringRef() == "ts.break") {
                     tsContext->jumps[op] = std::make_tuple(StringRef(""), continuation);
                 }
-            });
-            
+            };
+
+            whileOp.before().walk(visitor);
+            whileOp.after().walk(visitor);
+
             // Only the "before" region should be inlined.
             Block *before = &whileOp.before().front();
             Block *beforeLast = &whileOp.before().back();
@@ -442,6 +448,25 @@ namespace
             return success();
         }
     };
+
+    struct ContinueOpLowering : public TsPattern<mlir_ts::ContinueOp>
+    {
+        using TsPattern<mlir_ts::ContinueOp>::TsPattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::ContinueOp continueOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            OpBuilder::InsertionGuard guard(rewriter);
+
+            auto jump = tsContext->jumps[continueOp];
+            rewriter.replaceOpWithNewOp<BranchOp>(continueOp, std::get<1>(jump)/*break=incremental-or-condition block*/);
+
+            auto *opBlock = rewriter.getInsertionBlock();
+            auto opPosition = rewriter.getInsertionPoint();
+            /*auto *continuationBlock = */ rewriter.splitBlock(opBlock, opPosition);
+
+            return success();
+        }
+    };    
 
 } // end anonymous namespace
 
