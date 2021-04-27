@@ -21,47 +21,26 @@ namespace mlir_ts = mlir::typescript;
 namespace
 {
 
-    struct TSContextImpl 
+    struct TSContext
     {
-        SmallVector<mlir::Block *, 8> breakLoops;
+        // name, break, continue
+        DenseMap<Operation *, std::tuple<StringRef, mlir::Block *>> jumps;
     };
-
-    struct TSContext 
-    {
-        TSContext();
-        ~TSContext();
-
-        TSContextImpl *getImpl() { return impl.get(); }
-
-    private:
-        std::unique_ptr<TSContextImpl> impl;
-    };
-
-    TSContext::TSContext() 
-    {
-        impl = std::make_unique<TSContextImpl>();
-    }
-
-    TSContext::~TSContext() = default;
 
     class TSTypeConverter : public TypeConverter {
     public:
-        explicit TSTypeConverter();
+        explicit TSTypeConverter() {}
     };
-
-    TSTypeConverter::TSTypeConverter() : TypeConverter()
-    {
-    }    
 
     template <typename OpTy>
     class TsPattern : public OpConversionPattern<OpTy> 
     {
     public:
-        TsPattern<OpTy>(MLIRContext *context, TSTypeConverter &converter, TSContextImpl *tsContext, PatternBenefit benefit = 1) 
+        TsPattern<OpTy>(MLIRContext *context, TSTypeConverter &converter, TSContext *tsContext, PatternBenefit benefit = 1) 
             : OpConversionPattern<OpTy>::OpConversionPattern(context, benefit), tsContext(tsContext), typeConverter(converter) {}
 
     protected:
-        TSContextImpl *tsContext;
+        TSContext *tsContext;
         TSTypeConverter &typeConverter;
     };
 
@@ -340,13 +319,17 @@ namespace
             auto *currentBlock = rewriter.getInsertionBlock();
             auto *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
 
-            tsContext->breakLoops.push_back(continuation);
-
             // Inline both regions.
             auto *after = &whileOp.after().front();
             auto *afterLast = &whileOp.after().back();
             auto *before = &whileOp.before().front();
             auto *beforeLast = &whileOp.before().back();
+
+            whileOp.after().walk([&](Operation* op) {
+                if (op->getName().getStringRef() == "ts.break") {
+                    tsContext->jumps[op] = std::make_tuple(StringRef(""), continuation);
+                }
+            });
 
             rewriter.inlineRegionBefore(whileOp.after(), continuation);
             rewriter.inlineRegionBefore(whileOp.before(), after);
@@ -371,8 +354,6 @@ namespace
             // Replace the op with values "yielded" from the "before" region, which are
             // visible by dominance.
             rewriter.replaceOp(whileOp, condOp.args());
-
-            tsContext->breakLoops.pop_back();
 
             return success();  
         }
@@ -444,6 +425,8 @@ namespace
 
         LogicalResult matchAndRewrite(mlir_ts::BreakOp breakOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
+            auto jump = tsContext->jumps[breakOp];
+            rewriter.replaceOpWithNewOp<BranchOp>(breakOp, std::get<1>(jump)/*break=continuation*/);
             return success();
         }
     };
@@ -487,6 +470,9 @@ namespace
         }
 
         void runOnFunction() final;
+    
+        TSTypeConverter typeConverter;
+        TSContext tsContext;
     };
 } // end anonymous namespace.
 
@@ -547,9 +533,6 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         mlir_ts::YieldOp
     >();
 
-    TSTypeConverter typeConverter;
-    TSContext tsContext;
-
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.
     OwningRewritePatternList patterns;
@@ -566,11 +549,11 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     patterns.insert<
         WhileOpLowering,
         BreakOpLowering
-    >(&getContext(), typeConverter, tsContext.getImpl());    
+    >(&getContext(), typeConverter, &tsContext);    
 
     patterns.insert<
         DoWhileOpLowering
-    >(&getContext(), typeConverter, tsContext.getImpl(), /*benefit=*/2);
+    >(&getContext(), typeConverter, &tsContext, /*benefit=*/2);
 
     // With the target and rewrite patterns defined, we can now attempt the
     // conversion. The conversion will signal failure if any of our `illegal`

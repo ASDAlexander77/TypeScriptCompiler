@@ -849,13 +849,11 @@ def TypeScript_ConditionOp : TypeScript_Op<"condition",
   let verifier = ?;
 }
 
-def TypeScript_ContinueOp : TypeScript_Op<"continue",
-                         [NoSideEffect]> {
+def TypeScript_ContinueOp : TypeScript_Op<"continue"> {
   let summary = "loop continuation";
 }
 
-def TypeScript_BreakOp : TypeScript_Op<"break",
-                         [NoSideEffect]> {
+def TypeScript_BreakOp : TypeScript_Op<"break"> {
   let summary = "loop termination";
 }
 
