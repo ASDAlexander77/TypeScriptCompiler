@@ -857,8 +857,7 @@ def TypeScript_BreakOp : TypeScript_Op<"break"> {
   let summary = "loop termination";
 }
 
-def TypeScript_ContinuePlaceHolderOp : TypeScript_Op<"continue_placeholder", 
-                        [HasParent<"WhileOp">]> {
+def TypeScript_ContinuePlaceHolderOp : TypeScript_Op<"continue_placeholder"> {
   let summary = "loop continue placeholder";
 }
 

@@ -319,20 +319,44 @@ namespace
             auto *currentBlock = rewriter.getInsertionBlock();
             auto *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
 
-            // Inline both regions.
             auto *after = &whileOp.after().front();
             auto *afterLast = &whileOp.after().back();
             auto *before = &whileOp.before().front();
             auto *beforeLast = &whileOp.before().back();
 
-            auto visitor = [&](Operation* op) {
-                if (op->getName().getStringRef() == "ts.break") {
+            // to support break/continue;
+            // Inline both regions.
+            Operation* continuePlaceholder = nullptr;
+            auto visitorPlaceHolder = [&](Operation* op) {
+                auto name = op->getName().getStringRef();
+                if (name == "ts.continue_placeholder") {
+                    continuePlaceholder = op;
+                    return WalkResult::interrupt();
+                }
+
+                return WalkResult::advance();
+            };
+
+            whileOp.before().walk(visitorPlaceHolder);
+            whileOp.after().walk(visitorPlaceHolder);            
+
+            assert(continuePlaceholder != nullptr);
+
+            SmallVector<Operation *, 4> continueOps;
+            auto visitorBreakContinue = [&](Operation* op) {
+                auto name = op->getName().getStringRef();
+                if (name == "ts.break") {
                     tsContext->jumps[op] = std::make_tuple(StringRef(""), continuation);
+                }
+                else if (name == "ts.continue") {
+                    continueOps.push_back(op);
                 }
             };
 
-            whileOp.before().walk(visitor);
-            whileOp.after().walk(visitor);
+            whileOp.before().walk(visitorBreakContinue);
+            whileOp.after().walk(visitorBreakContinue);
+
+            // end of logic for break/continue
 
             rewriter.inlineRegionBefore(whileOp.after(), continuation);
             rewriter.inlineRegionBefore(whileOp.before(), after);
@@ -353,10 +377,26 @@ namespace
 
             auto yieldOp = cast<mlir_ts::YieldOp>(afterLast->getTerminator());
             rewriter.replaceOpWithNewOp<BranchOp>(yieldOp, before, yieldOp.results());
-
+          
             // Replace the op with values "yielded" from the "before" region, which are
             // visible by dominance.
             rewriter.replaceOp(whileOp, condOp.args());
+
+            // create continue split;
+            rewriter.setInsertionPointAfter(continuePlaceholder);
+
+            auto *opBlock = rewriter.getInsertionBlock();
+            auto opPosition = rewriter.getInsertionPoint();
+            auto *continuationBlockForContinuePlace = rewriter.splitBlock(opBlock, opPosition);
+
+            rewriter.setInsertionPointToEnd(opBlock);
+            rewriter.create<BranchOp>(loc, continuationBlockForContinuePlace);
+            //rewriter.replaceOpWithNewOp<BranchOp>(continuePlaceholder, continuationBlockForContinuePlace);
+
+            for (auto contOp : continueOps)
+            {
+                tsContext->jumps[contOp] = std::make_tuple(StringRef(""), continuationBlockForContinuePlace);
+            }
 
             return success();  
         }
@@ -567,7 +607,8 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         mlir_ts::LogicalBinaryOp,
         mlir_ts::UndefOp,
         mlir_ts::VariableOp,
-        mlir_ts::YieldOp
+        mlir_ts::YieldOp,
+        mlir_ts::ContinuePlaceHolderOp
     >();
 
     // Now that the conversion target has been defined, we just need to provide
@@ -585,7 +626,8 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
 
     patterns.insert<
         WhileOpLowering,
-        BreakOpLowering
+        BreakOpLowering,
+        ContinueOpLowering
     >(&getContext(), typeConverter, &tsContext);    
 
     patterns.insert<
