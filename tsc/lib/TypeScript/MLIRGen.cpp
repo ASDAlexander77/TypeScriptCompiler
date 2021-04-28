@@ -861,7 +861,14 @@ namespace
 
             builder.setInsertionPointToStart(&doWhileOp.cond().front());
             auto conditionValue = mlirGen(doStatementAST->expression, genContext);
-            builder.create<mlir_ts::ConditionOp>(location, conditionValue, mlir::ValueRange{});
+            if (conditionValue)
+            {
+                builder.create<mlir_ts::ConditionOp>(location, conditionValue, mlir::ValueRange{});
+            }
+            else
+            {
+                builder.create<mlir_ts::NoConditionOp>(location, mlir::ValueRange{});
+            }
 
             builder.setInsertionPointAfter(doWhileOp);
             return mlir::success();
@@ -881,7 +888,14 @@ namespace
             // condition
             builder.setInsertionPointToStart(&whileOp.cond().front());
             auto conditionValue = mlirGen(whileStatementAST->expression, genContext);
-            builder.create<mlir_ts::ConditionOp>(location, conditionValue, mlir::ValueRange{});
+            if (conditionValue)
+            {
+                builder.create<mlir_ts::ConditionOp>(location, conditionValue, mlir::ValueRange{});
+            }
+            else
+            {
+                builder.create<mlir_ts::NoConditionOp>(location, mlir::ValueRange{});
+            }
 
             // body
             builder.setInsertionPointToStart(&whileOp.body().front());
@@ -925,13 +939,14 @@ namespace
 
             builder.setInsertionPointToStart(&forOp.cond().front());
             auto conditionValue = mlirGen(forStatementAST->condition, genContext);
-            if (!conditionValue)
+            if (conditionValue)
             {
-                // const true
-                conditionValue = builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), mlir::BoolAttr::get(true, theModule.getContext()));
+                builder.create<mlir_ts::ConditionOp>(location, conditionValue, mlir::ValueRange{});
             }
-
-            builder.create<mlir_ts::ConditionOp>(location, conditionValue, mlir::ValueRange{});
+            else
+            {
+                builder.create<mlir_ts::NoConditionOp>(location, mlir::ValueRange{});
+            }
 
             // body
             builder.setInsertionPointToStart(&forOp.body().front());

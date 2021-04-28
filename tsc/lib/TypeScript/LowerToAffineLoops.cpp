@@ -481,9 +481,18 @@ namespace
             // given only the patterns from this file, we only need to look at the last
             // block. This should be reconsidered if we allow break/continue.
             rewriter.setInsertionPointToEnd(condLast);
-            auto condOp = cast<mlir_ts::ConditionOp>(condLast->getTerminator());
-            auto castToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), condOp.condition());
-            rewriter.replaceOpWithNewOp<CondBranchOp>(condOp, castToI1, body, condOp.args(), continuation, ValueRange());
+            ValueRange args;
+            if (auto condOp = dyn_cast_or_null<mlir_ts::ConditionOp>(condLast->getTerminator()))
+            {
+                args = condOp.args();
+                auto castToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), condOp.condition());
+                rewriter.replaceOpWithNewOp<CondBranchOp>(condOp, castToI1, body, condOp.args(), continuation, ValueRange());
+            }
+            else
+            {
+                auto noCondOp = cast<mlir_ts::NoConditionOp>(condLast->getTerminator());
+                rewriter.replaceOpWithNewOp<BranchOp>(noCondOp, body, noCondOp.args());
+            }
 
             rewriter.setInsertionPointToEnd(bodyLast);
 
@@ -497,7 +506,7 @@ namespace
 
             // Replace the op with values "yielded" from the "before" region, which are
             // visible by dominance.
-            rewriter.replaceOp(forOp, condOp.args());
+            rewriter.replaceOp(forOp, args);
 
             return success();  
         }

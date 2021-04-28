@@ -879,6 +879,25 @@ def TypeScript_ConditionOp : TypeScript_Op<"condition",
   let verifier = ?;
 }
 
+def TypeScript_NoConditionOp : TypeScript_Op<"no-condition",
+                         [HasParent<"DoWhileOp, WhileOp, ForOp">, NoSideEffect, Terminator]> {
+  let summary = "loop continuation condition";
+  let description = [{
+    This operation accepts the continuation (i.e., inverse of exit) condition
+    of the `ts.while` construct. If its first argument is true, the "after"
+    region of `ts.while` is executed, with the remaining arguments forwarded
+    to the entry block of the region. Otherwise, the loop terminates.
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$args);
+
+  let assemblyFormat =
+      [{ attr-dict ($args^ `:` type($args))? }];
+
+  // Override the default verifier, everything is checked by traits.
+  let verifier = ?;
+}
+
 def TypeScript_ContinueOp : TypeScript_Op<"continue"> {
   let summary = "loop continuation";
 }
