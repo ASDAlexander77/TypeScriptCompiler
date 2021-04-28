@@ -334,6 +334,18 @@ namespace
         }
     };
 
+    struct SymbolRefOpLowering : public OpConversionPattern<mlir_ts::SymbolRefOp>
+    {
+        using OpConversionPattern<mlir_ts::SymbolRefOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::SymbolRefOp symbolRefOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            TypeConverterHelper tch(*getTypeConverter());
+            rewriter.replaceOpWithNewOp<mlir::ConstantOp>(symbolRefOp, tch.convertType(symbolRefOp.getType()), symbolRefOp.getValue());
+            return success();            
+        }
+    };
+
     struct NullOpLowering : public OpConversionPattern<mlir_ts::NullOp>
     {
         using OpConversionPattern<mlir_ts::NullOp>::OpConversionPattern;
@@ -1029,6 +1041,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         AssertOpLowering,
         CastOpLowering,
         ConstantOpLowering,
+        SymbolRefOpLowering,
         GlobalOpLowering,
         EntryOpLowering,
         FuncOpLowering,

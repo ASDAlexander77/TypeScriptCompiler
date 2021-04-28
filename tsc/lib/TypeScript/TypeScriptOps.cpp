@@ -102,6 +102,21 @@ LogicalResult ts::ArrayType::verifyConstructionInvariants(Location loc, Type ele
 }
 
 //===----------------------------------------------------------------------===//
+// ConstantOp
+//===----------------------------------------------------------------------===//
+OpFoldResult ts::ConstantOp::fold(ArrayRef<Attribute> operands) {
+  assert(operands.empty() && "constant has no operands");
+
+  auto val = getValue();
+  if (val.isa<SymbolRefAttr>())
+  {
+    return {};
+  }
+
+  return getValue();
+}
+
+//===----------------------------------------------------------------------===//
 // FuncOp
 //===----------------------------------------------------------------------===//
 ts::FuncOp ts::FuncOp::create(Location location, StringRef name, FunctionType type,
@@ -191,18 +206,6 @@ LogicalResult verify(ts::FuncOp op)
                    << "function signature(" << fnInputTypes[i] << ')';
 
     return success();
-}
-
-//===----------------------------------------------------------------------===//
-// IdentifierReference
-//===----------------------------------------------------------------------===//
-
-ts::IdentifierReference ts::IdentifierReference::create(Location location, StringRef name)
-{
-    OperationState state(location, ts::IdentifierReference::getOperationName());
-    OpBuilder builder(location->getContext());
-    ts::IdentifierReference::build(builder, state, builder.getNoneType(), name);
-    return cast<ts::IdentifierReference>(Operation::create(state));
 }
 
 //===----------------------------------------------------------------------===//

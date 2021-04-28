@@ -60,6 +60,21 @@ def ConstantOp : TypeScript_Op<"constant",
   let hasFolder = 1;
 }
 
+def SymbolRefOp : TypeScript_Op<"sumbol_ref"> {
+  let summary = "sumbol reference as constant";
+
+  let arguments = (ins FlatSymbolRefAttr:$identifier);
+  let results = (outs AnyType);
+
+  let builders = [
+    OpBuilderDAG<(ins "FlatSymbolRefAttr":$identifier),
+    [{ build($_builder, $_state, identifier.getType(), identifier); }]>];
+
+  let extraClassDeclaration = [{
+    Attribute getValue() { return (*this)->getAttr("identifier"); }
+  }];
+}
+
 def TypeScript_FuncOp : TypeScript_Op<"func", [
   AffineScope, AutomaticAllocationScope, CallableOpInterface, FunctionLike,
   IsolatedFromAbove, Symbol
@@ -153,15 +168,6 @@ def TypeScript_FuncOp : TypeScript_Op<"func", [
   let parser = [{ return ::parseFuncOp(parser, result); }];
   let printer = [{ return ::print(*this, p); }];
   let verifier = [{ return ::verify(*this); }];
-}
-
-def TypeScript_IdentifierReference : TypeScript_Op<"identifier_reference", [NoSideEffect, Symbol]> {
-    let arguments = (ins FlatSymbolRefAttr:$identifier);
-    let results = (outs NoneType);
-
-    let extraClassDeclaration = [{
-        static IdentifierReference create(Location location, StringRef name);
-    }];
 }
 
 def TypeScript_NullOp : TypeScript_Op<"null", []> {

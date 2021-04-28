@@ -1337,6 +1337,8 @@ namespace
                     auto argumentsContext = callExpression->arguments;
                     auto opArgsCount = std::distance(argumentsContext.begin(), argumentsContext.end());
 
+                    definingOp->erase();
+
                     // resolve function
                     auto calledFuncIt = functionMap.find(functionName);
                     if (calledFuncIt == functionMap.end())
@@ -1347,39 +1349,37 @@ namespace
                             SmallVector<mlir::Value, 4> operands;
                             mlirGen(argumentsContext, operands, genContext);
                             mlir::succeeded(mlirGenPrint(location, operands));
-                            return nullptr;
                         }
-
+                        else 
                         // assert - internal command;
                         if (functionName.compare(StringRef("assert")) == 0 && opArgsCount > 0)
                         {
                             SmallVector<mlir::Value, 4> operands;
                             mlirGen(argumentsContext, operands, genContext);
                             mlir::succeeded(mlirGenAssert(location, operands));
-                            return nullptr;
                         }
-
+                        else 
                         // assert - internal command;
                         if (functionName.compare(StringRef("parseInt")) == 0 && opArgsCount > 0)
                         {
                             SmallVector<mlir::Value, 4> operands;
                             mlirGen(argumentsContext, operands, genContext);
-                            return mlirGenParseInt(location, operands);
+                            result = mlirGenParseInt(location, operands);
                         }
-
+                        else 
                         if (functionName.compare(StringRef("parseFloat")) == 0 && opArgsCount > 0)
                         {
                             SmallVector<mlir::Value, 4> operands;
                             mlirGen(argumentsContext, operands, genContext);
-                            return mlirGenParseFloat(location, operands);
+                            result = mlirGenParseFloat(location, operands);
                         }
-
+                        else 
                         if (!genContext.allowPartialResolve)
                         {
                             emitError(location) << "no defined function found for '" << functionName << "'";
                         }
 
-                        return nullptr;
+                        return result;
                     }
 
                     auto calledFunc = calledFuncIt->second;
@@ -1667,11 +1667,11 @@ namespace
             auto fn = theModule.lookupSymbol<mlir_ts::FuncOp>(name);
             if (fn)
             {
-                return builder.create<mlir_ts::ConstantOp>(location, fn.getType(), builder.getSymbolRefAttr(name));
+                return builder.create<mlir_ts::SymbolRefOp>(location, fn.getType(), mlir::FlatSymbolRefAttr::get(name, builder.getContext()));
             }            
 
             // unresolved reference (for call for example)
-            return mlir_ts::IdentifierReference::create(location, name);
+            return builder.create<mlir_ts::SymbolRefOp>(location, mlir::FlatSymbolRefAttr::get(name, builder.getContext()));
         }
 
         mlir::Type getType(Node typeReferenceAST)

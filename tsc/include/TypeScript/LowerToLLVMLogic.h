@@ -106,11 +106,6 @@ namespace typescript
                 {
                     return convertedType;
                 }
-
-                emitError(mlir::Location(mlir::LocationAttr()), "invalid cast type: '") << type << "'";
-
-                // TODO: should we show warning here?
-                assert(false);
             }
 
             return type;
