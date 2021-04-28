@@ -1629,6 +1629,8 @@ namespace
 
         mlir::Value mlirGen(Identifier identifier, const GenContext &genContext)
         {
+            auto location = loc(identifier);
+
             // resolve name
             auto name = wstos(identifier->escapedText);
 
@@ -1648,7 +1650,6 @@ namespace
                 else if (value.second->getIsGlobal())
                 {
                     // global var
-                    auto location = loc(identifier);
                     if (!value.second->getReadWriteAccess() && value.second->getType().isa<mlir_ts::StringType>())
                     {
                         // load address of const object in global
@@ -1662,8 +1663,15 @@ namespace
                 }
             }
 
+            // resolving function
+            auto fn = theModule.lookupSymbol<mlir_ts::FuncOp>(name);
+            if (fn)
+            {
+                return builder.create<mlir_ts::ConstantOp>(location, fn.getType(), builder.getSymbolRefAttr(name));
+            }            
+
             // unresolved reference (for call for example)
-            return mlir_ts::IdentifierReference::create(loc(identifier), name);
+            return mlir_ts::IdentifierReference::create(location, name);
         }
 
         mlir::Type getType(Node typeReferenceAST)
