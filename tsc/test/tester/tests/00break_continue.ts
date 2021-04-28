@@ -1,7 +1,7 @@
 function main() {    
-    assert(test_do() == 10, "failed. 1");
-    assert(test_while() == 10, "failed. 2");
-    assert(test_for() == 10, "failed. 3");
+    assert(test_do() == 5, "failed. 1");
+    assert(test_while() == 5, "failed. 2");
+    assert(test_for() == 5, "failed. 3");
     test_for_empty();
 }
 
