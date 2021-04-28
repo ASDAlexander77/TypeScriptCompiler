@@ -880,7 +880,7 @@ def TypeScript_ConditionOp : TypeScript_Op<"condition",
 }
 
 def TypeScript_NoConditionOp : TypeScript_Op<"no-condition",
-                         [HasParent<"DoWhileOp, WhileOp, ForOp">, NoSideEffect, Terminator]> {
+                         [HasParent<"ForOp">, Terminator]> {
   let summary = "loop continuation condition";
   let description = [{
     This operation accepts the continuation (i.e., inverse of exit) condition

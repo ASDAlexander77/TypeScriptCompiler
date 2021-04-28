@@ -861,14 +861,7 @@ namespace
 
             builder.setInsertionPointToStart(&doWhileOp.cond().front());
             auto conditionValue = mlirGen(doStatementAST->expression, genContext);
-            if (conditionValue)
-            {
-                builder.create<mlir_ts::ConditionOp>(location, conditionValue, mlir::ValueRange{});
-            }
-            else
-            {
-                builder.create<mlir_ts::NoConditionOp>(location, mlir::ValueRange{});
-            }
+            builder.create<mlir_ts::ConditionOp>(location, conditionValue, mlir::ValueRange{});
 
             builder.setInsertionPointAfter(doWhileOp);
             return mlir::success();
@@ -888,14 +881,7 @@ namespace
             // condition
             builder.setInsertionPointToStart(&whileOp.cond().front());
             auto conditionValue = mlirGen(whileStatementAST->expression, genContext);
-            if (conditionValue)
-            {
-                builder.create<mlir_ts::ConditionOp>(location, conditionValue, mlir::ValueRange{});
-            }
-            else
-            {
-                builder.create<mlir_ts::NoConditionOp>(location, mlir::ValueRange{});
-            }
+            builder.create<mlir_ts::ConditionOp>(location, conditionValue, mlir::ValueRange{});
 
             // body
             builder.setInsertionPointToStart(&whileOp.body().front());
