@@ -317,6 +317,39 @@ FunctionType ts::CallOp::getCalleeType()
 }
 
 //===----------------------------------------------------------------------===//
+// CallIndirectOp
+//===----------------------------------------------------------------------===//
+
+namespace 
+{
+    /// Fold indirect calls that have a constant function as the callee operand.
+    struct SimplifyIndirectCallWithKnownCallee : public OpRewritePattern<CallIndirectOp> 
+    {
+        using OpRewritePattern<CallIndirectOp>::OpRewritePattern;
+
+        LogicalResult matchAndRewrite(CallIndirectOp indirectCall, PatternRewriter &rewriter) const override {
+            // Check that the callee is a constant callee.
+            SymbolRefAttr calledFn;
+            if (!matchPattern(indirectCall.getCallee(), m_Constant(&calledFn)))
+            {
+                return failure();
+            }
+
+            // Replace with a direct call.
+            rewriter.replaceOpWithNewOp<CallOp>(indirectCall, calledFn,
+                                                indirectCall.getResultTypes(),
+                                                indirectCall.getArgOperands());
+            return success();
+        }
+    };
+} // end anonymous namespace.
+
+void ts::CallIndirectOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context) 
+{
+  results.insert<SimplifyIndirectCallWithKnownCallee>(context);
+}
+
+//===----------------------------------------------------------------------===//
 // IfOp
 //===----------------------------------------------------------------------===//
 

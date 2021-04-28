@@ -631,6 +631,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         mlir_ts::ArithmeticUnaryOp,
         mlir_ts::AssertOp,
         mlir_ts::CallOp,
+        mlir_ts::CallIndirectOp,
         mlir_ts::CastOp,
         mlir_ts::ConstantOp,
         mlir_ts::SymbolRefOp,

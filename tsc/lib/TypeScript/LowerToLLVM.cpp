@@ -578,6 +578,22 @@ namespace
         }
     };
 
+    struct CallIndirectOpLowering : public OpRewritePattern<mlir_ts::CallIndirectOp>
+    {
+        using OpRewritePattern<mlir_ts::CallIndirectOp>::OpRewritePattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::CallIndirectOp op, PatternRewriter &rewriter) const final
+        {
+            // just replace
+            rewriter.replaceOpWithNewOp<mlir::CallIndirectOp>(
+                op,
+                op.getResultTypes(),
+                op.getCallee(),
+                op.getArgOperands());
+            return success();
+        }
+    };    
+
     struct CastOpLowering : public OpConversionPattern<mlir_ts::CastOp>
     {
         using OpConversionPattern<mlir_ts::CastOp>::OpConversionPattern;
@@ -1029,6 +1045,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     // The only remaining operation to lower from the `typescript` dialect, is the PrintOp.
     patterns.insert<
         CallOpLowering,
+        CallIndirectOpLowering,
         ExitOpLowering,
         ReturnOpLowering,
         ReturnValOpLowering>(&getContext());

@@ -343,7 +343,68 @@ def TypeScript_CallOp : TypeScript_Op<"call",
     }
   }];
 
+  let assemblyFormat = [{
+    $callee `(` $operands `)` attr-dict `:` functional-type($operands, results)
+  }];
   let verifier = ?;
+}
+
+def TypeScript_CallIndirectOp : TypeScript_Op<"call_indirect", [
+      CallOpInterface,
+      TypesMatchWith<"callee input types match argument types",
+                     "callee", "operands",
+                     "$_self.cast<FunctionType>().getInputs()">,
+      TypesMatchWith<"callee result types match result types",
+                     "callee", "results",
+                     "$_self.cast<FunctionType>().getResults()">
+    ]> {
+  let summary = "indirect call operation";
+  let description = [{
+    The `call_indirect` operation represents an indirect call to a value of
+    function type. Functions are first class types in MLIR, and may be passed as
+    arguments and merged together with block arguments. The operands and result
+    types of the call must match the specified function type.
+
+    Function values can be created with the
+    [`constant` operation](#stdconstant-constantop).
+
+    Example:
+
+    ```mlir
+    %31 = call_indirect %15(%0, %1)
+            : (tensor<16xf32>, tensor<16xf32>) -> tensor<16xf32>
+    ```
+  }];
+
+  let arguments = (ins FunctionType:$callee, Variadic<AnyType>:$operands);
+  let results = (outs Variadic<AnyType>:$results);
+
+  let builders = [
+    OpBuilderDAG<(ins "Value":$callee, CArg<"ValueRange", "{}">:$operands), [{
+      $_state.operands.push_back(callee);
+      $_state.addOperands(operands);
+      $_state.addTypes(callee.getType().cast<FunctionType>().getResults());
+    }]>];
+
+  let extraClassDeclaration = [{
+    Value getCallee() { return getOperand(0); }
+
+    /// Get the argument operands to the called function.
+    operand_range getArgOperands() {
+      return {arg_operand_begin(), arg_operand_end()};
+    }
+
+    operand_iterator arg_operand_begin() { return ++operand_begin(); }
+    operand_iterator arg_operand_end() { return operand_end(); }
+
+    /// Return the callee of this operation.
+    CallInterfaceCallable getCallableForCallee() { return getCallee(); }
+  }];
+
+  let verifier = ?;
+  let hasCanonicalizer = 1;
+
+  let assemblyFormat = "$callee `(` $operands `)` attr-dict `:` type($callee)";
 }
 
 def TypeScript_ParamOp : TypeScript_Op<"param", []> {

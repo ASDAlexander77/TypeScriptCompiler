@@ -1382,34 +1382,11 @@ namespace
                         return result;
                     }
 
-                    auto calledFunc = calledFuncIt->second;
-                    auto calledFuncType = calledFunc.getType();
-                    auto funcArgsCount = calledFunc.getNumArguments();
-
-                    // process arguments
                     SmallVector<mlir::Value, 4> operands;
 
-                    auto hasOptionalFrom = calledFunc.getOperation()->hasAttrOfType<mlir::IntegerAttr>(FUNC_OPTIONAL_ATTR_NAME);
-                    if (hasOptionalFrom)
-                    {
-                        auto constNumOfParams = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(opArgsCount));
-                        operands.push_back(constNumOfParams);
-                    }
-
-                    mlirGen(argumentsContext, operands, calledFuncType, hasOptionalFrom, genContext);
-
-                    if (hasOptionalFrom)
-                    {
-                        auto optionalFrom = funcArgsCount - opArgsCount;
-                        if (hasOptionalFrom && optionalFrom > 0)
-                        {
-                            // -1 to exclude count params
-                            for (auto i = (size_t)opArgsCount; i < funcArgsCount - 1; i++)
-                            {
-                                operands.push_back(builder.create<mlir_ts::UndefOp>(location, calledFuncType.getInput(i + 1)));
-                            }
-                        }
-                    }
+                    auto calledFunc = calledFuncIt->second;
+                    auto calledFuncType = calledFunc.getType();
+                    mlirGenCallOperands(location, calledFuncType, callExpression->arguments, calledFunc.getOperation(), operands, genContext);
 
                     // default call by name
                     auto callOp =
@@ -1418,16 +1395,71 @@ namespace
                             calledFunc,
                             operands);
 
-                    if (calledFunc.getType().getNumResults() > 0)
+                    if (calledFuncType.getNumResults() > 0)
                     {
                         return callOp.getResult(0);
                     }
 
                     return nullptr;
+
+                }
+                else
+                {
+                    // indirect call
+                    SmallVector<mlir::Value, 4> operands;
+
+                    auto calledFuncType = result.getType().cast<mlir::FunctionType>();
+                    mlirGenCallOperands(location, calledFuncType, callExpression->arguments, nullptr/*TODO: should I finish it before refactoring?*/, operands, genContext);
+
+                    // default call by name
+                    auto callIndirectOp =
+                        builder.create<mlir_ts::CallIndirectOp>(
+                            location,
+                            result,
+                            operands);
+
+                    if (calledFuncType.getNumResults() > 0)
+                    {
+                        return callIndirectOp.getResult(0);
+                    }
+
+                    return nullptr;                    
                 }
             }
 
             return nullptr;
+        }
+
+        mlir::LogicalResult mlirGenCallOperands(mlir::Location location, mlir::FunctionType calledFuncType, NodeArray<Expression> argumentsContext, mlir::Operation* funcOp, SmallVector<mlir::Value, 4> &operands, const GenContext &genContext) 
+        {
+            auto opArgsCount = std::distance(argumentsContext.begin(), argumentsContext.end());
+
+            //auto funcArgsCount = calledFunc.getNumArguments();
+            auto funcArgsCount = calledFuncType.getNumInputs();
+
+            auto hasOptionalFrom = funcOp && funcOp->hasAttrOfType<mlir::IntegerAttr>(FUNC_OPTIONAL_ATTR_NAME);
+            if (hasOptionalFrom)
+            {
+                auto constNumOfParams = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(opArgsCount));
+                operands.push_back(constNumOfParams);
+            }
+
+            mlirGen(argumentsContext, operands, calledFuncType, hasOptionalFrom, genContext);
+
+            if (hasOptionalFrom)
+            {
+                auto optionalFrom = funcArgsCount - opArgsCount;
+                if (hasOptionalFrom && optionalFrom > 0)
+                {
+                    // -1 to exclude count params
+                    for (auto i = (size_t)opArgsCount; i < funcArgsCount - 1; i++)
+                    {
+                        operands.push_back(builder.create<mlir_ts::UndefOp>(location, calledFuncType.getInput(i + 1)));
+                    }
+                }
+            }
+
+            return mlir::success();
         }
 
         mlir::LogicalResult mlirGenPrint(const mlir::Location &location, const SmallVector<mlir::Value, 4> &operands)
