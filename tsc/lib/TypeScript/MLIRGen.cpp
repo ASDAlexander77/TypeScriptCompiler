@@ -31,7 +31,7 @@
 
 #include <numeric>
 
-using namespace typescript;
+using namespace ::typescript;
 using namespace ts;
 namespace mlir_ts = mlir::typescript;
 
@@ -233,7 +233,7 @@ namespace
             {
                 return mlirGen(statementAST.as<Block>(), genContext);
             }
-            else if (kind == SyntaxKind::EmptyStatement)
+            else if (kind == SyntaxKind::EmptyStatement || kind == SyntaxKind::Unknown/*TODO: temp solution to treat null statements as empty*/)
             {
                 return mlir::success();
             }
@@ -323,6 +323,10 @@ namespace
             else if (kind == SyntaxKind::ElementAccessExpression)
             {
                 return mlirGen(expressionAST.as<ElementAccessExpression>(), genContext);
+            }
+            else if (kind == SyntaxKind::Unknown/*TODO: temp solution to treat null expr as empty expr*/)
+            {
+                return mlir::Value();
             }
 
             llvm_unreachable("unknown expression");
@@ -921,6 +925,12 @@ namespace
 
             builder.setInsertionPointToStart(&forOp.cond().front());
             auto conditionValue = mlirGen(forStatementAST->condition, genContext);
+            if (!conditionValue)
+            {
+                // const true
+                conditionValue = builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), mlir::BoolAttr::get(true, theModule.getContext()));
+            }
+
             builder.create<mlir_ts::ConditionOp>(location, conditionValue, mlir::ValueRange{});
 
             // body

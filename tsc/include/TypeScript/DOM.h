@@ -9,7 +9,7 @@
 #include "parser.h"
 
 using namespace llvm;
-using namespace typescript;
+using namespace ::typescript;
 
 namespace ts
 {

@@ -2,6 +2,7 @@ function main() {
     assert(test_do() == 10, "failed. 1");
     assert(test_while() == 10, "failed. 2");
     assert(test_for() == 10, "failed. 3");
+    test_for_empty();
 }
 
 
@@ -90,4 +91,12 @@ function test_for()
 	}
 
     return i;
+}
+
+function test_for_empty()
+{
+	for ( ; ; )
+	{
+        break;
+	}    
 }
