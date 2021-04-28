@@ -93,16 +93,6 @@ LogicalResult ts::OptionalType::verifyConstructionInvariants(Location loc, Type 
 }
 
 //===----------------------------------------------------------------------===//
-// SizedArrayType
-//===----------------------------------------------------------------------===//
-
-LogicalResult ts::SizedArrayType::verifyConstructionInvariants(Location loc, unsigned size, Type elementType)
-{
-    return success();
-}
-
-
-//===----------------------------------------------------------------------===//
 // ArrayType
 //===----------------------------------------------------------------------===//
 

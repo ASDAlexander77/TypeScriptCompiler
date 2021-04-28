@@ -24,7 +24,7 @@ def ConstantOp : TypeScript_Op<"constant",
     Syntax:
 
     ```
-    operation ::= ssa-id `=` `std.constant` attribute-value `:` type
+    operation ::= ssa-id `=` `ts.constant` attribute-value `:` type
     ```
 
     The `constant` operation produces an SSA value equal to some constant
@@ -40,8 +40,8 @@ def ConstantOp : TypeScript_Op<"constant",
     %3 = constant @myfn : (tensor<16xf32>, f32) -> tensor<16xf32>
 
     // Equivalent generic forms
-    %1 = "std.constant"() {value = 42 : i32} : () -> i32
-    %3 = "std.constant"() {value = @myfn}
+    %1 = "ts.constant"() {value = 42 : i32} : () -> i32
+    %3 = "ts.constant"() {value = @myfn}
        : () -> ((tensor<16xf32>, f32) -> tensor<16xf32>)
     ```
   }];
