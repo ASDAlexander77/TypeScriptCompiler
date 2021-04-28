@@ -452,18 +452,49 @@ void ts::WhileOp::getSuccessorRegions(Optional<unsigned> index,
   (void)operands;
 
   if (!index.hasValue()) {
-    regions.emplace_back(&before(), before().getArguments());
+    regions.emplace_back(&cond(), cond().getArguments());
     return;
   }
 
   assert(*index < 2 && "there are only two regions in a WhileOp");
   if (*index == 0) {
-    regions.emplace_back(&after(), after().getArguments());
+    regions.emplace_back(&body(), body().getArguments());
     regions.emplace_back(getResults());
     return;
   }
 
-  regions.emplace_back(&before(), before().getArguments());
+  regions.emplace_back(&cond(), cond().getArguments());
+}
+
+//===----------------------------------------------------------------------===//
+// DoWhileOp
+//===----------------------------------------------------------------------===//
+
+OperandRange ts::DoWhileOp::getSuccessorEntryOperands(unsigned index) {
+  assert(index == 0 &&
+         "DoWhileOp is expected to branch only to the first region");
+
+  return inits();
+}
+
+void ts::DoWhileOp::getSuccessorRegions(Optional<unsigned> index,
+                                  ArrayRef<Attribute> operands,
+                                  SmallVectorImpl<RegionSuccessor> &regions) {
+  (void)operands;
+
+  if (!index.hasValue()) {
+    regions.emplace_back(&cond(), cond().getArguments());
+    return;
+  }
+
+  assert(*index < 2 && "there are only two regions in a DoWhileOp");
+  if (*index == 0) {
+    regions.emplace_back(&body(), body().getArguments());
+    regions.emplace_back(getResults());
+    return;
+  }
+
+  regions.emplace_back(&cond(), cond().getArguments());
 }
 
 //===----------------------------------------------------------------------===//
@@ -483,28 +514,20 @@ void ts::ForOp::getSuccessorRegions(Optional<unsigned> index,
   (void)operands;
 
   if (!index.hasValue()) {
+    regions.emplace_back(&cond(), cond().getArguments());
+    return;
+  }
+
+  assert(*index < 2 && "there are only two regions in a ForOp");
+  if (*index == 0) {
+    regions.emplace_back(&incr(), incr().getArguments());
+    regions.emplace_back(&body(), body().getArguments());
     regions.emplace_back(getResults());
     return;
   }
 
-  assert(*index < 3 && "there are only tree regions in a ForOp");
-  if (*index == 2)
-  {
-    regions.emplace_back(&incr(), incr().getArguments());
-  }
-
-  if (*index == 1)
-  {
-    regions.emplace_back(&body(), body().getArguments());
-  }
-
-  if (*index == 0)
-  {
-    regions.emplace_back(&cond(), cond().getArguments());
-    regions.emplace_back(getResults());
-  }
+  regions.emplace_back(&cond(), cond().getArguments());
 }
-
 
 namespace
 {

@@ -845,22 +845,21 @@ namespace
             SmallVector<mlir::Type, 0> types;
             SmallVector<mlir::Value, 0> operands;
 
-            auto whileOp = builder.create<mlir_ts::WhileOp>(location, types, operands);
-            /*auto *before =*/ builder.createBlock(&whileOp.before(), {}, types);
-            /*auto *after =*/ builder.createBlock(&whileOp.after(), {}, types);
+            auto doWhileOp = builder.create<mlir_ts::DoWhileOp>(location, types, operands);
+            /*auto *cond =*/ builder.createBlock(&doWhileOp.cond(), {}, types);
+            /*auto *body =*/ builder.createBlock(&doWhileOp.body(), {}, types);
 
             // body in condition
-            builder.setInsertionPointToStart(&whileOp.before().front());
+            builder.setInsertionPointToStart(&doWhileOp.body().front());
             mlirGen(doStatementAST->statement, genContext);
+            // just simple return, as body in cond
+            builder.create<mlir_ts::YieldOp>(location);
 
+            builder.setInsertionPointToStart(&doWhileOp.cond().front());
             auto conditionValue = mlirGen(doStatementAST->expression, genContext);
             builder.create<mlir_ts::ConditionOp>(location, conditionValue, mlir::ValueRange{});
 
-            // just simple return, as body in cond
-            builder.setInsertionPointToStart(&whileOp.after().front());
-            builder.create<mlir_ts::YieldOp>(location);
-
-            builder.setInsertionPointAfter(whileOp);
+            builder.setInsertionPointAfter(doWhileOp);
             return mlir::success();
         }        
 
@@ -872,16 +871,16 @@ namespace
             SmallVector<mlir::Value, 0> operands;
 
             auto whileOp = builder.create<mlir_ts::WhileOp>(location, types, operands);
-            /*auto *before =*/ builder.createBlock(&whileOp.before(), {}, types);
-            /*auto *after =*/ builder.createBlock(&whileOp.after(), {}, types);
+            /*auto *cond =*/ builder.createBlock(&whileOp.cond(), {}, types);
+            /*auto *body =*/ builder.createBlock(&whileOp.body(), {}, types);
 
             // condition
-            builder.setInsertionPointToStart(&whileOp.before().front());
+            builder.setInsertionPointToStart(&whileOp.cond().front());
             auto conditionValue = mlirGen(whileStatementAST->expression, genContext);
             builder.create<mlir_ts::ConditionOp>(location, conditionValue, mlir::ValueRange{});
 
             // body
-            builder.setInsertionPointToStart(&whileOp.after().front());
+            builder.setInsertionPointToStart(&whileOp.body().front());
             mlirGen(whileStatementAST->statement, genContext);
             builder.create<mlir_ts::YieldOp>(location);
 

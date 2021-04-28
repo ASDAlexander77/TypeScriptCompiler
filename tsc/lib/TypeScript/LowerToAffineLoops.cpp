@@ -319,10 +319,10 @@ namespace
             auto *currentBlock = rewriter.getInsertionBlock();
             auto *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
 
-            auto *after = &whileOp.after().front();
-            auto *afterLast = &whileOp.after().back();
-            auto *before = &whileOp.before().front();
-            auto *beforeLast = &whileOp.before().back();
+            auto *body = &whileOp.body().front();
+            auto *bodyLast = &whileOp.body().back();
+            auto *cond = &whileOp.cond().front();
+            auto *condLast = &whileOp.cond().back();
 
             // logic to support continue/break
 
@@ -332,34 +332,32 @@ namespace
                     tsContext->jumps[op] = std::make_tuple(StringRef(""), continuation);
                 }
                 else if (name == "ts.continue") {
-                    tsContext->jumps[op] = std::make_tuple(StringRef(""), before);
+                    tsContext->jumps[op] = std::make_tuple(StringRef(""), cond);
                 }
             };
 
-            whileOp.before().walk(visitorBreakContinue);
-            whileOp.after().walk(visitorBreakContinue);
+            whileOp.body().walk(visitorBreakContinue);
 
             // end of logic for break/continue
 
-            rewriter.inlineRegionBefore(whileOp.after(), continuation);
-            rewriter.inlineRegionBefore(whileOp.before(), after);
+            rewriter.inlineRegionBefore(whileOp.body(), continuation);
+            rewriter.inlineRegionBefore(whileOp.cond(), body);
 
             // Branch to the "before" region.
             rewriter.setInsertionPointToEnd(currentBlock);
-            rewriter.create<BranchOp>(loc, before, whileOp.inits());
+            rewriter.create<BranchOp>(loc, cond, whileOp.inits());
 
             // Replace terminators with branches. Assuming bodies are SESE, which holds
             // given only the patterns from this file, we only need to look at the last
             // block. This should be reconsidered if we allow break/continue.
-            rewriter.setInsertionPointToEnd(beforeLast);
-            auto condOp = cast<mlir_ts::ConditionOp>(beforeLast->getTerminator());
+            rewriter.setInsertionPointToEnd(condLast);
+            auto condOp = cast<mlir_ts::ConditionOp>(condLast->getTerminator());
             auto castToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), condOp.condition());
-            rewriter.replaceOpWithNewOp<CondBranchOp>(condOp, castToI1, after, condOp.args(), continuation, ValueRange());
+            rewriter.replaceOpWithNewOp<CondBranchOp>(condOp, castToI1, body, condOp.args(), continuation, ValueRange());
 
-            rewriter.setInsertionPointToEnd(afterLast);
-
-            auto yieldOp = cast<mlir_ts::YieldOp>(afterLast->getTerminator());
-            rewriter.replaceOpWithNewOp<BranchOp>(yieldOp, before, yieldOp.results());
+            rewriter.setInsertionPointToEnd(bodyLast);
+            auto yieldOp = cast<mlir_ts::YieldOp>(bodyLast->getTerminator());
+            rewriter.replaceOpWithNewOp<BranchOp>(yieldOp, cond, yieldOp.results());
           
             // Replace the op with values "yielded" from the "before" region, which are
             // visible by dominance.
@@ -373,30 +371,13 @@ namespace
     /// forwarding its arguments back to the "before" region (i.e., a "do-while"
     /// loop). This avoid inlining the "after" region completely and branches back
     /// to the "before" entry instead.
-    struct DoWhileOpLowering : public TsPattern<mlir_ts::WhileOp>
+    struct DoWhileOpLowering : public TsPattern<mlir_ts::DoWhileOp>
     {
-        using TsPattern<mlir_ts::WhileOp>::TsPattern;
+        using TsPattern<mlir_ts::DoWhileOp>::TsPattern;
 
-        LogicalResult matchAndRewrite(mlir_ts::WhileOp whileOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::DoWhileOp doWhileOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            Location loc = whileOp.getLoc();
-            
-            if (!llvm::hasSingleElement(whileOp.after()))
-                return rewriter.notifyMatchFailure(whileOp,
-                                                "do-while simplification applicable to "
-                                                "single-block 'after' region only");
-
-            Block &afterBlock = whileOp.after().front();
-            if (!llvm::hasSingleElement(afterBlock))
-                return rewriter.notifyMatchFailure(whileOp,
-                                                "do-while simplification applicable "
-                                                "only if 'after' region has no payload");
-
-            auto yield = dyn_cast<mlir_ts::YieldOp>(&afterBlock.front());
-            if (!yield || yield.results() != afterBlock.getArguments())
-                return rewriter.notifyMatchFailure(whileOp,
-                                                "do-while simplification applicable "
-                                                "only to forwarding 'after' regions");
+            Location loc = doWhileOp.getLoc();
 
             // Split the current block before the WhileOp to create the inlining point.
             OpBuilder::InsertionGuard guard(rewriter);
@@ -404,8 +385,10 @@ namespace
             Block *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
 
             // Only the "before" region should be inlined.
-            Block *before = &whileOp.before().front();
-            Block *beforeLast = &whileOp.before().back();
+            auto *body = &doWhileOp.body().front();
+            auto *bodyLast = &doWhileOp.body().back();
+            auto *cond = &doWhileOp.cond().front();
+            auto *condLast = &doWhileOp.cond().back();
 
             // logic to support continue/break
 
@@ -415,32 +398,36 @@ namespace
                     tsContext->jumps[op] = std::make_tuple(StringRef(""), continuation);
                 }
                 else if (name == "ts.continue") {
-                    tsContext->jumps[op] = std::make_tuple(StringRef(""), before);
+                    tsContext->jumps[op] = std::make_tuple(StringRef(""), cond);
                 }
             };
 
-            whileOp.before().walk(visitorBreakContinue);
-            whileOp.after().walk(visitorBreakContinue);
+            doWhileOp.body().walk(visitorBreakContinue);
 
             // end of logic for break/continue
 
-            rewriter.inlineRegionBefore(whileOp.before(), continuation);
+            rewriter.inlineRegionBefore(doWhileOp.cond(), continuation);
+            rewriter.inlineRegionBefore(doWhileOp.body(), cond);
 
             // Branch to the "before" region.
             rewriter.setInsertionPointToEnd(currentBlock);
-            rewriter.create<BranchOp>(whileOp.getLoc(), before, whileOp.inits());
+            rewriter.create<BranchOp>(doWhileOp.getLoc(), body, doWhileOp.inits());
+
+            rewriter.setInsertionPointToEnd(bodyLast);
+            auto yieldOp = cast<mlir_ts::YieldOp>(bodyLast->getTerminator());
+            rewriter.replaceOpWithNewOp<BranchOp>(yieldOp, cond, yieldOp.results());
 
             // Loop around the "before" region based on condition.
-            rewriter.setInsertionPointToEnd(beforeLast);
-            auto condOp = cast<mlir_ts::ConditionOp>(beforeLast->getTerminator());
+            rewriter.setInsertionPointToEnd(condLast);
+            auto condOp = cast<mlir_ts::ConditionOp>(condLast->getTerminator());
             auto castToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), condOp.condition());
-            rewriter.replaceOpWithNewOp<CondBranchOp>(condOp, castToI1, before,
+            rewriter.replaceOpWithNewOp<CondBranchOp>(condOp, castToI1, body,
                                                     condOp.args(), continuation,
                                                     ValueRange());
-
+           
             // Replace the op with values "yielded" from the "before" region, which are
             // visible by dominance.
-            rewriter.replaceOp(whileOp, condOp.args());
+            rewriter.replaceOp(doWhileOp, condOp.args());
 
             return success();
         }
@@ -670,15 +657,12 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     >(&getContext());
 
     patterns.insert<
+        DoWhileOpLowering,
         WhileOpLowering,
         ForOpLowering,
         BreakOpLowering,
         ContinueOpLowering
     >(&getContext(), typeConverter, &tsContext);    
-
-    patterns.insert<
-        DoWhileOpLowering
-    >(&getContext(), typeConverter, &tsContext, /*benefit=*/2);
 
     // With the target and rewrite patterns defined, we can now attempt the
     // conversion. The conversion will signal failure if any of our `illegal`
