@@ -545,7 +545,9 @@ namespace
             else
             {
                 // auto calculate name
-                // __func+location
+                std::stringstream ssName;
+                ssName << "__uf" << hash_value(location);
+                name = ssName.str();
             }
 
             auto funcProto = std::make_shared<FunctionPrototypeDOM>(name, params);
@@ -624,6 +626,9 @@ namespace
 
         mlir::LogicalResult mlirGen(FunctionDeclaration functionDeclarationAST, const GenContext &genContext)
         {
+            // save point before 
+            functionBeginPoint = builder.saveInsertionPoint();
+
             if (auto funcRefValue = mlirGenunctionLikeDeclaration(functionDeclarationAST, genContext))            
             {
                 funcRefValue.getDefiningOp()->erase();
@@ -635,7 +640,17 @@ namespace
 
         mlir::Value mlirGen(FunctionExpression functionExpressionAST, const GenContext &genContext)
         {
-            return mlirGenunctionLikeDeclaration(functionExpressionAST, genContext);
+            mlir::OpBuilder::InsertPoint pt = builder.saveInsertionPoint();
+            continueFunctionPoint.push_back(pt);
+
+            // provide name for it
+            auto funcSymbolRef = mlirGenunctionLikeDeclaration(functionExpressionAST, genContext);
+
+            // restore point
+            builder.restoreInsertionPoint(continueFunctionPoint.back());
+            continueFunctionPoint.pop_back();
+
+            return funcSymbolRef;
         }        
 
         mlir::Value mlirGenunctionLikeDeclaration(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
@@ -662,7 +677,7 @@ namespace
             auto returnType = mlirGenFunctionBody(functionLikeDeclarationBaseAST, funcOp, funcProto, funcGenContext);
 
             // set visibility index
-            if (functionLikeDeclarationBaseAST->name.as<Identifier>()->escapedText != S("main"))
+            if (funcOp.getName() != StringRef("main"))
             {
                 funcOp.setPrivate();
             }
@@ -1808,7 +1823,7 @@ namespace
             return mlir::success();
         }
 
-    private:
+    protected:
 
         mlir::StringAttr getStringAttr(std::string text)
         {
@@ -1840,6 +1855,12 @@ namespace
         // helper to get line number
         Parser parser;
         ts::SourceFile sourceFile;
+
+    private:
+        // 
+        mlir::OpBuilder::InsertPoint functionBeginPoint;
+
+        mlir::SmallVector<mlir::OpBuilder::InsertPoint> continueFunctionPoint;
     };
 } // namespace
 
