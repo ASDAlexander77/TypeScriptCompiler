@@ -324,6 +324,10 @@ namespace
             {
                 return mlirGen(expressionAST.as<ElementAccessExpression>(), genContext);
             }
+            else if (kind == SyntaxKind::FunctionExpression)
+            {
+                return mlirGen(expressionAST.as<FunctionExpression>(), genContext);
+            }
             else if (kind == SyntaxKind::Unknown/*TODO: temp solution to treat null expr as empty expr*/)
             {
                 return mlir::Value();
@@ -506,11 +510,11 @@ namespace
         }
 
         std::tuple<mlir_ts::FuncOp, FunctionPrototypeDOM::TypePtr, bool> mlirGenFunctionPrototype(
-            FunctionDeclaration functionDeclarationAST, const GenContext &genContext)
+            FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
         {
-            auto location = loc(functionDeclarationAST);
+            auto location = loc(functionLikeDeclarationBaseAST);
 
-            std::vector<FunctionParamDOM::TypePtr> params = mlirGenParameters(functionDeclarationAST, genContext);
+            std::vector<FunctionParamDOM::TypePtr> params = mlirGenParameters(functionLikeDeclarationBaseAST, genContext);
             SmallVector<mlir::Type> argTypes;
             auto argNumber = 0;
             auto argOptionalFrom = -1;
@@ -533,7 +537,7 @@ namespace
             }
 
             std::string name;
-            auto identifier = functionDeclarationAST->name.as<Identifier>();
+            auto identifier = functionLikeDeclarationBaseAST->name.as<Identifier>();
             if (identifier)
             {
                 name = wstos(identifier->escapedText);
@@ -547,13 +551,13 @@ namespace
             auto funcProto = std::make_shared<FunctionPrototypeDOM>(name, params);
 
             mlir::FunctionType funcType;
-            if (auto typeParameter = functionDeclarationAST->type)
+            if (auto typeParameter = functionLikeDeclarationBaseAST->type)
             {
                 auto returnType = getType(typeParameter);
                 funcProto->setReturnType(returnType);
                 funcType = builder.getFunctionType(argTypes, returnType);
             }
-            else if (auto returnType = getReturnType(functionDeclarationAST, name, argTypes, funcProto, genContext))
+            else if (auto returnType = getReturnType(functionLikeDeclarationBaseAST, name, argTypes, funcProto, genContext))
             {
                 funcProto->setReturnType(returnType);
                 funcType = builder.getFunctionType(argTypes, returnType);
@@ -576,7 +580,7 @@ namespace
             return std::make_tuple(funcOp, std::move(funcProto), true);
         }
 
-        mlir::Type getReturnType(FunctionDeclaration functionDeclarationAST, StringRef name,
+        mlir::Type getReturnType(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, StringRef name,
                                  const SmallVector<mlir::Type> &argTypes, const FunctionPrototypeDOM::TypePtr &funcProto, const GenContext &genContext)
         {
             mlir::Type returnType;
@@ -592,7 +596,7 @@ namespace
                     }
                 });
 
-            visitorAST1.visit(functionDeclarationAST);
+            visitorAST1.visit(functionLikeDeclarationBaseAST);
 
             if (!hasReturnStatementWithExpr)
             {
@@ -602,7 +606,7 @@ namespace
             mlir::OpBuilder::InsertionGuard guard(builder);
 
             auto partialDeclFuncType = builder.getFunctionType(argTypes, llvm::None);
-            auto dummyFuncOp = mlir_ts::FuncOp::create(loc(functionDeclarationAST), name, partialDeclFuncType);
+            auto dummyFuncOp = mlir_ts::FuncOp::create(loc(functionLikeDeclarationBaseAST), name, partialDeclFuncType);
 
             // simulate scope
             SymbolTableScopeT varScope(symbolTable);
@@ -610,7 +614,7 @@ namespace
             GenContext genContextWithPassResult(genContext);
             genContextWithPassResult.allowPartialResolve = true;
             genContextWithPassResult.passResult = new PassResult();
-            if (failed(mlirGenFunctionBody(functionDeclarationAST, dummyFuncOp, funcProto, genContextWithPassResult, true)))
+            if (failed(mlirGenFunctionBody(functionLikeDeclarationBaseAST, dummyFuncOp, funcProto, genContextWithPassResult, true)))
             {
                 return mlir::Type();
             }
@@ -620,15 +624,33 @@ namespace
 
         mlir::LogicalResult mlirGen(FunctionDeclaration functionDeclarationAST, const GenContext &genContext)
         {
+            if (auto funcRefValue = mlirGenunctionLikeDeclaration(functionDeclarationAST, genContext))            
+            {
+                funcRefValue.getDefiningOp()->erase();
+                return mlir::success();
+            }
+
+            return mlir::failure();
+        }
+
+        mlir::Value mlirGen(FunctionExpression functionExpressionAST, const GenContext &genContext)
+        {
+            return mlirGenunctionLikeDeclaration(functionExpressionAST, genContext);
+        }        
+
+        mlir::Value mlirGenunctionLikeDeclaration(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
+        {
+            auto location = loc(functionLikeDeclarationBaseAST);
+
             SymbolTableScopeT varScope(symbolTable);
-            auto funcOpWithFuncProto = mlirGenFunctionPrototype(functionDeclarationAST, genContext);
+            auto funcOpWithFuncProto = mlirGenFunctionPrototype(functionLikeDeclarationBaseAST, genContext);
 
             auto &funcOp = std::get<0>(funcOpWithFuncProto);
             auto &funcProto = std::get<1>(funcOpWithFuncProto);
             auto result = std::get<2>(funcOpWithFuncProto);
             if (!result || !funcOp)
             {
-                return mlir::failure();
+                return mlir::Value();
             }
 
             auto funcGenContext = GenContext(genContext);
@@ -637,10 +659,10 @@ namespace
                 funcGenContext.functionReturnType = funcOp.getType().getResult(0);
             }
 
-            auto returnType = mlirGenFunctionBody(functionDeclarationAST, funcOp, funcProto, funcGenContext);
+            auto returnType = mlirGenFunctionBody(functionLikeDeclarationBaseAST, funcOp, funcProto, funcGenContext);
 
             // set visibility index
-            if (functionDeclarationAST->name.as<Identifier>()->escapedText != S("main"))
+            if (functionLikeDeclarationBaseAST->name.as<Identifier>()->escapedText != S("main"))
             {
                 funcOp.setPrivate();
             }
@@ -648,10 +670,10 @@ namespace
             theModule.push_back(funcOp);
             functionMap.insert({funcOp.getName(), funcOp});
 
-            return mlir::success();
-        }
+            return builder.create<mlir_ts::SymbolRefOp>(location, funcOp.getType(), mlir::FlatSymbolRefAttr::get(funcOp.getName(), builder.getContext()));
+        }  
 
-        mlir::LogicalResult mlirGenFunctionBody(FunctionDeclaration functionDeclarationAST, mlir_ts::FuncOp funcOp,
+        mlir::LogicalResult mlirGenFunctionBody(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, mlir_ts::FuncOp funcOp,
                                                 FunctionPrototypeDOM::TypePtr funcProto, const GenContext &genContext, bool dummyRun = false)
         {
             auto &entryBlock = *funcOp.addEntryBlock();
@@ -674,7 +696,7 @@ namespace
             auto hasReturn = retType && !retType.isa<mlir_ts::VoidType>();
             if (hasReturn)
             {
-                auto location = loc(functionDeclarationAST);
+                auto location = loc(functionLikeDeclarationBaseAST);
                 auto entryOp = builder.create<mlir_ts::EntryOp>(location, mlir_ts::RefType::get(retType));
                 auto varDecl = std::make_shared<VariableDeclarationDOM>(RETURN_VARIABLE_NAME, retType, location);
                 varDecl->setReadWriteAccess();
@@ -682,7 +704,7 @@ namespace
             }
             else
             {
-                builder.create<mlir_ts::EntryOp>(loc(functionDeclarationAST), mlir::Type());
+                builder.create<mlir_ts::EntryOp>(loc(functionLikeDeclarationBaseAST), mlir::Type());
             }
 
             auto arguments = entryBlock.getArguments();
@@ -763,13 +785,13 @@ namespace
                 }
             }
 
-            if (failed(mlirGenBody(functionDeclarationAST->body, genContext)))
+            if (failed(mlirGenBody(functionLikeDeclarationBaseAST->body, genContext)))
             {
                 return mlir::failure();
             }
 
             // add exit code
-            builder.create<mlir_ts::ExitOp>(loc(functionDeclarationAST));
+            builder.create<mlir_ts::ExitOp>(loc(functionLikeDeclarationBaseAST));
 
             if (dummyRun)
             {
