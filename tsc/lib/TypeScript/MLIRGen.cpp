@@ -1729,6 +1729,10 @@ namespace
             {
                 return getVoidType();
             }            
+            else if (kind == SyntaxKind::FunctionType)
+            {
+                return getFunctionType(typeReferenceAST.as<FunctionTypeNode>());
+            }
 
             return getAnyType();
         }
@@ -1738,7 +1742,7 @@ namespace
             return mlir_ts::VoidType::get(builder.getContext());
         }
 
-        mlir::Type getBooleanType()
+        mlir_ts::BooleanType getBooleanType()
         {
             return mlir_ts::BooleanType::get(builder.getContext());
         }
@@ -1753,7 +1757,19 @@ namespace
             return mlir_ts::ArrayType::get(elementType);
         }
 
-        mlir::Type getAnyType()
+        mlir::FunctionType getFunctionType(FunctionTypeNode functionType)
+        {
+            auto resultType = getType(functionType->type);
+            SmallVector<mlir::Type> argTypes;
+            for (auto argType : functionType->typeParameters)
+            {
+                argTypes.push_back(getType(argType));
+            }
+
+            return mlir::FunctionType::get(builder.getContext(), argTypes, resultType);
+        }
+
+        mlir_ts::AnyType getAnyType()
         {
             return mlir_ts::AnyType::get(builder.getContext());
         }

@@ -1,10 +1,13 @@
-function ___f1() 
-{
+function f1() {
     print("Hello World!");
-};
+}
 
-function main() 
-{
-    const x = ___f1;
+function run(f: () => void) {
+    f();
+}
+
+function main() {
+    const x = f1;
     x();
+    run(x);
 }
