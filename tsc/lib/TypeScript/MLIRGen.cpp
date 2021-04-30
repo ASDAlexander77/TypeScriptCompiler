@@ -1166,6 +1166,13 @@ namespace
 
             builder.setInsertionPointToStart(&ifOp.elseRegion().front());
             auto resultFalse = andOp ? leftExpressionValue : mlirGen(rightExpression, genContext);
+
+            // sync right part
+            if (resultTrue.getType() != resultFalse.getType())
+            {
+                resultFalse = builder.create<mlir_ts::CastOp>(location, resultTrue.getType(), resultFalse);
+            }                    
+
             builder.create<mlir_ts::YieldOp>(location, mlir::ValueRange{resultFalse});
 
             builder.setInsertionPointAfter(ifOp);
