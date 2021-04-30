@@ -58,10 +58,29 @@ namespace
     {
         GenContext() = default;
 
+        void clean() 
+        {
+            if (cleanUps)
+            {
+                for (auto op : *cleanUps)
+                {
+                    op->erase();
+                }
+
+                delete cleanUps;
+            }
+
+            if (passResult)
+            {
+                delete passResult;
+            }
+        }
+
         bool allowPartialResolve;
         bool dummyRun;
         mlir::Type functionReturnType;
         PassResult *passResult;
+        mlir::SmallVector<mlir::Block *>* cleanUps;
     };
 
     /// Implementation of a simple MLIR emission from the TypeScript AST.
@@ -621,13 +640,16 @@ namespace
             GenContext genContextWithPassResult(genContext);
             genContextWithPassResult.allowPartialResolve = true;
             genContextWithPassResult.dummyRun = true;
+            genContextWithPassResult.cleanUps = new SmallVector<mlir::Block*>();
             genContextWithPassResult.passResult = new PassResult();
-            if (failed(mlirGenFunctionBody(functionLikeDeclarationBaseAST, dummyFuncOp, funcProto, genContextWithPassResult)))
+            mlir::Type functionReturnType;
+            if (succeeded(mlirGenFunctionBody(functionLikeDeclarationBaseAST, dummyFuncOp, funcProto, genContextWithPassResult)))
             {
-                return mlir::Type();
+                functionReturnType = genContextWithPassResult.passResult->functionReturnType;
             }
 
-            return genContextWithPassResult.passResult->functionReturnType;
+            genContextWithPassResult.clean();
+            return functionReturnType;
         }
 
         mlir::LogicalResult mlirGen(FunctionDeclaration functionDeclarationAST, const GenContext &genContext)
@@ -642,7 +664,7 @@ namespace
                 builder.restoreInsertionPoint(functionBeginPoint);
             }
 
-            if (auto funcRefValue = mlirGenunctionLikeDeclaration(functionDeclarationAST, genContext))            
+            if (auto funcRefValue = mlirGenFunctionLikeDeclaration(functionDeclarationAST, genContext))            
             {
                 funcRefValue.getDefiningOp()->erase();
                 functionBeginPoint = mlir::OpBuilder::InsertPoint();
@@ -663,7 +685,7 @@ namespace
             }
 
             // provide name for it
-            auto funcSymbolRef = mlirGenunctionLikeDeclaration(functionExpressionAST, genContext);
+            auto funcSymbolRef = mlirGenFunctionLikeDeclaration(functionExpressionAST, genContext);
 
             // restore point
             builder.restoreInsertionPoint(continueFunctionPoint.back());
@@ -672,7 +694,7 @@ namespace
             return funcSymbolRef;
         }        
 
-        mlir::Value mlirGenunctionLikeDeclaration(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
+        mlir::Value mlirGenFunctionLikeDeclaration(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
         {
             auto location = loc(functionLikeDeclarationBaseAST);
 
@@ -710,7 +732,8 @@ namespace
         mlir::LogicalResult mlirGenFunctionBody(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, mlir_ts::FuncOp funcOp,
                                                 FunctionPrototypeDOM::TypePtr funcProto, const GenContext &genContext)
         {
-            auto &entryBlock = *funcOp.addEntryBlock();
+            auto *blockPtr = funcOp.addEntryBlock();
+            auto &entryBlock = *blockPtr;
 
             // process function params
             for (auto paramPairs : llvm::zip(funcProto->getArgs(), entryBlock.getArguments()))
@@ -829,7 +852,7 @@ namespace
 
             if (genContext.dummyRun)
             {
-                entryBlock.erase();
+                genContext.cleanUps->push_back(blockPtr);
             }
 
             return mlir::success();
