@@ -654,43 +654,22 @@ namespace
 
         mlir::LogicalResult mlirGen(FunctionDeclaration functionDeclarationAST, const GenContext &genContext)
         {
-            // save point before 
-            if (!functionBeginPoint.isSet())
-            {
-                functionBeginPoint = builder.saveInsertionPoint();
-            }
-            else
-            {
-                builder.restoreInsertionPoint(functionBeginPoint);
-            }
-
+            mlir::OpBuilder::InsertionGuard guard(builder);
             if (auto funcRefValue = mlirGenFunctionLikeDeclaration(functionDeclarationAST, genContext))            
             {
                 funcRefValue.getDefiningOp()->erase();
-                functionBeginPoint = mlir::OpBuilder::InsertPoint();
                 return mlir::success();
             }
 
-            functionBeginPoint = mlir::OpBuilder::InsertPoint();
             return mlir::failure();
         }
 
         mlir::Value mlirGen(FunctionExpression functionExpressionAST, const GenContext &genContext)
         {
-            mlir::OpBuilder::InsertPoint pt = builder.saveInsertionPoint();
-            continueFunctionPoint.push_back(pt);
-            if (functionBeginPoint.isSet())
-            {
-                builder.restoreInsertionPoint(functionBeginPoint);
-            }
+            mlir::OpBuilder::InsertionGuard guard(builder);
 
             // provide name for it
             auto funcSymbolRef = mlirGenFunctionLikeDeclaration(functionExpressionAST, genContext);
-
-            // restore point
-            builder.restoreInsertionPoint(continueFunctionPoint.back());
-            continueFunctionPoint.pop_back();
-
             return funcSymbolRef;
         }        
 
@@ -727,7 +706,7 @@ namespace
             {
                 theModule.push_back(funcOp);
             }
-            
+
             functionMap.insert({funcOp.getName(), funcOp});
 
             return builder.create<mlir_ts::SymbolRefOp>(location, funcOp.getType(), mlir::FlatSymbolRefAttr::get(funcOp.getName(), builder.getContext()));
@@ -1910,11 +1889,7 @@ namespace
         Parser parser;
         ts::SourceFile sourceFile;
 
-    private:
-        // 
         mlir::OpBuilder::InsertPoint functionBeginPoint;
-
-        mlir::SmallVector<mlir::OpBuilder::InsertPoint> continueFunctionPoint;
     };
 } // namespace
 
