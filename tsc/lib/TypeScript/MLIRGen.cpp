@@ -668,6 +668,8 @@ namespace
         {
             mlir::OpBuilder::InsertionGuard guard(builder);
 
+            builder.restoreInsertionPoint(functionBeginPoint);
+
             // provide name for it
             auto funcSymbolRef = mlirGenFunctionLikeDeclaration(functionExpressionAST, genContext);
             return funcSymbolRef;
