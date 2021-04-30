@@ -45,6 +45,8 @@ using llvm::SmallVector;
 using llvm::StringRef;
 using llvm::Twine;
 
+// TODO: optimize of amount of calls to detect return types and if it is was calculated before then do not run it all the time
+
 namespace
 {
     struct PassResult
@@ -54,7 +56,10 @@ namespace
 
     struct GenContext
     {
+        GenContext() = default;
+
         bool allowPartialResolve;
+        bool dummyRun;
         mlir::Type functionReturnType;
         PassResult *passResult;
     };
@@ -141,7 +146,7 @@ namespace
 
                         auto funcOp = std::get<0>(funcOpAndFuncProto);
                         auto &funcProto = std::get<1>(funcOpAndFuncProto);
-                        if (auto funcOp = theModule.lookupSymbol<mlir::FuncOp>(funcProto->getName()))
+                        if (auto funcOp = theModule.lookupSymbol<mlir_ts::FuncOp>(funcProto->getName()))
                         {
                             return;
                         }
@@ -615,8 +620,9 @@ namespace
 
             GenContext genContextWithPassResult(genContext);
             genContextWithPassResult.allowPartialResolve = true;
+            genContextWithPassResult.dummyRun = true;
             genContextWithPassResult.passResult = new PassResult();
-            if (failed(mlirGenFunctionBody(functionLikeDeclarationBaseAST, dummyFuncOp, funcProto, genContextWithPassResult, true)))
+            if (failed(mlirGenFunctionBody(functionLikeDeclarationBaseAST, dummyFuncOp, funcProto, genContextWithPassResult)))
             {
                 return mlir::Type();
             }
@@ -627,14 +633,23 @@ namespace
         mlir::LogicalResult mlirGen(FunctionDeclaration functionDeclarationAST, const GenContext &genContext)
         {
             // save point before 
-            functionBeginPoint = builder.saveInsertionPoint();
+            if (!functionBeginPoint.isSet())
+            {
+                functionBeginPoint = builder.saveInsertionPoint();
+            }
+            else
+            {
+                builder.restoreInsertionPoint(functionBeginPoint);
+            }
 
             if (auto funcRefValue = mlirGenunctionLikeDeclaration(functionDeclarationAST, genContext))            
             {
                 funcRefValue.getDefiningOp()->erase();
+                functionBeginPoint = mlir::OpBuilder::InsertPoint();
                 return mlir::success();
             }
 
+            functionBeginPoint = mlir::OpBuilder::InsertPoint();
             return mlir::failure();
         }
 
@@ -642,6 +657,10 @@ namespace
         {
             mlir::OpBuilder::InsertPoint pt = builder.saveInsertionPoint();
             continueFunctionPoint.push_back(pt);
+            if (functionBeginPoint.isSet())
+            {
+                builder.restoreInsertionPoint(functionBeginPoint);
+            }
 
             // provide name for it
             auto funcSymbolRef = mlirGenunctionLikeDeclaration(functionExpressionAST, genContext);
@@ -689,7 +708,7 @@ namespace
         }  
 
         mlir::LogicalResult mlirGenFunctionBody(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, mlir_ts::FuncOp funcOp,
-                                                FunctionPrototypeDOM::TypePtr funcProto, const GenContext &genContext, bool dummyRun = false)
+                                                FunctionPrototypeDOM::TypePtr funcProto, const GenContext &genContext)
         {
             auto &entryBlock = *funcOp.addEntryBlock();
 
@@ -808,7 +827,7 @@ namespace
             // add exit code
             builder.create<mlir_ts::ExitOp>(loc(functionLikeDeclarationBaseAST));
 
-            if (dummyRun)
+            if (genContext.dummyRun)
             {
                 entryBlock.erase();
             }
@@ -863,6 +882,10 @@ namespace
 
             // condition
             auto condValue = mlirGen(ifStatementAST->expression, genContext);
+            if (condValue.getType() != getBooleanType())
+            {
+                condValue = builder.create<mlir_ts::CastOp>(location, getBooleanType(), condValue);
+            }
 
             auto ifOp = builder.create<mlir_ts::IfOp>(location, condValue, hasElse);
 
@@ -1085,6 +1108,10 @@ namespace
 
             // condition
             auto condValue = mlirGen(conditionalExpressionAST->condition, genContext);
+            if (condValue.getType() != getBooleanType())
+            {
+                condValue = builder.create<mlir_ts::CastOp>(location, getBooleanType(), condValue);
+            }
 
             // detect value type
             mlir::Type resultType;

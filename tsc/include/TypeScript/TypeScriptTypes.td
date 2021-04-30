@@ -19,6 +19,11 @@ def TypeScript_Any : TypeScript_Type<"Any"> {
 
 def TypeScript_Boolean : TypeScript_Type<"Boolean"> {
     let mnemonic = "boolean";
+
+    // We define the printer inline.
+    let printer = [{
+        $_printer << "boolean";
+    }];
 }
 
 def TypeScript_Void : TypeScript_Type<"Void"> {
