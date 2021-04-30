@@ -723,7 +723,11 @@ namespace
                 funcOp.setPrivate();
             }
 
-            theModule.push_back(funcOp);
+            if (!genContext.dummyRun)
+            {
+                theModule.push_back(funcOp);
+            }
+            
             functionMap.insert({funcOp.getName(), funcOp});
 
             return builder.create<mlir_ts::SymbolRefOp>(location, funcOp.getType(), mlir::FlatSymbolRefAttr::get(funcOp.getName(), builder.getContext()));
