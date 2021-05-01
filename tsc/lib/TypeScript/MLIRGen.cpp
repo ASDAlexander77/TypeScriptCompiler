@@ -352,6 +352,10 @@ namespace
             {
                 return mlirGen(expressionAST.as<FunctionExpression>(), genContext);
             }
+            else if (kind == SyntaxKind::TypeAssertionExpression)
+            {
+                return mlirGen(expressionAST.as<TypeAssertion>(), genContext);
+            }            
             else if (kind == SyntaxKind::Unknown/*TODO: temp solution to treat null expr as empty expr*/)
             {
                 return mlir::Value();
@@ -841,6 +845,17 @@ namespace
             }
 
             return mlir::success();
+        }
+
+        mlir::Value mlirGen(TypeAssertion typeAssertionAST, const GenContext &genContext)
+        {
+            auto location = loc(typeAssertionAST);
+
+            auto typeInfo = getType(typeAssertionAST->type);
+            auto exprValue = mlirGen(typeAssertionAST->expression, genContext);
+
+            auto castedValue = builder.create<mlir_ts::CastOp>(location, typeInfo, exprValue);
+            return castedValue;
         }
 
         mlir::LogicalResult mlirGen(ReturnStatement returnStatementAST, const GenContext &genContext)
