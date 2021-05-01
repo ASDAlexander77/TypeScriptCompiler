@@ -1199,7 +1199,29 @@ namespace
         {
             auto location = loc(binaryExpressionAST);
 
+            auto saveResult = true;
             auto opCode = (SyntaxKind) binaryExpressionAST->operatorToken;
+            // check if we need to save result
+            switch (opCode)
+            {
+                case SyntaxKind::PlusEqualsToken: opCode = SyntaxKind::PlusEqualsToken; break;
+                case SyntaxKind::MinusEqualsToken: opCode = SyntaxKind::MinusEqualsToken; break;
+                case SyntaxKind::AsteriskEqualsToken: opCode = SyntaxKind::AsteriskEqualsToken; break;
+                case SyntaxKind::AsteriskAsteriskEqualsToken: opCode = SyntaxKind::AsteriskAsteriskEqualsToken; break;
+                case SyntaxKind::SlashEqualsToken: opCode = SyntaxKind::SlashEqualsToken; break;
+                case SyntaxKind::PercentEqualsToken: opCode = SyntaxKind::PercentEqualsToken; break;
+                case SyntaxKind::LessThanLessThanEqualsToken: opCode = SyntaxKind::LessThanLessThanEqualsToken; break;
+                case SyntaxKind::GreaterThanGreaterThanEqualsToken: opCode = SyntaxKind::GreaterThanGreaterThanEqualsToken; break;
+                case SyntaxKind::GreaterThanGreaterThanGreaterThanEqualsToken: opCode = SyntaxKind::GreaterThanGreaterThanGreaterThanEqualsToken; break;
+                case SyntaxKind::AmpersandEqualsToken: opCode = SyntaxKind::AmpersandEqualsToken; break;
+                case SyntaxKind::BarEqualsToken: opCode = SyntaxKind::BarEqualsToken; break;
+                case SyntaxKind::BarBarEqualsToken: opCode = SyntaxKind::BarBarEqualsToken; break;
+                case SyntaxKind::AmpersandAmpersandEqualsToken: opCode = SyntaxKind::AmpersandAmpersandEqualsToken; break;
+                case SyntaxKind::QuestionQuestionEqualsToken: opCode = SyntaxKind::QuestionQuestionEqualsToken; break;
+                case SyntaxKind::CaretEqualsToken: opCode = SyntaxKind::CaretEqualsToken; break;
+                case SyntaxKind::EqualsToken: /*nothing to do*/ break;
+                default: saveResult = false; break;
+            }
 
             auto leftExpression = binaryExpressionAST->left;
             auto rightExpression = binaryExpressionAST->right;
@@ -1304,38 +1326,12 @@ namespace
                     break;
             }
 
+            auto result = rightExpressionValue;
             switch (opCode)
             {
             case SyntaxKind::EqualsToken:
-            {
-                if (auto loadOp = dyn_cast<mlir_ts::LoadOp>(leftExpressionValue.getDefiningOp()))
-                {
-                    // TODO: when saving const array into variable we need to allocate space and copy array as we need to have writable array
-                    builder.create<mlir_ts::StoreOp>(
-                        location,
-                        rightExpressionValue,
-                        loadOp.reference());
-                    loadOp.erase();
-                }
-                else if (auto loadElementOp = dyn_cast<mlir_ts::LoadElementOp>(leftExpressionValue.getDefiningOp()))
-                {
-                    builder.create<mlir_ts::StoreElementOp>(
-                        location,
-                        rightExpressionValue,
-                        loadElementOp.array(),
-                        loadElementOp.index());        
-                    loadElementOp.erase();            
-                }
-                else
-                {
-                    builder.create<mlir_ts::StoreOp>(
-                        location,
-                        rightExpressionValue,
-                        leftExpressionValue);
-                }
-
-                return rightExpressionValue;
-            }
+                // nothing to do;
+                break;
             case SyntaxKind::EqualsEqualsToken:
             case SyntaxKind::EqualsEqualsEqualsToken:
             case SyntaxKind::ExclamationEqualsToken:
@@ -1344,22 +1340,58 @@ namespace
             case SyntaxKind::GreaterThanEqualsToken:
             case SyntaxKind::LessThanToken:
             case SyntaxKind::LessThanEqualsToken:
-                return builder.create<mlir_ts::LogicalBinaryOp>(
-                    location,
-                    getBooleanType(),
-                    builder.getI32IntegerAttr((int)opCode),
-                    leftExpressionValue,
-                    rightExpressionValue);
+                result = 
+                    builder.create<mlir_ts::LogicalBinaryOp>(
+                        location,
+                        getBooleanType(),
+                        builder.getI32IntegerAttr((int)opCode),
+                        leftExpressionValue,
+                        rightExpressionValue);
+                break;
             case SyntaxKind::CommaToken:
                 return rightExpressionValue;
             default:
-                return builder.create<mlir_ts::ArithmeticBinaryOp>(
-                    location,
-                    leftExpressionValue.getType(),
-                    builder.getI32IntegerAttr((int)opCode),
-                    leftExpressionValue,
-                    rightExpressionValue);
+                result = 
+                    builder.create<mlir_ts::ArithmeticBinaryOp>(
+                        location,
+                        leftExpressionValue.getType(),
+                        builder.getI32IntegerAttr((int)opCode),
+                        leftExpressionValue,
+                        rightExpressionValue);
+                break;
             }
+
+            if (saveResult)
+            {
+                // TODO: finish it for field access, review CodeLogicHelper.saveResult
+                if (auto loadOp = dyn_cast<mlir_ts::LoadOp>(leftExpressionValue.getDefiningOp()))
+                {
+                    // TODO: when saving const array into variable we need to allocate space and copy array as we need to have writable array
+                    builder.create<mlir_ts::StoreOp>(
+                        location,
+                        result,
+                        loadOp.reference());
+                    loadOp.erase();
+                }
+                else if (auto loadElementOp = dyn_cast<mlir_ts::LoadElementOp>(leftExpressionValue.getDefiningOp()))
+                {
+                    builder.create<mlir_ts::StoreElementOp>(
+                        location,
+                        result,
+                        loadElementOp.array(),
+                        loadElementOp.index());        
+                    loadElementOp.erase();            
+                }
+                else
+                {
+                    builder.create<mlir_ts::StoreOp>(
+                        location,
+                        result,
+                        leftExpressionValue);
+                }
+            }
+
+            return result;
         }
 
         mlir::Value mlirGen(SpreadElement spreadElement, const GenContext &genContext)

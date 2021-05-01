@@ -364,15 +364,15 @@ namespace typescript
         template <typename OpTy>
         void saveResult(OpTy& op, mlir::Value result)
         {
-            auto name = op.operand1().getDefiningOp()->getName().getStringRef();
+            auto defOp = op.operand1().getDefiningOp();
             // TODO: finish it for field access
-            if (name == "ts.load")
+            if (auto loadOp = dyn_cast<mlir_ts::LoadOp>(defOp))
             {
-                rewriter.create<mlir_ts::StoreOp>(op->getLoc(), result, op.operand1().getDefiningOp()->getOperand(0));
+                rewriter.create<mlir_ts::StoreOp>(op->getLoc(), result, loadOp.reference());
             }
-            else if (name == "ts.load_element")
+            else if (auto loadElementOp = dyn_cast<mlir_ts::LoadElementOp>(defOp))
             {
-                rewriter.create<mlir_ts::StoreElementOp>(op->getLoc(), result, op.operand1().getDefiningOp()->getOperand(0), op.operand1().getDefiningOp()->getOperand(1));
+                rewriter.create<mlir_ts::StoreElementOp>(op->getLoc(), result, loadElementOp.array(), loadElementOp.index());
             }
             else
             {
