@@ -634,6 +634,12 @@ namespace
                 return success();
             }
 
+            if (op1.isInteger(1) && (op2.isInteger(8) || op2.isInteger(32)))
+            {
+                rewriter.replaceOpWithNewOp<ZeroExtendIOp>(op, in, op2);
+                return success();
+            }            
+
             /*
             if ((op1.isInteger(64) || op1.isInteger(32) || op1.isInteger(16)) && op2.isInteger(8))
             {

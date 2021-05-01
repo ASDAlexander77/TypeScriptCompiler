@@ -14,4 +14,21 @@ function main() {
 	(function () {
 		print("Hello World!");
 	})();
+
+    nested();
 }
+
+function nested() {                                                 
+    function _x() {                      
+        print(1);                   
+        return 1;                         
+    }                                     
+    function _y() {                       
+        print(2);                   
+        return 2;                         
+    }                                     
+
+    print(_x() || _x() == 0 ? _x() : _y());     
+    print(!_x() && _x() != 0 ? _x() : _y());     
+}
+

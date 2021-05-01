@@ -613,7 +613,7 @@ namespace
 
             // check if we have any return with expression
             auto hasReturnStatementWithExpr = false;
-            FilterVisitorAST<ReturnStatement> visitorAST1(
+            FilterVisitorSkipFuncsAST<ReturnStatement> visitorAST1(
                 SyntaxKind::ReturnStatement,
                 [&](auto retStatement) {
                     if (retStatement->expression)
