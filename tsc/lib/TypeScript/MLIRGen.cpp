@@ -1204,21 +1204,21 @@ namespace
             // check if we need to save result
             switch (opCode)
             {
-                case SyntaxKind::PlusEqualsToken: opCode = SyntaxKind::PlusEqualsToken; break;
-                case SyntaxKind::MinusEqualsToken: opCode = SyntaxKind::MinusEqualsToken; break;
-                case SyntaxKind::AsteriskEqualsToken: opCode = SyntaxKind::AsteriskEqualsToken; break;
-                case SyntaxKind::AsteriskAsteriskEqualsToken: opCode = SyntaxKind::AsteriskAsteriskEqualsToken; break;
-                case SyntaxKind::SlashEqualsToken: opCode = SyntaxKind::SlashEqualsToken; break;
-                case SyntaxKind::PercentEqualsToken: opCode = SyntaxKind::PercentEqualsToken; break;
-                case SyntaxKind::LessThanLessThanEqualsToken: opCode = SyntaxKind::LessThanLessThanEqualsToken; break;
-                case SyntaxKind::GreaterThanGreaterThanEqualsToken: opCode = SyntaxKind::GreaterThanGreaterThanEqualsToken; break;
-                case SyntaxKind::GreaterThanGreaterThanGreaterThanEqualsToken: opCode = SyntaxKind::GreaterThanGreaterThanGreaterThanEqualsToken; break;
-                case SyntaxKind::AmpersandEqualsToken: opCode = SyntaxKind::AmpersandEqualsToken; break;
-                case SyntaxKind::BarEqualsToken: opCode = SyntaxKind::BarEqualsToken; break;
-                case SyntaxKind::BarBarEqualsToken: opCode = SyntaxKind::BarBarEqualsToken; break;
-                case SyntaxKind::AmpersandAmpersandEqualsToken: opCode = SyntaxKind::AmpersandAmpersandEqualsToken; break;
-                case SyntaxKind::QuestionQuestionEqualsToken: opCode = SyntaxKind::QuestionQuestionEqualsToken; break;
-                case SyntaxKind::CaretEqualsToken: opCode = SyntaxKind::CaretEqualsToken; break;
+                case SyntaxKind::PlusEqualsToken: opCode = SyntaxKind::PlusToken; break;
+                case SyntaxKind::MinusEqualsToken: opCode = SyntaxKind::MinusToken; break;
+                case SyntaxKind::AsteriskEqualsToken: opCode = SyntaxKind::AsteriskToken; break;
+                case SyntaxKind::AsteriskAsteriskEqualsToken: opCode = SyntaxKind::AsteriskAsteriskToken; break;
+                case SyntaxKind::SlashEqualsToken: opCode = SyntaxKind::SlashToken; break;
+                case SyntaxKind::PercentEqualsToken: opCode = SyntaxKind::PercentToken; break;
+                case SyntaxKind::LessThanLessThanEqualsToken: opCode = SyntaxKind::LessThanLessThanToken; break;
+                case SyntaxKind::GreaterThanGreaterThanEqualsToken: opCode = SyntaxKind::GreaterThanGreaterThanToken; break;
+                case SyntaxKind::GreaterThanGreaterThanGreaterThanEqualsToken: opCode = SyntaxKind::GreaterThanGreaterThanGreaterThanToken; break;
+                case SyntaxKind::AmpersandEqualsToken: opCode = SyntaxKind::AmpersandToken; break;
+                case SyntaxKind::BarEqualsToken: opCode = SyntaxKind::BarToken; break;
+                case SyntaxKind::BarBarEqualsToken: opCode = SyntaxKind::BarBarToken; break;
+                case SyntaxKind::AmpersandAmpersandEqualsToken: opCode = SyntaxKind::AmpersandAmpersandToken; break;
+                case SyntaxKind::QuestionQuestionEqualsToken: opCode = SyntaxKind::QuestionQuestionToken; break;
+                case SyntaxKind::CaretEqualsToken: opCode = SyntaxKind::CaretToken; break;
                 case SyntaxKind::EqualsToken: /*nothing to do*/ break;
                 default: saveResult = false; break;
             }
@@ -1363,31 +1363,37 @@ namespace
 
             if (saveResult)
             {
+                if (leftExpressionValueBeforeCast.getType() != result.getType())
+                {
+                    result = builder.create<mlir_ts::CastOp>(loc(leftExpression), leftExpressionValueBeforeCast.getType(), result);
+                }
+
                 // TODO: finish it for field access, review CodeLogicHelper.saveResult
-                if (auto loadOp = dyn_cast<mlir_ts::LoadOp>(leftExpressionValue.getDefiningOp()))
+                if (auto loadOp = dyn_cast<mlir_ts::LoadOp>(leftExpressionValueBeforeCast.getDefiningOp()))
                 {
                     // TODO: when saving const array into variable we need to allocate space and copy array as we need to have writable array
                     builder.create<mlir_ts::StoreOp>(
                         location,
                         result,
                         loadOp.reference());
-                    loadOp.erase();
                 }
-                else if (auto loadElementOp = dyn_cast<mlir_ts::LoadElementOp>(leftExpressionValue.getDefiningOp()))
+                else if (auto loadElementOp = dyn_cast<mlir_ts::LoadElementOp>(leftExpressionValueBeforeCast.getDefiningOp()))
                 {
                     builder.create<mlir_ts::StoreElementOp>(
                         location,
                         result,
                         loadElementOp.array(),
                         loadElementOp.index());        
-                    loadElementOp.erase();            
                 }
                 else
                 {
-                    builder.create<mlir_ts::StoreOp>(
-                        location,
-                        result,
-                        leftExpressionValue);
+                    llvm_unreachable("not implemented");
+                }
+
+                if (opCode == SyntaxKind::EqualsToken)
+                {
+                    // special case when loadop not needed for "=" op
+                    leftExpressionValueBeforeCast.getDefiningOp()->erase();
                 }
             }
 
