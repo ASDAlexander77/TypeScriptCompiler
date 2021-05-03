@@ -253,6 +253,10 @@ namespace
             {
                 return mlirGen(statementAST.as<BreakStatement>(), genContext);
             }            
+            else if (kind == SyntaxKind::SwitchStatement)
+            {
+                return mlirGen(statementAST.as<SwitchStatement>(), genContext);
+            }
             else if (kind == SyntaxKind::Block)
             {
                 return mlirGen(statementAST.as<Block>(), genContext);
@@ -1047,6 +1051,21 @@ namespace
             builder.create<mlir_ts::BreakOp>(location);
             return mlir::success();
         }
+
+        mlir::LogicalResult mlirGen(SwitchStatement switchStatementAST, const GenContext &genContext)
+        {
+            auto location = loc(switchStatementAST);
+
+            auto condValue = mlirGen(switchStatementAST->expression, genContext);
+
+            auto switchOp = builder.create<mlir_ts::SwitchOp>(location, condValue);
+
+            // add merge block
+            switchOp.addMergeBlock();
+            mlir::Block *mergeBlock = switchOp.getMergeBlock();
+
+            return mlir::success();
+        }  
 
         mlir::Value mlirGen(UnaryExpression unaryExpressionAST, const GenContext &genContext)
         {

@@ -547,6 +547,38 @@ void ts::ForOp::getSuccessorRegions(Optional<unsigned> index,
   regions.emplace_back(&cond(), cond().getArguments());
 }
 
+//===----------------------------------------------------------------------===//
+// SwitchOp
+//===----------------------------------------------------------------------===//
+
+void ts::SwitchOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attribute> operands, SmallVectorImpl<RegionSuccessor> &regions)
+{
+    regions.push_back(RegionSuccessor(&casesRegion()));
+}
+
+Block *ts::SwitchOp::getHeaderBlock() {
+  assert(!casesRegion().empty() && "op region should not be empty!");
+  // The first block is the loop header block.
+  return &casesRegion().front();
+}
+
+Block *ts::SwitchOp::getMergeBlock() {
+  assert(!casesRegion().empty() && "op region should not be empty!");
+  // The last block is the loop merge block.
+  return &casesRegion().back();
+}
+
+void ts::SwitchOp::addMergeBlock() {
+  assert(casesRegion().empty() && "entry and merge block already exist");
+  auto *mergeBlock = new Block();
+  casesRegion().push_back(mergeBlock);
+  OpBuilder builder = OpBuilder::atBlockEnd(mergeBlock);
+
+  // Add a ts.merge op into the merge block.
+  builder.create<ts::MergeOp>(getLoc());
+}
+
+
 namespace
 {
     // Pattern to remove unused IfOp results.

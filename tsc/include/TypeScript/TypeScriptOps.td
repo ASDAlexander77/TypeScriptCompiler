@@ -973,6 +973,35 @@ def TypeScript_BreakOp : TypeScript_Op<"break"> {
   let summary = "loop termination";
 }
 
+def TypeScript_SwitchOp : TypeScript_Op<"switch",
+      [DeclareOpInterfaceMethods<RegionBranchOpInterface>,
+       RecursiveSideEffects, NoRegionArguments]> {
+  let summary = "switch operation";
+
+  let arguments = (ins AnyType:$value);
+  let results = (outs );
+  let regions = (region AnyRegion:$casesRegion);
+  
+  let extraClassDeclaration = [{
+    /// Returns the selection header block.
+    Block *getHeaderBlock();
+
+    /// Returns the selection merge block.
+    Block *getMergeBlock();
+
+    /// Adds a selection merge block containing one ts.merge op.
+    void addMergeBlock();
+  }];
+}
+
+def TypeScript_MergeOp : TypeScript_Op<"merge", [NoSideEffect, HasParent<"SwitchOp">, Terminator]> {
+  let summary = "A special terminator for merging a switch.";
+
+  let arguments = (ins);
+
+  let results = (outs);
+}
+
 def TypeScript_AddressOfOp : TypeScript_Op<"addressof"> {
   let arguments = (ins FlatSymbolRefAttr:$global_name);
   let results = (outs TypeScript_AnyRef:$reference);
