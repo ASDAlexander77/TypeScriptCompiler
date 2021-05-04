@@ -1090,7 +1090,7 @@ namespace
                                 {
                                     if ((SyntaxKind)statement == SyntaxKind::BreakStatement)
                                     {
-                                        hasBreak;
+                                        hasBreak = true;
                                         break;
                                     }
 
@@ -1098,7 +1098,7 @@ namespace
                                 }
 
                                 // exit;
-                                builder.create<mlir::BranchOp>(location, lastBlock);
+                                builder.create<mlir::BranchOp>(location, hasBreak ? mergeBlock : lastBlock);
 
                                 lastBlock = caseBodyBlock;
                             }
