@@ -1075,40 +1075,38 @@ namespace
                 mlir::Block *caseBodyBlock = nullptr;
                 mlir::Block *caseConditionBlock = nullptr;
 
+                {
+                    mlir::OpBuilder::InsertionGuard guard(builder);
+                    caseBodyBlock = builder.createBlock(lastConditionBlock);
+
+                    auto hasBreak = false;
+                    for (auto statement : caseBlock->statements)
+                    {
+                        if ((SyntaxKind)statement == SyntaxKind::BreakStatement)
+                        {
+                            hasBreak = true;
+                            break;
+                        }
+
+                        mlirGen(statement, genContext);
+                    }
+
+                    // exit;
+                    builder.create<mlir::BranchOp>(location, hasBreak ? mergeBlock : lastBlock);
+
+                    lastBlock = caseBodyBlock;
+                }
+
                 switch ((SyntaxKind)caseBlock)
                 {
                     case SyntaxKind::CaseClause:
                         {
-                            auto caseClause = caseBlock.as<CaseClause>();
-
-                            {
-                                mlir::OpBuilder::InsertionGuard guard(builder);
-                                caseBodyBlock = builder.createBlock(lastConditionBlock);
-
-                                auto hasBreak = false;
-                                for (auto statement : caseClause->statements)
-                                {
-                                    if ((SyntaxKind)statement == SyntaxKind::BreakStatement)
-                                    {
-                                        hasBreak = true;
-                                        break;
-                                    }
-
-                                    mlirGen(statement, genContext);
-                                }
-
-                                // exit;
-                                builder.create<mlir::BranchOp>(location, hasBreak ? mergeBlock : lastBlock);
-
-                                lastBlock = caseBodyBlock;
-                            }
-
                             {
 
                                 mlir::OpBuilder::InsertionGuard guard(builder);
                                 caseConditionBlock = builder.createBlock(lastBlock);
 
-                                auto caseValue = mlirGen(caseClause->expression, genContext);
+                                auto caseValue = mlirGen(caseBlock.as<CaseClause>()->expression, genContext);
                                                 
                                 auto condition = 
                                     builder.create<mlir_ts::LogicalBinaryOp>(
@@ -1134,7 +1132,7 @@ namespace
                         break;
                     case SyntaxKind::DefaultClause:
                         {
-                            auto defaultClause = caseBlock.as<DefaultClause>();
+                            lastConditionBlock = lastBlock;
                         }
                         break;                        
                 }
