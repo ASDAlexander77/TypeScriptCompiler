@@ -562,18 +562,20 @@ namespace
             OpBuilder::InsertionGuard guard(rewriter);
             Block *currentBlock = rewriter.getInsertionBlock();
             Block *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
-
-            // TODO: missing joinning with current block
-
-            //auto *casesRegion = &switchOp.casesRegion().front();
+           
+            auto *casesRegion = &switchOp.casesRegion().front();
             auto *casesRegionLast = &switchOp.casesRegion().back();            
+
+            // Branch to the "casesRegion" region.
+            rewriter.setInsertionPointToEnd(currentBlock);
+            rewriter.create<BranchOp>(loc, casesRegion, ValueRange{});
 
             rewriter.inlineRegionBefore(switchOp.casesRegion(), continuation);
 
             // replace merge with br
             rewriter.setInsertionPointToEnd(casesRegionLast);
             auto mergeOp = cast<mlir_ts::MergeOp>(casesRegionLast->getTerminator());
-            rewriter.replaceOpWithNewOp<BranchOp>(mergeOp, continuation, ValueRange());
+            rewriter.replaceOpWithNewOp<BranchOp>(mergeOp, continuation, ValueRange{});
 
             rewriter.replaceOp(switchOp, continuation->getArguments());
 
