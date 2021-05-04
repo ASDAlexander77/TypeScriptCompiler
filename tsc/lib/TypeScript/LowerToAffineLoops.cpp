@@ -48,22 +48,22 @@ namespace
     // TypeScriptToAffine RewritePatterns
     //===----------------------------------------------------------------------===//
 
-    struct ParamOpLowering : public OpRewritePattern<mlir_ts::ParamOp>
+    struct ParamOpLowering : public TsPattern<mlir_ts::ParamOp>
     {
-        using OpRewritePattern<mlir_ts::ParamOp>::OpRewritePattern;
+        using TsPattern<mlir_ts::ParamOp>::TsPattern;
 
-        LogicalResult matchAndRewrite(mlir_ts::ParamOp paramOp, PatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::ParamOp paramOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             rewriter.replaceOpWithNewOp<mlir_ts::VariableOp>(paramOp, paramOp.getType(), paramOp.argValue());
             return success();
         }
     };
 
-    struct ParamOptionalOpLowering : public OpRewritePattern<mlir_ts::ParamOptionalOp>
+    struct ParamOptionalOpLowering : public TsPattern<mlir_ts::ParamOptionalOp>
     {
-        using OpRewritePattern<mlir_ts::ParamOptionalOp>::OpRewritePattern;
+        using TsPattern<mlir_ts::ParamOptionalOp>::TsPattern;
 
-        LogicalResult matchAndRewrite(mlir_ts::ParamOptionalOp paramOp, PatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::ParamOptionalOp paramOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             TypeHelper th(rewriter); 
 
@@ -116,22 +116,22 @@ namespace
         }
     };
 
-    struct ParamDefaultValueOpLowering : public OpRewritePattern<mlir_ts::ParamDefaultValueOp>
+    struct ParamDefaultValueOpLowering : public TsPattern<mlir_ts::ParamDefaultValueOp>
     {
-        using OpRewritePattern<mlir_ts::ParamDefaultValueOp>::OpRewritePattern;
+        using TsPattern<mlir_ts::ParamDefaultValueOp>::TsPattern;
 
-        LogicalResult matchAndRewrite(mlir_ts::ParamDefaultValueOp op, PatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::ParamDefaultValueOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             rewriter.replaceOpWithNewOp<mlir_ts::YieldOp>(op, op.results());
             return success();
         }
     };
 
-    struct PrefixUnaryOpLowering : public OpRewritePattern<mlir_ts::PrefixUnaryOp>
+    struct PrefixUnaryOpLowering : public TsPattern<mlir_ts::PrefixUnaryOp>
     {
-        using OpRewritePattern<mlir_ts::PrefixUnaryOp>::OpRewritePattern;
+        using TsPattern<mlir_ts::PrefixUnaryOp>::TsPattern;
 
-        LogicalResult matchAndRewrite(mlir_ts::PrefixUnaryOp op, PatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::PrefixUnaryOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             CodeLogicHelper clh(op, rewriter);
             auto cst1 = rewriter.create<mlir_ts::ConstantOp>(op->getLoc(), rewriter.getI32IntegerAttr(1));
@@ -154,11 +154,11 @@ namespace
         }
     };  
 
-    struct PostfixUnaryOpLowering : public OpRewritePattern<mlir_ts::PostfixUnaryOp>
+    struct PostfixUnaryOpLowering : public TsPattern<mlir_ts::PostfixUnaryOp>
     {
-        using OpRewritePattern<mlir_ts::PostfixUnaryOp>::OpRewritePattern;
+        using TsPattern<mlir_ts::PostfixUnaryOp>::TsPattern;
 
-        LogicalResult matchAndRewrite(mlir_ts::PostfixUnaryOp op, PatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::PostfixUnaryOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             CodeLogicHelper clh(op, rewriter);
             auto cst1 = rewriter.create<mlir_ts::ConstantOp>(op->getLoc(), rewriter.getI32IntegerAttr(1));
@@ -182,11 +182,11 @@ namespace
         }
     };  
 
-    struct ArithmeticBinaryOpLowering : public OpRewritePattern<mlir_ts::ArithmeticBinaryOp>
+    struct ArithmeticBinaryOpLowering : public TsPattern<mlir_ts::ArithmeticBinaryOp>
     {
-        using OpRewritePattern<mlir_ts::ArithmeticBinaryOp>::OpRewritePattern;
+        using TsPattern<mlir_ts::ArithmeticBinaryOp>::TsPattern;
 
-        LogicalResult matchAndRewrite(mlir_ts::ArithmeticBinaryOp arithmeticBinaryOp, PatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::ArithmeticBinaryOp arithmeticBinaryOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             auto opCode = (SyntaxKind)arithmeticBinaryOp.opCode();
             switch (opCode)
@@ -245,11 +245,11 @@ namespace
         }
     };
 
-    struct IfOpLowering : public OpRewritePattern<mlir_ts::IfOp>
+    struct IfOpLowering : public TsPattern<mlir_ts::IfOp>
     {
-        using OpRewritePattern<mlir_ts::IfOp>::OpRewritePattern;
+        using TsPattern<mlir_ts::IfOp>::TsPattern;
 
-        LogicalResult matchAndRewrite(mlir_ts::IfOp ifOp, PatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::IfOp ifOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             auto loc = ifOp.getLoc();
 
@@ -550,6 +550,16 @@ namespace
         }
     };    
 
+    struct SwitchOpLowering : public TsPattern<mlir_ts::SwitchOp>
+    {
+        using TsPattern<mlir_ts::SwitchOp>::TsPattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::SwitchOp switchOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            return success();
+        }
+    };      
+
 } // end anonymous namespace
 
 //===----------------------------------------------------------------------===//
@@ -664,15 +674,13 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         ParamDefaultValueOpLowering,
         PrefixUnaryOpLowering,
         PostfixUnaryOpLowering,
-        IfOpLowering
-    >(&getContext());
-
-    patterns.insert<
+        IfOpLowering,
         DoWhileOpLowering,
         WhileOpLowering,
         ForOpLowering,
         BreakOpLowering,
-        ContinueOpLowering
+        ContinueOpLowering,
+        SwitchOpLowering
     >(&getContext(), typeConverter, &tsContext);    
 
     // With the target and rewrite patterns defined, we can now attempt the

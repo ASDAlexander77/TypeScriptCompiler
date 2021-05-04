@@ -1056,13 +1056,84 @@ namespace
         {
             auto location = loc(switchStatementAST);
 
-            auto condValue = mlirGen(switchStatementAST->expression, genContext);
+            auto switchValue = mlirGen(switchStatementAST->expression, genContext);
 
-            auto switchOp = builder.create<mlir_ts::SwitchOp>(location, condValue);
+            auto switchOp = builder.create<mlir_ts::SwitchOp>(location, switchValue);
 
             // add merge block
             switchOp.addMergeBlock();
-            mlir::Block *mergeBlock = switchOp.getMergeBlock();
+            auto *mergeBlock = switchOp.getMergeBlock();
+
+            auto *lastBlock = mergeBlock;
+
+            auto &clauses = switchStatementAST->caseBlock->clauses;
+            for (int index = clauses.size() - 1; index >=0; index--)
+            {
+                auto caseBlock = clauses[index];
+
+                mlir::Block *caseBodyBlock = nullptr;
+                mlir::Block *caseConditionBlock = nullptr;
+
+                switch ((SyntaxKind)caseBlock)
+                {
+                    case SyntaxKind::CaseClause:
+                        {
+                            auto caseClause = caseBlock.as<CaseClause>();
+
+                            {
+                                mlir::OpBuilder::InsertionGuard guard(builder);
+                                caseBodyBlock = lastBlock = builder.createBlock(lastBlock);
+
+                                auto hasBreak = false;
+                                for (auto statement : caseClause->statements)
+                                {
+                                    if ((SyntaxKind)statement == SyntaxKind::BreakStatement)
+                                    {
+                                        hasBreak;
+                                        break;
+                                    }
+
+                                    mlirGen(statement, genContext);
+                                }
+
+                                // exit;
+                                builder.create<mlir::BranchOp>(location, lastBlock);
+                            }
+
+                            {
+
+                                mlir::OpBuilder::InsertionGuard guard(builder);
+                                caseConditionBlock = lastBlock = builder.createBlock(lastBlock);
+
+                                auto caseValue = mlirGen(caseClause->expression, genContext);
+                                                
+                                auto condition = 
+                                    builder.create<mlir_ts::LogicalBinaryOp>(
+                                        location,
+                                        getBooleanType(),
+                                        builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsToken),
+                                        switchValue,
+                                        caseValue);                                
+
+                                auto conditionI1 = builder.create<mlir_ts::CastOp>(location, builder.getI1Type(), condition);
+
+                                builder.create<mlir::CondBranchOp>(
+                                    location, 
+                                    conditionI1, 
+                                    caseBodyBlock, /*trueArguments=*/mlir::ValueRange{}, 
+                                    mergeBlock, /*falseArguments=*/mlir::ValueRange{});
+                            }
+
+                            // create condition block
+                        }
+                        break;
+                    case SyntaxKind::DefaultClause:
+                        {
+                            auto defaultClause = caseBlock.as<DefaultClause>();
+                        }
+                        break;                        
+                }
+            }
 
             return mlir::success();
         }  
