@@ -1065,6 +1065,7 @@ namespace
             auto *mergeBlock = switchOp.getMergeBlock();
 
             auto *lastBlock = mergeBlock;
+            auto *lastConditionBlock = mergeBlock;
 
             auto &clauses = switchStatementAST->caseBlock->clauses;
             for (int index = clauses.size() - 1; index >=0; index--)
@@ -1082,7 +1083,7 @@ namespace
 
                             {
                                 mlir::OpBuilder::InsertionGuard guard(builder);
-                                caseBodyBlock = lastBlock = builder.createBlock(lastBlock);
+                                caseBodyBlock = builder.createBlock(lastConditionBlock);
 
                                 auto hasBreak = false;
                                 for (auto statement : caseClause->statements)
@@ -1098,12 +1099,14 @@ namespace
 
                                 // exit;
                                 builder.create<mlir::BranchOp>(location, lastBlock);
+
+                                lastBlock = caseBodyBlock;
                             }
 
                             {
 
                                 mlir::OpBuilder::InsertionGuard guard(builder);
-                                caseConditionBlock = lastBlock = builder.createBlock(lastBlock);
+                                caseConditionBlock = builder.createBlock(lastBlock);
 
                                 auto caseValue = mlirGen(caseClause->expression, genContext);
                                                 
@@ -1121,7 +1124,9 @@ namespace
                                     location, 
                                     conditionI1, 
                                     caseBodyBlock, /*trueArguments=*/mlir::ValueRange{}, 
-                                    mergeBlock, /*falseArguments=*/mlir::ValueRange{});
+                                    lastConditionBlock, /*falseArguments=*/mlir::ValueRange{});
+
+                                lastConditionBlock = caseConditionBlock;
                             }
 
                             // create condition block
