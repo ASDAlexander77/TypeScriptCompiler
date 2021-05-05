@@ -11,44 +11,53 @@ function main() {
     x();
     run(x);
 
-	(function () {
-		print("Hello World!");
-	})();
+    (function () {
+        print("Hello World!");
+    })();
 
     nested();
     init_method();
     arrow_func();
+    arrow_func_nobody();
 }
 
-function init_method() {                                                 
-    let greeting = function() {
+function init_method() {
+    let greeting = function () {
         print("Hello TypeScript!");
     };
-    
+
     greeting();
 }
 
-function arrow_func() {                                                 
+function arrow_func() {
 
     let sum = (x: number, y: number): number => {
         return x + y;
     }
-    
+
     sum(10, 20);
-    
+
 }
 
-function nested() {                                                 
-    function _x() {                      
-        print(1);                   
-        return 1;                         
-    }                                     
-    function _y() {                       
-        print(2);                   
-        return 2;                         
-    }                                     
+function arrow_func_nobody() {
 
-    print(_x() || _x() == 0 ? _x() : _y());     
-    print(!_x() && _x() != 0 ? _x() : _y());     
+    let sum = (x: number, y: number) => x + y;
+
+    sum(3, 4);
+
+}
+
+function nested() {
+    function _x() {
+        print(1);
+        return 1;
+    }
+    function _y() {
+        print(2);
+        return 2;
+    }
+
+    print(_x() || _x() == 0 ? _x() : _y());
+    print(!_x() && _x() != 0 ? _x() : _y());
 }
 
