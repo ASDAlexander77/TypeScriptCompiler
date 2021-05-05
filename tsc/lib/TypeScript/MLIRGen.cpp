@@ -1071,6 +1071,16 @@ namespace
             for (int index = clauses.size() - 1; index >=0; index--)
             {
                 auto caseBlock = clauses[index];
+                auto statements = caseBlock->statements;
+                // inline block
+                if (statements.size() == 1)
+                {
+                    auto firstStatement = statements.front();
+                    if ((SyntaxKind)firstStatement == SyntaxKind::Block)
+                    {
+                        statements = statements.front().as<Block>()->statements;
+                    }
+                }
 
                 mlir::Block *caseBodyBlock = nullptr;
                 mlir::Block *caseConditionBlock = nullptr;
@@ -1080,7 +1090,7 @@ namespace
                     caseBodyBlock = builder.createBlock(lastConditionBlock);
 
                     auto hasBreak = false;
-                    for (auto statement : caseBlock->statements)
+                    for (auto statement : statements)
                     {
                         if ((SyntaxKind)statement == SyntaxKind::BreakStatement)
                         {

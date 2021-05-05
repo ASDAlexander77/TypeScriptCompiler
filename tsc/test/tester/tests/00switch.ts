@@ -23,7 +23,8 @@ function test1() {
 }
 
 function test2() {
-    switch (10) {
+    let a = 10;
+    switch (a) {
         default:
             print("default 2");
             break;
@@ -31,15 +32,29 @@ function test2() {
 }
 
 function test3() {
-    switch (10.5) {
+    let a = 10.5
+    switch (a) {
         case 10.5:
             print("cool. 10.5");
             break;
     }
 }
 
+function test4()
+{
+		let a = 10;
+	        switch (a) 
+		{                                            
+		    default: {
+        	        print("default 2");                          
+			break;
+		   }                                          
+	        }
+}
+
 function main() {
     test1();
     test2();
     test3();
+    test4();
 }
