@@ -663,9 +663,8 @@ namespace
         mlir::LogicalResult mlirGen(FunctionDeclaration functionDeclarationAST, const GenContext &genContext)
         {
             mlir::OpBuilder::InsertionGuard guard(builder);
-            if (auto funcRefValue = mlirGenFunctionLikeDeclaration(functionDeclarationAST, genContext))            
+            if (mlirGenFunctionLikeDeclaration(functionDeclarationAST, genContext))            
             {
-                funcRefValue.getDefiningOp()->erase();
                 return mlir::success();
             }
 
@@ -674,16 +673,29 @@ namespace
 
         mlir::Value mlirGen(FunctionExpression functionExpressionAST, const GenContext &genContext)
         {
-            mlir::OpBuilder::InsertionGuard guard(builder);
+            mlir_ts::FuncOp funcOp;
 
-            builder.restoreInsertionPoint(functionBeginPoint);
+            {
+                mlir::OpBuilder::InsertionGuard guard(builder);
+                builder.restoreInsertionPoint(functionBeginPoint);
 
-            // provide name for it
-            auto funcSymbolRef = mlirGenFunctionLikeDeclaration(functionExpressionAST, genContext);
+                // provide name for it
+                funcOp = mlirGenFunctionLikeDeclaration(functionExpressionAST, genContext);
+                if (!funcOp)
+                {
+                    return mlir::Value();
+                }
+            }
+
+            auto funcSymbolRef = 
+                builder.create<mlir_ts::SymbolRefOp>(
+                    loc(functionExpressionAST), 
+                    funcOp.getType(), 
+                    mlir::FlatSymbolRefAttr::get(funcOp.getName(), builder.getContext()));
             return funcSymbolRef;
         }        
 
-        mlir::Value mlirGenFunctionLikeDeclaration(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
+        mlir_ts::FuncOp mlirGenFunctionLikeDeclaration(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
         {
             auto location = loc(functionLikeDeclarationBaseAST);
 
@@ -695,7 +707,7 @@ namespace
             auto result = std::get<2>(funcOpWithFuncProto);
             if (!result || !funcOp)
             {
-                return mlir::Value();
+                return funcOp;
             }
 
             auto funcGenContext = GenContext(genContext);
@@ -719,7 +731,7 @@ namespace
 
             functionMap.insert({funcOp.getName(), funcOp});
 
-            return builder.create<mlir_ts::SymbolRefOp>(location, funcOp.getType(), mlir::FlatSymbolRefAttr::get(funcOp.getName(), builder.getContext()));
+            return funcOp;
         }  
 
         mlir::LogicalResult mlirGenFunctionBody(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, mlir_ts::FuncOp funcOp,
@@ -1794,6 +1806,36 @@ namespace
             {
                 // return "number"
                 auto typeOfValue = builder.create<mlir_ts::ConstantOp>(loc(typeOfExpression), getStringType(), getStringAttr(std::string("number")));
+                return typeOfValue;
+            }
+
+            if (type == getStringType())
+            {
+                // return "number"
+                auto typeOfValue = builder.create<mlir_ts::ConstantOp>(loc(typeOfExpression), getStringType(), getStringAttr(std::string("string")));
+                return typeOfValue;
+            }
+
+            /* // TODO: finish it
+            if (type == getArrayType())
+            {
+                // return "number"
+                auto typeOfValue = builder.create<mlir_ts::ConstantOp>(loc(typeOfExpression), getStringType(), getStringAttr(std::string("array")));
+                return typeOfValue;
+            }
+            */
+
+            if (type == getBooleanType())
+            {
+                // return "number"
+                auto typeOfValue = builder.create<mlir_ts::ConstantOp>(loc(typeOfExpression), getStringType(), getStringAttr(std::string("boolean")));
+                return typeOfValue;
+            }
+
+            if (type == getAnyType())
+            {
+                // return "number"
+                auto typeOfValue = builder.create<mlir_ts::ConstantOp>(loc(typeOfExpression), getStringType(), getStringAttr(std::string("object")));
                 return typeOfValue;
             }
 

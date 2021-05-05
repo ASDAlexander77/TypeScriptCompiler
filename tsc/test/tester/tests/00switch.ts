@@ -40,16 +40,14 @@ function test3() {
     }
 }
 
-function test4()
-{
-		let a = 10;
-	        switch (a) 
-		{                                            
-		    default: {
-        	        print("default 2");                          
-			break;
-		   }                                          
-	        }
+function test4() {
+    let a = 10;
+    switch (a) {
+        default: {
+            print("default 2");
+            break;
+        }
+    }
 }
 
 function main() {
