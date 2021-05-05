@@ -17,6 +17,7 @@ function main() {
 
     nested();
     init_method();
+    arrow_func();
 }
 
 function init_method() {                                                 
@@ -25,6 +26,16 @@ function init_method() {
     };
     
     greeting();
+}
+
+function arrow_func() {                                                 
+
+    let sum = (x: number, y: number): number => {
+        return x + y;
+    }
+    
+    sum(10, 20);
+    
 }
 
 function nested() {                                                 

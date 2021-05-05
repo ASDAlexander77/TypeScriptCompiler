@@ -356,6 +356,10 @@ namespace
             {
                 return mlirGen(expressionAST.as<FunctionExpression>(), genContext);
             }
+            else if (kind == SyntaxKind::ArrowFunction)
+            {
+                return mlirGen(expressionAST.as<ArrowFunction>(), genContext);
+            }
             else if (kind == SyntaxKind::TypeAssertionExpression)
             {
                 return mlirGen(expressionAST.as<TypeAssertion>(), genContext);
@@ -694,6 +698,30 @@ namespace
                     mlir::FlatSymbolRefAttr::get(funcOp.getName(), builder.getContext()));
             return funcSymbolRef;
         }        
+
+        mlir::Value mlirGen(ArrowFunction arrowFunctionAST, const GenContext &genContext)
+        {
+            mlir_ts::FuncOp funcOp;
+
+            {
+                mlir::OpBuilder::InsertionGuard guard(builder);
+                builder.restoreInsertionPoint(functionBeginPoint);
+
+                // provide name for it
+                funcOp = mlirGenFunctionLikeDeclaration(arrowFunctionAST, genContext);
+                if (!funcOp)
+                {
+                    return mlir::Value();
+                }
+            }
+
+            auto funcSymbolRef = 
+                builder.create<mlir_ts::SymbolRefOp>(
+                    loc(arrowFunctionAST), 
+                    funcOp.getType(), 
+                    mlir::FlatSymbolRefAttr::get(funcOp.getName(), builder.getContext()));
+            return funcSymbolRef;
+        }          
 
         mlir_ts::FuncOp mlirGenFunctionLikeDeclaration(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
         {
