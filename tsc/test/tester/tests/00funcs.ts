@@ -16,6 +16,15 @@ function main() {
 	})();
 
     nested();
+    init_method();
+}
+
+function init_method() {                                                 
+    let greeting = function() {
+        print("Hello TypeScript!");
+    };
+    
+    greeting();
 }
 
 function nested() {                                                 
