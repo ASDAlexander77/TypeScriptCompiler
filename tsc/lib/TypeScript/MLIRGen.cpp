@@ -194,6 +194,17 @@ namespace
                 return mlirGen(body.as<Block>(), genContext);
             }
 
+            if (body.is<Statement>())
+            {
+                return mlirGen(body.as<Statement>(), genContext);
+            }
+
+            if (body.is<Expression>())
+            {
+                auto result = mlirGen(body.as<Expression>(), genContext);
+                return mlirGenReturnValue(loc(body), result, genContext);
+            }
+
             llvm_unreachable("unknown body type");
         }        
 
@@ -908,35 +919,39 @@ namespace
             if (auto expression = returnStatementAST->expression)
             {
                 auto expressionValue = mlirGen(expression, genContext);
-                if (genContext.functionReturnType && genContext.functionReturnType != expressionValue.getType())
-                {
-                    auto castValue = builder.create<mlir_ts::CastOp>(loc(expression), genContext.functionReturnType, expressionValue);
-                    expressionValue = castValue;
-                }
-
-                // record return type if not provided
-                if (genContext.passResult)
-                {
-                    genContext.passResult->functionReturnType = expressionValue.getType();
-                }
-
-                auto retVarInfo = symbolTable.lookup(RETURN_VARIABLE_NAME);
-                if (!retVarInfo.second)
-                {
-                    if (genContext.allowPartialResolve)
-                    {
-                        return mlir::success();
-                    }
-
-                    emitError(location) << "can't find return variable";
-                }
-
-                builder.create<mlir_ts::ReturnValOp>(location, expressionValue, retVarInfo.first);
+                return mlirGenReturnValue(location, expressionValue, genContext);
             }
-            else
+
+            builder.create<mlir_ts::ReturnOp>(location);
+            return mlir::success();
+        }
+
+        mlir::LogicalResult mlirGenReturnValue(mlir::Location location, mlir::Value expressionValue, const GenContext &genContext)
+        {
+            if (genContext.functionReturnType && genContext.functionReturnType != expressionValue.getType())
             {
-                builder.create<mlir_ts::ReturnOp>(location);
+                auto castValue = builder.create<mlir_ts::CastOp>(location, genContext.functionReturnType, expressionValue);
+                expressionValue = castValue;
             }
+
+            // record return type if not provided
+            if (genContext.passResult)
+            {
+                genContext.passResult->functionReturnType = expressionValue.getType();
+            }
+
+            auto retVarInfo = symbolTable.lookup(RETURN_VARIABLE_NAME);
+            if (!retVarInfo.second)
+            {
+                if (genContext.allowPartialResolve)
+                {
+                    return mlir::success();
+                }
+
+                emitError(location) << "can't find return variable";
+            }
+
+            builder.create<mlir_ts::ReturnValOp>(location, expressionValue, retVarInfo.first);
 
             return mlir::success();
         }
