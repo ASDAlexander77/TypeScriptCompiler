@@ -41,6 +41,10 @@ function arrow_func() {
 
 function arrow_func_nobody() {
 
+    let Print = () => print("Hello TypeScript");
+
+    Print();
+    
     let sum = (x: number, y: number) => x + y;
 
     sum(3, 4);
