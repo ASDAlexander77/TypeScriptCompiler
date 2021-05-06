@@ -649,23 +649,15 @@ namespace
 
             if (!hasReturnStatementWithExpr)
             {
-                if ((SyntaxKind)functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction
+                auto allowFuncExprWithOneLine = 
+                    (SyntaxKind)functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction
                     && (SyntaxKind)functionLikeDeclarationBaseAST->body != SyntaxKind::Block
-                    && functionLikeDeclarationBaseAST->body.is<Expression>())
+                    && functionLikeDeclarationBaseAST->body.is<Expression>();
+
+                if (!allowFuncExprWithOneLine)
                 {
-                    // detect return type of 1 line expression;
-                    auto result = mlirGen(functionLikeDeclarationBaseAST->body.as<Expression>(), genContext);
-                    if (result)
-                    {
-                        returnType = result.getType();
-
-                        emitError(loc(functionLikeDeclarationBaseAST)) << "ret type: " << returnType;
-
-                        result.getDefiningOp()->erase();
-                    }
+                    return returnType;
                 }
-
-                return returnType;
             }
 
             mlir::OpBuilder::InsertionGuard guard(builder);
@@ -944,6 +936,13 @@ namespace
 
         mlir::LogicalResult mlirGenReturnValue(mlir::Location location, mlir::Value expressionValue, const GenContext &genContext)
         {
+            // empty return
+            if (!expressionValue)
+            {
+                builder.create<mlir_ts::ReturnOp>(location);
+                return mlir::success();                
+            }
+
             if (genContext.functionReturnType && genContext.functionReturnType != expressionValue.getType())
             {
                 auto castValue = builder.create<mlir_ts::CastOp>(location, genContext.functionReturnType, expressionValue);
