@@ -649,6 +649,19 @@ namespace
 
             if (!hasReturnStatementWithExpr)
             {
+                if ((SyntaxKind)functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction
+                    && (SyntaxKind)functionLikeDeclarationBaseAST->body != SyntaxKind::Block
+                    && functionLikeDeclarationBaseAST->body.is<Expression>())
+                {
+                    // detect return type of 1 line expression;
+                    auto result = mlirGen(functionLikeDeclarationBaseAST->body.as<Expression>(), genContext);
+                    if (result)
+                    {
+                        returnType = result.getType();
+                        result.getDefiningOp()->erase();
+                    }
+                }
+
                 return returnType;
             }
 
@@ -949,6 +962,7 @@ namespace
                 }
 
                 emitError(location) << "can't find return variable";
+                return mlir::failure();
             }
 
             builder.create<mlir_ts::ReturnValOp>(location, expressionValue, retVarInfo.first);
@@ -1613,9 +1627,9 @@ namespace
             auto location = loc(callExpression);
 
             // get function ref.
-            auto result = mlirGen(callExpression->expression.as<Expression>(), genContext);
+            auto funcRefValue = mlirGen(callExpression->expression.as<Expression>(), genContext);
 
-            auto definingOp = result.getDefiningOp();
+            auto definingOp = funcRefValue.getDefiningOp();
             if (definingOp)
             {
                 auto opName = definingOp->getName().getStringRef();
@@ -1633,6 +1647,7 @@ namespace
                     auto calledFuncIt = functionMap.find(functionName);
                     if (calledFuncIt == functionMap.end())
                     {
+                        mlir::Value result;
                         // print - internal command;
                         if (functionName.compare(StringRef("print")) == 0)
                         {
@@ -1698,14 +1713,14 @@ namespace
                     // indirect call
                     SmallVector<mlir::Value, 4> operands;
 
-                    auto calledFuncType = result.getType().cast<mlir::FunctionType>();
+                    auto calledFuncType = funcRefValue.getType().cast<mlir::FunctionType>();
                     mlirGenCallOperands(location, calledFuncType, callExpression->arguments, nullptr/*TODO: should I finish it before refactoring?*/, operands, genContext);
 
                     // default call by name
                     auto callIndirectOp =
                         builder.create<mlir_ts::CallIndirectOp>(
                             location,
-                            result,
+                            funcRefValue,
                             operands);
 
                     if (calledFuncType.getNumResults() > 0)
