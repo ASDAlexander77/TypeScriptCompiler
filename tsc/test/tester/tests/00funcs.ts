@@ -2,6 +2,17 @@ function f1() {
     print("Hello World!");
 }
 
+function f2(x: number) {
+    print(x);
+}
+
+// TODO: should work after refactoring optional parameters
+/*
+function f3(x = 0) {
+    print(x);
+}
+*/
+
 function run(f: () => void) {
     f();
 }
@@ -11,6 +22,12 @@ function main() {
     x();
     run(x);
 
+    const x2 = f2;
+    x2(1);
+
+    //const x3 = f3;
+    //x3(2);
+
     (function () {
         print("Hello World!");
     })();
@@ -19,6 +36,7 @@ function main() {
     init_method();
     arrow_func();
     arrow_func_nobody();
+    test_lmb_param();
 }
 
 function init_method() {
@@ -65,3 +83,11 @@ function nested() {
     print(!_x() && _x() != 0 ? _x() : _y());
 }
 
+function run_f(f: (x: number, y: number) => number)
+{
+	return f(2, 3);
+}
+
+function test_lmb_param() {                                                 
+	run_f((x: number, y: number) => x + y);
+}

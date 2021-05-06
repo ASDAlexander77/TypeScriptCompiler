@@ -2099,9 +2099,9 @@ namespace
         {
             auto resultType = getType(functionType->type);
             SmallVector<mlir::Type> argTypes;
-            for (auto argType : functionType->typeParameters)
+            for (auto paramItem : functionType->parameters)
             {
-                argTypes.push_back(getType(argType));
+                argTypes.push_back(getType(paramItem->type));
             }
 
             return mlir::FunctionType::get(builder.getContext(), argTypes, resultType);
