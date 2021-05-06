@@ -658,6 +658,9 @@ namespace
                     if (result)
                     {
                         returnType = result.getType();
+
+                        emitError(loc(functionLikeDeclarationBaseAST)) << "ret type: " << returnType;
+
                         result.getDefiningOp()->erase();
                     }
                 }
@@ -2038,6 +2041,7 @@ namespace
             }            
 
             // unresolved reference (for call for example)
+            // TODO: put assert here to see which ref names are not resolved
             return builder.create<mlir_ts::SymbolRefOp>(location, mlir::FlatSymbolRefAttr::get(name, builder.getContext()));
         }
 
