@@ -71,6 +71,12 @@ namespace typescript
             return LLVM::LLVMPointerType::get(rewriter.getIntegerType(8));
         }
 
+        LLVM::LLVMPointerType getI8PtrPtrType()
+        {
+            return LLVM::LLVMPointerType::get(LLVM::LLVMPointerType::get(rewriter.getIntegerType(8)));
+        }
+
+
         LLVM::LLVMPointerType getPointerType(Type elementType)
         {
             return LLVM::LLVMPointerType::get(elementType);
@@ -299,6 +305,11 @@ namespace typescript
             return rewriter.create<LLVM::ConstantOp>(op->getLoc(), rewriter.getIntegerType(32), rewriter.getIntegerAttr(rewriter.getI32Type(), value));
         }
 
+        Value createI64ConstantOf(unsigned value)
+        {
+            return rewriter.create<LLVM::ConstantOp>(op->getLoc(), rewriter.getIntegerType(64), rewriter.getIntegerAttr(rewriter.getI64Type(), value));
+        }
+
         Value createI1ConstantOf(bool value)
         {
             return rewriter.create<LLVM::ConstantOp>(op->getLoc(), rewriter.getIntegerType(1), rewriter.getIntegerAttr(rewriter.getI1Type(), value));
@@ -401,6 +412,18 @@ namespace typescript
         }
     }  
 
+    template <typename BinOpTy>
+    bool IsStringArg(BinOpTy &binOp)
+    {
+        auto leftType = binOp.getOperand(0).getType();
+        if (leftType.dyn_cast_or_null<mlir_ts::StringType>())
+        {
+            return true;
+        }
+
+        return false;
+    }    
+
     template <typename BinOpTy, typename StdIOpTy, typename StdFOpTy>
     void BinOp(BinOpTy &binOp, mlir::PatternRewriter &builder)
     {
@@ -434,8 +457,9 @@ namespace typescript
         {
             builder.replaceOpWithNewOp<StdFOpTy>(binOp, v2, binOp.getOperand(0), binOp.getOperand(1));
         }
-        else if (leftType.dyn_cast_or_null<mlir_ts::StringType>() || leftType.dyn_cast_or_null<mlir_ts::AnyType>())
+        else if (/*leftType.dyn_cast_or_null<mlir_ts::StringType>() || */leftType.dyn_cast_or_null<mlir_ts::AnyType>())
         {
+            // excluded string
             auto left = binOp.getOperand(0);
             auto right = binOp.getOperand(1);
 
@@ -451,7 +475,7 @@ namespace typescript
             emitError(binOp.getLoc(), "Not implemented operator for type 1: '") << leftType << "'";
             llvm_unreachable("not implemented");
         }
-    }
+    }   
 }
 
 #endif // MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_H_

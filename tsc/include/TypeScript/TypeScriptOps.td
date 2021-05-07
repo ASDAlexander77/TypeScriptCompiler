@@ -1082,5 +1082,14 @@ def TypeScript_GlobalOp : TypeScript_Op<"global",
   }];
 }
 
+def TypeScript_StringConcatOp : TypeScript_Op<"string_concat"> {
+  let arguments = (ins TypeScript_String:$op1, TypeScript_String:$op2);
+  let results = (outs TypeScript_String:$result);
+}
+
+def TypeScript_StringCompareOp : TypeScript_Op<"string_compare"> {
+  let arguments = (ins TypeScript_String:$op1, TypeScript_String:$op2, I32Attr:$code);
+  let results = (outs TypeScript_Boolean:$result);
+}
 
 #endif // TYPESCRIPT_OPS

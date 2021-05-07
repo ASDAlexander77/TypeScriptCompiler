@@ -192,7 +192,19 @@ namespace
             switch (opCode)
             {
             case SyntaxKind::PlusToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, AddIOp, AddFOp>(arithmeticBinaryOp, rewriter);
+                if (IsStringArg(arithmeticBinaryOp))
+                {
+                    rewriter.replaceOpWithNewOp<mlir_ts::StringConcatOp>(
+                        arithmeticBinaryOp, 
+                        mlir_ts::StringType::get(rewriter.getContext()), 
+                        arithmeticBinaryOp.getOperand(0), 
+                        arithmeticBinaryOp.getOperand(1));       
+                }
+                else
+                {
+                    BinOp<mlir_ts::ArithmeticBinaryOp, AddIOp, AddFOp>(arithmeticBinaryOp, rewriter);
+                }
+
                 return success();
 
             case SyntaxKind::MinusToken:
@@ -679,6 +691,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         mlir_ts::ReturnValOp,
         mlir_ts::StoreOp,
         mlir_ts::StoreElementOp,
+        mlir_ts::StringConcatOp,
         mlir_ts::LoadOp,
         mlir_ts::LoadElementOp,
         mlir_ts::LogicalBinaryOp,

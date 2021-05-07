@@ -278,6 +278,108 @@ namespace
         }
     };
 
+    class StringConcatOpLowering : public OpConversionPattern<mlir_ts::StringConcatOp>
+    {
+    public:
+        using OpConversionPattern<mlir_ts::StringConcatOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::StringConcatOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            TypeHelper th(rewriter);
+            CodeLogicHelper clh(op, rewriter);
+            LLVMCodeHelper ch(op, rewriter);
+
+            auto loc = op->getLoc();
+
+            // TODO implement str concat
+            auto i8PtrTy = th.getI8PtrType();
+            auto i8PtrPtrTy = th.getI8PtrPtrType();
+
+            auto strlenFuncOp =
+                ch.getOrInsertFunction(
+                    "strlen",
+                    th.getFunctionType(rewriter.getI64Type(), {i8PtrTy}));                    
+            auto strcpyFuncOp =
+                ch.getOrInsertFunction(
+                    "strcpy",
+                    th.getFunctionType(i8PtrTy, {i8PtrTy, i8PtrTy}));                    
+            auto strcatFuncOp =
+                ch.getOrInsertFunction(
+                    "strcat",
+                    th.getFunctionType(i8PtrTy, {i8PtrTy, i8PtrTy}));   
+
+            // calc size
+            auto size1 = rewriter.create<LLVM::CallOp>(loc, strlenFuncOp, op.op1());
+            auto size2 = rewriter.create<LLVM::CallOp>(loc, strlenFuncOp, op.op2());
+            auto size = rewriter.create<LLVM::AddOp>(loc, rewriter.getI64Type(), size1.getResult(0), size2.getResult(0));
+            auto const1 = clh.createI64ConstantOf(1);
+            auto sizeP1 = rewriter.create<LLVM::AddOp>(loc, rewriter.getI64Type(), ValueRange{size, const1});
+            auto bufferSizeValue = size;
+            auto newStringValue = rewriter.create<LLVM::AllocaOp>(op->getLoc(), i8PtrTy, bufferSizeValue, true);            
+            rewriter.create<LLVM::CallOp>(loc, strcpyFuncOp, ValueRange{newStringValue, op.op1()});
+            rewriter.create<LLVM::CallOp>(loc, strcatFuncOp, ValueRange{newStringValue, op.op2()});
+
+            rewriter.replaceOp(op, ValueRange{newStringValue});
+
+            return success();
+        }
+    };       
+
+    class StringCompareOpLowering : public OpConversionPattern<mlir_ts::StringCompareOp>
+    {
+    public:
+        using OpConversionPattern<mlir_ts::StringCompareOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::StringCompareOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            TypeHelper th(rewriter);
+            CodeLogicHelper clh(op, rewriter);
+            LLVMCodeHelper ch(op, rewriter);
+
+            auto loc = op->getLoc();
+
+            // TODO implement str concat
+            auto i8PtrTy = th.getI8PtrType();
+
+            auto strcmpFuncOp =
+                ch.getOrInsertFunction(
+                    "strcmp",
+                    th.getFunctionType(th.getI32Type(), {i8PtrTy, i8PtrTy}));                    
+
+            // calc size
+            auto compareResult = rewriter.create<LLVM::CallOp>(loc, strcmpFuncOp, ValueRange{op.op1(), op.op2()});
+            auto const0 = clh.createI32ConstantOf(0);
+
+            switch ((SyntaxKind)op.code())
+            {
+                case SyntaxKind::EqualsEqualsToken:
+                case SyntaxKind::EqualsEqualsEqualsToken:
+                    rewriter.replaceOpWithNewOp<LLVM::ICmpOp>(op, LLVM::ICmpPredicate::eq, compareResult.getResult(0), const0);
+                    break;
+                case SyntaxKind::ExclamationEqualsToken:
+                case SyntaxKind::ExclamationEqualsEqualsToken:
+                    rewriter.replaceOpWithNewOp<LLVM::ICmpOp>(op, LLVM::ICmpPredicate::ne, compareResult.getResult(0), const0);
+                    break;
+                case SyntaxKind::GreaterThanToken:
+                    rewriter.replaceOpWithNewOp<LLVM::ICmpOp>(op, LLVM::ICmpPredicate::sgt, compareResult.getResult(0), const0);
+                    break;
+                case SyntaxKind::GreaterThanEqualsToken:
+                    rewriter.replaceOpWithNewOp<LLVM::ICmpOp>(op, LLVM::ICmpPredicate::sge, compareResult.getResult(0), const0);
+                    break;
+                case SyntaxKind::LessThanToken:
+                    rewriter.replaceOpWithNewOp<LLVM::ICmpOp>(op, LLVM::ICmpPredicate::slt, compareResult.getResult(0), const0);
+                    break;
+                case SyntaxKind::LessThanEqualsToken:
+                    rewriter.replaceOpWithNewOp<LLVM::ICmpOp>(op, LLVM::ICmpPredicate::sle, compareResult.getResult(0), const0);
+                    break;
+                default:
+                    llvm_unreachable("not implemented");
+            }
+
+            return success();
+        }
+    }; 
+
     struct ConstantOpLowering : public OpConversionPattern<mlir_ts::ConstantOp>
     {
         using OpConversionPattern<mlir_ts::ConstantOp>::OpConversionPattern;
@@ -600,43 +702,46 @@ namespace
 
         LogicalResult matchAndRewrite(mlir_ts::CastOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
+            TypeHelper th(rewriter);
+            LLVMCodeHelper ch(op, rewriter);
             CodeLogicHelper clh(op, rewriter);
             TypeConverterHelper tch(*getTypeConverter());
 
             auto in = op.in();
             auto res = op.res();
-            auto op1 = tch.convertType(in.getType());
-            auto op2 = tch.convertType(res.getType());
+            auto resTypeOrig = res.getType();
+            auto inType = tch.convertType(in.getType());
+            auto resType = tch.convertType(resTypeOrig);
 
-            if (op1 == op2)
+            if (inType == resType)
             {
                 // types are equals
                 rewriter.replaceOp(op, in);
                 return success();
             }
 
-            if (op1.isInteger(32) && op2.isF32())
+            if (inType.isInteger(32) && resType.isF32())
             {
-                rewriter.replaceOpWithNewOp<SIToFPOp>(op, op2, in);
+                rewriter.replaceOpWithNewOp<SIToFPOp>(op, resType, in);
                 return success();
             }
 
-            if (op1.isF32() && op2.isInteger(32))
+            if (inType.isF32() && resType.isInteger(32))
             {
-                rewriter.replaceOpWithNewOp<FPToSIOp>(op, op2, in);
+                rewriter.replaceOpWithNewOp<FPToSIOp>(op, resType, in);
                 return success();
             }
 
-            if ((op1.isInteger(32) || op1.isInteger(8)) && op2.isInteger(1))
+            if ((inType.isInteger(32) || inType.isInteger(8)) && resType.isInteger(1))
             {
                 //rewriter.replaceOpWithNewOp<TruncateIOp>(op, op2, in);
                 rewriter.replaceOpWithNewOp<CmpIOp>(op, CmpIPredicate::ne, op.in(), clh.createI32ConstantOf(0));
                 return success();
             }
 
-            if (op1.isInteger(1) && (op2.isInteger(8) || op2.isInteger(32)))
+            if (inType.isInteger(1) && (resType.isInteger(8) || resType.isInteger(32)))
             {
-                rewriter.replaceOpWithNewOp<ZeroExtendIOp>(op, in, op2);
+                rewriter.replaceOpWithNewOp<ZeroExtendIOp>(op, in, resType);
                 return success();
             }            
 
@@ -648,15 +753,45 @@ namespace
             }
             */
 
-            auto op1Any = op1.dyn_cast_or_null<mlir_ts::AnyType>();
-            auto op2String = op2.dyn_cast_or_null<mlir_ts::StringType>();
-            if (op1Any && op2String)
+            auto isResString = resTypeOrig.dyn_cast_or_null<mlir_ts::StringType>();
+            if (inType.isInteger(32) && isResString)
             {
-                rewriter.replaceOp(op, op.in());
+                auto i8PtrTy = th.getI8PtrType();
+
+                auto _itoaFuncOp =
+                    ch.getOrInsertFunction(
+                        "_itoa",
+                        th.getFunctionType(th.getI8PtrType(), ArrayRef<mlir::Type>{rewriter.getI32Type(), th.getI8PtrType(), rewriter.getI32Type()}, true));
+
+                auto bufferSizeValue = clh.createI32ConstantOf(50);
+                mlir::Value newStringValue = rewriter.create<LLVM::AllocaOp>(op->getLoc(), i8PtrTy, bufferSizeValue, true);
+                auto base = clh.createI32ConstantOf(10);
+
+                rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, _itoaFuncOp, ValueRange{op.in(), newStringValue, base});
+
                 return success();
             }
 
-            emitError(op->getLoc(), "invalid cast operator type 1: '") << op1 << "', type 2: '" << op2 << "'";
+            if (inType.isF32() && isResString)
+            {
+                auto i8PtrTy = th.getI8PtrType();
+
+                auto _gcvtFuncOp =
+                    ch.getOrInsertFunction(
+                        "_gcvt",
+                        th.getFunctionType(th.getI8PtrType(), ArrayRef<mlir::Type>{rewriter.getF64Type(), rewriter.getI32Type(), th.getI8PtrType()}, true));
+
+                auto bufferSizeValue = clh.createI32ConstantOf(50);
+                mlir::Value newStringValue = rewriter.create<LLVM::AllocaOp>(op->getLoc(), i8PtrTy, bufferSizeValue, true);
+                auto doubleValue = rewriter.create<LLVM::FPExtOp>(op->getLoc(), rewriter.getF64Type(), op.in());
+                auto precision = clh.createI32ConstantOf(16);
+
+                rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, _gcvtFuncOp, ValueRange{doubleValue, precision, newStringValue});
+
+                return success();
+            }
+
+            emitError(op->getLoc(), "invalid cast operator type 1: '") << inType << "', type 2: '" << resType << "'";
             llvm_unreachable("not implemented");
         }
     };
@@ -774,6 +909,32 @@ namespace
         LogicalResult matchAndRewrite(mlir_ts::LogicalBinaryOp logicalBinaryOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             auto op = (SyntaxKind)logicalBinaryOp.opCode();
+
+            if (IsStringArg(logicalBinaryOp))
+            {
+                switch (op)
+                {
+                case SyntaxKind::EqualsEqualsToken:
+                case SyntaxKind::EqualsEqualsEqualsToken:
+                case SyntaxKind::ExclamationEqualsToken:
+                case SyntaxKind::ExclamationEqualsEqualsToken:
+                case SyntaxKind::GreaterThanToken:
+                case SyntaxKind::GreaterThanEqualsToken:
+                case SyntaxKind::LessThanToken:
+                case SyntaxKind::LessThanEqualsToken:
+                    rewriter.replaceOpWithNewOp<mlir_ts::StringCompareOp>(
+                        logicalBinaryOp, 
+                        mlir_ts::StringType::get(rewriter.getContext()), 
+                        logicalBinaryOp.getOperand(0), 
+                        logicalBinaryOp.getOperand(1),
+                        rewriter.getI32IntegerAttr((int)op));       
+                    return success();
+                default:
+                    llvm_unreachable("not implemented");
+                }
+            }
+
+            // int and float
             switch (op)
             {
             case SyntaxKind::EqualsEqualsToken:
@@ -1077,6 +1238,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         PrintOpLowering,
         StoreOpLowering,
         StoreElementOpLowering,
+        StringConcatOpLowering,
+        StringCompareOpLowering,
         UndefOpLowering,
         VariableOpLowering>(typeConverter, &getContext());
 
