@@ -754,6 +754,18 @@ namespace
             */
 
             auto isResString = resTypeOrig.dyn_cast_or_null<mlir_ts::StringType>();
+
+            if (inType.isInteger(1) && isResString)
+            {
+                rewriter.replaceOpWithNewOp<LLVM::SelectOp>(
+                    op,
+                    op.in(),
+                    ch.getOrCreateGlobalString("__true__", std::string("true")),
+                    ch.getOrCreateGlobalString("__false__", std::string("false"))); 
+
+                return success();               
+            }
+
             if (inType.isInteger(32) && isResString)
             {
                 auto i8PtrTy = th.getI8PtrType();
