@@ -1155,7 +1155,23 @@ namespace
         });
 
         converter.addConversion([&](mlir_ts::BooleanType type) {
-            return IntegerType::get(m.getContext(), 1);
+            return IntegerType::get(m.getContext(), 1/*, mlir::IntegerType::SignednessSemantics::Unsigned*/);
+        });
+
+        converter.addConversion([&](mlir_ts::CharType type) {
+            return IntegerType::get(m.getContext(), 8/*, mlir::IntegerType::SignednessSemantics::Unsigned*/);
+        });
+
+        converter.addConversion([&](mlir_ts::ByteType type) {
+            return IntegerType::get(m.getContext(), 8/*, mlir::IntegerType::SignednessSemantics::Unsigned*/);
+        });
+
+        converter.addConversion([&](mlir_ts::NumberType type) {
+            return Float32Type::get(m.getContext());
+        });
+
+        converter.addConversion([&](mlir_ts::BigIntType type) {
+            return IntegerType::get(m.getContext(), 64/*, mlir::IntegerType::SignednessSemantics::Signed*/);
         });
 
         converter.addConversion([&](mlir_ts::StringType type) {

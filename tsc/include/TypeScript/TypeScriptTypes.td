@@ -13,25 +13,36 @@ include "TypeScriptDialect.td"
 // All of the types will extend this class.
 class TypeScript_Type<string name> : TypeDef<TypeScript_Dialect, name> { }
 
+def TypeScript_Void : TypeScript_Type<"Void"> {
+    let mnemonic = "void";
+}
+
 def TypeScript_Any : TypeScript_Type<"Any"> {
     let mnemonic = "any";
 }
 
 def TypeScript_Boolean : TypeScript_Type<"Boolean"> {
     let mnemonic = "boolean";
-
-    // We define the printer inline.
-    let printer = [{
-        $_printer << "boolean";
-    }];
 }
 
-def TypeScript_Void : TypeScript_Type<"Void"> {
-    let mnemonic = "void";
+def TypeScript_Byte : TypeScript_Type<"Byte"> {
+    let mnemonic = "byte";
+}
+
+def TypeScript_Number : TypeScript_Type<"Number"> {
+    let mnemonic = "number";
+}
+
+def TypeScript_BigInt : TypeScript_Type<"BigInt"> {
+    let mnemonic = "bigint";
 }
 
 def TypeScript_String : TypeScript_Type<"String"> {
     let mnemonic = "string";
+}
+
+def TypeScript_Char : TypeScript_Type<"Char"> {
+    let mnemonic = "char";
 }
 
 def TypeScript_Object : TypeScript_Type<"Object"> {

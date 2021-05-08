@@ -2053,11 +2053,11 @@ namespace
             }
             else if (kind == SyntaxKind::NumberKeyword)
             {
-                return builder.getF32Type();
+                return getNumberType();
             }
             else if (kind == SyntaxKind::BigIntKeyword)
             {
-                return builder.getI64Type();
+                return getBigIntType();
             }
             else if (kind == SyntaxKind::StringKeyword)
             {
@@ -2080,14 +2080,34 @@ namespace
             return mlir_ts::VoidType::get(builder.getContext());
         }
 
+        mlir_ts::ByteType getByteType()
+        {
+            return mlir_ts::ByteType::get(builder.getContext());
+        }
+
         mlir_ts::BooleanType getBooleanType()
         {
             return mlir_ts::BooleanType::get(builder.getContext());
         }
-        
+
+        mlir_ts::NumberType getNumberType()
+        {
+            return mlir_ts::NumberType::get(builder.getContext());
+        }
+
+        mlir_ts::BigIntType getBigIntType()
+        {
+            return mlir_ts::BigIntType::get(builder.getContext());
+        }
+
         mlir_ts::StringType getStringType()
         {
             return mlir_ts::StringType::get(builder.getContext());
+        }
+
+        mlir_ts::CharType getCharType()
+        {
+            return mlir_ts::CharType::get(builder.getContext());
         }
 
         mlir_ts::ArrayType getArrayType(mlir::Type elementType)
