@@ -436,6 +436,12 @@ namespace typescript
         {
             builder.replaceOpWithNewOp<StdFOpTy>(binOp, binOp.getOperand(0), binOp.getOperand(1));
         }
+        else if (leftType.dyn_cast_or_null<mlir_ts::NumberType>())
+        {
+            auto castLeft = builder.create<mlir_ts::CastOp>(binOp->getLoc(), builder.getF32Type(), binOp.getOperand(0));
+            auto castRight = builder.create<mlir_ts::CastOp>(binOp->getLoc(), builder.getF32Type(), binOp.getOperand(1));
+            builder.replaceOpWithNewOp<StdFOpTy>(binOp, castLeft, castRight);
+        }
         else
         {
             emitError(binOp.getLoc(), "Not implemented operator for type 1: '") << leftType << "'";

@@ -27,21 +27,15 @@ namespace
         DenseMap<Operation *, std::tuple<StringRef, mlir::Block *>> jumps;
     };
 
-    class TSTypeConverter : public TypeConverter {
-    public:
-        explicit TSTypeConverter() {}
-    };
-
     template <typename OpTy>
-    class TsPattern : public OpConversionPattern<OpTy> 
+    class TsPattern : public OpRewritePattern<OpTy> 
     {
     public:
-        TsPattern<OpTy>(MLIRContext *context, TSTypeConverter &converter, TSContext *tsContext, PatternBenefit benefit = 1) 
-            : OpConversionPattern<OpTy>::OpConversionPattern(context, benefit), tsContext(tsContext), typeConverter(converter) {}
+        TsPattern<OpTy>(MLIRContext *context, TSContext *tsContext, PatternBenefit benefit = 1) 
+            : OpRewritePattern<OpTy>::OpRewritePattern(context, benefit), tsContext(tsContext) {}
 
     protected:
         TSContext *tsContext;
-        TSTypeConverter &typeConverter;
     };
 
     //===----------------------------------------------------------------------===//
@@ -52,7 +46,7 @@ namespace
     {
         using TsPattern<mlir_ts::ParamOp>::TsPattern;
 
-        LogicalResult matchAndRewrite(mlir_ts::ParamOp paramOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::ParamOp paramOp, PatternRewriter &rewriter) const final
         {
             rewriter.replaceOpWithNewOp<mlir_ts::VariableOp>(paramOp, paramOp.getType(), paramOp.argValue());
             return success();
@@ -63,7 +57,7 @@ namespace
     {
         using TsPattern<mlir_ts::ParamOptionalOp>::TsPattern;
 
-        LogicalResult matchAndRewrite(mlir_ts::ParamOptionalOp paramOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::ParamOptionalOp paramOp, PatternRewriter &rewriter) const final
         {
             TypeHelper th(rewriter); 
 
@@ -120,7 +114,7 @@ namespace
     {
         using TsPattern<mlir_ts::ParamDefaultValueOp>::TsPattern;
 
-        LogicalResult matchAndRewrite(mlir_ts::ParamDefaultValueOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::ParamDefaultValueOp op, PatternRewriter &rewriter) const final
         {
             rewriter.replaceOpWithNewOp<mlir_ts::YieldOp>(op, op.results());
             return success();
@@ -131,7 +125,7 @@ namespace
     {
         using TsPattern<mlir_ts::PrefixUnaryOp>::TsPattern;
 
-        LogicalResult matchAndRewrite(mlir_ts::PrefixUnaryOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::PrefixUnaryOp op, PatternRewriter &rewriter) const final
         {
             CodeLogicHelper clh(op, rewriter);
             auto cst1 = rewriter.create<mlir_ts::ConstantOp>(op->getLoc(), rewriter.getI32IntegerAttr(1));
@@ -158,7 +152,7 @@ namespace
     {
         using TsPattern<mlir_ts::PostfixUnaryOp>::TsPattern;
 
-        LogicalResult matchAndRewrite(mlir_ts::PostfixUnaryOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::PostfixUnaryOp op, PatternRewriter &rewriter) const final
         {
             CodeLogicHelper clh(op, rewriter);
             auto cst1 = rewriter.create<mlir_ts::ConstantOp>(op->getLoc(), rewriter.getI32IntegerAttr(1));
@@ -182,86 +176,11 @@ namespace
         }
     };  
 
-    struct ArithmeticBinaryOpLowering : public TsPattern<mlir_ts::ArithmeticBinaryOp>
-    {
-        using TsPattern<mlir_ts::ArithmeticBinaryOp>::TsPattern;
-
-        LogicalResult matchAndRewrite(mlir_ts::ArithmeticBinaryOp arithmeticBinaryOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
-        {
-            auto opCode = (SyntaxKind)arithmeticBinaryOp.opCode();
-            switch (opCode)
-            {
-            case SyntaxKind::PlusToken:
-                if (IsStringArg(arithmeticBinaryOp))
-                {
-                    rewriter.replaceOpWithNewOp<mlir_ts::StringConcatOp>(
-                        arithmeticBinaryOp, 
-                        mlir_ts::StringType::get(rewriter.getContext()), 
-                        arithmeticBinaryOp.getOperand(0), 
-                        arithmeticBinaryOp.getOperand(1));       
-                }
-                else
-                {
-                    BinOp<mlir_ts::ArithmeticBinaryOp, AddIOp, AddFOp>(arithmeticBinaryOp, rewriter);
-                }
-
-                return success();
-
-            case SyntaxKind::MinusToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, SubIOp, SubFOp>(arithmeticBinaryOp, rewriter);
-                return success();
-
-            case SyntaxKind::AsteriskToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, MulIOp, MulFOp>(arithmeticBinaryOp, rewriter);
-                return success();
-
-            case SyntaxKind::SlashToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, DivFOp, DivFOp>(arithmeticBinaryOp, rewriter);
-                return success();
-
-            case SyntaxKind::GreaterThanGreaterThanToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, SignedShiftRightOp, SignedShiftRightOp>(arithmeticBinaryOp, rewriter);
-                return success();
-
-            case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, UnsignedShiftRightOp, UnsignedShiftRightOp>(arithmeticBinaryOp, rewriter);
-                return success();
-
-            case SyntaxKind::LessThanLessThanToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, ShiftLeftOp, ShiftLeftOp>(arithmeticBinaryOp, rewriter);
-                return success();                
-
-            case SyntaxKind::AmpersandToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, AndOp, AndOp>(arithmeticBinaryOp, rewriter);
-                return success();                    
-
-            case SyntaxKind::BarToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, OrOp, OrOp>(arithmeticBinaryOp, rewriter);
-                return success();                    
-
-            case SyntaxKind::CaretToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, XOrOp, XOrOp>(arithmeticBinaryOp, rewriter);
-                return success();                    
-
-            case SyntaxKind::PercentToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, RemFOp, RemFOp>(arithmeticBinaryOp, rewriter);
-                return success();                    
-
-            case SyntaxKind::AsteriskAsteriskToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, PowFOp, PowFOp>(arithmeticBinaryOp, rewriter);
-                return success();                    
-
-            default:
-                llvm_unreachable("not implemented");
-            }
-        }
-    };
-
     struct IfOpLowering : public TsPattern<mlir_ts::IfOp>
     {
         using TsPattern<mlir_ts::IfOp>::TsPattern;
 
-        LogicalResult matchAndRewrite(mlir_ts::IfOp ifOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::IfOp ifOp, PatternRewriter &rewriter) const final
         {
             auto loc = ifOp.getLoc();
 
@@ -322,7 +241,7 @@ namespace
     {
         using TsPattern<mlir_ts::WhileOp>::TsPattern;
 
-        LogicalResult matchAndRewrite(mlir_ts::WhileOp whileOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::WhileOp whileOp, PatternRewriter &rewriter) const final
         {
             OpBuilder::InsertionGuard guard(rewriter);
             Location loc = whileOp.getLoc();
@@ -387,7 +306,7 @@ namespace
     {
         using TsPattern<mlir_ts::DoWhileOp>::TsPattern;
 
-        LogicalResult matchAndRewrite(mlir_ts::DoWhileOp doWhileOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::DoWhileOp doWhileOp, PatternRewriter &rewriter) const final
         {
             Location loc = doWhileOp.getLoc();
 
@@ -449,7 +368,7 @@ namespace
     {
         using TsPattern<mlir_ts::ForOp>::TsPattern;
 
-        LogicalResult matchAndRewrite(mlir_ts::ForOp forOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::ForOp forOp, PatternRewriter &rewriter) const final
         {
             OpBuilder::InsertionGuard guard(rewriter);
             Location loc = forOp.getLoc();
@@ -528,7 +447,7 @@ namespace
     {
         using TsPattern<mlir_ts::BreakOp>::TsPattern;
 
-        LogicalResult matchAndRewrite(mlir_ts::BreakOp breakOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::BreakOp breakOp, PatternRewriter &rewriter) const final
         {
             OpBuilder::InsertionGuard guard(rewriter);
 
@@ -547,7 +466,7 @@ namespace
     {
         using TsPattern<mlir_ts::ContinueOp>::TsPattern;
 
-        LogicalResult matchAndRewrite(mlir_ts::ContinueOp continueOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::ContinueOp continueOp, PatternRewriter &rewriter) const final
         {
             OpBuilder::InsertionGuard guard(rewriter);
 
@@ -566,7 +485,7 @@ namespace
     {
         using TsPattern<mlir_ts::SwitchOp>::TsPattern;
 
-        LogicalResult matchAndRewrite(mlir_ts::SwitchOp switchOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::SwitchOp switchOp, PatternRewriter &rewriter) const final
         {
             Location loc = switchOp.getLoc();
 
@@ -635,7 +554,6 @@ namespace
 
         void runOnFunction() final;
     
-        TSTypeConverter typeConverter;
         TSContext tsContext;
     };
 } // end anonymous namespace.
@@ -673,6 +591,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         mlir_ts::AddressOfOp,
         mlir_ts::AddressOfConstStringOp,
         mlir_ts::AddressOfElementOp,
+        mlir_ts::ArithmeticBinaryOp,
         mlir_ts::ArithmeticUnaryOp,
         mlir_ts::AssertOp,
         mlir_ts::CallOp,
@@ -704,7 +623,6 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     // the set of patterns that will lower the TypeScript operations.
     OwningRewritePatternList patterns;
     patterns.insert<
-        ArithmeticBinaryOpLowering,
         ParamOpLowering,
         ParamOptionalOpLowering,
         ParamDefaultValueOpLowering,
@@ -717,7 +635,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         BreakOpLowering,
         ContinueOpLowering,
         SwitchOpLowering
-    >(&getContext(), typeConverter, &tsContext);    
+    >(&getContext(), &tsContext);    
 
     // With the target and rewrite patterns defined, we can now attempt the
     // conversion. The conversion will signal failure if any of our `illegal`
