@@ -285,14 +285,20 @@ namespace typescript
             auto globalPtr = arrayOrString;
             auto type = arrayOrString.getType();
 
-            mlir::Type elementType;
+            mlir::Type ptrType;
             if (auto arrayType = type.dyn_cast_or_null<mlir_ts::ArrayType>())
             {
-                elementType = arrayType.getElementType();
+                auto elementType = arrayType.getElementType();
+                ptrType = th.getPointerType(tch.convertType(elementType));
             }
             else if (auto arrayType = type.dyn_cast_or_null<mlir_ts::StringType>())
             {
-                elementType = mlir_ts::CharType::get(rewriter.getContext());
+                auto elementType = mlir_ts::CharType::get(rewriter.getContext());
+                ptrType = th.getPointerType(tch.convertType(elementType));
+            }
+            else if (type.dyn_cast_or_null<mlir::LLVM::LLVMPointerType>())
+            {
+                ptrType = type;
             }
             else
             {
@@ -301,7 +307,7 @@ namespace typescript
 
             auto addr = rewriter.create<LLVM::GEPOp>(
                 loc,
-                th.getPointerType(tch.convertType(elementType)), 
+                ptrType, 
                 globalPtr,
                 ValueRange{index});
 
@@ -315,6 +321,11 @@ namespace typescript
         PatternRewriter &rewriter;
     public:        
         CodeLogicHelper(Operation *op, PatternRewriter &rewriter) : op(op), rewriter(rewriter) {}
+
+        Value createI8ConstantOf(unsigned value)
+        {
+            return rewriter.create<LLVM::ConstantOp>(op->getLoc(), rewriter.getIntegerType(8), rewriter.getIntegerAttr(rewriter.getIntegerType(8), value));
+        }
 
         Value createI32ConstantOf(unsigned value)
         {

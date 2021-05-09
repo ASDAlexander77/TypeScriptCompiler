@@ -1092,4 +1092,9 @@ def TypeScript_StringCompareOp : TypeScript_Op<"StringCompare"> {
   let results = (outs TypeScript_Boolean:$result);
 }
 
+def TypeScript_CharToStringOp : TypeScript_Op<"CharToString"> {
+  let arguments = (ins TypeScript_Char:$op);
+  let results = (outs TypeScript_String:$result);
+}
+
 #endif // TYPESCRIPT_OPS

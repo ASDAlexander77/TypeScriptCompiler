@@ -342,7 +342,6 @@ namespace
 
             auto loc = op->getLoc();
 
-            // TODO implement str concat
             auto i8PtrTy = th.getI8PtrType();
 
             auto strcmpFuncOp =
@@ -383,6 +382,39 @@ namespace
             return success();
         }
     }; 
+
+    class CharToStringOpLowering : public OpConversionPattern<mlir_ts::CharToStringOp>
+    {
+    public:
+        using OpConversionPattern<mlir_ts::CharToStringOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::CharToStringOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            TypeHelper th(rewriter);
+            CodeLogicHelper clh(op, rewriter);
+            LLVMCodeHelper ch(op, rewriter);
+
+            auto loc = op->getLoc();            
+
+            auto i8PtrTy = th.getI8PtrType();            
+
+            auto bufferSizeValue = clh.createI64ConstantOf(2);
+            auto newStringValue = rewriter.create<LLVM::AllocaOp>(loc, i8PtrTy, bufferSizeValue, true);            
+            // TODO: copy char and 0 into 2 bytes array
+
+            auto index0Value = clh.createI32ConstantOf(0);
+            auto index1Value = clh.createI32ConstantOf(1);
+            auto nullCharValue = clh.createI8ConstantOf(0);
+            auto addr0 = ch.GetAddressOfElement(newStringValue, index0Value);
+            rewriter.create<LLVM::StoreOp>(loc, op.op(), addr0);
+            auto addr1 = ch.GetAddressOfElement(newStringValue, index1Value);
+            rewriter.create<LLVM::StoreOp>(loc, nullCharValue, addr1);
+
+            rewriter.replaceOp(op, ValueRange{newStringValue});        
+
+            return success();    
+        }
+    };
 
     struct ConstantOpLowering : public OpConversionPattern<mlir_ts::ConstantOp>
     {
@@ -713,39 +745,47 @@ namespace
 
             auto in = op.in();
             auto res = op.res();
-            auto resTypeOrig = res.getType();
-            auto inType = tch.convertType(in.getType());
-            auto resType = tch.convertType(resTypeOrig);
+            auto inType = in.getType();
+            auto resType = res.getType();
+            auto inLLVMType = tch.convertType(inType);
+            auto resLLVMType = tch.convertType(resType);
 
-            if (inType == resType)
+            if (inLLVMType == resLLVMType)
             {
                 // types are equals
                 rewriter.replaceOp(op, in);
                 return success();
             }
 
-            if (inType.isInteger(32) && resType.isF32())
+            if (inType.dyn_cast_or_null<mlir_ts::CharType>() && resType.dyn_cast_or_null<mlir_ts::StringType>())
             {
-                rewriter.replaceOpWithNewOp<SIToFPOp>(op, resType, in);
+                // types are equals
+                rewriter.replaceOpWithNewOp<mlir_ts::CharToStringOp>(op, mlir_ts::StringType::get(rewriter.getContext()), in);
                 return success();
             }
 
-            if (inType.isF32() && resType.isInteger(32))
+            if (inLLVMType.isInteger(32) && resLLVMType.isF32())
             {
-                rewriter.replaceOpWithNewOp<FPToSIOp>(op, resType, in);
+                rewriter.replaceOpWithNewOp<SIToFPOp>(op, resLLVMType, in);
                 return success();
             }
 
-            if ((inType.isInteger(32) || inType.isInteger(8)) && resType.isInteger(1))
+            if (inLLVMType.isF32() && resLLVMType.isInteger(32))
+            {
+                rewriter.replaceOpWithNewOp<FPToSIOp>(op, resLLVMType, in);
+                return success();
+            }
+
+            if ((inLLVMType.isInteger(32) || inLLVMType.isInteger(8)) && resLLVMType.isInteger(1))
             {
                 //rewriter.replaceOpWithNewOp<TruncateIOp>(op, op2, in);
                 rewriter.replaceOpWithNewOp<CmpIOp>(op, CmpIPredicate::ne, op.in(), clh.createI32ConstantOf(0));
                 return success();
             }
 
-            if (inType.isInteger(1) && (resType.isInteger(8) || resType.isInteger(32)))
+            if (inLLVMType.isInteger(1) && (resLLVMType.isInteger(8) || resLLVMType.isInteger(32)))
             {
-                rewriter.replaceOpWithNewOp<ZeroExtendIOp>(op, in, resType);
+                rewriter.replaceOpWithNewOp<ZeroExtendIOp>(op, in, resLLVMType);
                 return success();
             }            
 
@@ -757,9 +797,9 @@ namespace
             }
             */
 
-            auto isResString = resTypeOrig.dyn_cast_or_null<mlir_ts::StringType>();
+            auto isResString = resType.dyn_cast_or_null<mlir_ts::StringType>();
 
-            if (inType.isInteger(1) && isResString)
+            if (inLLVMType.isInteger(1) && isResString)
             {
                 rewriter.replaceOpWithNewOp<LLVM::SelectOp>(
                     op,
@@ -770,7 +810,7 @@ namespace
                 return success();               
             }
 
-            if (inType.isInteger(32) && isResString)
+            if (inLLVMType.isInteger(32) && isResString)
             {
                 auto i8PtrTy = th.getI8PtrType();
 
@@ -788,7 +828,7 @@ namespace
                 return success();
             }
 
-            if (inType.isF32() && isResString)
+            if (inLLVMType.isF32() && isResString)
             {
                 auto i8PtrTy = th.getI8PtrType();
 
@@ -807,7 +847,7 @@ namespace
                 return success();
             }
 
-            emitError(op->getLoc(), "invalid cast operator type 1: '") << inType << "', type 2: '" << resType << "'";
+            emitError(op->getLoc(), "invalid cast operator type 1: '") << inLLVMType << "', type 2: '" << resLLVMType << "'";
             llvm_unreachable("not implemented");
         }
     };
@@ -1349,6 +1389,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         StoreElementOpLowering,
         StringConcatOpLowering,
         StringCompareOpLowering,
+        CharToStringOpLowering,
         UndefOpLowering,
         VariableOpLowering>(typeConverter, &getContext());
 
