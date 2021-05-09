@@ -258,11 +258,10 @@ namespace
             // logic to support continue/break
 
             auto visitorBreakContinue = [&](Operation* op) {
-                auto name = op->getName().getStringRef();
-                if (name == "ts.break") {
+                if (dyn_cast_or_null<mlir_ts::BreakOp>(op)) {
                     tsContext->jumps[op] = std::make_tuple(StringRef(""), continuation);
                 }
-                else if (name == "ts.continue") {
+                else if (dyn_cast_or_null<mlir_ts::ContinueOp>(op)) {
                     tsContext->jumps[op] = std::make_tuple(StringRef(""), cond);
                 }
             };
@@ -324,11 +323,10 @@ namespace
             // logic to support continue/break
 
             auto visitorBreakContinue = [&](Operation* op) {
-                auto name = op->getName().getStringRef();
-                if (name == "ts.break") {
+                if (dyn_cast_or_null<mlir_ts::BreakOp>(op)) {
                     tsContext->jumps[op] = std::make_tuple(StringRef(""), continuation);
                 }
-                else if (name == "ts.continue") {
+                else if (dyn_cast_or_null<mlir_ts::ContinueOp>(op)) {
                     tsContext->jumps[op] = std::make_tuple(StringRef(""), cond);
                 }
             };
@@ -387,11 +385,10 @@ namespace
             // logic to support continue/break
 
             auto visitorBreakContinue = [&](Operation* op) {
-                auto name = op->getName().getStringRef();
-                if (name == "ts.break") {
+                if (dyn_cast_or_null<mlir_ts::BreakOp>(op)) {
                     tsContext->jumps[op] = std::make_tuple(StringRef(""), continuation);
                 }
-                else if (name == "ts.continue") {
+                else if (dyn_cast_or_null<mlir_ts::ContinueOp>(op)) {
                     tsContext->jumps[op] = std::make_tuple(StringRef(""), incr);
                 }
             };
