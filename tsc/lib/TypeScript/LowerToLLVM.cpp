@@ -61,7 +61,15 @@ namespace
                     format << " ";
                 }
 
-                if (llvmType.isIntOrIndexOrFloat() && !llvmType.isIntOrIndex())
+                if (auto s = type.dyn_cast_or_null<mlir_ts::StringType>())
+                {
+                    format << "%s";
+                }
+                else if (auto c = type.dyn_cast_or_null<mlir_ts::CharType>())
+                {
+                    format << "%c";
+                }                
+                else if (llvmType.isIntOrIndexOrFloat() && !llvmType.isIntOrIndex())
                 {
                     format << "%f";
                 }
@@ -75,10 +83,6 @@ namespace
                     {
                         format << "%d";
                     }
-                }
-                else if (auto s = type.dyn_cast_or_null<mlir_ts::StringType>())
-                {
-                    format << "%s";
                 }
                 else
                 {
