@@ -1408,6 +1408,20 @@ namespace
             auto leftExpressionValue = mlirGen(leftExpression, genContext);
             auto rightExpressionValue = mlirGen(rightExpression, genContext);
 
+            // TODO: temporary hack
+            if (leftExpressionValue.getType() != rightExpressionValue.getType())
+            {
+                if (leftExpressionValue.getType().dyn_cast_or_null<mlir_ts::CharType>())
+                {
+                    leftExpressionValue = builder.create<mlir_ts::CastOp>(loc(leftExpression), getStringType(), leftExpressionValue);
+                }
+
+                if (rightExpressionValue.getType().dyn_cast_or_null<mlir_ts::CharType>())
+                {
+                    rightExpressionValue = builder.create<mlir_ts::CastOp>(loc(rightExpression), getStringType(), rightExpressionValue);
+                }                
+            }
+
             auto leftExpressionValueBeforeCast = leftExpressionValue;
             auto rightExpressionValueBeforeCast = rightExpressionValue;
 
