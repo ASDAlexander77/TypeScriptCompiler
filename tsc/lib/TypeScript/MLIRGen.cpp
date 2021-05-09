@@ -1616,6 +1616,10 @@ namespace
             {
                 elementType = arrayType.cast<mlir::VectorType>().getElementType();
             }
+            else if (arrayType.isa<mlir_ts::StringType>())
+            {
+                elementType = getCharType();
+            }
             else 
             {
                 llvm_unreachable("not implemented");

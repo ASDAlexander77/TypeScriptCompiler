@@ -17,7 +17,7 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 // ConstantOp
 //===----------------------------------------------------------------------===//
 
-def ConstantOp : TypeScript_Op<"constant",
+def ConstantOp : TypeScript_Op<"Constant",
     [ConstantLike, NoSideEffect]> {
   let summary = "constant";
   let description = [{
@@ -60,7 +60,7 @@ def ConstantOp : TypeScript_Op<"constant",
   let hasFolder = 1;
 }
 
-def SymbolRefOp : TypeScript_Op<"sumbol_ref"> {
+def SymbolRefOp : TypeScript_Op<"SymbolRef"> {
   let summary = "sumbol reference as constant";
 
   let arguments = (ins FlatSymbolRefAttr:$identifier);
@@ -75,7 +75,7 @@ def SymbolRefOp : TypeScript_Op<"sumbol_ref"> {
   }];
 }
 
-def TypeScript_FuncOp : TypeScript_Op<"func", [
+def TypeScript_FuncOp : TypeScript_Op<"Func", [
   AffineScope, AutomaticAllocationScope, CallableOpInterface, FunctionLike,
   IsolatedFromAbove, Symbol
 ]> {
@@ -170,7 +170,7 @@ def TypeScript_FuncOp : TypeScript_Op<"func", [
   let verifier = [{ return ::verify(*this); }];
 }
 
-def TypeScript_NullOp : TypeScript_Op<"null", []> {
+def TypeScript_NullOp : TypeScript_Op<"Null", []> {
   let summary = "Make an intermediate object whose value is null.";
 
   let description = [{
@@ -196,7 +196,7 @@ def TypeScript_NullOp : TypeScript_Op<"null", []> {
   let assemblyFormat = "attr-dict `:` type($result)";
 }
 
-def TypeScript_UndefOp : TypeScript_Op<"undef", []> {
+def TypeScript_UndefOp : TypeScript_Op<"Undef", []> {
   let summary = "Make an intermediate object whose value is undefined.";
 
   let description = [{
@@ -233,7 +233,7 @@ def TypeScript_PrintOp : TypeScript_Op<"print"> {
   let arguments = (ins Variadic<AnyType>:$inputs);
 }
 
-def TypeScript_AssertOp : TypeScript_Op<"assert"> {
+def TypeScript_AssertOp : TypeScript_Op<"Assert"> {
   let summary = "Assert operation";
   let description = [{
     Assert operation
@@ -287,7 +287,7 @@ def TypeScript_ParseFloatOp : TypeScript_Op<"parseFloat"> {
   let results = (outs F32:$res);
 }
 
-def TypeScript_CallOp : TypeScript_Op<"call",
+def TypeScript_CallOp : TypeScript_Op<"Call",
     [CallOpInterface, MemRefsNormalizable,
      DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
   let summary = "call operation";
@@ -349,7 +349,7 @@ def TypeScript_CallOp : TypeScript_Op<"call",
   let verifier = ?;
 }
 
-def TypeScript_CallIndirectOp : TypeScript_Op<"call_indirect", [
+def TypeScript_CallIndirectOp : TypeScript_Op<"CallIndirect", [
       CallOpInterface,
       TypesMatchWith<"callee input types match argument types",
                      "callee", "operands",
@@ -407,7 +407,7 @@ def TypeScript_CallIndirectOp : TypeScript_Op<"call_indirect", [
   let assemblyFormat = "$callee `(` $operands `)` attr-dict `:` type($callee)";
 }
 
-def TypeScript_ParamOp : TypeScript_Op<"param", []> {
+def TypeScript_ParamOp : TypeScript_Op<"Param", []> {
   let summary = [{
     Allocate an parameter object in memory.
   }];
@@ -428,7 +428,7 @@ def TypeScript_ParamOp : TypeScript_Op<"param", []> {
   );
 }
 
-def TypeScript_ParamOptionalOp : TypeScript_Op<"param_opt", [SingleBlockImplicitTerminator<"typescript::ParamDefaultValueOp">]> {
+def TypeScript_ParamOptionalOp : TypeScript_Op<"ParamOpt", [SingleBlockImplicitTerminator<"typescript::ParamDefaultValueOp">]> {
   let summary = [{
     Allocate an parameter object in memory.
   }];
@@ -461,7 +461,7 @@ def TypeScript_ParamOptionalOp : TypeScript_Op<"param_opt", [SingleBlockImplicit
 
 }
 
-def TypeScript_ParamDefaultValueOp : TypeScript_Op<"defaultValue", [NoSideEffect, ReturnLike, Terminator,
+def TypeScript_ParamDefaultValueOp : TypeScript_Op<"DefaultValue", [NoSideEffect, ReturnLike, Terminator,
                                ParentOneOf<["ParamOptionalOp"]>]> {
   let arguments = (ins Variadic<AnyType>:$results);
   let builders = [OpBuilderDAG<(ins), [{ /* nothing to do */ }]>];
@@ -492,7 +492,7 @@ def TypeScript_VariableOp : TypeScript_Op<"variable", []> {
   );
 }
 
-def TypeScript_StoreOp : TypeScript_Op<"store",
+def TypeScript_StoreOp : TypeScript_Op<"Store",
       [TypesMatchWith<"type of 'value' matches element type of 'reference'",
                      "reference", "value",
                      "$_self.cast<RefType>().getElementType()">]> {
@@ -519,7 +519,7 @@ def TypeScript_LoadOp : TypeScript_Op<"load",
   let assemblyFormat = "$reference attr-dict `:` type($reference) `->` type($result)";
 }
 
-def TypeScript_LoadElementOp : TypeScript_Op<"load_element"> {
+def TypeScript_LoadElementOp : TypeScript_Op<"LoadElement"> {
   let description = [{
     ```mlir
     %3 = ts.load_element %1, %2 : f32
@@ -527,7 +527,7 @@ def TypeScript_LoadElementOp : TypeScript_Op<"load_element"> {
   }];
 
   let arguments = (ins
-    TypeScript_Array:$array,
+    TypeScript_ArrayLike:$array,
     I32:$index
   );
 
@@ -631,7 +631,7 @@ def TypeScript_PropertyAccessOp : TypeScript_Op<"PropertyAccess"> {
   //let assemblyFormat = "$object_reference `,` $propertyIndex attr-dict `:` type($result)";
 }
 
-def TypeScript_ArithmeticUnaryOp : TypeScript_Op<"arithmetic_unary"> {
+def TypeScript_ArithmeticUnaryOp : TypeScript_Op<"ArithmeticUnary"> {
   let description = [{
     ```mlir
     %2 = ts.arithmetic_unary 1, %1 : f32
@@ -650,7 +650,7 @@ def TypeScript_ArithmeticUnaryOp : TypeScript_Op<"arithmetic_unary"> {
   let assemblyFormat = "$operand1 `(` $opCode `)` attr-dict `:` type($operand1) `->` type($result)";
 }
 
-def TypeScript_PrefixUnaryOp : TypeScript_Op<"prefix_unary"> {
+def TypeScript_PrefixUnaryOp : TypeScript_Op<"PrefixUnary"> {
   let description = [{
     ```mlir
     %2 = ts.prefix_unary 1, %1 : f32
@@ -669,7 +669,7 @@ def TypeScript_PrefixUnaryOp : TypeScript_Op<"prefix_unary"> {
   let assemblyFormat = "$operand1 `(` $opCode `)` attr-dict `:` type($operand1) `->` type($result)";
 }
 
-def TypeScript_PostfixUnaryOp : TypeScript_Op<"postfix_unary"> {
+def TypeScript_PostfixUnaryOp : TypeScript_Op<"PostfixUnary"> {
   let description = [{
     ```mlir
     %2 = ts.postfix_unary 1, %1 : f32
@@ -688,7 +688,7 @@ def TypeScript_PostfixUnaryOp : TypeScript_Op<"postfix_unary"> {
   let assemblyFormat = "$operand1 `(` $opCode `)` attr-dict `:` type($operand1) `->` type($result)";
 }
 
-def TypeScript_ArithmeticBinaryOp : TypeScript_Op<"arithmetic_binary"> {
+def TypeScript_ArithmeticBinaryOp : TypeScript_Op<"ArithmeticBinary"> {
   let description = [{
     ```mlir
     %2 = ts.arithmetic_binary 1, %0, %1 : f32
@@ -708,7 +708,7 @@ def TypeScript_ArithmeticBinaryOp : TypeScript_Op<"arithmetic_binary"> {
   let assemblyFormat = "$operand1 `(` $opCode `)` $operand2 attr-dict `:` type($operand1) `,` type($operand2) `->` type($result)";
 }
 
-def TypeScript_LogicalBinaryOp : TypeScript_Op<"logical_binary"> {
+def TypeScript_LogicalBinaryOp : TypeScript_Op<"LogicalBinary"> {
   let description = [{
     ```mlir
     %2 = ts.logical_binary 1, %0, %1 : ts.boolean
@@ -728,7 +728,7 @@ def TypeScript_LogicalBinaryOp : TypeScript_Op<"logical_binary"> {
   let assemblyFormat = "$operand1 `(` $opCode `)` $operand2 attr-dict `:` type($operand1) `,` type($operand2) `->` type($result)";
 }
 
-def TypeScript_CastOp : TypeScript_Op<"cast"> {
+def TypeScript_CastOp : TypeScript_Op<"Cast"> {
   let description = [{
     Example:
       ts.cast %v : i32 to f16
@@ -738,7 +738,7 @@ def TypeScript_CastOp : TypeScript_Op<"cast"> {
   let assemblyFormat = "$in attr-dict `:` type($in) `to` type($res)";
 }
 
-def TypeScript_EntryOp : TypeScript_Op<"entry"> {
+def TypeScript_EntryOp : TypeScript_Op<"Entry"> {
   let description = [{
     To prepare data for return value
 
@@ -757,7 +757,7 @@ def TypeScript_EntryOp : TypeScript_Op<"entry"> {
   );  
 }
 
-def TypeScript_ReturnOp : TypeScript_Op<"return"> {
+def TypeScript_ReturnOp : TypeScript_Op<"Return"> {
   let description = [{
     ```
     return-value-op ::= `ts.return` ssa-use `:` typescript-type
@@ -774,7 +774,7 @@ def TypeScript_ReturnOp : TypeScript_Op<"return"> {
   );
 }
 
-def TypeScript_ReturnValOp : TypeScript_Op<"returnVal"> {
+def TypeScript_ReturnValOp : TypeScript_Op<"ReturnVal"> {
   let description = [{
     ```
     return-value-op ::= `ts.returnVal` ssa-use `:` typescript-type
@@ -793,7 +793,7 @@ def TypeScript_ReturnValOp : TypeScript_Op<"returnVal"> {
   );
 }
 
-def TypeScript_ExitOp : TypeScript_Op<"exit", [NoSideEffect, ReturnLike, Terminator]> {
+def TypeScript_ExitOp : TypeScript_Op<"Exit", [NoSideEffect, ReturnLike, Terminator]> {
   let description = [{
     To prepare exit data for return
 
@@ -808,7 +808,7 @@ def TypeScript_ExitOp : TypeScript_Op<"exit", [NoSideEffect, ReturnLike, Termina
   );
 }
 
-def TypeScript_IfOp : TypeScript_Op<"if",
+def TypeScript_IfOp : TypeScript_Op<"If",
       [DeclareOpInterfaceMethods<RegionBranchOpInterface>,
        SingleBlockImplicitTerminator<"typescript::YieldOp">, RecursiveSideEffects,
        NoRegionArguments]> {
@@ -851,7 +851,7 @@ def TypeScript_IfOp : TypeScript_Op<"if",
   let hasCanonicalizer = 1;
 }
 
-def TypeScript_YieldOp : TypeScript_Op<"yield", [NoSideEffect, ReturnLike, Terminator,
+def TypeScript_YieldOp : TypeScript_Op<"Yield", [NoSideEffect, ReturnLike, Terminator,
                                ParentOneOf<["IfOp",  "DoWhileOp", "WhileOp", "ForOp"]>]> {
   let summary = "loop yield and termination operation";
 
@@ -862,7 +862,7 @@ def TypeScript_YieldOp : TypeScript_Op<"yield", [NoSideEffect, ReturnLike, Termi
   let verifier = ?;
 }
 
-def TypeScript_WhileOp : TypeScript_Op<"while",
+def TypeScript_WhileOp : TypeScript_Op<"While",
     [DeclareOpInterfaceMethods<RegionBranchOpInterface>,
      RecursiveSideEffects]> {
   let summary = "a generic 'while' loop";
@@ -896,7 +896,7 @@ def TypeScript_WhileOp : TypeScript_Op<"while",
   }];
 }
 
-def TypeScript_DoWhileOp : TypeScript_Op<"do-while",
+def TypeScript_DoWhileOp : TypeScript_Op<"DoWhile",
     [DeclareOpInterfaceMethods<RegionBranchOpInterface>,
      RecursiveSideEffects]> {
   let summary = "a generic 'do-while' loop";
@@ -913,7 +913,7 @@ def TypeScript_DoWhileOp : TypeScript_Op<"do-while",
   }];
 }
 
-def TypeScript_ForOp : TypeScript_Op<"for",
+def TypeScript_ForOp : TypeScript_Op<"For",
     [DeclareOpInterfaceMethods<RegionBranchOpInterface>,
      RecursiveSideEffects]> {
   let summary = "a generic 'for' loop";
@@ -927,7 +927,7 @@ def TypeScript_ForOp : TypeScript_Op<"for",
   }];
 }
 
-def TypeScript_ConditionOp : TypeScript_Op<"condition",
+def TypeScript_ConditionOp : TypeScript_Op<"Condition",
                          [HasParent<"DoWhileOp, WhileOp, ForOp">, NoSideEffect, Terminator]> {
   let summary = "loop continuation condition";
   let description = [{
@@ -946,7 +946,7 @@ def TypeScript_ConditionOp : TypeScript_Op<"condition",
   let verifier = ?;
 }
 
-def TypeScript_NoConditionOp : TypeScript_Op<"no-condition",
+def TypeScript_NoConditionOp : TypeScript_Op<"NoCondition",
                          [HasParent<"ForOp">, Terminator]> {
   let summary = "loop continuation condition";
   let description = [{
@@ -965,15 +965,15 @@ def TypeScript_NoConditionOp : TypeScript_Op<"no-condition",
   let verifier = ?;
 }
 
-def TypeScript_ContinueOp : TypeScript_Op<"continue"> {
+def TypeScript_ContinueOp : TypeScript_Op<"Continue"> {
   let summary = "loop continuation";
 }
 
-def TypeScript_BreakOp : TypeScript_Op<"break"> {
+def TypeScript_BreakOp : TypeScript_Op<"Break"> {
   let summary = "loop termination";
 }
 
-def TypeScript_SwitchOp : TypeScript_Op<"switch",
+def TypeScript_SwitchOp : TypeScript_Op<"Switch",
       [DeclareOpInterfaceMethods<RegionBranchOpInterface>,
        RecursiveSideEffects, NoRegionArguments]> {
   let summary = "switch operation";
@@ -994,7 +994,7 @@ def TypeScript_SwitchOp : TypeScript_Op<"switch",
   }];
 }
 
-def TypeScript_MergeOp : TypeScript_Op<"merge", [NoSideEffect, HasParent<"SwitchOp">, Terminator]> {
+def TypeScript_MergeOp : TypeScript_Op<"Merge", [NoSideEffect, HasParent<"SwitchOp">, Terminator]> {
   let summary = "A special terminator for merging a switch.";
 
   let arguments = (ins);
@@ -1002,7 +1002,7 @@ def TypeScript_MergeOp : TypeScript_Op<"merge", [NoSideEffect, HasParent<"Switch
   let results = (outs);
 }
 
-def TypeScript_AddressOfOp : TypeScript_Op<"addressof"> {
+def TypeScript_AddressOfOp : TypeScript_Op<"Addressof"> {
   let arguments = (ins FlatSymbolRefAttr:$global_name);
   let results = (outs TypeScript_AnyRef:$reference);
 
@@ -1029,12 +1029,12 @@ def TypeScript_AddressOfOp : TypeScript_Op<"addressof"> {
   }];
 }
 
-def TypeScript_AddressOfConstStringOp : TypeScript_Op<"addressof_conststring"> {
+def TypeScript_AddressOfConstStringOp : TypeScript_Op<"AddressOfConstString"> {
   let arguments = (ins FlatSymbolRefAttr:$global_name);
   let results = (outs TypeScript_String:$instance);
 }
 
-def TypeScript_AddressOfElementOp : TypeScript_Op<"addressof_element"> {
+def TypeScript_AddressOfElementOp : TypeScript_Op<"AddressOfElement"> {
   let arguments = (ins 
         TypeScript_AnyRef:$reference,
         Index:$elementIndex
@@ -1042,7 +1042,7 @@ def TypeScript_AddressOfElementOp : TypeScript_Op<"addressof_element"> {
   let results = (outs TypeScript_AnyRef:$reference_of_element);
 }
 
-def TypeScript_GlobalOp : TypeScript_Op<"global",
+def TypeScript_GlobalOp : TypeScript_Op<"Global",
     [IsolatedFromAbove, SingleBlockImplicitTerminator<"ReturnOp">, Symbol]> {
   let arguments = (ins
     TypeAttr:$type,
@@ -1082,12 +1082,12 @@ def TypeScript_GlobalOp : TypeScript_Op<"global",
   }];
 }
 
-def TypeScript_StringConcatOp : TypeScript_Op<"string_concat"> {
+def TypeScript_StringConcatOp : TypeScript_Op<"StringConcat"> {
   let arguments = (ins TypeScript_String:$op1, TypeScript_String:$op2);
   let results = (outs TypeScript_String:$result);
 }
 
-def TypeScript_StringCompareOp : TypeScript_Op<"string_compare"> {
+def TypeScript_StringCompareOp : TypeScript_Op<"StringCompare"> {
   let arguments = (ins TypeScript_String:$op1, TypeScript_String:$op2, I32Attr:$code);
   let results = (outs TypeScript_Boolean:$result);
 }

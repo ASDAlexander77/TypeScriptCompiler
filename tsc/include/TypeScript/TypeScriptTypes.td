@@ -188,4 +188,9 @@ def TypeScript_Array : TypeScript_Type<"Array"> {
 
 }
 
+def TypeScript_ArrayLike : AnyTypeOf<[
+    TypeScript_Array, TypeScript_String
+  ]>;
+
+
 #endif // TYPESCRIPT_TYPEDEFS

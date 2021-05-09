@@ -276,16 +276,32 @@ namespace typescript
             return rewriter.create<LLVM::LLVMFuncOp>(loc, name, llvmFnType);
         }   
 
-        mlir::Value GetAddressOfElement(mlir::Value array, mlir::Value index)
+        mlir::Value GetAddressOfElement(mlir::Value arrayOrString, mlir::Value index)
         {
             TypeHelper th(rewriter);
             TypeConverterHelper tch(*typeConverter);
 
             auto loc = op->getLoc();
-            auto globalPtr = array;
+            auto globalPtr = arrayOrString;
+            auto type = arrayOrString.getType();
+
+            mlir::Type elementType;
+            if (auto arrayType = type.dyn_cast_or_null<mlir_ts::ArrayType>())
+            {
+                elementType = arrayType.getElementType();
+            }
+            else if (auto arrayType = type.dyn_cast_or_null<mlir_ts::StringType>())
+            {
+                elementType = mlir_ts::CharType::get(rewriter.getContext());
+            }
+            else
+            {
+                llvm_unreachable("not implemented");
+            }
+
             auto addr = rewriter.create<LLVM::GEPOp>(
                 loc,
-                th.getPointerType(tch.convertType(array.getType().cast<mlir_ts::ArrayType>().getElementType())), 
+                th.getPointerType(tch.convertType(elementType)), 
                 globalPtr,
                 ValueRange{index});
 
@@ -469,7 +485,7 @@ namespace typescript
             auto castRight = builder.create<mlir_ts::CastOp>(binOp->getLoc(), builder.getF32Type(), binOp.getOperand(1));
             builder.replaceOpWithNewOp<StdFOpTy>(binOp, v2, castLeft, castRight);
         }        
-        else if (/*leftType.dyn_cast_or_null<mlir_ts::StringType>() || */leftType.dyn_cast_or_null<mlir_ts::AnyType>())
+        else if (leftType.dyn_cast_or_null<mlir_ts::AnyType>())
         {
             // excluded string
             auto left = binOp.getOperand(0);
