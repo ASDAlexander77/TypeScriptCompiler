@@ -8,7 +8,7 @@ function testStrings(): void {
     print("ts0y")
 
     s = s + "4OK";
-    s2 = s;
+    let s2 = s;
     print("ts0")
     //assert(s.charCodeAt(4) == 52, "hello eq2");
     //assert(s.charAt(4) == "4", "hello eq2X");

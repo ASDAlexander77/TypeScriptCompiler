@@ -1412,6 +1412,21 @@ namespace
             auto leftExpressionValue = mlirGen(leftExpression, genContext);
             auto rightExpressionValue = mlirGen(rightExpression, genContext);
 
+            if (auto unresolvedLeft = dyn_cast_or_null<mlir_ts::SymbolRefOp>(leftExpressionValue.getDefiningOp()))
+            {
+                emitError(location, "can't find variable: ") << unresolvedLeft.identifier();
+                return mlir::Value();
+            }
+
+            if (auto unresolvedRight = dyn_cast_or_null<mlir_ts::SymbolRefOp>(rightExpressionValue.getDefiningOp()))
+            {
+                emitError(location, "can't find variable: ") << unresolvedRight.identifier();
+                return mlir::Value();
+            }
+
+            auto leftExpressionValueBeforeCast = leftExpressionValue;
+            auto rightExpressionValueBeforeCast = rightExpressionValue;
+
             // TODO: temporary hack
             if (leftExpressionValue.getType() != rightExpressionValue.getType())
             {
@@ -1425,9 +1440,6 @@ namespace
                     rightExpressionValue = builder.create<mlir_ts::CastOp>(loc(rightExpression), getStringType(), rightExpressionValue);
                 }                
             }
-
-            auto leftExpressionValueBeforeCast = leftExpressionValue;
-            auto rightExpressionValueBeforeCast = rightExpressionValue;
 
             // cast step
             switch (opCode)
