@@ -312,16 +312,31 @@ namespace
                     "strcat",
                     th.getFunctionType(i8PtrTy, {i8PtrTy, i8PtrTy}));   
 
+            mlir::Value size = clh.createI64ConstantOf(1);
             // calc size
-            auto size1 = rewriter.create<LLVM::CallOp>(loc, strlenFuncOp, op.op1());
-            auto size2 = rewriter.create<LLVM::CallOp>(loc, strlenFuncOp, op.op2());
-            auto size = rewriter.create<LLVM::AddOp>(loc, rewriter.getI64Type(), size1.getResult(0), size2.getResult(0));
-            auto const1 = clh.createI64ConstantOf(1);
-            auto sizeP1 = rewriter.create<LLVM::AddOp>(loc, rewriter.getI64Type(), ValueRange{size, const1});
-            auto bufferSizeValue = size;
-            auto newStringValue = rewriter.create<LLVM::AllocaOp>(op->getLoc(), i8PtrTy, bufferSizeValue, true);            
-            rewriter.create<LLVM::CallOp>(loc, strcpyFuncOp, ValueRange{newStringValue, op.op1()});
-            rewriter.create<LLVM::CallOp>(loc, strcatFuncOp, ValueRange{newStringValue, op.op2()});
+            for (auto op : op.ops())
+            {
+                auto size1 = rewriter.create<LLVM::CallOp>(loc, strlenFuncOp, op);
+                size = rewriter.create<LLVM::AddOp>(loc, rewriter.getI64Type(), ValueRange{size, size1.getResult(0)});
+            }
+
+            auto newStringValue = rewriter.create<LLVM::AllocaOp>(op->getLoc(), i8PtrTy, size, true);            
+
+            // copy
+            auto concat = false;
+            for (auto op : op.ops())
+            {
+                if (concat)
+                {
+                    rewriter.create<LLVM::CallOp>(loc, strcatFuncOp, ValueRange{newStringValue, op});
+                }
+                else
+                {
+                    rewriter.create<LLVM::CallOp>(loc, strcpyFuncOp, ValueRange{newStringValue, op});
+                }
+
+                concat = true;
+            }
 
             rewriter.replaceOp(op, ValueRange{newStringValue});
 
@@ -973,8 +988,7 @@ namespace
                     rewriter.replaceOpWithNewOp<mlir_ts::StringConcatOp>(
                         arithmeticBinaryOp, 
                         mlir_ts::StringType::get(rewriter.getContext()), 
-                        arithmeticBinaryOp.getOperand(0), 
-                        arithmeticBinaryOp.getOperand(1));       
+                        ValueRange{arithmeticBinaryOp.getOperand(0), arithmeticBinaryOp.getOperand(1)});       
                 }
                 else
                 {

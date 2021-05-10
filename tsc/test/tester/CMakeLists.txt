@@ -26,4 +26,4 @@ add_test(NAME test-runner-00-switch COMMAND test-runner "${PROJECT_SOURCE_DIR}/t
 add_test(NAME test-runner-00-strings COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00strings.ts")
 add_test(NAME test-runner-01-arguments COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01arguments.ts")
 add_test(NAME test-runner-02-numbers COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/02numbers.ts")
-#add_test(NAME test-runner-05-strings COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/05strings.ts")
+add_test(NAME test-runner-05-strings COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/05strings.ts")

@@ -374,7 +374,11 @@ namespace
             else if (kind == SyntaxKind::TypeAssertionExpression)
             {
                 return mlirGen(expressionAST.as<TypeAssertion>(), genContext);
-            }            
+            }       
+            else if (kind == SyntaxKind::TemplateExpression)
+            {
+                return mlirGen(expressionAST.as<TemplateExpression>(), genContext);
+            }                   
             else if (kind == SyntaxKind::Unknown/*TODO: temp solution to treat null expr as empty expr*/)
             {
                 return mlir::Value();
@@ -1882,42 +1886,84 @@ namespace
             auto type = result.getType();
             if (type.isIntOrIndexOrFloat() && !type.isIntOrIndex())
             {
-                // return "number"
                 auto typeOfValue = builder.create<mlir_ts::ConstantOp>(loc(typeOfExpression), getStringType(), getStringAttr(std::string("number")));
                 return typeOfValue;
             }
 
             if (type == getStringType())
             {
-                // return "number"
                 auto typeOfValue = builder.create<mlir_ts::ConstantOp>(loc(typeOfExpression), getStringType(), getStringAttr(std::string("string")));
                 return typeOfValue;
             }
 
-            /* // TODO: finish it
-            if (type == getArrayType())
+            if (type.dyn_cast_or_null<mlir_ts::ArrayType>())
             {
-                // return "number"
                 auto typeOfValue = builder.create<mlir_ts::ConstantOp>(loc(typeOfExpression), getStringType(), getStringAttr(std::string("array")));
                 return typeOfValue;
             }
-            */
 
             if (type == getBooleanType())
             {
-                // return "number"
                 auto typeOfValue = builder.create<mlir_ts::ConstantOp>(loc(typeOfExpression), getStringType(), getStringAttr(std::string("boolean")));
                 return typeOfValue;
             }
 
             if (type == getAnyType())
             {
-                // return "number"
                 auto typeOfValue = builder.create<mlir_ts::ConstantOp>(loc(typeOfExpression), getStringType(), getStringAttr(std::string("object")));
                 return typeOfValue;
             }
 
             llvm_unreachable("not implemented");
+        }
+
+        mlir::Value mlirGen(TemplateExpression templateExpressionAST, const GenContext &genContext)
+        {
+            auto location = loc(templateExpressionAST);
+
+            auto stringType = getStringType();
+            SmallVector<mlir::Value, 4> strs;
+
+            auto text = wstos(templateExpressionAST->head->rawText);
+            auto head = builder.create<mlir_ts::ConstantOp>(
+                location,
+                stringType,
+                getStringAttr(text));
+
+            // first string
+            strs.push_back(head);
+            for (auto span : templateExpressionAST->templateSpans)
+            {
+                auto exprValue = mlirGen(span->expression, genContext);
+                if (exprValue.getType() != stringType)
+                {
+                    exprValue = builder.create<mlir_ts::CastOp>(location, stringType, exprValue);
+                }
+
+                // expr value
+                strs.push_back(exprValue);
+
+                auto spanText = wstos(span->literal->rawText);
+                auto spanValue = builder.create<mlir_ts::ConstantOp>(
+                    location,
+                    stringType,
+                    getStringAttr(spanText));
+
+                // text
+                strs.push_back(spanValue);
+            }
+
+            if (strs.size() <= 1)
+            {
+                return head;
+            } 
+
+            auto concatValues = builder.create<mlir_ts::StringConcatOp>(
+                location,
+                stringType,
+                mlir::ArrayRef<mlir::Value>{strs});
+
+            return concatValues;
         }
 
         mlir::Value mlirGen(NullLiteral nullLiteral, const GenContext &genContext)

@@ -1083,7 +1083,7 @@ def TypeScript_GlobalOp : TypeScript_Op<"Global",
 }
 
 def TypeScript_StringConcatOp : TypeScript_Op<"StringConcat"> {
-  let arguments = (ins TypeScript_String:$op1, TypeScript_String:$op2);
+  let arguments = (ins Variadic<TypeScript_String>:$ops);
   let results = (outs TypeScript_String:$result);
 }
 
