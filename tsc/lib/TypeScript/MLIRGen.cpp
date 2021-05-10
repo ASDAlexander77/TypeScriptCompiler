@@ -268,6 +268,10 @@ namespace
             {
                 return mlirGen(statementAST.as<SwitchStatement>(), genContext);
             }
+            else if (kind == SyntaxKind::ThrowStatement)
+            {
+                return mlirGen(statementAST.as<ThrowStatement>(), genContext);
+            }            
             else if (kind == SyntaxKind::Block)
             {
                 return mlirGen(statementAST.as<Block>(), genContext);
@@ -374,6 +378,10 @@ namespace
             else if (kind == SyntaxKind::TypeAssertionExpression)
             {
                 return mlirGen(expressionAST.as<TypeAssertion>(), genContext);
+            }       
+            else if (kind == SyntaxKind::AsExpression)
+            {
+                return mlirGen(expressionAST.as<AsExpression>(), genContext);
             }       
             else if (kind == SyntaxKind::TemplateExpression)
             {
@@ -925,6 +933,17 @@ namespace
             return castedValue;
         }
 
+        mlir::Value mlirGen(AsExpression asExpressionAST, const GenContext &genContext)
+        {
+            auto location = loc(asExpressionAST);
+
+            auto typeInfo = getType(asExpressionAST->type);
+            auto exprValue = mlirGen(asExpressionAST->expression, genContext);
+
+            auto castedValue = builder.create<mlir_ts::CastOp>(location, typeInfo, exprValue);
+            return castedValue;
+        }        
+
         mlir::LogicalResult mlirGen(ReturnStatement returnStatementAST, const GenContext &genContext)
         {
             auto location = loc(returnStatementAST);
@@ -1225,6 +1244,16 @@ namespace
 
             return mlir::success();
         }  
+
+        mlir::LogicalResult mlirGen(ThrowStatement throwStatementAST, const GenContext &genContext)
+        {
+            auto location = loc(throwStatementAST);
+
+            // TODO: read about LLVM_ResumeOp,  maybe this is what you need
+            llvm_unreachable("not implemented");
+
+            return mlir::success();
+        }
 
         mlir::Value mlirGen(UnaryExpression unaryExpressionAST, const GenContext &genContext)
         {
