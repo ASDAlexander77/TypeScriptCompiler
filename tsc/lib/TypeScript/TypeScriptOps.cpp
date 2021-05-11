@@ -47,6 +47,12 @@ Type ts::TypeScriptDialect::parseType(DialectAsmParser &parser) const
         return booleanType;
     }
 
+    auto numberType = generatedTypeParser(getContext(), parser, "number");
+    if (numberType != Type())
+    {
+        return numberType;
+    }    
+
     auto stringType = generatedTypeParser(getContext(), parser, "string");
     if (stringType != Type())
     {
@@ -70,6 +76,12 @@ Type ts::TypeScriptDialect::parseType(DialectAsmParser &parser) const
     {
         return arrayType;
     }
+
+    auto tupleType = generatedTypeParser(getContext(), parser, "tuple");
+    if (tupleType != Type())
+    {
+        return tupleType;
+    }    
 
     parser.emitError(typeLoc, "unknown type in TypeScript dialect");
     return Type();
@@ -100,6 +112,27 @@ LogicalResult ts::ArrayType::verifyConstructionInvariants(Location loc, Type ele
 {
     return success();
 }
+
+//===----------------------------------------------------------------------===//
+/// TupleType
+//===----------------------------------------------------------------------===//
+
+/// Accumulate the types contained in this tuple and tuples nested within it.
+/// Note that this only flattens nested tuples, not any other container type,
+/// e.g. a tuple<i32, tensor<i32>, tuple<f32, tuple<i64>>> is flattened to
+/// (i32, tensor<i32>, f32, i64)
+void ts::TupleType::getFlattenedTypes(SmallVector<Type> &types) {
+  for (Type type : getTypes()) {
+    if (auto nestedTuple = type.dyn_cast<ts::TupleType>())
+      nestedTuple.getFlattenedTypes(types);
+    else
+      types.push_back(type);
+  }
+}
+
+/// Return the number of element types.
+size_t ts::TupleType::size() const { return getTypes().size(); }
+
 
 //===----------------------------------------------------------------------===//
 // ConstantOp

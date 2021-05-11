@@ -83,9 +83,7 @@ def TypeScript_Ref : TypeScript_Type<"Ref"> {
   let parser = [{
     Type elementType;
     if ($_parser.parseLess()) return Type();
-    if ($_parser.parseLBrace()) return Type();
     if ($_parser.parseType(elementType)) return Type();
-    if ($_parser.parseRBrace()) return Type();
     if ($_parser.parseGreater()) return Type();
     return get(elementType);
   }];
@@ -162,9 +160,10 @@ def TypeScript_Array : TypeScript_Type<"Array"> {
     ```
   }];
   let parameters = (ins "Type":$elementType);
+  let genVerifyInvariantsDecl = 1;
 
   // We define the printer inline.
-  let printer = [{ $_printer << "array<" << getImpl()->elementType << ">"; }];
+  let printer = [{ $_printer << "array<" << getImpl()->elementType << ">"; }];  
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "Type":$elementType), [{
@@ -181,11 +180,87 @@ def TypeScript_Array : TypeScript_Type<"Array"> {
     if ($_parser.parseType(elementType)) return Type();
     if ($_parser.parseGreater()) return Type();
     return get(elementType);
+  }];  
+
+  let skipDefaultBuilders = 1;  
+}
+
+def TypeScript_Tuple : TypeScript_Type<"Tuple"> {
+  let mnemonic = "tuple";
+
+  let summary = "Fixed-sized collection of other types";
+  let description = [{
+    Syntax:
+
+    ```
+    tuple-type ::= `tuple` `<` (type ( `,` type)*)? `>`
+    ```
+
+    The value of `tuple` type represents a fixed-size collection of elements,
+    where each element may be of a different type.
+
+    Examples:
+
+    ```mlir
+    // Empty tuple.
+    tuple<>
+
+    // Single element
+    tuple<f32>
+
+    // Many elements.
+    tuple<i32, f32, tensor<i1>, i5>
+    ```
+  }];
+  let parameters = (ins "ArrayRef<Type>":$types);
+
+  let printer = [{
+    $_printer << "tuple" << "<";
+    size_t i = 0;
+    for (auto typeItem : getImpl()->types) 
+    {
+      $_printer << typeItem;
+      if (i++ < getImpl()->types.size() - 1)
+          $_printer << ",";    
+    }
+    $_printer << ">";
   }];
 
-  let skipDefaultBuilders = 1;
-  let genVerifyInvariantsDecl = 1;
+  // Parses the above format
+  let parser = [{
+    Type elementType;
+    SmallVector<Type> types;
+    if ($_parser.parseLess()) return Type();
+    while (!mlir::succeeded($_parser.parseOptionalGreater())) 
+    {
+        if ($_parser.parseType(elementType)) return Type();
+        if ($_parser.parseOptionalComma()) break;
+    }
+    if ($_parser.parseGreater()) return Type();
+    return get(context, types);
+  }];  
 
+  let extraClassDeclaration = [{
+    /// Accumulate the types contained in this tuple and tuples nested within
+    /// it. Note that this only flattens nested tuples, not any other container
+    /// type, e.g. a tuple<i32, tensor<i32>, tuple<f32, tuple<i64>>> is
+    /// flattened to (i32, tensor<i32>, f32, i64)
+    void getFlattenedTypes(SmallVector<Type> &types);
+
+    /// Return the number of held types.
+    size_t size() const;
+
+    /// Iterate over the held elements.
+    using iterator = ArrayRef<Type>::iterator;
+    iterator begin() const { return getTypes().begin(); }
+    iterator end() const { return getTypes().end(); }
+
+    /// Return the element type at index 'index'.
+    Type getType(size_t index) const {
+      assert(index < size() && "invalid index for tuple type");
+      return getTypes()[index];
+    }
+  }];
 }
 
 def TypeScript_ArrayLike : AnyTypeOf<[

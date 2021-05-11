@@ -1252,6 +1252,8 @@ namespace
             // TODO: read about LLVM_ResumeOp,  maybe this is what you need (+LLVM_InvokeOp, LLVM_LandingpadOp)
             llvm_unreachable("not implemented");
 
+            // TODO: PS, you can add param to each method to process return "exception info", and check every call for methods if they return exception info
+
             /*
 llvm.mlir.global external constant @_ZTIi() : !llvm.ptr<i8>
 llvm.func @foo(!llvm.ptr<i8>)
@@ -2220,8 +2222,13 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             {
                 return getFunctionType(typeReferenceAST.as<FunctionTypeNode>());
             }
+            else if (kind == SyntaxKind::TupleType)
+            {
+                return getTupleType(typeReferenceAST.as<TupleTypeNode>());
+            }
 
-            return getAnyType();
+            llvm_unreachable("not implemented type declaration");
+            //return getAnyType();
         }
 
         mlir_ts::VoidType getVoidType()
@@ -2263,6 +2270,23 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
         {
             return mlir_ts::ArrayType::get(elementType);
         }
+
+        mlir_ts::TupleType getTupleType(TupleTypeNode tupleType)
+        {
+            mlir::SmallVector<mlir::Type> types;
+            for (auto typeItem : tupleType->elements)
+            {
+                auto type = getType(typeItem);
+                if (!type)
+                {
+                    llvm_unreachable("wrong type");
+                }
+
+                types.push_back(type);
+            }
+
+            return mlir_ts::TupleType::get(builder.getContext(), types);
+        }        
 
         mlir::FunctionType getFunctionType(FunctionTypeNode functionType)
         {
