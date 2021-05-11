@@ -1319,6 +1319,16 @@ namespace
         converter.addConversion([&](mlir_ts::RefType type) {
             return LLVM::LLVMPointerType::get(converter.convertType(type.getElementType()));
         });
+
+        converter.addConversion([&](mlir_ts::TupleType type) {
+            SmallVector<mlir::Type> convertedTypes;
+            for (auto subType : type.getTypes())
+            {
+                convertedTypes.push_back(converter.convertType(subType));
+            }
+
+            return LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, false);
+        });            
     };
 
 } // end anonymous namespace

@@ -2119,7 +2119,9 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
         mlir::Value mlirGen(ts::ArrayLiteralExpression arrayLiteral, const GenContext &genContext)
         {
             // first value
+            auto isTuple = false;
             mlir::Type elementType;
+            SmallVector<mlir::Type> types;
             SmallVector<mlir::Attribute> values;
             for (auto &item : arrayLiteral->elements)
             {
@@ -2131,16 +2133,32 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     continue;
                 }
 
+                auto type = constOp.getType();
+
                 values.push_back(constOp.valueAttr());
+                types.push_back(type);
                 if (!elementType)
                 {
-                    elementType = constOp.getType();
+                    elementType = type;
+                }
+                else if (elementType != type)
+                {
+                    // this is tuple.
+                    isTuple = true;
                 }
 
                 itemValue.getDefiningOp()->erase();            
             }
 
             auto arrayAttr = mlir::ArrayAttr::get(llvm::makeArrayRef(values), builder.getContext());            
+            if (isTuple)
+            {
+                return builder.create<mlir_ts::ConstantOp>(
+                    loc(arrayLiteral),
+                    getTupleType(types),
+                    arrayAttr);
+            }
+
             return builder.create<mlir_ts::ConstantOp>(
                 loc(arrayLiteral),
                 getArrayType(elementType),
@@ -2285,8 +2303,13 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 types.push_back(type);
             }
 
-            return mlir_ts::TupleType::get(builder.getContext(), types);
+            return getTupleType(types);
         }        
+
+        mlir_ts::TupleType getTupleType(mlir::SmallVector<mlir::Type> &types)
+        {
+            return mlir_ts::TupleType::get(builder.getContext(), types);
+        }         
 
         mlir::FunctionType getFunctionType(FunctionTypeNode functionType)
         {
