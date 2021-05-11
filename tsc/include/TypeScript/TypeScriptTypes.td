@@ -212,7 +212,7 @@ def TypeScript_Tuple : TypeScript_Type<"Tuple"> {
     tuple<i32, f32, tensor<i1>, i5>
     ```
   }];
-  let parameters = (ins "ArrayRef<Type>":$types);
+  let parameters = (ins "SmallVector<Type>":$types);
 
   let printer = [{
     $_printer << "tuple" << "<";
