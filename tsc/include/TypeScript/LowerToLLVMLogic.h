@@ -259,6 +259,67 @@ namespace typescript
                 ArrayRef<Value>({cst0, cst0}));            
         }        
 
+        Value getOrCreateGlobalTuple(mlir::Type llvmStructType, StringRef name, ArrayAttr arrayAttr)
+        {
+            auto loc = op->getLoc();
+            auto parentModule = op->getParentOfType<ModuleOp>();
+
+            TypeHelper th(rewriter);
+            
+            auto pointerType = LLVM::LLVMPointerType::get(llvmStructType);
+
+            // Create the global at the entry of the module.
+            LLVM::GlobalOp global;
+            if (!(global = parentModule.lookupSymbol<LLVM::GlobalOp>(name)))
+            {
+                OpBuilder::InsertionGuard insertGuard(rewriter);
+                rewriter.setInsertionPointToStart(parentModule.getBody());
+              
+                global = rewriter.create<LLVM::GlobalOp>(loc, llvmStructType, true, LLVM::Linkage::Internal, name, Attribute{});
+
+                global.getInitializerRegion().push_back(new Block());
+                rewriter.setInsertionPointToStart(global.getInitializerBlock());
+
+                mlir::Value tupleVal = rewriter.create<LLVM::UndefOp>(loc, llvmStructType);
+
+                auto position = 0;
+                for (auto item : arrayAttr.getValue())
+                {
+                    if (item.isa<StringAttr>())
+                    {
+                        mlir::OpBuilder::InsertionGuard guard(rewriter);
+                        
+                        auto strValue = item.cast<StringAttr>().getValue().str();
+                        auto itemVal = getOrCreateGlobalString(strValue);                        
+
+                        tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemVal, rewriter.getI64ArrayAttr(position++));
+                    }
+                    else if (item.isa<FloatAttr>())
+                    {
+                        auto itemValue = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getF32Type(), item);
+                        tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemValue, rewriter.getI64ArrayAttr(position++));
+                    }
+                    else
+                    {
+                        llvm_unreachable("tuple literal is not implemented(1)");
+                    }                    
+                }
+
+                rewriter.create<LLVM::ReturnOp>(loc, ValueRange{tupleVal});
+            }
+
+            // Get the pointer to the first character in the global string.
+            Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
+            Value cst0 = rewriter.create<LLVM::ConstantOp>(
+                loc, IntegerType::get(rewriter.getContext(), 64),
+                rewriter.getIntegerAttr(rewriter.getIndexType(), 0));
+            return rewriter.create<LLVM::GEPOp>(
+                loc,
+                pointerType,
+                globalPtr, 
+                ArrayRef<Value>({cst0}));  
+        }  
+
         LLVM::LLVMFuncOp getOrInsertFunction(const StringRef &name, const LLVM::LLVMFunctionType &llvmFnType)
         {
             auto parentModule = op->getParentOfType<ModuleOp>();

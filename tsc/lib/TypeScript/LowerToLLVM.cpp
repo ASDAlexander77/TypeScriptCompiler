@@ -435,6 +435,21 @@ namespace
     {
         using OpConversionPattern<mlir_ts::ConstantOp>::OpConversionPattern;
 
+        std::string calc_hash_value(ArrayAttr &arrayAttr, const char* prefix) const
+        {
+            auto opHash = 0ULL;
+            for (auto item : arrayAttr)
+            {
+                opHash ^= hash_value(item) + 0x9e3779b9 + (opHash<<6) + (opHash>>2);
+            }
+
+            // calculate name;
+            std::stringstream vecVarName;
+            vecVarName << prefix << opHash;     
+
+            return vecVarName.str();
+        }
+
         LogicalResult matchAndRewrite(mlir_ts::ConstantOp constantOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             // load address of const string
@@ -460,19 +475,11 @@ namespace
                 auto llvmElementType = tch.convertType(elementType);
                 auto arrayAttr = constantOp.value().dyn_cast_or_null<ArrayAttr>();
 
-                auto opHash = 0ULL;
-                for (auto item : arrayAttr)
-                {
-                    opHash ^= hash_value(item) + 0x9e3779b9 + (opHash<<6) + (opHash>>2);
-                }
-
-                // calculate name;
-                std::stringstream vecVarName;
-                vecVarName << "a_" << opHash;                    
+                auto vecVarName = calc_hash_value(arrayAttr, "a_");      
 
                 auto arrayFirstElementAddrCst = ch.getOrCreateGlobalArray(
                     elementType,
-                    vecVarName.str(), 
+                    vecVarName, 
                     llvmElementType,
                     arrayAttr.size(),
                     arrayAttr);
@@ -482,7 +489,23 @@ namespace
                 return success();
             }            
 
-            rewriter.replaceOpWithNewOp<mlir::ConstantOp>(constantOp, tch.convertType(constantOp.getType()), constantOp.getValue());
+            if (type.isa<mlir_ts::TupleType>())
+            {
+                LLVMCodeHelper ch(constantOp, rewriter);
+
+                auto arrayAttr = constantOp.value().dyn_cast_or_null<ArrayAttr>();
+
+                auto varName = calc_hash_value(arrayAttr, "tp_");      
+
+                auto convertedTupleType = tch.convertType(type);
+                ch.getOrCreateGlobalTuple(convertedTupleType, varName, arrayAttr);
+
+                // TODO: finish code
+                rewriter.replaceOpWithNewOp<LLVM::UndefOp>(constantOp, convertedTupleType);
+                return success();
+            }
+
+            rewriter.replaceOpWithNewOp<mlir::ConstantOp>(constantOp, tch.convertType(type), constantOp.getValue());
             return success();
         }
     };
