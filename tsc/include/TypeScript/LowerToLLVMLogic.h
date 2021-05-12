@@ -353,6 +353,34 @@ namespace typescript
                 auto elementType = mlir_ts::CharType::get(rewriter.getContext());
                 ptrType = th.getPointerType(tch.convertType(elementType));
             }
+            else if (auto refType = type.dyn_cast_or_null<mlir_ts::RefType>())            
+            {   
+                auto elementType = refType.getElementType();
+                mlir::Type fieldType;
+                if (auto tupleType = elementType.dyn_cast_or_null<mlir_ts::TupleType>())
+                {
+                    // extract  value from index;
+                    // TODO: ...
+                    // get index
+                    // TODO: It seems I did this work in LoadElement result type, why do I do it again?
+                    if (auto indexConstOp = dyn_cast_or_null<mlir_ts::ConstantOp>(index.getDefiningOp()))
+                    {
+                        auto constIndex = indexConstOp.value().dyn_cast_or_null<mlir::IntegerAttr>().getInt();
+                        fieldType = tupleType.getType(constIndex);
+                    }
+                    else
+                    {
+                        llvm_unreachable("not implemented (index)");
+                    }                    
+
+                    auto convertedFieldType = tch.convertType(fieldType);
+                    ptrType = mlir::LLVM::LLVMPointerType::get(convertedFieldType);
+                }
+                else
+                {
+                    llvm_unreachable("not implemented (TupleType)");
+                }
+            }
             else if (type.dyn_cast_or_null<mlir::LLVM::LLVMPointerType>())
             {
                 ptrType = type;
@@ -361,6 +389,8 @@ namespace typescript
             {
                 llvm_unreachable("not implemented");
             }
+
+            assert(ptrType.isa<mlir::LLVM::LLVMPointerType>());
 
             auto addr = rewriter.create<LLVM::GEPOp>(
                 loc,

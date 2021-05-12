@@ -1713,17 +1713,42 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             auto arrayType = expression.getType();
 
             mlir::Type elementType;
-            if (arrayType.isa<mlir_ts::ArrayType>())
+            if (auto arrayTyped = arrayType.dyn_cast_or_null<mlir_ts::ArrayType>())
             {
-                elementType = arrayType.cast<mlir_ts::ArrayType>().getElementType();
+                elementType = arrayTyped.getElementType();
             }
-            else if (arrayType.isa<mlir::VectorType>())
+            else if (auto vectorType = arrayType.dyn_cast_or_null<mlir::VectorType>())
             {
-                elementType = arrayType.cast<mlir::VectorType>().getElementType();
+                elementType = vectorType.getElementType();
             }
             else if (arrayType.isa<mlir_ts::StringType>())
             {
                 elementType = getCharType();
+            }
+            else if (auto tupleType = arrayType.dyn_cast_or_null<mlir_ts::TupleType>())
+            {
+                // convert LoadOp into original op to get address
+                // TODO: review with code in *= (save logic)
+                if (auto loadOp = dyn_cast_or_null<mlir_ts::LoadOp>(expression.getDefiningOp()))
+                {
+                    expression = loadOp.reference();
+                    loadOp.erase();
+                }
+                else
+                {
+                    llvm_unreachable("not implemented (LoadOp)");
+                }
+
+                // get index
+                if (auto indexConstOp = dyn_cast_or_null<mlir_ts::ConstantOp>(argumentExpression.getDefiningOp()))
+                {
+                    auto constIndex = indexConstOp.value().dyn_cast_or_null<mlir::IntegerAttr>().getInt();
+                    elementType = tupleType.getType(constIndex);
+                }
+                else
+                {
+                    llvm_unreachable("not implemented (index)");
+                }
             }
             else 
             {
