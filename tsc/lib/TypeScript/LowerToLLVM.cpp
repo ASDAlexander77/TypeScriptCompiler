@@ -1263,23 +1263,6 @@ namespace
         }
     };
 
-    struct AddressOfElementOpLowering : public OpConversionPattern<mlir_ts::AddressOfElementOp>
-    {
-        using OpConversionPattern<mlir_ts::AddressOfElementOp>::OpConversionPattern;
-
-        LogicalResult matchAndRewrite(mlir_ts::AddressOfElementOp addressOfElementOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
-        {
-            TypeHelper th(rewriter);
-            TypeConverterHelper tch(*getTypeConverter());
-            LLVMCodeHelper ch(addressOfElementOp, rewriter, getTypeConverter());
-
-            auto addr = ch.GetAddressOfElement(addressOfElementOp.reference(), addressOfElementOp.elementIndex());
-            addressOfElementOp.erase();
-
-            return success();
-        }
-    };
-
     struct AddressOfConstStringOpLowering : public OpConversionPattern<mlir_ts::AddressOfConstStringOp>
     {
         using OpConversionPattern<mlir_ts::AddressOfConstStringOp>::OpConversionPattern;
@@ -1418,7 +1401,6 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     patterns.insert<
         AddressOfOpLowering,
         AddressOfConstStringOpLowering,
-        AddressOfElementOpLowering,
         ArithmeticUnaryOpLowering,
         ArithmeticBinaryOpLowering,
         AssertOpLowering,

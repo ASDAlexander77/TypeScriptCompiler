@@ -363,7 +363,7 @@ namespace typescript
                     // TODO: ...
                     // get index
                     // TODO: It seems I did this work in LoadElement result type, why do I do it again?
-                    if (auto indexConstOp = dyn_cast_or_null<mlir_ts::ConstantOp>(index.getDefiningOp()))
+                    if (auto indexConstOp = dyn_cast_or_null<mlir::ConstantOp>(index.getDefiningOp()))
                     {
                         auto constIndex = indexConstOp.value().dyn_cast_or_null<mlir::IntegerAttr>().getInt();
                         fieldType = tupleType.getType(constIndex);
