@@ -500,8 +500,11 @@ namespace
                 auto convertedTupleType = tch.convertType(type);
                 auto tupleConstPtr = ch.getOrCreateGlobalTuple(convertedTupleType, varName, arrayAttr);
 
-                // TODO: finish code
-                rewriter.replaceOpWithNewOp<LLVM::UndefOp>(constantOp, convertedTupleType);
+                // optimize it and replace it with copy memory. (use canon. pass) check  "EraseRedundantAssertions"
+                auto loadedValue = rewriter.create<LLVM::LoadOp>(constantOp->getLoc(), tupleConstPtr);
+
+                rewriter.replaceOp(constantOp, ValueRange{loadedValue});
+
                 return success();
             }
 
