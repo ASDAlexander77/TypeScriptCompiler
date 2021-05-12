@@ -498,7 +498,7 @@ namespace
                 auto varName = calc_hash_value(arrayAttr, "tp_");      
 
                 auto convertedTupleType = tch.convertType(type);
-                ch.getOrCreateGlobalTuple(convertedTupleType, varName, arrayAttr);
+                auto tupleConstPtr = ch.getOrCreateGlobalTuple(convertedTupleType, varName, arrayAttr);
 
                 // TODO: finish code
                 rewriter.replaceOpWithNewOp<LLVM::UndefOp>(constantOp, convertedTupleType);

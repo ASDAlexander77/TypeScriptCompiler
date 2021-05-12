@@ -294,15 +294,11 @@ namespace typescript
 
                         tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemVal, rewriter.getI64ArrayAttr(position++));
                     }
-                    else if (item.isa<FloatAttr>())
-                    {
-                        auto itemValue = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getF32Type(), item);
-                        tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemValue, rewriter.getI64ArrayAttr(position++));
-                    }
                     else
                     {
-                        llvm_unreachable("tuple literal is not implemented(1)");
-                    }                    
+                        auto itemValue = rewriter.create<LLVM::ConstantOp>(loc, item.getType(), item);
+                        tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemValue, rewriter.getI64ArrayAttr(position++));
+                    }
                 }
 
                 rewriter.create<LLVM::ReturnOp>(loc, ValueRange{tupleVal});
