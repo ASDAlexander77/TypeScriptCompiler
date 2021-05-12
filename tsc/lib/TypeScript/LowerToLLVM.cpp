@@ -39,7 +39,7 @@ namespace
         {
             TypeHelper th(rewriter);
             LLVMCodeHelper ch(op, rewriter);
-            TypeConverterHelper tch(*getTypeConverter());
+            TypeConverterHelper tch(getTypeConverter());
 
             auto loc = op->getLoc();
 
@@ -407,10 +407,11 @@ namespace
         {
             TypeHelper th(rewriter);
             CodeLogicHelper clh(op, rewriter);
-            LLVMCodeHelper ch(op, rewriter);
+            LLVMCodeHelper ch(op, rewriter, typeConverter);
 
             auto loc = op->getLoc();            
 
+            auto charType = mlir_ts::CharType::get(rewriter.getContext());
             auto i8PtrTy = th.getI8PtrType();            
 
             auto bufferSizeValue = clh.createI64ConstantOf(2);
@@ -420,9 +421,9 @@ namespace
             auto index0Value = clh.createI32ConstantOf(0);
             auto index1Value = clh.createI32ConstantOf(1);
             auto nullCharValue = clh.createI8ConstantOf(0);
-            auto addr0 = ch.GetAddressOfElement(newStringValue, index0Value);
+            auto addr0 = ch.GetAddressOfElement(charType, newStringValue, index0Value);
             rewriter.create<LLVM::StoreOp>(loc, op.op(), addr0);
-            auto addr1 = ch.GetAddressOfElement(newStringValue, index1Value);
+            auto addr1 = ch.GetAddressOfElement(charType, newStringValue, index1Value);
             rewriter.create<LLVM::StoreOp>(loc, nullCharValue, addr1);
 
             rewriter.replaceOp(op, ValueRange{newStringValue});        
@@ -466,7 +467,7 @@ namespace
                 return success();
             }
 
-            TypeConverterHelper tch(*getTypeConverter());
+            TypeConverterHelper tch(getTypeConverter());
             if (type.isa<mlir_ts::ArrayType>())
             {
                 LLVMCodeHelper ch(constantOp, rewriter);
@@ -519,7 +520,7 @@ namespace
 
         LogicalResult matchAndRewrite(mlir_ts::SymbolRefOp symbolRefOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            TypeConverterHelper tch(*getTypeConverter());
+            TypeConverterHelper tch(getTypeConverter());
             rewriter.replaceOpWithNewOp<mlir::ConstantOp>(symbolRefOp, tch.convertType(symbolRefOp.getType()), symbolRefOp.getValue());
             return success();            
         }
@@ -531,7 +532,7 @@ namespace
 
         LogicalResult matchAndRewrite(mlir_ts::NullOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            TypeConverterHelper tch(*getTypeConverter());
+            TypeConverterHelper tch(getTypeConverter());
             rewriter.replaceOpWithNewOp<LLVM::NullOp>(op, tch.convertType(op.getType()));
             return success();
         }
@@ -544,7 +545,7 @@ namespace
 
         LogicalResult matchAndRewrite(mlir_ts::UndefOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            TypeConverterHelper tch(*getTypeConverter());
+            TypeConverterHelper tch(getTypeConverter());
             rewriter.replaceOpWithNewOp<LLVM::UndefOp>(op, tch.convertType(op.getType()));
             return success();
         }
@@ -557,7 +558,7 @@ namespace
         LogicalResult matchAndRewrite(mlir_ts::EntryOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             CodeLogicHelper clh(op, rewriter);
-            TypeConverterHelper tch(*getTypeConverter());
+            TypeConverterHelper tch(getTypeConverter());
 
             auto location = op.getLoc();
 
@@ -782,7 +783,7 @@ namespace
             TypeHelper th(rewriter);
             LLVMCodeHelper ch(op, rewriter);
             CodeLogicHelper clh(op, rewriter);
-            TypeConverterHelper tch(*getTypeConverter());
+            TypeConverterHelper tch(getTypeConverter());
 
             auto in = op.in();
             auto res = op.res();
@@ -900,7 +901,7 @@ namespace
         LogicalResult matchAndRewrite(mlir_ts::VariableOp varOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             CodeLogicHelper clh(varOp, rewriter);
-            TypeConverterHelper tch(*getTypeConverter());
+            TypeConverterHelper tch(getTypeConverter());
 
             auto location = varOp.getLoc();
 
@@ -940,7 +941,7 @@ namespace
         }
     }
 
-    void NegativeOpBin(mlir_ts::ArithmeticUnaryOp &unaryOp, mlir::PatternRewriter &builder, TypeConverter &typeConverter)
+    void NegativeOpBin(mlir_ts::ArithmeticUnaryOp &unaryOp, mlir::PatternRewriter &builder, TypeConverter *typeConverter)
     {
         CodeLogicHelper clh(unaryOp, builder);
         TypeConverterHelper tch(typeConverter);
@@ -982,7 +983,7 @@ namespace
             switch (opCode)
             {
             case SyntaxKind::ExclamationToken:
-                NegativeOpBin(arithmeticUnaryOp, rewriter, *getTypeConverter());
+                NegativeOpBin(arithmeticUnaryOp, rewriter, getTypeConverter());
                 return success();
             case SyntaxKind::PlusToken:
                 rewriter.replaceOp(arithmeticUnaryOp, arithmeticUnaryOp.operand1());
@@ -991,7 +992,7 @@ namespace
                 NegativeOpValue(arithmeticUnaryOp, rewriter);
                 return success();
             case SyntaxKind::TildeToken:
-                NegativeOpBin(arithmeticUnaryOp, rewriter, *getTypeConverter());
+                NegativeOpBin(arithmeticUnaryOp, rewriter, getTypeConverter());
                 return success();
             default:
                 llvm_unreachable("not implemented");
@@ -1153,7 +1154,7 @@ namespace
         LogicalResult matchAndRewrite(mlir_ts::LoadOp loadOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             TypeHelper th(rewriter);
-            TypeConverterHelper tch(*getTypeConverter());
+            TypeConverterHelper tch(getTypeConverter());
             CodeLogicHelper clh(loadOp, rewriter);
 
             auto elementType = loadOp.reference().getType().cast<mlir_ts::RefType>().getElementType();
@@ -1185,10 +1186,10 @@ namespace
         LogicalResult matchAndRewrite(mlir_ts::LoadElementOp loadElementOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             TypeHelper th(rewriter);
-            TypeConverterHelper tch(*getTypeConverter());
+            TypeConverterHelper tch(getTypeConverter());
             LLVMCodeHelper ch(loadElementOp, rewriter, getTypeConverter());
 
-            auto addr = ch.GetAddressOfElement(loadElementOp.array(), loadElementOp.index());
+            auto addr = ch.GetAddressOfElement(loadElementOp.getResult().getType(), loadElementOp.array(), loadElementOp.index());
             rewriter.replaceOpWithNewOp<LLVM::LoadOp>(loadElementOp, addr);
             return success();
         }
@@ -1201,10 +1202,10 @@ namespace
         LogicalResult matchAndRewrite(mlir_ts::StoreElementOp storeElementOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             TypeHelper th(rewriter);
-            TypeConverterHelper tch(*getTypeConverter());
+            TypeConverterHelper tch(getTypeConverter());
             LLVMCodeHelper ch(storeElementOp, rewriter, getTypeConverter());
 
-            auto addr = ch.GetAddressOfElement(storeElementOp.array(), storeElementOp.index());
+            auto addr = ch.GetAddressOfElement(storeElementOp.value().getType(), storeElementOp.array(), storeElementOp.index());
             rewriter.replaceOpWithNewOp<LLVM::StoreOp>(storeElementOp, storeElementOp.value(), addr);
             return success();
         }
@@ -1217,7 +1218,7 @@ namespace
         LogicalResult matchAndRewrite(mlir_ts::GlobalOp globalOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             TypeHelper th(rewriter);
-            TypeConverterHelper tch(*getTypeConverter());
+            TypeConverterHelper tch(getTypeConverter());
 
             Type type;
             auto hasValue = globalOp.value().hasValue();
@@ -1250,7 +1251,7 @@ namespace
         LogicalResult matchAndRewrite(mlir_ts::AddressOfOp addressOfOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             TypeHelper th(rewriter);            
-            TypeConverterHelper tch(*getTypeConverter());
+            TypeConverterHelper tch(getTypeConverter());
             auto parentModule = addressOfOp->getParentOfType<ModuleOp>();
 
             if (auto global = parentModule.lookupSymbol<LLVM::GlobalOp>(addressOfOp.global_name()))
@@ -1270,7 +1271,7 @@ namespace
         LogicalResult matchAndRewrite(mlir_ts::AddressOfConstStringOp addressOfConstStringOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             TypeHelper th(rewriter);            
-            TypeConverterHelper tch(*getTypeConverter());
+            TypeConverterHelper tch(getTypeConverter());
             auto parentModule = addressOfConstStringOp->getParentOfType<ModuleOp>();
 
             if (auto global = parentModule.lookupSymbol<LLVM::GlobalOp>(addressOfConstStringOp.global_name()))

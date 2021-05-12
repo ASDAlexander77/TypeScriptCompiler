@@ -102,7 +102,9 @@ namespace typescript
     {
         TypeConverter &typeConverter;
     public:
-        TypeConverterHelper(TypeConverter &typeConverter) : typeConverter(typeConverter) {}
+        TypeConverterHelper(TypeConverter *typeConverter) : typeConverter(*typeConverter) {
+            assert(typeConverter);
+        }
 
         mlir::Type convertType(mlir::Type type)
         {
@@ -333,64 +335,15 @@ namespace typescript
             return rewriter.create<LLVM::LLVMFuncOp>(loc, name, llvmFnType);
         }   
 
-        mlir::Value GetAddressOfElement(mlir::Value arrayOrString, mlir::Value index)
+        mlir::Value GetAddressOfElement(mlir::Type elementType, mlir::Value arrayOrStringOrTuple, mlir::Value index)
         {
             TypeHelper th(rewriter);
-            TypeConverterHelper tch(*typeConverter);
+            TypeConverterHelper tch(typeConverter);
 
             auto loc = op->getLoc();
-            auto globalPtr = arrayOrString;
-            auto type = arrayOrString.getType();
+            auto globalPtr = arrayOrStringOrTuple;
 
-            mlir::Type ptrType;
-            if (auto arrayType = type.dyn_cast_or_null<mlir_ts::ArrayType>())
-            {
-                auto elementType = arrayType.getElementType();
-                ptrType = th.getPointerType(tch.convertType(elementType));
-            }
-            else if (auto arrayType = type.dyn_cast_or_null<mlir_ts::StringType>())
-            {
-                auto elementType = mlir_ts::CharType::get(rewriter.getContext());
-                ptrType = th.getPointerType(tch.convertType(elementType));
-            }
-            else if (auto refType = type.dyn_cast_or_null<mlir_ts::RefType>())            
-            {   
-                auto elementType = refType.getElementType();
-                mlir::Type fieldType;
-                if (auto tupleType = elementType.dyn_cast_or_null<mlir_ts::TupleType>())
-                {
-                    // extract  value from index;
-                    // TODO: ...
-                    // get index
-                    // TODO: It seems I did this work in LoadElement result type, why do I do it again?
-                    if (auto indexConstOp = dyn_cast_or_null<mlir::ConstantOp>(index.getDefiningOp()))
-                    {
-                        auto constIndex = indexConstOp.value().dyn_cast_or_null<mlir::IntegerAttr>().getInt();
-                        fieldType = tupleType.getType(constIndex);
-                    }
-                    else
-                    {
-                        llvm_unreachable("not implemented (index)");
-                    }                    
-
-                    auto convertedFieldType = tch.convertType(fieldType);
-                    ptrType = mlir::LLVM::LLVMPointerType::get(convertedFieldType);
-                }
-                else
-                {
-                    llvm_unreachable("not implemented (TupleType)");
-                }
-            }
-            else if (type.dyn_cast_or_null<mlir::LLVM::LLVMPointerType>())
-            {
-                ptrType = type;
-            }
-            else
-            {
-                llvm_unreachable("not implemented");
-            }
-
-            assert(ptrType.isa<mlir::LLVM::LLVMPointerType>());
+            auto ptrType = th.getPointerType(tch.convertType(elementType));
 
             auto addr = rewriter.create<LLVM::GEPOp>(
                 loc,
