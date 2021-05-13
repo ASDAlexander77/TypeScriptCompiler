@@ -1211,6 +1211,59 @@ namespace
         }
     };    
 
+    struct LoadPropertyOpLowering : public OpConversionPattern<mlir_ts::LoadPropertyOp>
+    {
+        using OpConversionPattern<mlir_ts::LoadPropertyOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::LoadPropertyOp loadElementOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            TypeConverterHelper tch(getTypeConverter());
+
+            auto elementType = loadElementOp.object().getType().cast<mlir_ts::RefType>().getElementType();
+            auto elementTypeConverted = tch.convertType(elementType);
+
+            // TODO: do I need to use GetAddressOp to speed up loading 1 field
+            auto loadedObject = rewriter.create<LLVM::LoadOp>(
+                loadElementOp->getLoc(), 
+                elementTypeConverted, 
+                loadElementOp.object());
+
+            rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
+                loadElementOp, 
+                tch.convertType(loadElementOp.getType()), 
+                loadedObject, 
+                loadElementOp.position());
+
+            return success();
+        }
+    };
+
+    struct StorePropertyOpLowering : public OpConversionPattern<mlir_ts::StorePropertyOp>
+    {
+        using OpConversionPattern<mlir_ts::StorePropertyOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::StorePropertyOp storePropertyOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            TypeConverterHelper tch(getTypeConverter());
+
+            auto elementType = storePropertyOp.object().getType().cast<mlir_ts::RefType>().getElementType();
+            auto elementTypeConverted = tch.convertType(elementType);
+
+            auto loadedObject = rewriter.create<LLVM::LoadOp>(
+                storePropertyOp->getLoc(), 
+                elementTypeConverted, 
+                storePropertyOp.object());
+
+            rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(
+                storePropertyOp, 
+                loadedObject, 
+                storePropertyOp.value(),
+                storePropertyOp.position());
+
+            return success();
+        }
+    };    
+
     struct GlobalOpLowering : public OpConversionPattern<mlir_ts::GlobalOp>
     {
         using OpConversionPattern<mlir_ts::GlobalOp>::OpConversionPattern;
@@ -1413,6 +1466,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         FuncOpLowering,
         LoadOpLowering,
         LoadElementOpLowering,
+        LoadPropertyOpLowering,
         LogicalBinaryOpLowering,
         NullOpLowering,
         ParseFloatOpLowering,
@@ -1420,6 +1474,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         PrintOpLowering,
         StoreOpLowering,
         StoreElementOpLowering,
+        StorePropertyOpLowering,
         StringConcatOpLowering,
         StringCompareOpLowering,
         CharToStringOpLowering,

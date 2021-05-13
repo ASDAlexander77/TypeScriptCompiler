@@ -510,7 +510,6 @@ namespace
             return success();
         }
     };      
-
 } // end anonymous namespace
 
 //===----------------------------------------------------------------------===//
@@ -607,9 +606,11 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         mlir_ts::ReturnValOp,
         mlir_ts::StoreOp,
         mlir_ts::StoreElementOp,
+        mlir_ts::StorePropertyOp,
         mlir_ts::StringConcatOp,
         mlir_ts::LoadOp,
         mlir_ts::LoadElementOp,
+        mlir_ts::LoadPropertyOp,
         mlir_ts::LogicalBinaryOp,
         mlir_ts::UndefOp,
         mlir_ts::VariableOp,

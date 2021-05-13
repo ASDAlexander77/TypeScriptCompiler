@@ -268,8 +268,11 @@ def TypeScript_Tuple : TypeScript_Type<"Tuple"> {
 }
 
 def TypeScript_ArrayLike : AnyTypeOf<[
-    TypeScript_Array, TypeScript_String, TypeScript_AnyTupleRef
+    TypeScript_Array, TypeScript_String
   ]>;
 
+def TypeScript_AnyStructRefLike : AnyTypeOf<[
+    TypeScript_AnyTupleRef
+  ]>;
 
 #endif // TYPESCRIPT_TYPEDEFS

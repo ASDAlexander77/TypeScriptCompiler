@@ -565,8 +565,8 @@ def TypeScript_LoadPropertyOp : TypeScript_Op<"LoadProperty"> {
   }];
 
   let arguments = (ins
-    TypeScript_Object:$object,
-    I32:$propertyIndex
+    TypeScript_AnyStructRefLike:$object,
+    ArrayAttr:$position
   );
 
   let results = (outs
@@ -585,8 +585,8 @@ def TypeScript_StorePropertyOp : TypeScript_Op<"StoreProperty"> {
 
   let arguments = (ins
     AnyType:$value,
-    TypeScript_Object:$object,
-    I32:$propertyIndex
+    TypeScript_AnyStructRefLike:$object,
+    ArrayAttr:$position
   );
 
   let results = (outs

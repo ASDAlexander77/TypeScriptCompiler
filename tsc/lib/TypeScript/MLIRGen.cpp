@@ -1744,6 +1744,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 {
                     auto constIndex = indexConstOp.value().dyn_cast_or_null<mlir::IntegerAttr>().getInt();
                     elementType = tupleType.getType(constIndex);
+                    return builder.create<mlir_ts::LoadPropertyOp>(location, elementType, expression, mlir::ArrayAttr::get({indexConstOp.value()}, builder.getContext()));
                 }
                 else
                 {
