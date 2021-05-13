@@ -283,6 +283,8 @@ namespace typescript
 
                     auto subType = llvmStructType.cast<LLVM::LLVMStructType>().getBody()[position];
                     auto subTupleVal = getTupleFromArrayAttr(loc, subType, subArrayAttr);
+
+                    tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, subTupleVal, rewriter.getI64ArrayAttr(position++));
                 }                
                 else
                 {
