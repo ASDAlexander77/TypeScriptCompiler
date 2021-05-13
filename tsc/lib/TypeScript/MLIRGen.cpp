@@ -2239,6 +2239,9 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 auto type = getType(typeAliasDeclarationAST->type);
                 auto name = ident.identifier();
                 typeAliasMap.insert({name, type});
+
+                identOp.getDefiningOp()->erase();
+
                 return mlir::success();
             }
             else
@@ -2309,6 +2312,9 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 {
                     auto name = symRefOp.identifier();
                     auto type = typeAliasMap.lookup(name);
+                    
+                    value.getDefiningOp()->erase();
+
                     if (type)
                     {
                         return type;
@@ -2404,9 +2410,11 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             return mlir::FunctionType::get(builder.getContext(), argTypes, resultType);
         }
 
-        mlir_ts::UnionType getUnionType(UnionTypeNode unionTypeNode)
+        mlir::Type getUnionType(UnionTypeNode unionTypeNode)
         {
             mlir::SmallVector<mlir::Type> types;
+            auto oneType = true;
+            mlir::Type currentType;
             for (auto typeItem : unionTypeNode->types)
             {
                 auto type = getType(typeItem);
@@ -2415,7 +2423,19 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     llvm_unreachable("wrong type");
                 }
 
+                if (currentType && currentType != type)
+                {
+                    oneType = false;
+                }
+
+                currentType = type;
+
                 types.push_back(type);
+            }
+
+            if (oneType)
+            {
+                return currentType;
             }
 
             return getUnionType(types);
