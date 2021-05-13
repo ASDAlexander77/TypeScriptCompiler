@@ -272,6 +272,10 @@ namespace
             {
                 return mlirGen(statementAST.as<ThrowStatement>(), genContext);
             }            
+            else if (kind == SyntaxKind::TypeAliasDeclaration)
+            {
+                return mlirGen(statementAST.as<TypeAliasDeclaration>(), genContext);
+            }
             else if (kind == SyntaxKind::Block)
             {
                 return mlirGen(statementAST.as<Block>(), genContext);
@@ -2227,6 +2231,24 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             return builder.create<mlir_ts::SymbolRefOp>(location, mlir::FlatSymbolRefAttr::get(name, builder.getContext()));
         }
 
+        mlir::LogicalResult mlirGen(TypeAliasDeclaration typeAliasDeclarationAST, const GenContext &genContext)
+        {
+            auto identOp = mlirGen(typeAliasDeclarationAST->name, genContext);
+            if (auto ident = dyn_cast_or_null<mlir_ts::SymbolRefOp>(identOp.getDefiningOp()))
+            {
+                auto type = getType(typeAliasDeclarationAST->type);
+                auto name = ident.identifier();
+                typeAliasMap.insert({name, type});
+                return mlir::success();
+            }
+            else
+            {
+                llvm_unreachable("not implemented");
+            }
+
+            return mlir::failure();
+        }
+
         mlir::Type getType(Node typeReferenceAST)
         {
             auto kind = (SyntaxKind) typeReferenceAST;
@@ -2258,6 +2280,45 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             {
                 return getTupleType(typeReferenceAST.as<TupleTypeNode>());
             }
+            else if (kind == SyntaxKind::ArrayType)
+            {
+                return getArrayType(typeReferenceAST.as<ArrayTypeNode>());
+            }
+            else if (kind == SyntaxKind::UnionType)
+            {
+                return getUnionType(typeReferenceAST.as<UnionTypeNode>());
+            }
+            else if (kind == SyntaxKind::IntersectionType)
+            {
+                return getIntersectionType(typeReferenceAST.as<IntersectionTypeNode>());
+            }
+            else if (kind == SyntaxKind::ParenthesizedType)
+            {
+                return getParenthesizedType(typeReferenceAST.as<ParenthesizedTypeNode>());
+            }            
+            else if (kind == SyntaxKind::LiteralType)
+            {
+                return getLiteralType(typeReferenceAST.as<LiteralTypeNode>());
+            } 
+            else if (kind == SyntaxKind::TypeReference)
+            {
+                auto node = typeReferenceAST.as<TypeReferenceNode>();
+                GenContext genContext;
+                auto value = mlirGen(node->typeName.as<Expression>(), genContext);
+                if (auto symRefOp = dyn_cast_or_null<mlir_ts::SymbolRefOp>(value.getDefiningOp()))
+                {
+                    auto name = symRefOp.identifier();
+                    auto type = typeAliasMap.lookup(name);
+                    if (type)
+                    {
+                        return type;
+                    }
+
+                    theModule.emitError("Type alias '") << name << "' can't be found";
+                }
+
+                value.getDefiningOp()->erase();
+            }             
 
             llvm_unreachable("not implemented type declaration");
             //return getAnyType();
@@ -2298,6 +2359,12 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             return mlir_ts::CharType::get(builder.getContext());
         }
 
+        mlir_ts::ArrayType getArrayType(ArrayTypeNode arrayTypeAST)
+        {
+            auto type = getType(arrayTypeAST->elementType);
+            return getArrayType(type);
+        }   
+
         mlir_ts::ArrayType getArrayType(mlir::Type elementType)
         {
             return mlir_ts::ArrayType::get(elementType);
@@ -2336,6 +2403,66 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
             return mlir::FunctionType::get(builder.getContext(), argTypes, resultType);
         }
+
+        mlir_ts::UnionType getUnionType(UnionTypeNode unionTypeNode)
+        {
+            mlir::SmallVector<mlir::Type> types;
+            for (auto typeItem : unionTypeNode->types)
+            {
+                auto type = getType(typeItem);
+                if (!type)
+                {
+                    llvm_unreachable("wrong type");
+                }
+
+                types.push_back(type);
+            }
+
+            return getUnionType(types);
+        }        
+
+        mlir_ts::UnionType getUnionType(mlir::SmallVector<mlir::Type> &types)
+        {
+            return mlir_ts::UnionType::get(builder.getContext(), types);
+        }         
+
+        mlir_ts::IntersectionType getIntersectionType(IntersectionTypeNode intersectionTypeNode)
+        {
+            mlir::SmallVector<mlir::Type> types;
+            for (auto typeItem : intersectionTypeNode->types)
+            {
+                auto type = getType(typeItem);
+                if (!type)
+                {
+                    llvm_unreachable("wrong type");
+                }
+
+                types.push_back(type);
+            }
+
+            return getIntersectionType(types);
+        }        
+
+        mlir_ts::IntersectionType getIntersectionType(mlir::SmallVector<mlir::Type> &types)
+        {
+            return mlir_ts::IntersectionType::get(builder.getContext(), types);
+        }            
+
+        mlir::Type getParenthesizedType(ParenthesizedTypeNode parenthesizedTypeNode)
+        {
+            return getType(parenthesizedTypeNode->type);
+        }          
+
+        mlir::Type getLiteralType(LiteralTypeNode literalTypeNode)
+        {
+            GenContext genContext;
+            genContext.dummyRun = true;
+            genContext.allowPartialResolve = true;
+            auto value = mlirGen(literalTypeNode->literal.as<Expression>(), genContext);
+            auto type = value.getType();
+            value.getDefiningOp()->erase();
+            return type;
+        }         
 
         mlir_ts::AnyType getAnyType()
         {
@@ -2382,6 +2509,8 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
         llvm::ScopedHashTable<StringRef, VariablePairT> symbolTable;
 
         llvm::StringMap<mlir_ts::FuncOp> functionMap;
+
+        llvm::StringMap<mlir::Type> typeAliasMap;
 
         // helper to get line number
         Parser parser;
