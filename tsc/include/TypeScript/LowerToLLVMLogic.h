@@ -142,6 +142,48 @@ namespace typescript
         LLVMCodeHelper(Operation *op, PatternRewriter &rewriter, TypeConverter *typeConverter) : op(op), rewriter(rewriter), typeConverter(typeConverter) {}
 
     private:
+
+        template <typename T>
+        void seekLast(Block *block)
+        {
+            // find last string
+            auto lastUse = [&](Operation* op) {
+                if (auto globalOp = dyn_cast_or_null<LLVM::GlobalOp>(op)) {
+                    if (globalOp.valueAttr() && globalOp.valueAttr().isa<T>()) {
+                        rewriter.setInsertionPointAfter(globalOp);
+                    }
+                }
+            };
+
+            block->walk(lastUse);      
+        }
+
+        void seekLast(Block *block)
+        {
+            // find last string
+            auto lastUse = [&](Operation* op) {
+                if (auto globalOp = dyn_cast_or_null<LLVM::GlobalOp>(op)) {
+                    rewriter.setInsertionPointAfter(globalOp);
+                }
+            };
+
+            block->walk(lastUse);      
+        }
+
+        void seekLastWithBody(Block *block)
+        {
+            // find last string
+            auto lastUse = [&](Operation* op) {
+                if (auto globalOp = dyn_cast_or_null<LLVM::GlobalOp>(op)) {
+                    if (globalOp.getInitializerBlock()) {
+                        rewriter.setInsertionPointAfter(globalOp);
+                    }
+                }
+            };
+
+            block->walk(lastUse);      
+        }
+
         /// Return a value representing an access into a global string with the given
         /// name, creating the string if necessary.
         Value getOrCreateGlobalString_(StringRef name, StringRef value)
@@ -157,6 +199,9 @@ namespace typescript
             {
                 OpBuilder::InsertionGuard insertGuard(rewriter);
                 rewriter.setInsertionPointToStart(parentModule.getBody());
+
+                seekLast<StringAttr>(parentModule.getBody());
+
                 auto type = th.getArrayType(th.getI8Type(), value.size());
                 global = rewriter.create<LLVM::GlobalOp>(loc, type, true, LLVM::Linkage::Internal, name, rewriter.getStringAttr(value));
             }
@@ -216,6 +261,8 @@ namespace typescript
                 auto value = arrayAttr.getValue();
                 if (llvmElementType.isIntOrFloat())
                 {
+                    seekLast<DenseElementsAttr>(parentModule.getBody());
+
                     // end
                     auto dataType = mlir::VectorType::get({static_cast<int64_t>(value.size())}, llvmElementType);
                     auto attr = mlir::DenseElementsAttr::get(dataType, value);                
@@ -223,12 +270,17 @@ namespace typescript
                 }
                 else if (originalElementType.dyn_cast_or_null<mlir_ts::StringType>())
                 {
+                    seekLast(parentModule.getBody());
+
                     mlir::OpBuilder::InsertionGuard guard(rewriter);
                     
                     global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, Attribute{});
 
-                    global.getInitializerRegion().push_back(new Block());
-                    rewriter.setInsertionPointToStart(global.getInitializerBlock());
+                    Region &region = global.getInitializerRegion();
+                    Block *block = rewriter.createBlock(&region);
+
+                    // Initialize the tuple
+                    rewriter.setInsertionPoint(block, block->begin());
 
                     mlir::Value arrayVal = rewriter.create<LLVM::UndefOp>(loc, arrayType);
 
@@ -311,11 +363,16 @@ namespace typescript
             {
                 OpBuilder::InsertionGuard insertGuard(rewriter);
                 rewriter.setInsertionPointToStart(parentModule.getBody());
+
+                seekLast(parentModule.getBody());                
               
                 global = rewriter.create<LLVM::GlobalOp>(loc, llvmStructType, true, LLVM::Linkage::Internal, name, Attribute{});
 
-                global.getInitializerRegion().push_back(new Block());
-                rewriter.setInsertionPointToStart(global.getInitializerBlock());
+                Region &region = global.getInitializerRegion();
+                Block *block = rewriter.createBlock(&region);
+
+                // Initialize the tuple
+                rewriter.setInsertionPoint(block, block->begin());
 
                 auto tupleVal = getTupleFromArrayAttr(loc, llvmStructType, arrayAttr);
                 rewriter.create<LLVM::ReturnOp>(loc, ValueRange{tupleVal});
