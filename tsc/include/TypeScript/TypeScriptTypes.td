@@ -96,6 +96,10 @@ def TypeScript_IsRefType : CPred<"$_self.isa<::mlir::typescript::RefType>()">;
 
 def TypeScript_AnyRef : DialectType<TypeScript_Dialect, TypeScript_IsRefType, "any reference type">;
 
+def TypeScript_IsTupleType : CPred<"$_self.isa<::mlir::typescript::TupleType>()">;
+
+def TypeScript_AnyTuple : DialectType<TypeScript_Dialect, TypeScript_IsTupleType, "any tuple type">;
+
 def TypeScript_IsTupleRefType : CPred<"$_self.isa<::mlir::typescript::RefType>() && $_self.cast<::mlir::typescript::RefType>().getElementType().isa<::mlir::typescript::TupleType>()">;
 
 def TypeScript_AnyTupleRef : DialectType<TypeScript_Dialect, TypeScript_IsTupleRefType, "any tuple reference type">;
@@ -271,8 +275,8 @@ def TypeScript_ArrayLike : AnyTypeOf<[
     TypeScript_Array, TypeScript_String
   ]>;
 
-def TypeScript_AnyStructRefLike : AnyTypeOf<[
-    TypeScript_AnyTupleRef
+def TypeScript_AnyStructLike : AnyTypeOf<[
+    TypeScript_AnyTuple
   ]>;
 
 #endif // TYPESCRIPT_TYPEDEFS

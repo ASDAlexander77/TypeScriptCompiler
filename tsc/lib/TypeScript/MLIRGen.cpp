@@ -1727,18 +1727,6 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             }
             else if (auto tupleType = arrayType.dyn_cast_or_null<mlir_ts::TupleType>())
             {
-                // convert LoadOp into original op to get address
-                // TODO: review with code in *= (save logic)
-                if (auto loadOp = dyn_cast_or_null<mlir_ts::LoadOp>(expression.getDefiningOp()))
-                {
-                    expression = loadOp.reference();
-                    loadOp.erase();
-                }
-                else
-                {
-                    llvm_unreachable("not implemented (LoadOp)");
-                }
-
                 // get index
                 if (auto indexConstOp = dyn_cast_or_null<mlir_ts::ConstantOp>(argumentExpression.getDefiningOp()))
                 {

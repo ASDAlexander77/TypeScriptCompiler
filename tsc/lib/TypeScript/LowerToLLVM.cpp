@@ -1185,8 +1185,6 @@ namespace
 
         LogicalResult matchAndRewrite(mlir_ts::LoadElementOp loadElementOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            TypeHelper th(rewriter);
-            TypeConverterHelper tch(getTypeConverter());
             LLVMCodeHelper ch(loadElementOp, rewriter, getTypeConverter());
 
             auto addr = ch.GetAddressOfElement(loadElementOp.getResult().getType(), loadElementOp.array(), loadElementOp.index());
@@ -1201,8 +1199,6 @@ namespace
 
         LogicalResult matchAndRewrite(mlir_ts::StoreElementOp storeElementOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            TypeHelper th(rewriter);
-            TypeConverterHelper tch(getTypeConverter());
             LLVMCodeHelper ch(storeElementOp, rewriter, getTypeConverter());
 
             auto addr = ch.GetAddressOfElement(storeElementOp.value().getType(), storeElementOp.array(), storeElementOp.index());
@@ -1219,19 +1215,10 @@ namespace
         {
             TypeConverterHelper tch(getTypeConverter());
 
-            auto elementType = loadElementOp.object().getType().cast<mlir_ts::RefType>().getElementType();
-            auto elementTypeConverted = tch.convertType(elementType);
-
-            // TODO: do I need to use GetAddressOp to speed up loading 1 field
-            auto loadedObject = rewriter.create<LLVM::LoadOp>(
-                loadElementOp->getLoc(), 
-                elementTypeConverted, 
-                loadElementOp.object());
-
             rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
                 loadElementOp, 
                 tch.convertType(loadElementOp.getType()), 
-                loadedObject, 
+                loadElementOp.object(), 
                 loadElementOp.position());
 
             return success();
@@ -1244,19 +1231,9 @@ namespace
 
         LogicalResult matchAndRewrite(mlir_ts::StorePropertyOp storePropertyOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            TypeConverterHelper tch(getTypeConverter());
-
-            auto elementType = storePropertyOp.object().getType().cast<mlir_ts::RefType>().getElementType();
-            auto elementTypeConverted = tch.convertType(elementType);
-
-            auto loadedObject = rewriter.create<LLVM::LoadOp>(
-                storePropertyOp->getLoc(), 
-                elementTypeConverted, 
-                storePropertyOp.object());
-
             rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(
                 storePropertyOp, 
-                loadedObject, 
+                storePropertyOp.object(), 
                 storePropertyOp.value(),
                 storePropertyOp.position());
 
