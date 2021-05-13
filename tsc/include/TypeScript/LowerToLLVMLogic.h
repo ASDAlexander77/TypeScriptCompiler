@@ -261,6 +261,39 @@ namespace typescript
                 ArrayRef<Value>({cst0, cst0}));            
         }        
 
+        Value getTupleFromArrayAttr(Location loc, mlir::Type llvmStructType, ArrayAttr arrayAttr)
+        {
+            Value tupleVal = rewriter.create<LLVM::UndefOp>(loc, llvmStructType);
+
+            auto position = 0;
+            for (auto item : arrayAttr.getValue())
+            {
+                if (item.isa<StringAttr>())
+                {
+                    mlir::OpBuilder::InsertionGuard guard(rewriter);
+                    
+                    auto strValue = item.cast<StringAttr>().getValue().str();
+                    auto itemVal = getOrCreateGlobalString(strValue);                        
+
+                    tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemVal, rewriter.getI64ArrayAttr(position++));
+                }
+                else if (auto subArrayAttr = item.dyn_cast_or_null<ArrayAttr>())
+                {
+                    mlir::OpBuilder::InsertionGuard guard(rewriter);
+
+                    auto subType = llvmStructType.cast<LLVM::LLVMStructType>().getBody()[position];
+                    auto subTupleVal = getTupleFromArrayAttr(loc, subType, subArrayAttr);
+                }                
+                else
+                {
+                    auto itemValue = rewriter.create<LLVM::ConstantOp>(loc, item.getType(), item);
+                    tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemValue, rewriter.getI64ArrayAttr(position++));
+                }
+            }
+
+            return tupleVal;
+        }
+
         Value getOrCreateGlobalTuple(mlir::Type llvmStructType, StringRef name, ArrayAttr arrayAttr)
         {
             auto loc = op->getLoc();
@@ -282,27 +315,7 @@ namespace typescript
                 global.getInitializerRegion().push_back(new Block());
                 rewriter.setInsertionPointToStart(global.getInitializerBlock());
 
-                mlir::Value tupleVal = rewriter.create<LLVM::UndefOp>(loc, llvmStructType);
-
-                auto position = 0;
-                for (auto item : arrayAttr.getValue())
-                {
-                    if (item.isa<StringAttr>())
-                    {
-                        mlir::OpBuilder::InsertionGuard guard(rewriter);
-                        
-                        auto strValue = item.cast<StringAttr>().getValue().str();
-                        auto itemVal = getOrCreateGlobalString(strValue);                        
-
-                        tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemVal, rewriter.getI64ArrayAttr(position++));
-                    }
-                    else
-                    {
-                        auto itemValue = rewriter.create<LLVM::ConstantOp>(loc, item.getType(), item);
-                        tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemValue, rewriter.getI64ArrayAttr(position++));
-                    }
-                }
-
+                auto tupleVal = getTupleFromArrayAttr(loc, llvmStructType, arrayAttr);
                 rewriter.create<LLVM::ReturnOp>(loc, ValueRange{tupleVal});
             }
 
