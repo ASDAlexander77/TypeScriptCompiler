@@ -434,6 +434,30 @@ namespace typescript
     public:        
         CodeLogicHelper(Operation *op, PatternRewriter &rewriter) : op(op), rewriter(rewriter) {}
 
+        Value createIConstantOf(unsigned width, unsigned value)
+        {
+            return rewriter.create<LLVM::ConstantOp>(op->getLoc(), rewriter.getIntegerType(width), rewriter.getIntegerAttr(rewriter.getIntegerType(width), value));
+        }
+
+        Value createFConstantOf(unsigned width, double value)
+        {
+            auto ftype = rewriter.getF32Type();
+            if (width == 16)
+            {
+                ftype = rewriter.getF16Type();
+            }
+            else if (width == 64)
+            {
+                ftype = rewriter.getF64Type();
+            }
+            else if (width == 128)
+            {
+                ftype = rewriter.getF128Type();
+            }
+
+            return rewriter.create<LLVM::ConstantOp>(op->getLoc(), ftype, rewriter.getFloatAttr(ftype, value));
+        }
+
         Value createI8ConstantOf(unsigned value)
         {
             return rewriter.create<LLVM::ConstantOp>(op->getLoc(), rewriter.getIntegerType(8), rewriter.getIntegerAttr(rewriter.getIntegerType(8), value));

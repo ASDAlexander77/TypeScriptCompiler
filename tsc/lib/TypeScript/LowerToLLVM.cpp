@@ -957,11 +957,11 @@ namespace
         auto type = oper.getType();
         if (type.isIntOrIndex())
         {
-            builder.replaceOpWithNewOp<SubIOp>(unaryOp, type, clh.createI32ConstantOf(0), oper);
+            builder.replaceOpWithNewOp<SubIOp>(unaryOp, type, clh.createIConstantOf(type.getIntOrFloatBitWidth(), 0), oper);
         }
         else if (!type.isIntOrIndex() && type.isIntOrIndexOrFloat())
         {
-            builder.replaceOpWithNewOp<SubFOp>(unaryOp, type, clh.createF32ConstantOf(0.0), oper);
+            builder.replaceOpWithNewOp<SubFOp>(unaryOp, type, clh.createFConstantOf(type.getIntOrFloatBitWidth(), 0.0), oper);
         }
         else
         {
@@ -985,8 +985,8 @@ namespace
             }
             else
             {
-                //lhs = clh.createI32ConstantOf(0xffff);
-                lhs = clh.createI32ConstantOf(-1);
+                //lhs = clh.createI32ConstantOf(-1);
+                lhs = clh.createIConstantOf(type.getIntOrFloatBitWidth(), -1);
             }
 
             builder.replaceOpWithNewOp<LLVM::XOrOp>(unaryOp, type, oper, lhs);

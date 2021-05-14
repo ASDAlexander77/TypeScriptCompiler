@@ -2551,7 +2551,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
         mlir_ts::EnumType getEnumType()
         {
-            return getEnumType(builder.getI64Type());
+            return getEnumType(builder.getI32Type());
         }  
         
         mlir_ts::EnumType getEnumType(mlir::Type elementType)
