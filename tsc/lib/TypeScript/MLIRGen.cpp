@@ -2409,7 +2409,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     }
                     else
                     {
-                        enumValueAttr = builder.getI64IntegerAttr(index);
+                        enumValueAttr = builder.getI32IntegerAttr(index);
                     }
 
                     enumValues.push_back({ mlir::Identifier::get(memberName, builder.getContext()), enumValueAttr });
@@ -2503,6 +2503,12 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 else if (auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(value.getDefiningOp()))
                 {
                     auto type = constOp.getType();
+                    if (auto enumType = type.dyn_cast_or_null<mlir_ts::EnumType>())
+                    {
+                        // we do not exact type enum as we want to avoid casting it all the time
+                        type = enumType.getElementType();
+                    }
+
                     value.getDefiningOp()->erase();
                     return type;
                 }
