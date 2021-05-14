@@ -1488,6 +1488,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
         {
             auto leftInt = leftConstOp.valueAttr().dyn_cast<mlir::IntegerAttr>().getInt();
             auto rightInt = rightConstOp.valueAttr().dyn_cast<mlir::IntegerAttr>().getInt();
+            auto resultType = leftConstOp.getType();
 
             int64_t result = 0;
             switch (opCode)
@@ -1510,7 +1511,10 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 default: llvm_unreachable("not implemented"); break;
             }
 
-            return builder.create<mlir_ts::ConstantOp>(location, leftConstOp.getType(), builder.getI64IntegerAttr(result));
+            leftConstOp.erase();
+            rightConstOp.erase();
+
+            return builder.create<mlir_ts::ConstantOp>(location, resultType, builder.getI64IntegerAttr(result));
         }
 
         mlir::Value mlirGen(BinaryExpression binaryExpressionAST, const GenContext &genContext)

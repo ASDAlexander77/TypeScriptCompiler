@@ -608,6 +608,13 @@ namespace typescript
             auto castRight = builder.create<mlir_ts::CastOp>(binOp->getLoc(), builder.getF32Type(), binOp.getOperand(1));
             builder.replaceOpWithNewOp<StdFOpTy>(binOp, v2, castLeft, castRight);
         }        
+        else if (auto leftEnumType = leftType.dyn_cast_or_null<mlir_ts::EnumType>())
+        {
+            auto castLeft = builder.create<mlir_ts::CastOp>(binOp->getLoc(), leftEnumType.getElementType(), binOp.getOperand(0));
+            auto castRight = builder.create<mlir_ts::CastOp>(binOp->getLoc(), leftEnumType.getElementType(), binOp.getOperand(1));
+            auto res = builder.create<StdFOpTy>(binOp->getLoc(), v2, castLeft, castRight);
+            builder.replaceOpWithNewOp<mlir_ts::CastOp>(binOp, leftEnumType, res);
+        }          
         else if (leftType.dyn_cast_or_null<mlir_ts::AnyType>())
         {
             // excluded string
