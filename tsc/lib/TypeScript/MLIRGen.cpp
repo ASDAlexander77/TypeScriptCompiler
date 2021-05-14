@@ -1535,6 +1535,13 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 return mlir::Value();
             }
 
+            // check if const expr.
+            if (genContext.allowConstEval && leftExpressionValue.isa<mlir_ts::ConstantOp>() && rightExpressionValue.isa<mlir_ts::ConstantOp>())
+            {
+                // try to evaluate
+                // TODO:...
+            }
+
             auto leftExpressionValueBeforeCast = leftExpressionValue;
             auto rightExpressionValueBeforeCast = rightExpressionValue;
 
