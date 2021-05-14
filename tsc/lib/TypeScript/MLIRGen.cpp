@@ -79,6 +79,7 @@ namespace
 
         bool allowPartialResolve;
         bool dummyRun;
+        bool allowConstEval;
         mlir::Type functionReturnType;
         PassResult *passResult;
         mlir::SmallVector<mlir::Block *>* cleanUps;
@@ -114,6 +115,7 @@ namespace
             theModule = mlir::ModuleOp::create(loc(module), fileName);
             builder.setInsertionPointToStart(theModule.getBody());
 
+            declareAllTypesAndEnumsDeclarations(module);
             declareAllFunctionDeclarations(module);
 
             SymbolTableScopeT varScope(symbolTable);
@@ -141,6 +143,27 @@ namespace
             return theModule;
         }
 
+        mlir::LogicalResult declareAllTypesAndEnumsDeclarations(SourceFile module)
+        {
+            FilterVisitorAST<EnumDeclaration> visitorASTEnum(
+                SyntaxKind::EnumDeclaration,
+                [&](auto enumDecl) {
+                    GenContext genContext;
+                    mlirGen(enumDecl, genContext);
+                });
+            visitorASTEnum.visit(module);
+
+            FilterVisitorAST<TypeAliasDeclaration> visitorASTType(
+                SyntaxKind::TypeAliasDeclaration,
+                [&](auto typeAliasDecl) {
+                    GenContext genContext;
+                    mlirGen(typeAliasDecl, genContext);
+                });
+            visitorASTType.visit(module);            
+
+            return mlir::success();
+        }
+        
         mlir::LogicalResult declareAllFunctionDeclarations(SourceFile module)
         {
             auto unresolvedFunctions = -1;
@@ -275,11 +298,15 @@ namespace
             }            
             else if (kind == SyntaxKind::TypeAliasDeclaration)
             {
-                return mlirGen(statementAST.as<TypeAliasDeclaration>(), genContext);
+                // must be processed already
+                //return mlirGen(statementAST.as<TypeAliasDeclaration>(), genContext);
+                return mlir::success();
             }
             else if (kind == SyntaxKind::EnumDeclaration)
             {
-                return mlirGen(statementAST.as<EnumDeclaration>(), genContext);
+                // must be processed already
+                //return mlirGen(statementAST.as<EnumDeclaration>(), genContext);
+                return mlir::success();
             }
             else if (kind == SyntaxKind::Block)
             {
@@ -1739,6 +1766,8 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 return value;
             }
 
+            emitError(location, "Can't resolve property named");
+
             llvm_unreachable("not implemented");
         }
 
@@ -2320,7 +2349,9 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     mlir::Attribute enumValueAttr;
                     if (enumMember->initializer)
                     {
-                        auto enumValue = mlirGen(enumMember->initializer, genContext);
+                        GenContext enumValueGenContext(genContext);
+                        enumValueGenContext.allowConstEval = true;
+                        auto enumValue = mlirGen(enumMember->initializer, enumValueGenContext);
                         if (auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(enumValue.getDefiningOp()))
                         {
                             enumValueAttr = constOp.valueAttr();
