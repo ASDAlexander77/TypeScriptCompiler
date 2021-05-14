@@ -150,6 +150,49 @@ def TypeScript_Optional : TypeScript_Type<"Optional"> {
 
 }
 
+def TypeScript_Enum : TypeScript_Type<"Enum"> {
+  let mnemonic = "enum";
+
+  let description = [{
+    Syntax:
+
+    ```
+    enum-type ::= `enum<` type `>`
+    ```
+
+    Examples:
+
+    ```mlir
+    enum<f32>
+    enum<i32>
+    ```
+  }];
+  let parameters = (ins "Type":$elementType);
+  let genVerifyInvariantsDecl = 1;
+
+  // We define the printer inline.
+  let printer = [{ $_printer << "enum<" << getImpl()->elementType << ">"; }];  
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "Type":$elementType), [{
+      return Base::get(elementType.getContext(), elementType);
+    }], [{
+      return Base::getChecked($_loc, elementType);
+    }]>
+  ];
+
+  // Parses the above format
+  let parser = [{
+    Type elementType;
+    if ($_parser.parseLess()) return Type();
+    if ($_parser.parseType(elementType)) return Type();
+    if ($_parser.parseGreater()) return Type();
+    return get(elementType);
+  }];  
+
+  let skipDefaultBuilders = 1;  
+}
+
 def TypeScript_Array : TypeScript_Type<"Array"> {
   let mnemonic = "array";
 

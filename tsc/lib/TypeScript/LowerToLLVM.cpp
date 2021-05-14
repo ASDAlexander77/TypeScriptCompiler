@@ -1352,6 +1352,10 @@ namespace
             return LLVM::LLVMPointerType::get(IntegerType::get(m.getContext(), 8));
         });
 
+        converter.addConversion([&](mlir_ts::EnumType type) {
+            return converter.convertType(type.getElementType());
+        });        
+
         converter.addConversion([&](mlir_ts::ArrayType type) {
             return LLVM::LLVMPointerType::get(converter.convertType(type.getElementType()));
         });        

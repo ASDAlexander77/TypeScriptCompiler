@@ -71,6 +71,12 @@ Type ts::TypeScriptDialect::parseType(DialectAsmParser &parser) const
         return optionalType;
     }
 
+    auto enumType = generatedTypeParser(getContext(), parser, "enum");
+    if (enumType != Type())
+    {
+        return enumType;
+    }
+
     auto arrayType = generatedTypeParser(getContext(), parser, "array");
     if (arrayType != Type())
     {
@@ -100,6 +106,15 @@ void ts::TypeScriptDialect::printType(Type type, DialectAsmPrinter &os) const
 //===----------------------------------------------------------------------===//
 
 LogicalResult ts::OptionalType::verifyConstructionInvariants(Location loc, Type elementType)
+{
+    return success();
+}
+
+//===----------------------------------------------------------------------===//
+// EnumType
+//===----------------------------------------------------------------------===//
+
+LogicalResult ts::EnumType::verifyConstructionInvariants(Location loc, Type elementType)
 {
     return success();
 }

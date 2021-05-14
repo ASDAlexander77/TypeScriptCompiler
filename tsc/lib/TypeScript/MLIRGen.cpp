@@ -17,6 +17,7 @@
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/ScopedHashTable.h"
+#include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include "TypeScript/VisitorAST.h"
@@ -275,6 +276,10 @@ namespace
             else if (kind == SyntaxKind::TypeAliasDeclaration)
             {
                 return mlirGen(statementAST.as<TypeAliasDeclaration>(), genContext);
+            }
+            else if (kind == SyntaxKind::EnumDeclaration)
+            {
+                return mlirGen(statementAST.as<EnumDeclaration>(), genContext);
             }
             else if (kind == SyntaxKind::Block)
             {
@@ -1698,11 +1703,41 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             auto location = loc(propertyAccessExpression);
 
             auto expression = mlirGen(propertyAccessExpression->expression.as<Expression>(), genContext);
-            // propertyAccessExpression->name
+            auto name = mlirGen(propertyAccessExpression->name.as<Expression>(), genContext);
 
-            auto elementType = expression.getType().cast<mlir_ts::RefType>().getElementType();
+            mlir::Value value;
 
-            //return builder.create<mlir_ts::LoadPropertyOp>(location, elementType, expression, propertyIndexExpression);
+            TypeSwitch<mlir::Type>(expression.getType())
+                .Case<mlir_ts::EnumType>([&](auto node) 
+                { 
+                    auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(expression.getDefiningOp());
+                    auto dictionaryAttr = constOp.getValue().cast<mlir::DictionaryAttr>();
+
+                    auto symRef = dyn_cast_or_null<mlir_ts::SymbolRefOp>(name.getDefiningOp());
+                    if (symRef)
+                    {
+                        auto valueAttr = dictionaryAttr.get(symRef.identifier());
+                        if (!valueAttr)
+                        {
+                            emitError(location, "Enum member '") << symRef.identifier() << "' can't be found";
+                            return;
+                        }
+
+                        value = builder.create<mlir_ts::ConstantOp>(location, expression.getType().cast<mlir_ts::EnumType>().getElementType(), valueAttr);
+
+                        symRef->erase();
+                        constOp->erase();
+                    }
+                    else
+                    {
+                        llvm_unreachable("not implemented");                        
+                    }
+                });
+
+            if (value)
+            {
+                return value;
+            }
 
             llvm_unreachable("not implemented");
         }
@@ -2226,6 +2261,13 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 return builder.create<mlir_ts::SymbolRefOp>(location, fn.getType(), mlir::FlatSymbolRefAttr::get(name, builder.getContext()));
             }            
 
+            // check if we have enum
+            if (enumsMap.count(name))
+            {
+                auto enumTypeInfo = enumsMap.lookup(name);
+                return builder.create<mlir_ts::ConstantOp>(location, getEnumType(), enumTypeInfo);
+            }
+
             // unresolved reference (for call for example)
             // TODO: put assert here to see which ref names are not resolved
             return builder.create<mlir_ts::SymbolRefOp>(location, mlir::FlatSymbolRefAttr::get(name, builder.getContext()));
@@ -2251,6 +2293,66 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
             return mlir::failure();
         }
+
+        mlir::LogicalResult mlirGen(EnumDeclaration enumDeclarationAST, const GenContext &genContext)
+        {
+            auto identOp = mlirGen(enumDeclarationAST->name, genContext);
+            if (auto ident = dyn_cast_or_null<mlir_ts::SymbolRefOp>(identOp.getDefiningOp()))
+            {
+                auto name = ident.identifier();
+
+                SmallVector<mlir::NamedAttribute> enumValues;
+                int64_t index = 0;
+                for (auto enumMember : enumDeclarationAST->members)
+                {                    
+                    StringRef memberName;
+                    auto memberIdentOp = mlirGen(enumMember->name.as<Expression>(), genContext);
+                    if (auto memberIdent = dyn_cast_or_null<mlir_ts::SymbolRefOp>(memberIdentOp.getDefiningOp()))
+                    {
+                        memberName = memberIdent.identifier();
+                        memberIdent->erase();
+                    }
+                    else
+                    {
+                        llvm_unreachable("not implemented");
+                    }
+
+                    mlir::Attribute enumValueAttr;
+                    if (enumMember->initializer)
+                    {
+                        auto enumValue = mlirGen(enumMember->initializer, genContext);
+                        if (auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(enumValue.getDefiningOp()))
+                        {
+                            enumValueAttr = constOp.valueAttr();
+                            constOp->erase();
+                        }
+                        else
+                        {
+                            llvm_unreachable("not implemented");
+                        }
+                    }
+                    else
+                    {
+                        enumValueAttr = builder.getI64IntegerAttr(index);
+                    }
+
+                    enumValues.push_back({ mlir::Identifier::get(memberName, builder.getContext()), enumValueAttr });
+                    index++;
+                }
+
+                enumsMap.insert({ name, mlir::DictionaryAttr::get(enumValues, builder.getContext()) });
+
+                identOp.getDefiningOp()->erase();
+
+                return mlir::success();
+            }
+            else
+            {
+                llvm_unreachable("not implemented");
+            }
+
+            return mlir::failure();
+        }        
 
         mlir::Type getType(Node typeReferenceAST)
         {
@@ -2322,6 +2424,12 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
                     theModule.emitError("Type alias '") << name << "' can't be found";
                 }
+                else if (auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(value.getDefiningOp()))
+                {
+                    auto type = constOp.getType();
+                    value.getDefiningOp()->erase();
+                    return type;
+                }
 
                 value.getDefiningOp()->erase();
             }             
@@ -2363,6 +2471,16 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
         mlir_ts::CharType getCharType()
         {
             return mlir_ts::CharType::get(builder.getContext());
+        }
+
+        mlir_ts::EnumType getEnumType()
+        {
+            return getEnumType(builder.getI64Type());
+        }  
+        
+        mlir_ts::EnumType getEnumType(mlir::Type elementType)
+        {
+            return mlir_ts::EnumType::get(elementType);
         }
 
         mlir_ts::ArrayType getArrayType(ArrayTypeNode arrayTypeAST)
@@ -2531,6 +2649,8 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
         llvm::StringMap<mlir_ts::FuncOp> functionMap;
 
         llvm::StringMap<mlir::Type> typeAliasMap;
+
+        llvm::StringMap<mlir::DictionaryAttr> enumsMap;
 
         // helper to get line number
         Parser parser;
