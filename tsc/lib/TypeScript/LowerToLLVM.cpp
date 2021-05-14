@@ -806,38 +806,48 @@ namespace
                 return success();
             }
 
-            if (inLLVMType.isInteger(32) && resLLVMType.isF32())
+            if ((inLLVMType.isInteger(32) || inLLVMType.isInteger(64)) && (resLLVMType.isF32() || resLLVMType.isF64()))
             {
                 rewriter.replaceOpWithNewOp<SIToFPOp>(op, resLLVMType, in);
                 return success();
             }
 
-            if (inLLVMType.isF32() && resLLVMType.isInteger(32))
+            if ((inLLVMType.isF32() || inLLVMType.isF64()) && (resLLVMType.isInteger(32) || resLLVMType.isInteger(64)))
             {
                 rewriter.replaceOpWithNewOp<FPToSIOp>(op, resLLVMType, in);
                 return success();
             }
 
-            if ((inLLVMType.isInteger(32) || inLLVMType.isInteger(8)) && resLLVMType.isInteger(1))
+            if ((inLLVMType.isInteger(64) || inLLVMType.isInteger(32) || inLLVMType.isInteger(8)) && resLLVMType.isInteger(1))
             {
                 //rewriter.replaceOpWithNewOp<TruncateIOp>(op, op2, in);
                 rewriter.replaceOpWithNewOp<CmpIOp>(op, CmpIPredicate::ne, op.in(), clh.createI32ConstantOf(0));
                 return success();
             }
 
-            if (inLLVMType.isInteger(1) && (resLLVMType.isInteger(8) || resLLVMType.isInteger(32)))
+            if (inLLVMType.isInteger(1) && (resLLVMType.isInteger(8) || resLLVMType.isInteger(32) || resLLVMType.isInteger(64)))
             {
                 rewriter.replaceOpWithNewOp<ZeroExtendIOp>(op, in, resLLVMType);
                 return success();
             }            
 
-            /*
-            if ((op1.isInteger(64) || op1.isInteger(32) || op1.isInteger(16)) && op2.isInteger(8))
+            if (inLLVMType.isInteger(32) && resLLVMType.isInteger(64))
             {
-                rewriter.replaceOpWithNewOp<TruncateIOp>(op, op2, in);
+                rewriter.replaceOpWithNewOp<ZeroExtendIOp>(op, in, resLLVMType);
+                return success();
+            }               
+
+            if ((inLLVMType.isInteger(64) || inLLVMType.isInteger(32) || inLLVMType.isInteger(16)) && resLLVMType.isInteger(8))
+            {
+                rewriter.replaceOpWithNewOp<TruncateIOp>(op, in, resLLVMType);
                 return success();
             }
-            */
+
+            if (inLLVMType.isInteger(64) && resLLVMType.isInteger(32))
+            {
+                rewriter.replaceOpWithNewOp<TruncateIOp>(op, in, resLLVMType);
+                return success();
+            }
 
             auto isResString = resType.dyn_cast_or_null<mlir_ts::StringType>();
 
@@ -870,7 +880,25 @@ namespace
                 return success();
             }
 
-            if (inLLVMType.isF32() && isResString)
+            if (inLLVMType.isInteger(64) && isResString)
+            {
+                auto i8PtrTy = th.getI8PtrType();
+
+                auto _itoaFuncOp =
+                    ch.getOrInsertFunction(
+                        "_i64toa",
+                        th.getFunctionType(th.getI8PtrType(), ArrayRef<mlir::Type>{rewriter.getI32Type(), th.getI8PtrType(), rewriter.getI32Type()}, true));
+
+                auto bufferSizeValue = clh.createI32ConstantOf(50);
+                mlir::Value newStringValue = rewriter.create<LLVM::AllocaOp>(op->getLoc(), i8PtrTy, bufferSizeValue, true);
+                auto base = clh.createI32ConstantOf(10);
+
+                rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, _itoaFuncOp, ValueRange{op.in(), newStringValue, base});
+
+                return success();
+            }            
+
+            if ((inLLVMType.isF32() || inLLVMType.isF64()) && isResString)
             {
                 auto i8PtrTy = th.getI8PtrType();
 

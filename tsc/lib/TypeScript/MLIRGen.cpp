@@ -1481,7 +1481,36 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
             builder.setInsertionPointAfter(ifOp);
 
-            return ifOp.getResult(0);            
+            return ifOp.getResult(0);                                
+        }
+
+        mlir::Value evaluateBinaryOp(mlir::Location location, SyntaxKind opCode, mlir_ts::ConstantOp leftConstOp, mlir_ts::ConstantOp rightConstOp, const GenContext &genContext)
+        {
+            auto leftInt = leftConstOp.valueAttr().dyn_cast<mlir::IntegerAttr>().getInt();
+            auto rightInt = rightConstOp.valueAttr().dyn_cast<mlir::IntegerAttr>().getInt();
+
+            int64_t result = 0;
+            switch (opCode)
+            {
+                case SyntaxKind::PlusEqualsToken: 
+                    result = leftInt + rightInt;
+                    break;
+                case SyntaxKind::LessThanLessThanToken: 
+                    result = leftInt << rightInt;
+                    break;
+                case SyntaxKind::GreaterThanGreaterThanToken: 
+                    result = leftInt >> rightInt;
+                    break;
+                case SyntaxKind::AmpersandToken: 
+                    result = leftInt & rightInt;
+                    break;
+                case SyntaxKind::BarToken:
+                    result = leftInt | rightInt;
+                    break;
+                default: llvm_unreachable("not implemented"); break;
+            }
+
+            return builder.create<mlir_ts::ConstantOp>(location, leftConstOp.getType(), builder.getI64IntegerAttr(result));
         }
 
         mlir::Value mlirGen(BinaryExpression binaryExpressionAST, const GenContext &genContext)
@@ -1536,10 +1565,15 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             }
 
             // check if const expr.
-            if (genContext.allowConstEval && leftExpressionValue.isa<mlir_ts::ConstantOp>() && rightExpressionValue.isa<mlir_ts::ConstantOp>())
+            if (genContext.allowConstEval)
             {
-                // try to evaluate
-                // TODO:...
+                auto leftConstOp = dyn_cast_or_null<mlir_ts::ConstantOp>(leftExpressionValue.getDefiningOp());
+                auto rightConstOp = dyn_cast_or_null<mlir_ts::ConstantOp>(rightExpressionValue.getDefiningOp());
+                if (leftConstOp && rightConstOp)
+                {
+                    // try to evaluate
+                    return evaluateBinaryOp(location, opCode, leftConstOp, rightConstOp, genContext);
+                }
             }
 
             auto leftExpressionValueBeforeCast = leftExpressionValue;
