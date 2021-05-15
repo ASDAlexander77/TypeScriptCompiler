@@ -1806,6 +1806,30 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     {
                         llvm_unreachable("not implemented");                        
                     }
+                })
+                .Case<mlir_ts::TupleType>([&](auto tupleType)
+                {
+                    // get index
+                    auto symRef = dyn_cast_or_null<mlir_ts::SymbolRefOp>(name.getDefiningOp());
+                    if (symRef)
+                    {
+                        auto fieldIndex = tupleType.getIndex(symRef.identifier());
+                        if (fieldIndex < 0)
+                        {
+                            emitError(location, "Tuple member '") << symRef.identifier() << "' can't be found";
+                            return;
+                        }
+
+                        auto elementType = tupleType.getType(fieldIndex);
+                        auto indexConstOp = builder.create<mlir_ts::ConstantOp>(location, builder.getI64Type(), builder.getI64IntegerAttr(fieldIndex));
+
+                        symRef->erase();
+                        value = builder.create<mlir_ts::LoadPropertyOp>(location, elementType, expression, mlir::ArrayAttr::get({indexConstOp.value()}, builder.getContext()));
+                    }
+                    else
+                    {
+                        llvm_unreachable("not implemented");                        
+                    }                              
                 });
 
             if (value)
@@ -1813,7 +1837,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 return value;
             }
 
-            emitError(location, "Can't resolve property named");
+            emitError(location, "Can't resolve property name");
 
             llvm_unreachable("not implemented");
         }

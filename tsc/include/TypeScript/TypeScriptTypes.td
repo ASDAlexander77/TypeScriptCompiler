@@ -309,6 +309,11 @@ def TypeScript_Tuple : TypeScript_Type<"Tuple"> {
     iterator begin() const { return getFields().begin(); }
     iterator end() const { return getFields().end(); }
 
+    int getIndex(StringRef name)
+    {
+        return std::distance(begin(), std::find_if(begin(), end(), [&](::mlir::typescript::FieldInfo fldInf){ return name == fldInf.name; }));
+    }
+
     /// Return the element type at index 'index'.
     ::mlir::typescript::FieldInfo getFieldInfo(size_t index) const {
       assert(index < size() && "invalid index for tuple type");
