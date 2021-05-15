@@ -2377,7 +2377,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
                 SmallVector<mlir::NamedAttribute> enumValues;
                 int64_t index = 0;
-                int activeBits = 0;
+                auto activeBits = 0;
                 for (auto enumMember : enumDeclarationAST->members)
                 {                    
                     StringRef memberName;
@@ -2404,7 +2404,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                             if (auto intAttr = enumValueAttr.dyn_cast_or_null<mlir::IntegerAttr>())
                             {
                                 index = intAttr.getInt();
-                                auto currentActiveBits = intAttr.getValue().getActiveBits();
+                                auto currentActiveBits = (int) intAttr.getValue().getActiveBits();
                                 if (currentActiveBits > activeBits)
                                 {
                                     activeBits = currentActiveBits;
@@ -2450,6 +2450,10 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     if (auto intAttr = enumItem.second.dyn_cast_or_null<mlir::IntegerAttr>())
                     {
                         adjustedEnumValues.push_back({ enumItem.first, mlir::IntegerAttr::get(enumIntType, intAttr.getInt() ) });
+                    }
+                    else
+                    {
+                        adjustedEnumValues.push_back(enumItem);
                     }
                 }
 
