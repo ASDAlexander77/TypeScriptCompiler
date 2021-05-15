@@ -2339,7 +2339,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             if (enumsMap.count(name))
             {
                 auto enumTypeInfo = enumsMap.lookup(name);
-                return builder.create<mlir_ts::ConstantOp>(location, getEnumType(), enumTypeInfo);
+                return builder.create<mlir_ts::ConstantOp>(location, getEnumType(enumTypeInfo.first), enumTypeInfo.second);
             }
 
             // unresolved reference (for call for example)
@@ -2377,6 +2377,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
                 SmallVector<mlir::NamedAttribute> enumValues;
                 int64_t index = 0;
+                int activeBits = 0;
                 for (auto enumMember : enumDeclarationAST->members)
                 {                    
                     StringRef memberName;
@@ -2400,6 +2401,16 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                         if (auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(enumValue.getDefiningOp()))
                         {
                             enumValueAttr = constOp.valueAttr();
+                            if (auto intAttr = enumValueAttr.dyn_cast_or_null<mlir::IntegerAttr>())
+                            {
+                                index = intAttr.getInt();
+                                auto currentActiveBits = intAttr.getValue().getActiveBits();
+                                if (currentActiveBits > activeBits)
+                                {
+                                    activeBits = currentActiveBits;
+                                }
+                            }
+
                             constOp->erase();
                         }
                         else
@@ -2414,9 +2425,35 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
                     enumValues.push_back({ mlir::Identifier::get(memberName, builder.getContext()), enumValueAttr });
                     index++;
+                    auto indexUsingBits = std::floor(std::log2(index)) + 1;
+                    if (indexUsingBits > activeBits)
+                    {
+                        activeBits = indexUsingBits;
+                    }                    
                 }
 
-                enumsMap.insert({ name, mlir::DictionaryAttr::get(enumValues, builder.getContext()) });
+                // get type by size
+                auto bits = 32;
+                if (bits < activeBits)
+                {
+                    bits = 64;
+                    if (bits < activeBits)
+                    {
+                        bits = 128;
+                    }
+                }
+
+                auto enumIntType = builder.getIntegerType(bits);
+                SmallVector<mlir::NamedAttribute> adjustedEnumValues;
+                for (auto enumItem : enumValues)
+                {
+                    if (auto intAttr = enumItem.second.dyn_cast_or_null<mlir::IntegerAttr>())
+                    {
+                        adjustedEnumValues.push_back({ enumItem.first, mlir::IntegerAttr::get(enumIntType, intAttr.getInt() ) });
+                    }
+                }
+
+                enumsMap.insert({ name, std::make_pair(enumIntType, mlir::DictionaryAttr::get(adjustedEnumValues, builder.getContext())) });
 
                 identOp.getDefiningOp()->erase();
 
@@ -2732,7 +2769,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
         llvm::StringMap<mlir::Type> typeAliasMap;
 
-        llvm::StringMap<mlir::DictionaryAttr> enumsMap;
+        llvm::StringMap< std::pair<mlir::Type, mlir::DictionaryAttr> > enumsMap;
 
         // helper to get line number
         Parser parser;
