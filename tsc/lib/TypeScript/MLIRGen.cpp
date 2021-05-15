@@ -479,6 +479,8 @@ namespace
                     }
                     else
                     {
+                        assert (type);
+
                         auto variableOp = builder.create<mlir_ts::VariableOp>(
                             location,
                             mlir_ts::RefType::get(type),
@@ -2277,12 +2279,18 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 itemValue.getDefiningOp()->erase();            
             }
 
-            auto arrayAttr = mlir::ArrayAttr::get(llvm::makeArrayRef(values), builder.getContext());            
+            auto arrayAttr = mlir::ArrayAttr::get(values, builder.getContext());            
             if (isTuple)
             {
+                SmallVector<mlir_ts::FieldInfo> fieldInfos;
+                for (auto type : types)
+                {
+                    fieldInfos.push_back({mlir::StringRef(), type});
+                }
+
                 return builder.create<mlir_ts::ConstantOp>(
                     loc(arrayLiteral),
-                    getTupleType(types),
+                    getTupleType(fieldInfos),
                     arrayAttr);
             }
 
@@ -2526,42 +2534,48 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             } 
             else if (kind == SyntaxKind::TypeReference)
             {
-                auto node = typeReferenceAST.as<TypeReferenceNode>();
-                GenContext genContext;
-                auto value = mlirGen(node->typeName.as<Expression>(), genContext);
-                if (auto symRefOp = dyn_cast_or_null<mlir_ts::SymbolRefOp>(value.getDefiningOp()))
-                {
-                    auto name = symRefOp.identifier();
-                    auto type = typeAliasMap.lookup(name);
-                    
-                    value.getDefiningOp()->erase();
-
-                    if (type)
-                    {
-                        return type;
-                    }
-
-                    theModule.emitError("Type alias '") << name << "' can't be found";
-                }
-                else if (auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(value.getDefiningOp()))
-                {
-                    auto type = constOp.getType();
-                    if (auto enumType = type.dyn_cast_or_null<mlir_ts::EnumType>())
-                    {
-                        // we do not exact type enum as we want to avoid casting it all the time
-                        type = enumType.getElementType();
-                    }
-
-                    value.getDefiningOp()->erase();
-                    return type;
-                }
-
-                value.getDefiningOp()->erase();
+                return getTypeByTypeReference(typeReferenceAST.as<TypeReferenceNode>());
             }             
 
             llvm_unreachable("not implemented type declaration");
             //return getAnyType();
         }
+
+        mlir::Type getTypeByTypeReference(TypeReferenceNode typeReferenceAST)
+        {
+            GenContext genContext;
+            auto value = mlirGen(typeReferenceAST->typeName.as<Expression>(), genContext);
+            if (auto symRefOp = dyn_cast_or_null<mlir_ts::SymbolRefOp>(value.getDefiningOp()))
+            {
+                auto name = symRefOp.identifier();
+                auto type = typeAliasMap.lookup(name);
+                
+                value.getDefiningOp()->erase();
+
+                if (type)
+                {
+                    return type;
+                }
+
+                theModule.emitError("Type alias '") << name << "' can't be found";
+            }
+            else if (auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(value.getDefiningOp()))
+            {
+                auto type = constOp.getType();
+                if (auto enumType = type.dyn_cast_or_null<mlir_ts::EnumType>())
+                {
+                    // we do not exact type enum as we want to avoid casting it all the time
+                    type = enumType.getElementType();
+                }
+
+                value.getDefiningOp()->erase();
+                return type;
+            }
+
+            value.getDefiningOp()->erase();
+
+            llvm_unreachable("not implemented");
+        }        
 
         mlir_ts::VoidType getVoidType()
         {
@@ -2621,24 +2635,35 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
         mlir_ts::TupleType getTupleType(TupleTypeNode tupleType)
         {
-            mlir::SmallVector<mlir::Type> types;
+            mlir::SmallVector<mlir_ts::FieldInfo> types;
             for (auto typeItem : tupleType->elements)
             {
-                auto type = getType(typeItem);
-                if (!type)
+                if ((SyntaxKind)typeItem == SyntaxKind::NamedTupleMember)
                 {
-                    llvm_unreachable("wrong type");
-                }
+                    auto namedTupleMember = typeItem.as<NamedTupleMember>();
+                    auto name = wstos(namedTupleMember->name.as<Identifier>()->escapedText);
+                    auto namePtr = StringRef(name).copy(stringAllocator);
 
-                types.push_back(type);
+                    auto type = getType(namedTupleMember->type);
+
+                    assert(type);         
+                    types.push_back({namePtr, type});
+                }
+                else
+                {
+                    auto type = getType(typeItem);
+
+                    assert(type);
+                    types.push_back({mlir::StringRef(), type});
+                }
             }
 
             return getTupleType(types);
         }        
 
-        mlir_ts::TupleType getTupleType(mlir::SmallVector<mlir::Type> &types)
+        mlir_ts::TupleType getTupleType(mlir::SmallVector<mlir_ts::FieldInfo> &fieldInfos)
         {
-            return mlir_ts::TupleType::get(builder.getContext(), types);
+            return mlir_ts::TupleType::get(builder.getContext(), fieldInfos);
         }         
 
         mlir::FunctionType getFunctionType(FunctionTypeNode functionType)
@@ -2768,6 +2793,9 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
         mlir::OpBuilder builder;
 
         mlir::StringRef fileName;
+
+        /// An allocator used for alias names.
+        llvm::BumpPtrAllocator stringAllocator;
 
         llvm::ScopedHashTable<StringRef, VariablePairT> symbolTable;
 

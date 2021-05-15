@@ -1394,9 +1394,9 @@ namespace
 
         converter.addConversion([&](mlir_ts::TupleType type) {
             SmallVector<mlir::Type> convertedTypes;
-            for (auto subType : type.getTypes())
+            for (auto subType : type.getFields())
             {
-                convertedTypes.push_back(converter.convertType(subType));
+                convertedTypes.push_back(converter.convertType(subType.type));
             }
 
             return LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, false);

@@ -11,8 +11,23 @@
 
 namespace mlir {
     namespace typescript {
+        
+        /// FieldInfo represents a field in the TupleType(StructType) data type. It is used as a
+        /// parameter in TestTypeDefs.td.
+        struct FieldInfo {
+            StringRef name;
+            Type type;
+
+            // Custom allocation called from generated constructor code
+            FieldInfo allocateInto(TypeStorageAllocator &alloc) const {
+                return FieldInfo{alloc.copyInto(name), type};
+            }
+        };
+
         void buildTerminatedBody(OpBuilder &builder, Location loc);
+
     } // namespace typescript
+
 } // namespace mlir
 
 #define GET_TYPEDEF_CLASSES 

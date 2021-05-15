@@ -263,32 +263,35 @@ def TypeScript_Tuple : TypeScript_Type<"Tuple"> {
     tuple<i32, f32, tensor<i1>, i5>
     ```
   }];
-  let parameters = (ins "SmallVector<Type>":$types);
+  let parameters = (ins ArrayRefOfSelfAllocationParameter<"::mlir::typescript::FieldInfo", "fields">:$fields);
 
   let printer = [{
     $_printer << "tuple" << "<";
-    size_t i = 0;
-    for (auto typeItem : getImpl()->types) 
-    {
-      $_printer << typeItem;
-      if (i++ < getImpl()->types.size() - 1)
-          $_printer << ",";    
+    for (size_t i=0, e = getImpl()->fields.size(); i < e; i++) {
+      const auto& field = getImpl()->fields[i];
+      $_printer << "{" << field.name << "," << field.type << "}";
+      if (i < getImpl()->fields.size() - 1)
+          $_printer << ",";
     }
     $_printer << ">";
   }];
 
   // Parses the above format
   let parser = [{
-    Type elementType;
-    SmallVector<Type> types;
+    SmallVector<FieldInfo, 4> parameters;
     if ($_parser.parseLess()) return Type();
-    while (!mlir::succeeded($_parser.parseOptionalGreater())) 
-    {
-        if ($_parser.parseType(elementType)) return Type();
-        if ($_parser.parseOptionalComma()) break;
+    while (mlir::succeeded($_parser.parseOptionalLBrace())) {
+      StringRef name;
+      if ($_parser.parseKeyword(&name)) return Type();
+      if ($_parser.parseComma()) return Type();
+      Type type;
+      if ($_parser.parseType(type)) return Type();
+      if ($_parser.parseRBrace()) return Type();
+      parameters.push_back(FieldInfo {name, type});
+      if ($_parser.parseOptionalComma()) break;
     }
     if ($_parser.parseGreater()) return Type();
-    return get(context, types);
+    return get($_ctxt, parameters);
   }];  
 
   let extraClassDeclaration = [{
@@ -302,14 +305,24 @@ def TypeScript_Tuple : TypeScript_Type<"Tuple"> {
     size_t size() const;
 
     /// Iterate over the held elements.
-    using iterator = ArrayRef<Type>::iterator;
-    iterator begin() const { return getTypes().begin(); }
-    iterator end() const { return getTypes().end(); }
+    using iterator = ArrayRef<::mlir::typescript::FieldInfo>::iterator;
+    iterator begin() const { return getFields().begin(); }
+    iterator end() const { return getFields().end(); }
 
     /// Return the element type at index 'index'.
+    ::mlir::typescript::FieldInfo getFieldInfo(size_t index) const {
+      assert(index < size() && "invalid index for tuple type");
+      return getFields()[index];
+    }
+
+    StringRef getName(size_t index) const {
+      assert(index < size() && "invalid index for tuple type");
+      return getFields()[index].name;
+    }
+
     Type getType(size_t index) const {
       assert(index < size() && "invalid index for tuple type");
-      return getTypes()[index];
+      return getFields()[index].type;
     }
   }];
 }
@@ -341,7 +354,7 @@ def TypeScript_Union : TypeScript_Type<"Union"> {
     union<i32, f32, tensor<i1>, i5>
     ```
   }];
-  let parameters = (ins "SmallVector<Type>":$types);
+  let parameters = (ins ArrayRefParameter<"Type", "type">:$types);
 
   let printer = [{
     $_printer << "union" << "<";
@@ -413,7 +426,7 @@ def TypeScript_Intersection : TypeScript_Type<"Intersection"> {
     intersection<i32, f32, tensor<i1>, i5>
     ```
   }];
-  let parameters = (ins "SmallVector<Type>":$types);
+  let parameters = (ins ArrayRefParameter<"Type", "type">:$types);
 
   let printer = [{
     $_printer << "union" << "<";
