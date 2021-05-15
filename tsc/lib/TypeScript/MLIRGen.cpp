@@ -2425,12 +2425,14 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
                     enumValues.push_back({ mlir::Identifier::get(memberName, builder.getContext()), enumValueAttr });
                     index++;
-                    auto indexUsingBits = std::floor(std::log2(index)) + 1;
-                    if (indexUsingBits > activeBits)
-                    {
-                        activeBits = indexUsingBits;
-                    }                    
                 }
+
+                // count used bits
+                auto indexUsingBits = std::floor(std::log2(index)) + 1;
+                if (indexUsingBits > activeBits)
+                {
+                    activeBits = indexUsingBits;
+                }                    
 
                 // get type by size
                 auto bits = 32;
