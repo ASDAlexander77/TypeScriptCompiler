@@ -1239,15 +1239,15 @@ namespace
     {
         using OpConversionPattern<mlir_ts::LoadPropertyOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite(mlir_ts::LoadPropertyOp loadElementOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::LoadPropertyOp loadPropertyOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             TypeConverterHelper tch(getTypeConverter());
 
             rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
-                loadElementOp, 
-                tch.convertType(loadElementOp.getType()), 
-                loadElementOp.object(), 
-                loadElementOp.position());
+                loadPropertyOp, 
+                tch.convertType(loadPropertyOp.getType()), 
+                loadPropertyOp.object(), 
+                loadPropertyOp.position());
 
             return success();
         }
@@ -1259,11 +1259,21 @@ namespace
 
         LogicalResult matchAndRewrite(mlir_ts::StorePropertyOp storePropertyOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
+            /*
             rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(
                 storePropertyOp, 
                 storePropertyOp.object(), 
                 storePropertyOp.value(),
                 storePropertyOp.position());
+            */
+
+            rewriter.create<LLVM::InsertValueOp>(
+                storePropertyOp->getLoc(), 
+                storePropertyOp.object(), 
+                storePropertyOp.value(),
+                storePropertyOp.position());
+
+            rewriter.eraseOp(storePropertyOp);
 
             return success();
         }
