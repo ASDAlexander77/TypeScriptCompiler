@@ -468,7 +468,7 @@ def TypeScript_ParamDefaultValueOp : TypeScript_Op<"DefaultValue", [NoSideEffect
   let verifier = ?;
 }
 
-def TypeScript_VariableOp : TypeScript_Op<"variable", []> {
+def TypeScript_VariableOp : TypeScript_Op<"Variable", []> {
   let summary = [{
     Allocate an object in memory.
   }];
@@ -505,7 +505,7 @@ def TypeScript_StoreOp : TypeScript_Op<"Store",
   let assemblyFormat = "$value `,` $reference attr-dict `:` type($reference)";
 }
 
-def TypeScript_LoadOp : TypeScript_Op<"load",
+def TypeScript_LoadOp : TypeScript_Op<"Load",
       [TypesMatchWith<"type of 'value' matches element type of 'reference'",
                      "reference", "result",
                      "$_self.cast<RefType>().getElementType()">]> {

@@ -2350,7 +2350,8 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     }
 
                     // load value if memref
-                    return builder.create<mlir_ts::LoadOp>(value.first.getLoc(), value.first.getType().cast<mlir_ts::RefType>().getElementType(), value.first);
+                    auto valueType = value.first.getType().cast<mlir_ts::RefType>().getElementType();
+                    return builder.create<mlir_ts::LoadOp>(value.first.getLoc(), valueType, value.first);
                 }
                 else if (value.second->getIsGlobal())
                 {
