@@ -1259,6 +1259,8 @@ namespace
 
         LogicalResult matchAndRewrite(mlir_ts::StorePropertyOp storePropertyOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
+            TypeConverterHelper tch(getTypeConverter());
+
             /*
             rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(
                 storePropertyOp, 
@@ -1269,6 +1271,7 @@ namespace
 
             rewriter.create<LLVM::InsertValueOp>(
                 storePropertyOp->getLoc(), 
+                tch.convertType(storePropertyOp.object().getType()),
                 storePropertyOp.object(), 
                 storePropertyOp.value(),
                 storePropertyOp.position());
