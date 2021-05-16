@@ -25,6 +25,7 @@ add_test(NAME test-runner-00-cond_expr COMMAND test-runner "${PROJECT_SOURCE_DIR
 add_test(NAME test-runner-00-switch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00switch.ts")
 add_test(NAME test-runner-00-strings COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00strings.ts")
 add_test(NAME test-runner-00-tuple COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00tuple.ts")
+add_test(NAME test-runner-00-tuple-named COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00tuple_named.ts")
 add_test(NAME test-runner-00-union-type COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00union_type.ts")
 add_test(NAME test-runner-01-arguments COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01arguments.ts")
 add_test(NAME test-runner-02-numbers COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/02numbers.ts")
