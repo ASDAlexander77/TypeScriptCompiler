@@ -21,6 +21,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include "TypeScript/VisitorAST.h"
+#include "TypeScript/MLIRGenLogic.h"
 
 #include "TypeScript/DOM.h"
 #include "TypeScript/Defines.h"
@@ -1787,31 +1788,12 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 return value;
             }
 
+            MLIRPropertyAccessCodeLogic cl(builder);
+
             TypeSwitch<mlir::Type>(expression.getType())
                 .Case<mlir_ts::EnumType>([&](auto node) 
                 { 
-                    auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(expression.getDefiningOp());
-                    auto dictionaryAttr = constOp.getValue().cast<mlir::DictionaryAttr>();
-
-                    auto symRef = dyn_cast_or_null<mlir_ts::SymbolRefOp>(name.getDefiningOp());
-                    if (symRef)
-                    {
-                        auto valueAttr = dictionaryAttr.get(symRef.identifier());
-                        if (!valueAttr)
-                        {
-                            emitError(location, "Enum member '") << symRef.identifier() << "' can't be found";
-                            return;
-                        }
-
-                        value = builder.create<mlir_ts::ConstantOp>(location, expression.getType().cast<mlir_ts::EnumType>().getElementType(), valueAttr);
-
-                        symRef->erase();
-                        constOp->erase();
-                    }
-                    else
-                    {
-                        llvm_unreachable("not implemented");                        
-                    }
+                    value = cl.Enum(location, expression, name);
                 })
                 .Case<mlir_ts::TupleType>([&](auto tupleType)
                 {
