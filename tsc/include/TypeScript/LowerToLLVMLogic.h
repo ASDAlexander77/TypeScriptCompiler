@@ -426,7 +426,7 @@ namespace typescript
             return addr;            
         }     
 
-        mlir::Value GetAddressOfStructElement(mlir::Type elementType, mlir::Value arrayOrStringOrTuple, int32_t index)
+        mlir::Value GetAddressOfStructElement(mlir::Type elementRefType, mlir::Value arrayOrStringOrTuple, int32_t index)
         {
             // index of struct MUST BE 32 bit
             TypeHelper th(rewriter);
@@ -435,7 +435,7 @@ namespace typescript
             auto loc = op->getLoc();
             auto globalPtr = arrayOrStringOrTuple;
 
-            auto ptrType = th.getPointerType(tch.convertType(elementType));
+            auto ptrType = tch.convertType(elementRefType);
 
             SmallVector<mlir::Value> indexes;
             // add first index which 64 bit (struct field MUST BE 32 bit index)
