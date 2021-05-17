@@ -1773,6 +1773,20 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
             mlir::Value value;
 
+            if (!expression.getType() || expression.getType() == mlir::NoneType::get(builder.getContext()))
+            {
+                if (auto symRef = dyn_cast_or_null<mlir_ts::SymbolRefOp>(expression.getDefiningOp()))
+                {
+                    emitError(location, "can't resolve '") << symRef.identifier() << "' ...";
+                }
+                else
+                {
+                    emitError(location, "can't resolve property left expression");
+                }
+
+                return value;
+            }
+
             TypeSwitch<mlir::Type>(expression.getType())
                 .Case<mlir_ts::EnumType>([&](auto node) 
                 { 
@@ -1836,7 +1850,59 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     {
                         llvm_unreachable("not implemented");                        
                     }                              
-                });
+                })
+                .Case<mlir_ts::StringType>([&](auto stringType)
+                {
+                    auto symRef = dyn_cast_or_null<mlir_ts::SymbolRefOp>(name.getDefiningOp());
+                    if (symRef)
+                    {
+                        if (symRef.identifier() == "length")
+                        {
+                            symRef->erase();
+
+                            // call strlen
+                            value = builder.create<mlir_ts::StringLengthOp>(location, builder.getI32Type(), expression);                            
+                        }
+                        else
+                        {
+                            llvm_unreachable("not implemented");                        
+                        }                         
+                    }
+                    else
+                    {
+                        llvm_unreachable("not implemented");                        
+                    }                    
+                })
+                .Case<mlir_ts::ArrayType>([&](auto arrayType)
+                {
+                    auto symRef = dyn_cast_or_null<mlir_ts::SymbolRefOp>(name.getDefiningOp());
+                    if (symRef)
+                    {
+                        if (symRef.identifier() == "length")
+                        {
+                            symRef->erase();
+
+                            if (auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(expression.getDefiningOp()))
+                            {
+                                // call strlen
+                                auto size = constOp.getValue().dyn_cast_or_null<mlir::ArrayAttr>().size();
+                                value = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(size));                            
+                            }
+                            else
+                            {
+                                llvm_unreachable("not implemented");                        
+                            }                         
+                        }
+                        else
+                        {
+                            llvm_unreachable("not implemented");                        
+                        }                         
+                    }
+                    else
+                    {
+                        llvm_unreachable("not implemented");                        
+                    }                    
+                });                
 
             if (value)
             {

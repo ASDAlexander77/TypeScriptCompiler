@@ -282,6 +282,31 @@ namespace
         }
     };
 
+    class StringLengthOpLowering : public OpConversionPattern<mlir_ts::StringLengthOp>
+    {
+    public:
+        using OpConversionPattern<mlir_ts::StringLengthOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::StringLengthOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            TypeHelper th(rewriter);
+            LLVMCodeHelper ch(op, rewriter);
+
+            auto loc = op->getLoc();
+            auto i8PtrTy = th.getI8PtrType();
+
+            auto strlenFuncOp =
+                ch.getOrInsertFunction(
+                    "strlen",
+                    th.getFunctionType(th.getI32Type(), {i8PtrTy}));                    
+
+            // calc size
+            rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, strlenFuncOp, ValueRange{op.op()});
+
+            return success();
+        }
+    }; 
+
     class StringConcatOpLowering : public OpConversionPattern<mlir_ts::StringConcatOp>
     {
     public:
@@ -417,7 +442,6 @@ namespace
 
             auto bufferSizeValue = clh.createI64ConstantOf(2);
             auto newStringValue = rewriter.create<LLVM::AllocaOp>(loc, i8PtrTy, bufferSizeValue, true);            
-            // TODO: copy char and 0 into 2 bytes array
 
             auto index0Value = clh.createI32ConstantOf(0);
             auto index1Value = clh.createI32ConstantOf(1);
@@ -1490,6 +1514,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         PrintOpLowering,
         StoreOpLowering,
         InsertPropertyOpLowering,
+        StringLengthOpLowering,
         StringConcatOpLowering,
         StringCompareOpLowering,
         CharToStringOpLowering,
