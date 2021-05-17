@@ -1739,14 +1739,6 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                         result,
                         loadOp.reference());
                 }
-                else if (auto loadElementOp = dyn_cast<mlir_ts::LoadElementOp>(leftExpressionValueBeforeCast.getDefiningOp()))
-                {
-                    builder.create<mlir_ts::StoreElementOp>(
-                        location,
-                        result,
-                        loadElementOp.array(),
-                        loadElementOp.index());        
-                }
                 else
                 {
                     llvm_unreachable("not implemented");
@@ -1883,10 +1875,20 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 // get index
                 if (auto indexConstOp = dyn_cast_or_null<mlir_ts::ConstantOp>(argumentExpression.getDefiningOp()))
                 {
-                    auto constIndex = indexConstOp.value().dyn_cast_or_null<mlir::IntegerAttr>().getInt();
-                    elementType = tupleType.getType(constIndex);
-                    auto propRef = builder.create<mlir_ts::PropertyRefOp>(location, elementType, expression, builder.getI32IntegerAttr(constIndex));
-                    return builder.create<mlir_ts::LoadOp>(location, elementType, propRef);
+                    if (auto loadOp = dyn_cast_or_null<mlir_ts::LoadOp>(expression.getDefiningOp()))
+                    {
+                        auto constIndex = indexConstOp.value().dyn_cast_or_null<mlir::IntegerAttr>().getInt();
+                        elementType = tupleType.getType(constIndex);
+                        
+                        auto propRef = builder.create<mlir_ts::PropertyRefOp>(location, mlir_ts::RefType::get(elementType), loadOp.reference(), builder.getI32IntegerAttr(constIndex));
+                        loadOp->erase();
+
+                        return builder.create<mlir_ts::LoadOp>(location, elementType, propRef);
+                    }
+                    else
+                    {
+                        llvm_unreachable("not implemented (load ref)");
+                    }
                 }
                 else
                 {
@@ -1898,7 +1900,8 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 llvm_unreachable("not implemented");
             }
 
-            return builder.create<mlir_ts::LoadElementOp>(location, elementType, expression, argumentExpression);
+            auto elemRef = builder.create<mlir_ts::ElementRefOp>(location, mlir_ts::RefType::get(elementType), expression, argumentExpression);
+            return builder.create<mlir_ts::LoadOp>(location, elementType, elemRef);
         }
 
         mlir::Value mlirGen(CallExpression callExpression, const GenContext &genContext)

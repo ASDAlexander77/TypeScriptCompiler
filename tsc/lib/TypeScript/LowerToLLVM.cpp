@@ -1207,33 +1207,19 @@ namespace
         }
     };
     
-    struct LoadElementOpLowering : public OpConversionPattern<mlir_ts::LoadElementOp>
+    struct ElementRefOpLowering : public OpConversionPattern<mlir_ts::ElementRefOp>
     {
-        using OpConversionPattern<mlir_ts::LoadElementOp>::OpConversionPattern;
+        using OpConversionPattern<mlir_ts::ElementRefOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite(mlir_ts::LoadElementOp loadElementOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::ElementRefOp elementOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            LLVMCodeHelper ch(loadElementOp, rewriter, getTypeConverter());
+            LLVMCodeHelper ch(elementOp, rewriter, getTypeConverter());
 
-            auto addr = ch.GetAddressOfArrayElement(loadElementOp.getResult().getType(), loadElementOp.array(), loadElementOp.index());
-            rewriter.replaceOpWithNewOp<LLVM::LoadOp>(loadElementOp, addr);
+            auto addr = ch.GetAddressOfArrayElement(elementOp.getResult().getType(), elementOp.array(), elementOp.index());
+            rewriter.replaceOp(elementOp, addr);
             return success();
         }
     };
-
-    struct StoreElementOpLowering : public OpConversionPattern<mlir_ts::StoreElementOp>
-    {
-        using OpConversionPattern<mlir_ts::StoreElementOp>::OpConversionPattern;
-
-        LogicalResult matchAndRewrite(mlir_ts::StoreElementOp storeElementOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
-        {
-            LLVMCodeHelper ch(storeElementOp, rewriter, getTypeConverter());
-
-            auto addr = ch.GetAddressOfArrayElement(storeElementOp.value().getType(), storeElementOp.array(), storeElementOp.index());
-            rewriter.replaceOpWithNewOp<LLVM::StoreOp>(storeElementOp, storeElementOp.value(), addr);
-            return success();
-        }
-    };    
 
     struct ExtractPropertyOpLowering : public OpConversionPattern<mlir_ts::ExtractPropertyOp>
     {
@@ -1493,7 +1479,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         EntryOpLowering,
         FuncOpLowering,
         LoadOpLowering,
-        LoadElementOpLowering,
+        ElementRefOpLowering,
         PropertyRefOpLowering,
         ExtractPropertyOpLowering,
         LogicalBinaryOpLowering,
@@ -1502,7 +1488,6 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         ParseIntOpLowering,
         PrintOpLowering,
         StoreOpLowering,
-        StoreElementOpLowering,
         InsertPropertyOpLowering,
         StringConcatOpLowering,
         StringCompareOpLowering,

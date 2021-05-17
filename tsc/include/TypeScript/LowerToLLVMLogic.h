@@ -407,7 +407,7 @@ namespace typescript
             return rewriter.create<LLVM::LLVMFuncOp>(loc, name, llvmFnType);
         }   
 
-        mlir::Value GetAddressOfArrayElement(mlir::Type elementType, mlir::Value arrayOrStringOrTuple, mlir::Value index)
+        mlir::Value GetAddressOfArrayElement(mlir::Type elementRefType, mlir::Value arrayOrStringOrTuple, mlir::Value index)
         {
             TypeHelper th(rewriter);
             TypeConverterHelper tch(typeConverter);
@@ -415,7 +415,9 @@ namespace typescript
             auto loc = op->getLoc();
             auto globalPtr = arrayOrStringOrTuple;
 
-            auto ptrType = th.getPointerType(tch.convertType(elementType));
+            assert(elementRefType.isa<mlir_ts::RefType>());
+
+            auto ptrType = tch.convertType(elementRefType);
 
             auto addr = rewriter.create<LLVM::GEPOp>(
                 loc,
@@ -434,6 +436,8 @@ namespace typescript
 
             auto loc = op->getLoc();
             auto globalPtr = arrayOrStringOrTuple;
+
+            assert(elementRefType.isa<mlir_ts::RefType>());
 
             auto ptrType = tch.convertType(elementRefType);
 
@@ -570,10 +574,6 @@ namespace typescript
             if (auto loadOp = dyn_cast<mlir_ts::LoadOp>(defOp))
             {
                 rewriter.create<mlir_ts::StoreOp>(op->getLoc(), result, loadOp.reference());
-            }
-            else if (auto loadElementOp = dyn_cast<mlir_ts::LoadElementOp>(defOp))
-            {
-                rewriter.create<mlir_ts::StoreElementOp>(op->getLoc(), result, loadElementOp.array(), loadElementOp.index());
             }
             else
             {
