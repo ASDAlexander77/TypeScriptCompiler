@@ -412,6 +412,7 @@ namespace
             auto loc = op->getLoc();            
 
             auto charType = mlir_ts::CharType::get(rewriter.getContext());
+            auto charRefType = mlir_ts::RefType::get(charType);
             auto i8PtrTy = th.getI8PtrType();            
 
             auto bufferSizeValue = clh.createI64ConstantOf(2);
@@ -421,9 +422,9 @@ namespace
             auto index0Value = clh.createI32ConstantOf(0);
             auto index1Value = clh.createI32ConstantOf(1);
             auto nullCharValue = clh.createI8ConstantOf(0);
-            auto addr0 = ch.GetAddressOfArrayElement(charType, newStringValue, index0Value);
+            auto addr0 = ch.GetAddressOfArrayElement(charRefType, newStringValue, index0Value);
             rewriter.create<LLVM::StoreOp>(loc, op.op(), addr0);
-            auto addr1 = ch.GetAddressOfArrayElement(charType, newStringValue, index1Value);
+            auto addr1 = ch.GetAddressOfArrayElement(charRefType, newStringValue, index1Value);
             rewriter.create<LLVM::StoreOp>(loc, nullCharValue, addr1);
 
             rewriter.replaceOp(op, ValueRange{newStringValue});        
