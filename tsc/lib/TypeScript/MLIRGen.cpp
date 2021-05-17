@@ -1752,7 +1752,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     builder.create<mlir_ts::StorePropertyOp>(
                         location,
                         result,
-                        loadPropertyOp.object(),
+                        loadPropertyOp.objectRef(),
                         loadPropertyOp.position());        
                 }                
                 else

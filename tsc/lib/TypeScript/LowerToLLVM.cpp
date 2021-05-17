@@ -1235,23 +1235,58 @@ namespace
         }
     };    
 
+    struct ExtractPropertyOpLowering : public OpConversionPattern<mlir_ts::ExtractPropertyOp>
+    {
+        using OpConversionPattern<mlir_ts::ExtractPropertyOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::ExtractPropertyOp extractPropertyOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            TypeConverterHelper tch(getTypeConverter());
+
+            rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
+                extractPropertyOp, 
+                tch.convertType(extractPropertyOp.getType()), 
+                extractPropertyOp.object(), 
+                extractPropertyOp.position());
+
+            return success();
+        }
+    };
+
     struct LoadPropertyOpLowering : public OpConversionPattern<mlir_ts::LoadPropertyOp>
     {
         using OpConversionPattern<mlir_ts::LoadPropertyOp>::OpConversionPattern;
 
         LogicalResult matchAndRewrite(mlir_ts::LoadPropertyOp loadPropertyOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            TypeConverterHelper tch(getTypeConverter());
+            LLVMCodeHelper ch(loadPropertyOp, rewriter, getTypeConverter());
 
-            rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
-                loadPropertyOp, 
-                tch.convertType(loadPropertyOp.getType()), 
-                loadPropertyOp.object(), 
-                loadPropertyOp.position());
+            auto addr = ch.GetAddressOfElement(loadPropertyOp.getResult().getType(), loadPropertyOp.objectRef(), loadPropertyOp.position());
+            rewriter.replaceOpWithNewOp<LLVM::LoadOp>(loadPropertyOp, addr);
 
             return success();
         }
     };
+
+    struct InsertPropertyOpLowering : public OpConversionPattern<mlir_ts::InsertPropertyOp>
+    {
+        using OpConversionPattern<mlir_ts::InsertPropertyOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::InsertPropertyOp insertPropertyOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            TypeConverterHelper tch(getTypeConverter());
+            auto loc = insertPropertyOp->getLoc();
+
+            rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(
+                insertPropertyOp, 
+                tch.convertType(insertPropertyOp.object().getType()),
+                insertPropertyOp.object(), 
+                insertPropertyOp.value(),
+                insertPropertyOp.position());
+
+            return success();
+        }
+    };     
 
     struct StorePropertyOpLowering : public OpConversionPattern<mlir_ts::StorePropertyOp>
     {
@@ -1259,39 +1294,11 @@ namespace
 
         LogicalResult matchAndRewrite(mlir_ts::StorePropertyOp storePropertyOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            TypeConverterHelper tch(getTypeConverter());
+            LLVMCodeHelper ch(storePropertyOp, rewriter, getTypeConverter());
             auto loc = storePropertyOp->getLoc();
 
-            /*
-            rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(
-                storePropertyOp, 
-                storePropertyOp.object(), 
-                storePropertyOp.value(),
-                storePropertyOp.position());
-            */
-
-            // should be save value by address, as InsertValueOp store value in loaded value in stack but not saving it back
-            auto newValue = rewriter.create<LLVM::InsertValueOp>(
-                loc, 
-                tch.convertType(storePropertyOp.object().getType()),
-                storePropertyOp.object(), 
-                storePropertyOp.value(),
-                storePropertyOp.position());
-
-            // save into "Load" reference
-            auto defOp = storePropertyOp.object().getDefiningOp();
-            if (auto loadOp = dyn_cast_or_null<LLVM::LoadOp>(defOp))
-            {
-                rewriter.replaceOpWithNewOp<LLVM::StoreOp>(storePropertyOp, newValue, loadOp.addr());
-            }
-            else if (auto loadOp = dyn_cast_or_null<mlir_ts::LoadOp>(defOp))
-            {
-                rewriter.replaceOpWithNewOp<LLVM::StoreOp>(storePropertyOp, newValue, loadOp.reference());
-            }
-            else
-            {
-                llvm_unreachable("not implemented");
-            }
+            auto addr = ch.GetAddressOfElement(storePropertyOp.value().getType(), storePropertyOp.objectRef(), storePropertyOp.position());
+            rewriter.replaceOpWithNewOp<LLVM::StoreOp>(storePropertyOp, storePropertyOp.value(), addr);
 
             return success();
         }
@@ -1504,6 +1511,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         LoadOpLowering,
         LoadElementOpLowering,
         LoadPropertyOpLowering,
+        ExtractPropertyOpLowering,
         LogicalBinaryOpLowering,
         NullOpLowering,
         ParseFloatOpLowering,
@@ -1512,6 +1520,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         StoreOpLowering,
         StoreElementOpLowering,
         StorePropertyOpLowering,
+        InsertPropertyOpLowering,
         StringConcatOpLowering,
         StringCompareOpLowering,
         CharToStringOpLowering,

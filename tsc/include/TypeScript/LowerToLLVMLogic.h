@@ -425,6 +425,32 @@ namespace typescript
 
             return addr;            
         }     
+
+        mlir::Value GetAddressOfElement(mlir::Type elementType, mlir::Value arrayOrStringOrTuple, mlir::ArrayAttr index)
+        {
+            TypeHelper th(rewriter);
+            TypeConverterHelper tch(typeConverter);
+
+            auto loc = op->getLoc();
+            auto globalPtr = arrayOrStringOrTuple;
+
+            auto ptrType = th.getPointerType(tch.convertType(elementType));
+
+            SmallVector<mlir::Value> indexes;
+            for (auto intAttr : index)
+            {
+                auto itemValue = rewriter.create<LLVM::ConstantOp>(loc, intAttr.getType(), intAttr);
+                indexes.push_back(itemValue);
+            }
+
+            auto addr = rewriter.create<LLVM::GEPOp>(
+                loc,
+                ptrType, 
+                globalPtr,
+                indexes);
+
+            return addr;            
+        }        
     };
 
     class CodeLogicHelper
@@ -550,7 +576,7 @@ namespace typescript
             }
             else if (auto loadPropertyOp = dyn_cast<mlir_ts::LoadPropertyOp>(defOp))
             {
-                rewriter.create<mlir_ts::StorePropertyOp>(op->getLoc(), result, loadPropertyOp.object(), loadPropertyOp.position());
+                rewriter.create<mlir_ts::StorePropertyOp>(op->getLoc(), result, loadPropertyOp.objectRef(), loadPropertyOp.position());
             }            
             else
             {

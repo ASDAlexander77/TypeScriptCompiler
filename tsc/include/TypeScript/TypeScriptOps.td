@@ -557,10 +557,10 @@ def TypeScript_StoreElementOp : TypeScript_Op<"StoreElement"> {
   //let assemblyFormat = "$array_reference `[` $index `]` `=` $value attr-dict `:` type($result)";
 }
 
-def TypeScript_LoadPropertyOp : TypeScript_Op<"LoadProperty"> {
+def TypeScript_ExtractPropertyOp : TypeScript_Op<"ExtractProperty"> {
   let description = [{
     ```mlir
-    %2 = ts.load_property %1, %2 : f32
+    %2 = ts.extract_property %1, %2 : f32
     ```
   }];
 
@@ -576,6 +576,43 @@ def TypeScript_LoadPropertyOp : TypeScript_Op<"LoadProperty"> {
   //let assemblyFormat = "$object_reference `,` $propertyIndex attr-dict `:` type($result)";
 }
 
+def TypeScript_LoadPropertyOp : TypeScript_Op<"LoadProperty"> {
+  let description = [{
+    ```mlir
+    %2 = ts.load_property %1, %2 : f32
+    ```
+  }];
+
+  let arguments = (ins
+    TypeScript_AnyStructRefLike:$objectRef,
+    ArrayAttr:$position
+  );
+
+  let results = (outs
+    AnyType:$result
+  );
+
+  //let assemblyFormat = "$object_reference `,` $propertyIndex attr-dict `:` type($result)";
+}
+
+def TypeScript_InsertPropertyOp : TypeScript_Op<"InsertProperty"> {
+  let description = [{
+    ```mlir
+    ts.insert_property %1, %2, %3
+    ```
+  }];
+
+  let arguments = (ins
+    AnyType:$value,
+    TypeScript_AnyStructLike:$object,
+    ArrayAttr:$position
+  );
+
+  let results = (outs 
+    TypeScript_AnyStructLike:$res
+  );
+}
+
 def TypeScript_StorePropertyOp : TypeScript_Op<"StoreProperty"> {
   let description = [{
     ```mlir
@@ -585,7 +622,7 @@ def TypeScript_StorePropertyOp : TypeScript_Op<"StoreProperty"> {
 
   let arguments = (ins
     AnyType:$value,
-    TypeScript_AnyStructLike:$object,
+    TypeScript_AnyStructRefLike:$objectRef,
     ArrayAttr:$position
   );
 

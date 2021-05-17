@@ -484,4 +484,8 @@ def TypeScript_AnyStructLike : AnyTypeOf<[
     TypeScript_AnyTuple
   ]>;
 
+def TypeScript_AnyStructRefLike : AnyTypeOf<[
+    TypeScript_AnyTupleRef
+  ]>;
+
 #endif // TYPESCRIPT_TYPEDEFS
