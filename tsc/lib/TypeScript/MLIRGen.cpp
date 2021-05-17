@@ -1829,10 +1829,22 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                         }
 
                         auto elementType = tupleType.getType(fieldIndex);
-                        auto indexConstOp = builder.create<mlir_ts::ConstantOp>(location, builder.getI64Type(), builder.getI64IntegerAttr(fieldIndex));
 
                         symRef->erase();
-                        value = builder.create<mlir_ts::LoadPropertyOp>(location, elementType, expression, mlir::ArrayAttr::get({indexConstOp.value()}, builder.getContext()));
+
+                        if (auto loadOp = dyn_cast_or_null<mlir_ts::LoadOp>(expression.getDefiningOp()))
+                        {
+                            value = builder.create<mlir_ts::LoadPropertyOp>(
+                                location, 
+                                elementType, 
+                                loadOp.reference(), 
+                                builder.getI32IntegerAttr(fieldIndex));
+                            loadOp->erase();
+                        }
+                        else
+                        {
+                            llvm_unreachable("not implemented");            
+                        }
                     }
                     else
                     {
@@ -1879,7 +1891,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 {
                     auto constIndex = indexConstOp.value().dyn_cast_or_null<mlir::IntegerAttr>().getInt();
                     elementType = tupleType.getType(constIndex);
-                    return builder.create<mlir_ts::LoadPropertyOp>(location, elementType, expression, mlir::ArrayAttr::get({indexConstOp.value()}, builder.getContext()));
+                    return builder.create<mlir_ts::LoadPropertyOp>(location, elementType, expression, builder.getI32IntegerAttr(constIndex));
                 }
                 else
                 {

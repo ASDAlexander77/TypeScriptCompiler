@@ -421,9 +421,9 @@ namespace
             auto index0Value = clh.createI32ConstantOf(0);
             auto index1Value = clh.createI32ConstantOf(1);
             auto nullCharValue = clh.createI8ConstantOf(0);
-            auto addr0 = ch.GetAddressOfElement(charType, newStringValue, index0Value);
+            auto addr0 = ch.GetAddressOfArrayElement(charType, newStringValue, index0Value);
             rewriter.create<LLVM::StoreOp>(loc, op.op(), addr0);
-            auto addr1 = ch.GetAddressOfElement(charType, newStringValue, index1Value);
+            auto addr1 = ch.GetAddressOfArrayElement(charType, newStringValue, index1Value);
             rewriter.create<LLVM::StoreOp>(loc, nullCharValue, addr1);
 
             rewriter.replaceOp(op, ValueRange{newStringValue});        
@@ -1215,7 +1215,7 @@ namespace
         {
             LLVMCodeHelper ch(loadElementOp, rewriter, getTypeConverter());
 
-            auto addr = ch.GetAddressOfElement(loadElementOp.getResult().getType(), loadElementOp.array(), loadElementOp.index());
+            auto addr = ch.GetAddressOfArrayElement(loadElementOp.getResult().getType(), loadElementOp.array(), loadElementOp.index());
             rewriter.replaceOpWithNewOp<LLVM::LoadOp>(loadElementOp, addr);
             return success();
         }
@@ -1229,7 +1229,7 @@ namespace
         {
             LLVMCodeHelper ch(storeElementOp, rewriter, getTypeConverter());
 
-            auto addr = ch.GetAddressOfElement(storeElementOp.value().getType(), storeElementOp.array(), storeElementOp.index());
+            auto addr = ch.GetAddressOfArrayElement(storeElementOp.value().getType(), storeElementOp.array(), storeElementOp.index());
             rewriter.replaceOpWithNewOp<LLVM::StoreOp>(storeElementOp, storeElementOp.value(), addr);
             return success();
         }
@@ -1261,7 +1261,7 @@ namespace
         {
             LLVMCodeHelper ch(loadPropertyOp, rewriter, getTypeConverter());
 
-            auto addr = ch.GetAddressOfElement(loadPropertyOp.getResult().getType(), loadPropertyOp.objectRef(), loadPropertyOp.position());
+            auto addr = ch.GetAddressOfStructElement(loadPropertyOp.getResult().getType(), loadPropertyOp.objectRef(), loadPropertyOp.position());
             rewriter.replaceOpWithNewOp<LLVM::LoadOp>(loadPropertyOp, addr);
 
             return success();
@@ -1297,7 +1297,7 @@ namespace
             LLVMCodeHelper ch(storePropertyOp, rewriter, getTypeConverter());
             auto loc = storePropertyOp->getLoc();
 
-            auto addr = ch.GetAddressOfElement(storePropertyOp.value().getType(), storePropertyOp.objectRef(), storePropertyOp.position());
+            auto addr = ch.GetAddressOfStructElement(storePropertyOp.value().getType(), storePropertyOp.objectRef(), storePropertyOp.position());
             rewriter.replaceOpWithNewOp<LLVM::StoreOp>(storePropertyOp, storePropertyOp.value(), addr);
 
             return success();

@@ -407,7 +407,7 @@ namespace typescript
             return rewriter.create<LLVM::LLVMFuncOp>(loc, name, llvmFnType);
         }   
 
-        mlir::Value GetAddressOfElement(mlir::Type elementType, mlir::Value arrayOrStringOrTuple, mlir::Value index)
+        mlir::Value GetAddressOfArrayElement(mlir::Type elementType, mlir::Value arrayOrStringOrTuple, mlir::Value index)
         {
             TypeHelper th(rewriter);
             TypeConverterHelper tch(typeConverter);
@@ -426,8 +426,9 @@ namespace typescript
             return addr;            
         }     
 
-        mlir::Value GetAddressOfElement(mlir::Type elementType, mlir::Value arrayOrStringOrTuple, mlir::ArrayAttr index)
+        mlir::Value GetAddressOfStructElement(mlir::Type elementType, mlir::Value arrayOrStringOrTuple, int32_t index)
         {
+            // index of struct MUST BE 32 bit
             TypeHelper th(rewriter);
             TypeConverterHelper tch(typeConverter);
 
@@ -437,11 +438,11 @@ namespace typescript
             auto ptrType = th.getPointerType(tch.convertType(elementType));
 
             SmallVector<mlir::Value> indexes;
-            for (auto intAttr : index)
-            {
-                auto itemValue = rewriter.create<LLVM::ConstantOp>(loc, intAttr.getType(), intAttr);
-                indexes.push_back(itemValue);
-            }
+            // add first index which 64 bit (struct field MUST BE 32 bit index)
+            auto firstIndex = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI64Type(), rewriter.getI64IntegerAttr(0));
+            indexes.push_back(firstIndex);
+            auto fieldIndex = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(index));
+            indexes.push_back(fieldIndex);
 
             auto addr = rewriter.create<LLVM::GEPOp>(
                 loc,
