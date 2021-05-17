@@ -575,10 +575,6 @@ namespace typescript
             {
                 rewriter.create<mlir_ts::StoreElementOp>(op->getLoc(), result, loadElementOp.array(), loadElementOp.index());
             }
-            else if (auto loadPropertyOp = dyn_cast<mlir_ts::LoadPropertyOp>(defOp))
-            {
-                rewriter.create<mlir_ts::StorePropertyOp>(op->getLoc(), result, loadPropertyOp.objectRef(), loadPropertyOp.position());
-            }            
             else
             {
                 llvm_unreachable("not implemented");

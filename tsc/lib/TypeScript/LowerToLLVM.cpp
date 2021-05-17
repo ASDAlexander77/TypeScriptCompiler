@@ -1253,36 +1253,6 @@ namespace
         }
     };
 
-    struct LoadPropertyRefOpLowering : public OpConversionPattern<mlir_ts::LoadPropertyRefOp>
-    {
-        using OpConversionPattern<mlir_ts::LoadPropertyRefOp>::OpConversionPattern;
-
-        LogicalResult matchAndRewrite(mlir_ts::LoadPropertyRefOp loadPropertyRefOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
-        {
-            LLVMCodeHelper ch(loadPropertyRefOp, rewriter, getTypeConverter());
-
-            auto addr = ch.GetAddressOfStructElement(loadPropertyRefOp.getResult().getType(), loadPropertyRefOp.objectRef(), loadPropertyRefOp.position());
-            rewriter.replaceOp(loadPropertyRefOp, addr);
-
-            return success();
-        }
-    };    
-
-    struct LoadPropertyOpLowering : public OpConversionPattern<mlir_ts::LoadPropertyOp>
-    {
-        using OpConversionPattern<mlir_ts::LoadPropertyOp>::OpConversionPattern;
-
-        LogicalResult matchAndRewrite(mlir_ts::LoadPropertyOp loadPropertyOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
-        {
-            LLVMCodeHelper ch(loadPropertyOp, rewriter, getTypeConverter());
-
-            auto addr = ch.GetAddressOfStructElement(loadPropertyOp.getResult().getType(), loadPropertyOp.objectRef(), loadPropertyOp.position());
-            rewriter.replaceOpWithNewOp<LLVM::LoadOp>(loadPropertyOp, addr);
-
-            return success();
-        }
-    };
-
     struct InsertPropertyOpLowering : public OpConversionPattern<mlir_ts::InsertPropertyOp>
     {
         using OpConversionPattern<mlir_ts::InsertPropertyOp>::OpConversionPattern;
@@ -1303,17 +1273,16 @@ namespace
         }
     };     
 
-    struct StorePropertyOpLowering : public OpConversionPattern<mlir_ts::StorePropertyOp>
+    struct PropertyRefOpLowering : public OpConversionPattern<mlir_ts::PropertyRefOp>
     {
-        using OpConversionPattern<mlir_ts::StorePropertyOp>::OpConversionPattern;
+        using OpConversionPattern<mlir_ts::PropertyRefOp>::OpConversionPattern;
 
-        LogicalResult matchAndRewrite(mlir_ts::StorePropertyOp storePropertyOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        LogicalResult matchAndRewrite(mlir_ts::PropertyRefOp propertyRefOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            LLVMCodeHelper ch(storePropertyOp, rewriter, getTypeConverter());
-            auto loc = storePropertyOp->getLoc();
+            LLVMCodeHelper ch(propertyRefOp, rewriter, getTypeConverter());
 
-            auto addr = ch.GetAddressOfStructElement(storePropertyOp.value().getType(), storePropertyOp.objectRef(), storePropertyOp.position());
-            rewriter.replaceOpWithNewOp<LLVM::StoreOp>(storePropertyOp, storePropertyOp.value(), addr);
+            auto addr = ch.GetAddressOfStructElement(propertyRefOp.getResult().getType(), propertyRefOp.objectRef(), propertyRefOp.position());
+            rewriter.replaceOp(propertyRefOp, addr);
 
             return success();
         }
@@ -1525,8 +1494,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         FuncOpLowering,
         LoadOpLowering,
         LoadElementOpLowering,
-        LoadPropertyRefOpLowering,
-        LoadPropertyOpLowering,
+        PropertyRefOpLowering,
         ExtractPropertyOpLowering,
         LogicalBinaryOpLowering,
         NullOpLowering,
@@ -1535,7 +1503,6 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         PrintOpLowering,
         StoreOpLowering,
         StoreElementOpLowering,
-        StorePropertyOpLowering,
         InsertPropertyOpLowering,
         StringConcatOpLowering,
         StringCompareOpLowering,
