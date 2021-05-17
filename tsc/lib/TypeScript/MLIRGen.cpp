@@ -1845,7 +1845,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                         {
                             auto loadRefOp = builder.create<mlir_ts::LoadPropertyRefOp>(
                                 location, 
-                                elementType, 
+                                mlir_ts::RefType::get(loadPropertyOp.result().getType()), 
                                 loadPropertyOp.objectRef(), 
                                 loadPropertyOp.position());
                             loadPropertyOp->erase();

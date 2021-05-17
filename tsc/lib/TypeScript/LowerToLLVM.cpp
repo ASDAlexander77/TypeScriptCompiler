@@ -1253,6 +1253,21 @@ namespace
         }
     };
 
+    struct LoadPropertyRefOpLowering : public OpConversionPattern<mlir_ts::LoadPropertyRefOp>
+    {
+        using OpConversionPattern<mlir_ts::LoadPropertyRefOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::LoadPropertyRefOp loadPropertyRefOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            LLVMCodeHelper ch(loadPropertyRefOp, rewriter, getTypeConverter());
+
+            auto addr = ch.GetAddressOfStructElement(loadPropertyRefOp.getResult().getType(), loadPropertyRefOp.objectRef(), loadPropertyRefOp.position());
+            rewriter.replaceOp(loadPropertyRefOp, addr);
+
+            return success();
+        }
+    };    
+
     struct LoadPropertyOpLowering : public OpConversionPattern<mlir_ts::LoadPropertyOp>
     {
         using OpConversionPattern<mlir_ts::LoadPropertyOp>::OpConversionPattern;
@@ -1510,6 +1525,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         FuncOpLowering,
         LoadOpLowering,
         LoadElementOpLowering,
+        LoadPropertyRefOpLowering,
         LoadPropertyOpLowering,
         ExtractPropertyOpLowering,
         LogicalBinaryOpLowering,
