@@ -595,6 +595,25 @@ def TypeScript_LoadPropertyOp : TypeScript_Op<"LoadProperty"> {
   //let assemblyFormat = "$object_reference `,` $propertyIndex attr-dict `:` type($result)";
 }
 
+def TypeScript_LoadPropertyRefOp : TypeScript_Op<"LoadPropertyRef"> {
+  let description = [{
+    ```mlir
+    %2 = ts.load_property_ref %1, %2 : f32
+    ```
+  }];
+
+  let arguments = (ins
+    TypeScript_AnyStructRefLike:$objectRef,
+    I32Attr:$position
+  );
+
+  let results = (outs
+    TypeScript_AnyRef:$result
+  );
+
+  //let assemblyFormat = "$object_reference `,` $propertyIndex attr-dict `:` type($result)";
+}
+
 def TypeScript_InsertPropertyOp : TypeScript_Op<"InsertProperty"> {
   let description = [{
     ```mlir

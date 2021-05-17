@@ -1841,6 +1841,21 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                                 builder.getI32IntegerAttr(fieldIndex));
                             loadOp->erase();
                         }
+                        else if (auto loadPropertyOp = dyn_cast_or_null<mlir_ts::LoadPropertyOp>(expression.getDefiningOp()))
+                        {
+                            auto loadRefOp = builder.create<mlir_ts::LoadPropertyRefOp>(
+                                location, 
+                                elementType, 
+                                loadPropertyOp.objectRef(), 
+                                loadPropertyOp.position());
+                            loadPropertyOp->erase();
+
+                            value = builder.create<mlir_ts::LoadPropertyOp>(
+                                location, 
+                                elementType, 
+                                loadRefOp, 
+                                builder.getI32IntegerAttr(fieldIndex));
+                        }                        
                         else
                         {
                             llvm_unreachable("not implemented");            
