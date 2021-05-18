@@ -346,25 +346,28 @@ namespace
                 size = rewriter.create<LLVM::AddOp>(loc, rewriter.getI64Type(), ValueRange{size, size1.getResult(0)});
             }
 
-            auto newStringValue = rewriter.create<LLVM::AllocaOp>(op->getLoc(), i8PtrTy, size, true);            
+            mlir::Value newStringValue = rewriter.create<LLVM::AllocaOp>(op->getLoc(), i8PtrTy, size, true);            
 
             // copy
             auto concat = false;
+            auto result = newStringValue;
             for (auto op : op.ops())
             {
                 if (concat)
                 {
-                    rewriter.create<LLVM::CallOp>(loc, strcatFuncOp, ValueRange{newStringValue, op});
+                    auto callResult = rewriter.create<LLVM::CallOp>(loc, strcatFuncOp, ValueRange{result, op});
+                    result = callResult.getResult(0);
                 }
                 else
                 {
-                    rewriter.create<LLVM::CallOp>(loc, strcpyFuncOp, ValueRange{newStringValue, op});
+                    auto callResult = rewriter.create<LLVM::CallOp>(loc, strcpyFuncOp, ValueRange{result, op});
+                    result = callResult.getResult(0);
                 }
 
                 concat = true;
             }
 
-            rewriter.replaceOp(op, ValueRange{newStringValue});
+            rewriter.replaceOp(op, ValueRange{result});
 
             return success();
         }
