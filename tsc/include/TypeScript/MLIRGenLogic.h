@@ -36,6 +36,107 @@ using llvm::Twine;
 
 namespace typescript
 {
+    class MLIRCustomMethods
+    {
+        mlir::OpBuilder &builder;
+        mlir::Location &location;
+
+    public:        
+        MLIRCustomMethods(mlir::OpBuilder &builder, mlir::Location &location) 
+            : builder(builder), location(location) {}   
+
+        mlir::Value callMethod(StringRef functionName, ArrayRef<mlir::Value> operands, bool allowPartialResolve)
+        {
+            mlir::Value result;
+            // print - internal command;
+            if (functionName.compare(StringRef("print")) == 0)
+            {
+                mlir::succeeded(mlirGenPrint(location, operands));
+            }
+            else 
+            // assert - internal command;
+            if (functionName.compare(StringRef("assert")) == 0)
+            {
+                mlir::succeeded(mlirGenAssert(location, operands));
+            }
+            else 
+            // assert - internal command;
+            if (functionName.compare(StringRef("parseInt")) == 0)
+            {
+                result = mlirGenParseInt(location, operands);
+            }
+            else 
+            if (functionName.compare(StringRef("parseFloat")) == 0)
+            {
+                result = mlirGenParseFloat(location, operands);
+            }
+            else 
+            if (!allowPartialResolve)
+            {
+                emitError(location) << "no defined function found for '" << functionName << "'";
+            }
+
+            return result;
+        }     
+
+    private:
+        mlir::LogicalResult mlirGenPrint(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+        {
+            auto printOp =
+                builder.create<mlir_ts::PrintOp>(
+                    location,
+                    operands);
+
+            return mlir::success();
+        }
+
+        mlir::LogicalResult mlirGenAssert(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+        {
+            auto msg = StringRef("assert");
+            if (operands.size() > 1)
+            {
+                auto param2 = operands[1];
+                auto constantOp = dyn_cast_or_null<mlir_ts::ConstantOp>(param2.getDefiningOp());
+                if (constantOp && constantOp.getType().isa<mlir_ts::StringType>())
+                {
+                    msg = constantOp.value().cast<mlir::StringAttr>().getValue();
+                }
+
+                param2.getDefiningOp()->erase();
+            }
+
+            auto assertOp =
+                builder.create<mlir_ts::AssertOp>(
+                    location,
+                    operands.front(),
+                    mlir::StringAttr::get(msg, builder.getContext()));
+
+            return mlir::success();
+        }
+
+        mlir::Value mlirGenParseInt(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+        {
+            auto parseIntOp =
+                builder.create<mlir_ts::ParseIntOp>(
+                    location,
+                    builder.getI32Type(),
+                    operands.front());
+
+            return parseIntOp;
+        }
+
+        mlir::Value mlirGenParseFloat(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+        {
+            auto parseFloatOp =
+                builder.create<mlir_ts::ParseFloatOp>(
+                    location,
+                    builder.getF32Type(),
+                    operands.front());
+
+            return parseFloatOp;
+        }
+    };
+
     class MLIRPropertyAccessCodeLogic
     {
         mlir::OpBuilder &builder;
@@ -88,37 +189,29 @@ namespace typescript
 
         mlir::Value String(mlir_ts::StringType stringType)
         {
-            mlir::Value value;
-
             auto propName = getName();
             if (propName == "length")
             {
-                value = builder.create<mlir_ts::StringLengthOp>(location, builder.getI32Type(), expression);                            
+                return builder.create<mlir_ts::StringLengthOp>(location, builder.getI32Type(), expression);                            
             }
             else
             {
                 llvm_unreachable("not implemented");                        
             }                         
-
-            return value;
         }    
 
         mlir::Value Array(mlir_ts::ArrayType arrayType)
         {
-            mlir::Value value;
-
             auto propName = getName();
             if (propName == "length")
             {
                 auto size = getExprConstAttr().cast<mlir::ArrayAttr>().size();
-                value = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(size));                            
+                return builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(size));                            
             }
             else
             {
                 llvm_unreachable("not implemented");                        
             }                         
-
-            return value;
         }           
 
     private:

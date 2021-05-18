@@ -6,12 +6,9 @@ function f2(x: number) {
     print(x);
 }
 
-// TODO: should work after refactoring optional parameters
-/*
 function f3(x = 0) {
     print(x);
 }
-*/
 
 function run(f: () => void) {
     f();
@@ -25,8 +22,8 @@ function main() {
     const x2 = f2;
     x2(1);
 
-    //const x3 = f3;
-    //x3(2);
+    const x3 = f3;
+    x3(2);
 
     (function () {
         print("Hello World!");

@@ -13,7 +13,7 @@ function testStrings(): void {
     //assert(s.charCodeAt(4) == 52, "hello eq2");
     //assert(s.charAt(4) == "4", "hello eq2X");
     assert(s[4] == "4", "hello eq2X");
-    //assert(s.length == 7, "len7");
+    assert(s.length == 7, "len7");
     print("ts0")
     s = "";
 

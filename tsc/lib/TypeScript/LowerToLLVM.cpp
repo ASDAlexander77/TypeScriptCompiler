@@ -298,10 +298,11 @@ namespace
             auto strlenFuncOp =
                 ch.getOrInsertFunction(
                     "strlen",
-                    th.getFunctionType(th.getI32Type(), {i8PtrTy}));                    
+                    th.getFunctionType(th.getI64Type(), {i8PtrTy}));                    
 
             // calc size
-            rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, strlenFuncOp, ValueRange{op.op()});
+            auto size = rewriter.create<LLVM::CallOp>(loc, strlenFuncOp, ValueRange{op.op()});
+            rewriter.replaceOpWithNewOp<LLVM::TruncOp>(op, th.getI32Type(), size.getResult(0));
 
             return success();
         }

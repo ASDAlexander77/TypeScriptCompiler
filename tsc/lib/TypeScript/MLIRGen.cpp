@@ -669,12 +669,6 @@ namespace
             }
 
             SmallVector<mlir::NamedAttribute> attrs;
-            // save info about optional parameters
-            if (argOptionalFrom >= 0)
-            {
-                attrs.push_back(builder.getNamedAttr(FUNC_OPTIONAL_ATTR_NAME, builder.getI8IntegerAttr(argOptionalFrom)));
-            }
-
             auto funcOp = mlir_ts::FuncOp::create(location, name, funcType, ArrayRef<mlir::NamedAttribute>(attrs));
 
             return std::make_tuple(funcOp, std::move(funcProto), true);
@@ -1891,7 +1885,6 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     auto calleeName = definingOp->getAttrOfType<mlir::FlatSymbolRefAttr>(attrName);
                     auto functionName = calleeName.getValue();
                     auto argumentsContext = callExpression->arguments;
-                    auto opArgsCount = std::distance(argumentsContext.begin(), argumentsContext.end());
 
                     definingOp->erase();
 
@@ -1899,51 +1892,19 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     auto calledFuncIt = functionMap.find(functionName);
                     if (calledFuncIt == functionMap.end())
                     {
-                        mlir::Value result;
-                        // print - internal command;
-                        if (functionName.compare(StringRef("print")) == 0)
-                        {
-                            SmallVector<mlir::Value, 4> operands;
-                            mlirGen(argumentsContext, operands, genContext);
-                            mlir::succeeded(mlirGenPrint(location, operands));
-                        }
-                        else 
-                        // assert - internal command;
-                        if (functionName.compare(StringRef("assert")) == 0 && opArgsCount > 0)
-                        {
-                            SmallVector<mlir::Value, 4> operands;
-                            mlirGen(argumentsContext, operands, genContext);
-                            mlir::succeeded(mlirGenAssert(location, operands));
-                        }
-                        else 
-                        // assert - internal command;
-                        if (functionName.compare(StringRef("parseInt")) == 0 && opArgsCount > 0)
-                        {
-                            SmallVector<mlir::Value, 4> operands;
-                            mlirGen(argumentsContext, operands, genContext);
-                            result = mlirGenParseInt(location, operands);
-                        }
-                        else 
-                        if (functionName.compare(StringRef("parseFloat")) == 0 && opArgsCount > 0)
-                        {
-                            SmallVector<mlir::Value, 4> operands;
-                            mlirGen(argumentsContext, operands, genContext);
-                            result = mlirGenParseFloat(location, operands);
-                        }
-                        else 
-                        if (!genContext.allowPartialResolve)
-                        {
-                            emitError(location) << "no defined function found for '" << functionName << "'";
-                        }
+                        MLIRCustomMethods cm(builder, location);
 
-                        return result;
+                        SmallVector<mlir::Value, 4> operands;
+                        mlirGen(argumentsContext, operands, genContext);
+
+                        return cm.callMethod(functionName, operands, genContext.allowPartialResolve);
                     }
 
                     SmallVector<mlir::Value, 4> operands;
 
                     auto calledFunc = calledFuncIt->second;
                     auto calledFuncType = calledFunc.getType();
-                    mlirGenCallOperands(location, calledFuncType, callExpression->arguments, calledFunc.getOperation(), operands, genContext);
+                    mlirGenCallOperands(location, calledFuncType, callExpression->arguments, operands, genContext);
 
                     // default call by name
                     auto callOp =
@@ -1966,7 +1927,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     SmallVector<mlir::Value, 4> operands;
 
                     auto calledFuncType = funcRefValue.getType().cast<mlir::FunctionType>();
-                    mlirGenCallOperands(location, calledFuncType, callExpression->arguments, nullptr/*TODO: should I finish it before refactoring?*/, operands, genContext);
+                    mlirGenCallOperands(location, calledFuncType, callExpression->arguments, operands, genContext);
 
                     // default call by name
                     auto callIndirectOp =
@@ -1987,14 +1948,14 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             return nullptr;
         }
 
-        mlir::LogicalResult mlirGenCallOperands(mlir::Location location, mlir::FunctionType calledFuncType, NodeArray<Expression> argumentsContext, mlir::Operation* funcOp, SmallVector<mlir::Value, 4> &operands, const GenContext &genContext) 
+        mlir::LogicalResult mlirGenCallOperands(mlir::Location location, mlir::FunctionType calledFuncType, NodeArray<Expression> argumentsContext, SmallVector<mlir::Value, 4> &operands, const GenContext &genContext) 
         {
             auto opArgsCount = std::distance(argumentsContext.begin(), argumentsContext.end());
 
-            //auto funcArgsCount = calledFunc.getNumArguments();
             auto funcArgsCount = calledFuncType.getNumInputs();
 
-            auto hasOptionalFrom = funcOp && funcOp->hasAttrOfType<mlir::IntegerAttr>(FUNC_OPTIONAL_ATTR_NAME);
+            auto optionalFrom = funcArgsCount - opArgsCount;
+            auto hasOptionalFrom = optionalFrom > 0;
             if (hasOptionalFrom)
             {
                 auto constNumOfParams = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(opArgsCount));
@@ -2005,74 +1966,14 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
             if (hasOptionalFrom)
             {
-                auto optionalFrom = funcArgsCount - opArgsCount;
-                if (hasOptionalFrom && optionalFrom > 0)
+                // -1 to exclude count params
+                for (auto i = (size_t)opArgsCount; i < funcArgsCount - 1; i++)
                 {
-                    // -1 to exclude count params
-                    for (auto i = (size_t)opArgsCount; i < funcArgsCount - 1; i++)
-                    {
-                        operands.push_back(builder.create<mlir_ts::UndefOp>(location, calledFuncType.getInput(i + 1)));
-                    }
+                    operands.push_back(builder.create<mlir_ts::UndefOp>(location, calledFuncType.getInput(i + 1)));
                 }
             }
 
             return mlir::success();
-        }
-
-        mlir::LogicalResult mlirGenPrint(const mlir::Location &location, const SmallVector<mlir::Value, 4> &operands)
-        {
-            auto printOp =
-                builder.create<mlir_ts::PrintOp>(
-                    location,
-                    operands);
-
-            return mlir::success();
-        }
-
-        mlir::LogicalResult mlirGenAssert(const mlir::Location &location, const SmallVector<mlir::Value, 4> &operands)
-        {
-            auto msg = StringRef("assert");
-            if (operands.size() > 1)
-            {
-                auto param2 = operands[1];
-                auto constantOp = dyn_cast_or_null<mlir_ts::ConstantOp>(param2.getDefiningOp());
-                if (constantOp && constantOp.getType().isa<mlir_ts::StringType>())
-                {
-                    msg = constantOp.value().cast<mlir::StringAttr>().getValue();
-                }
-
-                param2.getDefiningOp()->erase();
-            }
-
-            auto assertOp =
-                builder.create<mlir_ts::AssertOp>(
-                    location,
-                    operands.front(),
-                    mlir::StringAttr::get(msg, theModule.getContext()));
-
-            return mlir::success();
-        }
-
-        mlir::Value mlirGenParseInt(const mlir::Location &location, const SmallVector<mlir::Value, 4> &operands)
-        {
-            auto parseIntOp =
-                builder.create<mlir_ts::ParseIntOp>(
-                    location,
-                    builder.getI32Type(),
-                    operands.front());
-
-            return parseIntOp;
-        }
-
-        mlir::Value mlirGenParseFloat(const mlir::Location &location, const SmallVector<mlir::Value, 4> &operands)
-        {
-            auto parseFloatOp =
-                builder.create<mlir_ts::ParseFloatOp>(
-                    location,
-                    builder.getF32Type(),
-                    operands.front());
-
-            return parseFloatOp;
         }
 
         mlir::LogicalResult mlirGen(NodeArray<Expression> arguments, SmallVector<mlir::Value, 4> &operands, const GenContext &genContext)
