@@ -1788,102 +1788,24 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 return value;
             }
 
-            MLIRPropertyAccessCodeLogic cl(builder);
+            MLIRPropertyAccessCodeLogic cl(builder, location, expression, name);
 
             TypeSwitch<mlir::Type>(expression.getType())
-                .Case<mlir_ts::EnumType>([&](auto node) 
+                .Case<mlir_ts::EnumType>([&](auto enumType) 
                 { 
-                    value = cl.Enum(location, expression, name);
+                    value = cl.Enum(enumType);
                 })
                 .Case<mlir_ts::TupleType>([&](auto tupleType)
                 {
-                    // get index
-                    auto symRef = dyn_cast_or_null<mlir_ts::SymbolRefOp>(name.getDefiningOp());
-                    if (symRef)
-                    {
-                        auto fieldIndex = tupleType.getIndex(symRef.identifier());
-                        if (fieldIndex < 0)
-                        {
-                            emitError(location, "Tuple member '") << symRef.identifier() << "' can't be found";
-                            return;
-                        }
-
-                        auto elementType = tupleType.getType(fieldIndex);
-
-                        symRef->erase();
-
-                        if (auto loadOp = dyn_cast_or_null<mlir_ts::LoadOp>(expression.getDefiningOp()))
-                        {
-                            auto propRef = builder.create<mlir_ts::PropertyRefOp>(
-                                location, 
-                                mlir_ts::RefType::get(elementType), 
-                                loadOp.reference(), 
-                                builder.getI32IntegerAttr(fieldIndex));
-                            loadOp->erase();
-
-                            value = builder.create<mlir_ts::LoadOp>(location, elementType, propRef);
-                        }
-                        else
-                        {
-                            llvm_unreachable("not implemented");            
-                        }
-                    }
-                    else
-                    {
-                        llvm_unreachable("not implemented");                        
-                    }                              
+                    value = cl.Tuple(tupleType);
                 })
                 .Case<mlir_ts::StringType>([&](auto stringType)
                 {
-                    auto symRef = dyn_cast_or_null<mlir_ts::SymbolRefOp>(name.getDefiningOp());
-                    if (symRef)
-                    {
-                        if (symRef.identifier() == "length")
-                        {
-                            symRef->erase();
-
-                            // call strlen
-                            value = builder.create<mlir_ts::StringLengthOp>(location, builder.getI32Type(), expression);                            
-                        }
-                        else
-                        {
-                            llvm_unreachable("not implemented");                        
-                        }                         
-                    }
-                    else
-                    {
-                        llvm_unreachable("not implemented");                        
-                    }                    
+                    value = cl.String(stringType);
                 })
                 .Case<mlir_ts::ArrayType>([&](auto arrayType)
                 {
-                    auto symRef = dyn_cast_or_null<mlir_ts::SymbolRefOp>(name.getDefiningOp());
-                    if (symRef)
-                    {
-                        if (symRef.identifier() == "length")
-                        {
-                            symRef->erase();
-
-                            if (auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(expression.getDefiningOp()))
-                            {
-                                // call strlen
-                                auto size = constOp.getValue().dyn_cast_or_null<mlir::ArrayAttr>().size();
-                                value = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(size));                            
-                            }
-                            else
-                            {
-                                llvm_unreachable("not implemented");                        
-                            }                         
-                        }
-                        else
-                        {
-                            llvm_unreachable("not implemented");                        
-                        }                         
-                    }
-                    else
-                    {
-                        llvm_unreachable("not implemented");                        
-                    }                    
+                    value = cl.Array(arrayType);
                 });                
 
             if (value)
