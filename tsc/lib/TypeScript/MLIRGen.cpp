@@ -675,7 +675,7 @@ namespace
         }
 
         mlir::Type getReturnType(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, StringRef name,
-                                 const SmallVector<mlir::Type> &argTypes, const FunctionPrototypeDOM::TypePtr &funcProto, const GenContext &genContext)
+                                 ArrayRef<mlir::Type> argTypes, const FunctionPrototypeDOM::TypePtr &funcProto, const GenContext &genContext)
         {
             mlir::Type returnType;
 
