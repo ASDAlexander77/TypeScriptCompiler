@@ -607,8 +607,13 @@ namespace typescript
     public:        
         CastLogicHelper(Operation *op, PatternRewriter &rewriter) : op(op), rewriter(rewriter) {}
 
-        Value cast(mlir::Value in, mlir::Type inLLVMType, mlir::Value res, mlir::Type resLLVMType)
+        Value cast(mlir::Value in, mlir::Type inLLVMType, mlir::Type resType, mlir::Type resLLVMType)
         {
+            if (inLLVMType == resLLVMType)
+            {
+                return in;
+            }
+
             auto loc = op->getLoc();
 
             TypeHelper th(rewriter);
@@ -616,7 +621,6 @@ namespace typescript
             CodeLogicHelper clh(op, rewriter);
 
             auto inType = in.getType();
-            auto resType = res.getType();
 
             if (inType.dyn_cast_or_null<mlir_ts::CharType>() && resType.dyn_cast_or_null<mlir_ts::StringType>())
             {
@@ -724,6 +728,11 @@ namespace typescript
             {
                 return rewriter.create<mlir_ts::CreateOptionalOp>(loc, resType, in);
             }
+
+            if (auto optType = inType.dyn_cast_or_null<mlir_ts::OptionalType>())
+            {
+                return rewriter.create<mlir_ts::ValueOp>(loc, resType, in);
+            }            
 
             emitError(loc, "invalid cast operator type 1: '") << inLLVMType << "', type 2: '" << resLLVMType << "'";
             llvm_unreachable("not implemented");

@@ -471,15 +471,6 @@ def TypeScript_ParamDefaultValueOp : TypeScript_Op<"DefaultValue", [NoSideEffect
   let assemblyFormat = "$results attr-dict `:` type($results)";
 }
 
-def TypeScript_HasValueOp : TypeScript_Op<"HasValue"> {
-  let description = [{
-    Example:
-      ts.has_value %v : ts.optional<i32> to bool
-  }];
-  let arguments = (ins TypeScript_AnyOptional:$in);
-  let results = (outs TypeScript_Boolean:$res);
-}
-
 def TypeScript_CreateOptionalOp : TypeScript_Op<"CreateOptional", 
     [TypesMatchWith<"type of 'value' matches element type of 'optional'",
                      "res", "in",
@@ -490,6 +481,27 @@ def TypeScript_CreateOptionalOp : TypeScript_Op<"CreateOptional",
   }];
   let arguments = (ins AnyType:$in);
   let results = (outs TypeScript_AnyOptional:$res);
+}
+
+def TypeScript_HasValueOp : TypeScript_Op<"HasValue"> {
+  let description = [{
+    Example:
+      ts.has_value %v : ts.optional<i32> to bool
+  }];
+  let arguments = (ins TypeScript_AnyOptional:$in);
+  let results = (outs TypeScript_Boolean:$res);
+}
+
+def TypeScript_ValueOp : TypeScript_Op<"Value", 
+    [TypesMatchWith<"type of 'value' matches element type of 'optional'",
+                     "in", "res",
+                     "$_self.cast<OptionalType>().getElementType()">]> {
+  let description = [{
+    Example:
+      ts.value %v : ts.optional<i32> to i32
+  }];
+  let arguments = (ins TypeScript_AnyOptional:$in);
+  let results = (outs AnyType:$res);
 }
 
 def TypeScript_VariableOp : TypeScript_Op<"Variable", []> {

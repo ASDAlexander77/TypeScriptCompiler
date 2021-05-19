@@ -1930,19 +1930,15 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
         mlir::LogicalResult mlirGenCallOperands(mlir::Location location, mlir::FunctionType calledFuncType, NodeArray<Expression> argumentsContext, SmallVector<mlir::Value, 4> &operands, const GenContext &genContext) 
         {
             auto opArgsCount = std::distance(argumentsContext.begin(), argumentsContext.end());
-
             auto funcArgsCount = calledFuncType.getNumInputs();
 
-            auto optionalFrom = funcArgsCount - opArgsCount;
-            auto hasOptionalFrom = optionalFrom > 0;
-
-            mlirGen(argumentsContext, operands, calledFuncType, hasOptionalFrom, genContext);
-            if (hasOptionalFrom)
+            mlirGen(argumentsContext, operands, calledFuncType, genContext);
+            if (funcArgsCount > opArgsCount)
             {
                 // -1 to exclude count params
-                for (auto i = (size_t)opArgsCount; i < funcArgsCount - 1; i++)
+                for (auto i = (size_t)opArgsCount; i < funcArgsCount; i++)
                 {
-                    operands.push_back(builder.create<mlir_ts::UndefOp>(location, calledFuncType.getInput(i + 1)));
+                    operands.push_back(builder.create<mlir_ts::UndefOp>(location, calledFuncType.getInput(i)));
                 }
             }
 
@@ -1960,12 +1956,11 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             return mlir::success();
         }
 
-        mlir::LogicalResult mlirGen(NodeArray<Expression> arguments, SmallVector<mlir::Value, 4> &operands, mlir::FunctionType funcType, bool hasOptionalFrom, const GenContext &genContext)
+        mlir::LogicalResult mlirGen(NodeArray<Expression> arguments, SmallVector<mlir::Value, 4> &operands, mlir::FunctionType funcType, const GenContext &genContext)
         {
-            auto i = hasOptionalFrom ? 0 : -1;
+            auto i = 0;
             for (auto expression : arguments)
             {
-                i++;
                 auto value = mlirGen(expression, genContext);
 
                 if (value.getType() != funcType.getInput(i))
@@ -1977,6 +1972,8 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 {
                     operands.push_back(value);
                 }
+
+                i++;
             }
 
             return mlir::success();
