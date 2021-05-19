@@ -480,6 +480,18 @@ def TypeScript_HasValueOp : TypeScript_Op<"HasValue"> {
   let results = (outs TypeScript_Boolean:$res);
 }
 
+def TypeScript_CreateOptionalOp : TypeScript_Op<"CreateOptional", 
+    [TypesMatchWith<"type of 'value' matches element type of 'optional'",
+                     "res", "in",
+                     "$_self.cast<OptionalType>().getElementType()">]> {
+  let description = [{
+    Example:
+      ts.create_optional %v : i32 to ts.optional<i32>
+  }];
+  let arguments = (ins AnyType:$in);
+  let results = (outs TypeScript_AnyOptional:$res);
+}
+
 def TypeScript_VariableOp : TypeScript_Op<"Variable", []> {
   let summary = [{
     Allocate an object in memory.

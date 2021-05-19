@@ -809,6 +809,8 @@ namespace
 
         LogicalResult matchAndRewrite(mlir_ts::CastOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
+            auto loc = op->getLoc();
+
             TypeHelper th(rewriter);
             LLVMCodeHelper ch(op, rewriter);
             CodeLogicHelper clh(op, rewriter);
@@ -901,7 +903,7 @@ namespace
                         th.getFunctionType(th.getI8PtrType(), ArrayRef<mlir::Type>{rewriter.getI32Type(), th.getI8PtrType(), rewriter.getI32Type()}, true));
 
                 auto bufferSizeValue = clh.createI32ConstantOf(50);
-                mlir::Value newStringValue = rewriter.create<LLVM::AllocaOp>(op->getLoc(), i8PtrTy, bufferSizeValue, true);
+                mlir::Value newStringValue = rewriter.create<LLVM::AllocaOp>(loc, i8PtrTy, bufferSizeValue, true);
                 auto base = clh.createI32ConstantOf(10);
 
                 rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, _itoaFuncOp, ValueRange{op.in(), newStringValue, base});
@@ -919,7 +921,7 @@ namespace
                         th.getFunctionType(th.getI8PtrType(), ArrayRef<mlir::Type>{rewriter.getI32Type(), th.getI8PtrType(), rewriter.getI32Type()}, true));
 
                 auto bufferSizeValue = clh.createI32ConstantOf(50);
-                mlir::Value newStringValue = rewriter.create<LLVM::AllocaOp>(op->getLoc(), i8PtrTy, bufferSizeValue, true);
+                mlir::Value newStringValue = rewriter.create<LLVM::AllocaOp>(loc, i8PtrTy, bufferSizeValue, true);
                 auto base = clh.createI32ConstantOf(10);
 
                 rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, _itoaFuncOp, ValueRange{op.in(), newStringValue, base});
@@ -937,8 +939,8 @@ namespace
                         th.getFunctionType(th.getI8PtrType(), ArrayRef<mlir::Type>{rewriter.getF64Type(), rewriter.getI32Type(), th.getI8PtrType()}, true));
 
                 auto bufferSizeValue = clh.createI32ConstantOf(50);
-                mlir::Value newStringValue = rewriter.create<LLVM::AllocaOp>(op->getLoc(), i8PtrTy, bufferSizeValue, true);
-                auto doubleValue = rewriter.create<LLVM::FPExtOp>(op->getLoc(), rewriter.getF64Type(), op.in());
+                mlir::Value newStringValue = rewriter.create<LLVM::AllocaOp>(loc, i8PtrTy, bufferSizeValue, true);
+                auto doubleValue = rewriter.create<LLVM::FPExtOp>(loc, rewriter.getF64Type(), op.in());
                 auto precision = clh.createI32ConstantOf(16);
 
                 rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, _gcvtFuncOp, ValueRange{doubleValue, precision, newStringValue});
@@ -946,7 +948,14 @@ namespace
                 return success();
             }
 
-            emitError(op->getLoc(), "invalid cast operator type 1: '") << inLLVMType << "', type 2: '" << resLLVMType << "'";
+            // cast value value to optional value
+            if (auto optType = resType.dyn_cast_or_null<mlir_ts::OptionalType>())
+            {
+                rewriter.replaceOpWithNewOp<mlir_ts::CreateOptionalOp>(op, resType, in);
+                return success();
+            }
+
+            emitError(loc, "invalid cast operator type 1: '") << inLLVMType << "', type 2: '" << resLLVMType << "'";
             llvm_unreachable("not implemented");
         }
     };
@@ -1401,6 +1410,44 @@ namespace
         }
     };    
 
+    struct CreateOptionalOpLowering : public OpConversionPattern<mlir_ts::CreateOptionalOp>
+    {
+        using OpConversionPattern<mlir_ts::CreateOptionalOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::CreateOptionalOp createOptionalOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            auto loc = createOptionalOp->getLoc();
+
+            TypeHelper th(rewriter);            
+            TypeConverterHelper tch(getTypeConverter());
+            CodeLogicHelper clh(createOptionalOp, rewriter);
+
+            auto llvmType = tch.convertType(createOptionalOp.res().getType());
+
+            auto value = createOptionalOp.in();
+
+            auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmType);
+
+            auto structValue2 = rewriter.create<LLVM::InsertValueOp>(
+                loc, 
+                llvmType,
+                structValue, 
+                value,
+                rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(0)));           
+
+            auto trueValue = clh.createI1ConstantOf(true); 
+
+            rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(
+                createOptionalOp, 
+                llvmType, 
+                structValue2,
+                trueValue, 
+                rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(1)));
+
+            return success();
+        }
+    };    
+
     static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, mlir::ModuleOp &m)
     {
         converter.addConversion([&](mlir_ts::AnyType type) {
@@ -1538,6 +1585,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         AssertOpLowering,
         CastOpLowering,
         ConstantOpLowering,
+        CreateOptionalOpLowering,
         HasValueOpLowering,
         SymbolRefOpLowering,
         GlobalOpLowering,

@@ -868,11 +868,11 @@ namespace
 
                     auto countArgsValue = arguments[0];
 
-                    auto valueType = getOptionalType(param->getType());
+                    auto optType = getOptionalType(param->getType());
 
                     auto paramOptionalOp = builder.create<mlir_ts::ParamOptionalOp>(
                         location,
-                        mlir_ts::RefType::get(valueType),
+                        mlir_ts::RefType::get(optType),
                         arguments[index]);
 
                     paramValue = paramOptionalOp;
@@ -894,9 +894,9 @@ namespace
                             llvm_unreachable("unknown statement");
                         }
 
-                        if (valueType != defaultValue.getType())
+                        if (optType != defaultValue.getType())
                         {
-                            defaultValue = builder.create<mlir_ts::CastOp>(location, valueType, defaultValue);
+                            defaultValue = builder.create<mlir_ts::CastOp>(location, optType, defaultValue);
                         }
 
                         builder.create<mlir_ts::ParamDefaultValueOp>(location, defaultValue);

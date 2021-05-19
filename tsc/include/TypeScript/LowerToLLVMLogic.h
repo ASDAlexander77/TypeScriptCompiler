@@ -32,11 +32,6 @@ namespace typescript
         TypeHelper(PatternRewriter &rewriter) : context(rewriter.getContext()) {}
         TypeHelper(MLIRContext *context) : context(context) {}
 
-        LLVM::LLVMVoidType getVoidType()
-        {
-            return LLVM::LLVMVoidType::get(context);
-        }
-
         Type getBooleanType()
         {
             return mlir_ts::BooleanType::get(context);
@@ -57,11 +52,6 @@ namespace typescript
             return IntegerType::get(context, 64);
         }
 
-        Type getIndexType() 
-        { 
-            return IndexType::get(context); 
-        }
-
         Type getF32Type()
         {
             return FloatType::getF32(context);
@@ -72,6 +62,11 @@ namespace typescript
             return IntegerAttr::get(getI32Type(), APInt(32, value));
         }
 
+        Type getIndexType() 
+        { 
+            return getI64Type(); 
+        }
+
         IntegerAttr getIndexAttrValue(int64_t value)
         {
             return IntegerAttr::get(getIndexType(), APInt(64, value));
@@ -80,6 +75,11 @@ namespace typescript
         Type getLLVMBoolType()
         {
             return IntegerType::get(context, 1/*, IntegerType::SignednessSemantics::Unsigned*/);
+        }
+
+        LLVM::LLVMVoidType getVoidType()
+        {
+            return LLVM::LLVMVoidType::get(context);
         }
 
         LLVM::LLVMPointerType getI8PtrType()
@@ -599,6 +599,19 @@ namespace typescript
             }
         }
     };
+
+    class CastLogicHelper
+    {
+        Operation *op;
+        PatternRewriter &rewriter;
+    public:        
+        CastLogicHelper(Operation *op, PatternRewriter &rewriter) : op(op), rewriter(rewriter) {}
+
+        Value cast()
+        {
+            return mlir::Value();
+        }        
+    };    
 
     template <typename UnaryOpTy, typename StdIOpTy, typename StdFOpTy>
     void UnaryOp(UnaryOpTy &unaryOp, PatternRewriter &builder)
