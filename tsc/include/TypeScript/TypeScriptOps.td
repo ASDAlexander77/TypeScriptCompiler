@@ -47,7 +47,7 @@ def ConstantOp : TypeScript_Op<"Constant",
   }];
 
   let arguments = (ins AnyAttr:$value);
-  let results = (outs AnyType);
+  let results = (outs AnyType:$constValue);
 
   let builders = [
     OpBuilderDAG<(ins "Attribute":$value),
@@ -58,6 +58,8 @@ def ConstantOp : TypeScript_Op<"Constant",
   }];
 
   let hasFolder = 1;
+
+  let assemblyFormat = "attr-dict `:` type($constValue)";
 }
 
 def SymbolRefOp : TypeScript_Op<"SymbolRef"> {
@@ -224,7 +226,7 @@ def TypeScript_UndefOp : TypeScript_Op<"Undef", []> {
   let assemblyFormat = "attr-dict `:` type($result)";
 }
 
-def TypeScript_PrintOp : TypeScript_Op<"print"> {
+def TypeScript_PrintOp : TypeScript_Op<"Print"> {
   let summary = "print operation";
   let description = [{
     The "print" builtin operation prints a given input string, and produces no results.
@@ -436,14 +438,12 @@ def TypeScript_ParamOptionalOp : TypeScript_Op<"ParamOpt", [SingleBlockImplicitT
   let description = [{
 
     ```mlir
-    %0 = ts.param_opt : f32
+    %0 = ts.param_opt : !ts.optional<f32>
     ```
   }];
 
   let arguments = (ins
-    AnyType:$argValue,
-    I32:$params_count,
-    OptionalAttr<I32Attr>:$paramIndex
+    TypeScript_AnyOptional:$argValue
   );
 
   let results = (outs
@@ -464,8 +464,20 @@ def TypeScript_ParamOptionalOp : TypeScript_Op<"ParamOpt", [SingleBlockImplicitT
 def TypeScript_ParamDefaultValueOp : TypeScript_Op<"DefaultValue", [NoSideEffect, ReturnLike, Terminator,
                                ParentOneOf<["ParamOptionalOp"]>]> {
   let arguments = (ins Variadic<AnyType>:$results);
+
   let builders = [OpBuilderDAG<(ins), [{ /* nothing to do */ }]>];
   let verifier = ?;
+
+  let assemblyFormat = "$results attr-dict `:` type($results)";
+}
+
+def TypeScript_HasValueOp : TypeScript_Op<"HasValue"> {
+  let description = [{
+    Example:
+      ts.has_value %v : ts.optional<i32> to bool
+  }];
+  let arguments = (ins TypeScript_AnyOptional:$in);
+  let results = (outs TypeScript_Boolean:$res);
 }
 
 def TypeScript_VariableOp : TypeScript_Op<"Variable", []> {

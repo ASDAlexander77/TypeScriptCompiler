@@ -21,61 +21,76 @@
 
 using namespace mlir;
 using namespace ::typescript;
-namespace mlir_ts = mlir::typescript;
+namespace mlir_ts = typescript;
 
 namespace typescript
 {
     class TypeHelper
     {
-        PatternRewriter &rewriter;
+        MLIRContext *context;
     public:        
-        TypeHelper(PatternRewriter &rewriter) : rewriter(rewriter) {}
+        TypeHelper(PatternRewriter &rewriter) : context(rewriter.getContext()) {}
+        TypeHelper(MLIRContext *context) : context(context) {}
 
         LLVM::LLVMVoidType getVoidType()
         {
-            return LLVM::LLVMVoidType::get(rewriter.getContext());
+            return LLVM::LLVMVoidType::get(context);
         }
 
         Type getBooleanType()
         {
-            return mlir_ts::BooleanType::get(rewriter.getContext());
+            return mlir_ts::BooleanType::get(context);
         }
 
         Type getI8Type()
         {
-            return rewriter.getIntegerType(8);
+            return IntegerType::get(context, 8);
         }
 
         Type getI32Type()
         {
-            return rewriter.getIntegerType(32);
+            return IntegerType::get(context, 32);
         }
 
         Type getI64Type()
         {
-            return rewriter.getIntegerType(64);
+            return IntegerType::get(context, 64);
+        }
+
+        Type getIndexType() 
+        { 
+            return IndexType::get(context); 
         }
 
         Type getF32Type()
         {
-            return rewriter.getF32Type();
+            return FloatType::getF32(context);
+        }
+
+        IntegerAttr getStructIndexAttrValue(int32_t value)
+        {
+            return IntegerAttr::get(getI32Type(), APInt(32, value));
         }
 
         IntegerAttr getIndexAttrValue(int64_t value)
         {
-            return rewriter.getIntegerAttr(rewriter.getIndexType(), value);
+            return IntegerAttr::get(getIndexType(), APInt(64, value));
+        }
+
+        Type getLLVMBoolType()
+        {
+            return IntegerType::get(context, 1/*, IntegerType::SignednessSemantics::Unsigned*/);
         }
 
         LLVM::LLVMPointerType getI8PtrType()
         {
-            return LLVM::LLVMPointerType::get(rewriter.getIntegerType(8));
+            return LLVM::LLVMPointerType::get(getI8Type());
         }
 
         LLVM::LLVMPointerType getI8PtrPtrType()
         {
-            return LLVM::LLVMPointerType::get(LLVM::LLVMPointerType::get(rewriter.getIntegerType(8)));
+            return LLVM::LLVMPointerType::get(LLVM::LLVMPointerType::get(getI8Type()));
         }
-
 
         LLVM::LLVMPointerType getPointerType(Type elementType)
         {
@@ -87,12 +102,12 @@ namespace typescript
             return LLVM::LLVMArrayType::get(elementType, size);
         }
 
-        LLVM::LLVMFunctionType getFunctionType(mlir::Type result, ArrayRef<mlir::Type> arguments, bool isVarArg = false)
+        LLVM::LLVMFunctionType getFunctionType(Type result, ArrayRef<Type> arguments, bool isVarArg = false)
         {
             return LLVM::LLVMFunctionType::get(result, arguments, isVarArg);
         }
 
-        LLVM::LLVMFunctionType getFunctionType(ArrayRef<mlir::Type> arguments, bool isVarArg = false)
+        LLVM::LLVMFunctionType getFunctionType(ArrayRef<Type> arguments, bool isVarArg = false)
         {
             return LLVM::LLVMFunctionType::get(getVoidType(), arguments, isVarArg);
         }
@@ -106,7 +121,7 @@ namespace typescript
             assert(typeConverter);
         }
 
-        mlir::Type convertType(mlir::Type type)
+        Type convertType(Type type)
         {
             if (type)
             {
@@ -209,8 +224,9 @@ namespace typescript
             // Get the pointer to the first character in the global string.
             Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
             Value cst0 = rewriter.create<LLVM::ConstantOp>(
-                loc, IntegerType::get(rewriter.getContext(), 64),
-                rewriter.getIntegerAttr(rewriter.getIndexType(), 0));
+                loc, 
+                th.getIndexType(),
+                th.getIndexAttrValue(0));
             return rewriter.create<LLVM::GEPOp>(
                 loc,
                 th.getI8PtrType(),
@@ -240,7 +256,7 @@ namespace typescript
             return getOrCreateGlobalString_(name, StringRef(value.data(), value.length() + 1));
         }
 
-        Value getOrCreateGlobalArray(mlir::Type originalElementType, StringRef name, mlir::Type llvmElementType, unsigned size, ArrayAttr arrayAttr)
+        Value getOrCreateGlobalArray(Type originalElementType, StringRef name, Type llvmElementType, unsigned size, ArrayAttr arrayAttr)
         {
             auto loc = op->getLoc();
             auto parentModule = op->getParentOfType<ModuleOp>();
@@ -264,15 +280,15 @@ namespace typescript
                     seekLast<DenseElementsAttr>(parentModule.getBody());
 
                     // end
-                    auto dataType = mlir::VectorType::get({static_cast<int64_t>(value.size())}, llvmElementType);
-                    auto attr = mlir::DenseElementsAttr::get(dataType, value);                
+                    auto dataType = VectorType::get({static_cast<int64_t>(value.size())}, llvmElementType);
+                    auto attr = DenseElementsAttr::get(dataType, value);                
                     global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, attr);
                 }
                 else if (originalElementType.dyn_cast_or_null<mlir_ts::StringType>())
                 {
                     seekLast(parentModule.getBody());
 
-                    mlir::OpBuilder::InsertionGuard guard(rewriter);
+                    OpBuilder::InsertionGuard guard(rewriter);
                     
                     global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, Attribute{});
 
@@ -282,7 +298,7 @@ namespace typescript
                     // Initialize the tuple
                     rewriter.setInsertionPoint(block, block->begin());
 
-                    mlir::Value arrayVal = rewriter.create<LLVM::UndefOp>(loc, arrayType);
+                    Value arrayVal = rewriter.create<LLVM::UndefOp>(loc, arrayType);
 
                     auto position = 0;
                     for (auto item : arrayAttr.getValue())
@@ -304,8 +320,9 @@ namespace typescript
             // Get the pointer to the first character in the global string.
             Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
             Value cst0 = rewriter.create<LLVM::ConstantOp>(
-                loc, IntegerType::get(rewriter.getContext(), 64),
-                rewriter.getIntegerAttr(rewriter.getIndexType(), 0));
+                loc,
+                th.getIndexType(),
+                th.getIndexAttrValue(0));
             return rewriter.create<LLVM::GEPOp>(
                 loc,
                 pointerType,
@@ -313,7 +330,7 @@ namespace typescript
                 ArrayRef<Value>({cst0, cst0}));            
         }        
 
-        Value getTupleFromArrayAttr(Location loc, mlir::Type llvmStructType, ArrayAttr arrayAttr)
+        Value getTupleFromArrayAttr(Location loc, Type llvmStructType, ArrayAttr arrayAttr)
         {
             Value tupleVal = rewriter.create<LLVM::UndefOp>(loc, llvmStructType);
 
@@ -322,7 +339,7 @@ namespace typescript
             {
                 if (item.isa<StringAttr>())
                 {
-                    mlir::OpBuilder::InsertionGuard guard(rewriter);
+                    OpBuilder::InsertionGuard guard(rewriter);
                     
                     auto strValue = item.cast<StringAttr>().getValue().str();
                     auto itemVal = getOrCreateGlobalString(strValue);                        
@@ -331,7 +348,7 @@ namespace typescript
                 }
                 else if (auto subArrayAttr = item.dyn_cast_or_null<ArrayAttr>())
                 {
-                    mlir::OpBuilder::InsertionGuard guard(rewriter);
+                    OpBuilder::InsertionGuard guard(rewriter);
 
                     auto subType = llvmStructType.cast<LLVM::LLVMStructType>().getBody()[position];
                     auto subTupleVal = getTupleFromArrayAttr(loc, subType, subArrayAttr);
@@ -348,7 +365,7 @@ namespace typescript
             return tupleVal;
         }
 
-        Value getOrCreateGlobalTuple(mlir::Type llvmStructType, StringRef name, ArrayAttr arrayAttr)
+        Value getOrCreateGlobalTuple(Type llvmStructType, StringRef name, ArrayAttr arrayAttr)
         {
             auto loc = op->getLoc();
             auto parentModule = op->getParentOfType<ModuleOp>();
@@ -381,8 +398,9 @@ namespace typescript
             // Get the pointer to the first character in the global string.
             Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
             Value cst0 = rewriter.create<LLVM::ConstantOp>(
-                loc, IntegerType::get(rewriter.getContext(), 64),
-                rewriter.getIntegerAttr(rewriter.getIndexType(), 0));
+                loc, 
+                th.getIndexType(),
+                th.getIndexAttrValue(0));
             return rewriter.create<LLVM::GEPOp>(
                 loc,
                 pointerType,
@@ -407,7 +425,7 @@ namespace typescript
             return rewriter.create<LLVM::LLVMFuncOp>(loc, name, llvmFnType);
         }   
 
-        mlir::Value GetAddressOfArrayElement(mlir::Type elementRefType, mlir::Value arrayOrStringOrTuple, mlir::Value index)
+        Value GetAddressOfArrayElement(Type elementRefType, Value arrayOrStringOrTuple, Value index)
         {
             TypeHelper th(rewriter);
             TypeConverterHelper tch(typeConverter);
@@ -428,7 +446,7 @@ namespace typescript
             return addr;            
         }     
 
-        mlir::Value GetAddressOfStructElement(mlir::Type elementRefType, mlir::Value arrayOrStringOrTuple, int32_t index)
+        Value GetAddressOfStructElement(Type elementRefType, Value arrayOrStringOrTuple, int32_t index)
         {
             // index of struct MUST BE 32 bit
             TypeHelper th(rewriter);
@@ -441,7 +459,7 @@ namespace typescript
 
             auto ptrType = tch.convertType(elementRefType);
 
-            SmallVector<mlir::Value> indexes;
+            SmallVector<Value> indexes;
             // add first index which 64 bit (struct field MUST BE 32 bit index)
             auto firstIndex = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI64Type(), rewriter.getI64IntegerAttr(0));
             indexes.push_back(firstIndex);
@@ -567,7 +585,7 @@ namespace typescript
         }
 
         template <typename OpTy>
-        void saveResult(OpTy& op, mlir::Value result)
+        void saveResult(OpTy& op, Value result)
         {
             auto defOp = op.operand1().getDefiningOp();
             // TODO: finish it for field access
@@ -583,7 +601,7 @@ namespace typescript
     };
 
     template <typename UnaryOpTy, typename StdIOpTy, typename StdFOpTy>
-    void UnaryOp(UnaryOpTy &unaryOp, mlir::PatternRewriter &builder)
+    void UnaryOp(UnaryOpTy &unaryOp, PatternRewriter &builder)
     {
         auto oper = unaryOp.operand1();
         auto type = oper.getType();
@@ -615,7 +633,7 @@ namespace typescript
     }    
 
     template <typename BinOpTy, typename StdIOpTy, typename StdFOpTy>
-    void BinOp(BinOpTy &binOp, mlir::PatternRewriter &builder)
+    void BinOp(BinOpTy &binOp, PatternRewriter &builder)
     {
         auto leftType = binOp.getOperand(0).getType();
         if (leftType.isIntOrIndex())

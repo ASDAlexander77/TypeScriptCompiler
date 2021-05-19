@@ -72,16 +72,15 @@ namespace
             Value variable = rewriter.create<mlir_ts::VariableOp>(location, paramOp.getType(), mlir::Value());
 
             // ts.if
-            auto index = paramOp.paramIndex();
-            auto indexConstant = rewriter.create<mlir_ts::ConstantOp>(location, rewriter.getI32IntegerAttr(index.getValue()));
+            auto falseConstant = rewriter.create<mlir_ts::ConstantOp>(location, rewriter.getBoolAttr(false));
+            auto hasValue = rewriter.create<mlir_ts::HasValueOp>(location, th.getBooleanType(), paramOp.argValue());
             // replace with ts op to avoid cast
-            auto condValue = rewriter.create<CmpIOp>(location, CmpIPredicate::ult, paramOp.params_count(), indexConstant);
             auto compare = rewriter.create<mlir_ts::LogicalBinaryOp>(
                 location,
                 th.getBooleanType(),
-                rewriter.getI32IntegerAttr((int)SyntaxKind::LessThanToken),
-                paramOp.params_count(),
-                indexConstant);
+                rewriter.getI32IntegerAttr((int)SyntaxKind::ExclamationEqualsToken),
+                hasValue,
+                falseConstant);
             auto ifOp = rewriter.create<mlir_ts::IfOp>(location, paramOp.argValue().getType(), compare, true);
 
             auto sp = rewriter.saveInsertionPoint();
@@ -106,6 +105,7 @@ namespace
             // save op
             rewriter.create<mlir_ts::StoreOp>(location, ifOp.results().front(), variable);
             rewriter.replaceOp(paramOp, variable);
+
             return success();
         }
     };
@@ -598,6 +598,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         mlir_ts::EntryOp,
         mlir_ts::ExitOp,
         mlir_ts::FuncOp,
+        mlir_ts::HasValueOp,
         mlir_ts::NullOp,
         mlir_ts::ParseFloatOp,
         mlir_ts::ParseIntOp,

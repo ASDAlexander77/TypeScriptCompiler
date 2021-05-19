@@ -1380,6 +1380,27 @@ namespace
         }
     };
 
+    struct HasValueOpLowering : public OpConversionPattern<mlir_ts::HasValueOp>
+    {
+        using OpConversionPattern<mlir_ts::HasValueOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::HasValueOp hasValueOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            auto loc = hasValueOp->getLoc();
+
+            TypeHelper th(rewriter);            
+            TypeConverterHelper tch(getTypeConverter());
+
+            rewriter.replaceOpWithNewOp<LLVM::ExtractValueOp>(
+                hasValueOp, 
+                th.getLLVMBoolType(), 
+                hasValueOp.in(), 
+                rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(1)));
+
+            return success();
+        }
+    };    
+
     static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, mlir::ModuleOp &m)
     {
         converter.addConversion([&](mlir_ts::AnyType type) {
@@ -1391,7 +1412,8 @@ namespace
         });
 
         converter.addConversion([&](mlir_ts::BooleanType type) {
-            return IntegerType::get(m.getContext(), 1/*, mlir::IntegerType::SignednessSemantics::Unsigned*/);
+            TypeHelper th(m.getContext());
+            return th.getLLVMBoolType();
         });
 
         converter.addConversion([&](mlir_ts::CharType type) {
@@ -1434,7 +1456,20 @@ namespace
             }
 
             return LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, false);
-        });            
+        });      
+
+        converter.addConversion([&](mlir_ts::OptionalType type) {
+            SmallVector<mlir::Type> convertedTypes;
+
+            TypeHelper th(m.getContext());
+
+            // wrapped type
+            convertedTypes.push_back(converter.convertType(type.getElementType()));
+            // field which shows undefined state
+            convertedTypes.push_back(th.getLLVMBoolType());
+
+            return LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, false);
+        });                
     };
 
 } // end anonymous namespace
@@ -1503,6 +1538,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         AssertOpLowering,
         CastOpLowering,
         ConstantOpLowering,
+        HasValueOpLowering,
         SymbolRefOpLowering,
         GlobalOpLowering,
         EntryOpLowering,

@@ -536,18 +536,6 @@ namespace
             }
 
             auto formalParams = parametersContextAST->parameters;
-
-            // add extra parameter to send number of parameters
-            auto anyOptionalParam =
-                formalParams.end() != std::find_if(formalParams.begin(), formalParams.end(), [](auto param) {
-                    return param->questionToken || !!param->initializer;
-                });
-
-            if (anyOptionalParam)
-            {
-                params.push_back(std::make_shared<FunctionParamDOM>(COUNT_PARAMS_PARAMETERNAME, builder.getI32Type(), loc(parametersContextAST), false));
-            }
-
             for (auto arg : formalParams)
             {
                 auto name = wstos(arg->name.as<Identifier>()->escapedText);
@@ -615,7 +603,6 @@ namespace
             std::vector<FunctionParamDOM::TypePtr> params = mlirGenParameters(functionLikeDeclarationBaseAST, genContext);
             SmallVector<mlir::Type> argTypes;
             auto argNumber = 0;
-            auto argOptionalFrom = -1;
 
             for (const auto &param : params)
             {
@@ -625,10 +612,13 @@ namespace
                     return std::make_tuple(mlir_ts::FuncOp(), FunctionPrototypeDOM::TypePtr(nullptr), false);
                 }
 
-                argTypes.push_back(paramType);
-                if (param->getIsOptional() && argOptionalFrom < 0)
+                if (param->getIsOptional())
                 {
-                    argOptionalFrom = argNumber;
+                    argTypes.push_back(getOptionalType(paramType));
+                }
+                else
+                {
+                    argTypes.push_back(paramType);
                 }
 
                 argNumber++;
@@ -867,13 +857,6 @@ namespace
             for (const auto &param : funcProto->getArgs())
             {
                 index++;
-
-                // skip __const_params, it is not real param
-                if (param->getName() == COUNT_PARAMS_PARAMETERNAME)
-                {
-                    continue;
-                }
-
                 mlir::Value paramValue;
 
                 // alloc all args
@@ -885,22 +868,20 @@ namespace
 
                     auto countArgsValue = arguments[0];
 
+                    auto valueType = getOptionalType(param->getType());
+
                     auto paramOptionalOp = builder.create<mlir_ts::ParamOptionalOp>(
                         location,
-                        mlir_ts::RefType::get(param->getType()),
-                        arguments[index],
-                        countArgsValue,
-                        builder.getI32IntegerAttr(index));
+                        mlir_ts::RefType::get(valueType),
+                        arguments[index]);
 
                     paramValue = paramOptionalOp;
 
                     if (param->hasInitValue())
                     {
-                        auto *defValueBlock = new mlir::Block();
-                        paramOptionalOp.defaultValueRegion().push_back(defValueBlock);
+                        mlir::OpBuilder::InsertionGuard guard(builder);
 
-                        auto sp = builder.saveInsertionPoint();
-                        builder.setInsertionPointToStart(defValueBlock);
+                        /*auto *defValueBlock =*/ builder.createBlock(&paramOptionalOp.defaultValueRegion());
 
                         mlir::Value defaultValue;
                         auto initExpression = param->getInitValue();
@@ -913,14 +894,12 @@ namespace
                             llvm_unreachable("unknown statement");
                         }
 
-                        if (param->getType() != defaultValue.getType())
+                        if (valueType != defaultValue.getType())
                         {
-                            defaultValue = builder.create<mlir_ts::CastOp>(location, param->getType(), defaultValue);
+                            defaultValue = builder.create<mlir_ts::CastOp>(location, valueType, defaultValue);
                         }
 
                         builder.create<mlir_ts::ParamDefaultValueOp>(location, defaultValue);
-
-                        builder.restoreInsertionPoint(sp);
                     }
                 }
                 else
@@ -1956,14 +1935,8 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
             auto optionalFrom = funcArgsCount - opArgsCount;
             auto hasOptionalFrom = optionalFrom > 0;
-            if (hasOptionalFrom)
-            {
-                auto constNumOfParams = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(opArgsCount));
-                operands.push_back(constNumOfParams);
-            }
 
             mlirGen(argumentsContext, operands, calledFuncType, hasOptionalFrom, genContext);
-
             if (hasOptionalFrom)
             {
                 // -1 to exclude count params
@@ -2665,6 +2638,11 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             value.getDefiningOp()->erase();
             return type;
         }         
+
+        mlir_ts::OptionalType getOptionalType(mlir::Type type)
+        {
+            return mlir_ts::OptionalType::get(type);
+        }
 
         mlir_ts::AnyType getAnyType()
         {

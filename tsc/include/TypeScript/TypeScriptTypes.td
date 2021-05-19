@@ -104,6 +104,10 @@ def TypeScript_IsTupleRefType : CPred<"$_self.isa<::mlir::typescript::RefType>()
 
 def TypeScript_AnyTupleRef : DialectType<TypeScript_Dialect, TypeScript_IsTupleRefType, "any tuple reference type">;
 
+def TypeScript_IsOptionalType : CPred<"$_self.isa<::mlir::typescript::OptionalType>()">;
+
+def TypeScript_AnyOptional : DialectType<TypeScript_Dialect, TypeScript_IsOptionalType, "any optional type">;
+
 def TypeScript_Optional : TypeScript_Type<"Optional"> {
   let mnemonic = "optional";
 
