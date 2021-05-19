@@ -811,9 +811,6 @@ namespace
         {
             auto loc = op->getLoc();
 
-            TypeHelper th(rewriter);
-            LLVMCodeHelper ch(op, rewriter);
-            CodeLogicHelper clh(op, rewriter);
             TypeConverterHelper tch(getTypeConverter());
 
             auto in = op.in();
@@ -830,133 +827,16 @@ namespace
                 return success();
             }
 
-            if (inType.dyn_cast_or_null<mlir_ts::CharType>() && resType.dyn_cast_or_null<mlir_ts::StringType>())
+            CastLogicHelper castLogic(op, rewriter);
+            auto result = castLogic.cast(in, inLLVMType, res, resLLVMType);
+            if (!result)
             {
-                // types are equals
-                rewriter.replaceOpWithNewOp<mlir_ts::CharToStringOp>(op, mlir_ts::StringType::get(rewriter.getContext()), in);
-                return success();
+                return failure();
             }
 
-            if ((inLLVMType.isInteger(32) || inLLVMType.isInteger(64)) && (resLLVMType.isF32() || resLLVMType.isF64()))
-            {
-                rewriter.replaceOpWithNewOp<SIToFPOp>(op, resLLVMType, in);
-                return success();
-            }
+            rewriter.replaceOp(op, result);
 
-            if ((inLLVMType.isF32() || inLLVMType.isF64()) && (resLLVMType.isInteger(32) || resLLVMType.isInteger(64)))
-            {
-                rewriter.replaceOpWithNewOp<FPToSIOp>(op, resLLVMType, in);
-                return success();
-            }
-
-            if ((inLLVMType.isInteger(64) || inLLVMType.isInteger(32) || inLLVMType.isInteger(8)) && resLLVMType.isInteger(1))
-            {
-                //rewriter.replaceOpWithNewOp<TruncateIOp>(op, op2, in);
-                rewriter.replaceOpWithNewOp<CmpIOp>(op, CmpIPredicate::ne, op.in(), clh.createI32ConstantOf(0));
-                return success();
-            }
-
-            if (inLLVMType.isInteger(1) && (resLLVMType.isInteger(8) || resLLVMType.isInteger(32) || resLLVMType.isInteger(64)))
-            {
-                rewriter.replaceOpWithNewOp<ZeroExtendIOp>(op, in, resLLVMType);
-                return success();
-            }            
-
-            if (inLLVMType.isInteger(32) && resLLVMType.isInteger(64))
-            {
-                rewriter.replaceOpWithNewOp<ZeroExtendIOp>(op, in, resLLVMType);
-                return success();
-            }               
-
-            if ((inLLVMType.isInteger(64) || inLLVMType.isInteger(32) || inLLVMType.isInteger(16)) && resLLVMType.isInteger(8))
-            {
-                rewriter.replaceOpWithNewOp<TruncateIOp>(op, in, resLLVMType);
-                return success();
-            }
-
-            if (inLLVMType.isInteger(64) && resLLVMType.isInteger(32))
-            {
-                rewriter.replaceOpWithNewOp<TruncateIOp>(op, in, resLLVMType);
-                return success();
-            }
-
-            auto isResString = resType.dyn_cast_or_null<mlir_ts::StringType>();
-
-            if (inLLVMType.isInteger(1) && isResString)
-            {
-                rewriter.replaceOpWithNewOp<LLVM::SelectOp>(
-                    op,
-                    op.in(),
-                    ch.getOrCreateGlobalString("__true__", std::string("true")),
-                    ch.getOrCreateGlobalString("__false__", std::string("false"))); 
-
-                return success();               
-            }
-
-            if (inLLVMType.isInteger(32) && isResString)
-            {
-                auto i8PtrTy = th.getI8PtrType();
-
-                auto _itoaFuncOp =
-                    ch.getOrInsertFunction(
-                        "_itoa",
-                        th.getFunctionType(th.getI8PtrType(), ArrayRef<mlir::Type>{rewriter.getI32Type(), th.getI8PtrType(), rewriter.getI32Type()}, true));
-
-                auto bufferSizeValue = clh.createI32ConstantOf(50);
-                mlir::Value newStringValue = rewriter.create<LLVM::AllocaOp>(loc, i8PtrTy, bufferSizeValue, true);
-                auto base = clh.createI32ConstantOf(10);
-
-                rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, _itoaFuncOp, ValueRange{op.in(), newStringValue, base});
-
-                return success();
-            }
-
-            if (inLLVMType.isInteger(64) && isResString)
-            {
-                auto i8PtrTy = th.getI8PtrType();
-
-                auto _itoaFuncOp =
-                    ch.getOrInsertFunction(
-                        "_i64toa",
-                        th.getFunctionType(th.getI8PtrType(), ArrayRef<mlir::Type>{rewriter.getI32Type(), th.getI8PtrType(), rewriter.getI32Type()}, true));
-
-                auto bufferSizeValue = clh.createI32ConstantOf(50);
-                mlir::Value newStringValue = rewriter.create<LLVM::AllocaOp>(loc, i8PtrTy, bufferSizeValue, true);
-                auto base = clh.createI32ConstantOf(10);
-
-                rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, _itoaFuncOp, ValueRange{op.in(), newStringValue, base});
-
-                return success();
-            }            
-
-            if ((inLLVMType.isF32() || inLLVMType.isF64()) && isResString)
-            {
-                auto i8PtrTy = th.getI8PtrType();
-
-                auto _gcvtFuncOp =
-                    ch.getOrInsertFunction(
-                        "_gcvt",
-                        th.getFunctionType(th.getI8PtrType(), ArrayRef<mlir::Type>{rewriter.getF64Type(), rewriter.getI32Type(), th.getI8PtrType()}, true));
-
-                auto bufferSizeValue = clh.createI32ConstantOf(50);
-                mlir::Value newStringValue = rewriter.create<LLVM::AllocaOp>(loc, i8PtrTy, bufferSizeValue, true);
-                auto doubleValue = rewriter.create<LLVM::FPExtOp>(loc, rewriter.getF64Type(), op.in());
-                auto precision = clh.createI32ConstantOf(16);
-
-                rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, _gcvtFuncOp, ValueRange{doubleValue, precision, newStringValue});
-
-                return success();
-            }
-
-            // cast value value to optional value
-            if (auto optType = resType.dyn_cast_or_null<mlir_ts::OptionalType>())
-            {
-                rewriter.replaceOpWithNewOp<mlir_ts::CreateOptionalOp>(op, resType, in);
-                return success();
-            }
-
-            emitError(loc, "invalid cast operator type 1: '") << inLLVMType << "', type 2: '" << resLLVMType << "'";
-            llvm_unreachable("not implemented");
+            return success();
         }
     };
 
