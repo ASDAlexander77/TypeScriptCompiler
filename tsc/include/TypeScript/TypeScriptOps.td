@@ -483,6 +483,15 @@ def TypeScript_CreateOptionalOp : TypeScript_Op<"CreateOptional",
   let results = (outs TypeScript_AnyOptional:$res);
 }
 
+def TypeScript_UndefOptionalOp : TypeScript_Op<"UndefOptional"> {
+  let description = [{
+    Example:
+      ts.undef_optional : ts.optional<i32>
+  }];
+  let arguments = (ins );
+  let results = (outs TypeScript_AnyOptional:$res);
+}
+
 def TypeScript_HasValueOp : TypeScript_Op<"HasValue"> {
   let description = [{
     Example:

@@ -574,6 +574,12 @@ namespace
 
         LogicalResult matchAndRewrite(mlir_ts::UndefOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
+            if (op.getType().isa<mlir_ts::OptionalType>())
+            {
+                rewriter.replaceOpWithNewOp<mlir_ts::UndefOptionalOp>(op, op.getType());
+                return success();
+            }
+
             TypeConverterHelper tch(getTypeConverter());
             rewriter.replaceOpWithNewOp<LLVM::UndefOp>(op, tch.convertType(op.getType()));
             return success();
@@ -1314,6 +1320,34 @@ namespace
         }
     };    
 
+    struct UndefOptionalOpLowering : public OpConversionPattern<mlir_ts::UndefOptionalOp>
+    {
+        using OpConversionPattern<mlir_ts::UndefOptionalOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::UndefOptionalOp undefOptionalOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            auto loc = undefOptionalOp->getLoc();
+
+            TypeHelper th(rewriter);            
+            TypeConverterHelper tch(getTypeConverter());
+            CodeLogicHelper clh(undefOptionalOp, rewriter);
+
+            auto llvmOptType = tch.convertType(undefOptionalOp.res().getType());
+            auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmOptType);
+
+            auto trueValue = clh.createI1ConstantOf(false); 
+
+            rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(
+                undefOptionalOp, 
+                llvmOptType, 
+                structValue,
+                trueValue, 
+                rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(1)));
+
+            return success();
+        }
+    };   
+
     struct HasValueOpLowering : public OpConversionPattern<mlir_ts::HasValueOp>
     {
         using OpConversionPattern<mlir_ts::HasValueOp>::OpConversionPattern;
@@ -1496,6 +1530,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         CastOpLowering,
         ConstantOpLowering,
         CreateOptionalOpLowering,
+        UndefOptionalOpLowering,
         HasValueOpLowering,
         ValueOpLowering,
         SymbolRefOpLowering,

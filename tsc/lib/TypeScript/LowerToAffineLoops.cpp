@@ -72,16 +72,8 @@ namespace
             Value variable = rewriter.create<mlir_ts::VariableOp>(location, paramOp.getType(), mlir::Value());
 
             // ts.if
-            auto falseConstant = rewriter.create<mlir_ts::ConstantOp>(location, rewriter.getBoolAttr(false));
             auto hasValue = rewriter.create<mlir_ts::HasValueOp>(location, th.getBooleanType(), paramOp.argValue());
-            // replace with ts op to avoid cast
-            auto compare = rewriter.create<mlir_ts::LogicalBinaryOp>(
-                location,
-                th.getBooleanType(),
-                rewriter.getI32IntegerAttr((int)SyntaxKind::ExclamationEqualsToken),
-                hasValue,
-                falseConstant);
-            auto ifOp = rewriter.create<mlir_ts::IfOp>(location, paramOp.argValue().getType(), compare, true);
+            auto ifOp = rewriter.create<mlir_ts::IfOp>(location, paramOp.argValue().getType(), hasValue, true);
 
             auto sp = rewriter.saveInsertionPoint();
 
@@ -90,15 +82,15 @@ namespace
 
             rewriter.setInsertionPointToStart(&thenRegion.back());
 
-            rewriter.inlineRegionBefore(paramOp.defaultValueRegion(), &ifOp.thenRegion().back());
-            rewriter.eraseBlock(&ifOp.thenRegion().back());
+            rewriter.create<mlir_ts::YieldOp>(location, paramOp.argValue());
 
             // else block
             auto &elseRegion = ifOp.elseRegion();
 
             rewriter.setInsertionPointToStart(&elseRegion.back());
 
-            rewriter.create<mlir_ts::YieldOp>(location, paramOp.argValue());
+            rewriter.inlineRegionBefore(paramOp.defaultValueRegion(), &ifOp.elseRegion().back());
+            rewriter.eraseBlock(&ifOp.elseRegion().back());
 
             rewriter.restoreInsertionPoint(sp);
 
