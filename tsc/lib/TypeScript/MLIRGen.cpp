@@ -342,12 +342,6 @@ namespace
             {
                 return mlirGen(expressionAST.as<NullLiteral>(), genContext);
             }
-            else if (kind == SyntaxKind::UndefinedKeyword)
-            {
-                // TODO: finish it
-                //return mlirGen(expressionAST.as<UndefinedLiteral>(), genContext);
-                llvm_unreachable("unknown expression");
-            }
             else if (kind == SyntaxKind::TrueKeyword)
             {
                 return mlirGen(expressionAST.as<TrueLiteral>(), genContext);
@@ -2072,15 +2066,6 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 getAnyType());
         }
 
-        /*
-        mlir::Value mlirGen(UndefinedLiteral undefinedLiteral, const GenContext &genContext)
-        {
-            return builder.create<mlir_ts::UndefOp>(
-                loc(undefinedLiteral),
-                getAnyType());
-        }
-        */
-
         mlir::Value mlirGen(TrueLiteral trueLiteral, const GenContext &genContext)
         {
             return builder.create<mlir_ts::ConstantOp>(
@@ -2237,7 +2222,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             // built in types
             if (name == "undefined") 
             {
-                return builder.create<mlir_ts::UndefOp>(location, getOptionalType(getByteType()));
+                return builder.create<mlir_ts::UndefOp>(location, getOptionalType(getUndefPlaceHolderType()));
             }
 
             // unresolved reference (for call for example)
@@ -2645,6 +2630,11 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
         mlir_ts::OptionalType getOptionalType(mlir::Type type)
         {
             return mlir_ts::OptionalType::get(type);
+        }
+
+        mlir_ts::UndefPlaceHolderType getUndefPlaceHolderType()
+        {
+            return mlir_ts::UndefPlaceHolderType::get(builder.getContext());
         }
 
         mlir_ts::AnyType getAnyType()

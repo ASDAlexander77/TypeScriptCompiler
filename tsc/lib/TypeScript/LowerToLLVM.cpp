@@ -1458,7 +1458,11 @@ namespace
             convertedTypes.push_back(th.getLLVMBoolType());
 
             return LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, false);
-        });                
+        });   
+
+        converter.addConversion([&](mlir_ts::UndefPlaceHolderType type) {
+            return LLVM::LLVMVoidType::get(type.getContext());
+        });                      
     };
 
 } // end anonymous namespace

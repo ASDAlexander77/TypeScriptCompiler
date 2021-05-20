@@ -49,6 +49,10 @@ def TypeScript_Object : TypeScript_Type<"Object"> {
     let mnemonic = "object";
 }
 
+def TypeScript_UndefPlaceHolder : TypeScript_Type<"UndefPlaceHolder"> {
+    let mnemonic = "undef_ph";
+}
+
 def TypeScript_Ref : TypeScript_Type<"Ref"> {
   let mnemonic = "ref";
 
