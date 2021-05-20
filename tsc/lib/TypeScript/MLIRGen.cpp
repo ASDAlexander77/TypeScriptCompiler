@@ -2234,6 +2234,12 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 return builder.create<mlir_ts::ConstantOp>(location, getEnumType(enumTypeInfo.first), enumTypeInfo.second);
             }
 
+            // built in types
+            if (name == "undefined") 
+            {
+                return builder.create<mlir_ts::UndefOp>(location, getOptionalType(getByteType()));
+            }
+
             // unresolved reference (for call for example)
             // TODO: put assert here to see which ref names are not resolved
             return builder.create<mlir_ts::SymbolRefOp>(location, mlir::FlatSymbolRefAttr::get(name, builder.getContext()));
