@@ -19,6 +19,8 @@
 #include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/TypeSwitch.h"
 
+#include "scanner_enums.h"
+
 using namespace mlir;
 using namespace ::typescript;
 namespace mlir_ts = typescript;
@@ -753,7 +755,7 @@ namespace typescript
         OptionalLogicHelper(Operation *op, PatternRewriter &rewriter, LLVMTypeConverter &typeConverter) : op(op), rewriter(rewriter), typeConverter(typeConverter) {}
 
         template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
-        Value logicalOp(Operation *binOp)
+        Value logicalOp(Operation *binOp, SyntaxKind opCmpCode)
         {
             auto loc = binOp->getLoc();
 
@@ -774,17 +776,33 @@ namespace typescript
             auto result = clh.conditionalExpressionLowering(th.getBooleanType(), bothUndefResultIf0, 
                 [&](OpBuilder & builder, Location loc) 
                 {
-                    auto leftSubType = leftType.cast<mlir_ts::OptionalType>().getElementType();
-                    auto rightSubType = rightType.cast<mlir_ts::OptionalType>().getElementType();
-
-                    if (leftSubType.isa<mlir_ts::UndefPlaceHolderType>() || rightSubType.isa<mlir_ts::UndefPlaceHolderType>())
+                    if (auto leftOptType = leftType.dyn_cast_or_null<mlir_ts::OptionalType>())
                     {
-                        return clh.createI1ConstantOf(false);
+                        auto leftSubType = leftOptType.getElementType();
+                        if (leftSubType.isa<mlir_ts::UndefPlaceHolderType>())
+                        {
+                            return clh.createI1ConstantOf(false);
+                        }
+
+                        leftType = leftSubType;
+                        auto leftValue = rewriter.create<mlir_ts::ValueOp>(loc, leftSubType, left);
+                        left = leftValue;
                     }
 
-                    auto leftValue = rewriter.create<mlir_ts::ValueOp>(loc, leftSubType, left);
-                    auto rightValue = rewriter.create<mlir_ts::ValueOp>(loc, rightSubType, right);
-                    auto result = LogicOp_<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, leftValue, rightValue, rewriter, typeConverter);
+                    if (auto rightOptType = rightType.dyn_cast_or_null<mlir_ts::OptionalType>())
+                    {
+                        auto rightSubType = rightOptType.getElementType();
+                        if (rightSubType.isa<mlir_ts::UndefPlaceHolderType>())
+                        {
+                            return clh.createI1ConstantOf(false);
+                        }
+
+                        rightType = rightSubType;
+                        auto rightValue = rewriter.create<mlir_ts::ValueOp>(loc, rightSubType, left);
+                        right = rightValue;
+                    }                    
+
+                    auto result = LogicOp_<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, opCmpCode, left, right, rewriter, typeConverter);
                     return result;
                 }, 
                 [&](OpBuilder & builder, Location loc) 
@@ -847,7 +865,7 @@ namespace typescript
     }
 
     template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
-    mlir::Value LogicOp_(Operation *binOp, mlir::Value left, mlir::Value right, PatternRewriter &builder, LLVMTypeConverter &typeConverter)
+    mlir::Value LogicOp_(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Value right, PatternRewriter &builder, LLVMTypeConverter &typeConverter)
     {
         auto loc = binOp->getLoc();
         
@@ -885,8 +903,25 @@ namespace typescript
         else if (leftType.dyn_cast_or_null<mlir_ts::OptionalType>())
         {
             OptionalLogicHelper olh(binOp, builder, typeConverter);
-            auto value = olh.logicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp);
+            auto value = olh.logicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op);
             return value;
+        }
+        else if (leftType.dyn_cast_or_null<mlir_ts::StringType>())
+        {
+            auto rightVal = right;
+            if (left.getType() != right.getType()) 
+            {
+                rightVal = builder.create<mlir_ts::CastOp>(loc, left.getType(), rightVal);
+            }
+
+            auto value = builder.create<mlir_ts::StringCompareOp>(
+                loc, 
+                mlir_ts::BooleanType::get(builder.getContext()), 
+                left, 
+                rightVal,
+                builder.getI32IntegerAttr((int)op));        
+
+            return value;        
         }
         else if (leftType.dyn_cast_or_null<mlir_ts::AnyType>())
         {
@@ -907,11 +942,11 @@ namespace typescript
     }   
 
     template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
-    mlir::Value LogicOp(Operation *binOp, PatternRewriter &builder, LLVMTypeConverter &typeConverter)
+    mlir::Value LogicOp(Operation *binOp, SyntaxKind op, PatternRewriter &builder, LLVMTypeConverter &typeConverter)
     {
         auto left = binOp->getOperand(0);
         auto right = binOp->getOperand(1);
-        return LogicOp_<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, left, right, builder, typeConverter);
+        return LogicOp_<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op, left, right, builder, typeConverter);
     }
 }
 

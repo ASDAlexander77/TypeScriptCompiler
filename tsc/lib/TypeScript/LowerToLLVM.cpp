@@ -1027,30 +1027,6 @@ namespace
         {
             auto op = (SyntaxKind)logicalBinaryOp.opCode();
 
-            if (logicalBinaryOp->getOperand(0).getType().isa<mlir_ts::StringType>())
-            {
-                switch (op)
-                {
-                case SyntaxKind::EqualsEqualsToken:
-                case SyntaxKind::EqualsEqualsEqualsToken:
-                case SyntaxKind::ExclamationEqualsToken:
-                case SyntaxKind::ExclamationEqualsEqualsToken:
-                case SyntaxKind::GreaterThanToken:
-                case SyntaxKind::GreaterThanEqualsToken:
-                case SyntaxKind::LessThanToken:
-                case SyntaxKind::LessThanEqualsToken:
-                    rewriter.replaceOpWithNewOp<mlir_ts::StringCompareOp>(
-                        logicalBinaryOp, 
-                        mlir_ts::StringType::get(rewriter.getContext()), 
-                        logicalBinaryOp.getOperand(0), 
-                        logicalBinaryOp.getOperand(1),
-                        rewriter.getI32IntegerAttr((int)op));       
-                    return success();
-                default:
-                    llvm_unreachable("not implemented");
-                }
-            }
-
             // int and float
             mlir::Value value;
             switch (op)
@@ -1058,28 +1034,28 @@ namespace
             case SyntaxKind::EqualsEqualsToken:
             case SyntaxKind::EqualsEqualsEqualsToken:
                 value = LogicOp<CmpIOp, CmpIPredicate, CmpIPredicate::eq,
-                        CmpFOp, CmpFPredicate, CmpFPredicate::OEQ>(logicalBinaryOp, rewriter, *(LLVMTypeConverter *)getTypeConverter());
+                        CmpFOp, CmpFPredicate, CmpFPredicate::OEQ>(logicalBinaryOp, op, rewriter, *(LLVMTypeConverter *)getTypeConverter());
                 break;
             case SyntaxKind::ExclamationEqualsToken:
             case SyntaxKind::ExclamationEqualsEqualsToken:
                 value = LogicOp<CmpIOp, CmpIPredicate, CmpIPredicate::ne,
-                        CmpFOp, CmpFPredicate, CmpFPredicate::ONE>(logicalBinaryOp, rewriter, *(LLVMTypeConverter *)getTypeConverter());
+                        CmpFOp, CmpFPredicate, CmpFPredicate::ONE>(logicalBinaryOp, op, rewriter, *(LLVMTypeConverter *)getTypeConverter());
                 break;
             case SyntaxKind::GreaterThanToken:
                 value = LogicOp<CmpIOp, CmpIPredicate, CmpIPredicate::sgt,
-                        CmpFOp, CmpFPredicate, CmpFPredicate::OGT>(logicalBinaryOp, rewriter, *(LLVMTypeConverter *)getTypeConverter());
+                        CmpFOp, CmpFPredicate, CmpFPredicate::OGT>(logicalBinaryOp, op, rewriter, *(LLVMTypeConverter *)getTypeConverter());
                 break;
             case SyntaxKind::GreaterThanEqualsToken:
                 value = LogicOp<CmpIOp, CmpIPredicate, CmpIPredicate::sge,
-                        CmpFOp, CmpFPredicate, CmpFPredicate::OGE>(logicalBinaryOp, rewriter, *(LLVMTypeConverter *)getTypeConverter());
+                        CmpFOp, CmpFPredicate, CmpFPredicate::OGE>(logicalBinaryOp, op, rewriter, *(LLVMTypeConverter *)getTypeConverter());
                 break;
             case SyntaxKind::LessThanToken:
                 value = LogicOp<CmpIOp, CmpIPredicate, CmpIPredicate::slt,
-                        CmpFOp, CmpFPredicate, CmpFPredicate::OLT>(logicalBinaryOp, rewriter, *(LLVMTypeConverter *)getTypeConverter());
+                        CmpFOp, CmpFPredicate, CmpFPredicate::OLT>(logicalBinaryOp, op, rewriter, *(LLVMTypeConverter *)getTypeConverter());
                 break;
             case SyntaxKind::LessThanEqualsToken:
                 value = LogicOp<CmpIOp, CmpIPredicate, CmpIPredicate::sle,
-                        CmpFOp, CmpFPredicate, CmpFPredicate::OLE>(logicalBinaryOp, rewriter, *(LLVMTypeConverter *)getTypeConverter());
+                        CmpFOp, CmpFPredicate, CmpFPredicate::OLE>(logicalBinaryOp, op, rewriter, *(LLVMTypeConverter *)getTypeConverter());
                 break;
             default:
                 llvm_unreachable("not implemented");
