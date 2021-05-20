@@ -1461,7 +1461,7 @@ namespace
         });   
 
         converter.addConversion([&](mlir_ts::UndefPlaceHolderType type) {
-            return LLVM::LLVMVoidType::get(type.getContext());
+            return IntegerType::get(m.getContext(), 8/*, mlir::IntegerType::SignednessSemantics::Unsigned*/);
         });                      
     };
 
