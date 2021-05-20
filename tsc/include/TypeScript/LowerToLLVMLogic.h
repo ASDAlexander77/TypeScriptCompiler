@@ -741,6 +741,51 @@ namespace typescript
         }        
     };    
 
+    template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
+    mlir::Value LogicOp(Operation *binOp, ConversionPatternRewriter &builder, LLVMTypeConverter &typeConverter);
+
+    class OptionalLogicHelper
+    {
+        Operation *op;
+        PatternRewriter &rewriter;
+        LLVMTypeConverter &typeConverter;
+    public:        
+        OptionalLogicHelper(Operation *op, PatternRewriter &rewriter, LLVMTypeConverter &typeConverter) : op(op), rewriter(rewriter), typeConverter(typeConverter) {}
+
+        template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
+        Value logicalOp(Operation *binOp)
+        {
+            auto loc = binOp->getLoc();
+
+            TypeHelper th(rewriter);
+            CodeLogicHelper clh(op, rewriter);
+
+            auto left = binOp->getOperand(0);
+            auto right = binOp->getOperand(1);
+            auto leftType = left.getType();
+
+            // compare hasvalue first
+            auto leftUndefFlagValue = rewriter.create<mlir_ts::HasValueOp>(loc, th.getBooleanType(), left);
+            auto rightUndefFlagValue = rewriter.create<mlir_ts::HasValueOp>(loc, th.getBooleanType(), right);
+
+            auto bothUndefResultIf0 = rewriter.create<mlir::OrOp>(loc, th.getBooleanType(), leftUndefFlagValue, rightUndefFlagValue);
+
+            auto result = clh.conditionalExpressionLowering(th.getBooleanType(), bothUndefResultIf0, 
+                [&](OpBuilder & builder, Location loc) 
+                {
+                    // TODO: finish comparing op
+                    return clh.createI1ConstantOf(false);
+                }, 
+                [&](OpBuilder & builder, Location loc) 
+                {
+                    // both are undefined
+                    return clh.createI1ConstantOf(true);
+                });
+
+            return result;
+        }        
+    };        
+
     template <typename UnaryOpTy, typename StdIOpTy, typename StdFOpTy>
     void UnaryOp(UnaryOpTy &unaryOp, PatternRewriter &builder)
     {
@@ -761,34 +806,26 @@ namespace typescript
         }
     }  
 
-    template <typename BinOpTy>
-    bool IsStringArg(BinOpTy &binOp)
-    {
-        auto leftType = binOp.getOperand(0).getType();
-        if (leftType.dyn_cast_or_null<mlir_ts::StringType>())
-        {
-            return true;
-        }
-
-        return false;
-    }    
-
     template <typename BinOpTy, typename StdIOpTy, typename StdFOpTy>
     void BinOp(BinOpTy &binOp, PatternRewriter &builder)
     {
-        auto leftType = binOp.getOperand(0).getType();
+        auto loc = binOp->getLoc();
+
+        auto left = binOp->getOperand(0);
+        auto right = binOp->getOperand(1);        
+        auto leftType = left.getType();
         if (leftType.isIntOrIndex())
         {
-            builder.replaceOpWithNewOp<StdIOpTy>(binOp, binOp.getOperand(0), binOp.getOperand(1));
+            builder.replaceOpWithNewOp<StdIOpTy>(binOp, left, right);
         }
         else if (!leftType.isIntOrIndex() && leftType.isIntOrIndexOrFloat())
         {
-            builder.replaceOpWithNewOp<StdFOpTy>(binOp, binOp.getOperand(0), binOp.getOperand(1));
+            builder.replaceOpWithNewOp<StdFOpTy>(binOp, left, right);
         }
         else if (leftType.dyn_cast_or_null<mlir_ts::NumberType>())
         {
-            auto castLeft = builder.create<mlir_ts::CastOp>(binOp->getLoc(), builder.getF32Type(), binOp.getOperand(0));
-            auto castRight = builder.create<mlir_ts::CastOp>(binOp->getLoc(), builder.getF32Type(), binOp.getOperand(1));
+            auto castLeft = builder.create<mlir_ts::CastOp>(loc, builder.getF32Type(), left);
+            auto castRight = builder.create<mlir_ts::CastOp>(loc, builder.getF32Type(), right);
             builder.replaceOpWithNewOp<StdFOpTy>(binOp, castLeft, castRight);
         }
         else
@@ -798,51 +835,64 @@ namespace typescript
         }
     }
 
-    template <typename BinOpTy, typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
-    void LogicOp(BinOpTy &binOp, ConversionPatternRewriter &builder, LLVMTypeConverter &typeConverter)
+    template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
+    mlir::Value LogicOp(Operation *binOp, ConversionPatternRewriter &builder, LLVMTypeConverter &typeConverter)
     {
+        auto loc = binOp->getLoc();
+
         LLVMTypeConverterHelper llvmtch(typeConverter);
 
-        auto leftType = binOp.getOperand(0).getType();
+        auto left = binOp->getOperand(0);
+        auto right = binOp->getOperand(1);
+        auto leftType = left.getType();
+
         if (leftType.isIntOrIndex() || leftType.dyn_cast_or_null<mlir_ts::BooleanType>())
         {
-            builder.replaceOpWithNewOp<StdIOpTy>(binOp, v1, binOp.getOperand(0), binOp.getOperand(1));
+            auto value = builder.create<StdIOpTy>(loc, v1, left, right);
+            return value;
         }
         else if (!leftType.isIntOrIndex() && leftType.isIntOrIndexOrFloat())
         {
-            builder.replaceOpWithNewOp<StdFOpTy>(binOp, v2, binOp.getOperand(0), binOp.getOperand(1));
+            auto value = builder.create<StdFOpTy>(loc, v2, left, right);
+            return value;
         }
         else if (leftType.dyn_cast_or_null<mlir_ts::NumberType>())
         {
-            auto castLeft = builder.create<mlir_ts::CastOp>(binOp->getLoc(), builder.getF32Type(), binOp.getOperand(0));
-            auto castRight = builder.create<mlir_ts::CastOp>(binOp->getLoc(), builder.getF32Type(), binOp.getOperand(1));
-            builder.replaceOpWithNewOp<StdFOpTy>(binOp, v2, castLeft, castRight);
+            auto castLeft = builder.create<mlir_ts::CastOp>(loc, builder.getF32Type(), left);
+            auto castRight = builder.create<mlir_ts::CastOp>(loc, builder.getF32Type(), right);
+            auto value = builder.create<StdFOpTy>(loc, v2, castLeft, castRight);
+            return value;
         }        
         /*
         else if (auto leftEnumType = leftType.dyn_cast_or_null<mlir_ts::EnumType>())
         {
-            auto castLeft = builder.create<mlir_ts::CastOp>(binOp->getLoc(), leftEnumType.getElementType(), binOp.getOperand(0));
-            auto castRight = builder.create<mlir_ts::CastOp>(binOp->getLoc(), leftEnumType.getElementType(), binOp.getOperand(1));
-            auto res = builder.create<StdFOpTy>(binOp->getLoc(), v2, castLeft, castRight);
-            builder.replaceOpWithNewOp<mlir_ts::CastOp>(binOp, leftEnumType, res);
+            auto castLeft = builder.create<mlir_ts::CastOp>(loc, leftEnumType.getElementType(), left);
+            auto castRight = builder.create<mlir_ts::CastOp>(loc, leftEnumType.getElementType(), right);
+            auto res = builder.create<StdFOpTy>(loc, v2, castLeft, castRight);
+            builder.create<mlir_ts::CastOp>(binOp, leftEnumType, res);
+            return value;
         } 
         */         
+        else if (leftType.dyn_cast_or_null<mlir_ts::OptionalType>())
+        {
+            OptionalLogicHelper olh(binOp, builder, typeConverter);
+            auto value = olh.logicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp);
+            return value;
+        }
         else if (leftType.dyn_cast_or_null<mlir_ts::AnyType>())
         {
             // excluded string
-            auto left = binOp.getOperand(0);
-            auto right = binOp.getOperand(1);
-
             auto intPtrType = llvmtch.getIntPtrType(0);
 
-            Value leftPtrValue = builder.create<LLVM::PtrToIntOp>(binOp.getLoc(), intPtrType, left);
-            Value rightPtrValue = builder.create<LLVM::PtrToIntOp>(binOp.getLoc(), intPtrType, right);
+            Value leftPtrValue = builder.create<LLVM::PtrToIntOp>(loc, intPtrType, left);
+            Value rightPtrValue = builder.create<LLVM::PtrToIntOp>(loc, intPtrType, right);
 
-            builder.replaceOpWithNewOp<StdIOpTy>(binOp, v1, leftPtrValue, rightPtrValue);
-        }
+            auto value = builder.create<StdIOpTy>(loc, v1, leftPtrValue, rightPtrValue);
+            return value;
+        }        
         else
         {
-            emitError(binOp.getLoc(), "Not implemented operator for type 1: '") << leftType << "'";
+            emitError(loc, "Not implemented operator for type 1: '") << leftType << "'";
             llvm_unreachable("not implemented");
         }
     }   

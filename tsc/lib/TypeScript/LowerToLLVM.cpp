@@ -955,7 +955,7 @@ namespace
             switch (opCode)
             {
             case SyntaxKind::PlusToken:
-                if (IsStringArg(arithmeticBinaryOp))
+                if (arithmeticBinaryOp->getOperand(0).getType().isa<mlir_ts::StringType>())
                 {
                     rewriter.replaceOpWithNewOp<mlir_ts::StringConcatOp>(
                         arithmeticBinaryOp, 
@@ -1027,7 +1027,7 @@ namespace
         {
             auto op = (SyntaxKind)logicalBinaryOp.opCode();
 
-            if (IsStringArg(logicalBinaryOp))
+            if (logicalBinaryOp->getOperand(0).getType().isa<mlir_ts::StringType>())
             {
                 switch (op)
                 {
@@ -1052,43 +1052,41 @@ namespace
             }
 
             // int and float
+            mlir::Value value;
             switch (op)
             {
             case SyntaxKind::EqualsEqualsToken:
             case SyntaxKind::EqualsEqualsEqualsToken:
-                LogicOp<mlir_ts::LogicalBinaryOp,
-                        CmpIOp, CmpIPredicate, CmpIPredicate::eq,
+                value = LogicOp<CmpIOp, CmpIPredicate, CmpIPredicate::eq,
                         CmpFOp, CmpFPredicate, CmpFPredicate::OEQ>(logicalBinaryOp, rewriter, *(LLVMTypeConverter *)getTypeConverter());
-                return success();
+                break;
             case SyntaxKind::ExclamationEqualsToken:
             case SyntaxKind::ExclamationEqualsEqualsToken:
-                LogicOp<mlir_ts::LogicalBinaryOp,
-                        CmpIOp, CmpIPredicate, CmpIPredicate::ne,
+                value = LogicOp<CmpIOp, CmpIPredicate, CmpIPredicate::ne,
                         CmpFOp, CmpFPredicate, CmpFPredicate::ONE>(logicalBinaryOp, rewriter, *(LLVMTypeConverter *)getTypeConverter());
-                return success();
+                break;
             case SyntaxKind::GreaterThanToken:
-                LogicOp<mlir_ts::LogicalBinaryOp,
-                        CmpIOp, CmpIPredicate, CmpIPredicate::sgt,
+                value = LogicOp<CmpIOp, CmpIPredicate, CmpIPredicate::sgt,
                         CmpFOp, CmpFPredicate, CmpFPredicate::OGT>(logicalBinaryOp, rewriter, *(LLVMTypeConverter *)getTypeConverter());
-                return success();
+                break;
             case SyntaxKind::GreaterThanEqualsToken:
-                LogicOp<mlir_ts::LogicalBinaryOp,
-                        CmpIOp, CmpIPredicate, CmpIPredicate::sge,
+                value = LogicOp<CmpIOp, CmpIPredicate, CmpIPredicate::sge,
                         CmpFOp, CmpFPredicate, CmpFPredicate::OGE>(logicalBinaryOp, rewriter, *(LLVMTypeConverter *)getTypeConverter());
-                return success();
+                break;
             case SyntaxKind::LessThanToken:
-                LogicOp<mlir_ts::LogicalBinaryOp,
-                        CmpIOp, CmpIPredicate, CmpIPredicate::slt,
+                value = LogicOp<CmpIOp, CmpIPredicate, CmpIPredicate::slt,
                         CmpFOp, CmpFPredicate, CmpFPredicate::OLT>(logicalBinaryOp, rewriter, *(LLVMTypeConverter *)getTypeConverter());
-                return success();
+                break;
             case SyntaxKind::LessThanEqualsToken:
-                LogicOp<mlir_ts::LogicalBinaryOp,
-                        CmpIOp, CmpIPredicate, CmpIPredicate::sle,
+                value = LogicOp<CmpIOp, CmpIPredicate, CmpIPredicate::sle,
                         CmpFOp, CmpFPredicate, CmpFPredicate::OLE>(logicalBinaryOp, rewriter, *(LLVMTypeConverter *)getTypeConverter());
-                return success();
+                break;
             default:
                 llvm_unreachable("not implemented");
             }
+
+            rewriter.replaceOp(logicalBinaryOp, value);
+            return success();
         }
     };
 
