@@ -291,7 +291,6 @@ namespace typescript
                 case SyntaxKind::AmpersandAmpersandEqualsToken: opCode = SyntaxKind::AmpersandAmpersandToken; break;
                 case SyntaxKind::QuestionQuestionEqualsToken: opCode = SyntaxKind::QuestionQuestionToken; break;
                 case SyntaxKind::CaretEqualsToken: opCode = SyntaxKind::CaretToken; break;
-                case SyntaxKind::EqualsToken: /*nothing to do*/ break;
                 default: return false; break;
             }            
 

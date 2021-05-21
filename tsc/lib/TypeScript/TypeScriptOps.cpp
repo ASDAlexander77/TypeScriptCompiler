@@ -421,9 +421,7 @@ void ts::IfOp::build(OpBuilder &builder, OperationState &result, TypeRange resul
         }
     };
 
-    build(builder, result, resultTypes, cond, addTerminator,
-          withElseRegion ? addTerminator
-                         : function_ref<void(OpBuilder &, Location)>());
+    build(builder, result, resultTypes, cond, addTerminator, withElseRegion ? addTerminator : function_ref<void(OpBuilder &, Location)>());
 }
 
 void ts::IfOp::build(OpBuilder &builder, OperationState &result, TypeRange resultTypes, Value cond,

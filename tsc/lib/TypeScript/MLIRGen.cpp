@@ -873,8 +873,6 @@ namespace
 
                     if (param->hasInitValue())
                     {
-                        mlir::OpBuilder::InsertionGuard guard(builder);
-
                         /*auto *defValueBlock =*/ builder.createBlock(&paramOptionalOp.defaultValueRegion());
 
                         mlir::Value defaultValue;
@@ -894,6 +892,8 @@ namespace
                         }
 
                         builder.create<mlir_ts::ParamDefaultValueOp>(location, defaultValue);
+
+                        builder.setInsertionPointAfter(paramOptionalOp);
                     }
                 }
                 else
@@ -1026,6 +1026,7 @@ namespace
             }
 
             builder.setInsertionPointAfter(ifOp);
+
             return mlir::success();
         }
 
@@ -1487,6 +1488,66 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             return builder.create<mlir_ts::ConstantOp>(location, resultType, builder.getI64IntegerAttr(result));
         }
 
+        mlir::Value mlirGenSaveLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
+        {
+            auto location = loc(binaryExpressionAST);
+
+            auto leftExpression = binaryExpressionAST->left;
+            auto rightExpression = binaryExpressionAST->right;
+
+            auto rightExpressionValue = mlirGen(rightExpression, genContext);            
+
+            auto leftExpressionValue = mlirGen(leftExpression, genContext);
+
+            if (auto unresolvedLeft = dyn_cast_or_null<mlir_ts::SymbolRefOp>(leftExpressionValue.getDefiningOp()))
+            {
+                emitError(location, "can't find variable: ") << unresolvedLeft.identifier();
+                return mlir::Value();
+            }
+
+            if (auto unresolvedRight = dyn_cast_or_null<mlir_ts::SymbolRefOp>(rightExpressionValue.getDefiningOp()))
+            {
+                emitError(location, "can't find variable: ") << unresolvedRight.identifier();
+                return mlir::Value();
+            }            
+
+            auto leftExpressionValueBeforeCast = leftExpressionValue;
+
+            if (leftExpressionValue.getType() != rightExpressionValue.getType())
+            {
+                if (rightExpressionValue.getType().dyn_cast_or_null<mlir_ts::CharType>())
+                {
+                    rightExpressionValue = builder.create<mlir_ts::CastOp>(loc(rightExpression), getStringType(), rightExpressionValue);
+                }  
+            }
+
+            auto result = rightExpressionValue;
+
+            // saving
+            if (leftExpressionValueBeforeCast.getType() != result.getType())
+            {
+                result = builder.create<mlir_ts::CastOp>(loc(leftExpression), leftExpressionValueBeforeCast.getType(), result);
+            }
+
+            // TODO: finish it for field access, review CodeLogicHelper.saveResult
+            if (auto loadOp = dyn_cast<mlir_ts::LoadOp>(leftExpressionValueBeforeCast.getDefiningOp()))
+            {
+                // TODO: when saving const array into variable we need to allocate space and copy array as we need to have writable array
+                builder.create<mlir_ts::StoreOp>(
+                    location,
+                    result,
+                    loadOp.reference());
+
+                leftExpressionValueBeforeCast.getDefiningOp()->erase();
+            }
+            else
+            {
+                llvm_unreachable("not implemented");
+            }      
+
+            return result;      
+        }        
+
         mlir::Value mlirGen(BinaryExpression binaryExpressionAST, const GenContext &genContext)
         {
             auto location = loc(binaryExpressionAST);
@@ -1501,6 +1562,11 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             if (opCode == SyntaxKind::AmpersandAmpersandToken || opCode == SyntaxKind::BarBarToken)
             {
                 return mlirGenAndOrLogic(binaryExpressionAST, genContext, opCode == SyntaxKind::AmpersandAmpersandToken);
+            }
+
+            if (opCode == SyntaxKind::EqualsToken)
+            {
+                return mlirGenSaveLogic(binaryExpressionAST, genContext);
             }
 
             auto leftExpressionValue = mlirGen(leftExpression, genContext);
@@ -1657,6 +1723,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             {
             case SyntaxKind::EqualsToken:
                 // nothing to do;
+                assert(false);
                 break;
             case SyntaxKind::EqualsEqualsToken:
             case SyntaxKind::EqualsEqualsEqualsToken:
@@ -1706,12 +1773,6 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 else
                 {
                     llvm_unreachable("not implemented");
-                }
-
-                if (opCode == SyntaxKind::EqualsToken)
-                {
-                    // special case when loadop not needed for "=" op
-                    leftExpressionValueBeforeCast.getDefiningOp()->erase();
                 }
             }
 
