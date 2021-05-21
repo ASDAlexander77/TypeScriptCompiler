@@ -147,6 +147,11 @@ namespace typescript
         {
             return IntegerType::get(&typeConverter.getContext(), typeConverter.getPointerBitwidth(addressSpace));
         }
+
+        int32_t getPointerBitwidth(unsigned addressSpace)
+        {
+            return typeConverter.getPointerBitwidth(addressSpace);
+        }
     };    
 
     class LLVMCodeHelper

@@ -383,45 +383,98 @@ namespace
             TypeHelper th(rewriter);
             CodeLogicHelper clh(op, rewriter);
             LLVMCodeHelper ch(op, rewriter);
+            LLVMTypeConverterHelper llvmtch(*(LLVMTypeConverter *)getTypeConverter());
 
             auto loc = op->getLoc();
 
             auto i8PtrTy = th.getI8PtrType();
 
+            // compare bodies
             auto strcmpFuncOp =
                 ch.getOrInsertFunction(
                     "strcmp",
-                    th.getFunctionType(th.getI32Type(), {i8PtrTy, i8PtrTy}));                    
+                    th.getFunctionType(th.getI32Type(), {i8PtrTy, i8PtrTy}));        
 
-            // calc size
-            auto compareResult = rewriter.create<LLVM::CallOp>(loc, strcmpFuncOp, ValueRange{op.op1(), op.op2()});
-            auto const0 = clh.createI32ConstantOf(0);
+            // compare ptrs first
+            auto intPtrType = llvmtch.getIntPtrType(0);
+            auto leftPtrValue = rewriter.create<LLVM::PtrToIntOp>(loc, intPtrType, op.op1());
+            auto rightPtrValue = rewriter.create<LLVM::PtrToIntOp>(loc, intPtrType, op.op2());            
 
-            switch ((SyntaxKind)op.code())
-            {
-                case SyntaxKind::EqualsEqualsToken:
-                case SyntaxKind::EqualsEqualsEqualsToken:
-                    rewriter.replaceOpWithNewOp<LLVM::ICmpOp>(op, LLVM::ICmpPredicate::eq, compareResult.getResult(0), const0);
-                    break;
-                case SyntaxKind::ExclamationEqualsToken:
-                case SyntaxKind::ExclamationEqualsEqualsToken:
-                    rewriter.replaceOpWithNewOp<LLVM::ICmpOp>(op, LLVM::ICmpPredicate::ne, compareResult.getResult(0), const0);
-                    break;
-                case SyntaxKind::GreaterThanToken:
-                    rewriter.replaceOpWithNewOp<LLVM::ICmpOp>(op, LLVM::ICmpPredicate::sgt, compareResult.getResult(0), const0);
-                    break;
-                case SyntaxKind::GreaterThanEqualsToken:
-                    rewriter.replaceOpWithNewOp<LLVM::ICmpOp>(op, LLVM::ICmpPredicate::sge, compareResult.getResult(0), const0);
-                    break;
-                case SyntaxKind::LessThanToken:
-                    rewriter.replaceOpWithNewOp<LLVM::ICmpOp>(op, LLVM::ICmpPredicate::slt, compareResult.getResult(0), const0);
-                    break;
-                case SyntaxKind::LessThanEqualsToken:
-                    rewriter.replaceOpWithNewOp<LLVM::ICmpOp>(op, LLVM::ICmpPredicate::sle, compareResult.getResult(0), const0);
-                    break;
-                default:
-                    llvm_unreachable("not implemented");
-            }
+            auto const0Ptr = clh.createIConstantOf(llvmtch.getPointerBitwidth(0), 0);
+            auto ptrCmpResult1 = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, leftPtrValue, const0Ptr);
+            auto ptrCmpResult2 = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, rightPtrValue, const0Ptr);
+            auto ptrCmpResult = rewriter.create<LLVM::AndOp>(loc, ptrCmpResult1, ptrCmpResult2);
+
+            auto result = clh.conditionalExpressionLowering(th.getBooleanType(), ptrCmpResult, 
+                [&](OpBuilder & builder, Location loc) 
+                {
+                    auto compareResult = rewriter.create<LLVM::CallOp>(loc, strcmpFuncOp, ValueRange{op.op1(), op.op2()});
+                    auto const0 = clh.createI32ConstantOf(0);
+
+                    // else compare body
+                    mlir::Value bodyCmpResult;
+                    switch ((SyntaxKind)op.code())
+                    {
+                        case SyntaxKind::EqualsEqualsToken:
+                        case SyntaxKind::EqualsEqualsEqualsToken:
+                            bodyCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, compareResult.getResult(0), const0);
+                            break;
+                        case SyntaxKind::ExclamationEqualsToken:
+                        case SyntaxKind::ExclamationEqualsEqualsToken:
+                            bodyCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, compareResult.getResult(0), const0);
+                            break;
+                        case SyntaxKind::GreaterThanToken:
+                            bodyCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sgt, compareResult.getResult(0), const0);
+                            break;
+                        case SyntaxKind::GreaterThanEqualsToken:
+                            bodyCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sge, compareResult.getResult(0), const0);
+                            break;
+                        case SyntaxKind::LessThanToken:
+                            bodyCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::slt, compareResult.getResult(0), const0);
+                            break;
+                        case SyntaxKind::LessThanEqualsToken:
+                            bodyCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sle, compareResult.getResult(0), const0);
+                            break;
+                        default:
+                            llvm_unreachable("not implemented");
+                    }
+
+                    return bodyCmpResult;
+                }, 
+                [&](OpBuilder & builder, Location loc) 
+                {
+                    // else compare body
+                    mlir::Value ptrCmpResult;
+                    switch ((SyntaxKind)op.code())
+                    {
+                        case SyntaxKind::EqualsEqualsToken:
+                        case SyntaxKind::EqualsEqualsEqualsToken:
+                            ptrCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, leftPtrValue, rightPtrValue);
+                            break;
+                        case SyntaxKind::ExclamationEqualsToken:
+                        case SyntaxKind::ExclamationEqualsEqualsToken:
+                            ptrCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, leftPtrValue, rightPtrValue);
+                            break;
+                        case SyntaxKind::GreaterThanToken:
+                            ptrCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sgt, leftPtrValue, rightPtrValue);
+                            break;
+                        case SyntaxKind::GreaterThanEqualsToken:
+                            ptrCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sge, leftPtrValue, rightPtrValue);
+                            break;
+                        case SyntaxKind::LessThanToken:
+                            ptrCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::slt, leftPtrValue, rightPtrValue);
+                            break;
+                        case SyntaxKind::LessThanEqualsToken:
+                            ptrCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sle, leftPtrValue, rightPtrValue);
+                            break;
+                        default:
+                            llvm_unreachable("not implemented");
+                    }
+
+                    return ptrCmpResult;
+                });            
+
+            rewriter.replaceOp(op, result);
 
             return success();
         }
