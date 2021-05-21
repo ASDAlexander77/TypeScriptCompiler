@@ -766,52 +766,158 @@ namespace typescript
             auto right = binOp->getOperand(1);
             auto leftType = left.getType();
             auto rightType = right.getType();
+            auto leftOptType = leftType.dyn_cast_or_null<mlir_ts::OptionalType>();
+            auto rightOptType = rightType.dyn_cast_or_null<mlir_ts::OptionalType>();
 
-            // compare hasvalue first
-            auto leftUndefFlagValue = rewriter.create<mlir_ts::HasValueOp>(loc, th.getBooleanType(), left);
-            auto rightUndefFlagValue = rewriter.create<mlir_ts::HasValueOp>(loc, th.getBooleanType(), right);
+            assert(leftOptType || rightOptType);
 
-            auto bothUndefResultIf0 = rewriter.create<mlir::OrOp>(loc, th.getBooleanType(), leftUndefFlagValue, rightUndefFlagValue);
+            // case 1, when both are optional
+            if (leftOptType && rightOptType)
+            {
+                // both are optional types
+                // compare hasvalue first
+                auto leftUndefFlagValue = rewriter.create<mlir_ts::HasValueOp>(loc, th.getBooleanType(), left);
+                auto rightUndefFlagValue = rewriter.create<mlir_ts::HasValueOp>(loc, th.getBooleanType(), right);
 
-            auto result = clh.conditionalExpressionLowering(th.getBooleanType(), bothUndefResultIf0, 
-                [&](OpBuilder & builder, Location loc) 
+                auto whenBothHasNoValues = [&](OpBuilder & builder, Location loc) 
                 {
-                    if (auto leftOptType = leftType.dyn_cast_or_null<mlir_ts::OptionalType>())
+                    mlir::Value undefFlagCmpResult;
+                    switch (opCmpCode)
                     {
-                        auto leftSubType = leftOptType.getElementType();
-                        if (leftSubType.isa<mlir_ts::UndefPlaceHolderType>())
-                        {
-                            return clh.createI1ConstantOf(false);
-                        }
-
-                        leftType = leftSubType;
-                        auto leftValue = rewriter.create<mlir_ts::ValueOp>(loc, leftSubType, left);
-                        left = leftValue;
-                    }
-
-                    if (auto rightOptType = rightType.dyn_cast_or_null<mlir_ts::OptionalType>())
-                    {
-                        auto rightSubType = rightOptType.getElementType();
-                        if (rightSubType.isa<mlir_ts::UndefPlaceHolderType>())
-                        {
-                            return clh.createI1ConstantOf(false);
-                        }
-
-                        rightType = rightSubType;
-                        auto rightValue = rewriter.create<mlir_ts::ValueOp>(loc, rightSubType, left);
-                        right = rightValue;
+                        case SyntaxKind::EqualsEqualsToken:
+                        case SyntaxKind::EqualsEqualsEqualsToken:
+                            undefFlagCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, rightUndefFlagValue, leftUndefFlagValue);
+                            break;
+                        case SyntaxKind::ExclamationEqualsToken:
+                        case SyntaxKind::ExclamationEqualsEqualsToken:
+                            undefFlagCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, rightUndefFlagValue, leftUndefFlagValue);
+                            break;
+                        case SyntaxKind::GreaterThanToken:
+                            undefFlagCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sgt, rightUndefFlagValue, leftUndefFlagValue);
+                            break;
+                        case SyntaxKind::GreaterThanEqualsToken:
+                            undefFlagCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sge, rightUndefFlagValue, leftUndefFlagValue);
+                            break;
+                        case SyntaxKind::LessThanToken:
+                            undefFlagCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::slt, rightUndefFlagValue, leftUndefFlagValue);
+                            break;
+                        case SyntaxKind::LessThanEqualsToken:
+                            undefFlagCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sle, rightUndefFlagValue, leftUndefFlagValue);
+                            break;
+                        default:
+                            llvm_unreachable("not implemented");
                     }                    
 
-                    auto result = LogicOp_<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, opCmpCode, left, right, rewriter, typeConverter);
-                    return result;
-                }, 
-                [&](OpBuilder & builder, Location loc) 
-                {
-                    // both are undefined
-                    return clh.createI1ConstantOf(true);
-                });
+                    return undefFlagCmpResult;
+                };
 
-            return result;
+                if (leftOptType.getElementType().isa<mlir_ts::UndefPlaceHolderType>() || rightOptType.getElementType().isa<mlir_ts::UndefPlaceHolderType>())
+                {
+                    // when we have undef in 1 of values we do not condition to test actual values
+                    return whenBothHasNoValues(rewriter, loc);
+                }
+
+                auto bothHasResult = rewriter.create<mlir::AndOp>(loc, th.getBooleanType(), leftUndefFlagValue, rightUndefFlagValue);
+
+                auto result = clh.conditionalExpressionLowering(th.getBooleanType(), bothHasResult, 
+                    [&](OpBuilder & builder, Location loc) 
+                    {
+                        auto leftSubType = leftOptType.getElementType();
+                        auto rightSubType = rightOptType.getElementType();
+                        left = rewriter.create<mlir_ts::ValueOp>(loc, leftSubType, left);
+                        right = rewriter.create<mlir_ts::ValueOp>(loc, rightSubType, right);
+                        return LogicOp_<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, opCmpCode, left, right, rewriter, typeConverter);
+                    }, 
+                    whenBothHasNoValues);
+
+                return result;
+            }
+            else
+            {
+                // case when 1 value is optional
+                auto whenOneValueIsUndef = [&](OpBuilder & builder, Location loc) 
+                {
+                    mlir::Value undefFlagCmpResult;
+                    switch (opCmpCode)
+                    {
+                        case SyntaxKind::EqualsEqualsToken:
+                        case SyntaxKind::EqualsEqualsEqualsToken:
+                            undefFlagCmpResult = clh.createI1ConstantOf(false);
+                            break;
+                        case SyntaxKind::ExclamationEqualsToken:
+                        case SyntaxKind::ExclamationEqualsEqualsToken:
+                            undefFlagCmpResult = clh.createI1ConstantOf(true);
+                            break;
+                        case SyntaxKind::GreaterThanToken:
+                            undefFlagCmpResult = clh.createI1ConstantOf(leftOptType ? false : true);
+                            break;
+                        case SyntaxKind::GreaterThanEqualsToken:
+                            undefFlagCmpResult = clh.createI1ConstantOf(leftOptType ? false : true);
+                            break;
+                        case SyntaxKind::LessThanToken:
+                            undefFlagCmpResult = clh.createI1ConstantOf(leftOptType ? true : false);
+                            break;
+                        case SyntaxKind::LessThanEqualsToken:
+                            undefFlagCmpResult = clh.createI1ConstantOf(leftOptType ? true : false);
+                            break;
+                        default:
+                            llvm_unreachable("not implemented");
+                    }                    
+
+                    return undefFlagCmpResult;
+                };
+
+                // when 1 of them is optional
+                mlir::Value hasResult;
+                if (leftOptType)
+                {
+                    if (leftOptType.getElementType().isa<mlir_ts::UndefPlaceHolderType>())
+                    {
+                        // result is false already
+                        return whenOneValueIsUndef(rewriter, loc);
+                    }
+                    else
+                    {
+                        hasResult = rewriter.create<mlir_ts::HasValueOp>(loc, th.getBooleanType(), left);
+                    }
+                }
+                else if (rightOptType)
+                {
+                    if (rightOptType.getElementType().isa<mlir_ts::UndefPlaceHolderType>())
+                    {
+                        // result is false already
+                        return whenOneValueIsUndef(rewriter, loc);
+                    }
+                    else
+                    {
+                        hasResult = rewriter.create<mlir_ts::HasValueOp>(loc, th.getBooleanType(), right);
+                    }
+                }
+
+                auto result = clh.conditionalExpressionLowering(th.getBooleanType(), hasResult, 
+                    [&](OpBuilder & builder, Location loc) 
+                    {
+                        if (leftOptType)
+                        {
+                            auto leftSubType = leftOptType.getElementType();
+                            left = rewriter.create<mlir_ts::ValueOp>(loc, leftSubType, left);
+                        }
+
+                        if (rightOptType)
+                        {
+                            auto rightSubType = rightOptType.getElementType();
+                            right = rewriter.create<mlir_ts::ValueOp>(loc, rightSubType, right);
+                        }
+
+                        return LogicOp_<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, opCmpCode, left, right, rewriter, typeConverter);
+                    }, 
+                    [&](OpBuilder & builder, Location loc) 
+                    {
+                        return whenOneValueIsUndef(rewriter, loc);
+                    });
+
+                return result;                
+            }
         }        
     };        
 
@@ -908,17 +1014,16 @@ namespace typescript
         }
         else if (leftType.dyn_cast_or_null<mlir_ts::StringType>())
         {
-            auto rightVal = right;
             if (left.getType() != right.getType()) 
             {
-                rightVal = builder.create<mlir_ts::CastOp>(loc, left.getType(), rightVal);
+                right = builder.create<mlir_ts::CastOp>(loc, left.getType(), right);
             }
 
             auto value = builder.create<mlir_ts::StringCompareOp>(
                 loc, 
                 mlir_ts::BooleanType::get(builder.getContext()), 
                 left, 
-                rightVal,
+                right,
                 builder.getI32IntegerAttr((int)op));        
 
             return value;        
