@@ -397,19 +397,23 @@ namespace
 
             // compare ptrs first
             auto intPtrType = llvmtch.getIntPtrType(0);
+            auto const0 = clh.createIConstantOf(llvmtch.getPointerBitwidth(0), 0);
             auto leftPtrValue = rewriter.create<LLVM::PtrToIntOp>(loc, intPtrType, op.op1());
-            auto rightPtrValue = rewriter.create<LLVM::PtrToIntOp>(loc, intPtrType, op.op2());            
-
-            auto const0Ptr = clh.createIConstantOf(llvmtch.getPointerBitwidth(0), 0);
-            auto ptrCmpResult1 = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, leftPtrValue, const0Ptr);
-            auto ptrCmpResult2 = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, rightPtrValue, const0Ptr);
-            auto ptrCmpResult = rewriter.create<LLVM::AndOp>(loc, ptrCmpResult1, ptrCmpResult2);
+            auto rightPtrValue = rewriter.create<LLVM::PtrToIntOp>(loc, intPtrType, op.op2());       
+            auto ptrCmpResult1 = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, leftPtrValue, const0);
+            auto ptrCmpResult2 = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, rightPtrValue, const0);
+            auto cmp32Result1 = rewriter.create<mlir_ts::CastOp>(loc, th.getI32Type(), ptrCmpResult1);
+            auto cmp32Result2 = rewriter.create<mlir_ts::CastOp>(loc, th.getI32Type(), ptrCmpResult2);
+            auto cmpResult = rewriter.create<LLVM::AndOp>(loc, cmp32Result1, cmp32Result2);
+            auto const0I32 = clh.createI32ConstantOf(0);
+            auto ptrCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, cmpResult, const0I32);
 
             auto result = clh.conditionalExpressionLowering(th.getBooleanType(), ptrCmpResult, 
                 [&](OpBuilder & builder, Location loc) 
                 {
-                    auto compareResult = rewriter.create<LLVM::CallOp>(loc, strcmpFuncOp, ValueRange{op.op1(), op.op2()});
+                    // both not null
                     auto const0 = clh.createI32ConstantOf(0);
+                    auto compareResult = rewriter.create<LLVM::CallOp>(loc, strcmpFuncOp, ValueRange{op.op1(), op.op2()});
 
                     // else compare body
                     mlir::Value bodyCmpResult;
@@ -443,6 +447,10 @@ namespace
                 }, 
                 [&](OpBuilder & builder, Location loc) 
                 {
+                    // any 1 null
+                    auto leftPtrValue = rewriter.create<LLVM::PtrToIntOp>(loc, intPtrType, op.op1());
+                    auto rightPtrValue = rewriter.create<LLVM::PtrToIntOp>(loc, intPtrType, op.op2());       
+
                     // else compare body
                     mlir::Value ptrCmpResult;
                     switch ((SyntaxKind)op.code())
@@ -1335,7 +1343,6 @@ namespace
                 rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(0)));           
 
             auto trueValue = clh.createI1ConstantOf(true); 
-
             rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(
                 createOptionalOp, 
                 llvmOptType, 
@@ -1358,17 +1365,48 @@ namespace
             TypeHelper th(rewriter);            
             TypeConverterHelper tch(getTypeConverter());
             CodeLogicHelper clh(undefOptionalOp, rewriter);
-
+            
+            auto boxedType = undefOptionalOp.res().getType().cast<mlir_ts::OptionalType>().getElementType();
+            auto llvmBoxedType = tch.convertType(boxedType);
             auto llvmOptType = tch.convertType(undefOptionalOp.res().getType());
-            auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmOptType);
+            
+            mlir::Value structValue = rewriter.create<LLVM::UndefOp>(loc, llvmOptType);
+            auto structValue2 = structValue;
+            
+            // default value
+            mlir::Value defaultValue;
 
-            auto trueValue = clh.createI1ConstantOf(false); 
+            if (llvmBoxedType.isa<LLVM::LLVMPointerType>())
+            {
+                defaultValue = rewriter.create<LLVM::NullOp>(loc, llvmBoxedType);
+            }
+            else if (llvmBoxedType.isa<mlir::IntegerType>())
+            {
+                llvmBoxedType.cast<mlir::IntegerType>().getWidth();
+                defaultValue = clh.createIConstantOf(llvmBoxedType.cast<mlir::IntegerType>().getWidth(), 0);
+            }
+            else if (llvmBoxedType.isa<mlir::FloatType>())
+            {
+                llvmBoxedType.cast<mlir::FloatType>().getWidth();
+                defaultValue = clh.createFConstantOf(llvmBoxedType.cast<mlir::FloatType>().getWidth(), 0.0);
+            }
 
+            if (defaultValue)
+            {
+                structValue2 = rewriter.create<LLVM::InsertValueOp>(
+                    loc, 
+                    llvmOptType,
+                    structValue, 
+                    defaultValue,
+                    rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(0)));                  
+            }
+
+            auto falseValue = clh.createI1ConstantOf(false); 
             rewriter.replaceOpWithNewOp<LLVM::InsertValueOp>(
                 undefOptionalOp, 
                 llvmOptType, 
-                structValue,
-                trueValue, 
+                structValue2,
+                falseValue, 
                 rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(1)));
 
             return success();
