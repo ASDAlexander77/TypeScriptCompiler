@@ -116,22 +116,34 @@ namespace typescript
 
         mlir::Value mlirGenParseInt(const mlir::Location &location, ArrayRef<mlir::Value> operands)
         {
+            auto op = operands.front();
+            if (!op.getType().isa<mlir_ts::StringType>())
+            {
+                op = builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()), op);
+            }
+
             auto parseIntOp =
                 builder.create<mlir_ts::ParseIntOp>(
                     location,
                     builder.getI32Type(),
-                    operands.front());
+                    op);
 
             return parseIntOp;
         }
 
         mlir::Value mlirGenParseFloat(const mlir::Location &location, ArrayRef<mlir::Value> operands)
         {
+            auto op = operands.front();
+            if (!op.getType().isa<mlir_ts::StringType>())
+            {
+                op = builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()), op);
+            }
+
             auto parseFloatOp =
                 builder.create<mlir_ts::ParseFloatOp>(
                     location,
                     builder.getF32Type(),
-                    operands.front());
+                    op);
 
             return parseFloatOp;
         }
@@ -255,6 +267,54 @@ namespace typescript
                 llvm_unreachable("not implemented");            
             }
         }        
+    };
+
+    class MLIRLogicHelper
+    {
+    public:
+        static bool isNeededToSaveData(SyntaxKind &opCode)
+        {
+            switch (opCode)
+            {
+                case SyntaxKind::PlusEqualsToken: opCode = SyntaxKind::PlusToken; break;
+                case SyntaxKind::MinusEqualsToken: opCode = SyntaxKind::MinusToken; break;
+                case SyntaxKind::AsteriskEqualsToken: opCode = SyntaxKind::AsteriskToken; break;
+                case SyntaxKind::AsteriskAsteriskEqualsToken: opCode = SyntaxKind::AsteriskAsteriskToken; break;
+                case SyntaxKind::SlashEqualsToken: opCode = SyntaxKind::SlashToken; break;
+                case SyntaxKind::PercentEqualsToken: opCode = SyntaxKind::PercentToken; break;
+                case SyntaxKind::LessThanLessThanEqualsToken: opCode = SyntaxKind::LessThanLessThanToken; break;
+                case SyntaxKind::GreaterThanGreaterThanEqualsToken: opCode = SyntaxKind::GreaterThanGreaterThanToken; break;
+                case SyntaxKind::GreaterThanGreaterThanGreaterThanEqualsToken: opCode = SyntaxKind::GreaterThanGreaterThanGreaterThanToken; break;
+                case SyntaxKind::AmpersandEqualsToken: opCode = SyntaxKind::AmpersandToken; break;
+                case SyntaxKind::BarEqualsToken: opCode = SyntaxKind::BarToken; break;
+                case SyntaxKind::BarBarEqualsToken: opCode = SyntaxKind::BarBarToken; break;
+                case SyntaxKind::AmpersandAmpersandEqualsToken: opCode = SyntaxKind::AmpersandAmpersandToken; break;
+                case SyntaxKind::QuestionQuestionEqualsToken: opCode = SyntaxKind::QuestionQuestionToken; break;
+                case SyntaxKind::CaretEqualsToken: opCode = SyntaxKind::CaretToken; break;
+                case SyntaxKind::EqualsToken: /*nothing to do*/ break;
+                default: return false; break;
+            }            
+
+            return true;
+        }
+
+        static bool isLogicOp(SyntaxKind opCode)
+        {
+            switch (opCode)
+            {
+                case SyntaxKind::EqualsEqualsToken:
+                case SyntaxKind::EqualsEqualsEqualsToken:
+                case SyntaxKind::ExclamationEqualsToken:
+                case SyntaxKind::ExclamationEqualsEqualsToken:
+                case SyntaxKind::GreaterThanToken:
+                case SyntaxKind::GreaterThanEqualsToken:
+                case SyntaxKind::LessThanToken:
+                case SyntaxKind::LessThanEqualsToken:
+                    return true;
+            }
+
+            return false;
+        }
     };
 }
 

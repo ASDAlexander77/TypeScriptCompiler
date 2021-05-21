@@ -1491,29 +1491,9 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
         {
             auto location = loc(binaryExpressionAST);
 
-            auto saveResult = true;
             auto opCode = (SyntaxKind) binaryExpressionAST->operatorToken;
-            // check if we need to save result
-            switch (opCode)
-            {
-                case SyntaxKind::PlusEqualsToken: opCode = SyntaxKind::PlusToken; break;
-                case SyntaxKind::MinusEqualsToken: opCode = SyntaxKind::MinusToken; break;
-                case SyntaxKind::AsteriskEqualsToken: opCode = SyntaxKind::AsteriskToken; break;
-                case SyntaxKind::AsteriskAsteriskEqualsToken: opCode = SyntaxKind::AsteriskAsteriskToken; break;
-                case SyntaxKind::SlashEqualsToken: opCode = SyntaxKind::SlashToken; break;
-                case SyntaxKind::PercentEqualsToken: opCode = SyntaxKind::PercentToken; break;
-                case SyntaxKind::LessThanLessThanEqualsToken: opCode = SyntaxKind::LessThanLessThanToken; break;
-                case SyntaxKind::GreaterThanGreaterThanEqualsToken: opCode = SyntaxKind::GreaterThanGreaterThanToken; break;
-                case SyntaxKind::GreaterThanGreaterThanGreaterThanEqualsToken: opCode = SyntaxKind::GreaterThanGreaterThanGreaterThanToken; break;
-                case SyntaxKind::AmpersandEqualsToken: opCode = SyntaxKind::AmpersandToken; break;
-                case SyntaxKind::BarEqualsToken: opCode = SyntaxKind::BarToken; break;
-                case SyntaxKind::BarBarEqualsToken: opCode = SyntaxKind::BarBarToken; break;
-                case SyntaxKind::AmpersandAmpersandEqualsToken: opCode = SyntaxKind::AmpersandAmpersandToken; break;
-                case SyntaxKind::QuestionQuestionEqualsToken: opCode = SyntaxKind::QuestionQuestionToken; break;
-                case SyntaxKind::CaretEqualsToken: opCode = SyntaxKind::CaretToken; break;
-                case SyntaxKind::EqualsToken: /*nothing to do*/ break;
-                default: saveResult = false; break;
-            }
+
+            auto saveResult = MLIRLogicHelper::isNeededToSaveData(opCode);
 
             auto leftExpression = binaryExpressionAST->left;
             auto rightExpression = binaryExpressionAST->right;
@@ -1553,9 +1533,9 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             auto leftExpressionValueBeforeCast = leftExpressionValue;
             auto rightExpressionValueBeforeCast = rightExpressionValue;
 
-            // TODO: temporary hack
             if (leftExpressionValue.getType() != rightExpressionValue.getType())
             {
+                // TODO: temporary hack
                 if (leftExpressionValue.getType().dyn_cast_or_null<mlir_ts::CharType>())
                 {
                     leftExpressionValue = builder.create<mlir_ts::CastOp>(loc(leftExpression), getStringType(), leftExpressionValue);
@@ -1565,6 +1545,22 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 {
                     rightExpressionValue = builder.create<mlir_ts::CastOp>(loc(rightExpression), getStringType(), rightExpressionValue);
                 }                
+
+                // end todo
+
+                if (!MLIRLogicHelper::isLogicOp(opCode))
+                {
+                    // cast from optional<T> type
+                    if (auto leftOptType = leftExpressionValue.getType().dyn_cast_or_null<mlir_ts::OptionalType>())
+                    {
+                        leftExpressionValue = builder.create<mlir_ts::CastOp>(loc(leftExpression), leftOptType.getElementType(), leftExpressionValue);
+                    }
+
+                    if (auto rightOptType = rightExpressionValue.getType().dyn_cast_or_null<mlir_ts::OptionalType>())
+                    {
+                        rightExpressionValue = builder.create<mlir_ts::CastOp>(loc(rightExpression), rightOptType.getElementType(), rightExpressionValue);
+                    }
+                }                  
             }
 
             // cast step
