@@ -878,55 +878,31 @@ namespace typescript
                 };
 
                 // when 1 of them is optional
-                mlir::Value hasResult;
+                if (leftOptType && leftOptType.getElementType().isa<mlir_ts::UndefPlaceHolderType>())
+                {
+                    // result is false already
+                    return whenOneValueIsUndef(rewriter, loc);
+                }
+
+                if (rightOptType && rightOptType.getElementType().isa<mlir_ts::UndefPlaceHolderType>())
+                {
+                    // result is false already
+                    return whenOneValueIsUndef(rewriter, loc);
+                }
+
                 if (leftOptType)
                 {
-                    if (leftOptType.getElementType().isa<mlir_ts::UndefPlaceHolderType>())
-                    {
-                        // result is false already
-                        return whenOneValueIsUndef(rewriter, loc);
-                    }
-                    else
-                    {
-                        hasResult = rewriter.create<mlir_ts::HasValueOp>(loc, th.getBooleanType(), left);
-                    }
+                    auto leftSubType = leftOptType.getElementType();
+                    left = rewriter.create<mlir_ts::ValueOp>(loc, leftSubType, left);
                 }
-                else if (rightOptType)
+
+                if (rightOptType)
                 {
-                    if (rightOptType.getElementType().isa<mlir_ts::UndefPlaceHolderType>())
-                    {
-                        // result is false already
-                        return whenOneValueIsUndef(rewriter, loc);
-                    }
-                    else
-                    {
-                        hasResult = rewriter.create<mlir_ts::HasValueOp>(loc, th.getBooleanType(), right);
-                    }
+                    auto rightSubType = rightOptType.getElementType();
+                    right = rewriter.create<mlir_ts::ValueOp>(loc, rightSubType, right);
                 }
 
-                auto result = clh.conditionalExpressionLowering(th.getBooleanType(), hasResult, 
-                    [&](OpBuilder & builder, Location loc) 
-                    {
-                        if (leftOptType)
-                        {
-                            auto leftSubType = leftOptType.getElementType();
-                            left = rewriter.create<mlir_ts::ValueOp>(loc, leftSubType, left);
-                        }
-
-                        if (rightOptType)
-                        {
-                            auto rightSubType = rightOptType.getElementType();
-                            right = rewriter.create<mlir_ts::ValueOp>(loc, rightSubType, right);
-                        }
-
-                        return LogicOp_<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, opCmpCode, left, right, rewriter, typeConverter);
-                    }, 
-                    [&](OpBuilder & builder, Location loc) 
-                    {
-                        return whenOneValueIsUndef(rewriter, loc);
-                    });
-
-                return result;                
+                return LogicOp_<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, opCmpCode, left, right, rewriter, typeConverter);
             }
         }        
     };        
