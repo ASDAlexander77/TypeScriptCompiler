@@ -781,8 +781,11 @@ namespace typescript
             {
                 // both are optional types
                 // compare hasvalue first
-                auto leftUndefFlagValue = rewriter.create<mlir_ts::HasValueOp>(loc, th.getBooleanType(), left);
-                auto rightUndefFlagValue = rewriter.create<mlir_ts::HasValueOp>(loc, th.getBooleanType(), right);
+                auto leftUndefFlagValueBool = rewriter.create<mlir_ts::HasValueOp>(loc, th.getBooleanType(), left);
+                auto rightUndefFlagValueBool = rewriter.create<mlir_ts::HasValueOp>(loc, th.getBooleanType(), right);
+
+                auto leftUndefFlagValue = rewriter.create<mlir_ts::CastOp>(loc, th.getI32Type(), leftUndefFlagValueBool);
+                auto rightUndefFlagValue = rewriter.create<mlir_ts::CastOp>(loc, th.getI32Type(), rightUndefFlagValueBool);
 
                 auto whenBothHasNoValues = [&](OpBuilder & builder, Location loc) 
                 {
@@ -791,23 +794,23 @@ namespace typescript
                     {
                         case SyntaxKind::EqualsEqualsToken:
                         case SyntaxKind::EqualsEqualsEqualsToken:
-                            undefFlagCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, rightUndefFlagValue, leftUndefFlagValue);
+                            undefFlagCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, leftUndefFlagValue, rightUndefFlagValue);
                             break;
                         case SyntaxKind::ExclamationEqualsToken:
                         case SyntaxKind::ExclamationEqualsEqualsToken:
-                            undefFlagCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, rightUndefFlagValue, leftUndefFlagValue);
+                            undefFlagCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, leftUndefFlagValue, rightUndefFlagValue);
                             break;
                         case SyntaxKind::GreaterThanToken:
-                            undefFlagCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sgt, rightUndefFlagValue, leftUndefFlagValue);
+                            undefFlagCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sgt, leftUndefFlagValue, rightUndefFlagValue);
                             break;
                         case SyntaxKind::GreaterThanEqualsToken:
-                            undefFlagCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sge, rightUndefFlagValue, leftUndefFlagValue);
+                            undefFlagCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sge, leftUndefFlagValue, rightUndefFlagValue);
                             break;
                         case SyntaxKind::LessThanToken:
-                            undefFlagCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::slt, rightUndefFlagValue, leftUndefFlagValue);
+                            undefFlagCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::slt, leftUndefFlagValue, rightUndefFlagValue);
                             break;
                         case SyntaxKind::LessThanEqualsToken:
-                            undefFlagCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sle, rightUndefFlagValue, leftUndefFlagValue);
+                            undefFlagCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sle, leftUndefFlagValue, rightUndefFlagValue);
                             break;
                         default:
                             llvm_unreachable("not implemented");
@@ -822,7 +825,9 @@ namespace typescript
                     return whenBothHasNoValues(rewriter, loc);
                 }
 
-                auto bothHasResult = rewriter.create<mlir::AndOp>(loc, th.getBooleanType(), leftUndefFlagValue, rightUndefFlagValue);
+                auto andOpResult = rewriter.create<mlir::AndOp>(loc, th.getI32Type(), leftUndefFlagValue, rightUndefFlagValue);
+                auto const0 = clh.createI32ConstantOf(0);
+                auto bothHasResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, andOpResult, const0);
 
                 auto result = clh.conditionalExpressionLowering(th.getBooleanType(), bothHasResult, 
                     [&](OpBuilder & builder, Location loc) 
