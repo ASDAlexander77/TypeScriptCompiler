@@ -51,15 +51,10 @@ namespace
 
             std::stringstream format;
             auto count = 0;
-            for (auto item : op->getOperands())
-            {
-                auto type = item.getType();
-                auto llvmType = tch.convertType(type);
 
-                if (count++ > 0)
-                {
-                    format << " ";
-                }
+            std::function<void(mlir::Type)> processFormatForType = [&](mlir::Type type)
+            {
+                auto llvmType = tch.convertType(type);
 
                 if (auto s = type.dyn_cast_or_null<mlir_ts::StringType>())
                 {
@@ -73,6 +68,11 @@ namespace
                 {
                     format << "%f";
                 }
+                else if (auto o = type.dyn_cast_or_null<mlir_ts::OptionalType>())
+                {
+                    format << "%s:";
+                    processFormatForType(o.getElementType());
+                }                
                 else if (llvmType.isIntOrIndex())
                 {
                     if (llvmType.isInteger(1))
@@ -88,6 +88,18 @@ namespace
                 {
                     format << "%d";
                 }
+            };
+
+            for (auto item : op->getOperands())
+            {
+                auto type = item.getType();
+
+                if (count++ > 0)
+                {
+                    format << " ";
+                }
+
+                processFormatForType(type);
             }
 
             format << "\n";
@@ -119,23 +131,20 @@ namespace
                         item,
                         ch.getOrCreateGlobalString("__true__", std::string("true")),
                         ch.getOrCreateGlobalString("__false__", std::string("false"))));
-
-                    /*
-                    auto valuesCond = ch.conditionalExpressionLowering(
-                        i8PtrTy,
-                        item,
-                        [&](auto &builder, auto loc)
-                        {
-                            return ch.getOrCreateGlobalString("__true__", std::string("true"));
-                        }, 
-                        [&](auto &builder, auto loc) 
-                        {
-                            return ch.getOrCreateGlobalString("__false__", std::string("false"));
-                        });
-
-                    values.push_back(valuesCond);
-                    */
                 }
+                else if (auto o = type.dyn_cast_or_null<mlir_ts::OptionalType>())
+                {
+                    auto boolPart = rewriter.create<mlir_ts::HasValueOp>(item.getLoc(), th.getBooleanType(), item);
+                    values.push_back(rewriter.create<LLVM::SelectOp>(
+                        item.getLoc(),
+                        boolPart,
+                        ch.getOrCreateGlobalString("__true__", std::string("true")),
+                        ch.getOrCreateGlobalString("__false__", std::string("false"))));
+                    values.push_back(rewriter.create<mlir_ts::ValueOp>(
+                        item.getLoc(),
+                        o.getElementType(),
+                        item));
+                }                
                 else
                 {
                     values.push_back(item);
