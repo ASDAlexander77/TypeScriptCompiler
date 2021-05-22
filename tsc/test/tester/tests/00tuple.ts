@@ -26,4 +26,6 @@ function main()
 {
     test1();
     test2();
+
+    print("done.");    
 }

@@ -4,6 +4,8 @@ function main() {
     test3();
     test4();
     test5();
+
+    print("done.");    
 }
 
 function test1()

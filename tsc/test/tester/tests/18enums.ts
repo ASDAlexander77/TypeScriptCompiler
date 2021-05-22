@@ -92,5 +92,7 @@ enum Foo {
 }
 
 function main() {
-    testEnums()
+    testEnums();
+
+    print("done.");    
 }

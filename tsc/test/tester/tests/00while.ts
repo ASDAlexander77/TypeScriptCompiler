@@ -1,5 +1,7 @@
 function main() {    
     assert(test() == 0, "failed. 1");
+
+    print("done.");    
 }
 
 function test()

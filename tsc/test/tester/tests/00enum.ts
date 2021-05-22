@@ -18,5 +18,7 @@ function main() {
     print(a, En.B, En.C, En.D);
     print(En2.D0, En2.D1, En2.D2);
     print(b);
+
+    print("done.");
 }
 

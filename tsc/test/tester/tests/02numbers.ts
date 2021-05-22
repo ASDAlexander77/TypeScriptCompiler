@@ -230,4 +230,6 @@ function main()
    testNums();
    testNaN();
    //testUnaryPlus();
+
+   print("done.");   
 }

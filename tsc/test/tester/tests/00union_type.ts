@@ -20,4 +20,6 @@ function testUnionIndexer(): void {
 function main()
 {
   testUnionIndexer();
+
+  print("done.");  
 }

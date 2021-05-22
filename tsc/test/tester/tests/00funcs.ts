@@ -34,6 +34,8 @@ function main() {
     arrow_func();
     arrow_func_nobody();
     test_lmb_param();
+
+    print("done.");
 }
 
 function init_method() {

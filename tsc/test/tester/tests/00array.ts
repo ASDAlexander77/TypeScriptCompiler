@@ -31,5 +31,7 @@ function main()
 	print(a3[1]);
 	print(a3[2]);
     a3[1] = "save";
+
+    print("done.");
 }
  

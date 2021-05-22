@@ -6,4 +6,6 @@ function main() {
     assert(glb2 == 2, "Failed. glb2");
     glb1 = glb1 + 1;
     assert(glb1 == 2, "Failed. glb1++");
+
+    print("done.");
 }

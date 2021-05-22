@@ -8,4 +8,6 @@ function main()
 	print (--j);
 	print (j--);
 	print (j);
+
+    print("done.");    
 }

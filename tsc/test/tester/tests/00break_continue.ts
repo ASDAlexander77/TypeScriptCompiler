@@ -3,6 +3,8 @@ function main() {
     assert(test_while() == 5, "failed. 2");
     assert(test_for() == 5, "failed. 3");
     test_for_empty();
+
+    print("done.");
 }
 
 

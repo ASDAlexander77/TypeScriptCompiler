@@ -3,6 +3,8 @@ function main() {
     test2(1);
     assert(test3(1) == 5, "failed. 3");
     assert(test4(1) == 3, "failed. 4");
+
+    print("done.");
 }
 
 function test(a: number)

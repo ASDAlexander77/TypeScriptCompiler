@@ -13,4 +13,5 @@ function main()
 		print([1, 2, 3][d]);
 	}
 
+    print("done.");
 }

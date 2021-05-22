@@ -1,6 +1,8 @@
 function main() {    
     assert(test1() == 10, "failed. 1");
     assert(test2() == 11, "failed. 2");
+
+    print("done.");
 }
 
 function test1()

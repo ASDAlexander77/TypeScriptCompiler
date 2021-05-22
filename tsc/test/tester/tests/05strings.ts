@@ -52,4 +52,6 @@ function testStrings(): void {
 function main()
 {
     testStrings();
+
+    print("done.");    
 }

@@ -11,4 +11,6 @@ function main() {
 	print (("asd" + 1) <= ("Asd1"));
 	print (("Asd" + 1) < ("asd1"));
 	print (("Asd" + 1) >= ("asd1"));
+
+    print("done.");    
 }

@@ -28,5 +28,7 @@ function main() {
 	t_undef();
 	f("asd");
 	t_val("asd");
+
+    print("done.");    
 }
 

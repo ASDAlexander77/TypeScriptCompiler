@@ -18,4 +18,6 @@ function main()
 	c.user.name = "Test2";
 
 	print (c.user.name, " << end (should be value Test2)");
+
+    print("done.");    
 }

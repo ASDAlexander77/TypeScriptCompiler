@@ -16,6 +16,8 @@ function main() {
     assert(optstring(3, "7") == 10, "os1")
     assert(optstring2(3) == 6, "os0")
     assert(optstring2(3, "7") == 10, "os1")
+
+    print("done.");    
 }
 
 /*
