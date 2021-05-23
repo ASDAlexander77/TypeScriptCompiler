@@ -152,6 +152,10 @@ void testFile(const char *file)
     sfn << stem << ms.count() << ".exe";
     auto exeFile = sfn.str();
 
+    std::stringstream tfn;
+    tfn << stem << ms.count() << ".txt";
+    auto txtFile = tfn.str();     
+
     std::stringstream efn;
     efn << stem << ms.count() << ".err";
     auto errFile = efn.str();    
@@ -162,6 +166,19 @@ void testFile(const char *file)
         std::stringstream mask;
         mask << "del " << stem << ms.count() << ".*";
         auto delCmd = mask.str();
+
+        // read output result
+        std::ifstream infileO;
+        infileO.open(txtFile, std::fstream::in);
+        std::string lineO;
+        auto anyDoneMsg = false;
+        while (std::getline(infileO, lineO))
+        {
+            if (lineO.find("done.") != std::string::npos)
+            {
+                anyDoneMsg = true;
+            }
+        }            
 
         // read test result
         std::ifstream infile;
@@ -184,6 +201,11 @@ void testFile(const char *file)
             auto errStr = errors.str();
             return errStr;
         } 
+
+        if (!anyDoneMsg)
+        {
+            return std::string("no 'done.' msg.");
+        }
 
         return std::string();
     };
@@ -208,7 +230,7 @@ void testFile(const char *file)
         if (index != std::string::npos)
         {
             throw "run error";
-        }
+        }     
     }
     catch (const std::exception &)
     {
