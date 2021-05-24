@@ -550,6 +550,47 @@ namespace
             return vecVarName.str();
         }
 
+        template <typename T, typename TOp>
+        void getOrCreateGlobalArray(TOp constantOp, T type, ConversionPatternRewriter &rewriter) const
+        {
+            LLVMCodeHelper ch(constantOp, rewriter);
+            TypeConverterHelper tch(getTypeConverter());
+
+            auto elementType = type.cast<T>().getElementType();
+            auto llvmElementType = tch.convertType(elementType);
+            auto arrayAttr = constantOp.value().dyn_cast_or_null<ArrayAttr>();
+
+            auto vecVarName = calc_hash_value(arrayAttr, "a_");      
+
+            auto arrayFirstElementAddrCst = ch.getOrCreateGlobalArray(
+                elementType,
+                vecVarName, 
+                llvmElementType,
+                arrayAttr.size(),
+                arrayAttr);
+
+            rewriter.replaceOp(constantOp, arrayFirstElementAddrCst);            
+        }
+
+        template <typename T, typename TOp>
+        void getOrCreateGlobalTuple(TOp constantOp, T type, ConversionPatternRewriter &rewriter) const
+        {
+            LLVMCodeHelper ch(constantOp, rewriter);
+            TypeConverterHelper tch(getTypeConverter());
+
+            auto arrayAttr = constantOp.value().dyn_cast_or_null<ArrayAttr>();
+
+            auto varName = calc_hash_value(arrayAttr, "tp_");      
+
+            auto convertedTupleType = tch.convertType(type);
+            auto tupleConstPtr = ch.getOrCreateGlobalTuple(convertedTupleType, varName, arrayAttr);
+
+            // optimize it and replace it with copy memory. (use canon. pass) check  "EraseRedundantAssertions"
+            auto loadedValue = rewriter.create<LLVM::LoadOp>(constantOp->getLoc(), tupleConstPtr);
+
+            rewriter.replaceOp(constantOp, ValueRange{loadedValue});            
+        }
+
         LogicalResult matchAndRewrite(mlir_ts::ConstantOp constantOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             // load address of const string
@@ -567,44 +608,27 @@ namespace
             }
 
             TypeConverterHelper tch(getTypeConverter());
-            if (type.isa<mlir_ts::ArrayType>())
+            if (auto constArrayType = type.dyn_cast_or_null<mlir_ts::ConstArrayType>())
             {
-                LLVMCodeHelper ch(constantOp, rewriter);
-
-                auto elementType = type.cast<mlir_ts::ArrayType>().getElementType();
-                auto llvmElementType = tch.convertType(elementType);
-                auto arrayAttr = constantOp.value().dyn_cast_or_null<ArrayAttr>();
-
-                auto vecVarName = calc_hash_value(arrayAttr, "a_");      
-
-                auto arrayFirstElementAddrCst = ch.getOrCreateGlobalArray(
-                    elementType,
-                    vecVarName, 
-                    llvmElementType,
-                    arrayAttr.size(),
-                    arrayAttr);
-
-                rewriter.replaceOp(constantOp, arrayFirstElementAddrCst);
-
+                getOrCreateGlobalArray(constantOp, constArrayType, rewriter);
                 return success();
             }            
 
-            if (type.isa<mlir_ts::TupleType>())
+            if (auto arrayType = type.dyn_cast_or_null<mlir_ts::ArrayType>())
             {
-                LLVMCodeHelper ch(constantOp, rewriter);
+                getOrCreateGlobalArray(constantOp, arrayType, rewriter);
+                return success();
+            }            
 
-                auto arrayAttr = constantOp.value().dyn_cast_or_null<ArrayAttr>();
+            if (auto constTupleType = type.dyn_cast_or_null<mlir_ts::ConstTupleType>())
+            {
+                getOrCreateGlobalTuple(constantOp, constTupleType, rewriter);
+                return success();
+            }
 
-                auto varName = calc_hash_value(arrayAttr, "tp_");      
-
-                auto convertedTupleType = tch.convertType(type);
-                auto tupleConstPtr = ch.getOrCreateGlobalTuple(convertedTupleType, varName, arrayAttr);
-
-                // optimize it and replace it with copy memory. (use canon. pass) check  "EraseRedundantAssertions"
-                auto loadedValue = rewriter.create<LLVM::LoadOp>(constantOp->getLoc(), tupleConstPtr);
-
-                rewriter.replaceOp(constantOp, ValueRange{loadedValue});
-
+            if (auto tupleType = type.dyn_cast_or_null<mlir_ts::TupleType>())
+            {
+                getOrCreateGlobalTuple(constantOp, tupleType, rewriter);
                 return success();
             }
 
@@ -928,6 +952,28 @@ namespace
             auto value = varOp.initializer();
             if (value)
             {
+                // allocate copy
+                if (varOp.copy())
+                {                    
+                    if (auto copyOp = dyn_cast_or_null<mlir_ts::ConstantOp>(value.getDefiningOp()))
+                    {
+                        CodeLogicHelper clh(varOp, rewriter);
+                        auto type = clh.getTypeOfConstValue(copyOp, tch);
+
+                        //emitError(location) << "result type: " << type;
+
+                        auto copied =
+                            rewriter.create<LLVM::AllocaOp>(
+                                location,
+                                LLVM::LLVMPointerType::get(type),
+                                clh.createI32ConstantOf(1));                
+                    }
+                    else
+                    {
+                        llvm_unreachable("not implemented");
+                    }
+                }
+
                 rewriter.create<LLVM::StoreOp>(location, value, allocated);
             }
 
@@ -1505,6 +1551,10 @@ namespace
             return converter.convertType(type.getElementType());
         });        
 
+        converter.addConversion([&](mlir_ts::ConstArrayType type) {
+            return LLVM::LLVMPointerType::get(converter.convertType(type.getElementType()));
+        });  
+
         converter.addConversion([&](mlir_ts::ArrayType type) {
             return LLVM::LLVMPointerType::get(converter.convertType(type.getElementType()));
         });        
@@ -1512,6 +1562,16 @@ namespace
         converter.addConversion([&](mlir_ts::RefType type) {
             return LLVM::LLVMPointerType::get(converter.convertType(type.getElementType()));
         });
+
+        converter.addConversion([&](mlir_ts::ConstTupleType type) {
+            SmallVector<mlir::Type> convertedTypes;
+            for (auto subType : type.getFields())
+            {
+                convertedTypes.push_back(converter.convertType(subType.type));
+            }
+
+            return LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, false);
+        });  
 
         converter.addConversion([&](mlir_ts::TupleType type) {
             SmallVector<mlir::Type> convertedTypes;

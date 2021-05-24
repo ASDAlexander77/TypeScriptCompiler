@@ -476,10 +476,14 @@ namespace
                     {
                         assert (type);
 
+                        auto copyRequired = false;
+                        auto actualType = convertConstTypeToType(type, copyRequired);
+
                         auto variableOp = builder.create<mlir_ts::VariableOp>(
                             location,
-                            mlir_ts::RefType::get(type),
-                            init);
+                            mlir_ts::RefType::get(actualType),
+                            init,
+                            copyRequired);
 
                         declare(varDecl, variableOp);
                     }
@@ -1842,6 +1846,33 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             llvm_unreachable("not implemented");
         }
 
+        template <typename T>
+        mlir::Value mlirGenElementAccess(mlir::Location location, mlir::Value expression, mlir::Value argumentExpression, T tupleType)
+        {
+            // get index
+            if (auto indexConstOp = dyn_cast_or_null<mlir_ts::ConstantOp>(argumentExpression.getDefiningOp()))
+            {
+                if (auto loadOp = dyn_cast_or_null<mlir_ts::LoadOp>(expression.getDefiningOp()))
+                {
+                    auto constIndex = indexConstOp.value().dyn_cast_or_null<mlir::IntegerAttr>().getInt();
+                    auto elementType = tupleType.getType(constIndex);
+                    
+                    auto propRef = builder.create<mlir_ts::PropertyRefOp>(location, mlir_ts::RefType::get(elementType), loadOp.reference(), builder.getI32IntegerAttr(constIndex));
+                    loadOp->erase();
+
+                    return builder.create<mlir_ts::LoadOp>(location, elementType, propRef);
+                }
+                else
+                {
+                    llvm_unreachable("not implemented (load ref)");
+                }
+            }
+            else
+            {
+                llvm_unreachable("not implemented (index)");
+            }
+        }
+
         mlir::Value mlirGen(ElementAccessExpression elementAccessExpression, const GenContext &genContext)
         {
             auto location = loc(elementAccessExpression);
@@ -1856,7 +1887,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             {
                 elementType = arrayTyped.getElementType();
             }
-            else if (auto vectorType = arrayType.dyn_cast_or_null<mlir::VectorType>())
+            else if (auto vectorType = arrayType.dyn_cast_or_null<mlir_ts::ConstArrayType>())
             {
                 elementType = vectorType.getElementType();
             }
@@ -1866,28 +1897,11 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             }
             else if (auto tupleType = arrayType.dyn_cast_or_null<mlir_ts::TupleType>())
             {
-                // get index
-                if (auto indexConstOp = dyn_cast_or_null<mlir_ts::ConstantOp>(argumentExpression.getDefiningOp()))
-                {
-                    if (auto loadOp = dyn_cast_or_null<mlir_ts::LoadOp>(expression.getDefiningOp()))
-                    {
-                        auto constIndex = indexConstOp.value().dyn_cast_or_null<mlir::IntegerAttr>().getInt();
-                        elementType = tupleType.getType(constIndex);
-                        
-                        auto propRef = builder.create<mlir_ts::PropertyRefOp>(location, mlir_ts::RefType::get(elementType), loadOp.reference(), builder.getI32IntegerAttr(constIndex));
-                        loadOp->erase();
-
-                        return builder.create<mlir_ts::LoadOp>(location, elementType, propRef);
-                    }
-                    else
-                    {
-                        llvm_unreachable("not implemented (load ref)");
-                    }
-                }
-                else
-                {
-                    llvm_unreachable("not implemented (index)");
-                }
+                return mlirGenElementAccess(location, expression, argumentExpression, tupleType);
+            }
+            else if (auto tupleType = arrayType.dyn_cast_or_null<mlir_ts::ConstTupleType>())
+            {
+                return mlirGenElementAccess(location, expression, argumentExpression, tupleType);
             }
             else 
             {
@@ -2215,13 +2229,13 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
                 return builder.create<mlir_ts::ConstantOp>(
                     loc(arrayLiteral),
-                    getTupleType(fieldInfos),
+                    getConstTupleType(fieldInfos),
                     arrayAttr);
             }
 
             return builder.create<mlir_ts::ConstantOp>(
                 loc(arrayLiteral),
-                getArrayType(elementType),
+                getConstArrayType(elementType),
                 arrayAttr);
         }
 
@@ -2554,6 +2568,17 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             return mlir_ts::EnumType::get(elementType);
         }
 
+        mlir_ts::ConstArrayType getConstArrayType(ArrayTypeNode arrayTypeAST)
+        {
+            auto type = getType(arrayTypeAST->elementType);
+            return getConstArrayType(type);
+        }          
+
+        mlir_ts::ConstArrayType getConstArrayType(mlir::Type elementType)
+        {
+            return mlir_ts::ConstArrayType::get(elementType);
+        }
+
         mlir_ts::ArrayType getArrayType(ArrayTypeNode arrayTypeAST)
         {
             auto type = getType(arrayTypeAST->elementType);
@@ -2565,9 +2590,8 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             return mlir_ts::ArrayType::get(elementType);
         }
 
-        mlir_ts::TupleType getTupleType(TupleTypeNode tupleType)
+        void getTupleFieldInfo(TupleTypeNode tupleType, mlir::SmallVector<mlir_ts::FieldInfo> &types)
         {
-            mlir::SmallVector<mlir_ts::FieldInfo> types;
             for (auto typeItem : tupleType->elements)
             {
                 if ((SyntaxKind)typeItem == SyntaxKind::NamedTupleMember)
@@ -2589,7 +2613,24 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     types.push_back({mlir::StringRef(), type});
                 }
             }
+        }
 
+        mlir_ts::ConstTupleType getConstTupleType(TupleTypeNode tupleType)
+        {
+            mlir::SmallVector<mlir_ts::FieldInfo> types;
+            getTupleFieldInfo(tupleType, types);
+            return getConstTupleType(types);
+        }        
+
+        mlir_ts::ConstTupleType getConstTupleType(mlir::SmallVector<mlir_ts::FieldInfo> &fieldInfos)
+        {
+            return mlir_ts::ConstTupleType::get(builder.getContext(), fieldInfos);
+        }         
+
+        mlir_ts::TupleType getTupleType(TupleTypeNode tupleType)
+        {
+            mlir::SmallVector<mlir_ts::FieldInfo> types;
+            getTupleFieldInfo(tupleType, types);
             return getTupleType(types);
         }        
 
@@ -2697,6 +2738,24 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
         mlir_ts::AnyType getAnyType()
         {
             return mlir_ts::AnyType::get(builder.getContext());
+        }
+
+        mlir::Type convertConstTypeToType(mlir::Type type, bool &copyRequired)
+        {
+            if (auto constArrayType = type.dyn_cast_or_null<mlir_ts::ConstArrayType>())
+            {
+                copyRequired = true;
+                return mlir_ts::ArrayType::get(constArrayType.getElementType());
+            }
+
+            if (auto constTupleType = type.dyn_cast_or_null<mlir_ts::ConstTupleType>())
+            {
+                copyRequired = true;
+                return mlir_ts::TupleType::get(builder.getContext(), constTupleType.getFields());
+            }
+
+            copyRequired = false;
+            return type;
         }
 
         mlir::LogicalResult declare(VariableDeclarationDOM::TypePtr var, mlir::Value value, bool redeclare = false)

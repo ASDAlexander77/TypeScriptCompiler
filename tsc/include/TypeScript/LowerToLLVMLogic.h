@@ -605,6 +605,20 @@ namespace typescript
                 llvm_unreachable("not implemented");
             }
         }
+
+        mlir::Type getTypeOfConstValue(mlir_ts::ConstantOp constOp, TypeConverterHelper &tch)
+        {
+            // build type
+            auto arrayAttr = constOp.value().dyn_cast_or_null<mlir::ArrayAttr>();
+            if (arrayAttr)
+            {
+                auto elementType = constOp.getType().cast<mlir_ts::ConstArrayType>().getElementType();
+                return mlir::LLVM::LLVMArrayType::get(elementType, arrayAttr.size());
+            }
+
+            return mlir::Type();
+
+        }
     };
 
     class CastLogicHelper

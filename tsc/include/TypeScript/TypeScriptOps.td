@@ -515,7 +515,7 @@ def TypeScript_ValueOp : TypeScript_Op<"Value",
 
 def TypeScript_VariableOp : TypeScript_Op<"Variable", []> {
   let summary = [{
-    Allocate an object in memory.
+    Allocate an object in stack memory.
   }];
 
   let description = [{
@@ -529,7 +529,7 @@ def TypeScript_VariableOp : TypeScript_Op<"Variable", []> {
   }];
 
   let arguments = (ins
-    Optional<AnyType>:$initializer
+    Optional<AnyType>:$initializer, BoolAttr:$copy
   );
 
   let results = (outs

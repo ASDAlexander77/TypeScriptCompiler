@@ -120,6 +120,15 @@ LogicalResult ts::EnumType::verifyConstructionInvariants(Location loc, Type elem
 }
 
 //===----------------------------------------------------------------------===//
+// ConstArrayType
+//===----------------------------------------------------------------------===//
+
+LogicalResult ts::ConstArrayType::verifyConstructionInvariants(Location loc, Type elementType)
+{
+    return success();
+}
+
+//===----------------------------------------------------------------------===//
 // ArrayType
 //===----------------------------------------------------------------------===//
 
@@ -127,6 +136,26 @@ LogicalResult ts::ArrayType::verifyConstructionInvariants(Location loc, Type ele
 {
     return success();
 }
+
+//===----------------------------------------------------------------------===//
+/// ConstTupleType
+//===----------------------------------------------------------------------===//
+
+/// Accumulate the types contained in this tuple and tuples nested within it.
+/// Note that this only flattens nested tuples, not any other container type,
+/// e.g. a tuple<i32, tensor<i32>, tuple<f32, tuple<i64>>> is flattened to
+/// (i32, tensor<i32>, f32, i64)
+void ts::ConstTupleType::getFlattenedTypes(SmallVector<Type> &types) {
+  for (auto typeInfo : getFields()) {
+    if (auto nestedTuple = typeInfo.type.dyn_cast<ts::ConstTupleType>())
+      nestedTuple.getFlattenedTypes(types);
+    else
+      types.push_back(typeInfo.type);
+  }
+}
+
+/// Return the number of element types.
+size_t ts::ConstTupleType::size() const { return getFields().size(); }
 
 //===----------------------------------------------------------------------===//
 /// TupleType

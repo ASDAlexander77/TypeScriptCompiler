@@ -96,22 +96,6 @@ def TypeScript_Ref : TypeScript_Type<"Ref"> {
 
 }
 
-def TypeScript_IsRefType : CPred<"$_self.isa<::mlir::typescript::RefType>()">;
-
-def TypeScript_AnyRef : DialectType<TypeScript_Dialect, TypeScript_IsRefType, "any reference type">;
-
-def TypeScript_IsTupleType : CPred<"$_self.isa<::mlir::typescript::TupleType>()">;
-
-def TypeScript_AnyTuple : DialectType<TypeScript_Dialect, TypeScript_IsTupleType, "any tuple type">;
-
-def TypeScript_IsTupleRefType : CPred<"$_self.isa<::mlir::typescript::RefType>() && $_self.cast<::mlir::typescript::RefType>().getElementType().isa<::mlir::typescript::TupleType>()">;
-
-def TypeScript_AnyTupleRef : DialectType<TypeScript_Dialect, TypeScript_IsTupleRefType, "any tuple reference type">;
-
-def TypeScript_IsOptionalType : CPred<"$_self.isa<::mlir::typescript::OptionalType>()">;
-
-def TypeScript_AnyOptional : DialectType<TypeScript_Dialect, TypeScript_IsOptionalType, "any optional type">;
-
 def TypeScript_Optional : TypeScript_Type<"Optional"> {
   let mnemonic = "optional";
 
@@ -201,6 +185,49 @@ def TypeScript_Enum : TypeScript_Type<"Enum"> {
   let skipDefaultBuilders = 1;  
 }
 
+def TypeScript_ConstArray : TypeScript_Type<"ConstArray"> {
+  let mnemonic = "const_array";
+
+  let description = [{
+    Syntax:
+
+    ```
+    array-type ::= `const_array<` type `>`
+    ```
+
+    Examples:
+
+    ```mlir
+    const_array<f32>
+    const_array<i32>
+    ```
+  }];
+  let parameters = (ins "Type":$elementType);
+  let genVerifyInvariantsDecl = 1;
+
+  // We define the printer inline.
+  let printer = [{ $_printer << "const_array<" << getImpl()->elementType << ">"; }];  
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "Type":$elementType), [{
+      return Base::get(elementType.getContext(), elementType);
+    }], [{
+      return Base::getChecked($_loc, elementType);
+    }]>
+  ];
+
+  // Parses the above format
+  let parser = [{
+    Type elementType;
+    if ($_parser.parseLess()) return Type();
+    if ($_parser.parseType(elementType)) return Type();
+    if ($_parser.parseGreater()) return Type();
+    return get(elementType);
+  }];  
+
+  let skipDefaultBuilders = 1;  
+}
+
 def TypeScript_Array : TypeScript_Type<"Array"> {
   let mnemonic = "array";
 
@@ -242,6 +269,102 @@ def TypeScript_Array : TypeScript_Type<"Array"> {
   }];  
 
   let skipDefaultBuilders = 1;  
+}
+
+def TypeScript_ConstTuple : TypeScript_Type<"ConstTuple"> {
+  let mnemonic = "const_tuple";
+
+  let summary = "Fixed-sized collection of other types";
+  let description = [{
+    Syntax:
+
+    ```
+    tuple-type ::= `const_tuple` `<` (type ( `,` type)*)? `>`
+    ```
+
+    The value of `tuple` type represents a fixed-size collection of elements,
+    where each element may be of a different type.
+
+    Examples:
+
+    ```mlir
+    // Empty tuple.
+    const_tuple<>
+
+    // Single element
+    const_tuple<f32>
+
+    // Many elements.
+    const_tuple<i32, f32, tensor<i1>, i5>
+    ```
+  }];
+  let parameters = (ins ArrayRefOfSelfAllocationParameter<"::mlir::typescript::FieldInfo", "fields">:$fields);
+
+  let printer = [{
+    $_printer << "tuple" << "<";
+    for (size_t i=0, e = getImpl()->fields.size(); i < e; i++) {
+      const auto& field = getImpl()->fields[i];
+      $_printer << "{" << field.name << "," << field.type << "}";
+      if (i < getImpl()->fields.size() - 1)
+          $_printer << ",";
+    }
+    $_printer << ">";
+  }];
+
+  // Parses the above format
+  let parser = [{
+    SmallVector<FieldInfo, 4> parameters;
+    if ($_parser.parseLess()) return Type();
+    while (mlir::succeeded($_parser.parseOptionalLBrace())) {
+      StringRef name;
+      if ($_parser.parseKeyword(&name)) return Type();
+      if ($_parser.parseComma()) return Type();
+      Type type;
+      if ($_parser.parseType(type)) return Type();
+      if ($_parser.parseRBrace()) return Type();
+      parameters.push_back(FieldInfo {name, type});
+      if ($_parser.parseOptionalComma()) break;
+    }
+    if ($_parser.parseGreater()) return Type();
+    return get($_ctxt, parameters);
+  }];  
+
+  let extraClassDeclaration = [{
+    /// Accumulate the types contained in this tuple and tuples nested within
+    /// it. Note that this only flattens nested tuples, not any other container
+    /// type, e.g. a tuple<i32, tensor<i32>, tuple<f32, tuple<i64>>> is
+    /// flattened to (i32, tensor<i32>, f32, i64)
+    void getFlattenedTypes(SmallVector<Type> &types);
+
+    /// Return the number of held types.
+    size_t size() const;
+
+    /// Iterate over the held elements.
+    using iterator = ArrayRef<::mlir::typescript::FieldInfo>::iterator;
+    iterator begin() const { return getFields().begin(); }
+    iterator end() const { return getFields().end(); }
+
+    int getIndex(StringRef name)
+    {
+        return std::distance(begin(), std::find_if(begin(), end(), [&](::mlir::typescript::FieldInfo fldInf){ return name == fldInf.name; }));
+    }
+
+    /// Return the element type at index 'index'.
+    ::mlir::typescript::FieldInfo getFieldInfo(size_t index) const {
+      assert(index < size() && "invalid index for tuple type");
+      return getFields()[index];
+    }
+
+    StringRef getName(size_t index) const {
+      assert(index < size() && "invalid index for tuple type");
+      return getFields()[index].name;
+    }
+
+    Type getType(size_t index) const {
+      assert(index < size() && "invalid index for tuple type");
+      return getFields()[index].type;
+    }
+  }];
 }
 
 def TypeScript_Tuple : TypeScript_Type<"Tuple"> {
@@ -484,12 +607,28 @@ def TypeScript_Intersection : TypeScript_Type<"Intersection"> {
   }];
 }
 
+def TypeScript_IsRefType : CPred<"$_self.isa<::mlir::typescript::RefType>()">;
+
+def TypeScript_AnyRef : DialectType<TypeScript_Dialect, TypeScript_IsRefType, "any reference type">;
+
+def TypeScript_IsTupleType : CPred<"$_self.isa<::mlir::typescript::TupleType>()">;
+
+def TypeScript_AnyTuple : DialectType<TypeScript_Dialect, TypeScript_IsTupleType, "any tuple type">;
+
+def TypeScript_IsTupleRefType : CPred<"$_self.isa<::mlir::typescript::RefType>() && $_self.cast<::mlir::typescript::RefType>().getElementType().isa<::mlir::typescript::TupleType>()">;
+
+def TypeScript_AnyTupleRef : DialectType<TypeScript_Dialect, TypeScript_IsTupleRefType, "any tuple reference type">;
+
+def TypeScript_IsOptionalType : CPred<"$_self.isa<::mlir::typescript::OptionalType>()">;
+
+def TypeScript_AnyOptional : DialectType<TypeScript_Dialect, TypeScript_IsOptionalType, "any optional type">;
+
 def TypeScript_ArrayLike : AnyTypeOf<[
-    TypeScript_Array, TypeScript_String
+    TypeScript_ConstArray, TypeScript_Array, TypeScript_String
   ]>;
 
 def TypeScript_AnyStructLike : AnyTypeOf<[
-    TypeScript_AnyTuple
+    TypeScript_ConstTuple, TypeScript_Tuple
   ]>;
 
 def TypeScript_AnyStructRefLike : AnyTypeOf<[
