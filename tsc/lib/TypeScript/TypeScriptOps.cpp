@@ -123,7 +123,7 @@ LogicalResult ts::EnumType::verifyConstructionInvariants(Location loc, Type elem
 // ConstArrayType
 //===----------------------------------------------------------------------===//
 
-LogicalResult ts::ConstArrayType::verifyConstructionInvariants(Location loc, Type elementType)
+LogicalResult ts::ConstArrayType::verifyConstructionInvariants(Location loc, Type elementType, unsigned size)
 {
     return success();
 }

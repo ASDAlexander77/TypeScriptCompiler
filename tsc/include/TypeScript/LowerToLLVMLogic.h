@@ -135,6 +135,24 @@ namespace typescript
 
             return type;
         }
+
+        Type convertTypeAsValue(Type type)
+        {
+            if (auto constArray = type.dyn_cast_or_null<mlir_ts::ConstArrayType>())
+            {
+                return LLVM::LLVMPointerType::get(LLVM::LLVMArrayType::get(convertType(constArray.getElementType()), constArray.getSize()));
+            }
+
+            if (type)
+            {
+                if (auto convertedType = typeConverter.convertType(type))
+                {
+                    return convertedType;
+                }
+            }
+
+            return type;
+        }        
     };
 
     class LLVMTypeConverterHelper
@@ -604,20 +622,6 @@ namespace typescript
             {
                 llvm_unreachable("not implemented");
             }
-        }
-
-        mlir::Type getTypeOfConstValue(mlir_ts::ConstantOp constOp, TypeConverterHelper &tch)
-        {
-            // build type
-            auto arrayAttr = constOp.value().dyn_cast_or_null<mlir::ArrayAttr>();
-            if (arrayAttr)
-            {
-                auto elementType = constOp.getType().cast<mlir_ts::ConstArrayType>().getElementType();
-                return mlir::LLVM::LLVMArrayType::get(elementType, arrayAttr.size());
-            }
-
-            return mlir::Type();
-
         }
     };
 

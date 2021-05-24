@@ -2235,7 +2235,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
             return builder.create<mlir_ts::ConstantOp>(
                 loc(arrayLiteral),
-                getConstArrayType(elementType),
+                getConstArrayType(elementType, values.size()),
                 arrayAttr);
         }
 
@@ -2568,15 +2568,15 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             return mlir_ts::EnumType::get(elementType);
         }
 
-        mlir_ts::ConstArrayType getConstArrayType(ArrayTypeNode arrayTypeAST)
+        mlir_ts::ConstArrayType getConstArrayType(ArrayTypeNode arrayTypeAST, unsigned size)
         {
             auto type = getType(arrayTypeAST->elementType);
-            return getConstArrayType(type);
+            return getConstArrayType(type, size);
         }          
 
-        mlir_ts::ConstArrayType getConstArrayType(mlir::Type elementType)
+        mlir_ts::ConstArrayType getConstArrayType(mlir::Type elementType, unsigned size)
         {
-            return mlir_ts::ConstArrayType::get(elementType);
+            return mlir_ts::ConstArrayType::get(elementType, size);
         }
 
         mlir_ts::ArrayType getArrayType(ArrayTypeNode arrayTypeAST)

@@ -192,27 +192,27 @@ def TypeScript_ConstArray : TypeScript_Type<"ConstArray"> {
     Syntax:
 
     ```
-    array-type ::= `const_array<` type `>`
+    array-type ::= `const_array<` type `,` size `>`
     ```
 
     Examples:
 
     ```mlir
-    const_array<f32>
-    const_array<i32>
+    const_array<f32, 1>
+    const_array<i32, 10>
     ```
   }];
-  let parameters = (ins "Type":$elementType);
+  let parameters = (ins "Type":$elementType, "unsigned":$size);
   let genVerifyInvariantsDecl = 1;
 
   // We define the printer inline.
-  let printer = [{ $_printer << "const_array<" << getImpl()->elementType << ">"; }];  
+  let printer = [{ $_printer << "const_array<" << getImpl()->elementType << "," << getImpl()->size << ">"; }];  
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "Type":$elementType), [{
-      return Base::get(elementType.getContext(), elementType);
+    TypeBuilderWithInferredContext<(ins "Type":$elementType, "unsigned":$size), [{
+      return Base::get(elementType.getContext(), elementType, size);
     }], [{
-      return Base::getChecked($_loc, elementType);
+      return Base::getChecked($_loc, elementType, size);
     }]>
   ];
 
@@ -221,8 +221,12 @@ def TypeScript_ConstArray : TypeScript_Type<"ConstArray"> {
     Type elementType;
     if ($_parser.parseLess()) return Type();
     if ($_parser.parseType(elementType)) return Type();
+    if ($_parser.parseComma()) return Type();
+    int size;
+    if ($_parser.parseInteger(size)) return Type();
     if ($_parser.parseGreater()) return Type();
-    return get(elementType);
+    Location loc = $_parser.getEncodedSourceLoc($_parser.getNameLoc());
+    return getChecked(loc, elementType, size);
   }];  
 
   let skipDefaultBuilders = 1;  

@@ -955,23 +955,17 @@ namespace
                 // allocate copy
                 if (varOp.copy())
                 {                    
-                    if (auto copyOp = dyn_cast_or_null<mlir_ts::ConstantOp>(value.getDefiningOp()))
-                    {
-                        CodeLogicHelper clh(varOp, rewriter);
-                        auto type = clh.getTypeOfConstValue(copyOp, tch);
+                    // ...
+                    //emitError(location) << "type: " << varOp.initializer().getType() << " llvm:" << tch.convertType(varOp.initializer().getType()) << " llvm as value:" << tch.convertTypeAsValue(varOp.initializer().getType());
+                    auto copyAllocated =
+                        rewriter.create<LLVM::AllocaOp>(
+                            location,
+                            tch.convertTypeAsValue(varOp.initializer().getType()),
+                            clh.createI32ConstantOf(1));
 
-                        //emitError(location) << "result type: " << type;
+                    rewriter.create<mlir_ts::MemoryCopyOp>(location, copyAllocated, value);
 
-                        auto copied =
-                            rewriter.create<LLVM::AllocaOp>(
-                                location,
-                                LLVM::LLVMPointerType::get(type),
-                                clh.createI32ConstantOf(1));                
-                    }
-                    else
-                    {
-                        llvm_unreachable("not implemented");
-                    }
+                    value = copyAllocated;
                 }
 
                 rewriter.create<LLVM::StoreOp>(location, value, allocated);
