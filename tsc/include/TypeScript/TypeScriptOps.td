@@ -1110,4 +1110,9 @@ def TypeScript_CharToStringOp : TypeScript_Op<"CharToString"> {
   let results = (outs TypeScript_String:$result);
 }
 
+def TypeScript_MemoryCopyOp : TypeScript_Op<"MemoryCopy"> {
+  let arguments = (ins AnyType:$dst, AnyType:$src);
+  let results = (outs );
+}
+
 #endif // TYPESCRIPT_OPS

@@ -557,6 +557,12 @@ namespace typescript
             return rewriter.create<LLVM::ConstantOp>(op->getLoc(), rewriter.getF32Type(), rewriter.getIntegerAttr(rewriter.getF32Type(), value));
         }
 
+        Value castToI8Ptr(mlir::Value value)
+        {
+            TypeHelper th(rewriter);
+            return rewriter.create<LLVM::BitcastOp>(op->getLoc(), th.getI8PtrType(), value);
+        }
+
         Value conditionalExpressionLowering(
             Type type, Value condition,
             function_ref<Value(OpBuilder &, Location)> thenBuilder,
@@ -687,6 +693,12 @@ namespace typescript
             {
                 return rewriter.create<TruncateIOp>(loc, in, resLLVMType);
             }
+
+            // ptrs cast
+            if (inLLVMType.isa<LLVM::LLVMPointerType>() && resLLVMType.isa<LLVM::LLVMPointerType>())
+            {
+                return rewriter.create<LLVM::BitcastOp>(loc, resLLVMType, in);
+            }            
 
             auto isResString = resType.dyn_cast_or_null<mlir_ts::StringType>();
 

@@ -965,7 +965,7 @@ namespace
 
                     rewriter.create<mlir_ts::MemoryCopyOp>(location, copyAllocated, value);
 
-                    value = copyAllocated;
+                    value = rewriter.create<mlir_ts::CastOp>(location, value.getType(), copyAllocated);
                 }
 
                 rewriter.create<LLVM::StoreOp>(location, value, allocated);
@@ -1506,6 +1506,45 @@ namespace
         }
     };    
 
+    struct MemoryCopyOpLowering : public OpConversionPattern<mlir_ts::MemoryCopyOp>
+    {
+        using OpConversionPattern<mlir_ts::MemoryCopyOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::MemoryCopyOp memoryCopyOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            auto loc = memoryCopyOp->getLoc();
+
+            TypeHelper th(rewriter);
+            LLVMCodeHelper ch(memoryCopyOp, rewriter);
+            TypeConverterHelper tch(getTypeConverter());
+            CodeLogicHelper clh(memoryCopyOp, rewriter);
+
+            auto copyMemFuncOp =
+                ch.getOrInsertFunction(
+                    "llvm.memcpy.p0i8.p0i8.i64",
+                    th.getFunctionType(th.getVoidType(), {th.getI8PtrType(), th.getI8PtrType(), th.getI64Type(), th.getLLVMBoolType()}));
+
+            mlir::SmallVector<mlir::Value, 4> values;
+            values.push_back(clh.castToI8Ptr(memoryCopyOp.dst()));
+            values.push_back(clh.castToI8Ptr(memoryCopyOp.src()));
+
+            // calculate size
+            auto size = clh.createI64ConstantOf(0);
+            values.push_back(size);
+            
+            auto immarg = clh.createI1ConstantOf(false);
+            values.push_back(immarg);
+
+            // print new line
+            rewriter.create<LLVM::CallOp>(loc, copyMemFuncOp, values);
+
+            // Notify the rewriter that this operation has been removed.
+            rewriter.eraseOp(memoryCopyOp);
+
+            return success();
+        }
+    };
+
     static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, mlir::ModuleOp &m)
     {
         converter.addConversion([&](mlir_ts::AnyType type) {
@@ -1685,6 +1724,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         StringCompareOpLowering,
         CharToStringOpLowering,
         UndefOpLowering,
+        MemoryCopyOpLowering,
         VariableOpLowering>(typeConverter, &getContext());
 
     populateTypeScriptConversionPatterns(typeConverter, m);
