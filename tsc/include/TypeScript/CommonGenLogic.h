@@ -19,11 +19,14 @@ namespace typescript
                 return mlir_ts::ArrayType::get(constArrayType.getElementType());
             }
 
+            /*
+            // tuple is value and copied already
             if (auto constTupleType = type.dyn_cast_or_null<mlir_ts::ConstTupleType>())
             {
                 copyRequired = true;
                 return mlir_ts::TupleType::get(context, constTupleType.getFields());
             }
+            */
 
             copyRequired = false;
             return type;

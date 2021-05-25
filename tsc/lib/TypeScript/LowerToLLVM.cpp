@@ -952,19 +952,17 @@ namespace
             auto value = varOp.initializer();
             if (value)
             {
-                // allocate copy
+                // allocate copy of const array or reference type
                 if (varOp.copy().hasValue() && varOp.copy().getValue())
                 {                    
-                    // ...
-                    //emitError(location) << "type: " << varOp.initializer().getType() << " llvm:" << tch.convertType(varOp.initializer().getType()) << " llvm as value:" << tch.convertTypeAsPtrToValue(varOp.initializer().getType());
+                    auto ptrToValue = tch.convertTypeAsPtrToValue(varOp.initializer().getType());
                     auto copyAllocated =
                         rewriter.create<LLVM::AllocaOp>(
                             location,
-                            tch.convertTypeAsPtrToValue(varOp.initializer().getType()),
+                            ptrToValue,
                             clh.createI32ConstantOf(1));
 
-                    rewriter.create<mlir_ts::MemoryCopyOp>(location, copyAllocated, value);
-
+                    rewriter.create<mlir_ts::MemoryCopyOp>(location, copyAllocated, value);        
                     value = rewriter.create<mlir_ts::CastOp>(location, value.getType(), copyAllocated);
                 }
 
