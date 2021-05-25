@@ -113,6 +113,32 @@ namespace typescript
         {
             return LLVM::LLVMFunctionType::get(getVoidType(), arguments, isVarArg);
         }
+
+        llvm::TypeSize getTypeSize(mlir::Type valueType)
+        {
+            // TODO: add align by 4 bytes
+            auto size = LLVM::getPrimitiveTypeSizeInBits(valueType);
+            if (size > 0)
+            {
+                return size;
+            }
+
+            auto calcSize = llvm::TypeSwitch<Type, llvm::TypeSize>(valueType)
+                .Case<LLVM::LLVMArrayType>(
+                [&](LLVM::LLVMArrayType aty) 
+                { 
+                    auto sizeElement = getTypeSize(aty.getElementType());
+                    auto count = aty.getNumElements();
+                    return llvm::TypeSize::Fixed(sizeElement * count); 
+                })
+                .Default([](Type ty) 
+                {
+                    assert(false);
+                    return llvm::TypeSize::Fixed(0);
+                });
+
+            return calcSize;
+        }
     };
 
     class TypeConverterHelper

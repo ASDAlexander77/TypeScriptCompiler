@@ -1528,8 +1528,15 @@ namespace
             values.push_back(clh.castToI8Ptr(memoryCopyOp.dst()));
             values.push_back(clh.castToI8Ptr(memoryCopyOp.src()));
 
+            // TODO: can wed replace it with save and load?
             // calculate size
-            auto size = clh.createI64ConstantOf(0);
+            auto valueType = tch.convertTypeAsValue(memoryCopyOp.src().getType()).cast<LLVM::LLVMPointerType>().getElementType();
+
+            //emitError(loc) << "value type: " << valueType;
+
+            auto sizeInBits = th.getTypeSize(valueType);
+            assert(sizeInBits > 0);
+            auto size = clh.createI64ConstantOf(sizeInBits / 8);
             values.push_back(size);
             
             auto immarg = clh.createI1ConstantOf(false);
