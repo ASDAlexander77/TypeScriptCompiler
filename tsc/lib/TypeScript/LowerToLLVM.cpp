@@ -956,11 +956,11 @@ namespace
                 if (varOp.copy().hasValue() && varOp.copy().getValue())
                 {                    
                     // ...
-                    //emitError(location) << "type: " << varOp.initializer().getType() << " llvm:" << tch.convertType(varOp.initializer().getType()) << " llvm as value:" << tch.convertTypeAsValue(varOp.initializer().getType());
+                    //emitError(location) << "type: " << varOp.initializer().getType() << " llvm:" << tch.convertType(varOp.initializer().getType()) << " llvm as value:" << tch.convertTypeAsPtrToValue(varOp.initializer().getType());
                     auto copyAllocated =
                         rewriter.create<LLVM::AllocaOp>(
                             location,
-                            tch.convertTypeAsValue(varOp.initializer().getType()),
+                            tch.convertTypeAsPtrToValue(varOp.initializer().getType()),
                             clh.createI32ConstantOf(1));
 
                     rewriter.create<mlir_ts::MemoryCopyOp>(location, copyAllocated, value);
@@ -1528,9 +1528,11 @@ namespace
             values.push_back(clh.castToI8Ptr(memoryCopyOp.dst()));
             values.push_back(clh.castToI8Ptr(memoryCopyOp.src()));
 
+            //emitError(loc) << "type: " << memoryCopyOp.src().getType();
+
             // TODO: can wed replace it with save and load?
             // calculate size
-            auto valueType = tch.convertTypeAsValue(memoryCopyOp.src().getType()).cast<LLVM::LLVMPointerType>().getElementType();
+            auto valueType = tch.convertTypeAsPtrToValue(memoryCopyOp.src().getType()).cast<LLVM::LLVMPointerType>().getElementType();
 
             //emitError(loc) << "value type: " << valueType;
 

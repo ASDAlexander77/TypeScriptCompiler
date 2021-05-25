@@ -18,6 +18,7 @@
 #include "mlir/Transforms/DialectConversion.h"
 #include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/IR/DataLayout.h"
 
 #include "TypeScript/CommonGenLogic.h"
 
@@ -118,12 +119,13 @@ namespace typescript
 
         llvm::TypeSize getTypeSize(mlir::Type valueType)
         {
-            // TODO: add align by 4 bytes
             auto size = LLVM::getPrimitiveTypeSizeInBits(valueType);
             if (size > 0)
             {
                 return size;
             }
+
+            // TODO: review DataLayout.getTypeAllocSizeInBits, https://llvm.org/docs/LangRef.html#langref-datalayout as class init
 
             auto calcSize = llvm::TypeSwitch<Type, llvm::TypeSize>(valueType)
                 .Case<LLVM::LLVMArrayType>([&](LLVM::LLVMArrayType aty) 
@@ -167,22 +169,19 @@ namespace typescript
             return type;
         }
 
-        Type convertTypeAsValue(Type type)
+        Type convertTypeAsPtrToValue(Type type)
         {
             if (auto constArray = type.dyn_cast_or_null<mlir_ts::ConstArrayType>())
             {
                 return LLVM::LLVMPointerType::get(LLVM::LLVMArrayType::get(convertType(constArray.getElementType()), constArray.getSize()));
             }
 
-            if (type)
+            if (auto constTuple = type.dyn_cast_or_null<mlir_ts::ConstTupleType>())
             {
-                if (auto convertedType = typeConverter.convertType(type))
-                {
-                    return convertedType;
-                }
+                return LLVM::LLVMPointerType::get(convertType(constTuple));
             }
 
-            return type;
+            llvm_unreachable("not implemented");
         }        
     };
 
