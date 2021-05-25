@@ -1825,6 +1825,10 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 { 
                     value = cl.Enum(enumType);
                 })
+                .Case<mlir_ts::ConstTupleType>([&](auto tupleType)
+                {
+                    value = cl.Tuple(tupleType);
+                })
                 .Case<mlir_ts::TupleType>([&](auto tupleType)
                 {
                     value = cl.Tuple(tupleType);
@@ -1832,6 +1836,10 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 .Case<mlir_ts::StringType>([&](auto stringType)
                 {
                     value = cl.String(stringType);
+                })
+                .Case<mlir_ts::ConstArrayType>([&](auto arrayType)
+                {
+                    value = cl.Array(arrayType);
                 })
                 .Case<mlir_ts::ArrayType>([&](auto arrayType)
                 {

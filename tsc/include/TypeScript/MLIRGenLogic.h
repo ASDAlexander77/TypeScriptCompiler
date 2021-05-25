@@ -174,7 +174,8 @@ namespace typescript
             return builder.create<mlir_ts::ConstantOp>(location, enumType.getElementType(), valueAttr);
         }
 
-        mlir::Value Tuple(mlir_ts::TupleType tupleType)
+        template <typename T>
+        mlir::Value Tuple(T tupleType)
         {
             mlir::Value value;
 
@@ -213,7 +214,8 @@ namespace typescript
             }                         
         }    
 
-        mlir::Value Array(mlir_ts::ArrayType arrayType)
+        template <typename T>
+        mlir::Value Array(T arrayType)
         {
             auto propName = getName();
             if (propName == "length")
