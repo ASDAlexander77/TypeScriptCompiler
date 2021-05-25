@@ -19,11 +19,13 @@
 #include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/TypeSwitch.h"
 
+#include "TypeScript/CommonGenLogic.h"
+
 #include "scanner_enums.h"
 
 using namespace mlir;
 using namespace ::typescript;
-namespace mlir_ts = typescript;
+namespace mlir_ts = mlir::typescript;
 
 namespace typescript
 {
@@ -124,13 +126,16 @@ namespace typescript
             }
 
             auto calcSize = llvm::TypeSwitch<Type, llvm::TypeSize>(valueType)
-                .Case<LLVM::LLVMArrayType>(
-                [&](LLVM::LLVMArrayType aty) 
+                .Case<LLVM::LLVMArrayType>([&](LLVM::LLVMArrayType aty) 
                 { 
                     auto sizeElement = getTypeSize(aty.getElementType());
                     auto count = aty.getNumElements();
                     return llvm::TypeSize::Fixed(sizeElement * count); 
                 })
+                .Case<LLVM::LLVMPointerType>([&](LLVM::LLVMPointerType pty) 
+                { 
+                    return llvm::TypeSize::Fixed(64); 
+                })                
                 .Default([](Type ty) 
                 {
                     assert(false);

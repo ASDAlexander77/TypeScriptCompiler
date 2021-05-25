@@ -476,14 +476,16 @@ namespace
                     {
                         assert (type);
 
+                        MLIRTypeHelper mth(builder.getContext()); 
+
                         auto copyRequired = false;
-                        auto actualType = convertConstTypeToType(type, copyRequired);
+                        auto actualType = mth.convertConstTypeToType(type, copyRequired);
 
                         auto variableOp = builder.create<mlir_ts::VariableOp>(
                             location,
                             mlir_ts::RefType::get(actualType),
                             init,
-                            copyRequired);
+                            builder.getBoolAttr(copyRequired));
 
                         declare(varDecl, variableOp);
                     }
@@ -2738,24 +2740,6 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
         mlir_ts::AnyType getAnyType()
         {
             return mlir_ts::AnyType::get(builder.getContext());
-        }
-
-        mlir::Type convertConstTypeToType(mlir::Type type, bool &copyRequired)
-        {
-            if (auto constArrayType = type.dyn_cast_or_null<mlir_ts::ConstArrayType>())
-            {
-                copyRequired = true;
-                return mlir_ts::ArrayType::get(constArrayType.getElementType());
-            }
-
-            if (auto constTupleType = type.dyn_cast_or_null<mlir_ts::ConstTupleType>())
-            {
-                copyRequired = true;
-                return mlir_ts::TupleType::get(builder.getContext(), constTupleType.getFields());
-            }
-
-            copyRequired = false;
-            return type;
         }
 
         mlir::LogicalResult declare(VariableDeclarationDOM::TypePtr var, mlir::Value value, bool redeclare = false)

@@ -953,7 +953,7 @@ namespace
             if (value)
             {
                 // allocate copy
-                if (varOp.copy())
+                if (varOp.copy().hasValue() && varOp.copy().getValue())
                 {                    
                     // ...
                     //emitError(location) << "type: " << varOp.initializer().getType() << " llvm:" << tch.convertType(varOp.initializer().getType()) << " llvm as value:" << tch.convertTypeAsValue(varOp.initializer().getType());

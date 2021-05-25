@@ -19,6 +19,8 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 
+#include "TypeScript/CommonGenLogic.h"
+
 #include <numeric>
 
 namespace mlir_ts = mlir::typescript;
@@ -29,7 +31,6 @@ using llvm::dyn_cast;
 using llvm::dyn_cast_or_null;
 using llvm::isa;
 using llvm::makeArrayRef;
-using llvm::ScopedHashTableScope;
 using llvm::SmallVector;
 using llvm::StringRef;
 using llvm::Twine;
