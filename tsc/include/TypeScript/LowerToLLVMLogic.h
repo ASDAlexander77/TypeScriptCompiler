@@ -169,16 +169,11 @@ namespace typescript
             return type;
         }
 
-        Type convertTypeAsPtrToValue(Type type)
+        Type makePtrToValue(Type type)
         {
             if (auto constArray = type.dyn_cast_or_null<mlir_ts::ConstArrayType>())
             {
                 return LLVM::LLVMPointerType::get(LLVM::LLVMArrayType::get(convertType(constArray.getElementType()), constArray.getSize()));
-            }
-
-            if (auto constTuple = type.dyn_cast_or_null<mlir_ts::ConstTupleType>())
-            {
-                return LLVM::LLVMPointerType::get(convertType(constTuple));
             }
 
             llvm_unreachable("not implemented");

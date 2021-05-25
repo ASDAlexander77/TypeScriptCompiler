@@ -955,7 +955,7 @@ namespace
                 // allocate copy of const array or reference type
                 if (varOp.copy().hasValue() && varOp.copy().getValue())
                 {                    
-                    auto ptrToValue = tch.convertTypeAsPtrToValue(varOp.initializer().getType());
+                    auto ptrToValue = tch.makePtrToValue(varOp.initializer().getType());
                     auto copyAllocated =
                         rewriter.create<LLVM::AllocaOp>(
                             location,
@@ -1514,11 +1514,6 @@ namespace
         {
             auto loc = loadSaveOp->getLoc();
 
-            TypeHelper th(rewriter);
-            LLVMCodeHelper ch(loadSaveOp, rewriter);
-            TypeConverterHelper tch(getTypeConverter());
-            CodeLogicHelper clh(loadSaveOp, rewriter);
-
             auto value = rewriter.create<LLVM::LoadOp>(loc, loadSaveOp.src());
             rewriter.create<LLVM::StoreOp>(loc, value, loadSaveOp.dst());
 
@@ -1554,7 +1549,7 @@ namespace
 
             // TODO: can wed replace it with save and load?
             // calculate size
-            auto valueType = tch.convertTypeAsPtrToValue(memoryCopyOp.src().getType()).cast<LLVM::LLVMPointerType>().getElementType();
+            auto valueType = tch.makePtrToValue(memoryCopyOp.src().getType()).cast<LLVM::LLVMPointerType>().getElementType();
 
             //emitError(loc) << "value type: " << valueType;
 
