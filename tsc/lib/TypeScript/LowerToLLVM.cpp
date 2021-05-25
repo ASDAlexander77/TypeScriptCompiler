@@ -962,7 +962,9 @@ namespace
                             ptrToValue,
                             clh.createI32ConstantOf(1));
 
-                    rewriter.create<mlir_ts::MemoryCopyOp>(location, copyAllocated, value);        
+                    auto valueAsCastedPtr = rewriter.create<mlir_ts::CastOp>(location, ptrToValue, value);
+                    rewriter.create<mlir_ts::LoadSaveOp>(location, copyAllocated, valueAsCastedPtr);        
+                    //rewriter.create<mlir_ts::MemoryCopyOp>(location, copyAllocated, value); 
                     value = rewriter.create<mlir_ts::CastOp>(location, value.getType(), copyAllocated);
                 }
 
@@ -1504,6 +1506,28 @@ namespace
         }
     };    
 
+    struct LoadSaveValueLowering : public OpConversionPattern<mlir_ts::LoadSaveOp>
+    {
+        using OpConversionPattern<mlir_ts::LoadSaveOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::LoadSaveOp loadSaveOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            auto loc = loadSaveOp->getLoc();
+
+            TypeHelper th(rewriter);
+            LLVMCodeHelper ch(loadSaveOp, rewriter);
+            TypeConverterHelper tch(getTypeConverter());
+            CodeLogicHelper clh(loadSaveOp, rewriter);
+
+            auto value = rewriter.create<LLVM::LoadOp>(loc, loadSaveOp.src());
+            rewriter.create<LLVM::StoreOp>(loc, value, loadSaveOp.dst());
+
+            rewriter.eraseOp(loadSaveOp);
+
+            return success();
+        }
+    };
+
     struct MemoryCopyOpLowering : public OpConversionPattern<mlir_ts::MemoryCopyOp>
     {
         using OpConversionPattern<mlir_ts::MemoryCopyOp>::OpConversionPattern;
@@ -1732,6 +1756,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         CharToStringOpLowering,
         UndefOpLowering,
         MemoryCopyOpLowering,
+        LoadSaveValueLowering,
         VariableOpLowering>(typeConverter, &getContext());
 
     populateTypeScriptConversionPatterns(typeConverter, m);

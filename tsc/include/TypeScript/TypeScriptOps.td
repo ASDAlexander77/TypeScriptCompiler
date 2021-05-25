@@ -1115,4 +1115,9 @@ def TypeScript_MemoryCopyOp : TypeScript_Op<"MemoryCopy"> {
   let results = (outs );
 }
 
+def TypeScript_LoadSaveOp : TypeScript_Op<"LoadSave", [AllTypesMatch<["dst", "src"]>]> {
+  let arguments = (ins AnyType:$dst, AnyType:$src);
+  let results = (outs );
+}
+
 #endif // TYPESCRIPT_OPS
