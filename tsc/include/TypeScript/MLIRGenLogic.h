@@ -220,8 +220,24 @@ namespace typescript
             auto propName = getName();
             if (propName == "length")
             {
-                auto size = getExprConstAttr().cast<mlir::ArrayAttr>().size();
-                return builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(size));                            
+                if (expression.getType().isa<mlir_ts::ConstArrayType>())
+                {
+                    auto size = getExprConstAttr().cast<mlir::ArrayAttr>().size();
+                    return builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(size));                            
+                }
+                else if (expression.getType().isa<mlir_ts::ArrayType>())
+                {
+                    auto sizeValue = 
+                        builder.create<mlir_ts::LengthOfOp>(
+                            location, 
+                            builder.getI32Type(),
+                            expression);                    
+                    return sizeValue;
+                }                
+                else
+                {
+                    llvm_unreachable("not implemented");                        
+                }
             }
             else
             {
@@ -245,7 +261,8 @@ namespace typescript
 
         mlir::Attribute getExprConstAttr()
         {
-            if (auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(expression.getDefiningOp()))
+            auto exprValue = expression.getDefiningOp();
+            if (auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(exprValue))
             {
                 auto value = constOp.getValue();
                 constOp->erase();

@@ -291,6 +291,27 @@ namespace
         }
     };
 
+    class LengthOfOpLowering : public OpConversionPattern<mlir_ts::LengthOfOp>
+    {
+    public:
+        using OpConversionPattern<mlir_ts::LengthOfOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::LengthOfOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            TypeHelper th(rewriter);
+
+            auto loc = op->getLoc();
+
+            rewriter.replaceOpWithNewOp<mlir::LLVM::ExtractValueOp>(
+                op, 
+                th.getI32Type(), 
+                op.op(), 
+                rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(1)));
+
+            return success();
+        }
+    }; 
+
     class StringLengthOpLowering : public OpConversionPattern<mlir_ts::StringLengthOp>
     {
     public:
@@ -1754,6 +1775,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         PrintOpLowering,
         StoreOpLowering,
         InsertPropertyOpLowering,
+        LengthOfOpLowering,
         StringLengthOpLowering,
         StringConcatOpLowering,
         StringCompareOpLowering,

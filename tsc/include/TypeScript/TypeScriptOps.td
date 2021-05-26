@@ -1090,6 +1090,11 @@ def TypeScript_GlobalOp : TypeScript_Op<"Global",
   }];
 }
 
+def TypeScript_LengthOfOp : TypeScript_Op<"LengthOf"> {
+  let arguments = (ins TypeScript_ArrayLike:$op);
+  let results = (outs I32:$result);
+}
+
 def TypeScript_StringLengthOp : TypeScript_Op<"StringLength"> {
   let arguments = (ins TypeScript_String:$op);
   let results = (outs I32:$result);
