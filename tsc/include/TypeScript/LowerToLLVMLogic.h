@@ -848,7 +848,7 @@ namespace typescript
                 size = constArrayType.getSize();
                 llvmElementType = tch.convertType(constArrayType.getElementType());
             }
-            if (auto ptrValue = type.dyn_cast_or_null<LLVM::LLVMPointerType>())
+            else if (auto ptrValue = type.dyn_cast_or_null<LLVM::LLVMPointerType>())
             {
                 auto elementType = ptrValue.getElementType();
                 if (auto arrayType = elementType.dyn_cast_or_null<LLVM::LLVMArrayType>())
