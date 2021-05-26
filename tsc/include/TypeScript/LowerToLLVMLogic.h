@@ -870,6 +870,7 @@ namespace typescript
 
             auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmRtArrayStructType);
 
+            // TODO: here we need to clone body to make it writable
             auto bitcast = rewriter.create<LLVM::BitcastOp>(loc, LLVM::LLVMPointerType::get(llvmElementType), in);
 
             auto structValue2 = rewriter.create<LLVM::InsertValueOp>(
