@@ -920,7 +920,7 @@ namespace
             auto inLLVMType = tch.convertType(inType);
             auto resLLVMType = tch.convertType(resType);
 
-            CastLogicHelper castLogic(op, rewriter);
+            CastLogicHelper castLogic(op, rewriter, tch);
             auto result = castLogic.cast(in, inLLVMType, resType, resLLVMType);
             if (!result)
             {
@@ -965,7 +965,8 @@ namespace
                     auto valueAsCastedPtr = rewriter.create<mlir_ts::CastOp>(location, ptrToValue, value);
                     rewriter.create<mlir_ts::LoadSaveOp>(location, copyAllocated, valueAsCastedPtr);        
                     //rewriter.create<mlir_ts::MemoryCopyOp>(location, copyAllocated, value); 
-                    value = rewriter.create<mlir_ts::CastOp>(location, value.getType(), copyAllocated);
+
+                    value = rewriter.create<mlir_ts::CastOp>(location, varOp.getType().cast<mlir_ts::RefType>().getElementType(), copyAllocated);
                 }
 
                 rewriter.create<LLVM::StoreOp>(location, value, allocated);
@@ -1376,7 +1377,7 @@ namespace
             if (valueLLVMType != llvmBoxedType)
             {
                 // cast value to box
-                CastLogicHelper castLogic(createOptionalOp, rewriter);
+                CastLogicHelper castLogic(createOptionalOp, rewriter, tch);
                 value = castLogic.cast(value, valueLLVMType, boxedType, llvmBoxedType);
                 if (!value)
                 {
@@ -1615,7 +1616,15 @@ namespace
         });  
 
         converter.addConversion([&](mlir_ts::ArrayType type) {
-            return LLVM::LLVMPointerType::get(converter.convertType(type.getElementType()));
+            TypeHelper th(m.getContext());
+            
+            SmallVector<mlir::Type> rtArrayType;
+            // pointer to data type
+            rtArrayType.push_back(LLVM::LLVMPointerType::get(converter.convertType(type.getElementType())));
+            // field which store length of array
+            rtArrayType.push_back(th.getI32Type());
+
+            return LLVM::LLVMStructType::getLiteral(type.getContext(), rtArrayType, false);
         });        
 
         converter.addConversion([&](mlir_ts::RefType type) {
