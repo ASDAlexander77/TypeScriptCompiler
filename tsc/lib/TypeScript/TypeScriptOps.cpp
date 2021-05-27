@@ -25,19 +25,19 @@ static ::mlir::LogicalResult verify(::mlir::typescript::FuncOp op);
 #include "TypeScript/TypeScriptOps.cpp.inc"
 
 using namespace mlir;
-namespace ts = mlir::typescript;
+namespace mlir_ts = mlir::typescript;
 
 /// Default callback for IfOp builders. Inserts a yield without arguments.
-void ts::buildTerminatedBody(OpBuilder &builder, Location loc)
+void mlir_ts::buildTerminatedBody(OpBuilder &builder, Location loc)
 {
-    builder.create<ts::YieldOp>(loc);
+    builder.create<mlir_ts::YieldOp>(loc);
 }
 
 //===----------------------------------------------------------------------===//
 // Types
 //===----------------------------------------------------------------------===//
 
-Type ts::TypeScriptDialect::parseType(DialectAsmParser &parser) const
+Type mlir_ts::TypeScriptDialect::parseType(DialectAsmParser &parser) const
 {
     llvm::SMLoc typeLoc = parser.getCurrentLocation();
 
@@ -93,7 +93,7 @@ Type ts::TypeScriptDialect::parseType(DialectAsmParser &parser) const
     return Type();
 }
 
-void ts::TypeScriptDialect::printType(Type type, DialectAsmPrinter &os) const
+void mlir_ts::TypeScriptDialect::printType(Type type, DialectAsmPrinter &os) const
 {
     if (failed(generatedTypePrinter(type, os)))
     {
@@ -105,7 +105,7 @@ void ts::TypeScriptDialect::printType(Type type, DialectAsmPrinter &os) const
 // OptionalType
 //===----------------------------------------------------------------------===//
 
-LogicalResult ts::OptionalType::verifyConstructionInvariants(Location loc, Type elementType)
+LogicalResult mlir_ts::OptionalType::verifyConstructionInvariants(Location loc, Type elementType)
 {
     return success();
 }
@@ -114,7 +114,7 @@ LogicalResult ts::OptionalType::verifyConstructionInvariants(Location loc, Type 
 // EnumType
 //===----------------------------------------------------------------------===//
 
-LogicalResult ts::EnumType::verifyConstructionInvariants(Location loc, Type elementType)
+LogicalResult mlir_ts::EnumType::verifyConstructionInvariants(Location loc, Type elementType)
 {
     return success();
 }
@@ -123,7 +123,7 @@ LogicalResult ts::EnumType::verifyConstructionInvariants(Location loc, Type elem
 // ConstArrayType
 //===----------------------------------------------------------------------===//
 
-LogicalResult ts::ConstArrayType::verifyConstructionInvariants(Location loc, Type elementType, unsigned size)
+LogicalResult mlir_ts::ConstArrayType::verifyConstructionInvariants(Location loc, Type elementType, unsigned size)
 {
     return success();
 }
@@ -132,7 +132,7 @@ LogicalResult ts::ConstArrayType::verifyConstructionInvariants(Location loc, Typ
 // ArrayType
 //===----------------------------------------------------------------------===//
 
-LogicalResult ts::ArrayType::verifyConstructionInvariants(Location loc, Type elementType)
+LogicalResult mlir_ts::ArrayType::verifyConstructionInvariants(Location loc, Type elementType)
 {
     return success();
 }
@@ -145,9 +145,9 @@ LogicalResult ts::ArrayType::verifyConstructionInvariants(Location loc, Type ele
 /// Note that this only flattens nested tuples, not any other container type,
 /// e.g. a tuple<i32, tensor<i32>, tuple<f32, tuple<i64>>> is flattened to
 /// (i32, tensor<i32>, f32, i64)
-void ts::ConstTupleType::getFlattenedTypes(SmallVector<Type> &types) {
+void mlir_ts::ConstTupleType::getFlattenedTypes(SmallVector<Type> &types) {
   for (auto typeInfo : getFields()) {
-    if (auto nestedTuple = typeInfo.type.dyn_cast<ts::ConstTupleType>())
+    if (auto nestedTuple = typeInfo.type.dyn_cast<mlir_ts::ConstTupleType>())
       nestedTuple.getFlattenedTypes(types);
     else
       types.push_back(typeInfo.type);
@@ -155,7 +155,7 @@ void ts::ConstTupleType::getFlattenedTypes(SmallVector<Type> &types) {
 }
 
 /// Return the number of element types.
-size_t ts::ConstTupleType::size() const { return getFields().size(); }
+size_t mlir_ts::ConstTupleType::size() const { return getFields().size(); }
 
 //===----------------------------------------------------------------------===//
 /// TupleType
@@ -165,9 +165,9 @@ size_t ts::ConstTupleType::size() const { return getFields().size(); }
 /// Note that this only flattens nested tuples, not any other container type,
 /// e.g. a tuple<i32, tensor<i32>, tuple<f32, tuple<i64>>> is flattened to
 /// (i32, tensor<i32>, f32, i64)
-void ts::TupleType::getFlattenedTypes(SmallVector<Type> &types) {
+void mlir_ts::TupleType::getFlattenedTypes(SmallVector<Type> &types) {
   for (auto typeInfo : getFields()) {
-    if (auto nestedTuple = typeInfo.type.dyn_cast<ts::TupleType>())
+    if (auto nestedTuple = typeInfo.type.dyn_cast<mlir_ts::TupleType>())
       nestedTuple.getFlattenedTypes(types);
     else
       types.push_back(typeInfo.type);
@@ -175,7 +175,7 @@ void ts::TupleType::getFlattenedTypes(SmallVector<Type> &types) {
 }
 
 /// Return the number of element types.
-size_t ts::TupleType::size() const { return getFields().size(); }
+size_t mlir_ts::TupleType::size() const { return getFields().size(); }
 
 // The functions don't need to be in the header file, but need to be in the mlir
 // namespace. Declare them here, then define them immediately below. Separating
@@ -203,38 +203,31 @@ static llvm::hash_code mlir::typescript::hash_value(const FieldInfo &fi) {
 //===----------------------------------------------------------------------===//
 // ConstantOp
 //===----------------------------------------------------------------------===//
-OpFoldResult ts::ConstantOp::fold(ArrayRef<Attribute> operands) {
+OpFoldResult mlir_ts::ConstantOp::fold(ArrayRef<Attribute> operands) {
   assert(operands.empty() && "constant has no operands");
-
-  auto val = getValue();
-  if (val.isa<SymbolRefAttr>())
-  {
-    return {};
-  }
-
   return getValue();
 }
 
 //===----------------------------------------------------------------------===//
 // FuncOp
 //===----------------------------------------------------------------------===//
-ts::FuncOp ts::FuncOp::create(Location location, StringRef name, FunctionType type,
+mlir_ts::FuncOp mlir_ts::FuncOp::create(Location location, StringRef name, FunctionType type,
                               ArrayRef<NamedAttribute> attrs)
 {
-    OperationState state(location, ts::FuncOp::getOperationName());
+    OperationState state(location, mlir_ts::FuncOp::getOperationName());
     OpBuilder builder(location->getContext());
-    ts::FuncOp::build(builder, state, name, type, attrs);
-    return cast<ts::FuncOp>(Operation::create(state));
+    mlir_ts::FuncOp::build(builder, state, name, type, attrs);
+    return cast<mlir_ts::FuncOp>(Operation::create(state));
 }
 
-ts::FuncOp ts::FuncOp::create(Location location, StringRef name, FunctionType type,
+mlir_ts::FuncOp mlir_ts::FuncOp::create(Location location, StringRef name, FunctionType type,
                               iterator_range<dialect_attr_iterator> attrs)
 {
     SmallVector<NamedAttribute, 8> attrRef(attrs);
     return create(location, name, type, llvm::makeArrayRef(attrRef));
 }
 
-ts::FuncOp ts::FuncOp::create(Location location, StringRef name, FunctionType type,
+mlir_ts::FuncOp mlir_ts::FuncOp::create(Location location, StringRef name, FunctionType type,
                               ArrayRef<NamedAttribute> attrs,
                               ArrayRef<DictionaryAttr> argAttrs)
 {
@@ -243,7 +236,7 @@ ts::FuncOp ts::FuncOp::create(Location location, StringRef name, FunctionType ty
     return func;
 }
 
-void ts::FuncOp::build(OpBuilder &builder, OperationState &state, StringRef name,
+void mlir_ts::FuncOp::build(OpBuilder &builder, OperationState &state, StringRef name,
                        FunctionType type, ArrayRef<NamedAttribute> attrs,
                        ArrayRef<DictionaryAttr> argAttrs)
 {
@@ -280,13 +273,13 @@ ParseResult parseFuncOp(OpAsmParser &parser, OperationState &result)
     return impl::parseFunctionLikeOp(parser, result, /*allowVariadic=*/false, buildFuncType);
 }
 
-void print(ts::FuncOp op, OpAsmPrinter &p)
+void print(mlir_ts::FuncOp op, OpAsmPrinter &p)
 {
     FunctionType fnType = op.getType();
     impl::printFunctionLikeOp(p, op, fnType.getInputs(), /*isVariadic=*/false, fnType.getResults());
 }
 
-LogicalResult verify(ts::FuncOp op)
+LogicalResult verify(mlir_ts::FuncOp op)
 {
     // If this function is external there is nothing to do.
     if (op.isExternal())
@@ -313,11 +306,11 @@ LogicalResult verify(ts::FuncOp op)
 
 namespace
 {
-    struct EraseRedundantAssertions : public OpRewritePattern<ts::AssertOp>
+    struct EraseRedundantAssertions : public OpRewritePattern<mlir_ts::AssertOp>
     {
-        using OpRewritePattern<ts::AssertOp>::OpRewritePattern;
+        using OpRewritePattern<mlir_ts::AssertOp>::OpRewritePattern;
 
-        LogicalResult matchAndRewrite(ts::AssertOp op,
+        LogicalResult matchAndRewrite(mlir_ts::AssertOp op,
                                       PatternRewriter &rewriter) const override
         {
             // Erase assertion if argument is constant true.
@@ -332,7 +325,7 @@ namespace
     };
 } // namespace
 
-void ts::AssertOp::getCanonicalizationPatterns(OwningRewritePatternList &patterns,
+void mlir_ts::AssertOp::getCanonicalizationPatterns(OwningRewritePatternList &patterns,
                                                MLIRContext *context)
 {
     patterns.insert<EraseRedundantAssertions>(context);
@@ -342,7 +335,7 @@ void ts::AssertOp::getCanonicalizationPatterns(OwningRewritePatternList &pattern
 // CallOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult ts::CallOp::verifySymbolUses(SymbolTableCollection &symbolTable)
+LogicalResult mlir_ts::CallOp::verifySymbolUses(SymbolTableCollection &symbolTable)
 {
     // Check that the callee attribute was specified.
     auto fnAttr = (*this)->getAttrOfType<FlatSymbolRefAttr>("callee");
@@ -351,7 +344,7 @@ LogicalResult ts::CallOp::verifySymbolUses(SymbolTableCollection &symbolTable)
         return emitOpError("requires a 'callee' symbol reference attribute");
     }
 
-    auto fn = symbolTable.lookupNearestSymbolFrom<ts::FuncOp>(*this, fnAttr);
+    auto fn = symbolTable.lookupNearestSymbolFrom<mlir_ts::FuncOp>(*this, fnAttr);
     if (!fn)
     {
         return emitOpError() << "'" << fnAttr.getValue()
@@ -394,7 +387,7 @@ LogicalResult ts::CallOp::verifySymbolUses(SymbolTableCollection &symbolTable)
     return success();
 }
 
-FunctionType ts::CallOp::getCalleeType()
+FunctionType mlir_ts::CallOp::getCalleeType()
 {
     return FunctionType::get(getContext(), getOperandTypes(), getResultTypes());
 }
@@ -406,11 +399,11 @@ FunctionType ts::CallOp::getCalleeType()
 namespace 
 {
     /// Fold indirect calls that have a constant function as the callee operand.
-    struct SimplifyIndirectCallWithKnownCallee : public OpRewritePattern<CallIndirectOp> 
+    struct SimplifyIndirectCallWithKnownCallee : public OpRewritePattern<mlir_ts::CallIndirectOp> 
     {
-        using OpRewritePattern<CallIndirectOp>::OpRewritePattern;
+        using OpRewritePattern<mlir_ts::CallIndirectOp>::OpRewritePattern;
 
-        LogicalResult matchAndRewrite(CallIndirectOp indirectCall, PatternRewriter &rewriter) const override {
+        LogicalResult matchAndRewrite(mlir_ts::CallIndirectOp indirectCall, PatternRewriter &rewriter) const override {
             // Check that the callee is a constant callee.
             SymbolRefAttr calledFn;
             if (!matchPattern(indirectCall.getCallee(), m_Constant(&calledFn)))
@@ -419,7 +412,7 @@ namespace
             }
 
             // Replace with a direct call.
-            rewriter.replaceOpWithNewOp<CallOp>(indirectCall, calledFn,
+            rewriter.replaceOpWithNewOp<mlir_ts::CallOp>(indirectCall, calledFn,
                                                 indirectCall.getResultTypes(),
                                                 indirectCall.getArgOperands());
             return success();
@@ -427,7 +420,7 @@ namespace
     };
 } // end anonymous namespace.
 
-void ts::CallIndirectOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context) 
+void mlir_ts::CallIndirectOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context) 
 {
   results.insert<SimplifyIndirectCallWithKnownCallee>(context);
 }
@@ -436,24 +429,24 @@ void ts::CallIndirectOp::getCanonicalizationPatterns(OwningRewritePatternList &r
 // IfOp
 //===----------------------------------------------------------------------===//
 
-void ts::IfOp::build(OpBuilder &builder, OperationState &result, Value cond, bool withElseRegion)
+void mlir_ts::IfOp::build(OpBuilder &builder, OperationState &result, Value cond, bool withElseRegion)
 {
     build(builder, result, /*resultTypes=*/llvm::None, cond, withElseRegion);
 }
 
-void ts::IfOp::build(OpBuilder &builder, OperationState &result, TypeRange resultTypes, Value cond, bool withElseRegion)
+void mlir_ts::IfOp::build(OpBuilder &builder, OperationState &result, TypeRange resultTypes, Value cond, bool withElseRegion)
 {
     auto addTerminator = [&](OpBuilder &nested, Location loc) {
         if (resultTypes.empty())
         {
-            ts::IfOp::ensureTerminator(*nested.getInsertionBlock()->getParent(), nested, loc);
+            mlir_ts::IfOp::ensureTerminator(*nested.getInsertionBlock()->getParent(), nested, loc);
         }
     };
 
     build(builder, result, resultTypes, cond, addTerminator, withElseRegion ? addTerminator : function_ref<void(OpBuilder &, Location)>());
 }
 
-void ts::IfOp::build(OpBuilder &builder, OperationState &result, TypeRange resultTypes, Value cond,
+void mlir_ts::IfOp::build(OpBuilder &builder, OperationState &result, TypeRange resultTypes, Value cond,
                      function_ref<void(OpBuilder &, Location)> thenBuilder,
                      function_ref<void(OpBuilder &, Location)> elseBuilder)
 {
@@ -475,7 +468,7 @@ void ts::IfOp::build(OpBuilder &builder, OperationState &result, TypeRange resul
     elseBuilder(builder, result.location);
 }
 
-void ts::IfOp::build(OpBuilder &builder, OperationState &result, Value cond,
+void mlir_ts::IfOp::build(OpBuilder &builder, OperationState &result, Value cond,
                      function_ref<void(OpBuilder &, Location)> thenBuilder,
                      function_ref<void(OpBuilder &, Location)> elseBuilder)
 {
@@ -500,7 +493,7 @@ static void replaceOpWithRegion(PatternRewriter &rewriter, Operation *op, Region
 /// during the flow of control. `operands` is a set of optional attributes that
 /// correspond to a constant value for each operand, or null if that operand is
 /// not a constant.
-void ts::IfOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attribute> operands, SmallVectorImpl<RegionSuccessor> &regions)
+void mlir_ts::IfOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attribute> operands, SmallVectorImpl<RegionSuccessor> &regions)
 {
     // The `then` and the `else` region branch back to the parent operation.
     if (index.hasValue())
@@ -538,14 +531,14 @@ void ts::IfOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attribute>
 // WhileOp
 //===----------------------------------------------------------------------===//
 
-OperandRange ts::WhileOp::getSuccessorEntryOperands(unsigned index) {
+OperandRange mlir_ts::WhileOp::getSuccessorEntryOperands(unsigned index) {
   assert(index == 0 &&
          "WhileOp is expected to branch only to the first region");
 
   return inits();
 }
 
-void ts::WhileOp::getSuccessorRegions(Optional<unsigned> index,
+void mlir_ts::WhileOp::getSuccessorRegions(Optional<unsigned> index,
                                   ArrayRef<Attribute> operands,
                                   SmallVectorImpl<RegionSuccessor> &regions) {
   (void)operands;
@@ -569,14 +562,14 @@ void ts::WhileOp::getSuccessorRegions(Optional<unsigned> index,
 // DoWhileOp
 //===----------------------------------------------------------------------===//
 
-OperandRange ts::DoWhileOp::getSuccessorEntryOperands(unsigned index) {
+OperandRange mlir_ts::DoWhileOp::getSuccessorEntryOperands(unsigned index) {
   assert(index == 0 &&
          "DoWhileOp is expected to branch only to the first region");
 
   return inits();
 }
 
-void ts::DoWhileOp::getSuccessorRegions(Optional<unsigned> index,
+void mlir_ts::DoWhileOp::getSuccessorRegions(Optional<unsigned> index,
                                   ArrayRef<Attribute> operands,
                                   SmallVectorImpl<RegionSuccessor> &regions) {
   (void)operands;
@@ -600,14 +593,14 @@ void ts::DoWhileOp::getSuccessorRegions(Optional<unsigned> index,
 // ForOp
 //===----------------------------------------------------------------------===//
 
-OperandRange ts::ForOp::getSuccessorEntryOperands(unsigned index) {
+OperandRange mlir_ts::ForOp::getSuccessorEntryOperands(unsigned index) {
   assert(index == 0 &&
          "ForOp is expected to branch only to the first region");
 
   return inits();
 }
 
-void ts::ForOp::getSuccessorRegions(Optional<unsigned> index,
+void mlir_ts::ForOp::getSuccessorRegions(Optional<unsigned> index,
                                   ArrayRef<Attribute> operands,
                                   SmallVectorImpl<RegionSuccessor> &regions) {
   (void)operands;
@@ -632,40 +625,40 @@ void ts::ForOp::getSuccessorRegions(Optional<unsigned> index,
 // SwitchOp
 //===----------------------------------------------------------------------===//
 
-void ts::SwitchOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attribute> operands, SmallVectorImpl<RegionSuccessor> &regions)
+void mlir_ts::SwitchOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attribute> operands, SmallVectorImpl<RegionSuccessor> &regions)
 {
     regions.push_back(RegionSuccessor(&casesRegion()));
 }
 
-Block *ts::SwitchOp::getHeaderBlock() {
+Block *mlir_ts::SwitchOp::getHeaderBlock() {
   assert(!casesRegion().empty() && "op region should not be empty!");
   // The first block is the loop header block.
   return &casesRegion().front();
 }
 
-Block *ts::SwitchOp::getMergeBlock() {
+Block *mlir_ts::SwitchOp::getMergeBlock() {
   assert(!casesRegion().empty() && "op region should not be empty!");
   // The last block is the loop merge block.
   return &casesRegion().back();
 }
 
-void ts::SwitchOp::addMergeBlock() {
+void mlir_ts::SwitchOp::addMergeBlock() {
   assert(casesRegion().empty() && "entry and merge block already exist");
   auto *mergeBlock = new Block();
   casesRegion().push_back(mergeBlock);
   OpBuilder builder = OpBuilder::atBlockEnd(mergeBlock);
 
   // Add a ts.merge op into the merge block.
-  builder.create<ts::MergeOp>(getLoc());
+  builder.create<mlir_ts::MergeOp>(getLoc());
 }
 
 
 namespace
 {
     // Pattern to remove unused IfOp results.
-    struct RemoveUnusedResults : public OpRewritePattern<ts::IfOp>
+    struct RemoveUnusedResults : public OpRewritePattern<mlir_ts::IfOp>
     {
-        using OpRewritePattern<ts::IfOp>::OpRewritePattern;
+        using OpRewritePattern<mlir_ts::IfOp>::OpRewritePattern;
 
         void transferBody(Block *source, Block *dest, ArrayRef<OpResult> usedResults,
                           PatternRewriter &rewriter) const
@@ -673,7 +666,7 @@ namespace
             // Move all operations to the destination block.
             rewriter.mergeBlocks(source, dest);
             // Replace the yield op by one that returns only the used values.
-            auto yieldOp = cast<ts::YieldOp>(dest->getTerminator());
+            auto yieldOp = cast<mlir_ts::YieldOp>(dest->getTerminator());
             SmallVector<Value, 4> usedOperands;
             llvm::transform(
                 usedResults,
@@ -684,7 +677,7 @@ namespace
             rewriter.updateRootInPlace(yieldOp, [&]() { yieldOp->setOperands(usedOperands); });
         }
 
-        LogicalResult matchAndRewrite(ts::IfOp op, PatternRewriter &rewriter) const override
+        LogicalResult matchAndRewrite(mlir_ts::IfOp op, PatternRewriter &rewriter) const override
         {
             // Compute the list of used results.
             SmallVector<OpResult, 4> usedResults;
@@ -708,7 +701,7 @@ namespace
 
             // Create a replacement operation with empty then and else regions.
             auto emptyBuilder = [](OpBuilder &, Location) {};
-            auto newOp = rewriter.create<ts::IfOp>(
+            auto newOp = rewriter.create<mlir_ts::IfOp>(
                 op.getLoc(),
                 newTypes,
                 op.condition(),
@@ -732,13 +725,13 @@ namespace
         }
     };
 
-    struct RemoveStaticCondition : public OpRewritePattern<ts::IfOp>
+    struct RemoveStaticCondition : public OpRewritePattern<mlir_ts::IfOp>
     {
-        using OpRewritePattern<ts::IfOp>::OpRewritePattern;
+        using OpRewritePattern<mlir_ts::IfOp>::OpRewritePattern;
 
-        LogicalResult matchAndRewrite(ts::IfOp op, PatternRewriter &rewriter) const override
+        LogicalResult matchAndRewrite(mlir_ts::IfOp op, PatternRewriter &rewriter) const override
         {
-            auto constant = op.condition().getDefiningOp<mlir::ConstantOp>();
+            auto constant = op.condition().getDefiningOp<mlir_ts::ConstantOp>();
             if (!constant)
             {
                 return failure();
@@ -762,12 +755,12 @@ namespace
     };
 } // namespace
 
-void ts::IfOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
+void mlir_ts::IfOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
 {
     results.insert<RemoveUnusedResults, RemoveStaticCondition>(context);
 }
 
-void ts::GlobalOp::build(OpBuilder &builder, OperationState &result, Type type, bool isConstant,
+void mlir_ts::GlobalOp::build(OpBuilder &builder, OperationState &result, Type type, bool isConstant,
     StringRef name, Attribute value, ArrayRef<NamedAttribute> attrs)
 {
     result.addAttribute(SymbolTable::getSymbolAttrName(), builder.getStringAttr(name));

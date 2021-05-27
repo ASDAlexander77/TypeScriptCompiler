@@ -1941,15 +1941,12 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             auto definingOp = funcRefValue.getDefiningOp();
             if (definingOp)
             {
-                auto opName = definingOp->getName().getStringRef();
                 auto attrName = StringRef(IDENTIFIER_ATTR_NAME);
                 if (definingOp->hasAttrOfType<mlir::FlatSymbolRefAttr>(attrName))
                 {
                     auto calleeName = definingOp->getAttrOfType<mlir::FlatSymbolRefAttr>(attrName);
                     auto functionName = calleeName.getValue();
                     auto argumentsContext = callExpression->arguments;
-
-                    //definingOp->erase();
 
                     // resolve function
                     auto calledFuncIt = functionMap.find(functionName);
@@ -1962,53 +1959,27 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
                         return cm.callMethod(functionName, operands, genContext.allowPartialResolve);
                     }
-
-                    SmallVector<mlir::Value, 4> operands;
-
-                    auto calledFunc = calledFuncIt->second;
-                    auto calledFuncType = calledFunc.getType();
-                    mlirGenCallOperands(location, calledFuncType, callExpression->arguments, operands, genContext);
-
-                    // default call by name
-                    auto callOp =
-                        builder.create<mlir_ts::CallOp>(
-                            location,
-                            calledFunc,
-                            operands);
-
-                    if (calledFuncType.getNumResults() > 0)
-                    {
-                        return callOp.getResult(0);
-                    }
-
-                    return nullptr;
-
-                }
-                else
-                {
-                    // indirect call
-                    SmallVector<mlir::Value, 4> operands;
-
-                    auto calledFuncType = funcRefValue.getType().cast<mlir::FunctionType>();
-                    mlirGenCallOperands(location, calledFuncType, callExpression->arguments, operands, genContext);
-
-                    // default call by name
-                    auto callIndirectOp =
-                        builder.create<mlir_ts::CallIndirectOp>(
-                            location,
-                            funcRefValue,
-                            operands);
-
-                    if (calledFuncType.getNumResults() > 0)
-                    {
-                        return callIndirectOp.getResult(0);
-                    }
-
-                    return nullptr;                    
                 }
             }
 
-            return nullptr;
+            SmallVector<mlir::Value, 4> operands;
+
+            auto calledFuncType = funcRefValue.getType().cast<mlir::FunctionType>();
+            mlirGenCallOperands(location, calledFuncType, callExpression->arguments, operands, genContext);
+
+            // default call by name
+            auto callIndirectOp =
+                builder.create<mlir_ts::CallIndirectOp>(
+                    location,
+                    funcRefValue,
+                    operands);
+
+            if (calledFuncType.getNumResults() > 0)
+            {
+                return callIndirectOp.getResult(0);
+            }
+
+            return nullptr;                    
         }
 
         mlir::LogicalResult mlirGenCallOperands(mlir::Location location, mlir::FunctionType calledFuncType, NodeArray<Expression> argumentsContext, SmallVector<mlir::Value, 4> &operands, const GenContext &genContext) 
@@ -2298,7 +2269,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             auto fn = theModule.lookupSymbol<mlir_ts::FuncOp>(name);
             if (fn)
             {
-                return builder.create<mlir_ts::SymbolRefOp>(location, fn.getType(), mlir::FlatSymbolRefAttr::get(name, builder.getContext()));
+                return builder.create<mlir_ts::ConstantOp>(location, fn.getType(), mlir::FlatSymbolRefAttr::get(name, builder.getContext()));
             }            
 
             // check if we have enum
