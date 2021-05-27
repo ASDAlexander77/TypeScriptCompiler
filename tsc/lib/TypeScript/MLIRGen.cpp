@@ -1882,7 +1882,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     auto constIndex = indexConstOp.value().dyn_cast_or_null<mlir::IntegerAttr>().getInt();
                     auto elementType = tupleType.getType(constIndex);
                     
-                    return builder.create<mlir_ts::ExtractPropertyOp>(location, mlir_ts::RefType::get(elementType), expression, builder.getI32ArrayAttr(mlir::ArrayRef<int32_t>(constIndex)));
+                    return builder.create<mlir_ts::ExtractPropertyOp>(location, elementType, expression, builder.getI32ArrayAttr(mlir::ArrayRef<int32_t>(constIndex)));
                 }
             }
             else
@@ -1923,7 +1923,8 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             }
             else 
             {
-                llvm_unreachable("not implemented");
+                emitError(location) << "ElementAccessExpression: " << arrayType;
+                llvm_unreachable("not implemented (ElementAccessExpression)");
             }
 
             auto elemRef = builder.create<mlir_ts::ElementRefOp>(location, mlir_ts::RefType::get(elementType), expression, argumentExpression);
