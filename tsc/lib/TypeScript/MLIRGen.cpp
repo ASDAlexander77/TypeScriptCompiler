@@ -1949,7 +1949,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     auto functionName = calleeName.getValue();
                     auto argumentsContext = callExpression->arguments;
 
-                    definingOp->erase();
+                    //definingOp->erase();
 
                     // resolve function
                     auto calledFuncIt = functionMap.find(functionName);
@@ -2046,7 +2046,6 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             for (auto expression : arguments)
             {
                 auto value = mlirGen(expression, genContext);
-
                 if (value.getType() != funcType.getInput(i))
                 {
                     auto castValue = builder.create<mlir_ts::CastOp>(loc(expression), funcType.getInput(i), value);

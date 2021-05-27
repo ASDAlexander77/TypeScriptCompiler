@@ -62,7 +62,7 @@ def ConstantOp : TypeScript_Op<"Constant",
   let assemblyFormat = "attr-dict `:` type($constValue)";
 }
 
-def SymbolRefOp : TypeScript_Op<"SymbolRef"> {
+def SymbolRefOp : TypeScript_Op<"SymbolRef", [NoSideEffect]> {
   let summary = "sumbol reference as constant";
 
   let arguments = (ins FlatSymbolRefAttr:$identifier);
