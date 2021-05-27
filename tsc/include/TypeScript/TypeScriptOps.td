@@ -529,7 +529,7 @@ def TypeScript_VariableOp : TypeScript_Op<"Variable", []> {
   }];
 
   let arguments = (ins
-    Optional<AnyType>:$initializer, OptionalAttr<BoolAttr>:$copy
+    Optional<AnyType>:$initializer
   );
 
   let results = (outs

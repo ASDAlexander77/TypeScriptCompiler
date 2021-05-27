@@ -65,16 +65,17 @@ namespace
 
             if (paramOp.defaultValueRegion().empty())
             {
-                MLIRTypeHelper mth(rewriter.getContext()); 
+                //MLIRTypeHelper mth(rewriter.getContext());
 
-                auto copyRequired = false;
-                auto actualType = mth.convertConstTypeToType(paramOp.getType(), copyRequired);
+                //auto copyRequired = false;
+                //auto actualType = mth.convertConstTypeToType(paramOp.getType(), copyRequired);
 
-                rewriter.replaceOpWithNewOp<mlir_ts::VariableOp>(paramOp, actualType, paramOp.argValue(), rewriter.getBoolAttr(copyRequired));
+                //rewriter.replaceOpWithNewOp<mlir_ts::VariableOp>(paramOp, actualType, paramOp.argValue());
+                rewriter.replaceOpWithNewOp<mlir_ts::VariableOp>(paramOp, paramOp.getType(), paramOp.argValue());
                 return success();            
             }
 
-            Value variable = rewriter.create<mlir_ts::VariableOp>(location, paramOp.getType(), mlir::Value(), rewriter.getBoolAttr(false));
+            Value variable = rewriter.create<mlir_ts::VariableOp>(location, paramOp.getType(), mlir::Value());
 
             // ts.if
             auto hasValue = rewriter.create<mlir_ts::HasValueOp>(location, th.getBooleanType(), paramOp.argValue());

@@ -973,6 +973,7 @@ namespace
             auto value = varOp.initializer();
             if (value)
             {
+                /*
                 // allocate copy of const array or reference type
                 if (varOp.copy().hasValue() && varOp.copy().getValue())
                 {                    
@@ -989,6 +990,7 @@ namespace
 
                     value = rewriter.create<mlir_ts::CastOp>(location, varOp.getType().cast<mlir_ts::RefType>().getElementType(), copyAllocated);
                 }
+                */
 
                 rewriter.create<LLVM::StoreOp>(location, value, allocated);
             }

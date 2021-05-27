@@ -426,9 +426,10 @@ namespace
             llvm_unreachable("unknown expression");
         }
 
-        mlir::LogicalResult mlirGen(VariableDeclarationList variableDeclarationListAST, bool isConst, const GenContext &genContext)
+        mlir::LogicalResult mlirGen(VariableDeclarationList variableDeclarationListAST, const GenContext &genContext)
         {
             auto location = loc(variableDeclarationListAST);
+            auto isConst = (variableDeclarationListAST->flags & NodeFlags::Const) == NodeFlags::Const;
 
             for (auto &item : variableDeclarationListAST->declarations)
             {
@@ -480,12 +481,16 @@ namespace
 
                         auto copyRequired = false;
                         auto actualType = mth.convertConstTypeToType(type, copyRequired);
+                        if (actualType != type)
+                        {
+                            auto castValue = builder.create<mlir_ts::CastOp>(location, actualType, init);
+                            init = castValue;
+                        }
 
                         auto variableOp = builder.create<mlir_ts::VariableOp>(
                             location,
                             mlir_ts::RefType::get(actualType),
-                            init,
-                            builder.getBoolAttr(copyRequired));
+                            init);
 
                         declare(varDecl, variableOp);
                     }
@@ -523,7 +528,7 @@ namespace
 
         mlir::LogicalResult mlirGen(VariableStatement variableStatementAST, const GenContext &genContext)
         {
-            return mlirGen(variableStatementAST->declarationList, hasConstModifier(variableStatementAST), genContext);
+            return mlirGen(variableStatementAST->declarationList, genContext);
         }
         
         std::vector<std::shared_ptr<FunctionParamDOM>> mlirGenParameters(SignatureDeclarationBase parametersContextAST,
@@ -1102,7 +1107,7 @@ namespace
             }
             else if (forStatementAST->initializer.is<VariableDeclarationList>())
             {
-                auto result = mlirGen(forStatementAST->initializer.as<VariableDeclarationList>(), false, genContext);
+                auto result = mlirGen(forStatementAST->initializer.as<VariableDeclarationList>(), genContext);
                 if (failed(result))
                 {
                     return result;
