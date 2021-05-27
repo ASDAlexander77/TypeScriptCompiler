@@ -209,6 +209,10 @@ OpFoldResult mlir_ts::ConstantOp::fold(ArrayRef<Attribute> operands) {
 }
 
 //===----------------------------------------------------------------------===//
+// SymbolRefOp
+//===----------------------------------------------------------------------===//
+
+//===----------------------------------------------------------------------===//
 // FuncOp
 //===----------------------------------------------------------------------===//
 mlir_ts::FuncOp mlir_ts::FuncOp::create(Location location, StringRef name, FunctionType type,
@@ -405,17 +409,17 @@ namespace
 
         LogicalResult matchAndRewrite(mlir_ts::CallIndirectOp indirectCall, PatternRewriter &rewriter) const override {
             // Check that the callee is a constant callee.
-            SymbolRefAttr calledFn;
-            if (!matchPattern(indirectCall.getCallee(), m_Constant(&calledFn)))
+            if (auto symbolRefOp = indirectCall.getCallee().getDefiningOp<mlir_ts::SymbolRefOp>())
             {
-                return failure();
+                // Replace with a direct call.
+                rewriter.replaceOpWithNewOp<mlir_ts::CallOp>(indirectCall, symbolRefOp.identifierAttr(),
+                    indirectCall.getResultTypes(),
+                    indirectCall.getArgOperands());
+
+                return success();
             }
 
-            // Replace with a direct call.
-            rewriter.replaceOpWithNewOp<mlir_ts::CallOp>(indirectCall, calledFn,
-                                                indirectCall.getResultTypes(),
-                                                indirectCall.getArgOperands());
-            return success();
+            return failure();
         }
     };
 } // end anonymous namespace.

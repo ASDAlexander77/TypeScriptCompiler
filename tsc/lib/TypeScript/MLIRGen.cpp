@@ -752,7 +752,7 @@ namespace
             }
 
             auto funcSymbolRef = 
-                builder.create<mlir_ts::ConstantOp>(
+                builder.create<mlir_ts::SymbolRefOp>(
                     loc(functionExpressionAST), 
                     funcOp.getType(), 
                     mlir::FlatSymbolRefAttr::get(funcOp.getName(), builder.getContext()));
@@ -776,7 +776,7 @@ namespace
             }
 
             auto funcSymbolRef = 
-                builder.create<mlir_ts::ConstantOp>(
+                builder.create<mlir_ts::SymbolRefOp>(
                     loc(arrowFunctionAST), 
                     funcOp.getType(), 
                     mlir::FlatSymbolRefAttr::get(funcOp.getName(), builder.getContext()));
@@ -2267,7 +2267,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             auto fn = functionMap.find(name);
             if (fn != functionMap.end())
             {
-                return builder.create<mlir_ts::ConstantOp>(location, fn->getValue().getType(), mlir::FlatSymbolRefAttr::get(name, builder.getContext()));
+                return builder.create<mlir_ts::SymbolRefOp>(location, fn->getValue().getType(), mlir::FlatSymbolRefAttr::get(name, builder.getContext()));
             }            
 
             // check if we have enum
