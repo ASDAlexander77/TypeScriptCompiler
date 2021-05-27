@@ -2264,10 +2264,10 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             }
 
             // resolving function
-            auto fn = theModule.lookupSymbol<mlir_ts::FuncOp>(name);
-            if (fn)
+            auto fn = functionMap.find(name);
+            if (fn != functionMap.end())
             {
-                return builder.create<mlir_ts::ConstantOp>(location, fn.getType(), mlir::FlatSymbolRefAttr::get(name, builder.getContext()));
+                return builder.create<mlir_ts::ConstantOp>(location, fn->getValue().getType(), mlir::FlatSymbolRefAttr::get(name, builder.getContext()));
             }            
 
             // check if we have enum
