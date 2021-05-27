@@ -973,25 +973,6 @@ namespace
             auto value = varOp.initializer();
             if (value)
             {
-                /*
-                // allocate copy of const array or reference type
-                if (varOp.copy().hasValue() && varOp.copy().getValue())
-                {                    
-                    auto ptrToValue = tch.makePtrToValue(varOp.initializer().getType());
-                    auto copyAllocated =
-                        rewriter.create<LLVM::AllocaOp>(
-                            location,
-                            ptrToValue,
-                            clh.createI32ConstantOf(1));
-
-                    auto valueAsCastedPtr = rewriter.create<mlir_ts::CastOp>(location, ptrToValue, value);
-                    rewriter.create<mlir_ts::LoadSaveOp>(location, copyAllocated, valueAsCastedPtr);        
-                    //rewriter.create<mlir_ts::MemoryCopyOp>(location, copyAllocated, value); 
-
-                    value = rewriter.create<mlir_ts::CastOp>(location, varOp.getType().cast<mlir_ts::RefType>().getElementType(), copyAllocated);
-                }
-                */
-
                 rewriter.create<LLVM::StoreOp>(location, value, allocated);
             }
 

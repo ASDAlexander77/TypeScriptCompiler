@@ -610,6 +610,8 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         mlir_ts::LoadOp,
         mlir_ts::ElementRefOp,
         mlir_ts::PropertyRefOp,
+        mlir_ts::InsertPropertyOp,
+        mlir_ts::ExtractPropertyOp,
         mlir_ts::LogicalBinaryOp,
         mlir_ts::UndefOp,
         mlir_ts::VariableOp,

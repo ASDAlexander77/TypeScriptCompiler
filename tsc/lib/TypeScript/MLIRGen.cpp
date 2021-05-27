@@ -1879,7 +1879,10 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 }
                 else
                 {
-                    llvm_unreachable("not implemented (load ref)");
+                    auto constIndex = indexConstOp.value().dyn_cast_or_null<mlir::IntegerAttr>().getInt();
+                    auto elementType = tupleType.getType(constIndex);
+                    
+                    return builder.create<mlir_ts::ExtractPropertyOp>(location, mlir_ts::RefType::get(elementType), expression, builder.getI32ArrayAttr(mlir::ArrayRef<int32_t>(constIndex)));
                 }
             }
             else
