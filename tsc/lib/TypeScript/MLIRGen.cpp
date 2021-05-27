@@ -189,13 +189,14 @@ namespace
                         }
 
                         auto funcOp = std::get<0>(funcOpAndFuncProto);
-                        auto &funcProto = std::get<1>(funcOpAndFuncProto);
-                        if (auto funcOp = theModule.lookupSymbol<mlir_ts::FuncOp>(funcProto->getName()))
+                        //auto &funcProto = std::get<1>(funcOpAndFuncProto);
+                        auto funcName = funcOp.getName();
+                        if (auto funcOp = theModule.lookupSymbol<mlir_ts::FuncOp>(funcName))
                         {
                             return;
                         }
 
-                        functionMap.insert({funcOp.getName(), funcOp});
+                        functionMap.insert({funcName, funcOp});
                     });
                 visitorAST.visit(module);
 
@@ -1938,27 +1939,24 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             // get function ref.
             auto funcRefValue = mlirGen(callExpression->expression.as<Expression>(), genContext);
 
+            auto attrName = StringRef(IDENTIFIER_ATTR_NAME);
             auto definingOp = funcRefValue.getDefiningOp();
-            if (definingOp)
+            if (definingOp->hasAttrOfType<mlir::FlatSymbolRefAttr>(attrName))
             {
-                auto attrName = StringRef(IDENTIFIER_ATTR_NAME);
-                if (definingOp->hasAttrOfType<mlir::FlatSymbolRefAttr>(attrName))
+                auto calleeName = definingOp->getAttrOfType<mlir::FlatSymbolRefAttr>(attrName);
+                auto functionName = calleeName.getValue();
+                auto argumentsContext = callExpression->arguments;
+
+                // resolve function
+                auto calledFuncIt = functionMap.find(functionName);
+                if (calledFuncIt == functionMap.end())
                 {
-                    auto calleeName = definingOp->getAttrOfType<mlir::FlatSymbolRefAttr>(attrName);
-                    auto functionName = calleeName.getValue();
-                    auto argumentsContext = callExpression->arguments;
+                    MLIRCustomMethods cm(builder, location);
 
-                    // resolve function
-                    auto calledFuncIt = functionMap.find(functionName);
-                    if (calledFuncIt == functionMap.end())
-                    {
-                        MLIRCustomMethods cm(builder, location);
+                    SmallVector<mlir::Value, 4> operands;
+                    mlirGen(argumentsContext, operands, genContext);
 
-                        SmallVector<mlir::Value, 4> operands;
-                        mlirGen(argumentsContext, operands, genContext);
-
-                        return cm.callMethod(functionName, operands, genContext.allowPartialResolve);
-                    }
+                    return cm.callMethod(functionName, operands, genContext.allowPartialResolve);
                 }
             }
 
