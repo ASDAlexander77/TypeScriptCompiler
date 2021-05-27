@@ -752,7 +752,7 @@ namespace
             }
 
             auto funcSymbolRef = 
-                builder.create<mlir_ts::SymbolRefOp>(
+                builder.create<mlir_ts::ConstantOp>(
                     loc(functionExpressionAST), 
                     funcOp.getType(), 
                     mlir::FlatSymbolRefAttr::get(funcOp.getName(), builder.getContext()));
@@ -776,7 +776,7 @@ namespace
             }
 
             auto funcSymbolRef = 
-                builder.create<mlir_ts::SymbolRefOp>(
+                builder.create<mlir_ts::ConstantOp>(
                     loc(arrowFunctionAST), 
                     funcOp.getType(), 
                     mlir::FlatSymbolRefAttr::get(funcOp.getName(), builder.getContext()));
