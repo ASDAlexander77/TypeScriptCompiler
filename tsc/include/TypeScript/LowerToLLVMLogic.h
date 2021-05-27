@@ -869,18 +869,42 @@ namespace typescript
             auto llvmRtArrayStructType = tch.convertType(resType);
 
             auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmRtArrayStructType);
+            auto arrayPtrType = LLVM::LLVMPointerType::get(llvmElementType);
+            auto arrayValueSize = LLVM::LLVMArrayType::get(llvmElementType, size);
+            auto ptrToArray = LLVM::LLVMPointerType::get(arrayValueSize);
 
-            // TODO: here we need to clone body to make it writable
-            auto bitcast = rewriter.create<LLVM::BitcastOp>(loc, LLVM::LLVMPointerType::get(llvmElementType), in);
+            auto sizeValue = clh.createI32ConstantOf(size); 
+
+            mlir::Value arrayPtr;
+            bool byValue = true;
+            if (byValue)
+            {
+                auto copyAllocated =
+                    rewriter.create<LLVM::AllocaOp>(
+                        loc,
+                        arrayPtrType,
+                        sizeValue);
+
+                auto ptrToArraySrc = rewriter.create<LLVM::BitcastOp>(loc, ptrToArray, in);
+                auto ptrToArrayDst = rewriter.create<LLVM::BitcastOp>(loc, ptrToArray, copyAllocated);
+                rewriter.create<mlir_ts::LoadSaveOp>(loc, ptrToArrayDst, ptrToArraySrc);              
+
+                arrayPtr = copyAllocated;           
+            }
+            else
+            {
+                // copy ptr only (const ptr -> ptr)
+                // TODO: here we need to clone body to make it writable (and remove logic from VariableOp)
+                arrayPtr = rewriter.create<LLVM::BitcastOp>(loc, arrayPtrType, in);
+            }
 
             auto structValue2 = rewriter.create<LLVM::InsertValueOp>(
                 loc, 
                 llvmRtArrayStructType,
                 structValue, 
-                bitcast,
+                arrayPtr,
                 rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(0)));           
 
-            auto sizeValue = clh.createI32ConstantOf(size); 
             auto structValue3 = rewriter.create<LLVM::InsertValueOp>(
                 loc, 
                 llvmRtArrayStructType, 
