@@ -1,6 +1,6 @@
 function testStrings(): void {
     print("testStrings")
-    //assert((42).toString() == "42", "42");
+    assert((42).toString() == "42", "42");
 
     print("ts0x")
     let s = "live";
