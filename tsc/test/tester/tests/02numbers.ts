@@ -47,7 +47,7 @@ function testRightU(a: number, b: number, c: number) {
 function testNums(): void {
     print("TN")
     let z = 12
-    //print("ZZ" + z);
+    print("ZZ" + z);
     let tt = 2;
     let x = 40 + tt;
     assert(x == 42, "add");
@@ -136,7 +136,7 @@ function testNums(): void {
 
     let r = fib(15);
     print("FB")
-    //print("FIB" + r);
+    print("FIB" + r);
     assert(r == 987, "fib");
 
     print("nums#5")
@@ -172,8 +172,8 @@ function testComma() {
     assert(x == 77, "x")
     assert(glb1 == 2, "g")
     // make sure there are no leaks
-    //let y = ("aaa" + "zz", "x" + "yyy")
-    //assert(y.length == 4, "y")
+    let y = ("aaa" + "zz", "x" + "yyy")
+    assert(y.length == 4, "y")
 }
 
 function isnan(x: number) {
