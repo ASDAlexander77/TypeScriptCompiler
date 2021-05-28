@@ -2247,7 +2247,8 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     isTuple = true;
                 }
 
-                itemValue.getDefiningOp()->erase();            
+                // TODO: 
+                //itemValue.getDefiningOp()->erase();            
             }
 
             auto arrayAttr = mlir::ArrayAttr::get(values, builder.getContext());            
