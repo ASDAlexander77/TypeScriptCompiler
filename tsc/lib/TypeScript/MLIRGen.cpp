@@ -2469,6 +2469,10 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             {
                 return getTypeByTypeReference(typeReferenceAST.as<TypeReferenceNode>());
             }             
+            else if (kind == SyntaxKind::AnyKeyword)
+            {
+                return getAnyType();
+            } 
 
             llvm_unreachable("not implemented type declaration");
             //return getAnyType();

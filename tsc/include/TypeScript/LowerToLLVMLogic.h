@@ -730,6 +730,16 @@ namespace typescript
                 return rewriter.create<TruncateIOp>(loc, in, resLLVMType);
             }
 
+            if (inLLVMType.isF32() && (resLLVMType.isF64() || resLLVMType.isF128()))
+            {
+                return rewriter.create<FPExtOp>(loc, in, resLLVMType);
+            }
+
+            if ((inLLVMType.isF64() || inLLVMType.isF128()) && resLLVMType.isF32())
+            {
+                return rewriter.create<FPTruncOp>(loc, in, resLLVMType);
+            }
+
             auto isResString = resType.dyn_cast_or_null<mlir_ts::StringType>();
 
             if (inLLVMType.isInteger(1) && isResString)
@@ -755,6 +765,17 @@ namespace typescript
             if (auto arrType = resType.dyn_cast_or_null<mlir_ts::ArrayType>())
             {
                 return castToArrayType(in, resType);
+            }
+
+            auto isInString = inType.dyn_cast_or_null<mlir_ts::StringType>();
+            if (isInString && (resLLVMType.isInteger(32) || resLLVMType.isInteger(64)))
+            {
+                return rewriter.create<mlir_ts::ParseIntOp>(loc, resLLVMType, in);
+            }
+
+            if (isInString && (resLLVMType.isF32() || resLLVMType.isF64()))
+            {
+                return rewriter.create<mlir_ts::ParseFloatOp>(loc, resLLVMType, in);
             }
 
             // cast value value to optional value

@@ -179,7 +179,7 @@ namespace
             TypeSwitch<LocationAttr>(loc)
                 .Case<FileLineColLoc>([&](FileLineColLoc loc) {
                     fileName = loc.getFilename();
-                    line = loc.getLine();
+                    line = loc.getLine() + 1;
                     column = loc.getColumn();
                 });
 
@@ -275,17 +275,21 @@ namespace
             TypeHelper th(rewriter);
             LLVMCodeHelper ch(op, rewriter);
 
+            auto loc = op->getLoc();
+
             // Insert the `atof` declaration if necessary.
             auto i8PtrTy = th.getI8PtrType();
             auto parseFloatFuncOp =
                 ch.getOrInsertFunction(
                     "atof",
-                    th.getFunctionType(rewriter.getF32Type(), {i8PtrTy}));
+                    th.getFunctionType(rewriter.getF64Type(), {i8PtrTy}));
 
-            rewriter.replaceOpWithNewOp<LLVM::CallOp>(
-                op,
+            auto funcCall = rewriter.create<LLVM::CallOp>(
+                loc,
                 parseFloatFuncOp,
-                op->getOperands());
+                operands);
+
+            rewriter.replaceOpWithNewOp<LLVM::FPTruncOp>(op, rewriter.getF32Type(), funcCall.getResult(0));
 
             return success();
         }
@@ -880,6 +884,7 @@ namespace
                 newFuncOp->setAttr(namedAttr.first, namedAttr.second);
             }
 
+#ifdef DISABLE_OPT
             // add LLVM attributes to fix issue with shift >> 32
 #define ATTR(attr) StringAttr::get(attr, rewriter.getContext())
 #define NAMED_ATTR(name, attr) ArrayAttr::get({ ATTR(name), ATTR(attr) }, rewriter.getContext())
@@ -907,7 +912,7 @@ namespace
                 // NAMED_ATTR("unsafe-fp-math","false"), 
                 // NAMED_ATTR("use-soft-float","false"), 
             }, rewriter.getContext()));
-
+#endif
             rewriter.inlineRegionBefore(funcOp.getBody(), newFuncOp.getBody(), newFuncOp.end());
             if (failed(rewriter.convertRegionTypes(&newFuncOp.getBody(), typeConverter, &signatureInputsConverter)))
             {
