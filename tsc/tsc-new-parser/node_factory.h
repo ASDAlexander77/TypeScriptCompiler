@@ -23,6 +23,10 @@ namespace ts
             : scanner(scanner), rawTextScanner(ScriptTarget::Latest, /*skipTrivia*/ false, LanguageVariant::Standard), 
               parenthesizerRules(this), flags(nodeFactoryFlags), createNodeCallback(createNodeCallback) {}
 
+        NodeFactory(NodeFactoryFlags nodeFactoryFlags)
+            : scanner(nullptr), rawTextScanner(ScriptTarget::Latest, /*skipTrivia*/ false, LanguageVariant::Standard), 
+              parenthesizerRules(this), flags(nodeFactoryFlags), createNodeCallback((NodeCreateCallbackFunc)[](Node) {}) {}
+
         auto NoParenthesizerRules() -> boolean;
 
         template <typename T>

@@ -173,7 +173,7 @@ namespace ts
 
     auto NodeFactory::createBaseIdentifier(string text, SyntaxKind originalKeywordKind)
     {
-        if (originalKeywordKind == SyntaxKind::Unknown && !text.empty())
+        if (originalKeywordKind == SyntaxKind::Unknown && !text.empty() && scanner)
         {
             originalKeywordKind = scanner->stringToToken(text);
         }

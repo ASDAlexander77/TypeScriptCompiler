@@ -30,6 +30,7 @@
 #include "parser.h"
 #include "utilities.h"
 #include "file_helper.h"
+#include "node_factory.h"
 
 #include <numeric>
 
@@ -281,6 +282,10 @@ namespace
             else if (kind == SyntaxKind::ForStatement)
             {
                 return mlirGen(statementAST.as<ForStatement>(), genContext);
+            }
+            else if (kind == SyntaxKind::ForOfStatement)
+            {
+                return mlirGen(statementAST.as<ForOfStatement>(), genContext);
             }
             else if (kind == SyntaxKind::ContinueStatement)
             {
@@ -1148,6 +1153,46 @@ namespace
 
             return mlir::success();
         }         
+
+        mlir::LogicalResult mlirGen(ForOfStatement forOfStatementAST, const GenContext &genContext)
+        {
+            auto location = loc(forOfStatementAST);
+
+            NodeFactory nf(NodeFactoryFlags::None);
+
+            // init
+            NodeArray<VariableDeclaration> declarations;
+            auto _i = nf.createIdentifier(S("_i_"));
+            declarations.push_back(nf.createVariableDeclaration(_i, undefined, undefined, nf.createNumericLiteral(S("0"))));
+
+            auto _a = nf.createIdentifier(S("_a_"));
+            auto arrayVar = nf.createVariableDeclaration(_a, undefined, undefined, forOfStatementAST->expression);
+            arrayVar->transformFlags |= TransformFlags::ForceConst;
+            declarations.push_back(arrayVar);
+            
+            auto initVars = nf.createVariableDeclarationList(declarations);
+
+            // condition
+            auto cond = nf.createBinaryExpression(_i, nf.createToken(SyntaxKind::LessThanToken), nf.createPropertyAccessExpression(_a, nf.createIdentifier(S("length"))));
+
+            // incr
+            auto incr = nf.createPrefixUnaryExpression(nf.createToken(SyntaxKind::PlusPlusToken), _i);
+
+            // block
+            NodeArray<ts::Statement> statements;
+
+            auto varDeclList = forOfStatementAST->initializer.as<VariableDeclarationList>();
+            varDeclList->declarations.front()->initializer = nf.createElementAccessExpression(_a, _i);
+           
+            statements.push_back(nf.createVariableStatement(undefined, varDeclList));
+            statements.push_back(forOfStatementAST->statement);
+            auto block = nf.createBlock(statements);
+
+            // final For statement
+            auto forStatNode = nf.createForStatement(initVars, cond, incr, block);
+
+            return mlirGen(forStatNode, genContext);
+        }
 
         mlir::LogicalResult mlirGen(ContinueStatement continueStatementAST, const GenContext &genContext)
         {
