@@ -1884,6 +1884,18 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 {
                     value = cl.Tuple(tupleType);
                 })
+                .Case<mlir_ts::BooleanType>([&](auto intType)
+                {
+                    value = cl.Bool(intType);
+                })
+                .Case<mlir::IntegerType>([&](auto intType)
+                {
+                    value = cl.Int(intType);
+                })
+                .Case<mlir::FloatType>([&](auto intType)
+                {
+                    value = cl.Float(intType);
+                })
                 .Case<mlir_ts::StringType>([&](auto stringType)
                 {
                     value = cl.String(stringType);
@@ -2005,21 +2017,35 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 }
             }
 
-            SmallVector<mlir::Value, 4> operands;
+            mlir::Value value;
+            TypeSwitch<mlir::Type>(funcRefValue.getType())
+                .Case<mlir::FunctionType>([&](auto calledFuncType) 
+                { 
+                    SmallVector<mlir::Value, 4> operands;
+                    mlirGenCallOperands(location, calledFuncType, callExpression->arguments, operands, genContext);
 
-            auto calledFuncType = funcRefValue.getType().cast<mlir::FunctionType>();
-            mlirGenCallOperands(location, calledFuncType, callExpression->arguments, operands, genContext);
+                    // default call by name
+                    auto callIndirectOp =
+                        builder.create<mlir_ts::CallIndirectOp>(
+                            location,
+                            funcRefValue,
+                            operands);
 
-            // default call by name
-            auto callIndirectOp =
-                builder.create<mlir_ts::CallIndirectOp>(
-                    location,
-                    funcRefValue,
-                    operands);
+                    if (calledFuncType.getNumResults() > 0)
+                    {
+                        value = callIndirectOp.getResult(0);
+                    }
+                })
+                .Default([&](auto type)
+                {
+                    // it is not function, so just return value as maybe resolved earlier like in case "<number>.ToString()"
+                    value = funcRefValue;
+                });                
 
-            if (calledFuncType.getNumResults() > 0)
+
+            if (value)
             {
-                return callIndirectOp.getResult(0);
+                return value;
             }
 
             return nullptr;                    

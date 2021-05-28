@@ -199,7 +199,46 @@ namespace typescript
                 builder.getI32IntegerAttr(fieldIndex));
 
             return builder.create<mlir_ts::LoadOp>(location, elementType, propRef);
-        }        
+        }       
+
+        mlir::Value Bool(mlir_ts::BooleanType intType)
+        {
+            auto propName = getName();
+            if (propName == "toString")
+            {
+                return builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()), expression);
+            }
+            else
+            {
+                llvm_unreachable("not implemented");                        
+            }                         
+        }          
+
+        mlir::Value Int(mlir::IntegerType intType)
+        {
+            auto propName = getName();
+            if (propName == "toString")
+            {
+                return builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()), expression);
+            }
+            else
+            {
+                llvm_unreachable("not implemented");                        
+            }                         
+        }  
+
+        mlir::Value Float(mlir::FloatType intType)
+        {
+            auto propName = getName();
+            if (propName == "toString")
+            {
+                return builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()), expression);
+            }
+            else
+            {
+                llvm_unreachable("not implemented");                        
+            }                         
+        }    
 
         mlir::Value String(mlir_ts::StringType stringType)
         {
