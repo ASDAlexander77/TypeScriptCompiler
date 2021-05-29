@@ -71,6 +71,11 @@ namespace typescript
             {
                 result = mlirGenParseFloat(location, operands);
             }
+            else
+            if (functionName.compare(StringRef("sizeof")) == 0)
+            {
+                result = mlirGenSizeOf(location, operands);
+            }
             else 
             if (!allowPartialResolve)
             {
@@ -148,6 +153,17 @@ namespace typescript
 
             return parseFloatOp;
         }
+
+        mlir::Value mlirGenSizeOf(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+        {
+            auto sizeOfValue =
+                builder.create<mlir_ts::SizeOfOp>(
+                    location,
+                    builder.getI64Type(),
+                    mlir::TypeAttr::get(operands.front().getType()));
+
+            return sizeOfValue;
+        }        
     };
 
     class MLIRPropertyAccessCodeLogic

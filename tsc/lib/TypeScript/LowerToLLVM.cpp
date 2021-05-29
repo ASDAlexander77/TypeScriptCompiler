@@ -295,6 +295,29 @@ namespace
         }
     };
 
+    class SizeOfOpLowering : public OpConversionPattern<mlir_ts::SizeOfOp>
+    {
+    public:
+        using OpConversionPattern<mlir_ts::SizeOfOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::SizeOfOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            TypeHelper th(rewriter);            
+            TypeConverterHelper tch(getTypeConverter());
+
+            auto loc = op->getLoc();
+
+            auto nullPtrToTypeValue = rewriter.create<LLVM::NullOp>(loc, LLVM::LLVMPointerType::get(tch.convertType(op.type())));
+
+            auto cst1 = rewriter.create<LLVM::ConstantOp>(loc, th.getI64Type(), th.getIndexAttrValue(1));
+            auto sizeOffSetAddr = rewriter.create<LLVM::GEPOp>(loc, nullPtrToTypeValue.getType(), nullPtrToTypeValue, ArrayRef<Value>({cst1}));
+
+            rewriter.replaceOpWithNewOp<LLVM::PtrToIntOp>(op, th.getIndexType(), sizeOffSetAddr);
+
+            return success();
+        }
+    };     
+
     class LengthOfOpLowering : public OpConversionPattern<mlir_ts::LengthOfOp>
     {
     public:
@@ -1790,6 +1813,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         ParseIntOpLowering,
         PrintOpLowering,
         StoreOpLowering,
+        SizeOfOpLowering,
         InsertPropertyOpLowering,
         LengthOfOpLowering,
         StringLengthOpLowering,

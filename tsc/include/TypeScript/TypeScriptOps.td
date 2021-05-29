@@ -290,6 +290,16 @@ def TypeScript_ParseFloatOp : TypeScript_Op<"parseFloat"> {
   let results = (outs F32:$res);
 }
 
+def TypeScript_SizeOfOp : TypeScript_Op<"sizeof"> {
+  let summary = "size of type";
+  let description = [{
+    size of type
+  }];
+
+  let arguments = (ins TypeAttr:$type);
+  let results = (outs I64:$size);
+}
+
 def TypeScript_CallOp : TypeScript_Op<"Call",
     [CallOpInterface, MemRefsNormalizable,
      DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
