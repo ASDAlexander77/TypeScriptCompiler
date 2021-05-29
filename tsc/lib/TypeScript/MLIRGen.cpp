@@ -1160,6 +1160,8 @@ namespace
 
             NodeFactory nf(NodeFactoryFlags::None);
 
+            // TODO: bug, _i_ and _a_ are not scope isolated
+
             // init
             NodeArray<VariableDeclaration> declarations;
             auto _i = nf.createIdentifier(S("_i_"));
