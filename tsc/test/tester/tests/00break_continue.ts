@@ -1,7 +1,7 @@
 function main() {    
     assert(test_do() == 5, "failed. 1");
     assert(test_while() == 5, "failed. 2");
-    assert(test_for() == 5, "failed. 3");
+    assert(test_for() == 4, "failed. 3");
     test_for_empty();
 
     print("done.");
@@ -70,6 +70,7 @@ function test_while()
 
 function test_for()
 {
+    let j = 0;
 	for (let i = 0; i < 10; i++)
 	{
 		if (i == 5)
@@ -90,9 +91,11 @@ function test_for()
 
 			print("j = ", j);
 		}
+
+        j = i;
 	}
 
-    return i;
+    return j;
 }
 
 function test_for_empty()

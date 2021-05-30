@@ -237,6 +237,8 @@ namespace
 
         mlir::LogicalResult mlirGen(Block blockAST, const GenContext &genContext)
         {
+            SymbolTableScopeT varScope(symbolTable);
+            
             for (auto &statement : blockAST->statements)
             {
                 if (failed(mlirGen(statement, genContext)))
@@ -790,9 +792,10 @@ namespace
 
         mlir_ts::FuncOp mlirGenFunctionLikeDeclaration(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
         {
+            SymbolTableScopeT varScope(symbolTable);
+
             auto location = loc(functionLikeDeclarationBaseAST);
 
-            SymbolTableScopeT varScope(symbolTable);
             auto funcOpWithFuncProto = mlirGenFunctionPrototype(functionLikeDeclarationBaseAST, genContext);
 
             auto &funcOp = std::get<0>(funcOpWithFuncProto);
@@ -1020,6 +1023,8 @@ namespace
 
         mlir::LogicalResult mlirGen(IfStatement ifStatementAST, const GenContext &genContext)
         {
+            SymbolTableScopeT varScope(symbolTable);
+
             auto location = loc(ifStatementAST);
 
             auto hasElse = !!ifStatementAST->elseStatement;
@@ -1049,6 +1054,8 @@ namespace
 
         mlir::LogicalResult mlirGen(DoStatement doStatementAST, const GenContext &genContext)
         {
+            SymbolTableScopeT varScope(symbolTable);
+            
             auto location = loc(doStatementAST);
 
             SmallVector<mlir::Type, 0> types;
@@ -1074,6 +1081,8 @@ namespace
 
         mlir::LogicalResult mlirGen(WhileStatement whileStatementAST, const GenContext &genContext)
         {
+            SymbolTableScopeT varScope(symbolTable);
+            
             auto location = loc(whileStatementAST);
 
             SmallVector<mlir::Type, 0> types;
@@ -1099,6 +1108,8 @@ namespace
 
         mlir::LogicalResult mlirGen(ForStatement forStatementAST, const GenContext &genContext)
         {
+            SymbolTableScopeT varScope(symbolTable);
+            
             auto location = loc(forStatementAST);
 
             // initializer
@@ -1156,6 +1167,8 @@ namespace
 
         mlir::LogicalResult mlirGen(ForOfStatement forOfStatementAST, const GenContext &genContext)
         {
+            SymbolTableScopeT varScope(symbolTable);
+
             auto location = loc(forOfStatementAST);
 
             NodeFactory nf(NodeFactoryFlags::None);
