@@ -430,6 +430,11 @@ namespace
             {
                 return mlirGen(expressionAST.as<NewExpression>(), genContext);
             }             
+            else if (kind == SyntaxKind::DeleteExpression)
+            {
+                mlirGen(expressionAST.as<DeleteExpression>(), genContext);
+                return mlir::Value();
+            }             
             else if (kind == SyntaxKind::Unknown/*TODO: temp solution to treat null expr as empty expr*/)
             {
                 return mlir::Value();
@@ -2141,6 +2146,20 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 mlir::TypeAttr::get(type));
 
             return newOp;
+        }
+
+        mlir::LogicalResult mlirGen(DeleteExpression deleteExpression, const GenContext &genContext)
+        {
+            MLIRTypeHelper mth(builder.getContext());
+            auto location = loc(deleteExpression);
+
+            auto expr = mlirGen(deleteExpression->expression, genContext);
+
+            builder.create<mlir_ts::DeleteOp>(
+                location,
+                expr);
+
+            return mlir::success();
         }
 
         mlir::Value mlirGen(TypeOfExpression typeOfExpression, const GenContext &genContext)

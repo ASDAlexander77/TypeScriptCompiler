@@ -310,6 +310,16 @@ def TypeScript_NewOp : TypeScript_Op<"New"> {
   let results = (outs AnyType:$instance);
 }
 
+def TypeScript_DeleteOp : TypeScript_Op<"Delete"> {
+  let summary = "delete allocated in memory";
+  let description = [{
+    delete allocated in memory
+  }];
+
+  let arguments = (ins TypeScript_AnyRefLike:$reference);
+  let results = (outs );
+}
+
 def TypeScript_CallOp : TypeScript_Op<"Call",
     [CallOpInterface, MemRefsNormalizable,
      DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {

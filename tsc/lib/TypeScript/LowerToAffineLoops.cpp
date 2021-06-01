@@ -611,6 +611,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         mlir_ts::StringConcatOp,
         mlir_ts::LoadOp,
         mlir_ts::NewOp,
+        mlir_ts::DeleteOp,
         mlir_ts::PropertyRefOp,
         mlir_ts::InsertPropertyOp,
         mlir_ts::ExtractPropertyOp,

@@ -679,6 +679,10 @@ def TypeScript_ArrayLike : AnyTypeOf<[
     TypeScript_ConstArray, TypeScript_Array, TypeScript_String
   ]>;
 
+def TypeScript_AnyRefLike : AnyTypeOf<[
+    TypeScript_Ref, TypeScript_ValueRef
+  ]>;
+
 def TypeScript_AnyStructLike : AnyTypeOf<[
     TypeScript_ConstTuple, TypeScript_Tuple
   ]>;

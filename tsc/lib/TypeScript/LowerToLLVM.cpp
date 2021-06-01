@@ -680,6 +680,12 @@ namespace
                 return success();
             }
 
+            if (auto enumType = type.dyn_cast_or_null<mlir_ts::EnumType>())
+            {
+                rewriter.eraseOp(constantOp);
+                return success();
+            }            
+
             rewriter.replaceOpWithNewOp<mlir::ConstantOp>(constantOp, tch.convertType(type), constantOp.getValue());
             return success();
         }
@@ -1066,6 +1072,32 @@ namespace
             return success();
         }
     };
+
+    struct DeleteOpLowering : public OpConversionPattern<mlir_ts::DeleteOp>
+    {
+        using OpConversionPattern<mlir_ts::DeleteOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::DeleteOp deleteOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            LLVMCodeHelper ch(deleteOp, rewriter);
+            CodeLogicHelper clh(deleteOp, rewriter);
+            TypeConverterHelper tch(getTypeConverter());
+            TypeHelper th(rewriter);
+
+            auto loc = deleteOp.getLoc();
+
+            auto i8PtrTy = th.getI8PtrType();
+            auto freeFuncOp =
+                ch.getOrInsertFunction(
+                    "free",
+                    th.getFunctionType(th.getVoidType(), {i8PtrTy}));
+
+            auto casted = clh.castToI8Ptr(deleteOp.reference());
+
+            rewriter.replaceOpWithNewOp<LLVM::CallOp>(deleteOp, freeFuncOp, ValueRange{casted});
+            return success();
+        }
+    };    
 
     void NegativeOpValue(mlir_ts::ArithmeticUnaryOp &unaryOp, mlir::PatternRewriter &builder)
     {
@@ -1844,6 +1876,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         LogicalBinaryOpLowering,
         NullOpLowering,
         NewOpLowering,
+        DeleteOpLowering,
         ParseFloatOpLowering,
         ParseIntOpLowering,
         PrintOpLowering,
