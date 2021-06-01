@@ -11,6 +11,11 @@ namespace typescript
     public:        
         MLIRTypeHelper(mlir::MLIRContext *context) : context(context) {}
 
+        bool isValueType(mlir::Type type)
+        {
+            return type && (type.isIntOrIndexOrFloat() || type.isa<mlir_ts::TupleType>());
+        }
+
         mlir::Type convertConstTypeToType(mlir::Type type, bool &copyRequired)
         {
             if (auto constArrayType = type.dyn_cast_or_null<mlir_ts::ConstArrayType>())

@@ -96,6 +96,50 @@ def TypeScript_Ref : TypeScript_Type<"Ref"> {
 
 }
 
+def TypeScript_ValueRef : TypeScript_Type<"ValueRef"> {
+  let mnemonic = "value_ref";
+
+  let description = [{
+    Syntax:
+
+    ```
+    value-ref-type ::= `value_ref` `<` type `>`
+    ```
+
+    Examples:
+
+    ```mlir
+    value_ref<f32>
+    value_ref<i32>
+    ```
+  }];
+  let parameters = (ins "Type":$elementType);
+
+  // We define the printer inline.
+  let printer = [{ $_printer << "value_ref<" << getImpl()->elementType << ">"; }];
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "Type":$elementType), [{
+      return Base::get(elementType.getContext(), elementType);
+    }], [{
+      return Base::getChecked($_loc, elementType);
+    }]>
+  ];
+
+  // Parses the above format
+  let parser = [{
+    Type elementType;
+    if ($_parser.parseLess()) return Type();
+    if ($_parser.parseType(elementType)) return Type();
+    if ($_parser.parseGreater()) return Type();
+    return get(elementType);
+  }];
+
+  let skipDefaultBuilders = 1;
+
+}
+
+
 def TypeScript_Optional : TypeScript_Type<"Optional"> {
   let mnemonic = "optional";
 

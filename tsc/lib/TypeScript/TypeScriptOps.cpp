@@ -65,6 +65,12 @@ Type mlir_ts::TypeScriptDialect::parseType(DialectAsmParser &parser) const
         return refType;
     }
 
+    auto valueRefType = generatedTypeParser(getContext(), parser, "value_ref");
+    if (valueRefType != Type())
+    {
+        return valueRefType;
+    }
+
     auto optionalType = generatedTypeParser(getContext(), parser, "optional");
     if (optionalType != Type())
     {

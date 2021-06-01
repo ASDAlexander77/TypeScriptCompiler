@@ -425,7 +425,11 @@ namespace
             else if (kind == SyntaxKind::TemplateExpression)
             {
                 return mlirGen(expressionAST.as<TemplateExpression>(), genContext);
-            }                   
+            }             
+            else if (kind == SyntaxKind::NewExpression)
+            {
+                return mlirGen(expressionAST.as<NewExpression>(), genContext);
+            }             
             else if (kind == SyntaxKind::Unknown/*TODO: temp solution to treat null expr as empty expr*/)
             {
                 return mlir::Value();
@@ -2117,6 +2121,28 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             return mlir::success();
         }
 
+        mlir::Value mlirGen(NewExpression newExpression, const GenContext &genContext)
+        {
+            MLIRTypeHelper mth(builder.getContext());
+            auto location = loc(newExpression);
+
+            auto typeExpr = mlirGen(newExpression->expression, genContext);
+
+            auto type = getResolveTypeFromValue(typeExpr);
+            auto storageType = type;
+            if (mth.isValueType(type))
+            {
+                storageType = getValueRefType(type);
+            }
+
+            auto newOp = builder.create<mlir_ts::NewOp>(
+                location,
+                storageType,
+                mlir::TypeAttr::get(type));
+
+            return newOp;
+        }
+
         mlir::Value mlirGen(TypeOfExpression typeOfExpression, const GenContext &genContext)
         {
             auto result = mlirGen(typeOfExpression->expression, genContext);
@@ -2565,40 +2591,42 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             //return getAnyType();
         }
 
-        mlir::Type getTypeByTypeReference(TypeReferenceNode typeReferenceAST)
+        mlir::Type getResolveTypeFromValue(mlir::Value value)
         {
-            GenContext genContext;
-            auto value = mlirGen(typeReferenceAST->typeName.as<Expression>(), genContext);
+            mlir::Type type;
+
             if (auto symRefOp = dyn_cast_or_null<mlir_ts::SymbolRefOp>(value.getDefiningOp()))
             {
                 auto name = symRefOp.identifier();
-                auto type = typeAliasMap.lookup(name);
-                
-                value.getDefiningOp()->erase();
-
-                if (type)
+                type = typeAliasMap.lookup(name);
+                if (!type)
                 {
-                    return type;
+                    theModule.emitError("Type alias '") << name << "' can't be found";
                 }
-
-                theModule.emitError("Type alias '") << name << "' can't be found";
             }
             else if (auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(value.getDefiningOp()))
             {
-                auto type = constOp.getType();
+                type = constOp.getType();
                 if (auto enumType = type.dyn_cast_or_null<mlir_ts::EnumType>())
                 {
                     // we do not exact type enum as we want to avoid casting it all the time
                     type = enumType.getElementType();
                 }
+            }
 
-                value.getDefiningOp()->erase();
+            if (type)
+            {
                 return type;
             }
 
-            value.getDefiningOp()->erase();
+            llvm_unreachable("not implemented type declaration");
+        }
 
-            llvm_unreachable("not implemented");
+        mlir::Type getTypeByTypeReference(TypeReferenceNode typeReferenceAST)
+        {
+            GenContext genContext;
+            auto typeVale = mlirGen(typeReferenceAST->typeName.as<Expression>(), genContext);
+            return getResolveTypeFromValue(typeVale);
         }        
 
         mlir_ts::VoidType getVoidType()
@@ -2666,6 +2694,11 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
         mlir_ts::ArrayType getArrayType(mlir::Type elementType)
         {
             return mlir_ts::ArrayType::get(elementType);
+        }
+
+        mlir_ts::ValueRefType getValueRefType(mlir::Type elementType)
+        {
+            return mlir_ts::ValueRefType::get(elementType);
         }
 
         void getTupleFieldInfo(TupleTypeNode tupleType, mlir::SmallVector<mlir_ts::FieldInfo> &types)

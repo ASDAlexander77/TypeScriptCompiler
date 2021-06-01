@@ -1037,6 +1037,36 @@ namespace
         }
     };
 
+    struct NewOpLowering : public OpConversionPattern<mlir_ts::NewOp>
+    {
+        using OpConversionPattern<mlir_ts::NewOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::NewOp newOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            LLVMCodeHelper ch(newOp, rewriter);
+            CodeLogicHelper clh(newOp, rewriter);
+            TypeConverterHelper tch(getTypeConverter());
+            TypeHelper th(rewriter);
+
+            auto loc = newOp.getLoc();
+
+            auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), newOp.typeAttr());
+
+            auto i8PtrTy = th.getI8PtrType();
+            auto mallocFuncOp =
+                ch.getOrInsertFunction(
+                    "malloc",
+                    th.getFunctionType(i8PtrTy, {th.getIndexType()}));
+
+            auto callResults = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{sizeOfTypeValue});
+
+            auto allocated = rewriter.create<LLVM::BitcastOp>(newOp->getLoc(), tch.convertType(newOp.getType()), callResults.getResult(0));
+
+            rewriter.replaceOp(newOp, ValueRange{allocated});
+            return success();
+        }
+    };
+
     void NegativeOpValue(mlir_ts::ArithmeticUnaryOp &unaryOp, mlir::PatternRewriter &builder)
     {
         CodeLogicHelper clh(unaryOp, builder);
@@ -1691,6 +1721,10 @@ namespace
             return LLVM::LLVMPointerType::get(converter.convertType(type.getElementType()));
         });
 
+        converter.addConversion([&](mlir_ts::ValueRefType type) {
+            return LLVM::LLVMPointerType::get(converter.convertType(type.getElementType()));
+        });
+
         converter.addConversion([&](mlir_ts::ConstTupleType type) {
             SmallVector<mlir::Type> convertedTypes;
             for (auto subType : type.getFields())
@@ -1809,6 +1843,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         ExtractPropertyOpLowering,
         LogicalBinaryOpLowering,
         NullOpLowering,
+        NewOpLowering,
         ParseFloatOpLowering,
         ParseIntOpLowering,
         PrintOpLowering,
