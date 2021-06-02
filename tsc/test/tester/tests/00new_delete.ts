@@ -4,4 +4,6 @@ function main()
 {
 	let i = new Type1();
 	delete i;
+
+    print("done.");
 }

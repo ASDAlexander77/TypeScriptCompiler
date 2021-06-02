@@ -1879,7 +1879,16 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             auto location = loc(propertyAccessExpression);
 
             auto expression = mlirGen(propertyAccessExpression->expression.as<Expression>(), genContext);
-            auto name = mlirGen(propertyAccessExpression->name.as<Expression>(), genContext);
+
+            std::string name;
+            if (propertyAccessExpression->name == SyntaxKind::Identifier)
+            {
+                name = wstos(propertyAccessExpression->name.as<Identifier>()->escapedText);
+            }
+            else
+            {
+                llvm_unreachable("not implemented");
+            }
 
             mlir::Value value;
 
@@ -2377,6 +2386,13 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     auto propertyAssignment = item.as<PropertyAssignment>();
                     itemValue = mlirGen(propertyAssignment->initializer, genContext);
                     auto name = wstos(propertyAssignment->name.as<Identifier>()->escapedText);
+                    namePtr = StringRef(name).copy(stringAllocator);
+                }
+                else if (item == SyntaxKind::ShorthandPropertyAssignment)
+                {
+                    auto shorthandPropertyAssignment = item.as<ShorthandPropertyAssignment>();
+                    itemValue = mlirGen(shorthandPropertyAssignment->name.as<Expression>(), genContext);
+                    auto name = wstos(shorthandPropertyAssignment->name.as<Identifier>()->escapedText);
                     namePtr = StringRef(name).copy(stringAllocator);
                 }
                 else

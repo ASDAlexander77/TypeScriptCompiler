@@ -171,9 +171,9 @@ namespace typescript
         mlir::OpBuilder &builder;
         mlir::Location &location;
         mlir::Value &expression;
-        mlir::Value &name;
+        mlir::StringRef name;
     public:        
-        MLIRPropertyAccessCodeLogic(mlir::OpBuilder &builder, mlir::Location &location, mlir::Value &expression, mlir::Value &name) 
+        MLIRPropertyAccessCodeLogic(mlir::OpBuilder &builder, mlir::Location &location, mlir::Value &expression, mlir::StringRef name) 
             : builder(builder), location(location), expression(expression), name(name) {}
 
         mlir::Value Enum(mlir_ts::EnumType enumType)
@@ -308,15 +308,7 @@ namespace typescript
     private:
         StringRef getName() 
         {
-            auto symRef = dyn_cast_or_null<mlir_ts::SymbolRefOp>(name.getDefiningOp());
-            if (symRef)
-            {
-                auto value = symRef.identifier();
-                symRef->erase();
-                return value;
-            }
-
-            llvm_unreachable("not implemented");                        
+            return name;                  
         }        
 
         mlir::Attribute getExprConstAttr()
