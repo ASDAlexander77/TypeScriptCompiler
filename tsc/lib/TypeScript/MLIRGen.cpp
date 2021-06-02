@@ -2640,6 +2640,10 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             {
                 return getTupleType(typeReferenceAST.as<TupleTypeNode>());
             }
+            else if (kind == SyntaxKind::TypeLiteral)
+            {
+                return getTupleType(typeReferenceAST.as<TypeLiteralNode>());
+            }            
             else if (kind == SyntaxKind::ArrayType)
             {
                 return getArrayType(typeReferenceAST.as<ArrayTypeNode>());
@@ -2787,7 +2791,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
         {
             for (auto typeItem : tupleType->elements)
             {
-                if ((SyntaxKind)typeItem == SyntaxKind::NamedTupleMember)
+                if (typeItem == SyntaxKind::NamedTupleMember)
                 {
                     auto namedTupleMember = typeItem.as<NamedTupleMember>();
                     auto name = wstos(namedTupleMember->name.as<Identifier>()->escapedText);
@@ -2808,6 +2812,31 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             }
         }
 
+        void getTupleFieldInfo(TypeLiteralNode typeLiteral, mlir::SmallVector<mlir_ts::FieldInfo> &types)
+        {
+            for (auto typeItem : typeLiteral->members)
+            {
+                if (typeItem == SyntaxKind::PropertySignature)
+                {
+                    auto propertySignature = typeItem.as<PropertySignature>();
+                    auto name = wstos(propertySignature->name.as<Identifier>()->escapedText);
+                    auto namePtr = StringRef(name).copy(stringAllocator);
+
+                    auto type = getType(propertySignature->type);
+
+                    assert(type);         
+                    types.push_back({namePtr, type});
+                }
+                else
+                {
+                    auto type = getType(typeItem);
+
+                    assert(type);
+                    types.push_back({mlir::StringRef(), type});
+                }
+            }            
+        }        
+
         mlir_ts::ConstTupleType getConstTupleType(TupleTypeNode tupleType)
         {
             mlir::SmallVector<mlir_ts::FieldInfo> types;
@@ -2826,6 +2855,13 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             getTupleFieldInfo(tupleType, types);
             return getTupleType(types);
         }        
+
+        mlir_ts::TupleType getTupleType(TypeLiteralNode typeLiteral)
+        {
+            mlir::SmallVector<mlir_ts::FieldInfo> types;
+            getTupleFieldInfo(typeLiteral, types);
+            return getTupleType(types);
+        }  
 
         mlir_ts::TupleType getTupleType(mlir::SmallVector<mlir_ts::FieldInfo> &fieldInfos)
         {

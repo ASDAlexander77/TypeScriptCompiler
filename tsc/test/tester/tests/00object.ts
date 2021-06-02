@@ -1,3 +1,8 @@
+function t(a: { name: string })
+{
+   print(a.name);
+}
+
 function main() {
     const object = { a: 1, b: 2, c: 3 };
 
@@ -23,6 +28,12 @@ function main() {
     const object4 = { a, b, c };
 
     print(object4.a);
+
+    const object5 : { name: string } = { name: "foo" };
+
+    print(object5.name);
+
+    t(object5);
 
     print("done.");    
 }
