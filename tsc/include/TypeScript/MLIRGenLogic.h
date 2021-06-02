@@ -207,14 +207,19 @@ namespace typescript
             auto elementType = tupleType.getType(fieldIndex);
 
             auto refValue = getExprLoadRefValue();
+            if (refValue)
+            {
+                auto propRef = builder.create<mlir_ts::PropertyRefOp>(
+                    location, 
+                    mlir_ts::RefType::get(elementType), 
+                    refValue, 
+                    builder.getI32IntegerAttr(fieldIndex));
 
-            auto propRef = builder.create<mlir_ts::PropertyRefOp>(
-                location, 
-                mlir_ts::RefType::get(elementType), 
-                refValue, 
-                builder.getI32IntegerAttr(fieldIndex));
+                return builder.create<mlir_ts::LoadOp>(location, elementType, propRef);
+            }
 
-            return builder.create<mlir_ts::LoadOp>(location, elementType, propRef);
+            MLIRTypeHelper mth(builder.getContext());
+            return builder.create<mlir_ts::ExtractPropertyOp>(location, elementType, expression, builder.getArrayAttr(mth.getStructIndexAttrValue(fieldIndex)));
         }       
 
         mlir::Value Bool(mlir_ts::BooleanType intType)
@@ -337,10 +342,8 @@ namespace typescript
                 loadOp->erase();
                 return refValue;
             }
-            else
-            {
-                llvm_unreachable("not implemented");            
-            }
+
+            return mlir::Value();
         }        
     };
 

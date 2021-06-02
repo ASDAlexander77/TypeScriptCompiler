@@ -362,6 +362,10 @@ namespace
             {
                 return mlirGen(expressionAST.as<ArrayLiteralExpression>(), genContext);
             }
+            else if (kind == SyntaxKind::ObjectLiteralExpression)
+            {
+                return mlirGen(expressionAST.as<ObjectLiteralExpression>(), genContext);
+            }
             else if (kind == SyntaxKind::Identifier)
             {
                 return mlirGen(expressionAST.as<Identifier>(), genContext);
@@ -2357,6 +2361,49 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 getConstArrayType(elementType, values.size()),
                 arrayAttr);
         }
+
+        mlir::Value mlirGen(ts::ObjectLiteralExpression objectLiteral, const GenContext &genContext)
+        {
+            // first value
+            SmallVector<mlir::Type> types;
+            SmallVector<mlir_ts::FieldInfo> fieldInfos;
+            SmallVector<mlir::Attribute> values;
+            for (auto &item : objectLiteral->properties)
+            {
+                mlir::Value itemValue;
+                mlir::StringRef namePtr;
+                if (item == SyntaxKind::PropertyAssignment)
+                {
+                    auto propertyAssignment = item.as<PropertyAssignment>();
+                    itemValue = mlirGen(propertyAssignment->initializer, genContext);
+                    auto name = wstos(propertyAssignment->name.as<Identifier>()->escapedText);
+                    namePtr = StringRef(name).copy(stringAllocator);
+                }
+                else
+                {
+                    llvm_unreachable("object literal is not implemented(1)");
+                }
+
+                auto constOp = cast<mlir_ts::ConstantOp>(itemValue.getDefiningOp());
+                if (!constOp)
+                {
+                    llvm_unreachable("object literal is not implemented(1)");
+                    continue;
+                }
+
+                auto type = constOp.getType();
+
+                values.push_back(constOp.valueAttr());
+                types.push_back(type);
+                fieldInfos.push_back({namePtr, type});
+            }
+
+            auto arrayAttr = mlir::ArrayAttr::get(values, builder.getContext());            
+            return builder.create<mlir_ts::ConstantOp>(
+                loc(objectLiteral),
+                getConstTupleType(fieldInfos),
+                arrayAttr);
+        }       
 
         mlir::Value mlirGen(Identifier identifier, const GenContext &genContext)
         {

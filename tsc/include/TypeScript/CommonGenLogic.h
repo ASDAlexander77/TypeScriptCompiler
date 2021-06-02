@@ -11,6 +11,16 @@ namespace typescript
     public:        
         MLIRTypeHelper(mlir::MLIRContext *context) : context(context) {}
 
+        mlir::Type getI32Type()
+        {
+            return mlir::IntegerType::get(context, 32);
+        }
+        
+        mlir::IntegerAttr getStructIndexAttrValue(int32_t value)
+        {
+            return mlir::IntegerAttr::get(getI32Type(), mlir::APInt(32, value));
+        }        
+
         bool isValueType(mlir::Type type)
         {
             return type && (type.isIntOrIndexOrFloat() || type.isa<mlir_ts::TupleType>());
