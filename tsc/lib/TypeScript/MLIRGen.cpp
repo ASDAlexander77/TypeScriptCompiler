@@ -350,6 +350,10 @@ namespace
             {
                 return mlirGen(expressionAST.as<ts::StringLiteral>(), genContext);
             }
+            else if (kind == SyntaxKind::BigIntLiteral)
+            {
+                return mlirGen(expressionAST.as<BigIntLiteral>(), genContext);
+            }            
             else if (kind == SyntaxKind::NullKeyword)
             {
                 return mlirGen(expressionAST.as<NullLiteral>(), genContext);
@@ -444,6 +448,10 @@ namespace
                 return mlir::Value();
             }             
             else if (kind == SyntaxKind::Unknown/*TODO: temp solution to treat null expr as empty expr*/)
+            {
+                return mlir::Value();
+            }
+            else if (kind == SyntaxKind::OmittedExpression/*TODO: temp solution to treat null expr as empty expr*/)
             {
                 return mlir::Value();
             }
@@ -2331,15 +2339,18 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     builder.getI32IntegerAttr(to_unsigned_integer(numericLiteral->text)));
             }
 
-            if (!(numericLiteral->numericLiteralFlags & TokenFlags::NumericLiteralFlags))
-            {
-                return builder.create<mlir_ts::ConstantOp>(
-                    loc(numericLiteral),
-                    builder.getF32Type(),
-                    builder.getF32FloatAttr(to_float(numericLiteral->text)));
-            }
+            return builder.create<mlir_ts::ConstantOp>(
+                loc(numericLiteral),
+                builder.getF32Type(),
+                builder.getF32FloatAttr(to_float(numericLiteral->text)));
+        }
 
-            llvm_unreachable("unknown numeric literal");
+        mlir::Value mlirGen(BigIntLiteral bigIntLiteral, const GenContext &genContext)
+        {
+            return builder.create<mlir_ts::ConstantOp>(
+                loc(bigIntLiteral),
+                builder.getI64Type(),
+                builder.getI64IntegerAttr(to_bignumber(bigIntLiteral->text)));
         }
 
         mlir::Value mlirGen(ts::StringLiteral stringLiteral, const GenContext &genContext)
@@ -2362,6 +2373,12 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             for (auto &item : arrayLiteral->elements)
             {
                 auto itemValue = mlirGen(item, genContext);
+                if (!itemValue)
+                {
+                    // omitted expression
+                    continue;
+                }
+
                 auto constOp = cast<mlir_ts::ConstantOp>(itemValue.getDefiningOp());
                 if (!constOp)
                 {
