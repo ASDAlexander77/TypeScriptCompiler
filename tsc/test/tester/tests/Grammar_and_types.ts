@@ -1,7 +1,7 @@
 function main()
 {
     // Basics
-    let Früh = "foobar";
+    let foo = "foobar";
 
     // Comments
     // a one line comment
@@ -14,71 +14,58 @@ function main()
 
     // Evaluating variables
 
-    var a;
-    console.log('The value of a is ' + a); // The value of a is undefined
-    
-    console.log('The value of b is ' + b); // The value of b is undefined
-    var b;
-    // This one may puzzle you until you read 'Variable hoisting' below
-    
-    console.log('The value of c is ' + c); // Uncaught ReferenceError: c is not defined
-    
-    let x;
-    console.log('The value of x is ' + x); // The value of x is undefined
-    
-    console.log('The value of y is ' + y); // Uncaught ReferenceError: y is not defined
-    let y; 
-    
-    var input;
+    let input = 0;
     if (input === undefined) {
         doThis();
     } else {
         doThat();
     }
 
-    var myArray = [];
+    let myArray = [1];
     if (!myArray[0]) myFunction();
     
+    let a = 0;
     a + 2;  // Evaluates to NaN
 
-    var n = null;
-    console.log(n * 32); // Will log 0 to the console
+    let n : string = null;
+    print(n * 32); // Will log 0 to the console
     
     // Variable scope
+    let x = 0;
     if (true) {
-        var x = 5;
+        x = 5;
     }
-    console.log(x);  // x is 5    
+    print(x);  // x is 5    
 
     // Variable hoisting
 
     /**
      * Example 1
      */
-    console.log(x === undefined); // true
-    var x = 3;
+    print(x === undefined); // false
+    x = 3;
     
     /**
      * Example 2
      */
     // will return a value of undefined
-    var myvar = 'my value';
+    let mylet = 'my value';
     
     (function() {
-        var myvar = 'local value';
-        console.log(myvar); // undefined
+        let mylet = 'local value';
+        print(myvar); // undefined
     })();    
 
     // Function hoisting
     foo(); // "bar"
 
     function foo() {
-      console.log('bar');
+      print('bar');
     }
     
     /* Function expression */   
-    var baz = function() {
-      console.log('bar2');
+    let baz = function() {
+      print('bar2');
     };    
 
     baz();
@@ -87,16 +74,16 @@ function main()
 
     const PI = 3.14;
 
-    const MY_OBJECT = {'key': 'value'};
+    let MY_OBJECT = {'key': 'value'};
     MY_OBJECT.key = 'otherValue';
     
     const MY_ARRAY = ['HTML','CSS'];
     // TODO: //MY_ARRAY.push('JAVASCRIPT');
-    console.log(MY_ARRAY); //logs ['HTML','CSS','JAVASCRIPT'];    
+    print(MY_ARRAY); //logs ['HTML','CSS','JAVASCRIPT'];    
 
     // Data type conversion
 
-    var answer = 42;
+    let answer = 42;
 
     // TODO?: // answer = 'Thanks for all the fish...';
 
@@ -148,9 +135,9 @@ function main()
 
     // Object literals
 
-    var sales = 'Toyota';
+    const sales = 'Toyota';
 
-    function carTypes(name) {
+    function carTypes(name:string) {
       if (name === 'Honda') {
         return name;
       } else {
@@ -158,28 +145,28 @@ function main()
       }
     }
     
-    var car = { myCar: 'Saturn', getCar: /* TODO: // carTypes('Honda') */ 'Honda', special: sales };
+    let car = { myCar: 'Saturn', getCar: /* TODO: // carTypes('Honda') */ 'Honda', special: sales };
     
-    console.log(car.myCar);   // Saturn
-    console.log(car.getCar);  // Honda
-    console.log(car.special); // Toyota    
+    print(car.myCar);   // Saturn
+    print(car.getCar);  // Honda
+    print(car.special); // Toyota    
 
-    var car2 = { manyCars: {a: 'Saab', b: 'Jeep'}, 7: 'Mazda' };
+    let car2 = { manyCars: {a: 'Saab', b: 'Jeep'}, 7: 'Mazda' };
 
-    console.log(car2.manyCars.b); // Jeep
-    console.log(car2[7]); // Mazda    
+    print(car2.manyCars.b); // Jeep
+    print(car2[7]); // Mazda    
 
-    var unusualPropertyNames = {
+    let unusualPropertyNames = {
         '': 'An empty string',
         '!': 'Bang!'
     }    
 
-    console.log(unusualPropertyNames['']);  // An empty string
-    console.log(unusualPropertyNames['!']); // Bang!    
+    print(unusualPropertyNames['']);  // An empty string
+    print(unusualPropertyNames['!']); // Bang!    
 
     // RegExp literals
 
-    var re = /ab+c/;
+    let re = /ab+c/;
 
     // String literals
 
@@ -189,7 +176,7 @@ function main()
     'one line \n another line';
     "John's cat";
 
-    console.log("John's cat".length);
+    print("John's cat".length);
 
     // Basic literal string creation
     `In JavaScript '\n' is a line-feed.`;
@@ -200,7 +187,7 @@ function main()
     quoted strings cannot.`;
 
     // String interpolation
-    var name = 'Bob', time = 'today';
+    let name = 'Bob', time = 'today';
     `Hello ${name}, how are you ${time}?`;
 
     let myTag = (str, name, age) => `${str[0]}${name}${str[1]}${age}${str[2]}`;
@@ -214,24 +201,24 @@ function main()
 
     // Escaping characters
 
-    var quote = "He read \"The Cremation of Sam McGee\" by R.W. Service.";
-    console.log(quote);
+    let quote = "He read \"The Cremation of Sam McGee\" by R.W. Service.";
+    print(quote);
     
-    var home = 'c:\\temp';
+    let home = 'c:\\temp';
 
-    var str = 'this string \
+    let str = 'this string \
     is broken \
     across multiple \
     lines.'
-    console.log(str);   // this string is broken across multiple lines.
+    print(str);   // this string is broken across multiple lines.
 
-    var poem =
+    let poem =
     'Roses are red,\n\
     Violets are blue.\n\
     Sugar is sweet,\n\
     and so is foo.'    
 
-    var poem2015 =
+    let poem2015 =
     `Roses are red,
     Violets are blue.
     Sugar is sweet,

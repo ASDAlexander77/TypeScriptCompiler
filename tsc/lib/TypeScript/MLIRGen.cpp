@@ -174,6 +174,7 @@ namespace
             // TODO: test recursive references
             do
             {
+                mlir::SmallVector<StringRef> unresolvedFuncs;
                 auto unresolvedFunctionsCurrentRun = 0;
                 FilterVisitorAST<FunctionDeclaration> visitorAST(
                     SyntaxKind::FunctionDeclaration,
@@ -186,12 +187,20 @@ namespace
                         if (!result)
                         {
                             unresolvedFunctionsCurrentRun++;
+
+                            auto name = MLIRHelper::getName(funcDecl->name, stringAllocator);
+                            if (!name.empty())
+                            {
+                                unresolvedFuncs.push_back(name);
+                            }
+
                             return;
                         }
 
                         auto funcOp = std::get<0>(funcOpAndFuncProto);
                         //auto &funcProto = std::get<1>(funcOpAndFuncProto);
                         auto funcName = funcOp.getName();
+
                         if (auto funcOp = theModule.lookupSymbol<mlir_ts::FuncOp>(funcName))
                         {
                             return;
@@ -203,7 +212,12 @@ namespace
 
                 if (unresolvedFunctionsCurrentRun == unresolvedFunctions)
                 {
-                    emitError(loc(module)) << "can't resolve recursive references of functions '" << fileName << "'";
+                    auto o = emitError(loc(module)) << "can't resolve recursive references of functions '" << fileName << "'";
+                    for (auto &name : unresolvedFuncs)
+                    {
+                        o << " func: " << name;
+                    }
+
                     return mlir::failure();
                 }
 
@@ -625,6 +639,12 @@ namespace
                     // remove temp block
                     builder.restoreInsertionPoint(insertPoint);
                     entryBlock.erase();
+                }
+
+                if (!typeParameter && !initializer)
+                {
+                    auto funcName = MLIRHelper::getName(parametersContextAST->name);
+                    emitError(loc(arg)) << "type of parameter '" << name << "' is not provided, paramter must have type of initializer, function: " << funcName;
                 }
 
                 params.push_back(std::make_shared<FunctionParamDOM>(name, type, loc(arg), isOptional, initializer));
@@ -2454,10 +2474,10 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     llvm_unreachable("object literal is not implemented(1)");
                 }
 
-                auto constOp = cast<mlir_ts::ConstantOp>(itemValue.getDefiningOp());
+                auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(itemValue.getDefiningOp());
                 if (!constOp)
                 {
-                    llvm_unreachable("object literal is not implemented(1)");
+                    llvm_unreachable("object literal is not implemented(1), must be const object");
                     continue;
                 }
 
