@@ -460,7 +460,7 @@ namespace
             {
                 mlir::Type type;
 
-                auto name = wstos(item->name.as<Identifier>()->escapedText);
+                auto name = MLIRHelper::getName(item->name);
 
                 if (item->type)
                 {
@@ -568,7 +568,7 @@ namespace
             auto formalParams = parametersContextAST->parameters;
             for (auto arg : formalParams)
             {
-                auto name = wstos(arg->name.as<Identifier>()->escapedText);
+                auto name = MLIRHelper::getName(arg->name);
                 mlir::Type type;
                 auto isOptional = !!arg->questionToken;
                 auto typeParameter = arg->type;
@@ -654,13 +654,8 @@ namespace
                 argNumber++;
             }
 
-            std::string name;
-            auto identifier = functionLikeDeclarationBaseAST->name.as<Identifier>();
-            if (identifier)
-            {
-                name = wstos(identifier->escapedText);
-            }
-            else
+            auto name = MLIRHelper::getName(functionLikeDeclarationBaseAST->name);
+            if (name.empty())
             {
                 // auto calculate name
                 std::stringstream ssName;
@@ -1203,7 +1198,8 @@ namespace
             auto initVars = nf.createVariableDeclarationList(declarations);
 
             // condition
-            auto cond = nf.createBinaryExpression(_i, nf.createToken(SyntaxKind::LessThanToken), nf.createCallExpression(nf.createIdentifier(S("#_last_field")), undefined, NodeArray<Expression>(_a)));
+            //auto cond = nf.createBinaryExpression(_i, nf.createToken(SyntaxKind::LessThanToken), nf.createCallExpression(nf.createIdentifier(S("#_last_field")), undefined, NodeArray<Expression>(_a)));
+            auto cond = nf.createBinaryExpression(_i, nf.createToken(SyntaxKind::LessThanToken), nf.createPropertyAccessExpression(_a, nf.createIdentifier(S("length"))));
 
             // incr
             auto incr = nf.createPrefixUnaryExpression(nf.createToken(SyntaxKind::PlusPlusToken), _i);
@@ -1928,7 +1924,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             std::string name;
             if (propertyAccessExpression->name == SyntaxKind::Identifier)
             {
-                name = wstos(propertyAccessExpression->name.as<Identifier>()->escapedText);
+                name = MLIRHelper::getName(propertyAccessExpression->name);
             }
             else
             {
@@ -2007,11 +2003,10 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             // get index
             if (auto indexConstOp = dyn_cast_or_null<mlir_ts::ConstantOp>(argumentExpression.getDefiningOp()))
             {
+                auto constIndex = indexConstOp.value().dyn_cast_or_null<mlir::IntegerAttr>().getInt();
+                auto elementType = tupleType.getType(constIndex);
                 if (auto loadOp = dyn_cast_or_null<mlir_ts::LoadOp>(expression.getDefiningOp()))
                 {
-                    auto constIndex = indexConstOp.value().dyn_cast_or_null<mlir::IntegerAttr>().getInt();
-                    auto elementType = tupleType.getType(constIndex);
-                    
                     auto propRef = builder.create<mlir_ts::PropertyRefOp>(location, mlir_ts::RefType::get(elementType), loadOp.reference(), builder.getI32IntegerAttr(constIndex));
                     loadOp->erase();
 
@@ -2019,9 +2014,6 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 }
                 else
                 {
-                    auto constIndex = indexConstOp.value().dyn_cast_or_null<mlir::IntegerAttr>().getInt();
-                    auto elementType = tupleType.getType(constIndex);
-                    
                     return builder.create<mlir_ts::ExtractPropertyOp>(location, elementType, expression, builder.getI32ArrayAttr(mlir::ArrayRef<int32_t>(constIndex)));
                 }
             }
@@ -2430,14 +2422,14 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 {
                     auto propertyAssignment = item.as<PropertyAssignment>();
                     itemValue = mlirGen(propertyAssignment->initializer, genContext);
-                    auto name = wstos(propertyAssignment->name.as<Identifier>()->escapedText);
+                    auto name = MLIRHelper::getName(propertyAssignment->name);
                     namePtr = StringRef(name).copy(stringAllocator);
                 }
                 else if (item == SyntaxKind::ShorthandPropertyAssignment)
                 {
                     auto shorthandPropertyAssignment = item.as<ShorthandPropertyAssignment>();
                     itemValue = mlirGen(shorthandPropertyAssignment->name.as<Expression>(), genContext);
-                    auto name = wstos(shorthandPropertyAssignment->name.as<Identifier>()->escapedText);
+                    auto name = MLIRHelper::getName(shorthandPropertyAssignment->name);
                     namePtr = StringRef(name).copy(stringAllocator);
                 }
                 else
@@ -2813,6 +2805,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
         mlir_ts::ConstArrayType getConstArrayType(mlir::Type elementType, unsigned size)
         {
+            assert(elementType);
             return mlir_ts::ConstArrayType::get(elementType, size);
         }
 
@@ -2839,8 +2832,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 if (typeItem == SyntaxKind::NamedTupleMember)
                 {
                     auto namedTupleMember = typeItem.as<NamedTupleMember>();
-                    auto name = wstos(namedTupleMember->name.as<Identifier>()->escapedText);
-                    auto namePtr = StringRef(name).copy(stringAllocator);
+                    auto namePtr = MLIRHelper::getName(namedTupleMember->name, stringAllocator);
 
                     auto type = getType(namedTupleMember->type);
 
@@ -2864,8 +2856,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 if (typeItem == SyntaxKind::PropertySignature)
                 {
                     auto propertySignature = typeItem.as<PropertySignature>();
-                    auto name = wstos(propertySignature->name.as<Identifier>()->escapedText);
-                    auto namePtr = StringRef(name).copy(stringAllocator);
+                    auto namePtr =  MLIRHelper::getName(propertySignature->name, stringAllocator);
 
                     auto type = getType(propertySignature->type);
 

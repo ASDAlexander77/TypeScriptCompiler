@@ -76,6 +76,7 @@ namespace typescript
             {
                 result = mlirGenSizeOf(location, operands);
             }
+            /*
             else
             if (functionName.compare(StringRef("#_last_field")) == 0)
             {
@@ -95,6 +96,7 @@ namespace typescript
                     });  
 
             }
+            */
             else 
             if (!allowPartialResolve)
             {

@@ -1,10 +1,39 @@
 #ifndef MLIR_TYPESCRIPT_COMMONGENLOGIC_H_
 #define MLIR_TYPESCRIPT_COMMONGENLOGIC_H_
 
+#include "parser.h"
+#include "file_helper.h"
+
 namespace mlir_ts = mlir::typescript;
 
 namespace typescript
 {
+    class MLIRHelper
+    {
+    public:
+        static std::string getName(ts::Node name)
+        {
+            std::string nameValue;
+            if (name == SyntaxKind::Identifier)
+            {
+                nameValue = wstos(name.as<ts::Identifier>()->escapedText);
+            }
+
+            if (name == SyntaxKind::StringLiteral)
+            {
+                nameValue = wstos(name.as<ts::StringLiteral>()->text);
+            }
+
+            return nameValue;
+        }
+
+        static mlir::StringRef getName(ts::Node name, llvm::BumpPtrAllocator &stringAllocator)
+        {
+            auto nameValue = getName(name);
+            return mlir::StringRef(nameValue).copy(stringAllocator);
+        }        
+    };
+
     class MLIRTypeHelper
     {
         mlir::MLIRContext *context;

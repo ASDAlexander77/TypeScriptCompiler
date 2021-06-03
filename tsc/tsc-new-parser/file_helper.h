@@ -1,4 +1,7 @@
 
+#ifndef FILE_HELPER_H_
+#define FILE_HELPER_H_
+
 #include <cstdio>
 #include <iostream>
 #include <memory>
@@ -135,3 +138,5 @@ static std::wstring readFile(std::string file)
     std::wstring str((std::istreambuf_iterator<char_t>(f)), std::istreambuf_iterator<char_t>());
     return str;
 }
+
+#endif // FILE_HELPER_H_

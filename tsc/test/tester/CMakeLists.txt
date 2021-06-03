@@ -31,6 +31,7 @@ add_test(NAME test-runner-00-union-type COMMAND test-runner "${PROJECT_SOURCE_DI
 add_test(NAME test-runner-00-length COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00length.ts")
 add_test(NAME test-runner-00-undef COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00undef.ts")
 add_test(NAME test-runner-00-str-null COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00str_null.ts")
+add_test(NAME test-runner-00-for-in COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_in.ts")
 add_test(NAME test-runner-00-for-of COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_of.ts")
 add_test(NAME test-runner-00-sizeof COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00sizeof.ts")
 add_test(NAME test-runner-00-new-delete COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00new_delete.ts")
