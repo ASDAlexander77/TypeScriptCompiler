@@ -76,6 +76,25 @@ namespace typescript
             {
                 result = mlirGenSizeOf(location, operands);
             }
+            else
+            if (functionName.compare(StringRef("#_last_field")) == 0)
+            {
+                mlir::TypeSwitch<mlir::Type>(operands.front().getType())
+                    .Case<mlir_ts::ConstTupleType>([&](auto tupleType) 
+                    { 
+                        result = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(tupleType.size()));
+                    })
+                    .Case<mlir_ts::TupleType>([&](auto tupleType) 
+                    { 
+                        result = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(tupleType.size()));
+                    })
+                    .Default([&](auto type)
+                    {                                                
+                        llvm_unreachable("not implemented");
+                        //result = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(-1));
+                    });  
+
+            }
             else 
             if (!allowPartialResolve)
             {
