@@ -2031,6 +2031,14 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             // get index
             if (auto indexConstOp = dyn_cast_or_null<mlir_ts::ConstantOp>(argumentExpression.getDefiningOp()))
             {
+                auto probableIndex = tupleType.getIndex(indexConstOp.value());
+                if (probableIndex >= 0 && probableIndex < tupleType.size())
+                {
+                    // this is property access
+                    MLIRPropertyAccessCodeLogic cl(builder, location, expression, indexConstOp.value());
+                    return cl.Tuple(tupleType);
+                }
+
                 auto constIndex = indexConstOp.value().dyn_cast_or_null<mlir::IntegerAttr>().getInt();
                 auto elementType = tupleType.getType(constIndex);
                 if (auto loadOp = dyn_cast_or_null<mlir_ts::LoadOp>(expression.getDefiningOp()))
@@ -2485,7 +2493,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
                 values.push_back(constOp.valueAttr());
                 types.push_back(type);
-                fieldInfos.push_back({mlir::StringAttr::get(namePtr, builder.getContext()), type});
+                fieldInfos.push_back({mlir::FlatSymbolRefAttr::get(namePtr, builder.getContext()), type});
             }
 
             auto arrayAttr = mlir::ArrayAttr::get(values, builder.getContext());            
@@ -2864,6 +2872,8 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
         void getTupleFieldInfo(TupleTypeNode tupleType, mlir::SmallVector<mlir_ts::FieldInfo> &types)
         {
+            MLIRPropertyCodeLogic mpcl(builder);
+            mlir::Attribute attrVal;
             for (auto typeItem : tupleType->elements)
             {
                 if (typeItem == SyntaxKind::NamedTupleMember)
@@ -2874,15 +2884,26 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     auto type = getType(namedTupleMember->type);
 
                     assert(type);         
-                    types.push_back({mlir::StringAttr::get(namePtr, builder.getContext()), type});
+                    types.push_back({mpcl.FieldName(namePtr), type});
                 }
+                else if (typeItem == SyntaxKind::LiteralType)
+                {
+                    auto literalTypeNode = typeItem.as<LiteralTypeNode>();
+                    GenContext genContext;
+                    auto literalValue = mlirGen(literalTypeNode->literal.as<Expression>(), genContext);
+                    auto constantOp = dyn_cast_or_null<mlir_ts::ConstantOp>(literalValue.getDefiningOp());
+                    attrVal = constantOp.valueAttr();
+                    continue;
+                }                
                 else
                 {
                     auto type = getType(typeItem);
 
                     assert(type);
-                    types.push_back({mlir::Attribute(), type});
+                    types.push_back({attrVal, type});
                 }
+
+                attrVal = mlir::Attribute();
             }
         }
 
@@ -2898,7 +2919,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     auto type = getType(propertySignature->type);
 
                     assert(type);         
-                    types.push_back({mlir::StringAttr::get(namePtr, builder.getContext()), type});
+                    types.push_back({mlir::FlatSymbolRefAttr::get(namePtr, builder.getContext()), type});
                 }
                 else
                 {

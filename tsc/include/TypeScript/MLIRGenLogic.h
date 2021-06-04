@@ -187,15 +187,36 @@ namespace typescript
         }        
     };
 
+    class MLIRPropertyCodeLogic
+    {
+        mlir::OpBuilder &builder;
+        public:    
+        MLIRPropertyCodeLogic(mlir::OpBuilder &builder) 
+            : builder(builder) {}
+
+        mlir::Attribute FieldName(StringRef name)
+        {
+            return mlir::FlatSymbolRefAttr::get(name, builder.getContext());
+        }
+    };
+
     class MLIRPropertyAccessCodeLogic
     {
         mlir::OpBuilder &builder;
         mlir::Location &location;
         mlir::Value &expression;
         mlir::StringRef name;
+        mlir::Attribute fieldId;
     public:        
-        MLIRPropertyAccessCodeLogic(mlir::OpBuilder &builder, mlir::Location &location, mlir::Value &expression, mlir::StringRef name) 
-            : builder(builder), location(location), expression(expression), name(name) {}
+        MLIRPropertyAccessCodeLogic(mlir::OpBuilder &builder, mlir::Location &location, mlir::Value &expression, StringRef name) 
+            : builder(builder), location(location), expression(expression), name(name)
+            {
+                MLIRPropertyCodeLogic mpcl(builder);
+                fieldId = mpcl.FieldName(name);
+            }
+
+        MLIRPropertyAccessCodeLogic(mlir::OpBuilder &builder, mlir::Location &location, mlir::Value &expression, mlir::Attribute fieldId) 
+            : builder(builder), location(location), expression(expression), fieldId(fieldId) {}
 
         mlir::Value Enum(mlir_ts::EnumType enumType)
         {
@@ -215,13 +236,10 @@ namespace typescript
         mlir::Value Tuple(T tupleType)
         {
             mlir::Value value;
-
-            auto propName = getName();
-
-            auto fieldIndex = tupleType.getIndex(mlir::StringAttr::get(propName, builder.getContext()));
+            auto fieldIndex = tupleType.getIndex(fieldId);
             if (fieldIndex < 0)
             {
-                emitError(location, "Tuple member '") << propName << "' can't be found";
+                emitError(location, "Tuple member '") << fieldId << "' can't be found";
                 return value;
             }
 
