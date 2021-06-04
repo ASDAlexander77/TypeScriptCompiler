@@ -233,16 +233,29 @@ namespace typescript
         }
 
         template <typename T>
-        mlir::Value Tuple(T tupleType)
+        mlir::Value Tuple(T tupleType, bool indexAccess = false)
         {
             mlir::Value value;
+
+            // resolve index
             auto fieldIndex = tupleType.getIndex(fieldId);
-            if (fieldIndex < 0)
+            if (indexAccess && (fieldIndex < 0 || fieldIndex >= tupleType.size()))
+            {
+                // try to resolve index
+                auto intAttr = fieldId.dyn_cast_or_null<mlir::IntegerAttr>();
+                if (intAttr)
+                {
+                    fieldIndex = intAttr.getInt();
+                }
+            }
+
+            if (fieldIndex < 0 || fieldIndex >= tupleType.size())
             {
                 emitError(location, "Tuple member '") << fieldId << "' can't be found";
                 return value;
             }
 
+            // type
             auto elementType = tupleType.getType(fieldIndex);
 
             auto refValue = getExprLoadRefValue();

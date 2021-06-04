@@ -1949,15 +1949,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
             auto expression = mlirGen(propertyAccessExpression->expression.as<Expression>(), genContext);
 
-            std::string name;
-            if (propertyAccessExpression->name == SyntaxKind::Identifier)
-            {
-                name = MLIRHelper::getName(propertyAccessExpression->name);
-            }
-            else
-            {
-                llvm_unreachable("not implemented");
-            }
+            auto name = MLIRHelper::getName(propertyAccessExpression->name);
 
             mlir::Value value;
 
@@ -2031,27 +2023,9 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             // get index
             if (auto indexConstOp = dyn_cast_or_null<mlir_ts::ConstantOp>(argumentExpression.getDefiningOp()))
             {
-                auto probableIndex = tupleType.getIndex(indexConstOp.value());
-                if (probableIndex >= 0 && probableIndex < tupleType.size())
-                {
-                    // this is property access
-                    MLIRPropertyAccessCodeLogic cl(builder, location, expression, indexConstOp.value());
-                    return cl.Tuple(tupleType);
-                }
-
-                auto constIndex = indexConstOp.value().dyn_cast_or_null<mlir::IntegerAttr>().getInt();
-                auto elementType = tupleType.getType(constIndex);
-                if (auto loadOp = dyn_cast_or_null<mlir_ts::LoadOp>(expression.getDefiningOp()))
-                {
-                    auto propRef = builder.create<mlir_ts::PropertyRefOp>(location, mlir_ts::RefType::get(elementType), loadOp.reference(), builder.getI32IntegerAttr(constIndex));
-                    loadOp->erase();
-
-                    return builder.create<mlir_ts::LoadOp>(location, elementType, propRef);
-                }
-                else
-                {
-                    return builder.create<mlir_ts::ExtractPropertyOp>(location, elementType, expression, builder.getI32ArrayAttr(mlir::ArrayRef<int32_t>(constIndex)));
-                }
+                // this is property access
+                MLIRPropertyAccessCodeLogic cl(builder, location, expression, indexConstOp.value());
+                return cl.Tuple(tupleType, true);
             }
             else
             {
