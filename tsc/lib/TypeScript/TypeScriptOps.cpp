@@ -364,9 +364,14 @@ LogicalResult mlir_ts::CallOp::verifySymbolUses(SymbolTableCollection &symbolTab
     // Verify that the operand and result types match the callee.
     auto fnType = fn.getType();
 
-    auto optionalFromValue = fnType.getNumInputs() - getNumOperands();
+    auto optionalFromValue = (int)fnType.getNumInputs() - (int)getNumOperands();
     for (unsigned i = 0, e = optionalFromValue == -1 ? fnType.getNumInputs() : getOperands().size(); i != e; ++i)
     {
+        if (auto unresolvedLeft = dyn_cast_or_null<mlir_ts::SymbolRefOp>(getOperand(i).getDefiningOp()))
+        {
+            return emitOpError("can't find variable: ") << unresolvedLeft.identifier();
+        }
+
         if (getOperand(i).getType() != fnType.getInput(i))
         {
             /*
@@ -405,6 +410,49 @@ FunctionType mlir_ts::CallOp::getCalleeType()
 //===----------------------------------------------------------------------===//
 // CallIndirectOp
 //===----------------------------------------------------------------------===//
+
+LogicalResult mlir_ts::CallIndirectOp::verifySymbolUses(SymbolTableCollection &symbolTable)
+{
+    // Verify that the operand and result types match the callee.
+    auto fnType = getCallee().getType().cast<mlir::FunctionType>();
+
+    auto optionalFromValue = (int)fnType.getNumInputs() - (int)getNumOperands();
+    for (unsigned i = 0, e = optionalFromValue == -1 ? fnType.getNumInputs() : getOperands().size(); i != e; ++i)
+    {
+        if (auto unresolvedLeft = dyn_cast_or_null<mlir_ts::SymbolRefOp>(getOperand(i).getDefiningOp()))
+        {
+            return emitOpError("can't find variable: ") << unresolvedLeft.identifier();
+        }
+
+        if (getOperand(i + 1).getType() != fnType.getInput(i))
+        {
+            /*
+            OptionalType optType;
+            TypeSwitch<Type>(fnType.getInput(i))
+                .Case<OptionalType>([&](auto node) { optType = node; });
+
+            if (!optType || optType.getElementType() != getOperand(i).getType())
+            {
+            */
+            return emitOpError("operand type mismatch: expected operand type ")
+                   << fnType.getInput(i) << ", but provided "
+                   << getOperand(i).getType() << " for operand number " << i;
+            /*
+            }
+            */
+        }
+    }
+
+    for (unsigned i = 0, e = fnType.getNumResults(); i != e; ++i)
+    {
+        if (getResult(i).getType() != fnType.getResult(i))
+        {
+            return emitOpError("result type mismatch");
+        }
+    }
+
+    return success();
+}
 
 namespace 
 {

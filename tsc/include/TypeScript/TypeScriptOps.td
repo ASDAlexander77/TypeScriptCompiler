@@ -384,6 +384,7 @@ def TypeScript_CallOp : TypeScript_Op<"Call",
 
 def TypeScript_CallIndirectOp : TypeScript_Op<"CallIndirect", [
       CallOpInterface,
+      DeclareOpInterfaceMethods<SymbolUserOpInterface>,
       TypesMatchWith<"callee input types match argument types",
                      "callee", "operands",
                      "$_self.cast<FunctionType>().getInputs()">,

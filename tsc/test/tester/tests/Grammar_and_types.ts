@@ -166,7 +166,7 @@ function main()
 
     // RegExp literals
 
-    let re = /ab+c/;
+    // TODO: // let re = /ab+c/;
 
     // String literals
 
@@ -190,8 +190,8 @@ function main()
     let name = 'Bob', time = 'today';
     `Hello ${name}, how are you ${time}?`;
 
-    let myTag = (str, name, age) => `${str[0]}${name}${str[1]}${age}${str[2]}`;
-    // TODO: // let [name, age] = ['Mika', 28];
+    let myTag = (str:string[], name:string, age:number) => `${str[0]}${name}${str[1]}${age}${str[2]}`;
+    let [name, age] = ['Mika', 28];
     myTag`Participant "${ name }" is ${ age } years old.`;
     // Participant "Mika" is 28 years old.    
 
