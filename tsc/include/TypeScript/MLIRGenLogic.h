@@ -187,15 +187,29 @@ namespace typescript
         }        
     };
 
-    class MLIRPropertyCodeLogic
+    class MLIRCodeLogic
     {
         mlir::OpBuilder &builder;
         public:    
-        MLIRPropertyCodeLogic(mlir::OpBuilder &builder) 
+        MLIRCodeLogic(mlir::OpBuilder &builder) 
             : builder(builder) {}
 
-        mlir::Attribute FieldName(StringRef name)
+        mlir::Attribute ExtractAttr(mlir::Value value)
         {
+            auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(value.getDefiningOp());
+            if (constOp)
+            {
+                return constOp.valueAttr();
+            }
+            else
+            {
+                llvm_unreachable("not implemented");
+            }
+        }
+
+        mlir::Attribute TupleFieldName(StringRef name)
+        {
+            assert(!name.empty());
             return mlir::FlatSymbolRefAttr::get(name, builder.getContext());
         }
     };
@@ -211,8 +225,8 @@ namespace typescript
         MLIRPropertyAccessCodeLogic(mlir::OpBuilder &builder, mlir::Location &location, mlir::Value &expression, StringRef name) 
             : builder(builder), location(location), expression(expression), name(name)
             {
-                MLIRPropertyCodeLogic mpcl(builder);
-                fieldId = mpcl.FieldName(name);
+                MLIRCodeLogic mcl(builder);
+                fieldId = mcl.TupleFieldName(name);
             }
 
         MLIRPropertyAccessCodeLogic(mlir::OpBuilder &builder, mlir::Location &location, mlir::Value &expression, mlir::Attribute fieldId) 

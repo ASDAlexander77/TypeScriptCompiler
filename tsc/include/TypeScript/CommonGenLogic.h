@@ -19,11 +19,6 @@ namespace typescript
                 nameValue = wstos(name.as<ts::Identifier>()->escapedText);
             }
 
-            if (name == SyntaxKind::StringLiteral)
-            {
-                nameValue = wstos(name.as<ts::StringLiteral>()->text);
-            }
-
             return nameValue;
         }
 

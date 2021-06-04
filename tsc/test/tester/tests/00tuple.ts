@@ -22,10 +22,19 @@ function test2()
     print (d[0][1]);  
 }
 
+function test3()
+{
+    let car2 = { manyCars: {a: 'Saab', b: 'Jeep'}, 7: 'Mazda' };
+
+    print(car2.manyCars.b); // Jeep
+    print(car2[7]); // Mazda    
+}
+
 function main()
 {
     test1();
     test2();
+    test3();
 
     print("done.");    
 }

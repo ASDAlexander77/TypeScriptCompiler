@@ -2429,6 +2429,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
         mlir::Value mlirGen(ts::ObjectLiteralExpression objectLiteral, const GenContext &genContext)
         {
+            MLIRCodeLogic mcl(builder);
             // first value
             SmallVector<mlir::Type> types;
             SmallVector<mlir_ts::FieldInfo> fieldInfos;
@@ -2436,20 +2437,30 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             for (auto &item : objectLiteral->properties)
             {
                 mlir::Value itemValue;
-                mlir::StringRef namePtr;
+                mlir::Attribute fieldId;
                 if (item == SyntaxKind::PropertyAssignment)
                 {
                     auto propertyAssignment = item.as<PropertyAssignment>();
                     itemValue = mlirGen(propertyAssignment->initializer, genContext);
                     auto name = MLIRHelper::getName(propertyAssignment->name);
-                    namePtr = StringRef(name).copy(stringAllocator);
+                    if (name.empty())
+                    {
+                        auto value = mlirGen(propertyAssignment->name.as<Expression>(), genContext);
+                        fieldId = mcl.ExtractAttr(value);
+                    }
+                    else
+                    {
+                        auto namePtr = StringRef(name).copy(stringAllocator);
+                        fieldId = mcl.TupleFieldName(namePtr);                        
+                    }
                 }
                 else if (item == SyntaxKind::ShorthandPropertyAssignment)
                 {
                     auto shorthandPropertyAssignment = item.as<ShorthandPropertyAssignment>();
                     itemValue = mlirGen(shorthandPropertyAssignment->name.as<Expression>(), genContext);
                     auto name = MLIRHelper::getName(shorthandPropertyAssignment->name);
-                    namePtr = StringRef(name).copy(stringAllocator);
+                    auto namePtr = StringRef(name).copy(stringAllocator);
+                    fieldId = mcl.TupleFieldName(namePtr);
                 }
                 else
                 {
@@ -2467,7 +2478,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
                 values.push_back(constOp.valueAttr());
                 types.push_back(type);
-                fieldInfos.push_back({mlir::FlatSymbolRefAttr::get(namePtr, builder.getContext()), type});
+                fieldInfos.push_back({fieldId, type});
             }
 
             auto arrayAttr = mlir::ArrayAttr::get(values, builder.getContext());            
@@ -2846,7 +2857,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
         void getTupleFieldInfo(TupleTypeNode tupleType, mlir::SmallVector<mlir_ts::FieldInfo> &types)
         {
-            MLIRPropertyCodeLogic mpcl(builder);
+            MLIRCodeLogic mcl(builder);
             mlir::Attribute attrVal;
             for (auto typeItem : tupleType->elements)
             {
@@ -2858,7 +2869,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     auto type = getType(namedTupleMember->type);
 
                     assert(type);         
-                    types.push_back({mpcl.FieldName(namePtr), type});
+                    types.push_back({mcl.TupleFieldName(namePtr), type});
                 }
                 else if (typeItem == SyntaxKind::LiteralType)
                 {
