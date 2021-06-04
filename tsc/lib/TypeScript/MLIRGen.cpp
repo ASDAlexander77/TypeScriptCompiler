@@ -3064,7 +3064,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
         mlir::StringAttr getStringAttr(std::string text)
         {
-            return builder.getStringAttr(StringRef(text.data(), text.length() + 1));
+            return builder.getStringAttr(text);
         }
 
         /// Helper conversion for a TypeScript AST location to an MLIR location.

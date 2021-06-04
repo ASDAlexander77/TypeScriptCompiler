@@ -210,7 +210,7 @@ namespace typescript
         mlir::Attribute TupleFieldName(StringRef name)
         {
             assert(!name.empty());
-            return mlir::FlatSymbolRefAttr::get(name, builder.getContext());
+            return mlir::StringAttr::get(name, builder.getContext());
         }
     };
 
