@@ -364,6 +364,10 @@ namespace
             {
                 return mlirGen(expressionAST.as<ts::StringLiteral>(), genContext);
             }
+            else if (kind == SyntaxKind::NoSubstitutionTemplateLiteral)
+            {
+                return mlirGen(expressionAST.as<NoSubstitutionTemplateLiteral>(), genContext);
+            }             
             else if (kind == SyntaxKind::BigIntLiteral)
             {
                 return mlirGen(expressionAST.as<BigIntLiteral>(), genContext);
@@ -450,7 +454,11 @@ namespace
             }       
             else if (kind == SyntaxKind::TemplateExpression)
             {
-                return mlirGen(expressionAST.as<TemplateExpression>(), genContext);
+                return mlirGen(expressionAST.as<TemplateLiteralLikeNode>(), genContext);
+            }             
+            else if (kind == SyntaxKind::TaggedTemplateExpression)
+            {
+                return mlirGen(expressionAST.as<TaggedTemplateExpression>(), genContext);
             }             
             else if (kind == SyntaxKind::NewExpression)
             {
@@ -493,14 +501,17 @@ namespace
                 if (auto initializer = item->initializer)
                 {
                     init = mlirGen(initializer, genContext);
-                    if (!type)
+                    if (init)
                     {
-                        type = init.getType();
-                    }
-                    else if (type != init.getType())
-                    {
-                        auto castValue = builder.create<mlir_ts::CastOp>(loc(initializer), type, init);
-                        init = castValue;
+                        if (!type)
+                        {
+                            type = init.getType();
+                        }
+                        else if (type != init.getType())
+                        {
+                            auto castValue = builder.create<mlir_ts::CastOp>(loc(initializer), type, init);
+                            init = castValue;
+                        }
                     }
                 }
 
@@ -644,7 +655,7 @@ namespace
                 if (!typeParameter && !initializer)
                 {
                     auto funcName = MLIRHelper::getName(parametersContextAST->name);
-                    emitError(loc(arg)) << "type of parameter '" << name << "' is not provided, paramter must have type of initializer, function: " << funcName;
+                    emitError(loc(arg)) << "type of parameter '" << name << "' is not provided, parameter must have type of initializer, function: " << funcName;
                 }
 
                 params.push_back(std::make_shared<FunctionParamDOM>(name, type, loc(arg), isOptional, initializer));
@@ -753,21 +764,25 @@ namespace
             auto partialDeclFuncType = builder.getFunctionType(argTypes, llvm::None);
             auto dummyFuncOp = mlir_ts::FuncOp::create(loc(functionLikeDeclarationBaseAST), name, partialDeclFuncType);
 
-            // simulate scope
-            SymbolTableScopeT varScope(symbolTable);
-
-            GenContext genContextWithPassResult(genContext);
-            genContextWithPassResult.allowPartialResolve = true;
-            genContextWithPassResult.dummyRun = true;
-            genContextWithPassResult.cleanUps = new SmallVector<mlir::Block*>();
-            genContextWithPassResult.passResult = new PassResult();
             mlir::Type functionReturnType;
-            if (succeeded(mlirGenFunctionBody(functionLikeDeclarationBaseAST, dummyFuncOp, funcProto, genContextWithPassResult)))
+
             {
-                functionReturnType = genContextWithPassResult.passResult->functionReturnType;
+                // simulate scope
+                SymbolTableScopeT varScope(symbolTable);
+
+                GenContext genContextWithPassResult(genContext);
+                genContextWithPassResult.allowPartialResolve = true;
+                genContextWithPassResult.dummyRun = true;
+                genContextWithPassResult.cleanUps = new SmallVector<mlir::Block*>();
+                genContextWithPassResult.passResult = new PassResult();
+                if (succeeded(mlirGenFunctionBody(functionLikeDeclarationBaseAST, dummyFuncOp, funcProto, genContextWithPassResult)))
+                {
+                    functionReturnType = genContextWithPassResult.passResult->functionReturnType;
+                }
+
+                genContextWithPassResult.clean();
             }
 
-            genContextWithPassResult.clean();
             return functionReturnType;
         }
 
@@ -2259,7 +2274,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             llvm_unreachable("not implemented");
         }
 
-        mlir::Value mlirGen(TemplateExpression templateExpressionAST, const GenContext &genContext)
+        mlir::Value mlirGen(TemplateLiteralLikeNode templateExpressionAST, const GenContext &genContext)
         {
             auto location = loc(templateExpressionAST);
 
@@ -2277,6 +2292,12 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             for (auto span : templateExpressionAST->templateSpans)
             {
                 auto exprValue = mlirGen(span->expression, genContext);
+                if (auto unresolved = dyn_cast_or_null<mlir_ts::SymbolRefOp>(exprValue.getDefiningOp()))
+                {
+                    emitError(location, "can't find variable: ") << unresolved.identifier();
+                    return mlir::Value();
+                }
+
                 if (exprValue.getType() != stringType)
                 {
                     exprValue = builder.create<mlir_ts::CastOp>(location, stringType, exprValue);
@@ -2306,6 +2327,81 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 mlir::ArrayRef<mlir::Value>{strs});
 
             return concatValues;
+        }
+
+        mlir::Value mlirGen(TaggedTemplateExpression taggedTemplateExpressionAST, const GenContext &genContext)
+        {
+            auto location = loc(taggedTemplateExpressionAST);
+
+            auto templateExpressionAST = taggedTemplateExpressionAST->_template;
+
+            SmallVector<mlir::Attribute, 4> strs;
+            SmallVector<mlir::Value, 4> vals;
+
+            auto text = wstos(templateExpressionAST->head->rawText);
+
+            // first string
+            strs.push_back(getStringAttr(text));
+            for (auto span : templateExpressionAST->templateSpans)
+            {
+                // expr value
+                auto exprValue = mlirGen(span->expression, genContext);
+                if (auto unresolved = dyn_cast_or_null<mlir_ts::SymbolRefOp>(exprValue.getDefiningOp()))
+                {
+                    emitError(location, "can't find variable: ") << unresolved.identifier();
+                    return mlir::Value();
+                }
+
+                vals.push_back(exprValue);
+
+                auto spanText = wstos(span->literal->rawText);
+                // text
+                strs.push_back(getStringAttr(spanText));
+            }
+
+            // tag method
+            auto arrayAttr = mlir::ArrayAttr::get(strs, builder.getContext());            
+            auto constStringArray = 
+                builder.create<mlir_ts::ConstantOp>(
+                    location,
+                    getConstArrayType(getStringType(), strs.size()),
+                    arrayAttr);            
+
+            auto strArrayValue = builder.create<mlir_ts::CastOp>(location, getArrayType(getStringType()), constStringArray);
+
+            vals.insert(vals.begin(), strArrayValue);
+
+            auto callee = mlirGen(taggedTemplateExpressionAST->tag, genContext);
+
+            // cast all params if needed
+            auto funcType = callee.getType().cast<mlir::FunctionType>();
+            
+            SmallVector<mlir::Value, 4> operands;
+
+            auto i = 0;
+            for (auto value : vals)
+            {
+                if (value.getType() != funcType.getInput(i))
+                {
+                    auto castValue = builder.create<mlir_ts::CastOp>(value.getLoc(), funcType.getInput(i), value);
+                    operands.push_back(castValue);
+                }
+                else
+                {
+                    operands.push_back(value);
+                }
+
+                i++;
+            }
+
+            // call
+            auto callIndirectOp =
+                builder.create<mlir_ts::CallIndirectOp>(
+                    location,
+                    callee,
+                    operands);
+
+            return callIndirectOp.getResult(0);
         }
 
         mlir::Value mlirGen(NullLiteral nullLiteral, const GenContext &genContext)
@@ -2364,6 +2460,16 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 getStringType(),
                 getStringAttr(text));
         }
+
+        mlir::Value mlirGen(ts::NoSubstitutionTemplateLiteral noSubstitutionTemplateLiteral, const GenContext &genContext)
+        {
+            auto text = wstos(noSubstitutionTemplateLiteral->text);
+
+            return builder.create<mlir_ts::ConstantOp>(
+                loc(noSubstitutionTemplateLiteral),
+                getStringType(),
+                getStringAttr(text));
+        }        
 
         mlir::Value mlirGen(ts::ArrayLiteralExpression arrayLiteral, const GenContext &genContext)
         {
@@ -3051,10 +3157,12 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
         mlir::LogicalResult declare(VariableDeclarationDOM::TypePtr var, mlir::Value value, bool redeclare = false)
         {
             const auto &name = var->getName();
+            /*
             if (!redeclare && symbolTable.count(name))
             {
                 return mlir::failure();
             }
+            */
 
             symbolTable.insert(name, {value, var});
             return mlir::success();
