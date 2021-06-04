@@ -218,7 +218,7 @@ namespace typescript
 
             auto propName = getName();
 
-            auto fieldIndex = tupleType.getIndex(propName);
+            auto fieldIndex = tupleType.getIndex(mlir::StringAttr::get(propName, builder.getContext()));
             if (fieldIndex < 0)
             {
                 emitError(location, "Tuple member '") << propName << "' can't be found";

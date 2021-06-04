@@ -15,12 +15,13 @@ namespace mlir {
         /// FieldInfo represents a field in the TupleType(StructType) data type. It is used as a
         /// parameter in TestTypeDefs.td.
         struct FieldInfo {
-            StringRef name;
+            Attribute id;
             Type type;
 
             // Custom allocation called from generated constructor code
             FieldInfo allocateInto(TypeStorageAllocator &alloc) const {
-                return FieldInfo{alloc.copyInto(name), type};
+                //return FieldInfo{alloc.copyInto(name), type};
+                return FieldInfo{id, type};
             }
         };
 

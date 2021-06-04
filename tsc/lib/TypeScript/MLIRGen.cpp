@@ -2430,7 +2430,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 SmallVector<mlir_ts::FieldInfo> fieldInfos;
                 for (auto type : types)
                 {
-                    fieldInfos.push_back({mlir::StringRef(), type});
+                    fieldInfos.push_back({mlir::Attribute(), type});
                 }
 
                 return builder.create<mlir_ts::ConstantOp>(
@@ -2485,7 +2485,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
                 values.push_back(constOp.valueAttr());
                 types.push_back(type);
-                fieldInfos.push_back({namePtr, type});
+                fieldInfos.push_back({mlir::StringAttr::get(namePtr, builder.getContext()), type});
             }
 
             auto arrayAttr = mlir::ArrayAttr::get(values, builder.getContext());            
@@ -2874,14 +2874,14 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     auto type = getType(namedTupleMember->type);
 
                     assert(type);         
-                    types.push_back({namePtr, type});
+                    types.push_back({mlir::StringAttr::get(namePtr, builder.getContext()), type});
                 }
                 else
                 {
                     auto type = getType(typeItem);
 
                     assert(type);
-                    types.push_back({mlir::StringRef(), type});
+                    types.push_back({mlir::Attribute(), type});
                 }
             }
         }
@@ -2898,14 +2898,14 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     auto type = getType(propertySignature->type);
 
                     assert(type);         
-                    types.push_back({namePtr, type});
+                    types.push_back({mlir::StringAttr::get(namePtr, builder.getContext()), type});
                 }
                 else
                 {
                     auto type = getType(typeItem);
 
                     assert(type);
-                    types.push_back({mlir::StringRef(), type});
+                    types.push_back({mlir::Attribute(), type});
                 }
             }            
         }        

@@ -198,12 +198,12 @@ namespace mlir {
 // FieldInfo is used as part of a parameter, so equality comparison is
 // compulsory.
 static bool mlir::typescript::operator==(const FieldInfo &a, const FieldInfo &b) {
-  return a.name == b.name && a.type == b.type;
+  return a.id == b.id && a.type == b.type;
 }
 
 // FieldInfo is used as part of a parameter, so a hash will be computed.
 static llvm::hash_code mlir::typescript::hash_value(const FieldInfo &fi) {
-  return llvm::hash_combine(fi.name, fi.type);
+  return llvm::hash_combine(fi.id, fi.type);
 }
 
 //===----------------------------------------------------------------------===//

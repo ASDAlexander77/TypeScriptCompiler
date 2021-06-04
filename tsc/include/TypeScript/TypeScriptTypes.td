@@ -352,7 +352,7 @@ def TypeScript_ConstTuple : TypeScript_Type<"ConstTuple"> {
     $_printer << "tuple" << "<";
     for (size_t i=0, e = getImpl()->fields.size(); i < e; i++) {
       const auto& field = getImpl()->fields[i];
-      $_printer << "{" << field.name << "," << field.type << "}";
+      $_printer << "{" << field.id << "," << field.type << "}";
       if (i < getImpl()->fields.size() - 1)
           $_printer << ",";
     }
@@ -364,13 +364,13 @@ def TypeScript_ConstTuple : TypeScript_Type<"ConstTuple"> {
     SmallVector<FieldInfo, 4> parameters;
     if ($_parser.parseLess()) return Type();
     while (mlir::succeeded($_parser.parseOptionalLBrace())) {
-      StringRef name;
-      if ($_parser.parseKeyword(&name)) return Type();
+      Attribute id;
+      if ($_parser.parseAttribute(id)) return Type();
       if ($_parser.parseComma()) return Type();
       Type type;
       if ($_parser.parseType(type)) return Type();
       if ($_parser.parseRBrace()) return Type();
-      parameters.push_back(FieldInfo {name, type});
+      parameters.push_back(FieldInfo {id, type});
       if ($_parser.parseOptionalComma()) break;
     }
     if ($_parser.parseGreater()) return Type();
@@ -392,9 +392,9 @@ def TypeScript_ConstTuple : TypeScript_Type<"ConstTuple"> {
     iterator begin() const { return getFields().begin(); }
     iterator end() const { return getFields().end(); }
 
-    int getIndex(StringRef name)
+    int getIndex(Attribute id)
     {
-        return std::distance(begin(), std::find_if(begin(), end(), [&](::mlir::typescript::FieldInfo fldInf){ return name == fldInf.name; }));
+        return std::distance(begin(), std::find_if(begin(), end(), [&](::mlir::typescript::FieldInfo fldInf){ return id == fldInf.id; }));
     }
 
     /// Return the element type at index 'index'.
@@ -403,9 +403,9 @@ def TypeScript_ConstTuple : TypeScript_Type<"ConstTuple"> {
       return getFields()[index];
     }
 
-    StringRef getName(size_t index) const {
+    Attribute getId(size_t index) const {
       assert(index < size() && "invalid index for tuple type");
-      return getFields()[index].name;
+      return getFields()[index].id;
     }
 
     Type getType(size_t index) const {
@@ -448,7 +448,7 @@ def TypeScript_Tuple : TypeScript_Type<"Tuple"> {
     $_printer << "tuple" << "<";
     for (size_t i=0, e = getImpl()->fields.size(); i < e; i++) {
       const auto& field = getImpl()->fields[i];
-      $_printer << "{" << field.name << "," << field.type << "}";
+      $_printer << "{" << field.id << "," << field.type << "}";
       if (i < getImpl()->fields.size() - 1)
           $_printer << ",";
     }
@@ -460,13 +460,13 @@ def TypeScript_Tuple : TypeScript_Type<"Tuple"> {
     SmallVector<FieldInfo, 4> parameters;
     if ($_parser.parseLess()) return Type();
     while (mlir::succeeded($_parser.parseOptionalLBrace())) {
-      StringRef name;
-      if ($_parser.parseKeyword(&name)) return Type();
+      Attribute id;
+      if ($_parser.parseAttribute(id)) return Type();
       if ($_parser.parseComma()) return Type();
       Type type;
       if ($_parser.parseType(type)) return Type();
       if ($_parser.parseRBrace()) return Type();
-      parameters.push_back(FieldInfo {name, type});
+      parameters.push_back(FieldInfo {id, type});
       if ($_parser.parseOptionalComma()) break;
     }
     if ($_parser.parseGreater()) return Type();
@@ -488,9 +488,9 @@ def TypeScript_Tuple : TypeScript_Type<"Tuple"> {
     iterator begin() const { return getFields().begin(); }
     iterator end() const { return getFields().end(); }
 
-    int getIndex(StringRef name)
+    int getIndex(Attribute id)
     {
-        return std::distance(begin(), std::find_if(begin(), end(), [&](::mlir::typescript::FieldInfo fldInf){ return name == fldInf.name; }));
+        return std::distance(begin(), std::find_if(begin(), end(), [&](::mlir::typescript::FieldInfo fldInf){ return id == fldInf.id; }));
     }
 
     /// Return the element type at index 'index'.
@@ -499,9 +499,9 @@ def TypeScript_Tuple : TypeScript_Type<"Tuple"> {
       return getFields()[index];
     }
 
-    StringRef getName(size_t index) const {
+    Attribute getId(size_t index) const {
       assert(index < size() && "invalid index for tuple type");
-      return getFields()[index].name;
+      return getFields()[index].id;
     }
 
     Type getType(size_t index) const {
