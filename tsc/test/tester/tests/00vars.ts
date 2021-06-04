@@ -4,6 +4,8 @@ function main() {
     test3();
     test4();
     test5();
+    test6();
+    test7();
 
     print("done.");    
 }
@@ -44,4 +46,12 @@ function test6()
     let i: number, j: number;
     i = j = 66;
     assert(i == 66, "Failed. 6");
+}
+
+function test7()
+{
+   let [name, age] = ['Mika', 28];
+
+   assert(name == "Mika", "Failed. 7.1");
+   assert(age == 28, "Failed. 7.2");
 }

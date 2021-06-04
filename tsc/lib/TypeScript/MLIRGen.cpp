@@ -481,22 +481,127 @@ namespace
             llvm_unreachable("unknown expression");
         }
 
-        mlir::LogicalResult mlirGen(VariableDeclarationList variableDeclarationListAST, const GenContext &genContext)
+        void registerVariable(mlir::Location location, std::string name, bool isConst, mlir::Type type, mlir::Value init)
         {
-            auto location = loc(variableDeclarationListAST);
-            auto isConst = (variableDeclarationListAST->flags & NodeFlags::Const) == NodeFlags::Const;
+            auto isGlobal = symbolTable.getCurScope()->getParentScope() == nullptr;
 
-            for (auto &item : variableDeclarationListAST->declarations)
+            auto varDecl = std::make_shared<VariableDeclarationDOM>(name, type, location);
+            if (!isConst)
             {
-                mlir::Type type;
+                varDecl->setReadWriteAccess();
+            }
 
+            varDecl->setIsGlobal(isGlobal);
+
+            if (!isGlobal)
+            {
+                if (isConst)
+                {
+                    declare(varDecl, init);
+                }
+                else
+                {
+                    assert (type);
+
+                    MLIRTypeHelper mth(builder.getContext()); 
+
+                    auto copyRequired = false;
+                    auto actualType = mth.convertConstTypeToType(type, copyRequired);
+                    if (actualType != type)
+                    {
+                        auto castValue = builder.create<mlir_ts::CastOp>(location, actualType, init);
+                        init = castValue;
+                    }
+
+                    auto variableOp = builder.create<mlir_ts::VariableOp>(
+                        location,
+                        mlir_ts::RefType::get(actualType),
+                        init);
+
+                    declare(varDecl, variableOp);
+                }
+            }
+            else
+            {
+                // get constant
+                auto value = mlir::Attribute();
+                if (init)
+                {
+                    if (auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(init.getDefiningOp()))
+                    {
+                        value = constOp.value();
+                    }
+
+                    // TODO global init value
+                    init.getDefiningOp()->erase();
+                }
+
+                auto globalOp = 
+                    builder.create<mlir_ts::GlobalOp>(
+                        location,
+                        type,
+                        isConst,
+                        name,
+                        value);
+
+                declare(varDecl, mlir::Value());
+            }
+        }
+
+        template <typename ItemTy>
+        void processDeclaration(ItemTy item, bool isConst, mlir::Type type, mlir::Value init, const GenContext &genContext)
+        {
+            auto location = loc(item);
+
+            if (item->name == SyntaxKind::ArrayBindingPattern)
+            {
+                auto arrayBindingPattern = item->name.as<ArrayBindingPattern>();
+                auto index = 0;
+                for (auto arrayBindingElement : arrayBindingPattern->elements)
+                {
+                    MLIRPropertyAccessCodeLogic cl(builder, location, init, builder.getI32IntegerAttr(index++));
+                    mlir::Value subInit;                        
+                    TypeSwitch<mlir::Type>(type)
+                        .Case<mlir_ts::ConstTupleType>([&](auto tupleType)
+                        {
+                            subInit = cl.Tuple(tupleType, true);
+                        })
+                        .Case<mlir_ts::TupleType>([&](auto tupleType)
+                        {
+                            subInit = cl.Tuple(tupleType, true);
+                        })
+                        .Default([&](auto type) 
+                        {
+                            llvm_unreachable("not implemented");
+                        });                
+
+                    processDeclaration(arrayBindingElement.as<BindingElement>(), isConst, subInit.getType(), subInit, genContext);
+                }
+            }
+            else
+            {
+                // name
                 auto name = MLIRHelper::getName(item->name);
 
+                // register
+                registerVariable(location, name, isConst, type, init);
+            }
+
+        }
+
+        mlir::LogicalResult mlirGen(VariableDeclarationList variableDeclarationListAST, const GenContext &genContext)
+        {
+            auto isConst = (variableDeclarationListAST->flags & NodeFlags::Const) == NodeFlags::Const;
+            for (auto &item : variableDeclarationListAST->declarations)
+            {
+                // type
+                mlir::Type type;
                 if (item->type)
                 {
                     type = getType(item->type);
                 }
 
+                // init
                 mlir::Value init;
                 if (auto initializer = item->initializer)
                 {
@@ -515,73 +620,10 @@ namespace
                     }
                 }
 
-                auto isGlobal = symbolTable.getCurScope()->getParentScope() == nullptr;
-
-                auto varDecl = std::make_shared<VariableDeclarationDOM>(name, type, location);
-                if (!isConst)
-                {
-                    varDecl->setReadWriteAccess();
-                }
-
-                varDecl->setIsGlobal(isGlobal);
-
-                if (!isGlobal)
-                {
-                    if (isConst)
-                    {
-                        declare(varDecl, init);
-                    }
-                    else
-                    {
-                        assert (type);
-
-                        MLIRTypeHelper mth(builder.getContext()); 
-
-                        auto copyRequired = false;
-                        auto actualType = mth.convertConstTypeToType(type, copyRequired);
-                        if (actualType != type)
-                        {
-                            auto castValue = builder.create<mlir_ts::CastOp>(location, actualType, init);
-                            init = castValue;
-                        }
-
-                        auto variableOp = builder.create<mlir_ts::VariableOp>(
-                            location,
-                            mlir_ts::RefType::get(actualType),
-                            init);
-
-                        declare(varDecl, variableOp);
-                    }
-                }
-                else
-                {
-                    // get constant
-                    auto value = mlir::Attribute();
-                    if (init)
-                    {
-                        if (auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(init.getDefiningOp()))
-                        {
-                            value = constOp.value();
-                        }
-
-                        // TODO global init value
-                        init.getDefiningOp()->erase();
-                    }
-
-                    auto globalOp = 
-                        builder.create<mlir_ts::GlobalOp>(
-                            location,
-                            type,
-                            isConst,
-                            name,
-                            value);
-
-                    declare(varDecl, mlir::Value());
-                }
+                processDeclaration(item, isConst, type, init, genContext);
             }
 
             return mlir::success();
-
         }
 
         mlir::LogicalResult mlirGen(VariableStatement variableStatementAST, const GenContext &genContext)
@@ -2020,6 +2062,10 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 .Case<mlir_ts::ArrayType>([&](auto arrayType)
                 {
                     value = cl.Array(arrayType);
+                })
+                .Default([](auto type)
+                {
+                    llvm_unreachable("not implemented");
                 });                
 
             if (value)
