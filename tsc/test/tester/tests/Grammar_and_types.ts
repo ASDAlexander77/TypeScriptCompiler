@@ -53,7 +53,7 @@ function main()
     
     (function() {
         let mylet = 'local value';
-        print(myvar); // undefined
+        print(mylet);
     })();    
 
     // Function hoisting

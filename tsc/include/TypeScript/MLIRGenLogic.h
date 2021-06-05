@@ -48,6 +48,16 @@ namespace typescript
 
         mlir::Value callMethod(StringRef functionName, ArrayRef<mlir::Value> operands, bool allowPartialResolve)
         {
+            // validate params
+            for (auto &oper : operands)
+            {
+                if (auto unresolvedLeft = dyn_cast_or_null<mlir_ts::SymbolRefOp>(oper.getDefiningOp()))
+                {
+                    emitError(oper.getLoc(), "can't find variable: ") << unresolvedLeft.identifier();
+                    return mlir::Value();
+                }
+            }
+
             mlir::Value result;
             // print - internal command;
             if (functionName.compare(StringRef("print")) == 0)

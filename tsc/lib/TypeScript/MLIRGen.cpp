@@ -1876,6 +1876,8 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     }    
 
                     break;
+            case SyntaxKind::AsteriskToken:
+            case SyntaxKind::MinusToken:
             case SyntaxKind::EqualsEqualsToken:
             case SyntaxKind::EqualsEqualsEqualsToken:
             case SyntaxKind::ExclamationEqualsToken:
