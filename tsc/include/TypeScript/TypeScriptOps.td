@@ -1005,12 +1005,22 @@ def TypeScript_NoConditionOp : TypeScript_Op<"NoCondition",
   let verifier = ?;
 }
 
+def TypeScript_LabelOp : TypeScript_Op<"Label"> {
+  let summary = "label";
+
+  let arguments = (ins StrAttr:$label);
+}
+
 def TypeScript_ContinueOp : TypeScript_Op<"Continue"> {
   let summary = "loop continuation";
+
+  let arguments = (ins OptionalAttr<StrAttr>:$label);
 }
 
 def TypeScript_BreakOp : TypeScript_Op<"Break"> {
   let summary = "loop termination";
+
+  let arguments = (ins OptionalAttr<StrAttr>:$label);
 }
 
 def TypeScript_SwitchOp : TypeScript_Op<"Switch",

@@ -287,6 +287,10 @@ namespace
             {
                 return mlirGen(statementAST.as<ReturnStatement>(), genContext);
             }
+            else if (kind == SyntaxKind::LabeledStatement)
+            {
+                return mlirGen(statementAST.as<LabeledStatement>(), genContext);
+            }            
             else if (kind == SyntaxKind::DoStatement)
             {
                 return mlirGen(statementAST.as<DoStatement>(), genContext);
@@ -322,6 +326,10 @@ namespace
             else if (kind == SyntaxKind::ThrowStatement)
             {
                 return mlirGen(statementAST.as<ThrowStatement>(), genContext);
+            }            
+            else if (kind == SyntaxKind::LabeledStatement)
+            {
+                return mlirGen(statementAST.as<LabeledStatement>(), genContext);
             }            
             else if (kind == SyntaxKind::TypeAliasDeclaration)
             {
@@ -1348,11 +1356,24 @@ namespace
             return mlirGen(forStatNode, genContext);
         }
 
+        mlir::LogicalResult mlirGen(LabeledStatement labeledStatementAST, const GenContext &genContext)
+        {
+            auto location = loc(labeledStatementAST);
+
+            auto label = MLIRHelper::getName(labeledStatementAST->label);
+
+            builder.create<mlir_ts::LabelOp>(location, builder.getStringAttr(label));
+
+            return mlirGen(labeledStatementAST->statement, genContext);
+        }
+
         mlir::LogicalResult mlirGen(ContinueStatement continueStatementAST, const GenContext &genContext)
         {
             auto location = loc(continueStatementAST);
 
-            builder.create<mlir_ts::ContinueOp>(location);
+            auto label = MLIRHelper::getName(continueStatementAST->label);
+
+            builder.create<mlir_ts::ContinueOp>(location, builder.getStringAttr(label));
             return mlir::success();
         }
 
@@ -1360,7 +1381,9 @@ namespace
         {
             auto location = loc(breakStatementAST);
 
-            builder.create<mlir_ts::BreakOp>(location);
+            auto label = MLIRHelper::getName(breakStatementAST->label);
+
+            builder.create<mlir_ts::BreakOp>(location, builder.getStringAttr(label));
             return mlir::success();
         }
 
