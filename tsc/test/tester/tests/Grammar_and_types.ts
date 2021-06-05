@@ -223,6 +223,8 @@ function main()
     Violets are blue.
     Sugar is sweet,
     and so is foo.`     
+
+    print("done.");
 }
 
 function doThis() {}

@@ -715,7 +715,12 @@ namespace typescript
                 return rewriter.create<ZeroExtendIOp>(loc, in, resLLVMType);
             }            
 
-            if (inLLVMType.isInteger(32) && resLLVMType.isInteger(64))
+            if (inLLVMType.isInteger(8) && resLLVMType.isInteger(32))
+            {
+                return rewriter.create<ZeroExtendIOp>(loc, in, resLLVMType);
+            }               
+
+            if ((inLLVMType.isInteger(8) || inLLVMType.isInteger(32)) && resLLVMType.isInteger(64))
             {
                 return rewriter.create<ZeroExtendIOp>(loc, in, resLLVMType);
             }               
@@ -786,7 +791,8 @@ namespace typescript
 
             if (auto optType = inType.dyn_cast_or_null<mlir_ts::OptionalType>())
             {
-                return rewriter.create<mlir_ts::ValueOp>(loc, resType, in);
+                auto val = rewriter.create<mlir_ts::ValueOp>(loc, optType.getElementType(), in);
+                return cast(val, tch.convertType(val.getType()), resType, resLLVMType);
             }            
 
             // ptrs cast
