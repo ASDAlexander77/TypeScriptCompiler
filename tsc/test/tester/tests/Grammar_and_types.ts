@@ -1,8 +1,11 @@
 function main()
 {
+    print("Basics");
+
     // Basics
     let foo = "foobar";
 
+    print("Comments");
     // Comments
     // a one line comment
 
@@ -12,6 +15,7 @@ function main()
 
     /* You can't, however, /* nest comments */
 
+    print("Evaluating variables");
     // Evaluating variables
 
     let input = 0;
@@ -27,10 +31,14 @@ function main()
     let a = 0;
     a + 2;  // Evaluates to NaN
 
-    let n : string = null;
-    print(n * 32); // Will log 0 to the console
+    print("n * 32");
+   
+    // TODO: null access
+    //let n : string = null;
+    //print(n * 32); // Will log 0 to the console
     
     // Variable scope
+    print("Variable scope");
     let x = 0;
     if (true) {
         x = 5;
@@ -38,6 +46,7 @@ function main()
     print(x);  // x is 5    
 
     // Variable hoisting
+    print("Variable hoisting");
 
     /**
      * Example 1
@@ -57,6 +66,7 @@ function main()
     })();    
 
     // Function hoisting
+    print("Function hoisting");
     foo(); // "bar"
 
     function foo() {
@@ -71,6 +81,7 @@ function main()
     baz();
 
     // Constants
+    print("Constants");
 
     const PI = 3.14;
 
@@ -82,12 +93,14 @@ function main()
     print(MY_ARRAY); //logs ['HTML','CSS','JAVASCRIPT'];    
 
     // Data type conversion
+    print("Data type conversion");
 
     let answer = 42;
 
     // TODO?: // answer = 'Thanks for all the fish...';
 
     // Numbers and the '+' operator
+    print("Numbers and the '+' operator");
 
     const x_ = 'The answer is ' + 42 // "The answer is 42"
     const y_ = 42 + ' is the answer' // "42 is the answer"
@@ -96,6 +109,7 @@ function main()
     '37' + 7 // "377"    
 
     // Converting strings to numbers
+    print("Converting strings to numbers");
 
     // TODO: parseInt('101', 2) // 5
     parseInt('101')
@@ -104,8 +118,10 @@ function main()
     (+'1.1') + (+'1.1') // 2.2
 
     // Literals
+    print("Literals");
 
     // Array literals
+    print("Array literals");
 
     let coffees = ['French Roast', 'Colombian', 'Kona'];
     let fish = ['Lion', , 'Angel'];
@@ -115,11 +131,13 @@ function main()
     let myList3 = ['home', , 'school', , ];
 
     // Boolean literals
+    print("Boolean literals");
 
     true;
     false;
 
     // Numeric literals
+    print("Numeric literals");
 
     0, 117, -345, 123456789123456789n;             //(decimal, base 10)
     015, 0001, -0o77, 0o777777777777n;             //(octal, base 8)
@@ -127,6 +145,7 @@ function main()
     0b11, 0b0011, -0b11, 0b11101001010101010101n;  //(binary, base 2)
 
     // Floating-point literals
+    print("Floating-point literals");
 
     3.1415926;
     -.123456789;
@@ -134,6 +153,7 @@ function main()
     .1e-23;
 
     // Object literals
+    print("Object literals");
 
     const sales = 'Toyota';
 
@@ -165,10 +185,12 @@ function main()
     print(unusualPropertyNames['!']); // Bang!    
 
     // RegExp literals
+    print("RegExp literals");
 
     // TODO: // let re = /ab+c/;
 
     // String literals
+    print("String literals");
 
     'foo';
     "bar";
@@ -186,19 +208,23 @@ function main()
     over multiple lines, but double and single
     quoted strings cannot.`;
 
+    print("String interpolation");
     // String interpolation
     let name = 'Bob', time = 'today';
     `Hello ${name}, how are you ${time}?`;
 
+    print("String interpolation - tag");
     let myTag = (str:string[], name:string, age:number) => `${str[0]}${name}${str[1]}${age}${str[2]}`;
     let [name, age] = ['Mika', 28];
     myTag`Participant "${ name }" is ${ age } years old.`;
     // Participant "Mika" is 28 years old.    
 
+    print("Using special characters in strings");
     // Using special characters in strings
 
     'one line \n another line';
 
+    print("Escaping characters");
     // Escaping characters
 
     let quote = "He read \"The Cremation of Sam McGee\" by R.W. Service.";

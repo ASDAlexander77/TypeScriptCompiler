@@ -39,3 +39,4 @@ add_test(NAME test-runner-01-arguments COMMAND test-runner "${PROJECT_SOURCE_DIR
 add_test(NAME test-runner-02-numbers COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/02numbers.ts")
 add_test(NAME test-runner-05-strings COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/05strings.ts")
 add_test(NAME test-runner-18-enums COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/18enums.ts")
+add_test(NAME test-runner-Grammar_and_types COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/Grammar_and_types.ts")
