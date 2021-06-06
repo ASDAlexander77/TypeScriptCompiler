@@ -934,6 +934,9 @@ def TypeScript_WhileOp : TypeScript_Op<"While",
   let extraClassDeclaration = [{
     OperandRange getSuccessorEntryOperands(unsigned index);
   }];
+
+  let assemblyFormat =
+      [{ attr-dict ($inits^ `:` type($inits))? `->` type($results) `(` $cond `)` $body }];
 }
 
 def TypeScript_DoWhileOp : TypeScript_Op<"DoWhile",
@@ -951,6 +954,9 @@ def TypeScript_DoWhileOp : TypeScript_Op<"DoWhile",
   let extraClassDeclaration = [{
     OperandRange getSuccessorEntryOperands(unsigned index);
   }];
+
+  let assemblyFormat =
+      [{ attr-dict ($inits^ `:` type($inits))? `->` type($results) $body `(` $cond `)` }];  
 }
 
 def TypeScript_ForOp : TypeScript_Op<"For",
@@ -965,6 +971,9 @@ def TypeScript_ForOp : TypeScript_Op<"For",
   let extraClassDeclaration = [{
     OperandRange getSuccessorEntryOperands(unsigned index);
   }];
+
+  let assemblyFormat =
+      [{ attr-dict ($inits^ `:` type($inits))? `->` type($results) `(` $cond `,` $incr `)` $body }];   
 }
 
 def TypeScript_ConditionOp : TypeScript_Op<"Condition",
@@ -1003,12 +1012,6 @@ def TypeScript_NoConditionOp : TypeScript_Op<"NoCondition",
 
   // Override the default verifier, everything is checked by traits.
   let verifier = ?;
-}
-
-def TypeScript_LabelOp : TypeScript_Op<"Label"> {
-  let summary = "label";
-
-  let arguments = (ins StrAttr:$label);
 }
 
 def TypeScript_ContinueOp : TypeScript_Op<"Continue"> {

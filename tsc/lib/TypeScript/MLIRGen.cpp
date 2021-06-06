@@ -1167,6 +1167,11 @@ namespace
             SmallVector<mlir::Value, 0> operands;
 
             auto doWhileOp = builder.create<mlir_ts::DoWhileOp>(location, types, operands);
+            if (!label.empty())
+            {
+                doWhileOp->setAttr(LABEL_ATTR_NAME, builder.getStringAttr(label));
+            }
+
             /*auto *cond =*/ builder.createBlock(&doWhileOp.cond(), {}, types);
             /*auto *body =*/ builder.createBlock(&doWhileOp.body(), {}, types);
 
@@ -1194,6 +1199,11 @@ namespace
             SmallVector<mlir::Value, 0> operands;
 
             auto whileOp = builder.create<mlir_ts::WhileOp>(location, types, operands);
+            if (!label.empty())
+            {
+                whileOp->setAttr(LABEL_ATTR_NAME, builder.getStringAttr(label));
+            }
+
             /*auto *cond =*/ builder.createBlock(&whileOp.cond(), {}, types);
             /*auto *body =*/ builder.createBlock(&whileOp.body(), {}, types);
 
@@ -1240,6 +1250,11 @@ namespace
             SmallVector<mlir::Value, 0> operands;
 
             auto forOp = builder.create<mlir_ts::ForOp>(location, types, operands);
+            if (!label.empty())
+            {
+                forOp->setAttr(LABEL_ATTR_NAME, builder.getStringAttr(label));
+            }
+
             /*auto *cond =*/ builder.createBlock(&forOp.cond(), {}, types);
             /*auto *body =*/ builder.createBlock(&forOp.body(), {}, types);
             /*auto *incr =*/ builder.createBlock(&forOp.incr(), {}, types);
@@ -1360,11 +1375,13 @@ namespace
         {
             auto location = loc(labeledStatementAST);
 
-            auto label = MLIRHelper::getName(labeledStatementAST->label);
+            label = MLIRHelper::getName(labeledStatementAST->label);
 
-            builder.create<mlir_ts::LabelOp>(location, builder.getStringAttr(label));
+            auto res = mlirGen(labeledStatementAST->statement, genContext);
 
-            return mlirGen(labeledStatementAST->statement, genContext);
+            label = "";
+
+            return res;
         }
 
         mlir::LogicalResult mlirGen(ContinueStatement continueStatementAST, const GenContext &genContext)
@@ -3280,6 +3297,8 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
         ts::SourceFile sourceFile;
 
         mlir::OpBuilder::InsertPoint functionBeginPoint;
+
+        std::string label;
     };
 } // namespace
 

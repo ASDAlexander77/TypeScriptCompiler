@@ -24,7 +24,7 @@ namespace
     struct TSContext
     {
         // name, break, continue
-        DenseMap<Operation *, std::tuple<StringRef, mlir::Block *>> jumps;
+        DenseMap<Operation *, mlir::Block *> jumps;
     };
 
     template <typename OpTy>
@@ -244,6 +244,8 @@ namespace
             OpBuilder::InsertionGuard guard(rewriter);
             Location loc = whileOp.getLoc();
 
+            auto labelAttr = whileOp->getAttrOfType<StringAttr>(LABEL_ATTR_NAME);
+
             // Split the current block before the WhileOp to create the inlining point.
             auto *currentBlock = rewriter.getInsertionBlock();
             auto *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
@@ -256,11 +258,13 @@ namespace
             // logic to support continue/break
 
             auto visitorBreakContinue = [&](Operation* op) {
-                if (dyn_cast_or_null<mlir_ts::BreakOp>(op)) {
-                    tsContext->jumps[op] = std::make_tuple(StringRef(""), continuation);
+                if (auto breakOp = dyn_cast_or_null<mlir_ts::BreakOp>(op)) {
+                    auto set = MLIRHelper::matchLabelOrNotSet(labelAttr, breakOp.labelAttr());
+                    if (set) tsContext->jumps[op] = continuation;
                 }
-                else if (dyn_cast_or_null<mlir_ts::ContinueOp>(op)) {
-                    tsContext->jumps[op] = std::make_tuple(StringRef(""), cond);
+                else if (auto continueOp = dyn_cast_or_null<mlir_ts::ContinueOp>(op)) {
+                    auto set = MLIRHelper::matchLabelOrNotSet(labelAttr, continueOp.labelAttr());
+                    if (set) tsContext->jumps[op] = cond;
                 }
             };
 
@@ -307,6 +311,8 @@ namespace
         {
             Location loc = doWhileOp.getLoc();
 
+            auto labelAttr = doWhileOp->getAttrOfType<StringAttr>(LABEL_ATTR_NAME);
+
             // Split the current block before the WhileOp to create the inlining point.
             OpBuilder::InsertionGuard guard(rewriter);
             Block *currentBlock = rewriter.getInsertionBlock();
@@ -321,11 +327,13 @@ namespace
             // logic to support continue/break
 
             auto visitorBreakContinue = [&](Operation* op) {
-                if (dyn_cast_or_null<mlir_ts::BreakOp>(op)) {
-                    tsContext->jumps[op] = std::make_tuple(StringRef(""), continuation);
+                if (auto breakOp = dyn_cast_or_null<mlir_ts::BreakOp>(op)) {
+                    auto set = MLIRHelper::matchLabelOrNotSet(labelAttr, breakOp.labelAttr());
+                    if (set) tsContext->jumps[op] = continuation;
                 }
-                else if (dyn_cast_or_null<mlir_ts::ContinueOp>(op)) {
-                    tsContext->jumps[op] = std::make_tuple(StringRef(""), cond);
+                else if (auto continueOp = dyn_cast_or_null<mlir_ts::ContinueOp>(op)) {
+                    auto set = MLIRHelper::matchLabelOrNotSet(labelAttr, continueOp.labelAttr());
+                    if (set) tsContext->jumps[op] = cond;
                 }
             };
 
@@ -369,6 +377,8 @@ namespace
             OpBuilder::InsertionGuard guard(rewriter);
             Location loc = forOp.getLoc();
 
+            auto labelAttr = forOp->getAttrOfType<StringAttr>(LABEL_ATTR_NAME);
+
             // Split the current block before the WhileOp to create the inlining point.
             auto *currentBlock = rewriter.getInsertionBlock();
             auto *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
@@ -383,12 +393,14 @@ namespace
             // logic to support continue/break
 
             auto visitorBreakContinue = [&](Operation* op) {
-                if (dyn_cast_or_null<mlir_ts::BreakOp>(op)) {
-                    tsContext->jumps[op] = std::make_tuple(StringRef(""), continuation);
+                if (auto breakOp = dyn_cast_or_null<mlir_ts::BreakOp>(op)) {
+                    auto set = MLIRHelper::matchLabelOrNotSet(labelAttr, breakOp.labelAttr());
+                    if (set) tsContext->jumps[op] = continuation;
                 }
-                else if (dyn_cast_or_null<mlir_ts::ContinueOp>(op)) {
-                    tsContext->jumps[op] = std::make_tuple(StringRef(""), incr);
-                }
+                else if (auto continueOp = dyn_cast_or_null<mlir_ts::ContinueOp>(op)) {
+                    auto set = MLIRHelper::matchLabelOrNotSet(labelAttr, continueOp.labelAttr());
+                    if (set) tsContext->jumps[op] = incr;
+                }                
             };
 
             forOp.body().walk(visitorBreakContinue);
@@ -447,7 +459,8 @@ namespace
             OpBuilder::InsertionGuard guard(rewriter);
 
             auto jump = tsContext->jumps[breakOp];
-            rewriter.replaceOpWithNewOp<BranchOp>(breakOp, std::get<1>(jump)/*break=continuation*/);
+            assert(jump);
+            rewriter.replaceOpWithNewOp<BranchOp>(breakOp, jump/*break=continuation*/);
 
             auto *opBlock = rewriter.getInsertionBlock();
             auto opPosition = rewriter.getInsertionPoint();
@@ -466,7 +479,8 @@ namespace
             OpBuilder::InsertionGuard guard(rewriter);
 
             auto jump = tsContext->jumps[continueOp];
-            rewriter.replaceOpWithNewOp<BranchOp>(continueOp, std::get<1>(jump)/*break=incremental-or-condition block*/);
+            assert(jump);
+            rewriter.replaceOpWithNewOp<BranchOp>(continueOp, jump/*break=incremental-or-condition block*/);
 
             auto *opBlock = rewriter.getInsertionBlock();
             auto opPosition = rewriter.getInsertionPoint();

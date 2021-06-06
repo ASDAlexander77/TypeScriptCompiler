@@ -27,6 +27,22 @@ namespace typescript
             auto nameValue = getName(name);
             return mlir::StringRef(nameValue).copy(stringAllocator);
         }        
+
+        static bool matchLabelOrNotSet(mlir::StringAttr loopLabel, mlir::StringAttr opLabel)
+        {
+            if (!loopLabel)
+            {
+                return true;
+            }
+
+            if (!(loopLabel && opLabel))
+            {
+                return false;
+            }
+
+            auto eq = loopLabel.getValue() == opLabel.getValue();
+            return eq;
+        }
     };
 
     class MLIRTypeHelper
