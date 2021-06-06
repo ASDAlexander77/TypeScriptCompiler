@@ -2734,16 +2734,25 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     llvm_unreachable("object literal is not implemented(1)");
                 }
 
-                auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(itemValue.getDefiningOp());
-                if (!constOp)
+                mlir::Type type;
+                mlir::Attribute value;                        
+                if (auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(itemValue.getDefiningOp()))
                 {
-                    llvm_unreachable("object literal is not implemented(1), must be const object");
+                    value = constOp.valueAttr();
+                    type = constOp.getType();
+                }
+                else if (auto symRefOp = dyn_cast_or_null<mlir_ts::SymbolRefOp>(itemValue.getDefiningOp()))
+                {
+                    value = symRefOp.identifierAttr();
+                    type = symRefOp.getType();
+                }
+                else
+                {
+                    llvm_unreachable("object literal is not implemented(1), must be const object or global symbol");
                     continue;
                 }
 
-                auto type = constOp.getType();
-
-                values.push_back(constOp.valueAttr());
+                values.push_back(value);
                 types.push_back(type);
                 fieldInfos.push_back({fieldId, type});
             }
