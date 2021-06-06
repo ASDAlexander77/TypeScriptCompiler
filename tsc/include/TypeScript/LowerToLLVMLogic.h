@@ -514,9 +514,12 @@ namespace typescript
         {
             Value tupleVal = rewriter.create<LLVM::UndefOp>(loc, llvmStructType);
 
+            auto typesRange = llvmStructType.cast<LLVM::LLVMStructType>().getBody();
+
             auto position = 0;
             for (auto item : arrayAttr.getValue())
             {
+                auto type = typesRange[position];
                 if (item.isa<StringAttr>())
                 {
                     OpBuilder::InsertionGuard guard(rewriter);
@@ -530,14 +533,14 @@ namespace typescript
                 {
                     OpBuilder::InsertionGuard guard(rewriter);
 
-                    auto subType = llvmStructType.cast<LLVM::LLVMStructType>().getBody()[position];
-                    auto subTupleVal = getTupleFromArrayAttr(loc, subType, subArrayAttr);
+                    auto subTupleVal = getTupleFromArrayAttr(loc, type, subArrayAttr);
 
                     tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, subTupleVal, rewriter.getI64ArrayAttr(position++));
                 }                
                 else
                 {
-                    auto itemValue = rewriter.create<LLVM::ConstantOp>(loc, item.getType(), item);
+                    // DO NOT Replace with LLVM::ConstantOp - to use AddressOf for global symbol names
+                    auto itemValue = rewriter.create<mlir::ConstantOp>(loc, type, item);
                     tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemValue, rewriter.getI64ArrayAttr(position++));
                 }
             }

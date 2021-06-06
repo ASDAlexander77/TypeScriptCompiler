@@ -54,6 +54,8 @@ function main() {
     // nested
     print(outside()(10));
 
+    test_func_in_objectliteral();
+
     print("done.");
 }
 
@@ -122,4 +124,17 @@ function outside() {
         return x * 2;
     }
     return inside;
+}
+
+function test_func_in_objectliteral() {
+    const createPet = function () {
+        return {
+            setName: function (newName: string) {
+                print(newName);
+            },
+        };
+    };
+
+    const pet = createPet();
+    pet.setName("Oliver");
 }
