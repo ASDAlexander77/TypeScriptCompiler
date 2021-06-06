@@ -30,14 +30,9 @@ namespace typescript
 
         static bool matchLabelOrNotSet(mlir::StringAttr loopLabel, mlir::StringAttr opLabel)
         {
-            if (!loopLabel)
+            if (!loopLabel || !opLabel || loopLabel.getValue().size() == 0 || opLabel.getValue().size() == 0)
             {
                 return true;
-            }
-
-            if (!(loopLabel && opLabel))
-            {
-                return false;
             }
 
             auto eq = loopLabel.getValue() == opLabel.getValue();
