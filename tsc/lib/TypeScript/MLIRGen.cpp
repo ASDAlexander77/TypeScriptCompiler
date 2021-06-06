@@ -705,7 +705,7 @@ namespace
                 if (!typeParameter && !initializer)
                 {
                     auto funcName = MLIRHelper::getName(parametersContextAST->name);
-                    emitError(loc(arg)) << "type of parameter '" << name << "' is not provided, parameter must have type of initializer, function: " << funcName;
+                    emitError(loc(arg)) << "type of parameter '" << name << "' is not provided, parameter must have type or initializer, function: " << funcName;
                 }
 
                 params.push_back(std::make_shared<FunctionParamDOM>(name, type, loc(arg), isOptional, initializer));
@@ -823,6 +823,7 @@ namespace
                 GenContext genContextWithPassResult(genContext);
                 genContextWithPassResult.allowPartialResolve = true;
                 genContextWithPassResult.dummyRun = true;
+                genContextWithPassResult.functionReturnType = nullptr;
                 genContextWithPassResult.cleanUps = new SmallVector<mlir::Block*>();
                 genContextWithPassResult.passResult = new PassResult();
                 if (succeeded(mlirGenFunctionBody(functionLikeDeclarationBaseAST, dummyFuncOp, funcProto, genContextWithPassResult)))

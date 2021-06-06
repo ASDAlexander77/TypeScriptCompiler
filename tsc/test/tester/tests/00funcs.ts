@@ -45,6 +45,12 @@ function main() {
 
     print(a, b, c, d, e);
 
+    // nest func
+    const a = addSquares(2, 3); // returns 13
+    const b = addSquares(3, 4); // returns 25
+    const c = addSquares(4, 5); // returns 41
+    print(a, b, c);
+
     print("done.");
 }
 
@@ -96,8 +102,14 @@ function test_lmb_param() {
     run_f((x: number, y: number) => x + y);
 }
 
-// function must have return type or will be error as type can't be detected
 function factorial(n: number) {
     if (n === 0 || n === 1) return 1;
     else return n * factorial(n - 1);
+}
+
+function addSquares(a: number, b: number) {
+    function square(x: number) {
+        return x * x;
+    }
+    return square(a) + square(b);
 }
