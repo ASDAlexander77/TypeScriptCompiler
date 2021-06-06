@@ -51,6 +51,9 @@ function main() {
     const c = addSquares(4, 5); // returns 41
     print(a, b, c);
 
+    // nested
+    print(outside()(10));
+
     print("done.");
 }
 
@@ -112,4 +115,11 @@ function addSquares(a: number, b: number) {
         return x * x;
     }
     return square(a) + square(b);
+}
+
+function outside() {
+    function inside(x: number) {
+        return x * 2;
+    }
+    return inside;
 }
