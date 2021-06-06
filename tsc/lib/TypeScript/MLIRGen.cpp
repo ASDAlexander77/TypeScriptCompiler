@@ -1577,6 +1577,23 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
             auto expression = prefixUnaryExpressionAST->operand;
             auto expressionValue = mlirGen(expression, genContext);
+
+            if (!expressionValue)
+            {
+                if (!genContext.allowPartialResolve)
+                {
+                    emitError(loc(expression), "expression has not result");
+                }
+
+                return mlir::Value();
+            }
+
+            if (auto unresolved = dyn_cast_or_null<mlir_ts::SymbolRefOp>(expressionValue.getDefiningOp()))
+            {
+                emitError(loc(expression), "can't find variable: ") << unresolved.identifier();
+                return mlir::Value();
+            }
+
             auto boolValue = expressionValue;
 
             switch (opCode)
@@ -1621,6 +1638,22 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
             auto expression = postfixUnaryExpressionAST->operand;
             auto expressionValue = mlirGen(expression, genContext);
+
+            if (!expressionValue)
+            {
+                if (!genContext.allowPartialResolve)
+                {
+                    emitError(loc(expression), "expression has not result");
+                }
+
+                return mlir::Value();
+            }
+
+            if (auto unresolved = dyn_cast_or_null<mlir_ts::SymbolRefOp>(expressionValue.getDefiningOp()))
+            {
+                emitError(loc(expression), "can't find variable: ") << unresolved.identifier();
+                return mlir::Value();
+            }
 
             switch (opCode)
             {
@@ -1747,18 +1780,37 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             auto rightExpression = binaryExpressionAST->right;
 
             auto rightExpressionValue = mlirGen(rightExpression, genContext);            
-
             auto leftExpressionValue = mlirGen(leftExpression, genContext);
+
+            if (!leftExpressionValue)
+            {
+                if (!genContext.allowPartialResolve)
+                {
+                    emitError(loc(leftExpression), "left expression has not result");
+                }
+
+                return mlir::Value();
+            }
+
+            if (!rightExpressionValue)
+            {
+                if (!genContext.allowPartialResolve)
+                {
+                    emitError(loc(rightExpression), "right expression has not result");
+                }
+
+                return mlir::Value();
+            }            
 
             if (auto unresolvedLeft = dyn_cast_or_null<mlir_ts::SymbolRefOp>(leftExpressionValue.getDefiningOp()))
             {
-                emitError(location, "can't find variable: ") << unresolvedLeft.identifier();
+                emitError(loc(leftExpression), "can't find variable: ") << unresolvedLeft.identifier();
                 return mlir::Value();
             }
 
             if (auto unresolvedRight = dyn_cast_or_null<mlir_ts::SymbolRefOp>(rightExpressionValue.getDefiningOp()))
             {
-                emitError(location, "can't find variable: ") << unresolvedRight.identifier();
+                emitError(loc(rightExpression), "can't find variable: ") << unresolvedRight.identifier();
                 return mlir::Value();
             }            
 
@@ -1823,15 +1875,35 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             auto leftExpressionValue = mlirGen(leftExpression, genContext);
             auto rightExpressionValue = mlirGen(rightExpression, genContext);
 
+            if (!leftExpressionValue)
+            {
+                if (!genContext.allowPartialResolve)
+                {
+                    emitError(loc(leftExpression), "left expression has not result");
+                }
+
+                return mlir::Value();
+            }
+
+            if (!rightExpressionValue)
+            {
+                if (!genContext.allowPartialResolve)
+                {
+                    emitError(loc(rightExpression), "right expression has not result");
+                }
+
+                return mlir::Value();
+            }
+
             if (auto unresolvedLeft = dyn_cast_or_null<mlir_ts::SymbolRefOp>(leftExpressionValue.getDefiningOp()))
             {
-                emitError(location, "can't find variable: ") << unresolvedLeft.identifier();
+                emitError(loc(leftExpression), "can't find variable: ") << unresolvedLeft.identifier();
                 return mlir::Value();
             }
 
             if (auto unresolvedRight = dyn_cast_or_null<mlir_ts::SymbolRefOp>(rightExpressionValue.getDefiningOp()))
             {
-                emitError(location, "can't find variable: ") << unresolvedRight.identifier();
+                emitError(loc(rightExpression), "can't find variable: ") << unresolvedRight.identifier();
                 return mlir::Value();
             }
 
