@@ -1170,6 +1170,7 @@ namespace
             if (!label.empty())
             {
                 doWhileOp->setAttr(LABEL_ATTR_NAME, builder.getStringAttr(label));
+                label = "";
             }
 
             /*auto *cond =*/ builder.createBlock(&doWhileOp.cond(), {}, types);
@@ -1202,6 +1203,7 @@ namespace
             if (!label.empty())
             {
                 whileOp->setAttr(LABEL_ATTR_NAME, builder.getStringAttr(label));
+                label = "";
             }
 
             /*auto *cond =*/ builder.createBlock(&whileOp.cond(), {}, types);
@@ -1253,6 +1255,7 @@ namespace
             if (!label.empty())
             {
                 forOp->setAttr(LABEL_ATTR_NAME, builder.getStringAttr(label));
+                label = "";
             }
 
             /*auto *cond =*/ builder.createBlock(&forOp.cond(), {}, types);
@@ -1376,10 +1379,7 @@ namespace
             auto location = loc(labeledStatementAST);
 
             label = MLIRHelper::getName(labeledStatementAST->label);
-
             auto res = mlirGen(labeledStatementAST->statement, genContext);
-
-            label = "";
 
             return res;
         }
