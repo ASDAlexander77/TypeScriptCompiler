@@ -583,21 +583,6 @@ namespace
     {
         using OpConversionPattern<mlir_ts::ConstantOp>::OpConversionPattern;
 
-        std::string calc_hash_value(ArrayAttr &arrayAttr, const char* prefix) const
-        {
-            auto opHash = 0ULL;
-            for (auto item : arrayAttr)
-            {
-                opHash ^= hash_value(item) + 0x9e3779b9 + (opHash<<6) + (opHash>>2);
-            }
-
-            // calculate name;
-            std::stringstream vecVarName;
-            vecVarName << prefix << opHash;     
-
-            return vecVarName.str();
-        }
-
         template <typename T, typename TOp>
         void getOrCreateGlobalArray(TOp constantOp, T type, ConversionPatternRewriter &rewriter) const
         {
@@ -608,11 +593,8 @@ namespace
             auto llvmElementType = tch.convertType(elementType);
             auto arrayAttr = constantOp.value().dyn_cast_or_null<ArrayAttr>();
 
-            auto vecVarName = calc_hash_value(arrayAttr, "a_");      
-
             auto arrayFirstElementAddrCst = ch.getOrCreateGlobalArray(
                 elementType,
-                vecVarName, 
                 llvmElementType,
                 arrayAttr.size(),
                 arrayAttr);
@@ -628,10 +610,8 @@ namespace
 
             auto arrayAttr = constantOp.value().dyn_cast_or_null<ArrayAttr>();
 
-            auto varName = calc_hash_value(arrayAttr, "tp_");      
-
             auto convertedTupleType = tch.convertType(type);
-            auto tupleConstPtr = ch.getOrCreateGlobalTuple(convertedTupleType, varName, arrayAttr);
+            auto tupleConstPtr = ch.getOrCreateGlobalTuple(convertedTupleType, arrayAttr);
 
             // optimize it and replace it with copy memory. (use canon. pass) check  "EraseRedundantAssertions"
             auto loadedValue = rewriter.create<LLVM::LoadOp>(constantOp->getLoc(), tupleConstPtr);

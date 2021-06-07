@@ -416,6 +416,21 @@ namespace typescript
 
     public:
 
+        std::string calc_hash_value(ArrayAttr &arrayAttr, const char* prefix) const
+        {
+            auto opHash = 0ULL;
+            for (auto item : arrayAttr)
+            {
+                opHash ^= hash_value(item) + 0x9e3779b9 + (opHash<<6) + (opHash>>2);
+            }
+
+            // calculate name;
+            std::stringstream vecVarName;
+            vecVarName << prefix << opHash;     
+
+            return vecVarName.str();
+        }
+
         std::string getStorageStringName(std::string value)
         {
             auto opHash = std::hash<std::string>{}(value);
@@ -426,6 +441,16 @@ namespace typescript
             return strVarName.str();
         }
 
+        std::string getStorageTupleName(std::string value)
+        {
+            auto opHash = std::hash<std::string>{}(value);
+
+            std::stringstream strVarName;
+            strVarName << "s_" << opHash;
+
+            return strVarName.str();
+        }        
+
         Value getOrCreateGlobalString(std::string value)
         {
             return getOrCreateGlobalString(getStorageStringName(value), value);
@@ -434,6 +459,12 @@ namespace typescript
         Value getOrCreateGlobalString(StringRef name, std::string value)
         {
             return getOrCreateGlobalString_(name, StringRef(value.data(), value.length() + 1));
+        }
+
+        Value getOrCreateGlobalArray(Type originalElementType, Type llvmElementType, unsigned size, ArrayAttr arrayAttr)
+        {
+            auto vecVarName = calc_hash_value(arrayAttr, "a_"); 
+            return getOrCreateGlobalArray(originalElementType, vecVarName, llvmElementType, size, arrayAttr);
         }
 
         Value getOrCreateGlobalArray(Type originalElementType, StringRef name, Type llvmElementType, unsigned size, ArrayAttr arrayAttr)
@@ -487,6 +518,36 @@ namespace typescript
                         auto itemVal = getOrCreateGlobalString(strValue);                        
 
                         arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, itemVal, rewriter.getI64ArrayAttr(position++));
+                    }
+
+                    rewriter.create<LLVM::ReturnOp>(loc, ValueRange{arrayVal});
+                }
+                else if (originalElementType.dyn_cast_or_null<mlir_ts::ConstArrayType>())
+                {                                        
+                    //
+                    llvm_unreachable("under construction ConstArrayType");
+                }
+                else if (originalElementType.dyn_cast_or_null<mlir_ts::ConstTupleType>())
+                {                                        
+                    seekLast(parentModule.getBody());
+
+                    OpBuilder::InsertionGuard guard(rewriter);
+                    
+                    global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, Attribute{});
+
+                    Region &region = global.getInitializerRegion();
+                    Block *block = rewriter.createBlock(&region);
+
+                    // Initialize the tuple
+                    rewriter.setInsertionPoint(block, block->begin());
+
+                    Value arrayVal = rewriter.create<LLVM::UndefOp>(loc, arrayType);
+
+                    auto position = 0;
+                    for (auto item : arrayAttr.getValue())
+                    {
+                        auto tupleVal = getTupleFromArrayAttr(loc, llvmElementType, item.dyn_cast_or_null<ArrayAttr>());
+                        arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, tupleVal, rewriter.getI64ArrayAttr(position++));
                     }
 
                     rewriter.create<LLVM::ReturnOp>(loc, ValueRange{arrayVal});
@@ -546,6 +607,12 @@ namespace typescript
             }
 
             return tupleVal;
+        }
+
+        Value getOrCreateGlobalTuple(Type llvmStructType, ArrayAttr arrayAttr)
+        {
+            auto varName = calc_hash_value(arrayAttr, "tp_");   
+            return getOrCreateGlobalTuple(llvmStructType, varName, arrayAttr);
         }
 
         Value getOrCreateGlobalTuple(Type llvmStructType, StringRef name, ArrayAttr arrayAttr)
