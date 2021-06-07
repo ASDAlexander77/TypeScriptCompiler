@@ -477,6 +477,10 @@ namespace
                 mlirGen(expressionAST.as<DeleteExpression>(), genContext);
                 return mlir::Value();
             }             
+            else if (kind == SyntaxKind::VoidExpression)
+            {
+                return mlirGen(expressionAST.as<VoidExpression>(), genContext);
+            }             
             else if (kind == SyntaxKind::Unknown/*TODO: temp solution to treat null expr as empty expr*/)
             {
                 return mlir::Value();
@@ -2398,6 +2402,18 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             return mlir::success();
         }
 
+        mlir::Value mlirGen(VoidExpression voidExpression, const GenContext &genContext)
+        {
+            MLIRTypeHelper mth(builder.getContext());
+            auto location = loc(voidExpression);
+
+            auto expr = mlirGen(voidExpression->expression, genContext);
+
+            auto value = getUndefined(location);            
+
+            return value;
+        }
+
         mlir::Value mlirGen(TypeOfExpression typeOfExpression, const GenContext &genContext)
         {
             auto result = mlirGen(typeOfExpression->expression, genContext);
@@ -2824,7 +2840,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             // built in types
             if (name == "undefined") 
             {
-                return builder.create<mlir_ts::UndefOp>(location, getOptionalType(getUndefPlaceHolderType()));
+                return getUndefined(location);
             }
 
             // unresolved reference (for call for example)
@@ -3135,6 +3151,11 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
         mlir_ts::ValueRefType getValueRefType(mlir::Type elementType)
         {
             return mlir_ts::ValueRefType::get(elementType);
+        }
+
+        mlir::Value getUndefined(mlir::Location location)
+        {
+            return builder.create<mlir_ts::UndefOp>(location, getOptionalType(getUndefPlaceHolderType()));
         }
 
         void getTupleFieldInfo(TupleTypeNode tupleType, mlir::SmallVector<mlir_ts::FieldInfo> &types)
