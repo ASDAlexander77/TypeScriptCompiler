@@ -2408,6 +2408,12 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 return typeOfValue;
             }
 
+            if (type == getBooleanType())
+            {
+                auto typeOfValue = builder.create<mlir_ts::ConstantOp>(loc(typeOfExpression), getBooleanType(), getStringAttr(std::string("boolean")));
+                return typeOfValue;
+            }
+
             if (type == getStringType())
             {
                 auto typeOfValue = builder.create<mlir_ts::ConstantOp>(loc(typeOfExpression), getStringType(), getStringAttr(std::string("string")));
@@ -2420,9 +2426,9 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 return typeOfValue;
             }
 
-            if (type == getBooleanType())
+            if (type.dyn_cast_or_null<mlir::FunctionType>())
             {
-                auto typeOfValue = builder.create<mlir_ts::ConstantOp>(loc(typeOfExpression), getStringType(), getStringAttr(std::string("boolean")));
+                auto typeOfValue = builder.create<mlir_ts::ConstantOp>(loc(typeOfExpression), getStringType(), getStringAttr(std::string("function")));
                 return typeOfValue;
             }
 
