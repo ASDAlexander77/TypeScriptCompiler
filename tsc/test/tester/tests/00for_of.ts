@@ -1,3 +1,11 @@
+type int = 1;
+
+function f(a: [int, string][]) {
+    for (const [k, v] of a) {
+        print(k, v);
+    }
+}
+
 function main() {
     for (const q of [1, 12]) {
         print(q);
@@ -24,6 +32,8 @@ function main() {
     for (const [k, v] of trees) {
         print(k, v);
     }
+
+    f(trees);
 
     print("done.");
 }

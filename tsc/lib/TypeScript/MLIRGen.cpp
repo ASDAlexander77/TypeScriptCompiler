@@ -2389,9 +2389,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             MLIRTypeHelper mth(builder.getContext());
             auto location = loc(newExpression);
 
-            auto typeExpr = mlirGen(newExpression->expression, genContext);
-
-            auto type = getResolveTypeFromValue(typeExpr);
+            auto type = getTypeByTypeName(newExpression->expression);
             auto storageType = type;
             if (mth.isValueType(type))
             {
@@ -2868,15 +2866,11 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
         mlir::LogicalResult mlirGen(TypeAliasDeclaration typeAliasDeclarationAST, const GenContext &genContext)
         {
-            auto identOp = mlirGen(typeAliasDeclarationAST->name, genContext);
-            if (auto ident = dyn_cast_or_null<mlir_ts::SymbolRefOp>(identOp.getDefiningOp()))
+            auto name = MLIRHelper::getName(typeAliasDeclarationAST->name);
+            if (!name.empty())
             {
                 auto type = getType(typeAliasDeclarationAST->type);
-                auto name = ident.identifier();
                 typeAliasMap.insert({name, type});
-
-                identOp.getDefiningOp()->erase();
-
                 return mlir::success();
             }
             else
@@ -2889,107 +2883,96 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
         mlir::LogicalResult mlirGen(EnumDeclaration enumDeclarationAST, const GenContext &genContext)
         {
-            auto identOp = mlirGen(enumDeclarationAST->name, genContext);
-            if (auto ident = dyn_cast_or_null<mlir_ts::SymbolRefOp>(identOp.getDefiningOp()))
+            auto name = MLIRHelper::getName(enumDeclarationAST->name);
+            if (name.empty())
             {
-                auto name = ident.identifier();
+                llvm_unreachable("not implemented");
+                return mlir::failure();
+            }
 
-                SmallVector<mlir::NamedAttribute> enumValues;
-                int64_t index = 0;
-                auto activeBits = 0;
-                for (auto enumMember : enumDeclarationAST->members)
-                {                    
-                    StringRef memberName;
-                    auto memberIdentOp = mlirGen(enumMember->name.as<Expression>(), genContext);
-                    if (auto memberIdent = dyn_cast_or_null<mlir_ts::SymbolRefOp>(memberIdentOp.getDefiningOp()))
+            SmallVector<mlir::NamedAttribute> enumValues;
+            int64_t index = 0;
+            auto activeBits = 0;
+            for (auto enumMember : enumDeclarationAST->members)
+            {                    
+                auto memberName = MLIRHelper::getName(enumMember->name);
+                if (memberName.empty())
+                {
+                    llvm_unreachable("not implemented");
+                    return mlir::failure();
+                }
+
+                mlir::Attribute enumValueAttr;
+                if (enumMember->initializer)
+                {
+                    GenContext enumValueGenContext(genContext);
+                    enumValueGenContext.allowConstEval = true;
+                    auto enumValue = mlirGen(enumMember->initializer, enumValueGenContext);
+                    if (auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(enumValue.getDefiningOp()))
                     {
-                        memberName = memberIdent.identifier();
-                        memberIdent->erase();
+                        enumValueAttr = constOp.valueAttr();
+                        if (auto intAttr = enumValueAttr.dyn_cast_or_null<mlir::IntegerAttr>())
+                        {
+                            index = intAttr.getInt();
+                            auto currentActiveBits = (int) intAttr.getValue().getActiveBits();
+                            if (currentActiveBits > activeBits)
+                            {
+                                activeBits = currentActiveBits;
+                            }
+                        }
+
+                        // we need it here, as it is outsize of function, cleanup (canonicalizer) does not work for it.
+                        constOp->erase();
                     }
                     else
                     {
                         llvm_unreachable("not implemented");
                     }
-
-                    mlir::Attribute enumValueAttr;
-                    if (enumMember->initializer)
-                    {
-                        GenContext enumValueGenContext(genContext);
-                        enumValueGenContext.allowConstEval = true;
-                        auto enumValue = mlirGen(enumMember->initializer, enumValueGenContext);
-                        if (auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(enumValue.getDefiningOp()))
-                        {
-                            enumValueAttr = constOp.valueAttr();
-                            if (auto intAttr = enumValueAttr.dyn_cast_or_null<mlir::IntegerAttr>())
-                            {
-                                index = intAttr.getInt();
-                                auto currentActiveBits = (int) intAttr.getValue().getActiveBits();
-                                if (currentActiveBits > activeBits)
-                                {
-                                    activeBits = currentActiveBits;
-                                }
-                            }
-
-                            constOp->erase();
-                        }
-                        else
-                        {
-                            llvm_unreachable("not implemented");
-                        }
-                    }
-                    else
-                    {
-                        enumValueAttr = builder.getI32IntegerAttr(index);
-                    }
-
-                    enumValues.push_back({ mlir::Identifier::get(memberName, builder.getContext()), enumValueAttr });
-                    index++;
+                }
+                else
+                {
+                    enumValueAttr = builder.getI32IntegerAttr(index);
                 }
 
-                // count used bits
-                auto indexUsingBits = std::floor(std::log2(index)) + 1;
-                if (indexUsingBits > activeBits)
-                {
-                    activeBits = indexUsingBits;
-                }                    
+                enumValues.push_back({ mlir::Identifier::get(memberName, builder.getContext()), enumValueAttr });
+                index++;
+            }
 
-                // get type by size
-                auto bits = 32;
+            // count used bits
+            auto indexUsingBits = std::floor(std::log2(index)) + 1;
+            if (indexUsingBits > activeBits)
+            {
+                activeBits = indexUsingBits;
+            }                    
+
+            // get type by size
+            auto bits = 32;
+            if (bits < activeBits)
+            {
+                bits = 64;
                 if (bits < activeBits)
                 {
-                    bits = 64;
-                    if (bits < activeBits)
-                    {
-                        bits = 128;
-                    }
+                    bits = 128;
                 }
-
-                auto enumIntType = builder.getIntegerType(bits);
-                SmallVector<mlir::NamedAttribute> adjustedEnumValues;
-                for (auto enumItem : enumValues)
-                {
-                    if (auto intAttr = enumItem.second.dyn_cast_or_null<mlir::IntegerAttr>())
-                    {
-                        adjustedEnumValues.push_back({ enumItem.first, mlir::IntegerAttr::get(enumIntType, intAttr.getInt() ) });
-                    }
-                    else
-                    {
-                        adjustedEnumValues.push_back(enumItem);
-                    }
-                }
-
-                enumsMap.insert({ name, std::make_pair(enumIntType, mlir::DictionaryAttr::get(adjustedEnumValues, builder.getContext())) });
-
-                identOp.getDefiningOp()->erase();
-
-                return mlir::success();
             }
-            else
+
+            auto enumIntType = builder.getIntegerType(bits);
+            SmallVector<mlir::NamedAttribute> adjustedEnumValues;
+            for (auto enumItem : enumValues)
             {
-                llvm_unreachable("not implemented");
+                if (auto intAttr = enumItem.second.dyn_cast_or_null<mlir::IntegerAttr>())
+                {
+                    adjustedEnumValues.push_back({ enumItem.first, mlir::IntegerAttr::get(enumIntType, intAttr.getInt() ) });
+                }
+                else
+                {
+                    adjustedEnumValues.push_back(enumItem);
+                }
             }
 
-            return mlir::failure();
+            enumsMap.insert({ name, std::make_pair(enumIntType, mlir::DictionaryAttr::get(adjustedEnumValues, builder.getContext())) });
+
+            return mlir::success();
         }        
 
         mlir::Type getType(Node typeReferenceAST)
@@ -3060,42 +3043,38 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             //return getAnyType();
         }
 
-        mlir::Type getResolveTypeFromValue(mlir::Value value)
+        mlir::Type getResolveTypeFromValue(std::string name)
         {
-            mlir::Type type;
-
-            if (auto symRefOp = dyn_cast_or_null<mlir_ts::SymbolRefOp>(value.getDefiningOp()))
+            auto aliasType = typeAliasMap.lookup(name);
+            if (aliasType)
             {
-                auto name = symRefOp.identifier();
-                type = typeAliasMap.lookup(name);
-                if (!type)
-                {
-                    theModule.emitError("Type alias '") << name << "' can't be found";
-                }
-            }
-            else if (auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(value.getDefiningOp()))
-            {
-                type = constOp.getType();
-                if (auto enumType = type.dyn_cast_or_null<mlir_ts::EnumType>())
-                {
-                    // we do not exact type enum as we want to avoid casting it all the time
-                    type = enumType.getElementType();
-                }
+                return aliasType;
             }
 
-            if (type)
+            if (enumsMap.count(name))
             {
-                return type;
+                auto enumType = enumsMap.lookup(name);
+                return enumType.first;
             }
 
-            llvm_unreachable("not implemented type declaration");
-        }
+            theModule.emitError("Type '") << name << "' can't be found";
+            return mlir::Type();
+        }        
+
+        mlir::Type getTypeByTypeName(Node node)
+        {
+            auto typeName = MLIRHelper::getName(node);
+            if (!typeName.empty())
+            {
+                return getResolveTypeFromValue(typeName);
+            }
+          
+            llvm_unreachable("not implemented");
+        }   
 
         mlir::Type getTypeByTypeReference(TypeReferenceNode typeReferenceAST)
         {
-            GenContext genContext;
-            auto typeVale = mlirGen(typeReferenceAST->typeName.as<Expression>(), genContext);
-            return getResolveTypeFromValue(typeVale);
+            return getTypeByTypeName(typeReferenceAST->typeName);
         }        
 
         mlir_ts::VoidType getVoidType()

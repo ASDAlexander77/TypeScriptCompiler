@@ -214,25 +214,18 @@ OpFoldResult mlir_ts::ConstantOp::fold(ArrayRef<Attribute> operands) {
   return getValue();
 }
 
-//===----------------------------------------------------------------------===//
-// SymbolRefOp
-//===----------------------------------------------------------------------===//
-
-//===----------------------------------------------------------------------===//
-// LoadOp
-//===----------------------------------------------------------------------===//
 namespace 
 {
-    /// Fold indirect calls that have a constant function as the callee operand.
-    struct RemoveUnusedLoads : public OpRewritePattern<mlir_ts::LoadOp> 
+    template <typename T>
+    struct RemoveUnused : public OpRewritePattern<T> 
     {
-        using OpRewritePattern<mlir_ts::LoadOp>::OpRewritePattern;
+        using OpRewritePattern<T>::OpRewritePattern;
 
-        LogicalResult matchAndRewrite(mlir_ts::LoadOp loadOp, PatternRewriter &rewriter) const override {
-
-            if (loadOp.result().use_empty())
+        LogicalResult matchAndRewrite(T op, PatternRewriter &rewriter) const override 
+        {
+            if (op->getResult(0).use_empty())
             {
-                rewriter.eraseOp(loadOp);
+                rewriter.eraseOp(op);
             }
 
             return success();
@@ -240,9 +233,23 @@ namespace
     };
 } // end anonymous namespace.
 
+
+//===----------------------------------------------------------------------===//
+// SymbolRefOp
+//===----------------------------------------------------------------------===//
+
+void mlir_ts::SymbolRefOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context) 
+{
+  results.insert<RemoveUnused<mlir_ts::SymbolRefOp>>(context);
+}
+
+//===----------------------------------------------------------------------===//
+// LoadOp
+//===----------------------------------------------------------------------===//
+
 void mlir_ts::LoadOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context) 
 {
-  results.insert<RemoveUnusedLoads>(context);
+  results.insert<RemoveUnused<mlir_ts::LoadOp>>(context);
 }
 
 //===----------------------------------------------------------------------===//

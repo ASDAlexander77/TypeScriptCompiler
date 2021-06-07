@@ -76,6 +76,8 @@ def SymbolRefOp : TypeScript_Op<"SymbolRef",
   let extraClassDeclaration = [{
     Attribute getValue() { return (*this)->getAttr("identifier"); }
   }];
+
+  let hasCanonicalizer = 1;
 }
 
 def TypeScript_FuncOp : TypeScript_Op<"Func", [
