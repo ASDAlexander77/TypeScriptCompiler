@@ -36,6 +36,7 @@ add_test(NAME test-runner-00-for-of COMMAND test-runner "${PROJECT_SOURCE_DIR}/t
 add_test(NAME test-runner-00-sizeof COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00sizeof.ts")
 add_test(NAME test-runner-00-new-delete COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00new_delete.ts")
 add_test(NAME test-runner-00-void COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00void.ts")
+add_test(NAME test-runner-00-in COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00in.ts")
 add_test(NAME test-runner-01-arguments COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01arguments.ts")
 add_test(NAME test-runner-02-numbers COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/02numbers.ts")
 add_test(NAME test-runner-05-strings COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/05strings.ts")

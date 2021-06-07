@@ -1587,7 +1587,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             {
                 if (!genContext.allowPartialResolve)
                 {
-                    emitError(loc(expression), "expression has not result");
+                    emitError(loc(expression), "expression has no result");
                 }
 
                 return mlir::Value();
@@ -1648,7 +1648,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             {
                 if (!genContext.allowPartialResolve)
                 {
-                    emitError(loc(expression), "expression has not result");
+                    emitError(loc(expression), "expression has no result");
                 }
 
                 return mlir::Value();
@@ -1744,6 +1744,19 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             return ifOp.getResult(0);                                
         }
 
+        mlir::Value mlirGenInLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
+        {
+            // Supports only array now
+            auto location = loc(binaryExpressionAST);
+
+            NodeFactory nf(NodeFactoryFlags::None);
+
+            // condition
+            auto cond = nf.createBinaryExpression(binaryExpressionAST->left, nf.createToken(SyntaxKind::LessThanToken), nf.createPropertyAccessExpression(binaryExpressionAST->right, nf.createIdentifier(S("length"))));
+
+            return mlirGen(cond, genContext);            
+        }        
+
         mlir::Value evaluateBinaryOp(mlir::Location location, SyntaxKind opCode, mlir_ts::ConstantOp leftConstOp, mlir_ts::ConstantOp rightConstOp, const GenContext &genContext)
         {
             auto leftInt = leftConstOp.valueAttr().dyn_cast<mlir::IntegerAttr>().getInt();
@@ -1791,7 +1804,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             {
                 if (!genContext.allowPartialResolve)
                 {
-                    emitError(loc(leftExpression), "left expression has not result");
+                    emitError(loc(leftExpression), "left expression has no result");
                 }
 
                 return mlir::Value();
@@ -1801,7 +1814,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             {
                 if (!genContext.allowPartialResolve)
                 {
-                    emitError(loc(rightExpression), "right expression has not result");
+                    emitError(loc(rightExpression), "right expression has no result");
                 }
 
                 return mlir::Value();
@@ -1871,6 +1884,11 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             {
                 return mlirGenAndOrLogic(binaryExpressionAST, genContext, opCode == SyntaxKind::AmpersandAmpersandToken);
             }
+            
+            if (opCode == SyntaxKind::InKeyword)
+            {
+                return mlirGenInLogic(binaryExpressionAST, genContext);
+            }
 
             if (opCode == SyntaxKind::EqualsToken)
             {
@@ -1884,7 +1902,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             {
                 if (!genContext.allowPartialResolve)
                 {
-                    emitError(loc(leftExpression), "left expression has not result");
+                    emitError(loc(leftExpression), "left expression has no result");
                 }
 
                 return mlir::Value();
@@ -1894,7 +1912,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             {
                 if (!genContext.allowPartialResolve)
                 {
-                    emitError(loc(rightExpression), "right expression has not result");
+                    emitError(loc(rightExpression), "right expression has no result");
                 }
 
                 return mlir::Value();
@@ -2791,7 +2809,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             auto location = loc(identifier);
 
             // resolve name
-            auto name = wstos(identifier->escapedText);
+            auto name = MLIRHelper::getName(identifier);
 
             auto value = symbolTable.lookup(name);
             if (value.second)

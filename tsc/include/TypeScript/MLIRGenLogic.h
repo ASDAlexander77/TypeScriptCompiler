@@ -393,7 +393,6 @@ namespace typescript
             if (auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(exprValue))
             {
                 auto value = constOp.getValue();
-                constOp->erase();
                 return value;
             }
             else
@@ -407,6 +406,7 @@ namespace typescript
             if (auto loadOp = dyn_cast_or_null<mlir_ts::LoadOp>(expression.getDefiningOp()))
             {
                 auto refValue = loadOp.reference();
+                // TODO: rewrite code when you do not need to remove it, maybe you can remove it later at affine stage as not used
                 loadOp->erase();
                 return refValue;
             }
