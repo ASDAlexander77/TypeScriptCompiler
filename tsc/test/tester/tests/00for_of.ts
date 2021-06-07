@@ -7,10 +7,22 @@ function main() {
         print(l);
     }
 
-    const array1 = ['a', 'b', 'c'];
+    const array1 = ["a", "b", "c"];
 
     for (const element of array1) {
         print(element);
+    }
+
+    const trees = [
+        [1, "redwood"],
+        [2, "bay"],
+        [3, "cedar"],
+        [4, "oak"],
+        [5, "maple"],
+    ];
+
+    for (const [k, v] of trees) {
+        print(k, v);
     }
 
     print("done.");

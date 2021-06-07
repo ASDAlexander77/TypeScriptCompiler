@@ -594,6 +594,8 @@ def TypeScript_LoadOp : TypeScript_Op<"Load",
   let arguments = (ins Arg<TypeScript_AnyRef, "the reference to load from", [MemRead]>:$reference);
   let results = (outs AnyType:$result);
   let assemblyFormat = "$reference attr-dict `:` type($reference) `->` type($result)";
+
+  let hasCanonicalizer = 1;
 }
 
 def TypeScript_ExtractPropertyOp : TypeScript_Op<"ExtractProperty"> {

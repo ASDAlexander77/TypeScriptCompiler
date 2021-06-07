@@ -219,6 +219,33 @@ OpFoldResult mlir_ts::ConstantOp::fold(ArrayRef<Attribute> operands) {
 //===----------------------------------------------------------------------===//
 
 //===----------------------------------------------------------------------===//
+// LoadOp
+//===----------------------------------------------------------------------===//
+namespace 
+{
+    /// Fold indirect calls that have a constant function as the callee operand.
+    struct RemoveUnusedLoads : public OpRewritePattern<mlir_ts::LoadOp> 
+    {
+        using OpRewritePattern<mlir_ts::LoadOp>::OpRewritePattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::LoadOp loadOp, PatternRewriter &rewriter) const override {
+
+            if (loadOp.result().use_empty())
+            {
+                rewriter.eraseOp(loadOp);
+            }
+
+            return success();
+        }
+    };
+} // end anonymous namespace.
+
+void mlir_ts::LoadOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context) 
+{
+  results.insert<RemoveUnusedLoads>(context);
+}
+
+//===----------------------------------------------------------------------===//
 // FuncOp
 //===----------------------------------------------------------------------===//
 mlir_ts::FuncOp mlir_ts::FuncOp::create(Location location, StringRef name, FunctionType type,

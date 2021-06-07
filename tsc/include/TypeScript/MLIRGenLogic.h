@@ -405,9 +405,8 @@ namespace typescript
         {
             if (auto loadOp = dyn_cast_or_null<mlir_ts::LoadOp>(expression.getDefiningOp()))
             {
+                // this LoadOp will be removed later as unused
                 auto refValue = loadOp.reference();
-                // TODO: rewrite code when you do not need to remove it, maybe you can remove it later at affine stage as not used
-                loadOp->erase();
                 return refValue;
             }
 
