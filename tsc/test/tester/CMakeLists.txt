@@ -21,6 +21,7 @@ add_test(NAME test-runner-00-vars COMMAND test-runner "${PROJECT_SOURCE_DIR}/tes
 add_test(NAME test-runner-00-globals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals.ts")
 add_test(NAME test-runner-00-arrays COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array.ts")
 add_test(NAME test-runner-00-arrays2 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array2.ts")
+add_test(NAME test-runner-00-arrays3 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array3.ts")
 add_test(NAME test-runner-00-prefix-postfix COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00prefix_postfix.ts")
 add_test(NAME test-runner-00-cond_expr COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00cond_expr.ts")
 add_test(NAME test-runner-00-switch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00switch.ts")

@@ -467,6 +467,38 @@ namespace typescript
             return getOrCreateGlobalArray(originalElementType, vecVarName, llvmElementType, size, arrayAttr);
         }
 
+        Value getReadOnlyRTArray(mlir::Location loc, mlir_ts::ArrayType originalArrayType, LLVM::LLVMStructType llvmArrayType, ArrayAttr arrayValue)
+        {
+            auto llvmSubElementType = llvmArrayType.getBody()[0].cast<LLVM::LLVMPointerType>().getElementType();
+
+            auto size = arrayValue.size();
+            auto itemValArrayPtr = getOrCreateGlobalArray(originalArrayType.getElementType(), llvmSubElementType, size, arrayValue);        
+
+            // create ReadOnlyRuntimeArrayType
+            auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmArrayType);
+            //auto arrayPtrType = LLVM::LLVMPointerType::get(llvmSubElementType);
+            //auto arrayValueSize = LLVM::LLVMArrayType::get(llvmSubElementType, size);
+            //auto ptrToArray = LLVM::LLVMPointerType::get(arrayValueSize);
+
+            auto sizeValue = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(32), rewriter.getIntegerAttr(rewriter.getI32Type(), arrayValue.size()));
+
+            auto structValue2 = rewriter.create<LLVM::InsertValueOp>(
+                loc, 
+                llvmArrayType,
+                structValue, 
+                itemValArrayPtr,
+                rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(0)));           
+
+            auto structValue3 = rewriter.create<LLVM::InsertValueOp>(
+                loc, 
+                llvmArrayType, 
+                structValue2,
+                sizeValue, 
+                rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(1)));
+
+            return structValue3;
+        }
+
         Value getOrCreateGlobalArray(Type originalElementType, StringRef name, Type llvmElementType, unsigned size, ArrayAttr arrayAttr)
         {
             auto loc = op->getLoc();
@@ -544,35 +576,7 @@ namespace typescript
                     for (auto item : arrayAttr.getValue())
                     {
                         auto arrayValue = item.cast<ArrayAttr>();
-
-                        auto llvmSubElementType = llvmElementType.cast<LLVM::LLVMStructType>().getBody()[0].cast<LLVM::LLVMPointerType>().getElementType();
-
-                        auto size = arrayValue.size();
-                        auto itemValArrayPtr = getOrCreateGlobalArray(originalArrayType.getElementType(), llvmSubElementType, size, arrayValue);        
-
-                        // create ReadOnlyRuntimeArrayType
-                        auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmElementType);
-                        //auto arrayPtrType = LLVM::LLVMPointerType::get(llvmSubElementType);
-                        //auto arrayValueSize = LLVM::LLVMArrayType::get(llvmSubElementType, size);
-                        //auto ptrToArray = LLVM::LLVMPointerType::get(arrayValueSize);
-
-                        auto sizeValue = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(32), rewriter.getIntegerAttr(rewriter.getI32Type(), arrayValue.size()));
-
-                        auto structValue2 = rewriter.create<LLVM::InsertValueOp>(
-                            loc, 
-                            llvmElementType,
-                            structValue, 
-                            itemValArrayPtr,
-                            rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(0)));           
-
-                        auto structValue3 = rewriter.create<LLVM::InsertValueOp>(
-                            loc, 
-                            llvmElementType, 
-                            structValue2,
-                            sizeValue, 
-                            rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(1)));
-
-                        auto itemVal = structValue3;
+                        auto itemVal = getReadOnlyRTArray(loc, originalArrayType, llvmElementType.cast<LLVM::LLVMStructType>(), arrayValue);
 
                         arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, itemVal, rewriter.getI64ArrayAttr(position++));
                     }
@@ -584,7 +588,7 @@ namespace typescript
                     //
                     llvm_unreachable("ConstArrayType must not be used in array, use normal ArrayType (the same way as StringType)");
                 }
-                else if (originalElementType.dyn_cast_or_null<mlir_ts::ConstTupleType>())
+                else if (auto constTupleType = originalElementType.dyn_cast_or_null<mlir_ts::ConstTupleType>())
                 {                                        
                     seekLast(parentModule.getBody());
 
@@ -603,7 +607,7 @@ namespace typescript
                     auto position = 0;
                     for (auto item : arrayAttr.getValue())
                     {
-                        auto tupleVal = getTupleFromArrayAttr(loc, llvmElementType, item.dyn_cast_or_null<ArrayAttr>());
+                        auto tupleVal = getTupleFromArrayAttr(loc, constTupleType, llvmElementType.cast<LLVM::LLVMStructType>(), item.dyn_cast_or_null<ArrayAttr>());
                         arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, tupleVal, rewriter.getI64ArrayAttr(position++));
                     }
 
@@ -628,16 +632,18 @@ namespace typescript
                 ArrayRef<Value>({cst0, cst0}));            
         }        
 
-        Value getTupleFromArrayAttr(Location loc, Type llvmStructType, ArrayAttr arrayAttr)
+        Value getTupleFromArrayAttr(Location loc, mlir_ts::ConstTupleType originalType, LLVM::LLVMStructType llvmStructType, ArrayAttr arrayAttr)
         {
             Value tupleVal = rewriter.create<LLVM::UndefOp>(loc, llvmStructType);
 
-            auto typesRange = llvmStructType.cast<LLVM::LLVMStructType>().getBody();
+            auto typesRange = llvmStructType.getBody();
 
             auto position = 0;
             for (auto item : arrayAttr.getValue())
             {
-                auto type = typesRange[position];
+                auto type = originalType.getType(position);
+
+                auto llvmType = typesRange[position];
                 if (item.isa<StringAttr>())
                 {
                     OpBuilder::InsertionGuard guard(rewriter);
@@ -647,18 +653,33 @@ namespace typescript
 
                     tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemVal, rewriter.getI64ArrayAttr(position++));
                 }
-                else if (auto subArrayAttr = item.dyn_cast_or_null<ArrayAttr>())
+                else if (auto constArrayType = type.dyn_cast_or_null<mlir_ts::ConstArrayType>())
                 {
+                    llvm_unreachable("not used.");
+                }       
+                else if (auto arrayType = type.dyn_cast_or_null<mlir_ts::ArrayType>())
+                {
+                    auto subArrayAttr = item.dyn_cast_or_null<ArrayAttr>();
+
                     OpBuilder::InsertionGuard guard(rewriter);
 
-                    auto subTupleVal = getTupleFromArrayAttr(loc, type, subArrayAttr);
+                    auto itemVal = getReadOnlyRTArray(loc, arrayType, llvmType.cast<LLVM::LLVMStructType>(), subArrayAttr);
+                    tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemVal, rewriter.getI64ArrayAttr(position++));
+                }                               
+                else if (auto constTupleType = type.dyn_cast_or_null<mlir_ts::ConstTupleType>())
+                {
+                    auto subArrayAttr = item.dyn_cast_or_null<ArrayAttr>();
+
+                    OpBuilder::InsertionGuard guard(rewriter);
+
+                    auto subTupleVal = getTupleFromArrayAttr(loc, constTupleType, llvmType.cast<LLVM::LLVMStructType>(), subArrayAttr);
 
                     tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, subTupleVal, rewriter.getI64ArrayAttr(position++));
                 }                
                 else
                 {
                     // DO NOT Replace with LLVM::ConstantOp - to use AddressOf for global symbol names
-                    auto itemValue = rewriter.create<mlir::ConstantOp>(loc, type, item);
+                    auto itemValue = rewriter.create<mlir::ConstantOp>(loc, llvmType, item);
                     tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemValue, rewriter.getI64ArrayAttr(position++));
                 }
             }
@@ -666,13 +687,13 @@ namespace typescript
             return tupleVal;
         }
 
-        Value getOrCreateGlobalTuple(Type llvmStructType, ArrayAttr arrayAttr)
+        Value getOrCreateGlobalTuple(mlir_ts::ConstTupleType originalType, LLVM::LLVMStructType llvmStructType, ArrayAttr arrayAttr)
         {
             auto varName = calc_hash_value(arrayAttr, "tp_");   
-            return getOrCreateGlobalTuple(llvmStructType, varName, arrayAttr);
+            return getOrCreateGlobalTuple(originalType, llvmStructType, varName, arrayAttr);
         }
 
-        Value getOrCreateGlobalTuple(Type llvmStructType, StringRef name, ArrayAttr arrayAttr)
+        Value getOrCreateGlobalTuple(mlir_ts::ConstTupleType originalType, LLVM::LLVMStructType llvmStructType, StringRef name, ArrayAttr arrayAttr)
         {
             auto loc = op->getLoc();
             auto parentModule = op->getParentOfType<ModuleOp>();
@@ -698,7 +719,7 @@ namespace typescript
                 // Initialize the tuple
                 rewriter.setInsertionPoint(block, block->begin());
 
-                auto tupleVal = getTupleFromArrayAttr(loc, llvmStructType, arrayAttr);
+                auto tupleVal = getTupleFromArrayAttr(loc, originalType, llvmStructType, arrayAttr);
                 rewriter.create<LLVM::ReturnOp>(loc, ValueRange{tupleVal});
             }
 

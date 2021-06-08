@@ -352,7 +352,15 @@ def TypeScript_ConstTuple : TypeScript_Type<"ConstTuple"> {
     $_printer << "tuple" << "<";
     for (size_t i=0, e = getImpl()->fields.size(); i < e; i++) {
       const auto& field = getImpl()->fields[i];
-      $_printer << "{" << field.id << "," << field.type << "}";
+      if (field.id) 
+      {
+          $_printer << "{" << field.id << "," << field.type << "}";
+      }
+      else
+      {
+          $_printer << field.type;
+      }
+      
       if (i < getImpl()->fields.size() - 1)
           $_printer << ",";
     }
@@ -436,10 +444,10 @@ def TypeScript_Tuple : TypeScript_Type<"Tuple"> {
     tuple<>
 
     // Single element
-    tuple<f32>
+    tuple<{f32}>
 
     // Many elements.
-    tuple<i32, f32, tensor<i1>, i5>
+    tuple<{i32}, {f32}, {tensor<i1>}, {i5}>
     ```
   }];
   let parameters = (ins ArrayRefOfSelfAllocationParameter<"::mlir::typescript::FieldInfo", "fields">:$fields);
@@ -448,7 +456,15 @@ def TypeScript_Tuple : TypeScript_Type<"Tuple"> {
     $_printer << "tuple" << "<";
     for (size_t i=0, e = getImpl()->fields.size(); i < e; i++) {
       const auto& field = getImpl()->fields[i];
-      $_printer << "{" << field.id << "," << field.type << "}";
+      if (field.id) 
+      {
+          $_printer << "{" << field.id << "," << field.type << "}";
+      }
+      else
+      {
+          $_printer << field.type;
+      }
+
       if (i < getImpl()->fields.size() - 1)
           $_printer << ",";
     }

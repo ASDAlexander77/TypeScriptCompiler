@@ -611,7 +611,7 @@ namespace
             auto arrayAttr = constantOp.value().dyn_cast_or_null<ArrayAttr>();
 
             auto convertedTupleType = tch.convertType(type);
-            auto tupleConstPtr = ch.getOrCreateGlobalTuple(convertedTupleType, arrayAttr);
+            auto tupleConstPtr = ch.getOrCreateGlobalTuple(type.cast<mlir_ts::ConstTupleType>(), convertedTupleType.cast<LLVM::LLVMStructType>(), arrayAttr);
 
             // optimize it and replace it with copy memory. (use canon. pass) check  "EraseRedundantAssertions"
             auto loadedValue = rewriter.create<LLVM::LoadOp>(constantOp->getLoc(), tupleConstPtr);
