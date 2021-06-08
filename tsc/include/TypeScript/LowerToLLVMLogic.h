@@ -522,10 +522,67 @@ namespace typescript
 
                     rewriter.create<LLVM::ReturnOp>(loc, ValueRange{arrayVal});
                 }
+                else if (auto originalArrayType = originalElementType.dyn_cast_or_null<mlir_ts::ArrayType>())
+                { 
+                    seekLast(parentModule.getBody());
+
+                    OpBuilder::InsertionGuard guard(rewriter);
+                    
+                    global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, Attribute{});
+
+                    Region &region = global.getInitializerRegion();
+                    Block *block = rewriter.createBlock(&region);
+
+                    // Initialize the tuple
+                    rewriter.setInsertionPoint(block, block->begin());
+
+                    Value arrayVal = rewriter.create<LLVM::UndefOp>(loc, arrayType);
+
+                    // TODO: implement ReadOnlyRTArray; as RTArray may contains ConstArray data (so using not editable memory)
+
+                    auto position = 0;
+                    for (auto item : arrayAttr.getValue())
+                    {
+                        auto arrayValue = item.cast<ArrayAttr>();
+
+                        auto llvmSubElementType = llvmElementType.cast<LLVM::LLVMStructType>().getBody()[0].cast<LLVM::LLVMPointerType>().getElementType();
+
+                        auto size = arrayValue.size();
+                        auto itemValArrayPtr = getOrCreateGlobalArray(originalArrayType.getElementType(), llvmSubElementType, size, arrayValue);        
+
+                        // create ReadOnlyRuntimeArrayType
+                        auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmElementType);
+                        //auto arrayPtrType = LLVM::LLVMPointerType::get(llvmSubElementType);
+                        //auto arrayValueSize = LLVM::LLVMArrayType::get(llvmSubElementType, size);
+                        //auto ptrToArray = LLVM::LLVMPointerType::get(arrayValueSize);
+
+                        auto sizeValue = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(32), rewriter.getIntegerAttr(rewriter.getI32Type(), arrayValue.size()));
+
+                        auto structValue2 = rewriter.create<LLVM::InsertValueOp>(
+                            loc, 
+                            llvmElementType,
+                            structValue, 
+                            itemValArrayPtr,
+                            rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(0)));           
+
+                        auto structValue3 = rewriter.create<LLVM::InsertValueOp>(
+                            loc, 
+                            llvmElementType, 
+                            structValue2,
+                            sizeValue, 
+                            rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(1)));
+
+                        auto itemVal = structValue3;
+
+                        arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, itemVal, rewriter.getI64ArrayAttr(position++));
+                    }
+
+                    rewriter.create<LLVM::ReturnOp>(loc, ValueRange{arrayVal});                    
+                }
                 else if (originalElementType.dyn_cast_or_null<mlir_ts::ConstArrayType>())
                 {                                        
                     //
-                    llvm_unreachable("under construction ConstArrayType");
+                    llvm_unreachable("ConstArrayType must not be used in array, use normal ArrayType (the same way as StringType)");
                 }
                 else if (originalElementType.dyn_cast_or_null<mlir_ts::ConstTupleType>())
                 {                                        

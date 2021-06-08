@@ -2672,6 +2672,8 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
         mlir::Value mlirGen(ts::ArrayLiteralExpression arrayLiteral, const GenContext &genContext)
         {
+            MLIRTypeHelper mth(builder.getContext());
+
             // first value
             auto isTuple = false;
             mlir::Type elementType;
@@ -2693,7 +2695,8 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     continue;
                 }
 
-                auto type = constOp.getType();
+                bool copyRequired;
+                auto type = mth.convertConstTypeToType(constOp.getType(), copyRequired);
 
                 values.push_back(constOp.valueAttr());
                 types.push_back(type);

@@ -46,6 +46,24 @@ namespace typescript
 
             return false;
         }
+
+        static bool matchSimilarTypes(mlir::Type ty1, mlir::Type ty2)
+        {
+            if (ty1 == ty2)
+            {
+                return true;
+            }
+
+            if (auto constArray1 = ty1.dyn_cast_or_null<mlir_ts::ConstArrayType>())
+            {
+                if (auto constArray2 = ty2.dyn_cast_or_null<mlir_ts::ConstArrayType>())
+                {
+                    return matchSimilarTypes(constArray1.getElementType(), constArray2.getElementType());
+                }
+            }
+
+            return false;
+        }
     };
 
     class MLIRTypeHelper
