@@ -1674,6 +1674,43 @@ namespace
         }
     };
 
+    struct ThrowOpLoweringWin32 : public OpConversionPattern<mlir_ts::ThrowOp>
+    {
+        using OpConversionPattern<mlir_ts::ThrowOp>::OpConversionPattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::ThrowOp throwOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            LLVMCodeHelper ch(throwOp, rewriter);
+            CodeLogicHelper clh(throwOp, rewriter);
+            TypeConverterHelper tch(getTypeConverter());
+            TypeHelper th(rewriter);
+
+            auto loc = throwOp.getLoc();
+
+            auto throwInfoTy = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), { th.getI32Type(), th.getI32Type(), th.getI32Type(), th.getI32Type() }, false);
+            auto throwInfoPtrTy = LLVM::LLVMPointerType::get(throwInfoTy);
+
+            auto i8PtrTy = th.getI8PtrType();
+
+            auto cxxThrowException =
+                ch.getOrInsertFunction(
+                    "_CxxThrowException",
+                    th.getFunctionType(th.getVoidType(), {i8PtrTy, throwInfoPtrTy}));
+
+            auto nullCst = rewriter.create<LLVM::NullOp>(loc, i8PtrTy);
+            auto throwInfoPtr = rewriter.create<LLVM::BitcastOp>(loc, throwInfoPtrTy, nullCst);
+
+            // prepare first param
+            // we need temp var
+            auto value = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(throwOp.exception().getType()), throwOp.exception());
+
+            rewriter.create<LLVM::CallOp>(loc, cxxThrowException, ValueRange{ clh.castToI8Ptr(value), throwInfoPtr });
+
+            rewriter.eraseOp(throwOp);
+            return success();
+        }
+    };        
+
     static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, mlir::ModuleOp &m)
     {
         converter.addConversion([&](mlir_ts::AnyType type) {
@@ -1871,6 +1908,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         UndefOpLowering,
         MemoryCopyOpLowering,
         LoadSaveValueLowering,
+        ThrowOpLoweringWin32,
         VariableOpLowering>(typeConverter, &getContext());
 
     populateTypeScriptConversionPatterns(typeConverter, m);
