@@ -632,6 +632,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         mlir_ts::LogicalBinaryOp,
         mlir_ts::UndefOp,
         mlir_ts::VariableOp,
+        mlir_ts::ThrowOp,
         mlir_ts::YieldOp
     >();
 

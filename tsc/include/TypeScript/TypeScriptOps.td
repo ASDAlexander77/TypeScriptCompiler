@@ -1174,4 +1174,9 @@ def TypeScript_LoadSaveOp : TypeScript_Op<"LoadSave", [AllTypesMatch<["dst", "sr
   let results = (outs );
 }
 
+def TypeScript_ThrowOp : TypeScript_Op<"Throw"> {
+  let arguments = (ins AnyType:$exception);
+  let results = (outs );
+}
+
 #endif // TYPESCRIPT_OPS

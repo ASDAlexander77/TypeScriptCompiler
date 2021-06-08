@@ -1512,8 +1512,13 @@ namespace
         {
             auto location = loc(throwStatementAST);
 
+            auto exception = mlirGen(throwStatementAST->expression, genContext);
+
+            builder.create<mlir_ts::ThrowOp>(location, exception);
+
+            return mlir::success();
+
             // TODO: read about LLVM_ResumeOp,  maybe this is what you need (+LLVM_InvokeOp, LLVM_LandingpadOp)
-            llvm_unreachable("not implemented");
 
             // TODO: PS, you can add param to each method to process return "exception info", and check every call for methods if they return exception info
 
@@ -1560,8 +1565,6 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 }
 
             */
-
-            return mlir::success();
         }
 
         mlir::Value mlirGen(UnaryExpression unaryExpressionAST, const GenContext &genContext)
@@ -1757,6 +1760,18 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             return mlirGen(cond, genContext);            
         }        
 
+        mlir::Value mlirGenInstanceOfLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
+        {
+            auto location = loc(binaryExpressionAST);
+
+            auto result = mlirGen(binaryExpressionAST->left, genContext);
+            auto resultType = result.getType();
+            auto type = getTypeByTypeName(binaryExpressionAST->right);
+
+            return builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(resultType == type));
+        }
+
+
         mlir::Value evaluateBinaryOp(mlir::Location location, SyntaxKind opCode, mlir_ts::ConstantOp leftConstOp, mlir_ts::ConstantOp rightConstOp, const GenContext &genContext)
         {
             auto leftInt = leftConstOp.valueAttr().dyn_cast<mlir::IntegerAttr>().getInt();
@@ -1888,6 +1903,11 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             if (opCode == SyntaxKind::InKeyword)
             {
                 return mlirGenInLogic(binaryExpressionAST, genContext);
+            }
+
+            if (opCode == SyntaxKind::InstanceOfKeyword)
+            {
+                return mlirGenInstanceOfLogic(binaryExpressionAST, genContext);
             }
 
             if (opCode == SyntaxKind::EqualsToken)
