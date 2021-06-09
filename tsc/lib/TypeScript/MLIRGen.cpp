@@ -82,6 +82,7 @@ namespace
         bool allowPartialResolve;
         bool dummyRun;
         bool allowConstEval;
+        mlir_ts::FuncOp funcOp;
         mlir::Type functionReturnType;
         PassResult *passResult;
         mlir::SmallVector<mlir::Block *>* cleanUps;
@@ -326,6 +327,10 @@ namespace
             else if (kind == SyntaxKind::ThrowStatement)
             {
                 return mlirGen(statementAST.as<ThrowStatement>(), genContext);
+            }            
+            else if (kind == SyntaxKind::TryStatement)
+            {
+                return mlirGen(statementAST.as<TryStatement>(), genContext);
             }            
             else if (kind == SyntaxKind::LabeledStatement)
             {
@@ -917,6 +922,7 @@ namespace
             }
 
             auto funcGenContext = GenContext(genContext);
+            funcGenContext.funcOp = funcOp;
             if (funcOp.getNumResults() > 0)
             {
                 funcGenContext.functionReturnType = funcOp.getType().getResult(0);
@@ -1565,6 +1571,13 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 }
 
             */
+        }
+
+        mlir::LogicalResult mlirGen(TryStatement tryStatementAST, const GenContext &genContext)
+        {
+            const_cast<GenContext &>(genContext).funcOp.personalityAttr(builder.getBoolAttr(true));
+            auto result = mlirGen(tryStatementAST->tryBlock, genContext);
+            return result;
         }
 
         mlir::Value mlirGen(UnaryExpression unaryExpressionAST, const GenContext &genContext)

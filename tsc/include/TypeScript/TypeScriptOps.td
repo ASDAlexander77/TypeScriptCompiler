@@ -95,7 +95,8 @@ def TypeScript_FuncOp : TypeScript_Op<"Func", [
 
   let arguments = (ins SymbolNameAttr:$sym_name,
                        TypeAttr:$type,
-                       OptionalAttr<StrAttr>:$sym_visibility);
+                       OptionalAttr<StrAttr>:$sym_visibility,
+                       OptionalAttr<BoolAttr>:$personality);
   let regions = (region AnyRegion:$body);
 
   let builders = [OpBuilderDAG<(ins
