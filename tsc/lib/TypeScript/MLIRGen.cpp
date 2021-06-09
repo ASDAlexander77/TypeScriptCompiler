@@ -1191,7 +1191,7 @@ namespace
             builder.setInsertionPointToStart(&doWhileOp.body().front());
             mlirGen(doStatementAST->statement, genContext);
             // just simple return, as body in cond
-            builder.create<mlir_ts::YieldOp>(location);
+            builder.create<mlir_ts::ResultOp>(location);
 
             builder.setInsertionPointToStart(&doWhileOp.cond().front());
             auto conditionValue = mlirGen(doStatementAST->expression, genContext);
@@ -1228,7 +1228,7 @@ namespace
             // body
             builder.setInsertionPointToStart(&whileOp.body().front());
             mlirGen(whileStatementAST->statement, genContext);
-            builder.create<mlir_ts::YieldOp>(location);
+            builder.create<mlir_ts::ResultOp>(location);
 
             builder.setInsertionPointAfter(whileOp);
             return mlir::success();
@@ -1287,12 +1287,12 @@ namespace
             // body
             builder.setInsertionPointToStart(&forOp.body().front());
             mlirGen(forStatementAST->statement, genContext);
-            builder.create<mlir_ts::YieldOp>(location);
+            builder.create<mlir_ts::ResultOp>(location);
 
             // increment
             builder.setInsertionPointToStart(&forOp.incr().front());
             mlirGen(forStatementAST->incrementor, genContext);
-            builder.create<mlir_ts::YieldOp>(location);
+            builder.create<mlir_ts::ResultOp>(location);
 
             builder.setInsertionPointAfter(forOp);
 
@@ -1714,11 +1714,11 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
             builder.setInsertionPointToStart(&ifOp.thenRegion().front());
             auto resultTrue = mlirGen(conditionalExpressionAST->whenTrue, genContext);
-            builder.create<mlir_ts::YieldOp>(location, mlir::ValueRange{resultTrue});
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{resultTrue});
 
             builder.setInsertionPointToStart(&ifOp.elseRegion().front());
             auto resultFalse = mlirGen(conditionalExpressionAST->whenFalse, genContext);
-            builder.create<mlir_ts::YieldOp>(location, mlir::ValueRange{resultFalse});
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{resultFalse});
 
             builder.setInsertionPointAfter(ifOp);
 
@@ -1742,7 +1742,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
             builder.setInsertionPointToStart(&ifOp.thenRegion().front());
             auto resultTrue = andOp ? mlirGen(rightExpression, genContext) : leftExpressionValue;
-            builder.create<mlir_ts::YieldOp>(location, mlir::ValueRange{resultTrue});
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{resultTrue});
 
             builder.setInsertionPointToStart(&ifOp.elseRegion().front());
             auto resultFalse = andOp ? leftExpressionValue : mlirGen(rightExpression, genContext);
@@ -1753,7 +1753,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 resultFalse = builder.create<mlir_ts::CastOp>(location, resultTrue.getType(), resultFalse);
             }                    
 
-            builder.create<mlir_ts::YieldOp>(location, mlir::ValueRange{resultFalse});
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{resultFalse});
 
             builder.setInsertionPointAfter(ifOp);
 

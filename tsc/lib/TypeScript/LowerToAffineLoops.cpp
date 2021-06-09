@@ -88,7 +88,7 @@ namespace
 
             rewriter.setInsertionPointToStart(&thenRegion.back());
 
-            rewriter.create<mlir_ts::YieldOp>(location, paramOp.argValue());
+            rewriter.create<mlir_ts::ResultOp>(location, paramOp.argValue());
 
             // else block
             auto &elseRegion = ifOp.elseRegion();
@@ -114,7 +114,7 @@ namespace
 
         LogicalResult matchAndRewrite(mlir_ts::ParamDefaultValueOp op, PatternRewriter &rewriter) const final
         {
-            rewriter.replaceOpWithNewOp<mlir_ts::YieldOp>(op, op.results());
+            rewriter.replaceOpWithNewOp<mlir_ts::ResultOp>(op, op.results());
             return success();
         }
     };
@@ -288,7 +288,7 @@ namespace
             rewriter.replaceOpWithNewOp<CondBranchOp>(condOp, castToI1, body, condOp.args(), continuation, ValueRange());
 
             rewriter.setInsertionPointToEnd(bodyLast);
-            auto yieldOp = cast<mlir_ts::YieldOp>(bodyLast->getTerminator());
+            auto yieldOp = cast<mlir_ts::ResultOp>(bodyLast->getTerminator());
             rewriter.replaceOpWithNewOp<BranchOp>(yieldOp, cond, yieldOp.results());
           
             // Replace the op with values "yielded" from the "before" region, which are
@@ -349,7 +349,7 @@ namespace
             rewriter.create<BranchOp>(doWhileOp.getLoc(), body, doWhileOp.inits());
 
             rewriter.setInsertionPointToEnd(bodyLast);
-            auto yieldOp = cast<mlir_ts::YieldOp>(bodyLast->getTerminator());
+            auto yieldOp = cast<mlir_ts::ResultOp>(bodyLast->getTerminator());
             rewriter.replaceOpWithNewOp<BranchOp>(yieldOp, cond, yieldOp.results());
 
             // Loop around the "before" region based on condition.
@@ -434,12 +434,12 @@ namespace
 
             rewriter.setInsertionPointToEnd(bodyLast);
 
-            auto yieldOpBody = cast<mlir_ts::YieldOp>(bodyLast->getTerminator());
+            auto yieldOpBody = cast<mlir_ts::ResultOp>(bodyLast->getTerminator());
             rewriter.replaceOpWithNewOp<BranchOp>(yieldOpBody, incr, yieldOpBody.results());
 
             rewriter.setInsertionPointToEnd(incrLast);
 
-            auto yieldOpIncr = cast<mlir_ts::YieldOp>(incrLast->getTerminator());
+            auto yieldOpIncr = cast<mlir_ts::ResultOp>(incrLast->getTerminator());
             rewriter.replaceOpWithNewOp<BranchOp>(yieldOpIncr, cond, yieldOpIncr.results());
 
             // Replace the op with values "yielded" from the "before" region, which are
@@ -633,7 +633,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         mlir_ts::UndefOp,
         mlir_ts::VariableOp,
         mlir_ts::ThrowOp,
-        mlir_ts::YieldOp
+        mlir_ts::ResultOp
     >();
 
     // Now that the conversion target has been defined, we just need to provide

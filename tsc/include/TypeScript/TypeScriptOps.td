@@ -855,7 +855,7 @@ def TypeScript_ExitOp : TypeScript_Op<"Exit", [NoSideEffect, ReturnLike, Termina
 
 def TypeScript_IfOp : TypeScript_Op<"If",
       [DeclareOpInterfaceMethods<RegionBranchOpInterface>,
-       SingleBlockImplicitTerminator<"typescript::YieldOp">, RecursiveSideEffects,
+       SingleBlockImplicitTerminator<"typescript::ResultOp">, RecursiveSideEffects,
        NoRegionArguments]> {
   let summary = "if-then-else operation";
 
@@ -896,7 +896,7 @@ def TypeScript_IfOp : TypeScript_Op<"If",
   let hasCanonicalizer = 1;
 }
 
-def TypeScript_YieldOp : TypeScript_Op<"Yield", [NoSideEffect, ReturnLike, Terminator,
+def TypeScript_ResultOp : TypeScript_Op<"Result", [NoSideEffect, ReturnLike, Terminator,
                                ParentOneOf<["IfOp",  "DoWhileOp", "WhileOp", "ForOp"]>]> {
   let summary = "loop yield and termination operation";
 

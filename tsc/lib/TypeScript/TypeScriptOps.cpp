@@ -30,7 +30,7 @@ namespace mlir_ts = mlir::typescript;
 /// Default callback for IfOp builders. Inserts a yield without arguments.
 void mlir_ts::buildTerminatedBody(OpBuilder &builder, Location loc)
 {
-    builder.create<mlir_ts::YieldOp>(loc);
+    builder.create<mlir_ts::ResultOp>(loc);
 }
 
 //===----------------------------------------------------------------------===//
@@ -766,7 +766,7 @@ namespace
             // Move all operations to the destination block.
             rewriter.mergeBlocks(source, dest);
             // Replace the yield op by one that returns only the used values.
-            auto yieldOp = cast<mlir_ts::YieldOp>(dest->getTerminator());
+            auto yieldOp = cast<mlir_ts::ResultOp>(dest->getTerminator());
             SmallVector<Value, 4> usedOperands;
             llvm::transform(
                 usedResults,
