@@ -28,6 +28,10 @@ namespace mlir_ts = mlir::typescript;
 // TypeScriptToLLVM RewritePatterns
 //===----------------------------------------------------------------------===//
 
+#define ATTR(attr) StringAttr::get(attr, rewriter.getContext())
+#define IDENT(name) Identifier::get(name, rewriter.getContext())
+#define NAMED_ATTR(name, attr) ArrayAttr::get({ ATTR(name), ATTR(attr) }, rewriter.getContext())
+
 namespace
 {
     class PrintOpLowering : public OpConversionPattern<mlir_ts::PrintOp>
@@ -895,9 +899,6 @@ namespace
 
 #ifdef DISABLE_OPT
             // add LLVM attributes to fix issue with shift >> 32
-#define ATTR(attr) StringAttr::get(attr, rewriter.getContext())
-#define NAMED_ATTR(name, attr) ArrayAttr::get({ ATTR(name), ATTR(attr) }, rewriter.getContext())
-
             newFuncOp->setAttr("passthrough", ArrayAttr::get({
                 ATTR("noinline"),
                 // ATTR("norecurse"),
@@ -1676,6 +1677,7 @@ namespace
 
     struct ThrowOpLoweringVCWin32 : public OpConversionPattern<mlir_ts::ThrowOp>
     {
+            // add LLVM attributes to fix issue with shift >> 32                    
         using OpConversionPattern<mlir_ts::ThrowOp>::OpConversionPattern;
 
         LogicalResult matchAndRewrite(mlir_ts::ThrowOp throwOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
@@ -1684,11 +1686,12 @@ namespace
             CodeLogicHelper clh(throwOp, rewriter);
             TypeConverterHelper tch(getTypeConverter());
             TypeHelper th(rewriter);
+            LLVMRTTIHelper rttih(throwOp, rewriter);        
 
             auto loc = throwOp.getLoc();
 
-            auto throwInfoTy = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), { th.getI32Type(), th.getI32Type(), th.getI32Type(), th.getI32Type() }, false);
-            auto throwInfoPtrTy = LLVM::LLVMPointerType::get(throwInfoTy);
+            auto throwInfoTy = rttih.getThrowInfoTy();
+            auto throwInfoPtrTy = rttih.getThrowInfoPtrTy();
 
             auto i8PtrTy = th.getI8PtrType();
 
@@ -1696,13 +1699,6 @@ namespace
                 ch.getOrInsertFunction(
                     "_CxxThrowException",
                     th.getFunctionType(th.getVoidType(), {i8PtrTy, throwInfoPtrTy}));
-
-            auto nullCst = rewriter.create<LLVM::NullOp>(loc, i8PtrTy);
-            auto throwInfoPtr = rewriter.create<LLVM::BitcastOp>(loc, throwInfoPtrTy, nullCst);
-
-            // prepare first param
-            // we need temp var
-            auto value = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(throwOp.exception().getType()), throwOp.exception());
 
             // prepare RTTI info for throw
             {
@@ -1713,26 +1709,30 @@ namespace
                 rewriter.setInsertionPointToStart(parentModule.getBody());
                 ch.seekLast(parentModule.getBody());
 
+                // ??_7type_info@@6B@
+                rttih.typeInfo(loc);
+
+                // ??_R0N@8
+                rttih.typeDescriptor2(loc);
+
+                // __ImageBase
+                rttih.imageBase(loc);
+
+                // _CT??_R0N@88
+                rttih.catchableType(loc);
+
+                // _CTA1N
+                rttih.catchableArrayType(loc);
+
                 // _TI1N
-                auto _TI1NValue = rewriter.create<LLVM::GlobalOp>(loc, throwInfoTy, true, LLVM::Linkage::LinkonceODR, "_TI1N", Attribute{});
-
-                Region &_TI1NRegion = _TI1NValue.getInitializerRegion();
-                Block *_TI1NBlock = rewriter.createBlock(&_TI1NRegion);
-
-                rewriter.setInsertionPoint(_TI1NBlock, _TI1NBlock->begin());
-
-                Value throwInfoStructValue = ch.getStructFromArrayAttr(loc, throwInfoTy, 
-                rewriter.getArrayAttr({ 
-                    rewriter.getI32IntegerAttr(0), 
-                    rewriter.getI32IntegerAttr(0), 
-                    rewriter.getI32IntegerAttr(0), 
-                    rewriter.getI32IntegerAttr(0) 
-                }));
-
-                // here you can continue building struct values
-                
-                rewriter.create<LLVM::ReturnOp>(loc, ValueRange{throwInfoStructValue});                
+                rttih.throwInfo(loc);
             }
+
+            // prepare first param
+            // we need temp var
+            auto value = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(throwOp.exception().getType()), throwOp.exception());
+
+            auto throwInfoPtr = rewriter.create<mlir::ConstantOp>(loc, throwInfoPtrTy, FlatSymbolRefAttr::get("_TI1N", rewriter.getContext()));
 
             // throw exception
             rewriter.create<LLVM::CallOp>(loc, cxxThrowException, ValueRange{ clh.castToI8Ptr(value), throwInfoPtr });
