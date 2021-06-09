@@ -867,7 +867,7 @@ namespace typescript
                     "__CxxFrameHandler3",
                     th.getFunctionType(th.getI32Type(), {}, true));
 
-            newFuncOp->setAttr(rewriter.getIdentifier("personality"), rewriter.getStringAttr("__CxxFrameHandler3"));
+            newFuncOp->setAttr(rewriter.getIdentifier("personality"), FlatSymbolRefAttr::get("__CxxFrameHandler3", rewriter.getContext()));
             return success();
         }
 
