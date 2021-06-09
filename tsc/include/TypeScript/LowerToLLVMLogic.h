@@ -849,7 +849,7 @@ namespace typescript
         }        
     };
 
-    class LLVMRTTIHelper
+    class LLVMRTTIHelperVCWin32
     {
         Operation *op;
         PatternRewriter &rewriter;
@@ -858,7 +858,18 @@ namespace typescript
         ModuleOp parentModule;
 
     public:        
-        LLVMRTTIHelper(Operation *op, PatternRewriter &rewriter) : op(op), rewriter(rewriter), parentModule(op->getParentOfType<ModuleOp>()), th(rewriter), ch(op, rewriter) {}
+        LLVMRTTIHelperVCWin32(Operation *op, PatternRewriter &rewriter) : op(op), rewriter(rewriter), parentModule(op->getParentOfType<ModuleOp>()), th(rewriter), ch(op, rewriter) {}
+
+        LogicalResult setPersonality(mlir::FuncOp newFuncOp)
+        {
+            auto cxxFrameHandler3 =
+                ch.getOrInsertFunction(
+                    "__CxxFrameHandler3",
+                    th.getFunctionType(th.getI32Type(), {}, true));
+
+            newFuncOp->setAttr(rewriter.getIdentifier("personality"), rewriter.getStringAttr("__CxxFrameHandler3"));
+            return success();
+        }
 
         LogicalResult typeInfo(mlir::Location loc)
         {

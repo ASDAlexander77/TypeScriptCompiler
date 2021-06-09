@@ -897,6 +897,12 @@ namespace
                 newFuncOp->setAttr(namedAttr.first, namedAttr.second);
             }
 
+            if (funcOp.personality().hasValue() && funcOp.personality().getValue())
+            {
+                LLVMRTTIHelperVCWin32 rttih(funcOp, rewriter);
+                rttih.setPersonality(newFuncOp);            
+            }
+
 #ifdef DISABLE_OPT
             // add LLVM attributes to fix issue with shift >> 32
             newFuncOp->setAttr("passthrough", ArrayAttr::get({
@@ -1686,7 +1692,7 @@ namespace
             CodeLogicHelper clh(throwOp, rewriter);
             TypeConverterHelper tch(getTypeConverter());
             TypeHelper th(rewriter);
-            LLVMRTTIHelper rttih(throwOp, rewriter);        
+            LLVMRTTIHelperVCWin32 rttih(throwOp, rewriter);        
 
             auto loc = throwOp.getLoc();
 
