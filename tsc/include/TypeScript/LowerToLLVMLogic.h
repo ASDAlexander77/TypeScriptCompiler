@@ -336,8 +336,6 @@ namespace typescript
         LLVMCodeHelper(Operation *op, PatternRewriter &rewriter) : op(op), rewriter(rewriter) {}
         LLVMCodeHelper(Operation *op, PatternRewriter &rewriter, TypeConverter *typeConverter) : op(op), rewriter(rewriter), typeConverter(typeConverter) {}
 
-    private:
-
         template <typename T>
         void seekLast(Block *block)
         {
@@ -378,6 +376,8 @@ namespace typescript
 
             block->walk(lastUse);      
         }
+
+    private:
 
         /// Return a value representing an access into a global string with the given
         /// name, creating the string if necessary.
@@ -630,6 +630,25 @@ namespace typescript
                 pointerType,
                 globalPtr, 
                 ArrayRef<Value>({cst0, cst0}));            
+        }        
+
+        Value getStructFromArrayAttr(Location loc, LLVM::LLVMStructType llvmStructType, ArrayAttr arrayAttr)
+        {
+            Value structVal = rewriter.create<LLVM::UndefOp>(loc, llvmStructType);
+
+            auto typesRange = llvmStructType.getBody();
+
+            auto position = 0;
+            for (auto item : arrayAttr.getValue())
+            {
+                auto llvmType = typesRange[position];
+
+                // DO NOT Replace with LLVM::ConstantOp - to use AddressOf for global symbol names
+                auto itemValue = rewriter.create<mlir::ConstantOp>(loc, llvmType, item);
+                structVal = rewriter.create<LLVM::InsertValueOp>(loc, structVal, itemValue, rewriter.getI64ArrayAttr(position++));
+            }
+
+            return structVal;
         }        
 
         Value getTupleFromArrayAttr(Location loc, mlir_ts::ConstTupleType originalType, LLVM::LLVMStructType llvmStructType, ArrayAttr arrayAttr)

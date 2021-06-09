@@ -1674,7 +1674,7 @@ namespace
         }
     };
 
-    struct ThrowOpLoweringWin32 : public OpConversionPattern<mlir_ts::ThrowOp>
+    struct ThrowOpLoweringVCWin32 : public OpConversionPattern<mlir_ts::ThrowOp>
     {
         using OpConversionPattern<mlir_ts::ThrowOp>::OpConversionPattern;
 
@@ -1704,6 +1704,37 @@ namespace
             // we need temp var
             auto value = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(throwOp.exception().getType()), throwOp.exception());
 
+            // prepare RTTI info for throw
+            {
+                auto parentModule = throwOp->getParentOfType<ModuleOp>();
+
+                OpBuilder::InsertionGuard guard(rewriter);
+
+                rewriter.setInsertionPointToStart(parentModule.getBody());
+                ch.seekLast(parentModule.getBody());
+
+                // _TI1N
+                auto _TI1NValue = rewriter.create<LLVM::GlobalOp>(loc, throwInfoTy, true, LLVM::Linkage::LinkonceODR, "_TI1N", Attribute{});
+
+                Region &_TI1NRegion = _TI1NValue.getInitializerRegion();
+                Block *_TI1NBlock = rewriter.createBlock(&_TI1NRegion);
+
+                rewriter.setInsertionPoint(_TI1NBlock, _TI1NBlock->begin());
+
+                Value throwInfoStructValue = ch.getStructFromArrayAttr(loc, throwInfoTy, 
+                rewriter.getArrayAttr({ 
+                    rewriter.getI32IntegerAttr(0), 
+                    rewriter.getI32IntegerAttr(0), 
+                    rewriter.getI32IntegerAttr(0), 
+                    rewriter.getI32IntegerAttr(0) 
+                }));
+
+                // here you can continue building struct values
+                
+                rewriter.create<LLVM::ReturnOp>(loc, ValueRange{throwInfoStructValue});                
+            }
+
+            // throw exception
             rewriter.create<LLVM::CallOp>(loc, cxxThrowException, ValueRange{ clh.castToI8Ptr(value), throwInfoPtr });
 
             rewriter.eraseOp(throwOp);
@@ -1908,7 +1939,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         UndefOpLowering,
         MemoryCopyOpLowering,
         LoadSaveValueLowering,
-        ThrowOpLoweringWin32,
+        ThrowOpLoweringVCWin32,
         VariableOpLowering>(typeConverter, &getContext());
 
     populateTypeScriptConversionPatterns(typeConverter, m);
