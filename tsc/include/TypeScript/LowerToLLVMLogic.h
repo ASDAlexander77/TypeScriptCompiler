@@ -855,20 +855,33 @@ namespace typescript
         PatternRewriter &rewriter;
         TypeHelper th;
         LLVMCodeHelper ch;
+        ModuleOp parentModule;
 
     public:        
-        LLVMRTTIHelper(Operation *op, PatternRewriter &rewriter) : op(op), rewriter(rewriter), th(rewriter), ch(op, rewriter) {}
+        LLVMRTTIHelper(Operation *op, PatternRewriter &rewriter) : op(op), rewriter(rewriter), parentModule(op->getParentOfType<ModuleOp>()), th(rewriter), ch(op, rewriter) {}
 
         LogicalResult typeInfo(mlir::Location loc)
         {
-            rewriter.create<LLVM::GlobalOp>(loc, th.getI8PtrType(), true, LLVM::Linkage::External, "??_7type_info@@6B@", Attribute{});
+            auto name = "??_7type_info@@6B@";
+            if (parentModule.lookupSymbol<LLVM::GlobalOp>(name))
+            {
+                return failure(); 
+            }
+
+            rewriter.create<LLVM::GlobalOp>(loc, th.getI8PtrType(), true, LLVM::Linkage::External, name, Attribute{});
             return success();
         }
 
         LogicalResult typeDescriptor2(mlir::Location loc)
         {
+            auto name = "??_R0N@8";
+            if (parentModule.lookupSymbol<LLVM::GlobalOp>(name))
+            {
+                return failure(); 
+            }
+
             auto rttiTypeDescriptor2Ty = getRttiTypeDescriptor2Ty();
-            auto _r0n_Value = rewriter.create<LLVM::GlobalOp>(loc, rttiTypeDescriptor2Ty, false, LLVM::Linkage::LinkonceODR, "??_R0N@8", Attribute{});
+            auto _r0n_Value = rewriter.create<LLVM::GlobalOp>(loc, rttiTypeDescriptor2Ty, false, LLVM::Linkage::LinkonceODR, name, Attribute{});
 
             {
                 ch.setStructWritingPoint(_r0n_Value);
@@ -896,15 +909,27 @@ namespace typescript
 
         LogicalResult imageBase(mlir::Location loc)
         {
-            rewriter.create<LLVM::GlobalOp>(loc, th.getI8Type(), true, LLVM::Linkage::External, "__ImageBase", Attribute{});
+            auto name = "__ImageBase";
+            if (parentModule.lookupSymbol<LLVM::GlobalOp>(name))
+            {
+                return failure(); 
+            }
+
+            rewriter.create<LLVM::GlobalOp>(loc, th.getI8Type(), true, LLVM::Linkage::External, name, Attribute{});
             return success();
         }        
 
         LogicalResult catchableType(mlir::Location loc)
         {
+            auto name = "_CT??_R0N@88";
+            if (parentModule.lookupSymbol<LLVM::GlobalOp>(name))
+            {
+                return failure(); 
+            }
+
             // _CT??_R0N@88
             auto ehCatchableTypeTy = getCatchableTypeTy();
-            auto _ct_r0n_Value = rewriter.create<LLVM::GlobalOp>(loc, ehCatchableTypeTy, true, LLVM::Linkage::LinkonceODR, "_CT??_R0N@88", Attribute{});
+            auto _ct_r0n_Value = rewriter.create<LLVM::GlobalOp>(loc, ehCatchableTypeTy, true, LLVM::Linkage::LinkonceODR, name, Attribute{});
 
             {
                 ch.setStructWritingPoint(_ct_r0n_Value);
@@ -957,9 +982,15 @@ namespace typescript
 
         LogicalResult catchableArrayType(mlir::Location loc)
         {
+            auto name = "_CTA1N";
+            if (parentModule.lookupSymbol<LLVM::GlobalOp>(name))
+            {
+                return failure(); 
+            }
+
             // _CT??_R0N@88
             auto ehCatchableArrayTypeTy = getCatchableArrayTypeTy();
-            auto _cta1nValue = rewriter.create<LLVM::GlobalOp>(loc, ehCatchableArrayTypeTy, true, LLVM::Linkage::LinkonceODR, "_CTA1N", Attribute{});
+            auto _cta1nValue = rewriter.create<LLVM::GlobalOp>(loc, ehCatchableArrayTypeTy, true, LLVM::Linkage::LinkonceODR, name, Attribute{});
 
             {
                 ch.setStructWritingPoint(_cta1nValue);
@@ -1001,8 +1032,14 @@ namespace typescript
 
         LogicalResult throwInfo(mlir::Location loc)
         {
+            auto name = "_TI1N";
+            if (parentModule.lookupSymbol<LLVM::GlobalOp>(name))
+            {
+                return failure(); 
+            }
+
             auto throwInfoTy = getThrowInfoTy();
-            auto _TI1NValue = rewriter.create<LLVM::GlobalOp>(loc, throwInfoTy, true, LLVM::Linkage::LinkonceODR, "_TI1N", Attribute{});
+            auto _TI1NValue = rewriter.create<LLVM::GlobalOp>(loc, throwInfoTy, true, LLVM::Linkage::LinkonceODR, name, Attribute{});
 
             ch.setStructWritingPoint(_TI1NValue);
 
