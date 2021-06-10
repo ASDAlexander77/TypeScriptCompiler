@@ -878,3 +878,20 @@ void mlir_ts::GlobalOp::build(OpBuilder &builder, OperationState &result, Type t
     result.attributes.append(attrs.begin(), attrs.end());
     result.addRegion();
 }
+
+//===----------------------------------------------------------------------===//
+// TryOp
+//===----------------------------------------------------------------------===//
+
+OperandRange mlir_ts::TryOp::getSuccessorEntryOperands(unsigned index) {
+  assert(index == 0 &&
+         "TryOp is expected to branch only to the first region");
+
+  return getODSOperands(0);
+}
+
+void mlir_ts::TryOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attribute> operands, SmallVectorImpl<RegionSuccessor> &regions)
+{
+    regions.push_back(RegionSuccessor(&catches()));
+    regions.push_back(RegionSuccessor(&finallyBlock()));
+}

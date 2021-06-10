@@ -1060,6 +1060,35 @@ def TypeScript_MergeOp : TypeScript_Op<"Merge", [NoSideEffect, HasParent<"Switch
   let results = (outs);
 }
 
+def TypeScript_TryOp : TypeScript_Op<"Try",
+    [DeclareOpInterfaceMethods<RegionBranchOpInterface>,
+     RecursiveSideEffects]> {
+  let summary = "a generic 'try' clause";
+  let description = [{
+    This operation represents a generic "try" clause.
+  }];
+
+  let arguments = (ins );
+  let results = (outs );
+  let regions = (region SizedRegion<1>:$body, SizedRegion<1>:$catches, AnyRegion:$finallyBlock);
+
+  let extraClassDeclaration = [{
+    OperandRange getSuccessorEntryOperands(unsigned index);
+  }];
+}
+
+def TypeScript_CatchOp : TypeScript_Op<"Catch",
+                         [HasParent<"TryOp">]> {
+  let summary = "try catch";
+  let description = [{
+  }];
+
+  let arguments = (ins AnyType:$catchArg);
+
+  // Override the default verifier, everything is checked by traits.
+  let verifier = ?;
+}
+
 def TypeScript_AddressOfOp : TypeScript_Op<"Addressof"> {
   let arguments = (ins FlatSymbolRefAttr:$global_name);
   let results = (outs TypeScript_AnyRef:$reference);

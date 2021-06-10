@@ -1575,7 +1575,20 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
         mlir::LogicalResult mlirGen(TryStatement tryStatementAST, const GenContext &genContext)
         {
+            auto location = loc(tryStatementAST);
+
             const_cast<GenContext &>(genContext).funcOp.personalityAttr(builder.getBoolAttr(true));
+
+            auto tryOp = builder.create<mlir_ts::TryOp>(location);
+
+            SmallVector<mlir::Type, 0> types;
+
+            /*auto *body =*/ builder.createBlock(&tryOp.body(), {}, types);
+            /*auto *catches =*/ builder.createBlock(&tryOp.catches(), {}, types);
+            /*auto *finallyBlock =*/ builder.createBlock(&tryOp.finallyBlock(), {}, types);
+
+            builder.setInsertionPointToStart(&tryOp.body().front());
+
             auto result = mlirGen(tryStatementAST->tryBlock, genContext);
             return result;
         }
