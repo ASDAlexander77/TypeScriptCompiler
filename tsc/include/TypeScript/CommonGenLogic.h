@@ -4,6 +4,21 @@
 #include "parser.h"
 #include "file_helper.h"
 
+#ifndef NDEBUG
+#define DBG_PRINT   \
+            LLVM_DEBUG(llvm::dbgs() << "\n*** region: " << rewriter.getInsertionBlock()->getParent() << "\n"); \
+            for (auto &block : *rewriter.getInsertionBlock()->getParent()) \
+            { \
+                LLVM_DEBUG(llvm::dbgs() << "\n*** *** block:" << &block << "\n"); \
+                for (auto &op : block.getOperations()) \
+                { \
+                    LLVM_DEBUG(llvm::dbgs() << "*** *** === op:" << &op << " ... " << op <<  "\n"); \
+                } \
+            }
+#else
+#define DBG_PRINT 
+#endif
+
 namespace mlir_ts = mlir::typescript;
 
 namespace typescript
