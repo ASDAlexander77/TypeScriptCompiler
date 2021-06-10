@@ -535,14 +535,9 @@ namespace
         {
             Location loc = tryOp.getLoc();
 
-            // debug
-            DBG_PRINT
-
             OpBuilder::InsertionGuard guard(rewriter);
             Block *currentBlock = rewriter.getInsertionBlock();
             Block *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
-
-            DBG_PRINT
 
             auto *bodyRegion = &tryOp.body().front();
             auto *bodyRegionLast = &tryOp.body().back();                 
@@ -555,19 +550,11 @@ namespace
             rewriter.setInsertionPointToEnd(currentBlock);
             rewriter.create<BranchOp>(loc, bodyRegion, ValueRange{});            
 
-            DBG_PRINT
+            rewriter.inlineRegionBefore(tryOp.body(), continuation);
 
-            rewriter.inlineRegionBefore(tryOp.body(), currentBlock);
+            rewriter.inlineRegionBefore(tryOp.catches(), continuation);
 
-            DBG_PRINT
-
-            rewriter.inlineRegionBefore(tryOp.catches(), bodyRegion);
-
-            DBG_PRINT
-
-            rewriter.inlineRegionBefore(tryOp.finallyBlock(), catchesRegion);
-
-            DBG_PRINT
+            rewriter.inlineRegionBefore(tryOp.finallyBlock(), continuation);
 
             // Body:exit -> replace ResultOp with br
             rewriter.setInsertionPointToEnd(bodyRegionLast);
@@ -588,6 +575,8 @@ namespace
             rewriter.replaceOpWithNewOp<BranchOp>(yieldOpFinallyBlock, continuation, yieldOpFinallyBlock.results());            
 
             rewriter.replaceOp(tryOp, continuation->getArguments());
+
+            DBG_PRINT
 
             return success();
         }

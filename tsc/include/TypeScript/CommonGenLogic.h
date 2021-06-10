@@ -6,15 +6,13 @@
 
 #ifndef NDEBUG
 #define DBG_PRINT   \
+            LLVM_DEBUG(llvm::dbgs() << "\n === START OF DEBUG === \n"); \
             LLVM_DEBUG(llvm::dbgs() << "\n*** region: " << rewriter.getInsertionBlock()->getParent() << "\n"); \
             for (auto &block : *rewriter.getInsertionBlock()->getParent()) \
             { \
-                LLVM_DEBUG(llvm::dbgs() << "\n*** *** block:" << &block << "\n"); \
-                for (auto &op : block.getOperations()) \
-                { \
-                    LLVM_DEBUG(llvm::dbgs() << "*** *** === op:" << &op << " ... " << op <<  "\n"); \
-                } \
-            }
+                LLVM_DEBUG(block.dump(););  \
+            } \
+            LLVM_DEBUG(llvm::dbgs() << "\n === END OF DEBUG === \n");
 #else
 #define DBG_PRINT 
 #endif
