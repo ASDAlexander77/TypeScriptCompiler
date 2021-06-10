@@ -897,7 +897,7 @@ def TypeScript_IfOp : TypeScript_Op<"If",
 }
 
 def TypeScript_ResultOp : TypeScript_Op<"Result", [NoSideEffect, ReturnLike, Terminator,
-                               ParentOneOf<["IfOp",  "DoWhileOp", "WhileOp", "ForOp"]>]> {
+                               ParentOneOf<["IfOp",  "DoWhileOp", "WhileOp", "ForOp", "TryOp"]>]> {
   let summary = "loop yield and termination operation";
 
   let arguments = (ins Variadic<AnyType>:$results);

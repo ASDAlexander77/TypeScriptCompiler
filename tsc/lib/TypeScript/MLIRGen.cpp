@@ -1587,9 +1587,23 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             /*auto *catches =*/ builder.createBlock(&tryOp.catches(), {}, types);
             /*auto *finallyBlock =*/ builder.createBlock(&tryOp.finallyBlock(), {}, types);
 
-            builder.setInsertionPointToStart(&tryOp.body().front());
-
+            // body
+            builder.setInsertionPointToStart(&tryOp.body().front());        
             auto result = mlirGen(tryStatementAST->tryBlock, genContext);
+            // terminator
+            builder.create<mlir_ts::ResultOp>(location);
+
+            // catches
+            builder.setInsertionPointToStart(&tryOp.catches().front());        
+            // terminator
+            builder.create<mlir_ts::ResultOp>(location);
+
+            // finally
+            builder.setInsertionPointToStart(&tryOp.finallyBlock().front());        
+            // terminator
+            builder.create<mlir_ts::ResultOp>(location);
+
+            builder.setInsertionPointAfter(tryOp);
             return result;
         }
 
