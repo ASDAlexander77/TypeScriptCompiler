@@ -1,0 +1,32 @@
+## Compiling to exe
+
+1) Via LLC
+
+compile.bat:
+
+set LIBPATH=C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\SDK\ScopeCppSDK\vc15\VC\lib
+set SDKPATH=C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\SDK\ScopeCppSDK\vc15\SDK\lib
+set TSCEXEPATH=<...>\TypeScriptCompiler\__build\tsc\bin\
+set LLVMEXEPATH=<...>\TypeScriptCompiler\3rdParty\llvm\debug\bin
+
+set FILENAME=test
+
+%TSCEXEPATH%\tsc.exe --emit=llvm %FILENAME%.ts 2>%FILENAME%.ll
+%LLVMEXEPATH%\llc.exe --filetype=obj -o=%FILENAME%.o %FILENAME%.ll
+%LLVMEXEPATH%\lld.exe -flavor link %FILENAME%.o "%LIBPATH%\libcmt.lib" "%LIBPATH%\libvcruntime.lib" "%SDKPATH%\kernel32.lib" "%SDKPATH%\libucrt.lib" "%SDKPATH%\uuid.lib" 
+
+
+2) Via mlir_run_cpu
+
+compile.bat:
+
+set LIBPATH=C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\SDK\ScopeCppSDK\vc15\VC\lib
+set SDKPATH=C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\SDK\ScopeCppSDK\vc15\SDK\lib
+set TSCEXEPATH=<...>\TypeScriptCompiler\__build\tsc\bin\
+set LLVMEXEPATH=<...>\TypeScriptCompiler\3rdParty\llvm\debug\bin
+
+set FILENAME=test
+
+%TSCEXEPATH%\tsc.exe --emit=mlir-llvm %FILENAME%.ts 2>%FILENAME%.mlir
+%LLVMEXEPATH%\mlir-cpu-runner.exe -O1 %FILENAME%.mlir --entry-point-result=void -dump-object-file -object-filename=%FILENAME%.o
+%LLVMEXEPATH%\lld.exe -flavor link %FILENAME%.o "%LIBPATH%\libcmt.lib" "%LIBPATH%\libvcruntime.lib" "%SDKPATH%\kernel32.lib" "%SDKPATH%\libucrt.lib" "%SDKPATH%\uuid.lib" 
