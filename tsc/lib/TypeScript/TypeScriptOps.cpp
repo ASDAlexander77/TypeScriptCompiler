@@ -14,16 +14,6 @@
 
 #include "llvm/ADT/TypeSwitch.h"
 
-#define GET_TYPEDEF_CLASSES
-#include "TypeScript/TypeScriptOpsTypes.cpp.inc"
-
-static ::mlir::ParseResult parseFuncOp(::mlir::OpAsmParser &parser, ::mlir::OperationState &result);
-static void print(::mlir::typescript::FuncOp op, ::mlir::OpAsmPrinter &p);
-static ::mlir::LogicalResult verify(::mlir::typescript::FuncOp op);
-
-#define GET_OP_CLASSES
-#include "TypeScript/TypeScriptOps.cpp.inc"
-
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
 
@@ -37,111 +27,21 @@ void mlir_ts::buildTerminatedBody(OpBuilder &builder, Location loc)
 // Types
 //===----------------------------------------------------------------------===//
 
-Type mlir_ts::TypeScriptDialect::parseType(DialectAsmParser &parser) const
-{
-    llvm::SMLoc typeLoc = parser.getCurrentLocation();
-
-    auto booleanType = generatedTypeParser(getContext(), parser, "boolean");
-    if (booleanType != Type())
-    {
-        return booleanType;
-    }
-
-    auto numberType = generatedTypeParser(getContext(), parser, "number");
-    if (numberType != Type())
-    {
-        return numberType;
-    }    
-
-    auto stringType = generatedTypeParser(getContext(), parser, "string");
-    if (stringType != Type())
-    {
-        return stringType;
-    }
-
-    auto refType = generatedTypeParser(getContext(), parser, "ref");
-    if (refType != Type())
-    {
-        return refType;
-    }
-
-    auto valueRefType = generatedTypeParser(getContext(), parser, "value_ref");
-    if (valueRefType != Type())
-    {
-        return valueRefType;
-    }
-
-    auto optionalType = generatedTypeParser(getContext(), parser, "optional");
-    if (optionalType != Type())
-    {
-        return optionalType;
-    }
-
-    auto enumType = generatedTypeParser(getContext(), parser, "enum");
-    if (enumType != Type())
-    {
-        return enumType;
-    }
-
-    auto arrayType = generatedTypeParser(getContext(), parser, "array");
-    if (arrayType != Type())
-    {
-        return arrayType;
-    }
-
-    auto tupleType = generatedTypeParser(getContext(), parser, "tuple");
-    if (tupleType != Type())
-    {
-        return tupleType;
-    }    
-
-    parser.emitError(typeLoc, "unknown type in TypeScript dialect");
-    return Type();
-}
-
-void mlir_ts::TypeScriptDialect::printType(Type type, DialectAsmPrinter &os) const
-{
-    if (failed(generatedTypePrinter(type, os)))
-    {
-        llvm_unreachable("unexpected 'TypeScript' type kind");
-    }
-}
-
 //===----------------------------------------------------------------------===//
 // OptionalType
 //===----------------------------------------------------------------------===//
-
-LogicalResult mlir_ts::OptionalType::verifyConstructionInvariants(Location loc, Type elementType)
-{
-    return success();
-}
 
 //===----------------------------------------------------------------------===//
 // EnumType
 //===----------------------------------------------------------------------===//
 
-LogicalResult mlir_ts::EnumType::verifyConstructionInvariants(Location loc, Type elementType)
-{
-    return success();
-}
-
 //===----------------------------------------------------------------------===//
 // ConstArrayType
 //===----------------------------------------------------------------------===//
 
-LogicalResult mlir_ts::ConstArrayType::verifyConstructionInvariants(Location loc, Type elementType, unsigned size)
-{
-    return success();
-}
-
 //===----------------------------------------------------------------------===//
 // ArrayType
 //===----------------------------------------------------------------------===//
-
-LogicalResult mlir_ts::ArrayType::verifyConstructionInvariants(Location loc, Type elementType)
-{
-    return success();
-}
 
 //===----------------------------------------------------------------------===//
 /// ConstTupleType
@@ -182,29 +82,6 @@ void mlir_ts::TupleType::getFlattenedTypes(SmallVector<Type> &types) {
 
 /// Return the number of element types.
 size_t mlir_ts::TupleType::size() const { return getFields().size(); }
-
-// The functions don't need to be in the header file, but need to be in the mlir
-// namespace. Declare them here, then define them immediately below. Separating
-// the declaration and definition adheres to the LLVM coding standards.
-namespace mlir {
-    namespace typescript {
-        // FieldInfo is used as part of a parameter, so equality comparison is compulsory.
-        static bool operator==(const FieldInfo &a, const FieldInfo &b);
-        // FieldInfo is used as part of a parameter, so a hash will be computed.
-        static llvm::hash_code hash_value(const FieldInfo &fi);
-    } // namespace typescript
-} // namespace mlir
-
-// FieldInfo is used as part of a parameter, so equality comparison is
-// compulsory.
-static bool mlir::typescript::operator==(const FieldInfo &a, const FieldInfo &b) {
-  return a.id == b.id && a.type == b.type;
-}
-
-// FieldInfo is used as part of a parameter, so a hash will be computed.
-static llvm::hash_code mlir::typescript::hash_value(const FieldInfo &fi) {
-  return llvm::hash_combine(fi.id, fi.type);
-}
 
 //===----------------------------------------------------------------------===//
 // ConstantOp
@@ -265,13 +142,6 @@ mlir_ts::FuncOp mlir_ts::FuncOp::create(Location location, StringRef name, Funct
 }
 
 mlir_ts::FuncOp mlir_ts::FuncOp::create(Location location, StringRef name, FunctionType type,
-                              iterator_range<dialect_attr_iterator> attrs)
-{
-    SmallVector<NamedAttribute, 8> attrRef(attrs);
-    return create(location, name, type, llvm::makeArrayRef(attrRef));
-}
-
-mlir_ts::FuncOp mlir_ts::FuncOp::create(Location location, StringRef name, FunctionType type,
                               ArrayRef<NamedAttribute> attrs,
                               ArrayRef<DictionaryAttr> argAttrs)
 {
@@ -296,31 +166,27 @@ void mlir_ts::FuncOp::build(OpBuilder &builder, OperationState &state, StringRef
     }
 
     assert(type.getNumInputs() == argAttrs.size());
-    SmallString<8> argAttrName;
-    for (unsigned i = 0, e = type.getNumInputs(); i != e; ++i)
-    {
-        if (DictionaryAttr argDict = argAttrs[i])
-        {
-            state.addAttribute(getArgAttrName(i, argAttrName), argDict);
-        }
-    }
+    function_like_impl::addArgAndResultAttrs(builder, state, argAttrs, /*resultAttrs=*/llvm::None);
 }
 
 ParseResult parseFuncOp(OpAsmParser &parser, OperationState &result)
 {
-    auto buildFuncType = [](Builder &builder, ArrayRef<Type> argTypes,
-                            ArrayRef<Type> results, impl::VariadicFlag,
-                            std::string &) {
-        return builder.getFunctionType(argTypes, results);
-    };
+  auto buildFuncType = [](Builder &builder, ArrayRef<Type> argTypes,
+                          ArrayRef<Type> results,
+                          function_like_impl::VariadicFlag, std::string &) {
+    return builder.getFunctionType(argTypes, results);
+  };
 
-    return impl::parseFunctionLikeOp(parser, result, /*allowVariadic=*/false, buildFuncType);
+  return function_like_impl::parseFunctionLikeOp(
+      parser, result, /*allowVariadic=*/false, buildFuncType);
+
 }
 
 void print(mlir_ts::FuncOp op, OpAsmPrinter &p)
 {
-    FunctionType fnType = op.getType();
-    impl::printFunctionLikeOp(p, op, fnType.getInputs(), /*isVariadic=*/false, fnType.getResults());
+  FunctionType fnType = op.getType();
+  function_like_impl::printFunctionLikeOp(
+      p, op, fnType.getInputs(), /*isVariadic=*/false, fnType.getResults());
 }
 
 LogicalResult verify(mlir_ts::FuncOp op)

@@ -11,6 +11,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/SCF/SCF.h"
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
+#include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "llvm/ADT/Sequence.h"
@@ -886,9 +887,9 @@ namespace
                 funcOp.getLoc(),
                 funcOp.getName(),
                 rewriter.getFunctionType(signatureInputsConverter.getConvertedTypes(), signatureResultsConverter.getConvertedTypes()));
-            for (const auto &namedAttr : funcOp.getAttrs())
+            for (const auto &namedAttr : funcOp->getAttrs())
             {
-                if (namedAttr.first == impl::getTypeAttrName() ||
+                if (namedAttr.first == function_like_impl::getTypeAttrName() ||
                     namedAttr.first == SymbolTable::getSymbolAttrName())
                 {
                     continue;
@@ -1230,7 +1231,7 @@ namespace
                 return success();                    
 
             case SyntaxKind::AsteriskAsteriskToken:
-                BinOp<mlir_ts::ArithmeticBinaryOp, PowFOp, PowFOp>(arithmeticBinaryOp, rewriter);
+                BinOp<mlir_ts::ArithmeticBinaryOp, math::PowFOp, math::PowFOp>(arithmeticBinaryOp, rewriter);
                 return success();                    
 
             default:
@@ -1738,7 +1739,7 @@ namespace
             // we need temp var
             auto value = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(throwOp.exception().getType()), throwOp.exception());
 
-            auto throwInfoPtr = rewriter.create<mlir::ConstantOp>(loc, throwInfoPtrTy, FlatSymbolRefAttr::get("_TI1N", rewriter.getContext()));
+            auto throwInfoPtr = rewriter.create<mlir::ConstantOp>(loc, throwInfoPtrTy, FlatSymbolRefAttr::get(rewriter.getContext(), "_TI1N"));
 
             // throw exception
             rewriter.create<LLVM::CallOp>(loc, cxxThrowException, ValueRange{ clh.castToI8Ptr(value), throwInfoPtr });
@@ -1877,7 +1878,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     // final target for this lowering. For this lowering, we are only targeting
     // the LLVM dialect.
     LLVMConversionTarget target(getContext());
-    target.addLegalOp<ModuleOp, ModuleTerminatorOp>();
+    target.addLegalOp<ModuleOp>();
 
     // During this lowering, we will also be lowering the MemRef types, that are
     // currently being operated on, to a representation in LLVM. To perform this
@@ -1894,9 +1895,9 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     // lowerings. Transitive lowering, or A->B->C lowering, is when multiple
     // patterns must be applied to fully transform an illegal operation into a
     // set of legal ones.
-    OwningRewritePatternList patterns;
-    populateAffineToStdConversionPatterns(patterns, &getContext());
-    populateLoopToStdConversionPatterns(patterns, &getContext());
+    OwningRewritePatternList patterns(&getContext());
+    populateAffineToStdConversionPatterns(patterns);
+    populateLoopToStdConversionPatterns(patterns);
     populateStdToLLVMConversionPatterns(typeConverter, patterns);
 
     // The only remaining operation to lower from the `typescript` dialect, is the PrintOp.

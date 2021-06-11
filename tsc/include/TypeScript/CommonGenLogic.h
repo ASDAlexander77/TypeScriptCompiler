@@ -10,6 +10,7 @@
             LLVM_DEBUG(llvm::dbgs() << "\n*** region: " << rewriter.getInsertionBlock()->getParent() << "\n"); \
             for (auto &block : *rewriter.getInsertionBlock()->getParent()) \
             { \
+                LLVM_DEBUG(llvm::dbgs() << "\n === block dump === \n"); \
                 LLVM_DEBUG(block.dump(););  \
             } \
             LLVM_DEBUG(llvm::dbgs() << "\n === END OF DEBUG === \n");

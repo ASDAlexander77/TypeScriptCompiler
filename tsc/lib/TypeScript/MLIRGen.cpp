@@ -498,7 +498,7 @@ namespace
             llvm_unreachable("unknown expression");
         }
 
-        void registerVariable(mlir::Location location, std::string name, bool isConst, mlir::Type type, mlir::Value init)
+        void registerVariable(mlir::Location location, StringRef name, bool isConst, mlir::Type type, mlir::Value init)
         {
             auto isGlobal = symbolTable.getCurScope()->getParentScope() == nullptr;
 
@@ -877,7 +877,7 @@ namespace
                 builder.create<mlir_ts::SymbolRefOp>(
                     loc(functionExpressionAST), 
                     funcOp.getType(), 
-                    mlir::FlatSymbolRefAttr::get(funcOp.getName(), builder.getContext()));
+                    mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
             return funcSymbolRef;
         }        
 
@@ -901,7 +901,7 @@ namespace
                 builder.create<mlir_ts::SymbolRefOp>(
                     loc(arrowFunctionAST), 
                     funcOp.getType(), 
-                    mlir::FlatSymbolRefAttr::get(funcOp.getName(), builder.getContext()));
+                    mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
             return funcSymbolRef;
         }          
 
@@ -2619,7 +2619,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             }
 
             // tag method
-            auto arrayAttr = mlir::ArrayAttr::get(strs, builder.getContext());            
+            auto arrayAttr = mlir::ArrayAttr::get(builder.getContext(), strs);            
             auto constStringArray = 
                 builder.create<mlir_ts::ConstantOp>(
                     location,
@@ -2675,7 +2675,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             return builder.create<mlir_ts::ConstantOp>(
                 loc(trueLiteral),
                 getBooleanType(),
-                mlir::BoolAttr::get(true, theModule.getContext()));
+                mlir::BoolAttr::get(theModule.getContext(), true));
         }
 
         mlir::Value mlirGen(FalseLiteral falseLiteral, const GenContext &genContext)
@@ -2683,7 +2683,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             return builder.create<mlir_ts::ConstantOp>(
                 loc(falseLiteral),
                 getBooleanType(),
-                mlir::BoolAttr::get(false, theModule.getContext()));
+                mlir::BoolAttr::get(theModule.getContext(), false));
         }
 
         mlir::Value mlirGen(NumericLiteral numericLiteral, const GenContext &genContext)
@@ -2774,7 +2774,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 //itemValue.getDefiningOp()->erase();            
             }
 
-            auto arrayAttr = mlir::ArrayAttr::get(values, builder.getContext());            
+            auto arrayAttr = mlir::ArrayAttr::get(builder.getContext(), values);            
             if (isTuple)
             {
                 SmallVector<mlir_ts::FieldInfo> fieldInfos;
@@ -2858,7 +2858,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 fieldInfos.push_back({fieldId, type});
             }
 
-            auto arrayAttr = mlir::ArrayAttr::get(values, builder.getContext());            
+            auto arrayAttr = mlir::ArrayAttr::get(builder.getContext(), values);            
             return builder.create<mlir_ts::ConstantOp>(
                 loc(objectLiteral),
                 getConstTupleType(fieldInfos),
@@ -2906,7 +2906,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             auto fn = functionMap.find(name);
             if (fn != functionMap.end())
             {
-                return builder.create<mlir_ts::SymbolRefOp>(location, fn->getValue().getType(), mlir::FlatSymbolRefAttr::get(name, builder.getContext()));
+                return builder.create<mlir_ts::SymbolRefOp>(location, fn->getValue().getType(), mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
             }            
 
             // check if we have enum
@@ -2924,7 +2924,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
             // unresolved reference (for call for example)
             // TODO: put assert here to see which ref names are not resolved
-            return builder.create<mlir_ts::SymbolRefOp>(location, mlir::FlatSymbolRefAttr::get(name, builder.getContext()));
+            return builder.create<mlir_ts::SymbolRefOp>(location, mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
         }
 
         mlir::LogicalResult mlirGen(TypeAliasDeclaration typeAliasDeclarationAST, const GenContext &genContext)
@@ -3033,7 +3033,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 }
             }
 
-            enumsMap.insert({ name, std::make_pair(enumIntType, mlir::DictionaryAttr::get(adjustedEnumValues, builder.getContext())) });
+            enumsMap.insert({ name, std::make_pair(enumIntType, mlir::DictionaryAttr::get(builder.getContext(), adjustedEnumValues)) });
 
             return mlir::success();
         }        
@@ -3267,7 +3267,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     auto type = getType(propertySignature->type);
 
                     assert(type);         
-                    types.push_back({mlir::FlatSymbolRefAttr::get(namePtr, builder.getContext()), type});
+                    types.push_back({mlir::FlatSymbolRefAttr::get(builder.getContext(), namePtr), type});
                 }
                 else
                 {
@@ -3437,7 +3437,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
         {
             //return builder.getFileLineColLoc(builder.getIdentifier(fileName), loc->pos, loc->_end);
             auto posLineChar = parser.getLineAndCharacterOfPosition(sourceFile, loc->pos);
-            return builder.getFileLineColLoc(builder.getIdentifier(fileName), posLineChar.line + 1, posLineChar.character + 1);
+            return mlir::FileLineColLoc::get(builder.getContext(), builder.getIdentifier(fileName), posLineChar.line + 1, posLineChar.character + 1);
         }
 
         /// A "module" matches a TypeScript source file: containing a list of functions.

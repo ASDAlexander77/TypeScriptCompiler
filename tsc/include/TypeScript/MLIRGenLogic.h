@@ -146,7 +146,7 @@ namespace typescript
                 builder.create<mlir_ts::AssertOp>(
                     location,
                     operands.front(),
-                    mlir::StringAttr::get(msg, builder.getContext()));
+                    mlir::StringAttr::get(builder.getContext(), msg));
 
             return mlir::success();
         }
@@ -220,7 +220,7 @@ namespace typescript
         mlir::Attribute TupleFieldName(StringRef name)
         {
             assert(!name.empty());
-            return mlir::StringAttr::get(name, builder.getContext());
+            return mlir::StringAttr::get(builder.getContext(), name);
         }
     };
 

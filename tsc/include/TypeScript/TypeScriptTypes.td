@@ -78,8 +78,6 @@ def TypeScript_Ref : TypeScript_Type<"Ref"> {
   let builders = [
     TypeBuilderWithInferredContext<(ins "Type":$elementType), [{
       return Base::get(elementType.getContext(), elementType);
-    }], [{
-      return Base::getChecked($_loc, elementType);
     }]>
   ];
 
@@ -121,8 +119,6 @@ def TypeScript_ValueRef : TypeScript_Type<"ValueRef"> {
   let builders = [
     TypeBuilderWithInferredContext<(ins "Type":$elementType), [{
       return Base::get(elementType.getContext(), elementType);
-    }], [{
-      return Base::getChecked($_loc, elementType);
     }]>
   ];
 
@@ -165,8 +161,6 @@ def TypeScript_Optional : TypeScript_Type<"Optional"> {
   let builders = [
     TypeBuilderWithInferredContext<(ins "Type":$elementType), [{
       return Base::get(elementType.getContext(), elementType);
-    }], [{
-      return Base::getChecked($_loc, elementType);
     }]>
   ];
 
@@ -182,8 +176,6 @@ def TypeScript_Optional : TypeScript_Type<"Optional"> {
   }];
 
   let skipDefaultBuilders = 1;
-  let genVerifyInvariantsDecl = 1;
-
 }
 
 def TypeScript_Enum : TypeScript_Type<"Enum"> {
@@ -204,7 +196,6 @@ def TypeScript_Enum : TypeScript_Type<"Enum"> {
     ```
   }];
   let parameters = (ins "Type":$elementType);
-  let genVerifyInvariantsDecl = 1;
 
   // We define the printer inline.
   let printer = [{ $_printer << "enum<" << getImpl()->elementType << ">"; }];  
@@ -212,8 +203,6 @@ def TypeScript_Enum : TypeScript_Type<"Enum"> {
   let builders = [
     TypeBuilderWithInferredContext<(ins "Type":$elementType), [{
       return Base::get(elementType.getContext(), elementType);
-    }], [{
-      return Base::getChecked($_loc, elementType);
     }]>
   ];
 
@@ -247,7 +236,6 @@ def TypeScript_ConstArray : TypeScript_Type<"ConstArray"> {
     ```
   }];
   let parameters = (ins "Type":$elementType, "unsigned":$size);
-  let genVerifyInvariantsDecl = 1;
 
   // We define the printer inline.
   let printer = [{ $_printer << "const_array<" << getImpl()->elementType << "," << getImpl()->size << ">"; }];  
@@ -255,8 +243,6 @@ def TypeScript_ConstArray : TypeScript_Type<"ConstArray"> {
   let builders = [
     TypeBuilderWithInferredContext<(ins "Type":$elementType, "unsigned":$size), [{
       return Base::get(elementType.getContext(), elementType, size);
-    }], [{
-      return Base::getChecked($_loc, elementType, size);
     }]>
   ];
 
@@ -269,8 +255,7 @@ def TypeScript_ConstArray : TypeScript_Type<"ConstArray"> {
     int size;
     if ($_parser.parseInteger(size)) return Type();
     if ($_parser.parseGreater()) return Type();
-    Location loc = $_parser.getEncodedSourceLoc($_parser.getNameLoc());
-    return getChecked(loc, elementType, size);
+    return get(elementType, size);
   }];  
 
   let skipDefaultBuilders = 1;  
@@ -294,7 +279,6 @@ def TypeScript_Array : TypeScript_Type<"Array"> {
     ```
   }];
   let parameters = (ins "Type":$elementType);
-  let genVerifyInvariantsDecl = 1;
 
   // We define the printer inline.
   let printer = [{ $_printer << "array<" << getImpl()->elementType << ">"; }];  
@@ -302,8 +286,6 @@ def TypeScript_Array : TypeScript_Type<"Array"> {
   let builders = [
     TypeBuilderWithInferredContext<(ins "Type":$elementType), [{
       return Base::get(elementType.getContext(), elementType);
-    }], [{
-      return Base::getChecked($_loc, elementType);
     }]>
   ];
 

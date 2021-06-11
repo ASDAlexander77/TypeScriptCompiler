@@ -50,7 +50,7 @@ def ConstantOp : TypeScript_Op<"Constant",
   let results = (outs AnyType:$constValue);
 
   let builders = [
-    OpBuilderDAG<(ins "Attribute":$value),
+    OpBuilder<(ins "Attribute":$value),
     [{ build($_builder, $_state, value.getType(), value); }]>];
 
   let extraClassDeclaration = [{
@@ -70,7 +70,7 @@ def SymbolRefOp : TypeScript_Op<"SymbolRef",
   let results = (outs AnyType);
 
   let builders = [
-    OpBuilderDAG<(ins "FlatSymbolRefAttr":$identifier),
+    OpBuilder<(ins "FlatSymbolRefAttr":$identifier),
     [{ build($_builder, $_state, identifier.getType(), identifier); }]>];
 
   let extraClassDeclaration = [{
@@ -99,7 +99,7 @@ def TypeScript_FuncOp : TypeScript_Op<"Func", [
                        OptionalAttr<BoolAttr>:$personality);
   let regions = (region AnyRegion:$body);
 
-  let builders = [OpBuilderDAG<(ins
+  let builders = [OpBuilder<(ins
     "StringRef":$name, "FunctionType":$type,
     CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs,
     CArg<"ArrayRef<DictionaryAttr>", "{}">:$argAttrs)
@@ -107,8 +107,6 @@ def TypeScript_FuncOp : TypeScript_Op<"Func", [
   let extraClassDeclaration = [{
     static FuncOp create(Location location, StringRef name, FunctionType type,
                          ArrayRef<NamedAttribute> attrs = {});
-    static FuncOp create(Location location, StringRef name, FunctionType type,
-                         iterator_range<dialect_attr_iterator> attrs);
     static FuncOp create(Location location, StringRef name, FunctionType type,
                          ArrayRef<NamedAttribute> attrs,
                          ArrayRef<DictionaryAttr> argAttrs);
@@ -342,18 +340,18 @@ def TypeScript_CallOp : TypeScript_Op<"Call",
   let results = (outs Variadic<AnyType>);
 
   let builders = [
-    OpBuilderDAG<(ins "FuncOp":$callee, CArg<"ValueRange", "{}">:$operands), [{
+    OpBuilder<(ins "FuncOp":$callee, CArg<"ValueRange", "{}">:$operands), [{
       $_state.addOperands(operands);
       $_state.addAttribute("callee",$_builder.getSymbolRefAttr(callee));
       $_state.addTypes(callee.getType().getResults());
     }]>,
-    OpBuilderDAG<(ins "SymbolRefAttr":$callee, "TypeRange":$results,
+    OpBuilder<(ins "SymbolRefAttr":$callee, "TypeRange":$results,
       CArg<"ValueRange", "{}">:$operands), [{
       $_state.addOperands(operands);
       $_state.addAttribute("callee", callee);
       $_state.addTypes(results);
     }]>,
-    OpBuilderDAG<(ins "StringRef":$callee, "TypeRange":$results,
+    OpBuilder<(ins "StringRef":$callee, "TypeRange":$results,
       CArg<"ValueRange", "{}">:$operands), [{
       build($_builder, $_state, $_builder.getSymbolRefAttr(callee), results,
             operands);
@@ -417,7 +415,7 @@ def TypeScript_CallIndirectOp : TypeScript_Op<"CallIndirect", [
   let results = (outs Variadic<AnyType>:$results);
 
   let builders = [
-    OpBuilderDAG<(ins "Value":$callee, CArg<"ValueRange", "{}">:$operands), [{
+    OpBuilder<(ins "Value":$callee, CArg<"ValueRange", "{}">:$operands), [{
       $_state.operands.push_back(callee);
       $_state.addOperands(operands);
       $_state.addTypes(callee.getType().cast<FunctionType>().getResults());
@@ -500,7 +498,7 @@ def TypeScript_ParamDefaultValueOp : TypeScript_Op<"DefaultValue", [NoSideEffect
                                ParentOneOf<["ParamOptionalOp"]>]> {
   let arguments = (ins Variadic<AnyType>:$results);
 
-  let builders = [OpBuilderDAG<(ins), [{ /* nothing to do */ }]>];
+  let builders = [OpBuilder<(ins), [{ /* nothing to do */ }]>];
   let verifier = ?;
 
   let assemblyFormat = "$results attr-dict `:` type($results)";
@@ -865,15 +863,15 @@ def TypeScript_IfOp : TypeScript_Op<"If",
 
   let skipDefaultBuilders = 1;
   let builders = [
-    OpBuilderDAG<(ins "Value":$cond, "bool":$withElseRegion)>,
-    OpBuilderDAG<(ins "TypeRange":$resultTypes, "Value":$cond,
+    OpBuilder<(ins "Value":$cond, "bool":$withElseRegion)>,
+    OpBuilder<(ins "TypeRange":$resultTypes, "Value":$cond,
       "bool":$withElseRegion)>,
-    OpBuilderDAG<(ins "TypeRange":$resultTypes, "Value":$cond,
+    OpBuilder<(ins "TypeRange":$resultTypes, "Value":$cond,
       CArg<"function_ref<void(OpBuilder &, Location)>",
            "buildTerminatedBody">:$thenBuilder,
       CArg<"function_ref<void(OpBuilder &, Location)>",
            "nullptr">:$elseBuilder)>,
-    OpBuilderDAG<(ins "Value":$cond,
+    OpBuilder<(ins "Value":$cond,
       CArg<"function_ref<void(OpBuilder &, Location)>",
            "buildTerminatedBody">:$thenBuilder,
       CArg<"function_ref<void(OpBuilder &, Location)>",
@@ -901,7 +899,7 @@ def TypeScript_ResultOp : TypeScript_Op<"Result", [NoSideEffect, ReturnLike, Ter
   let summary = "loop yield and termination operation";
 
   let arguments = (ins Variadic<AnyType>:$results);
-  let builders = [OpBuilderDAG<(ins), [{ /* nothing to do */ }]>];
+  let builders = [OpBuilder<(ins), [{ /* nothing to do */ }]>];
   // Override default verifier, no custom verification
   // needed.
   let verifier = ?;
@@ -1094,13 +1092,13 @@ def TypeScript_AddressOfOp : TypeScript_Op<"Addressof"> {
   let results = (outs TypeScript_AnyRef:$reference);
 
   let builders = [
-    OpBuilderDAG<(ins "GlobalOp":$global,
+    OpBuilder<(ins "GlobalOp":$global,
       CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs),
     [{
       build($_builder, $_state, RefType::get(global.getType()), global.sym_name());
       $_state.addAttributes(attrs);
     }]>,
-    OpBuilderDAG<(ins "FuncOp":$func, CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs),
+    OpBuilder<(ins "FuncOp":$func, CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs),
     [{
       build($_builder, $_state, RefType::get(func.getType()), func.getName());
       $_state.addAttributes(attrs);
@@ -1141,8 +1139,8 @@ def TypeScript_GlobalOp : TypeScript_Op<"Global",
   let regions = (region AnyRegion:$initializer);
 
   let builders = [
-    OpBuilderDAG<(ins "Type":$type, "bool":$isConstant, "StringRef":$name, 
-        "Attribute":$value, CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs)>
+    OpBuilder<(ins "Type":$type, "bool":$isConstant, "StringRef":$name, 
+        "Attribute":$value, "ArrayRef<NamedAttribute>":$attrs)>
   ];
 
   let extraClassDeclaration = [{

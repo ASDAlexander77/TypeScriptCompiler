@@ -867,7 +867,7 @@ namespace typescript
                     "__CxxFrameHandler3",
                     th.getFunctionType(th.getI32Type(), {}, true));
 
-            newFuncOp->setAttr(rewriter.getIdentifier("personality"), FlatSymbolRefAttr::get("__CxxFrameHandler3", rewriter.getContext()));
+            newFuncOp->setAttr(rewriter.getIdentifier("personality"), FlatSymbolRefAttr::get(rewriter.getContext(), "__CxxFrameHandler3"));
             return success();
         }
 
@@ -900,7 +900,7 @@ namespace typescript
                 // begin
                 Value structVal = rewriter.create<LLVM::UndefOp>(loc, rttiTypeDescriptor2Ty);
 
-                auto itemValue1 = rewriter.create<mlir::ConstantOp>(loc, th.getI8PtrPtrType(), FlatSymbolRefAttr::get("??_7type_info@@6B@", rewriter.getContext()));
+                auto itemValue1 = rewriter.create<mlir::ConstantOp>(loc, th.getI8PtrPtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), "??_7type_info@@6B@"));
                 ch.setStructValue(loc, structVal, itemValue1, 0);
 
                 auto itemValue2 = rewriter.create<LLVM::NullOp>(loc, th.getI8PtrType());
@@ -952,10 +952,10 @@ namespace typescript
                 ch.setStructValue(loc, structVal, itemValue1, 0);
 
                 // value 2
-                auto rttiTypeDescriptor2PtrValue = rewriter.create<mlir::ConstantOp>(loc, getRttiTypeDescriptor2PtrTy(), FlatSymbolRefAttr::get("??_R0N@8", rewriter.getContext()));
+                auto rttiTypeDescriptor2PtrValue = rewriter.create<mlir::ConstantOp>(loc, getRttiTypeDescriptor2PtrTy(), FlatSymbolRefAttr::get(rewriter.getContext(), "??_R0N@8"));
                 auto rttiTypeDescriptor2IntValue = rewriter.create<LLVM::PtrToIntOp>(loc,  th.getI64Type(), rttiTypeDescriptor2PtrValue);
 
-                auto imageBasePtrValue = rewriter.create<mlir::ConstantOp>(loc, th.getI8PtrType(), FlatSymbolRefAttr::get("__ImageBase", rewriter.getContext()));
+                auto imageBasePtrValue = rewriter.create<mlir::ConstantOp>(loc, th.getI8PtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), "__ImageBase"));
                 auto imageBaseIntValue = rewriter.create<LLVM::PtrToIntOp>(loc,  th.getI64Type(), imageBasePtrValue);
 
                 // sub
@@ -1013,10 +1013,10 @@ namespace typescript
                 ch.setStructValue(loc, structVal, itemValue1, 0);
 
                 // value 2
-                auto rttiCatchableTypePtrValue = rewriter.create<mlir::ConstantOp>(loc, getCatchableTypePtrTy(), FlatSymbolRefAttr::get("_CT??_R0N@88", rewriter.getContext()));
+                auto rttiCatchableTypePtrValue = rewriter.create<mlir::ConstantOp>(loc, getCatchableTypePtrTy(), FlatSymbolRefAttr::get(rewriter.getContext(), "_CT??_R0N@88"));
                 auto rttiCatchableTypeIntValue = rewriter.create<LLVM::PtrToIntOp>(loc,  th.getI64Type(), rttiCatchableTypePtrValue);
 
-                auto imageBasePtrValue = rewriter.create<mlir::ConstantOp>(loc, th.getI8PtrType(), FlatSymbolRefAttr::get("__ImageBase", rewriter.getContext()));
+                auto imageBasePtrValue = rewriter.create<mlir::ConstantOp>(loc, th.getI8PtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), "__ImageBase"));
                 auto imageBaseIntValue = rewriter.create<LLVM::PtrToIntOp>(loc,  th.getI64Type(), imageBasePtrValue);
 
                 // sub
@@ -1062,10 +1062,10 @@ namespace typescript
             }));
 
             // value 3
-            auto rttiCatchableArrayTypePtrValue = rewriter.create<mlir::ConstantOp>(loc, getCatchableArrayTypePtrTy(), FlatSymbolRefAttr::get("_CTA1N", rewriter.getContext()));
+            auto rttiCatchableArrayTypePtrValue = rewriter.create<mlir::ConstantOp>(loc, getCatchableArrayTypePtrTy(), FlatSymbolRefAttr::get(rewriter.getContext(), "_CTA1N"));
             auto rttiCatchableArrayTypeIntValue = rewriter.create<LLVM::PtrToIntOp>(loc,  th.getI64Type(), rttiCatchableArrayTypePtrValue);
 
-            auto imageBasePtrValue = rewriter.create<mlir::ConstantOp>(loc, th.getI8PtrType(), FlatSymbolRefAttr::get("__ImageBase", rewriter.getContext()));
+            auto imageBasePtrValue = rewriter.create<mlir::ConstantOp>(loc, th.getI8PtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), "__ImageBase"));
             auto imageBaseIntValue = rewriter.create<LLVM::PtrToIntOp>(loc,  th.getI64Type(), imageBasePtrValue);
 
             // sub

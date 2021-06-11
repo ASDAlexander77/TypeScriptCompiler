@@ -697,7 +697,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
 
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.
-    OwningRewritePatternList patterns;
+    OwningRewritePatternList patterns(&getContext());
     patterns.insert<
         ParamOpLowering,
         ParamOptionalOpLowering,

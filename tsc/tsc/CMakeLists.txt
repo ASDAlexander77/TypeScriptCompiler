@@ -13,13 +13,18 @@ set(LIBS
     ${dialect_libs}
     ${conversion_libs}
     MLIRAnalysis
-    MLIREDSC
+    MLIRCallInterfaces
+    MLIRCastInterfaces
     MLIRExecutionEngine
     MLIRIR
+    MLIRLLVMToLLVMIRTranslation
     MLIRJitRunner
     MLIRLLVMIR
     MLIRParser
-    MLIRTargetLLVMIR
+    MLIRPass
+    MLIRSideEffectInterfaces
+    MLIRTargetLLVMIRExport
+    MLIRTransforms
     MLIRSupport
     MLIROptLib
     MLIRTypeScript
