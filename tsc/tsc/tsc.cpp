@@ -282,6 +282,7 @@ int main(int argc, char **argv)
     // Load our Dialect in this MLIR Context.
     context.getOrLoadDialect<mlir::typescript::TypeScriptDialect>();
     context.getOrLoadDialect<mlir::StandardOpsDialect>();
+    context.getOrLoadDialect<mlir::math::MathDialect>();
     context.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
 
     mlir::OwningModuleRef module;
