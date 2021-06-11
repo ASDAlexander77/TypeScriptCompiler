@@ -974,21 +974,27 @@ namespace
         {
             if (auto unwind = tsLlvmContext->unwind[op])
             {
-                OpBuilder::InsertionGuard guard(rewriter);
+                {
+                    OpBuilder::InsertionGuard guard(rewriter);
 
-                auto invokeOp = rewriter.replaceOpWithNewOp<LLVM::InvokeOp>(
-                    op,
-                    op.getResultTypes(),
-                    op.calleeAttr(),
-                    op.getArgOperands(),
-                    unwind,
-                    ValueRange{},
-                    unwind,
-                    ValueRange{});
+                    auto *opBlock = rewriter.getInsertionBlock();
+                    auto opPosition = rewriter.getInsertionPoint();
+                    auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
 
-                auto *opBlock = rewriter.getInsertionBlock();
-                auto opPosition = rewriter.getInsertionPoint();
-                auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
+                    rewriter.setInsertionPointToEnd(opBlock);
+
+                    rewriter.create<LLVM::InvokeOp>(
+                        op->getLoc(),
+                        op.getResultTypes(),
+                        op.calleeAttr(),
+                        op.getArgOperands(),
+                        continuationBlock,
+                        ValueRange{},
+                        unwind,
+                        ValueRange{});
+                }
+
+                rewriter.eraseOp(op);
 
                 return success();
             }
@@ -1819,6 +1825,8 @@ namespace
 
         LogicalResult matchAndRewrite(mlir_ts::TryOp tryOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
+            TypeHelper th(rewriter);
+
             Location loc = tryOp.getLoc();
 
             OpBuilder::InsertionGuard guard(rewriter);
@@ -1863,6 +1871,12 @@ namespace
             auto resultOp = cast<mlir_ts::ResultOp>(bodyRegionLast->getTerminator());
             rewriter.replaceOpWithNewOp<BranchOp>(resultOp, continuation, ValueRange{});
 
+            // catches;landingpad
+            rewriter.setInsertionPointToStart(catchesRegion);
+
+            auto landingPadTypeWin32 = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {th.getI8PtrType(), th.getI32Type(), th.getI8PtrType()}, false);
+
+            rewriter.create<LLVM::LandingpadOp>(loc, landingPadTypeWin32, ValueRange{});
             // catches:exit
             rewriter.setInsertionPointToEnd(catchesRegionLast);
 

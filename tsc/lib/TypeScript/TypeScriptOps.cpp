@@ -214,7 +214,6 @@ LogicalResult verify(mlir_ts::InvokeOp op)
     }
 
     // In unwind destination, first operation must be LandingpadOp
-    // TODO: finish it
     /*
     if (!isa<LandingpadOp>(unwindDest->front()))
     {
