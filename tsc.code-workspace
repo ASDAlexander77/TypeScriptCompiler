@@ -37,7 +37,7 @@
         "editor.detectIndentation": false,
         "editor.insertSpaces": true,
         "editor.tabSize": 4,
-        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.defaultFormatter": "ms-vscode.cpptools",
         "editor.formatOnSave": true
         "files.exclude": {
             "**/__build": true,

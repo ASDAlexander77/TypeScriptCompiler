@@ -5,6 +5,7 @@ set(LLVM_LINK_COMPONENTS
     Support
     nativecodegen
     native
+    OrcJIT
     )
 
 get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
@@ -17,16 +18,17 @@ set(LIBS
     MLIRCastInterfaces
     MLIRExecutionEngine
     MLIRIR
-    MLIRLLVMToLLVMIRTranslation
     MLIRJitRunner
     MLIRLLVMIR
+    MLIRLLVMIRTransforms
+    MLIRLLVMToLLVMIRTranslation
+    MLIROptLib
     MLIRParser
     MLIRPass
     MLIRSideEffectInterfaces
+    MLIRSupport
     MLIRTargetLLVMIRExport
     MLIRTransforms
-    MLIRSupport
-    MLIROptLib
     MLIRTypeScript
     )
 

@@ -13,9 +13,9 @@
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "externalConsole": true,
+            "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
-        },            
+        },
         {
             "name": "(Windows) tsc.exe - MLIR",
             "type": "cppvsdbg",
@@ -25,9 +25,9 @@
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "externalConsole": true,
+            "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
-        },        
+        },
         {
             "name": "(Windows) tsc.exe - MLIR-AFFINE",
             "type": "cppvsdbg",
@@ -37,9 +37,9 @@
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "externalConsole": true,
+            "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
-        },        
+        },
         {
             "name": "(Windows) tsc.exe - MLIR-LLVM",
             "type": "cppvsdbg",
@@ -49,9 +49,9 @@
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "externalConsole": true,
+            "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
-        },        
+        },
         {
             "name": "(Windows) tsc.exe - LLVM",
             "type": "cppvsdbg",
@@ -61,9 +61,9 @@
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "externalConsole": true,
+            "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
-        },          
+        },
         {
             "name": "(Windows) CMake current - Launch",
             "type": "cppvsdbg",
@@ -73,7 +73,7 @@
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
-            "externalConsole": true,
+            "console": "externalTerminal"
         }
-   ]
+    ]
 }
