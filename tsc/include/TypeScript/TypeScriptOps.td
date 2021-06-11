@@ -169,8 +169,7 @@ def TypeScript_FuncOp : TypeScript_Op<"Func", [
       return success();
     }
   }];
-  let parser = [{ return ::parseFuncOp(parser, result); }];
-  let printer = [{ return ::print(*this, p); }];
+
   let verifier = [{ return ::verify(*this); }];
 }
 
@@ -440,6 +439,35 @@ def TypeScript_CallIndirectOp : TypeScript_Op<"CallIndirect", [
   let hasCanonicalizer = 1;
 
   let assemblyFormat = "$callee `(` $operands `)` attr-dict `:` type($callee)";
+}
+
+def TypeScript_InvokeOp : TypeScript_Op<"invoke", [
+                      AttrSizedOperandSegments,
+                      DeclareOpInterfaceMethods<BranchOpInterface>,
+                      Terminator]> {
+  let arguments = (ins OptionalAttr<FlatSymbolRefAttr>:$callee,
+                   Variadic<AnyType>:$operands,
+                   Variadic<AnyType>:$normalDestOperands,
+                   Variadic<AnyType>:$unwindDestOperands);
+  let results = (outs Variadic<AnyType>);
+  let successors = (successor AnySuccessor:$normalDest,
+                              AnySuccessor:$unwindDest);
+
+  let builders = [
+    OpBuilder<(ins "TypeRange":$tys, "FlatSymbolRefAttr":$callee,
+      "ValueRange":$ops, "Block*":$normal, "ValueRange":$normalOps,
+      "Block*":$unwind, "ValueRange":$unwindOps),
+    [{
+      $_state.addAttribute("callee", callee);
+      build($_builder, $_state, tys, ops, normal, normalOps, unwind, unwindOps);
+    }]>,
+    OpBuilder<(ins "TypeRange":$tys, "ValueRange":$ops, "Block*":$normal,
+      "ValueRange":$normalOps, "Block*":$unwind, "ValueRange":$unwindOps),
+    [{
+      build($_builder, $_state, tys, /*callee=*/FlatSymbolRefAttr(), ops, normalOps,
+            unwindOps, normal, unwind);
+    }]>];
+  let verifier = [{ return ::verify(*this);  }];
 }
 
 def TypeScript_ParamOp : TypeScript_Op<"Param", []> {

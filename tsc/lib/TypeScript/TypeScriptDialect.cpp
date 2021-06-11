@@ -6,15 +6,14 @@
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace mlir;
-using namespace mlir::typescript;
+namespace mlir_ts = mlir::typescript;
 
 //===----------------------------------------------------------------------===//
 // TypeScript dialect.
 //===----------------------------------------------------------------------===//
 
-::mlir::ParseResult parseFuncOp(::mlir::OpAsmParser &parser, ::mlir::OperationState &result);
-void print(::mlir::typescript::FuncOp op, ::mlir::OpAsmPrinter &p);
-::mlir::LogicalResult verify(::mlir::typescript::FuncOp op);
+LogicalResult verify(mlir_ts::FuncOp op);
+LogicalResult verify(mlir_ts::InvokeOp op);
 
 #define GET_TYPEDEF_CLASSES
 #include "TypeScript/TypeScriptOpsTypes.cpp.inc"
@@ -22,9 +21,7 @@ void print(::mlir::typescript::FuncOp op, ::mlir::OpAsmPrinter &p);
 #define GET_OP_CLASSES
 #include "TypeScript/TypeScriptOps.cpp.inc"
 
-namespace mlir_ts = mlir::typescript;
-
-void TypeScriptDialect::initialize()
+void mlir_ts::TypeScriptDialect::initialize()
 {
     addOperations<
 #define GET_OP_LIST
@@ -36,7 +33,7 @@ void TypeScriptDialect::initialize()
         >();
 }
 
-Type TypeScriptDialect::parseType(DialectAsmParser &parser) const
+Type mlir_ts::TypeScriptDialect::parseType(DialectAsmParser &parser) const
 {
     llvm::SMLoc typeLoc = parser.getCurrentLocation();
 
@@ -50,7 +47,7 @@ Type TypeScriptDialect::parseType(DialectAsmParser &parser) const
     if (*generatedTypeParser(getContext(), parser, "number", numberType))
     {
         return numberType;
-    }    
+    }
 
     mlir::Type stringType;
     if (*generatedTypeParser(getContext(), parser, "string", stringType))
@@ -92,13 +89,13 @@ Type TypeScriptDialect::parseType(DialectAsmParser &parser) const
     if (*generatedTypeParser(getContext(), parser, "tuple", tupleType))
     {
         return tupleType;
-    }    
+    }
 
     parser.emitError(typeLoc, "unknown type in TypeScript dialect");
     return Type();
 }
 
-void TypeScriptDialect::printType(Type type, DialectAsmPrinter &os) const
+void mlir_ts::TypeScriptDialect::printType(Type type, DialectAsmPrinter &os) const
 {
     if (failed(generatedTypePrinter(type, os)))
     {
@@ -109,8 +106,10 @@ void TypeScriptDialect::printType(Type type, DialectAsmPrinter &os) const
 // The functions don't need to be in the header file, but need to be in the mlir
 // namespace. Declare them here, then define them immediately below. Separating
 // the declaration and definition adheres to the LLVM coding standards.
-namespace mlir {
-    namespace typescript {
+namespace mlir
+{
+    namespace typescript
+    {
         // FieldInfo is used as part of a parameter, so equality comparison is compulsory.
         static bool operator==(const FieldInfo &a, const FieldInfo &b);
         // FieldInfo is used as part of a parameter, so a hash will be computed.
@@ -120,11 +119,13 @@ namespace mlir {
 
 // FieldInfo is used as part of a parameter, so equality comparison is
 // compulsory.
-static bool mlir::typescript::operator==(const FieldInfo &a, const FieldInfo &b) {
-  return a.id == b.id && a.type == b.type;
+static bool mlir_ts::operator==(const FieldInfo &a, const FieldInfo &b)
+{
+    return a.id == b.id && a.type == b.type;
 }
 
 // FieldInfo is used as part of a parameter, so a hash will be computed.
-static llvm::hash_code mlir::typescript::hash_value(const FieldInfo &fi) {
-  return llvm::hash_combine(fi.id, fi.type);
+static llvm::hash_code mlir_ts::hash_value(const FieldInfo &fi)
+{
+    return llvm::hash_combine(fi.id, fi.type);
 }
