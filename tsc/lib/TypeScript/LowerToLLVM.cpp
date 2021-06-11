@@ -1876,7 +1876,7 @@ namespace
 
             auto landingPadTypeWin32 = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {th.getI8PtrType(), th.getI32Type(), th.getI8PtrType()}, false);
 
-            rewriter.create<LLVM::LandingpadOp>(loc, landingPadTypeWin32, ValueRange{});
+            rewriter.create<LLVM::LandingpadOp>(loc, landingPadTypeWin32, ValueRange{}, ArrayRef<NamedAttribute>{{rewriter.getIdentifier("cleanup"), mlir::UnitAttr::get(rewriter.getContext())}});
             // catches:exit
             rewriter.setInsertionPointToEnd(catchesRegionLast);
 
