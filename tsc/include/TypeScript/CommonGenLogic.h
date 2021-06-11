@@ -5,17 +5,22 @@
 #include "file_helper.h"
 
 #ifndef NDEBUG
-#define DBG_PRINT   \
-            LLVM_DEBUG(llvm::dbgs() << "\n === START OF DEBUG === \n"); \
-            LLVM_DEBUG(llvm::dbgs() << "\n*** region: " << rewriter.getInsertionBlock()->getParent() << "\n"); \
-            for (auto &block : *rewriter.getInsertionBlock()->getParent()) \
-            { \
-                LLVM_DEBUG(llvm::dbgs() << "\n === block dump === \n"); \
-                LLVM_DEBUG(block.dump(););  \
-            } \
-            LLVM_DEBUG(llvm::dbgs() << "\n === END OF DEBUG === \n");
+#define DBG_DUMP(o) LLVM_DEBUG(o->dump(););
+#define DBG_PRINT_BLOCK(block)                              \
+    LLVM_DEBUG(llvm::dbgs() << "\n === block dump === \n"); \
+    LLVM_DEBUG(block->dump(););
+#define DBG_PRINT                                                                                      \
+    LLVM_DEBUG(llvm::dbgs() << "\n === START OF DEBUG === \n");                                        \
+    LLVM_DEBUG(llvm::dbgs() << "\n*** region: " << rewriter.getInsertionBlock()->getParent() << "\n"); \
+    for (auto &block : *rewriter.getInsertionBlock()->getParent())                                     \
+    {                                                                                                  \
+        LLVM_DEBUG(llvm::dbgs() << "\n === block dump === \n");                                        \
+        LLVM_DEBUG(block.dump(););                                                                     \
+    }                                                                                                  \
+    LLVM_DEBUG(llvm::dbgs() << "\n === END OF DEBUG === \n");
 #else
-#define DBG_PRINT 
+#define DBG_PRINT_BLOCK(block)
+#define DBG_PRINT
 #endif
 
 namespace mlir_ts = mlir::typescript;
@@ -40,7 +45,7 @@ namespace typescript
         {
             auto nameValue = getName(name);
             return mlir::StringRef(nameValue).copy(stringAllocator);
-        }        
+        }
 
         static bool matchLabelOrNotSet(mlir::StringAttr loopLabel, mlir::StringAttr opLabel)
         {
@@ -83,18 +88,19 @@ namespace typescript
     class MLIRTypeHelper
     {
         mlir::MLIRContext *context;
-    public:        
+
+    public:
         MLIRTypeHelper(mlir::MLIRContext *context) : context(context) {}
 
         mlir::Type getI32Type()
         {
             return mlir::IntegerType::get(context, 32);
         }
-        
+
         mlir::IntegerAttr getStructIndexAttrValue(int32_t value)
         {
             return mlir::IntegerAttr::get(getI32Type(), mlir::APInt(32, value));
-        }        
+        }
 
         bool isValueType(mlir::Type type)
         {

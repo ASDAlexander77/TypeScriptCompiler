@@ -546,76 +546,6 @@ namespace
         }
     };
 
-    struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
-    {
-        using TsPattern<mlir_ts::TryOp>::TsPattern;
-
-        LogicalResult matchAndRewrite(mlir_ts::TryOp tryOp, PatternRewriter &rewriter) const final
-        {
-            Location loc = tryOp.getLoc();
-
-            OpBuilder::InsertionGuard guard(rewriter);
-            Block *currentBlock = rewriter.getInsertionBlock();
-            Block *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
-
-            auto *bodyRegion = &tryOp.body().front();
-            auto *bodyRegionLast = &tryOp.body().back();
-            auto *catchesRegion = &tryOp.catches().front();
-            auto *catchesRegionLast = &tryOp.catches().back();
-            auto *finallyBlockRegion = &tryOp.finallyBlock().front();
-            auto *finallyBlockRegionLast = &tryOp.finallyBlock().back();
-
-            // logic to set Invoke attribute CallOp
-
-            auto visitorCallOpContinue = [&](Operation *op)
-            {
-                if (auto callOp = dyn_cast_or_null<mlir_ts::CallOp>(op))
-                {
-                    callOp->setAttr("Invoke", rewriter.getBoolAttr(true));
-                }
-                else if (auto callIndirectOp = dyn_cast_or_null<mlir_ts::CallIndirectOp>(op))
-                {
-                    callIndirectOp->setAttr("Invoke", rewriter.getBoolAttr(true));
-                }
-            };
-
-            tryOp.body().walk(visitorCallOpContinue);
-
-            // Branch to the "body" region.
-            rewriter.setInsertionPointToEnd(currentBlock);
-            rewriter.create<BranchOp>(loc, bodyRegion, ValueRange{});
-
-            rewriter.inlineRegionBefore(tryOp.body(), continuation);
-
-            rewriter.inlineRegionBefore(tryOp.catches(), continuation);
-
-            rewriter.inlineRegionBefore(tryOp.finallyBlock(), continuation);
-
-            // Body:exit -> replace ResultOp with br
-            rewriter.setInsertionPointToEnd(bodyRegionLast);
-
-            auto resultOp = cast<mlir_ts::ResultOp>(bodyRegionLast->getTerminator());
-            rewriter.replaceOpWithNewOp<BranchOp>(resultOp, continuation, ValueRange{});
-
-            // catches:exit
-            rewriter.setInsertionPointToEnd(catchesRegionLast);
-
-            auto yieldOpCatches = cast<mlir_ts::ResultOp>(catchesRegionLast->getTerminator());
-            rewriter.replaceOpWithNewOp<BranchOp>(yieldOpCatches, continuation, yieldOpCatches.results());
-
-            // finally:exit
-            rewriter.setInsertionPointToEnd(finallyBlockRegionLast);
-
-            auto yieldOpFinallyBlock = cast<mlir_ts::ResultOp>(finallyBlockRegionLast->getTerminator());
-            rewriter.replaceOpWithNewOp<BranchOp>(yieldOpFinallyBlock, continuation, yieldOpFinallyBlock.results());
-
-            rewriter.replaceOp(tryOp, continuation->getArguments());
-
-            DBG_PRINT
-
-            return success();
-        }
-    };
 } // end anonymous namespace
 
 //===----------------------------------------------------------------------===//
@@ -727,6 +657,8 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         mlir_ts::UndefOp,
         mlir_ts::VariableOp,
         mlir_ts::ThrowOp,
+        mlir_ts::TryOp,
+        mlir_ts::InvokeOp,
         mlir_ts::ResultOp>();
 
     // Now that the conversion target has been defined, we just need to provide
@@ -744,8 +676,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         ForOpLowering,
         BreakOpLowering,
         ContinueOpLowering,
-        SwitchOpLowering,
-        TryOpLowering>(&getContext(), &tsContext);
+        SwitchOpLowering>(&getContext(), &tsContext);
 
     // With the target and rewrite patterns defined, we can now attempt the
     // conversion. The conversion will signal failure if any of our `illegal`

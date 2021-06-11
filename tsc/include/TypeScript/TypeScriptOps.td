@@ -171,6 +171,9 @@ def TypeScript_FuncOp : TypeScript_Op<"Func", [
   }];
 
   let verifier = [{ return ::verify(*this); }];
+
+  let assemblyFormat =
+      [{ $sym_name $type attr-dict $body }];
 }
 
 def TypeScript_NullOp : TypeScript_Op<"Null", []> {
