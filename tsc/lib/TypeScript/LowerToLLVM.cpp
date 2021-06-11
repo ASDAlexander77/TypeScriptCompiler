@@ -16,6 +16,7 @@
 #include "mlir/Transforms/DialectConversion.h"
 #include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/Debug.h"
 
 #include "TypeScript/LowerToLLVMLogic.h"
 
@@ -971,6 +972,27 @@ namespace
 
         LogicalResult matchAndRewrite(mlir_ts::CallOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
+            if (auto unwind = tsLlvmContext->unwind[op])
+            {
+                OpBuilder::InsertionGuard guard(rewriter);
+
+                auto invokeOp = rewriter.replaceOpWithNewOp<LLVM::InvokeOp>(
+                    op,
+                    op.getResultTypes(),
+                    op.calleeAttr(),
+                    op.getArgOperands(),
+                    unwind,
+                    ValueRange{},
+                    unwind,
+                    ValueRange{});
+
+                auto *opBlock = rewriter.getInsertionBlock();
+                auto opPosition = rewriter.getInsertionPoint();
+                auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
+
+                return success();
+            }
+
             // just replace
             rewriter.replaceOpWithNewOp<mlir::CallOp>(
                 op,
@@ -993,6 +1015,25 @@ namespace
                 op.getResultTypes(),
                 op.getCallee(),
                 op.getArgOperands());
+            return success();
+        }
+    };
+
+    struct InvokeOpLowering : public TsLlvmPattern<mlir_ts::InvokeOp>
+    {
+        using TsLlvmPattern<mlir_ts::InvokeOp>::TsLlvmPattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::InvokeOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            // just replace
+            rewriter.replaceOpWithNewOp<LLVM::InvokeOp>(
+                op,
+                op.getResultTypes(),
+                op.getOperands(),
+                op.normalDest(),
+                op.normalDestOperands(),
+                op.unwindDest(),
+                op.unwindDestOperands());
             return success();
         }
     };
@@ -2031,7 +2072,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         LoadSaveValueLowering,
         ThrowOpLoweringVCWin32,
         TryOpLowering,
-        VariableOpLowering>(typeConverter, &getContext(), &tsLlvmContext);
+        VariableOpLowering,
+        InvokeOpLowering>(typeConverter, &getContext(), &tsLlvmContext);
 
     populateTypeScriptConversionPatterns(typeConverter, m);
 
