@@ -63,7 +63,7 @@ namespace
         LogicalResult matchAndRewrite(mlir_ts::PrintOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             TypeHelper th(rewriter);
-            LLVMCodeHelper ch(op, rewriter);
+            LLVMCodeHelper ch(op, rewriter, getTypeConverter());
             TypeConverterHelper tch(getTypeConverter());
 
             auto loc = op->getLoc();
@@ -194,7 +194,7 @@ namespace
         LogicalResult matchAndRewrite(mlir_ts::AssertOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             TypeHelper th(rewriter);
-            LLVMCodeHelper ch(op, rewriter);
+            LLVMCodeHelper ch(op, rewriter, getTypeConverter());
 
             auto loc = op->getLoc();
 
@@ -273,7 +273,7 @@ namespace
         LogicalResult matchAndRewrite(mlir_ts::ParseIntOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             TypeHelper th(rewriter);
-            LLVMCodeHelper ch(op, rewriter);
+            LLVMCodeHelper ch(op, rewriter, getTypeConverter());
 
             // Insert the `atoi` declaration if necessary.
             auto i8PtrTy = th.getI8PtrType();
@@ -299,7 +299,7 @@ namespace
         LogicalResult matchAndRewrite(mlir_ts::ParseFloatOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             TypeHelper th(rewriter);
-            LLVMCodeHelper ch(op, rewriter);
+            LLVMCodeHelper ch(op, rewriter, getTypeConverter());
 
             auto loc = op->getLoc();
 
@@ -373,7 +373,7 @@ namespace
         LogicalResult matchAndRewrite(mlir_ts::StringLengthOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             TypeHelper th(rewriter);
-            LLVMCodeHelper ch(op, rewriter);
+            LLVMCodeHelper ch(op, rewriter, getTypeConverter());
 
             auto loc = op->getLoc();
             auto i8PtrTy = th.getI8PtrType();
@@ -400,7 +400,7 @@ namespace
         {
             TypeHelper th(rewriter);
             CodeLogicHelper clh(op, rewriter);
-            LLVMCodeHelper ch(op, rewriter);
+            LLVMCodeHelper ch(op, rewriter, getTypeConverter());
 
             auto loc = op->getLoc();
 
@@ -465,7 +465,7 @@ namespace
         {
             TypeHelper th(rewriter);
             CodeLogicHelper clh(op, rewriter);
-            LLVMCodeHelper ch(op, rewriter);
+            LLVMCodeHelper ch(op, rewriter, getTypeConverter());
             LLVMTypeConverterHelper llvmtch(*(LLVMTypeConverter *)getTypeConverter());
 
             auto loc = op->getLoc();
@@ -613,7 +613,7 @@ namespace
         template <typename T, typename TOp>
         void getOrCreateGlobalArray(TOp constantOp, T type, ConversionPatternRewriter &rewriter) const
         {
-            LLVMCodeHelper ch(constantOp, rewriter);
+            LLVMCodeHelper ch(constantOp, rewriter, getTypeConverter());
             TypeConverterHelper tch(getTypeConverter());
 
             auto elementType = type.cast<T>().getElementType();
@@ -632,7 +632,7 @@ namespace
         template <typename T, typename TOp>
         void getOrCreateGlobalTuple(TOp constantOp, T type, ConversionPatternRewriter &rewriter) const
         {
-            LLVMCodeHelper ch(constantOp, rewriter);
+            LLVMCodeHelper ch(constantOp, rewriter, getTypeConverter());
             TypeConverterHelper tch(getTypeConverter());
 
             auto arrayAttr = constantOp.value().dyn_cast_or_null<ArrayAttr>();
@@ -652,7 +652,7 @@ namespace
             auto type = constantOp.getType();
             if (type.isa<mlir_ts::StringType>())
             {
-                LLVMCodeHelper ch(constantOp, rewriter);
+                LLVMCodeHelper ch(constantOp, rewriter, getTypeConverter());
 
                 auto strValue = constantOp.value().cast<StringAttr>().getValue().str();
                 auto txtCst = ch.getOrCreateGlobalString(strValue);
@@ -923,7 +923,7 @@ namespace
 
             if (funcOp.personality().hasValue() && funcOp.personality().getValue())
             {
-                LLVMRTTIHelperVCWin32 rttih(funcOp, rewriter);
+                LLVMRTTIHelperVCWin32 rttih(funcOp, rewriter, typeConverter);
                 rttih.setPersonality(newFuncOp);
             }
 
@@ -1107,7 +1107,7 @@ namespace
 
         LogicalResult matchAndRewrite(mlir_ts::NewOp newOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            LLVMCodeHelper ch(newOp, rewriter);
+            LLVMCodeHelper ch(newOp, rewriter, getTypeConverter());
             CodeLogicHelper clh(newOp, rewriter);
             TypeConverterHelper tch(getTypeConverter());
             TypeHelper th(rewriter);
@@ -1137,7 +1137,7 @@ namespace
 
         LogicalResult matchAndRewrite(mlir_ts::DeleteOp deleteOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            LLVMCodeHelper ch(deleteOp, rewriter);
+            LLVMCodeHelper ch(deleteOp, rewriter, getTypeConverter());
             CodeLogicHelper clh(deleteOp, rewriter);
             TypeConverterHelper tch(getTypeConverter());
             TypeHelper th(rewriter);
@@ -1462,29 +1462,9 @@ namespace
 
         LogicalResult matchAndRewrite(mlir_ts::GlobalOp globalOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            TypeHelper th(rewriter);
-            TypeConverterHelper tch(getTypeConverter());
-
-            Type type;
-            auto hasValue = globalOp.value().hasValue();
-            auto value = hasValue ? globalOp.value().getValue() : Attribute();
-            Type argType = globalOp.getType();
-            if (hasValue && argType.dyn_cast_or_null<mlir_ts::StringType>())
-            {
-                type = th.getArrayType(th.getI8Type(), value.cast<StringAttr>().getValue().size());
-            }
-            else
-            {
-                type = tch.convertType(globalOp.getType());
-            }
-
-            rewriter.replaceOpWithNewOp<LLVM::GlobalOp>(
-                globalOp,
-                type,
-                globalOp.constant(),
-                LLVM::Linkage::Internal,
-                globalOp.sym_name(),
-                value);
+            LLVMCodeHelper lch(globalOp, rewriter, getTypeConverter());
+            lch.createGlobalVarIfNew(globalOp.sym_name(), globalOp.type(), globalOp.valueAttr());
+            rewriter.eraseOp(globalOp);
             return success();
         }
     };
@@ -1713,7 +1693,7 @@ namespace
             auto loc = memoryCopyOp->getLoc();
 
             TypeHelper th(rewriter);
-            LLVMCodeHelper ch(memoryCopyOp, rewriter);
+            LLVMCodeHelper ch(memoryCopyOp, rewriter, getTypeConverter());
             TypeConverterHelper tch(getTypeConverter());
             CodeLogicHelper clh(memoryCopyOp, rewriter);
 
@@ -1759,11 +1739,11 @@ namespace
 
         LogicalResult matchAndRewrite(mlir_ts::ThrowOp throwOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            LLVMCodeHelper ch(throwOp, rewriter);
+            LLVMCodeHelper ch(throwOp, rewriter, getTypeConverter());
             CodeLogicHelper clh(throwOp, rewriter);
             TypeConverterHelper tch(getTypeConverter());
             TypeHelper th(rewriter);
-            LLVMRTTIHelperVCWin32 rttih(throwOp, rewriter);
+            LLVMRTTIHelperVCWin32 rttih(throwOp, rewriter, *getTypeConverter());
 
             auto loc = throwOp.getLoc();
 

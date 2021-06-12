@@ -52,6 +52,13 @@ using llvm::Twine;
 
 namespace
 {
+    enum class VariableClass
+    {
+        Const,
+        Let,
+        Var
+    };
+
     struct PassResult
     {
         mlir::Type functionReturnType;
@@ -61,7 +68,7 @@ namespace
     {
         GenContext() = default;
 
-        void clean() 
+        void clean()
         {
             if (cleanUps)
             {
@@ -85,7 +92,7 @@ namespace
         mlir_ts::FuncOp funcOp;
         mlir::Type functionReturnType;
         PassResult *passResult;
-        mlir::SmallVector<mlir::Block *>* cleanUps;
+        mlir::SmallVector<mlir::Block *> *cleanUps;
     };
 
     /// Implementation of a simple MLIR emission from the TypeScript AST.
@@ -150,7 +157,8 @@ namespace
         {
             FilterVisitorAST<EnumDeclaration> visitorASTEnum(
                 SyntaxKind::EnumDeclaration,
-                [&](auto enumDecl) {
+                [&](auto enumDecl)
+                {
                     GenContext genContext;
                     mlirGen(enumDecl, genContext);
                 });
@@ -158,15 +166,16 @@ namespace
 
             FilterVisitorAST<TypeAliasDeclaration> visitorASTType(
                 SyntaxKind::TypeAliasDeclaration,
-                [&](auto typeAliasDecl) {
+                [&](auto typeAliasDecl)
+                {
                     GenContext genContext;
                     mlirGen(typeAliasDecl, genContext);
                 });
-            visitorASTType.visit(module);            
+            visitorASTType.visit(module);
 
             return mlir::success();
         }
-        
+
         mlir::LogicalResult declareAllFunctionDeclarations(SourceFile module)
         {
             auto unresolvedFunctions = -1;
@@ -179,7 +188,8 @@ namespace
                 auto unresolvedFunctionsCurrentRun = 0;
                 FilterVisitorAST<FunctionDeclaration> visitorAST(
                     SyntaxKind::FunctionDeclaration,
-                    [&](auto funcDecl) {
+                    [&](auto funcDecl)
+                    {
                         GenContext genContextDecl = {0};
                         genContextDecl.allowPartialResolve = true;
 
@@ -248,12 +258,12 @@ namespace
             }
 
             llvm_unreachable("unknown body type");
-        }        
+        }
 
         mlir::LogicalResult mlirGen(Block blockAST, const GenContext &genContext)
         {
             SymbolTableScopeT varScope(symbolTable);
-            
+
             for (auto &statement : blockAST->statements)
             {
                 if (failed(mlirGen(statement, genContext)))
@@ -291,7 +301,7 @@ namespace
             else if (kind == SyntaxKind::LabeledStatement)
             {
                 return mlirGen(statementAST.as<LabeledStatement>(), genContext);
-            }            
+            }
             else if (kind == SyntaxKind::DoStatement)
             {
                 return mlirGen(statementAST.as<DoStatement>(), genContext);
@@ -319,7 +329,7 @@ namespace
             else if (kind == SyntaxKind::BreakStatement)
             {
                 return mlirGen(statementAST.as<BreakStatement>(), genContext);
-            }            
+            }
             else if (kind == SyntaxKind::SwitchStatement)
             {
                 return mlirGen(statementAST.as<SwitchStatement>(), genContext);
@@ -327,15 +337,15 @@ namespace
             else if (kind == SyntaxKind::ThrowStatement)
             {
                 return mlirGen(statementAST.as<ThrowStatement>(), genContext);
-            }            
+            }
             else if (kind == SyntaxKind::TryStatement)
             {
                 return mlirGen(statementAST.as<TryStatement>(), genContext);
-            }            
+            }
             else if (kind == SyntaxKind::LabeledStatement)
             {
                 return mlirGen(statementAST.as<LabeledStatement>(), genContext);
-            }            
+            }
             else if (kind == SyntaxKind::TypeAliasDeclaration)
             {
                 // must be processed already
@@ -352,7 +362,7 @@ namespace
             {
                 return mlirGen(statementAST.as<Block>(), genContext);
             }
-            else if (kind == SyntaxKind::EmptyStatement || kind == SyntaxKind::Unknown/*TODO: temp solution to treat null statements as empty*/)
+            else if (kind == SyntaxKind::EmptyStatement || kind == SyntaxKind::Unknown /*TODO: temp solution to treat null statements as empty*/)
             {
                 return mlir::success();
             }
@@ -380,11 +390,11 @@ namespace
             else if (kind == SyntaxKind::NoSubstitutionTemplateLiteral)
             {
                 return mlirGen(expressionAST.as<NoSubstitutionTemplateLiteral>(), genContext);
-            }             
+            }
             else if (kind == SyntaxKind::BigIntLiteral)
             {
                 return mlirGen(expressionAST.as<BigIntLiteral>(), genContext);
-            }            
+            }
             else if (kind == SyntaxKind::NullKeyword)
             {
                 return mlirGen(expressionAST.as<NullLiteral>(), genContext);
@@ -460,37 +470,37 @@ namespace
             else if (kind == SyntaxKind::TypeAssertionExpression)
             {
                 return mlirGen(expressionAST.as<TypeAssertion>(), genContext);
-            }       
+            }
             else if (kind == SyntaxKind::AsExpression)
             {
                 return mlirGen(expressionAST.as<AsExpression>(), genContext);
-            }       
+            }
             else if (kind == SyntaxKind::TemplateExpression)
             {
                 return mlirGen(expressionAST.as<TemplateLiteralLikeNode>(), genContext);
-            }             
+            }
             else if (kind == SyntaxKind::TaggedTemplateExpression)
             {
                 return mlirGen(expressionAST.as<TaggedTemplateExpression>(), genContext);
-            }             
+            }
             else if (kind == SyntaxKind::NewExpression)
             {
                 return mlirGen(expressionAST.as<NewExpression>(), genContext);
-            }             
+            }
             else if (kind == SyntaxKind::DeleteExpression)
             {
                 mlirGen(expressionAST.as<DeleteExpression>(), genContext);
                 return mlir::Value();
-            }             
+            }
             else if (kind == SyntaxKind::VoidExpression)
             {
                 return mlirGen(expressionAST.as<VoidExpression>(), genContext);
-            }             
-            else if (kind == SyntaxKind::Unknown/*TODO: temp solution to treat null expr as empty expr*/)
+            }
+            else if (kind == SyntaxKind::Unknown /*TODO: temp solution to treat null expr as empty expr*/)
             {
                 return mlir::Value();
             }
-            else if (kind == SyntaxKind::OmittedExpression/*TODO: temp solution to treat null expr as empty expr*/)
+            else if (kind == SyntaxKind::OmittedExpression /*TODO: temp solution to treat null expr as empty expr*/)
             {
                 return mlir::Value();
             }
@@ -498,9 +508,10 @@ namespace
             llvm_unreachable("unknown expression");
         }
 
-        void registerVariable(mlir::Location location, StringRef name, bool isConst, mlir::Type type, mlir::Value init)
+        void registerVariable(mlir::Location location, StringRef name, VariableClass varClass, mlir::Type type, mlir::Value init)
         {
-            auto isGlobal = symbolTable.getCurScope()->getParentScope() == nullptr;
+            auto isGlobal = symbolTable.getCurScope()->getParentScope() == nullptr || varClass == VariableClass::Var;
+            auto isConst = varClass == VariableClass::Const;
 
             auto varDecl = std::make_shared<VariableDeclarationDOM>(name, type, location);
             if (!isConst)
@@ -518,9 +529,9 @@ namespace
                 }
                 else
                 {
-                    assert (type);
+                    assert(type);
 
-                    MLIRTypeHelper mth(builder.getContext()); 
+                    MLIRTypeHelper mth(builder.getContext());
 
                     auto copyRequired = false;
                     auto actualType = mth.convertConstTypeToType(type, copyRequired);
@@ -553,7 +564,7 @@ namespace
                     init.getDefiningOp()->erase();
                 }
 
-                auto globalOp = 
+                auto globalOp =
                     builder.create<mlir_ts::GlobalOp>(
                         location,
                         type,
@@ -566,7 +577,7 @@ namespace
         }
 
         template <typename ItemTy>
-        void processDeclaration(ItemTy item, bool isConst, mlir::Type type, mlir::Value init, const GenContext &genContext)
+        void processDeclaration(ItemTy item, VariableClass varClass, mlir::Type type, mlir::Value init, const GenContext &genContext)
         {
             auto location = loc(item);
 
@@ -577,22 +588,16 @@ namespace
                 for (auto arrayBindingElement : arrayBindingPattern->elements)
                 {
                     MLIRPropertyAccessCodeLogic cl(builder, location, init, builder.getI32IntegerAttr(index++));
-                    mlir::Value subInit;                        
+                    mlir::Value subInit;
                     TypeSwitch<mlir::Type>(type)
                         .Case<mlir_ts::ConstTupleType>([&](auto tupleType)
-                        {
-                            subInit = cl.Tuple(tupleType, true);
-                        })
+                                                       { subInit = cl.Tuple(tupleType, true); })
                         .Case<mlir_ts::TupleType>([&](auto tupleType)
-                        {
-                            subInit = cl.Tuple(tupleType, true);
-                        })
-                        .Default([&](auto type) 
-                        {
-                            llvm_unreachable("not implemented");
-                        });                
+                                                  { subInit = cl.Tuple(tupleType, true); })
+                        .Default([&](auto type)
+                                 { llvm_unreachable("not implemented"); });
 
-                    processDeclaration(arrayBindingElement.as<BindingElement>(), isConst, subInit.getType(), subInit, genContext);
+                    processDeclaration(arrayBindingElement.as<BindingElement>(), varClass, subInit.getType(), subInit, genContext);
                 }
             }
             else
@@ -601,14 +606,17 @@ namespace
                 auto name = MLIRHelper::getName(item->name);
 
                 // register
-                registerVariable(location, name, isConst, type, init);
+                registerVariable(location, name, varClass, type, init);
             }
-
         }
 
         mlir::LogicalResult mlirGen(VariableDeclarationList variableDeclarationListAST, const GenContext &genContext)
         {
+            auto isLet = (variableDeclarationListAST->flags & NodeFlags::Const) == NodeFlags::Let;
             auto isConst = (variableDeclarationListAST->flags & NodeFlags::Const) == NodeFlags::Const;
+            auto varClass = isLet ? VariableClass::Let : isConst ? VariableClass::Const
+                                                                 : VariableClass::Var;
+
             for (auto &item : variableDeclarationListAST->declarations)
             {
                 // type
@@ -637,7 +645,7 @@ namespace
                     }
                 }
 
-                processDeclaration(item, isConst, type, init, genContext);
+                processDeclaration(item, varClass, type, init, genContext);
             }
 
             return mlir::success();
@@ -647,9 +655,9 @@ namespace
         {
             return mlirGen(variableStatementAST->declarationList, genContext);
         }
-        
+
         std::vector<std::shared_ptr<FunctionParamDOM>> mlirGenParameters(SignatureDeclarationBase parametersContextAST,
-                                                               const GenContext &genContext)
+                                                                         const GenContext &genContext)
         {
             std::vector<std::shared_ptr<FunctionParamDOM>> params;
             if (!parametersContextAST)
@@ -796,7 +804,8 @@ namespace
             auto hasReturnStatementWithExpr = false;
             FilterVisitorSkipFuncsAST<ReturnStatement> visitorAST1(
                 SyntaxKind::ReturnStatement,
-                [&](auto retStatement) {
+                [&](auto retStatement)
+                {
                     if (retStatement->expression)
                     {
                         hasReturnStatementWithExpr = true;
@@ -807,10 +816,8 @@ namespace
 
             if (!hasReturnStatementWithExpr)
             {
-                auto allowFuncExprWithOneLine = 
-                    (SyntaxKind)functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction
-                    && (SyntaxKind)functionLikeDeclarationBaseAST->body != SyntaxKind::Block
-                    && functionLikeDeclarationBaseAST->body.is<Expression>();
+                auto allowFuncExprWithOneLine =
+                    (SyntaxKind)functionLikeDeclarationBaseAST == SyntaxKind::ArrowFunction && (SyntaxKind)functionLikeDeclarationBaseAST->body != SyntaxKind::Block && functionLikeDeclarationBaseAST->body.is<Expression>();
 
                 if (!allowFuncExprWithOneLine)
                 {
@@ -833,7 +840,7 @@ namespace
                 genContextWithPassResult.allowPartialResolve = true;
                 genContextWithPassResult.dummyRun = true;
                 genContextWithPassResult.functionReturnType = nullptr;
-                genContextWithPassResult.cleanUps = new SmallVector<mlir::Block*>();
+                genContextWithPassResult.cleanUps = new SmallVector<mlir::Block *>();
                 genContextWithPassResult.passResult = new PassResult();
                 if (succeeded(mlirGenFunctionBody(functionLikeDeclarationBaseAST, dummyFuncOp, funcProto, genContextWithPassResult)))
                 {
@@ -849,7 +856,7 @@ namespace
         mlir::LogicalResult mlirGen(FunctionDeclaration functionDeclarationAST, const GenContext &genContext)
         {
             mlir::OpBuilder::InsertionGuard guard(builder);
-            if (mlirGenFunctionLikeDeclaration(functionDeclarationAST, genContext))            
+            if (mlirGenFunctionLikeDeclaration(functionDeclarationAST, genContext))
             {
                 return mlir::success();
             }
@@ -873,13 +880,13 @@ namespace
                 }
             }
 
-            auto funcSymbolRef = 
+            auto funcSymbolRef =
                 builder.create<mlir_ts::SymbolRefOp>(
-                    loc(functionExpressionAST), 
-                    funcOp.getType(), 
+                    loc(functionExpressionAST),
+                    funcOp.getType(),
                     mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
             return funcSymbolRef;
-        }        
+        }
 
         mlir::Value mlirGen(ArrowFunction arrowFunctionAST, const GenContext &genContext)
         {
@@ -897,13 +904,13 @@ namespace
                 }
             }
 
-            auto funcSymbolRef = 
+            auto funcSymbolRef =
                 builder.create<mlir_ts::SymbolRefOp>(
-                    loc(arrowFunctionAST), 
-                    funcOp.getType(), 
+                    loc(arrowFunctionAST),
+                    funcOp.getType(),
                     mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
             return funcSymbolRef;
-        }          
+        }
 
         mlir_ts::FuncOp mlirGenFunctionLikeDeclaration(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
         {
@@ -944,7 +951,7 @@ namespace
             functionMap.insert({funcOp.getName(), funcOp});
 
             return funcOp;
-        }  
+        }
 
         mlir::LogicalResult mlirGenFunctionBody(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, mlir_ts::FuncOp funcOp,
                                                 FunctionPrototypeDOM::TypePtr funcProto, const GenContext &genContext)
@@ -1009,7 +1016,7 @@ namespace
 
                     if (param->hasInitValue())
                     {
-                        /*auto *defValueBlock =*/ builder.createBlock(&paramOptionalOp.defaultValueRegion());
+                        /*auto *defValueBlock =*/builder.createBlock(&paramOptionalOp.defaultValueRegion());
 
                         mlir::Value defaultValue;
                         auto initExpression = param->getInitValue();
@@ -1084,7 +1091,7 @@ namespace
 
             auto castedValue = builder.create<mlir_ts::CastOp>(location, typeInfo, exprValue);
             return castedValue;
-        }        
+        }
 
         mlir::LogicalResult mlirGen(ReturnStatement returnStatementAST, const GenContext &genContext)
         {
@@ -1105,7 +1112,7 @@ namespace
             if (!expressionValue)
             {
                 builder.create<mlir_ts::ReturnOp>(location);
-                return mlir::success();                
+                return mlir::success();
             }
 
             if (genContext.functionReturnType && genContext.functionReturnType != expressionValue.getType())
@@ -1171,7 +1178,7 @@ namespace
         mlir::LogicalResult mlirGen(DoStatement doStatementAST, const GenContext &genContext)
         {
             SymbolTableScopeT varScope(symbolTable);
-            
+
             auto location = loc(doStatementAST);
 
             SmallVector<mlir::Type, 0> types;
@@ -1184,8 +1191,8 @@ namespace
                 label = "";
             }
 
-            /*auto *cond =*/ builder.createBlock(&doWhileOp.cond(), {}, types);
-            /*auto *body =*/ builder.createBlock(&doWhileOp.body(), {}, types);
+            /*auto *cond =*/builder.createBlock(&doWhileOp.cond(), {}, types);
+            /*auto *body =*/builder.createBlock(&doWhileOp.body(), {}, types);
 
             // body in condition
             builder.setInsertionPointToStart(&doWhileOp.body().front());
@@ -1199,12 +1206,12 @@ namespace
 
             builder.setInsertionPointAfter(doWhileOp);
             return mlir::success();
-        }        
+        }
 
         mlir::LogicalResult mlirGen(WhileStatement whileStatementAST, const GenContext &genContext)
         {
             SymbolTableScopeT varScope(symbolTable);
-            
+
             auto location = loc(whileStatementAST);
 
             SmallVector<mlir::Type, 0> types;
@@ -1217,8 +1224,8 @@ namespace
                 label = "";
             }
 
-            /*auto *cond =*/ builder.createBlock(&whileOp.cond(), {}, types);
-            /*auto *body =*/ builder.createBlock(&whileOp.body(), {}, types);
+            /*auto *cond =*/builder.createBlock(&whileOp.cond(), {}, types);
+            /*auto *body =*/builder.createBlock(&whileOp.body(), {}, types);
 
             // condition
             builder.setInsertionPointToStart(&whileOp.cond().front());
@@ -1232,12 +1239,12 @@ namespace
 
             builder.setInsertionPointAfter(whileOp);
             return mlir::success();
-        }           
+        }
 
         mlir::LogicalResult mlirGen(ForStatement forStatementAST, const GenContext &genContext)
         {
             SymbolTableScopeT varScope(symbolTable);
-            
+
             auto location = loc(forStatementAST);
 
             // initializer
@@ -1269,9 +1276,9 @@ namespace
                 label = "";
             }
 
-            /*auto *cond =*/ builder.createBlock(&forOp.cond(), {}, types);
-            /*auto *body =*/ builder.createBlock(&forOp.body(), {}, types);
-            /*auto *incr =*/ builder.createBlock(&forOp.incr(), {}, types);
+            /*auto *cond =*/builder.createBlock(&forOp.cond(), {}, types);
+            /*auto *body =*/builder.createBlock(&forOp.body(), {}, types);
+            /*auto *incr =*/builder.createBlock(&forOp.incr(), {}, types);
 
             builder.setInsertionPointToStart(&forOp.cond().front());
             auto conditionValue = mlirGen(forStatementAST->condition, genContext);
@@ -1297,7 +1304,7 @@ namespace
             builder.setInsertionPointAfter(forOp);
 
             return mlir::success();
-        }         
+        }
 
         mlir::LogicalResult mlirGen(ForInStatement forInStatementAST, const GenContext &genContext)
         {
@@ -1316,7 +1323,7 @@ namespace
             auto arrayVar = nf.createVariableDeclaration(_a, undefined, undefined, forInStatementAST->expression);
             arrayVar->transformFlags |= TransformFlags::ForceConst;
             declarations.push_back(arrayVar);
-            
+
             auto initVars = nf.createVariableDeclarationList(declarations);
 
             // condition
@@ -1331,7 +1338,7 @@ namespace
 
             auto varDeclList = forInStatementAST->initializer.as<VariableDeclarationList>();
             varDeclList->declarations.front()->initializer = _i;
-           
+
             statements.push_back(nf.createVariableStatement(undefined, varDeclList));
             statements.push_back(forInStatementAST->statement);
             auto block = nf.createBlock(statements);
@@ -1340,7 +1347,6 @@ namespace
             auto forStatNode = nf.createForStatement(initVars, cond, incr, block);
 
             return mlirGen(forStatNode, genContext);
-
         }
 
         mlir::LogicalResult mlirGen(ForOfStatement forOfStatementAST, const GenContext &genContext)
@@ -1360,7 +1366,7 @@ namespace
             auto arrayVar = nf.createVariableDeclaration(_a, undefined, undefined, forOfStatementAST->expression);
             arrayVar->transformFlags |= TransformFlags::ForceConst;
             declarations.push_back(arrayVar);
-            
+
             auto initVars = nf.createVariableDeclarationList(declarations);
 
             // condition
@@ -1374,7 +1380,7 @@ namespace
 
             auto varDeclList = forOfStatementAST->initializer.as<VariableDeclarationList>();
             varDeclList->declarations.front()->initializer = nf.createElementAccessExpression(_a, _i);
-           
+
             statements.push_back(nf.createVariableStatement(undefined, varDeclList));
             statements.push_back(forOfStatementAST->statement);
             auto block = nf.createBlock(statements);
@@ -1431,7 +1437,7 @@ namespace
             auto *lastConditionBlock = mergeBlock;
 
             auto &clauses = switchStatementAST->caseBlock->clauses;
-            for (int index = clauses.size() - 1; index >=0; index--)
+            for (int index = clauses.size() - 1; index >= 0; index--)
             {
                 auto caseBlock = clauses[index];
                 auto statements = caseBlock->statements;
@@ -1472,47 +1478,47 @@ namespace
 
                 switch ((SyntaxKind)caseBlock)
                 {
-                    case SyntaxKind::CaseClause:
-                        {
-                            {
+                case SyntaxKind::CaseClause:
+                {
+                    {
 
-                                mlir::OpBuilder::InsertionGuard guard(builder);
-                                caseConditionBlock = builder.createBlock(lastBlock);
+                        mlir::OpBuilder::InsertionGuard guard(builder);
+                        caseConditionBlock = builder.createBlock(lastBlock);
 
-                                auto caseValue = mlirGen(caseBlock.as<CaseClause>()->expression, genContext);
-                                                
-                                auto condition = 
-                                    builder.create<mlir_ts::LogicalBinaryOp>(
-                                        location,
-                                        getBooleanType(),
-                                        builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsToken),
-                                        switchValue,
-                                        caseValue);                                
+                        auto caseValue = mlirGen(caseBlock.as<CaseClause>()->expression, genContext);
 
-                                auto conditionI1 = builder.create<mlir_ts::CastOp>(location, builder.getI1Type(), condition);
+                        auto condition =
+                            builder.create<mlir_ts::LogicalBinaryOp>(
+                                location,
+                                getBooleanType(),
+                                builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsToken),
+                                switchValue,
+                                caseValue);
 
-                                builder.create<mlir::CondBranchOp>(
-                                    location, 
-                                    conditionI1, 
-                                    caseBodyBlock, /*trueArguments=*/mlir::ValueRange{}, 
-                                    lastConditionBlock, /*falseArguments=*/mlir::ValueRange{});
+                        auto conditionI1 = builder.create<mlir_ts::CastOp>(location, builder.getI1Type(), condition);
 
-                                lastConditionBlock = caseConditionBlock;
-                            }
+                        builder.create<mlir::CondBranchOp>(
+                            location,
+                            conditionI1,
+                            caseBodyBlock, /*trueArguments=*/mlir::ValueRange{},
+                            lastConditionBlock, /*falseArguments=*/mlir::ValueRange{});
 
-                            // create condition block
-                        }
-                        break;
-                    case SyntaxKind::DefaultClause:
-                        {
-                            lastConditionBlock = lastBlock;
-                        }
-                        break;                        
+                        lastConditionBlock = caseConditionBlock;
+                    }
+
+                    // create condition block
+                }
+                break;
+                case SyntaxKind::DefaultClause:
+                {
+                    lastConditionBlock = lastBlock;
+                }
+                break;
                 }
             }
 
             return mlir::success();
-        }  
+        }
 
         mlir::LogicalResult mlirGen(ThrowStatement throwStatementAST, const GenContext &genContext)
         {
@@ -1583,23 +1589,23 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
             SmallVector<mlir::Type, 0> types;
 
-            /*auto *body =*/ builder.createBlock(&tryOp.body(), {}, types);
-            /*auto *catches =*/ builder.createBlock(&tryOp.catches(), {}, types);
-            /*auto *finallyBlock =*/ builder.createBlock(&tryOp.finallyBlock(), {}, types);
+            /*auto *body =*/builder.createBlock(&tryOp.body(), {}, types);
+            /*auto *catches =*/builder.createBlock(&tryOp.catches(), {}, types);
+            /*auto *finallyBlock =*/builder.createBlock(&tryOp.finallyBlock(), {}, types);
 
             // body
-            builder.setInsertionPointToStart(&tryOp.body().front());        
+            builder.setInsertionPointToStart(&tryOp.body().front());
             auto result = mlirGen(tryStatementAST->tryBlock, genContext);
             // terminator
             builder.create<mlir_ts::ResultOp>(location);
 
             // catches
-            builder.setInsertionPointToStart(&tryOp.catches().front());        
+            builder.setInsertionPointToStart(&tryOp.catches().front());
             // terminator
             builder.create<mlir_ts::ResultOp>(location);
 
             // finally
-            builder.setInsertionPointToStart(&tryOp.finallyBlock().front());        
+            builder.setInsertionPointToStart(&tryOp.finallyBlock().front());
             // terminator
             builder.create<mlir_ts::ResultOp>(location);
 
@@ -1609,13 +1615,13 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
         mlir::Value mlirGen(UnaryExpression unaryExpressionAST, const GenContext &genContext)
         {
-            return mlirGen(unaryExpressionAST.as<Expression>(), genContext);               
+            return mlirGen(unaryExpressionAST.as<Expression>(), genContext);
         }
 
         mlir::Value mlirGen(LeftHandSideExpression leftHandSideExpressionAST, const GenContext &genContext)
         {
             return mlirGen(leftHandSideExpressionAST.as<Expression>(), genContext);
-        }        
+        }
 
         mlir::Value mlirGen(PrefixUnaryExpression prefixUnaryExpressionAST, const GenContext &genContext)
         {
@@ -1647,7 +1653,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             switch (opCode)
             {
             case SyntaxKind::ExclamationToken:
-                
+
                 if (expressionValue.getType() != getBooleanType())
                 {
                     boolValue = builder.create<mlir_ts::CastOp>(location, getBooleanType(), expressionValue);
@@ -1657,7 +1663,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     location,
                     getBooleanType(),
                     builder.getI32IntegerAttr((int)opCode),
-                    boolValue);            
+                    boolValue);
             case SyntaxKind::TildeToken:
             case SyntaxKind::PlusToken:
             case SyntaxKind::MinusToken:
@@ -1676,7 +1682,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             default:
                 llvm_unreachable("not implemented");
             }
-        }        
+        }
 
         mlir::Value mlirGen(PostfixUnaryExpression postfixUnaryExpressionAST, const GenContext &genContext)
         {
@@ -1715,7 +1721,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             default:
                 llvm_unreachable("not implemented");
             }
-        } 
+        }
 
         mlir::Value mlirGen(ConditionalExpression conditionalExpressionAST, const GenContext &genContext)
         {
@@ -1778,13 +1784,13 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             if (resultTrue.getType() != resultFalse.getType())
             {
                 resultFalse = builder.create<mlir_ts::CastOp>(location, resultTrue.getType(), resultFalse);
-            }                    
+            }
 
             builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{resultFalse});
 
             builder.setInsertionPointAfter(ifOp);
 
-            return ifOp.getResult(0);                                
+            return ifOp.getResult(0);
         }
 
         mlir::Value mlirGenInLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
@@ -1797,8 +1803,8 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             // condition
             auto cond = nf.createBinaryExpression(binaryExpressionAST->left, nf.createToken(SyntaxKind::LessThanToken), nf.createPropertyAccessExpression(binaryExpressionAST->right, nf.createIdentifier(S("length"))));
 
-            return mlirGen(cond, genContext);            
-        }        
+            return mlirGen(cond, genContext);
+        }
 
         mlir::Value mlirGenInstanceOfLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
         {
@@ -1811,7 +1817,6 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             return builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(resultType == type));
         }
 
-
         mlir::Value evaluateBinaryOp(mlir::Location location, SyntaxKind opCode, mlir_ts::ConstantOp leftConstOp, mlir_ts::ConstantOp rightConstOp, const GenContext &genContext)
         {
             auto leftInt = leftConstOp.valueAttr().dyn_cast<mlir::IntegerAttr>().getInt();
@@ -1821,22 +1826,24 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             int64_t result = 0;
             switch (opCode)
             {
-                case SyntaxKind::PlusEqualsToken: 
-                    result = leftInt + rightInt;
-                    break;
-                case SyntaxKind::LessThanLessThanToken: 
-                    result = leftInt << rightInt;
-                    break;
-                case SyntaxKind::GreaterThanGreaterThanToken: 
-                    result = leftInt >> rightInt;
-                    break;
-                case SyntaxKind::AmpersandToken: 
-                    result = leftInt & rightInt;
-                    break;
-                case SyntaxKind::BarToken:
-                    result = leftInt | rightInt;
-                    break;
-                default: llvm_unreachable("not implemented"); break;
+            case SyntaxKind::PlusEqualsToken:
+                result = leftInt + rightInt;
+                break;
+            case SyntaxKind::LessThanLessThanToken:
+                result = leftInt << rightInt;
+                break;
+            case SyntaxKind::GreaterThanGreaterThanToken:
+                result = leftInt >> rightInt;
+                break;
+            case SyntaxKind::AmpersandToken:
+                result = leftInt & rightInt;
+                break;
+            case SyntaxKind::BarToken:
+                result = leftInt | rightInt;
+                break;
+            default:
+                llvm_unreachable("not implemented");
+                break;
             }
 
             leftConstOp.erase();
@@ -1852,7 +1859,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             auto leftExpression = binaryExpressionAST->left;
             auto rightExpression = binaryExpressionAST->right;
 
-            auto rightExpressionValue = mlirGen(rightExpression, genContext);            
+            auto rightExpressionValue = mlirGen(rightExpression, genContext);
             auto leftExpressionValue = mlirGen(leftExpression, genContext);
 
             if (!leftExpressionValue)
@@ -1873,7 +1880,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 }
 
                 return mlir::Value();
-            }            
+            }
 
             if (auto unresolvedLeft = dyn_cast_or_null<mlir_ts::SymbolRefOp>(leftExpressionValue.getDefiningOp()))
             {
@@ -1885,7 +1892,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             {
                 emitError(loc(rightExpression), "can't find variable: ") << unresolvedRight.identifier();
                 return mlir::Value();
-            }            
+            }
 
             auto leftExpressionValueBeforeCast = leftExpressionValue;
 
@@ -1894,7 +1901,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 if (rightExpressionValue.getType().dyn_cast_or_null<mlir_ts::CharType>())
                 {
                     rightExpressionValue = builder.create<mlir_ts::CastOp>(loc(rightExpression), getStringType(), rightExpressionValue);
-                }  
+                }
             }
 
             auto result = rightExpressionValue;
@@ -1919,16 +1926,16 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             else
             {
                 llvm_unreachable("not implemented");
-            }      
+            }
 
-            return result;      
-        }        
+            return result;
+        }
 
         mlir::Value mlirGen(BinaryExpression binaryExpressionAST, const GenContext &genContext)
         {
             auto location = loc(binaryExpressionAST);
 
-            auto opCode = (SyntaxKind) binaryExpressionAST->operatorToken;
+            auto opCode = (SyntaxKind)binaryExpressionAST->operatorToken;
 
             auto saveResult = MLIRLogicHelper::isNeededToSaveData(opCode);
 
@@ -1939,7 +1946,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             {
                 return mlirGenAndOrLogic(binaryExpressionAST, genContext, opCode == SyntaxKind::AmpersandAmpersandToken);
             }
-            
+
             if (opCode == SyntaxKind::InKeyword)
             {
                 return mlirGenInLogic(binaryExpressionAST, genContext);
@@ -2016,7 +2023,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 if (rightExpressionValue.getType().dyn_cast_or_null<mlir_ts::CharType>())
                 {
                     rightExpressionValue = builder.create<mlir_ts::CastOp>(loc(rightExpression), getStringType(), rightExpressionValue);
-                }                
+                }
 
                 // end todo
 
@@ -2032,45 +2039,45 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     {
                         rightExpressionValue = builder.create<mlir_ts::CastOp>(loc(rightExpression), rightOptType.getElementType(), rightExpressionValue);
                     }
-                }                  
+                }
             }
 
             // cast step
             switch (opCode)
             {
-                case SyntaxKind::CommaToken:
-                    // no cast needed
-                    break;
-                case SyntaxKind::LessThanLessThanToken:
-                case SyntaxKind::GreaterThanGreaterThanToken:
-                case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
-                    // cast to int
-                    if (leftExpressionValue.getType() != builder.getI32Type())
-                    {
-                        leftExpressionValue = builder.create<mlir_ts::CastOp>(loc(leftExpression), builder.getI32Type(), leftExpressionValue);
-                    }
+            case SyntaxKind::CommaToken:
+                // no cast needed
+                break;
+            case SyntaxKind::LessThanLessThanToken:
+            case SyntaxKind::GreaterThanGreaterThanToken:
+            case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
+                // cast to int
+                if (leftExpressionValue.getType() != builder.getI32Type())
+                {
+                    leftExpressionValue = builder.create<mlir_ts::CastOp>(loc(leftExpression), builder.getI32Type(), leftExpressionValue);
+                }
 
-                    if (rightExpressionValue.getType() != builder.getI32Type())
-                    {
-                        rightExpressionValue = builder.create<mlir_ts::CastOp>(loc(rightExpression), builder.getI32Type(), rightExpressionValue);
-                    }                    
+                if (rightExpressionValue.getType() != builder.getI32Type())
+                {
+                    rightExpressionValue = builder.create<mlir_ts::CastOp>(loc(rightExpression), builder.getI32Type(), rightExpressionValue);
+                }
 
-                    break;
-                case SyntaxKind::SlashToken:
-                case SyntaxKind::PercentToken:
-                case SyntaxKind::AsteriskAsteriskToken:
+                break;
+            case SyntaxKind::SlashToken:
+            case SyntaxKind::PercentToken:
+            case SyntaxKind::AsteriskAsteriskToken:
 
-                    if (leftExpressionValue.getType() != builder.getF32Type())
-                    {
-                        leftExpressionValue = builder.create<mlir_ts::CastOp>(loc(leftExpression), builder.getF32Type(), leftExpressionValue);
-                    }                
+                if (leftExpressionValue.getType() != builder.getF32Type())
+                {
+                    leftExpressionValue = builder.create<mlir_ts::CastOp>(loc(leftExpression), builder.getF32Type(), leftExpressionValue);
+                }
 
-                    if (rightExpressionValue.getType() != builder.getF32Type())
-                    {
-                        rightExpressionValue = builder.create<mlir_ts::CastOp>(loc(rightExpression), builder.getF32Type(), rightExpressionValue);
-                    }    
+                if (rightExpressionValue.getType() != builder.getF32Type())
+                {
+                    rightExpressionValue = builder.create<mlir_ts::CastOp>(loc(rightExpression), builder.getF32Type(), rightExpressionValue);
+                }
 
-                    break;
+                break;
             case SyntaxKind::AsteriskToken:
             case SyntaxKind::MinusToken:
             case SyntaxKind::EqualsEqualsToken:
@@ -2082,48 +2089,48 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             case SyntaxKind::LessThanToken:
             case SyntaxKind::LessThanEqualsToken:
 
-                    if (leftExpressionValue.getType() != rightExpressionValue.getType())
+                if (leftExpressionValue.getType() != rightExpressionValue.getType())
+                {
+                    // cast to base type
+                    auto hasF32 = leftExpressionValue.getType() == builder.getF32Type() || rightExpressionValue.getType() == builder.getF32Type();
+                    if (hasF32)
                     {
-                        // cast to base type
-                        auto hasF32 = leftExpressionValue.getType() == builder.getF32Type() || rightExpressionValue.getType() == builder.getF32Type();
-                        if (hasF32)
+                        if (leftExpressionValue.getType() != builder.getF32Type())
                         {
-                            if (leftExpressionValue.getType() != builder.getF32Type())
-                            {
-                                leftExpressionValue = builder.create<mlir_ts::CastOp>(loc(leftExpression), builder.getF32Type(), leftExpressionValue);
-                            }                            
-                            
-                            if (rightExpressionValue.getType() != builder.getF32Type())
-                            {
-                                rightExpressionValue = builder.create<mlir_ts::CastOp>(loc(rightExpression), builder.getF32Type(), rightExpressionValue);
-                            }                              
+                            leftExpressionValue = builder.create<mlir_ts::CastOp>(loc(leftExpression), builder.getF32Type(), leftExpressionValue);
                         }
-                        else
+
+                        if (rightExpressionValue.getType() != builder.getF32Type())
                         {
-                            auto hasI32 = leftExpressionValue.getType() == builder.getI32Type() || rightExpressionValue.getType() == builder.getI32Type();
-                            if (hasI32)
+                            rightExpressionValue = builder.create<mlir_ts::CastOp>(loc(rightExpression), builder.getF32Type(), rightExpressionValue);
+                        }
+                    }
+                    else
+                    {
+                        auto hasI32 = leftExpressionValue.getType() == builder.getI32Type() || rightExpressionValue.getType() == builder.getI32Type();
+                        if (hasI32)
+                        {
+                            if (leftExpressionValue.getType() != builder.getI32Type())
                             {
-                                if (leftExpressionValue.getType() != builder.getI32Type())
-                                {
-                                    leftExpressionValue = builder.create<mlir_ts::CastOp>(loc(leftExpression), builder.getI32Type(), leftExpressionValue);
-                                }                            
-                                
-                                if (rightExpressionValue.getType() != builder.getI32Type())
-                                {
-                                    rightExpressionValue = builder.create<mlir_ts::CastOp>(loc(rightExpression), builder.getI32Type(), rightExpressionValue);
-                                }                                   
+                                leftExpressionValue = builder.create<mlir_ts::CastOp>(loc(leftExpression), builder.getI32Type(), leftExpressionValue);
+                            }
+
+                            if (rightExpressionValue.getType() != builder.getI32Type())
+                            {
+                                rightExpressionValue = builder.create<mlir_ts::CastOp>(loc(rightExpression), builder.getI32Type(), rightExpressionValue);
                             }
                         }
                     }
+                }
 
-                    break;                    
-                default:
-                    if (leftExpressionValue.getType() != rightExpressionValue.getType())
-                    {
-                        rightExpressionValue = builder.create<mlir_ts::CastOp>(loc(rightExpression), leftExpressionValue.getType(), rightExpressionValue);
-                    }
+                break;
+            default:
+                if (leftExpressionValue.getType() != rightExpressionValue.getType())
+                {
+                    rightExpressionValue = builder.create<mlir_ts::CastOp>(loc(rightExpression), leftExpressionValue.getType(), rightExpressionValue);
+                }
 
-                    break;
+                break;
             }
 
             auto result = rightExpressionValue;
@@ -2141,7 +2148,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             case SyntaxKind::GreaterThanEqualsToken:
             case SyntaxKind::LessThanToken:
             case SyntaxKind::LessThanEqualsToken:
-                result = 
+                result =
                     builder.create<mlir_ts::LogicalBinaryOp>(
                         location,
                         getBooleanType(),
@@ -2152,7 +2159,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             case SyntaxKind::CommaToken:
                 return rightExpressionValue;
             default:
-                result = 
+                result =
                     builder.create<mlir_ts::ArithmeticBinaryOp>(
                         location,
                         leftExpressionValue.getType(),
@@ -2224,46 +2231,26 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             MLIRPropertyAccessCodeLogic cl(builder, location, expression, name);
 
             TypeSwitch<mlir::Type>(expression.getType())
-                .Case<mlir_ts::EnumType>([&](auto enumType) 
-                { 
-                    value = cl.Enum(enumType);
-                })
+                .Case<mlir_ts::EnumType>([&](auto enumType)
+                                         { value = cl.Enum(enumType); })
                 .Case<mlir_ts::ConstTupleType>([&](auto tupleType)
-                {
-                    value = cl.Tuple(tupleType);
-                })
+                                               { value = cl.Tuple(tupleType); })
                 .Case<mlir_ts::TupleType>([&](auto tupleType)
-                {
-                    value = cl.Tuple(tupleType);
-                })
+                                          { value = cl.Tuple(tupleType); })
                 .Case<mlir_ts::BooleanType>([&](auto intType)
-                {
-                    value = cl.Bool(intType);
-                })
+                                            { value = cl.Bool(intType); })
                 .Case<mlir::IntegerType>([&](auto intType)
-                {
-                    value = cl.Int(intType);
-                })
+                                         { value = cl.Int(intType); })
                 .Case<mlir::FloatType>([&](auto intType)
-                {
-                    value = cl.Float(intType);
-                })
+                                       { value = cl.Float(intType); })
                 .Case<mlir_ts::StringType>([&](auto stringType)
-                {
-                    value = cl.String(stringType);
-                })
+                                           { value = cl.String(stringType); })
                 .Case<mlir_ts::ConstArrayType>([&](auto arrayType)
-                {
-                    value = cl.Array(arrayType);
-                })
+                                               { value = cl.Array(arrayType); })
                 .Case<mlir_ts::ArrayType>([&](auto arrayType)
-                {
-                    value = cl.Array(arrayType);
-                })
+                                          { value = cl.Array(arrayType); })
                 .Default([](auto type)
-                {
-                    llvm_unreachable("not implemented");
-                });                
+                         { llvm_unreachable("not implemented"); });
 
             if (value)
             {
@@ -2321,7 +2308,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             {
                 return mlirGenElementAccess(location, expression, argumentExpression, tupleType);
             }
-            else 
+            else
             {
                 emitError(location) << "ElementAccessExpression: " << arrayType;
                 llvm_unreachable("not implemented (ElementAccessExpression)");
@@ -2361,39 +2348,38 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
             mlir::Value value;
             TypeSwitch<mlir::Type>(funcRefValue.getType())
-                .Case<mlir::FunctionType>([&](auto calledFuncType) 
-                { 
-                    SmallVector<mlir::Value, 4> operands;
-                    mlirGenCallOperands(location, calledFuncType, callExpression->arguments, operands, genContext);
+                .Case<mlir::FunctionType>([&](auto calledFuncType)
+                                          {
+                                              SmallVector<mlir::Value, 4> operands;
+                                              mlirGenCallOperands(location, calledFuncType, callExpression->arguments, operands, genContext);
 
-                    // default call by name
-                    auto callIndirectOp =
-                        builder.create<mlir_ts::CallIndirectOp>(
-                            location,
-                            funcRefValue,
-                            operands);
+                                              // default call by name
+                                              auto callIndirectOp =
+                                                  builder.create<mlir_ts::CallIndirectOp>(
+                                                      location,
+                                                      funcRefValue,
+                                                      operands);
 
-                    if (calledFuncType.getNumResults() > 0)
-                    {
-                        value = callIndirectOp.getResult(0);
-                    }
-                })
+                                              if (calledFuncType.getNumResults() > 0)
+                                              {
+                                                  value = callIndirectOp.getResult(0);
+                                              }
+                                          })
                 .Default([&](auto type)
-                {
-                    // it is not function, so just return value as maybe resolved earlier like in case "<number>.ToString()"
-                    value = funcRefValue;
-                });                
-
+                         {
+                             // it is not function, so just return value as maybe resolved earlier like in case "<number>.ToString()"
+                             value = funcRefValue;
+                         });
 
             if (value)
             {
                 return value;
             }
 
-            return nullptr;                    
+            return nullptr;
         }
 
-        mlir::LogicalResult mlirGenCallOperands(mlir::Location location, mlir::FunctionType calledFuncType, NodeArray<Expression> argumentsContext, SmallVector<mlir::Value, 4> &operands, const GenContext &genContext) 
+        mlir::LogicalResult mlirGenCallOperands(mlir::Location location, mlir::FunctionType calledFuncType, NodeArray<Expression> argumentsContext, SmallVector<mlir::Value, 4> &operands, const GenContext &genContext)
         {
             auto opArgsCount = std::distance(argumentsContext.begin(), argumentsContext.end());
             auto funcArgsCount = calledFuncType.getNumInputs();
@@ -2485,7 +2471,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
             auto expr = mlirGen(voidExpression->expression, genContext);
 
-            auto value = getUndefined(location);            
+            auto value = getUndefined(location);
 
             return value;
         }
@@ -2578,7 +2564,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             if (strs.size() <= 1)
             {
                 return head;
-            } 
+            }
 
             auto concatValues = builder.create<mlir_ts::StringConcatOp>(
                 location,
@@ -2619,12 +2605,12 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             }
 
             // tag method
-            auto arrayAttr = mlir::ArrayAttr::get(builder.getContext(), strs);            
-            auto constStringArray = 
+            auto arrayAttr = mlir::ArrayAttr::get(builder.getContext(), strs);
+            auto constStringArray =
                 builder.create<mlir_ts::ConstantOp>(
                     location,
                     getConstArrayType(getStringType(), strs.size()),
-                    arrayAttr);            
+                    arrayAttr);
 
             auto strArrayValue = builder.create<mlir_ts::CastOp>(location, getArrayType(getStringType()), constStringArray);
 
@@ -2634,7 +2620,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
             // cast all params if needed
             auto funcType = callee.getType().cast<mlir::FunctionType>();
-            
+
             SmallVector<mlir::Value, 4> operands;
 
             auto i = 0;
@@ -2728,7 +2714,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 loc(noSubstitutionTemplateLiteral),
                 getStringType(),
                 getStringAttr(text));
-        }        
+        }
 
         mlir::Value mlirGen(ts::ArrayLiteralExpression arrayLiteral, const GenContext &genContext)
         {
@@ -2770,11 +2756,11 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     isTuple = true;
                 }
 
-                // TODO: 
-                //itemValue.getDefiningOp()->erase();            
+                // TODO:
+                //itemValue.getDefiningOp()->erase();
             }
 
-            auto arrayAttr = mlir::ArrayAttr::get(builder.getContext(), values);            
+            auto arrayAttr = mlir::ArrayAttr::get(builder.getContext(), values);
             if (isTuple)
             {
                 SmallVector<mlir_ts::FieldInfo> fieldInfos;
@@ -2819,7 +2805,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     else
                     {
                         auto namePtr = StringRef(name).copy(stringAllocator);
-                        fieldId = mcl.TupleFieldName(namePtr);                        
+                        fieldId = mcl.TupleFieldName(namePtr);
                     }
                 }
                 else if (item == SyntaxKind::ShorthandPropertyAssignment)
@@ -2836,7 +2822,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 }
 
                 mlir::Type type;
-                mlir::Attribute value;                        
+                mlir::Attribute value;
                 if (auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(itemValue.getDefiningOp()))
                 {
                     value = constOp.valueAttr();
@@ -2858,12 +2844,12 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 fieldInfos.push_back({fieldId, type});
             }
 
-            auto arrayAttr = mlir::ArrayAttr::get(builder.getContext(), values);            
+            auto arrayAttr = mlir::ArrayAttr::get(builder.getContext(), values);
             return builder.create<mlir_ts::ConstantOp>(
                 loc(objectLiteral),
                 getConstTupleType(fieldInfos),
                 arrayAttr);
-        }       
+        }
 
         mlir::Value mlirGen(Identifier identifier, const GenContext &genContext)
         {
@@ -2907,7 +2893,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             if (fn != functionMap.end())
             {
                 return builder.create<mlir_ts::SymbolRefOp>(location, fn->getValue().getType(), mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
-            }            
+            }
 
             // check if we have enum
             if (enumsMap.count(name))
@@ -2917,7 +2903,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             }
 
             // built in types
-            if (name == "undefined") 
+            if (name == "undefined")
             {
                 return getUndefined(location);
             }
@@ -2957,7 +2943,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             int64_t index = 0;
             auto activeBits = 0;
             for (auto enumMember : enumDeclarationAST->members)
-            {                    
+            {
                 auto memberName = MLIRHelper::getName(enumMember->name);
                 if (memberName.empty())
                 {
@@ -2977,7 +2963,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                         if (auto intAttr = enumValueAttr.dyn_cast_or_null<mlir::IntegerAttr>())
                         {
                             index = intAttr.getInt();
-                            auto currentActiveBits = (int) intAttr.getValue().getActiveBits();
+                            auto currentActiveBits = (int)intAttr.getValue().getActiveBits();
                             if (currentActiveBits > activeBits)
                             {
                                 activeBits = currentActiveBits;
@@ -2997,7 +2983,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     enumValueAttr = builder.getI32IntegerAttr(index);
                 }
 
-                enumValues.push_back({ mlir::Identifier::get(memberName, builder.getContext()), enumValueAttr });
+                enumValues.push_back({mlir::Identifier::get(memberName, builder.getContext()), enumValueAttr});
                 index++;
             }
 
@@ -3006,7 +2992,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             if (indexUsingBits > activeBits)
             {
                 activeBits = indexUsingBits;
-            }                    
+            }
 
             // get type by size
             auto bits = 32;
@@ -3025,7 +3011,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             {
                 if (auto intAttr = enumItem.second.dyn_cast_or_null<mlir::IntegerAttr>())
                 {
-                    adjustedEnumValues.push_back({ enumItem.first, mlir::IntegerAttr::get(enumIntType, intAttr.getInt() ) });
+                    adjustedEnumValues.push_back({enumItem.first, mlir::IntegerAttr::get(enumIntType, intAttr.getInt())});
                 }
                 else
                 {
@@ -3033,14 +3019,14 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 }
             }
 
-            enumsMap.insert({ name, std::make_pair(enumIntType, mlir::DictionaryAttr::get(builder.getContext(), adjustedEnumValues)) });
+            enumsMap.insert({name, std::make_pair(enumIntType, mlir::DictionaryAttr::get(builder.getContext(), adjustedEnumValues))});
 
             return mlir::success();
-        }        
+        }
 
         mlir::Type getType(Node typeReferenceAST)
         {
-            auto kind = (SyntaxKind) typeReferenceAST;
+            auto kind = (SyntaxKind)typeReferenceAST;
             if (kind == SyntaxKind::BooleanKeyword)
             {
                 return getBooleanType();
@@ -3060,7 +3046,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             else if (kind == SyntaxKind::VoidKeyword)
             {
                 return getVoidType();
-            }            
+            }
             else if (kind == SyntaxKind::FunctionType)
             {
                 return getFunctionType(typeReferenceAST.as<FunctionTypeNode>());
@@ -3072,7 +3058,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             else if (kind == SyntaxKind::TypeLiteral)
             {
                 return getTupleType(typeReferenceAST.as<TypeLiteralNode>());
-            }            
+            }
             else if (kind == SyntaxKind::ArrayType)
             {
                 return getArrayType(typeReferenceAST.as<ArrayTypeNode>());
@@ -3088,19 +3074,19 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             else if (kind == SyntaxKind::ParenthesizedType)
             {
                 return getParenthesizedType(typeReferenceAST.as<ParenthesizedTypeNode>());
-            }            
+            }
             else if (kind == SyntaxKind::LiteralType)
             {
                 return getLiteralType(typeReferenceAST.as<LiteralTypeNode>());
-            } 
+            }
             else if (kind == SyntaxKind::TypeReference)
             {
                 return getTypeByTypeReference(typeReferenceAST.as<TypeReferenceNode>());
-            }             
+            }
             else if (kind == SyntaxKind::AnyKeyword)
             {
                 return getAnyType();
-            } 
+            }
 
             llvm_unreachable("not implemented type declaration");
             //return getAnyType();
@@ -3122,7 +3108,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
             theModule.emitError("Type '") << name << "' can't be found";
             return mlir::Type();
-        }        
+        }
 
         mlir::Type getTypeByTypeName(Node node)
         {
@@ -3131,14 +3117,14 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             {
                 return getResolveTypeFromValue(typeName);
             }
-          
+
             llvm_unreachable("not implemented");
-        }   
+        }
 
         mlir::Type getTypeByTypeReference(TypeReferenceNode typeReferenceAST)
         {
             return getTypeByTypeName(typeReferenceAST->typeName);
-        }        
+        }
 
         mlir_ts::VoidType getVoidType()
         {
@@ -3178,8 +3164,8 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
         mlir_ts::EnumType getEnumType()
         {
             return getEnumType(builder.getI32Type());
-        }  
-        
+        }
+
         mlir_ts::EnumType getEnumType(mlir::Type elementType)
         {
             return mlir_ts::EnumType::get(elementType);
@@ -3189,7 +3175,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
         {
             auto type = getType(arrayTypeAST->elementType);
             return getConstArrayType(type, size);
-        }          
+        }
 
         mlir_ts::ConstArrayType getConstArrayType(mlir::Type elementType, unsigned size)
         {
@@ -3201,7 +3187,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
         {
             auto type = getType(arrayTypeAST->elementType);
             return getArrayType(type);
-        }   
+        }
 
         mlir_ts::ArrayType getArrayType(mlir::Type elementType)
         {
@@ -3231,7 +3217,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
                     auto type = getType(namedTupleMember->type);
 
-                    assert(type);         
+                    assert(type);
                     types.push_back({mcl.TupleFieldName(namePtr), type});
                 }
                 else if (typeItem == SyntaxKind::LiteralType)
@@ -3242,7 +3228,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     auto constantOp = dyn_cast_or_null<mlir_ts::ConstantOp>(literalValue.getDefiningOp());
                     attrVal = constantOp.valueAttr();
                     continue;
-                }                
+                }
                 else
                 {
                     auto type = getType(typeItem);
@@ -3262,11 +3248,11 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                 if (typeItem == SyntaxKind::PropertySignature)
                 {
                     auto propertySignature = typeItem.as<PropertySignature>();
-                    auto namePtr =  MLIRHelper::getName(propertySignature->name, stringAllocator);
+                    auto namePtr = MLIRHelper::getName(propertySignature->name, stringAllocator);
 
                     auto type = getType(propertySignature->type);
 
-                    assert(type);         
+                    assert(type);
                     types.push_back({mlir::FlatSymbolRefAttr::get(builder.getContext(), namePtr), type});
                 }
                 else
@@ -3276,39 +3262,39 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
                     assert(type);
                     types.push_back({mlir::Attribute(), type});
                 }
-            }            
-        }        
+            }
+        }
 
         mlir_ts::ConstTupleType getConstTupleType(TupleTypeNode tupleType)
         {
             mlir::SmallVector<mlir_ts::FieldInfo> types;
             getTupleFieldInfo(tupleType, types);
             return getConstTupleType(types);
-        }        
+        }
 
         mlir_ts::ConstTupleType getConstTupleType(mlir::SmallVector<mlir_ts::FieldInfo> &fieldInfos)
         {
             return mlir_ts::ConstTupleType::get(builder.getContext(), fieldInfos);
-        }         
+        }
 
         mlir_ts::TupleType getTupleType(TupleTypeNode tupleType)
         {
             mlir::SmallVector<mlir_ts::FieldInfo> types;
             getTupleFieldInfo(tupleType, types);
             return getTupleType(types);
-        }        
+        }
 
         mlir_ts::TupleType getTupleType(TypeLiteralNode typeLiteral)
         {
             mlir::SmallVector<mlir_ts::FieldInfo> types;
             getTupleFieldInfo(typeLiteral, types);
             return getTupleType(types);
-        }  
+        }
 
         mlir_ts::TupleType getTupleType(mlir::SmallVector<mlir_ts::FieldInfo> &fieldInfos)
         {
             return mlir_ts::TupleType::get(builder.getContext(), fieldInfos);
-        }         
+        }
 
         mlir::FunctionType getFunctionType(FunctionTypeNode functionType)
         {
@@ -3351,12 +3337,12 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             }
 
             return getUnionType(types);
-        }        
+        }
 
         mlir_ts::UnionType getUnionType(mlir::SmallVector<mlir::Type> &types)
         {
             return mlir_ts::UnionType::get(builder.getContext(), types);
-        }         
+        }
 
         mlir_ts::IntersectionType getIntersectionType(IntersectionTypeNode intersectionTypeNode)
         {
@@ -3373,17 +3359,17 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             }
 
             return getIntersectionType(types);
-        }        
+        }
 
         mlir_ts::IntersectionType getIntersectionType(mlir::SmallVector<mlir::Type> &types)
         {
             return mlir_ts::IntersectionType::get(builder.getContext(), types);
-        }            
+        }
 
         mlir::Type getParenthesizedType(ParenthesizedTypeNode parenthesizedTypeNode)
         {
             return getType(parenthesizedTypeNode->type);
-        }          
+        }
 
         mlir::Type getLiteralType(LiteralTypeNode literalTypeNode)
         {
@@ -3394,7 +3380,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             auto type = value.getType();
             value.getDefiningOp()->erase();
             return type;
-        }         
+        }
 
         mlir_ts::OptionalType getOptionalType(mlir::Type type)
         {
@@ -3426,7 +3412,6 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
         }
 
     protected:
-
         mlir::StringAttr getStringAttr(std::string text)
         {
             return builder.getStringAttr(text);
@@ -3459,7 +3444,7 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
 
         llvm::StringMap<mlir::Type> typeAliasMap;
 
-        llvm::StringMap< std::pair<mlir::Type, mlir::DictionaryAttr> > enumsMap;
+        llvm::StringMap<std::pair<mlir::Type, mlir::DictionaryAttr>> enumsMap;
 
         // helper to get line number
         Parser parser;
@@ -3487,8 +3472,8 @@ namespace typescript
 
         auto intent = 0;
 
-        visitNode = [&](Node child) -> Node {
-
+        visitNode = [&](Node child) -> Node
+        {
             for (auto i = 0; i < intent; i++)
             {
                 s << "\t";
@@ -3499,11 +3484,11 @@ namespace typescript
                 auto posLineChar = parser.getLineAndCharacterOfPosition(sourceFile, child->pos);
                 auto endLineChar = parser.getLineAndCharacterOfPosition(sourceFile, child->_end);
 
-                s 
+                s
                     << S("Node: ")
                     << parser.syntaxKindString(child).c_str()
-                    << S(" @ [ ") << child->pos << S("(") << posLineChar.line + 1 << S(":") << posLineChar.character + 1 << S(") - ") 
-                    << child->_end << S("(") << endLineChar.line + 1  << S(":") << endLineChar.character  << S(") ]") << std::endl;
+                    << S(" @ [ ") << child->pos << S("(") << posLineChar.line + 1 << S(":") << posLineChar.character + 1 << S(") - ")
+                    << child->_end << S("(") << endLineChar.line + 1 << S(":") << endLineChar.character << S(") ]") << std::endl;
             }
             else
             {
@@ -3511,13 +3496,14 @@ namespace typescript
             }
 
             intent++;
-            ts::forEachChild(child, visitNode, visitArray);    
+            ts::forEachChild(child, visitNode, visitArray);
             intent--;
 
             return undefined;
         };
 
-        visitArray = [&](NodeArray<Node> array) -> Node {
+        visitArray = [&](NodeArray<Node> array) -> Node
+        {
             for (auto node : array)
             {
                 visitNode(node);

@@ -33,7 +33,8 @@ namespace typescript
     class TypeHelper
     {
         MLIRContext *context;
-    public:        
+
+    public:
         TypeHelper(PatternRewriter &rewriter) : context(rewriter.getContext()) {}
         TypeHelper(MLIRContext *context) : context(context) {}
 
@@ -67,9 +68,9 @@ namespace typescript
             return IntegerAttr::get(getI32Type(), APInt(32, value));
         }
 
-        Type getIndexType() 
-        { 
-            return getI64Type(); 
+        Type getIndexType()
+        {
+            return getI64Type();
         }
 
         IntegerAttr getIndexAttrValue(int64_t value)
@@ -79,7 +80,7 @@ namespace typescript
 
         Type getLLVMBoolType()
         {
-            return IntegerType::get(context, 1/*, IntegerType::SignednessSemantics::Unsigned*/);
+            return IntegerType::get(context, 1 /*, IntegerType::SignednessSemantics::Unsigned*/);
         }
 
         LLVM::LLVMVoidType getVoidType()
@@ -105,7 +106,7 @@ namespace typescript
         LLVM::LLVMArrayType getI32Array(unsigned size)
         {
             return LLVM::LLVMArrayType::get(getI32Type(), size);
-        }        
+        }
 
         LLVM::LLVMPointerType getPointerType(Type elementType)
         {
@@ -138,21 +139,19 @@ namespace typescript
             // TODO: review DataLayout.getTypeAllocSizeInBits, https://llvm.org/docs/LangRef.html#langref-datalayout as class init
 
             auto calcSize = llvm::TypeSwitch<Type, llvm::TypeSize>(valueType)
-                .Case<LLVM::LLVMArrayType>([&](LLVM::LLVMArrayType aty) 
-                { 
-                    auto sizeElement = getTypeSize(aty.getElementType());
-                    auto count = aty.getNumElements();
-                    return llvm::TypeSize::Fixed(sizeElement * count); 
-                })
-                .Case<LLVM::LLVMPointerType>([&](LLVM::LLVMPointerType pty) 
-                { 
-                    return llvm::TypeSize::Fixed(64); 
-                })                
-                .Default([](Type ty) 
-                {
-                    assert(false);
-                    return llvm::TypeSize::Fixed(0);
-                });
+                                .Case<LLVM::LLVMArrayType>([&](LLVM::LLVMArrayType aty)
+                                                           {
+                                                               auto sizeElement = getTypeSize(aty.getElementType());
+                                                               auto count = aty.getNumElements();
+                                                               return llvm::TypeSize::Fixed(sizeElement * count);
+                                                           })
+                                .Case<LLVM::LLVMPointerType>([&](LLVM::LLVMPointerType pty)
+                                                             { return llvm::TypeSize::Fixed(64); })
+                                .Default([](Type ty)
+                                         {
+                                             assert(false);
+                                             return llvm::TypeSize::Fixed(0);
+                                         });
 
             return calcSize;
         }
@@ -160,9 +159,11 @@ namespace typescript
 
     class TypeConverterHelper
     {
-        TypeConverter &typeConverter;
     public:
-        TypeConverterHelper(TypeConverter *typeConverter) : typeConverter(*typeConverter) {
+        TypeConverter &typeConverter;
+
+        TypeConverterHelper(TypeConverter *typeConverter) : typeConverter(*typeConverter)
+        {
             assert(typeConverter);
         }
 
@@ -187,12 +188,13 @@ namespace typescript
             }
 
             llvm_unreachable("not implemented");
-        }        
+        }
     };
 
     class LLVMTypeConverterHelper
     {
         LLVMTypeConverter &typeConverter;
+
     public:
         LLVMTypeConverterHelper(LLVMTypeConverter &typeConverter) : typeConverter(typeConverter) {}
 
@@ -205,13 +207,14 @@ namespace typescript
         {
             return typeConverter.getPointerBitwidth(addressSpace);
         }
-    };    
+    };
 
     class CodeLogicHelper
     {
         Operation *op;
         PatternRewriter &rewriter;
-    public:        
+
+    public:
         CodeLogicHelper(Operation *op, PatternRewriter &rewriter) : op(op), rewriter(rewriter) {}
 
         Value createIConstantOf(unsigned width, unsigned value)
@@ -256,7 +259,7 @@ namespace typescript
         Value createI1ConstantOf(bool value)
         {
             return rewriter.create<LLVM::ConstantOp>(op->getLoc(), rewriter.getIntegerType(1), rewriter.getIntegerAttr(rewriter.getI1Type(), value));
-        }    
+        }
 
         Value createF32ConstantOf(float value)
         {
@@ -322,7 +325,7 @@ namespace typescript
         }
 
         template <typename OpTy>
-        void saveResult(OpTy& op, Value result)
+        void saveResult(OpTy &op, Value result)
         {
             auto defOp = op.operand1().getDefiningOp();
             // TODO: finish it for field access
@@ -342,53 +345,60 @@ namespace typescript
         Operation *op;
         PatternRewriter &rewriter;
         TypeConverter *typeConverter;
-    public:        
-        LLVMCodeHelper(Operation *op, PatternRewriter &rewriter) : op(op), rewriter(rewriter) {}
+
+    public:
         LLVMCodeHelper(Operation *op, PatternRewriter &rewriter, TypeConverter *typeConverter) : op(op), rewriter(rewriter), typeConverter(typeConverter) {}
 
         template <typename T>
         void seekLast(Block *block)
         {
             // find last string
-            auto lastUse = [&](Operation* op) {
-                if (auto globalOp = dyn_cast_or_null<LLVM::GlobalOp>(op)) {
-                    if (globalOp.valueAttr() && globalOp.valueAttr().isa<T>()) {
+            auto lastUse = [&](Operation *op)
+            {
+                if (auto globalOp = dyn_cast_or_null<LLVM::GlobalOp>(op))
+                {
+                    if (globalOp.valueAttr() && globalOp.valueAttr().isa<T>())
+                    {
                         rewriter.setInsertionPointAfter(globalOp);
                     }
                 }
             };
 
-            block->walk(lastUse);      
+            block->walk(lastUse);
         }
 
         void seekLast(Block *block)
         {
             // find last string
-            auto lastUse = [&](Operation* op) {
-                if (auto globalOp = dyn_cast_or_null<LLVM::GlobalOp>(op)) {
+            auto lastUse = [&](Operation *op)
+            {
+                if (auto globalOp = dyn_cast_or_null<LLVM::GlobalOp>(op))
+                {
                     rewriter.setInsertionPointAfter(globalOp);
                 }
             };
 
-            block->walk(lastUse);      
+            block->walk(lastUse);
         }
 
         void seekLastWithBody(Block *block)
         {
             // find last string
-            auto lastUse = [&](Operation* op) {
-                if (auto globalOp = dyn_cast_or_null<LLVM::GlobalOp>(op)) {
-                    if (globalOp.getInitializerBlock()) {
+            auto lastUse = [&](Operation *op)
+            {
+                if (auto globalOp = dyn_cast_or_null<LLVM::GlobalOp>(op))
+                {
+                    if (globalOp.getInitializerBlock())
+                    {
                         rewriter.setInsertionPointAfter(globalOp);
                     }
                 }
             };
 
-            block->walk(lastUse);      
+            block->walk(lastUse);
         }
 
     private:
-
         /// Return a value representing an access into a global string with the given
         /// name, creating the string if necessary.
         Value getOrCreateGlobalString_(StringRef name, StringRef value)
@@ -414,29 +424,28 @@ namespace typescript
             // Get the pointer to the first character in the global string.
             Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
             Value cst0 = rewriter.create<LLVM::ConstantOp>(
-                loc, 
+                loc,
                 th.getIndexType(),
                 th.getIndexAttrValue(0));
             return rewriter.create<LLVM::GEPOp>(
                 loc,
                 th.getI8PtrType(),
-                globalPtr, 
+                globalPtr,
                 ArrayRef<Value>({cst0, cst0}));
         }
 
     public:
-
-        std::string calc_hash_value(ArrayAttr &arrayAttr, const char* prefix) const
+        std::string calc_hash_value(ArrayAttr &arrayAttr, const char *prefix) const
         {
             auto opHash = 0ULL;
             for (auto item : arrayAttr)
             {
-                opHash ^= hash_value(item) + 0x9e3779b9 + (opHash<<6) + (opHash>>2);
+                opHash ^= hash_value(item) + 0x9e3779b9 + (opHash << 6) + (opHash >> 2);
             }
 
             // calculate name;
             std::stringstream vecVarName;
-            vecVarName << prefix << opHash;     
+            vecVarName << prefix << opHash;
 
             return vecVarName.str();
         }
@@ -459,12 +468,68 @@ namespace typescript
             strVarName << "s_" << opHash;
 
             return strVarName.str();
-        }        
+        }
+
+        mlir::LogicalResult createGlobalVarIfNew(StringRef name, mlir::Type typeIn, mlir::Attribute value)
+        {
+            auto loc = op->getLoc();
+            auto parentModule = op->getParentOfType<ModuleOp>();
+
+            auto type = typeConverter->convertType(typeIn);
+
+            TypeHelper th(rewriter);
+
+            // Create the global at the entry of the module.
+            LLVM::GlobalOp global;
+            if (!(global = parentModule.lookupSymbol<LLVM::GlobalOp>(name)))
+            {
+                OpBuilder::InsertionGuard insertGuard(rewriter);
+                rewriter.setInsertionPointToStart(parentModule.getBody());
+
+                seekLast(parentModule.getBody());
+
+                global = rewriter.create<LLVM::GlobalOp>(loc, type, true, LLVM::Linkage::Internal, name, value);
+
+                return success();
+            }
+
+            return failure();
+        }
+
+        Value getAddressOfGlobalVar(StringRef name, mlir::Type typeIn, mlir::Attribute value)
+        {
+            auto loc = op->getLoc();
+            auto parentModule = op->getParentOfType<ModuleOp>();
+
+            auto type = typeConverter->convertType(typeIn);
+
+            TypeHelper th(rewriter);
+
+            // Create the global at the entry of the module.
+            LLVM::GlobalOp global;
+            if (global = parentModule.lookupSymbol<LLVM::GlobalOp>(name))
+            {
+                // Get the pointer to the first character in the global string.
+                Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
+                Value cst0 = rewriter.create<LLVM::ConstantOp>(
+                    loc,
+                    th.getIndexType(),
+                    th.getIndexAttrValue(0));
+                return rewriter.create<LLVM::GEPOp>(
+                    loc,
+                    th.getPointerType(type),
+                    globalPtr,
+                    ArrayRef<Value>({cst0}));
+            }
+
+            assert(false);
+            return mlir::Value();
+        }
 
         Value getOrCreateGlobalString(std::string value)
         {
             return getOrCreateGlobalString(getStorageStringName(value), value);
-        }        
+        }
 
         StringAttr getStringAttrWith0(std::string value)
         {
@@ -478,7 +543,7 @@ namespace typescript
 
         Value getOrCreateGlobalArray(Type originalElementType, Type llvmElementType, unsigned size, ArrayAttr arrayAttr)
         {
-            auto vecVarName = calc_hash_value(arrayAttr, "a_"); 
+            auto vecVarName = calc_hash_value(arrayAttr, "a_");
             return getOrCreateGlobalArray(originalElementType, vecVarName, llvmElementType, size, arrayAttr);
         }
 
@@ -487,7 +552,7 @@ namespace typescript
             auto llvmSubElementType = llvmArrayType.getBody()[0].cast<LLVM::LLVMPointerType>().getElementType();
 
             auto size = arrayValue.size();
-            auto itemValArrayPtr = getOrCreateGlobalArray(originalArrayType.getElementType(), llvmSubElementType, size, arrayValue);        
+            auto itemValArrayPtr = getOrCreateGlobalArray(originalArrayType.getElementType(), llvmSubElementType, size, arrayValue);
 
             // create ReadOnlyRuntimeArrayType
             auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmArrayType);
@@ -498,17 +563,17 @@ namespace typescript
             auto sizeValue = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(32), rewriter.getIntegerAttr(rewriter.getI32Type(), arrayValue.size()));
 
             auto structValue2 = rewriter.create<LLVM::InsertValueOp>(
-                loc, 
+                loc,
                 llvmArrayType,
-                structValue, 
+                structValue,
                 itemValArrayPtr,
-                rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(0)));           
+                rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(0)));
 
             auto structValue3 = rewriter.create<LLVM::InsertValueOp>(
-                loc, 
-                llvmArrayType, 
+                loc,
+                llvmArrayType,
                 structValue2,
-                sizeValue, 
+                sizeValue,
                 rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(1)));
 
             return structValue3;
@@ -539,7 +604,7 @@ namespace typescript
 
                     // end
                     auto dataType = VectorType::get({static_cast<int64_t>(value.size())}, llvmElementType);
-                    auto attr = DenseElementsAttr::get(dataType, value);                
+                    auto attr = DenseElementsAttr::get(dataType, value);
                     global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, attr);
                 }
                 else if (originalElementType.dyn_cast_or_null<mlir_ts::StringType>())
@@ -547,7 +612,7 @@ namespace typescript
                     seekLast(parentModule.getBody());
 
                     OpBuilder::InsertionGuard guard(rewriter);
-                    
+
                     global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, Attribute{});
 
                     setStructWritingPoint(global);
@@ -558,7 +623,7 @@ namespace typescript
                     for (auto item : arrayAttr.getValue())
                     {
                         auto strValue = item.cast<StringAttr>().getValue().str();
-                        auto itemVal = getOrCreateGlobalString(strValue);                        
+                        auto itemVal = getOrCreateGlobalString(strValue);
 
                         arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, itemVal, rewriter.getI64ArrayAttr(position++));
                     }
@@ -566,11 +631,11 @@ namespace typescript
                     rewriter.create<LLVM::ReturnOp>(loc, ValueRange{arrayVal});
                 }
                 else if (auto originalArrayType = originalElementType.dyn_cast_or_null<mlir_ts::ArrayType>())
-                { 
+                {
                     seekLast(parentModule.getBody());
 
                     OpBuilder::InsertionGuard guard(rewriter);
-                    
+
                     global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, Attribute{});
 
                     setStructWritingPoint(global);
@@ -588,19 +653,19 @@ namespace typescript
                         arrayVal = rewriter.create<LLVM::InsertValueOp>(loc, arrayVal, itemVal, rewriter.getI64ArrayAttr(position++));
                     }
 
-                    rewriter.create<LLVM::ReturnOp>(loc, ValueRange{arrayVal});                    
+                    rewriter.create<LLVM::ReturnOp>(loc, ValueRange{arrayVal});
                 }
                 else if (originalElementType.dyn_cast_or_null<mlir_ts::ConstArrayType>())
-                {                                        
+                {
                     //
                     llvm_unreachable("ConstArrayType must not be used in array, use normal ArrayType (the same way as StringType)");
                 }
                 else if (auto constTupleType = originalElementType.dyn_cast_or_null<mlir_ts::ConstTupleType>())
-                {                                        
+                {
                     seekLast(parentModule.getBody());
 
                     OpBuilder::InsertionGuard guard(rewriter);
-                    
+
                     global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, Attribute{});
 
                     setStructWritingPoint(global);
@@ -631,9 +696,9 @@ namespace typescript
             return rewriter.create<LLVM::GEPOp>(
                 loc,
                 pointerType,
-                globalPtr, 
-                ArrayRef<Value>({cst0, cst0}));            
-        }        
+                globalPtr,
+                ArrayRef<Value>({cst0, cst0}));
+        }
 
         mlir::LogicalResult setStructWritingPoint(LLVM::GlobalOp globalOp)
         {
@@ -668,7 +733,7 @@ namespace typescript
             }
 
             return structVal;
-        }        
+        }
 
         Value getTupleFromArrayAttr(Location loc, mlir_ts::ConstTupleType originalType, LLVM::LLVMStructType llvmStructType, ArrayAttr arrayAttr)
         {
@@ -685,16 +750,16 @@ namespace typescript
                 if (item.isa<StringAttr>())
                 {
                     OpBuilder::InsertionGuard guard(rewriter);
-                    
+
                     auto strValue = item.cast<StringAttr>().getValue().str();
-                    auto itemVal = getOrCreateGlobalString(strValue);                        
+                    auto itemVal = getOrCreateGlobalString(strValue);
 
                     tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemVal, rewriter.getI64ArrayAttr(position++));
                 }
                 else if (auto constArrayType = type.dyn_cast_or_null<mlir_ts::ConstArrayType>())
                 {
                     llvm_unreachable("not used.");
-                }       
+                }
                 else if (auto arrayType = type.dyn_cast_or_null<mlir_ts::ArrayType>())
                 {
                     auto subArrayAttr = item.dyn_cast_or_null<ArrayAttr>();
@@ -703,7 +768,7 @@ namespace typescript
 
                     auto itemVal = getReadOnlyRTArray(loc, arrayType, llvmType.cast<LLVM::LLVMStructType>(), subArrayAttr);
                     tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemVal, rewriter.getI64ArrayAttr(position++));
-                }                               
+                }
                 else if (auto constTupleType = type.dyn_cast_or_null<mlir_ts::ConstTupleType>())
                 {
                     auto subArrayAttr = item.dyn_cast_or_null<ArrayAttr>();
@@ -713,7 +778,7 @@ namespace typescript
                     auto subTupleVal = getTupleFromArrayAttr(loc, constTupleType, llvmType.cast<LLVM::LLVMStructType>(), subArrayAttr);
 
                     tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, subTupleVal, rewriter.getI64ArrayAttr(position++));
-                }                
+                }
                 else
                 {
                     // DO NOT Replace with LLVM::ConstantOp - to use AddressOf for global symbol names
@@ -727,7 +792,7 @@ namespace typescript
 
         Value getOrCreateGlobalTuple(mlir_ts::ConstTupleType originalType, LLVM::LLVMStructType llvmStructType, ArrayAttr arrayAttr)
         {
-            auto varName = calc_hash_value(arrayAttr, "tp_");   
+            auto varName = calc_hash_value(arrayAttr, "tp_");
             return getOrCreateGlobalTuple(originalType, llvmStructType, varName, arrayAttr);
         }
 
@@ -737,7 +802,7 @@ namespace typescript
             auto parentModule = op->getParentOfType<ModuleOp>();
 
             TypeHelper th(rewriter);
-            
+
             auto pointerType = LLVM::LLVMPointerType::get(llvmStructType);
 
             // Create the global at the entry of the module.
@@ -747,8 +812,8 @@ namespace typescript
                 OpBuilder::InsertionGuard insertGuard(rewriter);
                 rewriter.setInsertionPointToStart(parentModule.getBody());
 
-                seekLast(parentModule.getBody());                
-              
+                seekLast(parentModule.getBody());
+
                 global = rewriter.create<LLVM::GlobalOp>(loc, llvmStructType, true, LLVM::Linkage::Internal, name, Attribute{});
 
                 setStructWritingPoint(global);
@@ -760,15 +825,15 @@ namespace typescript
             // Get the pointer to the first character in the global string.
             Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
             Value cst0 = rewriter.create<LLVM::ConstantOp>(
-                loc, 
+                loc,
                 th.getIndexType(),
                 th.getIndexAttrValue(0));
             return rewriter.create<LLVM::GEPOp>(
                 loc,
                 pointerType,
-                globalPtr, 
-                ArrayRef<Value>({cst0}));  
-        }  
+                globalPtr,
+                ArrayRef<Value>({cst0}));
+        }
 
         LLVM::LLVMFuncOp getOrInsertFunction(const StringRef &name, const LLVM::LLVMFunctionType &llvmFnType)
         {
@@ -785,7 +850,7 @@ namespace typescript
             PatternRewriter::InsertionGuard insertGuard(rewriter);
             rewriter.setInsertionPointToStart(parentModule.getBody());
             return rewriter.create<LLVM::LLVMFuncOp>(loc, name, llvmFnType);
-        }   
+        }
 
         Value GetAddressOfArrayElement(Type elementRefType, Value arrayOrStringOrTuple, Value index)
         {
@@ -804,20 +869,20 @@ namespace typescript
             {
                 // extract pointer from struct
                 dataPtr = rewriter.create<LLVM::ExtractValueOp>(
-                    loc, 
-                    ptrType, 
-                    arrayOrStringOrTuple, 
+                    loc,
+                    ptrType,
+                    arrayOrStringOrTuple,
                     rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(0)));
             }
 
             auto addr = rewriter.create<LLVM::GEPOp>(
                 loc,
-                ptrType, 
+                ptrType,
                 dataPtr,
                 ValueRange{index});
 
-            return addr;            
-        }     
+            return addr;
+        }
 
         Value GetAddressOfStructElement(Type elementRefType, Value arrayOrStringOrTuple, int32_t index)
         {
@@ -841,12 +906,12 @@ namespace typescript
 
             auto addr = rewriter.create<LLVM::GEPOp>(
                 loc,
-                ptrType, 
+                ptrType,
                 globalPtr,
                 indexes);
 
-            return addr;            
-        }        
+            return addr;
+        }
     };
 
     class LLVMRTTIHelperVCWin32
@@ -857,8 +922,9 @@ namespace typescript
         LLVMCodeHelper ch;
         ModuleOp parentModule;
 
-    public:        
-        LLVMRTTIHelperVCWin32(Operation *op, PatternRewriter &rewriter) : op(op), rewriter(rewriter), parentModule(op->getParentOfType<ModuleOp>()), th(rewriter), ch(op, rewriter) {}
+    public:
+        LLVMRTTIHelperVCWin32(Operation *op, PatternRewriter &rewriter, TypeConverter &typeConverter)
+            : op(op), rewriter(rewriter), parentModule(op->getParentOfType<ModuleOp>()), th(rewriter), ch(op, rewriter, &typeConverter) {}
 
         LogicalResult setPersonality(mlir::FuncOp newFuncOp)
         {
@@ -876,7 +942,7 @@ namespace typescript
             auto name = "??_7type_info@@6B@";
             if (parentModule.lookupSymbol<LLVM::GlobalOp>(name))
             {
-                return failure(); 
+                return failure();
             }
 
             rewriter.create<LLVM::GlobalOp>(loc, th.getI8PtrType(), true, LLVM::Linkage::External, name, Attribute{});
@@ -888,7 +954,7 @@ namespace typescript
             auto name = "??_R0N@8";
             if (parentModule.lookupSymbol<LLVM::GlobalOp>(name))
             {
-                return failure(); 
+                return failure();
             }
 
             auto rttiTypeDescriptor2Ty = getRttiTypeDescriptor2Ty();
@@ -896,7 +962,7 @@ namespace typescript
 
             {
                 ch.setStructWritingPoint(_r0n_Value);
-                
+
                 // begin
                 Value structVal = rewriter.create<LLVM::UndefOp>(loc, rttiTypeDescriptor2Ty);
 
@@ -910,7 +976,7 @@ namespace typescript
                 ch.setStructValue(loc, structVal, itemValue3, 2);
 
                 // end
-                rewriter.create<LLVM::ReturnOp>(loc, ValueRange{structVal});     
+                rewriter.create<LLVM::ReturnOp>(loc, ValueRange{structVal});
 
                 rewriter.setInsertionPointAfter(_r0n_Value);
             }
@@ -923,19 +989,19 @@ namespace typescript
             auto name = "__ImageBase";
             if (parentModule.lookupSymbol<LLVM::GlobalOp>(name))
             {
-                return failure(); 
+                return failure();
             }
 
             rewriter.create<LLVM::GlobalOp>(loc, th.getI8Type(), true, LLVM::Linkage::External, name, Attribute{});
             return success();
-        }        
+        }
 
         LogicalResult catchableType(mlir::Location loc)
         {
             auto name = "_CT??_R0N@88";
             if (parentModule.lookupSymbol<LLVM::GlobalOp>(name))
             {
-                return failure(); 
+                return failure();
             }
 
             // _CT??_R0N@88
@@ -944,7 +1010,7 @@ namespace typescript
 
             {
                 ch.setStructWritingPoint(_ct_r0n_Value);
-                
+
                 // begin
                 Value structVal = rewriter.create<LLVM::UndefOp>(loc, ehCatchableTypeTy);
 
@@ -953,10 +1019,10 @@ namespace typescript
 
                 // value 2
                 auto rttiTypeDescriptor2PtrValue = rewriter.create<mlir::ConstantOp>(loc, getRttiTypeDescriptor2PtrTy(), FlatSymbolRefAttr::get(rewriter.getContext(), "??_R0N@8"));
-                auto rttiTypeDescriptor2IntValue = rewriter.create<LLVM::PtrToIntOp>(loc,  th.getI64Type(), rttiTypeDescriptor2PtrValue);
+                auto rttiTypeDescriptor2IntValue = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), rttiTypeDescriptor2PtrValue);
 
                 auto imageBasePtrValue = rewriter.create<mlir::ConstantOp>(loc, th.getI8PtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), "__ImageBase"));
-                auto imageBaseIntValue = rewriter.create<LLVM::PtrToIntOp>(loc,  th.getI64Type(), imageBasePtrValue);
+                auto imageBaseIntValue = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), imageBasePtrValue);
 
                 // sub
                 auto subResValue = rewriter.create<LLVM::SubOp>(loc, th.getI64Type(), rttiTypeDescriptor2IntValue, imageBaseIntValue);
@@ -983,20 +1049,20 @@ namespace typescript
                 ch.setStructValue(loc, structVal, itemValue7, 6);
 
                 // end
-                rewriter.create<LLVM::ReturnOp>(loc, ValueRange{structVal});     
+                rewriter.create<LLVM::ReturnOp>(loc, ValueRange{structVal});
 
                 rewriter.setInsertionPointAfter(_ct_r0n_Value);
             }
 
             return success();
-        }          
+        }
 
         LogicalResult catchableArrayType(mlir::Location loc)
         {
             auto name = "_CTA1N";
             if (parentModule.lookupSymbol<LLVM::GlobalOp>(name))
             {
-                return failure(); 
+                return failure();
             }
 
             // _CT??_R0N@88
@@ -1005,7 +1071,7 @@ namespace typescript
 
             {
                 ch.setStructWritingPoint(_cta1nValue);
-                
+
                 // begin
                 Value structVal = rewriter.create<LLVM::UndefOp>(loc, ehCatchableArrayTypeTy);
 
@@ -1014,10 +1080,10 @@ namespace typescript
 
                 // value 2
                 auto rttiCatchableTypePtrValue = rewriter.create<mlir::ConstantOp>(loc, getCatchableTypePtrTy(), FlatSymbolRefAttr::get(rewriter.getContext(), "_CT??_R0N@88"));
-                auto rttiCatchableTypeIntValue = rewriter.create<LLVM::PtrToIntOp>(loc,  th.getI64Type(), rttiCatchableTypePtrValue);
+                auto rttiCatchableTypeIntValue = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), rttiCatchableTypePtrValue);
 
                 auto imageBasePtrValue = rewriter.create<mlir::ConstantOp>(loc, th.getI8PtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), "__ImageBase"));
-                auto imageBaseIntValue = rewriter.create<LLVM::PtrToIntOp>(loc,  th.getI64Type(), imageBasePtrValue);
+                auto imageBaseIntValue = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), imageBasePtrValue);
 
                 // sub
                 auto subResValue = rewriter.create<LLVM::SubOp>(loc, th.getI64Type(), rttiCatchableTypeIntValue, imageBaseIntValue);
@@ -1033,12 +1099,12 @@ namespace typescript
                 ch.setStructValue(loc, structVal, itemValue2, 1);
 
                 // end
-                rewriter.create<LLVM::ReturnOp>(loc, ValueRange{structVal});     
+                rewriter.create<LLVM::ReturnOp>(loc, ValueRange{structVal});
 
                 rewriter.setInsertionPointAfter(_cta1nValue);
             }
 
-            return success();            
+            return success();
         }
 
         LogicalResult throwInfo(mlir::Location loc)
@@ -1046,7 +1112,7 @@ namespace typescript
             auto name = "_TI1N";
             if (parentModule.lookupSymbol<LLVM::GlobalOp>(name))
             {
-                return failure(); 
+                return failure();
             }
 
             auto throwInfoTy = getThrowInfoTy();
@@ -1054,37 +1120,35 @@ namespace typescript
 
             ch.setStructWritingPoint(_TI1NValue);
 
-            Value structValue = ch.getStructFromArrayAttr(loc, throwInfoTy, 
-            rewriter.getArrayAttr({ 
-                rewriter.getI32IntegerAttr(0), 
-                rewriter.getI32IntegerAttr(0), 
-                rewriter.getI32IntegerAttr(0)
-            }));
+            Value structValue = ch.getStructFromArrayAttr(loc, throwInfoTy,
+                                                          rewriter.getArrayAttr({rewriter.getI32IntegerAttr(0),
+                                                                                 rewriter.getI32IntegerAttr(0),
+                                                                                 rewriter.getI32IntegerAttr(0)}));
 
             // value 3
             auto rttiCatchableArrayTypePtrValue = rewriter.create<mlir::ConstantOp>(loc, getCatchableArrayTypePtrTy(), FlatSymbolRefAttr::get(rewriter.getContext(), "_CTA1N"));
-            auto rttiCatchableArrayTypeIntValue = rewriter.create<LLVM::PtrToIntOp>(loc,  th.getI64Type(), rttiCatchableArrayTypePtrValue);
+            auto rttiCatchableArrayTypeIntValue = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), rttiCatchableArrayTypePtrValue);
 
             auto imageBasePtrValue = rewriter.create<mlir::ConstantOp>(loc, th.getI8PtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), "__ImageBase"));
-            auto imageBaseIntValue = rewriter.create<LLVM::PtrToIntOp>(loc,  th.getI64Type(), imageBasePtrValue);
+            auto imageBaseIntValue = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), imageBasePtrValue);
 
             // sub
             auto subResValue = rewriter.create<LLVM::SubOp>(loc, th.getI64Type(), rttiCatchableArrayTypeIntValue, imageBaseIntValue);
 
             // trunc
-            auto subRes32Value = rewriter.create<LLVM::TruncOp>(loc, th.getI32Type(), subResValue);            
+            auto subRes32Value = rewriter.create<LLVM::TruncOp>(loc, th.getI32Type(), subResValue);
             ch.setStructValue(loc, structValue, subRes32Value, 3);
-            
-            rewriter.create<LLVM::ReturnOp>(loc, ValueRange{structValue});       
 
-            rewriter.setInsertionPointAfter(_TI1NValue);         
+            rewriter.create<LLVM::ReturnOp>(loc, ValueRange{structValue});
+
+            rewriter.setInsertionPointAfter(_TI1NValue);
 
             return success();
-        }        
+        }
 
         LLVM::LLVMStructType getThrowInfoTy()
         {
-            return LLVM::LLVMStructType::getLiteral(rewriter.getContext(), { th.getI32Type(), th.getI32Type(), th.getI32Type(), th.getI32Type() }, false);
+            return LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {th.getI32Type(), th.getI32Type(), th.getI32Type(), th.getI32Type()}, false);
         }
 
         LLVM::LLVMPointerType getThrowInfoPtrTy()
@@ -1094,33 +1158,33 @@ namespace typescript
 
         LLVM::LLVMStructType getRttiTypeDescriptor2Ty()
         {
-            return LLVM::LLVMStructType::getLiteral(rewriter.getContext(), { th.getI8PtrPtrType(), th.getI8PtrType(), th.getI8Array(3) }, false);
+            return LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {th.getI8PtrPtrType(), th.getI8PtrType(), th.getI8Array(3)}, false);
         }
 
         LLVM::LLVMPointerType getRttiTypeDescriptor2PtrTy()
         {
             return LLVM::LLVMPointerType::get(getRttiTypeDescriptor2Ty());
-        }        
+        }
 
         LLVM::LLVMStructType getCatchableTypeTy()
         {
-            return LLVM::LLVMStructType::getLiteral(rewriter.getContext(), { th.getI32Type(), th.getI32Type(), th.getI32Type(), th.getI32Type(), th.getI32Type(), th.getI32Type(), th.getI32Type() }, false);
+            return LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {th.getI32Type(), th.getI32Type(), th.getI32Type(), th.getI32Type(), th.getI32Type(), th.getI32Type(), th.getI32Type()}, false);
         }
 
         LLVM::LLVMPointerType getCatchableTypePtrTy()
         {
             return LLVM::LLVMPointerType::get(getCatchableTypeTy());
-        }        
+        }
 
         LLVM::LLVMStructType getCatchableArrayTypeTy()
         {
-            return LLVM::LLVMStructType::getLiteral(rewriter.getContext(), { th.getI32Type(), th.getI32Array(1) }, false);
-        }        
+            return LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {th.getI32Type(), th.getI32Array(1)}, false);
+        }
 
         LLVM::LLVMPointerType getCatchableArrayTypePtrTy()
         {
             return LLVM::LLVMPointerType::get(getCatchableArrayTypeTy());
-        }        
+        }
     };
 
     class CastLogicHelper
@@ -1133,8 +1197,9 @@ namespace typescript
         CodeLogicHelper clh;
         Location loc;
 
-    public:        
-        CastLogicHelper(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch) : op(op), rewriter(rewriter), tch(tch), th(rewriter), ch(op, rewriter), clh(op, rewriter), loc(op->getLoc()) {}
+    public:
+        CastLogicHelper(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch)
+            : op(op), rewriter(rewriter), tch(tch), th(rewriter), ch(op, rewriter, &tch.typeConverter), clh(op, rewriter), loc(op->getLoc()) {}
 
         Value cast(mlir::Value in, mlir::Type inLLVMType, mlir::Type resType, mlir::Type resLLVMType)
         {
@@ -1169,17 +1234,17 @@ namespace typescript
             if (inLLVMType.isInteger(1) && (resLLVMType.isInteger(8) || resLLVMType.isInteger(32) || resLLVMType.isInteger(64)))
             {
                 return rewriter.create<ZeroExtendIOp>(loc, in, resLLVMType);
-            }            
+            }
 
             if (inLLVMType.isInteger(8) && resLLVMType.isInteger(32))
             {
                 return rewriter.create<ZeroExtendIOp>(loc, in, resLLVMType);
-            }               
+            }
 
             if ((inLLVMType.isInteger(8) || inLLVMType.isInteger(32)) && resLLVMType.isInteger(64))
             {
                 return rewriter.create<ZeroExtendIOp>(loc, in, resLLVMType);
-            }               
+            }
 
             if ((inLLVMType.isInteger(64) || inLLVMType.isInteger(32) || inLLVMType.isInteger(16)) && resLLVMType.isInteger(8))
             {
@@ -1216,7 +1281,7 @@ namespace typescript
             if (inLLVMType.isInteger(64) && isResString)
             {
                 return castI64ToString(in);
-            }            
+            }
 
             if ((inLLVMType.isF32() || inLLVMType.isF64()) && isResString)
             {
@@ -1249,19 +1314,19 @@ namespace typescript
             {
                 auto val = rewriter.create<mlir_ts::ValueOp>(loc, optType.getElementType(), in);
                 return cast(val, tch.convertType(val.getType()), resType, resLLVMType);
-            }            
+            }
 
             // ptrs cast
             if (inLLVMType.isa<LLVM::LLVMPointerType>() && resLLVMType.isa<LLVM::LLVMPointerType>())
             {
                 return rewriter.create<LLVM::BitcastOp>(loc, resLLVMType, in);
-            }            
+            }
 
             emitError(loc, "invalid cast operator type 1: '") << inLLVMType << "', type 2: '" << resLLVMType << "'";
             llvm_unreachable("not implemented");
 
             return mlir::Value();
-        }        
+        }
 
         mlir::Value castBoolToString(mlir::Value in)
         {
@@ -1269,9 +1334,9 @@ namespace typescript
                 loc,
                 in,
                 ch.getOrCreateGlobalString("__true__", std::string("true")),
-                ch.getOrCreateGlobalString("__false__", std::string("false"))); 
+                ch.getOrCreateGlobalString("__false__", std::string("false")));
         }
-        
+
         mlir::Value castI32ToString(mlir::Value in)
         {
             auto i8PtrTy = th.getI8PtrType();
@@ -1287,7 +1352,7 @@ namespace typescript
 
             return rewriter.create<LLVM::CallOp>(loc, _itoaFuncOp, ValueRange{in, newStringValue, base}).getResult(0);
         }
-        
+
         mlir::Value castI64ToString(mlir::Value in)
         {
             auto i8PtrTy = th.getI8PtrType();
@@ -1302,7 +1367,7 @@ namespace typescript
             auto base = clh.createI32ConstantOf(10);
 
             return rewriter.create<LLVM::CallOp>(loc, _itoaFuncOp, ValueRange{in, newStringValue, base}).getResult(0);
-        }        
+        }
 
         mlir::Value castF32orF64ToString(mlir::Value in)
         {
@@ -1356,7 +1421,7 @@ namespace typescript
             auto arrayValueSize = LLVM::LLVMArrayType::get(llvmElementType, size);
             auto ptrToArray = LLVM::LLVMPointerType::get(arrayValueSize);
 
-            auto sizeValue = clh.createI32ConstantOf(size); 
+            auto sizeValue = clh.createI32ConstantOf(size);
 
             mlir::Value arrayPtr;
             bool byValue = true;
@@ -1370,9 +1435,9 @@ namespace typescript
 
                 auto ptrToArraySrc = rewriter.create<LLVM::BitcastOp>(loc, ptrToArray, in);
                 auto ptrToArrayDst = rewriter.create<LLVM::BitcastOp>(loc, ptrToArray, copyAllocated);
-                rewriter.create<mlir_ts::LoadSaveOp>(loc, ptrToArrayDst, ptrToArraySrc);              
+                rewriter.create<mlir_ts::LoadSaveOp>(loc, ptrToArrayDst, ptrToArraySrc);
 
-                arrayPtr = copyAllocated;           
+                arrayPtr = copyAllocated;
             }
             else
             {
@@ -1382,22 +1447,22 @@ namespace typescript
             }
 
             auto structValue2 = rewriter.create<LLVM::InsertValueOp>(
-                loc, 
+                loc,
                 llvmRtArrayStructType,
-                structValue, 
+                structValue,
                 arrayPtr,
-                rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(0)));           
+                rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(0)));
 
             auto structValue3 = rewriter.create<LLVM::InsertValueOp>(
-                loc, 
-                llvmRtArrayStructType, 
+                loc,
+                llvmRtArrayStructType,
                 structValue2,
-                sizeValue, 
+                sizeValue,
                 rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(1)));
 
             return structValue3;
         }
-    };    
+    };
 
     template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
     mlir::Value LogicOp_(Operation *, mlir::Value, mlir::Value, PatternRewriter &, LLVMTypeConverter &);
@@ -1407,7 +1472,8 @@ namespace typescript
         Operation *op;
         PatternRewriter &rewriter;
         LLVMTypeConverter &typeConverter;
-    public:        
+
+    public:
         OptionalLogicHelper(Operation *op, PatternRewriter &rewriter, LLVMTypeConverter &typeConverter) : op(op), rewriter(rewriter), typeConverter(typeConverter) {}
 
         template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
@@ -1438,34 +1504,34 @@ namespace typescript
                 auto leftUndefFlagValue = rewriter.create<mlir_ts::CastOp>(loc, th.getI32Type(), leftUndefFlagValueBool);
                 auto rightUndefFlagValue = rewriter.create<mlir_ts::CastOp>(loc, th.getI32Type(), rightUndefFlagValueBool);
 
-                auto whenBothHasNoValues = [&](OpBuilder & builder, Location loc) 
+                auto whenBothHasNoValues = [&](OpBuilder &builder, Location loc)
                 {
                     mlir::Value undefFlagCmpResult;
                     switch (opCmpCode)
                     {
-                        case SyntaxKind::EqualsEqualsToken:
-                        case SyntaxKind::EqualsEqualsEqualsToken:
-                            undefFlagCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, leftUndefFlagValue, rightUndefFlagValue);
-                            break;
-                        case SyntaxKind::ExclamationEqualsToken:
-                        case SyntaxKind::ExclamationEqualsEqualsToken:
-                            undefFlagCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, leftUndefFlagValue, rightUndefFlagValue);
-                            break;
-                        case SyntaxKind::GreaterThanToken:
-                            undefFlagCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sgt, leftUndefFlagValue, rightUndefFlagValue);
-                            break;
-                        case SyntaxKind::GreaterThanEqualsToken:
-                            undefFlagCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sge, leftUndefFlagValue, rightUndefFlagValue);
-                            break;
-                        case SyntaxKind::LessThanToken:
-                            undefFlagCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::slt, leftUndefFlagValue, rightUndefFlagValue);
-                            break;
-                        case SyntaxKind::LessThanEqualsToken:
-                            undefFlagCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sle, leftUndefFlagValue, rightUndefFlagValue);
-                            break;
-                        default:
-                            llvm_unreachable("not implemented");
-                    }                    
+                    case SyntaxKind::EqualsEqualsToken:
+                    case SyntaxKind::EqualsEqualsEqualsToken:
+                        undefFlagCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, leftUndefFlagValue, rightUndefFlagValue);
+                        break;
+                    case SyntaxKind::ExclamationEqualsToken:
+                    case SyntaxKind::ExclamationEqualsEqualsToken:
+                        undefFlagCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, leftUndefFlagValue, rightUndefFlagValue);
+                        break;
+                    case SyntaxKind::GreaterThanToken:
+                        undefFlagCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sgt, leftUndefFlagValue, rightUndefFlagValue);
+                        break;
+                    case SyntaxKind::GreaterThanEqualsToken:
+                        undefFlagCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sge, leftUndefFlagValue, rightUndefFlagValue);
+                        break;
+                    case SyntaxKind::LessThanToken:
+                        undefFlagCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::slt, leftUndefFlagValue, rightUndefFlagValue);
+                        break;
+                    case SyntaxKind::LessThanEqualsToken:
+                        undefFlagCmpResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::sle, leftUndefFlagValue, rightUndefFlagValue);
+                        break;
+                    default:
+                        llvm_unreachable("not implemented");
+                    }
 
                     return undefFlagCmpResult;
                 };
@@ -1480,15 +1546,16 @@ namespace typescript
                 auto const0 = clh.createI32ConstantOf(0);
                 auto bothHasResult = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, andOpResult, const0);
 
-                auto result = clh.conditionalExpressionLowering(th.getBooleanType(), bothHasResult, 
-                    [&](OpBuilder & builder, Location loc) 
+                auto result = clh.conditionalExpressionLowering(
+                    th.getBooleanType(), bothHasResult,
+                    [&](OpBuilder &builder, Location loc)
                     {
                         auto leftSubType = leftOptType.getElementType();
                         auto rightSubType = rightOptType.getElementType();
                         left = rewriter.create<mlir_ts::ValueOp>(loc, leftSubType, left);
                         right = rewriter.create<mlir_ts::ValueOp>(loc, rightSubType, right);
                         return LogicOp_<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, opCmpCode, left, right, rewriter, typeConverter);
-                    }, 
+                    },
                     whenBothHasNoValues);
 
                 return result;
@@ -1496,34 +1563,34 @@ namespace typescript
             else
             {
                 // case when 1 value is optional
-                auto whenOneValueIsUndef = [&](OpBuilder & builder, Location loc) 
+                auto whenOneValueIsUndef = [&](OpBuilder &builder, Location loc)
                 {
                     mlir::Value undefFlagCmpResult;
                     switch (opCmpCode)
                     {
-                        case SyntaxKind::EqualsEqualsToken:
-                        case SyntaxKind::EqualsEqualsEqualsToken:
-                            undefFlagCmpResult = clh.createI1ConstantOf(false);
-                            break;
-                        case SyntaxKind::ExclamationEqualsToken:
-                        case SyntaxKind::ExclamationEqualsEqualsToken:
-                            undefFlagCmpResult = clh.createI1ConstantOf(true);
-                            break;
-                        case SyntaxKind::GreaterThanToken:
-                            undefFlagCmpResult = clh.createI1ConstantOf(leftOptType ? false : true);
-                            break;
-                        case SyntaxKind::GreaterThanEqualsToken:
-                            undefFlagCmpResult = clh.createI1ConstantOf(leftOptType ? false : true);
-                            break;
-                        case SyntaxKind::LessThanToken:
-                            undefFlagCmpResult = clh.createI1ConstantOf(leftOptType ? true : false);
-                            break;
-                        case SyntaxKind::LessThanEqualsToken:
-                            undefFlagCmpResult = clh.createI1ConstantOf(leftOptType ? true : false);
-                            break;
-                        default:
-                            llvm_unreachable("not implemented");
-                    }                    
+                    case SyntaxKind::EqualsEqualsToken:
+                    case SyntaxKind::EqualsEqualsEqualsToken:
+                        undefFlagCmpResult = clh.createI1ConstantOf(false);
+                        break;
+                    case SyntaxKind::ExclamationEqualsToken:
+                    case SyntaxKind::ExclamationEqualsEqualsToken:
+                        undefFlagCmpResult = clh.createI1ConstantOf(true);
+                        break;
+                    case SyntaxKind::GreaterThanToken:
+                        undefFlagCmpResult = clh.createI1ConstantOf(leftOptType ? false : true);
+                        break;
+                    case SyntaxKind::GreaterThanEqualsToken:
+                        undefFlagCmpResult = clh.createI1ConstantOf(leftOptType ? false : true);
+                        break;
+                    case SyntaxKind::LessThanToken:
+                        undefFlagCmpResult = clh.createI1ConstantOf(leftOptType ? true : false);
+                        break;
+                    case SyntaxKind::LessThanEqualsToken:
+                        undefFlagCmpResult = clh.createI1ConstantOf(leftOptType ? true : false);
+                        break;
+                    default:
+                        llvm_unreachable("not implemented");
+                    }
 
                     return undefFlagCmpResult;
                 };
@@ -1555,8 +1622,8 @@ namespace typescript
 
                 return LogicOp_<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, opCmpCode, left, right, rewriter, typeConverter);
             }
-        }        
-    };        
+        }
+    };
 
     template <typename UnaryOpTy, typename StdIOpTy, typename StdFOpTy>
     void UnaryOp(UnaryOpTy &unaryOp, PatternRewriter &builder)
@@ -1576,7 +1643,7 @@ namespace typescript
             emitError(binOp.getLoc(), "Not implemented operator for type 1: '") << type << "'";
             llvm_unreachable("not implemented");
         }
-    }  
+    }
 
     template <typename BinOpTy, typename StdIOpTy, typename StdFOpTy>
     void BinOp(BinOpTy &binOp, PatternRewriter &builder)
@@ -1584,7 +1651,7 @@ namespace typescript
         auto loc = binOp->getLoc();
 
         auto left = binOp->getOperand(0);
-        auto right = binOp->getOperand(1);        
+        auto right = binOp->getOperand(1);
         auto leftType = left.getType();
         if (leftType.isIntOrIndex())
         {
@@ -1611,7 +1678,7 @@ namespace typescript
     mlir::Value LogicOp_(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Value right, PatternRewriter &builder, LLVMTypeConverter &typeConverter)
     {
         auto loc = binOp->getLoc();
-        
+
         LLVMTypeConverterHelper llvmtch(typeConverter);
 
         auto leftType = left.getType();
@@ -1632,7 +1699,7 @@ namespace typescript
             auto castRight = builder.create<mlir_ts::CastOp>(loc, builder.getF32Type(), right);
             auto value = builder.create<StdFOpTy>(loc, v2, castLeft, castRight);
             return value;
-        }        
+        }
         /*
         else if (auto leftEnumType = leftType.dyn_cast_or_null<mlir_ts::EnumType>())
         {
@@ -1642,7 +1709,7 @@ namespace typescript
             builder.create<mlir_ts::CastOp>(binOp, leftEnumType, res);
             return value;
         } 
-        */         
+        */
         else if (leftType.dyn_cast_or_null<mlir_ts::OptionalType>())
         {
             OptionalLogicHelper olh(binOp, builder, typeConverter);
@@ -1651,19 +1718,19 @@ namespace typescript
         }
         else if (leftType.dyn_cast_or_null<mlir_ts::StringType>())
         {
-            if (left.getType() != right.getType()) 
+            if (left.getType() != right.getType())
             {
                 right = builder.create<mlir_ts::CastOp>(loc, left.getType(), right);
             }
 
             auto value = builder.create<mlir_ts::StringCompareOp>(
-                loc, 
-                mlir_ts::BooleanType::get(builder.getContext()), 
-                left, 
+                loc,
+                mlir_ts::BooleanType::get(builder.getContext()),
+                left,
                 right,
-                builder.getI32IntegerAttr((int)op));        
+                builder.getI32IntegerAttr((int)op));
 
-            return value;        
+            return value;
         }
         else if (leftType.dyn_cast_or_null<mlir_ts::AnyType>())
         {
@@ -1675,13 +1742,13 @@ namespace typescript
 
             auto value = builder.create<StdIOpTy>(loc, v1, leftPtrValue, rightPtrValue);
             return value;
-        }        
+        }
         else
         {
             emitError(loc, "Not implemented operator for type 1: '") << leftType << "'";
             llvm_unreachable("not implemented");
         }
-    }   
+    }
 
     template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
     mlir::Value LogicOp(Operation *binOp, SyntaxKind op, PatternRewriter &builder, LLVMTypeConverter &typeConverter)
