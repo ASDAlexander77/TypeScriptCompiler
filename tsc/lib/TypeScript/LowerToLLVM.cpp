@@ -1865,6 +1865,11 @@ namespace
 
             rewriter.inlineRegionBefore(tryOp.finallyBlock(), continuation);
 
+            // Body:catch vars
+            rewriter.setInsertionPointToStart(bodyRegion);
+
+            auto catch1 = rewriter.create<LLVM::NullOp>(loc, th.getI8PtrType());
+
             // Body:exit -> replace ResultOp with br
             rewriter.setInsertionPointToEnd(bodyRegionLast);
 
@@ -1875,13 +1880,15 @@ namespace
             rewriter.setInsertionPointToStart(catchesRegion);
 
             auto landingPadTypeWin32 = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {th.getI8PtrType(), th.getI32Type(), th.getI8PtrType()}, false);
+            auto landingPadOp = rewriter.create<LLVM::LandingpadOp>(loc, landingPadTypeWin32, false, ValueRange{catch1});
+            //rewriter.create<LLVM::ResumeOp>(loc, landingPadOp);
 
-            rewriter.create<LLVM::LandingpadOp>(loc, landingPadTypeWin32, ValueRange{}, ArrayRef<NamedAttribute>{{rewriter.getIdentifier("cleanup"), mlir::UnitAttr::get(rewriter.getContext())}});
             // catches:exit
             rewriter.setInsertionPointToEnd(catchesRegionLast);
 
             auto yieldOpCatches = cast<mlir_ts::ResultOp>(catchesRegionLast->getTerminator());
-            rewriter.replaceOpWithNewOp<BranchOp>(yieldOpCatches, continuation, yieldOpCatches.results());
+            //rewriter.replaceOpWithNewOp<BranchOp>(yieldOpCatches, continuation, yieldOpCatches.results());
+            rewriter.replaceOpWithNewOp<LLVM::ResumeOp>(yieldOpCatches, landingPadOp);
 
             // finally:exit
             rewriter.setInsertionPointToEnd(finallyBlockRegionLast);
