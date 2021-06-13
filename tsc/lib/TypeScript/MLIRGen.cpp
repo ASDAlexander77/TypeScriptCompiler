@@ -513,7 +513,8 @@ namespace
 
         void registerVariable(mlir::Location location, StringRef name, VariableClass varClass, mlir::Type type, mlir::Value init)
         {
-            auto isGlobal = symbolTable.getCurScope()->getParentScope() == nullptr || varClass == VariableClass::Var;
+            auto isGlobalScope = symbolTable.getCurScope()->getParentScope() == nullptr;
+            auto isGlobal = isGlobalScope || varClass == VariableClass::Var;
             auto isConst = varClass == VariableClass::Const;
 
             auto varDecl = std::make_shared<VariableDeclarationDOM>(name, type, location);
@@ -559,7 +560,7 @@ namespace
                 if (init)
                 {
                     MLIRCodeLogic mcl(builder);
-                    value = mcl.ExtractAttr(init, true);
+                    value = mcl.ExtractAttr(init, isGlobalScope);
                 }
 
                 builder.create<mlir_ts::GlobalOp>(
@@ -649,7 +650,13 @@ namespace
                     }
                 }
 
-                processDeclaration(item, varClass, type, init, genContext);
+                auto valClassItem = varClass;
+                if ((item->transformFlags & TransformFlags::ForceConst) == TransformFlags::ForceConst)
+                {
+                    valClassItem = VariableClass::Const;
+                }
+
+                processDeclaration(item, valClassItem, type, init, genContext);
             }
 
             return mlir::success();
@@ -1328,7 +1335,7 @@ namespace
             arrayVar->transformFlags |= TransformFlags::ForceConst;
             declarations.push_back(arrayVar);
 
-            auto initVars = nf.createVariableDeclarationList(declarations);
+            auto initVars = nf.createVariableDeclarationList(declarations, NodeFlags::Let);
 
             // condition
             //auto cond = nf.createBinaryExpression(_i, nf.createToken(SyntaxKind::LessThanToken), nf.createCallExpression(nf.createIdentifier(S("#_last_field")), undefined, NodeArray<Expression>(_a)));
@@ -1371,7 +1378,7 @@ namespace
             arrayVar->transformFlags |= TransformFlags::ForceConst;
             declarations.push_back(arrayVar);
 
-            auto initVars = nf.createVariableDeclarationList(declarations);
+            auto initVars = nf.createVariableDeclarationList(declarations, NodeFlags::Let);
 
             // condition
             auto cond = nf.createBinaryExpression(_i, nf.createToken(SyntaxKind::LessThanToken), nf.createPropertyAccessExpression(_a, nf.createIdentifier(S("length"))));

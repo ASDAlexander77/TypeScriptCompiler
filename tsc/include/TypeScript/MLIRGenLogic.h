@@ -393,16 +393,15 @@ namespace typescript
 
         mlir::Attribute getExprConstAttr()
         {
-            auto exprValue = expression.getDefiningOp();
-            if (auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(exprValue))
-            {
-                auto value = constOp.getValue();
-                return value;
-            }
-            else
+            MLIRCodeLogic mcl(builder);
+
+            auto value = mcl.ExtractAttr(expression);
+            if (!value)
             {
                 llvm_unreachable("not implemented");
             }
+
+            return value;
         }
 
         mlir::Value getExprLoadRefValue()
