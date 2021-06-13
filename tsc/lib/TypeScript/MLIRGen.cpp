@@ -19,6 +19,7 @@
 #include "llvm/ADT/ScopedHashTable.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/Debug.h"
 
 #include "TypeScript/VisitorAST.h"
 #include "TypeScript/MLIRGenLogic.h"
@@ -33,6 +34,8 @@
 #include "node_factory.h"
 
 #include <numeric>
+
+#define DEBUG_TYPE "mlir"
 
 using namespace ::typescript;
 using namespace ts;
@@ -555,22 +558,23 @@ namespace
                 auto value = mlir::Attribute();
                 if (init)
                 {
-                    if (auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(init.getDefiningOp()))
-                    {
-                        value = constOp.value();
-                    }
-
-                    // TODO global init value
-                    init.getDefiningOp()->erase();
+                    MLIRCodeLogic mcl(builder);
+                    value = mcl.ExtractAttr(init);
                 }
 
-                auto globalOp =
-                    builder.create<mlir_ts::GlobalOp>(
-                        location,
-                        type,
-                        isConst,
-                        name,
-                        value);
+                builder.create<mlir_ts::GlobalOp>(
+                    location,
+                    type,
+                    isConst,
+                    name,
+                    value);
+
+                if (!value && init)
+                {
+                    // save value
+                    auto address = builder.create<mlir_ts::AddressOfOp>(location, mlir_ts::RefType::get(type), name);
+                    builder.create<mlir_ts::StoreOp>(location, init, address);
+                }
 
                 declare(varDecl, mlir::Value());
             }
@@ -612,7 +616,7 @@ namespace
 
         mlir::LogicalResult mlirGen(VariableDeclarationList variableDeclarationListAST, const GenContext &genContext)
         {
-            auto isLet = (variableDeclarationListAST->flags & NodeFlags::Const) == NodeFlags::Let;
+            auto isLet = (variableDeclarationListAST->flags & NodeFlags::Let) == NodeFlags::Let;
             auto isConst = (variableDeclarationListAST->flags & NodeFlags::Const) == NodeFlags::Const;
             auto varClass = isLet ? VariableClass::Let : isConst ? VariableClass::Const
                                                                  : VariableClass::Var;

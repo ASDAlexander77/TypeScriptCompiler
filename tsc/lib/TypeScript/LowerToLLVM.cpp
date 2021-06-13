@@ -1463,7 +1463,7 @@ namespace
         LogicalResult matchAndRewrite(mlir_ts::GlobalOp globalOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             LLVMCodeHelper lch(globalOp, rewriter, getTypeConverter());
-            lch.createGlobalVarIfNew(globalOp.sym_name(), globalOp.type(), globalOp.valueAttr());
+            lch.createGlobalVarIfNew(globalOp.sym_name(), getTypeConverter()->convertType(globalOp.type()), globalOp.valueAttr(), globalOp.constant());
             rewriter.eraseOp(globalOp);
             return success();
         }
@@ -1475,17 +1475,10 @@ namespace
 
         LogicalResult matchAndRewrite(mlir_ts::AddressOfOp addressOfOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
-            TypeHelper th(rewriter);
-            TypeConverterHelper tch(getTypeConverter());
-            auto parentModule = addressOfOp->getParentOfType<ModuleOp>();
-
-            if (auto global = parentModule.lookupSymbol<LLVM::GlobalOp>(addressOfOp.global_name()))
-            {
-                rewriter.replaceOpWithNewOp<LLVM::AddressOfOp>(addressOfOp, global);
-                return success();
-            }
-
-            return failure();
+            LLVMCodeHelper lch(addressOfOp, rewriter, getTypeConverter());
+            auto value = lch.getAddressOfGlobalVar(addressOfOp.global_name());
+            rewriter.replaceOp(addressOfOp, value);
+            return success();
         }
     };
 
@@ -1496,7 +1489,6 @@ namespace
         LogicalResult matchAndRewrite(mlir_ts::AddressOfConstStringOp addressOfConstStringOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             TypeHelper th(rewriter);
-            TypeConverterHelper tch(getTypeConverter());
             auto parentModule = addressOfConstStringOp->getParentOfType<ModuleOp>();
 
             if (auto global = parentModule.lookupSymbol<LLVM::GlobalOp>(addressOfConstStringOp.global_name()))

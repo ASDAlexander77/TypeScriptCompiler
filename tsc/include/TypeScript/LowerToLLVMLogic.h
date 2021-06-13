@@ -470,12 +470,10 @@ namespace typescript
             return strVarName.str();
         }
 
-        mlir::LogicalResult createGlobalVarIfNew(StringRef name, mlir::Type typeIn, mlir::Attribute value)
+        mlir::LogicalResult createGlobalVarIfNew(StringRef name, mlir::Type type, mlir::Attribute value, bool isConst)
         {
             auto loc = op->getLoc();
             auto parentModule = op->getParentOfType<ModuleOp>();
-
-            auto type = typeConverter->convertType(typeIn);
 
             TypeHelper th(rewriter);
 
@@ -488,7 +486,7 @@ namespace typescript
 
                 seekLast(parentModule.getBody());
 
-                global = rewriter.create<LLVM::GlobalOp>(loc, type, true, LLVM::Linkage::Internal, name, value);
+                global = rewriter.create<LLVM::GlobalOp>(loc, type, isConst, LLVM::Linkage::Internal, name, value);
 
                 return success();
             }
@@ -496,12 +494,10 @@ namespace typescript
             return failure();
         }
 
-        Value getAddressOfGlobalVar(StringRef name, mlir::Type typeIn, mlir::Attribute value)
+        Value getAddressOfGlobalVar(StringRef name)
         {
             auto loc = op->getLoc();
             auto parentModule = op->getParentOfType<ModuleOp>();
-
-            auto type = typeConverter->convertType(typeIn);
 
             TypeHelper th(rewriter);
 
@@ -517,7 +513,7 @@ namespace typescript
                     th.getIndexAttrValue(0));
                 return rewriter.create<LLVM::GEPOp>(
                     loc,
-                    th.getPointerType(type),
+                    globalPtr.getType(),
                     globalPtr,
                     ArrayRef<Value>({cst0}));
             }

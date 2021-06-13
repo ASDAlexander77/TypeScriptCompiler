@@ -42,9 +42,9 @@ namespace typescript
         mlir::OpBuilder &builder;
         mlir::Location &location;
 
-    public:        
-        MLIRCustomMethods(mlir::OpBuilder &builder, mlir::Location &location) 
-            : builder(builder), location(location) {}   
+    public:
+        MLIRCustomMethods(mlir::OpBuilder &builder, mlir::Location &location)
+            : builder(builder), location(location) {}
 
         mlir::Value callMethod(StringRef functionName, ArrayRef<mlir::Value> operands, bool allowPartialResolve)
         {
@@ -64,25 +64,23 @@ namespace typescript
             {
                 mlir::succeeded(mlirGenPrint(location, operands));
             }
-            else 
-            // assert - internal command;
-            if (functionName.compare(StringRef("assert")) == 0)
+            else
+                // assert - internal command;
+                if (functionName.compare(StringRef("assert")) == 0)
             {
                 mlir::succeeded(mlirGenAssert(location, operands));
             }
-            else 
-            // assert - internal command;
-            if (functionName.compare(StringRef("parseInt")) == 0)
+            else
+                // assert - internal command;
+                if (functionName.compare(StringRef("parseInt")) == 0)
             {
                 result = mlirGenParseInt(location, operands);
             }
-            else 
-            if (functionName.compare(StringRef("parseFloat")) == 0)
+            else if (functionName.compare(StringRef("parseFloat")) == 0)
             {
                 result = mlirGenParseFloat(location, operands);
             }
-            else
-            if (functionName.compare(StringRef("sizeof")) == 0)
+            else if (functionName.compare(StringRef("sizeof")) == 0)
             {
                 result = mlirGenSizeOf(location, operands);
             }
@@ -107,14 +105,13 @@ namespace typescript
 
             }
             */
-            else 
-            if (!allowPartialResolve)
+            else if (!allowPartialResolve)
             {
                 emitError(location) << "no defined function found for '" << functionName << "'";
             }
 
             return result;
-        }     
+        }
 
     private:
         mlir::LogicalResult mlirGenPrint(const mlir::Location &location, ArrayRef<mlir::Value> operands)
@@ -194,14 +191,15 @@ namespace typescript
                     mlir::TypeAttr::get(operands.front().getType()));
 
             return sizeOfValue;
-        }        
+        }
     };
 
     class MLIRCodeLogic
     {
         mlir::OpBuilder &builder;
-        public:    
-        MLIRCodeLogic(mlir::OpBuilder &builder) 
+
+    public:
+        MLIRCodeLogic(mlir::OpBuilder &builder)
             : builder(builder) {}
 
         mlir::Attribute ExtractAttr(mlir::Value value)
@@ -211,10 +209,8 @@ namespace typescript
             {
                 return constOp.valueAttr();
             }
-            else
-            {
-                llvm_unreachable("not implemented");
-            }
+
+            return mlir::Attribute();
         }
 
         mlir::Attribute TupleFieldName(StringRef name)
@@ -231,15 +227,16 @@ namespace typescript
         mlir::Value &expression;
         mlir::StringRef name;
         mlir::Attribute fieldId;
-    public:        
-        MLIRPropertyAccessCodeLogic(mlir::OpBuilder &builder, mlir::Location &location, mlir::Value &expression, StringRef name) 
-            : builder(builder), location(location), expression(expression), name(name)
-            {
-                MLIRCodeLogic mcl(builder);
-                fieldId = mcl.TupleFieldName(name);
-            }
 
-        MLIRPropertyAccessCodeLogic(mlir::OpBuilder &builder, mlir::Location &location, mlir::Value &expression, mlir::Attribute fieldId) 
+    public:
+        MLIRPropertyAccessCodeLogic(mlir::OpBuilder &builder, mlir::Location &location, mlir::Value &expression, StringRef name)
+            : builder(builder), location(location), expression(expression), name(name)
+        {
+            MLIRCodeLogic mcl(builder);
+            fieldId = mcl.TupleFieldName(name);
+        }
+
+        MLIRPropertyAccessCodeLogic(mlir::OpBuilder &builder, mlir::Location &location, mlir::Value &expression, mlir::Attribute fieldId)
             : builder(builder), location(location), expression(expression), fieldId(fieldId) {}
 
         mlir::Value Enum(mlir_ts::EnumType enumType)
@@ -286,9 +283,9 @@ namespace typescript
             if (refValue)
             {
                 auto propRef = builder.create<mlir_ts::PropertyRefOp>(
-                    location, 
-                    mlir_ts::RefType::get(elementType), 
-                    refValue, 
+                    location,
+                    mlir_ts::RefType::get(elementType),
+                    refValue,
                     builder.getI32IntegerAttr(fieldIndex));
 
                 return builder.create<mlir_ts::LoadOp>(location, elementType, propRef);
@@ -296,7 +293,7 @@ namespace typescript
 
             MLIRTypeHelper mth(builder.getContext());
             return builder.create<mlir_ts::ExtractPropertyOp>(location, elementType, expression, builder.getArrayAttr(mth.getStructIndexAttrValue(fieldIndex)));
-        }       
+        }
 
         mlir::Value Bool(mlir_ts::BooleanType intType)
         {
@@ -307,9 +304,9 @@ namespace typescript
             }
             else
             {
-                llvm_unreachable("not implemented");                        
-            }                         
-        }          
+                llvm_unreachable("not implemented");
+            }
+        }
 
         mlir::Value Int(mlir::IntegerType intType)
         {
@@ -320,9 +317,9 @@ namespace typescript
             }
             else
             {
-                llvm_unreachable("not implemented");                        
-            }                         
-        }  
+                llvm_unreachable("not implemented");
+            }
+        }
 
         mlir::Value Float(mlir::FloatType intType)
         {
@@ -333,22 +330,22 @@ namespace typescript
             }
             else
             {
-                llvm_unreachable("not implemented");                        
-            }                         
-        }    
+                llvm_unreachable("not implemented");
+            }
+        }
 
         mlir::Value String(mlir_ts::StringType stringType)
         {
             auto propName = getName();
             if (propName == "length")
             {
-                return builder.create<mlir_ts::StringLengthOp>(location, builder.getI32Type(), expression);                            
+                return builder.create<mlir_ts::StringLengthOp>(location, builder.getI32Type(), expression);
             }
             else
             {
-                llvm_unreachable("not implemented");                        
-            }                         
-        }    
+                llvm_unreachable("not implemented");
+            }
+        }
 
         template <typename T>
         mlir::Value Array(T arrayType)
@@ -359,33 +356,33 @@ namespace typescript
                 if (expression.getType().isa<mlir_ts::ConstArrayType>())
                 {
                     auto size = getExprConstAttr().cast<mlir::ArrayAttr>().size();
-                    return builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(size));                            
+                    return builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(size));
                 }
                 else if (expression.getType().isa<mlir_ts::ArrayType>())
                 {
-                    auto sizeValue = 
+                    auto sizeValue =
                         builder.create<mlir_ts::LengthOfOp>(
-                            location, 
+                            location,
                             builder.getI32Type(),
-                            expression);                    
+                            expression);
                     return sizeValue;
-                }                
+                }
                 else
                 {
-                    llvm_unreachable("not implemented");                        
+                    llvm_unreachable("not implemented");
                 }
             }
             else
             {
-                llvm_unreachable("not implemented");                        
-            }                         
-        }           
+                llvm_unreachable("not implemented");
+            }
+        }
 
     private:
-        StringRef getName() 
+        StringRef getName()
         {
-            return name;                  
-        }        
+            return name;
+        }
 
         mlir::Attribute getExprConstAttr()
         {
@@ -397,8 +394,8 @@ namespace typescript
             }
             else
             {
-                llvm_unreachable("not implemented");                        
-            }  
+                llvm_unreachable("not implemented");
+            }
         }
 
         mlir::Value getExprLoadRefValue()
@@ -411,7 +408,7 @@ namespace typescript
             }
 
             return mlir::Value();
-        }        
+        }
     };
 
     class MLIRLogicHelper
@@ -421,23 +418,55 @@ namespace typescript
         {
             switch (opCode)
             {
-                case SyntaxKind::PlusEqualsToken: opCode = SyntaxKind::PlusToken; break;
-                case SyntaxKind::MinusEqualsToken: opCode = SyntaxKind::MinusToken; break;
-                case SyntaxKind::AsteriskEqualsToken: opCode = SyntaxKind::AsteriskToken; break;
-                case SyntaxKind::AsteriskAsteriskEqualsToken: opCode = SyntaxKind::AsteriskAsteriskToken; break;
-                case SyntaxKind::SlashEqualsToken: opCode = SyntaxKind::SlashToken; break;
-                case SyntaxKind::PercentEqualsToken: opCode = SyntaxKind::PercentToken; break;
-                case SyntaxKind::LessThanLessThanEqualsToken: opCode = SyntaxKind::LessThanLessThanToken; break;
-                case SyntaxKind::GreaterThanGreaterThanEqualsToken: opCode = SyntaxKind::GreaterThanGreaterThanToken; break;
-                case SyntaxKind::GreaterThanGreaterThanGreaterThanEqualsToken: opCode = SyntaxKind::GreaterThanGreaterThanGreaterThanToken; break;
-                case SyntaxKind::AmpersandEqualsToken: opCode = SyntaxKind::AmpersandToken; break;
-                case SyntaxKind::BarEqualsToken: opCode = SyntaxKind::BarToken; break;
-                case SyntaxKind::BarBarEqualsToken: opCode = SyntaxKind::BarBarToken; break;
-                case SyntaxKind::AmpersandAmpersandEqualsToken: opCode = SyntaxKind::AmpersandAmpersandToken; break;
-                case SyntaxKind::QuestionQuestionEqualsToken: opCode = SyntaxKind::QuestionQuestionToken; break;
-                case SyntaxKind::CaretEqualsToken: opCode = SyntaxKind::CaretToken; break;
-                default: return false; break;
-            }            
+            case SyntaxKind::PlusEqualsToken:
+                opCode = SyntaxKind::PlusToken;
+                break;
+            case SyntaxKind::MinusEqualsToken:
+                opCode = SyntaxKind::MinusToken;
+                break;
+            case SyntaxKind::AsteriskEqualsToken:
+                opCode = SyntaxKind::AsteriskToken;
+                break;
+            case SyntaxKind::AsteriskAsteriskEqualsToken:
+                opCode = SyntaxKind::AsteriskAsteriskToken;
+                break;
+            case SyntaxKind::SlashEqualsToken:
+                opCode = SyntaxKind::SlashToken;
+                break;
+            case SyntaxKind::PercentEqualsToken:
+                opCode = SyntaxKind::PercentToken;
+                break;
+            case SyntaxKind::LessThanLessThanEqualsToken:
+                opCode = SyntaxKind::LessThanLessThanToken;
+                break;
+            case SyntaxKind::GreaterThanGreaterThanEqualsToken:
+                opCode = SyntaxKind::GreaterThanGreaterThanToken;
+                break;
+            case SyntaxKind::GreaterThanGreaterThanGreaterThanEqualsToken:
+                opCode = SyntaxKind::GreaterThanGreaterThanGreaterThanToken;
+                break;
+            case SyntaxKind::AmpersandEqualsToken:
+                opCode = SyntaxKind::AmpersandToken;
+                break;
+            case SyntaxKind::BarEqualsToken:
+                opCode = SyntaxKind::BarToken;
+                break;
+            case SyntaxKind::BarBarEqualsToken:
+                opCode = SyntaxKind::BarBarToken;
+                break;
+            case SyntaxKind::AmpersandAmpersandEqualsToken:
+                opCode = SyntaxKind::AmpersandAmpersandToken;
+                break;
+            case SyntaxKind::QuestionQuestionEqualsToken:
+                opCode = SyntaxKind::QuestionQuestionToken;
+                break;
+            case SyntaxKind::CaretEqualsToken:
+                opCode = SyntaxKind::CaretToken;
+                break;
+            default:
+                return false;
+                break;
+            }
 
             return true;
         }
@@ -446,15 +475,15 @@ namespace typescript
         {
             switch (opCode)
             {
-                case SyntaxKind::EqualsEqualsToken:
-                case SyntaxKind::EqualsEqualsEqualsToken:
-                case SyntaxKind::ExclamationEqualsToken:
-                case SyntaxKind::ExclamationEqualsEqualsToken:
-                case SyntaxKind::GreaterThanToken:
-                case SyntaxKind::GreaterThanEqualsToken:
-                case SyntaxKind::LessThanToken:
-                case SyntaxKind::LessThanEqualsToken:
-                    return true;
+            case SyntaxKind::EqualsEqualsToken:
+            case SyntaxKind::EqualsEqualsEqualsToken:
+            case SyntaxKind::ExclamationEqualsToken:
+            case SyntaxKind::ExclamationEqualsEqualsToken:
+            case SyntaxKind::GreaterThanToken:
+            case SyntaxKind::GreaterThanEqualsToken:
+            case SyntaxKind::LessThanToken:
+            case SyntaxKind::LessThanEqualsToken:
+                return true;
             }
 
             return false;
