@@ -559,7 +559,7 @@ namespace
                 if (init)
                 {
                     MLIRCodeLogic mcl(builder);
-                    value = mcl.ExtractAttr(init);
+                    value = mcl.ExtractAttr(init, true);
                 }
 
                 builder.create<mlir_ts::GlobalOp>(

@@ -202,12 +202,19 @@ namespace typescript
         MLIRCodeLogic(mlir::OpBuilder &builder)
             : builder(builder) {}
 
-        mlir::Attribute ExtractAttr(mlir::Value value)
+        mlir::Attribute ExtractAttr(mlir::Value value, bool removeOpIfSuccess = false)
         {
             auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(value.getDefiningOp());
             if (constOp)
             {
-                return constOp.valueAttr();
+                auto val = constOp.valueAttr();
+                if (removeOpIfSuccess)
+                {
+                    // in case it is not in function and can't be removed with canonicalizer
+                    constOp->erase();
+                }
+
+                return val;
             }
 
             return mlir::Attribute();

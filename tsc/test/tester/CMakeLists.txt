@@ -19,6 +19,7 @@ add_test(NAME test-runner-00-for COMMAND test-runner "${PROJECT_SOURCE_DIR}/test
 add_test(NAME test-runner-00-break-continue COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00break_continue.ts")
 add_test(NAME test-runner-00-vars COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00vars.ts")
 add_test(NAME test-runner-00-globals COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals.ts")
+add_test(NAME test-runner-00-globals2 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00globals2.ts")
 add_test(NAME test-runner-00-arrays COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array.ts")
 add_test(NAME test-runner-00-arrays2 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array2.ts")
 add_test(NAME test-runner-00-arrays3 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00array3.ts")
