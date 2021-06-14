@@ -179,50 +179,46 @@ class MLIRGenImpl
 
         // VisitorAST
         // TODO: test recursive references
+        GenContext genContext = {0};
+        genContext.allowPartialResolve = true;
         do
         {
+            FilterVisitorAST<VariableStatement> globalsVisitorAST(SyntaxKind::VariableStatement,
+                                                                  [&](auto varStatement) { mlirGen(varStatement, genContext); });
+            globalsVisitorAST.visit(module);
+
             mlir::SmallVector<StringRef> unresolvedFuncs;
             auto unresolvedFunctionsCurrentRun = 0;
-            VisitorAST visitorAST([&](auto node) {
-                if (node == SyntaxKind::FunctionDeclaration)
+            FilterVisitorAST<FunctionDeclaration> funcVisitorAST(SyntaxKind::FunctionDeclaration, [&](auto funcDecl) {
+                GenContext funcGenContext(genContext);
+
+                auto funcOpAndFuncProto = mlirGenFunctionPrototype(funcDecl, funcGenContext);
+                auto result = std::get<2>(funcOpAndFuncProto);
+                if (!result)
                 {
-                    auto funcDecl = node.as<FunctionDeclaration>();
-                    GenContext genContextDecl = {0};
-                    genContextDecl.allowPartialResolve = true;
+                    unresolvedFunctionsCurrentRun++;
 
-                    auto funcOpAndFuncProto = mlirGenFunctionPrototype(funcDecl, genContextDecl);
-                    auto result = std::get<2>(funcOpAndFuncProto);
-                    if (!result)
+                    auto name = MLIRHelper::getName(funcDecl->name, stringAllocator);
+                    if (!name.empty())
                     {
-                        unresolvedFunctionsCurrentRun++;
-
-                        auto name = MLIRHelper::getName(funcDecl->name, stringAllocator);
-                        if (!name.empty())
-                        {
-                            unresolvedFuncs.push_back(name);
-                        }
-
-                        return;
+                        unresolvedFuncs.push_back(name);
                     }
 
-                    auto funcOp = std::get<0>(funcOpAndFuncProto);
-                    // auto &funcProto = std::get<1>(funcOpAndFuncProto);
-                    auto funcName = funcOp.getName();
-
-                    if (auto funcOp = theModule.lookupSymbol<mlir_ts::FuncOp>(funcName))
-                    {
-                        return;
-                    }
-
-                    functionMap.insert({funcName, funcOp});
+                    return;
                 }
 
-                if (node == SyntaxKind::VariableDeclaration)
+                auto funcOp = std::get<0>(funcOpAndFuncProto);
+                // auto &funcProto = std::get<1>(funcOpAndFuncProto);
+                auto funcName = funcOp.getName();
+
+                if (auto funcOp = theModule.lookupSymbol<mlir_ts::FuncOp>(funcName))
                 {
-                    // TODO: finish it
+                    return;
                 }
+
+                functionMap.insert({funcName, funcOp});
             });
-            visitorAST.visit(module);
+            funcVisitorAST.visit(module);
 
             if (unresolvedFunctionsCurrentRun == unresolvedFunctions)
             {
