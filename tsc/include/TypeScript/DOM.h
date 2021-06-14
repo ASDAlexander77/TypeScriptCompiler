@@ -43,9 +43,9 @@ namespace ts
         mlir::Type type;
         mlir::Location loc;
         Expression initValue;
+        mlir_ts::FuncOp functionScope;
 
     public:
-
         using TypePtr = std::shared_ptr<VariableDeclarationDOM>;
 
         VariableDeclarationDOM(StringRef name, mlir::Type type, mlir::Location loc, Expression initValue = undefined)
@@ -62,6 +62,8 @@ namespace ts
         void setReadWriteAccess(bool value = true) { readWrite = value; };
         bool getIsGlobal() const { return isGlobal; };
         void setIsGlobal(bool value = true) { isGlobal = value; };
+        mlir_ts::FuncOp getFuncOp() const { return functionScope; };
+        void setFuncOp(mlir_ts::FuncOp value) { functionScope = value; };
 
     protected:
         bool readWrite;
@@ -69,9 +71,8 @@ namespace ts
     };
 
     class FunctionParamDOM : public VariableDeclarationDOM
-    {    
+    {
     public:
-
         using TypePtr = std::shared_ptr<FunctionParamDOM>;
 
         FunctionParamDOM(StringRef name, mlir::Type type, mlir::Location loc, bool isOptional = false, Expression initValue = undefined)
@@ -94,11 +95,10 @@ namespace ts
     class FunctionPrototypeDOM
     {
         std::string name;
-        std::vector<FunctionParamDOM::TypePtr> args;    
+        std::vector<FunctionParamDOM::TypePtr> args;
         mlir::Type returnType;
 
     public:
-
         using TypePtr = std::shared_ptr<FunctionPrototypeDOM>;
 
         FunctionPrototypeDOM(StringRef name, std::vector<FunctionParamDOM::TypePtr> args)
@@ -110,7 +110,7 @@ namespace ts
         // ArrayRef should not be "&" or "*"
         ArrayRef<FunctionParamDOM::TypePtr> getArgs() const { return args; }
         const mlir::Type &getReturnType() const { return returnType; }
-        void setReturnType(mlir::Type returnType_) 
+        void setReturnType(mlir::Type returnType_)
         {
             returnType = returnType_;
         }

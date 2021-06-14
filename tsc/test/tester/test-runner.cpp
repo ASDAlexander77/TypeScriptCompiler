@@ -115,7 +115,7 @@ int runFolder(const char *folder)
     return 0;
 }
 
-void createBatchFile()
+void createCompileBatchFile()
 {
     if (exists("compile.bat"))
     {
@@ -139,30 +139,46 @@ void createBatchFile()
     batFile.close();
 }
 
+void createJitBatchFile()
+{
+    if (exists("jit.bat"))
+    {
+        return;
+    }
+
+    std::ofstream batFile("jit.bat");
+    batFile << "echo off" << std::endl;
+    batFile << "set FILENAME=%1" << std::endl;
+    batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit %2" << std::endl;
+    batFile << "echo on" << std::endl;
+    batFile.close();
+}
+
 void testFile(const char *file)
 {
-    std::chrono::milliseconds ms = std::chrono::duration_cast< std::chrono::milliseconds >(
-        std::chrono::system_clock::now().time_since_epoch()
-    );
+    std::chrono::milliseconds ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch());
 
     auto fileName = fs::path(file).filename();
     auto stem = fs::path(file).stem();
-    
+
     std::stringstream sfn;
     sfn << stem << ms.count() << ".exe";
     auto exeFile = sfn.str();
 
     std::stringstream tfn;
     tfn << stem << ms.count() << ".txt";
-    auto txtFile = tfn.str();     
+    auto txtFile = tfn.str();
 
     std::stringstream efn;
     efn << stem << ms.count() << ".err";
-    auto errFile = efn.str();    
+    auto errFile = efn.str();
 
     std::cout << "Test file: " << fileName << " path: " << file << std::endl;
 
-    auto cleanup = [&]() {
+    auto cleanup = [&]()
+    {
         std::stringstream mask;
         mask << "del " << stem << ms.count() << ".*";
         auto delCmd = mask.str();
@@ -178,7 +194,7 @@ void testFile(const char *file)
             {
                 anyDoneMsg = true;
             }
-        }            
+        }
 
         // read test result
         std::ifstream infile;
@@ -190,17 +206,17 @@ void testFile(const char *file)
         {
             errors << line << std::endl;
             anyError = true;
-        }        
+        }
 
         infile.close();
 
-        exec(delCmd);       
+        exec(delCmd);
 
         if (anyError)
         {
             auto errStr = errors.str();
             return errStr;
-        } 
+        }
 
         if (!anyDoneMsg)
         {
@@ -230,7 +246,7 @@ void testFile(const char *file)
         if (index != std::string::npos)
         {
             throw "run error";
-        }     
+        }
     }
     catch (const std::exception &)
     {
@@ -240,18 +256,26 @@ void testFile(const char *file)
     if (!res.empty())
     {
         throw std::exception(res.c_str());
-    }    
+    }
 }
 
 int main(int argc, char **argv)
 {
     try
     {
-        createBatchFile();
+        bool isJit = argc > 1 && std::string(argv[1]) == "-jit";
+        if (isJit)
+        {
+            createJitBatchFile();
+        }
+        else
+        {
+            createCompileBatchFile();
+        }
 
         if (argc > 1)
         {
-            testFile(argv[1]);
+            testFile(isJit ? argv[2] : argv[1]);
         }
         else
         {

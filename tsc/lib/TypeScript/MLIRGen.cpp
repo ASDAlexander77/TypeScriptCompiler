@@ -511,7 +511,7 @@ namespace
             llvm_unreachable("unknown expression");
         }
 
-        void registerVariable(mlir::Location location, StringRef name, VariableClass varClass, std::function<std::pair<mlir::Type, mlir::Value>()> func)
+        void registerVariable(mlir::Location location, StringRef name, VariableClass varClass, std::function<std::pair<mlir::Type, mlir::Value>()> func, const GenContext &genContext)
         {
             auto isGlobalScope = symbolTable.getCurScope()->getParentScope() == nullptr;
             auto isGlobal = isGlobalScope || varClass == VariableClass::Var;
@@ -616,6 +616,7 @@ namespace
             }
 
             varDecl->setIsGlobal(isGlobal);
+            varDecl->setFuncOp(genContext.funcOp);
 
             declare(varDecl, variableOp);
         }
@@ -658,7 +659,7 @@ namespace
                 auto name = MLIRHelper::getName(item->name);
 
                 // register
-                registerVariable(location, name, varClass, func);
+                registerVariable(location, name, varClass, func, genContext);
             }
         }
 
