@@ -2925,6 +2925,8 @@ llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personali
             auto value = symbolTable.lookup(name);
             if (value.second)
             {
+                auto isOuterFunctionScope = value.second->getFuncOp() != genContext.funcOp;
+
                 if (value.first)
                 {
                     if (!value.second->getReadWriteAccess())
