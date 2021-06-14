@@ -39,6 +39,7 @@
         "editor.tabSize": 4,
         "editor.defaultFormatter": "ms-vscode.cpptools",
         "editor.formatOnSave": true
+        "C_Cpp.clang_format_fallbackStyle": "{ BasedOnStyle: Microsoft, ColumnLimit: 140 }",
         "files.exclude": {
             "**/__build": true,
             "**/__build_*": true,
