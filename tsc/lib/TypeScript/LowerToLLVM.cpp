@@ -1463,8 +1463,20 @@ namespace
         LogicalResult matchAndRewrite(mlir_ts::GlobalOp globalOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
         {
             LLVMCodeHelper lch(globalOp, rewriter, getTypeConverter());
-            lch.createGlobalVarIfNew(globalOp.sym_name(), getTypeConverter()->convertType(globalOp.type()), globalOp.valueAttr(), globalOp.constant());
+            // TODO: include initialize block
+            lch.createGlobalVarIfNew(globalOp.sym_name(), getTypeConverter()->convertType(globalOp.type()), globalOp.valueAttr(), globalOp.constant(), globalOp.getInitializerRegion());
             rewriter.eraseOp(globalOp);
+            return success();
+        }
+    };
+
+    struct GlobalResultOpLowering : public TsLlvmPattern<mlir_ts::GlobalResultOp>
+    {
+        using TsLlvmPattern<mlir_ts::GlobalResultOp>::TsLlvmPattern;
+
+        LogicalResult matchAndRewrite(mlir_ts::GlobalResultOp globalResultOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+        {
+            rewriter.replaceOpWithNewOp<mlir::ReturnOp>(globalResultOp, globalResultOp.results());
             return success();
         }
     };
@@ -2039,6 +2051,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         ValueOpLowering,
         SymbolRefOpLowering,
         GlobalOpLowering,
+        GlobalResultOpLowering,
         EntryOpLowering,
         FuncOpLowering,
         LoadOpLowering,

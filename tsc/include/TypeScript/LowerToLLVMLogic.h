@@ -470,7 +470,7 @@ namespace typescript
             return strVarName.str();
         }
 
-        mlir::LogicalResult createGlobalVarIfNew(StringRef name, mlir::Type type, mlir::Attribute value, bool isConst)
+        mlir::LogicalResult createGlobalVarIfNew(StringRef name, mlir::Type type, mlir::Attribute value, bool isConst, mlir::Region &initRegion)
         {
             auto loc = op->getLoc();
             auto parentModule = op->getParentOfType<ModuleOp>();
@@ -487,6 +487,14 @@ namespace typescript
                 seekLast(parentModule.getBody());
 
                 global = rewriter.create<LLVM::GlobalOp>(loc, type, isConst, LLVM::Linkage::Internal, name, value);
+
+                if (!value && !initRegion.empty())
+                {
+                    setStructWritingPoint(global);
+
+                    rewriter.inlineRegionBefore(initRegion, &global.initializer().back());
+                    rewriter.eraseBlock(&global.initializer().back());
+                }
 
                 return success();
             }

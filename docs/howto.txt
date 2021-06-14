@@ -1,3 +1,10 @@
+## Run as JIT
+
+set FILENAME=test
+
+set TSCEXEPATH=<...>\TypeScriptCompiler\__build\tsc\bin\
+%TSCEXEPATH%\tsc.exe --emit=jit %FILENAME%.ts
+
 ## Compiling to exe
 
 1) Via LLC

@@ -511,25 +511,24 @@ namespace
             llvm_unreachable("unknown expression");
         }
 
-        void registerVariable(mlir::Location location, StringRef name, VariableClass varClass, mlir::Type type, mlir::Value init)
+        void registerVariable(mlir::Location location, StringRef name, VariableClass varClass, std::function<std::pair<mlir::Type, mlir::Value>()> func)
         {
             auto isGlobalScope = symbolTable.getCurScope()->getParentScope() == nullptr;
             auto isGlobal = isGlobalScope || varClass == VariableClass::Var;
             auto isConst = varClass == VariableClass::Const;
 
-            auto varDecl = std::make_shared<VariableDeclarationDOM>(name, type, location);
-            if (!isConst)
-            {
-                varDecl->setReadWriteAccess();
-            }
-
-            varDecl->setIsGlobal(isGlobal);
-
+            mlir::Value variableOp;
+            mlir::Type varType;
             if (!isGlobal)
             {
+                auto res = func();
+                auto type = std::get<0>(res);
+                auto init = std::get<1>(res);
+                varType = type;
+
                 if (isConst)
                 {
-                    declare(varDecl, init);
+                    variableOp = init;
                 }
                 else
                 {
@@ -539,55 +538,99 @@ namespace
 
                     auto copyRequired = false;
                     auto actualType = mth.convertConstTypeToType(type, copyRequired);
-                    if (actualType != type)
+                    if (init && actualType != type)
                     {
                         auto castValue = builder.create<mlir_ts::CastOp>(location, actualType, init);
                         init = castValue;
                     }
 
-                    auto variableOp = builder.create<mlir_ts::VariableOp>(
+                    variableOp = builder.create<mlir_ts::VariableOp>(
                         location,
                         mlir_ts::RefType::get(actualType),
                         init);
-
-                    declare(varDecl, variableOp);
                 }
             }
             else
             {
+                mlir_ts::GlobalOp globalOp;
                 // get constant
-                auto value = mlir::Attribute();
-                if (init)
                 {
-                    MLIRCodeLogic mcl(builder);
-                    value = mcl.ExtractAttr(init, isGlobalScope);
+                    mlir::OpBuilder::InsertionGuard insertGuard(builder);
+                    builder.setInsertionPointToStart(theModule.getBody());
+
+                    globalOp = builder.create<mlir_ts::GlobalOp>(
+                        location,
+                        // temp type
+                        builder.getI32Type(),
+                        isConst,
+                        name,
+                        mlir::Attribute());
+
+                    if (isGlobalScope)
+                    {
+                        auto &region = globalOp.getInitializerRegion();
+                        auto *block = builder.createBlock(&region);
+
+                        builder.setInsertionPoint(block, block->begin());
+
+                        auto res = func();
+                        auto type = std::get<0>(res);
+                        auto init = std::get<1>(res);
+                        varType = type;
+
+                        globalOp.typeAttr(mlir::TypeAttr::get(type));
+
+                        // add return
+                        if (init)
+                        {
+                            builder.create<mlir_ts::GlobalResultOp>(location, mlir::ValueRange{init});
+                        }
+                        else
+                        {
+                            auto undef = builder.create<mlir_ts::UndefOp>(location, type);
+                            builder.create<mlir_ts::GlobalResultOp>(location, mlir::ValueRange{undef});
+                        }
+                    }
                 }
 
-                builder.create<mlir_ts::GlobalOp>(
-                    location,
-                    type,
-                    isConst,
-                    name,
-                    value);
-
-                if (!value && init)
+                if (!isGlobalScope)
                 {
+                    auto res = func();
+                    auto type = std::get<0>(res);
+                    auto init = std::get<1>(res);
+                    varType = type;
+
+                    globalOp.typeAttr(mlir::TypeAttr::get(type));
+
                     // save value
                     auto address = builder.create<mlir_ts::AddressOfOp>(location, mlir_ts::RefType::get(type), name);
                     builder.create<mlir_ts::StoreOp>(location, init, address);
                 }
-
-                declare(varDecl, mlir::Value());
             }
+
+            // registering variable
+            auto varDecl = std::make_shared<VariableDeclarationDOM>(name, varType, location);
+            if (!isConst)
+            {
+                varDecl->setReadWriteAccess();
+            }
+
+            varDecl->setIsGlobal(isGlobal);
+
+            declare(varDecl, variableOp);
         }
 
         template <typename ItemTy>
-        void processDeclaration(ItemTy item, VariableClass varClass, mlir::Type type, mlir::Value init, const GenContext &genContext)
+        void processDeclaration(ItemTy item, VariableClass varClass, std::function<std::pair<mlir::Type, mlir::Value>()> func, const GenContext &genContext)
         {
             auto location = loc(item);
 
             if (item->name == SyntaxKind::ArrayBindingPattern)
             {
+                auto res = func();
+                auto type = std::get<0>(res);
+                auto init = std::get<1>(res);
+
                 auto arrayBindingPattern = item->name.as<ArrayBindingPattern>();
                 auto index = 0;
                 for (auto arrayBindingElement : arrayBindingPattern->elements)
@@ -602,7 +645,11 @@ namespace
                         .Default([&](auto type)
                                  { llvm_unreachable("not implemented"); });
 
-                    processDeclaration(arrayBindingElement.as<BindingElement>(), varClass, subInit.getType(), subInit, genContext);
+                    processDeclaration(
+                        arrayBindingElement.as<BindingElement>(), varClass,
+                        [&]()
+                        { return std::make_pair(subInit.getType(), subInit); },
+                        genContext);
                 }
             }
             else
@@ -611,7 +658,7 @@ namespace
                 auto name = MLIRHelper::getName(item->name);
 
                 // register
-                registerVariable(location, name, varClass, type, init);
+                registerVariable(location, name, varClass, func);
             }
         }
 
@@ -624,31 +671,36 @@ namespace
 
             for (auto &item : variableDeclarationListAST->declarations)
             {
-                // type
-                mlir::Type type;
-                if (item->type)
+                auto initFunc = [&]()
                 {
-                    type = getType(item->type);
-                }
-
-                // init
-                mlir::Value init;
-                if (auto initializer = item->initializer)
-                {
-                    init = mlirGen(initializer, genContext);
-                    if (init)
+                    // type
+                    mlir::Type type;
+                    if (item->type)
                     {
-                        if (!type)
+                        type = getType(item->type);
+                    }
+
+                    // init
+                    mlir::Value init;
+                    if (auto initializer = item->initializer)
+                    {
+                        init = mlirGen(initializer, genContext);
+                        if (init)
                         {
-                            type = init.getType();
-                        }
-                        else if (type != init.getType())
-                        {
-                            auto castValue = builder.create<mlir_ts::CastOp>(loc(initializer), type, init);
-                            init = castValue;
+                            if (!type)
+                            {
+                                type = init.getType();
+                            }
+                            else if (type != init.getType())
+                            {
+                                auto castValue = builder.create<mlir_ts::CastOp>(loc(initializer), type, init);
+                                init = castValue;
+                            }
                         }
                     }
-                }
+
+                    return std::make_pair(type, init);
+                };
 
                 auto valClassItem = varClass;
                 if ((item->transformFlags & TransformFlags::ForceConst) == TransformFlags::ForceConst)
@@ -656,7 +708,7 @@ namespace
                     valClassItem = VariableClass::Const;
                 }
 
-                processDeclaration(item, valClassItem, type, init, genContext);
+                processDeclaration(item, valClassItem, initFunc, genContext);
             }
 
             return mlir::success();

@@ -1159,7 +1159,7 @@ def TypeScript_AddressOfElementOp : TypeScript_Op<"AddressOfElement"> {
 }
 
 def TypeScript_GlobalOp : TypeScript_Op<"Global",
-    [IsolatedFromAbove, SingleBlockImplicitTerminator<"ReturnOp">, Symbol]> {
+    [IsolatedFromAbove, SingleBlockImplicitTerminator<"GlobalResultOp">, Symbol]> {
   let arguments = (ins
     TypeAttr:$type,
     UnitAttr:$constant,
@@ -1196,6 +1196,17 @@ def TypeScript_GlobalOp : TypeScript_Op<"Global",
         nullptr : &getInitializerRegion().front();
     }
   }];
+}
+
+def TypeScript_GlobalResultOp : TypeScript_Op<"GlobalResult", [NoSideEffect, ReturnLike, Terminator,
+                               ParentOneOf<["GlobalOp"]>]> {
+  let summary = "global init yield and termination operation";
+
+  let arguments = (ins Variadic<AnyType>:$results);
+  let builders = [OpBuilder<(ins), [{ /* nothing to do */ }]>];
+  // Override default verifier, no custom verification
+  // needed.
+  let verifier = ?;
 }
 
 def TypeScript_LengthOfOp : TypeScript_Op<"LengthOf"> {
