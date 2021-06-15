@@ -130,8 +130,37 @@ class MLIRGenImpl
 
         SymbolTableScopeT varScope(symbolTable);
 
-        declareAllTypesAndEnumsDeclarations(module);
-        declareAllFunctionDeclarationsAndGlobalVars(module);
+        // declareAllTypesAndEnumsDeclarations(module);
+        // declareAllFunctionDeclarationsAndGlobalVars(module);
+
+        // Process generating here
+        GenContext genContextPartial = {0};
+        genContextPartial.allowPartialResolve = true;
+        genContextPartial.dummyRun = true;
+        genContextPartial.cleanUps = new mlir::SmallVector<mlir::Block *>();
+        auto notAllResolved = false;
+        do
+        {
+            GenContext genContext = {0};
+            for (auto &statement : module->statements)
+            {
+                if (statement->processed)
+                {
+                    continue;
+                }
+
+                if (failed(mlirGen(statement, genContextPartial)))
+                {
+                    notAllResolved = true;
+                }
+                else
+                {
+                    statement->processed = true;
+                }
+            }
+        } while (notAllResolved);
+
+        genContextPartial.clean();
 
         // clean up
         theModule.getBody()->clear();
@@ -525,6 +554,7 @@ class MLIRGenImpl
             auto res = func();
             auto type = std::get<0>(res);
             auto init = std::get<1>(res);
+            assert(type);
             varType = type;
 
             if (isConst)
@@ -570,6 +600,7 @@ class MLIRGenImpl
                     auto res = func();
                     auto type = std::get<0>(res);
                     auto init = std::get<1>(res);
+                    assert(type);
                     varType = type;
 
                     globalOp.typeAttr(mlir::TypeAttr::get(type));
@@ -592,6 +623,7 @@ class MLIRGenImpl
                 auto res = func();
                 auto type = std::get<0>(res);
                 auto init = std::get<1>(res);
+                assert(type);
                 varType = type;
 
                 globalOp.typeAttr(mlir::TypeAttr::get(type));
