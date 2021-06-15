@@ -94,7 +94,6 @@ struct GenContext
     bool dummyRun;
     bool allowConstEval;
     mlir_ts::FuncOp funcOp;
-    mlir::Type functionDiscoveredReturnType;
     PassResult *passResult;
     mlir::SmallVector<mlir::Block *> *cleanUps;
 };
@@ -187,8 +186,8 @@ class MLIRGenImpl
         genContext.allowPartialResolve = true;
         do
         {
-            FilterVisitorSkipFuncsAST<VariableStatement> globalsVisitorAST(SyntaxKind::VariableStatement,
-                                                                           [&](auto varStatement) { mlirGen(varStatement, genContext); });
+            FilterVisitorAST /*FilterVisitorSkipFuncsAST*/<VariableStatement> globalsVisitorAST(
+                SyntaxKind::VariableStatement, [&](auto varStatement) { mlirGen(varStatement, genContext); });
             globalsVisitorAST.visit(module);
 
             mlir::SmallVector<StringRef> unresolvedFuncs;
@@ -834,10 +833,9 @@ class MLIRGenImpl
         }
         else if (mlir::succeeded(
                      discoverFunctionReturnTypeAndCapturedVars(functionLikeDeclarationBaseAST, name, argTypes, funcProto, genContext)) &&
-                 genContext.functionDiscoveredReturnType)
+                 funcProto->getReturnType())
         {
-            funcProto->setReturnType(genContext.functionDiscoveredReturnType);
-            funcType = builder.getFunctionType(argTypes, genContext.functionDiscoveredReturnType);
+            funcType = builder.getFunctionType(argTypes, funcProto->getReturnType());
         }
         else
         {
@@ -856,6 +854,11 @@ class MLIRGenImpl
                                                                   const FunctionPrototypeDOM::TypePtr &funcProto,
                                                                   const GenContext &genContext)
     {
+        if (funcProto->getDiscovered())
+        {
+            return mlir::failure();
+        }
+
         mlir::OpBuilder::InsertionGuard guard(builder);
 
         auto partialDeclFuncType = builder.getFunctionType(argTypes, llvm::None);
@@ -868,12 +871,16 @@ class MLIRGenImpl
             GenContext genContextWithPassResult(genContext);
             genContextWithPassResult.allowPartialResolve = true;
             genContextWithPassResult.dummyRun = true;
-            genContextWithPassResult.functionDiscoveredReturnType = nullptr;
             genContextWithPassResult.cleanUps = new SmallVector<mlir::Block *>();
             genContextWithPassResult.passResult = new PassResult();
             if (succeeded(mlirGenFunctionBody(functionLikeDeclarationBaseAST, dummyFuncOp, funcProto, genContextWithPassResult)))
             {
-                const_cast<GenContext &>(genContext).functionDiscoveredReturnType = genContextWithPassResult.passResult->functionReturnType;
+                funcProto->setDiscovered(true);
+                auto discoveredType = genContextWithPassResult.passResult->functionReturnType;
+                if (discoveredType && discoveredType != funcProto->getReturnType())
+                {
+                    funcProto->setReturnType(discoveredType);
+                }
             }
 
             genContextWithPassResult.clean();
@@ -953,11 +960,6 @@ class MLIRGenImpl
 
         auto funcGenContext = GenContext(genContext);
         funcGenContext.funcOp = funcOp;
-        if (funcOp.getNumResults() > 0)
-        {
-            funcGenContext.functionDiscoveredReturnType = funcOp.getType().getResult(0);
-        }
-
         auto returnType = mlirGenFunctionBody(functionLikeDeclarationBaseAST, funcOp, funcProto, funcGenContext);
 
         // set visibility index
@@ -1130,10 +1132,19 @@ class MLIRGenImpl
             return mlir::success();
         }
 
-        if (genContext.functionDiscoveredReturnType && genContext.functionDiscoveredReturnType != expressionValue.getType())
+        auto funcOp = const_cast<GenContext &>(genContext).funcOp;
+        if (funcOp)
         {
-            auto castValue = builder.create<mlir_ts::CastOp>(location, genContext.functionDiscoveredReturnType, expressionValue);
-            expressionValue = castValue;
+            auto countResults = funcOp.getCallableResults().size();
+            if (countResults > 0)
+            {
+                auto returnType = funcOp.getCallableResults().front();
+                if (returnType != expressionValue.getType())
+                {
+                    auto castValue = builder.create<mlir_ts::CastOp>(location, returnType, expressionValue);
+                    expressionValue = castValue;
+                }
+            }
         }
 
         // record return type if not provided
