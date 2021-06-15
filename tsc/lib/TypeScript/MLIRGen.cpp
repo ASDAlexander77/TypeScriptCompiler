@@ -71,6 +71,7 @@ struct GenContext
 {
     GenContext() = default;
 
+    // TODO: you are using "theModule.getBody()->clear();", do you need this hack anymore?
     void clean()
     {
         if (cleanUps)
@@ -128,10 +129,13 @@ class MLIRGenImpl
         theModule = mlir::ModuleOp::create(loc(module), fileName);
         builder.setInsertionPointToStart(theModule.getBody());
 
+        SymbolTableScopeT varScope(symbolTable);
+
         declareAllTypesAndEnumsDeclarations(module);
         declareAllFunctionDeclarationsAndGlobalVars(module);
 
-        SymbolTableScopeT varScope(symbolTable);
+        // clean up
+        theModule.getBody()->clear();
 
         // Process generating here
         GenContext genContext = {0};
@@ -183,8 +187,8 @@ class MLIRGenImpl
         genContext.allowPartialResolve = true;
         do
         {
-            FilterVisitorAST<VariableStatement> globalsVisitorAST(SyntaxKind::VariableStatement,
-                                                                  [&](auto varStatement) { mlirGen(varStatement, genContext); });
+            FilterVisitorSkipFuncsAST<VariableStatement> globalsVisitorAST(SyntaxKind::VariableStatement,
+                                                                           [&](auto varStatement) { mlirGen(varStatement, genContext); });
             globalsVisitorAST.visit(module);
 
             mlir::SmallVector<StringRef> unresolvedFuncs;
