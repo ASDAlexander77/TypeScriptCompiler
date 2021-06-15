@@ -540,7 +540,7 @@ class MLIRGenImpl
         llvm_unreachable("unknown expression");
     }
 
-    void registerVariable(mlir::Location location, StringRef name, VariableClass varClass,
+    bool registerVariable(mlir::Location location, StringRef name, VariableClass varClass,
                           std::function<std::pair<mlir::Type, mlir::Value>()> func, const GenContext &genContext)
     {
         auto isGlobalScope = symbolTable.getCurScope()->getParentScope() == nullptr;
@@ -554,6 +554,11 @@ class MLIRGenImpl
             auto res = func();
             auto type = std::get<0>(res);
             auto init = std::get<1>(res);
+            if (!type && genContext.allowPartialResolve)
+            {
+                return false;
+            }
+
             assert(type);
             varType = type;
 
@@ -600,6 +605,11 @@ class MLIRGenImpl
                     auto res = func();
                     auto type = std::get<0>(res);
                     auto init = std::get<1>(res);
+                    if (!type && genContext.allowPartialResolve)
+                    {
+                        return false;
+                    }
+
                     assert(type);
                     varType = type;
 
@@ -623,6 +633,11 @@ class MLIRGenImpl
                 auto res = func();
                 auto type = std::get<0>(res);
                 auto init = std::get<1>(res);
+                if (!type && genContext.allowPartialResolve)
+                {
+                    return false;
+                }
+
                 assert(type);
                 varType = type;
 
@@ -645,10 +660,12 @@ class MLIRGenImpl
         varDecl->setFuncOp(genContext.funcOp);
 
         declare(varDecl, variableOp);
+
+        return true;
     }
 
     template <typename ItemTy>
-    void processDeclaration(ItemTy item, VariableClass varClass, std::function<std::pair<mlir::Type, mlir::Value>()> func,
+    bool processDeclaration(ItemTy item, VariableClass varClass, std::function<std::pair<mlir::Type, mlir::Value>()> func,
                             const GenContext &genContext)
     {
         auto location = loc(item);
@@ -670,9 +687,12 @@ class MLIRGenImpl
                     .Case<mlir_ts::TupleType>([&](auto tupleType) { subInit = cl.Tuple(tupleType, true); })
                     .Default([&](auto type) { llvm_unreachable("not implemented"); });
 
-                processDeclaration(
-                    arrayBindingElement.as<BindingElement>(), varClass, [&]() { return std::make_pair(subInit.getType(), subInit); },
-                    genContext);
+                if (!processDeclaration(
+                        arrayBindingElement.as<BindingElement>(), varClass, [&]() { return std::make_pair(subInit.getType(), subInit); },
+                        genContext))
+                {
+                    return false;
+                }
             }
         }
         else
@@ -681,8 +701,10 @@ class MLIRGenImpl
             auto name = MLIRHelper::getName(item->name);
 
             // register
-            registerVariable(location, name, varClass, func, genContext);
+            return registerVariable(location, name, varClass, func, genContext);
         }
+
+        return true;
     }
 
     mlir::LogicalResult mlirGen(VariableDeclarationList variableDeclarationListAST, const GenContext &genContext)
@@ -729,7 +751,10 @@ class MLIRGenImpl
                 valClassItem = VariableClass::Const;
             }
 
-            processDeclaration(item, valClassItem, initFunc, genContext);
+            if (!processDeclaration(item, valClassItem, initFunc, genContext))
+            {
+                return mlir::failure();
+            }
         }
 
         return mlir::success();
@@ -2351,6 +2376,10 @@ llvm.return %5 : i32
 
         // get function ref.
         auto funcRefValue = mlirGen(callExpression->expression.as<Expression>(), genContext);
+        if (!funcRefValue && genContext.allowPartialResolve)
+        {
+            return mlir::Value();
+        }
 
         auto attrName = StringRef(IDENTIFIER_ATTR_NAME);
         auto definingOp = funcRefValue.getDefiningOp();
