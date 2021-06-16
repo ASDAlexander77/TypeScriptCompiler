@@ -916,6 +916,8 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
+        LLVM_DEBUG(llvm::dbgs() << "discover func ret type for : " << name << "\n";);
+
         mlir::OpBuilder::InsertionGuard guard(builder);
 
         auto partialDeclFuncType = builder.getFunctionType(argTypes, llvm::None);
@@ -926,6 +928,7 @@ class MLIRGenImpl
             SymbolTableScopeT varScope(symbolTable);
 
             GenContext genContextWithPassResult(genContext);
+            genContextWithPassResult.funcOp = nullptr;
             genContextWithPassResult.allowPartialResolve = true;
             genContextWithPassResult.dummyRun = true;
             genContextWithPassResult.cleanUps = new SmallVector<mlir::Block *>();
@@ -937,6 +940,7 @@ class MLIRGenImpl
                 if (discoveredType && discoveredType != funcProto->getReturnType())
                 {
                     funcProto->setReturnType(discoveredType);
+                    LLVM_DEBUG(llvm::dbgs() << "ret type is : " << funcProto->getReturnType() << "\n";);
                 }
             }
 
