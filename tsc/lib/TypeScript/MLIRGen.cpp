@@ -888,16 +888,39 @@ class MLIRGenImpl
             funcProto->setReturnType(returnType);
             funcType = builder.getFunctionType(argTypes, returnType);
         }
-        else if (mlir::succeeded(
-                     discoverFunctionReturnTypeAndCapturedVars(functionLikeDeclarationBaseAST, name, argTypes, funcProto, genContext)) &&
-                 funcProto->getReturnType())
-        {
-            funcType = builder.getFunctionType(argTypes, funcProto->getReturnType());
-        }
         else
         {
-            // no return type
-            funcType = builder.getFunctionType(argTypes, llvm::None);
+            // check if function already discovered
+            auto funcIt = functionMap.find(name);
+            if (funcIt != functionMap.end())
+            {
+                auto cachedFuncType = funcIt->second.getType();
+                if (cachedFuncType.getNumResults() > 0)
+                {
+                    auto returnType = cachedFuncType.getResult(0);
+                    funcProto->setReturnType(returnType);
+                    funcType = builder.getFunctionType(argTypes, returnType);
+                }
+                else
+                {
+                    funcType = builder.getFunctionType(argTypes, llvm::None);
+                }
+            }
+        }
+
+        if (!funcType)
+        {
+            if (mlir::succeeded(
+                    discoverFunctionReturnTypeAndCapturedVars(functionLikeDeclarationBaseAST, name, argTypes, funcProto, genContext)) &&
+                funcProto->getReturnType())
+            {
+                funcType = builder.getFunctionType(argTypes, funcProto->getReturnType());
+            }
+            else
+            {
+                // no return type
+                funcType = builder.getFunctionType(argTypes, llvm::None);
+            }
         }
 
         SmallVector<mlir::NamedAttribute> attrs;
