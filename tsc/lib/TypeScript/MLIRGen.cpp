@@ -82,11 +82,13 @@ struct GenContext
             }
 
             delete cleanUps;
+            cleanUps = nullptr;
         }
 
         if (passResult)
         {
             delete passResult;
+            passResult = nullptr;
         }
     }
 
@@ -885,7 +887,7 @@ class MLIRGenImpl
             // simulate scope
             SymbolTableScopeT varScope(symbolTable);
 
-            GenContext genContextWithPassResult(genContext);
+            GenContext genContextWithPassResult = {0};
             genContextWithPassResult.funcOp = nullptr;
             genContextWithPassResult.allowPartialResolve = true;
             genContextWithPassResult.dummyRun = true;
@@ -898,7 +900,7 @@ class MLIRGenImpl
                 if (discoveredType && discoveredType != funcProto->getReturnType())
                 {
                     funcProto->setReturnType(discoveredType);
-                    LLVM_DEBUG(llvm::dbgs() << "ret type is : " << funcProto->getReturnType() << "\n";);
+                    LLVM_DEBUG(llvm::dbgs() << "ret type for " << name << " : " << funcProto->getReturnType() << "\n";);
                 }
             }
 
@@ -979,6 +981,7 @@ class MLIRGenImpl
 
         auto funcGenContext = GenContext(genContext);
         funcGenContext.funcOp = funcOp;
+        funcGenContext.passResult = nullptr;
         auto returnType = mlirGenFunctionBody(functionLikeDeclarationBaseAST, funcOp, funcProto, funcGenContext);
 
         // set visibility index
