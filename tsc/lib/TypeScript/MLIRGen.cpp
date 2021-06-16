@@ -888,7 +888,7 @@ class MLIRGenImpl
             SymbolTableScopeT varScope(symbolTable);
 
             GenContext genContextWithPassResult = {0};
-            genContextWithPassResult.funcOp = nullptr;
+            genContextWithPassResult.funcOp = dummyFuncOp;
             genContextWithPassResult.allowPartialResolve = true;
             genContextWithPassResult.dummyRun = true;
             genContextWithPassResult.cleanUps = new SmallVector<mlir::Block *>();
@@ -2834,14 +2834,24 @@ llvm.return %5 : i32
         auto value = symbolTable.lookup(name);
         if (value.second)
         {
-            auto isOuterFunctionScope = value.second->getFuncOp() != genContext.funcOp;
-            if (isOuterFunctionScope)
-            {
-                // create clone of external variable
-            }
-
             if (value.first)
             {
+                // begin of logic: outer vars
+                auto valueRegion = value.first.getParentRegion();
+                auto isOuterVar = false;
+                if (genContext.funcOp)
+                {
+                    auto funcRegion = const_cast<GenContext &>(genContext).funcOp.getCallableRegion();
+                    isOuterVar = !funcRegion->isAncestor(valueRegion);
+                }
+
+                auto isOuterFunctionScope = value.second->getFuncOp() != genContext.funcOp;
+
+                LLVM_DEBUG(llvm::dbgs() << "isOuterFunctionScope: " << (isOuterFunctionScope ? "true" : "false")
+                                        << ", isOuterVar: " << (isOuterVar ? "true" : "false") << " name: " << name << "\n");
+
+                // end of logic: outer vars
+
                 if (!value.second->getReadWriteAccess())
                 {
                     return value.first;
