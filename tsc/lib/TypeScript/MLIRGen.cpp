@@ -55,6 +55,9 @@ using llvm::Twine;
 
 namespace
 {
+using VariablePairT = std::pair<mlir::Value, VariableDeclarationDOM::TypePtr>;
+using SymbolTableScopeT = llvm::ScopedHashTableScope<StringRef, VariablePairT>;
+
 enum class VariableClass
 {
     Const,
@@ -65,6 +68,7 @@ enum class VariableClass
 struct PassResult
 {
     mlir::Type functionReturnType;
+    llvm::StringMap<VariablePairT> outerVariables;
 };
 
 struct GenContext
@@ -107,9 +111,6 @@ struct GenContext
 /// analysis and transformation based on these high level semantics.
 class MLIRGenImpl
 {
-    using VariablePairT = std::pair<mlir::Value, VariableDeclarationDOM::TypePtr>;
-    using SymbolTableScopeT = llvm::ScopedHashTableScope<StringRef, VariablePairT>;
-
   public:
     MLIRGenImpl(const mlir::MLIRContext &context) : builder(&const_cast<mlir::MLIRContext &>(context))
     {
@@ -867,7 +868,7 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult discoverFunctionReturnTypeAndCapturedVars(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST,
-                                                                  StringRef name, ArrayRef<mlir::Type> argTypes,
+                                                                  StringRef name, SmallVector<mlir::Type> &argTypes,
                                                                   const FunctionPrototypeDOM::TypePtr &funcProto,
                                                                   const GenContext &genContext)
     {
@@ -901,6 +902,21 @@ class MLIRGenImpl
                 {
                     funcProto->setReturnType(discoveredType);
                     LLVM_DEBUG(llvm::dbgs() << "ret type for " << name << " : " << funcProto->getReturnType() << "\n";);
+                }
+
+                // if we have captured parameters, add first param to send lamdas type(class)
+                if (genContextWithPassResult.passResult->outerVariables.size() > 0)
+                {
+                    SmallVector<mlir_ts::FieldInfo> fields;
+                    for (auto &varInfo : genContextWithPassResult.passResult->outerVariables)
+                    {
+                        auto &val = varInfo.getValue().second;
+                        fields.push_back(
+                            mlir_ts::FieldInfo{mlir::FlatSymbolRefAttr::get(builder.getContext(), val->getName()), val->getType()});
+                    }
+
+                    auto lambdaType = mlir_ts::TupleType::get(builder.getContext(), fields);
+                    argTypes.push_back(mlir_ts::RefType::get(lambdaType));
                 }
             }
 
@@ -982,10 +998,15 @@ class MLIRGenImpl
         auto funcGenContext = GenContext(genContext);
         funcGenContext.funcOp = funcOp;
         funcGenContext.passResult = nullptr;
-        auto returnType = mlirGenFunctionBody(functionLikeDeclarationBaseAST, funcOp, funcProto, funcGenContext);
+        auto resultFromBody = mlirGenFunctionBody(functionLikeDeclarationBaseAST, funcOp, funcProto, funcGenContext);
+        if (mlir::failed(resultFromBody))
+        {
+            return funcOp;
+        }
 
         // set visibility index
-        if (funcOp.getName() != StringRef("main"))
+        auto name = funcOp.getName();
+        if (name != StringRef("main"))
         {
             funcOp.setPrivate();
         }
@@ -995,7 +1016,12 @@ class MLIRGenImpl
             theModule.push_back(funcOp);
         }
 
-        functionMap.insert({funcOp.getName(), funcOp});
+        if (!functionMap.count(name))
+        {
+            functionMap.insert({name, funcOp});
+
+            LLVM_DEBUG(llvm::dbgs() << "reg. func: " << name << " type:" << funcOp.getType() << "\n";);
+        }
 
         return funcOp;
     }
@@ -2849,6 +2875,11 @@ llvm.return %5 : i32
 
                 LLVM_DEBUG(llvm::dbgs() << "isOuterFunctionScope: " << (isOuterFunctionScope ? "true" : "false")
                                         << ", isOuterVar: " << (isOuterVar ? "true" : "false") << " name: " << name << "\n");
+
+                if (isOuterVar && genContext.passResult)
+                {
+                    genContext.passResult->outerVariables.insert({value.second->getName(), value});
+                }
 
                 // end of logic: outer vars
 
