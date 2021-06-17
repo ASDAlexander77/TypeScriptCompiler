@@ -820,34 +820,33 @@ class MLIRGenImpl
         auto funcProto = std::make_shared<FunctionPrototypeDOM>(name, params);
 
         mlir::FunctionType funcType;
-        if (auto typeParameter = functionLikeDeclarationBaseAST->type)
+
+        // check if function already discovered
+        auto funcIt = functionMap.find(name);
+        if (funcIt != functionMap.end())
         {
-            auto returnType = getType(typeParameter);
-            funcProto->setReturnType(returnType);
-            funcType = builder.getFunctionType(argTypes, returnType);
-        }
-        else
-        {
-            // check if function already discovered
-            auto funcIt = functionMap.find(name);
-            if (funcIt != functionMap.end())
+            auto cachedFuncType = funcIt->second.getType();
+            if (cachedFuncType.getNumResults() > 0)
             {
-                auto cachedFuncType = funcIt->second.getType();
-                if (cachedFuncType.getNumResults() > 0)
-                {
-                    auto returnType = cachedFuncType.getResult(0);
-                    funcProto->setReturnType(returnType);
-                    funcType = builder.getFunctionType(argTypes, returnType);
-                }
-                else
-                {
-                    funcType = builder.getFunctionType(argTypes, llvm::None);
-                }
+                auto returnType = cachedFuncType.getResult(0);
+                funcProto->setReturnType(returnType);
+                funcType = builder.getFunctionType(cachedFuncType.getInputs(), returnType);
+            }
+            else
+            {
+                funcType = builder.getFunctionType(cachedFuncType.getInputs(), llvm::None);
             }
         }
 
+        // discover type & args
         if (!funcType)
         {
+            if (auto typeParameter = functionLikeDeclarationBaseAST->type)
+            {
+                auto returnType = getType(typeParameter);
+                funcProto->setReturnType(returnType);
+            }
+
             if (mlir::succeeded(
                     discoverFunctionReturnTypeAndCapturedVars(functionLikeDeclarationBaseAST, name, argTypes, funcProto, genContext)) &&
                 funcProto->getReturnType())
@@ -1021,6 +1020,10 @@ class MLIRGenImpl
             functionMap.insert({name, funcOp});
 
             LLVM_DEBUG(llvm::dbgs() << "reg. func: " << name << " type:" << funcOp.getType() << "\n";);
+        }
+        else
+        {
+            LLVM_DEBUG(llvm::dbgs() << "re-process. func: " << name << " type:" << funcOp.getType() << "\n";);
         }
 
         return funcOp;
