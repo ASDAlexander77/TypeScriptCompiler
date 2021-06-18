@@ -18,10 +18,13 @@
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/Debug.h"
 
 #include "TypeScript/CommonGenLogic.h"
 
 #include <numeric>
+
+#define DEBUG_TYPE "mlir"
 
 namespace mlir_ts = mlir::typescript;
 
@@ -363,6 +366,18 @@ class MLIRPropertyAccessCodeLogic
             {
                 llvm_unreachable("not implemented");
             }
+        }
+        else
+        {
+            llvm_unreachable("not implemented");
+        }
+    }
+
+    template <typename T> mlir::Value Ref(T refType)
+    {
+        if (auto tupleType = refType.getElementType().dyn_cast_or_null<mlir_ts::TupleType>())
+        {
+            return Tuple(tupleType);
         }
         else
         {

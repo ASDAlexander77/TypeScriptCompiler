@@ -52,7 +52,7 @@ class VariableDeclarationDOM : public BaseDOM
     using TypePtr = std::shared_ptr<VariableDeclarationDOM>;
 
     VariableDeclarationDOM(StringRef name, mlir::Type type, mlir::Location loc, Expression initValue = undefined)
-        : BaseDOM(Base_VariableDeclaration), name(name), type(type), loc(loc), initValue(initValue), readWrite(false)
+        : BaseDOM(Base_VariableDeclaration), name(name), type(type), loc(loc), initValue(initValue), readWrite(false), isGlobal(false)
     {
     }
 
@@ -141,7 +141,8 @@ class FunctionPrototypeDOM
   public:
     using TypePtr = std::shared_ptr<FunctionPrototypeDOM>;
 
-    FunctionPrototypeDOM(StringRef name, std::vector<FunctionParamDOM::TypePtr> args) : name(name), args(args), discovered(false)
+    FunctionPrototypeDOM(StringRef name, std::vector<FunctionParamDOM::TypePtr> args)
+        : name(name), args(args), discovered(false), returnType()
     {
     }
 

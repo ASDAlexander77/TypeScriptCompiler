@@ -1074,7 +1074,7 @@ class MLIRGenImpl
 
         auto thisParamVar = std::make_shared<VariableDeclarationDOM>(THIS_NAME, thisRefType, loc);
 
-        auto thisParamValue = builder.create<mlir_ts::ParamOp>(loc, mlir_ts::RefType::get(thisRefType), thisParam);
+        auto thisParamValue = builder.create<mlir_ts::ParamOp>(loc, thisRefType, thisParam);
         declare(thisParamVar, thisParamValue);
 
         return mlir::success();
@@ -1168,8 +1168,8 @@ class MLIRGenImpl
             auto _this_name = nf.createPropertyAccessExpression(_this, _name);
             auto thisVarRefValue = mlirGen(_this_name, genContext);
 
-            mlir::Value capturedRefValue = builder.create<mlir_ts::ParamCapturedOp>(
-                variableInfo->getLoc(), mlir_ts::RefType::get(variableInfo->getType()), thisVarRefValue);
+            mlir::Value capturedRefValue =
+                builder.create<mlir_ts::ParamCapturedOp>(variableInfo->getLoc(), variableInfo->getType(), thisVarRefValue);
 
             auto capturedParam = std::make_shared<VariableDeclarationDOM>(name, variableInfo->getType(), variableInfo->getLoc());
             capturedParam->setReadWriteAccess();
@@ -2402,6 +2402,7 @@ llvm.return %5 : i32
             .Case<mlir_ts::StringType>([&](auto stringType) { value = cl.String(stringType); })
             .Case<mlir_ts::ConstArrayType>([&](auto arrayType) { value = cl.Array(arrayType); })
             .Case<mlir_ts::ArrayType>([&](auto arrayType) { value = cl.Array(arrayType); })
+            .Case<mlir_ts::RefType>([&](auto refType) { value = cl.Ref(refType); })
             .Default([](auto type) { llvm_unreachable("not implemented"); });
 
         if (value)
