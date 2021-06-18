@@ -910,12 +910,14 @@ class MLIRGenImpl
                     for (auto &varInfo : genContextWithPassResult.passResult->outerVariables)
                     {
                         auto &val = varInfo.getValue().second;
-                        fields.push_back(
-                            mlir_ts::FieldInfo{mlir::FlatSymbolRefAttr::get(builder.getContext(), val->getName()), val->getType()});
+                        fields.push_back(mlir_ts::FieldInfo{mlir::FlatSymbolRefAttr::get(builder.getContext(), val->getName()),
+                                                            mlir_ts::RefType::get(val->getType())});
                     }
 
                     auto lambdaType = mlir_ts::TupleType::get(builder.getContext(), fields);
-                    argTypes.push_back(mlir_ts::RefType::get(lambdaType));
+                    argTypes.insert(argTypes.begin(), mlir_ts::RefType::get(lambdaType));
+
+                    captureVarsMap.insert({name, genContextWithPassResult.passResult->outerVariables});
                 }
             }
 
@@ -1029,31 +1031,12 @@ class MLIRGenImpl
         return funcOp;
     }
 
-    mlir::LogicalResult mlirGenFunctionBody(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, mlir_ts::FuncOp funcOp,
-                                            FunctionPrototypeDOM::TypePtr funcProto, const GenContext &genContext)
+    mlir::LogicalResult mlirGenFunctionEntry(mlir::Location location, FunctionPrototypeDOM::TypePtr funcProto, const GenContext &genContext)
     {
-        auto *blockPtr = funcOp.addEntryBlock();
-        auto &entryBlock = *blockPtr;
-
-        // process function params
-        for (auto paramPairs : llvm::zip(funcProto->getArgs(), entryBlock.getArguments()))
-        {
-            if (failed(declare(std::get<0>(paramPairs), std::get<1>(paramPairs))))
-            {
-                return mlir::failure();
-            }
-        }
-
-        // allocate all params
-
-        builder.setInsertionPointToStart(&entryBlock);
-
-        // add exit code
         auto retType = funcProto->getReturnType();
         auto hasReturn = retType && !retType.isa<mlir_ts::VoidType>();
         if (hasReturn)
         {
-            auto location = loc(functionLikeDeclarationBaseAST);
             auto entryOp = builder.create<mlir_ts::EntryOp>(location, mlir_ts::RefType::get(retType));
             auto varDecl = std::make_shared<VariableDeclarationDOM>(RETURN_VARIABLE_NAME, retType, location);
             varDecl->setReadWriteAccess();
@@ -1061,12 +1044,46 @@ class MLIRGenImpl
         }
         else
         {
-            builder.create<mlir_ts::EntryOp>(loc(functionLikeDeclarationBaseAST), mlir::Type());
+            builder.create<mlir_ts::EntryOp>(location, mlir::Type());
         }
 
-        auto arguments = entryBlock.getArguments();
+        return mlir::success();
+    }
 
-        auto index = -1;
+    mlir::LogicalResult mlirGenFunctionExit(mlir::Location location, const GenContext &genContext)
+    {
+        builder.create<mlir_ts::ExitOp>(location);
+        return mlir::success();
+    }
+
+    mlir::LogicalResult mlirGenFunctionThisParam(mlir::Location loc, int &firstIndex, FunctionPrototypeDOM::TypePtr funcProto,
+                                                 mlir::Block::BlockArgListType arguments, const GenContext &genContext)
+    {
+        // register this if lambda function
+        auto it = captureVarsMap.find(funcProto->getName());
+        if (it == captureVarsMap.end())
+        {
+            return mlir::success();
+        }
+
+        firstIndex++;
+        auto capturedVars = it->getValue();
+
+        auto thisParam = arguments[firstIndex];
+        auto thisRefType = thisParam.getType();
+
+        auto thisParamVar = std::make_shared<VariableDeclarationDOM>(THIS_NAME, thisRefType, loc);
+
+        auto thisParamValue = builder.create<mlir_ts::ParamOp>(loc, mlir_ts::RefType::get(thisRefType), thisParam);
+        declare(thisParamVar, thisParamValue);
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult mlirGenFunctionParams(int firstIndex, FunctionPrototypeDOM::TypePtr funcProto,
+                                              mlir::Block::BlockArgListType arguments, const GenContext &genContext)
+    {
+        auto index = firstIndex;
         for (const auto &param : funcProto->getArgs())
         {
             index++;
@@ -1123,13 +1140,102 @@ class MLIRGenImpl
             }
         }
 
+        return mlir::success();
+    }
+
+    mlir::LogicalResult mlirGenFunctionCaptures(FunctionPrototypeDOM::TypePtr funcProto, const GenContext &genContext)
+    {
+        auto it = captureVarsMap.find(funcProto->getName());
+        if (it == captureVarsMap.end())
+        {
+            return mlir::success();
+        }
+
+        auto capturedVars = it->getValue();
+
+        NodeFactory nf(NodeFactoryFlags::None);
+
+        // create variables
+        for (auto &capturedVar : capturedVars)
+        {
+            auto varItem = capturedVar.getValue();
+            auto variableInfo = varItem.second;
+            auto name = variableInfo->getName();
+
+            // load this.<var name>
+            auto _this = nf.createIdentifier(stows(THIS_NAME));
+            auto _name = nf.createIdentifier(stows(std::string(name)));
+            auto _this_name = nf.createPropertyAccessExpression(_this, _name);
+            auto thisVarRefValue = mlirGen(_this_name, genContext);
+
+            mlir::Value capturedRefValue = builder.create<mlir_ts::ParamCapturedOp>(
+                variableInfo->getLoc(), mlir_ts::RefType::get(variableInfo->getType()), thisVarRefValue);
+
+            auto capturedParam = std::make_shared<VariableDeclarationDOM>(name, variableInfo->getType(), variableInfo->getLoc());
+            capturedParam->setReadWriteAccess();
+            declare(capturedParam, capturedRefValue);
+        }
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult mlirGenFunctionBody(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, mlir_ts::FuncOp funcOp,
+                                            FunctionPrototypeDOM::TypePtr funcProto, const GenContext &genContext)
+    {
+        auto location = loc(functionLikeDeclarationBaseAST);
+
+        auto *blockPtr = funcOp.addEntryBlock();
+        auto &entryBlock = *blockPtr;
+
+        // process function params
+        for (auto paramPairs : llvm::zip(funcProto->getArgs(), entryBlock.getArguments()))
+        {
+            if (failed(declare(std::get<0>(paramPairs), std::get<1>(paramPairs))))
+            {
+                return mlir::failure();
+            }
+        }
+
+        // allocate all params
+
+        builder.setInsertionPointToStart(&entryBlock);
+
+        auto arguments = entryBlock.getArguments();
+        auto firstIndex = -1;
+
+        // add exit code
+        if (failed(mlirGenFunctionEntry(location, funcProto, genContext)))
+        {
+            return mlir::failure();
+        }
+
+        // register this if lambda function
+        if (failed(mlirGenFunctionThisParam(location, firstIndex, funcProto, arguments, genContext)))
+        {
+            return mlir::failure();
+        }
+
+        // allocate function parameters as variable
+        if (failed(mlirGenFunctionParams(firstIndex, funcProto, arguments, genContext)))
+        {
+            return mlir::failure();
+        }
+
+        if (failed(mlirGenFunctionCaptures(funcProto, genContext)))
+        {
+            return mlir::failure();
+        }
+
         if (failed(mlirGenBody(functionLikeDeclarationBaseAST->body, genContext)))
         {
             return mlir::failure();
         }
 
         // add exit code
-        builder.create<mlir_ts::ExitOp>(loc(functionLikeDeclarationBaseAST));
+        if (failed(mlirGenFunctionExit(location, genContext)))
+        {
+            return mlir::failure();
+        }
 
         if (genContext.dummyRun)
         {
@@ -3467,6 +3573,8 @@ llvm.return %5 : i32
     llvm::ScopedHashTable<StringRef, VariablePairT> symbolTable;
 
     llvm::StringMap<mlir_ts::FuncOp> functionMap;
+
+    llvm::StringMap<llvm::StringMap<VariablePairT>> captureVarsMap;
 
     llvm::StringMap<mlir::Type> typeAliasMap;
 

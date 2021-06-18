@@ -490,7 +490,7 @@ def TypeScript_ParamOp : TypeScript_Op<"Param", []> {
   );
 
   let results = (outs
-    AnyType:$reference
+    TypeScript_AnyRefLike:$reference
   );
 }
 
@@ -511,7 +511,7 @@ def TypeScript_ParamOptionalOp : TypeScript_Op<"ParamOpt", [SingleBlockImplicitT
   );
 
   let results = (outs
-    AnyType:$reference
+    TypeScript_AnyRefLike:$reference
   );
 
   let regions = (region AnyRegion:$defaultValueRegion);
@@ -524,6 +524,28 @@ def TypeScript_ParamOptionalOp : TypeScript_Op<"ParamOpt", [SingleBlockImplicitT
   }];
 
 }
+
+def TypeScript_ParamCapturedOp : TypeScript_Op<"ParamCaptured", []> {
+  let summary = [{
+    Copy captured address as allocated object.
+  }];
+
+  let description = [{
+
+    ```mlir
+    %1 = ts.param_captured %0 : !ts.ref<f32>
+    ```
+  }];
+
+  let arguments = (ins
+    TypeScript_AnyRefLike:$captured
+  );
+
+  let results = (outs
+    TypeScript_AnyRefLike:$reference
+  );
+}
+
 
 def TypeScript_ParamDefaultValueOp : TypeScript_Op<"DefaultValue", [NoSideEffect, ReturnLike, Terminator,
                                ParentOneOf<["ParamOptionalOp"]>]> {
