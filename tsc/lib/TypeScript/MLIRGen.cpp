@@ -1074,8 +1074,7 @@ class MLIRGenImpl
 
         auto thisParamVar = std::make_shared<VariableDeclarationDOM>(THIS_NAME, thisRefType, loc);
 
-        auto thisParamValue = builder.create<mlir_ts::ParamOp>(loc, thisRefType, thisParam);
-        declare(thisParamVar, thisParamValue);
+        declare(thisParamVar, thisParam);
 
         return mlir::success();
     }
