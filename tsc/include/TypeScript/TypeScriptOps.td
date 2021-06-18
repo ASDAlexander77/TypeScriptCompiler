@@ -480,6 +480,13 @@ def TypeScript_CaptureOp : TypeScript_Op<"Capture", []> {
   let results = (outs AnyType);
 }
 
+def TypeScript_TrampolineOp : TypeScript_Op<"Trampoline", []> {
+  let summary = "trampoline logic";
+
+  let arguments = (ins FunctionType:$callee, AnyType:$data_reference);
+  let results = (outs FunctionType:$newCallee);
+}
+
 def TypeScript_ParamOp : TypeScript_Op<"Param", []> {
   let summary = [{
     Allocate an parameter object in memory.

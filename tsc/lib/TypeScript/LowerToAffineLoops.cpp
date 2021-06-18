@@ -1,3 +1,5 @@
+#define DEBUG_TYPE "affine"
+
 #include "TypeScript/Passes.h"
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
@@ -15,8 +17,6 @@
 #include "TypeScript/LowerToLLVMLogic.h"
 
 #include "scanner_enums.h"
-
-#define DEBUG_TYPE "affine"
 
 using namespace mlir;
 using namespace ::typescript;
@@ -626,8 +626,8 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
                       mlir_ts::ParseIntOp, mlir_ts::PrintOp, mlir_ts::SizeOfOp, mlir_ts::ReturnOp, mlir_ts::ReturnValOp, mlir_ts::StoreOp,
                       mlir_ts::SymbolRefOp, mlir_ts::LengthOfOp, mlir_ts::StringLengthOp, mlir_ts::StringConcatOp, mlir_ts::LoadOp,
                       mlir_ts::NewOp, mlir_ts::DeleteOp, mlir_ts::PropertyRefOp, mlir_ts::InsertPropertyOp, mlir_ts::ExtractPropertyOp,
-                      mlir_ts::LogicalBinaryOp, mlir_ts::UndefOp, mlir_ts::VariableOp, mlir_ts::ThrowOp, mlir_ts::TryOp, mlir_ts::InvokeOp,
-                      mlir_ts::ResultOp>();
+                      mlir_ts::LogicalBinaryOp, mlir_ts::UndefOp, mlir_ts::VariableOp, mlir_ts::ThrowOp, mlir_ts::TryOp,
+                      mlir_ts::TrampolineOp, mlir_ts::InvokeOp, mlir_ts::ResultOp>();
 
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.

@@ -12,7 +12,7 @@
 #include "parser.h"
 
 using namespace llvm;
-using namespace ::typescript;
+namespace mlir_ts = mlir::typescript;
 
 namespace ts
 {

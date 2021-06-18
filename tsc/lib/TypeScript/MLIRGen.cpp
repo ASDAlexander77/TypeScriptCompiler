@@ -1,3 +1,5 @@
+#define DEBUG_TYPE "mlir"
+
 #include "TypeScript/MLIRGen.h"
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
@@ -34,8 +36,6 @@
 #include "utilities.h"
 
 #include <numeric>
-
-#define DEBUG_TYPE "mlir"
 
 using namespace ::typescript;
 using namespace ts;

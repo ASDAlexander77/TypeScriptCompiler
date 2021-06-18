@@ -1,3 +1,5 @@
+#define DEBUG_TYPE "llvm"
+
 #include "TypeScript/Defines.h"
 #include "TypeScript/Passes.h"
 #include "TypeScript/TypeScriptDialect.h"
@@ -14,6 +16,7 @@
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
+#include "llvm/ADT/ScopedHashTable.h"
 #include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
@@ -21,8 +24,6 @@
 #include "TypeScript/LowerToLLVMLogic.h"
 
 #include "scanner_enums.h"
-
-#define DEBUG_TYPE "llvm"
 
 using namespace mlir;
 using namespace ::typescript;
@@ -1771,6 +1772,46 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
     }
 };
 
+struct TrampolineOpLowering : public TsLlvmPattern<mlir_ts::TrampolineOp>
+{
+    using TsLlvmPattern<mlir_ts::TrampolineOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::TrampolineOp trampolineOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        auto location = trampolineOp->getLoc();
+
+        TypeHelper th(rewriter);
+        CodeLogicHelper clh(trampolineOp, rewriter);
+        LLVMCodeHelper ch(trampolineOp, rewriter, getTypeConverter());
+
+        // Insert the `_assert` declaration if necessary.
+        auto i8PtrTy = th.getI8PtrType();
+
+        auto initTrampolineFuncOp = ch.getOrInsertFunction("llvm.init.trampoline", th.getFunctionType(i8PtrTy, {i8PtrTy, i8PtrTy}));
+        auto adjustTrampolineFuncOp = ch.getOrInsertFunction("llvm.adjust.trampoline", th.getFunctionType(i8PtrTy, {i8PtrTy}));
+
+        // allocate temp trampoline
+        auto bufferType = th.getPointerType(th.getI8Array(10));
+        auto trampoline = rewriter.create<LLVM::AllocaOp>(location, bufferType, clh.createI32ConstantOf(1));
+
+        auto const0 = clh.createI32ConstantOf(0);
+        auto trampolinePtr = rewriter.create<LLVM::GEPOp>(location, i8PtrTy, ValueRange{trampoline, const0, const0});
+
+        // init trampoline
+        rewriter.create<LLVM::CallOp>(location, initTrampolineFuncOp,
+                                      ValueRange{trampolinePtr, clh.castToI8Ptr(trampolineOp.data_reference())});
+
+        auto callAdjustedTrampoline = rewriter.create<LLVM::CallOp>(location, adjustTrampolineFuncOp, ValueRange{trampolinePtr});
+        auto adjustedTrampolinePtr = callAdjustedTrampoline.getResult(0);
+
+        mlir::Value castFunc = rewriter.create<mlir_ts::CastOp>(location, trampolineOp.getType(), adjustedTrampolinePtr);
+        rewriter.replaceOp(trampolineOp, castFunc);
+
+        return success();
+    }
+};
+
 struct CaptureOpLowering : public TsLlvmPattern<mlir_ts::CaptureOp>
 {
     using TsLlvmPattern<mlir_ts::CaptureOp>::TsLlvmPattern;
@@ -1789,13 +1830,13 @@ struct CaptureOpLowering : public TsLlvmPattern<mlir_ts::CaptureOp>
         auto index = 0;
         for (auto val : captureOp.captured())
         {
-            auto fieldRef =
-                rewriter.create<mlir_ts::PropertyRefOp>(location, mlir::Type(), allocTempStorage, th.getStructIndexAttrValue(index));
-            // rewriter.create<mlir_ts::StoreOp>(location, );
+            auto fieldRef = rewriter.create<mlir_ts::PropertyRefOp>(location, captureStoreType.getType(index), allocTempStorage,
+                                                                    th.getStructIndexAttrValue(index));
+            rewriter.create<mlir_ts::StoreOp>(location, val, fieldRef);
         }
 
-        mlir::Value castFunc = rewriter.create<mlir_ts::CastOp>(location, captureOp.getType(), captureOp.callee());
-        rewriter.replaceOp(captureOp, castFunc);
+        mlir::Value newFunc = rewriter.create<mlir_ts::TrampolineOp>(location, captureOp.getType(), captureOp.callee(), allocTempStorage);
+        rewriter.replaceOp(captureOp, newFunc);
 
         return success();
     }
@@ -1947,7 +1988,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
                 NullOpLowering, NewOpLowering, DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering, PrintOpLowering, StoreOpLowering,
                 SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering, StringLengthOpLowering, StringConcatOpLowering,
                 StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering, MemoryCopyOpLowering, LoadSaveValueLowering,
-                ThrowOpLoweringVCWin32, TryOpLowering, VariableOpLowering, InvokeOpLowering>(typeConverter, &getContext(), &tsLlvmContext);
+                ThrowOpLoweringVCWin32, TrampolineOpLowering, TryOpLowering, VariableOpLowering, InvokeOpLowering>(
+            typeConverter, &getContext(), &tsLlvmContext);
 
     populateTypeScriptConversionPatterns(typeConverter, m);
 
