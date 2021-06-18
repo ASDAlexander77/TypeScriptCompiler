@@ -906,12 +906,12 @@ class MLIRGenImpl
                 // if we have captured parameters, add first param to send lamdas type(class)
                 if (genContextWithPassResult.passResult->outerVariables.size() > 0)
                 {
+                    MLIRCodeLogic mcl(builder);
                     SmallVector<mlir_ts::FieldInfo> fields;
                     for (auto &varInfo : genContextWithPassResult.passResult->outerVariables)
                     {
                         auto &val = varInfo.getValue().second;
-                        fields.push_back(mlir_ts::FieldInfo{mlir::FlatSymbolRefAttr::get(builder.getContext(), val->getName()),
-                                                            mlir_ts::RefType::get(val->getType())});
+                        fields.push_back(mlir_ts::FieldInfo{mcl.TupleFieldName(val->getName()), mlir_ts::RefType::get(val->getType())});
                     }
 
                     auto lambdaType = mlir_ts::TupleType::get(builder.getContext(), fields);
