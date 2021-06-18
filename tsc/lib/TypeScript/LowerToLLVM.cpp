@@ -1785,10 +1785,10 @@ struct TrampolineOpLowering : public TsLlvmPattern<mlir_ts::TrampolineOp>
         CodeLogicHelper clh(trampolineOp, rewriter);
         LLVMCodeHelper ch(trampolineOp, rewriter, getTypeConverter());
 
-        // Insert the `_assert` declaration if necessary.
         auto i8PtrTy = th.getI8PtrType();
 
-        auto initTrampolineFuncOp = ch.getOrInsertFunction("llvm.init.trampoline", th.getFunctionType(i8PtrTy, {i8PtrTy, i8PtrTy}));
+        auto initTrampolineFuncOp =
+            ch.getOrInsertFunction("llvm.init.trampoline", th.getFunctionType(th.getVoidType(), {i8PtrTy, i8PtrTy, i8PtrTy}));
         auto adjustTrampolineFuncOp = ch.getOrInsertFunction("llvm.adjust.trampoline", th.getFunctionType(i8PtrTy, {i8PtrTy}));
 
         // allocate temp trampoline
@@ -1799,8 +1799,9 @@ struct TrampolineOpLowering : public TsLlvmPattern<mlir_ts::TrampolineOp>
         auto trampolinePtr = rewriter.create<LLVM::GEPOp>(location, i8PtrTy, ValueRange{trampoline, const0, const0});
 
         // init trampoline
-        rewriter.create<LLVM::CallOp>(location, initTrampolineFuncOp,
-                                      ValueRange{trampolinePtr, clh.castToI8Ptr(trampolineOp.data_reference())});
+        rewriter.create<LLVM::CallOp>(
+            location, initTrampolineFuncOp,
+            ValueRange{trampolinePtr, clh.castToI8Ptr(trampolineOp.callee()), clh.castToI8Ptr(trampolineOp.data_reference())});
 
         auto callAdjustedTrampoline = rewriter.create<LLVM::CallOp>(location, adjustTrampolineFuncOp, ValueRange{trampolinePtr});
         auto adjustedTrampolinePtr = callAdjustedTrampoline.getResult(0);
