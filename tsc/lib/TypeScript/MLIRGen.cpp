@@ -1169,12 +1169,9 @@ class MLIRGenImpl
             auto thisVarRefValue = mlirGen(_this_name, genContext);
             auto variableRefType = mlir_ts::RefType::get(variableInfo->getType());
 
-            mlir::Value capturedRefValue =
-                builder.create<mlir_ts::ParamCapturedOp>(variableInfo->getLoc(), variableRefType, thisVarRefValue);
-
             auto capturedParam = std::make_shared<VariableDeclarationDOM>(name, variableRefType, variableInfo->getLoc());
             capturedParam->setReadWriteAccess();
-            declare(capturedParam, capturedRefValue);
+            declare(capturedParam, thisVarRefValue);
         }
 
         return mlir::success();

@@ -256,11 +256,8 @@ class MLIRPropertyAccessCodeLogic
         return builder.create<mlir_ts::ConstantOp>(location, enumType.getElementType(), valueAttr);
     }
 
-    template <typename T> mlir::Value Tuple(T tupleType, bool indexAccess = false)
+    template <typename T> std::pair<int, mlir::Type> getTupleFieldType(T tupleType, bool indexAccess = false)
     {
-        mlir::Value value;
-
-        // resolve index
         auto fieldIndex = tupleType.getIndex(fieldId);
         if (indexAccess && (fieldIndex < 0 || fieldIndex >= tupleType.size()))
         {
@@ -275,11 +272,28 @@ class MLIRPropertyAccessCodeLogic
         if (fieldIndex < 0 || fieldIndex >= tupleType.size())
         {
             emitError(location, "Tuple member '") << fieldId << "' can't be found";
-            return value;
+            return std::make_pair<>(-1, mlir::Type());
         }
 
         // type
         auto elementType = tupleType.getType(fieldIndex);
+
+        return std::make_pair(fieldIndex, elementType);
+    }
+
+    template <typename T> mlir::Value Tuple(T tupleType, bool indexAccess = false)
+    {
+        mlir::Value value;
+
+        // resolve index
+        auto pair = getTupleFieldType(tupleType, indexAccess);
+        auto fieldIndex = pair.first;
+        auto elementType = pair.second;
+
+        if (fieldIndex < 0)
+        {
+            return value;
+        }
 
         auto refValue = getExprLoadRefValue();
         if (refValue)
@@ -377,7 +391,25 @@ class MLIRPropertyAccessCodeLogic
     {
         if (auto tupleType = refType.getElementType().dyn_cast_or_null<mlir_ts::TupleType>())
         {
-            return Tuple(tupleType);
+            // tuple ref
+
+            // resolve index
+            auto pair = getTupleFieldType(tupleType);
+            auto fieldIndex = pair.first;
+            auto elementType = pair.second;
+
+            if (fieldIndex < 0)
+            {
+                return mlir::Value();
+            }
+
+            LLVM_DEBUG(llvm::dbgs() << "property ref access: " << expression << " index:" << fieldIndex << " field type: " << elementType
+                                    << "\n");
+
+            auto propRef = builder.create<mlir_ts::PropertyRefOp>(location, mlir_ts::RefType::get(elementType), expression,
+                                                                  builder.getI32IntegerAttr(fieldIndex));
+
+            return builder.create<mlir_ts::LoadOp>(location, elementType, propRef);
         }
         else
         {
@@ -406,19 +438,6 @@ class MLIRPropertyAccessCodeLogic
 
     mlir::Value getExprLoadRefValue()
     {
-        if (auto refType = expression.getType().dyn_cast_or_null<mlir_ts::RefType>())
-        {
-            if (refType.getElementType().isa<mlir_ts::TupleType>())
-            {
-                return expression;
-            }
-
-            if (refType.getElementType().isa<mlir_ts::ConstTupleType>())
-            {
-                return expression;
-            }
-        }
-
         if (auto loadOp = dyn_cast_or_null<mlir_ts::LoadOp>(expression.getDefiningOp()))
         {
             // this LoadOp will be removed later as unused
