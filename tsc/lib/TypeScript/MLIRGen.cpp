@@ -1167,11 +1167,12 @@ class MLIRGenImpl
             auto _name = nf.createIdentifier(stows(std::string(name)));
             auto _this_name = nf.createPropertyAccessExpression(_this, _name);
             auto thisVarRefValue = mlirGen(_this_name, genContext);
+            auto variableRefType = mlir_ts::RefType::get(variableInfo->getType());
 
             mlir::Value capturedRefValue =
-                builder.create<mlir_ts::ParamCapturedOp>(variableInfo->getLoc(), variableInfo->getType(), thisVarRefValue);
+                builder.create<mlir_ts::ParamCapturedOp>(variableInfo->getLoc(), variableRefType, thisVarRefValue);
 
-            auto capturedParam = std::make_shared<VariableDeclarationDOM>(name, variableInfo->getType(), variableInfo->getLoc());
+            auto capturedParam = std::make_shared<VariableDeclarationDOM>(name, variableRefType, variableInfo->getLoc());
             capturedParam->setReadWriteAccess();
             declare(capturedParam, capturedRefValue);
         }

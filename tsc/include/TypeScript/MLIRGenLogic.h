@@ -406,6 +406,19 @@ class MLIRPropertyAccessCodeLogic
 
     mlir::Value getExprLoadRefValue()
     {
+        if (auto refType = expression.getType().dyn_cast_or_null<mlir_ts::RefType>())
+        {
+            if (refType.getElementType().isa<mlir_ts::TupleType>())
+            {
+                return expression;
+            }
+
+            if (refType.getElementType().isa<mlir_ts::ConstTupleType>())
+            {
+                return expression;
+            }
+        }
+
         if (auto loadOp = dyn_cast_or_null<mlir_ts::LoadOp>(expression.getDefiningOp()))
         {
             // this LoadOp will be removed later as unused
