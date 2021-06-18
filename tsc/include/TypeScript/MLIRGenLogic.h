@@ -21,6 +21,7 @@
 #include "llvm/Support/Debug.h"
 
 #include "TypeScript/CommonGenLogic.h"
+#include "TypeScript/DOM.h"
 
 #include <numeric>
 
@@ -37,6 +38,9 @@ using llvm::makeArrayRef;
 using llvm::SmallVector;
 using llvm::StringRef;
 using llvm::Twine;
+
+using VariablePairT = std::pair<mlir::Value, ts::VariableDeclarationDOM::TypePtr>;
+using SymbolTableScopeT = llvm::ScopedHashTableScope<StringRef, VariablePairT>;
 
 namespace typescript
 {
@@ -214,10 +218,40 @@ class MLIRCodeLogic
         return mlir::Attribute();
     }
 
+    mlir::Value GetReferenceOfLoadOp(mlir::Value value)
+    {
+        if (auto loadOp = dyn_cast_or_null<mlir_ts::LoadOp>(value.getDefiningOp()))
+        {
+            // this LoadOp will be removed later as unused
+            auto refValue = loadOp.reference();
+            return refValue;
+        }
+
+        return mlir::Value();
+    }
+
     mlir::Attribute TupleFieldName(StringRef name)
     {
         assert(!name.empty());
         return mlir::StringAttr::get(builder.getContext(), name);
+    }
+
+    mlir::Type CaptureTypeStorage(llvm::StringMap<VariablePairT> &capturedVars)
+    {
+        SmallVector<mlir_ts::FieldInfo> fields;
+        for (auto &varInfo : capturedVars)
+        {
+            auto &val = varInfo.getValue().second;
+            fields.push_back(mlir_ts::FieldInfo{TupleFieldName(val->getName()), mlir_ts::RefType::get(val->getType())});
+        }
+
+        auto lambdaType = mlir_ts::TupleType::get(builder.getContext(), fields);
+        return lambdaType;
+    }
+
+    mlir::Type CaptureType(llvm::StringMap<VariablePairT> &capturedVars)
+    {
+        return mlir_ts::RefType::get(CaptureTypeStorage(capturedVars));
     }
 };
 
@@ -438,14 +472,15 @@ class MLIRPropertyAccessCodeLogic
 
     mlir::Value getExprLoadRefValue()
     {
-        if (auto loadOp = dyn_cast_or_null<mlir_ts::LoadOp>(expression.getDefiningOp()))
+        MLIRCodeLogic mcl(builder);
+
+        auto value = mcl.GetReferenceOfLoadOp(expression);
+        if (!value)
         {
-            // this LoadOp will be removed later as unused
-            auto refValue = loadOp.reference();
-            return refValue;
+            llvm_unreachable("not implemented");
         }
 
-        return mlir::Value();
+        return value;
     }
 };
 

@@ -1,3 +1,6 @@
+#ifndef MLIR_TYPESCRIPT_DOM_H_
+#define MLIR_TYPESCRIPT_DOM_H_
+
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
@@ -177,3 +180,5 @@ class FunctionPrototypeDOM
 };
 
 } // namespace ts
+
+#endif // MLIR_TYPESCRIPT_DOM_H_

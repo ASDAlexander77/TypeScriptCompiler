@@ -55,8 +55,6 @@ using llvm::Twine;
 
 namespace
 {
-using VariablePairT = std::pair<mlir::Value, VariableDeclarationDOM::TypePtr>;
-using SymbolTableScopeT = llvm::ScopedHashTableScope<StringRef, VariablePairT>;
 
 enum class VariableClass
 {
@@ -907,16 +905,7 @@ class MLIRGenImpl
                 if (genContextWithPassResult.passResult->outerVariables.size() > 0)
                 {
                     MLIRCodeLogic mcl(builder);
-                    SmallVector<mlir_ts::FieldInfo> fields;
-                    for (auto &varInfo : genContextWithPassResult.passResult->outerVariables)
-                    {
-                        auto &val = varInfo.getValue().second;
-                        fields.push_back(mlir_ts::FieldInfo{mcl.TupleFieldName(val->getName()), mlir_ts::RefType::get(val->getType())});
-                    }
-
-                    auto lambdaType = mlir_ts::TupleType::get(builder.getContext(), fields);
-                    argTypes.insert(argTypes.begin(), mlir_ts::RefType::get(lambdaType));
-
+                    argTypes.insert(argTypes.begin(), mcl.CaptureType(genContextWithPassResult.passResult->outerVariables));
                     captureVarsMap.insert({name, genContextWithPassResult.passResult->outerVariables});
                 }
             }
@@ -2964,6 +2953,11 @@ llvm.return %5 : i32
         // resolve name
         auto name = MLIRHelper::getName(identifier);
 
+        return mlirGen(location, name, genContext);
+    }
+
+    mlir::Value mlirGen(mlir::Location location, StringRef name, const GenContext &genContext)
+    {
         auto value = symbolTable.lookup(name);
         if (value.second)
         {
@@ -3020,7 +3014,37 @@ llvm.return %5 : i32
         auto fn = functionMap.find(name);
         if (fn != functionMap.end())
         {
-            return builder.create<mlir_ts::SymbolRefOp>(location, fn->getValue().getType(),
+            auto effectiveFuncType = fn->getValue().getType();
+            // check if required capture of vars
+            auto captureVars = captureVarsMap.find(name);
+            if (captureVars != captureVarsMap.end())
+            {
+                auto funcType = effectiveFuncType;
+                auto newFuncType = builder.getFunctionType(funcType.getInputs().slice(1), funcType.getResults());
+                effectiveFuncType = newFuncType;
+
+                auto funcOp =
+                    builder.create<mlir_ts::SymbolRefOp>(location, funcType, mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
+
+                /*
+
+                auto castToNewFunc = builder.create<mlir_ts::CastOp>(location, effectiveFuncType, funcOp);
+                return castToNewFunc;
+                */
+                MLIRCodeLogic mcl(builder);
+                SmallVector<mlir::Value> capturedValues;
+                for (auto &item : captureVars->getValue())
+                {
+                    auto varValue = mlirGen(location, item.first(), genContext);
+                    auto refValue = mcl.GetReferenceOfLoadOp(varValue);
+                    assert(refValue);
+                    capturedValues.push_back(refValue);
+                }
+
+                return builder.create<mlir_ts::CaptureOp>(location, effectiveFuncType, funcOp, capturedValues);
+            }
+
+            return builder.create<mlir_ts::SymbolRefOp>(location, effectiveFuncType,
                                                         mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
         }
 

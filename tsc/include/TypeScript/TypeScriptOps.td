@@ -473,6 +473,13 @@ def TypeScript_InvokeOp : TypeScript_Op<"invoke", [
   let verifier = [{ return ::verify(*this);  }];
 }
 
+def TypeScript_CaptureOp : TypeScript_Op<"Capture", []> {
+  let summary = "capture variables";
+
+  let arguments = (ins AnyType:$callee, Variadic<AnyType>:$captured);
+  let results = (outs AnyType);
+}
+
 def TypeScript_ParamOp : TypeScript_Op<"Param", []> {
   let summary = [{
     Allocate an parameter object in memory.
