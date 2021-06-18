@@ -236,6 +236,32 @@ class MLIRCodeLogic
         return mlir::StringAttr::get(builder.getContext(), name);
     }
 
+    template <typename T>
+    std::pair<int, mlir::Type> TupleFieldType(mlir::Location location, T tupleType, mlir::Attribute fieldId, bool indexAccess = false)
+    {
+        auto fieldIndex = tupleType.getIndex(fieldId);
+        if (indexAccess && (fieldIndex < 0 || fieldIndex >= tupleType.size()))
+        {
+            // try to resolve index
+            auto intAttr = fieldId.dyn_cast_or_null<mlir::IntegerAttr>();
+            if (intAttr)
+            {
+                fieldIndex = intAttr.getInt();
+            }
+        }
+
+        if (fieldIndex < 0 || fieldIndex >= tupleType.size())
+        {
+            emitError(location, "Tuple member '") << fieldId << "' can't be found";
+            return std::make_pair<>(-1, mlir::Type());
+        }
+
+        // type
+        auto elementType = tupleType.getType(fieldIndex);
+
+        return std::make_pair(fieldIndex, elementType);
+    }
+
     mlir::Type CaptureTypeStorage(llvm::StringMap<VariablePairT> &capturedVars)
     {
         SmallVector<mlir_ts::FieldInfo> fields;
@@ -290,37 +316,14 @@ class MLIRPropertyAccessCodeLogic
         return builder.create<mlir_ts::ConstantOp>(location, enumType.getElementType(), valueAttr);
     }
 
-    template <typename T> std::pair<int, mlir::Type> getTupleFieldType(T tupleType, bool indexAccess = false)
-    {
-        auto fieldIndex = tupleType.getIndex(fieldId);
-        if (indexAccess && (fieldIndex < 0 || fieldIndex >= tupleType.size()))
-        {
-            // try to resolve index
-            auto intAttr = fieldId.dyn_cast_or_null<mlir::IntegerAttr>();
-            if (intAttr)
-            {
-                fieldIndex = intAttr.getInt();
-            }
-        }
-
-        if (fieldIndex < 0 || fieldIndex >= tupleType.size())
-        {
-            emitError(location, "Tuple member '") << fieldId << "' can't be found";
-            return std::make_pair<>(-1, mlir::Type());
-        }
-
-        // type
-        auto elementType = tupleType.getType(fieldIndex);
-
-        return std::make_pair(fieldIndex, elementType);
-    }
-
     template <typename T> mlir::Value Tuple(T tupleType, bool indexAccess = false)
     {
         mlir::Value value;
 
+        MLIRCodeLogic mcl(builder);
+
         // resolve index
-        auto pair = getTupleFieldType(tupleType, indexAccess);
+        auto pair = mcl.TupleFieldType(location, tupleType, fieldId, indexAccess);
         auto fieldIndex = pair.first;
         auto elementType = pair.second;
 
@@ -425,10 +428,10 @@ class MLIRPropertyAccessCodeLogic
     {
         if (auto tupleType = refType.getElementType().dyn_cast_or_null<mlir_ts::TupleType>())
         {
-            // tuple ref
+            MLIRCodeLogic mcl(builder);
 
             // resolve index
-            auto pair = getTupleFieldType(tupleType);
+            auto pair = mcl.TupleFieldType(location, tupleType, fieldId);
             auto fieldIndex = pair.first;
             auto elementType = pair.second;
 
