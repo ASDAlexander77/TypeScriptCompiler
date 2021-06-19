@@ -1,15 +1,14 @@
 #include "helper.h"
 
+#include <array>
+#include <chrono>
 #include <cstdio>
+#include <fstream>
 #include <iostream>
 #include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
-#include <array>
-#include <iostream>
-#include <fstream>
-#include <sstream>
-#include <chrono>
 
 #if __cplusplus >= 201703L
 #include <filesystem>
@@ -28,8 +27,8 @@ namespace fs = std::experimental::filesystem;
 #define PCLOSE pclose
 #endif
 
-#ifndef TEST_VCPATH
-#define TEST_VCPATH "C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/SDK/ScopeCppSDK/vc15/VC/lib"
+#ifndef TEST_LIBPATH
+#define TEST_LIBPATH "C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/SDK/ScopeCppSDK/vc15/VC/lib"
 #endif
 
 #ifndef TEST_SDKPATH
@@ -42,6 +41,10 @@ namespace fs = std::experimental::filesystem;
 
 #ifndef TEST_TSC_EXEPATH
 #define TEST_TSC_EXEPATH "C:/dev/TypeScriptCompiler/__build/tsc/bin"
+#endif
+
+#ifndef TEST_CLANGLIBPATH
+#define TEST_CLANGLIBPATH "C:/dev/TypeScriptCompiler/3rdParty/llvm/debug/lib/clang/13.0.0/lib/windows"
 #endif
 
 #ifndef TEST_FILE
@@ -125,13 +128,43 @@ void createCompileBatchFile()
     std::ofstream batFile("compile.bat");
     batFile << "echo off" << std::endl;
     batFile << "set FILENAME=%1" << std::endl;
-    batFile << "set VCPATH=" << TEST_VCPATH << std::endl;
+    batFile << "set LIBPATH=" << TEST_LIBPATH << std::endl;
     batFile << "set SDKPATH=" << TEST_SDKPATH << std::endl;
     batFile << "set EXEPATH=" << TEST_EXEPATH << std::endl;
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "%TSCEXEPATH%\\tsc.exe --emit=llvm %2 2> %FILENAME%.il" << std::endl;
     batFile << "%EXEPATH%\\llc.exe --filetype=obj -o=%FILENAME%.o %FILENAME%.il" << std::endl;
-    batFile << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o \"%VCPATH%\\libcmt.lib\" \"%VCPATH%\\libvcruntime.lib\" \"%SDKPATH%\\kernel32.lib\" \"%SDKPATH%\\libucrt.lib\" \"%SDKPATH%\\uuid.lib\"" << std::endl;
+    batFile << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o \"%LIBPATH%\\libcmt.lib\" \"%LIBPATH%\\libvcruntime.lib\" "
+               "\"%SDKPATH%\\kernel32.lib\" \"%SDKPATH%\\libucrt.lib\" \"%SDKPATH%\\uuid.lib\""
+            << std::endl;
+    batFile << "del %FILENAME%.il" << std::endl;
+    batFile << "del %FILENAME%.o" << std::endl;
+    batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
+    batFile << "echo on" << std::endl;
+    batFile.close();
+}
+
+void createCompileBatchFileWithRT()
+{
+    if (exists("compile_rt.bat"))
+    {
+        return;
+    }
+
+    std::ofstream batFile("compile_rt.bat");
+    batFile << "echo off" << std::endl;
+    batFile << "set FILENAME=%1" << std::endl;
+    batFile << "set LIBPATH=" << TEST_LIBPATH << std::endl;
+    batFile << "set SDKPATH=" << TEST_SDKPATH << std::endl;
+    batFile << "set EXEPATH=" << TEST_EXEPATH << std::endl;
+    batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "set CLANGLIBPATH=" << TEST_CLANGLIBPATH << std::endl;
+    batFile << "%TSCEXEPATH%\\tsc.exe --emit=llvm %2 2> %FILENAME%.il" << std::endl;
+    batFile << "%EXEPATH%\\llc.exe --filetype=obj -o=%FILENAME%.o %FILENAME%.il" << std::endl;
+    batFile
+        << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:\"%LIBPATH%\" \"%LIBPATH%\\libcmt.lib\" \"%LIBPATH%\\libvcruntime.lib\" "
+           "\"%SDKPATH%\\kernel32.lib\" \"%SDKPATH%\\libucrt.lib\" \"%SDKPATH%\\uuid.lib\" \"%CLANGLIBPATH%\\clang_rt.builtins-x86_64.lib\""
+        << std::endl;
     batFile << "del %FILENAME%.il" << std::endl;
     batFile << "del %FILENAME%.o" << std::endl;
     batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
@@ -157,8 +190,8 @@ void createJitBatchFile()
 
 void testFile(const char *file)
 {
-    std::chrono::milliseconds ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch());
+    std::chrono::milliseconds ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch());
 
     auto fileName = fs::path(file).filename();
     auto stem = fs::path(file).stem();
@@ -177,8 +210,7 @@ void testFile(const char *file)
 
     std::cout << "Test file: " << fileName << " path: " << file << std::endl;
 
-    auto cleanup = [&]()
-    {
+    auto cleanup = [&]() {
         std::stringstream mask;
         mask << "del " << stem << ms.count() << ".*";
         auto delCmd = mask.str();
@@ -228,13 +260,13 @@ void testFile(const char *file)
 
     // compile
     std::stringstream ss;
-    ss << "compile.bat " << stem << ms.count() << " " << file;
+    ss << "compile_rt.bat " << stem << ms.count() << " " << file;
     try
     {
         auto compileResult = exec(ss.str());
 
-        //std::cout << std::endl << "Compiling: " << std::endl;
-        //std::cout << compileResult << std::endl;
+        // std::cout << std::endl << "Compiling: " << std::endl;
+        // std::cout << compileResult << std::endl;
 
         auto index = compileResult.find("error:");
         if (index != std::string::npos)
@@ -270,7 +302,7 @@ int main(int argc, char **argv)
         }
         else
         {
-            createCompileBatchFile();
+            createCompileBatchFileWithRT();
         }
 
         if (argc > 1)

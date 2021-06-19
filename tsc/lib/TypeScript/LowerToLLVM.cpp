@@ -1790,6 +1790,8 @@ struct TrampolineOpLowering : public TsLlvmPattern<mlir_ts::TrampolineOp>
         auto initTrampolineFuncOp =
             ch.getOrInsertFunction("llvm.init.trampoline", th.getFunctionType(th.getVoidType(), {i8PtrTy, i8PtrTy, i8PtrTy}));
         auto adjustTrampolineFuncOp = ch.getOrInsertFunction("llvm.adjust.trampoline", th.getFunctionType(i8PtrTy, {i8PtrTy}));
+        // Win32 specifics
+        auto enableExecuteStackFuncOp = ch.getOrInsertFunction("__enable_execute_stack", th.getFunctionType(th.getVoidType(), {i8PtrTy}));
 
         // allocate temp trampoline
         auto bufferType = th.getPointerType(th.getI8Array(10));
@@ -1805,6 +1807,8 @@ struct TrampolineOpLowering : public TsLlvmPattern<mlir_ts::TrampolineOp>
 
         auto callAdjustedTrampoline = rewriter.create<LLVM::CallOp>(location, adjustTrampolineFuncOp, ValueRange{trampolinePtr});
         auto adjustedTrampolinePtr = callAdjustedTrampoline.getResult(0);
+
+        rewriter.create<LLVM::CallOp>(location, enableExecuteStackFuncOp, ValueRange{adjustedTrampolinePtr});
 
         mlir::Value castFunc = rewriter.create<mlir_ts::CastOp>(location, trampolineOp.getType(), adjustedTrampolinePtr);
         rewriter.replaceOp(trampolineOp, castFunc);
@@ -1831,8 +1835,8 @@ struct CaptureOpLowering : public TsLlvmPattern<mlir_ts::CaptureOp>
         auto index = 0;
         for (auto val : captureOp.captured())
         {
-            auto fieldRef = rewriter.create<mlir_ts::PropertyRefOp>(location, captureStoreType.getType(index), allocTempStorage,
-                                                                    th.getStructIndexAttrValue(index));
+            auto fieldRef = rewriter.create<mlir_ts::PropertyRefOp>(location, mlir_ts::RefType::get(captureStoreType.getType(index)),
+                                                                    allocTempStorage, th.getStructIndexAttrValue(index));
             rewriter.create<mlir_ts::StoreOp>(location, val, fieldRef);
         }
 
