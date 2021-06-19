@@ -1793,7 +1793,6 @@ struct TrampolineOpLowering : public TsLlvmPattern<mlir_ts::TrampolineOp>
 
         // allocate temp trampoline
         auto bufferType = th.getPointerType(th.getI8Array(10));
-        // auto bufferType = th.getPointerType(mlir_ts::ConstArrayType::get(th.getI8Type(), 10));
         auto trampoline = rewriter.create<LLVM::AllocaOp>(location, bufferType, clh.createI32ConstantOf(1));
 
         auto const0 = clh.createI32ConstantOf(0);
