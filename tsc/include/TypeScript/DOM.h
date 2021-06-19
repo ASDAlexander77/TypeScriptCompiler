@@ -140,12 +140,13 @@ class FunctionPrototypeDOM
     std::vector<FunctionParamDOM::TypePtr> args;
     mlir::Type returnType;
     bool discovered;
+    bool hasCapturedVars;
 
   public:
     using TypePtr = std::shared_ptr<FunctionPrototypeDOM>;
 
     FunctionPrototypeDOM(StringRef name, std::vector<FunctionParamDOM::TypePtr> args)
-        : name(name), args(args), discovered(false), returnType()
+        : name(name), args(args), discovered(false), hasCapturedVars(false), returnType()
     {
     }
 
@@ -176,6 +177,15 @@ class FunctionPrototypeDOM
     void setDiscovered(bool discovered_)
     {
         discovered = discovered_;
+    }
+
+    const bool &getHasCapturedVars() const
+    {
+        return hasCapturedVars;
+    }
+    void setHasCapturedVars(bool hasCapturedVars_)
+    {
+        hasCapturedVars = hasCapturedVars_;
     }
 };
 

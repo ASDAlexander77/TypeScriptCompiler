@@ -828,12 +828,9 @@ class MLIRGenImpl
             {
                 auto returnType = cachedFuncType.getResult(0);
                 funcProto->setReturnType(returnType);
-                funcType = builder.getFunctionType(cachedFuncType.getInputs(), returnType);
             }
-            else
-            {
-                funcType = builder.getFunctionType(cachedFuncType.getInputs(), llvm::None);
-            }
+
+            funcType = cachedFuncType;
         }
 
         // discover type & args
@@ -858,8 +855,38 @@ class MLIRGenImpl
             }
         }
 
-        SmallVector<mlir::NamedAttribute> attrs;
-        auto funcOp = mlir_ts::FuncOp::create(location, name, funcType, ArrayRef<mlir::NamedAttribute>(attrs));
+        auto it = captureVarsMap.find(funcProto->getName());
+        auto hasCapturedVars = funcProto->getHasCapturedVars() || (it != captureVarsMap.end());
+
+        mlir_ts::FuncOp funcOp;
+        if (hasCapturedVars)
+        {
+            SmallVector<mlir::NamedAttribute> attrs;
+            SmallVector<mlir::DictionaryAttr> argAttrs;
+
+            for (auto argType : funcType.getInputs())
+            {
+                SmallVector<mlir::NamedAttribute> argAttrsForType;
+                // add nested to first attr
+                if (argAttrs.size() == 0)
+                {
+                    argAttrsForType.push_back(
+                        {builder.getIdentifier("ts.passthrough"), mlir::StringAttr::get(builder.getContext(), "nest")});
+                }
+
+                auto argDicAttr = mlir::DictionaryAttr::get(builder.getContext(), argAttrsForType);
+                argAttrs.push_back(argDicAttr);
+            }
+
+            funcOp = mlir_ts::FuncOp::create(location, name, funcType, attrs, argAttrs);
+
+            LLVM_DEBUG(llvm::dbgs() << "\n === FuncOp with attrs === \n");
+            LLVM_DEBUG(funcOp.dump());
+        }
+        else
+        {
+            funcOp = mlir_ts::FuncOp::create(location, name, funcType);
+        }
 
         return std::make_tuple(funcOp, std::move(funcProto), true);
     }
@@ -907,6 +934,8 @@ class MLIRGenImpl
                     MLIRCodeLogic mcl(builder);
                     argTypes.insert(argTypes.begin(), mcl.CaptureType(genContextWithPassResult.passResult->outerVariables));
                     captureVarsMap.insert({name, genContextWithPassResult.passResult->outerVariables});
+
+                    funcProto->setHasCapturedVars(true);
                 }
             }
 
@@ -2972,10 +3001,10 @@ llvm.return %5 : i32
                     isOuterVar = !funcRegion->isAncestor(valueRegion);
                 }
 
-                auto isOuterFunctionScope = value.second->getFuncOp() != genContext.funcOp;
-
-                LLVM_DEBUG(llvm::dbgs() << "isOuterFunctionScope: " << (isOuterFunctionScope ? "true" : "false")
-                                        << ", isOuterVar: " << (isOuterVar ? "true" : "false") << " name: " << name << "\n");
+                // auto isOuterFunctionScope = value.second->getFuncOp() != genContext.funcOp;
+                //
+                // LLVM_DEBUG(llvm::dbgs() << "isOuterFunctionScope: " << (isOuterFunctionScope ? "true" : "false")
+                //                         << ", isOuterVar: " << (isOuterVar ? "true" : "false") << " name: " << name << "\n");
 
                 if (isOuterVar && genContext.passResult)
                 {

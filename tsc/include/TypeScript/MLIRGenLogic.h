@@ -440,8 +440,8 @@ class MLIRPropertyAccessCodeLogic
                 return mlir::Value();
             }
 
-            LLVM_DEBUG(llvm::dbgs() << "property ref access: " << expression << " index:" << fieldIndex << " field type: " << elementType
-                                    << "\n");
+            // LLVM_DEBUG(llvm::dbgs() << "property ref access: " << expression << " index:" << fieldIndex << " field type: " << elementType
+            // << "\n");
 
             auto propRef = builder.create<mlir_ts::PropertyRefOp>(location, mlir_ts::RefType::get(elementType), expression,
                                                                   builder.getI32IntegerAttr(fieldIndex));
@@ -476,13 +476,7 @@ class MLIRPropertyAccessCodeLogic
     mlir::Value getExprLoadRefValue()
     {
         MLIRCodeLogic mcl(builder);
-
         auto value = mcl.GetReferenceOfLoadOp(expression);
-        if (!value)
-        {
-            llvm_unreachable("not implemented");
-        }
-
         return value;
     }
 };

@@ -33,9 +33,9 @@ namespace mlir_ts = mlir::typescript;
 // TypeScriptToLLVM RewritePatterns
 //===----------------------------------------------------------------------===//
 
-#define ATTR(attr) StringAttr::get(attr, rewriter.getContext())
-#define IDENT(name) Identifier::get(name, rewriter.getContext())
-#define NAMED_ATTR(name, attr) ArrayAttr::get({ATTR(name), ATTR(attr)}, rewriter.getContext())
+#define ATTR(attr) StringAttr::get(rewriter.getContext(), attr)
+#define IDENT(name) Identifier::get(rewriter.getContext(), name)
+#define NAMED_ATTR(name, attr) ArrayAttr::get(rewriter.getContext(), {ATTR(name), ATTR(attr)})
 
 namespace
 {
@@ -1779,6 +1779,7 @@ struct TrampolineOpLowering : public TsLlvmPattern<mlir_ts::TrampolineOp>
     LogicalResult matchAndRewrite(mlir_ts::TrampolineOp trampolineOp, ArrayRef<Value> operands,
                                   ConversionPatternRewriter &rewriter) const final
     {
+        // TODO: missing attribute "nest" on parameter
         auto location = trampolineOp->getLoc();
 
         TypeHelper th(rewriter);
