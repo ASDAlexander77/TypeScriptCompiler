@@ -93,11 +93,6 @@ def TypeScript_FuncOp : TypeScript_Op<"Func", [
     ```
   }];
 
-  string llvmBuilder = [{
-    llvm::LLVMContext &llvmContext = builder.getContext();
-    // TODO: finish it
-  }];
-
   let arguments = (ins SymbolNameAttr:$sym_name,
                        TypeAttr:$type,
                        OptionalAttr<StrAttr>:$sym_visibility,

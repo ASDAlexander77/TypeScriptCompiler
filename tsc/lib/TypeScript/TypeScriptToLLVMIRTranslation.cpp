@@ -28,19 +28,12 @@ class TypeScriptDialectLLVMIRTranslationInterface : public LLVMTranslationDialec
   public:
     using LLVMTranslationDialectInterface::LLVMTranslationDialectInterface;
 
-    /// Translates the given operation to LLVM IR using the provided IR builder
-    /// and saving the state in `moduleTranslation`.
-    LogicalResult convertOperation(Operation *op, llvm::IRBuilderBase &builder, LLVM::ModuleTranslation &moduleTranslation) const final
-    {
-        Operation &opInst = *op;
-        //#include "....Conversions.inc"
-
-        return failure();
-    }
-
     /// Attaches module-level metadata for functions marked as kernels.
     LogicalResult amendOperation(Operation *op, NamedAttribute attribute, LLVM::ModuleTranslation &moduleTranslation) const final
     {
+        LLVM_DEBUG(llvm::dbgs() << "\n === amendOperation === \n");
+        LLVM_DEBUG(llvm::dbgs() << "attribute: " << attribute.first << " val: " << attribute.second << "\n");
+        LLVM_DEBUG(op->dump());
         // TODO:
         return success();
     }
