@@ -1799,7 +1799,7 @@ struct TrampolineOpLowering : public TsLlvmPattern<mlir_ts::TrampolineOp>
         auto enableExecuteStackFuncOp = ch.getOrInsertFunction("__enable_execute_stack", th.getFunctionType(th.getVoidType(), {i8PtrTy}));
 
         // allocate temp trampoline
-        auto bufferType = th.getPointerType(th.getI8Array(10));
+        auto bufferType = th.getPointerType(th.getI8Array(TRAMPOLINE_BUFFER_SIZE_X64));
         auto trampoline = rewriter.create<LLVM::AllocaOp>(location, bufferType, clh.createI32ConstantOf(1));
 
         auto const0 = clh.createI32ConstantOf(0);

@@ -37,7 +37,7 @@ class TypeScriptDialectLLVMIRTranslationInterface : public LLVMTranslationDialec
         LLVM_DEBUG(llvm::dbgs() << "attribute: " << attribute.first << " val: " << attribute.second << "\n");
         // LLVM_DEBUG(op->dump());
         // TODO:
-        if (attribute.first != "ts.nest")
+        if (attribute.first != TS_NEST_ATTRIBUTE)
         {
             return success();
         }
@@ -51,7 +51,7 @@ class TypeScriptDialectLLVMIRTranslationInterface : public LLVMTranslationDialec
             llvm::Argument &llvmArg = std::get<1>(kvp);
             BlockArgument mlirArg = std::get<0>(kvp);
 
-            if (auto attr = func.getArgAttrOfType<UnitAttr>(argIdx, "ts.nest"))
+            if (auto attr = func.getArgAttrOfType<UnitAttr>(argIdx, TS_NEST_ATTRIBUTE))
             {
                 auto argTy = mlirArg.getType();
                 llvmArg.addAttr(llvm::Attribute::AttrKind::Nest);

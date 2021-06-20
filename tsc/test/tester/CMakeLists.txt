@@ -12,6 +12,7 @@ add_executable(test-runner test-runner.cpp)
 ######## enable testing ############                     
 add_test(NAME test-compile-00-assert COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")
 add_test(NAME test-compile-00-funcs COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs.ts")
+add_test(NAME test-compile-00-funcs_capture COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_capture.ts")
 add_test(NAME test-compile-00-if_return COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00if_return.ts")
 add_test(NAME test-compile-00-dowhile COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00dowhile.ts")
 add_test(NAME test-compile-00-while COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00while.ts")
