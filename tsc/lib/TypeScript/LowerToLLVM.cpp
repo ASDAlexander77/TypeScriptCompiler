@@ -15,6 +15,7 @@
 #include "mlir/Dialect/SCF/SCF.h"
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/Pass/Pass.h"
+#include "mlir/Target/LLVMIR/ModuleTranslation.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "llvm/ADT/ScopedHashTable.h"
 #include "llvm/ADT/Sequence.h"
@@ -850,8 +851,7 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
         auto newFuncOp = rewriter.create<mlir::FuncOp>(
             funcOp.getLoc(), funcOp.getName(),
             rewriter.getFunctionType(signatureInputsConverter.getConvertedTypes(), signatureResultsConverter.getConvertedTypes()),
-            ArrayRef<NamedAttribute>{},
-            /*argAttrs*/ ArrayRef<DictionaryAttr>{});
+            ArrayRef<NamedAttribute>{}, argAttrs);
         for (const auto &namedAttr : funcOp->getAttrs())
         {
             if (namedAttr.first == function_like_impl::getTypeAttrName() || namedAttr.first == SymbolTable::getSymbolAttrName())
@@ -1946,11 +1946,39 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
 
 namespace
 {
+
+/// Implementation of the dialect interface that converts operations belonging
+/// to the NVVM dialect to LLVM IR.
+class TypeScriptDialectLLVMIRTranslationInterface : public LLVMTranslationDialectInterface
+{
+  public:
+    using LLVMTranslationDialectInterface::LLVMTranslationDialectInterface;
+
+    /// Translates the given operation to LLVM IR using the provided IR builder
+    /// and saving the state in `moduleTranslation`.
+    LogicalResult convertOperation(Operation *op, llvm::IRBuilderBase &builder, LLVM::ModuleTranslation &moduleTranslation) const final
+    {
+        Operation &opInst = *op;
+        //#include "....Conversions.inc"
+
+        return failure();
+    }
+
+    /// Attaches module-level metadata for functions marked as kernels.
+    LogicalResult amendOperation(Operation *op, NamedAttribute attribute, LLVM::ModuleTranslation &moduleTranslation) const final
+    {
+        // TODO:
+        return success();
+    }
+};
+
 struct TypeScriptToLLVMLoweringPass : public PassWrapper<TypeScriptToLLVMLoweringPass, OperationPass<ModuleOp>>
 {
     void getDependentDialects(DialectRegistry &registry) const override
     {
         registry.insert<LLVM::LLVMDialect>();
+        registry.insert<mlir::typescript::TypeScriptDialect>();
+        registry.addDialectInterface<mlir::typescript::TypeScriptDialect, TypeScriptDialectLLVMIRTranslationInterface>();
     }
 
     void runOnOperation() final;
