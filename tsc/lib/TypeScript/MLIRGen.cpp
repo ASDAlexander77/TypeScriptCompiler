@@ -870,11 +870,9 @@ class MLIRGenImpl
                 // add nested to first attr
                 if (argAttrs.size() == 0)
                 {
-                    // we need to to force LLVM converter to allow to amend op in attched interface
+                    // we need to force LLVM converter to allow to amend op in attached interface
                     attrs.push_back({builder.getIdentifier("ts.nest"), mlir::UnitAttr::get(builder.getContext())});
                     argAttrsForType.push_back({builder.getIdentifier("ts.nest"), mlir::UnitAttr::get(builder.getContext())});
-                    // TODO: remove it, for debugging only
-                    argAttrsForType.push_back({builder.getIdentifier("llvm.noalias"), mlir::UnitAttr::get(builder.getContext())});
                 }
 
                 auto argDicAttr = mlir::DictionaryAttr::get(builder.getContext(), argAttrsForType);
