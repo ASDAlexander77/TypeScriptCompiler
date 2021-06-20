@@ -845,9 +845,13 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
             signatureResultsConverter.addInputs(argType.index(), convertedType);
         }
 
+        SmallVector<DictionaryAttr> argAttrs;
+        funcOp.getAllArgAttrs(argAttrs);
         auto newFuncOp = rewriter.create<mlir::FuncOp>(
             funcOp.getLoc(), funcOp.getName(),
-            rewriter.getFunctionType(signatureInputsConverter.getConvertedTypes(), signatureResultsConverter.getConvertedTypes()));
+            rewriter.getFunctionType(signatureInputsConverter.getConvertedTypes(), signatureResultsConverter.getConvertedTypes()),
+            ArrayRef<NamedAttribute>{},
+            /*argAttrs*/ ArrayRef<DictionaryAttr>{});
         for (const auto &namedAttr : funcOp->getAttrs())
         {
             if (namedAttr.first == function_like_impl::getTypeAttrName() || namedAttr.first == SymbolTable::getSymbolAttrName())

@@ -581,7 +581,7 @@ struct TypeScriptToAffineLoweringPass : public PassWrapper<TypeScriptToAffineLow
 {
     void getDependentDialects(DialectRegistry &registry) const override
     {
-        registry.insert<AffineDialect, StandardOpsDialect>();
+        registry.insert<StandardOpsDialect>();
     }
 
     void runOnFunction() final;
@@ -612,7 +612,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     // We define the specific operations, or dialects, that are legal targets for
     // this lowering. In our case, we are lowering to a combination of the
     // `Affine` and `Standard` dialects.
-    target.addLegalDialect<AffineDialect, StandardOpsDialect>();
+    target.addLegalDialect<StandardOpsDialect>();
 
     // We also define the TypeScript dialect as Illegal so that the conversion will fail
     // if any of these operations are *not* converted. Given that we actually want
