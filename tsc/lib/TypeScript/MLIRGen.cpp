@@ -871,7 +871,8 @@ class MLIRGenImpl
                 if (argAttrs.size() == 0)
                 {
                     argAttrsForType.push_back({builder.getIdentifier("ts.nest"), mlir::UnitAttr::get(builder.getContext())});
-                    // argAttrsForType.push_back({builder.getIdentifier("llvm.noalias"), mlir::UnitAttr::get(builder.getContext())});
+                    // TODO: remove it, for debugging only
+                    argAttrsForType.push_back({builder.getIdentifier("llvm.noalias"), mlir::UnitAttr::get(builder.getContext())});
                 }
 
                 auto argDicAttr = mlir::DictionaryAttr::get(builder.getContext(), argAttrsForType);

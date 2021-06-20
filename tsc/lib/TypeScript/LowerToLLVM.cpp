@@ -1711,7 +1711,7 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         auto *bodyRegionLast = &tryOp.body().back();
         auto *catchesRegion = &tryOp.catches().front();
         auto *catchesRegionLast = &tryOp.catches().back();
-        auto *finallyBlockRegion = &tryOp.finallyBlock().front();
+        // auto *finallyBlockRegion = &tryOp.finallyBlock().front();
         auto *finallyBlockRegionLast = &tryOp.finallyBlock().back();
 
         // logic to set Invoke attribute CallOp
@@ -1947,42 +1947,16 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
 namespace
 {
 
-/// Implementation of the dialect interface that converts operations belonging
-/// to the NVVM dialect to LLVM IR.
-class TypeScriptDialectLLVMIRTranslationInterface : public LLVMTranslationDialectInterface
-{
-  public:
-    using LLVMTranslationDialectInterface::LLVMTranslationDialectInterface;
-
-    /// Translates the given operation to LLVM IR using the provided IR builder
-    /// and saving the state in `moduleTranslation`.
-    LogicalResult convertOperation(Operation *op, llvm::IRBuilderBase &builder, LLVM::ModuleTranslation &moduleTranslation) const final
-    {
-        Operation &opInst = *op;
-        //#include "....Conversions.inc"
-
-        return failure();
-    }
-
-    /// Attaches module-level metadata for functions marked as kernels.
-    LogicalResult amendOperation(Operation *op, NamedAttribute attribute, LLVM::ModuleTranslation &moduleTranslation) const final
-    {
-        // TODO:
-        return success();
-    }
-};
-
 struct TypeScriptToLLVMLoweringPass : public PassWrapper<TypeScriptToLLVMLoweringPass, OperationPass<ModuleOp>>
 {
     void getDependentDialects(DialectRegistry &registry) const override
     {
         registry.insert<LLVM::LLVMDialect>();
-        registry.insert<mlir::typescript::TypeScriptDialect>();
-        registry.addDialectInterface<mlir::typescript::TypeScriptDialect, TypeScriptDialectLLVMIRTranslationInterface>();
     }
 
     void runOnOperation() final;
 };
+
 } // end anonymous namespace
 
 void TypeScriptToLLVMLoweringPass::runOnOperation()

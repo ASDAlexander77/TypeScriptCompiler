@@ -1,7 +1,8 @@
-#include "TypeScript/TypeScriptDialect.h"
-#include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/MLIRGen.h"
 #include "TypeScript/Passes.h"
+#include "TypeScript/TypeScriptDialect.h"
+#include "TypeScript/TypeScriptOps.h"
+#include "TypeScript/TypeScriptToLLVMIRTranslation.h"
 
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
 #include "mlir/ExecutionEngine/OptUtils.h"
@@ -29,51 +30,42 @@
 using namespace typescript;
 namespace cl = llvm::cl;
 
-static cl::opt<std::string> inputFilename(
-    cl::Positional,
-    cl::desc("<input TypeScript file>"),
-    cl::init("-"),
-    cl::value_desc("filename"));
+static cl::opt<std::string> inputFilename(cl::Positional, cl::desc("<input TypeScript file>"), cl::init("-"), cl::value_desc("filename"));
 
 namespace
 {
-    enum InputType
-    {
-        TypeScript,
-        MLIR
-    };
-}
+enum InputType
+{
+    TypeScript,
+    MLIR
+};
+} // namespace
 
-static cl::opt<enum InputType> inputType(
-    "x",
-    cl::init(TypeScript),
-    cl::desc("Decided the kind of output desired"),
-    cl::values(clEnumValN(TypeScript, "TypeScript", "load the input file as a TypeScript source.")),
-    cl::values(clEnumValN(MLIR, "mlir", "load the input file as an MLIR file")));
+static cl::opt<enum InputType> inputType("x", cl::init(TypeScript), cl::desc("Decided the kind of output desired"),
+                                         cl::values(clEnumValN(TypeScript, "TypeScript", "load the input file as a TypeScript source.")),
+                                         cl::values(clEnumValN(MLIR, "mlir", "load the input file as an MLIR file")));
 
 namespace
 {
-    enum Action
-    {
-        None,
-        DumpAST,
-        DumpMLIR,
-        DumpMLIRAffine,
-        DumpMLIRLLVM,
-        DumpLLVMIR,
-        RunJIT
-    };
-}
+enum Action
+{
+    None,
+    DumpAST,
+    DumpMLIR,
+    DumpMLIRAffine,
+    DumpMLIRLLVM,
+    DumpLLVMIR,
+    RunJIT
+};
+} // namespace
 
-static cl::opt<enum Action> emitAction(
-    "emit",
-    cl::desc("Select the kind of output desired"),
-    cl::values(clEnumValN(DumpAST, "ast", "output the AST dump")),
-    cl::values(clEnumValN(DumpMLIR, "mlir", "output the MLIR dump")),
-    cl::values(clEnumValN(DumpMLIRAffine, "mlir-affine", "output the MLIR dump after affine lowering")),
-    cl::values(clEnumValN(DumpMLIRLLVM, "mlir-llvm", "output the MLIR dump after llvm lowering")),
-    cl::values(clEnumValN(DumpLLVMIR, "llvm", "output the LLVM IR dump")),
-    cl::values(clEnumValN(RunJIT, "jit", "JIT the code and run it by invoking the main function")));
+static cl::opt<enum Action> emitAction("emit", cl::desc("Select the kind of output desired"),
+                                       cl::values(clEnumValN(DumpAST, "ast", "output the AST dump")),
+                                       cl::values(clEnumValN(DumpMLIR, "mlir", "output the MLIR dump")),
+                                       cl::values(clEnumValN(DumpMLIRAffine, "mlir-affine", "output the MLIR dump after affine lowering")),
+                                       cl::values(clEnumValN(DumpMLIRLLVM, "mlir-llvm", "output the MLIR dump after llvm lowering")),
+                                       cl::values(clEnumValN(DumpLLVMIR, "llvm", "output the LLVM IR dump")),
+                                       cl::values(clEnumValN(RunJIT, "jit", "JIT the code and run it by invoking the main function")));
 
 static cl::opt<bool> enableOpt("opt", cl::desc("Enable optimizations"));
 
@@ -82,8 +74,7 @@ int loadMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module)
     auto fileName = llvm::StringRef(inputFilename);
 
     // Handle '.TypeScript' input to the compiler.
-    if (inputType != InputType::MLIR &&
-        !fileName.endswith(".mlir"))
+    if (inputType != InputType::MLIR && !fileName.endswith(".mlir"))
     {
         auto fileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(inputFilename);
         if (std::error_code ec = fileOrErr.getError())
@@ -117,8 +108,7 @@ int loadMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module)
     return 0;
 }
 
-int loadAndProcessMLIR(mlir::MLIRContext &context,
-                       mlir::OwningModuleRef &module)
+int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module)
 {
     if (int error = loadMLIR(context, module))
     {
@@ -141,8 +131,8 @@ int loadAndProcessMLIR(mlir::MLIRContext &context,
         // Now that there is only one function, we can infer the shapes of each of
         // the operations.
         mlir::OpPassManager &optPM = pm.nest<mlir::FuncOp>();
-        //optPM.addPass(mlir::createCanonicalizerPass());
-        //optPM.addPass(mlir::typescript::createShapeInferencePass());
+        // optPM.addPass(mlir::createCanonicalizerPass());
+        // optPM.addPass(mlir::typescript::createShapeInferencePass());
         optPM.addPass(mlir::createCanonicalizerPass());
         optPM.addPass(mlir::createCSEPass());
     }
@@ -202,6 +192,7 @@ int dumpLLVMIR(mlir::ModuleOp module)
 {
     // Register the translation to LLVM IR with the MLIR context.
     mlir::registerLLVMDialectTranslation(*module->getContext());
+    mlir::typescript::registerTypeScriptDialectTranslation(*module->getContext());
 
     // Convert the module to LLVM IR in a new LLVM IR context.
     llvm::LLVMContext llvmContext;
@@ -240,6 +231,7 @@ int runJit(mlir::ModuleOp module)
     // Register the translation from MLIR to LLVM IR, which must happen before we
     // can JIT-compile.
     mlir::registerLLVMDialectTranslation(*module->getContext());
+    mlir::typescript::registerTypeScriptDialectTranslation(*module->getContext());
 
     // An optimization pipeline to use within the execution engine.
     auto optPipeline = mlir::makeOptimizingTransformer(
@@ -248,8 +240,7 @@ int runJit(mlir::ModuleOp module)
 
     // Create an MLIR execution engine. The execution engine eagerly JIT-compiles
     // the module.
-    auto maybeEngine = mlir::ExecutionEngine::create(
-        module, /*llvmModuleBuilder=*/nullptr, optPipeline);
+    auto maybeEngine = mlir::ExecutionEngine::create(module, /*llvmModuleBuilder=*/nullptr, optPipeline);
     assert(maybeEngine && "failed to construct an execution engine");
     auto &engine = maybeEngine.get();
 
