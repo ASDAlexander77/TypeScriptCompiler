@@ -3071,7 +3071,8 @@ llvm.return %5 : i32
                     capturedValues.push_back(refValue);
                 }
 
-                return builder.create<mlir_ts::CaptureOp>(location, effectiveFuncType, funcOp, capturedValues);
+                auto captured = builder.create<mlir_ts::CaptureOp>(location, funcType.getInput(0), capturedValues);
+                return builder.create<mlir_ts::TrampolineOp>(location, effectiveFuncType, funcOp, captured);
             }
 
             return builder.create<mlir_ts::SymbolRefOp>(location, effectiveFuncType,

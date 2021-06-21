@@ -1837,10 +1837,10 @@ struct CaptureOpLowering : public TsLlvmPattern<mlir_ts::CaptureOp>
 
         TypeHelper th(rewriter);
 
-        auto captureRefType = captureOp.callee().getType().cast<mlir::FunctionType>().getInput(0);
+        auto captureRefType = captureOp.getType();
         auto captureStoreType = captureRefType.cast<mlir_ts::RefType>().getElementType().cast<mlir_ts::TupleType>();
 
-        auto allocTempStorage = rewriter.create<mlir_ts::VariableOp>(location, captureRefType, mlir::Value());
+        mlir::Value allocTempStorage = rewriter.create<mlir_ts::VariableOp>(location, captureRefType, mlir::Value());
 
         auto index = 0;
         for (auto val : captureOp.captured())
@@ -1850,8 +1850,10 @@ struct CaptureOpLowering : public TsLlvmPattern<mlir_ts::CaptureOp>
             rewriter.create<mlir_ts::StoreOp>(location, val, fieldRef);
         }
 
-        mlir::Value newFunc = rewriter.create<mlir_ts::TrampolineOp>(location, captureOp.getType(), captureOp.callee(), allocTempStorage);
-        rewriter.replaceOp(captureOp, newFunc);
+        // mlir::Value newFunc = rewriter.create<mlir_ts::TrampolineOp>(location, captureOp.getType(), captureOp.callee(),
+        // allocTempStorage); rewriter.replaceOp(captureOp, newFunc);
+
+        rewriter.replaceOp(captureOp, allocTempStorage);
 
         return success();
     }

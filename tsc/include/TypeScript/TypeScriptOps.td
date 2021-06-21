@@ -476,7 +476,7 @@ def TypeScript_InvokeOp : TypeScript_Op<"invoke", [
 def TypeScript_CaptureOp : TypeScript_Op<"Capture", []> {
   let summary = "capture variables";
 
-  let arguments = (ins AnyType:$callee, Variadic<AnyType>:$captured);
+  let arguments = (ins Variadic<AnyType>:$captured);
   let results = (outs AnyType);
 }
 
