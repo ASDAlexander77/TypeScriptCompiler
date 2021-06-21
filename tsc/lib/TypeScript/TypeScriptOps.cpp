@@ -1,16 +1,16 @@
 #include "TypeScript/TypeScriptOps.h"
-#include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/Defines.h"
+#include "TypeScript/TypeScriptDialect.h"
 
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
 
 #include "mlir/IR/Builders.h"
-#include "mlir/IR/PatternMatch.h"
-#include "mlir/IR/Matchers.h"
 #include "mlir/IR/DialectImplementation.h"
-#include "mlir/IR/OpImplementation.h"
-#include "mlir/IR/TypeUtilities.h"
 #include "mlir/IR/FunctionImplementation.h"
+#include "mlir/IR/Matchers.h"
+#include "mlir/IR/OpImplementation.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/TypeUtilities.h"
 
 #include "llvm/ADT/TypeSwitch.h"
 
@@ -63,7 +63,10 @@ void mlir_ts::ConstTupleType::getFlattenedTypes(SmallVector<Type> &types)
 }
 
 /// Return the number of element types.
-size_t mlir_ts::ConstTupleType::size() const { return getFields().size(); }
+size_t mlir_ts::ConstTupleType::size() const
+{
+    return getFields().size();
+}
 
 //===----------------------------------------------------------------------===//
 /// TupleType
@@ -85,7 +88,10 @@ void mlir_ts::TupleType::getFlattenedTypes(SmallVector<Type> &types)
 }
 
 /// Return the number of element types.
-size_t mlir_ts::TupleType::size() const { return getFields().size(); }
+size_t mlir_ts::TupleType::size() const
+{
+    return getFields().size();
+}
 
 //===----------------------------------------------------------------------===//
 // ConstantOp
@@ -98,21 +104,20 @@ OpFoldResult mlir_ts::ConstantOp::fold(ArrayRef<Attribute> operands)
 
 namespace
 {
-    template <typename T>
-    struct RemoveUnused : public OpRewritePattern<T>
+template <typename T> struct RemoveUnused : public OpRewritePattern<T>
+{
+    using OpRewritePattern<T>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(T op, PatternRewriter &rewriter) const override
     {
-        using OpRewritePattern<T>::OpRewritePattern;
-
-        LogicalResult matchAndRewrite(T op, PatternRewriter &rewriter) const override
+        if (op->getResult(0).use_empty())
         {
-            if (op->getResult(0).use_empty())
-            {
-                rewriter.eraseOp(op);
-            }
-
-            return success();
+            rewriter.eraseOp(op);
         }
-    };
+
+        return success();
+    }
+};
 } // end anonymous namespace.
 
 //===----------------------------------------------------------------------===//
@@ -137,8 +142,7 @@ void mlir_ts::LoadOp::getCanonicalizationPatterns(OwningRewritePatternList &resu
 // FuncOp
 //===----------------------------------------------------------------------===//
 
-mlir_ts::FuncOp mlir_ts::FuncOp::create(Location location, StringRef name, FunctionType type,
-                                        ArrayRef<NamedAttribute> attrs)
+mlir_ts::FuncOp mlir_ts::FuncOp::create(Location location, StringRef name, FunctionType type, ArrayRef<NamedAttribute> attrs)
 {
     OperationState state(location, mlir_ts::FuncOp::getOperationName());
     OpBuilder builder(location->getContext());
@@ -146,8 +150,7 @@ mlir_ts::FuncOp mlir_ts::FuncOp::create(Location location, StringRef name, Funct
     return cast<mlir_ts::FuncOp>(Operation::create(state));
 }
 
-mlir_ts::FuncOp mlir_ts::FuncOp::create(Location location, StringRef name, FunctionType type,
-                                        ArrayRef<NamedAttribute> attrs,
+mlir_ts::FuncOp mlir_ts::FuncOp::create(Location location, StringRef name, FunctionType type, ArrayRef<NamedAttribute> attrs,
                                         ArrayRef<DictionaryAttr> argAttrs)
 {
     auto func = create(location, name, type, attrs);
@@ -155,12 +158,10 @@ mlir_ts::FuncOp mlir_ts::FuncOp::create(Location location, StringRef name, Funct
     return func;
 }
 
-void mlir_ts::FuncOp::build(OpBuilder &builder, OperationState &state, StringRef name,
-                            FunctionType type, ArrayRef<NamedAttribute> attrs,
+void mlir_ts::FuncOp::build(OpBuilder &builder, OperationState &state, StringRef name, FunctionType type, ArrayRef<NamedAttribute> attrs,
                             ArrayRef<DictionaryAttr> argAttrs)
 {
-    state.addAttribute(SymbolTable::getSymbolAttrName(),
-                       builder.getStringAttr(name));
+    state.addAttribute(SymbolTable::getSymbolAttrName(), builder.getStringAttr(name));
     state.addAttribute(getTypeAttrName(), TypeAttr::get(type));
     state.attributes.append(attrs.begin(), attrs.end());
     state.addRegion();
@@ -188,8 +189,7 @@ LogicalResult verify(mlir_ts::FuncOp op)
     for (unsigned i = 0, e = entryBlock.getNumArguments(); i != e; ++i)
         if (fnInputTypes[i] != entryBlock.getArgument(i).getType())
             return op.emitOpError("type of entry block argument #")
-                   << i << '(' << entryBlock.getArgument(i).getType()
-                   << ") must match the type of the corresponding argument in "
+                   << i << '(' << entryBlock.getArgument(i).getType() << ") must match the type of the corresponding argument in "
                    << "function signature(" << fnInputTypes[i] << ')';
 
     return success();
@@ -209,8 +209,7 @@ LogicalResult verify(mlir_ts::InvokeOp op)
     Block *unwindDest = op.unwindDest();
     if (unwindDest->empty())
     {
-        return op.emitError(
-            "must have at least one operation in unwind destination");
+        return op.emitError("must have at least one operation in unwind destination");
     }
 
     // In unwind destination, first operation must be LandingpadOp
@@ -237,27 +236,25 @@ Optional<MutableOperandRange> mlir_ts::InvokeOp::getMutableSuccessorOperands(uns
 
 namespace
 {
-    struct EraseRedundantAssertions : public OpRewritePattern<mlir_ts::AssertOp>
+struct EraseRedundantAssertions : public OpRewritePattern<mlir_ts::AssertOp>
+{
+    using OpRewritePattern<mlir_ts::AssertOp>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::AssertOp op, PatternRewriter &rewriter) const override
     {
-        using OpRewritePattern<mlir_ts::AssertOp>::OpRewritePattern;
-
-        LogicalResult matchAndRewrite(mlir_ts::AssertOp op,
-                                      PatternRewriter &rewriter) const override
+        // Erase assertion if argument is constant true.
+        if (matchPattern(op.arg(), m_One()))
         {
-            // Erase assertion if argument is constant true.
-            if (matchPattern(op.arg(), m_One()))
-            {
-                rewriter.eraseOp(op);
-                return success();
-            }
-
-            return failure();
+            rewriter.eraseOp(op);
+            return success();
         }
-    };
+
+        return failure();
+    }
+};
 } // namespace
 
-void mlir_ts::AssertOp::getCanonicalizationPatterns(OwningRewritePatternList &patterns,
-                                                    MLIRContext *context)
+void mlir_ts::AssertOp::getCanonicalizationPatterns(OwningRewritePatternList &patterns, MLIRContext *context)
 {
     patterns.insert<EraseRedundantAssertions>(context);
 }
@@ -278,8 +275,7 @@ LogicalResult mlir_ts::CallOp::verifySymbolUses(SymbolTableCollection &symbolTab
     auto fn = symbolTable.lookupNearestSymbolFrom<mlir_ts::FuncOp>(*this, fnAttr);
     if (!fn)
     {
-        return emitOpError() << "'" << fnAttr.getValue()
-                             << "' does not reference a valid function";
+        return emitOpError() << "'" << fnAttr.getValue() << "' does not reference a valid function";
     }
 
     // Verify that the operand and result types match the callee.
@@ -308,8 +304,7 @@ LogicalResult mlir_ts::CallOp::verifySymbolUses(SymbolTableCollection &symbolTab
             {
             */
             return emitOpError("operand type mismatch: expected operand type ")
-                   << fnType.getInput(i) << ", but provided "
-                   << getOperand(i).getType() << " for operand number " << i;
+                   << fnType.getInput(i) << ", but provided " << getOperand(i).getType() << " for operand number " << i;
             /*
             }
             */
@@ -364,8 +359,7 @@ LogicalResult mlir_ts::CallIndirectOp::verifySymbolUses(SymbolTableCollection &s
             {
             */
             return emitOpError("operand type mismatch: expected operand type ")
-                   << fnType.getInput(i) << ", but provided "
-                   << getOperand(i).getType() << " for operand number " << i;
+                   << fnType.getInput(i) << ", but provided " << getOperand(i).getType() << " for operand number " << i;
             /*
             }
             */
@@ -385,27 +379,40 @@ LogicalResult mlir_ts::CallIndirectOp::verifySymbolUses(SymbolTableCollection &s
 
 namespace
 {
-    /// Fold indirect calls that have a constant function as the callee operand.
-    struct SimplifyIndirectCallWithKnownCallee : public OpRewritePattern<mlir_ts::CallIndirectOp>
-    {
-        using OpRewritePattern<mlir_ts::CallIndirectOp>::OpRewritePattern;
+/// Fold indirect calls that have a constant function as the callee operand.
+struct SimplifyIndirectCallWithKnownCallee : public OpRewritePattern<mlir_ts::CallIndirectOp>
+{
+    using OpRewritePattern<mlir_ts::CallIndirectOp>::OpRewritePattern;
 
-        LogicalResult matchAndRewrite(mlir_ts::CallIndirectOp indirectCall, PatternRewriter &rewriter) const override
+    LogicalResult matchAndRewrite(mlir_ts::CallIndirectOp indirectCall, PatternRewriter &rewriter) const override
+    {
+        // Check that the callee is a constant callee.
+        if (auto symbolRefOp = indirectCall.getCallee().getDefiningOp<mlir_ts::SymbolRefOp>())
         {
-            // Check that the callee is a constant callee.
-            if (auto symbolRefOp = indirectCall.getCallee().getDefiningOp<mlir_ts::SymbolRefOp>())
+            // Replace with a direct call.
+            rewriter.replaceOpWithNewOp<mlir_ts::CallOp>(indirectCall, symbolRefOp.identifierAttr(), indirectCall.getResultTypes(),
+                                                         indirectCall.getArgOperands());
+            return success();
+        }
+
+        if (auto trampolineOp = indirectCall.getCallee().getDefiningOp<mlir_ts::TrampolineOp>())
+        {
+            if (auto symbolRefOp = trampolineOp.callee().getDefiningOp<mlir_ts::SymbolRefOp>())
             {
                 // Replace with a direct call.
-                rewriter.replaceOpWithNewOp<mlir_ts::CallOp>(indirectCall, symbolRefOp.identifierAttr(),
-                                                             indirectCall.getResultTypes(),
-                                                             indirectCall.getArgOperands());
-
+                SmallVector<mlir::Value> args(indirectCall.getArgOperands());
+                args.push_back(trampolineOp.data_reference());
+                args.append(indirectCall.getArgOperands().begin(), indirectCall.getArgOperands().end());
+                rewriter.replaceOpWithNewOp<mlir_ts::CallOp>(indirectCall, symbolRefOp.identifierAttr(), indirectCall.getResultTypes(),
+                                                             args);
+                rewriter.eraseOp(trampolineOp);
                 return success();
             }
-
-            return failure();
         }
-    };
+
+        return failure();
+    }
+};
 } // end anonymous namespace.
 
 void mlir_ts::CallIndirectOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
@@ -424,8 +431,7 @@ void mlir_ts::IfOp::build(OpBuilder &builder, OperationState &result, Value cond
 
 void mlir_ts::IfOp::build(OpBuilder &builder, OperationState &result, TypeRange resultTypes, Value cond, bool withElseRegion)
 {
-    auto addTerminator = [&](OpBuilder &nested, Location loc)
-    {
+    auto addTerminator = [&](OpBuilder &nested, Location loc) {
         if (resultTypes.empty())
         {
             mlir_ts::IfOp::ensureTerminator(*nested.getInsertionBlock()->getParent(), nested, loc);
@@ -436,8 +442,7 @@ void mlir_ts::IfOp::build(OpBuilder &builder, OperationState &result, TypeRange 
 }
 
 void mlir_ts::IfOp::build(OpBuilder &builder, OperationState &result, TypeRange resultTypes, Value cond,
-                          function_ref<void(OpBuilder &, Location)> thenBuilder,
-                          function_ref<void(OpBuilder &, Location)> elseBuilder)
+                          function_ref<void(OpBuilder &, Location)> thenBuilder, function_ref<void(OpBuilder &, Location)> elseBuilder)
 {
     assert(thenBuilder && "the builder callback for 'then' must be present");
 
@@ -457,8 +462,7 @@ void mlir_ts::IfOp::build(OpBuilder &builder, OperationState &result, TypeRange 
     elseBuilder(builder, result.location);
 }
 
-void mlir_ts::IfOp::build(OpBuilder &builder, OperationState &result, Value cond,
-                          function_ref<void(OpBuilder &, Location)> thenBuilder,
+void mlir_ts::IfOp::build(OpBuilder &builder, OperationState &result, Value cond, function_ref<void(OpBuilder &, Location)> thenBuilder,
                           function_ref<void(OpBuilder &, Location)> elseBuilder)
 {
     build(builder, result, TypeRange(), cond, thenBuilder, elseBuilder);
@@ -522,14 +526,12 @@ void mlir_ts::IfOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attri
 
 OperandRange mlir_ts::WhileOp::getSuccessorEntryOperands(unsigned index)
 {
-    assert(index == 0 &&
-           "WhileOp is expected to branch only to the first region");
+    assert(index == 0 && "WhileOp is expected to branch only to the first region");
 
     return inits();
 }
 
-void mlir_ts::WhileOp::getSuccessorRegions(Optional<unsigned> index,
-                                           ArrayRef<Attribute> operands,
+void mlir_ts::WhileOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attribute> operands,
                                            SmallVectorImpl<RegionSuccessor> &regions)
 {
     (void)operands;
@@ -557,14 +559,12 @@ void mlir_ts::WhileOp::getSuccessorRegions(Optional<unsigned> index,
 
 OperandRange mlir_ts::DoWhileOp::getSuccessorEntryOperands(unsigned index)
 {
-    assert(index == 0 &&
-           "DoWhileOp is expected to branch only to the first region");
+    assert(index == 0 && "DoWhileOp is expected to branch only to the first region");
 
     return inits();
 }
 
-void mlir_ts::DoWhileOp::getSuccessorRegions(Optional<unsigned> index,
-                                             ArrayRef<Attribute> operands,
+void mlir_ts::DoWhileOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attribute> operands,
                                              SmallVectorImpl<RegionSuccessor> &regions)
 {
     (void)operands;
@@ -592,15 +592,12 @@ void mlir_ts::DoWhileOp::getSuccessorRegions(Optional<unsigned> index,
 
 OperandRange mlir_ts::ForOp::getSuccessorEntryOperands(unsigned index)
 {
-    assert(index == 0 &&
-           "ForOp is expected to branch only to the first region");
+    assert(index == 0 && "ForOp is expected to branch only to the first region");
 
     return inits();
 }
 
-void mlir_ts::ForOp::getSuccessorRegions(Optional<unsigned> index,
-                                         ArrayRef<Attribute> operands,
-                                         SmallVectorImpl<RegionSuccessor> &regions)
+void mlir_ts::ForOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attribute> operands, SmallVectorImpl<RegionSuccessor> &regions)
 {
     (void)operands;
 
@@ -626,7 +623,8 @@ void mlir_ts::ForOp::getSuccessorRegions(Optional<unsigned> index,
 // SwitchOp
 //===----------------------------------------------------------------------===//
 
-void mlir_ts::SwitchOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attribute> operands, SmallVectorImpl<RegionSuccessor> &regions)
+void mlir_ts::SwitchOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attribute> operands,
+                                            SmallVectorImpl<RegionSuccessor> &regions)
 {
     regions.push_back(RegionSuccessor(&casesRegion()));
 }
@@ -658,108 +656,88 @@ void mlir_ts::SwitchOp::addMergeBlock()
 
 namespace
 {
-    // Pattern to remove unused IfOp results.
-    struct RemoveUnusedResults : public OpRewritePattern<mlir_ts::IfOp>
+// Pattern to remove unused IfOp results.
+struct RemoveUnusedResults : public OpRewritePattern<mlir_ts::IfOp>
+{
+    using OpRewritePattern<mlir_ts::IfOp>::OpRewritePattern;
+
+    void transferBody(Block *source, Block *dest, ArrayRef<OpResult> usedResults, PatternRewriter &rewriter) const
     {
-        using OpRewritePattern<mlir_ts::IfOp>::OpRewritePattern;
+        // Move all operations to the destination block.
+        rewriter.mergeBlocks(source, dest);
+        // Replace the yield op by one that returns only the used values.
+        auto yieldOp = cast<mlir_ts::ResultOp>(dest->getTerminator());
+        SmallVector<Value, 4> usedOperands;
+        llvm::transform(usedResults, std::back_inserter(usedOperands),
+                        [&](OpResult result) { return yieldOp.getOperand(result.getResultNumber()); });
+        rewriter.updateRootInPlace(yieldOp, [&]() { yieldOp->setOperands(usedOperands); });
+    }
 
-        void transferBody(Block *source, Block *dest, ArrayRef<OpResult> usedResults,
-                          PatternRewriter &rewriter) const
-        {
-            // Move all operations to the destination block.
-            rewriter.mergeBlocks(source, dest);
-            // Replace the yield op by one that returns only the used values.
-            auto yieldOp = cast<mlir_ts::ResultOp>(dest->getTerminator());
-            SmallVector<Value, 4> usedOperands;
-            llvm::transform(
-                usedResults,
-                std::back_inserter(usedOperands),
-                [&](OpResult result)
-                {
-                    return yieldOp.getOperand(result.getResultNumber());
-                });
-            rewriter.updateRootInPlace(yieldOp, [&]()
-                                       { yieldOp->setOperands(usedOperands); });
-        }
-
-        LogicalResult matchAndRewrite(mlir_ts::IfOp op, PatternRewriter &rewriter) const override
-        {
-            // Compute the list of used results.
-            SmallVector<OpResult, 4> usedResults;
-            llvm::copy_if(
-                op.getResults(),
-                std::back_inserter(usedResults),
-                [](OpResult result)
-                { return !result.use_empty(); });
-
-            // Replace the operation if only a subset of its results have uses.
-            if (usedResults.size() == op.getNumResults())
-            {
-                return failure();
-            }
-
-            // Compute the result types of the replacement operation.
-            SmallVector<Type, 4> newTypes;
-            llvm::transform(
-                usedResults,
-                std::back_inserter(newTypes),
-                [](OpResult result)
-                { return result.getType(); });
-
-            // Create a replacement operation with empty then and else regions.
-            auto emptyBuilder = [](OpBuilder &, Location) {};
-            auto newOp = rewriter.create<mlir_ts::IfOp>(
-                op.getLoc(),
-                newTypes,
-                op.condition(),
-                emptyBuilder,
-                emptyBuilder);
-
-            // Move the bodies and replace the terminators (note there is a then and
-            // an else region since the operation returns results).
-            transferBody(op.getBody(0), newOp.getBody(0), usedResults, rewriter);
-            transferBody(op.getBody(1), newOp.getBody(1), usedResults, rewriter);
-
-            // Replace the operation by the new one.
-            SmallVector<Value, 4> repResults(op.getNumResults());
-            for (auto en : llvm::enumerate(usedResults))
-            {
-                repResults[en.value().getResultNumber()] = newOp.getResult(en.index());
-            }
-
-            rewriter.replaceOp(op, repResults);
-            return success();
-        }
-    };
-
-    struct RemoveStaticCondition : public OpRewritePattern<mlir_ts::IfOp>
+    LogicalResult matchAndRewrite(mlir_ts::IfOp op, PatternRewriter &rewriter) const override
     {
-        using OpRewritePattern<mlir_ts::IfOp>::OpRewritePattern;
+        // Compute the list of used results.
+        SmallVector<OpResult, 4> usedResults;
+        llvm::copy_if(op.getResults(), std::back_inserter(usedResults), [](OpResult result) { return !result.use_empty(); });
 
-        LogicalResult matchAndRewrite(mlir_ts::IfOp op, PatternRewriter &rewriter) const override
+        // Replace the operation if only a subset of its results have uses.
+        if (usedResults.size() == op.getNumResults())
         {
-            auto constant = op.condition().getDefiningOp<mlir_ts::ConstantOp>();
-            if (!constant)
-            {
-                return failure();
-            }
-
-            if (constant.getValue().cast<BoolAttr>().getValue())
-            {
-                replaceOpWithRegion(rewriter, op, op.thenRegion());
-            }
-            else if (!op.elseRegion().empty())
-            {
-                replaceOpWithRegion(rewriter, op, op.elseRegion());
-            }
-            else
-            {
-                rewriter.eraseOp(op);
-            }
-
-            return success();
+            return failure();
         }
-    };
+
+        // Compute the result types of the replacement operation.
+        SmallVector<Type, 4> newTypes;
+        llvm::transform(usedResults, std::back_inserter(newTypes), [](OpResult result) { return result.getType(); });
+
+        // Create a replacement operation with empty then and else regions.
+        auto emptyBuilder = [](OpBuilder &, Location) {};
+        auto newOp = rewriter.create<mlir_ts::IfOp>(op.getLoc(), newTypes, op.condition(), emptyBuilder, emptyBuilder);
+
+        // Move the bodies and replace the terminators (note there is a then and
+        // an else region since the operation returns results).
+        transferBody(op.getBody(0), newOp.getBody(0), usedResults, rewriter);
+        transferBody(op.getBody(1), newOp.getBody(1), usedResults, rewriter);
+
+        // Replace the operation by the new one.
+        SmallVector<Value, 4> repResults(op.getNumResults());
+        for (auto en : llvm::enumerate(usedResults))
+        {
+            repResults[en.value().getResultNumber()] = newOp.getResult(en.index());
+        }
+
+        rewriter.replaceOp(op, repResults);
+        return success();
+    }
+};
+
+struct RemoveStaticCondition : public OpRewritePattern<mlir_ts::IfOp>
+{
+    using OpRewritePattern<mlir_ts::IfOp>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::IfOp op, PatternRewriter &rewriter) const override
+    {
+        auto constant = op.condition().getDefiningOp<mlir_ts::ConstantOp>();
+        if (!constant)
+        {
+            return failure();
+        }
+
+        if (constant.getValue().cast<BoolAttr>().getValue())
+        {
+            replaceOpWithRegion(rewriter, op, op.thenRegion());
+        }
+        else if (!op.elseRegion().empty())
+        {
+            replaceOpWithRegion(rewriter, op, op.elseRegion());
+        }
+        else
+        {
+            rewriter.eraseOp(op);
+        }
+
+        return success();
+    }
+};
 } // namespace
 
 void mlir_ts::IfOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
@@ -767,8 +745,8 @@ void mlir_ts::IfOp::getCanonicalizationPatterns(OwningRewritePatternList &result
     results.insert<RemoveUnusedResults, RemoveStaticCondition>(context);
 }
 
-void mlir_ts::GlobalOp::build(OpBuilder &builder, OperationState &result, Type type, bool isConstant,
-                              StringRef name, Attribute value, ArrayRef<NamedAttribute> attrs)
+void mlir_ts::GlobalOp::build(OpBuilder &builder, OperationState &result, Type type, bool isConstant, StringRef name, Attribute value,
+                              ArrayRef<NamedAttribute> attrs)
 {
     result.addAttribute(SymbolTable::getSymbolAttrName(), builder.getStringAttr(name));
     result.addAttribute("type", TypeAttr::get(type));
@@ -792,8 +770,7 @@ void mlir_ts::GlobalOp::build(OpBuilder &builder, OperationState &result, Type t
 
 OperandRange mlir_ts::TryOp::getSuccessorEntryOperands(unsigned index)
 {
-    assert(index == 0 &&
-           "TryOp is expected to branch only to the first region");
+    assert(index == 0 && "TryOp is expected to branch only to the first region");
 
     return getODSOperands(0);
 }
