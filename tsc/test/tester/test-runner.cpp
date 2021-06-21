@@ -48,8 +48,10 @@ namespace fs = std::experimental::filesystem;
 #endif
 
 #ifndef TEST_FILE
-#define TEST_FILE "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/02numbers.ts"
+#define TEST_FILE "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/00funcs_capture.ts"
 #endif
+
+bool isJit = true;
 
 bool hasEnding(std::string const &fullString, std::string const &ending)
 {
@@ -97,8 +99,7 @@ std::string exec(std::string cmd)
 
 inline bool exists(std::string name)
 {
-    std::ifstream f(name.c_str());
-    return f.good();
+    return fs::exists(name);
 }
 
 int runFolder(const char *folder)
@@ -167,8 +168,8 @@ void createCompileBatchFileWithRT()
         << std::endl;
     batFile << "del %FILENAME%.il" << std::endl;
     batFile << "del %FILENAME%.o" << std::endl;
-    batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
     batFile << "echo on" << std::endl;
+    batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
     batFile.close();
 }
 
@@ -183,8 +184,8 @@ void createJitBatchFile()
     batFile << "echo off" << std::endl;
     batFile << "set FILENAME=%1" << std::endl;
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit %2" << std::endl;
     batFile << "echo on" << std::endl;
+    batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit %2 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
     batFile.close();
 }
 
@@ -228,6 +229,8 @@ void testFile(const char *file)
             }
         }
 
+        infileO.close();
+
         // read test result
         std::ifstream infile;
         infile.open(errFile, std::fstream::in);
@@ -260,7 +263,15 @@ void testFile(const char *file)
 
     // compile
     std::stringstream ss;
-    ss << "compile_rt.bat " << stem << ms.count() << " " << file;
+    if (isJit)
+    {
+        ss << "jit.bat " << stem << ms.count() << " " << file;
+    }
+    else
+    {
+        ss << "compile_rt.bat " << stem << ms.count() << " " << file;
+    }
+
     try
     {
         auto compileResult = exec(ss.str());
@@ -295,7 +306,11 @@ int main(int argc, char **argv)
 {
     try
     {
-        bool isJit = argc > 1 && std::string(argv[1]) == "-jit";
+        if (argc > 1)
+        {
+            isJit = std::string(argv[1]) == "-jit";
+        }
+
         if (isJit)
         {
             createJitBatchFile();
