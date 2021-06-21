@@ -52,6 +52,7 @@ namespace fs = std::experimental::filesystem;
 #endif
 
 bool isJit = true;
+bool enableBuiltins = false;
 
 bool hasEnding(std::string const &fullString, std::string const &ending)
 {
@@ -267,9 +268,13 @@ void testFile(const char *file)
     {
         ss << "jit.bat " << stem << ms.count() << " " << file;
     }
-    else
+    else if (enableBuiltins)
     {
         ss << "compile_rt.bat " << stem << ms.count() << " " << file;
+    }
+    else
+    {
+        ss << "compile.bat " << stem << ms.count() << " " << file;
     }
 
     try
@@ -306,9 +311,22 @@ int main(int argc, char **argv)
 {
     try
     {
-        if (argc > 1)
+        char *filePath = nullptr;
+        auto index = 1;
+        for (; index < argc; index++)
         {
-            isJit = std::string(argv[1]) == "-jit";
+            if (std::string(argv[index]) == "-jit")
+            {
+                isJit = true;
+            }
+            else if (std::string(argv[index]) == "-builtins")
+            {
+                enableBuiltins = true;
+            }
+            else
+            {
+                filePath = argv[index];
+            }
         }
 
         if (isJit)
@@ -320,9 +338,9 @@ int main(int argc, char **argv)
             createCompileBatchFileWithRT();
         }
 
-        if (argc > 1)
+        if (index > 1)
         {
-            testFile(isJit ? argv[2] : argv[1]);
+            testFile(filePath);
         }
         else
         {
