@@ -925,7 +925,10 @@ class MLIRGenImpl
                 auto discoveredType = genContextWithPassResult.passResult->functionReturnType;
                 if (discoveredType && discoveredType != funcProto->getReturnType())
                 {
-                    funcProto->setReturnType(discoveredType);
+                    // TODO: do we need to convert it here? maybe send it as const object?
+                    MLIRTypeHelper mth(builder.getContext());
+                    bool copyRequired;
+                    funcProto->setReturnType(mth.convertConstTypeToType(discoveredType, copyRequired));
                     LLVM_DEBUG(llvm::dbgs() << "ret type for " << name << " : " << funcProto->getReturnType() << "\n";);
                 }
 
