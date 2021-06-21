@@ -1368,11 +1368,15 @@ class CastLogicHelper
             }
             else
             {
+                LLVM_DEBUG(llvm::dbgs() << "[castToArrayType(2)] from value: " << in << " type: " << in.getType() << " to type: " << resType
+                                        << "\n";);
                 llvm_unreachable("not implemented");
             }
         }
         else
         {
+            LLVM_DEBUG(llvm::dbgs() << "[castToArrayType(1)] from value: " << in << " type: " << in.getType() << " to type: " << resType
+                                    << "\n";);
             llvm_unreachable("not implemented");
         }
 

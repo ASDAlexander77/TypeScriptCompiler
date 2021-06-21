@@ -267,8 +267,9 @@ class MLIRCodeLogic
         SmallVector<mlir_ts::FieldInfo> fields;
         for (auto &varInfo : capturedVars)
         {
+            auto &actualValue = varInfo.getValue().first;
             auto &val = varInfo.getValue().second;
-            fields.push_back(mlir_ts::FieldInfo{TupleFieldName(val->getName()), mlir_ts::RefType::get(val->getType())});
+            fields.push_back(mlir_ts::FieldInfo{TupleFieldName(val->getName()), actualValue.getType()});
         }
 
         auto lambdaType = mlir_ts::TupleType::get(builder.getContext(), fields);

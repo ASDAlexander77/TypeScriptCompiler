@@ -3009,6 +3009,9 @@ llvm.return %5 : i32
 
                 if (isOuterVar && genContext.passResult)
                 {
+                    LLVM_DEBUG(llvm::dbgs() << "outer var name: " << name << " type: " << value.first.getType() << " value: " << value.first
+                                            << "\n");
+
                     genContext.passResult->outerVariables.insert({value.second->getName(), value});
                 }
 
