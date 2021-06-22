@@ -9,6 +9,8 @@ set p=%cd%
 IF EXIST ".\3rdParty\llvm\%BUILD%\bin_" (
   echo "No need to build LLVM (%BUILD%)"
 ) ELSE (
+  echo "Downloading LLVM"
+  git submodule update --init --recursive
   echo "Configuring LLVM (%BUILD%)"
   cd %p%
   @call scripts\config_llvm_%BUILD%.bat
