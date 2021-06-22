@@ -1,6 +1,18 @@
 # TypeScript Native Compiler
 ###### Powered by [![LLVM|MLIR](https://llvm.org/img/LLVM-Logo-Derivative-1.png)](https://llvm.org/)
 
+License
+-------
+
+TypeScriptCompiler is licensed under the MIT license.
+
+Chat Room
+---------
+
+Want to chat with other members of the TypeScriptCompiler community?
+
+[![Join the chat at https://gitter.im/ASDAlexander77/TypeScriptCompiler](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/ASDAlexander77/TypeScriptCompiler?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+
 ## Compile as JIT
 
 ```cmd
