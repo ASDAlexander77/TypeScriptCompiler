@@ -20,6 +20,20 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
+
+    - name: Cache Build 3rd Party
+      id: cache-3rd-party
+      uses: actions/cache@v2
+      with:
+        path: __build/llvm
+        key: ${{ runner.os }}-build-llvm
+
+    - name: Cache 3rd Party binaries
+      id: cache-3rd-party-binary
+      uses: actions/cache@v2
+      with:
+        path: 3rdParty
+        key: ${{ runner.os }}-3rd-party
     
     - name: Prepare 3rd party
       shell: cmd
