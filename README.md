@@ -29,7 +29,6 @@ set TSCPATH=%TSCBIN%\tsc\bin
 set VCFLD=C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\SDK\ScopeCppSDK\vc15
 set LIBPATH=%VCFLD%\VC\lib
 set SDKPATH=%VCFLD%\SDK\lib
-set LLVMLIBPATH=%LLVM%\llvm\release\lib
 %TSCPATH%\tsc.exe --emit=llvm %FILENAME%.ts 2>%FILENAME%.ll
 %LLVMPATH%\llc.exe --filetype=obj -o=%FILENAME%.o %FILENAME%.ll
 %LLVMPATH%\lld.exe -flavor link %FILENAME%.o /libpath:"%LIBPATH%" /libpath:"%SDKPATH%" "%LIBPATH%\libcmt.lib" "%LIBPATH%\libvcruntime.lib" "%SDKPATH%\kernel32.lib" "%SDKPATH%\libucrt.lib" "%SDKPATH%\uuid.lib"
