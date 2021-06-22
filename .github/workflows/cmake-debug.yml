@@ -22,15 +22,15 @@ jobs:
     - uses: actions/checkout@v2
     
     - name: Prepare 3rd party
-      run: prepare_3rdParty.bat
+      run: Start-Process -FilePath prepare_3rdParty.bat
 
     - name: Configure CMake
       working-directory: ${{github.workspace}}/tsc
-      run: cd config_tsc_debug.bat
+      run: Start-Process -FilePath config_tsc_debug.bat
 
     - name: Build
       working-directory: ${{github.workspace}}/tsc
-      run: build_tsc_debug.bat
+      run: Start-Process -FilePath build_tsc_debug.bat
 
     - name: Test
       working-directory: ${{github.workspace}}/__build
