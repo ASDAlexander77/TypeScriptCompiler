@@ -1,9 +1,9 @@
 name: CMake
 
 on:
-  push:
-    branches: [ main ]
   pull_request:
+    branches: [ main ]
+  workflow_dispatch:
     branches: [ main ]
 
 env:
