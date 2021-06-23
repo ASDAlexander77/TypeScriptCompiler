@@ -309,7 +309,7 @@ def TypeScript_NewOp : TypeScript_Op<"New"> {
     allocate in memory
   }];
 
-  let arguments = (ins TypeAttr:$type);
+  let arguments = (ins );
   let results = (outs AnyType:$instance);
 }
 

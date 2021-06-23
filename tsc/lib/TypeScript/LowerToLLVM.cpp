@@ -1037,15 +1037,18 @@ struct NewOpLowering : public TsLlvmPattern<mlir_ts::NewOp>
 
         auto loc = newOp.getLoc();
 
-        auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), newOp.typeAttr());
+        mlir::Type storageType;
+        TypeSwitch<Type>(newOp.getType())
+            .Case<mlir_ts::ClassType>([&](auto classType) { storageType = classType.getStorageType(); })
+            .Case<mlir_ts::ValueRefType>([&](auto valueRefType) { storageType = valueRefType.getElementType(); })
+            .Default([&](auto type) { storageType = type; });
+
+        auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), storageType);
 
         auto i8PtrTy = th.getI8PtrType();
         auto mallocFuncOp = ch.getOrInsertFunction("malloc", th.getFunctionType(i8PtrTy, {th.getIndexType()}));
 
         auto callResults = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{sizeOfTypeValue});
-
-        auto storageType =
-            newOp.getType().isa<mlir_ts::ClassType>() ? newOp.getType().cast<mlir_ts::ClassType>().getStorageType() : newOp.getType();
 
         auto allocated = rewriter.create<LLVM::BitcastOp>(newOp->getLoc(), tch.convertType(newOp.getType()), callResults.getResult(0));
 
@@ -1930,15 +1933,8 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         return LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, false);
     });
 
-    converter.addConversion([&](mlir_ts::ClassType type) {
-        SmallVector<mlir::Type> convertedTypes;
-        for (auto subType : type.getStorageType().cast<mlir_ts::TupleType>().getFields())
-        {
-            convertedTypes.push_back(converter.convertType(subType.type));
-        }
-
-        return LLVM::LLVMPointerType::get(LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, false));
-    });
+    converter.addConversion(
+        [&](mlir_ts::ClassType type) { return LLVM::LLVMPointerType::get(converter.convertType(type.getStorageType())); });
 
     converter.addConversion([&](mlir_ts::OptionalType type) {
         SmallVector<mlir::Type> convertedTypes;

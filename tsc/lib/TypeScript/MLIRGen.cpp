@@ -2621,13 +2621,13 @@ llvm.return %5 : i32
         auto location = loc(newExpression);
 
         auto type = getTypeByTypeName(newExpression->expression);
-        auto storageType = type;
+        auto resultType = type;
         if (mth.isValueType(type))
         {
-            storageType = getValueRefType(type);
+            resultType = getValueRefType(type);
         }
 
-        auto newOp = builder.create<mlir_ts::NewOp>(location, storageType, mlir::TypeAttr::get(type));
+        auto newOp = builder.create<mlir_ts::NewOp>(location, resultType);
 
         return newOp;
     }
