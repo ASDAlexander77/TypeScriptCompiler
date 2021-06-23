@@ -455,6 +455,36 @@ class MLIRPropertyAccessCodeLogic
         }
     }
 
+    template <typename T> mlir::Value Class(T classType)
+    {
+        if (auto tupleType = classType.getStorageType().dyn_cast_or_null<mlir_ts::TupleType>())
+        {
+            MLIRCodeLogic mcl(builder);
+
+            // resolve index
+            auto pair = mcl.TupleFieldType(location, tupleType, fieldId);
+            auto fieldIndex = pair.first;
+            auto elementType = pair.second;
+
+            if (fieldIndex < 0)
+            {
+                return mlir::Value();
+            }
+
+            // LLVM_DEBUG(llvm::dbgs() << "property ref access: " << expression << " index:" << fieldIndex << " field type: " << elementType
+            // << "\n");
+
+            auto propRef = builder.create<mlir_ts::PropertyRefOp>(location, mlir_ts::RefType::get(elementType), expression,
+                                                                  builder.getI32IntegerAttr(fieldIndex));
+
+            return builder.create<mlir_ts::LoadOp>(location, elementType, propRef);
+        }
+        else
+        {
+            llvm_unreachable("not implemented");
+        }
+    }
+
   private:
     StringRef getName()
     {

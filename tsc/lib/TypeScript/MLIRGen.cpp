@@ -2434,6 +2434,7 @@ llvm.return %5 : i32
             .Case<mlir_ts::ConstArrayType>([&](auto arrayType) { value = cl.Array(arrayType); })
             .Case<mlir_ts::ArrayType>([&](auto arrayType) { value = cl.Array(arrayType); })
             .Case<mlir_ts::RefType>([&](auto refType) { value = cl.Ref(refType); })
+            .Case<mlir_ts::ClassType>([&](auto classType) { value = cl.Class(classType); })
             .Default([](auto type) { llvm_unreachable("not implemented"); });
 
         if (value)
