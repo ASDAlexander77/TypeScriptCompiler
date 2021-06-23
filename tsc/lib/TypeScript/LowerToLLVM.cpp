@@ -1044,6 +1044,9 @@ struct NewOpLowering : public TsLlvmPattern<mlir_ts::NewOp>
 
         auto callResults = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{sizeOfTypeValue});
 
+        auto storageType =
+            newOp.getType().isa<mlir_ts::ClassType>() ? newOp.getType().cast<mlir_ts::ClassType>().getStorageType() : newOp.getType();
+
         auto allocated = rewriter.create<LLVM::BitcastOp>(newOp->getLoc(), tch.convertType(newOp.getType()), callResults.getResult(0));
 
         rewriter.replaceOp(newOp, ValueRange{allocated});
@@ -1925,6 +1928,16 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         }
 
         return LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, false);
+    });
+
+    converter.addConversion([&](mlir_ts::ClassType type) {
+        SmallVector<mlir::Type> convertedTypes;
+        for (auto subType : type.getStorageType().cast<mlir_ts::TupleType>().getFields())
+        {
+            convertedTypes.push_back(converter.convertType(subType.type));
+        }
+
+        return LLVM::LLVMPointerType::get(LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, false));
     });
 
     converter.addConversion([&](mlir_ts::OptionalType type) {

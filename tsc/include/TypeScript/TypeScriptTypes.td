@@ -509,6 +509,46 @@ def TypeScript_Tuple : TypeScript_Type<"Tuple"> {
   }];
 }
 
+def TypeScript_Class : TypeScript_Type<"Class"> {
+  let mnemonic = "class";
+
+  let description = [{
+    Syntax:
+
+    ```
+    class-type ::= `class<` type `>`
+    ```
+
+    Examples:
+
+    ```mlir
+    class<f32>
+    class<i32>
+    ```
+  }];
+  let parameters = (ins "Type":$storageType);
+
+  // We define the printer inline.
+  let printer = [{ $_printer << "class<" << getImpl()->storageType << ">"; }];  
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "Type":$storageType), [{
+      return Base::get(storageType.getContext(), storageType);
+    }]>
+  ];
+
+  // Parses the above format
+  let parser = [{
+    Type storageType;
+    if ($_parser.parseLess()) return Type();
+    if ($_parser.parseType(storageType)) return Type();
+    if ($_parser.parseGreater()) return Type();
+    return get(storageType);
+  }];  
+
+  let skipDefaultBuilders = 1;  
+}
+
 def TypeScript_Union : TypeScript_Type<"Union"> {
   let mnemonic = "union";
 

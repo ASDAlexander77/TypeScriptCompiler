@@ -196,6 +196,12 @@ class MLIRGenImpl
         });
         visitorASTEnum.visit(module);
 
+        FilterVisitorAST<ClassDeclaration> visitorASTClass(SyntaxKind::ClassDeclaration, [&](auto classDecl) {
+            GenContext genContext;
+            mlirGen(classDecl.as<ClassLikeDeclaration>(), genContext);
+        });
+        visitorASTClass.visit(module);
+
         FilterVisitorAST<TypeAliasDeclaration> visitorASTType(SyntaxKind::TypeAliasDeclaration, [&](auto typeAliasDecl) {
             GenContext genContext;
             mlirGen(typeAliasDecl, genContext);
@@ -323,6 +329,12 @@ class MLIRGenImpl
         {
             // must be processed already
             // return mlirGen(statementAST.as<EnumDeclaration>(), genContext);
+            return mlir::success();
+        }
+        else if (kind == SyntaxKind::ClassDeclaration)
+        {
+            // must be processed already
+            // return mlirGen(statementAST.as<ClassDeclaration>(), genContext);
             return mlir::success();
         }
         else if (kind == SyntaxKind::Block)
@@ -3217,6 +3229,53 @@ llvm.return %5 : i32
         return mlir::success();
     }
 
+    mlir::LogicalResult mlirGen(ClassLikeDeclaration classDeclarationAST, const GenContext &genContext)
+    {
+        auto name = MLIRHelper::getName(classDeclarationAST->name);
+        if (name.empty())
+        {
+            llvm_unreachable("not implemented");
+            return mlir::failure();
+        }
+
+        MLIRCodeLogic mcl(builder);
+        // first value
+        SmallVector<mlir::Type> types;
+        SmallVector<mlir_ts::FieldInfo> fieldInfos;
+        SmallVector<mlir::Attribute> values;
+        for (auto &classMember : classDeclarationAST->members)
+        {
+            mlir::Value initValue;
+            mlir::Attribute fieldId;
+            mlir::Type type;
+
+            if (classMember == SyntaxKind::PropertyDeclaration)
+            {
+                auto propertyDeclaration = classMember.as<PropertyDeclaration>();
+
+                auto memberName = MLIRHelper::getName(propertyDeclaration->name);
+                if (memberName.empty())
+                {
+                    llvm_unreachable("not implemented");
+                    return mlir::failure();
+                }
+
+                auto namePtr = StringRef(memberName).copy(stringAllocator);
+                fieldId = mcl.TupleFieldName(namePtr);
+
+                type = getType(propertyDeclaration->type);
+            }
+
+            fieldInfos.push_back({fieldId, type});
+        }
+
+        auto classType = getClassType(getTupleType(fieldInfos));
+
+        classesMap.insert({name, classType});
+
+        return mlir::success();
+    }
+
     mlir::Type getType(Node typeReferenceAST)
     {
         auto kind = (SyntaxKind)typeReferenceAST;
@@ -3287,6 +3346,12 @@ llvm.return %5 : i32
 
     mlir::Type getResolveTypeFromValue(std::string name)
     {
+        if (classesMap.count(name))
+        {
+            auto classType = classesMap.lookup(name);
+            return classType;
+        }
+
         auto aliasType = typeAliasMap.lookup(name);
         if (aliasType)
         {
@@ -3362,6 +3427,11 @@ llvm.return %5 : i32
     mlir_ts::EnumType getEnumType(mlir::Type elementType)
     {
         return mlir_ts::EnumType::get(elementType);
+    }
+
+    mlir_ts::ClassType getClassType(mlir::Type storageType)
+    {
+        return mlir_ts::ClassType::get(storageType);
     }
 
     mlir_ts::ConstArrayType getConstArrayType(ArrayTypeNode arrayTypeAST, unsigned size)
@@ -3641,6 +3711,8 @@ llvm.return %5 : i32
     llvm::StringMap<mlir::Type> typeAliasMap;
 
     llvm::StringMap<std::pair<mlir::Type, mlir::DictionaryAttr>> enumsMap;
+
+    llvm::StringMap<mlir::Type> classesMap;
 
     // helper to get line number
     Parser parser;
