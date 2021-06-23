@@ -2855,6 +2855,8 @@ llvm.return %5 : i32
 
     mlir::Value mlirGen(ts::ArrayLiteralExpression arrayLiteral, const GenContext &genContext)
     {
+        auto location = loc(arrayLiteral);
+
         MLIRTypeHelper mth(builder.getContext());
 
         // first value
@@ -2871,9 +2873,10 @@ llvm.return %5 : i32
                 continue;
             }
 
-            auto constOp = cast<mlir_ts::ConstantOp>(itemValue.getDefiningOp());
+            auto constOp = itemValue.getDefiningOp<mlir_ts::ConstantOp>();
             if (!constOp)
             {
+                emitError(location, "Array literal should contains constant values only");
                 llvm_unreachable("array literal is not implemented(1)");
                 continue;
             }
