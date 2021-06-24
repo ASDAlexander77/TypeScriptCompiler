@@ -303,7 +303,7 @@ void testFile(const char *file)
     auto res = cleanup();
     if (!res.empty())
     {
-        throw std::exception(res.c_str());
+        throw std::runtime_error(res.c_str());
     }
 }
 
