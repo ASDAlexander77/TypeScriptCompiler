@@ -1688,7 +1688,7 @@ mlir::Value LogicOp_(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Va
 
         return value;
     }
-    else if (leftType.dyn_cast_or_null<mlir_ts::AnyType>())
+    else if (leftType.dyn_cast_or_null<mlir_ts::AnyType>() || leftType.dyn_cast_or_null<mlir_ts::ClassType>())
     {
         // excluded string
         auto intPtrType = llvmtch.getIntPtrType(0);

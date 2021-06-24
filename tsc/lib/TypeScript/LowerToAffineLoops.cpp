@@ -597,8 +597,9 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     // We only lower the main function as we expect that all other functions have been inlined.
     if (function.getName() == "main")
     {
+        auto voidType = mlir_ts::VoidType::get(function.getContext());
         // Verify that the given main has no inputs and results.
-        if (function.getNumArguments() || function.getType().getNumResults())
+        if (function.getNumArguments() || llvm::any_of(function.getType().getResults(), [&](mlir::Type type) { return type != voidType; }))
         {
             function.emitError("expected 'main' to have 0 inputs and 0 results");
             return signalPassFailure();
