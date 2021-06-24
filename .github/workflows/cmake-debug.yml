@@ -38,6 +38,14 @@ jobs:
       with:
         path: 3rdParty
         key: ${{ runner.os }}-3rd-party
+
+    - name: Create __Build Folder
+      shell: cmd
+      run: IF NOT EXIST "c:\__build" (mkdir c:\__build)
+
+    - name: Link __Build Folder
+      shell: cmd
+      run: IF EXIST "c:\__build" mklink /d .\__build c:\__build
     
     - name: Prepare 3rd party
       shell: cmd
