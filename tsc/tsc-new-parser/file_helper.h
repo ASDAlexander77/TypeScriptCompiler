@@ -2,19 +2,16 @@
 #ifndef FILE_HELPER_H_
 #define FILE_HELPER_H_
 
+#include <array>
+#include <codecvt>
 #include <cstdio>
+#include <fstream>
 #include <iostream>
+#include <locale>
 #include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
-#include <array>
-#include <iostream>
-#include <fstream>
-#include <sstream>
-#include <locale>
-#include <codecvt>
-#include <string>
-#include <io.h>
 
 #if __cplusplus >= 201703L
 #include <filesystem>
@@ -130,7 +127,7 @@ static std::wstring readFile(std::string file)
 
     if (enc == ENCODING_UTF16LE)
     {
-        typedef std::codecvt_utf16<wchar_t, 0x10ffff, (std::codecvt_mode)(std::consume_header|std::little_endian)> conv16be;
+        typedef std::codecvt_utf16<wchar_t, 0x10ffff, (std::codecvt_mode)(std::consume_header | std::little_endian)> conv16be;
         std::locale loc16be(f.getloc(), new conv16be());
         f.imbue(loc16be);
     }
