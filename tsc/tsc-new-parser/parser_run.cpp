@@ -1,16 +1,13 @@
+#include <array>
+#include <codecvt>
 #include <cstdio>
+#include <fstream>
 #include <iostream>
+#include <locale>
 #include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
-#include <array>
-#include <iostream>
-#include <fstream>
-#include <sstream>
-#include <locale>
-#include <codecvt>
-#include <string>
-#include <io.h>
 
 #if __cplusplus >= 201703L
 #include <filesystem>
@@ -21,16 +18,16 @@ namespace fs = std::filesystem;
 namespace fs = std::experimental::filesystem;
 #endif
 
+#include "file_helper.h"
 #include "parser.h"
 #include "utilities.h"
-#include "file_helper.h"
 
 using namespace ts;
 
 void printParser(const wchar_t *fileName, const wchar_t *str, boolean showLineCharPos)
 {
     ts::Parser parser;
-    //auto sourceFile = parser.parseSourceFile(S("function f() { let i = 10; }"), ScriptTarget::Latest);
+    // auto sourceFile = parser.parseSourceFile(S("function f() { let i = 10; }"), ScriptTarget::Latest);
     auto sourceFile = parser.parseSourceFile(fileName, str, ScriptTarget::Latest);
 
     ts::FuncT<> visitNode;
@@ -39,7 +36,6 @@ void printParser(const wchar_t *fileName, const wchar_t *str, boolean showLineCh
     auto intent = 0;
 
     visitNode = [&](ts::Node child) -> ts::Node {
-
         for (auto i = 0; i < intent; i++)
         {
             std::cout << "\t";
@@ -50,19 +46,18 @@ void printParser(const wchar_t *fileName, const wchar_t *str, boolean showLineCh
             auto posLineChar = parser.getLineAndCharacterOfPosition(sourceFile, child->pos);
             auto endLineChar = parser.getLineAndCharacterOfPosition(sourceFile, child->_end);
 
-            std::cout 
-                << "Node: " 
-                << wtoc(parser.syntaxKindString(child).c_str()) 
-                << " @ [ " << child->pos << "(" << posLineChar.line + 1 << ":" << posLineChar.character + 1 << ") - " 
-                << child->_end << "(" << endLineChar.line + 1 << ":" << endLineChar.character << ") ]" << std::endl;
+            std::cout << "Node: " << wtoc(parser.syntaxKindString(child).c_str()) << " @ [ " << child->pos << "(" << posLineChar.line + 1
+                      << ":" << posLineChar.character + 1 << ") - " << child->_end << "(" << endLineChar.line + 1 << ":"
+                      << endLineChar.character << ") ]" << std::endl;
         }
         else
         {
-            std::cout << "Node: " << wtoc(parser.syntaxKindString(child).c_str()) << " @ [ " << child->pos << " - " << child->_end << " ]" << std::endl;
+            std::cout << "Node: " << wtoc(parser.syntaxKindString(child).c_str()) << " @ [ " << child->pos << " - " << child->_end << " ]"
+                      << std::endl;
         }
 
         intent++;
-        ts::forEachChild(child, visitNode, visitArray);    
+        ts::forEachChild(child, visitNode, visitArray);
         intent--;
 
         return undefined;
@@ -80,7 +75,7 @@ void printParser(const wchar_t *fileName, const wchar_t *str, boolean showLineCh
     auto result = ts::forEachChild(sourceFile.as<ts::Node>(), visitNode, visitArray);
 }
 
-boolean hasOption(int argc, char **args, const char* option)
+boolean hasOption(int argc, char **args, const char *option)
 {
     for (auto i = 1; i < argc; i++)
     {
@@ -98,7 +93,7 @@ boolean hasOption(int argc, char **args, const char* option)
     return false;
 }
 
-char* firstNonOption(int argc, char **args)
+char *firstNonOption(int argc, char **args)
 {
     for (auto i = 1; i < argc; i++)
     {
