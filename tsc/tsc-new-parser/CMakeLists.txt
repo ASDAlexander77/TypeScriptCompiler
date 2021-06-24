@@ -1,4 +1,4 @@
-set_MSVC_Options()
+set_Options()
 
 add_library(tsc-new-parser-lib parser.cpp node_factory.cpp parenthesizer_rules.cpp scanner.cpp)
 

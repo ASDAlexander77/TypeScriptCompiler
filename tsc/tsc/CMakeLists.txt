@@ -1,4 +1,4 @@
-set_MSVC_Options()
+set_Options()
 
 set(LLVM_LINK_COMPONENTS
     Core
