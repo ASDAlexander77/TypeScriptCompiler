@@ -1,16 +1,13 @@
+#include <array>
+#include <codecvt>
 #include <cstdio>
+#include <fstream>
 #include <iostream>
+#include <locale>
 #include <memory>
+#include <sstream>
 #include <stdexcept>
 #include <string>
-#include <array>
-#include <iostream>
-#include <fstream>
-#include <sstream>
-#include <locale>
-#include <codecvt>
-#include <string>
-#include <io.h>
 
 #if __cplusplus >= 201703L
 #include <filesystem>
@@ -34,8 +31,9 @@ void printScanner(const wchar_t *str)
     while (token != SyntaxKind::EndOfFileToken)
     {
         token = scanner.scan();
-        //std::wcout << scanner.syntaxKindString(token) << "(" << (int)token << S(") @") << scanner.getTokenPos() << S(" '") << scanner.tokenToString(token) << "':" << scanner.getTokenText() << std::endl;
-        //std::wcout << (number)token << S(" ") << scanner.getTokenText() << std::endl;
+        // std::wcout << scanner.syntaxKindString(token) << "(" << (int)token << S(") @") << scanner.getTokenPos() << S(" '") <<
+        // scanner.tokenToString(token) << "':" << scanner.getTokenText() << std::endl; std::wcout << (number)token << S(" ") <<
+        // scanner.getTokenText() << std::endl;
         wprintf_s(S("%d %ls\n"), (number)token, scanner.getTokenText().c_str());
     }
 }
