@@ -289,13 +289,6 @@ template <typename T> auto compareValues(T a, T b) -> Comparison
 template <typename T> using Comparer = std::function<Comparison(T, T)>;
 
 template <typename T, typename U>
-auto binarySearch(const std::vector<T> &array, T value, std::function<U(T, number)> keySelector, Comparer<U> keyComparer, number offset = 0)
-    -> number
-{
-    return binarySearchKey<T, U>(array, keySelector(value, -1), keySelector, keyComparer, offset);
-}
-
-template <typename T, typename U>
 auto binarySearchKey(const std::vector<T> &array, U key, std::function<U(T, number)> keySelector, Comparer<U> keyComparer,
                      number offset = 0) -> number
 {
@@ -324,6 +317,13 @@ auto binarySearchKey(const std::vector<T> &array, U key, std::function<U(T, numb
     }
 
     return ~low;
+}
+
+template <typename T, typename U>
+auto binarySearch(const std::vector<T> &array, T value, std::function<U(T, number)> keySelector, Comparer<U> keyComparer, number offset = 0)
+    -> number
+{
+    return binarySearchKey<T, U>(array, keySelector(value, -1), keySelector, keyComparer, offset);
 }
 
 template <typename T, typename U> inline auto append(T arr, U value) -> T

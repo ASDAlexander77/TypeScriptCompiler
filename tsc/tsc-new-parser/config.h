@@ -1,12 +1,14 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#include <string>
-#include <sstream>
-#include <regex>
 #include <functional>
+#include <regex>
+#include <sstream>
+#include <string>
 
-#pragma warning( disable : 4062 )
+#ifdef MSVC
+#pragma warning(disable : 4062)
+#endif
 
 using boolean = bool;
 using number = int;

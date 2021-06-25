@@ -40,7 +40,7 @@ struct safe_string
 
     CharacterCodes operator[](number index)
     {
-        if (index >= value.length())
+        if ((size_t)index >= value.length())
         {
             return CharacterCodes::outOfBoundary;
         }
@@ -136,7 +136,7 @@ static auto parsePseudoBigInt(string stringValue) -> string
     default: // already in decimal; omit trailing "n"
         auto nIndex = stringValue.length() - 1;
         // Skip leading 0s
-        auto nonZeroStart = 0;
+        size_t nonZeroStart = 0;
         while ((CharacterCodes)stringValue[nonZeroStart] == CharacterCodes::_0)
         {
             nonZeroStart++;
