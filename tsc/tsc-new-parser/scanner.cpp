@@ -217,7 +217,7 @@ std::map<string, SyntaxKind> Scanner::textToToken = {{S("abstract"), SyntaxKind:
                                                      {S("^="), SyntaxKind::CaretEqualsToken},
                                                      {S("||="), SyntaxKind::BarBarEqualsToken},
                                                      {S("&&="), SyntaxKind::AmpersandAmpersandEqualsToken},
-                                                     {S("??="), SyntaxKind::QuestionQuestionEqualsToken},
+                                                     {S("\?\?="), SyntaxKind::QuestionQuestionEqualsToken},
                                                      {S("@"), SyntaxKind::AtToken},
                                                      {S("`"), SyntaxKind::BacktickToken}};
 
