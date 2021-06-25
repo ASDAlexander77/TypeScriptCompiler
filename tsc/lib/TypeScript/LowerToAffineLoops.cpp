@@ -134,7 +134,7 @@ struct PrefixUnaryOpLowering : public TsPattern<mlir_ts::PrefixUnaryOp>
         auto cst1 = rewriter.create<mlir_ts::ConstantOp>(op->getLoc(), rewriter.getI32IntegerAttr(1));
 
         SyntaxKind opCode;
-        switch (op.opCode())
+        switch ((SyntaxKind)op.opCode())
         {
         case SyntaxKind::PlusPlusToken:
             opCode = SyntaxKind::PlusToken;
@@ -162,7 +162,7 @@ struct PostfixUnaryOpLowering : public TsPattern<mlir_ts::PostfixUnaryOp>
         auto cst1 = rewriter.create<mlir_ts::ConstantOp>(op->getLoc(), rewriter.getI32IntegerAttr(1));
 
         SyntaxKind opCode;
-        switch (op.opCode())
+        switch ((SyntaxKind)op.opCode())
         {
         case SyntaxKind::PlusPlusToken:
             opCode = SyntaxKind::PlusToken;
