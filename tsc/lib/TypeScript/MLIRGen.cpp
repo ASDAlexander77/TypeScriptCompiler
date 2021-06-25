@@ -198,7 +198,7 @@ class MLIRGenImpl
 
         FilterVisitorAST<ClassDeclaration> visitorASTClass(SyntaxKind::ClassDeclaration, [&](auto classDecl) {
             GenContext genContext;
-            mlirGen(classDecl.as<ClassLikeDeclaration>(), genContext);
+            mlirGen(classDecl.template as<ClassLikeDeclaration>(), genContext);
         });
         visitorASTClass.visit(module);
 
@@ -624,7 +624,7 @@ class MLIRGenImpl
             auto type = std::get<0>(res);
             auto init = std::get<1>(res);
 
-            auto arrayBindingPattern = item->name.as<ArrayBindingPattern>();
+            auto arrayBindingPattern = item->name.template as<ArrayBindingPattern>();
             auto index = 0;
             for (auto arrayBindingElement : arrayBindingPattern->elements)
             {
@@ -636,8 +636,8 @@ class MLIRGenImpl
                     .Default([&](auto type) { llvm_unreachable("not implemented"); });
 
                 if (!processDeclaration(
-                        arrayBindingElement.as<BindingElement>(), varClass, [&]() { return std::make_pair(subInit.getType(), subInit); },
-                        genContext))
+                        arrayBindingElement.template as<BindingElement>(), varClass,
+                        [&]() { return std::make_pair(subInit.getType(), subInit); }, genContext))
                 {
                     return false;
                 }

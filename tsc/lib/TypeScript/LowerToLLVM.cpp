@@ -564,9 +564,9 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
         LLVMCodeHelper ch(constantOp, rewriter, getTypeConverter());
         TypeConverterHelper tch(getTypeConverter());
 
-        auto elementType = type.cast<T>().getElementType();
+        auto elementType = type.template cast<T>().getElementType();
         auto llvmElementType = tch.convertType(elementType);
-        auto arrayAttr = constantOp.value().dyn_cast_or_null<ArrayAttr>();
+        auto arrayAttr = constantOp.value().template dyn_cast_or_null<ArrayAttr>();
 
         auto arrayFirstElementAddrCst = ch.getOrCreateGlobalArray(elementType, llvmElementType, arrayAttr.size(), arrayAttr);
 
@@ -578,11 +578,11 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
         LLVMCodeHelper ch(constantOp, rewriter, getTypeConverter());
         TypeConverterHelper tch(getTypeConverter());
 
-        auto arrayAttr = constantOp.value().dyn_cast_or_null<ArrayAttr>();
+        auto arrayAttr = constantOp.value().template dyn_cast_or_null<ArrayAttr>();
 
         auto convertedTupleType = tch.convertType(type);
-        auto tupleConstPtr =
-            ch.getOrCreateGlobalTuple(type.cast<mlir_ts::ConstTupleType>(), convertedTupleType.cast<LLVM::LLVMStructType>(), arrayAttr);
+        auto tupleConstPtr = ch.getOrCreateGlobalTuple(type.cast<mlir_ts::ConstTupleType>(),
+                                                       convertedTupleType.template cast<LLVM::LLVMStructType>(), arrayAttr);
 
         // optimize it and replace it with copy memory. (use canon. pass) check  "EraseRedundantAssertions"
         auto loadedValue = rewriter.create<LLVM::LoadOp>(constantOp->getLoc(), tupleConstPtr);

@@ -1419,7 +1419,7 @@ class CastLogicHelper
 };
 
 template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
-mlir::Value LogicOp_(Operation *, mlir::Value, mlir::Value, PatternRewriter &, LLVMTypeConverter &);
+mlir::Value LogicOp_(Operation *, SyntaxKind, mlir::Value, mlir::Value, PatternRewriter &, LLVMTypeConverter &);
 
 class OptionalLogicHelper
 {

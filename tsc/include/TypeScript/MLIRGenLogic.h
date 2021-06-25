@@ -427,7 +427,7 @@ class MLIRPropertyAccessCodeLogic
 
     template <typename T> mlir::Value Ref(T refType)
     {
-        if (auto tupleType = refType.getElementType().dyn_cast_or_null<mlir_ts::TupleType>())
+        if (auto tupleType = refType.getElementType().template dyn_cast_or_null<mlir_ts::TupleType>())
         {
             MLIRCodeLogic mcl(builder);
 
@@ -457,7 +457,7 @@ class MLIRPropertyAccessCodeLogic
 
     template <typename T> mlir::Value Class(T classType)
     {
-        if (auto tupleType = classType.getStorageType().dyn_cast_or_null<mlir_ts::TupleType>())
+        if (auto tupleType = classType.getStorageType().template dyn_cast_or_null<mlir_ts::TupleType>())
         {
             MLIRCodeLogic mcl(builder);
 
