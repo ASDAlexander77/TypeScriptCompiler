@@ -187,7 +187,7 @@ struct Node : TextRange
     }
 
     Node() = default;
-    Node(SyntaxKind kind, number pos, number end) : _kind(kind), TextRange{pos, end}
+    Node(SyntaxKind kind, number pos, number end) : TextRange{pos, end}, _kind(kind)
     {
     }
 
@@ -2181,9 +2181,9 @@ struct RedirectInfo
 
 struct DiagnosticMessage
 {
-    string key;
-    DiagnosticCategory category;
     number code;
+    DiagnosticCategory category;
+    string key;
     string message;
     std::vector<string> reportsUnnecessary;
     std::vector<string> reportsDeprecated;
