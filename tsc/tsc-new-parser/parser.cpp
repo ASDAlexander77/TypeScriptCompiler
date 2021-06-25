@@ -3187,8 +3187,8 @@ struct Parser
             nextToken();
         }
         Node expression = token() == SyntaxKind::TrueKeyword || token() == SyntaxKind::FalseKeyword || token() == SyntaxKind::NullKeyword
-                              ? parseTokenNode</*BooleanLiteral, NullLiteral*/ Node>()
-                              : parseLiteralLikeNode(token()).as<LiteralExpression>();
+                              ? parseTokenNode</*BooleanLiteral, NullLiteral*/ Node>().as<Expression>()
+                              : parseLiteralLikeNode(token()).as<Expression>();
         if (negative)
         {
             expression = finishNode(factory.createPrefixUnaryExpression(SyntaxKind::MinusToken, expression), pos);
@@ -3283,7 +3283,7 @@ struct Parser
             return lookAhead<boolean>(std::bind(&Parser::isStartOfTypeOfImportType, this)) ? parseImportType().as<Node>()
                                                                                            : parseTypeQuery().as<Node>();
         case SyntaxKind::OpenBraceToken:
-            return lookAhead<boolean>(std::bind(&Parser::isStartOfMappedType, this)) ? parseMappedType() : parseTypeLiteral();
+            return lookAhead<boolean>(std::bind(&Parser::isStartOfMappedType, this)) ? parseMappedType() : parseTypeLiteral().as<Node>();
         case SyntaxKind::OpenBracketToken:
             return parseTupleType();
         case SyntaxKind::OpenParenToken:
@@ -4230,7 +4230,7 @@ struct Parser
         auto equalsGreaterThanToken = parseExpectedToken(SyntaxKind::EqualsGreaterThanToken);
         auto body = (lastToken == SyntaxKind::EqualsGreaterThanToken || lastToken == SyntaxKind::OpenBraceToken)
                         ? parseArrowFunctionExpressionBody(some(modifiers, isAsyncModifier))
-                        : parseIdentifier();
+                        : parseIdentifier().as<Node>();
 
         auto node = factory.createArrowFunction(modifiers, typeParameters, parameters, type, equalsGreaterThanToken, body);
         return withJSDoc(finishNode(node, pos), hasJSDoc);
@@ -4474,7 +4474,7 @@ struct Parser
             auto updateExpression = parseUpdateExpression();
             return token() == SyntaxKind::AsteriskAsteriskToken
                        ? parseBinaryExpressionRest(getBinaryOperatorPrecedence(token()), updateExpression, pos)
-                       : updateExpression;
+                       : updateExpression.as<Expression>();
         }
 
         /**
