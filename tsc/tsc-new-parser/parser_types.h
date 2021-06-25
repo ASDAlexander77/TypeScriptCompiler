@@ -54,23 +54,23 @@ template <typename T /*extends Node*/> struct NodeArray : ReadonlyArray<T>, Text
     using std::vector<T>::size;
 
     NodeArray()
-        : isUndefined{false}, hasTrailingComma{false}, isMissingList{false}, transformFlags{TransformFlags::None}, ReadonlyArray<T>()
+        : ReadonlyArray<T>(), isUndefined{false}, hasTrailingComma{false}, isMissingList{false}, transformFlags{TransformFlags::None}
     {
     }
     NodeArray(undefined_t)
-        : isUndefined{true}, hasTrailingComma{false}, isMissingList{false}, transformFlags{TransformFlags::None}, ReadonlyArray<T>()
+        : ReadonlyArray<T>(), isUndefined{true}, hasTrailingComma{false}, isMissingList{false}, transformFlags{TransformFlags::None}
     {
     }
 
     template <typename U>
     NodeArray(NodeArray<U> other)
-        : isUndefined{other.isUndefined}, hasTrailingComma{other.hasTrailingComma}, isMissingList{other.isMissingList},
-          transformFlags{other.transformFlags}, ReadonlyArray<T>(other.begin(), other.end())
+        : ReadonlyArray<T>(other.begin(), other.end()), isUndefined{other.isUndefined}, hasTrailingComma{other.hasTrailingComma},
+          isMissingList{other.isMissingList}, transformFlags{other.transformFlags}
     {
     }
 
     NodeArray(T item)
-        : isUndefined{false}, hasTrailingComma{false}, isMissingList{false}, transformFlags{TransformFlags::None}, ReadonlyArray<T>({item})
+        : ReadonlyArray<T>({item}), isUndefined{false}, hasTrailingComma{false}, isMissingList{false}, transformFlags{TransformFlags::None}
     {
     }
 
