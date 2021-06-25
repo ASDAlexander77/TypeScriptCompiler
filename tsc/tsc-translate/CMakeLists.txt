@@ -1,3 +1,5 @@
+set_Options()
+
 set(LLVM_LINK_COMPONENTS
   Support
   )
