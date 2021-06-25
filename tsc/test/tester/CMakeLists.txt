@@ -1,6 +1,7 @@
 message(STATUS ">>> test >>> runner")
 
 set_Options()
+set_Libs(LIBS)
 
 add_definitions("-DTEST_VCPATH=\"C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/SDK/ScopeCppSDK/vc15/VC/lib\"")
 add_definitions("-DTEST_SDKPATH=\"C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/SDK/ScopeCppSDK/vc15/SDK/lib\"")
@@ -8,6 +9,7 @@ add_definitions("-DTEST_EXEPATH=\"C:/dev/TypeScriptCompiler/3rdParty/llvm/debug/
 add_definitions("-DTEST_TSCEXEPATH=\"C:/dev/TypeScriptCompiler/__build/tsc/bin\"")
 
 add_executable(test-runner test-runner.cpp)
+target_link_libraries(test-runner PRIVATE ${LIBS})
 
 ######## enable testing ############                     
 add_test(NAME test-compile-00-assert COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")
