@@ -6,7 +6,7 @@
 #include <sstream>
 #include <string>
 
-#ifdef MSVC
+#if _MSC_VER
 #pragma warning(disable : 4062)
 #endif
 
