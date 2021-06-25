@@ -1420,7 +1420,7 @@ template <typename R, typename T> static auto setParentRecursive(T rootNode, boo
     auto bindJSDoc = [&](auto child) {
         if (hasJSDocNodes(child))
         {
-            for (auto &doc : child.as<JSDocContainer>()->jsDoc)
+            for (auto &doc : child.template as<JSDocContainer>()->jsDoc)
             {
                 bindParentToChildIgnoringJSDoc(doc, child);
                 forEachChildRecursively<boolean, T>(doc, bindParentToChildIgnoringJSDoc);
