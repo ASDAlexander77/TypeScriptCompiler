@@ -36,7 +36,7 @@ if ("${LLVM_EXTERNAL_LIT}" STREQUAL "" OR "${LLVM_EXTERNAL_LIT}" STREQUAL "LLVM_
 if (MSVC)
 file(REAL_PATH "${CMAKE_SOURCE_DIR}/../__build/llvm/${CMAKE_BUILD_TYPE}/bin/llvm-lit.py" LLVM_EXTERNAL_LIT)
 else()
-file(REAL_PATH "${CMAKE_SOURCE_DIR}/../__build/llvm-ninja/${CMAKE_BUILD_TYPE}/bin/llvm-lit" LLVM_EXTERNAL_LIT)
+file(REAL_PATH "${CMAKE_SOURCE_DIR}/../__build/llvm-ninja/bin/llvm-lit" LLVM_EXTERNAL_LIT)
 endif()
 endif()
 message(STATUS "LLVM_EXTERNAL_LIT is ${LLVM_EXTERNAL_LIT}")
