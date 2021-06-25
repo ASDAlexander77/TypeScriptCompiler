@@ -134,7 +134,7 @@ class NodeFactory
 
     template <typename T> auto createBaseNode(SyntaxKind kind)
     {
-        auto newNode = T(T::data());
+        auto newNode = T(T::template data());
         newNode->_kind = kind;
         createNodeCallback(newNode);
         return newNode;
