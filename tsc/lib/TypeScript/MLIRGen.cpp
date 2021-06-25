@@ -211,12 +211,42 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    mlir::LogicalResult mlirGen(ModuleDeclaration moduleDeclarationAST, const GenContext &genContext)
+    {
+        auto location = loc(moduleDeclarationAST);
+
+        auto moduleName = MLIRHelper::getName(moduleDeclarationAST->name);
+
+        auto moduleOp = builder.create<mlir::ModuleOp>(location, StringRef(moduleName));
+
+        builder.setInsertionPointToStart(&moduleOp.body().front());
+
+        // save module theModule
+        auto parentModule = theModule;
+        theModule = moduleOp;
+
+        GenContext moduleGenContext = {0};
+        auto result = mlirGenBody(moduleDeclarationAST->body, genContext);
+
+        // restore
+        theModule = parentModule;
+
+        builder.setInsertionPointAfter(moduleOp);
+
+        return result;
+    }
+
     mlir::LogicalResult mlirGenBody(Node body, const GenContext &genContext)
     {
         auto kind = (SyntaxKind)body;
         if (kind == SyntaxKind::Block)
         {
             return mlirGen(body.as<Block>(), genContext);
+        }
+
+        if (kind == SyntaxKind::ModuleBlock)
+        {
+            return mlirGen(body.as<ModuleBlock>(), genContext);
         }
 
         if (body.is<Statement>())
@@ -231,6 +261,21 @@ class MLIRGenImpl
         }
 
         llvm_unreachable("unknown body type");
+    }
+
+    mlir::LogicalResult mlirGen(ModuleBlock moduleBlockAST, const GenContext &genContext)
+    {
+        SymbolTableScopeT varScope(symbolTable);
+
+        for (auto &statement : moduleBlockAST->statements)
+        {
+            if (failed(mlirGen(statement, genContext)))
+            {
+                return mlir::failure();
+            }
+        }
+
+        return mlir::success();
     }
 
     mlir::LogicalResult mlirGen(Block blockAST, const GenContext &genContext)
@@ -340,6 +385,10 @@ class MLIRGenImpl
         else if (kind == SyntaxKind::Block)
         {
             return mlirGen(statementAST.as<Block>(), genContext);
+        }
+        else if (kind == SyntaxKind::ModuleDeclaration)
+        {
+            return mlirGen(statementAST.as<ModuleDeclaration>(), genContext);
         }
         else if (kind == SyntaxKind::EmptyStatement ||
                  kind == SyntaxKind::Unknown /*TODO: temp solution to treat null statements as empty*/)
