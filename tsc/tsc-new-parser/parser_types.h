@@ -45,13 +45,14 @@ struct ReadonlyTextRange : TextRange
 template <typename T /*extends Node*/> struct ReadonlyArray : std::vector<T>
 {
     using std::vector<T>::vector;
-    using std::vector<T>::back;
-    using std::vector<T>::pop_back;
-    using std::vector<T>::size;
 };
 
 template <typename T /*extends Node*/> struct NodeArray : ReadonlyArray<T>, TextRange
 {
+    using std::vector<T>::back;
+    using std::vector<T>::pop_back;
+    using std::vector<T>::size;
+
     NodeArray()
         : isUndefined{false}, hasTrailingComma{false}, isMissingList{false}, transformFlags{TransformFlags::None}, ReadonlyArray<T>()
     {
