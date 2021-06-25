@@ -1,7 +1,5 @@
 set_Options()
 
-set_Libs(LIBS)
-
 add_library(tsc-new-parser-lib parser.cpp node_factory.cpp parenthesizer_rules.cpp scanner.cpp)
 
 add_executable(tsc-new-scanner scanner_run.cpp scanner.cpp)

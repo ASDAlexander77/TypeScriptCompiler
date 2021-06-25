@@ -9,8 +9,6 @@ set(LIBS
         MLIRTypeScript
         )
 
-set_Libs(LIBS)
-
 add_llvm_executable(tsc-opt tsc-opt.cpp)
 
 llvm_update_compile_flags(tsc-opt)
