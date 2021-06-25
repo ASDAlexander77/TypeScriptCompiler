@@ -24,6 +24,7 @@ set(CMAKE_MODULE_PATH
 include(config_macros)
 
 set(CMAKE_CXX_STANDARD 14 CACHE STRING "C++ standard to conform to")
+find_package(Filesystem)
 
 ##### LLVM config ########
 
