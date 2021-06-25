@@ -1,6 +1,7 @@
 #ifndef NEW_PARSER_TYPES_H
 #define NEW_PARSER_TYPES_H
 
+#include "core.h"
 #include "parser_fwd_types.h"
 
 #include <map>

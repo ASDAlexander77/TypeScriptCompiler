@@ -1,5 +1,4 @@
 #include "parser.h"
-#include "core.h"
 #include "node_factory.h"
 #include "node_test.h"
 #include "utilities.h"
