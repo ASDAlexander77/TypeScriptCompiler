@@ -581,7 +581,7 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
         auto arrayAttr = constantOp.value().template dyn_cast_or_null<ArrayAttr>();
 
         auto convertedTupleType = tch.convertType(type);
-        auto tupleConstPtr = ch.getOrCreateGlobalTuple(type.typename cast<mlir_ts::ConstTupleType>(),
+        auto tupleConstPtr = ch.getOrCreateGlobalTuple(type.cast<mlir_ts::ConstTupleType>(),
                                                        convertedTupleType.template cast<LLVM::LLVMStructType>(), arrayAttr);
 
         // optimize it and replace it with copy memory. (use canon. pass) check  "EraseRedundantAssertions"
