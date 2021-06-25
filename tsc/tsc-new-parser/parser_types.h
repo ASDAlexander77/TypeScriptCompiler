@@ -128,11 +128,11 @@ template <typename T /*extends Node*/> struct NodeArray : ReadonlyArray<T>, Text
         return !isUndefined;
     }
 
+    boolean isUndefined;
     boolean hasTrailingComma;
-    /* @internal */ TransformFlags transformFlags; // Flags for transforms, possibly undefined
     // to support MissingList
     boolean isMissingList;
-    boolean isUndefined;
+    /* @internal */ TransformFlags transformFlags; // Flags for transforms, possibly undefined
 };
 
 using ModifiersArray = NodeArray<PTR(Modifier)>;
