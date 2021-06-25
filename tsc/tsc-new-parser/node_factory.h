@@ -132,9 +132,9 @@ class NodeFactory
 
     auto getCookedText(SyntaxKind kind, string rawText) -> std::pair<string, boolean>;
 
-    template <typename T> auto createBaseNode(SyntaxKind kind)
+    template <typename T, typename D = typename T::data> auto createBaseNode(SyntaxKind kind)
     {
-        auto newNode = T(T::template data());
+        auto newNode = T(D());
         newNode->_kind = kind;
         createNodeCallback(newNode);
         return newNode;
