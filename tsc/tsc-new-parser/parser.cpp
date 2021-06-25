@@ -494,8 +494,9 @@ struct Parser
                 findIndex(savedParseDiagnostics, [&](auto diagnostic, number index) { return diagnostic->start >= prevStatement->pos; });
             auto diagnosticEnd =
                 diagnosticStart >= 0
-                    ? findIndex(savedParseDiagnostics,
-                                [&](auto diagnostic, number index) { return diagnostic->start >= nextStatement->pos, diagnosticStart; })
+                    ? findIndex(
+                          savedParseDiagnostics, [&](auto diagnostic, number index) { return diagnostic->start >= nextStatement->pos; },
+                          diagnosticStart)
                     : -1;
             if (diagnosticStart >= 0)
             {
@@ -4287,7 +4288,7 @@ struct Parser
             doOutsideOfContext<Expression>(disallowInAndDecoratorContext, std::bind(&Parser::parseAssignmentExpressionOrHigher, this));
         auto colonToken = parseExpectedToken(SyntaxKind::ColonToken);
         auto whenFalse = nodeIsPresent(colonToken)
-                             ? parseAssignmentExpressionOrHigher()
+                             ? parseAssignmentExpressionOrHigher().as<Node>()
                              : createMissingNode<Identifier>(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ false,
                                                              data::DiagnosticMessage(Diagnostics::_0_expected),
                                                              scanner.tokenToString(SyntaxKind::ColonToken));
@@ -4979,7 +4980,8 @@ struct Parser
         //      primaryExpression in the form of an identifier and "this" keyword
         // We can't just simply use parseLeftHandSideExpressionOrHigher because then we will start consider class,auto etc.as<a>() keyword
         // We only want to consider "this".as<a>() primaryExpression
-        JsxTagNameExpression expression = token() == SyntaxKind::ThisKeyword ? parseTokenNode<ThisExpression>() : parseIdentifierName();
+        JsxTagNameExpression expression =
+            token() == SyntaxKind::ThisKeyword ? parseTokenNode<ThisExpression>() : parseIdentifierName().as<Node>();
         while (parseOptional(SyntaxKind::DotToken))
         {
             expression = finishNode(factory.createPropertyAccessExpression(
@@ -5142,8 +5144,9 @@ struct Parser
     {
         auto name = parseRightSideOfDot(/*allowIdentifierNames*/ true, /*allowPrivateIdentifiers*/ true);
         auto isOptionalChain = (number)questionDotToken || tryReparseOptionalChain(expression);
-        auto propertyAccess = isOptionalChain ? factory.createPropertyAccessChain(expression, questionDotToken, name)
-                                              : factory.createPropertyAccessExpression(expression, name);
+        auto propertyAccess = isOptionalChain
+                                  ? factory.createPropertyAccessChain(expression, questionDotToken, name).as<PropertyAccessExpression>()
+                                  : factory.createPropertyAccessExpression(expression, name);
         if (isOptionalChain && isPrivateIdentifier(propertyAccess->name))
         {
             parseErrorAtRange(propertyAccess->name,
@@ -5173,9 +5176,10 @@ struct Parser
 
         parseExpected(SyntaxKind::CloseBracketToken);
 
-        auto indexedAccess = (number)questionDotToken || tryReparseOptionalChain(expression)
-                                 ? factory.createElementAccessChain(expression, questionDotToken, argumentExpression)
-                                 : factory.createElementAccessExpression(expression, argumentExpression);
+        auto indexedAccess =
+            (number)questionDotToken || tryReparseOptionalChain(expression)
+                ? factory.createElementAccessChain(expression, questionDotToken, argumentExpression).as<ElementAccessExpression>()
+                : factory.createElementAccessExpression(expression, argumentExpression);
         return finishNode(indexedAccess, pos);
     }
 
@@ -5280,9 +5284,10 @@ struct Parser
                     }
 
                     auto argumentList = parseArgumentList();
-                    auto callExpr = questionDotToken || tryReparseOptionalChain(expression)
-                                        ? factory.createCallChain(expression, questionDotToken, typeArguments, argumentList)
-                                        : factory.createCallExpression(expression, typeArguments, argumentList);
+                    auto callExpr =
+                        questionDotToken || tryReparseOptionalChain(expression)
+                            ? factory.createCallChain(expression, questionDotToken, typeArguments, argumentList).as<CallExpression>()
+                            : factory.createCallExpression(expression, typeArguments, argumentList);
                     expression = finishNode(callExpr, pos);
                     continue;
                 }
@@ -5292,6 +5297,7 @@ struct Parser
                 auto argumentList = parseArgumentList();
                 auto callExpr = questionDotToken || tryReparseOptionalChain(expression)
                                     ? factory.createCallChain(expression, questionDotToken, /*typeArguments*/ undefined, argumentList)
+                                          .as<CallExpression>()
                                     : factory.createCallExpression(expression, /*typeArguments*/ undefined, argumentList);
                 expression = finishNode(callExpr, pos);
                 continue;
@@ -5460,7 +5466,7 @@ struct Parser
     auto parseArgumentOrArrayLiteralElement() -> Expression
     {
         return token() == SyntaxKind::DotDotDotToken ? parseSpreadElement()
-               : token() == SyntaxKind::CommaToken   ? finishNode(factory.createOmittedExpression(), getNodePos())
+               : token() == SyntaxKind::CommaToken   ? finishNode(factory.createOmittedExpression(), getNodePos()).as<Expression>()
                                                      : parseAssignmentExpressionOrHigher();
     }
 
@@ -5871,7 +5877,7 @@ struct Parser
 
     auto parseCaseOrDefaultClause() -> CaseOrDefaultClause
     {
-        return token() == SyntaxKind::CaseKeyword ? parseCaseClause() : (CaseOrDefaultClause)parseDefaultClause();
+        return token() == SyntaxKind::CaseKeyword ? (CaseOrDefaultClause)parseCaseClause() : (CaseOrDefaultClause)parseDefaultClause();
     }
 
     auto parseCaseBlock() -> CaseBlock
