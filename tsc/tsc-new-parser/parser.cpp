@@ -262,7 +262,7 @@ struct Parser
                 }
             }
 
-            auto expression = expressions.size() > 1 ? finishNode(factory.createArrayLiteralExpression(expressions).as<Expression>(), pos)
+            auto expression = expressions.size() > 1 ? finishNode(factory.createArrayLiteralExpression(expressions), pos).as<Expression>()
                                                      : Debug::checkDefined(expressions[0]);
             auto statement = factory.createExpressionStatement(expression).as<Statement>();
             finishNode(statement, pos);
