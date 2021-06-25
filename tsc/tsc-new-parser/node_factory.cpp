@@ -1062,7 +1062,8 @@ auto NodeFactory::createArrowFunction(ModifiersArray modifiers, NodeArray<TypePa
                                                                  /*decorators*/ undefined, modifiers,
                                                                  /*name*/ undefined, typeParameters, parameters, type,
                                                                  parenthesizerRules.parenthesizeConciseBodyOfArrowFunction(body));
-    node->equalsGreaterThanToken = equalsGreaterThanToken ? equalsGreaterThanToken : createToken(SyntaxKind::EqualsGreaterThanToken);
+    node->equalsGreaterThanToken =
+        equalsGreaterThanToken ? equalsGreaterThanToken : createToken(SyntaxKind::EqualsGreaterThanToken).as<EqualsGreaterThanToken>();
     node->transformFlags |= propagateChildFlags(node->equalsGreaterThanToken) | TransformFlags::ContainsES2015;
     if (!!(modifiersToFlags(node->modifiers) & ModifierFlags::Async))
     {
@@ -1217,9 +1218,9 @@ auto NodeFactory::createConditionalExpression(Expression condition, QuestionToke
 {
     auto node = createBaseExpression<ConditionalExpression>(SyntaxKind::ConditionalExpression);
     node->condition = parenthesizerRules.parenthesizeConditionOfConditionalExpression(condition);
-    node->questionToken = questionToken ? questionToken : createToken(SyntaxKind::QuestionToken);
+    node->questionToken = questionToken ? questionToken : createToken(SyntaxKind::QuestionToken).as<QuestionToken>();
     node->whenTrue = parenthesizerRules.parenthesizeBranchOfConditionalExpression(whenTrue);
-    node->colonToken = colonToken ? colonToken : createToken(SyntaxKind::ColonToken);
+    node->colonToken = colonToken ? colonToken : createToken(SyntaxKind::ColonToken).as<ColonToken>();
     node->whenFalse = parenthesizerRules.parenthesizeBranchOfConditionalExpression(whenFalse);
     node->transformFlags |= propagateChildFlags(node->condition) | propagateChildFlags(node->questionToken) |
                             propagateChildFlags(node->whenTrue) | propagateChildFlags(node->colonToken) |
@@ -2590,7 +2591,8 @@ auto NodeFactory::createHeritageClause(SyntaxKind token, NodeArray<ExpressionWit
 auto NodeFactory::createCatchClause(VariableDeclaration variableDeclaration, Block block) -> CatchClause
 {
     auto node = createBaseNode<CatchClause>(SyntaxKind::CatchClause);
-    variableDeclaration = variableDeclaration;
+    // TODO: review it
+    // variableDeclaration = variableDeclaration;
     node->variableDeclaration = variableDeclaration;
     node->block = block;
     node->transformFlags |= propagateChildFlags(node->variableDeclaration) | propagateChildFlags(node->block);
