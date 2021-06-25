@@ -32,6 +32,8 @@ set(LIBS
     MLIRTypeScript
     )
 
+set_Libs(LIBS)
+
 add_llvm_executable(tsc tsc.cpp)
 
 llvm_update_compile_flags(tsc)
