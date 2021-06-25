@@ -167,7 +167,7 @@ auto ParenthesizerRules::parenthesizeOperandOfPrefixUnary(Expression operand) ->
     }
 
     // TODO(rbuckton) -> Verifiy whether `setTextRange` is needed.
-    return isUnaryExpression(operand) ? operand : setTextRange(factory->createParenthesizedExpression(operand), operand);
+    return isUnaryExpression(operand) ? operand : setTextRange(factory->createParenthesizedExpression(operand).as<Expression>(), operand);
 }
 
 auto ParenthesizerRules::parenthesizeConciseBodyOfArrowFunction(ConciseBody body) -> ConciseBody
@@ -195,7 +195,8 @@ auto ParenthesizerRules::parenthesizeOperandOfPostfixUnary(Expression operand) -
     }
 
     // TODO(rbuckton) -> Verifiy whether `setTextRange` is needed.
-    return isLeftHandSideExpression(operand) ? operand : setTextRange(factory->createParenthesizedExpression(operand), operand);
+    return isLeftHandSideExpression(operand) ? operand
+                                             : setTextRange(factory->createParenthesizedExpression(operand).as<Expression>(), operand);
 }
 
 inline static auto operatorHasAssociativeProperty(SyntaxKind binaryOperator)
@@ -364,7 +365,7 @@ auto ParenthesizerRules::parenthesizeBinaryOperand(SyntaxKind binaryOperator, Ex
     }
 
     return binaryOperandNeedsParentheses(binaryOperator, operand, isLeftSideOfBinary, leftOperand)
-               ? factory->createParenthesizedExpression(operand)
+               ? factory->createParenthesizedExpression(operand).as<Expression>()
                : operand;
 }
 
@@ -406,7 +407,7 @@ auto ParenthesizerRules::parenthesizeBranchOfConditionalExpression(Expression br
     // so in case when comma expression is introduced as a part of previous transformations
     // if should be wrapped in parens since comma operator has the lowest precedence
     auto emittedExpression = skipPartiallyEmittedExpressions(branch);
-    return isCommaSequence(emittedExpression) ? factory->createParenthesizedExpression(branch) : branch;
+    return isCommaSequence(emittedExpression) ? factory->createParenthesizedExpression(branch).as<Expression>() : branch;
 }
 
 /**
@@ -438,7 +439,7 @@ auto ParenthesizerRules::parenthesizeExpressionOfExportDefault(Expression expres
             needsParens = true;
         }
     }
-    return needsParens ? factory->createParenthesizedExpression(expression) : expression;
+    return needsParens ? factory->createParenthesizedExpression(expression).as<Expression>() : expression;
 }
 
 auto ParenthesizerRules::parenthesizeExpressionOfExpressionStatement(Expression expression) -> Expression
@@ -483,7 +484,7 @@ auto ParenthesizerRules::parenthesizeOrdinalTypeArgument(TypeNode node, number i
     }
 
     return i == 0 && isFunctionOrConstructorTypeNode(node) && node.as<FunctionOrConstructorTypeNodeBase>()->typeParameters
-               ? factory->createParenthesizedType(node)
+               ? factory->createParenthesizedType(node).as<TypeNode>()
                : node;
 }
 } // namespace ts
