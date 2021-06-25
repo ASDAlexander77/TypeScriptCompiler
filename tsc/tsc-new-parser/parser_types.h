@@ -44,7 +44,7 @@ struct ReadonlyTextRange : TextRange
 
 template <typename T /*extends Node*/> struct ReadonlyArray : std::vector<T>
 {
-    using vector::vector;
+    using vector<T>::vector;
 };
 
 template <typename T /*extends Node*/> struct NodeArray : ReadonlyArray<T>, TextRange
