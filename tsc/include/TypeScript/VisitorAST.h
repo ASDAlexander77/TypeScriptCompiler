@@ -87,7 +87,7 @@ template <typename T> class FilterVisitorAST : public VisitorASTBase
 template <typename T> class FilterVisitorSkipFuncsAST : public FilterVisitorAST<T>
 {
   public:
-    FilterVisitorSkipFuncsAST(SyntaxKind kind, std::function<void(T)> functor) : FilterVisitorAST(kind, functor)
+    FilterVisitorSkipFuncsAST(SyntaxKind kind, std::function<void(T)> functor) : FilterVisitorAST<T>(kind, functor)
     {
     }
 
