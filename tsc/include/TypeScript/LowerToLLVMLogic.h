@@ -1600,7 +1600,7 @@ template <typename UnaryOpTy, typename StdIOpTy, typename StdFOpTy> void UnaryOp
     }
     else
     {
-        emitError(binOp.getLoc(), "Not implemented operator for type 1: '") << type << "'";
+        emitError(unaryOp.getLoc(), "Not implemented operator for type 1: '") << type << "'";
         llvm_unreachable("not implemented");
     }
 }
@@ -1620,7 +1620,7 @@ template <typename BinOpTy, typename StdIOpTy, typename StdFOpTy> void BinOp(Bin
     {
         builder.replaceOpWithNewOp<StdFOpTy>(binOp, left, right);
     }
-    else if (leftType.dyn_cast_or_null<mlir_ts::NumberType>())
+    else if (leftType.template dyn_cast_or_null<mlir_ts::NumberType>())
     {
         auto castLeft = builder.create<mlir_ts::CastOp>(loc, builder.getF32Type(), left);
         auto castRight = builder.create<mlir_ts::CastOp>(loc, builder.getF32Type(), right);
