@@ -13,7 +13,8 @@ macro(set_Libs list)
 
 if(MSVC)
 else()
-    set(list "${list} stdc++fs")
+    #set(list "${list} stdc++fs")
+    link_libraries(stdc++fs)
 endif()
 
 endmacro()
