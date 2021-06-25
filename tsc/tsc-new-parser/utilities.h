@@ -1406,6 +1406,16 @@ static auto forEachChildRecursively(T rootNode, FuncWithParentT<R, T> cbNode, Ar
     return false;
 }
 
+inline static auto setParent(Node child, Node parent) -> Node
+{
+    if (!!child && !!parent)
+    {
+        child->parent = parent;
+    }
+
+    return child;
+}
+
 template <typename R, typename T> static auto setParentRecursive(T rootNode, boolean incremental) -> R
 {
     auto bindParentToChildIgnoringJSDoc = [&](auto child, auto parent) /*true is skip*/ {
@@ -1787,16 +1797,6 @@ inline auto isParameterPropertyModifier(SyntaxKind kind) -> boolean
 inline auto isClassMemberModifier(SyntaxKind idToken) -> boolean
 {
     return isParameterPropertyModifier(idToken) || idToken == SyntaxKind::StaticKeyword;
-}
-
-inline static auto setParent(Node child, Node parent) -> Node
-{
-    if (!!child && !!parent)
-    {
-        child->parent = parent;
-    }
-
-    return child;
 }
 
 inline static auto isNamedDeclaration(Node node) -> boolean

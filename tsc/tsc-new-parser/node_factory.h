@@ -102,7 +102,7 @@ class NodeFactory
     template <typename T> inline auto asEmbeddedStatement(T statement) -> T
     {
         return statement && isNotEmittedStatement(statement)
-                   ? setTextRange(setOriginalNode(createEmptyStatement(), statement), statement).as<Statement>()
+                   ? setTextRange(setOriginalNode(createEmptyStatement(), statement), statement).template as<Statement>()
                    : statement;
     }
 
