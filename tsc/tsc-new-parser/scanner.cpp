@@ -3075,7 +3075,7 @@ auto Scanner::reScanLessThanToken() -> SyntaxKind
 
 auto Scanner::reScanQuestionToken() -> SyntaxKind
 {
-    debug(token == SyntaxKind::QuestionQuestionToken, S("'reScanQuestionToken' should only be called on a '??'"));
+    debug(token == SyntaxKind::QuestionQuestionToken, S("'reScanQuestionToken' should only be called on a '\?\?'"));
     pos = tokenPos + 1;
     return token = SyntaxKind::QuestionToken;
 }
