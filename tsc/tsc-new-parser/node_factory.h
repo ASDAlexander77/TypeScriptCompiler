@@ -236,6 +236,8 @@ class NodeFactory
         return node;
     }
 
+    auto static getDefaultTagNameForKind(SyntaxKind kind) -> string;
+
     template <typename T> auto createJSDocSimpleTagWorker(SyntaxKind kind, Identifier tagName, string comment)
     {
         auto node = createBaseJSDocTag<T>(kind, tagName ? tagName : createIdentifier(getDefaultTagNameForKind(kind)), comment);
