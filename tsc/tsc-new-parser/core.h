@@ -292,7 +292,7 @@ template <typename T, typename U>
 auto binarySearchKey(const std::vector<T> &array, U key, std::function<U(T, number)> keySelector, Comparer<U> keyComparer,
                      number offset = 0) -> number
 {
-    if (!array)
+    if (array.size() <= 0)
     {
         return -1;
     }
