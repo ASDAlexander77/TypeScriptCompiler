@@ -631,8 +631,8 @@ class MLIRGenImpl
                 MLIRPropertyAccessCodeLogic cl(builder, location, init, builder.getI32IntegerAttr(index++));
                 mlir::Value subInit;
                 TypeSwitch<mlir::Type>(type)
-                    .Case<mlir_ts::ConstTupleType>([&](auto tupleType) { subInit = cl.Tuple(tupleType, true); })
-                    .Case<mlir_ts::TupleType>([&](auto tupleType) { subInit = cl.Tuple(tupleType, true); })
+                    .template Case<mlir_ts::ConstTupleType>([&](auto constTupleType) { subInit = cl.Tuple(constTupleType, true); })
+                    .template Case<mlir_ts::TupleType>([&](auto tupleType) { subInit = cl.Tuple(tupleType, true); })
                     .Default([&](auto type) { llvm_unreachable("not implemented"); });
 
                 if (!processDeclaration(

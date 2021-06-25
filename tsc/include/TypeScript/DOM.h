@@ -115,7 +115,7 @@ class FunctionParamDOM : public VariableDeclarationDOM
     using TypePtr = std::shared_ptr<FunctionParamDOM>;
 
     FunctionParamDOM(StringRef name, mlir::Type type, mlir::Location loc, bool isOptional = false, Expression initValue = undefined)
-        : isOptional(isOptional), VariableDeclarationDOM(name, type, loc, initValue)
+        : VariableDeclarationDOM(name, type, loc, initValue), isOptional(isOptional)
     {
     }
 
@@ -146,7 +146,7 @@ class FunctionPrototypeDOM
     using TypePtr = std::shared_ptr<FunctionPrototypeDOM>;
 
     FunctionPrototypeDOM(StringRef name, std::vector<FunctionParamDOM::TypePtr> args)
-        : name(name), args(args), discovered(false), hasCapturedVars(false), returnType()
+        : name(name), args(args), returnType(), discovered(false), hasCapturedVars(false)
     {
     }
 

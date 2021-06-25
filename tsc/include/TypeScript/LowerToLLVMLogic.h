@@ -875,9 +875,9 @@ class LLVMRTTIHelperVCWin32
 {
     Operation *op;
     PatternRewriter &rewriter;
+    ModuleOp parentModule;
     TypeHelper th;
     LLVMCodeHelper ch;
-    ModuleOp parentModule;
 
   public:
     LLVMRTTIHelperVCWin32(Operation *op, PatternRewriter &rewriter, TypeConverter &typeConverter)
