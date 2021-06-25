@@ -101,8 +101,9 @@ class NodeFactory
 
     template <typename T> inline auto asEmbeddedStatement(T statement) -> T
     {
-        return statement && isNotEmittedStatement(statement) ? setTextRange(setOriginalNode(createEmptyStatement(), statement), statement)
-                                                             : statement;
+        return statement && isNotEmittedStatement(statement)
+                   ? setTextRange(setOriginalNode(createEmptyStatement(), statement), statement).as<Statement>()
+                   : statement;
     }
 
     auto propagateIdentifierNameFlags(Identifier node) -> TransformFlags;
