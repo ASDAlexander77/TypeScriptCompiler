@@ -17,8 +17,5 @@ IF EXIST ".\3rdParty\llvm\%BUILD%\bin" (
   @call scripts\config_llvm_%BUILD%.bat
   echo "Building LLVM (%BUILD%)"
   cd %p%
-  @call scripts\config_llvm_%BUILD%.bat
-  echo "Building LLVM (%BUILD%) 2"
-  cd %p%
   @call scripts\build_llvm_%BUILD%.bat
 )
