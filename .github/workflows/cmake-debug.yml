@@ -52,8 +52,7 @@ jobs:
       shell: cmd
       run: prepare_3rdParty.bat
 
-    - name: Prepare 3rd party
-      continue-on-error: true
+    - name: Prepare 3rd party (2)
       shell: cmd
       run: prepare_3rdParty.bat
 
