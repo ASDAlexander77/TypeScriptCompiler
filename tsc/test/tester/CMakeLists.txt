@@ -1,5 +1,9 @@
 message(STATUS ">>> test >>> runner")
 
+set(CMAKE_CXX_STANDARD 17 CACHE STRING "C++ standard to conform to")
+set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
 set_Options()
 
 add_definitions("-DTEST_VCPATH=\"C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/SDK/ScopeCppSDK/vc15/VC/lib\"")

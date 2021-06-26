@@ -102,6 +102,21 @@ struct GenContext
     mlir::SmallVector<mlir::Block *> *cleanUps;
 };
 
+struct NamespaceInfo
+{
+    llvm::StringMap<mlir_ts::FuncOp> functionMap;
+
+    llvm::StringMap<llvm::StringMap<VariablePairT>> captureVarsMap;
+
+    llvm::StringMap<mlir::Type> typeAliasMap;
+
+    llvm::StringMap<std::pair<mlir::Type, mlir::DictionaryAttr>> enumsMap;
+
+    llvm::StringMap<mlir::Type> classesMap;
+
+    llvm::StringMap<NamespaceInfo> namespacesMap;
+};
+
 /// Implementation of a simple MLIR emission from the TypeScript AST.
 ///
 /// This will emit operations that are specific to the TypeScript language, preserving
@@ -881,8 +896,8 @@ class MLIRGenImpl
         mlir::FunctionType funcType;
 
         // check if function already discovered
-        auto funcIt = functionMap.find(name);
-        if (funcIt != functionMap.end())
+        auto funcIt = getFunctionMap().find(name);
+        if (funcIt != getFunctionMap().end())
         {
             auto cachedFuncType = funcIt->second.getType();
             if (cachedFuncType.getNumResults() > 0)
@@ -916,8 +931,8 @@ class MLIRGenImpl
             }
         }
 
-        auto it = captureVarsMap.find(funcProto->getName());
-        auto hasCapturedVars = funcProto->getHasCapturedVars() || (it != captureVarsMap.end());
+        auto it = getCaptureVarsMap().find(funcProto->getName());
+        auto hasCapturedVars = funcProto->getHasCapturedVars() || (it != getCaptureVarsMap().end());
 
         mlir_ts::FuncOp funcOp;
         if (hasCapturedVars)
@@ -998,7 +1013,7 @@ class MLIRGenImpl
                 {
                     MLIRCodeLogic mcl(builder);
                     argTypes.insert(argTypes.begin(), mcl.CaptureType(genContextWithPassResult.passResult->outerVariables));
-                    captureVarsMap.insert({name, genContextWithPassResult.passResult->outerVariables});
+                    getCaptureVarsMap().insert({name, genContextWithPassResult.passResult->outerVariables});
 
                     funcProto->setHasCapturedVars(true);
                 }
@@ -1100,9 +1115,9 @@ class MLIRGenImpl
             theModule.push_back(funcOp);
         }
 
-        if (!functionMap.count(name))
+        if (!getFunctionMap().count(name))
         {
-            functionMap.insert({name, funcOp});
+            getFunctionMap().insert({name, funcOp});
 
             LLVM_DEBUG(llvm::dbgs() << "reg. func: " << name << " type:" << funcOp.getType() << "\n";);
         }
@@ -1143,8 +1158,8 @@ class MLIRGenImpl
                                                  mlir::Block::BlockArgListType arguments, const GenContext &genContext)
     {
         // register this if lambda function
-        auto it = captureVarsMap.find(funcProto->getName());
-        if (it == captureVarsMap.end())
+        auto it = getCaptureVarsMap().find(funcProto->getName());
+        if (it == getCaptureVarsMap().end())
         {
             return mlir::success();
         }
@@ -1227,8 +1242,8 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGenFunctionCaptures(FunctionPrototypeDOM::TypePtr funcProto, const GenContext &genContext)
     {
-        auto it = captureVarsMap.find(funcProto->getName());
-        if (it == captureVarsMap.end())
+        auto it = getCaptureVarsMap().find(funcProto->getName());
+        if (it == getCaptureVarsMap().end())
         {
             return mlir::success();
         }
@@ -2572,8 +2587,8 @@ llvm.return %5 : i32
             auto argumentsContext = callExpression->arguments;
 
             // resolve function
-            auto calledFuncIt = functionMap.find(functionName);
-            if (calledFuncIt == functionMap.end())
+            auto calledFuncIt = getFunctionMap().find(functionName);
+            if (calledFuncIt == getFunctionMap().end())
             {
                 MLIRCustomMethods cm(builder, location);
 
@@ -3112,13 +3127,13 @@ llvm.return %5 : i32
         }
 
         // resolving function
-        auto fn = functionMap.find(name);
-        if (fn != functionMap.end())
+        auto fn = getFunctionMap().find(name);
+        if (fn != getFunctionMap().end())
         {
             auto effectiveFuncType = fn->getValue().getType();
             // check if required capture of vars
-            auto captureVars = captureVarsMap.find(name);
-            if (captureVars != captureVarsMap.end())
+            auto captureVars = getCaptureVarsMap().find(name);
+            if (captureVars != getCaptureVarsMap().end())
             {
                 auto funcType = effectiveFuncType;
                 auto newFuncType = builder.getFunctionType(funcType.getInputs().slice(1), funcType.getResults());
@@ -3151,9 +3166,9 @@ llvm.return %5 : i32
         }
 
         // check if we have enum
-        if (enumsMap.count(name))
+        if (getEnumsMap().count(name))
         {
-            auto enumTypeInfo = enumsMap.lookup(name);
+            auto enumTypeInfo = getEnumsMap().lookup(name);
             return builder.create<mlir_ts::ConstantOp>(location, getEnumType(enumTypeInfo.first), enumTypeInfo.second);
         }
 
@@ -3174,7 +3189,7 @@ llvm.return %5 : i32
         if (!name.empty())
         {
             auto type = getType(typeAliasDeclarationAST->type);
-            typeAliasMap.insert({name, type});
+            getTypeAliasMap().insert({name, type});
             return mlir::success();
         }
         else
@@ -3274,7 +3289,7 @@ llvm.return %5 : i32
             }
         }
 
-        enumsMap.insert({name, std::make_pair(enumIntType, mlir::DictionaryAttr::get(builder.getContext(), adjustedEnumValues))});
+        getEnumsMap().insert({name, std::make_pair(enumIntType, mlir::DictionaryAttr::get(builder.getContext(), adjustedEnumValues))});
 
         return mlir::success();
     }
@@ -3321,7 +3336,7 @@ llvm.return %5 : i32
 
         auto classType = getClassType(getTupleType(fieldInfos));
 
-        classesMap.insert({name, classType});
+        getClassesMap().insert({name, classType});
 
         return mlir::success();
     }
@@ -3396,21 +3411,21 @@ llvm.return %5 : i32
 
     mlir::Type getResolveTypeFromValue(std::string name)
     {
-        if (classesMap.count(name))
+        if (getClassesMap().count(name))
         {
-            auto classType = classesMap.lookup(name);
+            auto classType = getClassesMap().lookup(name);
             return classType;
         }
 
-        auto aliasType = typeAliasMap.lookup(name);
+        auto aliasType = getTypeAliasMap().lookup(name);
         if (aliasType)
         {
             return aliasType;
         }
 
-        if (enumsMap.count(name))
+        if (getEnumsMap().count(name))
         {
-            auto enumType = enumsMap.lookup(name);
+            auto enumType = getEnumsMap().lookup(name);
             return enumType.first;
         }
 
@@ -3724,6 +3739,31 @@ llvm.return %5 : i32
         return mlir::success();
     }
 
+    auto getFunctionMap() -> llvm::StringMap<mlir_ts::FuncOp> &
+    {
+        return rootNamespace.functionMap;
+    }
+
+    auto getCaptureVarsMap() -> llvm::StringMap<llvm::StringMap<VariablePairT>> &
+    {
+        return rootNamespace.captureVarsMap;
+    }
+
+    auto getClassesMap() -> llvm::StringMap<mlir::Type> &
+    {
+        return rootNamespace.classesMap;
+    }
+
+    auto getEnumsMap() -> llvm::StringMap<std::pair<mlir::Type, mlir::DictionaryAttr>> &
+    {
+        return rootNamespace.enumsMap;
+    }
+
+    auto getTypeAliasMap() -> llvm::StringMap<mlir::Type> &
+    {
+        return rootNamespace.typeAliasMap;
+    }
+
   protected:
     mlir::StringAttr getStringAttr(std::string text)
     {
@@ -3754,15 +3794,7 @@ llvm.return %5 : i32
 
     llvm::ScopedHashTable<StringRef, VariablePairT> symbolTable;
 
-    llvm::StringMap<mlir_ts::FuncOp> functionMap;
-
-    llvm::StringMap<llvm::StringMap<VariablePairT>> captureVarsMap;
-
-    llvm::StringMap<mlir::Type> typeAliasMap;
-
-    llvm::StringMap<std::pair<mlir::Type, mlir::DictionaryAttr>> enumsMap;
-
-    llvm::StringMap<mlir::Type> classesMap;
+    NamespaceInfo rootNamespace;
 
     // helper to get line number
     Parser parser;

@@ -199,18 +199,18 @@ void testFile(const char *file)
     auto stem = fs::path(file).stem();
 
     std::stringstream sfn;
-    sfn << stem << ms.count() << ".exe";
+    sfn << stem.generic_string() << ms.count() << ".exe";
     auto exeFile = sfn.str();
 
     std::stringstream tfn;
-    tfn << stem << ms.count() << ".txt";
+    tfn << stem.generic_string() << ms.count() << ".txt";
     auto txtFile = tfn.str();
 
     std::stringstream efn;
-    efn << stem << ms.count() << ".err";
+    efn << stem.generic_string() << ms.count() << ".err";
     auto errFile = efn.str();
 
-    std::cout << "Test file: " << fileName << " path: " << file << std::endl;
+    std::cout << "Test file: " << fileName.generic_string() << " path: " << file << std::endl;
 
     auto cleanup = [&]() {
         std::stringstream mask;
@@ -266,15 +266,15 @@ void testFile(const char *file)
     std::stringstream ss;
     if (isJit)
     {
-        ss << "jit.bat " << stem << ms.count() << " " << file;
+        ss << "jit.bat " << stem.generic_string() << ms.count() << " " << file;
     }
     else if (enableBuiltins)
     {
-        ss << "compile_rt.bat " << stem << ms.count() << " " << file;
+        ss << "compile_rt.bat " << stem.generic_string() << ms.count() << " " << file;
     }
     else
     {
-        ss << "compile.bat " << stem << ms.count() << " " << file;
+        ss << "compile.bat " << stem.generic_string() << ms.count() << " " << file;
     }
 
     try
