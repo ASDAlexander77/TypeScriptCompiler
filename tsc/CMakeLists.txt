@@ -16,10 +16,7 @@ endif()
 project(tsc LANGUAGES CXX C)
 
 # Add path for custom modules
-set(CMAKE_MODULE_PATH
-  ${CMAKE_MODULE_PATH}
-  "${CMAKE_CURRENT_SOURCE_DIR}/cmake"
-  )
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 include(config_macros)
 
@@ -33,15 +30,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 if ("${CMAKE_BUILD_TYPE}" STREQUAL "")
 set(CMAKE_BUILD_TYPE "Debug")
 endif()
-
-#if ("${LLVM_EXTERNAL_LIT}" STREQUAL "" OR "${LLVM_EXTERNAL_LIT}" STREQUAL "LLVM_EXTERNAL_LIT-NOTFOUND")
-#  if (MSVC)
-#    file(REAL_PATH "${CMAKE_SOURCE_DIR}/../__build/llvm/${CMAKE_BUILD_TYPE}/bin/llvm-lit.py" LLVM_DEFAULT_EXTERNAL_LIT)
-#  else()
-#    file(REAL_PATH "${CMAKE_SOURCE_DIR}/../__build/llvm-ninja/bin/llvm-lit" LLVM_DEFAULT_EXTERNAL_LIT)
-#  endif()
-#endif()
-#message(STATUS "LLVM_EXTERNAL_LIT is ${LLVM_EXTERNAL_LIT}")
 
 if ("${MLIR_DIR}" STREQUAL "" OR "${MLIR_DIR}" STREQUAL "MLIR_DIR-NOTFOUND")
   if (MSVC)
@@ -79,6 +67,9 @@ include(TableGen)
 include(AddLLVM)
 include(AddMLIR)
 include(HandleLLVMOptions)
+
+file(REAL_PATH "${MLIR_INCLUDE_DIR}/../../../${CMAKE_BUILD_TYPE}/bin/llvm-lit.py" LLVM_EXTERNAL_LIT)
+message(STATUS "LLVM_EXTERNAL_LIT is ${LLVM_EXTERNAL_LIT}")
 
 include_directories(${LLVM_INCLUDE_DIRS})
 include_directories(${MLIR_INCLUDE_DIRS})

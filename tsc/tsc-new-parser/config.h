@@ -8,6 +8,8 @@
 
 #if _MSC_VER
 #pragma warning(disable : 4062)
+#pragma warning(disable : 4834)
+#pragma warning(disable : 4996)
 #endif
 
 using boolean = bool;
