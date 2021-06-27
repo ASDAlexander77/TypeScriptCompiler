@@ -968,7 +968,6 @@ class MLIRGenImpl
         auto it = getCaptureVarsMap().find(funcProto->getName());
         auto hasCapturedVars = funcProto->getHasCapturedVars() || (it != getCaptureVarsMap().end());
 
-        auto fullFunctionName = getFullNamespaceName(name);
         mlir_ts::FuncOp funcOp;
         if (hasCapturedVars)
         {
@@ -990,15 +989,17 @@ class MLIRGenImpl
                 argAttrs.push_back(argDicAttr);
             }
 
-            funcOp = mlir_ts::FuncOp::create(location, fullFunctionName, funcType, attrs, argAttrs);
+            funcOp = mlir_ts::FuncOp::create(location, name, funcType, attrs, argAttrs);
 
             LLVM_DEBUG(llvm::dbgs() << "\n === FuncOp with attrs === \n");
             LLVM_DEBUG(funcOp.dump());
         }
         else
         {
-            funcOp = mlir_ts::FuncOp::create(location, fullFunctionName, funcType);
+            funcOp = mlir_ts::FuncOp::create(location, name, funcType);
         }
+
+        setNamespace(funcOp);
 
         return std::make_tuple(funcOp, std::move(funcProto), true);
     }
@@ -3165,7 +3166,8 @@ llvm.return %5 : i32
         auto fn = getFunctionMap().find(name);
         if (fn != getFunctionMap().end())
         {
-            auto effectiveFuncType = fn->getValue().getType();
+            auto funcOp = fn->getValue();
+            auto effectiveFuncType = funcOp.getType();
             // check if required capture of vars
             auto captureVars = getCaptureVarsMap().find(name);
             if (captureVars != getCaptureVarsMap().end())
@@ -3174,14 +3176,9 @@ llvm.return %5 : i32
                 auto newFuncType = builder.getFunctionType(funcType.getInputs().slice(1), funcType.getResults());
                 effectiveFuncType = newFuncType;
 
-                auto funcOp =
+                auto funcSymbolOp =
                     builder.create<mlir_ts::SymbolRefOp>(location, funcType, mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
 
-                /*
-
-                auto castToNewFunc = builder.create<mlir_ts::CastOp>(location, effectiveFuncType, funcOp);
-                return castToNewFunc;
-                */
                 MLIRCodeLogic mcl(builder);
                 SmallVector<mlir::Value> capturedValues;
                 for (auto &item : captureVars->getValue())
@@ -3193,11 +3190,13 @@ llvm.return %5 : i32
                 }
 
                 auto captured = builder.create<mlir_ts::CaptureOp>(location, funcType.getInput(0), capturedValues);
-                return builder.create<mlir_ts::TrampolineOp>(location, effectiveFuncType, funcOp, captured);
+                return builder.create<mlir_ts::TrampolineOp>(location, effectiveFuncType, funcSymbolOp, captured);
             }
 
-            return builder.create<mlir_ts::SymbolRefOp>(location, effectiveFuncType,
-                                                        mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
+            auto symbOp =
+                builder.create<mlir_ts::SymbolRefOp>(location, effectiveFuncType, mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
+            copyNamespace(funcOp, symbOp);
+            return symbOp;
         }
 
         // check if we have enum
@@ -3772,6 +3771,33 @@ llvm.return %5 : i32
 
         symbolTable.insert(name, {value, var});
         return mlir::success();
+    }
+
+    void setNamespace(mlir::Operation *op)
+    {
+        auto namespc = getNamespace();
+        if (!namespc.empty())
+        {
+            op->setAttr(NAMESPACE_ATTR_NAME, mlir::FlatSymbolRefAttr::get(builder.getContext(), namespc));
+        }
+    }
+
+    void copyNamespace(mlir::Operation *opFrom, mlir::Operation *opTo)
+    {
+        if (opFrom->hasAttrOfType<mlir::FlatSymbolRefAttr>(NAMESPACE_ATTR_NAME))
+        {
+            opTo->setAttr(NAMESPACE_ATTR_NAME, opFrom->getAttr(NAMESPACE_ATTR_NAME));
+        }
+    }
+
+    auto getNamespace() -> StringRef
+    {
+        if (currentNamespace.fullName.empty())
+        {
+            return "";
+        }
+
+        return currentNamespace.fullName;
     }
 
     auto getFullNamespaceName(StringRef name) -> StringRef
