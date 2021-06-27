@@ -968,6 +968,7 @@ class MLIRGenImpl
         auto it = getCaptureVarsMap().find(funcProto->getName());
         auto hasCapturedVars = funcProto->getHasCapturedVars() || (it != getCaptureVarsMap().end());
 
+        auto fullFunctionName = getFullNamespaceName(name);
         mlir_ts::FuncOp funcOp;
         if (hasCapturedVars)
         {
@@ -989,14 +990,14 @@ class MLIRGenImpl
                 argAttrs.push_back(argDicAttr);
             }
 
-            funcOp = mlir_ts::FuncOp::create(location, getFullNamespaceName(name), funcType, attrs, argAttrs);
+            funcOp = mlir_ts::FuncOp::create(location, fullFunctionName, funcType, attrs, argAttrs);
 
             LLVM_DEBUG(llvm::dbgs() << "\n === FuncOp with attrs === \n");
             LLVM_DEBUG(funcOp.dump());
         }
         else
         {
-            funcOp = mlir_ts::FuncOp::create(location, name, funcType);
+            funcOp = mlir_ts::FuncOp::create(location, fullFunctionName, funcType);
         }
 
         return std::make_tuple(funcOp, std::move(funcProto), true);
@@ -1138,7 +1139,7 @@ class MLIRGenImpl
         }
 
         // set visibility index
-        auto name = funcOp.getName();
+        auto name = getNameWithoutNamespace(funcOp.getName());
         if (name != StringRef("main"))
         {
             funcOp.setPrivate();
@@ -3785,7 +3786,19 @@ llvm.return %5 : i32
         res += ".";
         res += name;
 
-        return res;
+        auto namePtr = StringRef(res).copy(stringAllocator);
+        return namePtr;
+    }
+
+    auto getNameWithoutNamespace(StringRef name) -> StringRef
+    {
+        auto pos = name.find_last_of('.');
+        if (pos == StringRef::npos)
+        {
+            return name;
+        }
+
+        return name.substr(pos + 1);
     }
 
     auto getFunctionMap() -> llvm::StringMap<mlir_ts::FuncOp> &
