@@ -104,6 +104,10 @@ struct GenContext
 
 struct NamespaceInfo
 {
+    mlir::StringRef name;
+
+    mlir::StringRef fullName;
+
     llvm::StringMap<mlir_ts::FuncOp> functionMap;
 
     llvm::StringMap<llvm::StringMap<VariablePairT>> captureVarsMap;
@@ -114,7 +118,7 @@ struct NamespaceInfo
 
     llvm::StringMap<mlir::Type> classesMap;
 
-    llvm::StringMap<NamespaceInfo> namespacesMap;
+    llvm::StringMap<NamespaceInfo *> namespacesMap;
 };
 
 /// Implementation of a simple MLIR emission from the TypeScript AST.
@@ -125,12 +129,13 @@ struct NamespaceInfo
 class MLIRGenImpl
 {
   public:
-    MLIRGenImpl(const mlir::MLIRContext &context) : builder(&const_cast<mlir::MLIRContext &>(context))
+    MLIRGenImpl(const mlir::MLIRContext &context) : builder(&const_cast<mlir::MLIRContext &>(context)), currentNamespace(rootNamespace)
     {
         fileName = "<unknown>";
     }
 
-    MLIRGenImpl(const mlir::MLIRContext &context, const llvm::StringRef &fileNameParam) : builder(&const_cast<mlir::MLIRContext &>(context))
+    MLIRGenImpl(const mlir::MLIRContext &context, const llvm::StringRef &fileNameParam)
+        : builder(&const_cast<mlir::MLIRContext &>(context)), currentNamespace(rootNamespace)
     {
         fileName = fileNameParam;
     }
@@ -226,8 +231,37 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    mlir::LogicalResult mlirGenNamespace(ModuleDeclaration moduleDeclarationAST, const GenContext &genContext)
+    {
+        auto location = loc(moduleDeclarationAST);
+
+        auto namespaceName = MLIRHelper::getName(moduleDeclarationAST->name);
+
+        NamespaceInfo newNamespace;
+        newNamespace.name = namespaceName;
+        newNamespace.fullName = getFullNamespaceName(namespaceName);
+        currentNamespace.namespacesMap.insert({namespaceName, &newNamespace});
+
+        auto savedNamespace = currentNamespace;
+        currentNamespace = newNamespace;
+
+        GenContext moduleGenContext = {0};
+        auto result = mlirGenBody(moduleDeclarationAST->body, genContext);
+
+        currentNamespace = savedNamespace;
+
+        return mlir::success();
+    }
+
     mlir::LogicalResult mlirGen(ModuleDeclaration moduleDeclarationAST, const GenContext &genContext)
     {
+        auto isNamespace = (moduleDeclarationAST->flags & NodeFlags::Namespace) == NodeFlags::Namespace;
+        auto isNestedNamespace = (moduleDeclarationAST->flags & NodeFlags::NestedNamespace) == NodeFlags::NestedNamespace;
+        if (isNamespace || isNestedNamespace)
+        {
+            return mlirGenNamespace(moduleDeclarationAST, genContext);
+        }
+
         auto location = loc(moduleDeclarationAST);
 
         auto moduleName = MLIRHelper::getName(moduleDeclarationAST->name);
@@ -955,7 +989,7 @@ class MLIRGenImpl
                 argAttrs.push_back(argDicAttr);
             }
 
-            funcOp = mlir_ts::FuncOp::create(location, name, funcType, attrs, argAttrs);
+            funcOp = mlir_ts::FuncOp::create(location, getFullNamespaceName(name), funcType, attrs, argAttrs);
 
             LLVM_DEBUG(llvm::dbgs() << "\n === FuncOp with attrs === \n");
             LLVM_DEBUG(funcOp.dump());
@@ -1008,7 +1042,7 @@ class MLIRGenImpl
                     LLVM_DEBUG(llvm::dbgs() << "ret type for " << name << " : " << funcProto->getReturnType() << "\n";);
                 }
 
-                // if we have captured parameters, add first param to send lamdas type(class)
+                // if we have captured parameters, add first param to send lambda's type(class)
                 if (genContextWithPassResult.passResult->outerVariables.size() > 0)
                 {
                     MLIRCodeLogic mcl(builder);
@@ -3739,29 +3773,44 @@ llvm.return %5 : i32
         return mlir::success();
     }
 
+    auto getFullNamespaceName(StringRef name) -> StringRef
+    {
+        if (currentNamespace.fullName.empty())
+        {
+            return name;
+        }
+
+        std::string res;
+        res += currentNamespace.fullName;
+        res += ".";
+        res += name;
+
+        return res;
+    }
+
     auto getFunctionMap() -> llvm::StringMap<mlir_ts::FuncOp> &
     {
-        return rootNamespace.functionMap;
+        return currentNamespace.functionMap;
     }
 
     auto getCaptureVarsMap() -> llvm::StringMap<llvm::StringMap<VariablePairT>> &
     {
-        return rootNamespace.captureVarsMap;
+        return currentNamespace.captureVarsMap;
     }
 
     auto getClassesMap() -> llvm::StringMap<mlir::Type> &
     {
-        return rootNamespace.classesMap;
+        return currentNamespace.classesMap;
     }
 
     auto getEnumsMap() -> llvm::StringMap<std::pair<mlir::Type, mlir::DictionaryAttr>> &
     {
-        return rootNamespace.enumsMap;
+        return currentNamespace.enumsMap;
     }
 
     auto getTypeAliasMap() -> llvm::StringMap<mlir::Type> &
     {
-        return rootNamespace.typeAliasMap;
+        return currentNamespace.typeAliasMap;
     }
 
   protected:
@@ -3793,6 +3842,8 @@ llvm.return %5 : i32
     llvm::BumpPtrAllocator stringAllocator;
 
     llvm::ScopedHashTable<StringRef, VariablePairT> symbolTable;
+
+    NamespaceInfo &currentNamespace;
 
     NamespaceInfo rootNamespace;
 
