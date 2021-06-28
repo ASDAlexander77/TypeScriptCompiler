@@ -155,8 +155,6 @@ class MLIRGenImpl
 
         SymbolTableScopeT varScope(symbolTable);
 
-        declareAllTypesAndEnumsDeclarations(module);
-
         // Process of discovery here
         GenContext genContextPartial = {0};
         genContextPartial.allowPartialResolve = true;
@@ -212,29 +210,6 @@ class MLIRGenImpl
         return theModule;
     }
 
-    mlir::LogicalResult declareAllTypesAndEnumsDeclarations(SourceFile module)
-    {
-        FilterVisitorAST<EnumDeclaration> visitorASTEnum(SyntaxKind::EnumDeclaration, [&](auto enumDecl) {
-            GenContext genContext;
-            mlirGen(enumDecl, genContext);
-        });
-        visitorASTEnum.visit(module);
-
-        FilterVisitorAST<ClassDeclaration> visitorASTClass(SyntaxKind::ClassDeclaration, [&](auto classDecl) {
-            GenContext genContext;
-            mlirGen(classDecl.template as<ClassLikeDeclaration>(), genContext);
-        });
-        visitorASTClass.visit(module);
-
-        FilterVisitorAST<TypeAliasDeclaration> visitorASTType(SyntaxKind::TypeAliasDeclaration, [&](auto typeAliasDecl) {
-            GenContext genContext;
-            mlirGen(typeAliasDecl, genContext);
-        });
-        visitorASTType.visit(module);
-
-        return mlir::success();
-    }
-
     mlir::LogicalResult mlirGenNamespace(ModuleDeclaration moduleDeclarationAST, const GenContext &genContext)
     {
         auto location = loc(moduleDeclarationAST);
@@ -242,15 +217,23 @@ class MLIRGenImpl
         auto namespaceName = MLIRHelper::getName(moduleDeclarationAST->name);
         auto namePtr = StringRef(namespaceName).copy(stringAllocator);
 
-        auto fullNamePtr = getFullNamespaceName(namePtr);
-        auto newNamespacePtr = std::make_shared<NamespaceInfo>();
-        newNamespacePtr->name = namePtr;
-        newNamespacePtr->fullName = fullNamePtr;
-        currentNamespace->namespacesMap.insert({namePtr, newNamespacePtr});
-        fullNamespacesMap.insert({fullNamePtr, newNamespacePtr});
-
         auto savedNamespace = currentNamespace;
-        currentNamespace = newNamespacePtr;
+
+        auto fullNamePtr = getFullNamespaceName(namePtr);
+        auto it = currentNamespace->namespacesMap.find(namePtr);
+        if (it == currentNamespace->namespacesMap.end())
+        {
+            auto newNamespacePtr = std::make_shared<NamespaceInfo>();
+            newNamespacePtr->name = namePtr;
+            newNamespacePtr->fullName = fullNamePtr;
+            currentNamespace->namespacesMap.insert({namePtr, newNamespacePtr});
+            fullNamespacesMap.insert({fullNamePtr, newNamespacePtr});
+            currentNamespace = newNamespacePtr;
+        }
+        else
+        {
+            currentNamespace = it->getValue();
+        }
 
         GenContext moduleGenContext = {0};
         auto result = mlirGenBody(moduleDeclarationAST->body, genContext);
@@ -325,9 +308,19 @@ class MLIRGenImpl
 
         for (auto &statement : moduleBlockAST->statements)
         {
+            if (genContext.dummyRun && statement->processed)
+            {
+                continue;
+            }
+
             if (failed(mlirGen(statement, genContext)))
             {
                 return mlir::failure();
+            }
+
+            if (genContext.dummyRun)
+            {
+                statement->processed = true;
             }
         }
 
@@ -340,9 +333,19 @@ class MLIRGenImpl
 
         for (auto &statement : blockAST->statements)
         {
+            if (genContext.dummyRun && statement->processed)
+            {
+                continue;
+            }
+
             if (failed(mlirGen(statement, genContext)))
             {
                 return mlir::failure();
+            }
+
+            if (genContext.dummyRun)
+            {
+                statement->processed = true;
             }
         }
 
@@ -422,21 +425,18 @@ class MLIRGenImpl
         }
         else if (kind == SyntaxKind::TypeAliasDeclaration)
         {
-            // must be processed already
-            // return mlirGen(statementAST.as<TypeAliasDeclaration>(), genContext);
-            return mlir::success();
+            // declaration
+            return mlirGen(statementAST.as<TypeAliasDeclaration>(), genContext);
         }
         else if (kind == SyntaxKind::EnumDeclaration)
         {
-            // must be processed already
-            // return mlirGen(statementAST.as<EnumDeclaration>(), genContext);
-            return mlir::success();
+            // declaration
+            return mlirGen(statementAST.as<EnumDeclaration>(), genContext);
         }
         else if (kind == SyntaxKind::ClassDeclaration)
         {
-            // must be processed already
-            // return mlirGen(statementAST.as<ClassDeclaration>(), genContext);
-            return mlir::success();
+            // declaration
+            return mlirGen(statementAST.as<ClassLikeDeclaration>(), genContext);
         }
         else if (kind == SyntaxKind::Block)
         {
@@ -2535,13 +2535,16 @@ llvm.return %5 : i32
 
                 currentNamespace = saveNamespace;
             }
-            else if (auto symRef = dyn_cast_or_null<mlir_ts::SymbolRefOp>(expression.getDefiningOp()))
+            else if (!genContext.dummyRun)
             {
-                emitError(location, "can't resolve '") << symRef.identifier() << "' ...";
-            }
-            else
-            {
-                emitError(location, "can't resolve property left expression");
+                if (auto symRef = dyn_cast_or_null<mlir_ts::SymbolRefOp>(expression.getDefiningOp()))
+                {
+                    emitError(location, "can't resolve '") << symRef.identifier() << "' ...";
+                }
+                else
+                {
+                    emitError(location, "can't resolve property left expression");
+                }
             }
 
             return value;
@@ -2654,7 +2657,15 @@ llvm.return %5 : i32
             MLIRCustomMethods cm(builder, location);
 
             SmallVector<mlir::Value, 4> operands;
-            mlirGen(argumentsContext, operands, genContext);
+            if (mlir::failed(mlirGen(argumentsContext, operands, genContext)))
+            {
+                if (!genContext.dummyRun)
+                {
+                    emitError(location) << "Call Method: can't resolve values of all parameters";
+                }
+
+                return mlir::Value();
+            }
 
             return cm.callMethod(functionName, operands, genContext.allowPartialResolve);
         }
@@ -2663,14 +2674,22 @@ llvm.return %5 : i32
         TypeSwitch<mlir::Type>(funcRefValue.getType())
             .Case<mlir::FunctionType>([&](auto calledFuncType) {
                 SmallVector<mlir::Value, 4> operands;
-                mlirGenCallOperands(location, calledFuncType, callExpression->arguments, operands, genContext);
-
-                // default call by name
-                auto callIndirectOp = builder.create<mlir_ts::CallIndirectOp>(location, funcRefValue, operands);
-
-                if (calledFuncType.getNumResults() > 0)
+                if (mlir::failed(mlirGenCallOperands(location, calledFuncType, callExpression->arguments, operands, genContext)))
                 {
-                    value = callIndirectOp.getResult(0);
+                    if (!genContext.dummyRun)
+                    {
+                        emitError(location) << "Call Method: can't resolve values of all parameters";
+                    }
+                }
+                else
+                {
+                    // default call by name
+                    auto callIndirectOp = builder.create<mlir_ts::CallIndirectOp>(location, funcRefValue, operands);
+
+                    if (calledFuncType.getNumResults() > 0)
+                    {
+                        value = callIndirectOp.getResult(0);
+                    }
                 }
             })
             .Default([&](auto type) {
@@ -2693,7 +2712,11 @@ llvm.return %5 : i32
         auto opArgsCount = std::distance(argumentsContext.begin(), argumentsContext.end());
         auto funcArgsCount = calledFuncType.getNumInputs();
 
-        mlirGen(argumentsContext, operands, calledFuncType, genContext);
+        if (mlir::failed(mlirGen(argumentsContext, operands, calledFuncType, genContext)))
+        {
+            return mlir::failure();
+        }
+
         if (funcArgsCount > opArgsCount)
         {
             // -1 to exclude count params
@@ -2711,6 +2734,11 @@ llvm.return %5 : i32
         for (auto expression : arguments)
         {
             auto value = mlirGen(expression, genContext);
+            if (!value)
+            {
+                return mlir::failure();
+            }
+
             operands.push_back(value);
         }
 
@@ -3273,6 +3301,8 @@ llvm.return %5 : i32
             return mlir::failure();
         }
 
+        auto namePtr = StringRef(name).copy(stringAllocator);
+
         SmallVector<mlir::NamedAttribute> enumValues;
         int64_t index = 0;
         auto activeBits = 0;
@@ -3353,7 +3383,7 @@ llvm.return %5 : i32
             }
         }
 
-        getEnumsMap().insert({name, std::make_pair(enumIntType, mlir::DictionaryAttr::get(builder.getContext(), adjustedEnumValues))});
+        getEnumsMap().insert({namePtr, std::make_pair(enumIntType, mlir::DictionaryAttr::get(builder.getContext(), adjustedEnumValues))});
 
         return mlir::success();
     }
