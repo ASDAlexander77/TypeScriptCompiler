@@ -66,7 +66,11 @@ class MLIRCustomMethods
 
             if (auto unresolvedLeft = dyn_cast_or_null<mlir_ts::SymbolRefOp>(oper.getDefiningOp()))
             {
-                emitError(oper.getLoc(), "can't find variable: ") << unresolvedLeft.identifier();
+                if (!allowPartialResolve)
+                {
+                    emitError(oper.getLoc(), "can't find variable: ") << unresolvedLeft.identifier();
+                }
+
                 return mlir::Value();
             }
         }

@@ -1480,6 +1480,11 @@ class MLIRGenImpl
 
         // condition
         auto condValue = mlirGen(ifStatementAST->expression, genContext);
+        if (genContext.allowPartialResolve && !condValue)
+        {
+            return mlir::failure();
+        }
+
         if (condValue.getType() != getBooleanType())
         {
             condValue = builder.create<mlir_ts::CastOp>(location, getBooleanType(), condValue);
@@ -1965,7 +1970,11 @@ llvm.return %5 : i32
 
         if (auto unresolved = dyn_cast_or_null<mlir_ts::SymbolRefOp>(expressionValue.getDefiningOp()))
         {
-            emitError(loc(expression), "can't find variable: ") << unresolved.identifier();
+            if (!genContext.allowPartialResolve)
+            {
+                emitError(loc(expression), "can't find variable: ") << unresolved.identifier();
+            }
+
             return mlir::Value();
         }
 
@@ -2017,7 +2026,11 @@ llvm.return %5 : i32
 
         if (auto unresolved = dyn_cast_or_null<mlir_ts::SymbolRefOp>(expressionValue.getDefiningOp()))
         {
-            emitError(loc(expression), "can't find variable: ") << unresolved.identifier();
+            if (!genContext.allowPartialResolve)
+            {
+                emitError(loc(expression), "can't find variable: ") << unresolved.identifier();
+            }
+
             return mlir::Value();
         }
 
@@ -2196,13 +2209,21 @@ llvm.return %5 : i32
 
         if (auto unresolvedLeft = dyn_cast_or_null<mlir_ts::SymbolRefOp>(leftExpressionValue.getDefiningOp()))
         {
-            emitError(loc(leftExpression), "can't find variable: ") << unresolvedLeft.identifier();
+            if (!genContext.allowPartialResolve)
+            {
+                emitError(loc(leftExpression), "can't find variable: ") << unresolvedLeft.identifier();
+            }
+
             return mlir::Value();
         }
 
         if (auto unresolvedRight = dyn_cast_or_null<mlir_ts::SymbolRefOp>(rightExpressionValue.getDefiningOp()))
         {
-            emitError(loc(rightExpression), "can't find variable: ") << unresolvedRight.identifier();
+            if (!genContext.allowPartialResolve)
+            {
+                emitError(loc(rightExpression), "can't find variable: ") << unresolvedRight.identifier();
+            }
+
             return mlir::Value();
         }
 
@@ -2274,6 +2295,7 @@ llvm.return %5 : i32
         auto leftExpressionValue = mlirGen(leftExpression, genContext);
         auto rightExpressionValue = mlirGen(rightExpression, genContext);
 
+        // TODO: create procedure to test values
         if (!leftExpressionValue)
         {
             if (!genContext.allowPartialResolve)
@@ -2296,15 +2318,25 @@ llvm.return %5 : i32
 
         if (auto unresolvedLeft = dyn_cast_or_null<mlir_ts::SymbolRefOp>(leftExpressionValue.getDefiningOp()))
         {
-            emitError(loc(leftExpression), "can't find variable: ") << unresolvedLeft.identifier();
+            if (!genContext.allowPartialResolve)
+            {
+                emitError(loc(leftExpression), "can't find variable: ") << unresolvedLeft.identifier();
+            }
+
             return mlir::Value();
         }
 
         if (auto unresolvedRight = dyn_cast_or_null<mlir_ts::SymbolRefOp>(rightExpressionValue.getDefiningOp()))
         {
-            emitError(loc(rightExpression), "can't find variable: ") << unresolvedRight.identifier();
+            if (!genContext.allowPartialResolve)
+            {
+                emitError(loc(rightExpression), "can't find variable: ") << unresolvedRight.identifier();
+            }
+
             return mlir::Value();
         }
+
+        // TODO: end here
 
         // check if const expr.
         if (genContext.allowConstEval)
@@ -2875,7 +2907,11 @@ llvm.return %5 : i32
             auto exprValue = mlirGen(span->expression, genContext);
             if (auto unresolved = dyn_cast_or_null<mlir_ts::SymbolRefOp>(exprValue.getDefiningOp()))
             {
-                emitError(location, "can't find variable: ") << unresolved.identifier();
+                if (!genContext.allowPartialResolve)
+                {
+                    emitError(location, "can't find variable: ") << unresolved.identifier();
+                }
+
                 return mlir::Value();
             }
 
@@ -2923,7 +2959,11 @@ llvm.return %5 : i32
             auto exprValue = mlirGen(span->expression, genContext);
             if (auto unresolved = dyn_cast_or_null<mlir_ts::SymbolRefOp>(exprValue.getDefiningOp()))
             {
-                emitError(location, "can't find variable: ") << unresolved.identifier();
+                if (!genContext.allowPartialResolve)
+                {
+                    emitError(location, "can't find variable: ") << unresolved.identifier();
+                }
+
                 return mlir::Value();
             }
 
