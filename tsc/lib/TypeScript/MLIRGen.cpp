@@ -3217,9 +3217,8 @@ llvm.return %5 : i32
                 return builder.create<mlir_ts::TrampolineOp>(location, effectiveFuncType, funcSymbolOp, captured);
             }
 
-            auto symbOp =
-                builder.create<mlir_ts::SymbolRefOp>(location, effectiveFuncType, mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
-            copyNamespace(funcOp, symbOp);
+            auto symbOp = builder.create<mlir_ts::SymbolRefOp>(location, effectiveFuncType,
+                                                               mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
             return symbOp;
         }
 
@@ -3813,19 +3812,6 @@ llvm.return %5 : i32
         }
 
         op->setAttr(NAME_ATTR_NAME, mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
-    }
-
-    void copyNamespace(mlir::Operation *opFrom, mlir::Operation *opTo)
-    {
-        if (opFrom->hasAttrOfType<mlir::FlatSymbolRefAttr>(NAMESPACE_ATTR_NAME))
-        {
-            opTo->setAttr(NAMESPACE_ATTR_NAME, opFrom->getAttr(NAMESPACE_ATTR_NAME));
-        }
-
-        if (opFrom->hasAttrOfType<mlir::FlatSymbolRefAttr>(NAME_ATTR_NAME))
-        {
-            opTo->setAttr(NAME_ATTR_NAME, opFrom->getAttr(NAME_ATTR_NAME));
-        }
     }
 
     auto getNamespace() -> StringRef
