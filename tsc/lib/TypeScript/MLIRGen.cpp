@@ -923,21 +923,26 @@ class MLIRGenImpl
             argNumber++;
         }
 
-        auto name = MLIRHelper::getName(functionLikeDeclarationBaseAST->name);
-        if (name.empty())
+        auto fullName = MLIRHelper::getName(functionLikeDeclarationBaseAST->name);
+        auto shortName = fullName;
+        if (fullName.empty())
         {
             // auto calculate name
             std::stringstream ssName;
             ssName << "__uf" << hash_value(location);
-            name = ssName.str();
+            fullName = ssName.str();
+        }
+        else
+        {
+            fullName = getFullNamespaceName(fullName);
         }
 
-        auto funcProto = std::make_shared<FunctionPrototypeDOM>(name, params);
+        auto funcProto = std::make_shared<FunctionPrototypeDOM>(fullName, params);
 
         mlir::FunctionType funcType;
 
         // check if function already discovered
-        auto funcIt = getFunctionMap().find(name);
+        auto funcIt = getFunctionMap().find(fullName);
         if (funcIt != getFunctionMap().end())
         {
             auto cachedFuncType = funcIt->second.getType();
@@ -960,7 +965,7 @@ class MLIRGenImpl
             }
 
             if (mlir::succeeded(
-                    discoverFunctionReturnTypeAndCapturedVars(functionLikeDeclarationBaseAST, name, argTypes, funcProto, genContext)) &&
+                    discoverFunctionReturnTypeAndCapturedVars(functionLikeDeclarationBaseAST, fullName, argTypes, funcProto, genContext)) &&
                 funcProto->getReturnType())
             {
                 funcType = builder.getFunctionType(argTypes, funcProto->getReturnType());
@@ -996,17 +1001,17 @@ class MLIRGenImpl
                 argAttrs.push_back(argDicAttr);
             }
 
-            funcOp = mlir_ts::FuncOp::create(location, name, funcType, attrs, argAttrs);
+            funcOp = mlir_ts::FuncOp::create(location, fullName, funcType, attrs, argAttrs);
 
             LLVM_DEBUG(llvm::dbgs() << "\n === FuncOp with attrs === \n");
             LLVM_DEBUG(funcOp.dump());
         }
         else
         {
-            funcOp = mlir_ts::FuncOp::create(location, name, funcType);
+            funcOp = mlir_ts::FuncOp::create(location, fullName, funcType);
         }
 
-        setNamespace(funcOp);
+        setNamespace(funcOp, shortName);
 
         return std::make_tuple(funcOp, std::move(funcProto), true);
     }
@@ -2637,23 +2642,21 @@ llvm.return %5 : i32
 
         auto attrName = StringRef(IDENTIFIER_ATTR_NAME);
         auto definingOp = funcRefValue.getDefiningOp();
-        if (definingOp->hasAttrOfType<mlir::FlatSymbolRefAttr>(attrName))
+        if (funcRefValue.getType() == mlir::NoneType::get(builder.getContext()) &&
+            definingOp->hasAttrOfType<mlir::FlatSymbolRefAttr>(attrName))
         {
+            // TODO: when you resolve names such as "print", "parseInt" should return names in mlirGen(Identifier)
             auto calleeName = definingOp->getAttrOfType<mlir::FlatSymbolRefAttr>(attrName);
             auto functionName = calleeName.getValue();
             auto argumentsContext = callExpression->arguments;
 
             // resolve function
-            auto calledFuncIt = getFunctionMap().find(functionName);
-            if (calledFuncIt == getFunctionMap().end())
-            {
-                MLIRCustomMethods cm(builder, location);
+            MLIRCustomMethods cm(builder, location);
 
-                SmallVector<mlir::Value, 4> operands;
-                mlirGen(argumentsContext, operands, genContext);
+            SmallVector<mlir::Value, 4> operands;
+            mlirGen(argumentsContext, operands, genContext);
 
-                return cm.callMethod(functionName, operands, genContext.allowPartialResolve);
-            }
+            return cm.callMethod(functionName, operands, genContext.allowPartialResolve);
         }
 
         mlir::Value value;
@@ -3801,13 +3804,15 @@ llvm.return %5 : i32
         return mlir::success();
     }
 
-    void setNamespace(mlir::Operation *op)
+    void setNamespace(mlir::Operation *op, StringRef name)
     {
         auto namespc = getNamespace();
         if (!namespc.empty())
         {
             op->setAttr(NAMESPACE_ATTR_NAME, mlir::FlatSymbolRefAttr::get(builder.getContext(), namespc));
         }
+
+        op->setAttr(NAME_ATTR_NAME, mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
     }
 
     void copyNamespace(mlir::Operation *opFrom, mlir::Operation *opTo)
@@ -3815,6 +3820,11 @@ llvm.return %5 : i32
         if (opFrom->hasAttrOfType<mlir::FlatSymbolRefAttr>(NAMESPACE_ATTR_NAME))
         {
             opTo->setAttr(NAMESPACE_ATTR_NAME, opFrom->getAttr(NAMESPACE_ATTR_NAME));
+        }
+
+        if (opFrom->hasAttrOfType<mlir::FlatSymbolRefAttr>(NAME_ATTR_NAME))
+        {
+            opTo->setAttr(NAME_ATTR_NAME, opFrom->getAttr(NAME_ATTR_NAME));
         }
     }
 
