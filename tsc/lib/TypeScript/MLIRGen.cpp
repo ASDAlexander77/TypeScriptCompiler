@@ -104,6 +104,9 @@ struct GenContext
 
 struct NamespaceInfo
 {
+  public:
+    using TypePtr = std::shared_ptr<NamespaceInfo>;
+
     mlir::StringRef name;
 
     mlir::StringRef fullName;
@@ -118,7 +121,7 @@ struct NamespaceInfo
 
     llvm::StringMap<mlir::Type> classesMap;
 
-    llvm::StringMap<NamespaceInfo *> namespacesMap;
+    llvm::StringMap<NamespaceInfo::TypePtr> namespacesMap;
 };
 
 /// Implementation of a simple MLIR emission from the TypeScript AST.
@@ -129,15 +132,16 @@ struct NamespaceInfo
 class MLIRGenImpl
 {
   public:
-    MLIRGenImpl(const mlir::MLIRContext &context) : builder(&const_cast<mlir::MLIRContext &>(context)), currentNamespace(rootNamespace)
+    MLIRGenImpl(const mlir::MLIRContext &context) : builder(&const_cast<mlir::MLIRContext &>(context))
     {
         fileName = "<unknown>";
+        currentNamespace = std::make_shared<NamespaceInfo>();
     }
 
-    MLIRGenImpl(const mlir::MLIRContext &context, const llvm::StringRef &fileNameParam)
-        : builder(&const_cast<mlir::MLIRContext &>(context)), currentNamespace(rootNamespace)
+    MLIRGenImpl(const mlir::MLIRContext &context, const llvm::StringRef &fileNameParam) : builder(&const_cast<mlir::MLIRContext &>(context))
     {
         fileName = fileNameParam;
+        currentNamespace = std::make_shared<NamespaceInfo>();
     }
 
     mlir::ModuleOp mlirGenSourceFile(SourceFile module)
@@ -236,14 +240,17 @@ class MLIRGenImpl
         auto location = loc(moduleDeclarationAST);
 
         auto namespaceName = MLIRHelper::getName(moduleDeclarationAST->name);
+        auto namePtr = StringRef(namespaceName).copy(stringAllocator);
 
-        NamespaceInfo newNamespace;
-        newNamespace.name = namespaceName;
-        newNamespace.fullName = getFullNamespaceName(namespaceName);
-        currentNamespace.namespacesMap.insert({namespaceName, &newNamespace});
+        auto fullNamePtr = getFullNamespaceName(namePtr);
+        auto newNamespacePtr = std::make_shared<NamespaceInfo>();
+        newNamespacePtr->name = namePtr;
+        newNamespacePtr->fullName = fullNamePtr;
+        currentNamespace->namespacesMap.insert({namePtr, newNamespacePtr});
+        fullNamespacesMap.insert({fullNamePtr, newNamespacePtr});
 
         auto savedNamespace = currentNamespace;
-        currentNamespace = newNamespace;
+        currentNamespace = newNamespacePtr;
 
         GenContext moduleGenContext = {0};
         auto result = mlirGenBody(moduleDeclarationAST->body, genContext);
@@ -2509,7 +2516,21 @@ llvm.return %5 : i32
 
         if (!expression.getType() || expression.getType() == mlir::NoneType::get(builder.getContext()))
         {
-            if (auto symRef = dyn_cast_or_null<mlir_ts::SymbolRefOp>(expression.getDefiningOp()))
+            if (auto namespaceRef = dyn_cast_or_null<mlir_ts::NamespaceRefOp>(expression.getDefiningOp()))
+            {
+                // todo resolve namespace
+                auto namespaceInfo = getNamespaceByFullName(namespaceRef.identifier());
+
+                assert(namespaceInfo);
+
+                auto saveNamespace = currentNamespace;
+                currentNamespace = namespaceInfo;
+
+                value = mlirGen(location, name, genContext);
+
+                currentNamespace = saveNamespace;
+            }
+            else if (auto symRef = dyn_cast_or_null<mlir_ts::SymbolRefOp>(expression.getDefiningOp()))
             {
                 emitError(location, "can't resolve '") << symRef.identifier() << "' ...";
             }
@@ -3206,6 +3227,13 @@ llvm.return %5 : i32
             return builder.create<mlir_ts::ConstantOp>(location, getEnumType(enumTypeInfo.first), enumTypeInfo.second);
         }
 
+        if (getNamespaceMap().count(name))
+        {
+            auto namespaceInfo = getNamespaceMap().lookup(name);
+            return builder.create<mlir_ts::NamespaceRefOp>(location,
+                                                           mlir::FlatSymbolRefAttr::get(builder.getContext(), namespaceInfo->fullName));
+        }
+
         // built in types
         if (name == "undefined")
         {
@@ -3792,23 +3820,23 @@ llvm.return %5 : i32
 
     auto getNamespace() -> StringRef
     {
-        if (currentNamespace.fullName.empty())
+        if (currentNamespace->fullName.empty())
         {
             return "";
         }
 
-        return currentNamespace.fullName;
+        return currentNamespace->fullName;
     }
 
     auto getFullNamespaceName(StringRef name) -> StringRef
     {
-        if (currentNamespace.fullName.empty())
+        if (currentNamespace->fullName.empty())
         {
             return name;
         }
 
         std::string res;
-        res += currentNamespace.fullName;
+        res += currentNamespace->fullName;
         res += ".";
         res += name;
 
@@ -3827,29 +3855,39 @@ llvm.return %5 : i32
         return name.substr(pos + 1);
     }
 
+    auto getNamespaceByFullName(StringRef fullName) -> NamespaceInfo::TypePtr
+    {
+        return fullNamespacesMap.lookup(fullName);
+    }
+
+    auto getNamespaceMap() -> llvm::StringMap<NamespaceInfo::TypePtr>
+    {
+        return currentNamespace->namespacesMap;
+    }
+
     auto getFunctionMap() -> llvm::StringMap<mlir_ts::FuncOp> &
     {
-        return currentNamespace.functionMap;
+        return currentNamespace->functionMap;
     }
 
     auto getCaptureVarsMap() -> llvm::StringMap<llvm::StringMap<VariablePairT>> &
     {
-        return currentNamespace.captureVarsMap;
+        return currentNamespace->captureVarsMap;
     }
 
     auto getClassesMap() -> llvm::StringMap<mlir::Type> &
     {
-        return currentNamespace.classesMap;
+        return currentNamespace->classesMap;
     }
 
     auto getEnumsMap() -> llvm::StringMap<std::pair<mlir::Type, mlir::DictionaryAttr>> &
     {
-        return currentNamespace.enumsMap;
+        return currentNamespace->enumsMap;
     }
 
     auto getTypeAliasMap() -> llvm::StringMap<mlir::Type> &
     {
-        return currentNamespace.typeAliasMap;
+        return currentNamespace->typeAliasMap;
     }
 
   protected:
@@ -3882,9 +3920,9 @@ llvm.return %5 : i32
 
     llvm::ScopedHashTable<StringRef, VariablePairT> symbolTable;
 
-    NamespaceInfo &currentNamespace;
+    NamespaceInfo::TypePtr currentNamespace;
 
-    NamespaceInfo rootNamespace;
+    llvm::StringMap<NamespaceInfo::TypePtr> fullNamespacesMap;
 
     // helper to get line number
     Parser parser;

@@ -48,11 +48,7 @@ jobs:
       run: IF EXIST "c:\__build" mklink /d .\__build c:\__build
     
     - name: Prepare 3rd party
-      continue-on-error: true
-      shell: cmd
-      run: prepare_3rdParty.bat
-
-    - name: Prepare 3rd party (2)
+      continue-on-error: false
       shell: cmd
       run: prepare_3rdParty.bat
 

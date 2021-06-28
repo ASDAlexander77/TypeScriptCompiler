@@ -64,7 +64,25 @@ def ConstantOp : TypeScript_Op<"Constant",
 
 def SymbolRefOp : TypeScript_Op<"SymbolRef", 
     [NoSideEffect]> {
-  let summary = "sumbol reference as constant";
+  let summary = "symbol reference as constant";
+
+  let arguments = (ins FlatSymbolRefAttr:$identifier);
+  let results = (outs AnyType);
+
+  let builders = [
+    OpBuilder<(ins "FlatSymbolRefAttr":$identifier),
+    [{ build($_builder, $_state, identifier.getType(), identifier); }]>];
+
+  let extraClassDeclaration = [{
+    Attribute getValue() { return (*this)->getAttr("identifier"); }
+  }];
+
+  let hasCanonicalizer = 1;
+}
+
+def NamespaceRefOp : TypeScript_Op<"NamespaceRef", 
+    [NoSideEffect]> {
+  let summary = "symbol reference to namespace";
 
   let arguments = (ins FlatSymbolRefAttr:$identifier);
   let results = (outs AnyType);
