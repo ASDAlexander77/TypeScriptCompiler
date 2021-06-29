@@ -34,7 +34,11 @@ class MLIRHelper
     static std::string getName(ts::Identifier identifier)
     {
         std::string nameValue;
-        nameValue = wstos(identifier->escapedText);
+        if (identifier)
+        {
+            nameValue = wstos(identifier->escapedText);
+        }
+
         return nameValue;
     }
 
