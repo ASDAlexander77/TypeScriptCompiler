@@ -624,7 +624,7 @@ class MLIRGenImpl
     bool registerVariable(mlir::Location location, StringRef name, VariableClass varClass,
                           std::function<std::pair<mlir::Type, mlir::Value>()> func, const GenContext &genContext)
     {
-        auto isGlobalScope = symbolTable.getCurScope()->getParentScope() == nullptr;
+        auto isGlobalScope = !genContext.funcOp; /*symbolTable.getCurScope()->getParentScope() == nullptr*/
         auto isGlobal = isGlobalScope || varClass == VariableClass::Var;
         auto isConst = varClass == VariableClass::Const;
 
