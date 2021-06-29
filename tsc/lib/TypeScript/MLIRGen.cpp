@@ -53,6 +53,27 @@ using llvm::Twine;
 
 // TODO: optimize of amount of calls to detect return types and if it is was calculated before then do not run it all the time
 
+#define VALIDATE_EXPR(value, expression)                                                                                                   \
+    if (!value)                                                                                                                            \
+    {                                                                                                                                      \
+        if (!genContext.allowPartialResolve)                                                                                               \
+        {                                                                                                                                  \
+            emitError(loc(expression), "expression has no result");                                                                        \
+        }                                                                                                                                  \
+                                                                                                                                           \
+        return mlir::Value();                                                                                                              \
+    }                                                                                                                                      \
+                                                                                                                                           \
+    if (auto unresolved = dyn_cast_or_null<mlir_ts::SymbolRefOp>(value.getDefiningOp()))                                                   \
+    {                                                                                                                                      \
+        if (!genContext.allowPartialResolve)                                                                                               \
+        {                                                                                                                                  \
+            emitError(loc(expression), "can't find variable: ") << unresolved.identifier();                                                \
+        }                                                                                                                                  \
+                                                                                                                                           \
+        return mlir::Value();                                                                                                              \
+    }
+
 namespace
 {
 
@@ -1958,25 +1979,7 @@ llvm.return %5 : i32
         auto expression = prefixUnaryExpressionAST->operand;
         auto expressionValue = mlirGen(expression, genContext);
 
-        if (!expressionValue)
-        {
-            if (!genContext.allowPartialResolve)
-            {
-                emitError(loc(expression), "expression has no result");
-            }
-
-            return mlir::Value();
-        }
-
-        if (auto unresolved = dyn_cast_or_null<mlir_ts::SymbolRefOp>(expressionValue.getDefiningOp()))
-        {
-            if (!genContext.allowPartialResolve)
-            {
-                emitError(loc(expression), "can't find variable: ") << unresolved.identifier();
-            }
-
-            return mlir::Value();
-        }
+        VALIDATE_EXPR(expressionValue, expression)
 
         auto boolValue = expressionValue;
 
@@ -2014,25 +2017,7 @@ llvm.return %5 : i32
         auto expression = postfixUnaryExpressionAST->operand;
         auto expressionValue = mlirGen(expression, genContext);
 
-        if (!expressionValue)
-        {
-            if (!genContext.allowPartialResolve)
-            {
-                emitError(loc(expression), "expression has no result");
-            }
-
-            return mlir::Value();
-        }
-
-        if (auto unresolved = dyn_cast_or_null<mlir_ts::SymbolRefOp>(expressionValue.getDefiningOp()))
-        {
-            if (!genContext.allowPartialResolve)
-            {
-                emitError(loc(expression), "can't find variable: ") << unresolved.identifier();
-            }
-
-            return mlir::Value();
-        }
+        VALIDATE_EXPR(expressionValue, expression)
 
         switch (opCode)
         {
@@ -2187,45 +2172,8 @@ llvm.return %5 : i32
         auto rightExpressionValue = mlirGen(rightExpression, genContext);
         auto leftExpressionValue = mlirGen(leftExpression, genContext);
 
-        if (!leftExpressionValue)
-        {
-            if (!genContext.allowPartialResolve)
-            {
-                emitError(loc(leftExpression), "left expression has no result");
-            }
-
-            return mlir::Value();
-        }
-
-        if (!rightExpressionValue)
-        {
-            if (!genContext.allowPartialResolve)
-            {
-                emitError(loc(rightExpression), "right expression has no result");
-            }
-
-            return mlir::Value();
-        }
-
-        if (auto unresolvedLeft = dyn_cast_or_null<mlir_ts::SymbolRefOp>(leftExpressionValue.getDefiningOp()))
-        {
-            if (!genContext.allowPartialResolve)
-            {
-                emitError(loc(leftExpression), "can't find variable: ") << unresolvedLeft.identifier();
-            }
-
-            return mlir::Value();
-        }
-
-        if (auto unresolvedRight = dyn_cast_or_null<mlir_ts::SymbolRefOp>(rightExpressionValue.getDefiningOp()))
-        {
-            if (!genContext.allowPartialResolve)
-            {
-                emitError(loc(rightExpression), "can't find variable: ") << unresolvedRight.identifier();
-            }
-
-            return mlir::Value();
-        }
+        VALIDATE_EXPR(rightExpressionValue, rightExpression)
+        VALIDATE_EXPR(leftExpressionValue, leftExpression)
 
         auto leftExpressionValueBeforeCast = leftExpressionValue;
 
@@ -2295,48 +2243,8 @@ llvm.return %5 : i32
         auto leftExpressionValue = mlirGen(leftExpression, genContext);
         auto rightExpressionValue = mlirGen(rightExpression, genContext);
 
-        // TODO: create procedure to test values
-        if (!leftExpressionValue)
-        {
-            if (!genContext.allowPartialResolve)
-            {
-                emitError(loc(leftExpression), "left expression has no result");
-            }
-
-            return mlir::Value();
-        }
-
-        if (!rightExpressionValue)
-        {
-            if (!genContext.allowPartialResolve)
-            {
-                emitError(loc(rightExpression), "right expression has no result");
-            }
-
-            return mlir::Value();
-        }
-
-        if (auto unresolvedLeft = dyn_cast_or_null<mlir_ts::SymbolRefOp>(leftExpressionValue.getDefiningOp()))
-        {
-            if (!genContext.allowPartialResolve)
-            {
-                emitError(loc(leftExpression), "can't find variable: ") << unresolvedLeft.identifier();
-            }
-
-            return mlir::Value();
-        }
-
-        if (auto unresolvedRight = dyn_cast_or_null<mlir_ts::SymbolRefOp>(rightExpressionValue.getDefiningOp()))
-        {
-            if (!genContext.allowPartialResolve)
-            {
-                emitError(loc(rightExpression), "can't find variable: ") << unresolvedRight.identifier();
-            }
-
-            return mlir::Value();
-        }
-
-        // TODO: end here
+        VALIDATE_EXPR(rightExpressionValue, rightExpression)
+        VALIDATE_EXPR(leftExpressionValue, leftExpression)
 
         // check if const expr.
         if (genContext.allowConstEval)
@@ -2545,15 +2453,18 @@ llvm.return %5 : i32
     {
         auto location = loc(propertyAccessExpression);
 
-        auto expression = mlirGen(propertyAccessExpression->expression.as<Expression>(), genContext);
+        auto expression = propertyAccessExpression->expression.as<Expression>();
+        auto expressionValue = mlirGen(expression, genContext);
+
+        VALIDATE_EXPR(expressionValue, expression)
 
         auto name = MLIRHelper::getName(propertyAccessExpression->name);
 
         mlir::Value value;
 
-        if (!expression.getType() || expression.getType() == mlir::NoneType::get(builder.getContext()))
+        if (!expressionValue.getType() || expressionValue.getType() == mlir::NoneType::get(builder.getContext()))
         {
-            if (auto namespaceRef = dyn_cast_or_null<mlir_ts::NamespaceRefOp>(expression.getDefiningOp()))
+            if (auto namespaceRef = dyn_cast_or_null<mlir_ts::NamespaceRefOp>(expressionValue.getDefiningOp()))
             {
                 // todo resolve namespace
                 auto namespaceInfo = getNamespaceByFullName(namespaceRef.identifier());
@@ -2567,24 +2478,13 @@ llvm.return %5 : i32
 
                 currentNamespace = saveNamespace;
             }
-            else if (!genContext.dummyRun)
-            {
-                if (auto symRef = dyn_cast_or_null<mlir_ts::SymbolRefOp>(expression.getDefiningOp()))
-                {
-                    emitError(location, "can't resolve '") << symRef.identifier() << "' ...";
-                }
-                else
-                {
-                    emitError(location, "can't resolve property left expression");
-                }
-            }
 
             return value;
         }
 
-        MLIRPropertyAccessCodeLogic cl(builder, location, expression, name);
+        MLIRPropertyAccessCodeLogic cl(builder, location, expressionValue, name);
 
-        TypeSwitch<mlir::Type>(expression.getType())
+        TypeSwitch<mlir::Type>(expressionValue.getType())
             .Case<mlir_ts::EnumType>([&](auto enumType) { value = cl.Enum(enumType); })
             .Case<mlir_ts::ConstTupleType>([&](auto tupleType) { value = cl.Tuple(tupleType); })
             .Case<mlir_ts::TupleType>([&](auto tupleType) { value = cl.Tuple(tupleType); })
@@ -2904,16 +2804,10 @@ llvm.return %5 : i32
         strs.push_back(head);
         for (auto span : templateExpressionAST->templateSpans)
         {
-            auto exprValue = mlirGen(span->expression, genContext);
-            if (auto unresolved = dyn_cast_or_null<mlir_ts::SymbolRefOp>(exprValue.getDefiningOp()))
-            {
-                if (!genContext.allowPartialResolve)
-                {
-                    emitError(location, "can't find variable: ") << unresolved.identifier();
-                }
+            auto expression = span->expression;
+            auto exprValue = mlirGen(expression, genContext);
 
-                return mlir::Value();
-            }
+            VALIDATE_EXPR(exprValue, expression)
 
             if (exprValue.getType() != stringType)
             {
@@ -2956,16 +2850,10 @@ llvm.return %5 : i32
         for (auto span : templateExpressionAST->templateSpans)
         {
             // expr value
-            auto exprValue = mlirGen(span->expression, genContext);
-            if (auto unresolved = dyn_cast_or_null<mlir_ts::SymbolRefOp>(exprValue.getDefiningOp()))
-            {
-                if (!genContext.allowPartialResolve)
-                {
-                    emitError(location, "can't find variable: ") << unresolved.identifier();
-                }
+            auto expression = span->expression;
+            auto exprValue = mlirGen(expression, genContext);
 
-                return mlir::Value();
-            }
+            VALIDATE_EXPR(exprValue, expression)
 
             vals.push_back(exprValue);
 
