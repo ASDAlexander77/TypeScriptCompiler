@@ -31,12 +31,19 @@ namespace typescript
 class MLIRHelper
 {
   public:
+    static std::string getName(ts::Identifier identifier)
+    {
+        std::string nameValue;
+        nameValue = wstos(identifier->escapedText);
+        return nameValue;
+    }
+
     static std::string getName(ts::Node name)
     {
         std::string nameValue;
         if (name == SyntaxKind::Identifier)
         {
-            nameValue = wstos(name.as<ts::Identifier>()->escapedText);
+            return getName(name.as<ts::Identifier>());
         }
 
         return nameValue;

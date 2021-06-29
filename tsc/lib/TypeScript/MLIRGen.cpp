@@ -138,6 +138,8 @@ struct NamespaceInfo
 
     llvm::StringMap<mlir::Type> typeAliasMap;
 
+    llvm::StringMap<mlir::StringRef> importEqualsMap;
+
     llvm::StringMap<std::pair<mlir::Type, mlir::DictionaryAttr>> enumsMap;
 
     llvm::StringMap<mlir::Type> classesMap;
@@ -449,6 +451,10 @@ class MLIRGenImpl
             // declaration
             return mlirGen(statementAST.as<TypeAliasDeclaration>(), genContext);
         }
+        else if (kind == SyntaxKind::Block)
+        {
+            return mlirGen(statementAST.as<Block>(), genContext);
+        }
         else if (kind == SyntaxKind::EnumDeclaration)
         {
             // declaration
@@ -459,9 +465,10 @@ class MLIRGenImpl
             // declaration
             return mlirGen(statementAST.as<ClassLikeDeclaration>(), genContext);
         }
-        else if (kind == SyntaxKind::Block)
+        else if (kind == SyntaxKind::ImportEqualsDeclaration)
         {
-            return mlirGen(statementAST.as<Block>(), genContext);
+            // declaration
+            return mlirGen(statementAST.as<ImportEqualsDeclaration>(), genContext);
         }
         else if (kind == SyntaxKind::ModuleDeclaration)
         {
@@ -2449,6 +2456,45 @@ llvm.return %5 : i32
         return mlirGen(parenthesizedExpression->expression, genContext);
     }
 
+    mlir::Value mlirGen(QualifiedName qualifiedName, const GenContext &genContext)
+    {
+        auto location = loc(qualifiedName);
+
+        auto expression = qualifiedName->left;
+        auto expressionValue = mlirGenModuleReference(expression, genContext);
+
+        VALIDATE_EXPR(expressionValue, expression)
+
+        auto name = MLIRHelper::getName(qualifiedName->right);
+
+        mlir::Value value;
+        if (!expressionValue.getType() || expressionValue.getType() == mlir::NoneType::get(builder.getContext()))
+        {
+            if (auto namespaceRef = dyn_cast_or_null<mlir_ts::NamespaceRefOp>(expressionValue.getDefiningOp()))
+            {
+                // todo resolve namespace
+                auto namespaceInfo = getNamespaceByFullName(namespaceRef.identifier());
+
+                assert(namespaceInfo);
+
+                auto saveNamespace = currentNamespace;
+                currentNamespace = namespaceInfo;
+
+                value = mlirGen(location, name, genContext);
+
+                currentNamespace = saveNamespace;
+
+                namespaceRef->erase();
+            }
+
+            return value;
+        }
+
+        emitError(location, "Can't resolve qualified name");
+
+        llvm_unreachable("not implemented");
+    }
+
     mlir::Value mlirGen(PropertyAccessExpression propertyAccessExpression, const GenContext &genContext)
     {
         auto location = loc(propertyAccessExpression);
@@ -2457,6 +2503,8 @@ llvm.return %5 : i32
         auto expressionValue = mlirGen(expression, genContext);
 
         VALIDATE_EXPR(expressionValue, expression)
+
+        LLVM_DEBUG(expressionValue.dump());
 
         auto name = MLIRHelper::getName(propertyAccessExpression->name);
 
@@ -3192,6 +3240,12 @@ llvm.return %5 : i32
                                                            mlir::FlatSymbolRefAttr::get(builder.getContext(), namespaceInfo->fullName));
         }
 
+        if (getImportEqualsMap().count(name))
+        {
+            auto fullName = getImportEqualsMap().lookup(name);
+            return builder.create<mlir_ts::NamespaceRefOp>(location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullName));
+        }
+
         // built in types
         if (name == "undefined")
         {
@@ -3211,6 +3265,42 @@ llvm.return %5 : i32
             auto type = getType(typeAliasDeclarationAST->type);
             getTypeAliasMap().insert({name, type});
             return mlir::success();
+        }
+        else
+        {
+            llvm_unreachable("not implemented");
+        }
+
+        return mlir::failure();
+    }
+
+    mlir::Value mlirGenModuleReference(Node moduleReference, const GenContext &genContext)
+    {
+        auto kind = (SyntaxKind)moduleReference;
+        if (kind == SyntaxKind::QualifiedName)
+        {
+            return mlirGen(moduleReference.as<QualifiedName>(), genContext);
+        }
+        else if (kind == SyntaxKind::Identifier)
+        {
+            return mlirGen(moduleReference.as<Identifier>(), genContext);
+        }
+
+        llvm_unreachable("not implemented");
+    }
+
+    mlir::LogicalResult mlirGen(ImportEqualsDeclaration importEqualsDeclarationAST, const GenContext &genContext)
+    {
+        auto name = MLIRHelper::getName(importEqualsDeclarationAST->name);
+        if (!name.empty())
+        {
+            auto value = mlirGenModuleReference(importEqualsDeclarationAST->moduleReference, genContext);
+            if (auto namespaceOp = value.getDefiningOp<mlir_ts::NamespaceRefOp>())
+            {
+                getImportEqualsMap().insert({name, namespaceOp.identifier()});
+                namespaceOp->erase();
+                return mlir::success();
+            }
         }
         else
         {
@@ -3842,6 +3932,11 @@ llvm.return %5 : i32
     auto getTypeAliasMap() -> llvm::StringMap<mlir::Type> &
     {
         return currentNamespace->typeAliasMap;
+    }
+
+    auto getImportEqualsMap() -> llvm::StringMap<mlir::StringRef> &
+    {
+        return currentNamespace->importEqualsMap;
     }
 
   protected:
