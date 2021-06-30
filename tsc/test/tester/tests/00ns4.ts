@@ -1,5 +1,4 @@
 let glb1 = 0;
-
 namespace fooX.bar.baz {
     let glb1 = 1;
 

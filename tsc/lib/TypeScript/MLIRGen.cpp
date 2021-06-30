@@ -160,13 +160,13 @@ class MLIRGenImpl
     MLIRGenImpl(const mlir::MLIRContext &context) : builder(&const_cast<mlir::MLIRContext &>(context))
     {
         fileName = "<unknown>";
-        currentNamespace = std::make_shared<NamespaceInfo>();
+        rootNamespace = currentNamespace = std::make_shared<NamespaceInfo>();
     }
 
     MLIRGenImpl(const mlir::MLIRContext &context, const llvm::StringRef &fileNameParam) : builder(&const_cast<mlir::MLIRContext &>(context))
     {
         fileName = fileNameParam;
-        currentNamespace = std::make_shared<NamespaceInfo>();
+        rootNamespace = currentNamespace = std::make_shared<NamespaceInfo>();
     }
 
     mlir::ModuleOp mlirGenSourceFile(SourceFile module)
@@ -731,7 +731,7 @@ class MLIRGenImpl
                 globalOp.typeAttr(mlir::TypeAttr::get(type));
 
                 // save value
-                auto address = builder.create<mlir_ts::AddressOfOp>(location, mlir_ts::RefType::get(type), effectiveName);
+                auto address = builder.create<mlir_ts::AddressOfOp>(location, mlir_ts::RefType::get(type), name);
                 builder.create<mlir_ts::StoreOp>(location, init, address);
             }
         }
@@ -751,7 +751,7 @@ class MLIRGenImpl
         }
         else
         {
-            getGlobalsMap().insert({effectiveName, {variableOp, varDecl}});
+            getGlobalsMap().insert({name, {variableOp, varDecl}});
         }
 
         return true;
@@ -3190,14 +3190,8 @@ llvm.return %5 : i32
         return mlir::Value();
     }
 
-    mlir::Value resolveIdentifier(mlir::Location location, StringRef name, const GenContext &genContext)
+    mlir::Value resolveIdentifierInNamespace(mlir::Location location, StringRef name, const GenContext &genContext)
     {
-        auto value = resolveIdentifierAsVariable(location, name, genContext);
-        if (value)
-        {
-            return value;
-        }
-
         // resolving function
         auto fn = getFunctionMap().find(name);
         if (fn != getFunctionMap().end())
@@ -3270,10 +3264,37 @@ llvm.return %5 : i32
             return builder.create<mlir_ts::NamespaceRefOp>(location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullName));
         }
 
+        return mlir::Value();
+    }
+
+    mlir::Value resolveIdentifier(mlir::Location location, StringRef name, const GenContext &genContext)
+    {
         // built in types
         if (name == "undefined")
         {
             return getUndefined(location);
+        }
+
+        auto value = resolveIdentifierAsVariable(location, name, genContext);
+        if (value)
+        {
+            return value;
+        }
+
+        value = resolveIdentifierInNamespace(location, name, genContext);
+        if (value)
+        {
+            return value;
+        }
+
+        // search in root namespace
+        auto saveNamespace = currentNamespace;
+        currentNamespace = rootNamespace;
+        value = resolveIdentifierInNamespace(location, name, genContext);
+        currentNamespace = saveNamespace;
+        if (value)
+        {
+            return value;
         }
 
         return mlir::Value();
@@ -3997,6 +4018,8 @@ llvm.return %5 : i32
     llvm::BumpPtrAllocator stringAllocator;
 
     llvm::ScopedHashTable<StringRef, VariablePairT> symbolTable;
+
+    NamespaceInfo::TypePtr rootNamespace;
 
     NamespaceInfo::TypePtr currentNamespace;
 
