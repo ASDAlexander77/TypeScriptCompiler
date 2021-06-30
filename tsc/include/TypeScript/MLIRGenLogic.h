@@ -210,12 +210,6 @@ class MLIRCodeLogic
         if (constOp)
         {
             auto val = constOp.valueAttr();
-            if (removeOpIfSuccess)
-            {
-                // in case it is not in function and can't be removed with canonicalizer
-                constOp->erase();
-            }
-
             return val;
         }
 

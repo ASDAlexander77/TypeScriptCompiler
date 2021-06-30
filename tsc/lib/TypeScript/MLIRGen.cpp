@@ -911,9 +911,6 @@ class MLIRGenImpl
                         // type = OptionalType::get(baseType);
                         type = baseType;
                     }
-
-                    // remove generated node as we need to detect type only
-                    initValue.getDefiningOp()->erase();
                 }
 
                 // remove temp block
@@ -2064,7 +2061,6 @@ llvm.return %5 : i32
             mlir::OpBuilder::InsertionGuard guard(builder);
             auto resultTrueTemp = mlirGen(conditionalExpressionAST->whenTrue, genContext);
             resultType = resultTrueTemp.getType();
-            resultTrueTemp.getDefiningOp()->erase();
         }
 
         auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{resultType}, condValue, true);
@@ -2215,8 +2211,6 @@ llvm.return %5 : i32
         {
             // TODO: when saving const array into variable we need to allocate space and copy array as we need to have writable array
             builder.create<mlir_ts::StoreOp>(location, result, loadOp.reference());
-
-            leftExpressionValueBeforeCast.getDefiningOp()->erase();
         }
         else
         {
@@ -2493,8 +2487,6 @@ llvm.return %5 : i32
                 value = mlirGen(location, name, genContext);
 
                 currentNamespace = saveNamespace;
-
-                namespaceRef->erase();
             }
 
             return value;
@@ -3046,9 +3038,6 @@ llvm.return %5 : i32
                 // this is tuple.
                 isTuple = true;
             }
-
-            // TODO:
-            // itemValue.getDefiningOp()->erase();
         }
 
         auto arrayAttr = mlir::ArrayAttr::get(builder.getContext(), values);
@@ -3365,7 +3354,6 @@ llvm.return %5 : i32
             if (auto namespaceOp = value.getDefiningOp<mlir_ts::NamespaceRefOp>())
             {
                 getImportEqualsMap().insert({name, namespaceOp.identifier()});
-                namespaceOp->erase();
                 return mlir::success();
             }
         }
@@ -3418,9 +3406,6 @@ llvm.return %5 : i32
                             activeBits = currentActiveBits;
                         }
                     }
-
-                    // we need it here, as it is outsize of function, cleanup (canonicalizer) does not work for it.
-                    constOp->erase();
                 }
                 else
                 {
@@ -3863,7 +3848,6 @@ llvm.return %5 : i32
         genContext.allowPartialResolve = true;
         auto value = mlirGen(literalTypeNode->literal.as<Expression>(), genContext);
         auto type = value.getType();
-        value.getDefiningOp()->erase();
         return type;
     }
 
