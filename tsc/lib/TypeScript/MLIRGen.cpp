@@ -961,17 +961,17 @@ class MLIRGenImpl
         }
 
         auto fullName = MLIRHelper::getName(functionLikeDeclarationBaseAST->name);
-        auto shortName = fullName;
+        auto name = fullName;
         if (fullName.empty())
         {
             // auto calculate name
             std::stringstream ssName;
             ssName << "__uf" << hash_value(location);
-            fullName = ssName.str();
+            name = fullName = ssName.str();
         }
         else
         {
-            fullName = getFullNamespaceName(fullName);
+            fullName = getFullNamespaceName(name);
         }
 
         auto funcProto = std::make_shared<FunctionPrototypeDOM>(fullName, params);
@@ -979,7 +979,7 @@ class MLIRGenImpl
         mlir::FunctionType funcType;
 
         // check if function already discovered
-        auto funcIt = getFunctionMap().find(shortName);
+        auto funcIt = getFunctionMap().find(name);
         if (funcIt != getFunctionMap().end())
         {
             auto cachedFuncType = funcIt->second.getType();
