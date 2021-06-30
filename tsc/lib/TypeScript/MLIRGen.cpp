@@ -134,6 +134,8 @@ struct NamespaceInfo
 
     llvm::StringMap<mlir_ts::FuncOp> functionMap;
 
+    llvm::StringMap<VariablePairT> globalsMap;
+
     llvm::StringMap<llvm::StringMap<VariablePairT>> captureVarsMap;
 
     llvm::StringMap<mlir::Type> typeAliasMap;
@@ -741,10 +743,16 @@ class MLIRGenImpl
             varDecl->setReadWriteAccess();
         }
 
-        varDecl->setIsGlobal(isGlobal);
         varDecl->setFuncOp(genContext.funcOp);
 
-        declare(varDecl, variableOp);
+        if (!isGlobal)
+        {
+            declare(varDecl, variableOp);
+        }
+        else
+        {
+            getGlobalsMap().insert({effectiveName, {variableOp, varDecl}});
+        }
 
         return true;
     }
@@ -3143,58 +3151,40 @@ llvm.return %5 : i32
         }
 
         auto value = symbolTable.lookup(name);
-        if (value.second)
+        if (value.second && value.first)
         {
-            if (value.first)
+            // begin of logic: outer vars
+            auto valueRegion = value.first.getParentRegion();
+            auto isOuterVar = false;
+            if (genContext.funcOp)
             {
-                // begin of logic: outer vars
-                auto valueRegion = value.first.getParentRegion();
-                auto isOuterVar = false;
-                if (genContext.funcOp)
-                {
-                    auto funcRegion = const_cast<GenContext &>(genContext).funcOp.getCallableRegion();
-                    isOuterVar = !funcRegion->isAncestor(valueRegion);
-                }
-
-                // auto isOuterFunctionScope = value.second->getFuncOp() != genContext.funcOp;
-                //
-                // LLVM_DEBUG(llvm::dbgs() << "isOuterFunctionScope: " << (isOuterFunctionScope ? "true" : "false")
-                //                         << ", isOuterVar: " << (isOuterVar ? "true" : "false") << " name: " << name << "\n");
-
-                if (isOuterVar && genContext.passResult)
-                {
-                    LLVM_DEBUG(llvm::dbgs() << "outer var name: " << name << " type: " << value.first.getType() << " value: " << value.first
-                                            << "\n");
-
-                    genContext.passResult->outerVariables.insert({value.second->getName(), value});
-                }
-
-                // end of logic: outer vars
-
-                if (!value.second->getReadWriteAccess())
-                {
-                    return value.first;
-                }
-
-                // load value if memref
-                auto valueType = value.first.getType().cast<mlir_ts::RefType>().getElementType();
-                return builder.create<mlir_ts::LoadOp>(value.first.getLoc(), valueType, value.first);
+                auto funcRegion = const_cast<GenContext &>(genContext).funcOp.getCallableRegion();
+                isOuterVar = !funcRegion->isAncestor(valueRegion);
             }
-            else if (value.second->getIsGlobal())
+
+            // auto isOuterFunctionScope = value.second->getFuncOp() != genContext.funcOp;
+            //
+            // LLVM_DEBUG(llvm::dbgs() << "isOuterFunctionScope: " << (isOuterFunctionScope ? "true" : "false")
+            //                         << ", isOuterVar: " << (isOuterVar ? "true" : "false") << " name: " << name << "\n");
+
+            if (isOuterVar && genContext.passResult)
             {
-                // global var
-                if (!value.second->getReadWriteAccess() && value.second->getType().isa<mlir_ts::StringType>())
-                {
-                    // load address of const object in global
-                    return builder.create<mlir_ts::AddressOfConstStringOp>(location, value.second->getType(), value.second->getName());
-                }
-                else
-                {
-                    auto address = builder.create<mlir_ts::AddressOfOp>(location, mlir_ts::RefType::get(value.second->getType()),
-                                                                        value.second->getName());
-                    return builder.create<mlir_ts::LoadOp>(location, value.second->getType(), address);
-                }
+                LLVM_DEBUG(llvm::dbgs() << "outer var name: " << name << " type: " << value.first.getType() << " value: " << value.first
+                                        << "\n");
+
+                genContext.passResult->outerVariables.insert({value.second->getName(), value});
             }
+
+            // end of logic: outer vars
+
+            if (!value.second->getReadWriteAccess())
+            {
+                return value.first;
+            }
+
+            // load value if memref
+            auto valueType = value.first.getType().cast<mlir_ts::RefType>().getElementType();
+            return builder.create<mlir_ts::LoadOp>(value.first.getLoc(), valueType, value.first);
         }
 
         return mlir::Value();
@@ -3202,14 +3192,7 @@ llvm.return %5 : i32
 
     mlir::Value resolveIdentifier(mlir::Location location, StringRef name, const GenContext &genContext)
     {
-        // resolve as fullname
-        auto value = resolveIdentifierAsVariable(location, getFullNamespaceName(name), genContext);
-        if (value)
-        {
-            return value;
-        }
-
-        value = resolveIdentifierAsVariable(location, name, genContext);
+        auto value = resolveIdentifierAsVariable(location, name, genContext);
         if (value)
         {
             return value;
@@ -3249,6 +3232,22 @@ llvm.return %5 : i32
             auto symbOp = builder.create<mlir_ts::SymbolRefOp>(location, effectiveFuncType,
                                                                mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
             return symbOp;
+        }
+
+        if (getGlobalsMap().count(name))
+        {
+            auto value = getGlobalsMap().lookup(name);
+            if (!value.second->getReadWriteAccess() && value.second->getType().isa<mlir_ts::StringType>())
+            {
+                // load address of const object in global
+                return builder.create<mlir_ts::AddressOfConstStringOp>(location, value.second->getType(), value.second->getName());
+            }
+            else
+            {
+                auto address =
+                    builder.create<mlir_ts::AddressOfOp>(location, mlir_ts::RefType::get(value.second->getType()), value.second->getName());
+                return builder.create<mlir_ts::LoadOp>(location, value.second->getType(), address);
+            }
         }
 
         // check if we have enum
@@ -3937,6 +3936,11 @@ llvm.return %5 : i32
     auto getFunctionMap() -> llvm::StringMap<mlir_ts::FuncOp> &
     {
         return currentNamespace->functionMap;
+    }
+
+    auto getGlobalsMap() -> llvm::StringMap<VariablePairT> &
+    {
+        return currentNamespace->globalsMap;
     }
 
     auto getCaptureVarsMap() -> llvm::StringMap<llvm::StringMap<VariablePairT>> &

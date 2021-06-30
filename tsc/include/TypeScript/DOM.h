@@ -55,7 +55,7 @@ class VariableDeclarationDOM : public BaseDOM
     using TypePtr = std::shared_ptr<VariableDeclarationDOM>;
 
     VariableDeclarationDOM(StringRef name, mlir::Type type, mlir::Location loc, Expression initValue = undefined)
-        : BaseDOM(Base_VariableDeclaration), name(name), type(type), loc(loc), initValue(initValue), readWrite(false), isGlobal(false)
+        : BaseDOM(Base_VariableDeclaration), name(name), type(type), loc(loc), initValue(initValue), readWrite(false)
     {
     }
 
@@ -87,14 +87,6 @@ class VariableDeclarationDOM : public BaseDOM
     {
         readWrite = value;
     };
-    bool getIsGlobal() const
-    {
-        return isGlobal;
-    };
-    void setIsGlobal(bool value = true)
-    {
-        isGlobal = value;
-    };
     mlir_ts::FuncOp getFuncOp() const
     {
         return functionScope;
@@ -106,7 +98,6 @@ class VariableDeclarationDOM : public BaseDOM
 
   protected:
     bool readWrite;
-    bool isGlobal;
 };
 
 class FunctionParamDOM : public VariableDeclarationDOM
