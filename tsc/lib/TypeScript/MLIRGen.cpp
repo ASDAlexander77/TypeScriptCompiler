@@ -979,7 +979,7 @@ class MLIRGenImpl
         mlir::FunctionType funcType;
 
         // check if function already discovered
-        auto funcIt = getFunctionMap().find(fullName);
+        auto funcIt = getFunctionMap().find(shortName);
         if (funcIt != getFunctionMap().end())
         {
             auto cachedFuncType = funcIt->second.getType();
