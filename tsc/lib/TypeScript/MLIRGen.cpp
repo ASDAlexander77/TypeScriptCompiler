@@ -3580,6 +3580,14 @@ llvm.return %5 : i32
         if (value)
         {
             auto type = value.getType();
+
+            // extra code for extracting enum storage type
+            // TODO: think if you can avoid doing it
+            if (auto enumType = type.dyn_cast_or_null<mlir_ts::EnumType>())
+            {
+                return enumType.getElementType();
+            }
+
             return type;
         }
 
