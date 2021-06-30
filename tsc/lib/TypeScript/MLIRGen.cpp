@@ -3256,6 +3256,12 @@ llvm.return %5 : i32
             return builder.create<mlir_ts::TypeRefOp>(location, classType);
         }
 
+        if (getTypeAliasMap().count(name))
+        {
+            auto typeAliasInfo = getTypeAliasMap().lookup(name);
+            return builder.create<mlir_ts::TypeRefOp>(location, typeAliasInfo);
+        }
+
         if (getNamespaceMap().count(name))
         {
             auto namespaceInfo = getNamespaceMap().lookup(name);
@@ -3588,7 +3594,9 @@ llvm.return %5 : i32
         auto value = mlirGen(node.as<Expression>(), genContext);
         if (value)
         {
-            return value.getType();
+            auto type = value.getType();
+            value.getDefiningOp()->erase();
+            return type;
         }
 
         llvm_unreachable("not implemented");
