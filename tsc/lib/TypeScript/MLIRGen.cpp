@@ -3576,7 +3576,16 @@ llvm.return %5 : i32
 
     mlir::Type getTypeByTypeName(Node node, const GenContext &genContext)
     {
-        auto value = mlirGen(node.as<Expression>(), genContext);
+        mlir::Value value;
+        if (node == SyntaxKind::QualifiedName)
+        {
+            value = mlirGen(node.as<QualifiedName>(), genContext);
+        }
+        else
+        {
+            value = mlirGen(node.as<Expression>(), genContext);
+        }
+
         if (value)
         {
             auto type = value.getType();
