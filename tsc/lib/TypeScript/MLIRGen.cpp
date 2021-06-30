@@ -3595,7 +3595,6 @@ llvm.return %5 : i32
         if (value)
         {
             auto type = value.getType();
-            value.getDefiningOp()->erase();
             return type;
         }
 

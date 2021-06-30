@@ -127,13 +127,15 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module
     {
         // Inline all functions into main and then delete them.
         pm.addPass(mlir::createInlinerPass());
+        // TODO: experiment
+        pm.addPass(mlir::createCanonicalizerPass());
 
         // Now that there is only one function, we can infer the shapes of each of
         // the operations.
         mlir::OpPassManager &optPM = pm.nest<mlir::FuncOp>();
         // optPM.addPass(mlir::createCanonicalizerPass());
         // optPM.addPass(mlir::typescript::createShapeInferencePass());
-        optPM.addPass(mlir::createCanonicalizerPass());
+        // optPM.addPass(mlir::createCanonicalizerPass());
         optPM.addPass(mlir::createCSEPass());
     }
 
