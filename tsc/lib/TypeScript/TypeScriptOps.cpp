@@ -130,6 +130,15 @@ void mlir_ts::SymbolRefOp::getCanonicalizationPatterns(OwningRewritePatternList 
 }
 
 //===----------------------------------------------------------------------===//
+// TypeRefOp
+//===----------------------------------------------------------------------===//
+
+void mlir_ts::TypeRefOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
+{
+    results.insert<RemoveUnused<mlir_ts::TypeRefOp>>(context);
+}
+
+//===----------------------------------------------------------------------===//
 // NamespaceRefOp
 //===----------------------------------------------------------------------===//
 

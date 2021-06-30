@@ -80,6 +80,15 @@ def SymbolRefOp : TypeScript_Op<"SymbolRef",
   let hasCanonicalizer = 1;
 }
 
+def TypeRefOp : TypeScript_Op<"TypeRef", 
+    [NoSideEffect]> {
+  let summary = "symbol reference to type";
+
+  let results = (outs AnyType);
+
+  let hasCanonicalizer = 1;
+}
+
 def NamespaceRefOp : TypeScript_Op<"NamespaceRef", 
     [NoSideEffect]> {
   let summary = "symbol reference to namespace";

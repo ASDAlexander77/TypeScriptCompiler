@@ -134,7 +134,7 @@ struct NamespaceInfo
 
     llvm::StringMap<mlir_ts::FuncOp> functionMap;
 
-    llvm::StringMap<VariablePairT> globalsMap;
+    llvm::StringMap<VariableDeclarationDOM::TypePtr> globalsMap;
 
     llvm::StringMap<llvm::StringMap<VariablePairT>> captureVarsMap;
 
@@ -751,7 +751,7 @@ class MLIRGenImpl
         }
         else
         {
-            getGlobalsMap().insert({name, {variableOp, varDecl}});
+            getGlobalsMap().insert({name, varDecl});
         }
 
         return true;
@@ -2138,7 +2138,7 @@ llvm.return %5 : i32
 
         auto result = mlirGen(binaryExpressionAST->left, genContext);
         auto resultType = result.getType();
-        auto type = getTypeByTypeName(binaryExpressionAST->right);
+        auto type = getTypeByTypeName(binaryExpressionAST->right, genContext);
 
         return builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(resultType == type));
     }
@@ -2763,7 +2763,7 @@ llvm.return %5 : i32
         MLIRTypeHelper mth(builder.getContext());
         auto location = loc(newExpression);
 
-        auto type = getTypeByTypeName(newExpression->expression);
+        auto type = getTypeByTypeName(newExpression->expression, genContext);
         auto resultType = type;
         if (mth.isValueType(type))
         {
@@ -3231,16 +3231,15 @@ llvm.return %5 : i32
         if (getGlobalsMap().count(name))
         {
             auto value = getGlobalsMap().lookup(name);
-            if (!value.second->getReadWriteAccess() && value.second->getType().isa<mlir_ts::StringType>())
+            if (!value->getReadWriteAccess() && value->getType().isa<mlir_ts::StringType>())
             {
                 // load address of const object in global
-                return builder.create<mlir_ts::AddressOfConstStringOp>(location, value.second->getType(), value.second->getName());
+                return builder.create<mlir_ts::AddressOfConstStringOp>(location, value->getType(), value->getName());
             }
             else
             {
-                auto address =
-                    builder.create<mlir_ts::AddressOfOp>(location, mlir_ts::RefType::get(value.second->getType()), value.second->getName());
-                return builder.create<mlir_ts::LoadOp>(location, value.second->getType(), address);
+                auto address = builder.create<mlir_ts::AddressOfOp>(location, mlir_ts::RefType::get(value->getType()), value->getName());
+                return builder.create<mlir_ts::LoadOp>(location, value->getType(), address);
             }
         }
 
@@ -3249,6 +3248,12 @@ llvm.return %5 : i32
         {
             auto enumTypeInfo = getEnumsMap().lookup(name);
             return builder.create<mlir_ts::ConstantOp>(location, getEnumType(enumTypeInfo.first), enumTypeInfo.second);
+        }
+
+        if (getClassesMap().count(name))
+        {
+            auto classType = getClassesMap().lookup(name);
+            return builder.create<mlir_ts::TypeRefOp>(location, classType);
         }
 
         if (getNamespaceMap().count(name))
@@ -3566,7 +3571,8 @@ llvm.return %5 : i32
         }
         else if (kind == SyntaxKind::TypeReference)
         {
-            return getTypeByTypeReference(typeReferenceAST.as<TypeReferenceNode>());
+            GenContext genContext;
+            return getTypeByTypeReference(typeReferenceAST.as<TypeReferenceNode>(), genContext);
         }
         else if (kind == SyntaxKind::AnyKeyword)
         {
@@ -3577,44 +3583,20 @@ llvm.return %5 : i32
         // return getAnyType();
     }
 
-    mlir::Type getResolveTypeFromValue(std::string name)
+    mlir::Type getTypeByTypeName(Node node, const GenContext &genContext)
     {
-        if (getClassesMap().count(name))
+        auto value = mlirGen(node.as<Expression>(), genContext);
+        if (value)
         {
-            auto classType = getClassesMap().lookup(name);
-            return classType;
-        }
-
-        auto aliasType = getTypeAliasMap().lookup(name);
-        if (aliasType)
-        {
-            return aliasType;
-        }
-
-        if (getEnumsMap().count(name))
-        {
-            auto enumType = getEnumsMap().lookup(name);
-            return enumType.first;
-        }
-
-        theModule.emitError("Type '") << name << "' can't be found";
-        return mlir::Type();
-    }
-
-    mlir::Type getTypeByTypeName(Node node)
-    {
-        auto typeName = MLIRHelper::getName(node);
-        if (!typeName.empty())
-        {
-            return getResolveTypeFromValue(typeName);
+            return value.getType();
         }
 
         llvm_unreachable("not implemented");
     }
 
-    mlir::Type getTypeByTypeReference(TypeReferenceNode typeReferenceAST)
+    mlir::Type getTypeByTypeReference(TypeReferenceNode typeReferenceAST, const GenContext &genContext)
     {
-        return getTypeByTypeName(typeReferenceAST->typeName);
+        return getTypeByTypeName(typeReferenceAST->typeName, genContext);
     }
 
     mlir_ts::VoidType getVoidType()
@@ -3959,7 +3941,7 @@ llvm.return %5 : i32
         return currentNamespace->functionMap;
     }
 
-    auto getGlobalsMap() -> llvm::StringMap<VariablePairT> &
+    auto getGlobalsMap() -> llvm::StringMap<VariableDeclarationDOM::TypePtr> &
     {
         return currentNamespace->globalsMap;
     }
