@@ -628,6 +628,8 @@ class MLIRGenImpl
         auto isGlobal = isGlobalScope || varClass == VariableClass::Var;
         auto isConst = varClass == VariableClass::Const;
 
+        auto effectiveName = name;
+
         mlir::Value variableOp;
         mlir::Type varType;
         if (!isGlobal)
@@ -672,9 +674,11 @@ class MLIRGenImpl
                 mlir::OpBuilder::InsertionGuard insertGuard(builder);
                 builder.setInsertionPointToStart(theModule.getBody());
 
+                effectiveName = getFullNamespaceName(name);
+
                 globalOp = builder.create<mlir_ts::GlobalOp>(location,
                                                              // temp type
-                                                             builder.getI32Type(), isConst, name, mlir::Attribute());
+                                                             builder.getI32Type(), isConst, effectiveName, mlir::Attribute());
 
                 if (isGlobalScope)
                 {
@@ -725,13 +729,13 @@ class MLIRGenImpl
                 globalOp.typeAttr(mlir::TypeAttr::get(type));
 
                 // save value
-                auto address = builder.create<mlir_ts::AddressOfOp>(location, mlir_ts::RefType::get(type), name);
+                auto address = builder.create<mlir_ts::AddressOfOp>(location, mlir_ts::RefType::get(type), effectiveName);
                 builder.create<mlir_ts::StoreOp>(location, init, address);
             }
         }
 
         // registering variable
-        auto varDecl = std::make_shared<VariableDeclarationDOM>(name, varType, location);
+        auto varDecl = std::make_shared<VariableDeclarationDOM>(effectiveName, varType, location);
         if (!isConst)
         {
             varDecl->setReadWriteAccess();
@@ -1038,8 +1042,6 @@ class MLIRGenImpl
         {
             funcOp = mlir_ts::FuncOp::create(location, fullName, funcType);
         }
-
-        setNamespace(funcOp, shortName);
 
         return std::make_tuple(funcOp, std::move(funcProto), true);
     }
@@ -3133,8 +3135,13 @@ llvm.return %5 : i32
         return mlirGen(location, name, genContext);
     }
 
-    mlir::Value mlirGen(mlir::Location location, StringRef name, const GenContext &genContext)
+    mlir::Value resolveIdentifierAsVariable(mlir::Location location, StringRef name, const GenContext &genContext)
     {
+        if (name.empty())
+        {
+            return mlir::Value();
+        }
+
         auto value = symbolTable.lookup(name);
         if (value.second)
         {
@@ -3188,6 +3195,24 @@ llvm.return %5 : i32
                     return builder.create<mlir_ts::LoadOp>(location, value.second->getType(), address);
                 }
             }
+        }
+
+        return mlir::Value();
+    }
+
+    mlir::Value resolveIdentifier(mlir::Location location, StringRef name, const GenContext &genContext)
+    {
+        // resolve as fullname
+        auto value = resolveIdentifierAsVariable(location, getFullNamespaceName(name), genContext);
+        if (value)
+        {
+            return value;
+        }
+
+        value = resolveIdentifierAsVariable(location, name, genContext);
+        if (value)
+        {
+            return value;
         }
 
         // resolving function
@@ -3250,6 +3275,17 @@ llvm.return %5 : i32
         if (name == "undefined")
         {
             return getUndefined(location);
+        }
+
+        return mlir::Value();
+    }
+
+    mlir::Value mlirGen(mlir::Location location, StringRef name, const GenContext &genContext)
+    {
+        auto value = resolveIdentifier(location, name, genContext);
+        if (value)
+        {
+            return value;
         }
 
         // unresolved reference (for call for example)
@@ -3849,17 +3885,6 @@ llvm.return %5 : i32
 
         symbolTable.insert(name, {value, var});
         return mlir::success();
-    }
-
-    void setNamespace(mlir::Operation *op, StringRef name)
-    {
-        auto namespc = getNamespace();
-        if (!namespc.empty())
-        {
-            op->setAttr(NAMESPACE_ATTR_NAME, mlir::FlatSymbolRefAttr::get(builder.getContext(), namespc));
-        }
-
-        op->setAttr(NAME_ATTR_NAME, mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
     }
 
     auto getNamespace() -> StringRef
