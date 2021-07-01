@@ -42,12 +42,28 @@ class MLIRHelper
         return nameValue;
     }
 
+    static std::string getName(ts::PrivateIdentifier identifier)
+    {
+        std::string nameValue;
+        if (identifier)
+        {
+            nameValue = wstos(identifier->escapedText);
+        }
+
+        return nameValue;
+    }
+
     static std::string getName(ts::Node name)
     {
         std::string nameValue;
         if (name == SyntaxKind::Identifier)
         {
             return getName(name.as<ts::Identifier>());
+        }
+
+        if (name == SyntaxKind::PrivateIdentifier)
+        {
+            return getName(name.as<ts::PrivateIdentifier>());
         }
 
         return nameValue;
