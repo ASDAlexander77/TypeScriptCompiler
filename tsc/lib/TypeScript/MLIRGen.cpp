@@ -271,7 +271,7 @@ class MLIRGenImpl
             auto newNamespacePtr = std::make_shared<NamespaceInfo>();
             newNamespacePtr->name = namePtr;
             newNamespacePtr->fullName = fullNamePtr;
-            currentNamespace->namespacesMap.insert({namePtr, newNamespacePtr});
+            getNamespaceMap().insert({namePtr, newNamespacePtr});
             fullNamespacesMap.insert({fullNamePtr, newNamespacePtr});
             currentNamespace = newNamespacePtr;
         }
@@ -2526,8 +2526,6 @@ llvm.return %5 : i32
 
         VALIDATE_EXPR(expressionValue, expression)
 
-        LLVM_DEBUG(expressionValue.dump());
-
         auto name = MLIRHelper::getName(propertyAccessExpression->name);
 
         mlir::Value value;
@@ -3300,7 +3298,8 @@ llvm.return %5 : i32
         if (getClassesMap().count(name))
         {
             auto classInfo = getClassesMap().lookup(name);
-            return builder.create<mlir_ts::ClassRefOp>(location, mlir::FlatSymbolRefAttr::get(builder.getContext(), classInfo->fullName));
+            return builder.create<mlir_ts::ClassRefOp>(location, classInfo->storageType,
+                                                       mlir::FlatSymbolRefAttr::get(builder.getContext(), classInfo->fullName));
         }
 
         if (getTypeAliasMap().count(name))
@@ -3530,10 +3529,9 @@ llvm.return %5 : i32
 
         // register class
         auto newClassPtr = std::make_shared<ClassInfo>();
-        newNamespacePtr->name = namePtr;
-        newNamespacePtr->fullName = fullNamePtr;
-        currentNamespace->classMap.insert({namePtr, newClassPtr});
-        fullNamespacesMap.insert({fullNamePtr, newClassPtr});
+        newClassPtr->name = namePtr;
+        newClassPtr->fullName = fullNamePtr;
+        getClassesMap().insert({namePtr, newClassPtr});
 
         // read class info
         MLIRCodeLogic mcl(builder);
