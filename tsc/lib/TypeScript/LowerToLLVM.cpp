@@ -1057,6 +1057,41 @@ struct NewOpLowering : public TsLlvmPattern<mlir_ts::NewOp>
     }
 };
 
+struct NewArrayOpLowering : public TsLlvmPattern<mlir_ts::NewArrayOp>
+{
+    using TsLlvmPattern<mlir_ts::NewArrayOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::NewArrayOp newArrOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+    {
+        LLVMCodeHelper ch(newArrOp, rewriter, getTypeConverter());
+        CodeLogicHelper clh(newArrOp, rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+        TypeHelper th(rewriter);
+
+        auto loc = newArrOp.getLoc();
+
+        mlir::Type storageType;
+        TypeSwitch<Type>(newArrOp.getType())
+            .Case<mlir_ts::ClassType>([&](auto classType) { storageType = classType.getStorageType(); })
+            .Case<mlir_ts::ValueRefType>([&](auto valueRefType) { storageType = valueRefType.getElementType(); })
+            .Default([&](auto type) { storageType = type; });
+
+        auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), storageType);
+        auto multSizeOfTypeValue = rewriter.create<LLVM::MulOp>(loc, th.getIndexType(), ValueRange{sizeOfTypeValue, newArrOp.count()});
+
+        auto i8PtrTy = th.getI8PtrType();
+        auto mallocFuncOp = ch.getOrInsertFunction("malloc", th.getFunctionType(i8PtrTy, {th.getIndexType()}));
+
+        auto callResults = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{multSizeOfTypeValue});
+
+        auto allocated =
+            rewriter.create<LLVM::BitcastOp>(newArrOp->getLoc(), tch.convertType(newArrOp.getType()), callResults.getResult(0));
+
+        rewriter.replaceOp(newArrOp, ValueRange{allocated});
+        return success();
+    }
+};
+
 struct DeleteOpLowering : public TsLlvmPattern<mlir_ts::DeleteOp>
 {
     using TsLlvmPattern<mlir_ts::DeleteOp>::TsLlvmPattern;
@@ -2013,10 +2048,10 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
                 AssertOpLowering, CastOpLowering, ConstantOpLowering, CreateOptionalOpLowering, UndefOptionalOpLowering, HasValueOpLowering,
                 ValueOpLowering, SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering, EntryOpLowering, FuncOpLowering,
                 LoadOpLowering, ElementRefOpLowering, PropertyRefOpLowering, ExtractPropertyOpLowering, LogicalBinaryOpLowering,
-                NullOpLowering, NewOpLowering, DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering, PrintOpLowering, StoreOpLowering,
-                SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering, StringLengthOpLowering, StringConcatOpLowering,
-                StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering, MemoryCopyOpLowering, LoadSaveValueLowering,
-                ThrowOpLoweringVCWin32, TrampolineOpLowering, TryOpLowering, VariableOpLowering, InvokeOpLowering>(
+                NullOpLowering, NewOpLowering, NewArrayOpLowering, DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering,
+                PrintOpLowering, StoreOpLowering, SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering, StringLengthOpLowering,
+                StringConcatOpLowering, StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering, MemoryCopyOpLowering,
+                LoadSaveValueLowering, ThrowOpLoweringVCWin32, TrampolineOpLowering, TryOpLowering, VariableOpLowering, InvokeOpLowering>(
             typeConverter, &getContext(), &tsLlvmContext);
 
     populateTypeScriptConversionPatterns(typeConverter, m);

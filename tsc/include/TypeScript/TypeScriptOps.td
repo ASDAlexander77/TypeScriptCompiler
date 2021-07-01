@@ -340,6 +340,16 @@ def TypeScript_NewOp : TypeScript_Op<"New"> {
   let results = (outs AnyType:$instance);
 }
 
+def TypeScript_NewArrayOp : TypeScript_Op<"NewArray"> {
+  let summary = "allocate in memory few instances";
+  let description = [{
+    allocate in memory few instances
+  }];
+
+  let arguments = (ins I64:$count);
+  let results = (outs AnyType:$instance);
+}
+
 def TypeScript_DeleteOp : TypeScript_Op<"Delete"> {
   let summary = "delete allocated in memory";
   let description = [{

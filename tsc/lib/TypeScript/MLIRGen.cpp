@@ -2755,16 +2755,35 @@ llvm.return %5 : i32
         MLIRTypeHelper mth(builder.getContext());
         auto location = loc(newExpression);
 
-        auto type = getTypeByTypeName(newExpression->expression, genContext);
-        auto resultType = type;
-        if (mth.isValueType(type))
+        // 3 cases, name, index access, method call
+        mlir::Type type;
+        auto typeExpression = newExpression->expression;
+        if (typeExpression == SyntaxKind::Identifier || typeExpression == SyntaxKind::QualifiedName)
         {
-            resultType = getValueRefType(type);
+            type = getTypeByTypeName(typeExpression, genContext);
+            auto resultType = type;
+            if (mth.isValueType(type))
+            {
+                resultType = getValueRefType(type);
+            }
+
+            auto newOp = builder.create<mlir_ts::NewOp>(location, resultType);
+            return newOp;
         }
+        else if (typeExpression == SyntaxKind::ElementAccessExpression)
+        {
+            auto elementAccessExpression = typeExpression.as<ElementAccessExpression>();
+            typeExpression = elementAccessExpression->expression;
+            type = getTypeByTypeName(typeExpression, genContext);
+            auto count = mlirGen(elementAccessExpression->argumentExpression, genContext);
 
-        auto newOp = builder.create<mlir_ts::NewOp>(location, resultType);
-
-        return newOp;
+            auto newArrOp = builder.create<mlir_ts::NewArrayOp>(location, getArrayType(type), count);
+            return newArrOp;
+        }
+        else
+        {
+            llvm_unreachable("not implemented");
+        }
     }
 
     mlir::LogicalResult mlirGen(DeleteExpression deleteExpression, const GenContext &genContext)
