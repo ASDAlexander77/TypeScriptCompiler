@@ -717,16 +717,16 @@ def TypeScript_ArrayLike : AnyTypeOf<[
     TypeScript_ConstArray, TypeScript_Array, TypeScript_String
   ]>;
 
+def TypeScript_AnyStructRefLike : AnyTypeOf<[
+    TypeScript_AnyConstTupleRef, TypeScript_AnyTupleRef, TypeScript_Class, TypeScript_Object
+  ]>;
+
 def TypeScript_AnyRefLike : AnyTypeOf<[
-    TypeScript_Ref, TypeScript_ValueRef
+    TypeScript_Ref, TypeScript_ValueRef, TypeScript_AnyStructRefLike
   ]>;
 
 def TypeScript_AnyStructLike : AnyTypeOf<[
     TypeScript_ConstTuple, TypeScript_Tuple
-  ]>;
-
-def TypeScript_AnyStructRefLike : AnyTypeOf<[
-    TypeScript_AnyConstTupleRef, TypeScript_AnyTupleRef, TypeScript_Class, TypeScript_Object
   ]>;
 
 #endif // TYPESCRIPT_TYPEDEFS

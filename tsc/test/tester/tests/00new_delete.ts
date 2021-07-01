@@ -1,14 +1,14 @@
 type Type1 = 1;
 
 function test_int() {
-    let i = new Type1();
+    let i = new Type1;
     delete i;
 }
 
 type int = 1;
 
 function test_array() {
-    const a = new int[10]();
+    const a = new int[10];
     a[0] = 1;
     print(a[0]);
 

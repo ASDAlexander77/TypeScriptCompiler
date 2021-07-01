@@ -2758,7 +2758,8 @@ llvm.return %5 : i32
         // 3 cases, name, index access, method call
         mlir::Type type;
         auto typeExpression = newExpression->expression;
-        if (typeExpression == SyntaxKind::Identifier || typeExpression == SyntaxKind::QualifiedName)
+        if (typeExpression == SyntaxKind::Identifier || typeExpression == SyntaxKind::QualifiedName ||
+            typeExpression == SyntaxKind::PropertyAccessExpression)
         {
             type = getTypeByTypeName(typeExpression, genContext);
             auto resultType = type;
@@ -2798,7 +2799,8 @@ llvm.return %5 : i32
 
         auto expr = mlirGen(deleteExpression->expression, genContext);
 
-        if (!expr.getType().isa<mlir_ts::RefType>())
+        if (!expr.getType().isa<mlir_ts::RefType>() && !expr.getType().isa<mlir_ts::ValueRefType>() &&
+            !expr.getType().isa<mlir_ts::ClassType>())
         {
             if (auto arrayType = expr.getType().dyn_cast_or_null<mlir_ts::ArrayType>())
             {

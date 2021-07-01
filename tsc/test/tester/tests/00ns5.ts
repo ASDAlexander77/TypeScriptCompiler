@@ -4,5 +4,6 @@ namespace nn {
 
 function main() {
     const c = new nn.c1();
+    delete c;
     print("done.");
 }
