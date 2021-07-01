@@ -2798,6 +2798,18 @@ llvm.return %5 : i32
 
         auto expr = mlirGen(deleteExpression->expression, genContext);
 
+        if (!expr.getType().isa<mlir_ts::RefType>())
+        {
+            if (auto arrayType = expr.getType().dyn_cast_or_null<mlir_ts::ArrayType>())
+            {
+                expr = builder.create<mlir_ts::CastOp>(location, mlir_ts::RefType::get(arrayType.getElementType()), expr);
+            }
+            else
+            {
+                llvm_unreachable("not implemented");
+            }
+        }
+
         builder.create<mlir_ts::DeleteOp>(location, expr);
 
         return mlir::success();

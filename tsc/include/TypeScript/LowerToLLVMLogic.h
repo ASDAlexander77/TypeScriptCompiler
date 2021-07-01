@@ -1290,6 +1290,20 @@ class CastLogicHelper
             return rewriter.create<LLVM::BitcastOp>(loc, resLLVMType, in);
         }
 
+        // array to ref of element
+        if (auto arrayType = inType.dyn_cast_or_null<mlir_ts::ArrayType>())
+        {
+            if (auto refType = resType.dyn_cast_or_null<mlir_ts::RefType>())
+            {
+                if (arrayType.getElementType() == refType.getElementType())
+                {
+
+                    return rewriter.create<LLVM::ExtractValueOp>(loc, resLLVMType, in,
+                                                                 rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(0)));
+                }
+            }
+        }
+
         emitError(loc, "invalid cast operator type 1: '") << inLLVMType << "', type 2: '" << resLLVMType << "'";
         llvm_unreachable("not implemented");
 
