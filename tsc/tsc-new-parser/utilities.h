@@ -2438,6 +2438,12 @@ inline static auto regex_exec(string &text, regex regEx) -> boolean
     auto words_end = sregex_iterator();
     return words_begin != words_end;
 }
+
+inline static auto hasModifier(Node node, SyntaxKind key) -> boolean
+{
+    return some(node->modifiers, [=](auto m) { return m == key; });
+}
+
 } // namespace ts
 
 #endif // UTILITIES_H

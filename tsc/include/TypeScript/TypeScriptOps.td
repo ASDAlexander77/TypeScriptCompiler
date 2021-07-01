@@ -107,6 +107,24 @@ def NamespaceRefOp : TypeScript_Op<"NamespaceRef",
   let hasCanonicalizer = 1;
 }
 
+def ClassRefOp : TypeScript_Op<"ClassRef", 
+    [NoSideEffect]> {
+  let summary = "symbol reference to class";
+
+  let arguments = (ins FlatSymbolRefAttr:$identifier);
+  let results = (outs AnyType);
+
+  let builders = [
+    OpBuilder<(ins "FlatSymbolRefAttr":$identifier),
+    [{ build($_builder, $_state, identifier.getType(), identifier); }]>];
+
+  let extraClassDeclaration = [{
+    Attribute getValue() { return (*this)->getAttr("identifier"); }
+  }];
+
+  let hasCanonicalizer = 1;
+}
+
 def TypeScript_FuncOp : TypeScript_Op<"Func", [
   AffineScope, AutomaticAllocationScope, CallableOpInterface, FunctionLike,
   IsolatedFromAbove, Symbol

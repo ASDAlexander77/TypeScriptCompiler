@@ -123,6 +123,26 @@ struct GenContext
     mlir::SmallVector<mlir::Block *> *cleanUps;
 };
 
+struct ClassStaticFieldInfo
+{
+    Attribute id;
+    mlir::Type type;
+};
+
+struct ClassInfo
+{
+  public:
+    using TypePtr = std::shared_ptr<ClassInfo>;
+
+    mlir::StringRef name;
+
+    mlir::StringRef fullName;
+
+    mlir::Type storageType;
+
+    llvm::StringMap<ClassStaticFieldInfo> staticFields;
+};
+
 struct NamespaceInfo
 {
   public:
@@ -144,7 +164,7 @@ struct NamespaceInfo
 
     llvm::StringMap<std::pair<mlir::Type, mlir::DictionaryAttr>> enumsMap;
 
-    llvm::StringMap<mlir::Type> classesMap;
+    llvm::StringMap<ClassInfo::TypePtr> classesMap;
 
     llvm::StringMap<NamespaceInfo::TypePtr> namespacesMap;
 };
@@ -1188,8 +1208,7 @@ class MLIRGenImpl
 
         // set visibility index
         auto name = getNameWithoutNamespace(funcOp.getName());
-        if (name != MAIN_ENTRY_NAME &&
-            !some(functionLikeDeclarationBaseAST->modifiers, [=](auto m) { return m == SyntaxKind::ExportKeyword; }))
+        if (name != MAIN_ENTRY_NAME && !hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::ExportKeyword))
         {
             funcOp.setPrivate();
         }
@@ -3280,8 +3299,8 @@ llvm.return %5 : i32
 
         if (getClassesMap().count(name))
         {
-            auto classType = getClassesMap().lookup(name);
-            return builder.create<mlir_ts::TypeRefOp>(location, classType);
+            auto classInfo = getClassesMap().lookup(name);
+            return builder.create<mlir_ts::ClassRefOp>(location, mlir::FlatSymbolRefAttr::get(builder.getContext(), classInfo->fullName));
         }
 
         if (getTypeAliasMap().count(name))
@@ -3506,6 +3525,17 @@ llvm.return %5 : i32
             return mlir::failure();
         }
 
+        auto namePtr = StringRef(name).copy(stringAllocator);
+        auto fullNamePtr = getFullNamespaceName(namePtr);
+
+        // register class
+        auto newClassPtr = std::make_shared<ClassInfo>();
+        newNamespacePtr->name = namePtr;
+        newNamespacePtr->fullName = fullNamePtr;
+        currentNamespace->classMap.insert({namePtr, newClassPtr});
+        fullNamespacesMap.insert({fullNamePtr, newClassPtr});
+
+        // read class info
         MLIRCodeLogic mcl(builder);
         // first value
         SmallVector<mlir::Type> types;
@@ -3516,6 +3546,7 @@ llvm.return %5 : i32
             mlir::Value initValue;
             mlir::Attribute fieldId;
             mlir::Type type;
+            auto isStatic = false;
 
             if (classMember == SyntaxKind::PropertyDeclaration)
             {
@@ -3532,14 +3563,18 @@ llvm.return %5 : i32
                 fieldId = mcl.TupleFieldName(namePtr);
 
                 type = getType(propertyDeclaration->type);
+
+                isStatic = hasModifier(propertyDeclaration, SyntaxKind::StaticKeyword);
             }
 
-            fieldInfos.push_back({fieldId, type});
+            if (!isStatic)
+            {
+                fieldInfos.push_back({fieldId, type});
+            }
         }
 
         auto classType = getClassType(getTupleType(fieldInfos));
-
-        getClassesMap().insert({name, classType});
+        newClassPtr->storageType = classType;
 
         return mlir::success();
     }
@@ -3998,7 +4033,7 @@ llvm.return %5 : i32
         return currentNamespace->captureVarsMap;
     }
 
-    auto getClassesMap() -> llvm::StringMap<mlir::Type> &
+    auto getClassesMap() -> llvm::StringMap<ClassInfo::TypePtr> &
     {
         return currentNamespace->classesMap;
     }
