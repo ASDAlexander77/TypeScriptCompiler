@@ -1188,7 +1188,8 @@ class MLIRGenImpl
 
         // set visibility index
         auto name = getNameWithoutNamespace(funcOp.getName());
-        if (name != StringRef("main"))
+        if (name != MAIN_ENTRY_NAME &&
+            !some(functionLikeDeclarationBaseAST->modifiers, [=](auto m) { return m == SyntaxKind::ExportKeyword; }))
         {
             funcOp.setPrivate();
         }

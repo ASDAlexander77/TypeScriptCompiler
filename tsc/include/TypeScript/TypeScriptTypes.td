@@ -726,7 +726,7 @@ def TypeScript_AnyRefLike : AnyTypeOf<[
   ]>;
 
 def TypeScript_AnyStructLike : AnyTypeOf<[
-    TypeScript_ConstTuple, TypeScript_Tuple
+    TypeScript_ConstTuple, TypeScript_Tuple, TypeScript_Class
   ]>;
 
 #endif // TYPESCRIPT_TYPEDEFS
