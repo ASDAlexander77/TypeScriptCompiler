@@ -1348,7 +1348,7 @@ class CastLogicHelper
         return rewriter.create<LLVM::CallOp>(loc, _gcvtFuncOp, ValueRange{doubleValue, precision, newStringValue}).getResult(0);
     }
 
-    mlir::Value castToArrayType(mlir::Value in, mlir::Type resType)
+    mlir::Value castToArrayType(mlir::Value in, mlir::Type arrayType)
     {
         mlir::Type llvmElementType;
         auto type = in.getType();
@@ -1368,26 +1368,25 @@ class CastLogicHelper
             }
             else
             {
-                LLVM_DEBUG(llvm::dbgs() << "[castToArrayType(2)] from value: " << in << " type: " << in.getType() << " to type: " << resType
-                                        << "\n";);
+                LLVM_DEBUG(llvm::dbgs() << "[castToArrayType(2)] from value: " << in << " type: " << in.getType()
+                                        << " to type: " << arrayType << "\n";);
                 llvm_unreachable("not implemented");
             }
         }
         else
         {
-            LLVM_DEBUG(llvm::dbgs() << "[castToArrayType(1)] from value: " << in << " type: " << in.getType() << " to type: " << resType
+            LLVM_DEBUG(llvm::dbgs() << "[castToArrayType(1)] from value: " << in << " type: " << in.getType() << " to type: " << arrayType
                                     << "\n";);
             llvm_unreachable("not implemented");
         }
 
-        auto llvmRtArrayStructType = tch.convertType(resType);
+        auto sizeValue = clh.createI32ConstantOf(size);
+        auto llvmRtArrayStructType = tch.convertType(arrayType);
 
         auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmRtArrayStructType);
         auto arrayPtrType = LLVM::LLVMPointerType::get(llvmElementType);
         auto arrayValueSize = LLVM::LLVMArrayType::get(llvmElementType, size);
         auto ptrToArray = LLVM::LLVMPointerType::get(arrayValueSize);
-
-        auto sizeValue = clh.createI32ConstantOf(size);
 
         mlir::Value arrayPtr;
         bool byValue = true;

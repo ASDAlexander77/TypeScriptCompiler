@@ -2777,6 +2777,11 @@ llvm.return %5 : i32
             type = getTypeByTypeName(typeExpression, genContext);
             auto count = mlirGen(elementAccessExpression->argumentExpression, genContext);
 
+            if (count.getType() != builder.getI32Type())
+            {
+                count = builder.create<mlir_ts::CastOp>(location, builder.getI32Type(), count);
+            }
+
             auto newArrOp = builder.create<mlir_ts::NewArrayOp>(location, getArrayType(type), count);
             return newArrOp;
         }

@@ -1070,6 +1070,11 @@ struct NewArrayOpLowering : public TsLlvmPattern<mlir_ts::NewArrayOp>
 
         auto loc = newArrOp.getLoc();
 
+        auto arrayType = newArrOp.getType().cast<mlir_ts::ArrayType>();
+        auto elementType = arrayType.getElementType();
+        auto llvmElementType = tch.convertType(elementType);
+        auto llvmPtrElementType = th.getPointerType(llvmElementType);
+
         mlir::Type storageType;
         TypeSwitch<Type>(newArrOp.getType())
             .Case<mlir_ts::ClassType>([&](auto classType) { storageType = classType.getStorageType(); })
@@ -1077,17 +1082,26 @@ struct NewArrayOpLowering : public TsLlvmPattern<mlir_ts::NewArrayOp>
             .Default([&](auto type) { storageType = type; });
 
         auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), storageType);
-        auto multSizeOfTypeValue = rewriter.create<LLVM::MulOp>(loc, th.getIndexType(), ValueRange{sizeOfTypeValue, newArrOp.count()});
+        auto countAsIndexType = rewriter.create<mlir_ts::CastOp>(loc, th.getIndexType(), newArrOp.count());
+        auto multSizeOfTypeValue = rewriter.create<LLVM::MulOp>(loc, th.getIndexType(), ValueRange{sizeOfTypeValue, countAsIndexType});
 
         auto i8PtrTy = th.getI8PtrType();
         auto mallocFuncOp = ch.getOrInsertFunction("malloc", th.getFunctionType(i8PtrTy, {th.getIndexType()}));
 
         auto callResults = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{multSizeOfTypeValue});
 
-        auto allocated =
-            rewriter.create<LLVM::BitcastOp>(newArrOp->getLoc(), tch.convertType(newArrOp.getType()), callResults.getResult(0));
+        auto allocated = rewriter.create<LLVM::BitcastOp>(newArrOp->getLoc(), llvmPtrElementType, callResults.getResult(0));
 
-        rewriter.replaceOp(newArrOp, ValueRange{allocated});
+        // create array type
+        auto llvmRtArrayStructType = tch.convertType(arrayType);
+        auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmRtArrayStructType);
+        auto structValue2 = rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue, allocated,
+                                                                 rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(0)));
+
+        auto structValue3 = rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue2, newArrOp.count(),
+                                                                 rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(1)));
+
+        rewriter.replaceOp(newArrOp, ValueRange{structValue3});
         return success();
     }
 };

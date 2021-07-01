@@ -346,7 +346,7 @@ def TypeScript_NewArrayOp : TypeScript_Op<"NewArray"> {
     allocate in memory few instances
   }];
 
-  let arguments = (ins I64:$count);
+  let arguments = (ins I32:$count);
   let results = (outs AnyType:$instance);
 }
 
