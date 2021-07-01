@@ -271,7 +271,7 @@ class MLIRGenImpl
             auto newNamespacePtr = std::make_shared<NamespaceInfo>();
             newNamespacePtr->name = namePtr;
             newNamespacePtr->fullName = fullNamePtr;
-            getNamespaceMap().insert({namePtr, newNamespacePtr});
+            currentNamespace->namespacesMap.insert({namePtr, newNamespacePtr});
             fullNamespacesMap.insert({fullNamePtr, newNamespacePtr});
             currentNamespace = newNamespacePtr;
         }
