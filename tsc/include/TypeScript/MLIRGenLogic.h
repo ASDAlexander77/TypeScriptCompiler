@@ -44,6 +44,7 @@ using SymbolTableScopeT = llvm::ScopedHashTableScope<StringRef, VariablePairT>;
 
 namespace typescript
 {
+
 class MLIRCustomMethods
 {
     mlir::OpBuilder &builder;
@@ -453,20 +454,8 @@ class MLIRPropertyAccessCodeLogic
         }
     }
 
-    mlir::Value ClassMembers(mlir::Value classRefOpValue)
+    mlir::Value Class(mlir_ts::ClassType classType)
     {
-        auto classRefOp = classRefOpValue.getDefiningOp<mlir_ts::ClassRefOp>();
-        if (!classRefOp)
-        {
-            return mlir::Value();
-        }
-
-        llvm_unreachable("not implemented");
-    }
-
-    mlir::Value Class(mlir::Value classRefOpValue, mlir_ts::ClassType classType)
-    {
-        LLVM_DEBUG(classRefOpValue.dump(););
         if (auto tupleType = classType.getStorageType().template dyn_cast_or_null<mlir_ts::TupleType>())
         {
             MLIRCodeLogic mcl(builder);
@@ -478,8 +467,7 @@ class MLIRPropertyAccessCodeLogic
 
             if (fieldIndex < 0)
             {
-                // TODO: access to class members
-                return ClassMembers(classRefOpValue);
+                return mlir::Value();
             }
 
             // LLVM_DEBUG(llvm::dbgs() << "property ref access: " << expression << " index:" << fieldIndex << " field type: " << elementType

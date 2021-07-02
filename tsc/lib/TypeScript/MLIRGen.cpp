@@ -123,10 +123,10 @@ struct GenContext
     mlir::SmallVector<mlir::Block *> *cleanUps;
 };
 
-struct ClassStaticFieldInfo
+struct StaticFieldInfo
 {
-    Attribute id;
-    mlir::Type type;
+    mlir::Attribute id;
+    mlir::StringRef globalVariableName;
 };
 
 struct ClassInfo
@@ -140,7 +140,17 @@ struct ClassInfo
 
     mlir::Type storageType;
 
-    llvm::StringMap<ClassStaticFieldInfo> staticFields;
+    llvm::SmallVector<StaticFieldInfo> staticFields;
+
+    /// Iterate over the held elements.
+    using iterator = ArrayRef<::mlir::typescript::FieldInfo>::iterator;
+
+    int getStaticFieldIndex(mlir::Attribute id)
+    {
+        auto dist = std::distance(staticFields.begin(), std::find_if(staticFields.begin(), staticFields.end(),
+                                                                     [&](StaticFieldInfo fldInf) { return id == fldInf.id; }));
+        return dist >= staticFields.size() ? -1 : dist;
+    }
 };
 
 struct NamespaceInfo
@@ -2564,7 +2574,14 @@ llvm.return %5 : i32
             .Case<mlir_ts::ConstArrayType>([&](auto arrayType) { value = cl.Array(arrayType); })
             .Case<mlir_ts::ArrayType>([&](auto arrayType) { value = cl.Array(arrayType); })
             .Case<mlir_ts::RefType>([&](auto refType) { value = cl.Ref(refType); })
-            .Case<mlir_ts::ClassType>([&](auto classType) { value = cl.Class(expressionValue, classType); })
+            .Case<mlir_ts::ClassType>([&](auto classType) {
+                value = cl.Class(classType);
+                if (!value)
+                {
+                    // static field access
+                    value = ClassMembers(location, expressionValue, name, genContext);
+                }
+            })
             .Default([](auto type) { llvm_unreachable("not implemented"); });
 
         if (value)
@@ -2575,6 +2592,32 @@ llvm.return %5 : i32
         emitError(location, "Can't resolve property name");
 
         llvm_unreachable("not implemented");
+    }
+
+    mlir::Value ClassMembers(mlir::Location location, mlir::Value classRefOpValue, mlir::StringRef name, const GenContext &genContext)
+    {
+        auto classRefOp = classRefOpValue.getDefiningOp<mlir_ts::ClassRefOp>();
+        if (!classRefOp)
+        {
+            return mlir::Value();
+        }
+
+        LLVM_DEBUG(classRefOpValue.dump(););
+
+        auto classInfo = getClassByFullName(classRefOp.identifier());
+
+        assert(classInfo);
+
+        MLIRCodeLogic mcl(builder);
+
+        auto index = classInfo->getStaticFieldIndex(mcl.TupleFieldName(name));
+
+        assert(index >= 0);
+
+        auto fieldInfo = classInfo->staticFields[index];
+
+        auto value = resolveIdentifierAsVariable(location, fieldInfo.globalVariableName, genContext);
+        return value;
     }
 
     template <typename T>
@@ -3518,6 +3561,7 @@ llvm.return %5 : i32
 
     mlir::LogicalResult mlirGen(ClassLikeDeclaration classDeclarationAST, const GenContext &genContext)
     {
+        auto location = loc(classDeclarationAST);
         auto name = MLIRHelper::getName(classDeclarationAST->name);
         if (name.empty())
         {
@@ -3533,19 +3577,22 @@ llvm.return %5 : i32
         newClassPtr->name = namePtr;
         newClassPtr->fullName = fullNamePtr;
         getClassesMap().insert({namePtr, newClassPtr});
+        fullNameClassesMap.insert({fullNamePtr, newClassPtr});
 
         // read class info
         MLIRCodeLogic mcl(builder);
         // first value
-        SmallVector<mlir::Type> types;
+        SmallVector<StaticFieldInfo> staticFieldInfos;
         SmallVector<mlir_ts::FieldInfo> fieldInfos;
-        SmallVector<mlir::Attribute> values;
         for (auto &classMember : classDeclarationAST->members)
         {
+            auto location = loc(classMember);
+
             mlir::Value initValue;
             mlir::Attribute fieldId;
             mlir::Type type;
             auto isStatic = false;
+            StringRef memberNamePtr;
 
             if (classMember == SyntaxKind::PropertyDeclaration)
             {
@@ -3558,8 +3605,8 @@ llvm.return %5 : i32
                     return mlir::failure();
                 }
 
-                auto namePtr = StringRef(memberName).copy(stringAllocator);
-                fieldId = mcl.TupleFieldName(namePtr);
+                memberNamePtr = StringRef(memberName).copy(stringAllocator);
+                fieldId = mcl.TupleFieldName(memberNamePtr);
 
                 type = getType(propertyDeclaration->type);
 
@@ -3570,10 +3617,20 @@ llvm.return %5 : i32
             {
                 fieldInfos.push_back({fieldId, type});
             }
+            else
+            {
+                // register global
+                auto fullClassStaticFieldName = concat(fullNamePtr, memberNamePtr);
+                registerVariable(
+                    location, memberNamePtr, VariableClass::Var, [&]() { return std::make_pair(type, mlir::Value()); }, genContext);
+
+                staticFieldInfos.push_back({fieldId, fullClassStaticFieldName});
+            }
         }
 
         auto classType = getClassType(getTupleType(fieldInfos));
         newClassPtr->storageType = classType;
+        newClassPtr->staticFields = staticFieldInfos;
 
         return mlir::success();
     }
@@ -3996,6 +4053,30 @@ llvm.return %5 : i32
         return namePtr;
     }
 
+    auto concat(StringRef fullNamespace, StringRef name) -> StringRef
+    {
+        std::string res;
+        res += fullNamespace;
+        res += ".";
+        res += name;
+
+        auto namePtr = StringRef(res).copy(stringAllocator);
+        return namePtr;
+    }
+
+    auto concat(StringRef fullNamespace, StringRef className, StringRef name) -> StringRef
+    {
+        std::string res;
+        res += fullNamespace;
+        res += ".";
+        res += className;
+        res += ".";
+        res += name;
+
+        auto namePtr = StringRef(res).copy(stringAllocator);
+        return namePtr;
+    }
+
     auto getNameWithoutNamespace(StringRef name) -> StringRef
     {
         auto pos = name.find_last_of('.');
@@ -4052,6 +4133,11 @@ llvm.return %5 : i32
         return currentNamespace->importEqualsMap;
     }
 
+    auto getClassByFullName(StringRef fullName) -> ClassInfo::TypePtr
+    {
+        return fullNameClassesMap.lookup(fullName);
+    }
+
   protected:
     mlir::StringAttr getStringAttr(std::string text)
     {
@@ -4087,6 +4173,8 @@ llvm.return %5 : i32
     NamespaceInfo::TypePtr currentNamespace;
 
     llvm::StringMap<NamespaceInfo::TypePtr> fullNamespacesMap;
+
+    llvm::StringMap<ClassInfo::TypePtr> fullNameClassesMap;
 
     // helper to get line number
     Parser parser;
