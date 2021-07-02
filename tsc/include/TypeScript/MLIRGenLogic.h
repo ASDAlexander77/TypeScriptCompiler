@@ -453,8 +453,20 @@ class MLIRPropertyAccessCodeLogic
         }
     }
 
-    template <typename T> mlir::Value Class(T classType)
+    mlir::Value ClassMembers(mlir::Value classRefOpValue)
     {
+        auto classRefOp = classRefOpValue.getDefiningOp<mlir_ts::ClassRefOp>();
+        if (!classRefOp)
+        {
+            return mlir::Value();
+        }
+
+        llvm_unreachable("not implemented");
+    }
+
+    mlir::Value Class(mlir::Value classRefOpValue, mlir_ts::ClassType classType)
+    {
+        LLVM_DEBUG(classRefOpValue.dump(););
         if (auto tupleType = classType.getStorageType().template dyn_cast_or_null<mlir_ts::TupleType>())
         {
             MLIRCodeLogic mcl(builder);
@@ -466,7 +478,8 @@ class MLIRPropertyAccessCodeLogic
 
             if (fieldIndex < 0)
             {
-                return mlir::Value();
+                // TODO: access to class members
+                return ClassMembers(classRefOpValue);
             }
 
             // LLVM_DEBUG(llvm::dbgs() << "property ref access: " << expression << " index:" << fieldIndex << " field type: " << elementType

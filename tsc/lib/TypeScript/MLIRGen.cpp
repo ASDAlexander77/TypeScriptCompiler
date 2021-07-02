@@ -265,13 +265,14 @@ class MLIRGenImpl
         auto savedNamespace = currentNamespace;
 
         auto fullNamePtr = getFullNamespaceName(namePtr);
-        auto it = currentNamespace->namespacesMap.find(namePtr);
-        if (it == currentNamespace->namespacesMap.end())
+        auto &namespacesMap = getNamespaceMap();
+        auto it = namespacesMap.find(namePtr);
+        if (it == namespacesMap.end())
         {
             auto newNamespacePtr = std::make_shared<NamespaceInfo>();
             newNamespacePtr->name = namePtr;
             newNamespacePtr->fullName = fullNamePtr;
-            currentNamespace->namespacesMap.insert({namePtr, newNamespacePtr});
+            namespacesMap.insert({namePtr, newNamespacePtr});
             fullNamespacesMap.insert({fullNamePtr, newNamespacePtr});
             currentNamespace = newNamespacePtr;
         }
@@ -2563,7 +2564,7 @@ llvm.return %5 : i32
             .Case<mlir_ts::ConstArrayType>([&](auto arrayType) { value = cl.Array(arrayType); })
             .Case<mlir_ts::ArrayType>([&](auto arrayType) { value = cl.Array(arrayType); })
             .Case<mlir_ts::RefType>([&](auto refType) { value = cl.Ref(refType); })
-            .Case<mlir_ts::ClassType>([&](auto classType) { value = cl.Class(classType); })
+            .Case<mlir_ts::ClassType>([&](auto classType) { value = cl.Class(expressionValue, classType); })
             .Default([](auto type) { llvm_unreachable("not implemented"); });
 
         if (value)
@@ -4011,7 +4012,7 @@ llvm.return %5 : i32
         return fullNamespacesMap.lookup(fullName);
     }
 
-    auto getNamespaceMap() -> llvm::StringMap<NamespaceInfo::TypePtr>
+    auto getNamespaceMap() -> llvm::StringMap<NamespaceInfo::TypePtr> &
     {
         return currentNamespace->namespacesMap;
     }
