@@ -654,7 +654,7 @@ class MLIRGenImpl
         llvm_unreachable("unknown expression");
     }
 
-    bool registerVariable(mlir::Location location, StringRef name, VariableClass varClass,
+    bool registerVariable(mlir::Location location, StringRef name, bool isFullName, VariableClass varClass,
                           std::function<std::pair<mlir::Type, mlir::Value>()> func, const GenContext &genContext)
     {
         auto isGlobalScope = !genContext.funcOp; /*symbolTable.getCurScope()->getParentScope() == nullptr*/
@@ -780,6 +780,10 @@ class MLIRGenImpl
         {
             declare(varDecl, variableOp);
         }
+        else if (isFullName)
+        {
+            fullNameGlobalsMap.insert({name, varDecl});
+        }
         else
         {
             getGlobalsMap().insert({name, varDecl});
@@ -825,7 +829,7 @@ class MLIRGenImpl
             auto name = MLIRHelper::getName(item->name);
 
             // register
-            return registerVariable(location, name, varClass, func, genContext);
+            return registerVariable(location, name, false, varClass, func, genContext);
         }
 
         return true;
@@ -2580,6 +2584,10 @@ llvm.return %5 : i32
                 {
                     // static field access
                     value = ClassMembers(location, expressionValue, name, genContext);
+                    if (!value && !genContext.allowPartialResolve)
+                    {
+                        emitError(location, "Class member '") << name << "' can't be found";
+                    }
                 }
             })
             .Default([](auto type) { llvm_unreachable("not implemented"); });
@@ -2605,7 +2613,6 @@ llvm.return %5 : i32
         LLVM_DEBUG(classRefOpValue.dump(););
 
         auto classInfo = getClassByFullName(classRefOp.identifier());
-
         assert(classInfo);
 
         MLIRCodeLogic mcl(builder);
@@ -2616,7 +2623,8 @@ llvm.return %5 : i32
 
         auto fieldInfo = classInfo->staticFields[index];
 
-        auto value = resolveIdentifierAsVariable(location, fieldInfo.globalVariableName, genContext);
+        auto value = resolveFullNameIdentifier(location, fieldInfo.globalVariableName, genContext);
+        assert(value);
         return value;
     }
 
@@ -3320,16 +3328,7 @@ llvm.return %5 : i32
         if (getGlobalsMap().count(name))
         {
             auto value = getGlobalsMap().lookup(name);
-            if (!value->getReadWriteAccess() && value->getType().isa<mlir_ts::StringType>())
-            {
-                // load address of const object in global
-                return builder.create<mlir_ts::AddressOfConstStringOp>(location, value->getType(), value->getName());
-            }
-            else
-            {
-                auto address = builder.create<mlir_ts::AddressOfOp>(location, mlir_ts::RefType::get(value->getType()), value->getName());
-                return builder.create<mlir_ts::LoadOp>(location, value->getType(), address);
-            }
+            return globalVariableAccess(location, value, genContext);
         }
 
         // check if we have enum
@@ -3366,6 +3365,33 @@ llvm.return %5 : i32
         }
 
         return mlir::Value();
+    }
+
+    mlir::Value resolveFullNameIdentifier(mlir::Location location, StringRef name, const GenContext &genContext)
+    {
+        if (fullNameGlobalsMap.count(name))
+        {
+            auto value = fullNameGlobalsMap.lookup(name);
+            return globalVariableAccess(location, value, genContext);
+        }
+
+        assert(false);
+
+        return mlir::Value();
+    }
+
+    mlir::Value globalVariableAccess(mlir::Location location, VariableDeclarationDOM::TypePtr value, const GenContext &genContext)
+    {
+        if (!value->getReadWriteAccess() && value->getType().isa<mlir_ts::StringType>())
+        {
+            // load address of const object in global
+            return builder.create<mlir_ts::AddressOfConstStringOp>(location, value->getType(), value->getName());
+        }
+        else
+        {
+            auto address = builder.create<mlir_ts::AddressOfOp>(location, mlir_ts::RefType::get(value->getType()), value->getName());
+            return builder.create<mlir_ts::LoadOp>(location, value->getType(), address);
+        }
     }
 
     mlir::Value resolveIdentifier(mlir::Location location, StringRef name, const GenContext &genContext)
@@ -3622,7 +3648,8 @@ llvm.return %5 : i32
                 // register global
                 auto fullClassStaticFieldName = concat(fullNamePtr, memberNamePtr);
                 registerVariable(
-                    location, memberNamePtr, VariableClass::Var, [&]() { return std::make_pair(type, mlir::Value()); }, genContext);
+                    location, fullClassStaticFieldName, true, VariableClass::Var, [&]() { return std::make_pair(type, mlir::Value()); },
+                    genContext);
 
                 staticFieldInfos.push_back({fieldId, fullClassStaticFieldName});
             }
@@ -4175,6 +4202,8 @@ llvm.return %5 : i32
     llvm::StringMap<NamespaceInfo::TypePtr> fullNamespacesMap;
 
     llvm::StringMap<ClassInfo::TypePtr> fullNameClassesMap;
+
+    llvm::StringMap<VariableDeclarationDOM::TypePtr> fullNameGlobalsMap;
 
     // helper to get line number
     Parser parser;

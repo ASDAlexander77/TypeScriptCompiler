@@ -238,6 +238,19 @@ class MLIRCodeLogic
     template <typename T>
     std::pair<int, mlir::Type> TupleFieldType(mlir::Location location, T tupleType, mlir::Attribute fieldId, bool indexAccess = false)
     {
+        auto result = TupleFieldTypeNoError(location, tupleType, fieldId, indexAccess);
+        if (result.first == -1)
+        {
+            emitError(location, "Tuple member '") << fieldId << "' can't be found";
+        }
+
+        return result;
+    }
+
+    template <typename T>
+    std::pair<int, mlir::Type> TupleFieldTypeNoError(mlir::Location location, T tupleType, mlir::Attribute fieldId,
+                                                     bool indexAccess = false)
+    {
         auto fieldIndex = tupleType.getIndex(fieldId);
         if (indexAccess && (fieldIndex < 0 || fieldIndex >= tupleType.size()))
         {
@@ -251,7 +264,6 @@ class MLIRCodeLogic
 
         if (fieldIndex < 0 || fieldIndex >= tupleType.size())
         {
-            emitError(location, "Tuple member '") << fieldId << "' can't be found";
             return std::make_pair<>(-1, mlir::Type());
         }
 
@@ -461,7 +473,7 @@ class MLIRPropertyAccessCodeLogic
             MLIRCodeLogic mcl(builder);
 
             // resolve index
-            auto pair = mcl.TupleFieldType(location, tupleType, fieldId);
+            auto pair = mcl.TupleFieldTypeNoError(location, tupleType, fieldId);
             auto fieldIndex = pair.first;
             auto elementType = pair.second;
 
