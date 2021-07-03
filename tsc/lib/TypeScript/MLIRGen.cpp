@@ -129,6 +129,13 @@ struct StaticFieldInfo
     mlir::StringRef globalVariableName;
 };
 
+struct MethodInfo
+{
+    std::string name;
+    mlir_ts::FuncOp funcOp;
+    bool isStatic;
+};
+
 struct ClassInfo
 {
   public:
@@ -142,6 +149,8 @@ struct ClassInfo
 
     llvm::SmallVector<StaticFieldInfo> staticFields;
 
+    SmallVector<MethodInfo> methods;
+
     /// Iterate over the held elements.
     using iterator = ArrayRef<::mlir::typescript::FieldInfo>::iterator;
 
@@ -149,7 +158,7 @@ struct ClassInfo
     {
         auto dist = std::distance(staticFields.begin(), std::find_if(staticFields.begin(), staticFields.end(),
                                                                      [&](StaticFieldInfo fldInf) { return id == fldInf.id; }));
-        return dist >= staticFields.size() ? -1 : dist;
+        return (signed)dist >= (signed)staticFields.size() ? -1 : dist;
     }
 };
 
@@ -996,6 +1005,13 @@ class MLIRGenImpl
         }
 
         auto fullName = MLIRHelper::getName(functionLikeDeclarationBaseAST->name);
+        if (functionLikeDeclarationBaseAST == SyntaxKind::MethodDeclaration)
+        {
+            // class method name
+            auto className = MLIRHelper::getName(functionLikeDeclarationBaseAST->parent.as<ClassDeclaration>()->name);
+            fullName = className + "." + fullName;
+        }
+
         auto name = fullName;
         if (fullName.empty())
         {
@@ -1223,7 +1239,8 @@ class MLIRGenImpl
 
         // set visibility index
         auto name = getNameWithoutNamespace(funcOp.getName());
-        if (name != MAIN_ENTRY_NAME && !hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::ExportKeyword))
+        if (name != MAIN_ENTRY_NAME &&
+            !hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::ExportKeyword) /* && !funcProto->getNoBody()*/)
         {
             funcOp.setPrivate();
         }
@@ -1395,6 +1412,13 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGenFunctionBody(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, mlir_ts::FuncOp funcOp,
                                             FunctionPrototypeDOM::TypePtr funcProto, const GenContext &genContext)
     {
+        if (!functionLikeDeclarationBaseAST->body)
+        {
+            // it is just declaration
+            funcProto->setNoBody(true);
+            return mlir::success();
+        }
+
         auto location = loc(functionLikeDeclarationBaseAST);
 
         auto *blockPtr = funcOp.addEntryBlock();
@@ -3609,6 +3633,7 @@ llvm.return %5 : i32
         MLIRCodeLogic mcl(builder);
         // first value
         SmallVector<StaticFieldInfo> staticFieldInfos;
+        SmallVector<MethodInfo> methodInfos;
         SmallVector<mlir_ts::FieldInfo> fieldInfos;
         for (auto &classMember : classDeclarationAST->members)
         {
@@ -3617,9 +3642,9 @@ llvm.return %5 : i32
             mlir::Value initValue;
             mlir::Attribute fieldId;
             mlir::Type type;
-            auto isStatic = false;
             StringRef memberNamePtr;
 
+            auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
             if (classMember == SyntaxKind::PropertyDeclaration)
             {
                 auto propertyDeclaration = classMember.as<PropertyDeclaration>();
@@ -3636,28 +3661,41 @@ llvm.return %5 : i32
 
                 type = getType(propertyDeclaration->type);
 
-                isStatic = hasModifier(propertyDeclaration, SyntaxKind::StaticKeyword);
-            }
+                if (!isStatic)
+                {
+                    fieldInfos.push_back({fieldId, type});
+                }
+                else
+                {
+                    // register global
+                    auto fullClassStaticFieldName = concat(fullNamePtr, memberNamePtr);
+                    registerVariable(
+                        location, fullClassStaticFieldName, true, VariableClass::Var, [&]() { return std::make_pair(type, mlir::Value()); },
+                        genContext);
 
-            if (!isStatic)
-            {
-                fieldInfos.push_back({fieldId, type});
+                    staticFieldInfos.push_back({fieldId, fullClassStaticFieldName});
+                }
             }
-            else
+            else if (classMember == SyntaxKind::MethodDeclaration)
             {
-                // register global
-                auto fullClassStaticFieldName = concat(fullNamePtr, memberNamePtr);
-                registerVariable(
-                    location, fullClassStaticFieldName, true, VariableClass::Var, [&]() { return std::make_pair(type, mlir::Value()); },
-                    genContext);
+                auto funcLikeDeclaration = classMember.as<FunctionLikeDeclarationBase>();
+                auto methodName = MLIRHelper::getName(funcLikeDeclaration->name);
+                if (methodName.empty())
+                {
+                    llvm_unreachable("not implemented");
+                    return mlir::failure();
+                }
 
-                staticFieldInfos.push_back({fieldId, fullClassStaticFieldName});
+                classMember->parent = classDeclarationAST;
+                auto funcOp = mlirGenFunctionLikeDeclaration(funcLikeDeclaration, genContext);
+                methodInfos.push_back({methodName, funcOp, isStatic});
             }
         }
 
         auto classType = getClassType(getTupleType(fieldInfos));
         newClassPtr->storageType = classType;
         newClassPtr->staticFields = staticFieldInfos;
+        newClassPtr->methods = methodInfos;
 
         return mlir::success();
     }

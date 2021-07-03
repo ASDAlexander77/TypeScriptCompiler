@@ -132,6 +132,7 @@ class FunctionPrototypeDOM
     mlir::Type returnType;
     bool discovered;
     bool hasCapturedVars;
+    bool noBody;
 
   public:
     using TypePtr = std::shared_ptr<FunctionPrototypeDOM>;
@@ -161,7 +162,7 @@ class FunctionPrototypeDOM
         returnType = returnType_;
     }
 
-    const bool &getDiscovered() const
+    bool getDiscovered() const
     {
         return discovered;
     }
@@ -170,13 +171,22 @@ class FunctionPrototypeDOM
         discovered = discovered_;
     }
 
-    const bool &getHasCapturedVars() const
+    bool getHasCapturedVars() const
     {
         return hasCapturedVars;
     }
     void setHasCapturedVars(bool hasCapturedVars_)
     {
         hasCapturedVars = hasCapturedVars_;
+    }
+
+    bool getNoBody() const
+    {
+        return noBody;
+    }
+    void setNoBody(bool noBody_)
+    {
+        noBody = noBody_;
     }
 };
 
