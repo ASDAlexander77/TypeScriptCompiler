@@ -160,6 +160,13 @@ struct ClassInfo
                                                                      [&](StaticFieldInfo fldInf) { return id == fldInf.id; }));
         return (signed)dist >= (signed)staticFields.size() ? -1 : dist;
     }
+
+    int getMethodIndex(mlir::StringRef name)
+    {
+        auto dist = std::distance(
+            methods.begin(), std::find_if(methods.begin(), methods.end(), [&](MethodInfo methodInfo) { return name == methodInfo.name; }));
+        return (signed)dist >= (signed)methods.size() ? -1 : dist;
+    }
 };
 
 struct NamespaceInfo
@@ -2640,16 +2647,28 @@ llvm.return %5 : i32
         assert(classInfo);
 
         MLIRCodeLogic mcl(builder);
+        auto staticFieldIndex = classInfo->getStaticFieldIndex(mcl.TupleFieldName(name));
+        if (staticFieldIndex >= 0)
+        {
+            auto fieldInfo = classInfo->staticFields[staticFieldIndex];
+            auto value = resolveFullNameIdentifier(location, fieldInfo.globalVariableName, genContext);
+            assert(value);
+            return value;
+        }
 
-        auto index = classInfo->getStaticFieldIndex(mcl.TupleFieldName(name));
+        // check method access
+        auto methodIndex = classInfo->getMethodIndex(name);
+        if (methodIndex >= 0)
+        {
+            auto funcOp = classInfo->methods[methodIndex].funcOp;
+            auto effectiveFuncType = funcOp.getType();
+            auto symbOp = builder.create<mlir_ts::SymbolRefOp>(location, effectiveFuncType,
+                                                               mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
+            return symbOp;
+        }
 
-        assert(index >= 0);
-
-        auto fieldInfo = classInfo->staticFields[index];
-
-        auto value = resolveFullNameIdentifier(location, fieldInfo.globalVariableName, genContext);
-        assert(value);
-        return value;
+        assert(false);
+        llvm_unreachable("not implemented");
     }
 
     template <typename T>
