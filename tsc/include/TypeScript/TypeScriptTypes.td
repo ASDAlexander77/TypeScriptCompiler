@@ -526,24 +526,27 @@ def TypeScript_Class : TypeScript_Type<"Class"> {
     class<i32>
     ```
   }];
-  let parameters = (ins "Type":$storageType);
+  let parameters = (ins "FlatSymbolRefAttr":$name, "Type":$storageType);
 
   // We define the printer inline.
-  let printer = [{ $_printer << "class<" << getImpl()->storageType << ">"; }];  
+  let printer = [{ $_printer << "class<" <<  getImpl()->name << "," << getImpl()->storageType << ">"; }];  
 
   let builders = [
-    TypeBuilderWithInferredContext<(ins "Type":$storageType), [{
-      return Base::get(storageType.getContext(), storageType);
+    TypeBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$name, "Type":$storageType), [{
+      return Base::get(storageType.getContext(), name, storageType);
     }]>
   ];
 
   // Parses the above format
   let parser = [{
+    Attribute name;
     Type storageType;
     if ($_parser.parseLess()) return Type();
+    if ($_parser.parseAttribute(name)) return Type();
+    if ($_parser.parseComma()) return Type();
     if ($_parser.parseType(storageType)) return Type();
     if ($_parser.parseGreater()) return Type();
-    return get(storageType);
+    return get(name.dyn_cast_or_null<FlatSymbolRefAttr>(), storageType);
   }];  
 
   let skipDefaultBuilders = 1;  

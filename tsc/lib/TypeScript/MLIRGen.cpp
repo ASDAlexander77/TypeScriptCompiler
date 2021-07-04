@@ -2610,11 +2610,14 @@ llvm.return %5 : i32
             .Case<mlir_ts::ArrayType>([&](auto arrayType) { value = cl.Array(arrayType); })
             .Case<mlir_ts::RefType>([&](auto refType) { value = cl.Ref(refType); })
             .Case<mlir_ts::ClassType>([&](auto classType) {
+                auto classInfo = getClassByFullName(classType.getName().getValue());
+                assert(classInfo);
+
                 value = cl.Class(classType);
                 if (!value)
                 {
                     // static field access
-                    value = ClassMembers(location, expressionValue, name, genContext);
+                    value = ClassMembers(location, classInfo, name, genContext);
                     if (!value && !genContext.allowPartialResolve)
                     {
                         emitError(location, "Class member '") << name << "' can't be found";
@@ -2633,17 +2636,8 @@ llvm.return %5 : i32
         llvm_unreachable("not implemented");
     }
 
-    mlir::Value ClassMembers(mlir::Location location, mlir::Value classRefOpValue, mlir::StringRef name, const GenContext &genContext)
+    mlir::Value ClassMembers(mlir::Location location, ClassInfo::TypePtr classInfo, mlir::StringRef name, const GenContext &genContext)
     {
-        auto classRefOp = classRefOpValue.getDefiningOp<mlir_ts::ClassRefOp>();
-        if (!classRefOp)
-        {
-            return mlir::Value();
-        }
-
-        LLVM_DEBUG(classRefOpValue.dump(););
-
-        auto classInfo = getClassByFullName(classRefOp.identifier());
         assert(classInfo);
 
         MLIRCodeLogic mcl(builder);
@@ -3711,7 +3705,7 @@ llvm.return %5 : i32
             }
         }
 
-        auto classType = getClassType(getTupleType(fieldInfos));
+        auto classType = getClassType(mlir::FlatSymbolRefAttr::get(builder.getContext(), fullNamePtr), getTupleType(fieldInfos));
         newClassPtr->storageType = classType;
         newClassPtr->staticFields = staticFieldInfos;
         newClassPtr->methods = methodInfos;
@@ -3867,9 +3861,9 @@ llvm.return %5 : i32
         return mlir_ts::EnumType::get(elementType);
     }
 
-    mlir_ts::ClassType getClassType(mlir::Type storageType)
+    mlir_ts::ClassType getClassType(mlir::FlatSymbolRefAttr name, mlir::Type storageType)
     {
-        return mlir_ts::ClassType::get(storageType);
+        return mlir_ts::ClassType::get(name, storageType);
     }
 
     mlir_ts::ConstArrayType getConstArrayType(ArrayTypeNode arrayTypeAST, unsigned size)
