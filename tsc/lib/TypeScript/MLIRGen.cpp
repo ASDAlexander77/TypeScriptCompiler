@@ -919,6 +919,12 @@ class MLIRGenImpl
             return params;
         }
 
+        // add this param
+        if (parametersContextAST == SyntaxKind::MethodDeclaration)
+        {
+            params.push_back(std::make_shared<FunctionParamDOM>(THIS_NAME, genContext.thisType, loc(parametersContextAST)));
+        }
+
         auto formalParams = parametersContextAST->parameters;
         for (auto arg : formalParams)
         {
@@ -991,12 +997,6 @@ class MLIRGenImpl
         std::vector<FunctionParamDOM::TypePtr> params = mlirGenParameters(functionLikeDeclarationBaseAST, genContext);
         SmallVector<mlir::Type> argTypes;
         auto argNumber = 0;
-
-        // add this param
-        if (functionLikeDeclarationBaseAST == SyntaxKind::MethodDeclaration)
-        {
-            argTypes.push_back(genContext.thisType);
-        }
 
         for (const auto &param : params)
         {
