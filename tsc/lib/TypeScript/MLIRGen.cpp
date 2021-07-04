@@ -119,6 +119,7 @@ struct GenContext
     bool dummyRun;
     bool allowConstEval;
     mlir_ts::FuncOp funcOp;
+    mlir::Type thisType;
     PassResult *passResult;
     mlir::SmallVector<mlir::Block *> *cleanUps;
 };
@@ -990,6 +991,12 @@ class MLIRGenImpl
         std::vector<FunctionParamDOM::TypePtr> params = mlirGenParameters(functionLikeDeclarationBaseAST, genContext);
         SmallVector<mlir::Type> argTypes;
         auto argNumber = 0;
+
+        // add this param
+        if (functionLikeDeclarationBaseAST == SyntaxKind::MethodDeclaration)
+        {
+            argTypes.push_back(genContext.thisType);
+        }
 
         for (const auto &param : params)
         {
@@ -3689,7 +3696,24 @@ llvm.return %5 : i32
                     staticFieldInfos.push_back({fieldId, fullClassStaticFieldName});
                 }
             }
-            else if (classMember == SyntaxKind::MethodDeclaration)
+        }
+
+        auto classType = getClassType(mlir::FlatSymbolRefAttr::get(builder.getContext(), fullNamePtr), getTupleType(fieldInfos));
+        newClassPtr->storageType = classType;
+        newClassPtr->staticFields = staticFieldInfos;
+
+        // add methods when we have classType
+        for (auto &classMember : classDeclarationAST->members)
+        {
+            auto location = loc(classMember);
+
+            mlir::Value initValue;
+            mlir::Attribute fieldId;
+            mlir::Type type;
+            StringRef memberNamePtr;
+
+            auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
+            if (classMember == SyntaxKind::MethodDeclaration)
             {
                 auto funcLikeDeclaration = classMember.as<FunctionLikeDeclarationBase>();
                 auto methodName = MLIRHelper::getName(funcLikeDeclaration->name);
@@ -3700,14 +3724,13 @@ llvm.return %5 : i32
                 }
 
                 classMember->parent = classDeclarationAST;
+                const_cast<GenContext &>(genContext).thisType = classType;
                 auto funcOp = mlirGenFunctionLikeDeclaration(funcLikeDeclaration, genContext);
+                const_cast<GenContext &>(genContext).thisType = mlir::Type();
                 methodInfos.push_back({methodName, funcOp, isStatic});
             }
         }
 
-        auto classType = getClassType(mlir::FlatSymbolRefAttr::get(builder.getContext(), fullNamePtr), getTupleType(fieldInfos));
-        newClassPtr->storageType = classType;
-        newClassPtr->staticFields = staticFieldInfos;
         newClassPtr->methods = methodInfos;
 
         return mlir::success();
