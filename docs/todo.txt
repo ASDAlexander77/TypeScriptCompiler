@@ -1,0 +1,1 @@
+1) Optimize param this of class (use direct value from param)

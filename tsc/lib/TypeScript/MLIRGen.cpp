@@ -655,6 +655,10 @@ class MLIRGenImpl
             mlirGen(expressionAST.as<DeleteExpression>(), genContext);
             return mlir::Value();
         }
+        else if (kind == SyntaxKind::ThisKeyword)
+        {
+            return mlirGen(loc(expressionAST), THIS_NAME, genContext);
+        }
         else if (kind == SyntaxKind::VoidExpression)
         {
             return mlirGen(expressionAST.as<VoidExpression>(), genContext);
