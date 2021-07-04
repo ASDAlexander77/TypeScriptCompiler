@@ -80,6 +80,24 @@ def SymbolRefOp : TypeScript_Op<"SymbolRef",
   let hasCanonicalizer = 1;
 }
 
+def ThisSymbolRefOp : TypeScript_Op<"ThisSymbolRef", 
+    [NoSideEffect]> {
+  let summary = "symbol reference as to this member";
+
+  let arguments = (ins AnyType:$thisVal, FlatSymbolRefAttr:$identifier);
+  let results = (outs AnyType);
+
+  let builders = [
+    OpBuilder<(ins "Value":$thisVal, "FlatSymbolRefAttr":$identifier),
+    [{ build($_builder, $_state, identifier.getType(), thisVal, identifier); }]>];
+
+  let extraClassDeclaration = [{
+    Attribute getValue() { return (*this)->getAttr("identifier"); }
+  }];
+
+  let hasCanonicalizer = 1;
+}
+
 def TypeRefOp : TypeScript_Op<"TypeRef", 
     [NoSideEffect]> {
   let summary = "symbol reference to type";

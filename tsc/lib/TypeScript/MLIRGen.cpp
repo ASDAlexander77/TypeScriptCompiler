@@ -2628,7 +2628,7 @@ llvm.return %5 : i32
                 if (!value)
                 {
                     // static field access
-                    value = ClassMembers(location, classInfo, name, genContext);
+                    value = ClassMembers(location, expressionValue, classInfo, name, genContext);
                     if (!value && !genContext.allowPartialResolve)
                     {
                         emitError(location, "Class member '") << name << "' can't be found";
@@ -2647,7 +2647,8 @@ llvm.return %5 : i32
         llvm_unreachable("not implemented");
     }
 
-    mlir::Value ClassMembers(mlir::Location location, ClassInfo::TypePtr classInfo, mlir::StringRef name, const GenContext &genContext)
+    mlir::Value ClassMembers(mlir::Location location, mlir::Value thisValue, ClassInfo::TypePtr classInfo, mlir::StringRef name,
+                             const GenContext &genContext)
     {
         assert(classInfo);
 
@@ -2665,11 +2666,22 @@ llvm.return %5 : i32
         auto methodIndex = classInfo->getMethodIndex(name);
         if (methodIndex >= 0)
         {
-            auto funcOp = classInfo->methods[methodIndex].funcOp;
+            auto methodInfo = classInfo->methods[methodIndex];
+            auto funcOp = methodInfo.funcOp;
             auto effectiveFuncType = funcOp.getType();
-            auto symbOp = builder.create<mlir_ts::SymbolRefOp>(location, effectiveFuncType,
-                                                               mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
-            return symbOp;
+
+            if (methodInfo.isStatic)
+            {
+                auto symbOp = builder.create<mlir_ts::SymbolRefOp>(location, effectiveFuncType,
+                                                                   mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
+                return symbOp;
+            }
+            else
+            {
+                auto thisSymbOp = builder.create<mlir_ts::ThisSymbolRefOp>(
+                    location, effectiveFuncType, thisValue, mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
+                return thisSymbOp;
+            }
         }
 
         assert(false);
@@ -2774,6 +2786,11 @@ llvm.return %5 : i32
         TypeSwitch<mlir::Type>(funcRefValue.getType())
             .Case<mlir::FunctionType>([&](auto calledFuncType) {
                 SmallVector<mlir::Value, 4> operands;
+                if (auto thisSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::ThisSymbolRefOp>())
+                {
+                    operands.push_back(thisSymbolRefOp.thisVal());
+                }
+
                 if (mlir::failed(mlirGenCallOperands(location, calledFuncType, callExpression->arguments, operands, genContext)))
                 {
                     if (!genContext.dummyRun)
@@ -2793,7 +2810,7 @@ llvm.return %5 : i32
                 }
             })
             .Default([&](auto type) {
-                // it is not function, so just return value as maybe resolved earlier like in case "<number>.ToString()"
+                // it is not function, so just return value as maybe it has been resolved earlier like in case "<number>.ToString()"
                 value = funcRefValue;
             });
 
@@ -2809,7 +2826,7 @@ llvm.return %5 : i32
                                             NodeArray<Expression> argumentsContext, SmallVector<mlir::Value, 4> &operands,
                                             const GenContext &genContext)
     {
-        auto opArgsCount = std::distance(argumentsContext.begin(), argumentsContext.end());
+        auto opArgsCount = std::distance(argumentsContext.begin(), argumentsContext.end()) + operands.size();
         auto funcArgsCount = calledFuncType.getNumInputs();
 
         if (mlir::failed(mlirGen(argumentsContext, operands, calledFuncType, genContext)))

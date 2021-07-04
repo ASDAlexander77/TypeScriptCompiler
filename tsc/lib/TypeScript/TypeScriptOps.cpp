@@ -130,6 +130,15 @@ void mlir_ts::SymbolRefOp::getCanonicalizationPatterns(OwningRewritePatternList 
 }
 
 //===----------------------------------------------------------------------===//
+// ThisSymbolRefOp
+//===----------------------------------------------------------------------===//
+
+void mlir_ts::ThisSymbolRefOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
+{
+    results.insert<RemoveUnused<mlir_ts::ThisSymbolRefOp>>(context);
+}
+
+//===----------------------------------------------------------------------===//
 // TypeRefOp
 //===----------------------------------------------------------------------===//
 
@@ -418,6 +427,14 @@ struct SimplifyIndirectCallWithKnownCallee : public OpRewritePattern<mlir_ts::Ca
         {
             // Replace with a direct call.
             rewriter.replaceOpWithNewOp<mlir_ts::CallOp>(indirectCall, symbolRefOp.identifierAttr(), indirectCall.getResultTypes(),
+                                                         indirectCall.getArgOperands());
+            return success();
+        }
+
+        if (auto thisSymbolRefOp = indirectCall.getCallee().getDefiningOp<mlir_ts::ThisSymbolRefOp>())
+        {
+            // Replace with a direct call.
+            rewriter.replaceOpWithNewOp<mlir_ts::CallOp>(indirectCall, thisSymbolRefOp.identifierAttr(), indirectCall.getResultTypes(),
                                                          indirectCall.getArgOperands());
             return success();
         }
