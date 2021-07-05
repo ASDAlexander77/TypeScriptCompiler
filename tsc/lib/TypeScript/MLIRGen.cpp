@@ -2637,7 +2637,7 @@ llvm.return %5 : i32
             })
             .Default([](auto type) { llvm_unreachable("not implemented"); });
 
-        if (value)
+        if (value || genContext.allowPartialResolve)
         {
             return value;
         }
@@ -2682,6 +2682,11 @@ llvm.return %5 : i32
                     location, effectiveFuncType, thisValue, mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
                 return thisSymbOp;
             }
+        }
+
+        if (genContext.allowPartialResolve)
+        {
+            return mlir::Value();
         }
 
         assert(false);
