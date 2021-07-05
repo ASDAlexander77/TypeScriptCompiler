@@ -18,7 +18,7 @@ class c1 {
 function main() {
     const c = new c1();
     print("Hello World", c.pin);
-    assert(c.pin, 1);
+    assert(c.pin == 1, "constructor");
     c.pin = 10;
     c.hello();
     print("Hello World", c.pin);

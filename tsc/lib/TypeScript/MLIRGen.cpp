@@ -152,6 +152,12 @@ struct ClassInfo
 
     SmallVector<MethodInfo> methods;
 
+    bool hasConstructor;
+
+    ClassInfo() : hasConstructor(false)
+    {
+    }
+
     /// Iterate over the held elements.
     using iterator = ArrayRef<::mlir::typescript::FieldInfo>::iterator;
 
@@ -924,7 +930,7 @@ class MLIRGenImpl
         }
 
         // add this param
-        if (parametersContextAST == SyntaxKind::MethodDeclaration)
+        if (parametersContextAST == SyntaxKind::MethodDeclaration || parametersContextAST == SyntaxKind::Constructor)
         {
             params.push_back(std::make_shared<FunctionParamDOM>(THIS_NAME, genContext.thisType, loc(parametersContextAST)));
         }
@@ -1028,6 +1034,12 @@ class MLIRGenImpl
             // class method name
             auto className = MLIRHelper::getName(functionLikeDeclarationBaseAST->parent.as<ClassDeclaration>()->name);
             fullName = className + "." + fullName;
+        }
+        else if (functionLikeDeclarationBaseAST == SyntaxKind::Constructor)
+        {
+            // class method name
+            auto className = MLIRHelper::getName(functionLikeDeclarationBaseAST->parent.as<ClassDeclaration>()->name);
+            fullName = className + "." + CONSTRUCTOR_NAME;
         }
 
         auto name = fullName;
@@ -2914,13 +2926,24 @@ llvm.return %5 : i32
             NodeFactory nf(NodeFactoryFlags::None);
 
             // register temp var
-            auto varDecl = std::make_shared<VariableDeclarationDOM>(".ctor", resultType, location);
-            declare(varDecl, newOp);
-            auto thisToken = nf.createIdentifier(S(".ctor"));
-            auto propAccess = nf.createPropertyAccessExpression(thisToken, nf.createIdentifier(S("Constructor")));
-            auto callExpr = nf.createCallExpression(propAccess, newExpression->typeArguments, newExpression->arguments);
+            if (auto classType = resultType.dyn_cast_or_null<mlir_ts::ClassType>())
+            {
+                auto classInfo = getClassByFullName(classType.getName().getValue());
+                assert(classInfo);
+                if (classInfo->hasConstructor)
+                {
+                    // to remove temp var .ctor after call
+                    SymbolTableScopeT varScope(symbolTable);
 
-            auto callCtorValue = mlirGen(callExpr, genContext);
+                    auto varDecl = std::make_shared<VariableDeclarationDOM>(CONSTRUCTOR_TEMPVAR_NAME, resultType, location);
+                    declare(varDecl, newOp);
+                    auto thisToken = nf.createIdentifier(S(CONSTRUCTOR_TEMPVAR_NAME));
+                    auto propAccess = nf.createPropertyAccessExpression(thisToken, nf.createIdentifier(S(CONSTRUCTOR_NAME)));
+                    auto callExpr = nf.createCallExpression(propAccess, newExpression->typeArguments, newExpression->arguments);
+
+                    auto callCtorValue = mlirGen(callExpr, genContext);
+                }
+            }
 
             return newOp;
         }
@@ -3752,10 +3775,16 @@ llvm.return %5 : i32
             StringRef memberNamePtr;
 
             auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
-            if (classMember == SyntaxKind::MethodDeclaration)
+            auto isConstructor = classMember == SyntaxKind::Constructor;
+            if (classMember == SyntaxKind::MethodDeclaration || isConstructor)
             {
+                if (isConstructor)
+                {
+                    newClassPtr->hasConstructor = true;
+                }
+
                 auto funcLikeDeclaration = classMember.as<FunctionLikeDeclarationBase>();
-                auto methodName = MLIRHelper::getName(funcLikeDeclaration->name);
+                auto methodName = isConstructor ? std::string(CONSTRUCTOR_NAME) : MLIRHelper::getName(funcLikeDeclaration->name);
                 if (methodName.empty())
                 {
                     llvm_unreachable("not implemented");
