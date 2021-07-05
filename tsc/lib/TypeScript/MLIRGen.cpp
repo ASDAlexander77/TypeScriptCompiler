@@ -2909,6 +2909,19 @@ llvm.return %5 : i32
             }
 
             auto newOp = builder.create<mlir_ts::NewOp>(location, resultType);
+
+            // adding call of ctor
+            NodeFactory nf(NodeFactoryFlags::None);
+
+            // register temp var
+            auto varDecl = std::make_shared<VariableDeclarationDOM>(".ctor", resultType, location);
+            declare(varDecl, newOp);
+            auto thisToken = nf.createIdentifier(S(".ctor"));
+            auto propAccess = nf.createPropertyAccessExpression(thisToken, nf.createIdentifier(S("Constructor")));
+            auto callExpr = nf.createCallExpression(propAccess, newExpression->typeArguments, newExpression->arguments);
+
+            auto callCtorValue = mlirGen(callExpr, genContext);
+
             return newOp;
         }
         else if (typeExpression == SyntaxKind::ElementAccessExpression)
