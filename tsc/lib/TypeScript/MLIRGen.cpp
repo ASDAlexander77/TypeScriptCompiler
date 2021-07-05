@@ -1073,6 +1073,8 @@ class MLIRGenImpl
             funcType = cachedFuncType;
         }
 
+        mlir_ts::FuncOp funcOp;
+
         // discover type & args
         if (!funcType)
         {
@@ -1080,25 +1082,30 @@ class MLIRGenImpl
             {
                 auto returnType = getType(typeParameter);
                 funcProto->setReturnType(returnType);
-            }
-
-            if (mlir::succeeded(
-                    discoverFunctionReturnTypeAndCapturedVars(functionLikeDeclarationBaseAST, fullName, argTypes, funcProto, genContext)) &&
-                funcProto->getReturnType())
-            {
                 funcType = builder.getFunctionType(argTypes, funcProto->getReturnType());
+            }
+            else if (mlir::succeeded(discoverFunctionReturnTypeAndCapturedVars(functionLikeDeclarationBaseAST, fullName, argTypes,
+                                                                               funcProto, genContext)))
+            {
+                if (funcProto->getReturnType())
+                {
+                    funcType = builder.getFunctionType(argTypes, funcProto->getReturnType());
+                }
+                else
+                {
+                    // no return type
+                    funcType = builder.getFunctionType(argTypes, llvm::None);
+                }
             }
             else
             {
-                // no return type
-                funcType = builder.getFunctionType(argTypes, llvm::None);
+                // false result
+                return std::make_tuple(funcOp, funcProto, false);
             }
         }
 
         auto it = getCaptureVarsMap().find(funcProto->getName());
         auto hasCapturedVars = funcProto->getHasCapturedVars() || (it != getCaptureVarsMap().end());
-
-        mlir_ts::FuncOp funcOp;
         if (hasCapturedVars)
         {
             SmallVector<mlir::NamedAttribute> attrs;
@@ -1129,7 +1136,7 @@ class MLIRGenImpl
             funcOp = mlir_ts::FuncOp::create(location, fullName, funcType);
         }
 
-        return std::make_tuple(funcOp, std::move(funcProto), true);
+        return std::make_tuple(funcOp, funcProto, true);
     }
 
     mlir::LogicalResult discoverFunctionReturnTypeAndCapturedVars(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST,
