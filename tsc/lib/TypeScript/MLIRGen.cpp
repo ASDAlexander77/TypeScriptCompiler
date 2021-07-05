@@ -2882,7 +2882,7 @@ llvm.return %5 : i32
     mlir::LogicalResult mlirGen(NodeArray<Expression> arguments, SmallVector<mlir::Value, 4> &operands, mlir::FunctionType funcType,
                                 const GenContext &genContext)
     {
-        auto i = 0;
+        auto i = operands.size(); // we need to shift in case of 'this'
         for (auto expression : arguments)
         {
             auto value = mlirGen(expression, genContext);

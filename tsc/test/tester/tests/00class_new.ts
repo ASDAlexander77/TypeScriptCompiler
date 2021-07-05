@@ -1,8 +1,8 @@
 class c1 {
     pin: number;
 
-    constructor() {
-        this.pin = 1;
+    constructor(pin: number) {
+        this.pin = pin;
     }
 
     hello() {
@@ -16,7 +16,7 @@ class c1 {
 }
 
 function main() {
-    const c = new c1();
+    const c = new c1(1);
     print("Hello World", c.pin);
     assert(c.pin == 1, "constructor");
     c.pin = 10;
