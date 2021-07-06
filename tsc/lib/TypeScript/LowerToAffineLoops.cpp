@@ -543,6 +543,38 @@ struct SwitchOpLowering : public TsPattern<mlir_ts::SwitchOp>
     }
 };
 
+struct AccessorRefOpLowering : public TsPattern<mlir_ts::AccessorRefOp>
+{
+    using TsPattern<mlir_ts::AccessorRefOp>::TsPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::AccessorRefOp accessorRefOp, PatternRewriter &rewriter) const final
+    {
+        Location loc = accessorRefOp.getLoc();
+
+        auto callRes = rewriter.create<mlir_ts::CallOp>(loc, accessorRefOp.getAccessor(), TypeRange{accessorRefOp.getType()}, ValueRange{});
+
+        rewriter.replaceOp(accessorRefOp, callRes.getResult(0));
+        return success();
+    }
+};
+
+struct ThisAccessorRefOpLowering : public TsPattern<mlir_ts::ThisAccessorRefOp>
+{
+    using TsPattern<mlir_ts::ThisAccessorRefOp>::TsPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ThisAccessorRefOp thisAccessorRefOp, PatternRewriter &rewriter) const final
+    {
+        Location loc = thisAccessorRefOp.getLoc();
+
+        auto callRes = rewriter.create<mlir_ts::CallOp>(loc, thisAccessorRefOp.getAccessor(), TypeRange{thisAccessorRefOp.getType()},
+                                                        ValueRange{thisAccessorRefOp.thisVal()});
+
+        rewriter.replaceOp(thisAccessorRefOp, callRes.getResult(0));
+
+        return success();
+    }
+};
+
 } // end anonymous namespace
 
 //===----------------------------------------------------------------------===//
@@ -634,8 +666,8 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     // the set of patterns that will lower the TypeScript operations.
     OwningRewritePatternList patterns(&getContext());
     patterns.insert<ParamOpLowering, ParamOptionalOpLowering, ParamDefaultValueOpLowering, PrefixUnaryOpLowering, PostfixUnaryOpLowering,
-                    IfOpLowering, DoWhileOpLowering, WhileOpLowering, ForOpLowering, BreakOpLowering, ContinueOpLowering, SwitchOpLowering>(
-        &getContext(), &tsContext);
+                    IfOpLowering, DoWhileOpLowering, WhileOpLowering, ForOpLowering, BreakOpLowering, ContinueOpLowering, SwitchOpLowering,
+                    AccessorRefOpLowering, ThisAccessorRefOpLowering>(&getContext(), &tsContext);
 
     // With the target and rewrite patterns defined, we can now attempt the
     // conversion. The conversion will signal failure if any of our `illegal`
