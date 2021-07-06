@@ -1042,15 +1042,13 @@ class MLIRGenImpl
         {
             // class method name
             auto className = MLIRHelper::getName(functionLikeDeclarationBaseAST->parent.as<ClassDeclaration>()->name);
-            // TODO: do not use . otherwise getNamespace func will not work properly
-            fullName = className + "@" + fullName;
+            fullName = className + "." + fullName;
         }
         else if (functionLikeDeclarationBaseAST == SyntaxKind::Constructor)
         {
             // class method name
             auto className = MLIRHelper::getName(functionLikeDeclarationBaseAST->parent.as<ClassDeclaration>()->name);
-            // TODO: do not use . otherwise getNamespace func will not work properly
-            fullName = className + "@" + CONSTRUCTOR_NAME;
+            fullName = className + "." + CONSTRUCTOR_NAME;
         }
 
         auto name = fullName;
@@ -1067,6 +1065,8 @@ class MLIRGenImpl
         }
 
         auto funcProto = std::make_shared<FunctionPrototypeDOM>(fullName, params);
+
+        funcProto->setNameWithoutNamespace(name);
 
         mlir::FunctionType funcType;
 
@@ -1290,8 +1290,7 @@ class MLIRGenImpl
         }
 
         // set visibility index
-        auto name = getNameWithoutNamespace(funcOp.getName());
-        if (name != MAIN_ENTRY_NAME &&
+        if (funcProto->getName() != MAIN_ENTRY_NAME &&
             !hasModifier(functionLikeDeclarationBaseAST, SyntaxKind::ExportKeyword) /* && !funcProto->getNoBody()*/)
         {
             funcOp.setPrivate();
@@ -1302,6 +1301,7 @@ class MLIRGenImpl
             theModule.push_back(funcOp);
         }
 
+        auto name = funcProto->getNameWithoutNamespace();
         if (!getFunctionMap().count(name))
         {
             getFunctionMap().insert({name, funcOp});

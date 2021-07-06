@@ -128,6 +128,7 @@ class FunctionParamDOM : public VariableDeclarationDOM
 class FunctionPrototypeDOM
 {
     std::string name;
+    std::string nameWithoutNamespace;
     std::vector<FunctionParamDOM::TypePtr> args;
     mlir::Type returnType;
     bool discovered;
@@ -145,6 +146,15 @@ class FunctionPrototypeDOM
     StringRef getName() const
     {
         return name;
+    }
+
+    StringRef getNameWithoutNamespace() const
+    {
+        return nameWithoutNamespace;
+    }
+    void setNameWithoutNamespace(StringRef nameWithoutNamespace_)
+    {
+        nameWithoutNamespace = nameWithoutNamespace_;
     }
 
     // ArrayRef should not be "&" or "*"
