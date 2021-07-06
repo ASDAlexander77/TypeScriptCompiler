@@ -2357,10 +2357,22 @@ llvm.return %5 : i32
         }
 
         // TODO: finish it for field access, review CodeLogicHelper.saveResult
-        if (auto loadOp = dyn_cast<mlir_ts::LoadOp>(leftExpressionValueBeforeCast.getDefiningOp()))
+        if (auto loadOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::LoadOp>())
         {
             // TODO: when saving const array into variable we need to allocate space and copy array as we need to have writable array
             builder.create<mlir_ts::StoreOp>(location, result, loadOp.reference());
+        }
+        else if (auto accessorRefOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::AccessorRefOp>())
+        {
+            auto callRes = builder.create<mlir_ts::CallOp>(location, accessorRefOp.setAccessor(), mlir::TypeRange{getVoidType()},
+                                                           mlir::ValueRange{result});
+            result = callRes.getResult(0);
+        }
+        else if (auto thisAccessorRefOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ThisAccessorRefOp>())
+        {
+            auto callRes = builder.create<mlir_ts::CallOp>(location, thisAccessorRefOp.setAccessor(), mlir::TypeRange{getVoidType()},
+                                                           mlir::ValueRange{thisAccessorRefOp.thisVal(), result});
+            result = callRes.getResult(0);
         }
         else
         {

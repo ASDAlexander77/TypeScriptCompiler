@@ -18,6 +18,10 @@ function main() {
     const c = new C();
     print(c.length);
     assert(c.length == 10);
+    print(c.length);
+    c.length = 20;
+    print(c.length);
+    assert(c.length == 20);
     delete c;
 
     print("done.");
