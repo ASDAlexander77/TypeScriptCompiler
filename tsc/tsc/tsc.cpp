@@ -148,11 +148,15 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module
         optPM.addPass(mlir::createCanonicalizerPass());
         optPM.addPass(mlir::createCSEPass());
 
+        pm.addPass(mlir::createSymbolDCEPass());
+
         // Add optimizations if enabled.
         if (enableOpt)
         {
-            optPM.addPass(mlir::createLoopFusionPass());
-            optPM.addPass(mlir::createMemRefDataFlowOptPass());
+            // TODO: do I need th8is?
+            // optPM.addPass(mlir::createLoopFusionPass());
+            // TODO: do I need th8is?
+            // optPM.addPass(mlir::createMemRefDataFlowOptPass());
         }
     }
 
