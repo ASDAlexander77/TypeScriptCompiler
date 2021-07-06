@@ -3759,58 +3759,65 @@ llvm.return %5 : i32
             declareClass = true;
         }
 
-        if (declareClass)
+        // read class info
+        MLIRCodeLogic mcl(builder);
+        // first value
+        auto &staticFieldInfos = newClassPtr->staticFields;
+        SmallVector<mlir_ts::FieldInfo> fieldInfos;
+        for (auto &classMember : classDeclarationAST->members)
         {
-            // read class info
-            MLIRCodeLogic mcl(builder);
-            // first value
-            SmallVector<StaticFieldInfo> staticFieldInfos;
-            SmallVector<mlir_ts::FieldInfo> fieldInfos;
-            for (auto &classMember : classDeclarationAST->members)
+            auto location = loc(classMember);
+
+            mlir::Value initValue;
+            mlir::Attribute fieldId;
+            mlir::Type type;
+            StringRef memberNamePtr;
+
+            auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
+            if (classMember == SyntaxKind::PropertyDeclaration)
             {
-                auto location = loc(classMember);
-
-                mlir::Value initValue;
-                mlir::Attribute fieldId;
-                mlir::Type type;
-                StringRef memberNamePtr;
-
-                auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
-                if (classMember == SyntaxKind::PropertyDeclaration)
+                if (!isStatic && !declareClass)
                 {
-                    auto propertyDeclaration = classMember.as<PropertyDeclaration>();
+                    continue;
+                }
 
-                    auto memberName = MLIRHelper::getName(propertyDeclaration->name);
-                    if (memberName.empty())
+                auto propertyDeclaration = classMember.as<PropertyDeclaration>();
+
+                auto memberName = MLIRHelper::getName(propertyDeclaration->name);
+                if (memberName.empty())
+                {
+                    llvm_unreachable("not implemented");
+                    return mlir::failure();
+                }
+
+                memberNamePtr = StringRef(memberName).copy(stringAllocator);
+                fieldId = mcl.TupleFieldName(memberNamePtr);
+
+                type = getType(propertyDeclaration->type);
+
+                if (!isStatic)
+                {
+                    fieldInfos.push_back({fieldId, type});
+                }
+                else
+                {
+                    // register global
+                    auto fullClassStaticFieldName = concat(fullNamePtr, memberNamePtr);
+                    registerVariable(
+                        location, fullClassStaticFieldName, true, VariableClass::Var, [&]() { return std::make_pair(type, mlir::Value()); },
+                        genContext);
+
+                    if (declareClass)
                     {
-                        llvm_unreachable("not implemented");
-                        return mlir::failure();
-                    }
-
-                    memberNamePtr = StringRef(memberName).copy(stringAllocator);
-                    fieldId = mcl.TupleFieldName(memberNamePtr);
-
-                    type = getType(propertyDeclaration->type);
-
-                    if (!isStatic)
-                    {
-                        fieldInfos.push_back({fieldId, type});
-                    }
-                    else
-                    {
-                        // register global
-                        auto fullClassStaticFieldName = concat(fullNamePtr, memberNamePtr);
-                        registerVariable(
-                            location, fullClassStaticFieldName, true, VariableClass::Var,
-                            [&]() { return std::make_pair(type, mlir::Value()); }, genContext);
-
                         staticFieldInfos.push_back({fieldId, fullClassStaticFieldName});
                     }
                 }
             }
+        }
 
+        if (declareClass)
+        {
             classType = getClassType(mlir::FlatSymbolRefAttr::get(builder.getContext(), fullNamePtr), getTupleType(fieldInfos));
-            newClassPtr->staticFields = staticFieldInfos;
             newClassPtr->classType = classType;
         }
 
@@ -4334,17 +4341,6 @@ llvm.return %5 : i32
 
         auto namePtr = StringRef(res).copy(stringAllocator);
         return namePtr;
-    }
-
-    auto getNameWithoutNamespace(StringRef name) -> StringRef
-    {
-        auto pos = name.find_last_of('.');
-        if (pos == StringRef::npos)
-        {
-            return name;
-        }
-
-        return name.substr(pos + 1);
     }
 
     auto getNamespaceByFullName(StringRef fullName) -> NamespaceInfo::TypePtr
