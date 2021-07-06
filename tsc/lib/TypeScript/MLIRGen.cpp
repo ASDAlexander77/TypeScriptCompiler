@@ -1574,6 +1574,12 @@ class MLIRGenImpl
         // empty return
         if (!expressionValue)
         {
+            if (genContext.allowPartialResolve)
+            {
+                // do not remove it, needed to process recursive functions
+                return mlir::success();
+            }
+
             return mlir::failure();
         }
 
