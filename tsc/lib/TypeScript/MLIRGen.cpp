@@ -384,7 +384,13 @@ class MLIRGenImpl
         if (body.is<Expression>())
         {
             auto result = mlirGen(body.as<Expression>(), genContext);
-            return mlirGenReturnValue(loc(body), result, genContext);
+            if (result)
+            {
+                return mlirGenReturnValue(loc(body), result, genContext);
+            }
+
+            builder.create<mlir_ts::ReturnOp>(loc(body));
+            return mlir::success();
         }
 
         llvm_unreachable("unknown body type");
@@ -2823,7 +2829,7 @@ llvm.return %5 : i32
             SmallVector<mlir::Value, 4> operands;
             if (mlir::failed(mlirGen(argumentsContext, operands, genContext)))
             {
-                if (!genContext.dummyRun)
+                if (!genContext.allowPartialResolve)
                 {
                     emitError(location) << "Call Method: can't resolve values of all parameters";
                 }
