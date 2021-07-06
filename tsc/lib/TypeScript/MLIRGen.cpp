@@ -142,6 +142,14 @@ struct MethodInfo
     bool isStatic;
 };
 
+struct AccessorInfo
+{
+    std::string name;
+    mlir_ts::FuncOp get;
+    mlir_ts::FuncOp set;
+    bool isStatic;
+};
+
 struct ClassInfo
 {
   public:
@@ -155,7 +163,9 @@ struct ClassInfo
 
     llvm::SmallVector<StaticFieldInfo> staticFields;
 
-    SmallVector<MethodInfo> methods;
+    llvm::SmallVector<MethodInfo> methods;
+
+    llvm::SmallVector<AccessorInfo> accessors;
 
     bool hasConstructor;
 
@@ -178,6 +188,13 @@ struct ClassInfo
         auto dist = std::distance(
             methods.begin(), std::find_if(methods.begin(), methods.end(), [&](MethodInfo methodInfo) { return name == methodInfo.name; }));
         return (signed)dist >= (signed)methods.size() ? -1 : dist;
+    }
+
+    int getAccessorIndex(mlir::StringRef name)
+    {
+        auto dist = std::distance(accessors.begin(), std::find_if(accessors.begin(), accessors.end(),
+                                                                  [&](AccessorInfo accessorInfo) { return name == accessorInfo.name; }));
+        return (signed)dist >= (signed)accessors.size() ? -1 : dist;
     }
 };
 
@@ -930,7 +947,8 @@ class MLIRGenImpl
         }
 
         // add this param
-        if (parametersContextAST == SyntaxKind::MethodDeclaration || parametersContextAST == SyntaxKind::Constructor)
+        if (parametersContextAST == SyntaxKind::MethodDeclaration || parametersContextAST == SyntaxKind::Constructor ||
+            parametersContextAST == SyntaxKind::GetAccessor || parametersContextAST == SyntaxKind::SetAccessor)
         {
             params.push_back(std::make_shared<FunctionParamDOM>(THIS_NAME, genContext.thisType, loc(parametersContextAST)));
         }
@@ -1034,6 +1052,18 @@ class MLIRGenImpl
             // class method name
             auto className = MLIRHelper::getName(functionLikeDeclarationBaseAST->parent.as<ClassDeclaration>()->name);
             fullName = className + "." + fullName;
+        }
+        else if (functionLikeDeclarationBaseAST == SyntaxKind::GetAccessor)
+        {
+            // class method name
+            auto className = MLIRHelper::getName(functionLikeDeclarationBaseAST->parent.as<ClassDeclaration>()->name);
+            fullName = className + ".get_" + fullName;
+        }
+        else if (functionLikeDeclarationBaseAST == SyntaxKind::SetAccessor)
+        {
+            // class method name
+            auto className = MLIRHelper::getName(functionLikeDeclarationBaseAST->parent.as<ClassDeclaration>()->name);
+            fullName = className + ".set_" + fullName;
         }
         else if (functionLikeDeclarationBaseAST == SyntaxKind::Constructor)
         {
@@ -2727,6 +2757,12 @@ llvm.return %5 : i32
             }
         }
 
+        // check accessor
+        auto accessorIndex = classInfo->getAccessorIndex(name);
+        if (accessorIndex >= 0)
+        {
+        }
+
         if (genContext.allowPartialResolve)
         {
             return mlir::Value();
@@ -3826,6 +3862,7 @@ llvm.return %5 : i32
         }
 
         auto &methodInfos = newClassPtr->methods;
+        auto &accessorInfos = newClassPtr->accessors;
 
         // clear all flags
         for (auto &classMember : classDeclarationAST->members)
@@ -3856,7 +3893,8 @@ llvm.return %5 : i32
 
                 auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
                 auto isConstructor = classMember == SyntaxKind::Constructor;
-                if (classMember == SyntaxKind::MethodDeclaration || isConstructor)
+                if (classMember == SyntaxKind::MethodDeclaration || isConstructor || classMember == SyntaxKind::GetAccessor ||
+                    classMember == SyntaxKind::SetAccessor)
                 {
                     if (isConstructor)
                     {
@@ -3864,7 +3902,27 @@ llvm.return %5 : i32
                     }
 
                     auto funcLikeDeclaration = classMember.as<FunctionLikeDeclarationBase>();
-                    auto methodName = isConstructor ? std::string(CONSTRUCTOR_NAME) : MLIRHelper::getName(funcLikeDeclaration->name);
+                    std::string methodName;
+                    std::string propertyName;
+                    if (isConstructor)
+                    {
+                        methodName = std::string(CONSTRUCTOR_NAME);
+                    }
+                    else if (classMember == SyntaxKind::GetAccessor)
+                    {
+                        propertyName = MLIRHelper::getName(funcLikeDeclaration->name);
+                        methodName = std::string("get_") + propertyName;
+                    }
+                    else if (classMember == SyntaxKind::SetAccessor)
+                    {
+                        propertyName = MLIRHelper::getName(funcLikeDeclaration->name);
+                        methodName = std::string("set_") + propertyName;
+                    }
+                    else
+                    {
+                        methodName = MLIRHelper::getName(funcLikeDeclaration->name);
+                    }
+
                     if (methodName.empty())
                     {
                         llvm_unreachable("not implemented");
@@ -3878,7 +3936,6 @@ llvm.return %5 : i32
                     funcGenContext.passResult = nullptr;
 
                     auto funcOp = mlirGenFunctionLikeDeclaration(funcLikeDeclaration, funcGenContext);
-
                     if (!funcOp)
                     {
                         notResolved++;
@@ -3890,6 +3947,24 @@ llvm.return %5 : i32
                     if (declareClass)
                     {
                         methodInfos.push_back({methodName, funcOp, isStatic});
+
+                        auto accessorIndex = newClassPtr->getAccessorIndex(propertyName);
+                        if (accessorIndex < 0)
+                        {
+                            accessorInfos.push_back({propertyName, {}, {}, isStatic});
+                            accessorIndex = newClassPtr->getAccessorIndex(propertyName);
+                        }
+
+                        assert(accessorIndex >= 0);
+
+                        if (classMember == SyntaxKind::GetAccessor)
+                        {
+                            newClassPtr->accessors[accessorIndex].get = funcOp;
+                        }
+                        else if (classMember == SyntaxKind::SetAccessor)
+                        {
+                            newClassPtr->accessors[accessorIndex].set = funcOp;
+                        }
                     }
                 }
             }

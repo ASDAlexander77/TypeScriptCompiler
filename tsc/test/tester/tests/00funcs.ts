@@ -14,6 +14,15 @@ function run(f: () => void) {
     f();
 }
 
+type GreetFunction = (a: string) => void;
+function greeter(fn: GreetFunction) {
+    fn("hello");
+}
+
+function hello(a: string) {
+    print(a);
+}
+
 function main() {
     const x = f1;
     x();
@@ -55,6 +64,8 @@ function main() {
     print(outside()(10));
 
     test_func_in_objectliteral();
+
+    greeter(hello);
 
     print("done.");
 }
