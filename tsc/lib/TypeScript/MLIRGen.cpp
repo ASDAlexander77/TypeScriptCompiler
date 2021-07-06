@@ -86,7 +86,12 @@ enum class VariableClass
 
 struct PassResult
 {
+    PassResult() : functionReturnTypeShouldBeProvided(false)
+    {
+    }
+
     mlir::Type functionReturnType;
+    bool functionReturnTypeShouldBeProvided;
     llvm::StringMap<VariablePairT> outerVariables;
 };
 
@@ -402,19 +407,9 @@ class MLIRGenImpl
 
         for (auto &statement : moduleBlockAST->statements)
         {
-            if (genContext.dummyRun && statement->processed)
-            {
-                continue;
-            }
-
             if (failed(mlirGen(statement, genContext)))
             {
                 return mlir::failure();
-            }
-
-            if (genContext.dummyRun)
-            {
-                statement->processed = true;
             }
         }
 
@@ -427,19 +422,9 @@ class MLIRGenImpl
 
         for (auto &statement : blockAST->statements)
         {
-            if (genContext.dummyRun && statement->processed)
-            {
-                continue;
-            }
-
             if (failed(mlirGen(statement, genContext)))
             {
                 return mlir::failure();
-            }
-
-            if (genContext.dummyRun)
-            {
-                statement->processed = true;
             }
         }
 
@@ -1185,8 +1170,16 @@ class MLIRGenImpl
             genContextWithPassResult.passResult = new PassResult();
             if (succeeded(mlirGenFunctionBody(functionLikeDeclarationBaseAST, dummyFuncOp, funcProto, genContextWithPassResult)))
             {
+                auto &passResult = genContextWithPassResult.passResult;
+                if (!passResult->functionReturnType && passResult->functionReturnTypeShouldBeProvided)
+                {
+                    // has return value but type is not provided yet
+                    genContextWithPassResult.clean();
+                    return mlir::failure();
+                }
+
                 funcProto->setDiscovered(true);
-                auto discoveredType = genContextWithPassResult.passResult->functionReturnType;
+                auto discoveredType = passResult->functionReturnType;
                 if (discoveredType && discoveredType != funcProto->getReturnType())
                 {
                     // TODO: do we need to convert it here? maybe send it as const object?
@@ -1197,11 +1190,11 @@ class MLIRGenImpl
                 }
 
                 // if we have captured parameters, add first param to send lambda's type(class)
-                if (genContextWithPassResult.passResult->outerVariables.size() > 0)
+                if (passResult->outerVariables.size() > 0)
                 {
                     MLIRCodeLogic mcl(builder);
-                    argTypes.insert(argTypes.begin(), mcl.CaptureType(genContextWithPassResult.passResult->outerVariables));
-                    getCaptureVarsMap().insert({name, genContextWithPassResult.passResult->outerVariables});
+                    argTypes.insert(argTypes.begin(), mcl.CaptureType(passResult->outerVariables));
+                    getCaptureVarsMap().insert({name, passResult->outerVariables});
 
                     funcProto->setHasCapturedVars(true);
                 }
@@ -1577,6 +1570,11 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGenReturnValue(mlir::Location location, mlir::Value expressionValue, const GenContext &genContext)
     {
+        if (genContext.passResult)
+        {
+            genContext.passResult->functionReturnTypeShouldBeProvided = true;
+        }
+
         // empty return
         if (!expressionValue)
         {
@@ -2851,7 +2849,7 @@ llvm.return %5 : i32
 
                 if (mlir::failed(mlirGenCallOperands(location, calledFuncType, callExpression->arguments, operands, genContext)))
                 {
-                    if (!genContext.dummyRun)
+                    if (!genContext.allowPartialResolve)
                     {
                         emitError(location) << "Call Method: can't resolve values of all parameters";
                     }
