@@ -2761,6 +2761,26 @@ llvm.return %5 : i32
         auto accessorIndex = classInfo->getAccessorIndex(name);
         if (accessorIndex >= 0)
         {
+            auto accessorInfo = classInfo->accessors[accessorIndex];
+            auto getFuncOp = accessorInfo.get;
+            auto setFuncOp = accessorInfo.set;
+            auto effectiveFuncType = getFuncOp ? getFuncOp.getType().dyn_cast_or_null<mlir::FunctionType>().getResult(0)
+                                               : setFuncOp.getType().dyn_cast_or_null<mlir::FunctionType>().getInput(0);
+
+            if (accessorInfo.isStatic)
+            {
+                auto symbOp = builder.create<mlir_ts::AccessorRefOp>(
+                    location, effectiveFuncType, mlir::FlatSymbolRefAttr::get(builder.getContext(), getFuncOp.getName()),
+                    mlir::FlatSymbolRefAttr::get(builder.getContext(), setFuncOp.getName()));
+                return symbOp;
+            }
+            else
+            {
+                auto thisSymbOp = builder.create<mlir_ts::ThisAccessorRefOp>(
+                    location, effectiveFuncType, thisValue, mlir::FlatSymbolRefAttr::get(builder.getContext(), getFuncOp.getName()),
+                    mlir::FlatSymbolRefAttr::get(builder.getContext(), setFuncOp.getName()));
+                return thisSymbOp;
+            }
         }
 
         if (genContext.allowPartialResolve)

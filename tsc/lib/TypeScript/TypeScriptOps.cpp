@@ -139,6 +139,24 @@ void mlir_ts::ThisSymbolRefOp::getCanonicalizationPatterns(OwningRewritePatternL
 }
 
 //===----------------------------------------------------------------------===//
+// AccessorRefOp
+//===----------------------------------------------------------------------===//
+
+void mlir_ts::AccessorRefOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
+{
+    results.insert<RemoveUnused<mlir_ts::AccessorRefOp>>(context);
+}
+
+//===----------------------------------------------------------------------===//
+// ThisAccessorRefOp
+//===----------------------------------------------------------------------===//
+
+void mlir_ts::ThisAccessorRefOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
+{
+    results.insert<RemoveUnused<mlir_ts::AccessorRefOp>>(context);
+}
+
+//===----------------------------------------------------------------------===//
 // TypeRefOp
 //===----------------------------------------------------------------------===//
 

@@ -98,6 +98,34 @@ def ThisSymbolRefOp : TypeScript_Op<"ThisSymbolRef",
   let hasCanonicalizer = 1;
 }
 
+def AccessorRefOp : TypeScript_Op<"AccessorRef", 
+    [NoSideEffect]> {
+  let summary = "symbol reference as to static accessor";
+
+  let arguments = (ins FlatSymbolRefAttr:$getAccessor, FlatSymbolRefAttr:$setAccessor);
+  let results = (outs AnyType);
+
+  let builders = [
+    OpBuilder<(ins "FlatSymbolRefAttr":$getAccessor, "FlatSymbolRefAttr":$setAccessor),
+    [{ build($_builder, $_state, getAccessor.getType(), getAccessor, setAccessor); }]>];
+
+  let hasCanonicalizer = 1;
+}
+
+def ThisAccessorRefOp : TypeScript_Op<"ThisAccessorRef", 
+    [NoSideEffect]> {
+  let summary = "symbol reference as to accessor";
+
+  let arguments = (ins AnyType:$thisVal, FlatSymbolRefAttr:$getAccessor, FlatSymbolRefAttr:$setAccessor);
+  let results = (outs AnyType);
+
+  let builders = [
+    OpBuilder<(ins "Value":$thisVal, "FlatSymbolRefAttr":$getAccessor, "FlatSymbolRefAttr":$setAccessor),
+    [{ build($_builder, $_state, getAccessor.getType(), thisVal, getAccessor, setAccessor); }]>];
+
+  let hasCanonicalizer = 1;
+}
+
 def TypeRefOp : TypeScript_Op<"TypeRef", 
     [NoSideEffect]> {
   let summary = "symbol reference to type";
