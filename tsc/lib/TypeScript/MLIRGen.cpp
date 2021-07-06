@@ -119,7 +119,7 @@ struct GenContext
     bool dummyRun;
     bool allowConstEval;
     mlir_ts::FuncOp funcOp;
-    mlir::Type thisType;
+    mlir_ts::ClassType thisType;
     PassResult *passResult;
     mlir::SmallVector<mlir::Block *> *cleanUps;
 };
@@ -1042,13 +1042,15 @@ class MLIRGenImpl
         {
             // class method name
             auto className = MLIRHelper::getName(functionLikeDeclarationBaseAST->parent.as<ClassDeclaration>()->name);
-            fullName = className + "." + fullName;
+            // TODO: do not use . otherwise getNamespace func will not work properly
+            fullName = className + "@" + fullName;
         }
         else if (functionLikeDeclarationBaseAST == SyntaxKind::Constructor)
         {
             // class method name
             auto className = MLIRHelper::getName(functionLikeDeclarationBaseAST->parent.as<ClassDeclaration>()->name);
-            fullName = className + "." + CONSTRUCTOR_NAME;
+            // TODO: do not use . otherwise getNamespace func will not work properly
+            fullName = className + "@" + CONSTRUCTOR_NAME;
         }
 
         auto name = fullName;
@@ -3801,7 +3803,7 @@ llvm.return %5 : i32
                 }
             }
 
-            auto classType = getClassType(mlir::FlatSymbolRefAttr::get(builder.getContext(), fullNamePtr), getTupleType(fieldInfos));
+            classType = getClassType(mlir::FlatSymbolRefAttr::get(builder.getContext(), fullNamePtr), getTupleType(fieldInfos));
             newClassPtr->staticFields = staticFieldInfos;
             newClassPtr->classType = classType;
         }
@@ -3853,9 +3855,12 @@ llvm.return %5 : i32
                     }
 
                     classMember->parent = classDeclarationAST;
-                    const_cast<GenContext &>(genContext).thisType = classType;
-                    auto funcOp = mlirGenFunctionLikeDeclaration(funcLikeDeclaration, genContext);
-                    const_cast<GenContext &>(genContext).thisType = mlir::Type();
+
+                    auto funcGenContext = GenContext(genContext);
+                    funcGenContext.thisType = classType;
+                    funcGenContext.passResult = nullptr;
+
+                    auto funcOp = mlirGenFunctionLikeDeclaration(funcLikeDeclaration, funcGenContext);
 
                     if (!funcOp)
                     {
