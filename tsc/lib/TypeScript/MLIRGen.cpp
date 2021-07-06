@@ -146,7 +146,7 @@ struct ClassInfo
 
     mlir::StringRef fullName;
 
-    mlir::Type storageType;
+    mlir_ts::ClassType classType;
 
     llvm::SmallVector<StaticFieldInfo> staticFields;
 
@@ -238,9 +238,11 @@ class MLIRGenImpl
         genContextPartial.allowPartialResolve = true;
         genContextPartial.dummyRun = true;
         genContextPartial.cleanUps = new mlir::SmallVector<mlir::Block *>();
-        auto notAllResolved = false;
+        auto notResolved = 0;
         do
         {
+            auto lastTimeNotResolved = notResolved;
+            notResolved = 0;
             GenContext genContext = {0};
             for (auto &statement : module->statements)
             {
@@ -251,14 +253,21 @@ class MLIRGenImpl
 
                 if (failed(mlirGen(statement, genContextPartial)))
                 {
-                    notAllResolved = true;
+                    notResolved++;
                 }
                 else
                 {
                     statement->processed = true;
                 }
             }
-        } while (notAllResolved);
+
+            if (lastTimeNotResolved > 0 && lastTimeNotResolved == notResolved)
+            {
+                theModule.emitError("can't resolve dependacies");
+                return nullptr;
+            }
+
+        } while (notResolved > 0);
 
         genContextPartial.clean();
 
@@ -1188,12 +1197,16 @@ class MLIRGenImpl
 
                     funcProto->setHasCapturedVars(true);
                 }
+
+                genContextWithPassResult.clean();
+                return mlir::success();
             }
-
-            genContextWithPassResult.clean();
+            else
+            {
+                genContextWithPassResult.clean();
+                return mlir::failure();
+            }
         }
-
-        return mlir::success();
     }
 
     mlir::LogicalResult mlirGen(FunctionDeclaration functionDeclarationAST, const GenContext &genContext)
@@ -1559,8 +1572,7 @@ class MLIRGenImpl
         // empty return
         if (!expressionValue)
         {
-            builder.create<mlir_ts::ReturnOp>(location);
-            return mlir::success();
+            return mlir::failure();
         }
 
         auto funcOp = const_cast<GenContext &>(genContext).funcOp;
@@ -2774,8 +2786,16 @@ llvm.return %5 : i32
 
         // get function ref.
         auto funcRefValue = mlirGen(callExpression->expression.as<Expression>(), genContext);
-        if (!funcRefValue && genContext.allowPartialResolve)
+        if (!funcRefValue)
         {
+            if (genContext.allowPartialResolve)
+            {
+                return mlir::Value();
+            }
+
+            assert(false);
+
+            emitError(location, "call expression is empty");
             return mlir::Value();
         }
 
@@ -2843,7 +2863,7 @@ llvm.return %5 : i32
             return value;
         }
 
-        return nullptr;
+        return mlir::Value();
     }
 
     mlir::LogicalResult mlirGenCallOperands(mlir::Location location, mlir::FunctionType calledFuncType,
@@ -3454,7 +3474,7 @@ llvm.return %5 : i32
         if (getClassesMap().count(name))
         {
             auto classInfo = getClassesMap().lookup(name);
-            return builder.create<mlir_ts::ClassRefOp>(location, classInfo->storageType,
+            return builder.create<mlir_ts::ClassRefOp>(location, classInfo->classType,
                                                        mlir::FlatSymbolRefAttr::get(builder.getContext(), classInfo->fullName));
         }
 
@@ -3711,102 +3731,154 @@ llvm.return %5 : i32
         auto namePtr = StringRef(name).copy(stringAllocator);
         auto fullNamePtr = getFullNamespaceName(namePtr);
 
-        // register class
-        auto newClassPtr = std::make_shared<ClassInfo>();
-        newClassPtr->name = namePtr;
-        newClassPtr->fullName = fullNamePtr;
-        getClassesMap().insert({namePtr, newClassPtr});
-        fullNameClassesMap.insert({fullNamePtr, newClassPtr});
-
-        // read class info
-        MLIRCodeLogic mcl(builder);
-        // first value
-        SmallVector<StaticFieldInfo> staticFieldInfos;
-        SmallVector<MethodInfo> methodInfos;
-        SmallVector<mlir_ts::FieldInfo> fieldInfos;
-        for (auto &classMember : classDeclarationAST->members)
+        bool declareClass = false;
+        ClassInfo::TypePtr newClassPtr;
+        mlir_ts::ClassType classType;
+        if (fullNameClassesMap.count(fullNamePtr))
         {
-            auto location = loc(classMember);
-
-            mlir::Value initValue;
-            mlir::Attribute fieldId;
-            mlir::Type type;
-            StringRef memberNamePtr;
-
-            auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
-            if (classMember == SyntaxKind::PropertyDeclaration)
-            {
-                auto propertyDeclaration = classMember.as<PropertyDeclaration>();
-
-                auto memberName = MLIRHelper::getName(propertyDeclaration->name);
-                if (memberName.empty())
-                {
-                    llvm_unreachable("not implemented");
-                    return mlir::failure();
-                }
-
-                memberNamePtr = StringRef(memberName).copy(stringAllocator);
-                fieldId = mcl.TupleFieldName(memberNamePtr);
-
-                type = getType(propertyDeclaration->type);
-
-                if (!isStatic)
-                {
-                    fieldInfos.push_back({fieldId, type});
-                }
-                else
-                {
-                    // register global
-                    auto fullClassStaticFieldName = concat(fullNamePtr, memberNamePtr);
-                    registerVariable(
-                        location, fullClassStaticFieldName, true, VariableClass::Var, [&]() { return std::make_pair(type, mlir::Value()); },
-                        genContext);
-
-                    staticFieldInfos.push_back({fieldId, fullClassStaticFieldName});
-                }
-            }
+            newClassPtr = fullNameClassesMap.lookup(fullNamePtr);
+            classType = newClassPtr->classType;
+            getClassesMap().insert({namePtr, newClassPtr});
+        }
+        else
+        {
+            // register class
+            newClassPtr = std::make_shared<ClassInfo>();
+            newClassPtr->name = namePtr;
+            newClassPtr->fullName = fullNamePtr;
+            getClassesMap().insert({namePtr, newClassPtr});
+            fullNameClassesMap.insert({fullNamePtr, newClassPtr});
+            declareClass = true;
         }
 
-        auto classType = getClassType(mlir::FlatSymbolRefAttr::get(builder.getContext(), fullNamePtr), getTupleType(fieldInfos));
-        newClassPtr->storageType = classType;
-        newClassPtr->staticFields = staticFieldInfos;
+        if (declareClass)
+        {
+            // read class info
+            MLIRCodeLogic mcl(builder);
+            // first value
+            SmallVector<StaticFieldInfo> staticFieldInfos;
+            SmallVector<mlir_ts::FieldInfo> fieldInfos;
+            for (auto &classMember : classDeclarationAST->members)
+            {
+                auto location = loc(classMember);
+
+                mlir::Value initValue;
+                mlir::Attribute fieldId;
+                mlir::Type type;
+                StringRef memberNamePtr;
+
+                auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
+                if (classMember == SyntaxKind::PropertyDeclaration)
+                {
+                    auto propertyDeclaration = classMember.as<PropertyDeclaration>();
+
+                    auto memberName = MLIRHelper::getName(propertyDeclaration->name);
+                    if (memberName.empty())
+                    {
+                        llvm_unreachable("not implemented");
+                        return mlir::failure();
+                    }
+
+                    memberNamePtr = StringRef(memberName).copy(stringAllocator);
+                    fieldId = mcl.TupleFieldName(memberNamePtr);
+
+                    type = getType(propertyDeclaration->type);
+
+                    if (!isStatic)
+                    {
+                        fieldInfos.push_back({fieldId, type});
+                    }
+                    else
+                    {
+                        // register global
+                        auto fullClassStaticFieldName = concat(fullNamePtr, memberNamePtr);
+                        registerVariable(
+                            location, fullClassStaticFieldName, true, VariableClass::Var,
+                            [&]() { return std::make_pair(type, mlir::Value()); }, genContext);
+
+                        staticFieldInfos.push_back({fieldId, fullClassStaticFieldName});
+                    }
+                }
+            }
+
+            auto classType = getClassType(mlir::FlatSymbolRefAttr::get(builder.getContext(), fullNamePtr), getTupleType(fieldInfos));
+            newClassPtr->staticFields = staticFieldInfos;
+            newClassPtr->classType = classType;
+        }
+
+        auto &methodInfos = newClassPtr->methods;
+
+        // clear all flags
+        for (auto &classMember : classDeclarationAST->members)
+        {
+            classMember->processed = false;
+        }
 
         // add methods when we have classType
-        for (auto &classMember : classDeclarationAST->members)
+        auto notResolved = 0;
+        do
         {
-            auto location = loc(classMember);
+            auto lastTimeNotResolved = notResolved;
+            notResolved = 0;
 
-            mlir::Value initValue;
-            mlir::Attribute fieldId;
-            mlir::Type type;
-            StringRef memberNamePtr;
-
-            auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
-            auto isConstructor = classMember == SyntaxKind::Constructor;
-            if (classMember == SyntaxKind::MethodDeclaration || isConstructor)
+            for (auto &classMember : classDeclarationAST->members)
             {
-                if (isConstructor)
+                if (classMember->processed)
                 {
-                    newClassPtr->hasConstructor = true;
+                    continue;
                 }
 
-                auto funcLikeDeclaration = classMember.as<FunctionLikeDeclarationBase>();
-                auto methodName = isConstructor ? std::string(CONSTRUCTOR_NAME) : MLIRHelper::getName(funcLikeDeclaration->name);
-                if (methodName.empty())
-                {
-                    llvm_unreachable("not implemented");
-                    return mlir::failure();
-                }
+                auto location = loc(classMember);
 
-                classMember->parent = classDeclarationAST;
-                const_cast<GenContext &>(genContext).thisType = classType;
-                auto funcOp = mlirGenFunctionLikeDeclaration(funcLikeDeclaration, genContext);
-                const_cast<GenContext &>(genContext).thisType = mlir::Type();
-                methodInfos.push_back({methodName, funcOp, isStatic});
+                mlir::Value initValue;
+                mlir::Attribute fieldId;
+                mlir::Type type;
+                StringRef memberNamePtr;
+
+                auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
+                auto isConstructor = classMember == SyntaxKind::Constructor;
+                if (classMember == SyntaxKind::MethodDeclaration || isConstructor)
+                {
+                    if (isConstructor)
+                    {
+                        newClassPtr->hasConstructor = true;
+                    }
+
+                    auto funcLikeDeclaration = classMember.as<FunctionLikeDeclarationBase>();
+                    auto methodName = isConstructor ? std::string(CONSTRUCTOR_NAME) : MLIRHelper::getName(funcLikeDeclaration->name);
+                    if (methodName.empty())
+                    {
+                        llvm_unreachable("not implemented");
+                        return mlir::failure();
+                    }
+
+                    classMember->parent = classDeclarationAST;
+                    const_cast<GenContext &>(genContext).thisType = classType;
+                    auto funcOp = mlirGenFunctionLikeDeclaration(funcLikeDeclaration, genContext);
+                    const_cast<GenContext &>(genContext).thisType = mlir::Type();
+
+                    if (!funcOp)
+                    {
+                        notResolved++;
+                        continue;
+                    }
+
+                    funcLikeDeclaration->processed = true;
+
+                    if (declareClass)
+                    {
+                        methodInfos.push_back({methodName, funcOp, isStatic});
+                    }
+                }
             }
-        }
 
-        newClassPtr->methods = methodInfos;
+            if (lastTimeNotResolved > 0 && lastTimeNotResolved == notResolved)
+            {
+                theModule.emitError("can't resolve dependacies in class: ") << namePtr;
+                return mlir::failure();
+            }
+
+        } while (notResolved > 0);
 
         return mlir::success();
     }
