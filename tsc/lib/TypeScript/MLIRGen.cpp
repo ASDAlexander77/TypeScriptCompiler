@@ -2777,8 +2777,9 @@ llvm.return %5 : i32
             auto accessorInfo = classInfo->accessors[accessorIndex];
             auto getFuncOp = accessorInfo.get;
             auto setFuncOp = accessorInfo.set;
-            auto effectiveFuncType = getFuncOp ? getFuncOp.getType().dyn_cast_or_null<mlir::FunctionType>().getResult(0)
-                                               : setFuncOp.getType().dyn_cast_or_null<mlir::FunctionType>().getInput(0);
+            auto effectiveFuncType =
+                getFuncOp ? getFuncOp.getType().dyn_cast_or_null<mlir::FunctionType>().getResult(0)
+                          : setFuncOp.getType().dyn_cast_or_null<mlir::FunctionType>().getInput(accessorInfo.isStatic ? 0 : 1);
 
             if (accessorInfo.isStatic)
             {
