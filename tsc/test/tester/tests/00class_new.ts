@@ -1,28 +1,24 @@
-class c1 {
-    pin: number;
+class Rectangle {
+    height: number;
+    width: number;
 
-    constructor(pin: number) {
-        this.pin = pin;
+    constructor(height: number, width: number) {
+        this.height = height;
+        this.width = width;
     }
-
-    hello() {
-        this.#hello();
+    // Getter
+    get area() {
+        return this.calcArea();
     }
-
-    #hello() {
-        print("Hello World", this.pin);
-        this.pin = 20;
+    // Method
+    calcArea() {
+        return this.height * this.width;
     }
 }
 
 function main() {
-    const c = new c1(1);
-    print("Hello World", c.pin);
-    assert(c.pin == 1, "constructor");
-    c.pin = 10;
-    c.hello();
-    print("Hello World", c.pin);
-    delete c;
-
+    const square = new Rectangle(10, 10);
+    print(square.area); // 100
+    assert(square.area == 100.0);
     print("done.");
 }

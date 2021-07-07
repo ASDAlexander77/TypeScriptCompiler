@@ -1043,16 +1043,24 @@ struct NewOpLowering : public TsLlvmPattern<mlir_ts::NewOp>
             .Case<mlir_ts::ValueRefType>([&](auto valueRefType) { storageType = valueRefType.getElementType(); })
             .Default([&](auto type) { storageType = type; });
 
-        auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), storageType);
+        auto resultType = tch.convertType(newOp.getType());
 
-        auto i8PtrTy = th.getI8PtrType();
-        auto mallocFuncOp = ch.getOrInsertFunction("malloc", th.getFunctionType(i8PtrTy, {th.getIndexType()}));
+        mlir::Value value;
+        if (newOp.stackAlloc().hasValue() && newOp.stackAlloc().getValue())
+        {
+            value = rewriter.create<LLVM::AllocaOp>(loc, resultType, clh.createI32ConstantOf(1));
+        }
+        else
+        {
+            auto i8PtrTy = th.getI8PtrType();
+            auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), storageType);
+            auto mallocFuncOp = ch.getOrInsertFunction("malloc", th.getFunctionType(i8PtrTy, {th.getIndexType()}));
+            auto callResults = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{sizeOfTypeValue});
 
-        auto callResults = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{sizeOfTypeValue});
+            value = rewriter.create<LLVM::BitcastOp>(newOp->getLoc(), resultType, callResults.getResult(0));
+        }
 
-        auto allocated = rewriter.create<LLVM::BitcastOp>(newOp->getLoc(), tch.convertType(newOp.getType()), callResults.getResult(0));
-
-        rewriter.replaceOp(newOp, ValueRange{allocated});
+        rewriter.replaceOp(newOp, ValueRange{value});
         return success();
     }
 };

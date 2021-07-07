@@ -400,7 +400,7 @@ def TypeScript_NewOp : TypeScript_Op<"New"> {
     allocate in memory
   }];
 
-  let arguments = (ins );
+  let arguments = (ins OptionalAttr<BoolAttr>:$stackAlloc);
   let results = (outs AnyType:$instance);
 }
 

@@ -2939,6 +2939,12 @@ llvm.return %5 : i32
                     }
                 }
             })
+            .Case<mlir_ts::ClassType>([&](auto classType) {
+                // seems we are calling type constructor
+                auto newOp = builder.create<mlir_ts::NewOp>(location, classType, builder.getBoolAttr(true));
+                mlirGenCallConstructor(location, classType, newOp, callExpression->typeArguments, callExpression->arguments, genContext);
+                value = newOp;
+            })
             .Default([&](auto type) {
                 // it is not function, so just return value as maybe it has been resolved earlier like in case "<number>.ToString()"
                 value = funcRefValue;
@@ -3015,6 +3021,38 @@ llvm.return %5 : i32
         return mlir::success();
     }
 
+    mlir::LogicalResult mlirGenCallConstructor(mlir::Location location, mlir_ts::ClassType classType, mlir::Value thisValue,
+                                               NodeArray<TypeNode> typeArguments, NodeArray<Expression> arguments,
+                                               const GenContext &genContext)
+    {
+        if (!classType)
+        {
+            return mlir::failure();
+        }
+
+        // adding call of ctor
+        NodeFactory nf(NodeFactoryFlags::None);
+
+        // register temp var
+        auto classInfo = getClassByFullName(classType.getName().getValue());
+        assert(classInfo);
+        if (classInfo->hasConstructor)
+        {
+            // to remove temp var .ctor after call
+            SymbolTableScopeT varScope(symbolTable);
+
+            auto varDecl = std::make_shared<VariableDeclarationDOM>(CONSTRUCTOR_TEMPVAR_NAME, classType, location);
+            declare(varDecl, thisValue);
+            auto thisToken = nf.createIdentifier(S(CONSTRUCTOR_TEMPVAR_NAME));
+            auto propAccess = nf.createPropertyAccessExpression(thisToken, nf.createIdentifier(S(CONSTRUCTOR_NAME)));
+            auto callExpr = nf.createCallExpression(propAccess, typeArguments, arguments);
+
+            auto callCtorValue = mlirGen(callExpr, genContext);
+        }
+
+        return mlir::success();
+    }
+
     mlir::Value mlirGen(NewExpression newExpression, const GenContext &genContext)
     {
         MLIRTypeHelper mth(builder.getContext());
@@ -3033,31 +3071,9 @@ llvm.return %5 : i32
                 resultType = getValueRefType(type);
             }
 
-            auto newOp = builder.create<mlir_ts::NewOp>(location, resultType);
-
-            // adding call of ctor
-            NodeFactory nf(NodeFactoryFlags::None);
-
-            // register temp var
-            if (auto classType = resultType.dyn_cast_or_null<mlir_ts::ClassType>())
-            {
-                auto classInfo = getClassByFullName(classType.getName().getValue());
-                assert(classInfo);
-                if (classInfo->hasConstructor)
-                {
-                    // to remove temp var .ctor after call
-                    SymbolTableScopeT varScope(symbolTable);
-
-                    auto varDecl = std::make_shared<VariableDeclarationDOM>(CONSTRUCTOR_TEMPVAR_NAME, resultType, location);
-                    declare(varDecl, newOp);
-                    auto thisToken = nf.createIdentifier(S(CONSTRUCTOR_TEMPVAR_NAME));
-                    auto propAccess = nf.createPropertyAccessExpression(thisToken, nf.createIdentifier(S(CONSTRUCTOR_NAME)));
-                    auto callExpr = nf.createCallExpression(propAccess, newExpression->typeArguments, newExpression->arguments);
-
-                    auto callCtorValue = mlirGen(callExpr, genContext);
-                }
-            }
-
+            auto newOp = builder.create<mlir_ts::NewOp>(location, resultType, builder.getBoolAttr(false));
+            mlirGenCallConstructor(location, resultType.dyn_cast_or_null<mlir_ts::ClassType>(), newOp, newExpression->typeArguments,
+                                   newExpression->arguments, genContext);
             return newOp;
         }
         else if (typeExpression == SyntaxKind::ElementAccessExpression)
