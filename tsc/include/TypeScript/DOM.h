@@ -139,7 +139,7 @@ class FunctionPrototypeDOM
     using TypePtr = std::shared_ptr<FunctionPrototypeDOM>;
 
     FunctionPrototypeDOM(StringRef name, std::vector<FunctionParamDOM::TypePtr> args)
-        : name(name), args(args), returnType(), discovered(false), hasCapturedVars(false)
+        : name(name.str()), args(args), returnType(), discovered(false), hasCapturedVars(false)
     {
     }
 
@@ -154,7 +154,7 @@ class FunctionPrototypeDOM
     }
     void setNameWithoutNamespace(StringRef nameWithoutNamespace_)
     {
-        nameWithoutNamespace = nameWithoutNamespace_;
+        nameWithoutNamespace = nameWithoutNamespace_.str();
     }
 
     // ArrayRef should not be "&" or "*"

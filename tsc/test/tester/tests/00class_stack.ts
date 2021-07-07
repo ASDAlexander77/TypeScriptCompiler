@@ -10,4 +10,6 @@ function main() {
 
     const dog2 = Animal();
     dog2.move(11);
+
+    print("done.");
 }
