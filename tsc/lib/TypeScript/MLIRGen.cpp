@@ -1083,7 +1083,7 @@ class MLIRGenImpl
         }
         else
         {
-            fullName = getFullNamespaceName(StringRef(name));
+            fullName = getFullNamespaceName(name).str();
         }
 
         auto funcProto = std::make_shared<FunctionPrototypeDOM>(fullName, params);
