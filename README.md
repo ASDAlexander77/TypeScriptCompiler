@@ -13,8 +13,6 @@ Want to chat with other members of the TypeScriptCompiler community?
 
 [![Join the chat at https://gitter.im/ASDAlexander77/TypeScriptCompiler](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/ASDAlexander77/TypeScriptCompiler?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
-[![tsc](https://pbs.twimg.com/tweet_video_thumb/E5ulUfyWQAAeQFT.jpg)](https://github.com/ASDAlexander77/TypeScriptCompiler/)
-
 ## Compile as JIT
 
 ```cmd
