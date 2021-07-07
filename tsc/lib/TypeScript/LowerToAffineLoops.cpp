@@ -551,7 +551,8 @@ struct AccessorRefOpLowering : public TsPattern<mlir_ts::AccessorRefOp>
     {
         Location loc = accessorRefOp.getLoc();
 
-        auto callRes = rewriter.create<mlir_ts::CallOp>(loc, accessorRefOp.getAccessor(), TypeRange{accessorRefOp.getType()}, ValueRange{});
+        auto callRes =
+            rewriter.create<mlir_ts::CallOp>(loc, accessorRefOp.getAccessor().getValue(), TypeRange{accessorRefOp.getType()}, ValueRange{});
 
         rewriter.replaceOp(accessorRefOp, callRes.getResult(0));
         return success();
@@ -566,8 +567,8 @@ struct ThisAccessorRefOpLowering : public TsPattern<mlir_ts::ThisAccessorRefOp>
     {
         Location loc = thisAccessorRefOp.getLoc();
 
-        auto callRes = rewriter.create<mlir_ts::CallOp>(loc, thisAccessorRefOp.getAccessor(), TypeRange{thisAccessorRefOp.getType()},
-                                                        ValueRange{thisAccessorRefOp.thisVal()});
+        auto callRes = rewriter.create<mlir_ts::CallOp>(loc, thisAccessorRefOp.getAccessor().getValue(),
+                                                        TypeRange{thisAccessorRefOp.getType()}, ValueRange{thisAccessorRefOp.thisVal()});
 
         rewriter.replaceOp(thisAccessorRefOp, callRes.getResult(0));
 

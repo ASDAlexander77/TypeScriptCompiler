@@ -2364,14 +2364,15 @@ llvm.return %5 : i32
         }
         else if (auto accessorRefOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::AccessorRefOp>())
         {
-            auto callRes = builder.create<mlir_ts::CallOp>(location, accessorRefOp.setAccessor(), mlir::TypeRange{getVoidType()},
+            auto callRes = builder.create<mlir_ts::CallOp>(location, accessorRefOp.setAccessor().getValue(), mlir::TypeRange{getVoidType()},
                                                            mlir::ValueRange{result});
             result = callRes.getResult(0);
         }
         else if (auto thisAccessorRefOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ThisAccessorRefOp>())
         {
-            auto callRes = builder.create<mlir_ts::CallOp>(location, thisAccessorRefOp.setAccessor(), mlir::TypeRange{getVoidType()},
-                                                           mlir::ValueRange{thisAccessorRefOp.thisVal(), result});
+            auto callRes =
+                builder.create<mlir_ts::CallOp>(location, thisAccessorRefOp.setAccessor().getValue(), mlir::TypeRange{getVoidType()},
+                                                mlir::ValueRange{thisAccessorRefOp.thisVal(), result});
             result = callRes.getResult(0);
         }
         else
@@ -2782,15 +2783,17 @@ llvm.return %5 : i32
             if (accessorInfo.isStatic)
             {
                 auto symbOp = builder.create<mlir_ts::AccessorRefOp>(
-                    location, effectiveFuncType, mlir::FlatSymbolRefAttr::get(builder.getContext(), getFuncOp.getName()),
-                    mlir::FlatSymbolRefAttr::get(builder.getContext(), setFuncOp.getName()));
+                    location, effectiveFuncType,
+                    getFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), getFuncOp.getName()) : mlir::FlatSymbolRefAttr{},
+                    setFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), setFuncOp.getName()) : mlir::FlatSymbolRefAttr{});
                 return symbOp;
             }
             else
             {
                 auto thisSymbOp = builder.create<mlir_ts::ThisAccessorRefOp>(
-                    location, effectiveFuncType, thisValue, mlir::FlatSymbolRefAttr::get(builder.getContext(), getFuncOp.getName()),
-                    mlir::FlatSymbolRefAttr::get(builder.getContext(), setFuncOp.getName()));
+                    location, effectiveFuncType, thisValue,
+                    getFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), getFuncOp.getName()) : mlir::FlatSymbolRefAttr{},
+                    setFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), setFuncOp.getName()) : mlir::FlatSymbolRefAttr{});
                 return thisSymbOp;
             }
         }

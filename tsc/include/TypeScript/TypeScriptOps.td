@@ -102,7 +102,7 @@ def AccessorRefOp : TypeScript_Op<"AccessorRef",
     [NoSideEffect]> {
   let summary = "symbol reference as to static accessor";
 
-  let arguments = (ins FlatSymbolRefAttr:$getAccessor, FlatSymbolRefAttr:$setAccessor);
+  let arguments = (ins OptionalAttr<FlatSymbolRefAttr>:$getAccessor, OptionalAttr<FlatSymbolRefAttr>:$setAccessor);
   let results = (outs AnyType);
 
   let builders = [
@@ -116,7 +116,7 @@ def ThisAccessorRefOp : TypeScript_Op<"ThisAccessorRef",
     [NoSideEffect]> {
   let summary = "symbol reference as to accessor";
 
-  let arguments = (ins AnyType:$thisVal, FlatSymbolRefAttr:$getAccessor, FlatSymbolRefAttr:$setAccessor);
+  let arguments = (ins AnyType:$thisVal, OptionalAttr<FlatSymbolRefAttr>:$getAccessor, OptionalAttr<FlatSymbolRefAttr>:$setAccessor);
   let results = (outs AnyType);
 
   let builders = [
