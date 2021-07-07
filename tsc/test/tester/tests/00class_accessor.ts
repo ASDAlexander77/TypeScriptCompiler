@@ -3,6 +3,7 @@ class C {
     _length: number;
     _length2: number;
     _length3: number;
+    static _lengthS: number;
 
     constructor() {
         this._length = 10;
@@ -25,6 +26,14 @@ class C {
         this._length3 = value;
         print(value);
     }
+
+    static get lengthS() {
+        return this._lengthS;
+    }
+
+    static set lengthS(value: number) {
+        this._lengthS = value;
+    }
 }
 
 function main() {
@@ -38,6 +47,9 @@ function main() {
 
     assert(c.length2 == 11);
     c.length3 = 30;
+
+    C.lengthS = 16;
+    assert(C.lengthS == 16);
 
     delete c;
 

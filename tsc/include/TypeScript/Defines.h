@@ -4,6 +4,7 @@
 #define IDENTIFIER_ATTR_NAME "identifier"
 #define RETURN_VARIABLE_NAME "__0return"
 #define LABEL_ATTR_NAME "label"
+#define UNDEFINED_NAME "undefined"
 #define THIS_NAME "this"
 #define SUPER_NAME "super"
 #define CONSTRUCTOR_NAME "constructor"

@@ -1195,6 +1195,7 @@ class MLIRGenImpl
 
             GenContext genContextWithPassResult = {0};
             genContextWithPassResult.funcOp = dummyFuncOp;
+            genContextWithPassResult.thisType = genContext.thisType;
             genContextWithPassResult.allowPartialResolve = true;
             genContextWithPassResult.dummyRun = true;
             genContextWithPassResult.cleanUps = new SmallVector<mlir::Block *>();
@@ -3559,8 +3560,9 @@ llvm.return %5 : i32
         if (getClassesMap().count(name))
         {
             auto classInfo = getClassesMap().lookup(name);
-            return builder.create<mlir_ts::ClassRefOp>(location, classInfo->classType,
-                                                       mlir::FlatSymbolRefAttr::get(builder.getContext(), classInfo->fullName));
+            return builder.create<mlir_ts::ClassRefOp>(
+                location, classInfo->classType,
+                mlir::FlatSymbolRefAttr::get(builder.getContext(), classInfo->classType.getName().getValue()));
         }
 
         if (getTypeAliasMap().count(name))
@@ -3615,7 +3617,7 @@ llvm.return %5 : i32
     mlir::Value resolveIdentifier(mlir::Location location, StringRef name, const GenContext &genContext)
     {
         // built in types
-        if (name == "undefined")
+        if (name == UNDEFINED_NAME)
         {
             return getUndefined(location);
         }
@@ -3640,6 +3642,14 @@ llvm.return %5 : i32
         if (value)
         {
             return value;
+        }
+
+        // try to resolve 'this' if not resolved yet
+        if (name == THIS_NAME && genContext.thisType)
+        {
+            return builder.create<mlir_ts::ClassRefOp>(
+                location, genContext.thisType,
+                mlir::FlatSymbolRefAttr::get(builder.getContext(), genContext.thisType.getName().getValue()));
         }
 
         return mlir::Value();
