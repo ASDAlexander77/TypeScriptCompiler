@@ -33,7 +33,7 @@ Hello World!
 ## Compile as Binary Executable
 
 ### On Windows
-File ``tsc-cmpile.bat``
+File ``tsc-compile.bat``
 ```cmd
 rem set %LLVM% and %TSCBIN%
 set LLVMPATH=%LLVM%\llvm\release\bin
@@ -47,7 +47,7 @@ set SDKPATH=%VCFLD%\SDK\lib
 ```
 Compile 
 ```cmd
-tsc-cmpile.bat hello
+tsc-compile.bat hello
 ```
 
 Run
