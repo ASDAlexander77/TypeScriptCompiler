@@ -161,6 +161,8 @@ struct ClassInfo
 
     mlir_ts::ClassType classType;
 
+    llvm::SmallVector<ClassInfo::TypePtr> baseClasses;
+
     llvm::SmallVector<StaticFieldInfo> staticFields;
 
     llvm::SmallVector<MethodInfo> methods;
@@ -2803,6 +2805,8 @@ llvm.return %5 : i32
             }
         }
 
+        // TODO: call the same for base classes
+
         if (genContext.allowPartialResolve)
         {
             return mlir::Value();
@@ -3866,7 +3870,8 @@ llvm.return %5 : i32
 
         // read class info
         MLIRCodeLogic mcl(builder);
-        // first value
+
+        auto &baseClassInfos = newClassPtr->baseClasses;
         auto &staticFieldInfos = newClassPtr->staticFields;
         SmallVector<mlir_ts::FieldInfo> fieldInfos;
 
@@ -3880,10 +3885,14 @@ llvm.return %5 : i32
                     auto baseType = mlirGen(extendingType->expression, genContext);
                     TypeSwitch<mlir::Type>(baseType.getType())
                         .template Case<mlir_ts::ClassType>([&](auto classType) {
+                            auto classInfo = getClassByFullName(classType.getName().getValue());
+
                             auto storageType = classType.getStorageType();
                             auto autoBaseName = classType.getName().getValue();
                             auto fieldId = mcl.TupleFieldName(autoBaseName);
                             fieldInfos.push_back({fieldId, storageType});
+
+                            baseClassInfos.push_back(classInfo);
                         })
                         .Default([&](auto type) { llvm_unreachable("not implemented"); });
                 }
