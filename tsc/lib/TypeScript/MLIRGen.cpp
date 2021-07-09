@@ -2720,7 +2720,7 @@ llvm.return %5 : i32
                 if (!value)
                 {
                     // static field access
-                    value = ClassMembers(location, expressionValue, classInfo, name, genContext);
+                    value = ClassMembers(location, expressionValue, classInfo, name, false, genContext);
                     if (!value && !genContext.allowPartialResolve)
                     {
                         emitError(location, "Class member '") << name << "' can't be found";
@@ -2740,7 +2740,7 @@ llvm.return %5 : i32
     }
 
     mlir::Value ClassMembers(mlir::Location location, mlir::Value thisValue, ClassInfo::TypePtr classInfo, mlir::StringRef name,
-                             const GenContext &genContext)
+                             bool baseClass, const GenContext &genContext)
     {
         assert(classInfo);
 
@@ -2806,8 +2806,16 @@ llvm.return %5 : i32
         }
 
         // TODO: call the same for base classes
+        for (auto baseClass : classInfo->baseClasses)
+        {
+            auto value = ClassMembers(location, thisValue, baseClass, name, true, genContext);
+            if (value)
+            {
+                return value;
+            }
+        }
 
-        if (genContext.allowPartialResolve)
+        if (baseClass || genContext.allowPartialResolve)
         {
             return mlir::Value();
         }
