@@ -1344,6 +1344,8 @@ class MLIRGenImpl
             LLVM_DEBUG(llvm::dbgs() << "re-process. func: " << name << " type:" << funcOp.getType() << "\n";);
         }
 
+        builder.setInsertionPointAfter(funcOp);
+
         return funcOp;
     }
 
