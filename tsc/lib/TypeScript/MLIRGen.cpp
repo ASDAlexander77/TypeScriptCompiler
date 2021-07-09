@@ -2770,8 +2770,11 @@ llvm.return %5 : i32
             }
             else
             {
+                auto effectiveThisValue =
+                    !baseClass ? thisValue : builder.create<mlir_ts::CastOp>(location, classInfo->classType, thisValue);
+
                 auto thisSymbOp = builder.create<mlir_ts::ThisSymbolRefOp>(
-                    location, effectiveFuncType, thisValue, mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
+                    location, effectiveFuncType, effectiveThisValue, mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
                 return thisSymbOp;
             }
         }
