@@ -3867,6 +3867,27 @@ llvm.return %5 : i32
         // first value
         auto &staticFieldInfos = newClassPtr->staticFields;
         SmallVector<mlir_ts::FieldInfo> fieldInfos;
+
+        // add base classes
+        for (auto &heritageClause : classDeclarationAST->heritageClauses)
+        {
+            if (heritageClause->token == SyntaxKind::ExtendsKeyword)
+            {
+                for (auto &extendingType : heritageClause->types)
+                {
+                    auto baseType = mlirGen(extendingType->expression, genContext);
+                    TypeSwitch<mlir::Type>(baseType.getType())
+                        .template Case<mlir_ts::ClassType>([&](auto classType) {
+                            auto storageType = classType.getStorageType();
+                            auto autoBaseName = classType.getName().getValue();
+                            auto fieldId = mcl.TupleFieldName(autoBaseName);
+                            fieldInfos.push_back({fieldId, storageType});
+                        })
+                        .Default([&](auto type) { llvm_unreachable("not implemented"); });
+                }
+            }
+        }
+
         for (auto &classMember : classDeclarationAST->members)
         {
             auto location = loc(classMember);
