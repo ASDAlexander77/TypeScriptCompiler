@@ -2819,13 +2819,22 @@ llvm.return %5 : i32
         }
 
         // TODO: call the same for base classes
+        auto first = true;
         for (auto baseClass : classInfo->baseClasses)
         {
+            if (first && name == SUPER_NAME)
+            {
+                auto value = mlirGenPropertyAccessExpression(location, thisValue, baseClass->name, genContext);
+                return value;
+            }
+
             auto value = ClassMembers(location, thisValue, baseClass, name, true, genContext);
             if (value)
             {
                 return value;
             }
+
+            first = false;
         }
 
         if (baseClass || genContext.allowPartialResolve)
