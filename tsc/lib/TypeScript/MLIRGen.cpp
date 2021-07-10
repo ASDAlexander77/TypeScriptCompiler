@@ -684,6 +684,10 @@ class MLIRGenImpl
         {
             return mlirGen(loc(expressionAST), THIS_NAME, genContext);
         }
+        else if (kind == SyntaxKind::SuperKeyword)
+        {
+            return mlirGen(loc(expressionAST), SUPER_NAME, genContext);
+        }
         else if (kind == SyntaxKind::VoidExpression)
         {
             return mlirGen(expressionAST.as<VoidExpression>(), genContext);
@@ -2677,11 +2681,17 @@ llvm.return %5 : i32
 
         auto name = MLIRHelper::getName(propertyAccessExpression->name);
 
+        return mlirGenPropertyAccessExpression(location, expressionValue, name, genContext);
+    }
+
+    mlir::Value mlirGenPropertyAccessExpression(mlir::Location location, mlir::Value objectValue, mlir::StringRef name,
+                                                const GenContext &genContext)
+    {
         mlir::Value value;
 
-        if (!expressionValue.getType() || expressionValue.getType() == mlir::NoneType::get(builder.getContext()))
+        if (!objectValue.getType() || objectValue.getType() == mlir::NoneType::get(builder.getContext()))
         {
-            if (auto namespaceRef = dyn_cast_or_null<mlir_ts::NamespaceRefOp>(expressionValue.getDefiningOp()))
+            if (auto namespaceRef = dyn_cast_or_null<mlir_ts::NamespaceRefOp>(objectValue.getDefiningOp()))
             {
                 // todo resolve namespace
                 auto namespaceInfo = getNamespaceByFullName(namespaceRef.identifier());
@@ -2699,9 +2709,9 @@ llvm.return %5 : i32
             return value;
         }
 
-        MLIRPropertyAccessCodeLogic cl(builder, location, expressionValue, name);
+        MLIRPropertyAccessCodeLogic cl(builder, location, objectValue, name);
 
-        TypeSwitch<mlir::Type>(expressionValue.getType())
+        TypeSwitch<mlir::Type>(objectValue.getType())
             .Case<mlir_ts::EnumType>([&](auto enumType) { value = cl.Enum(enumType); })
             .Case<mlir_ts::ConstTupleType>([&](auto tupleType) { value = cl.Tuple(tupleType); })
             .Case<mlir_ts::TupleType>([&](auto tupleType) { value = cl.Tuple(tupleType); })
@@ -2720,7 +2730,7 @@ llvm.return %5 : i32
                 if (!value)
                 {
                     // static field access
-                    value = ClassMembers(location, expressionValue, classInfo, name, false, genContext);
+                    value = ClassMembers(location, objectValue, classInfo, name, false, genContext);
                     if (!value && !genContext.allowPartialResolve)
                     {
                         emitError(location, "Class member '") << name << "' can't be found";
@@ -3678,11 +3688,21 @@ llvm.return %5 : i32
         }
 
         // try to resolve 'this' if not resolved yet
-        if (name == THIS_NAME && genContext.thisType)
+        if (genContext.thisType && name == THIS_NAME)
         {
             return builder.create<mlir_ts::ClassRefOp>(
                 location, genContext.thisType,
                 mlir::FlatSymbolRefAttr::get(builder.getContext(), genContext.thisType.getName().getValue()));
+        }
+
+        if (genContext.thisType && name == SUPER_NAME)
+        {
+            auto thisValue = mlirGen(location, THIS_NAME, genContext);
+
+            auto classInfo = getClassByFullName(genContext.thisType.getName().getValue());
+            auto baseClassInfo = classInfo->baseClasses.front();
+
+            return mlirGenPropertyAccessExpression(location, thisValue, baseClassInfo->name, genContext);
         }
 
         return mlir::Value();
