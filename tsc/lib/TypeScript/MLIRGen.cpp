@@ -4262,6 +4262,11 @@ llvm.return %5 : i32
         return mlir_ts::EnumType::get(elementType);
     }
 
+    mlir_ts::ClassStorageType getClassStorageType(mlir::FlatSymbolRefAttr name, mlir::SmallVector<mlir_ts::FieldInfo> &fieldInfos)
+    {
+        return mlir_ts::ClassStorageType::get(builder.getContext(), name, fieldInfos);
+    }
+
     mlir_ts::ClassType getClassType(mlir::FlatSymbolRefAttr name, mlir::Type storageType)
     {
         return mlir_ts::ClassType::get(name, storageType);

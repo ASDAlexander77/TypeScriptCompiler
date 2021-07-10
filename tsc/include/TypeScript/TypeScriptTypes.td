@@ -309,7 +309,7 @@ def TypeScript_ConstTuple : TypeScript_Type<"ConstTuple"> {
     Syntax:
 
     ```
-    tuple-type ::= `const_tuple` `<` (type ( `,` type)*)? `>`
+    const-tuple-type ::= `const_tuple` `<` (type ( `,` type)*)? `>`
     ```
 
     The value of `tuple` type represents a fixed-size collection of elements,
@@ -331,7 +331,7 @@ def TypeScript_ConstTuple : TypeScript_Type<"ConstTuple"> {
   let parameters = (ins ArrayRefOfSelfAllocationParameter<"::mlir::typescript::FieldInfo", "fields">:$fields);
 
   let printer = [{
-    $_printer << "tuple" << "<";
+    $_printer << "const_tuple" << "<";
     for (size_t i=0, e = getImpl()->fields.size(); i < e; i++) {
       const auto& field = getImpl()->fields[i];
       if (field.id) 
@@ -368,12 +368,6 @@ def TypeScript_ConstTuple : TypeScript_Type<"ConstTuple"> {
   }];  
 
   let extraClassDeclaration = [{
-    /// Accumulate the types contained in this tuple and tuples nested within
-    /// it. Note that this only flattens nested tuples, not any other container
-    /// type, e.g. a tuple<i32, tensor<i32>, tuple<f32, tuple<i64>>> is
-    /// flattened to (i32, tensor<i32>, f32, i64)
-    void getFlattenedTypes(SmallVector<Type> &types);
-
     /// Return the number of held types.
     size_t size() const;
 
@@ -472,12 +466,107 @@ def TypeScript_Tuple : TypeScript_Type<"Tuple"> {
   }];  
 
   let extraClassDeclaration = [{
-    /// Accumulate the types contained in this tuple and tuples nested within
-    /// it. Note that this only flattens nested tuples, not any other container
-    /// type, e.g. a tuple<i32, tensor<i32>, tuple<f32, tuple<i64>>> is
-    /// flattened to (i32, tensor<i32>, f32, i64)
-    void getFlattenedTypes(SmallVector<Type> &types);
+    /// Return the number of held types.
+    size_t size() const;
 
+    /// Iterate over the held elements.
+    using iterator = ArrayRef<::mlir::typescript::FieldInfo>::iterator;
+    iterator begin() const { return getFields().begin(); }
+    iterator end() const { return getFields().end(); }
+
+    int getIndex(Attribute id)
+    {
+        return std::distance(begin(), std::find_if(begin(), end(), [&](::mlir::typescript::FieldInfo fldInf){ return id == fldInf.id; }));
+    }
+
+    /// Return the element type at index 'index'.
+    ::mlir::typescript::FieldInfo getFieldInfo(size_t index) const {
+      assert(index < size() && "invalid index for tuple type");
+      return getFields()[index];
+    }
+
+    Attribute getId(size_t index) const {
+      assert(index < size() && "invalid index for tuple type");
+      return getFields()[index].id;
+    }
+
+    Type getType(size_t index) const {
+      assert(index < size() && "invalid index for tuple type");
+      return getFields()[index].type;
+    }
+  }];
+}
+
+def TypeScript_ClassStorage : TypeScript_Type<"ClassStorage"> {
+  let mnemonic = "class_storage";
+
+  let summary = "Fixed-sized collection of other types for class";
+  let description = [{
+    Syntax:
+
+    ```
+    class-storage-type ::= `class_storage` `<` (type ( `,` type)*)? `>`
+    ```
+
+    The value of `class_storage` type represents a fixed-size collection of elements,
+    where each element may be of a different type.
+
+    Examples:
+
+    ```mlir
+    // Empty tuple.
+    class_storage<>
+
+    // Single element
+    class_storage<{f32}>
+
+    // Many elements.
+    class_storage<{i32}, {f32}, {tensor<i1>}, {i5}>
+    ```
+  }];
+  let parameters = (ins "FlatSymbolRefAttr":$name, ArrayRefOfSelfAllocationParameter<"::mlir::typescript::FieldInfo", "fields">:$fields);
+
+  let printer = [{
+    $_printer << "class_storage<" <<  getImpl()->name << ",";
+    for (size_t i=0, e = getImpl()->fields.size(); i < e; i++) {
+      const auto& field = getImpl()->fields[i];
+      if (field.id) 
+      {
+          $_printer << "{" << field.id << "," << field.type << "}";
+      }
+      else
+      {
+          $_printer << field.type;
+      }
+
+      if (i < getImpl()->fields.size() - 1)
+          $_printer << ",";
+    }
+    $_printer << ">";
+  }];
+
+  // Parses the above format
+  let parser = [{
+    Attribute name;
+    SmallVector<FieldInfo, 4> parameters;
+    if ($_parser.parseLess()) return Type();
+    if ($_parser.parseAttribute(name)) return Type();    
+    if ($_parser.parseComma()) return Type();
+    while (mlir::succeeded($_parser.parseOptionalLBrace())) {
+      Attribute id;
+      if ($_parser.parseAttribute(id)) return Type();
+      if ($_parser.parseComma()) return Type();
+      Type type;
+      if ($_parser.parseType(type)) return Type();
+      if ($_parser.parseRBrace()) return Type();
+      parameters.push_back(FieldInfo {id, type});
+      if ($_parser.parseOptionalComma()) break;
+    }
+    if ($_parser.parseGreater()) return Type();
+    return get($_ctxt, name.dyn_cast_or_null<FlatSymbolRefAttr>(), parameters);
+  }];  
+
+  let extraClassDeclaration = [{
     /// Return the number of held types.
     size_t size() const;
 

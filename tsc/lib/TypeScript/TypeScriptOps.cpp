@@ -47,21 +47,6 @@ void mlir_ts::buildTerminatedBody(OpBuilder &builder, Location loc)
 /// ConstTupleType
 //===----------------------------------------------------------------------===//
 
-/// Accumulate the types contained in this tuple and tuples nested within it.
-/// Note that this only flattens nested tuples, not any other container type,
-/// e.g. a tuple<i32, tensor<i32>, tuple<f32, tuple<i64>>> is flattened to
-/// (i32, tensor<i32>, f32, i64)
-void mlir_ts::ConstTupleType::getFlattenedTypes(SmallVector<Type> &types)
-{
-    for (auto typeInfo : getFields())
-    {
-        if (auto nestedTuple = typeInfo.type.dyn_cast<mlir_ts::ConstTupleType>())
-            nestedTuple.getFlattenedTypes(types);
-        else
-            types.push_back(typeInfo.type);
-    }
-}
-
 /// Return the number of element types.
 size_t mlir_ts::ConstTupleType::size() const
 {
@@ -72,23 +57,18 @@ size_t mlir_ts::ConstTupleType::size() const
 /// TupleType
 //===----------------------------------------------------------------------===//
 
-/// Accumulate the types contained in this tuple and tuples nested within it.
-/// Note that this only flattens nested tuples, not any other container type,
-/// e.g. a tuple<i32, tensor<i32>, tuple<f32, tuple<i64>>> is flattened to
-/// (i32, tensor<i32>, f32, i64)
-void mlir_ts::TupleType::getFlattenedTypes(SmallVector<Type> &types)
-{
-    for (auto typeInfo : getFields())
-    {
-        if (auto nestedTuple = typeInfo.type.dyn_cast<mlir_ts::TupleType>())
-            nestedTuple.getFlattenedTypes(types);
-        else
-            types.push_back(typeInfo.type);
-    }
-}
-
 /// Return the number of element types.
 size_t mlir_ts::TupleType::size() const
+{
+    return getFields().size();
+}
+
+//===----------------------------------------------------------------------===//
+/// ClassStorageType
+//===----------------------------------------------------------------------===//
+
+/// Return the number of element types.
+size_t mlir_ts::ClassStorageType::size() const
 {
     return getFields().size();
 }
