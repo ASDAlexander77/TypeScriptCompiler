@@ -1990,6 +1990,16 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         return LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, false);
     });
 
+    converter.addConversion([&](mlir_ts::ClassStorageType type) {
+        SmallVector<mlir::Type> convertedTypes;
+        for (auto subType : type.getFields())
+        {
+            convertedTypes.push_back(converter.convertType(subType.type));
+        }
+
+        return LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, false);
+    });
+
     converter.addConversion(
         [&](mlir_ts::ClassType type) { return LLVM::LLVMPointerType::get(converter.convertType(type.getStorageType())); });
 

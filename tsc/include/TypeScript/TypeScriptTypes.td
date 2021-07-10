@@ -801,6 +801,10 @@ def TypeScript_IsTupleRefType : CPred<"$_self.isa<::mlir::typescript::RefType>()
 
 def TypeScript_AnyTupleRef : DialectType<TypeScript_Dialect, TypeScript_IsTupleRefType, "any tuple reference type">;
 
+def TypeScript_IsClassStorageRefType : CPred<"$_self.isa<::mlir::typescript::RefType>() && $_self.cast<::mlir::typescript::RefType>().getElementType().isa<::mlir::typescript::ClassStorageType>()">;
+
+def TypeScript_AnyClassStorageRef : DialectType<TypeScript_Dialect, TypeScript_IsClassStorageRefType, "any tuple reference type">;
+
 def TypeScript_IsOptionalType : CPred<"$_self.isa<::mlir::typescript::OptionalType>()">;
 
 def TypeScript_AnyOptional : DialectType<TypeScript_Dialect, TypeScript_IsOptionalType, "any optional type">;
@@ -810,7 +814,7 @@ def TypeScript_ArrayLike : AnyTypeOf<[
   ]>;
 
 def TypeScript_AnyStructRefLike : AnyTypeOf<[
-    TypeScript_AnyConstTupleRef, TypeScript_AnyTupleRef, TypeScript_Class, TypeScript_Object
+    TypeScript_AnyConstTupleRef, TypeScript_AnyTupleRef, TypeScript_Class, TypeScript_Object, TypeScript_AnyClassStorageRef
   ]>;
 
 def TypeScript_AnyRefLike : AnyTypeOf<[
@@ -818,7 +822,7 @@ def TypeScript_AnyRefLike : AnyTypeOf<[
   ]>;
 
 def TypeScript_AnyStructLike : AnyTypeOf<[
-    TypeScript_ConstTuple, TypeScript_Tuple, TypeScript_Class
+    TypeScript_ConstTuple, TypeScript_Tuple, TypeScript_Class, TypeScript_ClassStorage
   ]>;
 
 #endif // TYPESCRIPT_TYPEDEFS

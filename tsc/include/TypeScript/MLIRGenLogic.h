@@ -468,12 +468,12 @@ class MLIRPropertyAccessCodeLogic
 
     mlir::Value Class(mlir_ts::ClassType classType)
     {
-        if (auto tupleType = classType.getStorageType().template dyn_cast_or_null<mlir_ts::TupleType>())
+        if (auto classStorageType = classType.getStorageType().template dyn_cast_or_null<mlir_ts::ClassStorageType>())
         {
             MLIRCodeLogic mcl(builder);
 
             // resolve index
-            auto pair = mcl.TupleFieldTypeNoError(location, tupleType, fieldId);
+            auto pair = mcl.TupleFieldTypeNoError(location, classStorageType, fieldId);
             auto fieldIndex = pair.first;
             auto elementType = pair.second;
 

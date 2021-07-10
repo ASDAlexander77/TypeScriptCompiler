@@ -2713,8 +2713,9 @@ llvm.return %5 : i32
 
         TypeSwitch<mlir::Type>(objectValue.getType())
             .Case<mlir_ts::EnumType>([&](auto enumType) { value = cl.Enum(enumType); })
-            .Case<mlir_ts::ConstTupleType>([&](auto tupleType) { value = cl.Tuple(tupleType); })
+            .Case<mlir_ts::ConstTupleType>([&](auto constTupleType) { value = cl.Tuple(constTupleType); })
             .Case<mlir_ts::TupleType>([&](auto tupleType) { value = cl.Tuple(tupleType); })
+            .Case<mlir_ts::ClassStorageType>([&](auto classStorageType) { value = cl.Tuple(classStorageType); })
             .Case<mlir_ts::BooleanType>([&](auto intType) { value = cl.Bool(intType); })
             .Case<mlir::IntegerType>([&](auto intType) { value = cl.Int(intType); })
             .Case<mlir::FloatType>([&](auto intType) { value = cl.Float(intType); })
@@ -3991,7 +3992,8 @@ llvm.return %5 : i32
 
         if (declareClass)
         {
-            classType = getClassType(mlir::FlatSymbolRefAttr::get(builder.getContext(), fullNamePtr), getTupleType(fieldInfos));
+            auto classFullNameSymbol = mlir::FlatSymbolRefAttr::get(builder.getContext(), fullNamePtr);
+            classType = getClassType(classFullNameSymbol, getClassStorageType(classFullNameSymbol, fieldInfos));
             newClassPtr->classType = classType;
         }
 
