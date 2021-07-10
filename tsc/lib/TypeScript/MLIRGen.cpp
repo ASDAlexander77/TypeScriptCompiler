@@ -2724,10 +2724,10 @@ llvm.return %5 : i32
             .Case<mlir_ts::ArrayType>([&](auto arrayType) { value = cl.Array(arrayType); })
             .Case<mlir_ts::RefType>([&](auto refType) { value = cl.Ref(refType); })
             .Case<mlir_ts::ClassStorageType>([&](auto classStorageType) {
-                value = cl.Tuple(classStorageType);
+                value = cl.TupleNoError(classStorageType);
                 if (!value)
                 {
-                    value = ClassMembers(location, objectValue, classStorageType.getName().getValue(), name, false, genContext);
+                    value = ClassMembers(location, objectValue, classStorageType.getName().getValue(), name, true, genContext);
                 }
             })
             .Case<mlir_ts::ClassType>([&](auto classType) {
@@ -2756,7 +2756,7 @@ llvm.return %5 : i32
         assert(classInfo);
 
         // static field access
-        auto value = ClassMembers(location, thisValue, classInfo, name, false, genContext);
+        auto value = ClassMembers(location, thisValue, classInfo, name, baseClass, genContext);
         if (!value && !genContext.allowPartialResolve)
         {
             emitError(location, "Class member '") << name << "' can't be found";
@@ -2965,6 +2965,7 @@ llvm.return %5 : i32
         }
 
         mlir::Value value;
+        auto testResult = false;
         TypeSwitch<mlir::Type>(funcRefValue.getType())
             .Case<mlir::FunctionType>([&](auto calledFuncType) {
                 SmallVector<mlir::Value, 4> operands;
@@ -2988,6 +2989,7 @@ llvm.return %5 : i32
                     if (calledFuncType.getNumResults() > 0)
                     {
                         value = callIndirectOp.getResult(0);
+                        testResult = true;
                     }
                 }
             })
@@ -3007,7 +3009,7 @@ llvm.return %5 : i32
             return value;
         }
 
-        assert(false);
+        assert(!testResult);
         return mlir::Value();
     }
 

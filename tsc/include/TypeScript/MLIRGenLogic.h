@@ -358,6 +358,36 @@ class MLIRPropertyAccessCodeLogic
                                                           builder.getArrayAttr(mth.getStructIndexAttrValue(fieldIndex)));
     }
 
+    template <typename T> mlir::Value TupleNoError(T tupleType, bool indexAccess = false)
+    {
+        mlir::Value value;
+
+        MLIRCodeLogic mcl(builder);
+
+        // resolve index
+        auto pair = mcl.TupleFieldTypeNoError(location, tupleType, fieldId, indexAccess);
+        auto fieldIndex = pair.first;
+        auto elementType = pair.second;
+
+        if (fieldIndex < 0)
+        {
+            return value;
+        }
+
+        auto refValue = getExprLoadRefValue();
+        if (refValue)
+        {
+            auto propRef = builder.create<mlir_ts::PropertyRefOp>(location, mlir_ts::RefType::get(elementType), refValue,
+                                                                  builder.getI32IntegerAttr(fieldIndex));
+
+            return builder.create<mlir_ts::LoadOp>(location, elementType, propRef);
+        }
+
+        MLIRTypeHelper mth(builder.getContext());
+        return builder.create<mlir_ts::ExtractPropertyOp>(location, elementType, expression,
+                                                          builder.getArrayAttr(mth.getStructIndexAttrValue(fieldIndex)));
+    }
+
     mlir::Value Bool(mlir_ts::BooleanType intType)
     {
         auto propName = getName();
@@ -440,25 +470,7 @@ class MLIRPropertyAccessCodeLogic
     {
         if (auto tupleType = refType.getElementType().template dyn_cast_or_null<mlir_ts::TupleType>())
         {
-            MLIRCodeLogic mcl(builder);
-
-            // resolve index
-            auto pair = mcl.TupleFieldType(location, tupleType, fieldId);
-            auto fieldIndex = pair.first;
-            auto elementType = pair.second;
-
-            if (fieldIndex < 0)
-            {
-                return mlir::Value();
-            }
-
-            // LLVM_DEBUG(llvm::dbgs() << "property ref access: " << expression << " index:" << fieldIndex << " field type: " << elementType
-            // << "\n");
-
-            auto propRef = builder.create<mlir_ts::PropertyRefOp>(location, mlir_ts::RefType::get(elementType), expression,
-                                                                  builder.getI32IntegerAttr(fieldIndex));
-
-            return builder.create<mlir_ts::LoadOp>(location, elementType, propRef);
+            return Ref(tupleType);
         }
         else
         {
@@ -466,34 +478,62 @@ class MLIRPropertyAccessCodeLogic
         }
     }
 
+    mlir::Value Ref(mlir_ts::TupleType tupleType)
+    {
+        MLIRCodeLogic mcl(builder);
+
+        // resolve index
+        auto pair = mcl.TupleFieldType(location, tupleType, fieldId);
+        auto fieldIndex = pair.first;
+        auto elementType = pair.second;
+
+        if (fieldIndex < 0)
+        {
+            return mlir::Value();
+        }
+
+        // LLVM_DEBUG(llvm::dbgs() << "property ref access: " << expression << " index:" << fieldIndex << " field type: " << elementType
+        // << "\n");
+
+        auto propRef = builder.create<mlir_ts::PropertyRefOp>(location, mlir_ts::RefType::get(elementType), expression,
+                                                              builder.getI32IntegerAttr(fieldIndex));
+
+        return builder.create<mlir_ts::LoadOp>(location, elementType, propRef);
+    }
+
     mlir::Value Class(mlir_ts::ClassType classType)
     {
         if (auto classStorageType = classType.getStorageType().template dyn_cast_or_null<mlir_ts::ClassStorageType>())
         {
-            MLIRCodeLogic mcl(builder);
-
-            // resolve index
-            auto pair = mcl.TupleFieldTypeNoError(location, classStorageType, fieldId);
-            auto fieldIndex = pair.first;
-            auto elementType = pair.second;
-
-            if (fieldIndex < 0)
-            {
-                return mlir::Value();
-            }
-
-            // LLVM_DEBUG(llvm::dbgs() << "property ref access: " << expression << " index:" << fieldIndex << " field type: " << elementType
-            // << "\n");
-
-            auto propRef = builder.create<mlir_ts::PropertyRefOp>(location, mlir_ts::RefType::get(elementType), expression,
-                                                                  builder.getI32IntegerAttr(fieldIndex));
-
-            return builder.create<mlir_ts::LoadOp>(location, elementType, propRef);
+            return Class(classStorageType);
         }
         else
         {
             llvm_unreachable("not implemented");
         }
+    }
+
+    mlir::Value Class(mlir_ts::ClassStorageType classStorageType)
+    {
+        MLIRCodeLogic mcl(builder);
+
+        // resolve index
+        auto pair = mcl.TupleFieldTypeNoError(location, classStorageType, fieldId);
+        auto fieldIndex = pair.first;
+        auto elementType = pair.second;
+
+        if (fieldIndex < 0)
+        {
+            return mlir::Value();
+        }
+
+        // LLVM_DEBUG(llvm::dbgs() << "property ref access: " << expression << " index:" << fieldIndex << " field type: " << elementType
+        // << "\n");
+
+        auto propRef = builder.create<mlir_ts::PropertyRefOp>(location, mlir_ts::RefType::get(elementType), expression,
+                                                              builder.getI32IntegerAttr(fieldIndex));
+
+        return builder.create<mlir_ts::LoadOp>(location, elementType, propRef);
     }
 
   private:
