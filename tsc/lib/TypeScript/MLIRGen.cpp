@@ -2689,6 +2689,7 @@ llvm.return %5 : i32
     {
         mlir::Value value;
 
+        // TODO: create NamespaceType instead of using this hacky code
         if (!objectValue.getType() || objectValue.getType() == mlir::NoneType::get(builder.getContext()))
         {
             if (auto namespaceRef = dyn_cast_or_null<mlir_ts::NamespaceRefOp>(objectValue.getDefiningOp()))
@@ -2715,7 +2716,6 @@ llvm.return %5 : i32
             .Case<mlir_ts::EnumType>([&](auto enumType) { value = cl.Enum(enumType); })
             .Case<mlir_ts::ConstTupleType>([&](auto constTupleType) { value = cl.Tuple(constTupleType); })
             .Case<mlir_ts::TupleType>([&](auto tupleType) { value = cl.Tuple(tupleType); })
-            .Case<mlir_ts::ClassStorageType>([&](auto classStorageType) { value = cl.Tuple(classStorageType); })
             .Case<mlir_ts::BooleanType>([&](auto intType) { value = cl.Bool(intType); })
             .Case<mlir::IntegerType>([&](auto intType) { value = cl.Int(intType); })
             .Case<mlir::FloatType>([&](auto intType) { value = cl.Float(intType); })
@@ -2723,19 +2723,18 @@ llvm.return %5 : i32
             .Case<mlir_ts::ConstArrayType>([&](auto arrayType) { value = cl.Array(arrayType); })
             .Case<mlir_ts::ArrayType>([&](auto arrayType) { value = cl.Array(arrayType); })
             .Case<mlir_ts::RefType>([&](auto refType) { value = cl.Ref(refType); })
+            .Case<mlir_ts::ClassStorageType>([&](auto classStorageType) {
+                value = cl.Tuple(classStorageType);
+                if (!value)
+                {
+                    value = ClassMembers(location, objectValue, classStorageType.getName().getValue(), name, false, genContext);
+                }
+            })
             .Case<mlir_ts::ClassType>([&](auto classType) {
                 value = cl.Class(classType);
                 if (!value)
                 {
-                    auto classInfo = getClassByFullName(classType.getName().getValue());
-                    assert(classInfo);
-
-                    // static field access
-                    value = ClassMembers(location, objectValue, classInfo, name, false, genContext);
-                    if (!value && !genContext.allowPartialResolve)
-                    {
-                        emitError(location, "Class member '") << name << "' can't be found";
-                    }
+                    value = ClassMembers(location, objectValue, classType.getName().getValue(), name, false, genContext);
                 }
             })
             .Default([](auto type) { llvm_unreachable("not implemented"); });
@@ -2748,6 +2747,22 @@ llvm.return %5 : i32
         emitError(location, "Can't resolve property name");
 
         llvm_unreachable("not implemented");
+    }
+
+    mlir::Value ClassMembers(mlir::Location location, mlir::Value thisValue, mlir::StringRef classFullName, mlir::StringRef name,
+                             bool baseClass, const GenContext &genContext)
+    {
+        auto classInfo = getClassByFullName(classFullName);
+        assert(classInfo);
+
+        // static field access
+        auto value = ClassMembers(location, thisValue, classInfo, name, false, genContext);
+        if (!value && !genContext.allowPartialResolve)
+        {
+            emitError(location, "Class member '") << name << "' can't be found";
+        }
+
+        return value;
     }
 
     mlir::Value ClassMembers(mlir::Location location, mlir::Value thisValue, ClassInfo::TypePtr classInfo, mlir::StringRef name,
@@ -2992,6 +3007,7 @@ llvm.return %5 : i32
             return value;
         }
 
+        assert(false);
         return mlir::Value();
     }
 
