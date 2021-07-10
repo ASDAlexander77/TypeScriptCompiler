@@ -2723,12 +2723,12 @@ llvm.return %5 : i32
             .Case<mlir_ts::ArrayType>([&](auto arrayType) { value = cl.Array(arrayType); })
             .Case<mlir_ts::RefType>([&](auto refType) { value = cl.Ref(refType); })
             .Case<mlir_ts::ClassType>([&](auto classType) {
-                auto classInfo = getClassByFullName(classType.getName().getValue());
-                assert(classInfo);
-
                 value = cl.Class(classType);
                 if (!value)
                 {
+                    auto classInfo = getClassByFullName(classType.getName().getValue());
+                    assert(classInfo);
+
                     // static field access
                     value = ClassMembers(location, objectValue, classInfo, name, false, genContext);
                     if (!value && !genContext.allowPartialResolve)
@@ -3927,10 +3927,9 @@ llvm.return %5 : i32
                         .template Case<mlir_ts::ClassType>([&](auto classType) {
                             auto classInfo = getClassByFullName(classType.getName().getValue());
 
-                            auto storageType = classType.getStorageType();
-                            auto autoBaseName = classType.getName().getValue();
-                            auto fieldId = mcl.TupleFieldName(autoBaseName);
-                            fieldInfos.push_back({fieldId, storageType});
+                            auto baseName = classType.getName().getValue();
+                            auto fieldId = mcl.TupleFieldName(baseName);
+                            fieldInfos.push_back({fieldId, classType.getStorageType()});
 
                             baseClassInfos.push_back(classInfo);
                         })
