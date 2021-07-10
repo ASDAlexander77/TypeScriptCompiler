@@ -2727,14 +2727,14 @@ llvm.return %5 : i32
                 value = cl.TupleNoError(classStorageType);
                 if (!value)
                 {
-                    value = ClassMembers(location, objectValue, classStorageType.getName().getValue(), name, true, genContext);
+                    value = ClassMembers(location, objectValue, classStorageType.getName().getValue(), name, true, true, genContext);
                 }
             })
             .Case<mlir_ts::ClassType>([&](auto classType) {
                 value = cl.Class(classType);
                 if (!value)
                 {
-                    value = ClassMembers(location, objectValue, classType.getName().getValue(), name, false, genContext);
+                    value = ClassMembers(location, objectValue, classType.getName().getValue(), name, false, false, genContext);
                 }
             })
             .Default([](auto type) { llvm_unreachable("not implemented"); });
@@ -2750,13 +2750,13 @@ llvm.return %5 : i32
     }
 
     mlir::Value ClassMembers(mlir::Location location, mlir::Value thisValue, mlir::StringRef classFullName, mlir::StringRef name,
-                             bool baseClass, const GenContext &genContext)
+                             bool baseClass, bool storageType, const GenContext &genContext)
     {
         auto classInfo = getClassByFullName(classFullName);
         assert(classInfo);
 
         // static field access
-        auto value = ClassMembers(location, thisValue, classInfo, name, baseClass, genContext);
+        auto value = ClassMembers(location, thisValue, classInfo, name, baseClass, storageType, genContext);
         if (!value && !genContext.allowPartialResolve)
         {
             emitError(location, "Class member '") << name << "' can't be found";
@@ -2766,7 +2766,7 @@ llvm.return %5 : i32
     }
 
     mlir::Value ClassMembers(mlir::Location location, mlir::Value thisValue, ClassInfo::TypePtr classInfo, mlir::StringRef name,
-                             bool baseClass, const GenContext &genContext)
+                             bool baseClass, bool storageType, const GenContext &genContext)
     {
         assert(classInfo);
 
@@ -2796,8 +2796,19 @@ llvm.return %5 : i32
             }
             else
             {
-                auto effectiveThisValue =
-                    !baseClass ? thisValue : builder.create<mlir_ts::CastOp>(location, classInfo->classType, thisValue);
+                auto effectiveThisValue = thisValue;
+                if (baseClass)
+                {
+                    // get reference in case of classStorage
+                    if (storageType)
+                    {
+                        MLIRCodeLogic mcl(builder);
+                        thisValue = mcl.GetReferenceOfLoadOp(thisValue);
+                        assert(thisValue);
+                    }
+
+                    effectiveThisValue = builder.create<mlir_ts::CastOp>(location, classInfo->classType, thisValue);
+                }
 
                 auto thisSymbOp = builder.create<mlir_ts::ThisSymbolRefOp>(
                     location, effectiveFuncType, effectiveThisValue, mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
@@ -2844,7 +2855,7 @@ llvm.return %5 : i32
                 return value;
             }
 
-            auto value = ClassMembers(location, thisValue, baseClass, name, true, genContext);
+            auto value = ClassMembers(location, thisValue, baseClass, name, true, false, genContext);
             if (value)
             {
                 return value;
