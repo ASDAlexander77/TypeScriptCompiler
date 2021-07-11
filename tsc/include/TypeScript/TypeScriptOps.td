@@ -419,7 +419,7 @@ def TypeScript_NewOp : TypeScript_Op<"New"> {
   let arguments = (ins OptionalAttr<BoolAttr>:$stackAlloc);
   let results = (outs AnyType:$instance);
 
-  let assemblyFormat = "$stackAlloc attr-dict `:` type($instance)";
+  let assemblyFormat = "`{` $stackAlloc `}` attr-dict `:` type($instance)";
 }
 
 def TypeScript_NewArrayOp : TypeScript_Op<"NewArray"> {
@@ -431,7 +431,7 @@ def TypeScript_NewArrayOp : TypeScript_Op<"NewArray"> {
   let arguments = (ins I32:$count);
   let results = (outs AnyType:$instance);
 
-  let assemblyFormat = "$count attr-dict `:` type($instance)";
+  let assemblyFormat = "`[` $count `]` attr-dict `:` type($instance)";
 }
 
 def TypeScript_DeleteOp : TypeScript_Op<"Delete"> {
@@ -736,6 +736,8 @@ def TypeScript_VariableOp : TypeScript_Op<"Variable", []> {
   let results = (outs
     TypeScript_AnyRef:$reference
   );
+
+  let assemblyFormat = "`(` $initializer `:` type($initializer) `)` attr-dict `:` type($reference)";
 }
 
 def TypeScript_StoreOp : TypeScript_Op<"Store",

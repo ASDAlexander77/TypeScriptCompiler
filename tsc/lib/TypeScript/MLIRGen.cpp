@@ -3007,8 +3007,23 @@ llvm.return %5 : i32
             .Case<mlir_ts::ClassType>([&](auto classType) {
                 // seems we are calling type constructor
                 auto newOp = builder.create<mlir_ts::NewOp>(location, classType, builder.getBoolAttr(true));
-                mlirGenCallConstructor(location, classType, newOp, callExpression->typeArguments, callExpression->arguments, genContext);
+                mlirGenCallConstructor(location, classType, newOp, callExpression->typeArguments, callExpression->arguments, false,
+                                       genContext);
                 value = newOp;
+            })
+            .Case<mlir_ts::ClassStorageType>([&](auto classStorageType) {
+                MLIRCodeLogic mcl(builder);
+                auto refValue = mcl.GetReferenceOfLoadOp(funcRefValue);
+                if (refValue)
+                {
+                    // seems we are calling type constructor for super()
+                    mlirGenCallConstructor(location, classStorageType, refValue, callExpression->typeArguments, callExpression->arguments,
+                                           true, genContext);
+                }
+                else
+                {
+                    llvm_unreachable("not implemented");
+                }
             })
             .Default([&](auto type) {
                 // it is not function, so just return value as maybe it has been resolved earlier like in case "<number>.ToString()"
@@ -3089,26 +3104,53 @@ llvm.return %5 : i32
 
     mlir::LogicalResult mlirGenCallConstructor(mlir::Location location, mlir_ts::ClassType classType, mlir::Value thisValue,
                                                NodeArray<TypeNode> typeArguments, NodeArray<Expression> arguments,
-                                               const GenContext &genContext)
+                                               bool castThisValueToClass, const GenContext &genContext)
     {
         if (!classType)
         {
             return mlir::failure();
         }
 
-        // adding call of ctor
-        NodeFactory nf(NodeFactoryFlags::None);
-
         // register temp var
         auto classInfo = getClassByFullName(classType.getName().getValue());
+        return mlirGenCallConstructor(location, classInfo, thisValue, typeArguments, arguments, castThisValueToClass, genContext);
+    }
+
+    mlir::LogicalResult mlirGenCallConstructor(mlir::Location location, mlir_ts::ClassStorageType classStorageType, mlir::Value thisValue,
+                                               NodeArray<TypeNode> typeArguments, NodeArray<Expression> arguments,
+                                               bool castThisValueToClass, const GenContext &genContext)
+    {
+        if (!classStorageType)
+        {
+            return mlir::failure();
+        }
+
+        // register temp var
+        auto classInfo = getClassByFullName(classStorageType.getName().getValue());
+        return mlirGenCallConstructor(location, classInfo, thisValue, typeArguments, arguments, castThisValueToClass, genContext);
+    }
+
+    mlir::LogicalResult mlirGenCallConstructor(mlir::Location location, ClassInfo::TypePtr classInfo, mlir::Value thisValue,
+                                               NodeArray<TypeNode> typeArguments, NodeArray<Expression> arguments,
+                                               bool castThisValueToClass, const GenContext &genContext)
+    {
         assert(classInfo);
         if (classInfo->hasConstructor)
         {
+            // adding call of ctor
+            NodeFactory nf(NodeFactoryFlags::None);
+
             // to remove temp var .ctor after call
             SymbolTableScopeT varScope(symbolTable);
 
-            auto varDecl = std::make_shared<VariableDeclarationDOM>(CONSTRUCTOR_TEMPVAR_NAME, classType, location);
-            declare(varDecl, thisValue);
+            auto effectiveThisValue = thisValue;
+            if (castThisValueToClass)
+            {
+                effectiveThisValue = builder.create<mlir_ts::CastOp>(location, classInfo->classType, thisValue);
+            }
+
+            auto varDecl = std::make_shared<VariableDeclarationDOM>(CONSTRUCTOR_TEMPVAR_NAME, classInfo->classType, location);
+            declare(varDecl, effectiveThisValue);
             auto thisToken = nf.createIdentifier(S(CONSTRUCTOR_TEMPVAR_NAME));
             auto propAccess = nf.createPropertyAccessExpression(thisToken, nf.createIdentifier(S(CONSTRUCTOR_NAME)));
             auto callExpr = nf.createCallExpression(propAccess, typeArguments, arguments);
@@ -3139,7 +3181,7 @@ llvm.return %5 : i32
 
             auto newOp = builder.create<mlir_ts::NewOp>(location, resultType, builder.getBoolAttr(false));
             mlirGenCallConstructor(location, resultType.dyn_cast_or_null<mlir_ts::ClassType>(), newOp, newExpression->typeArguments,
-                                   newExpression->arguments, genContext);
+                                   newExpression->arguments, false, genContext);
             return newOp;
         }
         else if (typeExpression == SyntaxKind::ElementAccessExpression)
