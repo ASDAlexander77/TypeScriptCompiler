@@ -2845,7 +2845,6 @@ llvm.return %5 : i32
             }
         }
 
-        // TODO: call the same for base classes
         auto first = true;
         for (auto baseClass : classInfo->baseClasses)
         {
@@ -2861,6 +2860,32 @@ llvm.return %5 : i32
                 return value;
             }
 
+            // TODO: find field in base classes
+            SmallVector<ClassInfo::TypePtr> fieldPath;
+            if (classHasField(baseClass, name, fieldPath))
+            {
+                LLVM_DEBUG(dbgs() << "field path for : " << name << "\n";);
+                for (auto &chain : fieldPath)
+                {
+                    LLVM_DEBUG(dbgs() << "step: " << chain->fullName << "\n";);
+                }
+
+                // load value from path
+                auto currentObject = thisValue;
+                for (auto &chain : fieldPath)
+                {
+                    auto fieldValue = mlirGenPropertyAccessExpression(location, currentObject, chain->name, genContext);
+                    currentObject = fieldValue;
+                }
+
+                // last value
+                auto value = mlirGenPropertyAccessExpression(location, currentObject, name, genContext);
+                if (value)
+                {
+                    return value;
+                }
+            }
+
             first = false;
         }
 
@@ -2871,6 +2896,32 @@ llvm.return %5 : i32
 
         assert(false);
         llvm_unreachable("not implemented");
+    }
+
+    bool classHasField(ClassInfo::TypePtr classInfo, mlir::StringRef name, SmallVector<ClassInfo::TypePtr> &fieldPath)
+    {
+        MLIRCodeLogic mcl(builder);
+
+        auto fieldId = mcl.TupleFieldName(name);
+        auto classStorageType = classInfo->classType.getStorageType().cast<mlir_ts::ClassStorageType>();
+        auto fieldIndex = classStorageType.getIndex(fieldId);
+        auto missingField = fieldIndex < 0 || fieldIndex >= classStorageType.size();
+        if (!missingField)
+        {
+            fieldPath.insert(fieldPath.begin(), classInfo);
+            return true;
+        }
+
+        for (auto baseClass : classInfo->baseClasses)
+        {
+            if (classHasField(baseClass, name, fieldPath))
+            {
+                fieldPath.insert(fieldPath.begin(), classInfo);
+                return true;
+            }
+        }
+
+        return false;
     }
 
     template <typename T>
