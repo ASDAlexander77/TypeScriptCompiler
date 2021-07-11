@@ -67,7 +67,7 @@ def SymbolRefOp : TypeScript_Op<"SymbolRef",
   let summary = "symbol reference as constant";
 
   let arguments = (ins FlatSymbolRefAttr:$identifier);
-  let results = (outs AnyType);
+  let results = (outs AnyType:$value);
 
   let builders = [
     OpBuilder<(ins "FlatSymbolRefAttr":$identifier),
@@ -78,6 +78,8 @@ def SymbolRefOp : TypeScript_Op<"SymbolRef",
   }];
 
   let hasCanonicalizer = 1;
+
+  let assemblyFormat = "attr-dict `:` type($value)";
 }
 
 def ThisSymbolRefOp : TypeScript_Op<"ThisSymbolRef", 
@@ -85,7 +87,7 @@ def ThisSymbolRefOp : TypeScript_Op<"ThisSymbolRef",
   let summary = "symbol reference as to this member";
 
   let arguments = (ins AnyType:$thisVal, FlatSymbolRefAttr:$identifier);
-  let results = (outs AnyType);
+  let results = (outs AnyType:$value);
 
   let builders = [
     OpBuilder<(ins "Value":$thisVal, "FlatSymbolRefAttr":$identifier),
@@ -96,6 +98,8 @@ def ThisSymbolRefOp : TypeScript_Op<"ThisSymbolRef",
   }];
 
   let hasCanonicalizer = 1;
+
+  let assemblyFormat = "`(` $thisVal `:` type($thisVal) `)` attr-dict `:` type($value)";
 }
 
 def AccessorRefOp : TypeScript_Op<"AccessorRef", 
@@ -103,13 +107,15 @@ def AccessorRefOp : TypeScript_Op<"AccessorRef",
   let summary = "symbol reference as to static accessor";
 
   let arguments = (ins OptionalAttr<FlatSymbolRefAttr>:$getAccessor, OptionalAttr<FlatSymbolRefAttr>:$setAccessor);
-  let results = (outs AnyType);
+  let results = (outs AnyType:$value);
 
   let builders = [
     OpBuilder<(ins "FlatSymbolRefAttr":$getAccessor, "FlatSymbolRefAttr":$setAccessor),
     [{ build($_builder, $_state, getAccessor.getType(), getAccessor, setAccessor); }]>];
 
   let hasCanonicalizer = 1;
+
+  let assemblyFormat = "attr-dict `:` type($value)";
 }
 
 def ThisAccessorRefOp : TypeScript_Op<"ThisAccessorRef", 
@@ -117,22 +123,26 @@ def ThisAccessorRefOp : TypeScript_Op<"ThisAccessorRef",
   let summary = "symbol reference as to accessor";
 
   let arguments = (ins AnyType:$thisVal, OptionalAttr<FlatSymbolRefAttr>:$getAccessor, OptionalAttr<FlatSymbolRefAttr>:$setAccessor);
-  let results = (outs AnyType);
+  let results = (outs AnyType:$value);
 
   let builders = [
     OpBuilder<(ins "Value":$thisVal, "FlatSymbolRefAttr":$getAccessor, "FlatSymbolRefAttr":$setAccessor),
     [{ build($_builder, $_state, getAccessor.getType(), thisVal, getAccessor, setAccessor); }]>];
 
   let hasCanonicalizer = 1;
+
+  let assemblyFormat = "`(` $thisVal `:` type($thisVal) `)` $getAccessor $setAccessor attr-dict `:` type($value)";  
 }
 
 def TypeRefOp : TypeScript_Op<"TypeRef", 
     [NoSideEffect]> {
   let summary = "symbol reference to type";
 
-  let results = (outs AnyType);
+  let results = (outs AnyType:$value);
 
   let hasCanonicalizer = 1;
+
+  let assemblyFormat = "attr-dict `:` type($value)";   
 }
 
 def NamespaceRefOp : TypeScript_Op<"NamespaceRef", 
@@ -140,7 +150,7 @@ def NamespaceRefOp : TypeScript_Op<"NamespaceRef",
   let summary = "symbol reference to namespace";
 
   let arguments = (ins FlatSymbolRefAttr:$identifier);
-  let results = (outs AnyType);
+  let results = (outs AnyType:$value);
 
   let builders = [
     OpBuilder<(ins "FlatSymbolRefAttr":$identifier),
@@ -151,6 +161,8 @@ def NamespaceRefOp : TypeScript_Op<"NamespaceRef",
   }];
 
   let hasCanonicalizer = 1;
+
+  let assemblyFormat = "attr-dict `:` type($value)";     
 }
 
 def ClassRefOp : TypeScript_Op<"ClassRef", 
@@ -158,7 +170,7 @@ def ClassRefOp : TypeScript_Op<"ClassRef",
   let summary = "symbol reference to class";
 
   let arguments = (ins FlatSymbolRefAttr:$identifier);
-  let results = (outs AnyType);
+  let results = (outs AnyType:$value);
 
   let builders = [
     OpBuilder<(ins "FlatSymbolRefAttr":$identifier),
@@ -169,6 +181,8 @@ def ClassRefOp : TypeScript_Op<"ClassRef",
   }];
 
   let hasCanonicalizer = 1;
+
+  let assemblyFormat = "attr-dict `:` type($value)";    
 }
 
 def TypeScript_FuncOp : TypeScript_Op<"Func", [
@@ -328,6 +342,8 @@ def TypeScript_PrintOp : TypeScript_Op<"Print"> {
   }];
 
   let arguments = (ins Variadic<AnyType>:$inputs);
+
+  let assemblyFormat = "`(` $inputs `)` type($inputs) attr-dict";  
 }
 
 def TypeScript_AssertOp : TypeScript_Op<"Assert"> {
@@ -402,6 +418,8 @@ def TypeScript_NewOp : TypeScript_Op<"New"> {
 
   let arguments = (ins OptionalAttr<BoolAttr>:$stackAlloc);
   let results = (outs AnyType:$instance);
+
+  let assemblyFormat = "$stackAlloc attr-dict `:` type($instance)";
 }
 
 def TypeScript_NewArrayOp : TypeScript_Op<"NewArray"> {
@@ -412,6 +430,8 @@ def TypeScript_NewArrayOp : TypeScript_Op<"NewArray"> {
 
   let arguments = (ins I32:$count);
   let results = (outs AnyType:$instance);
+
+  let assemblyFormat = "$count attr-dict `:` type($instance)";
 }
 
 def TypeScript_DeleteOp : TypeScript_Op<"Delete"> {
@@ -422,6 +442,8 @@ def TypeScript_DeleteOp : TypeScript_Op<"Delete"> {
 
   let arguments = (ins TypeScript_AnyRefLike:$reference);
   let results = (outs );
+
+  let assemblyFormat = "`(` $reference `:` type($reference) `)` attr-dict";
 }
 
 def TypeScript_CallOp : TypeScript_Op<"Call",
@@ -740,7 +762,7 @@ def TypeScript_LoadOp : TypeScript_Op<"Load",
 
   let arguments = (ins Arg<TypeScript_AnyRef, "the reference to load from", [MemRead]>:$reference);
   let results = (outs AnyType:$result);
-  let assemblyFormat = "$reference attr-dict `:` type($reference) `->` type($result)";
+  let assemblyFormat = "`(` $reference `:` type($reference) `)` attr-dict `:` type($result)";
 
   let hasCanonicalizer = 1;
 }
@@ -761,7 +783,7 @@ def TypeScript_ExtractPropertyOp : TypeScript_Op<"ExtractProperty"> {
     AnyType:$result
   );
 
-  //let assemblyFormat = "$object_reference `,` $propertyIndex attr-dict `:` type($result)";
+  let assemblyFormat = "`(` $object `:` type($object) `,` $position `)` attr-dict `:` type($result)";
 }
 
 def TypeScript_InsertPropertyOp : TypeScript_Op<"InsertProperty"> {
