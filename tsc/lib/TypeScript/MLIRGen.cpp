@@ -4251,6 +4251,14 @@ llvm.return %5 : i32
             NodeFactory nf(NodeFactoryFlags::None);
 
             NodeArray<Statement> statements;
+
+            if (!newClassPtr->baseClasses.empty())
+            {
+                auto superExpr = nf.createToken(SyntaxKind::SuperKeyword);
+                auto callSuper = nf.createCallExpression(superExpr, undefined, undefined);
+                statements.push_back(nf.createExpressionStatement(callSuper));
+            }
+
             auto body = nf.createBlock(statements, /*multiLine*/ false);
             auto generatedConstructor = nf.createConstructorDeclaration(undefined, undefined, undefined, body);
             classDeclarationAST->members.push_back(generatedConstructor);
