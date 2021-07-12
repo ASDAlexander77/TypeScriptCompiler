@@ -4211,15 +4211,15 @@ llvm.return %5 : i32
         memberNamePtr = StringRef(memberName).copy(stringAllocator);
         fieldId = mcl.TupleFieldName(memberNamePtr);
 
-        auto typeAndInit = getTypeAndInit(propertyDeclaration, genContext);
-        type = typeAndInit.first;
-        if (typeAndInit.second)
-        {
-            newClassPtr->hasInitializers = true;
-        }
-
         if (!isStatic)
         {
+            auto typeAndInit = getTypeAndInit(propertyDeclaration, genContext);
+            type = typeAndInit.first;
+            if (typeAndInit.second)
+            {
+                newClassPtr->hasInitializers = true;
+            }
+
             fieldInfos.push_back({fieldId, type});
         }
         else
@@ -4227,8 +4227,8 @@ llvm.return %5 : i32
             // register global
             auto fullClassStaticFieldName = concat(newClassPtr->fullName, memberNamePtr);
             registerVariable(
-                location, fullClassStaticFieldName, true, VariableClass::Var, [&]() { return std::make_pair(type, mlir::Value()); },
-                genContext);
+                location, fullClassStaticFieldName, true, VariableClass::Var,
+                [&]() { return getTypeAndInit(propertyDeclaration, genContext); }, genContext);
 
             if (declareClass)
             {
