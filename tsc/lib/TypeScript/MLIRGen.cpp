@@ -171,8 +171,9 @@ struct ClassInfo
     llvm::SmallVector<AccessorInfo> accessors;
 
     bool hasConstructor;
+    bool hasInitializers;
 
-    ClassInfo() : hasConstructor(false)
+    ClassInfo() : hasConstructor(false), hasInitializers(false)
     {
     }
 
@@ -4126,6 +4127,10 @@ llvm.return %5 : i32
 
                 auto typeAndInit = getTypeAndInit(propertyDeclaration, genContext);
                 type = typeAndInit.first;
+                if (typeAndInit.second)
+                {
+                    newClassPtr->hasInitializers = true;
+                }
 
                 if (!isStatic)
                 {
@@ -4154,12 +4159,24 @@ llvm.return %5 : i32
             newClassPtr->classType = classType;
         }
 
-        auto &methodInfos = newClassPtr->methods;
-
         // clear all flags
         for (auto &classMember : classDeclarationAST->members)
         {
             classMember->processed = false;
+        }
+
+        ConstructorDeclaration generatedConstructor;
+        // if we do not have constructor but have initializers we need to create empty dummy constructor
+        if (newClassPtr->hasInitializers && !newClassPtr->hasConstructor)
+        {
+            // create constructor
+            newClassPtr->hasConstructor = true;
+
+            NodeFactory nf(NodeFactoryFlags::None);
+
+            NodeArray<Statement> statements;
+            auto body = nf.createBlock(statements, /*multiLine*/ false);
+            auto generatedConstructor = nf.createConstructorDeclaration(undefined, undefined, undefined, body);
         }
 
         // add methods when we have classType
@@ -4169,70 +4186,15 @@ llvm.return %5 : i32
             auto lastTimeNotResolved = notResolved;
             notResolved = 0;
 
+            if (generatedConstructor)
+            {
+            }
+
             for (auto &classMember : classDeclarationAST->members)
             {
-                if (classMember->processed)
+                if (mlir::failed(mlirGenClassMember(classDeclarationAST, newClassPtr, classMember, declareClass, genContext)))
                 {
-                    continue;
-                }
-
-                auto location = loc(classMember);
-
-                mlir::Value initValue;
-                mlir::Attribute fieldId;
-                mlir::Type type;
-                StringRef memberNamePtr;
-
-                auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
-                auto isConstructor = classMember == SyntaxKind::Constructor;
-                if (classMember == SyntaxKind::MethodDeclaration || isConstructor || classMember == SyntaxKind::GetAccessor ||
-                    classMember == SyntaxKind::SetAccessor)
-                {
-                    if (isConstructor)
-                    {
-                        newClassPtr->hasConstructor = true;
-                    }
-
-                    auto funcLikeDeclaration = classMember.as<FunctionLikeDeclarationBase>();
-                    std::string methodName;
-                    std::string propertyName;
-                    getMethodNameOrPropertyName(funcLikeDeclaration, methodName, propertyName);
-
-                    if (methodName.empty())
-                    {
-                        llvm_unreachable("not implemented");
-                        return mlir::failure();
-                    }
-
-                    classMember->parent = classDeclarationAST;
-
-                    auto funcGenContext = GenContext(genContext);
-                    funcGenContext.thisType = classType;
-                    funcGenContext.passResult = nullptr;
-                    if (isConstructor)
-                    {
-                        // adding missing statements
-                        generateConstructorStatements(classDeclarationAST, funcGenContext);
-                    }
-
-                    auto funcOp = mlirGenFunctionLikeDeclaration(funcLikeDeclaration, funcGenContext);
-
-                    // clean up
-                    const_cast<GenContext &>(genContext).generatedStatements.clear();
-
-                    if (!funcOp)
-                    {
-                        notResolved++;
-                        continue;
-                    }
-
-                    funcLikeDeclaration->processed = true;
-
-                    if (declareClass)
-                    {
-                        methodInfos.push_back({methodName, funcOp, isStatic});
-                        addAccessor(newClassPtr, classMember, propertyName, funcOp, isStatic);
-                    }
+                    notResolved++;
                 }
             }
 
@@ -4243,6 +4205,77 @@ llvm.return %5 : i32
             }
 
         } while (notResolved > 0);
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult mlirGenClassMember(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr,
+                                           ClassElement classMember, bool declareClass, const GenContext &genContext)
+    {
+        if (classMember->processed)
+        {
+            return mlir::success();
+        }
+
+        auto location = loc(classMember);
+
+        auto &methodInfos = newClassPtr->methods;
+
+        mlir::Value initValue;
+        mlir::Attribute fieldId;
+        mlir::Type type;
+        StringRef memberNamePtr;
+
+        auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
+        auto isConstructor = classMember == SyntaxKind::Constructor;
+        if (classMember == SyntaxKind::MethodDeclaration || isConstructor || classMember == SyntaxKind::GetAccessor ||
+            classMember == SyntaxKind::SetAccessor)
+        {
+            if (isConstructor)
+            {
+                newClassPtr->hasConstructor = true;
+            }
+
+            auto funcLikeDeclaration = classMember.as<FunctionLikeDeclarationBase>();
+            std::string methodName;
+            std::string propertyName;
+            getMethodNameOrPropertyName(funcLikeDeclaration, methodName, propertyName);
+
+            if (methodName.empty())
+            {
+                llvm_unreachable("not implemented");
+                return mlir::failure();
+            }
+
+            classMember->parent = classDeclarationAST;
+
+            auto funcGenContext = GenContext(genContext);
+            funcGenContext.thisType = newClassPtr->classType;
+            funcGenContext.passResult = nullptr;
+            if (isConstructor)
+            {
+                // adding missing statements
+                generateConstructorStatements(classDeclarationAST, funcGenContext);
+            }
+
+            auto funcOp = mlirGenFunctionLikeDeclaration(funcLikeDeclaration, funcGenContext);
+
+            // clean up
+            const_cast<GenContext &>(genContext).generatedStatements.clear();
+
+            if (!funcOp)
+            {
+                return mlir::failure();
+            }
+
+            funcLikeDeclaration->processed = true;
+
+            if (declareClass)
+            {
+                methodInfos.push_back({methodName, funcOp, isStatic});
+                addAccessor(newClassPtr, classMember, propertyName, funcOp, isStatic);
+            }
+        }
 
         return mlir::success();
     }
