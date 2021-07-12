@@ -4036,23 +4036,80 @@ llvm.return %5 : i32
     mlir::LogicalResult mlirGen(ClassLikeDeclaration classDeclarationAST, const GenContext &genContext)
     {
         auto location = loc(classDeclarationAST);
+
+        auto declareClass = false;
+        auto newClassPtr = mlirGenClassInfo(classDeclarationAST, declareClass, genContext);
+        if (!newClassPtr)
+        {
+            return mlir::failure();
+        }
+
+        mlirGenClassStorageType(classDeclarationAST, newClassPtr, declareClass, genContext);
+
+        // clear all flags
+        for (auto &classMember : classDeclarationAST->members)
+        {
+            classMember->processed = false;
+        }
+
+        auto generatedConstructor = mlirGenClassDefaultConstructor(newClassPtr, genContext);
+
+        // add methods when we have classType
+        auto notResolved = 0;
+        do
+        {
+            auto lastTimeNotResolved = notResolved;
+            notResolved = 0;
+
+            // default constructor
+            if (generatedConstructor)
+            {
+                if (mlir::failed(
+                        mlirGenClassMethodMember(classDeclarationAST, newClassPtr, generatedConstructor, declareClass, genContext)))
+                {
+                    notResolved++;
+                }
+            }
+
+            // class methods
+            for (auto &classMember : classDeclarationAST->members)
+            {
+                if (mlir::failed(mlirGenClassMethodMember(classDeclarationAST, newClassPtr, classMember, declareClass, genContext)))
+                {
+                    notResolved++;
+                }
+            }
+
+            // repeat if not all resolved
+            if (lastTimeNotResolved > 0 && lastTimeNotResolved == notResolved)
+            {
+                theModule.emitError("can't resolve dependencies in class: ") << newClassPtr->name;
+                return mlir::failure();
+            }
+
+        } while (notResolved > 0);
+
+        return mlir::success();
+    }
+
+    ClassInfo::TypePtr mlirGenClassInfo(ClassLikeDeclaration classDeclarationAST, bool &declareClass, const GenContext &genContext)
+    {
+        declareClass = false;
+
         auto name = MLIRHelper::getName(classDeclarationAST->name);
         if (name.empty())
         {
             llvm_unreachable("not implemented");
-            return mlir::failure();
+            return ClassInfo::TypePtr();
         }
 
         auto namePtr = StringRef(name).copy(stringAllocator);
         auto fullNamePtr = getFullNamespaceName(namePtr);
 
-        bool declareClass = false;
         ClassInfo::TypePtr newClassPtr;
-        mlir_ts::ClassType classType;
         if (fullNameClassesMap.count(fullNamePtr))
         {
             newClassPtr = fullNameClassesMap.lookup(fullNamePtr);
-            classType = newClassPtr->classType;
             getClassesMap().insert({namePtr, newClassPtr});
         }
         else
@@ -4066,105 +4123,135 @@ llvm.return %5 : i32
             declareClass = true;
         }
 
-        // read class info
-        MLIRCodeLogic mcl(builder);
+        return newClassPtr;
+    }
 
-        auto &baseClassInfos = newClassPtr->baseClasses;
-        auto &staticFieldInfos = newClassPtr->staticFields;
+    mlir::LogicalResult mlirGenClassStorageType(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr, bool declareClass,
+                                                const GenContext &genContext)
+    {
+        MLIRCodeLogic mcl(builder);
         SmallVector<mlir_ts::FieldInfo> fieldInfos;
 
         // add base classes
         for (auto &heritageClause : classDeclarationAST->heritageClauses)
         {
-            if (heritageClause->token == SyntaxKind::ExtendsKeyword)
-            {
-                for (auto &extendingType : heritageClause->types)
-                {
-                    auto baseType = mlirGen(extendingType->expression, genContext);
-                    TypeSwitch<mlir::Type>(baseType.getType())
-                        .template Case<mlir_ts::ClassType>([&](auto classType) {
-                            auto classInfo = getClassByFullName(classType.getName().getValue());
-
-                            auto baseName = classType.getName().getValue();
-                            auto fieldId = mcl.TupleFieldName(baseName);
-                            fieldInfos.push_back({fieldId, classType.getStorageType()});
-
-                            baseClassInfos.push_back(classInfo);
-                        })
-                        .Default([&](auto type) { llvm_unreachable("not implemented"); });
-                }
-            }
+            mlirGenClassHeritageClause(classDeclarationAST, newClassPtr, heritageClause, fieldInfos, declareClass, genContext);
         }
 
         for (auto &classMember : classDeclarationAST->members)
         {
-            auto location = loc(classMember);
-
-            mlir::Value initValue;
-            mlir::Attribute fieldId;
-            mlir::Type type;
-            StringRef memberNamePtr;
-
-            auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
-            if (classMember == SyntaxKind::PropertyDeclaration)
-            {
-                if (!isStatic && !declareClass)
-                {
-                    continue;
-                }
-
-                auto propertyDeclaration = classMember.as<PropertyDeclaration>();
-
-                auto memberName = MLIRHelper::getName(propertyDeclaration->name);
-                if (memberName.empty())
-                {
-                    llvm_unreachable("not implemented");
-                    return mlir::failure();
-                }
-
-                memberNamePtr = StringRef(memberName).copy(stringAllocator);
-                fieldId = mcl.TupleFieldName(memberNamePtr);
-
-                auto typeAndInit = getTypeAndInit(propertyDeclaration, genContext);
-                type = typeAndInit.first;
-                if (typeAndInit.second)
-                {
-                    newClassPtr->hasInitializers = true;
-                }
-
-                if (!isStatic)
-                {
-                    fieldInfos.push_back({fieldId, type});
-                }
-                else
-                {
-                    // register global
-                    auto fullClassStaticFieldName = concat(fullNamePtr, memberNamePtr);
-                    registerVariable(
-                        location, fullClassStaticFieldName, true, VariableClass::Var, [&]() { return std::make_pair(type, mlir::Value()); },
-                        genContext);
-
-                    if (declareClass)
-                    {
-                        staticFieldInfos.push_back({fieldId, fullClassStaticFieldName});
-                    }
-                }
-            }
+            mlirGenClassFieldMember(classDeclarationAST, newClassPtr, classMember, fieldInfos, declareClass, genContext);
         }
 
         if (declareClass)
         {
-            auto classFullNameSymbol = mlir::FlatSymbolRefAttr::get(builder.getContext(), fullNamePtr);
-            classType = getClassType(classFullNameSymbol, getClassStorageType(classFullNameSymbol, fieldInfos));
-            newClassPtr->classType = classType;
+            auto classFullNameSymbol = mlir::FlatSymbolRefAttr::get(builder.getContext(), newClassPtr->fullName);
+            newClassPtr->classType = getClassType(classFullNameSymbol, getClassStorageType(classFullNameSymbol, fieldInfos));
         }
 
-        // clear all flags
-        for (auto &classMember : classDeclarationAST->members)
+        return mlir::success();
+    }
+
+    mlir::LogicalResult mlirGenClassHeritageClause(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr,
+                                                   HeritageClause heritageClause, SmallVector<mlir_ts::FieldInfo> &fieldInfos,
+                                                   bool declareClass, const GenContext &genContext)
+    {
+        if (heritageClause->token != SyntaxKind::ExtendsKeyword)
         {
-            classMember->processed = false;
+            return mlir::success();
         }
 
+        MLIRCodeLogic mcl(builder);
+
+        auto &baseClassInfos = newClassPtr->baseClasses;
+
+        for (auto &extendingType : heritageClause->types)
+        {
+            auto baseType = mlirGen(extendingType->expression, genContext);
+            TypeSwitch<mlir::Type>(baseType.getType())
+                .template Case<mlir_ts::ClassType>([&](auto classType) {
+                    auto classInfo = getClassByFullName(classType.getName().getValue());
+
+                    auto baseName = classType.getName().getValue();
+                    auto fieldId = mcl.TupleFieldName(baseName);
+                    fieldInfos.push_back({fieldId, classType.getStorageType()});
+
+                    baseClassInfos.push_back(classInfo);
+                })
+                .Default([&](auto type) { llvm_unreachable("not implemented"); });
+        }
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult mlirGenClassFieldMember(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr,
+                                                ClassElement classMember, SmallVector<mlir_ts::FieldInfo> &fieldInfos, bool declareClass,
+                                                const GenContext &genContext)
+    {
+        auto location = loc(classMember);
+
+        MLIRCodeLogic mcl(builder);
+
+        auto &staticFieldInfos = newClassPtr->staticFields;
+
+        mlir::Value initValue;
+        mlir::Attribute fieldId;
+        mlir::Type type;
+        StringRef memberNamePtr;
+
+        auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
+        if (classMember != SyntaxKind::PropertyDeclaration)
+        {
+            return mlir::success();
+        }
+
+        if (!isStatic && !declareClass)
+        {
+            return mlir::success();
+        }
+
+        auto propertyDeclaration = classMember.as<PropertyDeclaration>();
+
+        auto memberName = MLIRHelper::getName(propertyDeclaration->name);
+        if (memberName.empty())
+        {
+            llvm_unreachable("not implemented");
+            return mlir::failure();
+        }
+
+        memberNamePtr = StringRef(memberName).copy(stringAllocator);
+        fieldId = mcl.TupleFieldName(memberNamePtr);
+
+        auto typeAndInit = getTypeAndInit(propertyDeclaration, genContext);
+        type = typeAndInit.first;
+        if (typeAndInit.second)
+        {
+            newClassPtr->hasInitializers = true;
+        }
+
+        if (!isStatic)
+        {
+            fieldInfos.push_back({fieldId, type});
+        }
+        else
+        {
+            // register global
+            auto fullClassStaticFieldName = concat(newClassPtr->fullName, memberNamePtr);
+            registerVariable(
+                location, fullClassStaticFieldName, true, VariableClass::Var, [&]() { return std::make_pair(type, mlir::Value()); },
+                genContext);
+
+            if (declareClass)
+            {
+                staticFieldInfos.push_back({fieldId, fullClassStaticFieldName});
+            }
+        }
+
+        return mlir::success();
+    }
+
+    ConstructorDeclaration mlirGenClassDefaultConstructor(ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
+    {
         ConstructorDeclaration generatedConstructor;
         // if we do not have constructor but have initializers we need to create empty dummy constructor
         if (newClassPtr->hasInitializers && !newClassPtr->hasConstructor)
@@ -4176,41 +4263,14 @@ llvm.return %5 : i32
 
             NodeArray<Statement> statements;
             auto body = nf.createBlock(statements, /*multiLine*/ false);
-            auto generatedConstructor = nf.createConstructorDeclaration(undefined, undefined, undefined, body);
+            generatedConstructor = nf.createConstructorDeclaration(undefined, undefined, undefined, body);
         }
 
-        // add methods when we have classType
-        auto notResolved = 0;
-        do
-        {
-            auto lastTimeNotResolved = notResolved;
-            notResolved = 0;
-
-            if (generatedConstructor)
-            {
-            }
-
-            for (auto &classMember : classDeclarationAST->members)
-            {
-                if (mlir::failed(mlirGenClassMember(classDeclarationAST, newClassPtr, classMember, declareClass, genContext)))
-                {
-                    notResolved++;
-                }
-            }
-
-            if (lastTimeNotResolved > 0 && lastTimeNotResolved == notResolved)
-            {
-                theModule.emitError("can't resolve dependencies in class: ") << namePtr;
-                return mlir::failure();
-            }
-
-        } while (notResolved > 0);
-
-        return mlir::success();
+        return generatedConstructor;
     }
 
-    mlir::LogicalResult mlirGenClassMember(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr,
-                                           ClassElement classMember, bool declareClass, const GenContext &genContext)
+    mlir::LogicalResult mlirGenClassMethodMember(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr,
+                                                 ClassElement classMember, bool declareClass, const GenContext &genContext)
     {
         if (classMember->processed)
         {
