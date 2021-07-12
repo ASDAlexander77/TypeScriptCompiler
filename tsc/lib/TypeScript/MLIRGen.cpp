@@ -903,6 +903,37 @@ class MLIRGenImpl
         return true;
     }
 
+    template <typename ItemTy> std::pair<mlir::Type, mlir::Value> getTypeAndInit(ItemTy item, const GenContext &genContext)
+    {
+        // type
+        mlir::Type type;
+        if (item->type)
+        {
+            type = getType(item->type);
+        }
+
+        // init
+        mlir::Value init;
+        if (auto initializer = item->initializer)
+        {
+            init = mlirGen(initializer, genContext);
+            if (init)
+            {
+                if (!type)
+                {
+                    type = init.getType();
+                }
+                else if (type != init.getType())
+                {
+                    auto castValue = builder.create<mlir_ts::CastOp>(loc(initializer), type, init);
+                    init = castValue;
+                }
+            }
+        }
+
+        return std::make_pair(type, init);
+    }
+
     mlir::LogicalResult mlirGen(VariableDeclarationList variableDeclarationListAST, const GenContext &genContext)
     {
         auto isLet = (variableDeclarationListAST->flags & NodeFlags::Let) == NodeFlags::Let;
@@ -911,35 +942,7 @@ class MLIRGenImpl
 
         for (auto &item : variableDeclarationListAST->declarations)
         {
-            auto initFunc = [&]() {
-                // type
-                mlir::Type type;
-                if (item->type)
-                {
-                    type = getType(item->type);
-                }
-
-                // init
-                mlir::Value init;
-                if (auto initializer = item->initializer)
-                {
-                    init = mlirGen(initializer, genContext);
-                    if (init)
-                    {
-                        if (!type)
-                        {
-                            type = init.getType();
-                        }
-                        else if (type != init.getType())
-                        {
-                            auto castValue = builder.create<mlir_ts::CastOp>(loc(initializer), type, init);
-                            init = castValue;
-                        }
-                    }
-                }
-
-                return std::make_pair(type, init);
-            };
+            auto initFunc = [&]() { return getTypeAndInit(item, genContext); };
 
             auto valClassItem = varClass;
             if ((item->transformFlags & TransformFlags::ForceConst) == TransformFlags::ForceConst)
@@ -4108,7 +4111,8 @@ llvm.return %5 : i32
                 memberNamePtr = StringRef(memberName).copy(stringAllocator);
                 fieldId = mcl.TupleFieldName(memberNamePtr);
 
-                type = getType(propertyDeclaration->type);
+                auto typeAndInit = getTypeAndInit(propertyDeclaration, genContext);
+                type = typeAndInit.first;
 
                 if (!isStatic)
                 {
@@ -4138,7 +4142,6 @@ llvm.return %5 : i32
         }
 
         auto &methodInfos = newClassPtr->methods;
-        auto &accessorInfos = newClassPtr->accessors;
 
         // clear all flags
         for (auto &classMember : classDeclarationAST->members)
@@ -4180,24 +4183,7 @@ llvm.return %5 : i32
                     auto funcLikeDeclaration = classMember.as<FunctionLikeDeclarationBase>();
                     std::string methodName;
                     std::string propertyName;
-                    if (isConstructor)
-                    {
-                        methodName = std::string(CONSTRUCTOR_NAME);
-                    }
-                    else if (classMember == SyntaxKind::GetAccessor)
-                    {
-                        propertyName = MLIRHelper::getName(funcLikeDeclaration->name);
-                        methodName = std::string("get_") + propertyName;
-                    }
-                    else if (classMember == SyntaxKind::SetAccessor)
-                    {
-                        propertyName = MLIRHelper::getName(funcLikeDeclaration->name);
-                        methodName = std::string("set_") + propertyName;
-                    }
-                    else
-                    {
-                        methodName = MLIRHelper::getName(funcLikeDeclaration->name);
-                    }
+                    getMethodNameOrPropertyName(funcLikeDeclaration, methodName, propertyName);
 
                     if (methodName.empty())
                     {
@@ -4210,6 +4196,11 @@ llvm.return %5 : i32
                     auto funcGenContext = GenContext(genContext);
                     funcGenContext.thisType = classType;
                     funcGenContext.passResult = nullptr;
+                    if (isConstructor)
+                    {
+                        // adding missing statements
+                        // generateConstructorStatements();
+                    }
 
                     auto funcOp = mlirGenFunctionLikeDeclaration(funcLikeDeclaration, funcGenContext);
                     if (!funcOp)
@@ -4223,24 +4214,7 @@ llvm.return %5 : i32
                     if (declareClass)
                     {
                         methodInfos.push_back({methodName, funcOp, isStatic});
-
-                        auto accessorIndex = newClassPtr->getAccessorIndex(propertyName);
-                        if (accessorIndex < 0)
-                        {
-                            accessorInfos.push_back({propertyName, {}, {}, isStatic});
-                            accessorIndex = newClassPtr->getAccessorIndex(propertyName);
-                        }
-
-                        assert(accessorIndex >= 0);
-
-                        if (classMember == SyntaxKind::GetAccessor)
-                        {
-                            newClassPtr->accessors[accessorIndex].get = funcOp;
-                        }
-                        else if (classMember == SyntaxKind::SetAccessor)
-                        {
-                            newClassPtr->accessors[accessorIndex].set = funcOp;
-                        }
+                        addAccessor(newClassPtr, classMember, propertyName, funcOp, isStatic);
                     }
                 }
             }
@@ -4254,6 +4228,55 @@ llvm.return %5 : i32
         } while (notResolved > 0);
 
         return mlir::success();
+    }
+
+    mlir::LogicalResult getMethodNameOrPropertyName(FunctionLikeDeclarationBase funcLikeDeclaration, std::string &methodName,
+                                                    std::string &propertyName)
+    {
+        if (funcLikeDeclaration == SyntaxKind::Constructor)
+        {
+            methodName = std::string(CONSTRUCTOR_NAME);
+        }
+        else if (funcLikeDeclaration == SyntaxKind::GetAccessor)
+        {
+            propertyName = MLIRHelper::getName(funcLikeDeclaration->name);
+            methodName = std::string("get_") + propertyName;
+        }
+        else if (funcLikeDeclaration == SyntaxKind::SetAccessor)
+        {
+            propertyName = MLIRHelper::getName(funcLikeDeclaration->name);
+            methodName = std::string("set_") + propertyName;
+        }
+        else
+        {
+            methodName = MLIRHelper::getName(funcLikeDeclaration->name);
+        }
+
+        return mlir::success();
+    }
+
+    void addAccessor(ClassInfo::TypePtr newClassPtr, ClassElement classMember, std::string &propertyName, mlir_ts::FuncOp funcOp,
+                     bool isStatic)
+    {
+        auto &accessorInfos = newClassPtr->accessors;
+
+        auto accessorIndex = newClassPtr->getAccessorIndex(propertyName);
+        if (accessorIndex < 0)
+        {
+            accessorInfos.push_back({propertyName, {}, {}, isStatic});
+            accessorIndex = newClassPtr->getAccessorIndex(propertyName);
+        }
+
+        assert(accessorIndex >= 0);
+
+        if (classMember == SyntaxKind::GetAccessor)
+        {
+            newClassPtr->accessors[accessorIndex].get = funcOp;
+        }
+        else if (classMember == SyntaxKind::SetAccessor)
+        {
+            newClassPtr->accessors[accessorIndex].set = funcOp;
+        }
     }
 
     mlir::Type getType(Node typeReferenceAST)
