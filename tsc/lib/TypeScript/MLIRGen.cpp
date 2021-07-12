@@ -4052,7 +4052,7 @@ llvm.return %5 : i32
             classMember->processed = false;
         }
 
-        auto generatedConstructor = mlirGenClassDefaultConstructor(newClassPtr, genContext);
+        mlirGenClassDefaultConstructor(classDeclarationAST, newClassPtr, genContext);
 
         // add methods when we have classType
         auto notResolved = 0;
@@ -4061,17 +4061,6 @@ llvm.return %5 : i32
             auto lastTimeNotResolved = notResolved;
             notResolved = 0;
 
-            // default constructor
-            if (generatedConstructor)
-            {
-                if (mlir::failed(
-                        mlirGenClassMethodMember(classDeclarationAST, newClassPtr, generatedConstructor, declareClass, genContext)))
-                {
-                    notResolved++;
-                }
-            }
-
-            // class methods
             for (auto &classMember : classDeclarationAST->members)
             {
                 if (mlir::failed(mlirGenClassMethodMember(classDeclarationAST, newClassPtr, classMember, declareClass, genContext)))
@@ -4250,9 +4239,9 @@ llvm.return %5 : i32
         return mlir::success();
     }
 
-    ConstructorDeclaration mlirGenClassDefaultConstructor(ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
+    mlir::LogicalResult mlirGenClassDefaultConstructor(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr,
+                                                       const GenContext &genContext)
     {
-        ConstructorDeclaration generatedConstructor;
         // if we do not have constructor but have initializers we need to create empty dummy constructor
         if (newClassPtr->hasInitializers && !newClassPtr->hasConstructor)
         {
@@ -4263,10 +4252,11 @@ llvm.return %5 : i32
 
             NodeArray<Statement> statements;
             auto body = nf.createBlock(statements, /*multiLine*/ false);
-            generatedConstructor = nf.createConstructorDeclaration(undefined, undefined, undefined, body);
+            auto generatedConstructor = nf.createConstructorDeclaration(undefined, undefined, undefined, body);
+            classDeclarationAST->members.push_back(generatedConstructor);
         }
 
-        return generatedConstructor;
+        return mlir::success();
     }
 
     mlir::LogicalResult mlirGenClassMethodMember(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr,
