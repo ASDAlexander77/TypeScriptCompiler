@@ -13,6 +13,44 @@ Want to chat with other members of the TypeScriptCompiler community?
 
 [![Join the chat at https://gitter.im/ASDAlexander77/TypeScriptCompiler](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/ASDAlexander77/TypeScriptCompiler?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
+# Example
+
+```TypeScript
+class Cat {
+    name: string;
+
+    constructor(name: string) {
+        this.name = name;
+    }
+
+    speak() {
+        print(`${this.name} makes a noise.`);
+    }
+}
+
+class Lion extends Cat {
+    speak() {
+        super.speak();
+        print(`${this.name} roars.`);
+    }
+}
+
+function main() {
+    let l = new Lion("Fuzzy");
+    l.speak();
+}
+```
+
+```cmd
+tsc --emit=jit example.ts
+```
+
+Result
+```
+Fuzzy makes a noise.
+Fuzzy roars.
+```
+
 ## Compile as JIT
 
 ```cmd
