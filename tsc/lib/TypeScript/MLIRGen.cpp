@@ -127,6 +127,7 @@ struct GenContext
     mlir_ts::ClassType thisType;
     PassResult *passResult;
     mlir::SmallVector<mlir::Block *> *cleanUps;
+    NodeArray<Statement> generatedStatements;
 };
 
 struct StaticFieldInfo
@@ -456,6 +457,18 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGen(Block blockAST, const GenContext &genContext)
     {
         SymbolTableScopeT varScope(symbolTable);
+
+        if (genContext.generatedStatements.size() > 0)
+        {
+            // auto generated code
+            for (auto &statement : genContext.generatedStatements)
+            {
+                if (failed(mlirGen(statement, genContext)))
+                {
+                    return mlir::failure();
+                }
+            }
+        }
 
         for (auto &statement : blockAST->statements)
         {
@@ -4199,10 +4212,14 @@ llvm.return %5 : i32
                     if (isConstructor)
                     {
                         // adding missing statements
-                        // generateConstructorStatements();
+                        generateConstructorStatements(classDeclarationAST, funcGenContext);
                     }
 
                     auto funcOp = mlirGenFunctionLikeDeclaration(funcLikeDeclaration, funcGenContext);
+
+                    // clean up
+                    const_cast<GenContext &>(genContext).generatedStatements.clear();
+
                     if (!funcOp)
                     {
                         notResolved++;
@@ -4226,6 +4243,49 @@ llvm.return %5 : i32
             }
 
         } while (notResolved > 0);
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult generateConstructorStatements(ClassLikeDeclaration classDeclarationAST, const GenContext &genContext)
+    {
+        NodeFactory nf(NodeFactoryFlags::None);
+
+        for (auto &classMember : classDeclarationAST->members)
+        {
+            auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
+            if (classMember == SyntaxKind::PropertyDeclaration)
+            {
+                if (isStatic)
+                {
+                    continue;
+                }
+
+                auto propertyDeclaration = classMember.as<PropertyDeclaration>();
+                if (!propertyDeclaration->initializer)
+                {
+                    continue;
+                }
+
+                auto memberName = MLIRHelper::getName(propertyDeclaration->name);
+                if (memberName.empty())
+                {
+                    llvm_unreachable("not implemented");
+                    return mlir::failure();
+                }
+
+                auto memberNamePtr = StringRef(memberName).copy(stringAllocator);
+
+                auto _this = nf.createIdentifier(stows(THIS_NAME));
+                auto _name = nf.createIdentifier(stows(std::string(memberNamePtr)));
+                auto _this_name = nf.createPropertyAccessExpression(_this, _name);
+                auto _this_name_equal =
+                    nf.createBinaryExpression(_this_name, nf.createToken(SyntaxKind::EqualsToken), propertyDeclaration->initializer);
+                auto expr_statement = nf.createExpressionStatement(_this_name_equal);
+
+                const_cast<GenContext &>(genContext).generatedStatements.push_back(expr_statement.as<Statement>());
+            }
+        }
 
         return mlir::success();
     }
