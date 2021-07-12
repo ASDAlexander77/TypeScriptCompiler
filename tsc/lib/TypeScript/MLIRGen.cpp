@@ -175,6 +175,24 @@ struct ClassInfo
     {
     }
 
+    auto getHasConstructor() -> bool
+    {
+        if (hasConstructor)
+        {
+            return true;
+        }
+
+        for (auto &base : baseClasses)
+        {
+            if (base->hasConstructor)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// Iterate over the held elements.
     using iterator = ArrayRef<::mlir::typescript::FieldInfo>::iterator;
 
@@ -287,7 +305,7 @@ class MLIRGenImpl
 
             if (lastTimeNotResolved > 0 && lastTimeNotResolved == notResolved)
             {
-                theModule.emitError("can't resolve dependacies");
+                theModule.emitError("can't resolve dependencies");
                 return nullptr;
             }
 
@@ -3186,7 +3204,7 @@ llvm.return %5 : i32
                                                bool castThisValueToClass, const GenContext &genContext)
     {
         assert(classInfo);
-        if (classInfo->hasConstructor)
+        if (classInfo->getHasConstructor())
         {
             // adding call of ctor
             NodeFactory nf(NodeFactoryFlags::None);
@@ -4229,7 +4247,7 @@ llvm.return %5 : i32
 
             if (lastTimeNotResolved > 0 && lastTimeNotResolved == notResolved)
             {
-                theModule.emitError("can't resolve dependacies in class: ") << namePtr;
+                theModule.emitError("can't resolve dependencies in class: ") << namePtr;
                 return mlir::failure();
             }
 
