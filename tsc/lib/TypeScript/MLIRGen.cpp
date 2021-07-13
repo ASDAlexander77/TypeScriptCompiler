@@ -4189,50 +4189,79 @@ llvm.return %5 : i32
         StringRef memberNamePtr;
 
         auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
-        if (classMember != SyntaxKind::PropertyDeclaration)
-        {
-            return mlir::success();
-        }
-
         if (!isStatic && !declareClass)
         {
             return mlir::success();
         }
 
-        auto propertyDeclaration = classMember.as<PropertyDeclaration>();
-
-        auto memberName = MLIRHelper::getName(propertyDeclaration->name);
-        if (memberName.empty())
+        if (classMember == SyntaxKind::PropertyDeclaration)
         {
-            llvm_unreachable("not implemented");
-            return mlir::failure();
-        }
+            // property declaration
+            auto propertyDeclaration = classMember.as<PropertyDeclaration>();
 
-        memberNamePtr = StringRef(memberName).copy(stringAllocator);
-        fieldId = mcl.TupleFieldName(memberNamePtr);
-
-        if (!isStatic)
-        {
-            auto typeAndInit = getTypeAndInit(propertyDeclaration, genContext);
-            type = typeAndInit.first;
-            if (typeAndInit.second)
+            auto memberName = MLIRHelper::getName(propertyDeclaration->name);
+            if (memberName.empty())
             {
-                newClassPtr->hasInitializers = true;
+                llvm_unreachable("not implemented");
+                return mlir::failure();
             }
 
-            fieldInfos.push_back({fieldId, type});
-        }
-        else
-        {
-            // register global
-            auto fullClassStaticFieldName = concat(newClassPtr->fullName, memberNamePtr);
-            registerVariable(
-                location, fullClassStaticFieldName, true, VariableClass::Var,
-                [&]() { return getTypeAndInit(propertyDeclaration, genContext); }, genContext);
+            memberNamePtr = StringRef(memberName).copy(stringAllocator);
+            fieldId = mcl.TupleFieldName(memberNamePtr);
 
-            if (declareClass)
+            if (!isStatic)
             {
-                staticFieldInfos.push_back({fieldId, fullClassStaticFieldName});
+                auto typeAndInit = getTypeAndInit(propertyDeclaration, genContext);
+                type = typeAndInit.first;
+                if (typeAndInit.second)
+                {
+                    newClassPtr->hasInitializers = true;
+                }
+
+                fieldInfos.push_back({fieldId, type});
+            }
+            else
+            {
+                // register global
+                auto fullClassStaticFieldName = concat(newClassPtr->fullName, memberNamePtr);
+                registerVariable(
+                    location, fullClassStaticFieldName, true, VariableClass::Var,
+                    [&]() { return getTypeAndInit(propertyDeclaration, genContext); }, genContext);
+
+                if (declareClass)
+                {
+                    staticFieldInfos.push_back({fieldId, fullClassStaticFieldName});
+                }
+            }
+        }
+
+        if (classMember == SyntaxKind::Constructor && !isStatic)
+        {
+            auto constructorDeclaration = classMember.as<ConstructorDeclaration>();
+            for (auto &parameter : constructorDeclaration->parameters)
+            {
+                auto isPublic = hasModifier(parameter, SyntaxKind::PublicKeyword);
+                auto isProtected = hasModifier(parameter, SyntaxKind::ProtectedKeyword);
+                auto isPrivate = hasModifier(parameter, SyntaxKind::PrivateKeyword);
+
+                if (!(isPublic || isProtected || isPrivate))
+                {
+                    continue;
+                }
+
+                auto parameterName = MLIRHelper::getName(parameter->name);
+                if (parameterName.empty())
+                {
+                    llvm_unreachable("not implemented");
+                    return mlir::failure();
+                }
+
+                memberNamePtr = StringRef(parameterName).copy(stringAllocator);
+                fieldId = mcl.TupleFieldName(memberNamePtr);
+
+                auto typeAndInit = getTypeAndInit(parameter, genContext);
+                type = typeAndInit.first;
+                fieldInfos.push_back({fieldId, type});
             }
         }
 
@@ -4375,6 +4404,44 @@ llvm.return %5 : i32
                 auto expr_statement = nf.createExpressionStatement(_this_name_equal);
 
                 const_cast<GenContext &>(genContext).generatedStatements.push_back(expr_statement.as<Statement>());
+            }
+
+            if (classMember == SyntaxKind::Constructor)
+            {
+                if (isStatic)
+                {
+                    continue;
+                }
+
+                auto constructorDeclaration = classMember.as<ConstructorDeclaration>();
+                for (auto &parameter : constructorDeclaration->parameters)
+                {
+                    auto isPublic = hasModifier(parameter, SyntaxKind::PublicKeyword);
+                    auto isProtected = hasModifier(parameter, SyntaxKind::ProtectedKeyword);
+                    auto isPrivate = hasModifier(parameter, SyntaxKind::PrivateKeyword);
+
+                    if (!(isPublic || isProtected || isPrivate))
+                    {
+                        continue;
+                    }
+
+                    auto propertyName = MLIRHelper::getName(parameter->name);
+                    if (propertyName.empty())
+                    {
+                        llvm_unreachable("not implemented");
+                        return mlir::failure();
+                    }
+
+                    auto propertyNamePtr = StringRef(propertyName).copy(stringAllocator);
+
+                    auto _this = nf.createIdentifier(stows(THIS_NAME));
+                    auto _name = nf.createIdentifier(stows(std::string(propertyNamePtr)));
+                    auto _this_name = nf.createPropertyAccessExpression(_this, _name);
+                    auto _this_name_equal = nf.createBinaryExpression(_this_name, nf.createToken(SyntaxKind::EqualsToken), _name);
+                    auto expr_statement = nf.createExpressionStatement(_this_name_equal);
+
+                    const_cast<GenContext &>(genContext).generatedStatements.push_back(expr_statement.as<Statement>());
+                }
             }
         }
 
