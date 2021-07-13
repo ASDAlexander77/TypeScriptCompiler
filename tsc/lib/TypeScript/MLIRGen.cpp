@@ -235,6 +235,16 @@ struct ClassInfo
         return false;
     }
 
+    void getVirtualTable(llvm::SmallVector<MethodInfo> &vtable)
+    {
+        for (auto &base : baseClasses)
+        {
+            base->getVirtualTable(vtable);
+        }
+
+        // do vtable for current class
+    }
+
     /// Iterate over the held elements.
     using iterator = ArrayRef<::mlir::typescript::FieldInfo>::iterator;
 
@@ -4150,6 +4160,8 @@ llvm.return %5 : i32
             newClassPtr->name = namePtr;
             newClassPtr->fullName = fullNamePtr;
             newClassPtr->isAbstract = hasModifier(classDeclarationAST, SyntaxKind::AbstractKeyword);
+            newClassPtr->hasVirtualTable = newClassPtr->isAbstract;
+
             getClassesMap().insert({namePtr, newClassPtr});
             fullNameClassesMap.insert({fullNamePtr, newClassPtr});
             declareClass = true;
@@ -4361,6 +4373,8 @@ llvm.return %5 : i32
         }
 
         // TODO: ...
+        llvm::SmallVector<MethodInfo> virtualTable;
+        newClassPtr->getVirtualTable(virtualTable);
 
         // register global
         auto fullClassVTableFieldName = concat(newClassPtr->fullName, VTABLE_NAME);
