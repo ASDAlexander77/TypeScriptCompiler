@@ -9,6 +9,7 @@
 #define SUPER_NAME "super"
 #define CONSTRUCTOR_NAME "constructor"
 #define CONSTRUCTOR_TEMPVAR_NAME ".ctor"
+#define VTABLE_NAME ".vtbl"
 #define LCONSTRUCTOR_NAME L"constructor"
 #define LCONSTRUCTOR_TEMPVAR_NAME L".ctor"
 #define MAIN_ENTRY_NAME "main"

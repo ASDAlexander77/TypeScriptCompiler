@@ -141,6 +141,7 @@ struct MethodInfo
     std::string name;
     mlir_ts::FuncOp funcOp;
     bool isStatic;
+    bool isVirtual;
 };
 
 struct AccessorInfo
@@ -149,6 +150,7 @@ struct AccessorInfo
     mlir_ts::FuncOp get;
     mlir_ts::FuncOp set;
     bool isStatic;
+    bool isVirtual;
 };
 
 struct ClassInfo
@@ -172,8 +174,9 @@ struct ClassInfo
 
     bool hasConstructor;
     bool hasInitializers;
+    bool hasVirtualTable;
 
-    ClassInfo() : hasConstructor(false), hasInitializers(false)
+    ClassInfo() : hasConstructor(false), hasInitializers(false), hasVirtualTable(false)
     {
     }
 
@@ -190,6 +193,24 @@ struct ClassInfo
             {
                 return true;
             }
+        }
+
+        return false;
+    }
+
+    auto getHasVirtualTable() -> bool
+    {
+        for (auto &base : baseClasses)
+        {
+            if (base->hasVirtualTable)
+            {
+                return false;
+            }
+        }
+
+        if (hasVirtualTable)
+        {
+            return true;
         }
 
         return false;
@@ -4134,6 +4155,13 @@ llvm.return %5 : i32
 
         if (declareClass)
         {
+            if (newClassPtr->getHasVirtualTable())
+            {
+                MLIRCodeLogic mcl(builder);
+                auto fieldId = mcl.TupleFieldName(VTABLE_NAME);
+                fieldInfos.insert(fieldInfos.begin(), {fieldId, getAnyType()});
+            }
+
             auto classFullNameSymbol = mlir::FlatSymbolRefAttr::get(builder.getContext(), newClassPtr->fullName);
             newClassPtr->classType = getClassType(classFullNameSymbol, getClassStorageType(classFullNameSymbol, fieldInfos));
         }
@@ -4187,6 +4215,12 @@ llvm.return %5 : i32
         mlir::Attribute fieldId;
         mlir::Type type;
         StringRef memberNamePtr;
+
+        auto isAbstract = hasModifier(classMember, SyntaxKind::AbstractKeyword);
+        if (isAbstract)
+        {
+            newClassPtr->hasVirtualTable = true;
+        }
 
         auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
         if (!isStatic && !declareClass)
@@ -4314,6 +4348,7 @@ llvm.return %5 : i32
         StringRef memberNamePtr;
 
         auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
+        auto isAbstract = hasModifier(classMember, SyntaxKind::AbstractKeyword);
         auto isConstructor = classMember == SyntaxKind::Constructor;
         if (classMember == SyntaxKind::MethodDeclaration || isConstructor || classMember == SyntaxKind::GetAccessor ||
             classMember == SyntaxKind::SetAccessor)
@@ -4359,8 +4394,8 @@ llvm.return %5 : i32
 
             if (declareClass)
             {
-                methodInfos.push_back({methodName, funcOp, isStatic});
-                addAccessor(newClassPtr, classMember, propertyName, funcOp, isStatic);
+                methodInfos.push_back({methodName, funcOp, isStatic, isAbstract});
+                addAccessor(newClassPtr, classMember, propertyName, funcOp, isStatic, isAbstract);
             }
         }
 
@@ -4474,14 +4509,14 @@ llvm.return %5 : i32
     }
 
     void addAccessor(ClassInfo::TypePtr newClassPtr, ClassElement classMember, std::string &propertyName, mlir_ts::FuncOp funcOp,
-                     bool isStatic)
+                     bool isStatic, bool isVirtual)
     {
         auto &accessorInfos = newClassPtr->accessors;
 
         auto accessorIndex = newClassPtr->getAccessorIndex(propertyName);
         if (accessorIndex < 0)
         {
-            accessorInfos.push_back({propertyName, {}, {}, isStatic});
+            accessorInfos.push_back({propertyName, {}, {}, isStatic, isVirtual});
             accessorIndex = newClassPtr->getAccessorIndex(propertyName);
         }
 

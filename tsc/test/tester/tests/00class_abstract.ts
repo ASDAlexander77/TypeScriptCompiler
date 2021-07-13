@@ -13,7 +13,7 @@ class Snake extends Animal {
         super(name);
     }
 
-    makeSound(input: string): string {
+    makeSound(input: string) {
         return "sssss" + input;
     }
 
@@ -26,4 +26,5 @@ class Snake extends Animal {
 function main() {
     const snake = new Snake("snake 1");
     snake.move();
+    print("done.");
 }
