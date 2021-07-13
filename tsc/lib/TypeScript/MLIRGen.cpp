@@ -175,8 +175,9 @@ struct ClassInfo
     bool hasConstructor;
     bool hasInitializers;
     bool hasVirtualTable;
+    bool isAbstract;
 
-    ClassInfo() : hasConstructor(false), hasInitializers(false), hasVirtualTable(false)
+    ClassInfo() : hasConstructor(false), hasInitializers(false), hasVirtualTable(false), isAbstract(false)
     {
     }
 
@@ -199,6 +200,24 @@ struct ClassInfo
     }
 
     auto getHasVirtualTable() -> bool
+    {
+        if (hasVirtualTable)
+        {
+            return true;
+        }
+
+        for (auto &base : baseClasses)
+        {
+            if (base->hasVirtualTable)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    auto getHasVirtualTableVariable() -> bool
     {
         for (auto &base : baseClasses)
         {
@@ -4075,6 +4094,8 @@ llvm.return %5 : i32
 
         mlirGenClassDefaultConstructor(classDeclarationAST, newClassPtr, genContext);
 
+        mlirGenClassVirtualTableDefinition(location, newClassPtr, genContext);
+
         // add methods when we have classType
         auto notResolved = 0;
         do
@@ -4128,6 +4149,7 @@ llvm.return %5 : i32
             newClassPtr = std::make_shared<ClassInfo>();
             newClassPtr->name = namePtr;
             newClassPtr->fullName = fullNamePtr;
+            newClassPtr->isAbstract = hasModifier(classDeclarationAST, SyntaxKind::AbstractKeyword);
             getClassesMap().insert({namePtr, newClassPtr});
             fullNameClassesMap.insert({fullNamePtr, newClassPtr});
             declareClass = true;
@@ -4155,7 +4177,7 @@ llvm.return %5 : i32
 
         if (declareClass)
         {
-            if (newClassPtr->getHasVirtualTable())
+            if (newClassPtr->getHasVirtualTableVariable())
             {
                 MLIRCodeLogic mcl(builder);
                 auto fieldId = mcl.TupleFieldName(VTABLE_NAME);
@@ -4326,6 +4348,28 @@ llvm.return %5 : i32
             auto generatedConstructor = nf.createConstructorDeclaration(undefined, undefined, undefined, body);
             classDeclarationAST->members.push_back(generatedConstructor);
         }
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult mlirGenClassVirtualTableDefinition(mlir::Location location, ClassInfo::TypePtr newClassPtr,
+                                                           const GenContext &genContext)
+    {
+        if (!newClassPtr->getHasVirtualTable() || newClassPtr->isAbstract)
+        {
+            return mlir::success();
+        }
+
+        // TODO: ...
+
+        // register global
+        auto fullClassVTableFieldName = concat(newClassPtr->fullName, VTABLE_NAME);
+        registerVariable(
+            location, fullClassVTableFieldName, true, VariableClass::Var,
+            [&]() {
+                return std::pair<mlir::Type, mlir::Value>{getAnyType(), mlir::Value()};
+            },
+            genContext);
 
         return mlir::success();
     }
