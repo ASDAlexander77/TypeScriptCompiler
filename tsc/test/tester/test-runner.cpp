@@ -52,6 +52,7 @@ namespace fs = std::experimental::filesystem;
 #endif
 
 bool isJit = true;
+bool isJitCompile = true;
 bool enableBuiltins = false;
 
 bool hasEnding(std::string const &fullString, std::string const &ending)
@@ -174,6 +175,30 @@ void createCompileBatchFileWithRT()
     batFile.close();
 }
 
+void createJitCompileBatchFile()
+{
+    if (exists("compile_jit.bat"))
+    {
+        return;
+    }
+
+    std::ofstream batFile("compile_jit.bat");
+    batFile << "echo off" << std::endl;
+    batFile << "set FILENAME=%1" << std::endl;
+    batFile << "set LIBPATH=" << TEST_LIBPATH << std::endl;
+    batFile << "set SDKPATH=" << TEST_SDKPATH << std::endl;
+    batFile << "set EXEPATH=" << TEST_EXEPATH << std::endl;
+    batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit -dump-object-file -object-filename=%FILENAME%.o %2" << std::endl;
+    batFile << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o \"%LIBPATH%\\libcmt.lib\" \"%LIBPATH%\\libvcruntime.lib\" "
+               "\"%SDKPATH%\\kernel32.lib\" \"%SDKPATH%\\libucrt.lib\" \"%SDKPATH%\\uuid.lib\""
+            << std::endl;
+    batFile << "del %FILENAME%.o" << std::endl;
+    batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
+    batFile << "echo on" << std::endl;
+    batFile.close();
+}
+
 void createJitBatchFile()
 {
     if (exists("jit.bat"))
@@ -268,6 +293,10 @@ void testFile(const char *file)
     {
         ss << "jit.bat " << stem.generic_string() << ms.count() << " " << file;
     }
+    else if (isJitCompile)
+    {
+        ss << "compile_jit.bat " << stem.generic_string() << ms.count() << " " << file;
+    }
     else if (enableBuiltins)
     {
         ss << "compile_rt.bat " << stem.generic_string() << ms.count() << " " << file;
@@ -319,6 +348,10 @@ int main(int argc, char **argv)
             {
                 isJit = true;
             }
+            else if (std::string(argv[index]) == "-llc")
+            {
+                isJitCompile = false;
+            }
             else if (std::string(argv[index]) == "-builtins")
             {
                 enableBuiltins = true;
@@ -332,6 +365,10 @@ int main(int argc, char **argv)
         if (isJit)
         {
             createJitBatchFile();
+        }
+        else if (isJitCompile)
+        {
+            createJitCompileBatchFile();
         }
         else
         {
