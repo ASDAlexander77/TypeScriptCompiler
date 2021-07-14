@@ -81,6 +81,8 @@ static cl::opt<bool> dumpObjectFile{"dump-object-file", cl::desc("Dump JITted-co
 
 static cl::opt<std::string> objectFilename{"object-filename", cl::desc("Dump JITted-compiled object to file <input file>.o")};
 
+// static cl::opt<std::string> targetTriple("mtriple", cl::desc("Override target triple for module"));
+
 int loadMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module)
 {
     auto fileName = llvm::StringRef(inputFilename);

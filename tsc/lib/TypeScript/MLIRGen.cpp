@@ -3159,7 +3159,7 @@ llvm.return %5 : i32
             .Case<mlir_ts::ClassType>([&](auto classType) {
                 // seems we are calling type constructor
                 auto newOp = builder.create<mlir_ts::NewOp>(location, classType, builder.getBoolAttr(true));
-                mlirGenCallConstructor(location, classType, newOp, callExpression->typeArguments, callExpression->arguments, false,
+                mlirGenCallConstructor(location, classType, newOp, callExpression->typeArguments, callExpression->arguments, false, true,
                                        genContext);
                 value = newOp;
             })
@@ -3170,7 +3170,7 @@ llvm.return %5 : i32
                 {
                     // seems we are calling type constructor for super()
                     mlirGenCallConstructor(location, classStorageType, refValue, callExpression->typeArguments, callExpression->arguments,
-                                           true, genContext);
+                                           true, false, genContext);
                 }
                 else
                 {
@@ -3256,7 +3256,7 @@ llvm.return %5 : i32
 
     mlir::LogicalResult mlirGenCallConstructor(mlir::Location location, mlir_ts::ClassType classType, mlir::Value thisValue,
                                                NodeArray<TypeNode> typeArguments, NodeArray<Expression> arguments,
-                                               bool castThisValueToClass, const GenContext &genContext)
+                                               bool castThisValueToClass, bool setVTable, const GenContext &genContext)
     {
         if (!classType)
         {
@@ -3265,12 +3265,13 @@ llvm.return %5 : i32
 
         // register temp var
         auto classInfo = getClassByFullName(classType.getName().getValue());
-        return mlirGenCallConstructor(location, classInfo, thisValue, typeArguments, arguments, castThisValueToClass, genContext);
+        return mlirGenCallConstructor(location, classInfo, thisValue, typeArguments, arguments, castThisValueToClass, setVTable,
+                                      genContext);
     }
 
     mlir::LogicalResult mlirGenCallConstructor(mlir::Location location, mlir_ts::ClassStorageType classStorageType, mlir::Value thisValue,
                                                NodeArray<TypeNode> typeArguments, NodeArray<Expression> arguments,
-                                               bool castThisValueToClass, const GenContext &genContext)
+                                               bool castThisValueToClass, bool setVTable, const GenContext &genContext)
     {
         if (!classStorageType)
         {
@@ -3279,31 +3280,53 @@ llvm.return %5 : i32
 
         // register temp var
         auto classInfo = getClassByFullName(classStorageType.getName().getValue());
-        return mlirGenCallConstructor(location, classInfo, thisValue, typeArguments, arguments, castThisValueToClass, genContext);
+        return mlirGenCallConstructor(location, classInfo, thisValue, typeArguments, arguments, castThisValueToClass, setVTable,
+                                      genContext);
     }
 
     mlir::LogicalResult mlirGenCallConstructor(mlir::Location location, ClassInfo::TypePtr classInfo, mlir::Value thisValue,
                                                NodeArray<TypeNode> typeArguments, NodeArray<Expression> arguments,
-                                               bool castThisValueToClass, const GenContext &genContext)
+                                               bool castThisValueToClass, bool setVTable, const GenContext &genContext)
     {
         assert(classInfo);
+
+        auto virtualTable = classInfo->getHasVirtualTable();
+        auto hasConstructor = classInfo->getHasConstructor();
+        if (!hasConstructor && !virtualTable)
+        {
+            return mlir::success();
+        }
+
+        // adding call of ctor
+        NodeFactory nf(NodeFactoryFlags::None);
+
+        // to remove temp var .ctor after call
+        SymbolTableScopeT varScope(symbolTable);
+
+        auto effectiveThisValue = thisValue;
+        if (castThisValueToClass)
+        {
+            effectiveThisValue = builder.create<mlir_ts::CastOp>(location, classInfo->classType, thisValue);
+        }
+
+        auto varDecl = std::make_shared<VariableDeclarationDOM>(CONSTRUCTOR_TEMPVAR_NAME, classInfo->classType, location);
+        declare(varDecl, effectiveThisValue);
+
+        auto thisToken = nf.createIdentifier(S(CONSTRUCTOR_TEMPVAR_NAME));
+
+        // set virtual table
+        if (setVTable && classInfo->getHasVirtualTable())
+        {
+            auto propAccess = nf.createPropertyAccessExpression(thisToken, nf.createIdentifier(S(VTABLE_NAME)));
+            auto fullClassVTableFieldName = concat(classInfo->fullName, VTABLE_NAME);
+            auto vtableGlobalName = nf.createIdentifier(stows(fullClassVTableFieldName.str()));
+            auto setPropValue = nf.createBinaryExpression(propAccess, nf.createToken(SyntaxKind::EqualsToken), vtableGlobalName);
+
+            mlirGen(setPropValue, genContext);
+        }
+
         if (classInfo->getHasConstructor())
         {
-            // adding call of ctor
-            NodeFactory nf(NodeFactoryFlags::None);
-
-            // to remove temp var .ctor after call
-            SymbolTableScopeT varScope(symbolTable);
-
-            auto effectiveThisValue = thisValue;
-            if (castThisValueToClass)
-            {
-                effectiveThisValue = builder.create<mlir_ts::CastOp>(location, classInfo->classType, thisValue);
-            }
-
-            auto varDecl = std::make_shared<VariableDeclarationDOM>(CONSTRUCTOR_TEMPVAR_NAME, classInfo->classType, location);
-            declare(varDecl, effectiveThisValue);
-            auto thisToken = nf.createIdentifier(S(CONSTRUCTOR_TEMPVAR_NAME));
             auto propAccess = nf.createPropertyAccessExpression(thisToken, nf.createIdentifier(S(CONSTRUCTOR_NAME)));
             auto callExpr = nf.createCallExpression(propAccess, typeArguments, arguments);
 
@@ -3333,7 +3356,7 @@ llvm.return %5 : i32
 
             auto newOp = builder.create<mlir_ts::NewOp>(location, resultType, builder.getBoolAttr(false));
             mlirGenCallConstructor(location, resultType.dyn_cast_or_null<mlir_ts::ClassType>(), newOp, newExpression->typeArguments,
-                                   newExpression->arguments, false, genContext);
+                                   newExpression->arguments, false, true, genContext);
             return newOp;
         }
         else if (typeExpression == SyntaxKind::ElementAccessExpression)
@@ -3871,8 +3894,6 @@ llvm.return %5 : i32
             return globalVariableAccess(location, value, genContext);
         }
 
-        assert(false);
-
         return mlir::Value();
     }
 
@@ -3936,6 +3957,12 @@ llvm.return %5 : i32
             auto baseClassInfo = classInfo->baseClasses.front();
 
             return mlirGenPropertyAccessExpression(location, thisValue, baseClassInfo->name, genContext);
+        }
+
+        value = resolveFullNameIdentifier(location, name, genContext);
+        if (value)
+        {
+            return value;
         }
 
         return mlir::Value();
@@ -4538,7 +4565,7 @@ llvm.return %5 : i32
 
                 auto memberNamePtr = StringRef(memberName).copy(stringAllocator);
 
-                auto _this = nf.createIdentifier(stows(THIS_NAME));
+                auto _this = nf.createIdentifier(S(THIS_NAME));
                 auto _name = nf.createIdentifier(stows(std::string(memberNamePtr)));
                 auto _this_name = nf.createPropertyAccessExpression(_this, _name);
                 auto _this_name_equal =
