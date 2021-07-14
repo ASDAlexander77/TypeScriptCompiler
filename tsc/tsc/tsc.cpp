@@ -69,6 +69,18 @@ static cl::opt<enum Action> emitAction("emit", cl::desc("Select the kind of outp
 
 static cl::opt<bool> enableOpt("opt", cl::desc("Enable optimizations"));
 
+// dump obj
+cl::OptionCategory clOptionsCategory{"linking options"};
+cl::list<std::string> clSharedLibs{"shared-libs", cl::desc("Libraries to link dynamically"), cl::ZeroOrMore, cl::MiscFlags::CommaSeparated,
+                                   cl::cat(clOptionsCategory)};
+
+static cl::opt<std::string> mainFuncName{"e", cl::desc("The function to be called"), cl::value_desc("<function name>"), cl::init("main")};
+
+static cl::opt<bool> dumpObjectFile{"dump-object-file", cl::desc("Dump JITted-compiled object to file specified with "
+                                                                 "-object-filename (<input file>.o by default).")};
+
+static cl::opt<std::string> objectFilename{"object-filename", cl::desc("Dump JITted-compiled object to file <input file>.o")};
+
 int loadMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module)
 {
     auto fileName = llvm::StringRef(inputFilename);
@@ -244,14 +256,83 @@ int runJit(mlir::ModuleOp module)
         /*optLevel=*/enableOpt ? 3 : 0, /*sizeLevel=*/0,
         /*targetMachine=*/nullptr);
 
+    // If shared library implements custom mlir-runner library init and destroy
+    // functions, we'll use them to register the library with the execution
+    // engine. Otherwise we'll pass library directly to the execution engine.
+    mlir::SmallVector<mlir::SmallString<256>, 4> libPaths;
+
+    // Use absolute library path so that gdb can find the symbol table.
+    transform(clSharedLibs, std::back_inserter(libPaths), [](std::string libPath) {
+        mlir::SmallString<256> absPath(libPath.begin(), libPath.end());
+        cantFail(llvm::errorCodeToError(llvm::sys::fs::make_absolute(absPath)));
+        return absPath;
+    });
+
+    // Libraries that we'll pass to the ExecutionEngine for loading.
+    mlir::SmallVector<mlir::StringRef, 4> executionEngineLibs;
+
+    using MlirRunnerInitFn = void (*)(llvm::StringMap<void *> &);
+    using MlirRunnerDestroyFn = void (*)();
+
+    llvm::StringMap<void *> exportSymbols;
+    mlir::SmallVector<MlirRunnerDestroyFn> destroyFns;
+
+    // Handle libraries that do support mlir-runner init/destroy callbacks.
+    for (auto &libPath : libPaths)
+    {
+        auto lib = llvm::sys::DynamicLibrary::getPermanentLibrary(libPath.c_str());
+        void *initSym = lib.getAddressOfSymbol("__mlir_runner_init");
+        void *destroySim = lib.getAddressOfSymbol("__mlir_runner_destroy");
+
+        // Library does not support mlir runner, load it with ExecutionEngine.
+        if (!initSym || !destroySim)
+        {
+            executionEngineLibs.push_back(libPath);
+            continue;
+        }
+
+        auto initFn = reinterpret_cast<MlirRunnerInitFn>(initSym);
+        initFn(exportSymbols);
+
+        auto destroyFn = reinterpret_cast<MlirRunnerDestroyFn>(destroySim);
+        destroyFns.push_back(destroyFn);
+    }
+
+    // Build a runtime symbol map from the config and exported symbols.
+    auto runtimeSymbolMap = [&](llvm::orc::MangleAndInterner interner) {
+        auto symbolMap = llvm::orc::SymbolMap();
+        for (auto &exportSymbol : exportSymbols)
+            symbolMap[interner(exportSymbol.getKey())] = llvm::JITEvaluatedSymbol::fromPointer(exportSymbol.getValue());
+        return symbolMap;
+    };
+
     // Create an MLIR execution engine. The execution engine eagerly JIT-compiles
     // the module.
     auto maybeEngine = mlir::ExecutionEngine::create(module, /*llvmModuleBuilder=*/nullptr, optPipeline);
     assert(maybeEngine && "failed to construct an execution engine");
     auto &engine = maybeEngine.get();
 
+    engine->registerSymbols(runtimeSymbolMap);
+
+    if (dumpObjectFile)
+    {
+        auto expectedFPtr = engine->lookup(mainFuncName);
+        if (!expectedFPtr)
+        {
+            llvm::errs() << expectedFPtr.takeError();
+            return -1;
+        }
+
+        engine->dumpToObjectFile(objectFilename.empty() ? inputFilename + ".o" : objectFilename);
+        return 0;
+    }
+
     // Invoke the JIT-compiled function.
-    auto invocationResult = engine->invokePacked("main");
+    auto invocationResult = engine->invokePacked(mainFuncName);
+
+    // Run all dynamic library destroy callbacks to prepare for the shutdown.
+    llvm::for_each(destroyFns, [](MlirRunnerDestroyFn destroy) { destroy(); });
+
     if (invocationResult)
     {
         llvm::errs() << "JIT invocation failed\n";

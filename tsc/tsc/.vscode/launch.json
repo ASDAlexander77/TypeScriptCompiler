@@ -65,6 +65,30 @@
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
         },
         {
+            "name": "(Windows) tsc.exe - JIT",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
+            "args": ["-emit=jit", "C:/temp/1.ts"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "externalTerminal",
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+        },        
+        {
+            "name": "(Windows) tsc.exe - JIT-OBJ",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
+            "args": ["-emit=jit", "-dump-object-file", "-object-filename=out.o", "C:/temp/1.ts"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "externalTerminal",
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+        },        
+        {
             "name": "(Windows) CMake current - Launch",
             "type": "cppvsdbg",
             "request": "launch",

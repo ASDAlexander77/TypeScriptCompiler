@@ -4380,6 +4380,20 @@ llvm.return %5 : i32
         return mlir::success();
     }
 
+    mlir::Type getVirtualTableType(llvm::SmallVector<MethodInfo> &virtualTable)
+    {
+        MLIRCodeLogic mcl(builder);
+
+        llvm::SmallVector<mlir_ts::FieldInfo> fields;
+        for (auto method : virtualTable)
+        {
+            fields.push_back({mcl.TupleFieldName(method.name), method.funcOp.getType()});
+        }
+
+        auto virtTuple = getTupleType(fields);
+        return virtTuple;
+    }
+
     mlir::LogicalResult mlirGenClassVirtualTableDefinition(mlir::Location location, ClassInfo::TypePtr newClassPtr,
                                                            const GenContext &genContext)
     {
@@ -4403,19 +4417,12 @@ llvm.return %5 : i32
 
                 MLIRCodeLogic mcl(builder);
 
-                llvm::SmallVector<mlir_ts::FieldInfo> fields;
-                for (auto method : virtualTable)
-                {
-                    fields.push_back({mcl.TupleFieldName(method.name), method.funcOp.getType()});
-                }
-
-                auto virtTuple = getTupleType(fields);
+                auto virtTuple = getVirtualTableType(virtualTable);
 
                 mlir::Value vtableValue = builder.create<mlir_ts::UndefOp>(location, virtTuple);
                 auto fieldIndex = 0;
                 for (auto method : virtualTable)
                 {
-                    fields.push_back({mcl.TupleFieldName(method.name), method.funcOp.getType()});
                     auto methodConstName = builder.create<mlir_ts::SymbolRefOp>(
                         location, method.funcOp.getType(), mlir::FlatSymbolRefAttr::get(builder.getContext(), method.funcOp.sym_name()));
 
