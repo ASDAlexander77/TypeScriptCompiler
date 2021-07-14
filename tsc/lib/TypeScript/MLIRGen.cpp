@@ -243,6 +243,22 @@ struct ClassInfo
         }
 
         // do vtable for current class
+        for (auto &method : methods)
+        {
+            auto index = std::distance(vtable.begin(), std::find_if(vtable.begin(), vtable.end(),
+                                                                    [&](auto vTableMethod) { return method.name == vTableMethod.name; }));
+            if ((size_t)index < vtable.size())
+            {
+                // found method
+                vtable[index].funcOp = method.funcOp;
+                continue;
+            }
+
+            if (method.isVirtual)
+            {
+                vtable.push_back(method);
+            }
+        }
     }
 
     /// Iterate over the held elements.
@@ -4376,12 +4392,38 @@ llvm.return %5 : i32
         llvm::SmallVector<MethodInfo> virtualTable;
         newClassPtr->getVirtualTable(virtualTable);
 
+        MLIRTypeHelper mth(builder.getContext());
+
         // register global
         auto fullClassVTableFieldName = concat(newClassPtr->fullName, VTABLE_NAME);
         registerVariable(
             location, fullClassVTableFieldName, true, VariableClass::Var,
             [&]() {
-                return std::pair<mlir::Type, mlir::Value>{getAnyType(), mlir::Value()};
+                // build vtable from names of methods
+
+                MLIRCodeLogic mcl(builder);
+
+                llvm::SmallVector<mlir_ts::FieldInfo> fields;
+                for (auto method : virtualTable)
+                {
+                    fields.push_back({mcl.TupleFieldName(method.name), method.funcOp.getType()});
+                }
+
+                auto virtTuple = getTupleType(fields);
+
+                mlir::Value vtableValue = builder.create<mlir_ts::UndefOp>(location, virtTuple);
+                auto fieldIndex = 0;
+                for (auto method : virtualTable)
+                {
+                    fields.push_back({mcl.TupleFieldName(method.name), method.funcOp.getType()});
+                    auto methodConstName = builder.create<mlir_ts::SymbolRefOp>(
+                        location, method.funcOp.getType(), mlir::FlatSymbolRefAttr::get(builder.getContext(), method.funcOp.sym_name()));
+
+                    vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
+                        location, virtTuple, methodConstName, vtableValue, builder.getArrayAttr(mth.getStructIndexAttrValue(fieldIndex++)));
+                }
+
+                return std::pair<mlir::Type, mlir::Value>{virtTuple, vtableValue};
             },
             genContext);
 
