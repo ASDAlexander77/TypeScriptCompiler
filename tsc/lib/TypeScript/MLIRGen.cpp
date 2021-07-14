@@ -2876,7 +2876,7 @@ llvm.return %5 : i32
         if (staticFieldIndex >= 0)
         {
             auto fieldInfo = classInfo->staticFields[staticFieldIndex];
-            auto value = resolveFullNameIdentifier(location, fieldInfo.globalVariableName, genContext);
+            auto value = resolveFullNameIdentifier(location, fieldInfo.globalVariableName, false, genContext);
             assert(value);
             return value;
         }
@@ -3317,10 +3317,18 @@ llvm.return %5 : i32
         // set virtual table
         if (setVTable && classInfo->getHasVirtualTable())
         {
-            auto propAccess = nf.createPropertyAccessExpression(thisToken, nf.createIdentifier(S(VTABLE_NAME)));
+            auto _vtable_name = nf.createIdentifier(S(VTABLE_NAME));
+            auto propAccess = nf.createPropertyAccessExpression(thisToken, _vtable_name);
+
+            // set temp vtable
             auto fullClassVTableFieldName = concat(classInfo->fullName, VTABLE_NAME);
-            auto vtableGlobalName = nf.createIdentifier(stows(fullClassVTableFieldName.str()));
-            auto setPropValue = nf.createBinaryExpression(propAccess, nf.createToken(SyntaxKind::EqualsToken), vtableGlobalName);
+            auto vtableAddress = resolveFullNameIdentifier(location, fullClassVTableFieldName, true, genContext);
+            assert(vtableAddress);
+            auto varDecl = std::make_shared<VariableDeclarationDOM>(VTABLE_NAME, vtableAddress.getType(), location);
+            declare(varDecl, vtableAddress);
+
+            // save vtable value
+            auto setPropValue = nf.createBinaryExpression(propAccess, nf.createToken(SyntaxKind::EqualsToken), _vtable_name);
 
             mlirGen(setPropValue, genContext);
         }
@@ -3846,7 +3854,7 @@ llvm.return %5 : i32
         if (getGlobalsMap().count(name))
         {
             auto value = getGlobalsMap().lookup(name);
-            return globalVariableAccess(location, value, genContext);
+            return globalVariableAccess(location, value, false, genContext);
         }
 
         // check if we have enum
@@ -3886,18 +3894,19 @@ llvm.return %5 : i32
         return mlir::Value();
     }
 
-    mlir::Value resolveFullNameIdentifier(mlir::Location location, StringRef name, const GenContext &genContext)
+    mlir::Value resolveFullNameIdentifier(mlir::Location location, StringRef name, bool asAddess, const GenContext &genContext)
     {
         if (fullNameGlobalsMap.count(name))
         {
             auto value = fullNameGlobalsMap.lookup(name);
-            return globalVariableAccess(location, value, genContext);
+            return globalVariableAccess(location, value, asAddess, genContext);
         }
 
         return mlir::Value();
     }
 
-    mlir::Value globalVariableAccess(mlir::Location location, VariableDeclarationDOM::TypePtr value, const GenContext &genContext)
+    mlir::Value globalVariableAccess(mlir::Location location, VariableDeclarationDOM::TypePtr value, bool asAddess,
+                                     const GenContext &genContext)
     {
         if (!value->getReadWriteAccess() && value->getType().isa<mlir_ts::StringType>())
         {
@@ -3907,6 +3916,11 @@ llvm.return %5 : i32
         else
         {
             auto address = builder.create<mlir_ts::AddressOfOp>(location, mlir_ts::RefType::get(value->getType()), value->getName());
+            if (asAddess)
+            {
+                return address;
+            }
+
             return builder.create<mlir_ts::LoadOp>(location, value->getType(), address);
         }
     }
@@ -3959,7 +3973,7 @@ llvm.return %5 : i32
             return mlirGenPropertyAccessExpression(location, thisValue, baseClassInfo->name, genContext);
         }
 
-        value = resolveFullNameIdentifier(location, name, genContext);
+        value = resolveFullNameIdentifier(location, name, false, genContext);
         if (value)
         {
             return value;
