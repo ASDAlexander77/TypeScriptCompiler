@@ -1922,6 +1922,31 @@ struct CaptureOpLowering : public TsLlvmPattern<mlir_ts::CaptureOp>
     }
 };
 
+struct ThisVirtualSymbolRefLowering : public TsLlvmPattern<mlir_ts::ThisVirtualSymbolRefOp>
+{
+    using TsLlvmPattern<mlir_ts::ThisVirtualSymbolRefOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ThisVirtualSymbolRefOp thisVirtualSymbolRefOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        Location loc = thisVirtualSymbolRefOp.getLoc();
+
+        TypeHelper th(rewriter);
+        CodeLogicHelper clh(thisVirtualSymbolRefOp, rewriter);
+
+        auto ptrToArrOfPtrs = rewriter.create<mlir_ts::CastOp>(loc, th.getI8PtrPtrPtrType(), thisVirtualSymbolRefOp.vtable());
+
+        auto index = clh.createI32ConstantOf(thisVirtualSymbolRefOp.index());
+        auto methodPtrPtr = rewriter.create<LLVM::GEPOp>(loc, th.getI8PtrPtrType(), ptrToArrOfPtrs, ValueRange{index});
+        auto methodPtr = rewriter.create<LLVM::LoadOp>(loc, methodPtrPtr);
+        auto methodTyped = rewriter.create<mlir_ts::CastOp>(loc, thisVirtualSymbolRefOp.getType(), methodPtr);
+
+        rewriter.replaceOp(thisVirtualSymbolRefOp, ValueRange{methodTyped});
+
+        return success();
+    }
+};
+
 static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, mlir::ModuleOp &m)
 {
     converter.addConversion([&](mlir_ts::AnyType type) { return LLVM::LLVMPointerType::get(IntegerType::get(m.getContext(), 8)); });
@@ -2074,17 +2099,16 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 
     // The only remaining operation to lower from the `typescript` dialect, is the PrintOp.
     TsLlvmContext tsLlvmContext;
-    patterns
-        .insert<CallOpLowering, CallIndirectOpLowering, CaptureOpLowering, ExitOpLowering, ReturnOpLowering, ReturnValOpLowering,
-                AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering,
-                AssertOpLowering, CastOpLowering, ConstantOpLowering, CreateOptionalOpLowering, UndefOptionalOpLowering, HasValueOpLowering,
-                ValueOpLowering, SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering, EntryOpLowering, FuncOpLowering,
-                LoadOpLowering, ElementRefOpLowering, PropertyRefOpLowering, ExtractPropertyOpLowering, LogicalBinaryOpLowering,
-                NullOpLowering, NewOpLowering, NewArrayOpLowering, DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering,
-                PrintOpLowering, StoreOpLowering, SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering, StringLengthOpLowering,
-                StringConcatOpLowering, StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering, MemoryCopyOpLowering,
-                LoadSaveValueLowering, ThrowOpLoweringVCWin32, TrampolineOpLowering, TryOpLowering, VariableOpLowering, InvokeOpLowering>(
-            typeConverter, &getContext(), &tsLlvmContext);
+    patterns.insert<CallOpLowering, CallIndirectOpLowering, CaptureOpLowering, ExitOpLowering, ReturnOpLowering, ReturnValOpLowering,
+                    AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering,
+                    AssertOpLowering, CastOpLowering, ConstantOpLowering, CreateOptionalOpLowering, UndefOptionalOpLowering,
+                    HasValueOpLowering, ValueOpLowering, SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering, EntryOpLowering,
+                    FuncOpLowering, LoadOpLowering, ElementRefOpLowering, PropertyRefOpLowering, ExtractPropertyOpLowering,
+                    LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, NewArrayOpLowering, DeleteOpLowering, ParseFloatOpLowering,
+                    ParseIntOpLowering, PrintOpLowering, StoreOpLowering, SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering,
+                    StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering,
+                    MemoryCopyOpLowering, LoadSaveValueLowering, ThrowOpLoweringVCWin32, TrampolineOpLowering, TryOpLowering,
+                    VariableOpLowering, InvokeOpLowering, ThisVirtualSymbolRefLowering>(typeConverter, &getContext(), &tsLlvmContext);
 
     populateTypeScriptConversionPatterns(typeConverter, m);
 
