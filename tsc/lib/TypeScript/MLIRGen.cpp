@@ -142,6 +142,7 @@ struct MethodInfo
     mlir_ts::FuncOp funcOp;
     bool isStatic;
     bool isVirtual;
+    int virtualIndex;
 };
 
 struct AccessorInfo
@@ -257,6 +258,7 @@ struct ClassInfo
 
             if (method.isVirtual)
             {
+                method.virtualIndex = vtable.size();
                 vtable.push_back(method);
             }
         }
@@ -2916,8 +2918,13 @@ llvm.return %5 : i32
 
                 if (methodInfo.isVirtual)
                 {
+                    // adding call of ctor
+                    NodeFactory nf(NodeFactoryFlags::None);
+
+                    auto vtableAccess = mlirGenPropertyAccessExpression(location, effectiveThisValue, VTABLE_NAME, genContext);
+
                     auto thisVirtualSymbOp = builder.create<mlir_ts::ThisVirtualSymbolRefOp>(
-                        location, effectiveFuncType, effectiveThisValue,
+                        location, effectiveFuncType, effectiveThisValue, vtableAccess, builder.getI32IntegerAttr(methodInfo.virtualIndex),
                         mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
                     return thisVirtualSymbOp;
                 }

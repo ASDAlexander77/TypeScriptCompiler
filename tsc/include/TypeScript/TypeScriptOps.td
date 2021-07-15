@@ -106,12 +106,12 @@ def ThisVirtualSymbolRefOp : TypeScript_Op<"ThisVirtualSymbolRef",
     [NoSideEffect]> {
   let summary = "symbol reference as to virtual this member";
 
-  let arguments = (ins AnyType:$thisVal, FlatSymbolRefAttr:$identifier);
+  let arguments = (ins AnyType:$thisVal, AnyType:$vtable, I32Attr:$index, FlatSymbolRefAttr:$identifier);
   let results = (outs AnyType:$value);
 
   let builders = [
-    OpBuilder<(ins "Value":$thisVal, "FlatSymbolRefAttr":$identifier),
-    [{ build($_builder, $_state, identifier.getType(), thisVal, identifier); }]>];
+    OpBuilder<(ins "Value":$thisVal, "Value":$vtable, "IntegerAttr":$index, "FlatSymbolRefAttr":$identifier),
+    [{ build($_builder, $_state, identifier.getType(), thisVal, vtable, index, identifier); }]>];
 
   let extraClassDeclaration = [{
     Attribute getValue() { return (*this)->getAttr("identifier"); }
@@ -119,7 +119,7 @@ def ThisVirtualSymbolRefOp : TypeScript_Op<"ThisVirtualSymbolRef",
 
   let hasCanonicalizer = 1;
 
-  let assemblyFormat = "`(` $thisVal `:` type($thisVal) `)` attr-dict `:` type($value)";
+  let assemblyFormat = "`(` $thisVal `:` type($thisVal) `,` $vtable `[` $index `]` `:` type($vtable) `)` attr-dict `:` type($value)";
 }
 
 def AccessorRefOp : TypeScript_Op<"AccessorRef", 
