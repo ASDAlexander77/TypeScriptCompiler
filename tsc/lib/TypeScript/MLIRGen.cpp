@@ -251,6 +251,7 @@ struct ClassInfo
             {
                 // found method
                 vtable[index].funcOp = method.funcOp;
+                method.isVirtual = true;
                 continue;
             }
 
@@ -2913,6 +2914,14 @@ llvm.return %5 : i32
                     effectiveThisValue = builder.create<mlir_ts::CastOp>(location, classInfo->classType, thisValue);
                 }
 
+                if (methodInfo.isVirtual)
+                {
+                    auto thisVirtualSymbOp = builder.create<mlir_ts::ThisVirtualSymbolRefOp>(
+                        location, effectiveFuncType, effectiveThisValue,
+                        mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
+                    return thisVirtualSymbOp;
+                }
+
                 auto thisSymbOp = builder.create<mlir_ts::ThisSymbolRefOp>(
                     location, effectiveFuncType, effectiveThisValue, mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
                 return thisSymbOp;
@@ -3130,6 +3139,10 @@ llvm.return %5 : i32
                 if (auto thisSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::ThisSymbolRefOp>())
                 {
                     operands.push_back(thisSymbolRefOp.thisVal());
+                }
+                else if (auto thisVirtualSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::ThisVirtualSymbolRefOp>())
+                {
+                    operands.push_back(thisVirtualSymbolRefOp.thisVal());
                 }
 
                 if (mlir::failed(mlirGenCallOperands(location, calledFuncType, callExpression->arguments, operands, genContext)))

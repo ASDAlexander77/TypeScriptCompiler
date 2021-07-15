@@ -119,6 +119,15 @@ void mlir_ts::ThisSymbolRefOp::getCanonicalizationPatterns(OwningRewritePatternL
 }
 
 //===----------------------------------------------------------------------===//
+// ThisVirtualSymbolRefOp
+//===----------------------------------------------------------------------===//
+
+void mlir_ts::ThisVirtualSymbolRefOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
+{
+    results.insert<RemoveUnused<mlir_ts::ThisVirtualSymbolRefOp>>(context);
+}
+
+//===----------------------------------------------------------------------===//
 // AccessorRefOp
 //===----------------------------------------------------------------------===//
 
