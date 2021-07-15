@@ -342,6 +342,9 @@ class MLIRGenImpl
         builder.setInsertionPointToStart(theModule.getBody());
 
         SymbolTableScopeT varScope(symbolTable);
+        llvm::ScopedHashTableScope<StringRef, NamespaceInfo::TypePtr> fullNamespacesMapScope(fullNamespacesMap);
+        llvm::ScopedHashTableScope<StringRef, ClassInfo::TypePtr> fullNameClassesMapScope(fullNameClassesMap);
+        llvm::ScopedHashTableScope<StringRef, VariableDeclarationDOM::TypePtr> fullNameGlobalsMapScope(fullNameGlobalsMap);
 
         // Process of discovery here
         GenContext genContextPartial = {0};
@@ -425,7 +428,7 @@ class MLIRGenImpl
             newNamespacePtr->name = namePtr;
             newNamespacePtr->fullName = fullNamePtr;
             namespacesMap.insert({namePtr, newNamespacePtr});
-            fullNamespacesMap.insert({fullNamePtr, newNamespacePtr});
+            fullNamespacesMap.insert(fullNamePtr, newNamespacePtr);
             currentNamespace = newNamespacePtr;
         }
         else
@@ -916,6 +919,9 @@ class MLIRGenImpl
         }
 
         // registering variable
+
+        LLVM_DEBUG(dbgs() << "\n +++== variable = " << effectiveName << " type: "; varType.dump(); dbgs() << " ==+++ \n";);
+
         auto varDecl = std::make_shared<VariableDeclarationDOM>(effectiveName, varType, location);
         if (!isConst)
         {
@@ -930,7 +936,7 @@ class MLIRGenImpl
         }
         else if (isFullName)
         {
-            fullNameGlobalsMap.insert({name, varDecl});
+            fullNameGlobalsMap.insert(name, varDecl);
         }
         else
         {
@@ -1267,9 +1273,6 @@ class MLIRGenImpl
             }
 
             funcOp = mlir_ts::FuncOp::create(location, fullName, funcType, attrs, argAttrs);
-
-            LLVM_DEBUG(llvm::dbgs() << "\n === FuncOp with attrs === \n");
-            LLVM_DEBUG(funcOp.dump());
         }
         else
         {
@@ -1289,7 +1292,7 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-        LLVM_DEBUG(llvm::dbgs() << "discover func ret type for : " << name << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "??? discover func ret type for : " << name << "\n";);
 
         mlir::OpBuilder::InsertionGuard guard(builder);
 
@@ -1325,7 +1328,6 @@ class MLIRGenImpl
                     MLIRTypeHelper mth(builder.getContext());
                     bool copyRequired;
                     funcProto->setReturnType(mth.convertConstTypeToType(discoveredType, copyRequired));
-                    LLVM_DEBUG(llvm::dbgs() << "ret type for " << name << " : " << funcProto->getReturnType() << "\n";);
                 }
 
                 // if we have captured parameters, add first param to send lambda's type(class)
@@ -1444,11 +1446,11 @@ class MLIRGenImpl
         {
             getFunctionMap().insert({name, funcOp});
 
-            LLVM_DEBUG(llvm::dbgs() << "reg. func: " << name << " type:" << funcOp.getType() << "\n";);
+            LLVM_DEBUG(llvm::dbgs() << "\n... reg. func: " << name << " type:" << funcOp.getType() << "\n";);
         }
         else
         {
-            LLVM_DEBUG(llvm::dbgs() << "re-process. func: " << name << " type:" << funcOp.getType() << "\n";);
+            LLVM_DEBUG(llvm::dbgs() << "\n... re-process. func: " << name << " type:" << funcOp.getType() << "\n";);
         }
 
         builder.setInsertionPointAfter(funcOp);
@@ -2961,16 +2963,9 @@ llvm.return %5 : i32
                 return value;
             }
 
-            // TODO: find field in base classes
             SmallVector<ClassInfo::TypePtr> fieldPath;
             if (classHasField(baseClass, name, fieldPath))
             {
-                LLVM_DEBUG(dbgs() << "field path for : " << name << "\n";);
-                for (auto &chain : fieldPath)
-                {
-                    LLVM_DEBUG(dbgs() << "step: " << chain->fullName << "\n";);
-                }
-
                 // load value from path
                 auto currentObject = thisValue;
                 for (auto &chain : fieldPath)
@@ -3323,6 +3318,7 @@ llvm.return %5 : i32
             // set temp vtable
             auto fullClassVTableFieldName = concat(classInfo->fullName, VTABLE_NAME);
             auto vtableAddress = resolveFullNameIdentifier(location, fullClassVTableFieldName, true, genContext);
+
             assert(vtableAddress);
             auto anyTypeValue = builder.create<mlir_ts::CastOp>(location, getAnyType(), vtableAddress);
             auto varDecl = std::make_shared<VariableDeclarationDOM>(VTABLE_NAME, anyTypeValue.getType(), location);
@@ -3787,15 +3783,9 @@ llvm.return %5 : i32
             }
 
             // auto isOuterFunctionScope = value.second->getFuncOp() != genContext.funcOp;
-            //
-            // LLVM_DEBUG(llvm::dbgs() << "isOuterFunctionScope: " << (isOuterFunctionScope ? "true" : "false")
-            //                         << ", isOuterVar: " << (isOuterVar ? "true" : "false") << " name: " << name << "\n");
 
             if (isOuterVar && genContext.passResult)
             {
-                LLVM_DEBUG(llvm::dbgs() << "outer var name: " << name << " type: " << value.first.getType() << " value: " << value.first
-                                        << "\n");
-
                 genContext.passResult->outerVariables.insert({value.second->getName(), value});
             }
 
@@ -4221,7 +4211,7 @@ llvm.return %5 : i32
             newClassPtr->hasVirtualTable = newClassPtr->isAbstract;
 
             getClassesMap().insert({namePtr, newClassPtr});
-            fullNameClassesMap.insert({fullNamePtr, newClassPtr});
+            fullNameClassesMap.insert(fullNamePtr, newClassPtr);
             declareClass = true;
         }
 
@@ -5212,11 +5202,11 @@ llvm.return %5 : i32
 
     NamespaceInfo::TypePtr currentNamespace;
 
-    llvm::StringMap<NamespaceInfo::TypePtr> fullNamespacesMap;
+    llvm::ScopedHashTable<StringRef, NamespaceInfo::TypePtr> fullNamespacesMap;
 
-    llvm::StringMap<ClassInfo::TypePtr> fullNameClassesMap;
+    llvm::ScopedHashTable<StringRef, ClassInfo::TypePtr> fullNameClassesMap;
 
-    llvm::StringMap<VariableDeclarationDOM::TypePtr> fullNameGlobalsMap;
+    llvm::ScopedHashTable<StringRef, VariableDeclarationDOM::TypePtr> fullNameGlobalsMap;
 
     // helper to get line number
     Parser parser;

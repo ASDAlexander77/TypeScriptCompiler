@@ -35,7 +35,6 @@ class TypeScriptDialectLLVMIRTranslationInterface : public LLVMTranslationDialec
     {
         LLVM_DEBUG(llvm::dbgs() << "\n === amendOperation === \n");
         LLVM_DEBUG(llvm::dbgs() << "attribute: " << attribute.first << " val: " << attribute.second << "\n");
-        // LLVM_DEBUG(op->dump());
         // TODO:
         if (attribute.first != TS_NEST_ATTRIBUTE)
         {
