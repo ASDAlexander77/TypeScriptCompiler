@@ -3324,8 +3324,9 @@ llvm.return %5 : i32
             auto fullClassVTableFieldName = concat(classInfo->fullName, VTABLE_NAME);
             auto vtableAddress = resolveFullNameIdentifier(location, fullClassVTableFieldName, true, genContext);
             assert(vtableAddress);
-            auto varDecl = std::make_shared<VariableDeclarationDOM>(VTABLE_NAME, vtableAddress.getType(), location);
-            declare(varDecl, vtableAddress);
+            auto anyTypeValue = builder.create<mlir_ts::CastOp>(location, getAnyType(), vtableAddress);
+            auto varDecl = std::make_shared<VariableDeclarationDOM>(VTABLE_NAME, anyTypeValue.getType(), location);
+            declare(varDecl, anyTypeValue);
 
             // save vtable value
             auto setPropValue = nf.createBinaryExpression(propAccess, nf.createToken(SyntaxKind::EqualsToken), _vtable_name);
