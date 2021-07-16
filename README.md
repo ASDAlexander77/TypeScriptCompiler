@@ -16,28 +16,36 @@ Want to chat with other members of the TypeScriptCompiler community?
 # Example
 
 ```TypeScript
-class Cat {
-    name: string;
+abstract class Department {
+    constructor(public name: string) {}
 
-    constructor(name: string) {
-        this.name = name;
+    printName(): void {
+        print("Department name: " + this.name);
     }
 
-    speak() {
-        print(`${this.name} makes a noise.`);
-    }
+    abstract printMeeting(): void; // must be implemented in derived classes
 }
 
-class Lion extends Cat {
-    speak() {
-        super.speak();
-        print(`${this.name} roars.`);
+class AccountingDepartment extends Department {
+    constructor() {
+        super("Accounting and Auditing"); // constructors in derived classes must call super()
+    }
+
+    printMeeting(): void {
+        print("The Accounting Department meets each Monday at 10am.");
+    }
+
+    generateReports(): void {
+        print("Generating accounting reports...");
     }
 }
 
 function main() {
-    let l = new Lion("Fuzzy");
-    l.speak();
+    let department: Department; // ok to create a reference to an abstract type
+    department = new AccountingDepartment(); // ok to create and assign a non-abstract subclass
+    department.printName();
+    department.printMeeting();
+    //department.generateReports(); // error: department is not of type AccountingDepartment, cannot access generateReports
 }
 ```
 
@@ -47,8 +55,8 @@ tsc --emit=jit example.ts
 
 Result
 ```
-Fuzzy makes a noise.
-Fuzzy roars.
+Department name: Accounting and Auditing
+The Accounting Department meets each Monday at 10am.
 ```
 
 ## Compile as JIT

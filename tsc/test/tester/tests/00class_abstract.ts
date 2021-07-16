@@ -1,30 +1,32 @@
-abstract class Animal {
-    constructor(protected name: string) {}
+abstract class Department {
+    constructor(public name: string) {}
 
-    abstract makeSound(input: string): string;
-
-    move(meters: number) {
-        print(this.name + " moved " + meters + "m.");
+    printName(): void {
+        print("Department name: " + this.name);
     }
+
+    abstract printMeeting(): void; // must be implemented in derived classes
 }
 
-class Snake extends Animal {
-    constructor(name: string) {
-        super(name);
+class AccountingDepartment extends Department {
+    constructor() {
+        super("Accounting and Auditing"); // constructors in derived classes must call super()
     }
 
-    makeSound(input: string) {
-        return "sssss" + input;
+    printMeeting(): void {
+        print("The Accounting Department meets each Monday at 10am.");
     }
 
-    move() {
-        print("Slithering...");
-        super.move(5);
+    generateReports(): void {
+        print("Generating accounting reports...");
     }
 }
 
 function main() {
-    const snake = new Snake("snake 1");
-    snake.move();
+    let department: Department; // ok to create a reference to an abstract type
+    department = new AccountingDepartment(); // ok to create and assign a non-abstract subclass
+    department.printName();
+    department.printMeeting();
+    //department.generateReports(); // error: department is not of type AccountingDepartment, cannot access generateReports
     print("done.");
 }
