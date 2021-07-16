@@ -87,8 +87,7 @@ set TSCPATH=%TSCBIN%\tsc\bin
 set VCFLD=C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\SDK\ScopeCppSDK\vc15
 set LIBPATH=%VCFLD%\VC\lib
 set SDKPATH=%VCFLD%\SDK\lib
-%TSCPATH%\tsc.exe --emit=llvm %FILENAME%.ts 2>%FILENAME%.ll
-%LLVMPATH%\llc.exe --filetype=obj -o=%FILENAME%.o %FILENAME%.ll
+%TSCPATH%\tsc.exe --emit=jit -dump-object-file -object-filename=%FILENAME%.o %FILENAME%.ts
 %LLVMPATH%\lld.exe -flavor link %FILENAME%.o /libpath:"%LIBPATH%" /libpath:"%SDKPATH%" "%LIBPATH%\libcmt.lib" "%LIBPATH%\libvcruntime.lib" "%SDKPATH%\kernel32.lib" "%SDKPATH%\libucrt.lib" "%SDKPATH%\uuid.lib"
 ```
 Compile 
@@ -106,6 +105,82 @@ Result
 Hello World!
 ```
 
+### On Linux (Ubuntu 20.04)
+File ``tsc-compile.sh``
+```cmd
+./tsc --emit=jit -dump-object-file -object-filename=$1.o $1.ts
+gcc -o $1 $1.o
+```
+Compile 
+```cmd
+sh -f tsc-compile.sh hello
+```
+
+Run
+```
+./hello
+```
+
+Result
+```
+Hello World!
+```
+
+### Compiling as WASM
+### On Windows
+File ``tsc-compile-wasm.bat``
+```cmd
+rem set %LLVM% and %TSCBIN%
+set LLVMPATH=%LLVM%\llvm\release\bin
+set TSCPATH=%TSCBIN%\tsc\bin
+%TSCPATH%\tsc.exe --emit=llvm %FILENAME%.ts 2>%FILENAME%.ll
+%LLVMPATH%\llc.exe -mtriple=wasm32-unknown-unknown -O3 --filetype=obj -o=%FILENAME%.o %FILENAME%.ll
+%LLVMPATH%\wasm-ld.exe %FILENAME%.o -o %FILENAME%.wasm --no-entry --export-all --allow-undefined
+```
+Compile 
+```cmd
+tsc-compile-wasm.bat hello
+```
+
+Run run.html
+```
+<!DOCTYPE html>
+<!-- add.html -->
+<html>
+  <head></head>
+  <body>
+    <script type="module">
+let buffer;
+
+const config = {
+    env: {
+        memory_base: 0,
+        table_base: 0,
+        memory : new WebAssembly.Memory({ initial: 256}),
+        table: new WebAssembly.Table({
+            initial: 0,
+            element: 'anyfunc',
+        })
+    }
+};
+
+fetch("./hello.wasm")
+    .then(response =>{
+        return response.arrayBuffer();
+    })
+    .then(bytes => {
+        return WebAssembly.instantiate(bytes, config); 
+    })
+    .then(results => { 
+       let { main } =  results.instance.exports;
+       buffer = new Uint8Array(results.instance.exports.memory.buffer);
+       main();
+    });
+    </script>
+  </body>
+</html>
+```
+
 ## Build
 ### On Windows
 
@@ -121,4 +196,20 @@ To build TSC binaries:
 cd tsc
 config_tsc_debug.bat
 build_tsc_debug.bat
+```
+
+### On Linux (Ubuntu 20.04)
+
+First, precompile dependencies
+
+```
+sh -f prepare_3rdParty.sh
+```
+
+To build TSC binaries:
+
+```
+cd tsc
+sh -f config_tsc_debug.sh
+sh -f build_tsc_debug.sh
 ```

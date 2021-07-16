@@ -3746,6 +3746,8 @@ llvm.return %5 : i32
                 llvm_unreachable("object literal is not implemented(1)");
             }
 
+            assert(itemValue);
+
             mlir::Type type;
             mlir::Attribute value;
             if (auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(itemValue.getDefiningOp()))
