@@ -49,6 +49,7 @@ function main() {
 }
 ```
 
+Run
 ```cmd
 tsc --emit=jit example.ts
 ```
@@ -142,7 +143,7 @@ Compile
 tsc-compile-wasm.bat hello
 ```
 
-Run run.html
+Run ``run.html``
 ```
 <!DOCTYPE html>
 <!-- add.html -->
@@ -206,7 +207,7 @@ First, precompile dependencies
 sh -f prepare_3rdParty.sh
 ```
 
-To build TSC binaries:
+To build ``TSC`` binaries:
 
 ```
 cd tsc
