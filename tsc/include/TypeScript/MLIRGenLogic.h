@@ -102,6 +102,14 @@ class MLIRCustomMethods
         {
             result = mlirGenSizeOf(location, operands);
         }
+        else if (functionName.compare(StringRef("__array_push")) == 0)
+        {
+            result = mlirGenArrayPush(location, operands);
+        }
+        else if (functionName.compare(StringRef("__array_pop")) == 0)
+        {
+            result = mlirGenArrayPop(location, operands);
+        }
         /*
         else
         if (functionName.compare(StringRef("#_last_field")) == 0)
@@ -191,6 +199,21 @@ class MLIRCustomMethods
     {
         auto sizeOfValue =
             builder.create<mlir_ts::SizeOfOp>(location, builder.getI64Type(), mlir::TypeAttr::get(operands.front().getType()));
+
+        return sizeOfValue;
+    }
+
+    mlir::Value mlirGenArrayPush(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    {
+        auto sizeOfValue = builder.create<mlir_ts::PushOp>(location, builder.getI64Type(), operands.front(), operands.slice(1));
+
+        return sizeOfValue;
+    }
+
+    mlir::Value mlirGenArrayPop(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    {
+        auto sizeOfValue = builder.create<mlir_ts::PopOp>(location, operands.front().getType().cast<mlir_ts::ArrayType>().getElementType(),
+                                                          operands.front());
 
         return sizeOfValue;
     }
@@ -454,6 +477,32 @@ class MLIRPropertyAccessCodeLogic
             {
                 auto sizeValue = builder.create<mlir_ts::LengthOfOp>(location, builder.getI32Type(), expression);
                 return sizeValue;
+            }
+            else
+            {
+                llvm_unreachable("not implemented");
+            }
+        }
+        else if (propName == "push")
+        {
+            if (expression.getType().isa<mlir_ts::ArrayType>())
+            {
+                auto symbOp = builder.create<mlir_ts::SymbolRefOp>(location, builder.getNoneType(),
+                                                                   mlir::FlatSymbolRefAttr::get(builder.getContext(), "__array_push"));
+                return symbOp;
+            }
+            else
+            {
+                llvm_unreachable("not implemented");
+            }
+        }
+        else if (propName == "pop")
+        {
+            if (expression.getType().isa<mlir_ts::ArrayType>())
+            {
+                auto symbOp = builder.create<mlir_ts::SymbolRefOp>(location, builder.getNoneType(),
+                                                                   mlir::FlatSymbolRefAttr::get(builder.getContext(), "__array_pop"));
+                return symbOp;
             }
             else
             {

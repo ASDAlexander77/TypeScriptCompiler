@@ -1368,6 +1368,16 @@ def TypeScript_GlobalResultOp : TypeScript_Op<"GlobalResult", [NoSideEffect, Ret
   let verifier = ?;
 }
 
+def TypeScript_PushOp : TypeScript_Op<"Push"> {
+  let arguments = (ins TypeScript_ArrayLike:$op, Variadic<AnyType>:$items);
+  let results = (outs I32:$new_size);
+}
+
+def TypeScript_PopOp : TypeScript_Op<"Pop"> {
+  let arguments = (ins TypeScript_ArrayLike:$op);
+  let results = (outs AnyType:$item);
+}
+
 def TypeScript_LengthOfOp : TypeScript_Op<"LengthOf"> {
   let arguments = (ins TypeScript_ArrayLike:$op);
   let results = (outs I32:$result);
