@@ -3743,6 +3743,12 @@ llvm.return %5 : i32
             return builder.create<mlir_ts::ConstantOp>(loc(arrayLiteral), getConstTupleType(fieldInfos), arrayAttr);
         }
 
+        if (!elementType)
+        {
+            // in case of empty array
+            elementType = getAnyType();
+        }
+
         return builder.create<mlir_ts::ConstantOp>(loc(arrayLiteral), getConstArrayType(elementType, values.size()), arrayAttr);
     }
 

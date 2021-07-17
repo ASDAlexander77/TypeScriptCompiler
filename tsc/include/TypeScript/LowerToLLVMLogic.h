@@ -613,6 +613,26 @@ class LLVMCodeHelper
 
                 rewriter.create<LLVM::ReturnOp>(loc, ValueRange{arrayVal});
             }
+            else if (originalElementType.dyn_cast_or_null<mlir_ts::AnyType>())
+            {
+                seekLast(parentModule.getBody());
+
+                OpBuilder::InsertionGuard guard(rewriter);
+
+                global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, Attribute{});
+
+                setStructWritingPoint(global);
+
+                Value arrayVal = rewriter.create<LLVM::UndefOp>(loc, arrayType);
+
+                for (auto item : arrayAttr.getValue())
+                {
+                    // it must be '[]' empty array
+                    assert(false);
+                }
+
+                rewriter.create<LLVM::ReturnOp>(loc, ValueRange{arrayVal});
+            }
             else if (auto originalArrayType = originalElementType.dyn_cast_or_null<mlir_ts::ArrayType>())
             {
                 seekLast(parentModule.getBody());
@@ -667,6 +687,8 @@ class LLVMCodeHelper
             }
             else
             {
+                LLVM_DEBUG(llvm::dbgs() << "type: "; originalElementType.dump(); llvm::dbgs() << "\n";);
+
                 llvm_unreachable("array literal is not implemented(1)");
             }
         }
