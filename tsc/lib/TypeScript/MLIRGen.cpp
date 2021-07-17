@@ -3165,6 +3165,15 @@ llvm.return %5 : i32
             MLIRCustomMethods cm(builder, location);
 
             SmallVector<mlir::Value, 4> operands;
+            if (auto thisSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::ThisSymbolRefOp>())
+            {
+                operands.push_back(thisSymbolRefOp.thisVal());
+            }
+            else if (auto thisVirtualSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::ThisVirtualSymbolRefOp>())
+            {
+                operands.push_back(thisVirtualSymbolRefOp.thisVal());
+            }
+
             if (mlir::failed(mlirGen(argumentsContext, operands, genContext)))
             {
                 if (!genContext.allowPartialResolve)

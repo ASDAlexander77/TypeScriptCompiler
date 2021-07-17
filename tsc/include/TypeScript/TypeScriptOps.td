@@ -1370,7 +1370,7 @@ def TypeScript_GlobalResultOp : TypeScript_Op<"GlobalResult", [NoSideEffect, Ret
 
 def TypeScript_PushOp : TypeScript_Op<"Push"> {
   let arguments = (ins TypeScript_ArrayLike:$op, Variadic<AnyType>:$items);
-  let results = (outs I32:$new_size);
+  let results = (outs I64:$new_size);
 }
 
 def TypeScript_PopOp : TypeScript_Op<"Pop"> {

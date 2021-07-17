@@ -487,8 +487,8 @@ class MLIRPropertyAccessCodeLogic
         {
             if (expression.getType().isa<mlir_ts::ArrayType>())
             {
-                auto symbOp = builder.create<mlir_ts::SymbolRefOp>(location, builder.getNoneType(),
-                                                                   mlir::FlatSymbolRefAttr::get(builder.getContext(), "__array_push"));
+                auto symbOp = builder.create<mlir_ts::ThisSymbolRefOp>(location, builder.getNoneType(), expression,
+                                                                       mlir::FlatSymbolRefAttr::get(builder.getContext(), "__array_push"));
                 return symbOp;
             }
             else
@@ -500,8 +500,8 @@ class MLIRPropertyAccessCodeLogic
         {
             if (expression.getType().isa<mlir_ts::ArrayType>())
             {
-                auto symbOp = builder.create<mlir_ts::SymbolRefOp>(location, builder.getNoneType(),
-                                                                   mlir::FlatSymbolRefAttr::get(builder.getContext(), "__array_pop"));
+                auto symbOp = builder.create<mlir_ts::ThisSymbolRefOp>(location, builder.getNoneType(), expression,
+                                                                       mlir::FlatSymbolRefAttr::get(builder.getContext(), "__array_pop"));
                 return symbOp;
             }
             else

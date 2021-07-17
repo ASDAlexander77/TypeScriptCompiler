@@ -227,6 +227,11 @@ class CodeLogicHelper
     {
     }
 
+    ArrayAttr getIndexAttr(int index)
+    {
+        return rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(index));
+    }
+
     Value createIConstantOf(unsigned width, unsigned value)
     {
         return rewriter.create<LLVM::ConstantOp>(op->getLoc(), rewriter.getIntegerType(width),
