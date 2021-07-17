@@ -79,4 +79,5 @@ function incrLazyNum(delta: number, res: number) {
 
 function main() {
     testLazyOps();
+    print("done.");
 }
