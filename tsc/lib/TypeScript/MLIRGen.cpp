@@ -1031,6 +1031,13 @@ class MLIRGenImpl
 
         for (auto &item : variableDeclarationListAST->declarations)
         {
+            if (!item->type && !item->initializer)
+            {
+                auto name = MLIRHelper::getName(item->name);
+                emitError(loc(item)) << "type of variable '" << name << "' is not provided, variable must have type or initializer";
+                return mlir::failure();
+            }
+
             auto initFunc = [&]() { return getTypeAndInit(item, genContext); };
 
             auto valClassItem = varClass;
@@ -4753,6 +4760,11 @@ llvm.return %5 : i32
             GenContext genContext;
             return getTypeByTypeReference(typeReferenceAST.as<TypeReferenceNode>(), genContext);
         }
+        else if (kind == SyntaxKind::TypeQuery)
+        {
+            GenContext genContext;
+            return getTypeByTypeQuery(typeReferenceAST.as<TypeQueryNode>(), genContext);
+        }
         else if (kind == SyntaxKind::AnyKeyword)
         {
             return getAnyType();
@@ -4794,6 +4806,16 @@ llvm.return %5 : i32
     mlir::Type getTypeByTypeReference(TypeReferenceNode typeReferenceAST, const GenContext &genContext)
     {
         return getTypeByTypeName(typeReferenceAST->typeName, genContext);
+    }
+
+    mlir::Type getTypeByTypeQuery(TypeQueryNode typeQueryAST, const GenContext &genContext)
+    {
+        auto value = mlirGen(typeQueryAST->exprName.as<Expression>(), genContext);
+        assert(value);
+
+        LLVM_DEBUG(dbgs() << "typeQuery: "; value.getType().dump(); dbgs() << "\n";);
+
+        return value.getType();
     }
 
     mlir_ts::VoidType getVoidType()
