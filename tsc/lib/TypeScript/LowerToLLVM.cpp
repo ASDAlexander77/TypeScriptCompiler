@@ -1127,7 +1127,7 @@ struct PushOpLowering : public TsLlvmPattern<mlir_ts::PushOp>
 
         auto loc = pushOp.getLoc();
 
-        auto arrayType = pushOp.getType().cast<mlir_ts::ArrayType>();
+        auto arrayType = pushOp.op().getType().cast<mlir_ts::ArrayType>();
         auto elementType = arrayType.getElementType();
         auto llvmElementType = tch.convertType(elementType);
         auto llvmPtrElementType = th.getPointerType(llvmElementType);
@@ -1141,7 +1141,7 @@ struct PushOpLowering : public TsLlvmPattern<mlir_ts::PushOp>
         auto currentPtr = rewriter.create<LLVM::ExtractValueOp>(loc, th.getIndexType(), pushOp.op(), clh.getIndexAttr(0));
         auto countAsIndexType = rewriter.create<LLVM::ExtractValueOp>(loc, th.getIndexType(), pushOp.op(), clh.getIndexAttr(1));
 
-        auto incSize = clh.createI32ConstantOf(pushOp.items().size());
+        auto incSize = clh.createIndexConstantOf(pushOp.items().size());
         auto newCountAsIndexType = rewriter.create<LLVM::AddOp>(loc, th.getIndexType(), ValueRange{countAsIndexType, incSize});
 
         auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), storageType);
@@ -1163,7 +1163,7 @@ struct PushOpLowering : public TsLlvmPattern<mlir_ts::PushOp>
             {
                 if (!value1)
                 {
-                    value1 = clh.createI32ConstantOf(1);
+                    value1 = clh.createIndexConstantOf(1);
                 }
 
                 index = rewriter.create<LLVM::AddOp>(loc, th.getIndexType(), ValueRange{index, value1});
@@ -1171,7 +1171,7 @@ struct PushOpLowering : public TsLlvmPattern<mlir_ts::PushOp>
 
             // save new element
             auto offset = rewriter.create<LLVM::GEPOp>(loc, llvmPtrElementType, allocated, ValueRange{index});
-            auto save = rewriter.create<LLVM::StoreOp>(loc, offset, pushOp.items().front());
+            auto save = rewriter.create<LLVM::StoreOp>(loc, item, offset);
             next = true;
         }
 
@@ -1215,7 +1215,7 @@ struct PopOpLowering : public TsLlvmPattern<mlir_ts::PushOp>
         auto currentPtr = rewriter.create<LLVM::ExtractValueOp>(loc, th.getIndexType(), pushOp.op(), clh.getIndexAttr(0));
         auto countAsIndexType = rewriter.create<LLVM::ExtractValueOp>(loc, th.getIndexType(), pushOp.op(), clh.getIndexAttr(1));
 
-        auto incSize = clh.createI32ConstantOf(1);
+        auto incSize = clh.createIndexConstantOf(1);
         auto newCountAsIndexType = rewriter.create<LLVM::SubOp>(loc, th.getIndexType(), ValueRange{countAsIndexType, incSize});
 
         // load last element

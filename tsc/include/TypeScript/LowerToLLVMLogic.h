@@ -287,6 +287,12 @@ class CodeLogicHelper
                                                  rewriter.getIntegerAttr(rewriter.getF32Type(), value));
     }
 
+    Value createIndexConstantOf(unsigned value)
+    {
+        return rewriter.create<LLVM::ConstantOp>(op->getLoc(), rewriter.getIntegerType(64),
+                                                 rewriter.getIntegerAttr(rewriter.getI64Type(), value));
+    }
+
     Value castToI8Ptr(mlir::Value value)
     {
         TypeHelper th(rewriter);
