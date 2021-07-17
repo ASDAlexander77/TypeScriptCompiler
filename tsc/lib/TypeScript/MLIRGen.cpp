@@ -2322,7 +2322,11 @@ llvm.return %5 : i32
         auto location = loc(conditionalExpressionAST);
 
         // condition
-        auto condValue = mlirGen(conditionalExpressionAST->condition, genContext);
+        auto condExpression = conditionalExpressionAST->condition;
+        auto condValue = mlirGen(condExpression, genContext);
+
+        VALIDATE_EXPR(condValue, condExpression);
+
         if (condValue.getType() != getBooleanType())
         {
             condValue = builder.create<mlir_ts::CastOp>(location, getBooleanType(), condValue);
@@ -2332,18 +2336,33 @@ llvm.return %5 : i32
         mlir::Type resultType;
         {
             mlir::OpBuilder::InsertionGuard guard(builder);
-            auto resultTrueTemp = mlirGen(conditionalExpressionAST->whenTrue, genContext);
+            auto whenTrueExpression = conditionalExpressionAST->whenTrue;
+            auto resultTrueTemp = mlirGen(whenTrueExpression, genContext);
+
+            VALIDATE_EXPR(resultTrueTemp, whenTrueExpression);
+
             resultType = resultTrueTemp.getType();
+
+            // it is temp calculation, remove it
+            resultTrueTemp.getDefiningOp()->erase();
         }
 
         auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{resultType}, condValue, true);
 
         builder.setInsertionPointToStart(&ifOp.thenRegion().front());
-        auto resultTrue = mlirGen(conditionalExpressionAST->whenTrue, genContext);
+        auto whenTrueExpression = conditionalExpressionAST->whenTrue;
+        auto resultTrue = mlirGen(whenTrueExpression, genContext);
+
+        VALIDATE_EXPR(resultTrue, whenTrueExpression);
+
         builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{resultTrue});
 
         builder.setInsertionPointToStart(&ifOp.elseRegion().front());
-        auto resultFalse = mlirGen(conditionalExpressionAST->whenFalse, genContext);
+        auto whenFalseExpression = conditionalExpressionAST->whenFalse;
+        auto resultFalse = mlirGen(whenFalseExpression, genContext);
+
+        VALIDATE_EXPR(resultFalse, whenFalseExpression);
+
         builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{resultFalse});
 
         builder.setInsertionPointAfter(ifOp);
