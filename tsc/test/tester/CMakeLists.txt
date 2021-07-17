@@ -68,6 +68,7 @@ add_test(NAME test-compile-08-stringopertations COMMAND test-runner "${PROJECT_S
 add_test(NAME test-compile-08-09postprefix COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/09postprefix.ts")
 add_test(NAME test-compile-10-arrayincrement COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/10arrayincrement.ts")
 add_test(NAME test-compile-11-equalsoperator COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/11equalsoperator.ts")
+add_test(NAME test-compile-14-lazyoperations COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/14lazyoperations.ts")
 add_test(NAME test-compile-18-enums COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/18enums.ts")
 add_test(NAME test-compile-Grammar_and_types COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/Grammar_and_types.ts")
 
@@ -124,5 +125,6 @@ add_test(NAME test-jit-08-stringopertations COMMAND test-runner -jit "${PROJECT_
 add_test(NAME test-jit-08-09postprefix COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/09postprefix.ts")
 add_test(NAME test-jit-10-arrayincrement COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/10arrayincrement.ts")
 add_test(NAME test-jit-11-equalsoperator COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/11equalsoperator.ts")
+add_test(NAME test-jit-14-lazyoperations COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/14lazyoperations.ts")
 add_test(NAME test-jit-18-enums COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/18enums.ts")
 add_test(NAME test-jit-Grammar_and_types COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/Grammar_and_types.ts")

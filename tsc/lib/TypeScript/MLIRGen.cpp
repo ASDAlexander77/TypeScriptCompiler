@@ -2360,6 +2360,9 @@ llvm.return %5 : i32
 
         // condition
         auto leftExpressionValue = mlirGen(leftExpression, genContext);
+
+        VALIDATE_EXPR(leftExpressionValue, leftExpression)
+
         auto resultType = leftExpressionValue.getType();
 
         auto condValue = builder.create<mlir_ts::CastOp>(location, getBooleanType(), leftExpressionValue);
@@ -2368,10 +2371,21 @@ llvm.return %5 : i32
 
         builder.setInsertionPointToStart(&ifOp.thenRegion().front());
         auto resultTrue = andOp ? mlirGen(rightExpression, genContext) : leftExpressionValue;
+
+        if (andOp)
+        {
+            VALIDATE_EXPR(resultTrue, rightExpression)
+        }
+
         builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{resultTrue});
 
         builder.setInsertionPointToStart(&ifOp.elseRegion().front());
         auto resultFalse = andOp ? leftExpressionValue : mlirGen(rightExpression, genContext);
+
+        if (!andOp)
+        {
+            VALIDATE_EXPR(resultFalse, rightExpression)
+        }
 
         // sync right part
         if (resultTrue.getType() != resultFalse.getType())
