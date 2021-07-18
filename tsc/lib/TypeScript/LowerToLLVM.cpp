@@ -1795,17 +1795,9 @@ struct MemoryCopyOpLowering : public TsLlvmPattern<mlir_ts::MemoryCopyOp>
         values.push_back(clh.castToI8Ptr(memoryCopyOp.dst()));
         values.push_back(clh.castToI8Ptr(memoryCopyOp.src()));
 
-        // emitError(loc) << "type: " << memoryCopyOp.src().getType();
+        auto valueType = memoryCopyOp.src().getType().cast<LLVM::LLVMPointerType>().getElementType();
 
-        // TODO: can wed replace it with save and load?
-        // calculate size
-        auto valueType = tch.makePtrToValue(memoryCopyOp.src().getType()).cast<LLVM::LLVMPointerType>().getElementType();
-
-        // emitError(loc) << "value type: " << valueType;
-
-        auto sizeInBits = th.getTypeSize(valueType);
-        assert(sizeInBits > 0);
-        auto size = clh.createI64ConstantOf(sizeInBits / 8);
+        auto size = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), valueType);
         values.push_back(size);
 
         auto immarg = clh.createI1ConstantOf(false);

@@ -33,8 +33,7 @@ function main() {
         print(k, v);
     }
 
-    // TODO: memory bug here
-    //f(trees);
+    f(trees);
 
     print("done.");
 }

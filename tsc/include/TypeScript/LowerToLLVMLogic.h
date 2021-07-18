@@ -136,31 +136,6 @@ class TypeHelper
     {
         return LLVM::LLVMFunctionType::get(getVoidType(), arguments, isVarArg);
     }
-
-    llvm::TypeSize getTypeSize(mlir::Type valueType)
-    {
-        auto size = LLVM::getPrimitiveTypeSizeInBits(valueType);
-        if (size > 0)
-        {
-            return size;
-        }
-
-        // TODO: review DataLayout.getTypeAllocSizeInBits, https://llvm.org/docs/LangRef.html#langref-datalayout as class init
-
-        auto calcSize = llvm::TypeSwitch<Type, llvm::TypeSize>(valueType)
-                            .Case<LLVM::LLVMArrayType>([&](LLVM::LLVMArrayType aty) {
-                                auto sizeElement = getTypeSize(aty.getElementType());
-                                auto count = aty.getNumElements();
-                                return llvm::TypeSize::Fixed(sizeElement * count);
-                            })
-                            .Case<LLVM::LLVMPointerType>([&](LLVM::LLVMPointerType pty) { return llvm::TypeSize::Fixed(64); })
-                            .Default([](Type ty) {
-                                assert(false);
-                                return llvm::TypeSize::Fixed(0);
-                            });
-
-        return calcSize;
-    }
 };
 
 class TypeConverterHelper
@@ -1501,13 +1476,15 @@ class CastLogicHelper
         bool byValue = true;
         if (byValue)
         {
+            auto bytesSize = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), arrayValueSize);
             // TODO: create MemRef which will store information about memory. stack of heap, to use in array push to realloc
-            // auto copyAllocated = rewriter.create<LLVM::AllocaOp>(loc, arrayPtrType, sizeValue);
-            auto copyAllocated = ch.MemoryAlloc(arrayPtrType, sizeValue);
+            // auto copyAllocated = rewriter.create<LLVM::AllocaOp>(loc, arrayPtrType, bytesSize);
+            auto copyAllocated = ch.MemoryAlloc(arrayPtrType, bytesSize);
 
             auto ptrToArraySrc = rewriter.create<LLVM::BitcastOp>(loc, ptrToArray, in);
             auto ptrToArrayDst = rewriter.create<LLVM::BitcastOp>(loc, ptrToArray, copyAllocated);
             rewriter.create<mlir_ts::LoadSaveOp>(loc, ptrToArrayDst, ptrToArraySrc);
+            // rewriter.create<mlir_ts::MemoryCopyOp>(loc, ptrToArrayDst, ptrToArraySrc);
 
             arrayPtr = rewriter.create<LLVM::BitcastOp>(loc, llvmDestArray, copyAllocated);
         }
