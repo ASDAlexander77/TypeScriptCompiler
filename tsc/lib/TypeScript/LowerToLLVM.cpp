@@ -1191,38 +1191,38 @@ struct PushOpLowering : public TsLlvmPattern<mlir_ts::PushOp>
     }
 };
 
-struct PopOpLowering : public TsLlvmPattern<mlir_ts::PushOp>
+struct PopOpLowering : public TsLlvmPattern<mlir_ts::PopOp>
 {
-    using TsLlvmPattern<mlir_ts::PushOp>::TsLlvmPattern;
+    using TsLlvmPattern<mlir_ts::PopOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::PushOp pushOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+    LogicalResult matchAndRewrite(mlir_ts::PopOp popOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
     {
-        LLVMCodeHelper ch(pushOp, rewriter, getTypeConverter());
-        CodeLogicHelper clh(pushOp, rewriter);
+        LLVMCodeHelper ch(popOp, rewriter, getTypeConverter());
+        CodeLogicHelper clh(popOp, rewriter);
         TypeConverterHelper tch(getTypeConverter());
         TypeHelper th(rewriter);
 
-        auto loc = pushOp.getLoc();
+        auto loc = popOp.getLoc();
 
-        auto arrayType = pushOp.op().getType().cast<mlir_ts::RefType>().getElementType().cast<mlir_ts::ArrayType>();
+        auto arrayType = popOp.op().getType().cast<mlir_ts::RefType>().getElementType().cast<mlir_ts::ArrayType>();
         auto elementType = arrayType.getElementType();
         auto llvmElementType = tch.convertType(elementType);
         auto llvmPtrElementType = th.getPointerType(llvmElementType);
 
         mlir::Type storageType;
-        TypeSwitch<Type>(pushOp.op().getType())
+        TypeSwitch<Type>(popOp.op().getType())
             .Case<mlir_ts::ClassType>([&](auto classType) { storageType = classType.getStorageType(); })
             .Case<mlir_ts::ValueRefType>([&](auto valueRefType) { storageType = valueRefType.getElementType(); })
             .Default([&](auto type) { storageType = type; });
 
         // auto currentPtr = rewriter.create<LLVM::ExtractValueOp>(loc, llvmPtrElementType, pushOp.op(), clh.getStructIndexAttr(0));
         auto ind0 = clh.createI32ConstantOf(0);
-        auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, th.getPointerType(llvmPtrElementType), pushOp.op(), ValueRange{ind0, ind0});
+        auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, th.getPointerType(llvmPtrElementType), popOp.op(), ValueRange{ind0, ind0});
         auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, llvmPtrElementType, currentPtrPtr);
 
         // auto countAsI32Type = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI32Type(), pushOp.op(), clh.getStructIndexAttr(1));
         auto ind1 = clh.createI32ConstantOf(1);
-        auto countAsI32TypePtr = rewriter.create<LLVM::GEPOp>(loc, th.getPointerType(th.getI32Type()), pushOp.op(), ValueRange{ind0, ind1});
+        auto countAsI32TypePtr = rewriter.create<LLVM::GEPOp>(loc, th.getPointerType(th.getI32Type()), popOp.op(), ValueRange{ind0, ind1});
         auto countAsI32Type = rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), countAsI32TypePtr);
 
         auto countAsIndexType = rewriter.create<ZeroExtendIOp>(loc, countAsI32Type, th.getIndexType());
@@ -1252,7 +1252,7 @@ struct PopOpLowering : public TsLlvmPattern<mlir_ts::PushOp>
         //    rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue2, newCountAsI32Type, clh.getStructIndexAttr(1));
         rewriter.create<LLVM::StoreOp>(loc, newCountAsI32Type, countAsI32TypePtr);
 
-        rewriter.replaceOp(pushOp, ValueRange{loadedElement});
+        rewriter.replaceOp(popOp, ValueRange{loadedElement});
         return success();
     }
 };
