@@ -1431,13 +1431,24 @@ class CastLogicHelper
 
     mlir::Value castToArrayType(mlir::Value in, mlir::Type arrayType)
     {
-        mlir::Type llvmElementType;
+        mlir::Type srcElementType;
+        mlir::Type llvmSrcElementType;
         auto type = in.getType();
         auto size = 0;
         if (auto constArrayType = type.dyn_cast_or_null<mlir_ts::ConstArrayType>())
         {
             size = constArrayType.getSize();
-            llvmElementType = tch.convertType(constArrayType.getElementType());
+            srcElementType = constArrayType.getElementType();
+            llvmSrcElementType = tch.convertType(srcElementType);
+
+            auto dstElementType = arrayType.cast<mlir_ts::ArrayType>().getElementType();
+            auto llvmDstElementType = tch.convertType(dstElementType);
+            if (size > 0 && llvmDstElementType != llvmSrcElementType)
+            {
+                emitError(loc) << "source array and destination array have different types, src: " << srcElementType
+                               << " dst: " << dstElementType;
+                return mlir::Value();
+            }
         }
         else if (auto ptrValue = type.dyn_cast_or_null<LLVM::LLVMPointerType>())
         {
@@ -1445,7 +1456,7 @@ class CastLogicHelper
             if (auto arrayType = elementType.dyn_cast_or_null<LLVM::LLVMArrayType>())
             {
                 size = arrayType.getNumElements();
-                llvmElementType = tch.convertType(arrayType.getElementType());
+                llvmSrcElementType = tch.convertType(arrayType.getElementType());
             }
             else
             {
@@ -1468,8 +1479,8 @@ class CastLogicHelper
         auto llvmDestArray = LLVM::LLVMPointerType::get(llvmDestArrayElement);
 
         auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmRtArrayStructType);
-        auto arrayPtrType = LLVM::LLVMPointerType::get(llvmElementType);
-        auto arrayValueSize = LLVM::LLVMArrayType::get(llvmElementType, size);
+        auto arrayPtrType = LLVM::LLVMPointerType::get(llvmSrcElementType);
+        auto arrayValueSize = LLVM::LLVMArrayType::get(llvmSrcElementType, size);
         auto ptrToArray = LLVM::LLVMPointerType::get(arrayValueSize);
 
         mlir::Value arrayPtr;
