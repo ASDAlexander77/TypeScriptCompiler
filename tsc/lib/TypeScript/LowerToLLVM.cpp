@@ -1057,6 +1057,117 @@ struct NewOpLowering : public TsLlvmPattern<mlir_ts::NewOp>
     }
 };
 
+struct CreateArrayOpLowering : public TsLlvmPattern<mlir_ts::CreateArrayOp>
+{
+    using TsLlvmPattern<mlir_ts::CreateArrayOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::CreateArrayOp createArrayOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        LLVMCodeHelper ch(createArrayOp, rewriter, getTypeConverter());
+        CodeLogicHelper clh(createArrayOp, rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+        TypeHelper th(rewriter);
+
+        auto loc = createArrayOp.getLoc();
+
+        auto arrayType = createArrayOp.getType();
+        auto elementType = arrayType.getElementType();
+        auto llvmElementType = tch.convertType(elementType);
+        auto llvmPtrElementType = th.getPointerType(llvmElementType);
+
+        mlir::Type storageType;
+        TypeSwitch<Type>(createArrayOp.getType())
+            .Case<mlir_ts::ClassType>([&](auto classType) { storageType = classType.getStorageType(); })
+            .Case<mlir_ts::ValueRefType>([&](auto valueRefType) { storageType = valueRefType.getElementType(); })
+            .Default([&](auto type) { storageType = type; });
+
+        auto newCountAsIndexType = clh.createIndexConstantOf(createArrayOp.items().size());
+
+        auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), storageType);
+        auto multSizeOfTypeValue = rewriter.create<LLVM::MulOp>(loc, th.getIndexType(), ValueRange{sizeOfTypeValue, newCountAsIndexType});
+
+        auto allocated = ch.MemoryAlloc(llvmPtrElementType, multSizeOfTypeValue);
+
+        mlir::Value index = clh.createIndexConstantOf(0);
+        auto next = false;
+        mlir::Value value1;
+        for (auto item : createArrayOp.items())
+        {
+            if (next)
+            {
+                if (!value1)
+                {
+                    value1 = clh.createIndexConstantOf(1);
+                }
+
+                index = rewriter.create<LLVM::AddOp>(loc, th.getIndexType(), ValueRange{index, value1});
+            }
+
+            // save new element
+            auto offset = rewriter.create<LLVM::GEPOp>(loc, llvmPtrElementType, allocated, ValueRange{index});
+
+            auto effectiveItem = item;
+            if (elementType != item.getType())
+            {
+                effectiveItem = rewriter.create<mlir_ts::CastOp>(loc, elementType, item);
+            }
+
+            auto save = rewriter.create<LLVM::StoreOp>(loc, effectiveItem, offset);
+            next = true;
+        }
+
+        // create array type
+        auto llvmRtArrayStructType = tch.convertType(arrayType);
+        auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmRtArrayStructType);
+        auto structValue2 = rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue, allocated,
+                                                                 rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(0)));
+
+        auto newCountAsI32Type = clh.createI32ConstantOf(createArrayOp.items().size());
+        auto structValue3 = rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue2, newCountAsI32Type,
+                                                                 rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(1)));
+
+        rewriter.replaceOp(createArrayOp, ValueRange{structValue3});
+        return success();
+    }
+};
+
+struct NewEmptyArrayOpLowering : public TsLlvmPattern<mlir_ts::NewEmptyArrayOp>
+{
+    using TsLlvmPattern<mlir_ts::NewEmptyArrayOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::NewEmptyArrayOp newEmptyArrOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        LLVMCodeHelper ch(newEmptyArrOp, rewriter, getTypeConverter());
+        CodeLogicHelper clh(newEmptyArrOp, rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+        TypeHelper th(rewriter);
+
+        auto loc = newEmptyArrOp.getLoc();
+
+        auto arrayType = newEmptyArrOp.getType();
+        auto elementType = arrayType.getElementType();
+        auto llvmElementType = tch.convertType(elementType);
+        auto llvmPtrElementType = th.getPointerType(llvmElementType);
+
+        auto allocated = rewriter.create<LLVM::NullOp>(loc, llvmPtrElementType);
+
+        // create array type
+        auto llvmRtArrayStructType = tch.convertType(arrayType);
+        auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmRtArrayStructType);
+        auto structValue2 =
+            rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue, allocated, clh.getStructIndexAttr(0));
+
+        auto size0 = clh.createI32ConstantOf(0);
+        auto structValue3 =
+            rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue2, size0, clh.getStructIndexAttr(1));
+
+        rewriter.replaceOp(newEmptyArrOp, ValueRange{structValue3});
+        return success();
+    }
+};
+
 struct NewArrayOpLowering : public TsLlvmPattern<mlir_ts::NewArrayOp>
 {
     using TsLlvmPattern<mlir_ts::NewArrayOp>::TsLlvmPattern;
@@ -1070,18 +1181,12 @@ struct NewArrayOpLowering : public TsLlvmPattern<mlir_ts::NewArrayOp>
 
         auto loc = newArrOp.getLoc();
 
-        auto arrayType = newArrOp.getType().cast<mlir_ts::ArrayType>();
+        auto arrayType = newArrOp.getType();
         auto elementType = arrayType.getElementType();
         auto llvmElementType = tch.convertType(elementType);
         auto llvmPtrElementType = th.getPointerType(llvmElementType);
 
-        mlir::Type storageType;
-        TypeSwitch<Type>(newArrOp.getType())
-            .Case<mlir_ts::ClassType>([&](auto classType) { storageType = classType.getStorageType(); })
-            .Case<mlir_ts::ValueRefType>([&](auto valueRefType) { storageType = valueRefType.getElementType(); })
-            .Default([&](auto type) { storageType = type; });
-
-        auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), storageType);
+        auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), elementType);
         auto countAsIndexType = rewriter.create<mlir_ts::CastOp>(loc, th.getIndexType(), newArrOp.count());
         auto multSizeOfTypeValue = rewriter.create<LLVM::MulOp>(loc, th.getIndexType(), ValueRange{sizeOfTypeValue, countAsIndexType});
 
@@ -1090,11 +1195,11 @@ struct NewArrayOpLowering : public TsLlvmPattern<mlir_ts::NewArrayOp>
         // create array type
         auto llvmRtArrayStructType = tch.convertType(arrayType);
         auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmRtArrayStructType);
-        auto structValue2 = rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue, allocated,
-                                                                 rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(0)));
+        auto structValue2 =
+            rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue, allocated, clh.getStructIndexAttr(0));
 
-        auto structValue3 = rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue2, newArrOp.count(),
-                                                                 rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(1)));
+        auto structValue3 =
+            rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue2, newArrOp.count(), clh.getStructIndexAttr(1));
 
         rewriter.replaceOp(newArrOp, ValueRange{structValue3});
         return success();
@@ -1119,12 +1224,6 @@ struct PushOpLowering : public TsLlvmPattern<mlir_ts::PushOp>
         auto llvmElementType = tch.convertType(elementType);
         auto llvmPtrElementType = th.getPointerType(llvmElementType);
 
-        mlir::Type storageType;
-        TypeSwitch<Type>(pushOp.op().getType())
-            .Case<mlir_ts::ClassType>([&](auto classType) { storageType = classType.getStorageType(); })
-            .Case<mlir_ts::ValueRefType>([&](auto valueRefType) { storageType = valueRefType.getElementType(); })
-            .Default([&](auto type) { storageType = type; });
-
         auto ind0 = clh.createI32ConstantOf(0);
         auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, th.getPointerType(llvmPtrElementType), pushOp.op(), ValueRange{ind0, ind0});
         auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, llvmPtrElementType, currentPtrPtr);
@@ -1138,7 +1237,7 @@ struct PushOpLowering : public TsLlvmPattern<mlir_ts::PushOp>
         auto incSize = clh.createIndexConstantOf(pushOp.items().size());
         auto newCountAsIndexType = rewriter.create<LLVM::AddOp>(loc, th.getIndexType(), ValueRange{countAsIndexType, incSize});
 
-        auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), storageType);
+        auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), elementType);
         auto multSizeOfTypeValue = rewriter.create<LLVM::MulOp>(loc, th.getIndexType(), ValueRange{sizeOfTypeValue, newCountAsIndexType});
 
         auto allocated = ch.MemoryRealloc(llvmPtrElementType, currentPtr, multSizeOfTypeValue);
@@ -2221,12 +2320,12 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
                     AssertOpLowering, CastOpLowering, ConstantOpLowering, CreateOptionalOpLowering, UndefOptionalOpLowering,
                     HasValueOpLowering, ValueOpLowering, SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering, EntryOpLowering,
                     FuncOpLowering, LoadOpLowering, ElementRefOpLowering, PropertyRefOpLowering, ExtractPropertyOpLowering,
-                    LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, NewArrayOpLowering, PushOpLowering, PopOpLowering,
-                    DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering, PrintOpLowering, StoreOpLowering, SizeOfOpLowering,
-                    InsertPropertyOpLowering, LengthOfOpLowering, StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering,
-                    CharToStringOpLowering, UndefOpLowering, MemoryCopyOpLowering, LoadSaveValueLowering, ThrowOpLoweringVCWin32,
-                    TrampolineOpLowering, TryOpLowering, VariableOpLowering, InvokeOpLowering, ThisVirtualSymbolRefLowering>(
-        typeConverter, &getContext(), &tsLlvmContext);
+                    LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering,
+                    NewArrayOpLowering, PushOpLowering, PopOpLowering, DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering,
+                    PrintOpLowering, StoreOpLowering, SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering,
+                    StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering,
+                    MemoryCopyOpLowering, LoadSaveValueLowering, ThrowOpLoweringVCWin32, TrampolineOpLowering, TryOpLowering,
+                    VariableOpLowering, InvokeOpLowering, ThisVirtualSymbolRefLowering>(typeConverter, &getContext(), &tsLlvmContext);
 
     populateTypeScriptConversionPatterns(typeConverter, m);
 

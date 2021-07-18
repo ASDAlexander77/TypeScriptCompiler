@@ -3696,6 +3696,58 @@ llvm.return %5 : i32
         return builder.create<mlir_ts::ConstantOp>(loc(noSubstitutionTemplateLiteral), getStringType(), getStringAttr(text));
     }
 
+    mlir::Value mlirGenArrayLiteralExpressionNonConst(ts::ArrayLiteralExpression arrayLiteral, const GenContext &genContext)
+    {
+        auto location = loc(arrayLiteral);
+
+        MLIRTypeHelper mth(builder.getContext());
+
+        // first value
+        auto isTuple = false;
+        mlir::Type elementType;
+        SmallVector<mlir::Type> types;
+        SmallVector<mlir::Value> values;
+        for (auto &item : arrayLiteral->elements)
+        {
+            auto itemValue = mlirGen(item, genContext);
+            if (!itemValue)
+            {
+                // omitted expression
+                continue;
+            }
+
+            auto type = itemValue.getType();
+
+            values.push_back(itemValue);
+            types.push_back(type);
+            if (!elementType)
+            {
+                elementType = type;
+            }
+            else if (elementType != type)
+            {
+                // this is tuple.
+                isTuple = true;
+            }
+        }
+
+        if (isTuple)
+        {
+            llvm_unreachable("not implemented");
+            return mlir::Value();
+        }
+
+        if (!elementType)
+        {
+            // in case of empty array
+            llvm_unreachable("not implemented");
+            return mlir::Value();
+        }
+
+        auto newArrayOp = builder.create<mlir_ts::CreateArrayOp>(loc(arrayLiteral), getArrayType(elementType), values);
+        return newArrayOp;
+    }
+
     mlir::Value mlirGen(ts::ArrayLiteralExpression arrayLiteral, const GenContext &genContext)
     {
         auto location = loc(arrayLiteral);
@@ -3719,9 +3771,7 @@ llvm.return %5 : i32
             auto constOp = itemValue.getDefiningOp<mlir_ts::ConstantOp>();
             if (!constOp)
             {
-                emitError(location, "Array literal should contains constant values only");
-                llvm_unreachable("array literal is not implemented(1)");
-                continue;
+                return mlirGenArrayLiteralExpressionNonConst(arrayLiteral, genContext);
             }
 
             bool copyRequired;

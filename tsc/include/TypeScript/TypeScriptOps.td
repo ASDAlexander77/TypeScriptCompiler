@@ -442,6 +442,30 @@ def TypeScript_NewOp : TypeScript_Op<"New"> {
   let assemblyFormat = "`{` $stackAlloc `}` attr-dict `:` type($instance)";
 }
 
+def TypeScript_CreateArrayOp : TypeScript_Op<"CreateArray"> {
+  let summary = "create array";
+  let description = [{
+    create array
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$items);
+  let results = (outs TypeScript_Array:$instance);
+
+  let assemblyFormat = "`[` $items `:` type($items) `]` attr-dict `:` type($instance)";
+}
+
+def TypeScript_NewEmptyArrayOp : TypeScript_Op<"NewEmptyArray"> {
+  let summary = "create empty array";
+  let description = [{
+    create empty array
+  }];
+
+  let arguments = (ins );
+  let results = (outs TypeScript_Array:$instance);
+
+  let assemblyFormat = "attr-dict `:` type($instance)";
+}
+
 def TypeScript_NewArrayOp : TypeScript_Op<"NewArray"> {
   let summary = "allocate in memory few instances";
   let description = [{
@@ -449,7 +473,7 @@ def TypeScript_NewArrayOp : TypeScript_Op<"NewArray"> {
   }];
 
   let arguments = (ins I32:$count);
-  let results = (outs AnyType:$instance);
+  let results = (outs TypeScript_Array:$instance);
 
   let assemblyFormat = "`[` $count `]` attr-dict `:` type($instance)";
 }
