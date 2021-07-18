@@ -1502,8 +1502,8 @@ class CastLogicHelper
         if (byValue)
         {
             // TODO: create MemRef which will store information about memory. stack of heap, to use in array push to realloc
-            auto copyAllocated = rewriter.create<LLVM::AllocaOp>(loc, arrayPtrType, sizeValue);
-            // auto copyAllocated = ch.MemoryAlloc(arrayPtrType, sizeValue);
+            // auto copyAllocated = rewriter.create<LLVM::AllocaOp>(loc, arrayPtrType, sizeValue);
+            auto copyAllocated = ch.MemoryAlloc(arrayPtrType, sizeValue);
 
             auto ptrToArraySrc = rewriter.create<LLVM::BitcastOp>(loc, ptrToArray, in);
             auto ptrToArrayDst = rewriter.create<LLVM::BitcastOp>(loc, ptrToArray, copyAllocated);
