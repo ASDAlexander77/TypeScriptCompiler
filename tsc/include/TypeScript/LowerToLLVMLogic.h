@@ -1434,6 +1434,9 @@ class CastLogicHelper
 
         auto sizeValue = clh.createI32ConstantOf(size);
         auto llvmRtArrayStructType = tch.convertType(arrayType);
+        auto destArrayElement = arrayType.cast<mlir_ts::ArrayType>().getElementType();
+        auto llvmDestArrayElement = tch.convertType(destArrayElement);
+        auto llvmDestArray = LLVM::LLVMPointerType::get(llvmDestArrayElement);
 
         auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmRtArrayStructType);
         auto arrayPtrType = LLVM::LLVMPointerType::get(llvmElementType);
@@ -1450,7 +1453,7 @@ class CastLogicHelper
             auto ptrToArrayDst = rewriter.create<LLVM::BitcastOp>(loc, ptrToArray, copyAllocated);
             rewriter.create<mlir_ts::LoadSaveOp>(loc, ptrToArrayDst, ptrToArraySrc);
 
-            arrayPtr = copyAllocated;
+            arrayPtr = rewriter.create<LLVM::BitcastOp>(loc, llvmDestArray, copyAllocated);
         }
         else
         {
