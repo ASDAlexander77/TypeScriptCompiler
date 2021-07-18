@@ -45,6 +45,103 @@ using SymbolTableScopeT = llvm::ScopedHashTableScope<StringRef, VariablePairT>;
 namespace typescript
 {
 
+class MLIRCodeLogic
+{
+    mlir::OpBuilder &builder;
+
+  public:
+    MLIRCodeLogic(mlir::OpBuilder &builder) : builder(builder)
+    {
+    }
+
+    mlir::Attribute ExtractAttr(mlir::Value value, bool removeOpIfSuccess = false)
+    {
+        auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(value.getDefiningOp());
+        if (constOp)
+        {
+            auto val = constOp.valueAttr();
+            return val;
+        }
+
+        return mlir::Attribute();
+    }
+
+    mlir::Value GetReferenceOfLoadOp(mlir::Value value)
+    {
+        if (auto loadOp = dyn_cast_or_null<mlir_ts::LoadOp>(value.getDefiningOp()))
+        {
+            // this LoadOp will be removed later as unused
+            auto refValue = loadOp.reference();
+            return refValue;
+        }
+
+        return mlir::Value();
+    }
+
+    mlir::Attribute TupleFieldName(StringRef name)
+    {
+        assert(!name.empty());
+        return mlir::StringAttr::get(builder.getContext(), name);
+    }
+
+    template <typename T>
+    std::pair<int, mlir::Type> TupleFieldType(mlir::Location location, T tupleType, mlir::Attribute fieldId, bool indexAccess = false)
+    {
+        auto result = TupleFieldTypeNoError(location, tupleType, fieldId, indexAccess);
+        if (result.first == -1)
+        {
+            emitError(location, "Tuple member '") << fieldId << "' can't be found";
+        }
+
+        return result;
+    }
+
+    template <typename T>
+    std::pair<int, mlir::Type> TupleFieldTypeNoError(mlir::Location location, T tupleType, mlir::Attribute fieldId,
+                                                     bool indexAccess = false)
+    {
+        auto fieldIndex = tupleType.getIndex(fieldId);
+        if (indexAccess && (fieldIndex < 0 || fieldIndex >= tupleType.size()))
+        {
+            // try to resolve index
+            auto intAttr = fieldId.dyn_cast_or_null<mlir::IntegerAttr>();
+            if (intAttr)
+            {
+                fieldIndex = intAttr.getInt();
+            }
+        }
+
+        if (fieldIndex < 0 || fieldIndex >= tupleType.size())
+        {
+            return std::make_pair<>(-1, mlir::Type());
+        }
+
+        // type
+        auto elementType = tupleType.getType(fieldIndex);
+
+        return std::make_pair(fieldIndex, elementType);
+    }
+
+    mlir::Type CaptureTypeStorage(llvm::StringMap<VariablePairT> &capturedVars)
+    {
+        SmallVector<mlir_ts::FieldInfo> fields;
+        for (auto &varInfo : capturedVars)
+        {
+            auto &actualValue = varInfo.getValue().first;
+            auto &val = varInfo.getValue().second;
+            fields.push_back(mlir_ts::FieldInfo{TupleFieldName(val->getName()), actualValue.getType()});
+        }
+
+        auto lambdaType = mlir_ts::TupleType::get(builder.getContext(), fields);
+        return lambdaType;
+    }
+
+    mlir::Type CaptureType(llvm::StringMap<VariablePairT> &capturedVars)
+    {
+        return mlir_ts::RefType::get(CaptureTypeStorage(capturedVars));
+    }
+};
+
 class MLIRCustomMethods
 {
     mlir::OpBuilder &builder;
@@ -205,114 +302,21 @@ class MLIRCustomMethods
 
     mlir::Value mlirGenArrayPush(const mlir::Location &location, ArrayRef<mlir::Value> operands)
     {
-        auto sizeOfValue = builder.create<mlir_ts::PushOp>(location, builder.getI64Type(), operands.front(), operands.slice(1));
+        MLIRCodeLogic mcl(builder);
+        auto thisValue = mcl.GetReferenceOfLoadOp(operands.front());
+        auto sizeOfValue = builder.create<mlir_ts::PushOp>(location, builder.getI64Type(), thisValue, operands.slice(1));
 
         return sizeOfValue;
     }
 
     mlir::Value mlirGenArrayPop(const mlir::Location &location, ArrayRef<mlir::Value> operands)
     {
-        auto sizeOfValue = builder.create<mlir_ts::PopOp>(location, operands.front().getType().cast<mlir_ts::ArrayType>().getElementType(),
-                                                          operands.front());
+        MLIRCodeLogic mcl(builder);
+        auto thisValue = mcl.GetReferenceOfLoadOp(operands.front());
+        auto sizeOfValue =
+            builder.create<mlir_ts::PopOp>(location, operands.front().getType().cast<mlir_ts::ArrayType>().getElementType(), thisValue);
 
         return sizeOfValue;
-    }
-};
-
-class MLIRCodeLogic
-{
-    mlir::OpBuilder &builder;
-
-  public:
-    MLIRCodeLogic(mlir::OpBuilder &builder) : builder(builder)
-    {
-    }
-
-    mlir::Attribute ExtractAttr(mlir::Value value, bool removeOpIfSuccess = false)
-    {
-        auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(value.getDefiningOp());
-        if (constOp)
-        {
-            auto val = constOp.valueAttr();
-            return val;
-        }
-
-        return mlir::Attribute();
-    }
-
-    mlir::Value GetReferenceOfLoadOp(mlir::Value value)
-    {
-        if (auto loadOp = dyn_cast_or_null<mlir_ts::LoadOp>(value.getDefiningOp()))
-        {
-            // this LoadOp will be removed later as unused
-            auto refValue = loadOp.reference();
-            return refValue;
-        }
-
-        return mlir::Value();
-    }
-
-    mlir::Attribute TupleFieldName(StringRef name)
-    {
-        assert(!name.empty());
-        return mlir::StringAttr::get(builder.getContext(), name);
-    }
-
-    template <typename T>
-    std::pair<int, mlir::Type> TupleFieldType(mlir::Location location, T tupleType, mlir::Attribute fieldId, bool indexAccess = false)
-    {
-        auto result = TupleFieldTypeNoError(location, tupleType, fieldId, indexAccess);
-        if (result.first == -1)
-        {
-            emitError(location, "Tuple member '") << fieldId << "' can't be found";
-        }
-
-        return result;
-    }
-
-    template <typename T>
-    std::pair<int, mlir::Type> TupleFieldTypeNoError(mlir::Location location, T tupleType, mlir::Attribute fieldId,
-                                                     bool indexAccess = false)
-    {
-        auto fieldIndex = tupleType.getIndex(fieldId);
-        if (indexAccess && (fieldIndex < 0 || fieldIndex >= tupleType.size()))
-        {
-            // try to resolve index
-            auto intAttr = fieldId.dyn_cast_or_null<mlir::IntegerAttr>();
-            if (intAttr)
-            {
-                fieldIndex = intAttr.getInt();
-            }
-        }
-
-        if (fieldIndex < 0 || fieldIndex >= tupleType.size())
-        {
-            return std::make_pair<>(-1, mlir::Type());
-        }
-
-        // type
-        auto elementType = tupleType.getType(fieldIndex);
-
-        return std::make_pair(fieldIndex, elementType);
-    }
-
-    mlir::Type CaptureTypeStorage(llvm::StringMap<VariablePairT> &capturedVars)
-    {
-        SmallVector<mlir_ts::FieldInfo> fields;
-        for (auto &varInfo : capturedVars)
-        {
-            auto &actualValue = varInfo.getValue().first;
-            auto &val = varInfo.getValue().second;
-            fields.push_back(mlir_ts::FieldInfo{TupleFieldName(val->getName()), actualValue.getType()});
-        }
-
-        auto lambdaType = mlir_ts::TupleType::get(builder.getContext(), fields);
-        return lambdaType;
-    }
-
-    mlir::Type CaptureType(llvm::StringMap<VariablePairT> &capturedVars)
-    {
-        return mlir_ts::RefType::get(CaptureTypeStorage(capturedVars));
     }
 };
 

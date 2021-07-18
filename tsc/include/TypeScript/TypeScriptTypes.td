@@ -809,6 +809,10 @@ def TypeScript_IsOptionalType : CPred<"$_self.isa<::mlir::typescript::OptionalTy
 
 def TypeScript_AnyOptional : DialectType<TypeScript_Dialect, TypeScript_IsOptionalType, "any optional type">;
 
+def TypeScript_IsArrayRefType : CPred<"$_self.isa<::mlir::typescript::RefType>() && $_self.cast<::mlir::typescript::RefType>().getElementType().isa<::mlir::typescript::ArrayType>()">;
+
+def TypeScript_AnyArrayRef : DialectType<TypeScript_Dialect, TypeScript_IsArrayRefType, "any array reference type">;
+
 def TypeScript_ArrayLike : AnyTypeOf<[
     TypeScript_ConstArray, TypeScript_Array, TypeScript_String
   ]>;
