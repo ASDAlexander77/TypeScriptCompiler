@@ -1125,12 +1125,10 @@ struct PushOpLowering : public TsLlvmPattern<mlir_ts::PushOp>
             .Case<mlir_ts::ValueRefType>([&](auto valueRefType) { storageType = valueRefType.getElementType(); })
             .Default([&](auto type) { storageType = type; });
 
-        // auto currentPtr = rewriter.create<LLVM::ExtractValueOp>(loc, llvmPtrElementType, pushOp.op(), clh.getStructIndexAttr(0));
         auto ind0 = clh.createI32ConstantOf(0);
         auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, th.getPointerType(llvmPtrElementType), pushOp.op(), ValueRange{ind0, ind0});
         auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, llvmPtrElementType, currentPtrPtr);
 
-        // auto countAsI32Type = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI32Type(), pushOp.op(), clh.getStructIndexAttr(1));
         auto ind1 = clh.createI32ConstantOf(1);
         auto countAsI32TypePtr = rewriter.create<LLVM::GEPOp>(loc, th.getPointerType(th.getI32Type()), pushOp.op(), ValueRange{ind0, ind1});
         auto countAsI32Type = rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), countAsI32TypePtr);
@@ -1173,17 +1171,10 @@ struct PushOpLowering : public TsLlvmPattern<mlir_ts::PushOp>
             next = true;
         }
 
-        // create array type
-        // auto llvmRtArrayStructType = tch.convertType(arrayType);
-        // auto structValue = pushOp.op();
-        // auto structValue2 =
-        //     rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue, allocated, clh.getStructIndexAttr(0));
         rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
 
         auto newCountAsI32Type = rewriter.create<TruncateIOp>(loc, newCountAsIndexType, th.getI32Type());
 
-        // auto structValue3 =
-        //    rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue2, newCountAsI32Type, clh.getStructIndexAttr(1));
         rewriter.create<LLVM::StoreOp>(loc, newCountAsI32Type, countAsI32TypePtr);
 
         rewriter.replaceOp(pushOp, ValueRange{newCountAsIndexType});
@@ -1215,12 +1206,10 @@ struct PopOpLowering : public TsLlvmPattern<mlir_ts::PopOp>
             .Case<mlir_ts::ValueRefType>([&](auto valueRefType) { storageType = valueRefType.getElementType(); })
             .Default([&](auto type) { storageType = type; });
 
-        // auto currentPtr = rewriter.create<LLVM::ExtractValueOp>(loc, llvmPtrElementType, pushOp.op(), clh.getStructIndexAttr(0));
         auto ind0 = clh.createI32ConstantOf(0);
         auto currentPtrPtr = rewriter.create<LLVM::GEPOp>(loc, th.getPointerType(llvmPtrElementType), popOp.op(), ValueRange{ind0, ind0});
         auto currentPtr = rewriter.create<LLVM::LoadOp>(loc, llvmPtrElementType, currentPtrPtr);
 
-        // auto countAsI32Type = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI32Type(), pushOp.op(), clh.getStructIndexAttr(1));
         auto ind1 = clh.createI32ConstantOf(1);
         auto countAsI32TypePtr = rewriter.create<LLVM::GEPOp>(loc, th.getPointerType(th.getI32Type()), popOp.op(), ValueRange{ind0, ind1});
         auto countAsI32Type = rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), countAsI32TypePtr);
@@ -1239,17 +1228,10 @@ struct PopOpLowering : public TsLlvmPattern<mlir_ts::PopOp>
 
         auto allocated = ch.MemoryRealloc(llvmPtrElementType, currentPtr, multSizeOfTypeValue);
 
-        // create array type
-        // auto llvmRtArrayStructType = tch.convertType(arrayType);
-        // auto structValue = pushOp.op();
-        // auto structValue2 =
-        //    rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue, allocated, clh.getStructIndexAttr(0));
         rewriter.create<LLVM::StoreOp>(loc, allocated, currentPtrPtr);
 
         auto newCountAsI32Type = rewriter.create<TruncateIOp>(loc, newCountAsIndexType, th.getI32Type());
 
-        // auto structValue3 =
-        //    rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue2, newCountAsI32Type, clh.getStructIndexAttr(1));
         rewriter.create<LLVM::StoreOp>(loc, newCountAsI32Type, countAsI32TypePtr);
 
         rewriter.replaceOp(popOp, ValueRange{loadedElement});
