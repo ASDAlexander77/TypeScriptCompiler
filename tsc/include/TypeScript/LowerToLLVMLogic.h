@@ -219,22 +219,26 @@ class LLVMTypeConverterHelper
 
 class CodeLogicHelper
 {
-    Operation *op;
+    Location loc;
     PatternRewriter &rewriter;
 
   public:
-    CodeLogicHelper(Operation *op, PatternRewriter &rewriter) : op(op), rewriter(rewriter)
+    CodeLogicHelper(Operation *op, PatternRewriter &rewriter) : loc(op->getLoc()), rewriter(rewriter)
     {
     }
 
-    ArrayAttr getIndexAttr(int index)
+    CodeLogicHelper(Location loc, PatternRewriter &rewriter) : loc(loc), rewriter(rewriter)
+    {
+    }
+
+    ArrayAttr getStructIndexAttr(int index)
     {
         return rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(index));
     }
 
     Value createIConstantOf(unsigned width, unsigned value)
     {
-        return rewriter.create<LLVM::ConstantOp>(op->getLoc(), rewriter.getIntegerType(width),
+        return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(width),
                                                  rewriter.getIntegerAttr(rewriter.getIntegerType(width), value));
     }
 
@@ -254,56 +258,49 @@ class CodeLogicHelper
             ftype = rewriter.getF128Type();
         }
 
-        return rewriter.create<LLVM::ConstantOp>(op->getLoc(), ftype, rewriter.getFloatAttr(ftype, value));
+        return rewriter.create<LLVM::ConstantOp>(loc, ftype, rewriter.getFloatAttr(ftype, value));
     }
 
     Value createI8ConstantOf(unsigned value)
     {
-        return rewriter.create<LLVM::ConstantOp>(op->getLoc(), rewriter.getIntegerType(8),
+        return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(8),
                                                  rewriter.getIntegerAttr(rewriter.getIntegerType(8), value));
     }
 
     Value createI32ConstantOf(unsigned value)
     {
-        return rewriter.create<LLVM::ConstantOp>(op->getLoc(), rewriter.getIntegerType(32),
-                                                 rewriter.getIntegerAttr(rewriter.getI32Type(), value));
+        return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(32), rewriter.getIntegerAttr(rewriter.getI32Type(), value));
     }
 
     Value createI64ConstantOf(unsigned value)
     {
-        return rewriter.create<LLVM::ConstantOp>(op->getLoc(), rewriter.getIntegerType(64),
-                                                 rewriter.getIntegerAttr(rewriter.getI64Type(), value));
+        return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(64), rewriter.getIntegerAttr(rewriter.getI64Type(), value));
     }
 
     Value createI1ConstantOf(bool value)
     {
-        return rewriter.create<LLVM::ConstantOp>(op->getLoc(), rewriter.getIntegerType(1),
-                                                 rewriter.getIntegerAttr(rewriter.getI1Type(), value));
+        return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(1), rewriter.getIntegerAttr(rewriter.getI1Type(), value));
     }
 
     Value createF32ConstantOf(float value)
     {
-        return rewriter.create<LLVM::ConstantOp>(op->getLoc(), rewriter.getF32Type(),
-                                                 rewriter.getIntegerAttr(rewriter.getF32Type(), value));
+        return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getF32Type(), rewriter.getIntegerAttr(rewriter.getF32Type(), value));
     }
 
     Value createIndexConstantOf(unsigned value)
     {
-        return rewriter.create<LLVM::ConstantOp>(op->getLoc(), rewriter.getIntegerType(64),
-                                                 rewriter.getIntegerAttr(rewriter.getI64Type(), value));
+        return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(64), rewriter.getIntegerAttr(rewriter.getI64Type(), value));
     }
 
     Value castToI8Ptr(mlir::Value value)
     {
         TypeHelper th(rewriter);
-        return rewriter.create<LLVM::BitcastOp>(op->getLoc(), th.getI8PtrType(), value);
+        return rewriter.create<LLVM::BitcastOp>(loc, th.getI8PtrType(), value);
     }
 
     Value conditionalExpressionLowering(Type type, Value condition, function_ref<Value(OpBuilder &, Location)> thenBuilder,
                                         function_ref<Value(OpBuilder &, Location)> elseBuilder)
     {
-        auto loc = op->getLoc();
-
         // Split block
         auto *opBlock = rewriter.getInsertionBlock();
         auto opPosition = rewriter.getInsertionPoint();
@@ -342,7 +339,7 @@ class CodeLogicHelper
         // TODO: finish it for field access
         if (auto loadOp = dyn_cast<mlir_ts::LoadOp>(defOp))
         {
-            rewriter.create<mlir_ts::StoreOp>(op->getLoc(), result, loadOp.reference());
+            rewriter.create<mlir_ts::StoreOp>(loc, result, loadOp.reference());
         }
         else
         {
@@ -907,6 +904,55 @@ class LLVMCodeHelper
 
         return addr;
     }
+
+    template <typename T> Value _MemoryAlloc(mlir::Value sizeOfAlloc);
+    Value MemoryAlloc(mlir::Value sizeOfAlloc)
+    {
+        return _MemoryAlloc<int>(sizeOfAlloc);
+    }
+
+    Value MemoryAlloc(mlir::Type storageType)
+    {
+        TypeHelper th(rewriter);
+
+        auto loc = op->getLoc();
+
+        auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), storageType);
+        return MemoryAlloc(sizeOfTypeValue);
+    }
+
+    Value MemoryAlloc(mlir::Type res, mlir::Type storageType)
+    {
+        auto loc = op->getLoc();
+
+        auto alloc = MemoryAlloc(storageType);
+        auto val = rewriter.create<LLVM::BitcastOp>(loc, res, alloc);
+        return val;
+    }
+
+    Value MemoryAlloc(mlir::Type res, mlir::Value sizeOfAlloc)
+    {
+        auto loc = op->getLoc();
+
+        auto alloc = MemoryAlloc(sizeOfAlloc);
+        auto val = rewriter.create<LLVM::BitcastOp>(loc, res, alloc);
+        return val;
+    }
+
+    template <typename T> Value _MemoryRealloc(mlir::Value ptrValue, mlir::Value sizeOfAlloc);
+    Value MemoryRealloc(mlir::Value ptrValue, mlir::Value sizeOfAlloc)
+    {
+        return _MemoryRealloc<int>(ptrValue, sizeOfAlloc);
+    }
+
+    Value MemoryRealloc(mlir::Type res, mlir::Value ptrValue, mlir::Value sizeOfAlloc)
+    {
+        auto loc = op->getLoc();
+
+        auto alloc = MemoryRealloc(ptrValue, sizeOfAlloc);
+        auto val = rewriter.create<LLVM::BitcastOp>(loc, res, alloc);
+        return val;
+    }
 };
 
 class LLVMRTTIHelperVCWin32
@@ -1207,6 +1253,14 @@ class CastLogicHelper
     {
     }
 
+    Value cast(mlir::Value in, mlir::Type resType)
+    {
+        auto inType = in.getType();
+        auto inLLVMType = tch.convertType(inType);
+        auto resLLVMType = tch.convertType(resType);
+        return cast(in, inLLVMType, resType, resLLVMType);
+    }
+
     Value cast(mlir::Value in, mlir::Type inLLVMType, mlir::Type resType, mlir::Type resLLVMType)
     {
         if (inLLVMType == resLLVMType)
@@ -1447,7 +1501,9 @@ class CastLogicHelper
         bool byValue = true;
         if (byValue)
         {
-            auto copyAllocated = rewriter.create<LLVM::AllocaOp>(loc, arrayPtrType, sizeValue);
+            // TODO: create MemRef which will store information about memory. stack of heap, to use in array push to realloc
+            // auto copyAllocated = rewriter.create<LLVM::AllocaOp>(loc, arrayPtrType, sizeValue);
+            auto copyAllocated = ch.MemoryAlloc(arrayPtrType, sizeValue);
 
             auto ptrToArraySrc = rewriter.create<LLVM::BitcastOp>(loc, ptrToArray, in);
             auto ptrToArrayDst = rewriter.create<LLVM::BitcastOp>(loc, ptrToArray, copyAllocated);
@@ -1462,15 +1518,64 @@ class CastLogicHelper
             arrayPtr = rewriter.create<LLVM::BitcastOp>(loc, arrayPtrType, in);
         }
 
-        auto structValue2 = rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue, arrayPtr,
-                                                                 rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(0)));
+        auto structValue2 =
+            rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue, arrayPtr, clh.getStructIndexAttr(0));
 
-        auto structValue3 = rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue2, sizeValue,
-                                                                 rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(1)));
+        auto structValue3 =
+            rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue2, sizeValue, clh.getStructIndexAttr(1));
 
         return structValue3;
     }
 };
+
+template <typename T> Value LLVMCodeHelper::_MemoryAlloc(mlir::Value sizeOfAlloc)
+{
+    TypeHelper th(rewriter);
+    TypeConverterHelper tch(typeConverter);
+
+    auto loc = op->getLoc();
+
+    auto i8PtrTy = th.getI8PtrType();
+    auto mallocFuncOp = getOrInsertFunction("malloc", th.getFunctionType(i8PtrTy, {th.getIndexType()}));
+
+    auto effectiveSize = sizeOfAlloc;
+    if (effectiveSize.getType() != th.getIndexType())
+    {
+        CastLogicHelper castLogic(op, rewriter, tch);
+        effectiveSize = castLogic.cast(effectiveSize, th.getIndexType());
+    }
+
+    auto callResults = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{effectiveSize});
+    return callResults.getResult(0);
+}
+
+template <typename T> Value LLVMCodeHelper::_MemoryRealloc(mlir::Value ptrValue, mlir::Value sizeOfAlloc)
+{
+    TypeHelper th(rewriter);
+    TypeConverterHelper tch(typeConverter);
+
+    auto loc = op->getLoc();
+
+    auto i8PtrTy = th.getI8PtrType();
+
+    auto effectivePtrValue = ptrValue;
+    if (ptrValue.getType() != i8PtrTy)
+    {
+        effectivePtrValue = rewriter.create<LLVM::BitcastOp>(loc, i8PtrTy, ptrValue);
+    }
+
+    auto mallocFuncOp = getOrInsertFunction("realloc", th.getFunctionType(i8PtrTy, {i8PtrTy, th.getIndexType()}));
+
+    auto effectiveSize = sizeOfAlloc;
+    if (effectiveSize.getType() != th.getIndexType())
+    {
+        CastLogicHelper castLogic(op, rewriter, tch);
+        effectiveSize = castLogic.cast(effectiveSize, th.getIndexType());
+    }
+
+    auto callResults = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{effectivePtrValue, effectiveSize});
+    return callResults.getResult(0);
+}
 
 template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
 mlir::Value LogicOp_(Operation *, SyntaxKind, mlir::Value, mlir::Value, PatternRewriter &, LLVMTypeConverter &);
