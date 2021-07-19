@@ -880,36 +880,36 @@ class LLVMCodeHelper
         return addr;
     }
 
-    template <typename T> Value _MemoryAlloc(mlir::Value sizeOfAlloc);
-    Value MemoryAlloc(mlir::Value sizeOfAlloc)
+    template <typename T> Value _MemoryAlloc(mlir::Value sizeOfAlloc, bool zero);
+    Value MemoryAlloc(mlir::Value sizeOfAlloc, bool zero = false)
     {
-        return _MemoryAlloc<int>(sizeOfAlloc);
+        return _MemoryAlloc<int>(sizeOfAlloc, zero);
     }
 
-    Value MemoryAlloc(mlir::Type storageType)
+    Value MemoryAlloc(mlir::Type storageType, bool zero = false)
     {
         TypeHelper th(rewriter);
 
         auto loc = op->getLoc();
 
         auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), storageType);
-        return MemoryAlloc(sizeOfTypeValue);
+        return MemoryAlloc(sizeOfTypeValue, zero);
     }
 
-    Value MemoryAlloc(mlir::Type res, mlir::Type storageType)
+    Value MemoryAlloc(mlir::Type res, mlir::Type storageType, bool zero = false)
     {
         auto loc = op->getLoc();
 
-        auto alloc = MemoryAlloc(storageType);
+        auto alloc = MemoryAlloc(storageType, zero);
         auto val = rewriter.create<LLVM::BitcastOp>(loc, res, alloc);
         return val;
     }
 
-    Value MemoryAlloc(mlir::Type res, mlir::Value sizeOfAlloc)
+    Value MemoryAlloc(mlir::Type res, mlir::Value sizeOfAlloc, bool zero = false)
     {
         auto loc = op->getLoc();
 
-        auto alloc = MemoryAlloc(sizeOfAlloc);
+        auto alloc = MemoryAlloc(sizeOfAlloc, zero);
         auto val = rewriter.create<LLVM::BitcastOp>(loc, res, alloc);
         return val;
     }
@@ -1516,10 +1516,11 @@ class CastLogicHelper
     }
 };
 
-template <typename T> Value LLVMCodeHelper::_MemoryAlloc(mlir::Value sizeOfAlloc)
+template <typename T> Value LLVMCodeHelper::_MemoryAlloc(mlir::Value sizeOfAlloc, bool zero)
 {
     TypeHelper th(rewriter);
     TypeConverterHelper tch(typeConverter);
+    CodeLogicHelper clh(op, rewriter);
 
     auto loc = op->getLoc();
 
@@ -1534,7 +1535,16 @@ template <typename T> Value LLVMCodeHelper::_MemoryAlloc(mlir::Value sizeOfAlloc
     }
 
     auto callResults = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{effectiveSize});
-    return callResults.getResult(0);
+    auto ptr = callResults.getResult(0);
+
+    if (zero)
+    {
+        auto memsetFuncOp = getOrInsertFunction("memset", th.getFunctionType(i8PtrTy, {i8PtrTy, th.getI32Type(), th.getIndexType()}));
+        auto const0 = clh.createI32ConstantOf(0);
+        rewriter.create<LLVM::CallOp>(loc, memsetFuncOp, ValueRange{ptr, const0, effectiveSize});
+    }
+
+    return ptr;
 }
 
 template <typename T> Value LLVMCodeHelper::_MemoryRealloc(mlir::Value ptrValue, mlir::Value sizeOfAlloc)

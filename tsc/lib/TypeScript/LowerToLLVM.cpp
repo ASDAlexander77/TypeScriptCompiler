@@ -1049,7 +1049,7 @@ struct NewOpLowering : public TsLlvmPattern<mlir_ts::NewOp>
         }
         else
         {
-            value = ch.MemoryAlloc(resultType, storageType);
+            value = ch.MemoryAlloc(resultType, storageType, true);
         }
 
         rewriter.replaceOp(newOp, ValueRange{value});

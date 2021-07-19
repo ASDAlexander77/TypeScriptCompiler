@@ -2851,7 +2851,11 @@ llvm.return %5 : i32
                 value = mlirGen(location, name, genContext);
 
                 currentNamespace = saveNamespace;
+                return value;
             }
+
+            LLVM_DEBUG(dbgs() << "mlirGenPropertyAccessExpression: "; objectValue.dump(); dbgs() << "\n");
+            assert(genContext.allowPartialResolve);
 
             return value;
         }
@@ -3145,9 +3149,9 @@ llvm.return %5 : i32
                 return mlir::Value();
             }
 
-            assert(false);
-
             emitError(location, "call expression is empty");
+
+            assert(false);
             return mlir::Value();
         }
 
@@ -4354,12 +4358,19 @@ llvm.return %5 : i32
         // add base classes
         for (auto &heritageClause : classDeclarationAST->heritageClauses)
         {
-            mlirGenClassHeritageClause(classDeclarationAST, newClassPtr, heritageClause, fieldInfos, declareClass, genContext);
+            if (mlir::failed(
+                    mlirGenClassHeritageClause(classDeclarationAST, newClassPtr, heritageClause, fieldInfos, declareClass, genContext)))
+            {
+                return mlir::failure();
+            }
         }
 
         for (auto &classMember : classDeclarationAST->members)
         {
-            mlirGenClassFieldMember(classDeclarationAST, newClassPtr, classMember, fieldInfos, declareClass, genContext);
+            if (mlir::failed(mlirGenClassFieldMember(classDeclarationAST, newClassPtr, classMember, fieldInfos, declareClass, genContext)))
+            {
+                return mlir::failure();
+            }
         }
 
         if (declareClass)
@@ -4425,6 +4436,11 @@ llvm.return %5 : i32
         mlir::Type type;
         StringRef memberNamePtr;
 
+        if (classMember == SyntaxKind::Constructor)
+        {
+            newClassPtr->hasConstructor = true;
+        }
+
         auto isAbstract = hasModifier(classMember, SyntaxKind::AbstractKeyword);
         if (isAbstract)
         {
@@ -4459,6 +4475,13 @@ llvm.return %5 : i32
                 if (typeAndInit.second)
                 {
                     newClassPtr->hasInitializers = true;
+                }
+
+                LLVM_DEBUG(dbgs() << "\n+++ class field: " << fieldId << " type: " << type << "\n\n");
+
+                if (!type)
+                {
+                    return mlir::failure();
                 }
 
                 fieldInfos.push_back({fieldId, type});
@@ -4504,6 +4527,13 @@ llvm.return %5 : i32
 
                 auto typeAndInit = getTypeAndInit(parameter, genContext);
                 type = typeAndInit.first;
+
+                LLVM_DEBUG(dbgs() << "\n+++ class auto-gen field: " << fieldId << " type: " << type << "\n\n");
+                if (!type)
+                {
+                    return mlir::failure();
+                }
+
                 fieldInfos.push_back({fieldId, type});
             }
         }
@@ -4619,11 +4649,6 @@ llvm.return %5 : i32
         if (classMember == SyntaxKind::MethodDeclaration || isConstructor || classMember == SyntaxKind::GetAccessor ||
             classMember == SyntaxKind::SetAccessor)
         {
-            if (isConstructor)
-            {
-                newClassPtr->hasConstructor = true;
-            }
-
             auto funcLikeDeclaration = classMember.as<FunctionLikeDeclarationBase>();
             std::string methodName;
             std::string propertyName;
