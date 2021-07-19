@@ -881,12 +881,12 @@ class LLVMCodeHelper
     }
 
     template <typename T> Value _MemoryAlloc(mlir::Value sizeOfAlloc, bool zero);
-    Value MemoryAlloc(mlir::Value sizeOfAlloc, bool zero = false)
+    Value MemoryAlloc(mlir::Value sizeOfAlloc, bool zero)
     {
         return _MemoryAlloc<int>(sizeOfAlloc, zero);
     }
 
-    Value MemoryAlloc(mlir::Type storageType, bool zero = false)
+    Value MemoryAlloc(mlir::Type storageType, bool zero)
     {
         TypeHelper th(rewriter);
 
@@ -896,7 +896,7 @@ class LLVMCodeHelper
         return MemoryAlloc(sizeOfTypeValue, zero);
     }
 
-    Value MemoryAlloc(mlir::Type res, mlir::Type storageType, bool zero = false)
+    Value MemoryAlloc(mlir::Type res, mlir::Type storageType, bool zero)
     {
         auto loc = op->getLoc();
 
@@ -905,7 +905,7 @@ class LLVMCodeHelper
         return val;
     }
 
-    Value MemoryAlloc(mlir::Type res, mlir::Value sizeOfAlloc, bool zero = false)
+    Value MemoryAlloc(mlir::Type res, mlir::Value sizeOfAlloc, bool zero)
     {
         auto loc = op->getLoc();
 

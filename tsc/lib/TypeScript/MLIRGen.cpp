@@ -126,6 +126,7 @@ struct GenContext
     bool allowConstEval;
     mlir_ts::FuncOp funcOp;
     mlir_ts::ClassType thisType;
+    mlir::FunctionType callFunction;
     PassResult *passResult;
     mlir::SmallVector<mlir::Block *> *cleanUps;
     NodeArray<Statement> generatedStatements;
@@ -3255,6 +3256,7 @@ llvm.return %5 : i32
                     operands.push_back(thisVirtualSymbolRefOp.thisVal());
                 }
 
+                const_cast<GenContext &>(genContext).callFunction = calledFuncType;
                 if (mlir::failed(mlirGenCallOperands(location, calledFuncType, callExpression->arguments, operands, genContext)))
                 {
                     if (!genContext.allowPartialResolve)
@@ -3273,6 +3275,8 @@ llvm.return %5 : i32
                         testResult = true;
                     }
                 }
+
+                const_cast<GenContext &>(genContext).callFunction = nullptr;
             })
             .Case<mlir_ts::ClassType>([&](auto classType) {
                 // seems we are calling type constructor
