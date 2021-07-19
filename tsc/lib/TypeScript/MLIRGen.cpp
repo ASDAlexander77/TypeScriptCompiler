@@ -550,7 +550,7 @@ class MLIRGenImpl
         // clear up state
         for (auto &statement : moduleBlockAST->statements)
         {
-            statement->processed = true;
+            statement->processed = false;
         }
 
         return mlir::success();

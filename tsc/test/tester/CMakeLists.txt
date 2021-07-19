@@ -75,6 +75,7 @@ add_test(NAME test-compile-12-referencecollection COMMAND test-runner "${PROJECT
 #add_test(NAME test-compile-13-actions.ts COMMAND test-runner -llc -builtins "${PROJECT_SOURCE_DIR}/test/tester/tests/13actions.ts")
 add_test(NAME test-compile-14-lazyoperations COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/14lazyoperations.ts")
 add_test(NAME test-compile-15-references COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/15references.ts")
+add_test(NAME test-compile-17-classes COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/17classes.ts")
 add_test(NAME test-compile-18-enums COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/18enums.ts")
 add_test(NAME test-compile-Grammar_and_types COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/Grammar_and_types.ts")
 
@@ -138,5 +139,6 @@ add_test(NAME test-jit-12-referencecollection COMMAND test-runner -jit "${PROJEC
 #add_test(NAME test-jit-13-actions.ts COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/13actions.ts")
 add_test(NAME test-jit-14-lazyoperations COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/14lazyoperations.ts")
 add_test(NAME test-jit-15-references COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/15references.ts")
+add_test(NAME test-jit-17-classes COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/17classes.ts")
 add_test(NAME test-jit-18-enums COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/18enums.ts")
 add_test(NAME test-jit-Grammar_and_types COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/Grammar_and_types.ts")
