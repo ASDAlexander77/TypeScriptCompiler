@@ -1,5 +1,6 @@
+type int = 1;
 class XFoo {
-    pin: number;
+    pin: int;
     buf: number[];
 
     constructor(k: number, l: number) {
