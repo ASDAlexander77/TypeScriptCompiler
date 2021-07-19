@@ -1789,8 +1789,15 @@ mlir::Value LogicOp_(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Va
     LLVMTypeConverterHelper llvmtch(typeConverter);
 
     auto leftType = left.getType();
+    auto rightType = right.getType();
 
-    if (leftType.isIntOrIndex() || leftType.dyn_cast_or_null<mlir_ts::BooleanType>())
+    if (leftType.isa<mlir_ts::OptionalType>() || rightType.isa<mlir_ts::OptionalType>())
+    {
+        OptionalLogicHelper olh(binOp, builder, typeConverter);
+        auto value = olh.logicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op);
+        return value;
+    }
+    else if (leftType.isIntOrIndex() || leftType.dyn_cast_or_null<mlir_ts::BooleanType>())
     {
         auto value = builder.create<StdIOpTy>(loc, v1, left, right);
         return value;
@@ -1817,12 +1824,6 @@ mlir::Value LogicOp_(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Va
         return value;
     }
     */
-    else if (leftType.dyn_cast_or_null<mlir_ts::OptionalType>())
-    {
-        OptionalLogicHelper olh(binOp, builder, typeConverter);
-        auto value = olh.logicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op);
-        return value;
-    }
     else if (leftType.dyn_cast_or_null<mlir_ts::StringType>())
     {
         if (left.getType() != right.getType())
