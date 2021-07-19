@@ -390,6 +390,12 @@ class MLIRGenImpl
         // clean up
         theModule.getBody()->clear();
 
+        // clear state
+        for (auto &statement : module->statements)
+        {
+            statement->processed = false;
+        }
+
         // Process generating here
         GenContext genContext = {0};
         for (auto &statement : module->statements)
@@ -516,6 +522,12 @@ class MLIRGenImpl
     {
         SymbolTableScopeT varScope(symbolTable);
 
+        // clear up state
+        for (auto &statement : moduleBlockAST->statements)
+        {
+            statement->processed = false;
+        }
+
         auto notResolved = 0;
         do
         {
@@ -546,12 +558,6 @@ class MLIRGenImpl
                 return mlir::failure();
             }
         } while (notResolved > 0);
-
-        // clear up state
-        for (auto &statement : moduleBlockAST->statements)
-        {
-            statement->processed = false;
-        }
 
         return mlir::success();
     }
