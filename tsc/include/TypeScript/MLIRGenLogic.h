@@ -304,6 +304,7 @@ class MLIRCustomMethods
     {
         MLIRCodeLogic mcl(builder);
         auto thisValue = mcl.GetReferenceOfLoadOp(operands.front());
+        assert(thisValue);
         auto sizeOfValue = builder.create<mlir_ts::PushOp>(location, builder.getI64Type(), thisValue, operands.slice(1));
 
         return sizeOfValue;
@@ -313,6 +314,7 @@ class MLIRCustomMethods
     {
         MLIRCodeLogic mcl(builder);
         auto thisValue = mcl.GetReferenceOfLoadOp(operands.front());
+        assert(thisValue);
         auto sizeOfValue =
             builder.create<mlir_ts::PopOp>(location, operands.front().getType().cast<mlir_ts::ArrayType>().getElementType(), thisValue);
 

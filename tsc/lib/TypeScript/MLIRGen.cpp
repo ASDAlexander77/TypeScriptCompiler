@@ -126,7 +126,8 @@ struct GenContext
     bool allowConstEval;
     mlir_ts::FuncOp funcOp;
     mlir_ts::ClassType thisType;
-    mlir::FunctionType callFunction;
+    mlir::FunctionType destFuncType;
+    mlir::Type argTypeDestFuncType;
     PassResult *passResult;
     mlir::SmallVector<mlir::Block *> *cleanUps;
     NodeArray<Statement> generatedStatements;
@@ -1129,6 +1130,7 @@ class MLIRGenImpl
         auto noneType = mlir::NoneType::get(builder.getContext());
 
         auto formalParams = parametersContextAST->parameters;
+        auto index = 0;
         for (auto arg : formalParams)
         {
             auto name = MLIRHelper::getName(arg->name);
@@ -1138,15 +1140,6 @@ class MLIRGenImpl
             if (typeParameter)
             {
                 type = getType(typeParameter);
-                if (!type || type == noneType)
-                {
-                    if (!genContext.allowPartialResolve)
-                    {
-                        emitError(loc(typeParameter)) << "can't resolve type for parameter '" << name << "'";
-                    }
-
-                    return params;
-                }
             }
 
             // process init value
@@ -1179,14 +1172,34 @@ class MLIRGenImpl
                 entryBlock.erase();
             }
 
-            if (!typeParameter && !initializer)
+            if ((!type || type == noneType) && genContext.argTypeDestFuncType)
             {
-                auto funcName = MLIRHelper::getName(parametersContextAST->name);
-                emitError(loc(arg)) << "type of parameter '" << name
-                                    << "' is not provided, parameter must have type or initializer, function: " << funcName;
+                type = genContext.argTypeDestFuncType.cast<mlir::FunctionType>().getInput(index);
+
+                LLVM_DEBUG(dbgs() << "\n ...param " << name << " mapped to type " << type << "\n\n");
+            }
+
+            if (!type || type == noneType)
+            {
+                if (!genContext.allowPartialResolve)
+                {
+                    if (!typeParameter && !initializer)
+                    {
+                        auto funcName = MLIRHelper::getName(parametersContextAST->name);
+                        emitError(loc(arg)) << "type of parameter '" << name
+                                            << "' is not provided, parameter must have type or initializer, function: " << funcName;
+                        return params;
+                    }
+
+                    emitError(loc(typeParameter)) << "can't resolve type for parameter '" << name << "'";
+                }
+
+                return params;
             }
 
             params.push_back(std::make_shared<FunctionParamDOM>(name, type, loc(arg), isOptional, initializer));
+
+            index++;
         }
 
         return params;
@@ -1653,12 +1666,19 @@ class MLIRGenImpl
             auto _this = nf.createIdentifier(stows(THIS_NAME));
             auto _name = nf.createIdentifier(stows(std::string(name)));
             auto _this_name = nf.createPropertyAccessExpression(_this, _name);
-            auto thisVarRefValue = mlirGen(_this_name, genContext);
+            auto thisVarValue = mlirGen(_this_name, genContext);
             auto variableRefType = mlir_ts::RefType::get(variableInfo->getType());
 
             auto capturedParam = std::make_shared<VariableDeclarationDOM>(name, variableRefType, variableInfo->getLoc());
-            capturedParam->setReadWriteAccess();
-            declare(capturedParam, thisVarRefValue);
+            if (thisVarValue.getType().isa<mlir_ts::RefType>())
+            {
+                capturedParam->setReadWriteAccess();
+            }
+
+            LLVM_DEBUG(dbgs() << "\n --- captured var: " << name << " this->" << name << " [" << thisVarValue
+                              << "] ref val type: " << variableRefType << "\n\n");
+
+            declare(capturedParam, thisVarValue);
         }
 
         return mlir::success();
@@ -3256,7 +3276,7 @@ llvm.return %5 : i32
                     operands.push_back(thisVirtualSymbolRefOp.thisVal());
                 }
 
-                const_cast<GenContext &>(genContext).callFunction = calledFuncType;
+                const_cast<GenContext &>(genContext).destFuncType = calledFuncType;
                 if (mlir::failed(mlirGenCallOperands(location, calledFuncType, callExpression->arguments, operands, genContext)))
                 {
                     if (!genContext.allowPartialResolve)
@@ -3276,7 +3296,7 @@ llvm.return %5 : i32
                     }
                 }
 
-                const_cast<GenContext &>(genContext).callFunction = nullptr;
+                const_cast<GenContext &>(genContext).destFuncType = nullptr;
             })
             .Case<mlir_ts::ClassType>([&](auto classType) {
                 // seems we are calling type constructor
@@ -3359,6 +3379,11 @@ llvm.return %5 : i32
         auto i = operands.size(); // we need to shift in case of 'this'
         for (auto expression : arguments)
         {
+            if (genContext.destFuncType)
+            {
+                const_cast<GenContext &>(genContext).argTypeDestFuncType = genContext.destFuncType.getInput(i);
+            }
+
             auto value = mlirGen(expression, genContext);
             if (value.getType() != funcType.getInput(i))
             {
@@ -3369,6 +3394,8 @@ llvm.return %5 : i32
             {
                 operands.push_back(value);
             }
+
+            const_cast<GenContext &>(genContext).argTypeDestFuncType = nullptr;
 
             i++;
         }
@@ -3981,6 +4008,8 @@ llvm.return %5 : i32
                 return value.first;
             }
 
+            LLVM_DEBUG(dbgs() << "??? variable: " << name << " type: " << value.first.getType() << "\n");
+
             // load value if memref
             auto valueType = value.first.getType().cast<mlir_ts::RefType>().getElementType();
             return builder.create<mlir_ts::LoadOp>(value.first.getLoc(), valueType, value.first);
@@ -4014,8 +4043,15 @@ llvm.return %5 : i32
                 {
                     auto varValue = mlirGen(location, item.first(), genContext);
                     auto refValue = mcl.GetReferenceOfLoadOp(varValue);
-                    assert(refValue);
-                    capturedValues.push_back(refValue);
+                    if (refValue)
+                    {
+                        capturedValues.push_back(refValue);
+                    }
+                    else
+                    {
+                        // this is not ref, this is const value
+                        capturedValues.push_back(varValue);
+                    }
                 }
 
                 auto captured = builder.create<mlir_ts::CaptureOp>(location, funcType.getInput(0), capturedValues);
