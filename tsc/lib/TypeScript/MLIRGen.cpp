@@ -81,7 +81,8 @@ enum class VariableClass
 {
     Const,
     Let,
-    Var
+    Var,
+    ConstRef
 };
 
 struct PassResult
@@ -848,7 +849,7 @@ class MLIRGenImpl
     {
         auto isGlobalScope = !genContext.funcOp; /*symbolTable.getCurScope()->getParentScope() == nullptr*/
         auto isGlobal = isGlobalScope || varClass == VariableClass::Var;
-        auto isConst = varClass == VariableClass::Const;
+        auto isConst = varClass == VariableClass::Const || varClass == VariableClass::ConstRef;
 
         auto effectiveName = name;
 
@@ -870,6 +871,18 @@ class MLIRGenImpl
             if (isConst)
             {
                 variableOp = init;
+                // special cast to support ForOf
+                if (varClass == VariableClass::ConstRef)
+                {
+                    MLIRCodeLogic mcl(builder);
+                    variableOp = mcl.GetReferenceOfLoadOp(init);
+                    if (!variableOp)
+                    {
+                        // convert ConstRef to Const again as this is const object (it seems)
+                        variableOp = init;
+                        varClass = VariableClass::Const;
+                    }
+                }
             }
             else
             {
@@ -961,7 +974,7 @@ class MLIRGenImpl
         LLVM_DEBUG(dbgs() << "\n +++== variable = " << effectiveName << " type: "; varType.dump(); dbgs() << " ==+++ \n";);
 
         auto varDecl = std::make_shared<VariableDeclarationDOM>(effectiveName, varType, location);
-        if (!isConst)
+        if (!isConst || varClass == VariableClass::ConstRef)
         {
             varDecl->setReadWriteAccess();
         }
@@ -1076,9 +1089,9 @@ class MLIRGenImpl
             auto initFunc = [&]() { return getTypeAndInit(item, genContext); };
 
             auto valClassItem = varClass;
-            if ((item->transformFlags & TransformFlags::ForceConst) == TransformFlags::ForceConst)
+            if ((item->transformFlags & TransformFlags::ForceConstRef) == TransformFlags::ForceConstRef)
             {
-                valClassItem = VariableClass::Const;
+                valClassItem = VariableClass::ConstRef;
             }
 
             if (!processDeclaration(item, valClassItem, initFunc, genContext))
@@ -1997,7 +2010,7 @@ class MLIRGenImpl
 
         auto _a = nf.createIdentifier(S("_a_"));
         auto arrayVar = nf.createVariableDeclaration(_a, undefined, undefined, forInStatementAST->expression);
-        arrayVar->transformFlags |= TransformFlags::ForceConst;
+        arrayVar->transformFlags |= TransformFlags::ForceConstRef;
         declarations.push_back(arrayVar);
 
         auto initVars = nf.createVariableDeclarationList(declarations, NodeFlags::Let);
@@ -2042,7 +2055,7 @@ class MLIRGenImpl
 
         auto _a = nf.createIdentifier(S("_a_"));
         auto arrayVar = nf.createVariableDeclaration(_a, undefined, undefined, forOfStatementAST->expression);
-        arrayVar->transformFlags |= TransformFlags::ForceConst;
+        arrayVar->transformFlags |= TransformFlags::ForceConstRef;
         declarations.push_back(arrayVar);
 
         auto initVars = nf.createVariableDeclarationList(declarations, NodeFlags::Let);
