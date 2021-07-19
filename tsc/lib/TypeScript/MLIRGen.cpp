@@ -516,12 +516,41 @@ class MLIRGenImpl
     {
         SymbolTableScopeT varScope(symbolTable);
 
-        for (auto &statement : moduleBlockAST->statements)
+        auto notResolved = 0;
+        do
         {
-            if (failed(mlirGen(statement, genContext)))
+            auto lastTimeNotResolved = notResolved;
+            notResolved = 0;
+            for (auto &statement : moduleBlockAST->statements)
             {
+                if (statement->processed)
+                {
+                    continue;
+                }
+
+                if (failed(mlirGen(statement, genContext)))
+                {
+                    notResolved++;
+                }
+                else
+                {
+                    statement->processed = true;
+                }
+            }
+
+            // repeat if not all resolved
+            if (lastTimeNotResolved > 0 && lastTimeNotResolved == notResolved)
+            {
+                // class can depends on other class declarations
+                theModule.emitError("can't resolve dependencies in namespace");
                 return mlir::failure();
             }
+        } while (notResolved > 0);
+
+        // clear up state
+        for (auto &statement : moduleBlockAST->statements)
+        {
+            statement->processed = true;
         }
 
         return mlir::success();
@@ -1077,6 +1106,8 @@ class MLIRGenImpl
             params.push_back(std::make_shared<FunctionParamDOM>(THIS_NAME, genContext.thisType, loc(parametersContextAST)));
         }
 
+        auto noneType = mlir::NoneType::get(builder.getContext());
+
         auto formalParams = parametersContextAST->parameters;
         for (auto arg : formalParams)
         {
@@ -1087,7 +1118,7 @@ class MLIRGenImpl
             if (typeParameter)
             {
                 type = getType(typeParameter);
-                if (!type)
+                if (!type || type == noneType)
                 {
                     if (!genContext.allowPartialResolve)
                     {
@@ -1115,7 +1146,7 @@ class MLIRGenImpl
                 {
                     // TODO: set type if not provided
                     isOptional = true;
-                    if (!type)
+                    if (!type || type == noneType)
                     {
                         auto baseType = initValue.getType();
                         // type = OptionalType::get(baseType);
@@ -4273,7 +4304,10 @@ llvm.return %5 : i32
             return mlir::failure();
         }
 
-        mlirGenClassStorageType(classDeclarationAST, newClassPtr, declareClass, genContext);
+        if (mlir::failed(mlirGenClassStorageType(classDeclarationAST, newClassPtr, declareClass, genContext)))
+        {
+            return mlir::failure();
+        }
 
         // clear all flags
         for (auto &classMember : classDeclarationAST->members)
@@ -4303,7 +4337,8 @@ llvm.return %5 : i32
             // repeat if not all resolved
             if (lastTimeNotResolved > 0 && lastTimeNotResolved == notResolved)
             {
-                theModule.emitError("can't resolve dependencies in class: ") << newClassPtr->name;
+                // class can depends on other class declarations
+                // theModule.emitError("can't resolve dependencies in class: ") << newClassPtr->name;
                 return mlir::failure();
             }
 
@@ -4331,6 +4366,7 @@ llvm.return %5 : i32
         {
             newClassPtr = fullNameClassesMap.lookup(fullNamePtr);
             getClassesMap().insert({namePtr, newClassPtr});
+            declareClass = !newClassPtr->classType;
         }
         else
         {
@@ -4453,6 +4489,7 @@ llvm.return %5 : i32
             return mlir::success();
         }
 
+        auto noneType = mlir::NoneType::get(builder.getContext());
         if (classMember == SyntaxKind::PropertyDeclaration)
         {
             // property declaration
@@ -4479,7 +4516,7 @@ llvm.return %5 : i32
 
                 LLVM_DEBUG(dbgs() << "\n+++ class field: " << fieldId << " type: " << type << "\n\n");
 
-                if (!type)
+                if (!type || type == noneType)
                 {
                     return mlir::failure();
                 }
@@ -4529,7 +4566,7 @@ llvm.return %5 : i32
                 type = typeAndInit.first;
 
                 LLVM_DEBUG(dbgs() << "\n+++ class auto-gen field: " << fieldId << " type: " << type << "\n\n");
-                if (!type)
+                if (!type || type == noneType)
                 {
                     return mlir::failure();
                 }
