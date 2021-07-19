@@ -993,6 +993,8 @@ def TypeScript_CastOp : TypeScript_Op<"Cast"> {
   let arguments = (ins AnyType:$in);
   let results = (outs AnyType:$res);
   let assemblyFormat = "$in attr-dict `:` type($in) `to` type($res)";
+
+  let hasCanonicalizer = 1;
 }
 
 def TypeScript_EntryOp : TypeScript_Op<"Entry"> {

@@ -182,6 +182,45 @@ void mlir_ts::LoadOp::getCanonicalizationPatterns(OwningRewritePatternList &resu
 }
 
 //===----------------------------------------------------------------------===//
+// CastOp
+//===----------------------------------------------------------------------===//
+
+namespace
+{
+struct ConvertCastOpToFunctionCall : public OpRewritePattern<mlir_ts::CastOp>
+{
+    using OpRewritePattern<mlir_ts::CastOp>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::CastOp castOp, PatternRewriter &rewriter) const override
+    {
+        // TODO: finish it
+        auto in = castOp.in();
+        auto res = castOp.res();
+        if (auto stringType = res.getType().isa<mlir_ts::StringType>())
+        {
+            if (auto classType = in.getType().dyn_cast_or_null<mlir_ts::ClassType>())
+            {
+                auto className = classType.getName().getValue();
+                auto fullToStringName = className + ".toString";
+                auto stringType = mlir_ts::StringType::get(rewriter.getContext());
+                auto callRes =
+                    rewriter.create<mlir_ts::CallOp>(castOp->getLoc(), fullToStringName.str(), TypeRange{stringType}, ValueRange{in});
+                auto res = callRes.getResult(0);
+                rewriter.replaceOp(castOp, res);
+            }
+        }
+
+        return success();
+    }
+};
+} // end anonymous namespace.
+
+void mlir_ts::CastOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
+{
+    results.insert<ConvertCastOpToFunctionCall>(context);
+}
+
+//===----------------------------------------------------------------------===//
 // FuncOp
 //===----------------------------------------------------------------------===//
 

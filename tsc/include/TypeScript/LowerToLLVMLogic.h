@@ -1245,7 +1245,7 @@ class CastLogicHelper
 
         auto inType = in.getType();
 
-        if (inType.dyn_cast_or_null<mlir_ts::CharType>() && resType.dyn_cast_or_null<mlir_ts::StringType>())
+        if (inType.isa<mlir_ts::CharType>() && resType.isa<mlir_ts::StringType>())
         {
             // types are equals
             return rewriter.create<mlir_ts::CharToStringOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
@@ -1301,7 +1301,7 @@ class CastLogicHelper
             return rewriter.create<FPTruncOp>(loc, in, resLLVMType);
         }
 
-        auto isResString = resType.dyn_cast_or_null<mlir_ts::StringType>();
+        auto isResString = resType.isa<mlir_ts::StringType>();
 
         if (inLLVMType.isInteger(1) && isResString)
         {
@@ -1349,6 +1349,28 @@ class CastLogicHelper
         {
             auto val = rewriter.create<mlir_ts::ValueOp>(loc, optType.getElementType(), in);
             return cast(val, tch.convertType(val.getType()), resType, resLLVMType);
+        }
+
+        if (isResString)
+        {
+            if (auto classType = inType.dyn_cast_or_null<mlir_ts::ClassType>())
+            {
+                /*
+                // function is removed because it is not referenced
+                // call toString
+                auto className = classType.getName().getValue();
+                auto fullToStringName = className + ".toString";
+                auto stringType = mlir_ts::StringType::get(rewriter.getContext());
+                auto funcType = th.getFunctionType(tch.convertType(stringType), {tch.convertType(classType)});
+                auto llvmFuncOp = rewriter.create<LLVM::LLVMFuncOp>(loc, fullToStringName.str(), funcType);
+                auto callRes = rewriter.create<LLVM::CallOp>(loc, llvmFuncOp, ValueRange{in});
+                return callRes.getResult(0);
+                */
+                emitError(loc, "invalid cast operator type 1: '") << inType << "', type 2: '" << resType << "'";
+                llvm_unreachable("not implemented");
+
+                return mlir::Value();
+            }
         }
 
         // ptrs cast
