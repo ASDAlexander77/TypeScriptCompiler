@@ -2134,13 +2134,33 @@ struct CaptureOpLowering : public TsLlvmPattern<mlir_ts::CaptureOp>
         auto captureRefType = captureOp.getType();
         auto captureStoreType = captureRefType.cast<mlir_ts::RefType>().getElementType().cast<mlir_ts::TupleType>();
 
+        LLVM_DEBUG(llvm::dbgs() << "\n ...capture store type: " << captureStoreType << "\n\n";);
+
         mlir::Value allocTempStorage = rewriter.create<mlir_ts::VariableOp>(location, captureRefType, mlir::Value());
 
         auto index = 0;
         for (auto val : captureOp.captured())
         {
-            auto fieldRef = rewriter.create<mlir_ts::PropertyRefOp>(location, mlir_ts::RefType::get(captureStoreType.getType(index)),
-                                                                    allocTempStorage, th.getStructIndexAttrValue(index));
+            // TODO: Hack to detect which sent by ref
+
+            auto thisStoreFieldType = captureStoreType.getType(index);
+            auto thisStoreFieldTypeRef = mlir_ts::RefType::get(thisStoreFieldType);
+            auto fieldRef = rewriter.create<mlir_ts::PropertyRefOp>(location, thisStoreFieldTypeRef, allocTempStorage,
+                                                                    th.getStructIndexAttrValue(index));
+
+            LLVM_DEBUG(llvm::dbgs() << "\n ...storing val: [" << val << "] in (" << index << ") ref: " << fieldRef << "\n\n";);
+
+            // dereference value in case of sending value by ref but stored as value
+            // TODO: review capture logic
+            if (auto valRefType = val.getType().dyn_cast_or_null<mlir_ts::RefType>())
+            {
+                if (!thisStoreFieldType.isa<mlir_ts::RefType>() && thisStoreFieldType == valRefType.getElementType())
+                {
+                    // load value to dereference
+                    val = rewriter.create<mlir_ts::LoadOp>(location, valRefType.getElementType(), val);
+                }
+            }
+
             rewriter.create<mlir_ts::StoreOp>(location, val, fieldRef);
         }
 

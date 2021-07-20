@@ -902,10 +902,12 @@ class MLIRGenImpl
             }
         }
 
+        if (variableOp)
+        {
+            LLVM_DEBUG(dbgs() << "\n +++== variable = " << effectiveName << " type: " << varType << " op: " << variableOp << "==+++ \n";);
+        }
+
         // registering variable
-
-        LLVM_DEBUG(dbgs() << "\n +++== variable = " << effectiveName << " type: "; varType.dump(); dbgs() << " ==+++ \n";);
-
         auto varDecl = std::make_shared<VariableDeclarationDOM>(effectiveName, varType, location);
         if (!isConst || varClass == VariableClass::ConstRef)
         {
@@ -1390,6 +1392,7 @@ class MLIRGenImpl
 
     mlir::Value mlirGen(ArrowFunction arrowFunctionAST, const GenContext &genContext)
     {
+        auto location = loc(arrowFunctionAST);
         mlir_ts::FuncOp funcOp;
 
         {
@@ -1404,7 +1407,12 @@ class MLIRGenImpl
             }
         }
 
-        auto funcSymbolRef = builder.create<mlir_ts::SymbolRefOp>(loc(arrowFunctionAST), funcOp.getType(),
+        if (auto trampOp = resolveFunctionWithCapture(location, funcOp.getName(), funcOp.getType(), genContext))
+        {
+            return trampOp;
+        }
+
+        auto funcSymbolRef = builder.create<mlir_ts::SymbolRefOp>(location, funcOp.getType(),
                                                                   mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
         return funcSymbolRef;
     }
@@ -1606,8 +1614,8 @@ class MLIRGenImpl
                 capturedParam->setReadWriteAccess();
             }
 
-            LLVM_DEBUG(dbgs() << "\n --- captured var: " << name << " this->" << name << " [" << thisVarValue
-                              << "] ref val type: " << variableRefType << "\n\n");
+            LLVM_DEBUG(dbgs() << "\n --- captured 'this->" << name << "' [" << thisVarValue << "] ref val type: " << variableRefType
+                              << "\n\n");
 
             declare(capturedParam, thisVarValue);
         }
@@ -2010,8 +2018,6 @@ class MLIRGenImpl
         arrayVar->transformFlags |= TransformFlags::ForceConstRef;
         declarations.push_back(arrayVar);
 
-        auto initVars = nf.createVariableDeclarationList(declarations, NodeFlags::Let);
-
         // condition
         auto cond = nf.createBinaryExpression(_i, nf.createToken(SyntaxKind::LessThanToken),
                                               nf.createPropertyAccessExpression(_a, nf.createIdentifier(S("length"))));
@@ -2024,6 +2030,8 @@ class MLIRGenImpl
 
         auto varDeclList = forOfStatementAST->initializer.as<VariableDeclarationList>();
         varDeclList->declarations.front()->initializer = nf.createElementAccessExpression(_a, _i);
+
+        auto initVars = nf.createVariableDeclarationList(declarations, NodeFlags::Let /*varDeclList->flags*/);
 
         statements.push_back(nf.createVariableStatement(undefined, varDeclList));
         statements.push_back(forOfStatementAST->statement);
@@ -3939,6 +3947,9 @@ llvm.return %5 : i32
 
             if (isOuterVar && genContext.passResult)
             {
+                LLVM_DEBUG(dbgs() << "\n...capturing var: [" << value.second->getName() << "] value pair: " << value.first << " type: "
+                                  << value.second->getType() << " readwrite: " << value.second->getReadWriteAccess() << "\n\n";);
+
                 genContext.passResult->outerVariables.insert({value.second->getName(), value});
             }
 
@@ -3976,6 +3987,7 @@ llvm.return %5 : i32
             for (auto &item : captureVars->getValue())
             {
                 auto varValue = mlirGen(location, item.first(), genContext);
+                // review capturing by ref.  it should match storage type
                 auto refValue = mcl.GetReferenceOfLoadOp(varValue);
                 if (refValue)
                 {
@@ -3988,6 +4000,7 @@ llvm.return %5 : i32
                 }
             }
 
+            // add attributes to treck which one sent by ref.
             auto captured = builder.create<mlir_ts::CaptureOp>(location, funcType.getInput(0), capturedValues);
             return builder.create<mlir_ts::TrampolineOp>(location, newFuncType, funcSymbolOp, captured);
         }

@@ -78,6 +78,7 @@ add_test(NAME test-compile-15-references COMMAND test-runner "${PROJECT_SOURCE_D
 add_test(NAME test-compile-17-classes COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/17classes.ts")
 add_test(NAME test-compile-18-enums COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/18enums.ts")
 add_test(NAME test-compile-19-forof COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/19forof.ts")
+add_test(NAME test-compile-19-forof-capture COMMAND test-runner -llc -builtins "${PROJECT_SOURCE_DIR}/test/tester/tests/19forof_capture.ts")
 #add_test(NAME test-compile-22-lambdas COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/22lambdas.ts")
 add_test(NAME test-compile-Grammar_and_types COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/Grammar_and_types.ts")
 

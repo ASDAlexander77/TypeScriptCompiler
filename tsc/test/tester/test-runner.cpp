@@ -350,6 +350,7 @@ int main(int argc, char **argv)
             }
             else if (std::string(argv[index]) == "-llc")
             {
+                isJit = false;
                 isJitCompile = false;
             }
             else if (std::string(argv[index]) == "-builtins")
