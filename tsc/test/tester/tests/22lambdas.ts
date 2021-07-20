@@ -1,3 +1,5 @@
+type action = () => void;
+
 let glb1 = 0;
 
 function doubleIt(f: (x: number) => number) {
@@ -69,7 +71,7 @@ function testNested() {
         }
     }
     glb1 = 0;
-    for (let f of fns) f();
+    for (let f of fns) (<action>f)();
     assert(glb1 == 321);
 
     function bar(v: number) {
