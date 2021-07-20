@@ -1049,7 +1049,7 @@ struct NewOpLowering : public TsLlvmPattern<mlir_ts::NewOp>
         }
         else
         {
-            value = ch.MemoryAllocBitcast(resultType, storageType, true);
+            value = ch.MemoryAllocBitcast(resultType, storageType, MemoryAllocSet::Zero);
         }
 
         rewriter.replaceOp(newOp, ValueRange{value});
@@ -1088,7 +1088,7 @@ struct CreateArrayOpLowering : public TsLlvmPattern<mlir_ts::CreateArrayOp>
         auto sizeOfTypeValue = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), storageType);
         auto multSizeOfTypeValue = rewriter.create<LLVM::MulOp>(loc, th.getIndexType(), ValueRange{sizeOfTypeValue, newCountAsIndexType});
 
-        auto allocated = ch.MemoryAllocBitcast(llvmPtrElementType, multSizeOfTypeValue, false);
+        auto allocated = ch.MemoryAllocBitcast(llvmPtrElementType, multSizeOfTypeValue);
 
         mlir::Value index = clh.createIndexConstantOf(0);
         auto next = false;
@@ -1205,7 +1205,7 @@ struct NewArrayOpLowering : public TsLlvmPattern<mlir_ts::NewArrayOp>
         auto countAsIndexType = rewriter.create<mlir_ts::CastOp>(loc, th.getIndexType(), newArrOp.count());
         auto multSizeOfTypeValue = rewriter.create<LLVM::MulOp>(loc, th.getIndexType(), ValueRange{sizeOfTypeValue, countAsIndexType});
 
-        auto allocated = ch.MemoryAllocBitcast(llvmPtrElementType, multSizeOfTypeValue, false);
+        auto allocated = ch.MemoryAllocBitcast(llvmPtrElementType, multSizeOfTypeValue);
 
         // create array type
         auto llvmRtArrayStructType = tch.convertType(arrayType);

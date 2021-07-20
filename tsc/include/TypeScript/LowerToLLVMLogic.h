@@ -323,6 +323,12 @@ class CodeLogicHelper
     }
 };
 
+enum class MemoryAllocSet
+{
+    None,
+    Zero
+};
+
 class LLVMCodeHelper
 {
     Operation *op;
@@ -880,13 +886,13 @@ class LLVMCodeHelper
         return addr;
     }
 
-    template <typename T> Value _MemoryAlloc(mlir::Value sizeOfAlloc, bool zero);
-    Value MemoryAlloc(mlir::Value sizeOfAlloc, bool zero)
+    template <typename T> Value _MemoryAlloc(mlir::Value sizeOfAlloc, MemoryAllocSet zero);
+    Value MemoryAlloc(mlir::Value sizeOfAlloc, MemoryAllocSet zero = MemoryAllocSet::None)
     {
         return _MemoryAlloc<int>(sizeOfAlloc, zero);
     }
 
-    Value MemoryAlloc(mlir::Type storageType, bool zero)
+    Value MemoryAlloc(mlir::Type storageType, MemoryAllocSet zero = MemoryAllocSet::None)
     {
         TypeHelper th(rewriter);
 
@@ -896,7 +902,7 @@ class LLVMCodeHelper
         return MemoryAlloc(sizeOfTypeValue, zero);
     }
 
-    Value MemoryAllocBitcast(mlir::Type res, mlir::Type storageType, bool zero)
+    Value MemoryAllocBitcast(mlir::Type res, mlir::Type storageType, MemoryAllocSet zero = MemoryAllocSet::None)
     {
         auto loc = op->getLoc();
 
@@ -905,7 +911,7 @@ class LLVMCodeHelper
         return val;
     }
 
-    Value MemoryAllocBitcast(mlir::Type res, mlir::Value sizeOfAlloc, bool zero)
+    Value MemoryAllocBitcast(mlir::Type res, mlir::Value sizeOfAlloc, MemoryAllocSet zero = MemoryAllocSet::None)
     {
         auto loc = op->getLoc();
 
@@ -1512,7 +1518,7 @@ class CastLogicHelper
             auto bytesSize = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), arrayValueSize);
             // TODO: create MemRef which will store information about memory. stack of heap, to use in array push to realloc
             // auto copyAllocated = rewriter.create<LLVM::AllocaOp>(loc, arrayPtrType, bytesSize);
-            auto copyAllocated = ch.MemoryAlloc(arrayPtrType, bytesSize);
+            auto copyAllocated = ch.MemoryAllocBitcast(arrayPtrType, bytesSize);
 
             auto ptrToArraySrc = rewriter.create<LLVM::BitcastOp>(loc, ptrToArray, in);
             auto ptrToArrayDst = rewriter.create<LLVM::BitcastOp>(loc, ptrToArray, copyAllocated);
@@ -1538,7 +1544,7 @@ class CastLogicHelper
     }
 };
 
-template <typename T> Value LLVMCodeHelper::_MemoryAlloc(mlir::Value sizeOfAlloc, bool zero)
+template <typename T> Value LLVMCodeHelper::_MemoryAlloc(mlir::Value sizeOfAlloc, MemoryAllocSet zero)
 {
     TypeHelper th(rewriter);
     TypeConverterHelper tch(typeConverter);
@@ -1559,7 +1565,7 @@ template <typename T> Value LLVMCodeHelper::_MemoryAlloc(mlir::Value sizeOfAlloc
     auto callResults = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{effectiveSize});
     auto ptr = callResults.getResult(0);
 
-    if (zero)
+    if (zero == MemoryAllocSet::Zero)
     {
         auto memsetFuncOp = getOrInsertFunction("memset", th.getFunctionType(i8PtrTy, {i8PtrTy, th.getI32Type(), th.getIndexType()}));
         auto const0 = clh.createI32ConstantOf(0);
