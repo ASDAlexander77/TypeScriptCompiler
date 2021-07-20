@@ -78,6 +78,7 @@ add_test(NAME test-compile-15-references COMMAND test-runner "${PROJECT_SOURCE_D
 add_test(NAME test-compile-17-classes COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/17classes.ts")
 add_test(NAME test-compile-18-enums COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/18enums.ts")
 add_test(NAME test-compile-19-forof COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/19forof.ts")
+#add_test(NAME test-compile-22-lambdas COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/22lambdas.ts")
 add_test(NAME test-compile-Grammar_and_types COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/Grammar_and_types.ts")
 
 add_test(NAME test-jit-00-assert COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")
@@ -143,4 +144,5 @@ add_test(NAME test-jit-15-references COMMAND test-runner -jit "${PROJECT_SOURCE_
 add_test(NAME test-jit-17-classes COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/17classes.ts")
 add_test(NAME test-jit-18-enums COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/18enums.ts")
 add_test(NAME test-jit-19-forof COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/19forof.ts")
+#add_test(NAME test-jit-22-lambdas COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/22lambdas.ts")
 add_test(NAME test-jit-Grammar_and_types COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/Grammar_and_types.ts")

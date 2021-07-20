@@ -3385,6 +3385,16 @@ llvm.return %5 : i32
             }
 
             auto value = mlirGen(expression, genContext);
+            if (!value)
+            {
+                if (!genContext.allowPartialResolve)
+                {
+                    emitError(loc(expression)) << "can't resolve function argument";
+                }
+
+                return mlir::failure();
+            }
+
             if (value.getType() != funcType.getInput(i))
             {
                 auto castValue = builder.create<mlir_ts::CastOp>(loc(expression), funcType.getInput(i), value);
