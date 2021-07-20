@@ -23,10 +23,14 @@
 #include "TypeScript/CommonGenLogic.h"
 #include "TypeScript/DOM.h"
 
+#include "parser_types.h"
+
 #include <numeric>
 
 #define DEBUG_TYPE "mlir"
 
+using namespace ::typescript;
+using namespace ts;
 namespace mlir_ts = mlir::typescript;
 
 using llvm::ArrayRef;
@@ -41,6 +45,86 @@ using llvm::Twine;
 
 using VariablePairT = std::pair<mlir::Value, ts::VariableDeclarationDOM::TypePtr>;
 using SymbolTableScopeT = llvm::ScopedHashTableScope<StringRef, VariablePairT>;
+
+#define VALIDATE_VALUE(value, loc)                                                                                                         \
+    if (!value)                                                                                                                            \
+    {                                                                                                                                      \
+        if (!genContext.allowPartialResolve)                                                                                               \
+        {                                                                                                                                  \
+            emitError(loc, "expression has no result");                                                                                    \
+        }                                                                                                                                  \
+                                                                                                                                           \
+        return mlir::Value();                                                                                                              \
+    }                                                                                                                                      \
+                                                                                                                                           \
+    if (auto unresolved = dyn_cast_or_null<mlir_ts::SymbolRefOp>(value.getDefiningOp()))                                                   \
+    {                                                                                                                                      \
+        if (unresolved.getType().isa<mlir::FunctionType>())                                                                                \
+        {                                                                                                                                  \
+            return unresolved;                                                                                                             \
+        }                                                                                                                                  \
+                                                                                                                                           \
+        if (!genContext.allowPartialResolve)                                                                                               \
+        {                                                                                                                                  \
+            emitError(loc, "can't find variable: ") << unresolved.identifier();                                                            \
+        }                                                                                                                                  \
+                                                                                                                                           \
+        return mlir::Value();                                                                                                              \
+    }
+
+#define VALIDATE_EXPR(value, expression) VALIDATE_VALUE(value, loc(expression))
+
+namespace
+{
+struct PassResult
+{
+    PassResult() : functionReturnTypeShouldBeProvided(false)
+    {
+    }
+
+    mlir::Type functionReturnType;
+    bool functionReturnTypeShouldBeProvided;
+    llvm::StringMap<VariablePairT> outerVariables;
+};
+
+struct GenContext
+{
+    GenContext() = default;
+
+    // TODO: you are using "theModule.getBody()->clear();", do you need this hack anymore?
+    void clean()
+    {
+        if (cleanUps)
+        {
+            for (auto op : *cleanUps)
+            {
+                op->erase();
+            }
+
+            delete cleanUps;
+            cleanUps = nullptr;
+        }
+
+        if (passResult)
+        {
+            delete passResult;
+            passResult = nullptr;
+        }
+    }
+
+    bool allowPartialResolve;
+    bool dummyRun;
+    bool allowConstEval;
+    mlir_ts::FuncOp funcOp;
+    mlir_ts::ClassType thisType;
+    mlir::FunctionType destFuncType;
+    mlir::Type argTypeDestFuncType;
+    PassResult *passResult;
+    mlir::SmallVector<mlir::Block *> *cleanUps;
+    NodeArray<Statement> generatedStatements;
+};
+
+} // namespace
 
 namespace typescript
 {
@@ -152,25 +236,12 @@ class MLIRCustomMethods
     {
     }
 
-    mlir::Value callMethod(StringRef functionName, ArrayRef<mlir::Value> operands, bool allowPartialResolve)
+    mlir::Value callMethod(StringRef functionName, ArrayRef<mlir::Value> operands, const GenContext &genContext)
     {
         // validate params
         for (auto &oper : operands)
         {
-            if (allowPartialResolve && !oper)
-            {
-                return mlir::Value();
-            }
-
-            if (auto unresolvedLeft = dyn_cast_or_null<mlir_ts::SymbolRefOp>(oper.getDefiningOp()))
-            {
-                if (!allowPartialResolve)
-                {
-                    emitError(oper.getLoc(), "can't find variable: ") << unresolvedLeft.identifier();
-                }
-
-                return mlir::Value();
-            }
+            VALIDATE_VALUE(oper, location)
         }
 
         mlir::Value result;
@@ -230,7 +301,7 @@ class MLIRCustomMethods
 
         }
         */
-        else if (!allowPartialResolve)
+        else if (!genContext.allowPartialResolve)
         {
             emitError(location) << "no defined function found for '" << functionName << "'";
         }

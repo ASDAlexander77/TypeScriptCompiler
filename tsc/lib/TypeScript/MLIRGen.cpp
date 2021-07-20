@@ -53,27 +53,6 @@ using llvm::Twine;
 
 // TODO: optimize of amount of calls to detect return types and if it is was calculated before then do not run it all the time
 
-#define VALIDATE_EXPR(value, expression)                                                                                                   \
-    if (!value)                                                                                                                            \
-    {                                                                                                                                      \
-        if (!genContext.allowPartialResolve)                                                                                               \
-        {                                                                                                                                  \
-            emitError(loc(expression), "expression has no result");                                                                        \
-        }                                                                                                                                  \
-                                                                                                                                           \
-        return mlir::Value();                                                                                                              \
-    }                                                                                                                                      \
-                                                                                                                                           \
-    if (auto unresolved = dyn_cast_or_null<mlir_ts::SymbolRefOp>(value.getDefiningOp()))                                                   \
-    {                                                                                                                                      \
-        if (!genContext.allowPartialResolve)                                                                                               \
-        {                                                                                                                                  \
-            emitError(loc(expression), "can't find variable: ") << unresolved.identifier();                                                \
-        }                                                                                                                                  \
-                                                                                                                                           \
-        return mlir::Value();                                                                                                              \
-    }
-
 namespace
 {
 
@@ -83,54 +62,6 @@ enum class VariableClass
     Let,
     Var,
     ConstRef
-};
-
-struct PassResult
-{
-    PassResult() : functionReturnTypeShouldBeProvided(false)
-    {
-    }
-
-    mlir::Type functionReturnType;
-    bool functionReturnTypeShouldBeProvided;
-    llvm::StringMap<VariablePairT> outerVariables;
-};
-
-struct GenContext
-{
-    GenContext() = default;
-
-    // TODO: you are using "theModule.getBody()->clear();", do you need this hack anymore?
-    void clean()
-    {
-        if (cleanUps)
-        {
-            for (auto op : *cleanUps)
-            {
-                op->erase();
-            }
-
-            delete cleanUps;
-            cleanUps = nullptr;
-        }
-
-        if (passResult)
-        {
-            delete passResult;
-            passResult = nullptr;
-        }
-    }
-
-    bool allowPartialResolve;
-    bool dummyRun;
-    bool allowConstEval;
-    mlir_ts::FuncOp funcOp;
-    mlir_ts::ClassType thisType;
-    mlir::FunctionType destFuncType;
-    mlir::Type argTypeDestFuncType;
-    PassResult *passResult;
-    mlir::SmallVector<mlir::Block *> *cleanUps;
-    NodeArray<Statement> generatedStatements;
 };
 
 struct StaticFieldInfo
@@ -3259,7 +3190,7 @@ llvm.return %5 : i32
                 return mlir::Value();
             }
 
-            return cm.callMethod(functionName, operands, genContext.allowPartialResolve);
+            return cm.callMethod(functionName, operands, genContext);
         }
 
         mlir::Value value;
