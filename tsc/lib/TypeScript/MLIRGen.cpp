@@ -4000,7 +4000,7 @@ llvm.return %5 : i32
                 }
             }
 
-            // add attributes to treck which one sent by ref.
+            // add attributes to track which one sent by ref.
             auto captured = builder.create<mlir_ts::CaptureOp>(location, funcType.getInput(0), capturedValues);
             return builder.create<mlir_ts::TrampolineOp>(location, newFuncType, funcSymbolOp, captured);
         }

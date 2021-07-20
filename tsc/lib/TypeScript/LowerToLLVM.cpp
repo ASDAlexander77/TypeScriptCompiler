@@ -2162,6 +2162,8 @@ struct CaptureOpLowering : public TsLlvmPattern<mlir_ts::CaptureOp>
             }
 
             rewriter.create<mlir_ts::StoreOp>(location, val, fieldRef);
+
+            index++;
         }
 
         // mlir::Value newFunc = rewriter.create<mlir_ts::TrampolineOp>(location, captureOp.getType(), captureOp.callee(),
