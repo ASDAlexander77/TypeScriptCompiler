@@ -145,7 +145,7 @@ function main() {
     testAction(1);
     testAction(7);
     testIter();
-    // TODO: fix it
+    // TODO: it is not working because __enable_execute_stack didn't enable value sent to function
     //testActionSave();
     testFunDecl();
     testLoopScope();
