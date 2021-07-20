@@ -383,7 +383,8 @@ class StringConcatOpLowering : public TsLlvmPattern<mlir_ts::StringConcatOp>
             size = rewriter.create<LLVM::AddOp>(loc, rewriter.getI64Type(), ValueRange{size, size1.getResult(0)});
         }
 
-        mlir::Value newStringValue = rewriter.create<LLVM::AllocaOp>(op->getLoc(), i8PtrTy, size, true);
+        // mlir::Value newStringValue = rewriter.create<LLVM::AllocaOp>(op->getLoc(), i8PtrTy, size, true);
+        mlir::Value newStringValue = ch.MemoryAllocBitcast(i8PtrTy, size);
 
         // copy
         auto concat = false;
@@ -539,6 +540,7 @@ class CharToStringOpLowering : public TsLlvmPattern<mlir_ts::CharToStringOp>
         auto i8PtrTy = th.getI8PtrType();
 
         auto bufferSizeValue = clh.createI64ConstantOf(2);
+        // TODO: review it
         auto newStringValue = rewriter.create<LLVM::AllocaOp>(loc, i8PtrTy, bufferSizeValue, true);
 
         auto index0Value = clh.createI32ConstantOf(0);
