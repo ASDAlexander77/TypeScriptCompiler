@@ -59,17 +59,15 @@ using SymbolTableScopeT = llvm::ScopedHashTableScope<StringRef, VariablePairT>;
                                                                                                                                            \
     if (auto unresolved = dyn_cast_or_null<mlir_ts::SymbolRefOp>(value.getDefiningOp()))                                                   \
     {                                                                                                                                      \
-        if (unresolved.getType().isa<mlir::FunctionType>())                                                                                \
+        if (!unresolved.getType().isa<mlir::FunctionType>())                                                                               \
         {                                                                                                                                  \
-            return unresolved;                                                                                                             \
-        }                                                                                                                                  \
+            if (!genContext.allowPartialResolve)                                                                                           \
+            {                                                                                                                              \
+                emitError(loc, "can't find variable: ") << unresolved.identifier();                                                        \
+            }                                                                                                                              \
                                                                                                                                            \
-        if (!genContext.allowPartialResolve)                                                                                               \
-        {                                                                                                                                  \
-            emitError(loc, "can't find variable: ") << unresolved.identifier();                                                            \
+            return mlir::Value();                                                                                                          \
         }                                                                                                                                  \
-                                                                                                                                           \
-        return mlir::Value();                                                                                                              \
     }
 
 #define VALIDATE_EXPR(value, expression) VALIDATE_VALUE(value, loc(expression))
