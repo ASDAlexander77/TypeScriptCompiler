@@ -62,6 +62,26 @@ def ConstantOp : TypeScript_Op<"Constant",
   let assemblyFormat = "attr-dict `:` type($constValue)";
 }
 
+def UnresolvedSymbolRefOp : TypeScript_Op<"UnresolvedSymbolRef", 
+    [NoSideEffect]> {
+  let summary = "unresolved symbol reference as constant";
+
+  let arguments = (ins FlatSymbolRefAttr:$identifier);
+  let results = (outs AnyType:$value);
+
+  let builders = [
+    OpBuilder<(ins "FlatSymbolRefAttr":$identifier),
+    [{ build($_builder, $_state, identifier.getType(), identifier); }]>];
+
+  let extraClassDeclaration = [{
+    Attribute getValue() { return (*this)->getAttr("identifier"); }
+  }];
+
+  let hasCanonicalizer = 1;
+
+  let assemblyFormat = "attr-dict `:` type($value)";
+}
+
 def SymbolRefOp : TypeScript_Op<"SymbolRef", 
     [NoSideEffect]> {
   let summary = "symbol reference as constant";

@@ -4155,7 +4155,7 @@ llvm.return %5 : i32
 
         // unresolved reference (for call for example)
         // TODO: put assert here to see which ref names are not resolved
-        return builder.create<mlir_ts::SymbolRefOp>(location, mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
+        return builder.create<mlir_ts::UnresolvedSymbolRefOp>(location, mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
     }
 
     mlir::LogicalResult mlirGen(TypeAliasDeclaration typeAliasDeclarationAST, const GenContext &genContext)
