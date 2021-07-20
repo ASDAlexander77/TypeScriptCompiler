@@ -1231,20 +1231,21 @@ class MLIRGenImpl
         // discover type & args
         if (!funcType)
         {
-            if (auto typeParameter = functionLikeDeclarationBaseAST->type)
-            {
-                auto returnType = getType(typeParameter);
-                funcProto->setReturnType(returnType);
-            }
-
-            if (!funcProto->getReturnType() && genContext.destFuncType && genContext.destFuncType.getNumResults() > 0)
-            {
-                funcProto->setReturnType(genContext.destFuncType.getResult(0));
-            }
-
             if (mlir::succeeded(
                     discoverFunctionReturnTypeAndCapturedVars(functionLikeDeclarationBaseAST, fullName, argTypes, funcProto, genContext)))
             {
+                // rewrite ret type with actual value
+                if (auto typeParameter = functionLikeDeclarationBaseAST->type)
+                {
+                    auto returnType = getType(typeParameter);
+                    funcProto->setReturnType(returnType);
+                }
+                else if (genContext.destFuncType && genContext.destFuncType.getNumResults() > 0)
+                {
+                    funcProto->setReturnType(genContext.destFuncType.getResult(0));
+                }
+
+                // create funcType
                 if (funcProto->getReturnType())
                 {
                     funcType = builder.getFunctionType(argTypes, funcProto->getReturnType());
@@ -1304,7 +1305,7 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-        LLVM_DEBUG(llvm::dbgs() << "??? discover func ret type for : " << name << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "??? discovering 'ret type' & 'captured vars' for : " << name << "\n";);
 
         mlir::OpBuilder::InsertionGuard guard(builder);
 
@@ -1340,6 +1341,7 @@ class MLIRGenImpl
                     MLIRTypeHelper mth(builder.getContext());
                     bool copyRequired;
                     funcProto->setReturnType(mth.convertConstTypeToType(discoveredType, copyRequired));
+                    LLVM_DEBUG(llvm::dbgs() << "ret type: " << funcProto->getReturnType() << ", name: " << name << "\n";);
                 }
 
                 // if we have captured parameters, add first param to send lambda's type(class)
@@ -1350,6 +1352,8 @@ class MLIRGenImpl
                     getCaptureVarsMap().insert({name, passResult->outerVariables});
 
                     funcProto->setHasCapturedVars(true);
+
+                    LLVM_DEBUG(llvm::dbgs() << "has captured vars, name: " << name << "\n";);
                 }
 
                 genContextWithPassResult.clean();
