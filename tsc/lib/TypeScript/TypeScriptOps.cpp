@@ -1,3 +1,5 @@
+#define DEBUG_TYPE "mlir"
+
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/Defines.h"
 #include "TypeScript/TypeScriptDialect.h"
@@ -13,6 +15,7 @@
 #include "mlir/IR/TypeUtilities.h"
 
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/Debug.h"
 
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
@@ -499,11 +502,16 @@ struct SimplifyIndirectCallWithKnownCallee : public OpRewritePattern<mlir_ts::Ca
             if (auto symbolRefOp = trampolineOp.callee().getDefiningOp<mlir_ts::SymbolRefOp>())
             {
                 // Replace with a direct call.
-                SmallVector<mlir::Value> args(indirectCall.getArgOperands());
+                SmallVector<mlir::Value> args;
                 args.push_back(trampolineOp.data_reference());
                 args.append(indirectCall.getArgOperands().begin(), indirectCall.getArgOperands().end());
                 rewriter.replaceOpWithNewOp<mlir_ts::CallOp>(indirectCall, symbolRefOp.identifierAttr(), indirectCall.getResultTypes(),
                                                              args);
+
+                LLVM_DEBUG(for (auto &arg : args) { llvm::dbgs() << "\n\narg: " << arg << "\n"; });
+
+                LLVM_DEBUG(llvm::dbgs() << "\n\nSimplifyIndirectCallWithKnownCallee: args: " << args.size() << "\n";);
+
                 rewriter.eraseOp(trampolineOp);
                 return success();
             }
