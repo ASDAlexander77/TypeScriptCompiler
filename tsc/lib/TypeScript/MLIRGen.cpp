@@ -2507,8 +2507,16 @@ llvm.return %5 : i32
         auto leftExpression = binaryExpressionAST->left;
         auto rightExpression = binaryExpressionAST->right;
 
-        auto rightExpressionValue = mlirGen(rightExpression, genContext);
         auto leftExpressionValue = mlirGen(leftExpression, genContext);
+        if (auto funcType = leftExpressionValue.getType().dyn_cast_or_null<mlir::FunctionType>())
+        {
+            const_cast<GenContext &>(genContext).argTypeDestFuncType = funcType;
+        }
+
+        auto rightExpressionValue = mlirGen(rightExpression, genContext);
+
+        // clear state
+        const_cast<GenContext &>(genContext).argTypeDestFuncType = nullptr;
 
         VALIDATE_EXPR(rightExpressionValue, rightExpression)
         VALIDATE_EXPR(leftExpressionValue, leftExpression)
