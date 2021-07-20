@@ -3959,6 +3959,42 @@ llvm.return %5 : i32
         return mlir::Value();
     }
 
+    mlir::Value resolveFunctionWithCapture(mlir::Location location, StringRef name, mlir::FunctionType funcType,
+                                           const GenContext &genContext)
+    {
+        // check if required capture of vars
+        auto captureVars = getCaptureVarsMap().find(name);
+        if (captureVars != getCaptureVarsMap().end())
+        {
+            auto newFuncType = builder.getFunctionType(funcType.getInputs().slice(1), funcType.getResults());
+
+            auto funcSymbolOp =
+                builder.create<mlir_ts::SymbolRefOp>(location, funcType, mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
+
+            MLIRCodeLogic mcl(builder);
+            SmallVector<mlir::Value> capturedValues;
+            for (auto &item : captureVars->getValue())
+            {
+                auto varValue = mlirGen(location, item.first(), genContext);
+                auto refValue = mcl.GetReferenceOfLoadOp(varValue);
+                if (refValue)
+                {
+                    capturedValues.push_back(refValue);
+                }
+                else
+                {
+                    // this is not ref, this is const value
+                    capturedValues.push_back(varValue);
+                }
+            }
+
+            auto captured = builder.create<mlir_ts::CaptureOp>(location, funcType.getInput(0), capturedValues);
+            return builder.create<mlir_ts::TrampolineOp>(location, newFuncType, funcSymbolOp, captured);
+        }
+
+        return mlir::Value();
+    }
+
     mlir::Value resolveIdentifierInNamespace(mlir::Location location, StringRef name, const GenContext &genContext)
     {
         // resolving function
@@ -3966,40 +4002,14 @@ llvm.return %5 : i32
         if (fn != getFunctionMap().end())
         {
             auto funcOp = fn->getValue();
-            auto effectiveFuncType = funcOp.getType();
-            // check if required capture of vars
-            auto captureVars = getCaptureVarsMap().find(name);
-            if (captureVars != getCaptureVarsMap().end())
+            auto funcType = funcOp.getType();
+
+            if (auto trampOp = resolveFunctionWithCapture(location, name, funcType, genContext))
             {
-                auto funcType = effectiveFuncType;
-                auto newFuncType = builder.getFunctionType(funcType.getInputs().slice(1), funcType.getResults());
-                effectiveFuncType = newFuncType;
-
-                auto funcSymbolOp =
-                    builder.create<mlir_ts::SymbolRefOp>(location, funcType, mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
-
-                MLIRCodeLogic mcl(builder);
-                SmallVector<mlir::Value> capturedValues;
-                for (auto &item : captureVars->getValue())
-                {
-                    auto varValue = mlirGen(location, item.first(), genContext);
-                    auto refValue = mcl.GetReferenceOfLoadOp(varValue);
-                    if (refValue)
-                    {
-                        capturedValues.push_back(refValue);
-                    }
-                    else
-                    {
-                        // this is not ref, this is const value
-                        capturedValues.push_back(varValue);
-                    }
-                }
-
-                auto captured = builder.create<mlir_ts::CaptureOp>(location, funcType.getInput(0), capturedValues);
-                return builder.create<mlir_ts::TrampolineOp>(location, effectiveFuncType, funcSymbolOp, captured);
+                return trampOp;
             }
 
-            auto symbOp = builder.create<mlir_ts::SymbolRefOp>(location, effectiveFuncType,
+            auto symbOp = builder.create<mlir_ts::SymbolRefOp>(location, funcType,
                                                                mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
             return symbOp;
         }
