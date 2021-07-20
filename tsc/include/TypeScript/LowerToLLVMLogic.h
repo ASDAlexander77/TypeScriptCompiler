@@ -896,7 +896,7 @@ class LLVMCodeHelper
         return MemoryAlloc(sizeOfTypeValue, zero);
     }
 
-    Value MemoryAlloc(mlir::Type res, mlir::Type storageType, bool zero)
+    Value MemoryAllocBitcast(mlir::Type res, mlir::Type storageType, bool zero)
     {
         auto loc = op->getLoc();
 
@@ -905,7 +905,7 @@ class LLVMCodeHelper
         return val;
     }
 
-    Value MemoryAlloc(mlir::Type res, mlir::Value sizeOfAlloc, bool zero)
+    Value MemoryAllocBitcast(mlir::Type res, mlir::Value sizeOfAlloc, bool zero)
     {
         auto loc = op->getLoc();
 
@@ -920,7 +920,7 @@ class LLVMCodeHelper
         return _MemoryRealloc<int>(ptrValue, sizeOfAlloc);
     }
 
-    Value MemoryRealloc(mlir::Type res, mlir::Value ptrValue, mlir::Value sizeOfAlloc)
+    Value MemoryReallocBitcast(mlir::Type res, mlir::Value ptrValue, mlir::Value sizeOfAlloc)
     {
         auto loc = op->getLoc();
 
