@@ -4104,6 +4104,16 @@ llvm.return %5 : i32
         if (getClassesMap().count(name))
         {
             auto classInfo = getClassesMap().lookup(name);
+            if (!classInfo->classType)
+            {
+                if (!genContext.allowPartialResolve)
+                {
+                    emitError(location) << "can't find class: " << name << "\n";
+                }
+
+                return mlir::Value();
+            }
+
             return builder.create<mlir_ts::ClassRefOp>(
                 location, classInfo->classType,
                 mlir::FlatSymbolRefAttr::get(builder.getContext(), classInfo->classType.getName().getValue()));

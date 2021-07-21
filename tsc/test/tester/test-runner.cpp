@@ -10,6 +10,8 @@
 #include <stdexcept>
 #include <string>
 
+#include <windows.h>
+
 #if __cplusplus >= 201703L
 #include <filesystem>
 namespace fs = std::filesystem;
@@ -69,34 +71,50 @@ bool hasEnding(std::string const &fullString, std::string const &ending)
 
 std::string exec(std::string cmd)
 {
-    std::array<char, 128> buffer;
-    std::string result;
+    auto retry = 3;
 
-    FILE *pipe = POPEN(cmd.c_str(), "rt");
-    if (!pipe)
+    do
     {
-        throw std::runtime_error("popen() failed!");
-    }
+        std::array<char, 128> buffer;
+        std::string result;
 
-    while (fgets(buffer.data(), buffer.size(), pipe) != nullptr)
-    {
-        result += buffer.data();
-    }
-
-    if (feof(pipe))
-    {
-        auto code = PCLOSE(pipe);
-        if (code)
+        FILE *pipe = POPEN(cmd.c_str(), "rt");
+        if (!pipe)
         {
-            std::cerr << "Error: return code is not 0" << std::endl;
+            throw std::runtime_error("popen() failed!");
         }
-    }
-    else
-    {
-        std::cerr << "Error: Failed to read the pipe to the end" << std::endl;
-    }
 
-    return result;
+        while (fgets(buffer.data(), buffer.size(), pipe) != nullptr)
+        {
+            result += buffer.data();
+        }
+
+        if (feof(pipe))
+        {
+            auto code = PCLOSE(pipe);
+            if (code)
+            {
+                if (retry <= 1)
+                {
+                    std::cerr << "Error: return code is not 0, code: " << code << " cmd: " << cmd << " output: " << result << std::endl;
+                }
+                else
+                {
+                    std::cerr << "retrying..." << std::endl;
+                    Sleep(1000);
+                    continue;
+                }
+            }
+        }
+        else
+        {
+            std::cerr << "Error: Failed to read the pipe to the end" << std::endl;
+        }
+
+        return result;
+    } while (--retry > 0);
+
+    return "";
 }
 
 inline bool exists(std::string name)

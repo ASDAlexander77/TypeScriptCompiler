@@ -87,6 +87,8 @@ add_test(NAME test-compile-28-boolcasts COMMAND test-runner "${PROJECT_SOURCE_DI
 add_test(NAME test-compile-32-complexcalls COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/32complexcalls.ts")
 #add_test(NAME test-compile-33-inheritance COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/33inheritance.ts")
 add_test(NAME test-compile-34-switch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/34switch.ts")
+add_test(NAME test-compile-35-lambdaparameters COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/35lambdaparameters.ts")
+add_test(NAME test-compile-39-objectdestructuring COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/39objectdestructuring.ts")
 add_test(NAME test-compile-Grammar_and_types COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/Grammar_and_types.ts")
 
 add_test(NAME test-jit-00-assert COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")
@@ -157,4 +159,6 @@ add_test(NAME test-jit-28-boolcasts COMMAND test-runner -jit "${PROJECT_SOURCE_D
 add_test(NAME test-jit-32-complexcalls COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/32complexcalls.ts")
 #add_test(NAME test-jit-33-inheritance COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/33inheritance.ts")
 add_test(NAME test-jit-34-switch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/34switch.ts")
+add_test(NAME test-jit-35-lambdaparameters COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/35lambdaparameters.ts")
+add_test(NAME test-jit-39-objectdestructuring COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/39objectdestructuring.ts")
 add_test(NAME test-jit-Grammar_and_types COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/Grammar_and_types.ts")
