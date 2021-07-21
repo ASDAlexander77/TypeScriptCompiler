@@ -2171,13 +2171,27 @@ class MLIRGenImpl
         auto *lastConditionBlock = mergeBlock;
 
         auto &clauses = switchStatementAST->caseBlock->clauses;
+
+        // process default first (in our case it will be the last)
         for (int index = clauses.size() - 1; index >= 0; index--)
         {
-            if (mlir::failed(
-                    mlirGenSwitchCase(location, switchValue, clauses, index, lastBlock, lastConditionBlock, mergeBlock, genContext)))
-            {
-                return mlir::failure();
-            }
+            if (SyntaxKind::DefaultClause == (SyntaxKind)clauses[index])
+                if (mlir::failed(
+                        mlirGenSwitchCase(location, switchValue, clauses, index, lastBlock, lastConditionBlock, mergeBlock, genContext)))
+                {
+                    return mlir::failure();
+                }
+        }
+
+        // process rest without default
+        for (int index = clauses.size() - 1; index >= 0; index--)
+        {
+            if (SyntaxKind::DefaultClause != (SyntaxKind)clauses[index])
+                if (mlir::failed(
+                        mlirGenSwitchCase(location, switchValue, clauses, index, lastBlock, lastConditionBlock, mergeBlock, genContext)))
+                {
+                    return mlir::failure();
+                }
         }
 
         return mlir::success();
