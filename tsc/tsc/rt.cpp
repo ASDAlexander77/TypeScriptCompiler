@@ -18,6 +18,12 @@
 #endif // __APPLE__
 #endif // _WIN32
 
+#if __LP64__
+#define TRAMPOLINE_SIZE 48
+#else
+#define TRAMPOLINE_SIZE 40
+#endif
+
 // A helper function that will be called from the JIT
 void _mlir__enable_execute_stack(void *addr)
 {
