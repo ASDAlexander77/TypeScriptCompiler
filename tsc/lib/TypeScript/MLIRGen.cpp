@@ -1240,9 +1240,9 @@ class MLIRGenImpl
                     auto returnType = getType(typeParameter);
                     funcProto->setReturnType(returnType);
                 }
-                else if (genContext.destFuncType && genContext.destFuncType.getNumResults() > 0)
+                else if (genContext.argTypeDestFuncType && genContext.argTypeDestFuncType.cast<mlir::FunctionType>().getNumResults() > 0)
                 {
-                    funcProto->setReturnType(genContext.destFuncType.getResult(0));
+                    funcProto->setReturnType(genContext.argTypeDestFuncType.cast<mlir::FunctionType>().getResult(0));
                 }
 
                 // create funcType

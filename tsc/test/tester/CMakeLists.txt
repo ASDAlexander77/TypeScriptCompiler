@@ -84,6 +84,7 @@ add_test(NAME test-compile-22-lambdas COMMAND test-runner -llc -builtins "${PROJ
 add_test(NAME test-compile-25-lamdacapture COMMAND test-runner -llc -builtins "${PROJECT_SOURCE_DIR}/test/tester/tests/25lamdacapture.ts")
 add_test(NAME test-compile-26-staticclasses COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/26staticclasses.ts")
 add_test(NAME test-compile-28-boolcasts COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/28boolcasts.ts")
+add_test(NAME test-compile-32-complexcalls COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/32complexcalls.ts")
 add_test(NAME test-compile-Grammar_and_types COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/Grammar_and_types.ts")
 
 add_test(NAME test-jit-00-assert COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")
@@ -151,4 +152,5 @@ add_test(NAME test-jit-19-forof COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/
 #add_test(NAME test-jit-22-lambdas COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/22lambdas.ts")
 add_test(NAME test-jit-26-staticclasses COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/26staticclasses.ts")
 add_test(NAME test-jit-28-boolcasts COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/28boolcasts.ts")
+add_test(NAME test-jit-32-complexcalls COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/32complexcalls.ts")
 add_test(NAME test-jit-Grammar_and_types COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/Grammar_and_types.ts")
