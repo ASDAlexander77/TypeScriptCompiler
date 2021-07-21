@@ -91,6 +91,7 @@ add_test(NAME test-compile-35-lambdaparameters COMMAND test-runner "${PROJECT_SO
 add_test(NAME test-compile-39-objectdestructuring COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/39objectdestructuring.ts")
 add_test(NAME test-compile-41-anonymoustypes COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/41anonymoustypes.ts")
 add_test(NAME test-compile-43-nestednamespace COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/43nestednamespace.ts")
+add_test(NAME test-compile-44-toplevelcode COMMAND test-runner -llc -builtins "${PROJECT_SOURCE_DIR}/test/tester/tests/44toplevelcode.ts")
 add_test(NAME test-compile-Grammar_and_types COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/Grammar_and_types.ts")
 
 add_test(NAME test-jit-00-assert COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")

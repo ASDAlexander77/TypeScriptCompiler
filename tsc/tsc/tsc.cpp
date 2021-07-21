@@ -4,6 +4,8 @@
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/TypeScriptToLLVMIRTranslation.h"
 
+#include "TypeScript/rt.h"
+
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
 #include "mlir/ExecutionEngine/OptUtils.h"
 #include "mlir/IR/AsmState.h"
@@ -305,6 +307,10 @@ int runJit(mlir::ModuleOp module)
         auto symbolMap = llvm::orc::SymbolMap();
         for (auto &exportSymbol : exportSymbols)
             symbolMap[interner(exportSymbol.getKey())] = llvm::JITEvaluatedSymbol::fromPointer(exportSymbol.getValue());
+
+        // adding my ref to __enable_execute_stack
+        symbolMap[interner("__enable_execute_stack")] = llvm::JITEvaluatedSymbol::fromPointer(_mlir__enable_execute_stack);
+
         return symbolMap;
     };
 
