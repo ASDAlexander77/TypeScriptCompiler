@@ -508,11 +508,17 @@ struct SimplifyIndirectCallWithKnownCallee : public OpRewritePattern<mlir_ts::Ca
                 rewriter.replaceOpWithNewOp<mlir_ts::CallOp>(indirectCall, symbolRefOp.identifierAttr(), indirectCall.getResultTypes(),
                                                              args);
 
-                LLVM_DEBUG(for (auto &arg : args) { llvm::dbgs() << "\n\narg: " << arg << "\n"; });
+                LLVM_DEBUG(for (auto &arg : args) { llvm::dbgs() << "\n\n SimplifyIndirectCallWithKnownCallee arg: " << arg << "\n"; });
 
-                LLVM_DEBUG(llvm::dbgs() << "\n\nSimplifyIndirectCallWithKnownCallee: args: " << args.size() << "\n";);
+                LLVM_DEBUG(llvm::dbgs() << "\nSimplifyIndirectCallWithKnownCallee: args: " << args.size() << "\n";);
+                LLVM_DEBUG(for (auto &use
+                                : trampolineOp->getUses()) { llvm::dbgs() << "\n use number:" << use.getOperandNumber() << "\n"; });
 
-                rewriter.eraseOp(trampolineOp);
+                if (trampolineOp.use_empty())
+                {
+                    rewriter.eraseOp(trampolineOp);
+                }
+
                 return success();
             }
         }
