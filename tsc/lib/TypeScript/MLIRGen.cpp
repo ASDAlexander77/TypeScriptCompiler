@@ -2911,7 +2911,7 @@ llvm.return %5 : i32
                 return value;
             }
 
-            LLVM_DEBUG(dbgs() << "mlirGenPropertyAccessExpression: "; objectValue.dump(); dbgs() << "\n");
+            LLVM_DEBUG(dbgs() << "mlirGenPropertyAccessExpression name: " << name << " object: " << objectValue << "\n");
             assert(genContext.allowPartialResolve);
 
             return value;
@@ -3517,6 +3517,9 @@ llvm.return %5 : i32
             typeExpression == SyntaxKind::PropertyAccessExpression)
         {
             type = getTypeByTypeName(typeExpression, genContext);
+
+            assert(type);
+
             auto resultType = type;
             if (mth.isValueType(type))
             {
@@ -3533,6 +3536,9 @@ llvm.return %5 : i32
             auto elementAccessExpression = typeExpression.as<ElementAccessExpression>();
             typeExpression = elementAccessExpression->expression;
             type = getTypeByTypeName(typeExpression, genContext);
+
+            assert(type);
+
             auto count = mlirGen(elementAccessExpression->argumentExpression, genContext);
 
             if (count.getType() != builder.getI32Type())
@@ -4128,6 +4134,7 @@ llvm.return %5 : i32
         if (getNamespaceMap().count(name))
         {
             auto namespaceInfo = getNamespaceMap().lookup(name);
+            assert(namespaceInfo);
             return builder.create<mlir_ts::NamespaceRefOp>(location,
                                                            mlir::FlatSymbolRefAttr::get(builder.getContext(), namespaceInfo->fullName));
         }
@@ -4135,7 +4142,23 @@ llvm.return %5 : i32
         if (getImportEqualsMap().count(name))
         {
             auto fullName = getImportEqualsMap().lookup(name);
-            return builder.create<mlir_ts::NamespaceRefOp>(location, mlir::FlatSymbolRefAttr::get(builder.getContext(), fullName));
+            auto namespaceInfo = getNamespaceByFullName(fullName);
+            if (namespaceInfo)
+            {
+                assert(namespaceInfo);
+                return builder.create<mlir_ts::NamespaceRefOp>(location,
+                                                               mlir::FlatSymbolRefAttr::get(builder.getContext(), namespaceInfo->fullName));
+            }
+
+            auto classInfo = getClassByFullName(fullName);
+            if (classInfo)
+            {
+                return builder.create<mlir_ts::ClassRefOp>(
+                    location, classInfo->classType,
+                    mlir::FlatSymbolRefAttr::get(builder.getContext(), classInfo->classType.getName().getValue()));
+            }
+
+            assert(false);
         }
 
         return mlir::Value();
@@ -4283,6 +4306,11 @@ llvm.return %5 : i32
             if (auto namespaceOp = value.getDefiningOp<mlir_ts::NamespaceRefOp>())
             {
                 getImportEqualsMap().insert({name, namespaceOp.identifier()});
+                return mlir::success();
+            }
+            else if (auto classRefOp = value.getDefiningOp<mlir_ts::ClassRefOp>())
+            {
+                getImportEqualsMap().insert({name, classRefOp.identifier()});
                 return mlir::success();
             }
         }
@@ -5050,6 +5078,8 @@ llvm.return %5 : i32
             {
                 return enumType.getElementType();
             }
+
+            assert(type);
 
             return type;
         }
