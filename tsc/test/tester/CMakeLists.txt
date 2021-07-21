@@ -89,6 +89,7 @@ add_test(NAME test-compile-32-complexcalls COMMAND test-runner "${PROJECT_SOURCE
 add_test(NAME test-compile-34-switch COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/34switch.ts")
 add_test(NAME test-compile-35-lambdaparameters COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/35lambdaparameters.ts")
 add_test(NAME test-compile-39-objectdestructuring COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/39objectdestructuring.ts")
+add_test(NAME test-compile-41-anonymoustypes COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/41anonymoustypes.ts")
 add_test(NAME test-compile-Grammar_and_types COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/Grammar_and_types.ts")
 
 add_test(NAME test-jit-00-assert COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")
@@ -161,4 +162,5 @@ add_test(NAME test-jit-32-complexcalls COMMAND test-runner -jit "${PROJECT_SOURC
 add_test(NAME test-jit-34-switch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/34switch.ts")
 add_test(NAME test-jit-35-lambdaparameters COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/35lambdaparameters.ts")
 add_test(NAME test-jit-39-objectdestructuring COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/39objectdestructuring.ts")
+add_test(NAME test-jit-41-anonymoustypes COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/41anonymoustypes.ts")
 add_test(NAME test-jit-Grammar_and_types COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/Grammar_and_types.ts")
