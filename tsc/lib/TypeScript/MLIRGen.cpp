@@ -5199,6 +5199,7 @@ llvm.return %5 : i32
 
     void getTupleFieldInfo(TypeLiteralNode typeLiteral, mlir::SmallVector<mlir_ts::FieldInfo> &types)
     {
+        MLIRCodeLogic mcl(builder);
         for (auto typeItem : typeLiteral->members)
         {
             if (typeItem == SyntaxKind::PropertySignature)
@@ -5209,7 +5210,7 @@ llvm.return %5 : i32
                 auto type = getType(propertySignature->type);
 
                 assert(type);
-                types.push_back({mlir::FlatSymbolRefAttr::get(builder.getContext(), namePtr), type});
+                types.push_back({mcl.TupleFieldName(namePtr), type});
             }
             else
             {
