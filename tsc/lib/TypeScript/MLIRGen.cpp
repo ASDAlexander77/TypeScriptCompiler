@@ -2508,6 +2508,9 @@ llvm.return %5 : i32
         auto rightExpression = binaryExpressionAST->right;
 
         auto leftExpressionValue = mlirGen(leftExpression, genContext);
+
+        VALIDATE_EXPR(leftExpressionValue, leftExpression)
+
         if (auto funcType = leftExpressionValue.getType().dyn_cast_or_null<mlir::FunctionType>())
         {
             const_cast<GenContext &>(genContext).argTypeDestFuncType = funcType;
@@ -2515,11 +2518,10 @@ llvm.return %5 : i32
 
         auto rightExpressionValue = mlirGen(rightExpression, genContext);
 
+        VALIDATE_EXPR(rightExpressionValue, rightExpression)
+
         // clear state
         const_cast<GenContext &>(genContext).argTypeDestFuncType = nullptr;
-
-        VALIDATE_EXPR(rightExpressionValue, rightExpression)
-        VALIDATE_EXPR(leftExpressionValue, leftExpression)
 
         auto leftExpressionValueBeforeCast = leftExpressionValue;
 
@@ -2862,6 +2864,8 @@ llvm.return %5 : i32
     {
         mlir::Value value;
 
+        assert(objectValue);
+
         // TODO: create NamespaceType instead of using this hacky code
         if (!objectValue.getType() || objectValue.getType() == mlir::NoneType::get(builder.getContext()))
         {
@@ -3040,7 +3044,7 @@ llvm.return %5 : i32
         {
             if (first && name == SUPER_NAME)
             {
-                auto value = mlirGenPropertyAccessExpression(location, thisValue, baseClass->name, genContext);
+                auto value = mlirGenPropertyAccessExpression(location, thisValue, baseClass->fullName, genContext);
                 return value;
             }
 
@@ -3057,7 +3061,19 @@ llvm.return %5 : i32
                 auto currentObject = thisValue;
                 for (auto &chain : fieldPath)
                 {
-                    auto fieldValue = mlirGenPropertyAccessExpression(location, currentObject, chain->name, genContext);
+                    auto fieldValue = mlirGenPropertyAccessExpression(location, currentObject, chain->fullName, genContext);
+                    if (!fieldValue)
+                    {
+                        if (!genContext.allowPartialResolve)
+                        {
+                            emitError(location) << "Can't resolve field/property/base '" << chain->fullName << "' of class '"
+                                                << classInfo->fullName << "'\n";
+                        }
+
+                        return fieldValue;
+                    }
+
+                    assert(fieldValue);
                     currentObject = fieldValue;
                 }
 
@@ -3076,6 +3092,8 @@ llvm.return %5 : i32
         {
             return mlir::Value();
         }
+
+        emitError(location) << "can't resolve property/field/base '" << name << "' of class '" << classInfo->fullName << "'\n";
 
         assert(false);
         llvm_unreachable("not implemented");
@@ -4163,7 +4181,7 @@ llvm.return %5 : i32
             auto classInfo = getClassByFullName(genContext.thisType.getName().getValue());
             auto baseClassInfo = classInfo->baseClasses.front();
 
-            return mlirGenPropertyAccessExpression(location, thisValue, baseClassInfo->name, genContext);
+            return mlirGenPropertyAccessExpression(location, thisValue, baseClassInfo->fullName, genContext);
         }
 
         value = resolveFullNameIdentifier(location, name, false, genContext);
