@@ -794,14 +794,14 @@ def TypeScript_VariableOp : TypeScript_Op<"Variable", []> {
   }];
 
   let arguments = (ins
-    Optional<AnyType>:$initializer
+    Optional<AnyType>:$initializer, OptionalAttr<BoolAttr>:$captured
   );
 
   let results = (outs
     TypeScript_AnyRef:$reference
   );
 
-  let assemblyFormat = "`(` $initializer `:` type($initializer) `)` attr-dict `:` type($reference)";
+  let assemblyFormat = "`(` $initializer `:` type($initializer) `)` `{` $captured `}` attr-dict `:` type($reference)";
 }
 
 def TypeScript_StoreOp : TypeScript_Op<"Store",

@@ -236,7 +236,7 @@ struct NamespaceInfo
 
     llvm::StringMap<VariableDeclarationDOM::TypePtr> globalsMap;
 
-    llvm::StringMap<llvm::StringMap<VariablePairT>> captureVarsMap;
+    llvm::StringMap<llvm::StringMap<ts::VariableDeclarationDOM::TypePtr>> captureVarsMap;
 
     llvm::StringMap<mlir::Type> typeAliasMap;
 
@@ -831,7 +831,10 @@ class MLIRGenImpl
                     init = castValue;
                 }
 
-                variableOp = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(actualType), init);
+                varType = actualType;
+
+                variableOp =
+                    builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(actualType), init, builder.getBoolAttr(false));
             }
         }
         else
@@ -1353,6 +1356,18 @@ class MLIRGenImpl
 
                     funcProto->setHasCapturedVars(true);
 
+                    // change storage class for variable
+                    /*
+                    for (auto &var : passResult->outerVariables)
+                    {
+                        var.getValue()->setCaptured();
+                        if (auto variableOp = var.getValue().getDefiningOp<mlir_ts::VariableOp>())
+                        {
+                            variableOp.capturedAttr(builder.getBoolAttr(true));
+                        }
+                    }
+                    */
+
                     LLVM_DEBUG(llvm::dbgs() << "has captured vars, name: " << name << "\n";);
                 }
 
@@ -1607,7 +1622,7 @@ class MLIRGenImpl
         for (auto &capturedVar : capturedVars)
         {
             auto varItem = capturedVar.getValue();
-            auto variableInfo = varItem.second;
+            auto variableInfo = varItem;
             auto name = variableInfo->getName();
 
             // load this.<var name>
@@ -4017,7 +4032,7 @@ llvm.return %5 : i32
                 LLVM_DEBUG(dbgs() << "\n...capturing var: [" << value.second->getName() << "] value pair: " << value.first << " type: "
                                   << value.second->getType() << " readwrite: " << value.second->getReadWriteAccess() << "\n\n";);
 
-                genContext.passResult->outerVariables.insert({value.second->getName(), value});
+                genContext.passResult->outerVariables.insert({value.second->getName(), value.second});
             }
 
             // end of logic: outer vars
@@ -5467,7 +5482,7 @@ llvm.return %5 : i32
         return currentNamespace->globalsMap;
     }
 
-    auto getCaptureVarsMap() -> llvm::StringMap<llvm::StringMap<VariablePairT>> &
+    auto getCaptureVarsMap() -> llvm::StringMap<llvm::StringMap<ts::VariableDeclarationDOM::TypePtr>> &
     {
         return currentNamespace->captureVarsMap;
     }

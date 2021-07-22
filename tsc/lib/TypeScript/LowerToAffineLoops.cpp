@@ -53,7 +53,7 @@ struct ParamOpLowering : public TsPattern<mlir_ts::ParamOp>
 
     LogicalResult matchAndRewrite(mlir_ts::ParamOp paramOp, PatternRewriter &rewriter) const final
     {
-        rewriter.replaceOpWithNewOp<mlir_ts::VariableOp>(paramOp, paramOp.getType(), paramOp.argValue());
+        rewriter.replaceOpWithNewOp<mlir_ts::VariableOp>(paramOp, paramOp.getType(), paramOp.argValue(), rewriter.getBoolAttr(false));
         return success();
     }
 };
@@ -76,11 +76,11 @@ struct ParamOptionalOpLowering : public TsPattern<mlir_ts::ParamOptionalOp>
             // auto actualType = mth.convertConstTypeToType(paramOp.getType(), copyRequired);
 
             // rewriter.replaceOpWithNewOp<mlir_ts::VariableOp>(paramOp, actualType, paramOp.argValue());
-            rewriter.replaceOpWithNewOp<mlir_ts::VariableOp>(paramOp, paramOp.getType(), paramOp.argValue());
+            rewriter.replaceOpWithNewOp<mlir_ts::VariableOp>(paramOp, paramOp.getType(), paramOp.argValue(), rewriter.getBoolAttr(false));
             return success();
         }
 
-        Value variable = rewriter.create<mlir_ts::VariableOp>(location, paramOp.getType(), mlir::Value());
+        Value variable = rewriter.create<mlir_ts::VariableOp>(location, paramOp.getType(), mlir::Value(), rewriter.getBoolAttr(false));
 
         // ts.if
         auto hasValue = rewriter.create<mlir_ts::HasValueOp>(location, th.getBooleanType(), paramOp.argValue());

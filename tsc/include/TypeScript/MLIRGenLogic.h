@@ -79,7 +79,7 @@ struct PassResult
 
     mlir::Type functionReturnType;
     bool functionReturnTypeShouldBeProvided;
-    llvm::StringMap<VariablePairT> outerVariables;
+    llvm::StringMap<ts::VariableDeclarationDOM::TypePtr> outerVariables;
 };
 
 struct GenContext
@@ -202,21 +202,21 @@ class MLIRCodeLogic
         return std::make_pair(fieldIndex, elementType);
     }
 
-    mlir::Type CaptureTypeStorage(llvm::StringMap<VariablePairT> &capturedVars)
+    mlir::Type CaptureTypeStorage(llvm::StringMap<ts::VariableDeclarationDOM::TypePtr> &capturedVars)
     {
         SmallVector<mlir_ts::FieldInfo> fields;
         for (auto &varInfo : capturedVars)
         {
-            auto &actualValue = varInfo.getValue().first;
-            auto &val = varInfo.getValue().second;
-            fields.push_back(mlir_ts::FieldInfo{TupleFieldName(val->getName()), actualValue.getType()});
+            auto &value = varInfo.getValue();
+            fields.push_back(mlir_ts::FieldInfo{TupleFieldName(value->getName()),
+                                                value->getReadWriteAccess() ? mlir_ts::RefType::get(value->getType()) : value->getType()});
         }
 
         auto lambdaType = mlir_ts::TupleType::get(builder.getContext(), fields);
         return lambdaType;
     }
 
-    mlir::Type CaptureType(llvm::StringMap<VariablePairT> &capturedVars)
+    mlir::Type CaptureType(llvm::StringMap<ts::VariableDeclarationDOM::TypePtr> &capturedVars)
     {
         return mlir_ts::RefType::get(CaptureTypeStorage(capturedVars));
     }

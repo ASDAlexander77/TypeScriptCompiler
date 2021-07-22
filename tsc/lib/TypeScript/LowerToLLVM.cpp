@@ -1982,7 +1982,8 @@ struct ThrowOpLoweringVCWin32 : public TsLlvmPattern<mlir_ts::ThrowOp>
 
         // prepare first param
         // we need temp var
-        auto value = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(throwOp.exception().getType()), throwOp.exception());
+        auto value = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(throwOp.exception().getType()), throwOp.exception(),
+                                                          rewriter.getBoolAttr(false));
 
         auto throwInfoPtr = rewriter.create<mlir::ConstantOp>(loc, throwInfoPtrTy, FlatSymbolRefAttr::get(rewriter.getContext(), "_TI1N"));
 
@@ -2142,7 +2143,8 @@ struct CaptureOpLowering : public TsLlvmPattern<mlir_ts::CaptureOp>
 
         LLVM_DEBUG(llvm::dbgs() << "\n ...capture store type: " << captureStoreType << "\n\n";);
 
-        mlir::Value allocTempStorage = rewriter.create<mlir_ts::VariableOp>(location, captureRefType, mlir::Value());
+        mlir::Value allocTempStorage =
+            rewriter.create<mlir_ts::VariableOp>(location, captureRefType, mlir::Value(), rewriter.getBoolAttr(false));
 
         auto index = 0;
         for (auto val : captureOp.captured())
