@@ -910,7 +910,6 @@ class MLIRGenImpl
             LLVM_DEBUG(dbgs() << "\n +++== variable = " << effectiveName << " type: " << varType << " op: " << variableOp << "==+++ \n";);
         }
 
-        // registering variable
         auto varDecl = std::make_shared<VariableDeclarationDOM>(effectiveName, varType, location);
         if (!isConst || varClass == VariableClass::ConstRef)
         {
@@ -1356,18 +1355,6 @@ class MLIRGenImpl
 
                     funcProto->setHasCapturedVars(true);
 
-                    // change storage class for variable
-                    /*
-                    for (auto &var : passResult->outerVariables)
-                    {
-                        var.getValue()->setCaptured();
-                        if (auto variableOp = var.getValue().getDefiningOp<mlir_ts::VariableOp>())
-                        {
-                            variableOp.capturedAttr(builder.getBoolAttr(true));
-                        }
-                    }
-                    */
-
                     LLVM_DEBUG(llvm::dbgs() << "has captured vars, name: " << name << "\n";);
                 }
 
@@ -1613,13 +1600,12 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGenFunctionCaptures(FunctionPrototypeDOM::TypePtr funcProto, const GenContext &genContext)
     {
-        auto it = getCaptureVarsMap().find(funcProto->getName());
-        if (it == getCaptureVarsMap().end())
+        if (genContext.capturedVars == nullptr)
         {
             return mlir::success();
         }
 
-        auto capturedVars = it->getValue();
+        auto capturedVars = *genContext.capturedVars;
 
         NodeFactory nf(NodeFactoryFlags::None);
 
@@ -4031,7 +4017,6 @@ llvm.return %5 : i32
             }
 
             // auto isOuterFunctionScope = value.second->getFuncOp() != genContext.funcOp;
-
             if (isOuterVar && genContext.passResult)
             {
                 LLVM_DEBUG(dbgs() << "\n...capturing var: [" << value.second->getName() << "] value pair: " << value.first << " type: "
@@ -4074,11 +4059,17 @@ llvm.return %5 : i32
             for (auto &item : captureVars->getValue())
             {
                 auto varValue = mlirGen(location, item.first(), genContext);
+
                 // review capturing by ref.  it should match storage type
                 auto refValue = mcl.GetReferenceOfLoadOp(varValue);
                 if (refValue)
                 {
                     capturedValues.push_back(refValue);
+                    // set var as captures
+                    if (auto varOp = refValue.getDefiningOp<mlir_ts::VariableOp>())
+                    {
+                        varOp.capturedAttr(builder.getBoolAttr(true));
+                    }
                 }
                 else
                 {

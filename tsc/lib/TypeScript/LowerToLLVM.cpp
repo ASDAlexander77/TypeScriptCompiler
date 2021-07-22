@@ -302,12 +302,18 @@ class SizeOfOpLowering : public TsLlvmPattern<mlir_ts::SizeOfOp>
 
         auto loc = op->getLoc();
 
-        auto nullPtrToTypeValue = rewriter.create<LLVM::NullOp>(loc, LLVM::LLVMPointerType::get(tch.convertType(op.type())));
+        auto storageType = op.type();
+        auto llvmStorageType = tch.convertType(op.type());
+        auto llvmStorageTypePtr = LLVM::LLVMPointerType::get(llvmStorageType);
+        auto nullPtrToTypeValue = rewriter.create<LLVM::NullOp>(loc, llvmStorageTypePtr);
+
+        LLVM_DEBUG(llvm::dbgs() << "size of - storage type: [" << storageType << "] llvm storage type: [" << llvmStorageType
+                                << "] llvm ptr: [" << llvmStorageTypePtr << "] value: [" << nullPtrToTypeValue << "]\n";);
 
         auto cst1 = rewriter.create<LLVM::ConstantOp>(loc, th.getI64Type(), th.getIndexAttrValue(1));
-        auto sizeOffSetAddr = rewriter.create<LLVM::GEPOp>(loc, nullPtrToTypeValue.getType(), nullPtrToTypeValue, ArrayRef<Value>({cst1}));
+        auto sizeOfSetAddr = rewriter.create<LLVM::GEPOp>(loc, llvmStorageTypePtr, nullPtrToTypeValue, ArrayRef<Value>({cst1}));
 
-        rewriter.replaceOpWithNewOp<LLVM::PtrToIntOp>(op, th.getIndexType(), sizeOffSetAddr);
+        rewriter.replaceOpWithNewOp<LLVM::PtrToIntOp>(op, th.getIndexType(), sizeOfSetAddr);
 
         return success();
     }
@@ -1011,10 +1017,16 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
 
         auto location = varOp.getLoc();
 
-        auto storageType = tch.convertType(varOp.reference().getType());
-        auto allocated = varOp.captured().hasValue() && varOp.captured().getValue()
-                             ? ch.MemoryAllocBitcast(storageType, storageType, MemoryAllocSet::Zero)
-                             : rewriter.create<LLVM::AllocaOp>(location, storageType, clh.createI32ConstantOf(1));
+        auto referenceType = varOp.reference().getType().dyn_cast_or_null<mlir_ts::RefType>();
+        auto storageType = referenceType.getElementType();
+        auto llvmReferenceType = tch.convertType(referenceType);
+        // auto isCaptured = varOp.captured().hasValue() && varOp.captured().getValue();
+        auto isCaptured = true;
+
+        LLVM_DEBUG(llvm::dbgs() << ">>> variable allocation: " << storageType << "\n";);
+
+        auto allocated = isCaptured ? ch.MemoryAllocBitcast(llvmReferenceType, storageType)
+                                    : rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, clh.createI32ConstantOf(1));
 
         auto value = varOp.initializer();
         if (value)
