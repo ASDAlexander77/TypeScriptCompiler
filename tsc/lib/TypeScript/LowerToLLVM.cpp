@@ -2101,10 +2101,14 @@ struct TrampolineOpLowering : public TsLlvmPattern<mlir_ts::TrampolineOp>
 
         // allocate temp trampoline
         auto bufferType = th.getPointerType(th.getI8Array(TRAMPOLINE_BUFFER_SIZE_X64));
-        auto trampoline = rewriter.create<LLVM::AllocaOp>(location, bufferType, clh.createI32ConstantOf(1));
 
         auto const0 = clh.createI32ConstantOf(0);
-        auto trampolinePtr = rewriter.create<LLVM::GEPOp>(location, i8PtrTy, ValueRange{trampoline, const0, const0});
+
+        // auto trampoline = rewriter.create<LLVM::AllocaOp>(location, bufferType, clh.createI32ConstantOf(1));
+        // auto trampolinePtr = rewriter.create<LLVM::GEPOp>(location, i8PtrTy, ValueRange{trampoline, const0, const0});
+
+        auto trampoline = ch.MemoryAlloc(bufferType);
+        auto trampolinePtr = rewriter.create<LLVM::GEPOp>(location, i8PtrTy, ValueRange{trampoline, const0});
 
         // init trampoline
         rewriter.create<LLVM::CallOp>(

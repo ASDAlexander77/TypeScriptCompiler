@@ -54,8 +54,7 @@ function iter(max: number, fn: (v: number) => void) {
 
 function testIter() {
     x = 0;
-    // TODO: v type can be detected from function parameter type
-    iter(10, (v: number) => {
+    iter(10, (v) => {
         x = x + (v + 1);
     });
     assert(x == 55, "55");
