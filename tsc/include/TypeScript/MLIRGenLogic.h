@@ -111,6 +111,7 @@ struct GenContext
     bool dummyRun;
     bool allowConstEval;
     mlir_ts::FuncOp funcOp;
+    llvm::StringMap<ts::VariableDeclarationDOM::TypePtr> *capturedVars;
     mlir_ts::ClassType thisType;
     mlir::FunctionType destFuncType;
     mlir::Type argTypeDestFuncType;

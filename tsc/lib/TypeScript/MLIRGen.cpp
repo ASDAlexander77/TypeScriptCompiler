@@ -1460,6 +1460,13 @@ class MLIRGenImpl
         auto funcGenContext = GenContext(genContext);
         funcGenContext.funcOp = funcOp;
         funcGenContext.passResult = nullptr;
+
+        auto it = getCaptureVarsMap().find(funcProto->getName());
+        if (it != getCaptureVarsMap().end())
+        {
+            funcGenContext.capturedVars = &it->getValue();
+        }
+
         auto resultFromBody = mlirGenFunctionBody(functionLikeDeclarationBaseAST, funcOp, funcProto, funcGenContext);
         if (mlir::failed(resultFromBody))
         {
@@ -1523,15 +1530,13 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGenFunctionThisParam(mlir::Location loc, int &firstIndex, FunctionPrototypeDOM::TypePtr funcProto,
                                                  mlir::Block::BlockArgListType arguments, const GenContext &genContext)
     {
-        // register this if lambda function
-        auto it = getCaptureVarsMap().find(funcProto->getName());
-        if (it == getCaptureVarsMap().end())
+        if (genContext.capturedVars == nullptr)
         {
             return mlir::success();
         }
 
         firstIndex++;
-        auto capturedVars = it->getValue();
+        auto capturedVars = *genContext.capturedVars;
 
         auto thisParam = arguments[firstIndex];
         auto thisRefType = thisParam.getType();

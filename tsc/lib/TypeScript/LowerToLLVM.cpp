@@ -1005,13 +1005,17 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
 
     LogicalResult matchAndRewrite(mlir_ts::VariableOp varOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
     {
+        LLVMCodeHelper ch(varOp, rewriter, getTypeConverter());
         CodeLogicHelper clh(varOp, rewriter);
         TypeConverterHelper tch(getTypeConverter());
 
         auto location = varOp.getLoc();
 
-        auto allocated =
-            rewriter.create<LLVM::AllocaOp>(location, tch.convertType(varOp.reference().getType()), clh.createI32ConstantOf(1));
+        auto storageType = tch.convertType(varOp.reference().getType());
+        auto allocated = varOp.captured().hasValue() && varOp.captured().getValue()
+                             ? ch.MemoryAllocBitcast(storageType, storageType, MemoryAllocSet::Zero)
+                             : rewriter.create<LLVM::AllocaOp>(location, storageType, clh.createI32ConstantOf(1));
+
         auto value = varOp.initializer();
         if (value)
         {
