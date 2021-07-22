@@ -1015,6 +1015,7 @@ def TypeScript_CastOp : TypeScript_Op<"Cast"> {
   let assemblyFormat = "$in attr-dict `:` type($in) `to` type($res)";
 
   let hasCanonicalizer = 1;
+  let verifier = [{ return ::verify(*this); }];
 }
 
 def TypeScript_EntryOp : TypeScript_Op<"Entry"> {

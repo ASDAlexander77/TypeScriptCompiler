@@ -5300,7 +5300,13 @@ llvm.return %5 : i32
         SmallVector<mlir::Type> argTypes;
         for (auto paramItem : functionType->parameters)
         {
-            argTypes.push_back(getType(paramItem->type));
+            auto type = getType(paramItem->type);
+            if (paramItem->questionToken)
+            {
+                type = getOptionalType(type);
+            }
+
+            argTypes.push_back(type);
         }
 
         return mlir::FunctionType::get(builder.getContext(), argTypes, resultType);

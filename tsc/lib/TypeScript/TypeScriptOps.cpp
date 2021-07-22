@@ -197,9 +197,82 @@ void mlir_ts::LoadOp::getCanonicalizationPatterns(OwningRewritePatternList &resu
 // CastOp
 //===----------------------------------------------------------------------===//
 
+LogicalResult verify(mlir_ts::CastOp op)
+{
+    auto inFuncType = op.in().getType().dyn_cast_or_null<mlir::FunctionType>();
+    auto resFuncType = op.res().getType().dyn_cast_or_null<mlir::FunctionType>();
+    if (inFuncType && resFuncType)
+    {
+        if (inFuncType.getInputs().size() != resFuncType.getInputs().size())
+        {
+            return op.emitOpError("can't cast function type to other function type with different count of parameters ")
+                   << '(' << inFuncType << ") must match the "
+                   << "function type(" << resFuncType << ')';
+        }
+
+        for (unsigned i = 0, e = inFuncType.getInputs().size(); i != e; ++i)
+        {
+            if (inFuncType.getInput(i) != resFuncType.getInput(i))
+            {
+                return op.emitOpError("can't cast function type to other function type with different parameters #")
+                       << i << '(' << inFuncType.getInput(i) << ") must match the type of the corresponding argument in "
+                       << "function argument(" << resFuncType.getInput(i) << ')';
+            }
+        }
+
+        auto inRetCount = inFuncType.getResults().size();
+        auto resRetCount = resFuncType.getResults().size();
+
+        auto noneType = mlir::NoneType::get(op.getContext());
+        auto voidType = mlir_ts::VoidType::get(op.getContext());
+
+        for (auto retType : inFuncType.getResults())
+        {
+            auto isVoid = !retType || retType == noneType || retType == voidType;
+            if (isVoid)
+            {
+                inRetCount--;
+            }
+        }
+
+        for (auto retType : resFuncType.getResults())
+        {
+            auto isVoid = !retType || retType == noneType || retType == voidType;
+            if (isVoid)
+            {
+                resRetCount--;
+            }
+        }
+
+        if (inRetCount != resRetCount)
+        {
+            return op.emitOpError("can't cast function type to other function type with different count of returns ")
+                   << '(' << inFuncType << ") must match the "
+                   << "function type(" << resFuncType << ')';
+        }
+
+        for (unsigned i = 0, e = inFuncType.getResults().size(); i != e; ++i)
+        {
+            auto inRetType = inFuncType.getResult(i);
+            auto resRetType = resFuncType.getResult(i);
+
+            auto isInVoid = !inRetType || inRetType == noneType || inRetType == voidType;
+            auto isResVoid = !resRetType || resRetType == noneType || resRetType == voidType;
+            if (!isInVoid && !isResVoid && inRetType != resRetType)
+            {
+                return op.emitOpError("can't cast function type to other function type with different return types #")
+                       << i << '(' << inFuncType.getResult(i) << ") must match the return type of the corresponding return in "
+                       << "function return(" << resFuncType.getResult(i) << ')';
+            }
+        }
+    }
+
+    return success();
+}
+
 namespace
 {
-struct ConvertCastOpToFunctionCall : public OpRewritePattern<mlir_ts::CastOp>
+struct ConvertCastOpToFunctionCallOrRemoveNotNeededCasts : public OpRewritePattern<mlir_ts::CastOp>
 {
     using OpRewritePattern<mlir_ts::CastOp>::OpRewritePattern;
 
@@ -208,7 +281,12 @@ struct ConvertCastOpToFunctionCall : public OpRewritePattern<mlir_ts::CastOp>
         // TODO: finish it
         auto in = castOp.in();
         auto res = castOp.res();
-        if (auto stringType = res.getType().isa<mlir_ts::StringType>())
+
+        if (in.getType() == res.getType())
+        {
+            rewriter.replaceOp(castOp, in);
+        }
+        else if (auto stringType = res.getType().isa<mlir_ts::StringType>())
         {
             if (auto classType = in.getType().dyn_cast_or_null<mlir_ts::ClassType>())
             {
@@ -229,7 +307,7 @@ struct ConvertCastOpToFunctionCall : public OpRewritePattern<mlir_ts::CastOp>
 
 void mlir_ts::CastOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
 {
-    results.insert<ConvertCastOpToFunctionCall>(context);
+    results.insert<ConvertCastOpToFunctionCallOrRemoveNotNeededCasts>(context);
 }
 
 //===----------------------------------------------------------------------===//

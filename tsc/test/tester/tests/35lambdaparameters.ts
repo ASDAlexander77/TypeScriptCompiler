@@ -2,12 +2,12 @@ function testLambdasWithMoreParams() {
     function a(f: (x: number, v: string, y: number) => void) {
         f(1, "a" + "X12b", 7);
     }
-    a(() => {});
+    a((x: number, v: string, y: number) => {});
 }
 
 namespace Arcade1617 {
     class Foo {
-        public handlerxx: () => void;
+        public handlerxx: (win?: boolean) => void;
         run() {
             this.handlerxx();
         }

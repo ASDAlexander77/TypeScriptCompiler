@@ -14,6 +14,7 @@ namespace mlir_ts = mlir::typescript;
 
 LogicalResult verify(mlir_ts::FuncOp op);
 LogicalResult verify(mlir_ts::InvokeOp op);
+LogicalResult verify(mlir_ts::CastOp op);
 
 #define GET_TYPEDEF_CLASSES
 #include "TypeScript/TypeScriptOpsTypes.cpp.inc"
@@ -108,13 +109,13 @@ void mlir_ts::TypeScriptDialect::printType(Type type, DialectAsmPrinter &os) con
 // the declaration and definition adheres to the LLVM coding standards.
 namespace mlir
 {
-    namespace typescript
-    {
-        // FieldInfo is used as part of a parameter, so equality comparison is compulsory.
-        static bool operator==(const FieldInfo &a, const FieldInfo &b);
-        // FieldInfo is used as part of a parameter, so a hash will be computed.
-        static llvm::hash_code hash_value(const FieldInfo &fi);
-    } // namespace typescript
+namespace typescript
+{
+// FieldInfo is used as part of a parameter, so equality comparison is compulsory.
+static bool operator==(const FieldInfo &a, const FieldInfo &b);
+// FieldInfo is used as part of a parameter, so a hash will be computed.
+static llvm::hash_code hash_value(const FieldInfo &fi);
+} // namespace typescript
 } // namespace mlir
 
 // FieldInfo is used as part of a parameter, so equality comparison is
