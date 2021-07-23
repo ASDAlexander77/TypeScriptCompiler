@@ -210,7 +210,27 @@ def ClassRefOp : TypeScript_Op<"ClassRef",
   let summary = "symbol reference to class";
 
   let arguments = (ins FlatSymbolRefAttr:$identifier);
-  let results = (outs AnyType:$value);
+  let results = (outs TypeScript_Class:$value);
+
+  let builders = [
+    OpBuilder<(ins "FlatSymbolRefAttr":$identifier),
+    [{ build($_builder, $_state, identifier.getType(), identifier); }]>];
+
+  let extraClassDeclaration = [{
+    Attribute getValue() { return (*this)->getAttr("identifier"); }
+  }];
+
+  let hasCanonicalizer = 1;
+
+  let assemblyFormat = "attr-dict `:` type($value)";    
+}
+
+def InterfaceRefOp : TypeScript_Op<"InterfaceRef", 
+    [NoSideEffect]> {
+  let summary = "symbol reference to interface";
+
+  let arguments = (ins FlatSymbolRefAttr:$identifier);
+  let results = (outs TypeScript_Interface:$value);
 
   let builders = [
     OpBuilder<(ins "FlatSymbolRefAttr":$identifier),

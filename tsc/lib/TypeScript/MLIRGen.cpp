@@ -88,6 +88,70 @@ struct AccessorInfo
     bool isVirtual;
 };
 
+struct InterfaceInfo
+{
+  public:
+    using TypePtr = std::shared_ptr<InterfaceInfo>;
+
+    mlir::StringRef name;
+
+    mlir::StringRef fullName;
+
+    mlir_ts::InterfaceType interfaceType;
+
+    llvm::SmallVector<InterfaceInfo::TypePtr> implements;
+
+    llvm::SmallVector<MethodInfo> methods;
+
+    llvm::SmallVector<AccessorInfo> accessors;
+
+    InterfaceInfo()
+    {
+    }
+
+    void getVirtualTable(llvm::SmallVector<MethodInfo> &vtable)
+    {
+        for (auto &base : implements)
+        {
+            base->getVirtualTable(vtable);
+        }
+
+        // do vtable for current class
+        for (auto &method : methods)
+        {
+            auto index = std::distance(vtable.begin(), std::find_if(vtable.begin(), vtable.end(),
+                                                                    [&](auto vTableMethod) { return method.name == vTableMethod.name; }));
+            if ((size_t)index < vtable.size())
+            {
+                // found method
+                vtable[index].funcOp = method.funcOp;
+                method.isVirtual = true;
+                continue;
+            }
+
+            if (method.isVirtual)
+            {
+                method.virtualIndex = vtable.size();
+                vtable.push_back(method);
+            }
+        }
+    }
+
+    int getMethodIndex(mlir::StringRef name)
+    {
+        auto dist = std::distance(
+            methods.begin(), std::find_if(methods.begin(), methods.end(), [&](MethodInfo methodInfo) { return name == methodInfo.name; }));
+        return (signed)dist >= (signed)methods.size() ? -1 : dist;
+    }
+
+    int getAccessorIndex(mlir::StringRef name)
+    {
+        auto dist = std::distance(accessors.begin(), std::find_if(accessors.begin(), accessors.end(),
+                                                                  [&](AccessorInfo accessorInfo) { return name == accessorInfo.name; }));
+        return (signed)dist >= (signed)accessors.size() ? -1 : dist;
+    }
+};
+
 struct ClassInfo
 {
   public:
@@ -100,6 +164,8 @@ struct ClassInfo
     mlir_ts::ClassType classType;
 
     llvm::SmallVector<ClassInfo::TypePtr> baseClasses;
+
+    llvm::SmallVector<InterfaceInfo::TypePtr> implements;
 
     llvm::SmallVector<StaticFieldInfo> staticFields;
 
@@ -246,6 +312,8 @@ struct NamespaceInfo
 
     llvm::StringMap<ClassInfo::TypePtr> classesMap;
 
+    llvm::StringMap<InterfaceInfo::TypePtr> interfacesMap;
+
     llvm::StringMap<NamespaceInfo::TypePtr> namespacesMap;
 };
 
@@ -281,6 +349,7 @@ class MLIRGenImpl
         SymbolTableScopeT varScope(symbolTable);
         llvm::ScopedHashTableScope<StringRef, NamespaceInfo::TypePtr> fullNamespacesMapScope(fullNamespacesMap);
         llvm::ScopedHashTableScope<StringRef, ClassInfo::TypePtr> fullNameClassesMapScope(fullNameClassesMap);
+        llvm::ScopedHashTableScope<StringRef, InterfaceInfo::TypePtr> fullNameInterfacesMapScope(fullNameInterfacesMap);
         llvm::ScopedHashTableScope<StringRef, VariableDeclarationDOM::TypePtr> fullNameGlobalsMapScope(fullNameGlobalsMap);
 
         // Process of discovery here
@@ -612,6 +681,11 @@ class MLIRGenImpl
         {
             // declaration
             return mlirGen(statementAST.as<ClassLikeDeclaration>(), genContext);
+        }
+        else if (kind == SyntaxKind::InterfaceDeclaration)
+        {
+            // declaration
+            return mlirGen(statementAST.as<InterfaceDeclaration>(), genContext);
         }
         else if (kind == SyntaxKind::ImportEqualsDeclaration)
         {
@@ -2950,6 +3024,9 @@ llvm.return %5 : i32
                     value = ClassMembers(location, objectValue, classType.getName().getValue(), name, false, false, genContext);
                 }
             })
+            .Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
+                value = InterfaceMembers(location, objectValue, interfaceType.getName().getValue(), name, false, false, genContext);
+            })
             .Default([](auto type) { llvm_unreachable("not implemented"); });
 
         if (value || genContext.allowPartialResolve)
@@ -3155,6 +3232,29 @@ llvm.return %5 : i32
         }
 
         return false;
+    }
+
+    mlir::Value InterfaceMembers(mlir::Location location, mlir::Value interfaceValue, mlir::StringRef interfaceFullName,
+                                 mlir::StringRef name, const GenContext &genContext)
+    {
+        auto interfaceInfo = getInterfaceByFullName(interfaceFullName);
+        assert(interfaceInfo);
+
+        // static field access
+        auto value = InterfaceMembers(location, interfaceValue, interfaceInfo, name, genContext);
+        if (!value && !genContext.allowPartialResolve)
+        {
+            emitError(location, "Interface member '") << name << "' can't be found";
+        }
+
+        return value;
+    }
+
+    mlir::Value InterfaceMembers(mlir::Location location, mlir::Value interfaceValue, InterfaceInfo::TypePtr interfaceInfo,
+                                 mlir::StringRef name, const GenContext &genContext)
+    {
+        assert(interfaceInfo);
+        llvm_unreachable("not implemented");
     }
 
     template <typename T>
@@ -4136,6 +4236,24 @@ llvm.return %5 : i32
                 mlir::FlatSymbolRefAttr::get(builder.getContext(), classInfo->classType.getName().getValue()));
         }
 
+        if (getInterfacesMap().count(name))
+        {
+            auto interfaceInfo = getInterfacesMap().lookup(name);
+            if (!interfaceInfo->interfaceType)
+            {
+                if (!genContext.allowPartialResolve)
+                {
+                    emitError(location) << "can't find interface: " << name << "\n";
+                }
+
+                return mlir::Value();
+            }
+
+            return builder.create<mlir_ts::InterfaceRefOp>(
+                location, interfaceInfo->interfaceType,
+                mlir::FlatSymbolRefAttr::get(builder.getContext(), interfaceInfo->interfaceType.getName().getValue()));
+        }
+
         if (getTypeAliasMap().count(name))
         {
             auto typeAliasInfo = getTypeAliasMap().lookup(name);
@@ -4167,6 +4285,14 @@ llvm.return %5 : i32
                 return builder.create<mlir_ts::ClassRefOp>(
                     location, classInfo->classType,
                     mlir::FlatSymbolRefAttr::get(builder.getContext(), classInfo->classType.getName().getValue()));
+            }
+
+            auto interfaceInfo = getInterfaceByFullName(fullName);
+            if (interfaceInfo)
+            {
+                return builder.create<mlir_ts::InterfaceRefOp>(
+                    location, interfaceInfo->interfaceType,
+                    mlir::FlatSymbolRefAttr::get(builder.getContext(), interfaceInfo->interfaceType.getName().getValue()));
             }
 
             assert(false);
@@ -4944,6 +5070,95 @@ llvm.return %5 : i32
         return mlir::success();
     }
 
+    InterfaceInfo::TypePtr mlirGenInterfaceInfo(InterfaceDeclaration interfaceDeclarationAST, bool &declareInterface,
+                                                const GenContext &genContext)
+    {
+        declareInterface = false;
+
+        auto name = MLIRHelper::getName(interfaceDeclarationAST->name);
+        if (name.empty())
+        {
+            llvm_unreachable("not implemented");
+            return InterfaceInfo::TypePtr();
+        }
+
+        auto namePtr = StringRef(name).copy(stringAllocator);
+        auto fullNamePtr = getFullNamespaceName(namePtr);
+
+        InterfaceInfo::TypePtr newInterfacePtr;
+        if (fullNameClassesMap.count(fullNamePtr))
+        {
+            newInterfacePtr = fullNameInterfacesMap.lookup(fullNamePtr);
+            getInterfacesMap().insert({namePtr, newInterfacePtr});
+            declareInterface = !newInterfacePtr->interfaceType;
+        }
+        else
+        {
+            // register class
+            newInterfacePtr = std::make_shared<InterfaceInfo>();
+            newInterfacePtr->name = namePtr;
+            newInterfacePtr->fullName = fullNamePtr;
+
+            getInterfacesMap().insert({namePtr, newInterfacePtr});
+            fullNameInterfacesMap.insert(fullNamePtr, newInterfacePtr);
+            declareInterface = true;
+        }
+
+        return newInterfacePtr;
+    }
+
+    mlir::LogicalResult mlirGen(InterfaceDeclaration interfaceDeclarationAST, const GenContext &genContext)
+    {
+        auto location = loc(interfaceDeclarationAST);
+
+        auto declareInterface = false;
+        auto newInterfacePtr = mlirGenInterfaceInfo(interfaceDeclarationAST, declareInterface, genContext);
+        if (!newInterfacePtr)
+        {
+            return mlir::failure();
+        }
+
+        if (mlir::failed(mlirGenInterfaceType(interfaceDeclarationAST, newInterfacePtr, declareInterface, genContext)))
+        {
+            return mlir::failure();
+        }
+
+        // clear all flags
+        for (auto &interfaceMember : interfaceDeclarationAST->members)
+        {
+            interfaceMember->processed = false;
+        }
+
+        // TODO:
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult mlirGenInterfaceType(InterfaceDeclaration interfaceDeclarationAST, InterfaceInfo::TypePtr newInterfacePtr,
+                                             bool declareInterface, const GenContext &genContext)
+    {
+        MLIRCodeLogic mcl(builder);
+        SmallVector<mlir_ts::FieldInfo> fieldInfos;
+
+        if (newInterfacePtr)
+        {
+            /*
+            // add virtual table field
+            MLIRCodeLogic mcl(builder);
+            auto vtFieldId = mcl.TupleFieldName(VTABLE_NAME);
+            fieldInfos.insert(fieldInfos.begin(), {vtFieldId, getAnyType()});
+
+            auto thisFieldId = mcl.TupleFieldName(THIS_NAME);
+            fieldInfos.insert(fieldInfos.begin(), {thisFieldId, getAnyType()});
+            */
+
+            auto interfaceFullNameSymbol = mlir::FlatSymbolRefAttr::get(builder.getContext(), newInterfacePtr->fullName);
+            newInterfacePtr->interfaceType = getInterfaceType(interfaceFullNameSymbol /*, fieldInfos*/);
+        }
+
+        return mlir::success();
+    }
+
     mlir::LogicalResult getMethodNameOrPropertyName(FunctionLikeDeclarationBase funcLikeDeclaration, std::string &methodName,
                                                     std::string &propertyName)
     {
@@ -5166,6 +5381,11 @@ llvm.return %5 : i32
     mlir_ts::ClassType getClassType(mlir::FlatSymbolRefAttr name, mlir::Type storageType)
     {
         return mlir_ts::ClassType::get(name, storageType);
+    }
+
+    mlir_ts::InterfaceType getInterfaceType(mlir::FlatSymbolRefAttr name)
+    {
+        return mlir_ts::InterfaceType::get(name);
     }
 
     mlir_ts::ConstArrayType getConstArrayType(ArrayTypeNode arrayTypeAST, unsigned size)
@@ -5494,6 +5714,11 @@ llvm.return %5 : i32
         return currentNamespace->classesMap;
     }
 
+    auto getInterfacesMap() -> llvm::StringMap<InterfaceInfo::TypePtr> &
+    {
+        return currentNamespace->interfacesMap;
+    }
+
     auto getEnumsMap() -> llvm::StringMap<std::pair<mlir::Type, mlir::DictionaryAttr>> &
     {
         return currentNamespace->enumsMap;
@@ -5512,6 +5737,11 @@ llvm.return %5 : i32
     auto getClassByFullName(StringRef fullName) -> ClassInfo::TypePtr
     {
         return fullNameClassesMap.lookup(fullName);
+    }
+
+    auto getInterfaceByFullName(StringRef fullName) -> InterfaceInfo::TypePtr
+    {
+        return fullNameInterfacesMap.lookup(fullName);
     }
 
   protected:
@@ -5551,6 +5781,8 @@ llvm.return %5 : i32
     llvm::ScopedHashTable<StringRef, NamespaceInfo::TypePtr> fullNamespacesMap;
 
     llvm::ScopedHashTable<StringRef, ClassInfo::TypePtr> fullNameClassesMap;
+
+    llvm::ScopedHashTable<StringRef, InterfaceInfo::TypePtr> fullNameInterfacesMap;
 
     llvm::ScopedHashTable<StringRef, VariableDeclarationDOM::TypePtr> fullNameGlobalsMap;
 

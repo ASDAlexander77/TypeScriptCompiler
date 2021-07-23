@@ -618,7 +618,7 @@ def TypeScript_Class : TypeScript_Type<"Class"> {
   let parameters = (ins "FlatSymbolRefAttr":$name, "Type":$storageType);
 
   // We define the printer inline.
-  let printer = [{ $_printer << "class<" <<  getImpl()->name << "," << getImpl()->storageType << ">"; }];  
+  let printer = [{ $_printer << "class<" << getImpl()->name << "," << getImpl()->storageType << ">"; }];  
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$name, "Type":$storageType), [{
@@ -636,6 +636,45 @@ def TypeScript_Class : TypeScript_Type<"Class"> {
     if ($_parser.parseType(storageType)) return Type();
     if ($_parser.parseGreater()) return Type();
     return get(name.dyn_cast_or_null<FlatSymbolRefAttr>(), storageType);
+  }];  
+
+  let skipDefaultBuilders = 1;  
+}
+
+def TypeScript_Interface : TypeScript_Type<"Interface"> {
+  let mnemonic = "iface";
+
+  let description = [{
+    Syntax:
+
+    ```
+    iface-type ::= `iface`
+    ```
+
+    Examples:
+
+    ```mlir
+    iface
+    iface
+    ```
+  }];
+  let parameters = (ins "FlatSymbolRefAttr":$name);
+
+  // We define the printer inline.
+  let printer = [{ $_printer << "iface<" << getImpl()->name << ">"; }];  
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$name), [{
+      return Base::get(name.getContext(), name);
+    }]>
+  ];
+
+  // Parses the above format
+  let parser = [{
+    Attribute name;
+    if ($_parser.parseLess()) return Type();
+    if ($_parser.parseAttribute(name)) return Type();
+    return get(name.dyn_cast_or_null<FlatSymbolRefAttr>());
   }];  
 
   let skipDefaultBuilders = 1;  

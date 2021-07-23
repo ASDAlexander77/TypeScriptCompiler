@@ -176,6 +176,15 @@ void mlir_ts::ClassRefOp::getCanonicalizationPatterns(OwningRewritePatternList &
 }
 
 //===----------------------------------------------------------------------===//
+// InterfaceRefOp
+//===----------------------------------------------------------------------===//
+
+void mlir_ts::InterfaceRefOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
+{
+    results.insert<RemoveUnused<mlir_ts::InterfaceRefOp>>(context);
+}
+
+//===----------------------------------------------------------------------===//
 // NamespaceRefOp
 //===----------------------------------------------------------------------===//
 
