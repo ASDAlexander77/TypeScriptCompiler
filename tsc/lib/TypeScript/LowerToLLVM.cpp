@@ -1020,8 +1020,7 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
         auto referenceType = varOp.reference().getType().dyn_cast_or_null<mlir_ts::RefType>();
         auto storageType = referenceType.getElementType();
         auto llvmReferenceType = tch.convertType(referenceType);
-        // auto isCaptured = varOp.captured().hasValue() && varOp.captured().getValue();
-        auto isCaptured = true;
+        auto isCaptured = varOp.captured().hasValue() && varOp.captured().getValue();
 
         LLVM_DEBUG(llvm::dbgs() << ">>> variable allocation: " << storageType << "\n";);
 
@@ -2117,7 +2116,7 @@ struct TrampolineOpLowering : public TsLlvmPattern<mlir_ts::TrampolineOp>
         auto enableExecuteStackFuncOp = ch.getOrInsertFunction("__enable_execute_stack", th.getFunctionType(th.getVoidType(), {i8PtrTy}));
 
         // allocate temp trampoline
-        auto bufferType = th.getPointerType(th.getI8Array(TRAMPOLINE_BUFFER_SIZE_X64));
+        auto bufferType = th.getPointerType(th.getI8Array(TRAMPOLINE_SIZE));
 
         auto const0 = clh.createI32ConstantOf(0);
 

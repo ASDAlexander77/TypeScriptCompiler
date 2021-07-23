@@ -15,7 +15,12 @@
 #define LCONSTRUCTOR_NAME L"constructor"
 #define LCONSTRUCTOR_TEMPVAR_NAME L".ctor"
 #define MAIN_ENTRY_NAME "main"
-#define TRAMPOLINE_BUFFER_SIZE_X64 24
 #define TS_NEST_ATTRIBUTE "ts.nest"
+
+#if __LP64__
+#define TRAMPOLINE_SIZE 48
+#else
+#define TRAMPOLINE_SIZE 40
+#endif
 
 #endif // DEFINES_H_

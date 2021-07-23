@@ -48,6 +48,7 @@ function main() {
 
     s2 = "";
     for (let i = 0; i < 3; i++) {
+        // TODO: this code breaks execution, i think because of variable i or copy in stack which is cleared after exiting
         let copy = i;
         control.runInBackground(() => {
             pause(10 * copy + 1);
