@@ -1,3 +1,8 @@
+//#define ALLOC_ALL_VARS_IN_HEAP 1
+//#define ALLOC_CAPTURED_VARS_IN_HEAP 1
+//#define ALLOC_CAPTURE_IN_HEAP 1
+// TODO: if I uncomment it, it will create errors in capture vars. calls. find out why? (wrong size of buffers?)
+//#define ALLOC_TRAMPOLINE_IN_HEAP 1
 #define DEBUG_TYPE "llvm"
 
 #include "TypeScript/Defines.h"
@@ -1020,9 +1025,16 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
         auto referenceType = varOp.reference().getType().dyn_cast_or_null<mlir_ts::RefType>();
         auto storageType = referenceType.getElementType();
         auto llvmReferenceType = tch.convertType(referenceType);
-        auto isCaptured = varOp.captured().hasValue() && varOp.captured().getValue();
 
-        LLVM_DEBUG(llvm::dbgs() << ">>> variable allocation: " << storageType << "\n";);
+#ifdef ALLOC_ALL_VARS_IN_HEAP
+        auto isCaptured = varOp.captured().hasValue() && varOp.captured().getValue();
+#elif ALLOC_CAPTURED_VARS_IN_HEAP
+        auto isCaptured = true;
+#else
+        auto isCaptured = false;
+#endif
+
+        LLVM_DEBUG(llvm::dbgs() << ">>> variable allocation: " << storageType << " is captured: " << isCaptured << "\n";);
 
         auto allocated = isCaptured ? ch.MemoryAllocBitcast(llvmReferenceType, storageType)
                                     : rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, clh.createI32ConstantOf(1));
@@ -2118,13 +2130,13 @@ struct TrampolineOpLowering : public TsLlvmPattern<mlir_ts::TrampolineOp>
         // allocate temp trampoline
         auto bufferType = th.getPointerType(th.getI8Array(TRAMPOLINE_SIZE));
 
+#ifdef ALLOC_TRAMPOLINE_IN_HEAP
+        auto trampolinePtr = ch.MemoryAlloc(bufferType);
+#else
+        auto trampoline = rewriter.create<LLVM::AllocaOp>(location, bufferType, clh.createI32ConstantOf(1));
         auto const0 = clh.createI32ConstantOf(0);
-
-        // auto trampoline = rewriter.create<LLVM::AllocaOp>(location, bufferType, clh.createI32ConstantOf(1));
-        // auto trampolinePtr = rewriter.create<LLVM::GEPOp>(location, i8PtrTy, ValueRange{trampoline, const0, const0});
-
-        auto trampoline = ch.MemoryAlloc(bufferType);
-        auto trampolinePtr = rewriter.create<LLVM::GEPOp>(location, i8PtrTy, ValueRange{trampoline, const0});
+        auto trampolinePtr = rewriter.create<LLVM::GEPOp>(location, i8PtrTy, ValueRange{trampoline, const0, const0});
+#endif
 
         // init trampoline
         rewriter.create<LLVM::CallOp>(
@@ -2158,8 +2170,14 @@ struct CaptureOpLowering : public TsLlvmPattern<mlir_ts::CaptureOp>
 
         LLVM_DEBUG(llvm::dbgs() << "\n ...capture store type: " << captureStoreType << "\n\n";);
 
+        // true => we need to allocate capture in heap memory
+#ifdef ALLOC_CAPTURE_IN_HEAP
+        auto inHeapMemory = true;
+#else
+        auto inHeapMemory = false;
+#endif
         mlir::Value allocTempStorage =
-            rewriter.create<mlir_ts::VariableOp>(location, captureRefType, mlir::Value(), rewriter.getBoolAttr(false));
+            rewriter.create<mlir_ts::VariableOp>(location, captureRefType, mlir::Value(), rewriter.getBoolAttr(inHeapMemory));
 
         auto index = 0;
         for (auto val : captureOp.captured())
