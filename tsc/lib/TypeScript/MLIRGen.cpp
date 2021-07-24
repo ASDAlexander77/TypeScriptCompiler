@@ -1222,44 +1222,18 @@ class MLIRGenImpl
         return params;
     }
 
-    std::tuple<FunctionPrototypeDOM::TypePtr, mlir::FunctionType, SmallVector<mlir::Type>> mlirGenFunctionSignaturePrototype(
-        SignatureDeclarationBase signatureDeclarationBaseAST, const GenContext &genContext)
+    std::tuple<std::string, std::string> getNameOfFunction(SignatureDeclarationBase signatureDeclarationBaseAST,
+                                                           const GenContext &genContext)
     {
-        std::vector<FunctionParamDOM::TypePtr> params = mlirGenParameters(signatureDeclarationBaseAST, genContext);
-        SmallVector<mlir::Type> argTypes;
-        auto argNumber = 0;
-
-        mlir::FunctionType funcType;
-
-        for (const auto &param : params)
+        std::string fullName = MLIRHelper::getName(signatureDeclarationBaseAST->name);
+        std::string objectOwnerName;
+        if (signatureDeclarationBaseAST->parent.is<ClassDeclaration>())
         {
-            auto paramType = param->getType();
-            if (!paramType)
-            {
-                return std::make_tuple(FunctionPrototypeDOM::TypePtr(nullptr), funcType, SmallVector<mlir::Type>{});
-            }
-
-            if (param->getIsOptional())
-            {
-                argTypes.push_back(getOptionalType(paramType));
-            }
-            else
-            {
-                argTypes.push_back(paramType);
-            }
-
-            argNumber++;
+            objectOwnerName = MLIRHelper::getName(signatureDeclarationBaseAST->parent.as<ClassDeclaration>()->name);
         }
-
-        auto fullName = MLIRHelper::getName(signatureDeclarationBaseAST->name);
-        auto objectOwnerName = std::string();
-        if (auto classDeclaration = signatureDeclarationBaseAST->parent.as<ClassDeclaration>())
+        else if (signatureDeclarationBaseAST->parent.is<InterfaceDeclaration>())
         {
-            objectOwnerName = MLIRHelper::getName(classDeclaration->name);
-        }
-        else if (auto interfaceDeclaration = signatureDeclarationBaseAST->parent.as<InterfaceDeclaration>())
-        {
-            objectOwnerName = MLIRHelper::getName(interfaceDeclaration->name);
+            objectOwnerName = MLIRHelper::getName(signatureDeclarationBaseAST->parent.as<InterfaceDeclaration>()->name);
         }
 
         if (signatureDeclarationBaseAST == SyntaxKind::MethodDeclaration || signatureDeclarationBaseAST == SyntaxKind::MethodSignature)
@@ -1296,6 +1270,42 @@ class MLIRGenImpl
             fullName = getFullNamespaceName(name).str();
         }
 
+        return std::make_tuple(fullName, name);
+    }
+
+    std::tuple<FunctionPrototypeDOM::TypePtr, mlir::FunctionType, SmallVector<mlir::Type>> mlirGenFunctionSignaturePrototype(
+        SignatureDeclarationBase signatureDeclarationBaseAST, const GenContext &genContext)
+    {
+        auto res = getNameOfFunction(signatureDeclarationBaseAST, genContext);
+        auto fullName = std::get<0>(res);
+        auto name = std::get<1>(res);
+
+        auto params = mlirGenParameters(signatureDeclarationBaseAST, genContext);
+        SmallVector<mlir::Type> argTypes;
+        auto argNumber = 0;
+
+        mlir::FunctionType funcType;
+
+        for (const auto &param : params)
+        {
+            auto paramType = param->getType();
+            if (!paramType)
+            {
+                return std::make_tuple(FunctionPrototypeDOM::TypePtr(nullptr), funcType, SmallVector<mlir::Type>{});
+            }
+
+            if (param->getIsOptional())
+            {
+                argTypes.push_back(getOptionalType(paramType));
+            }
+            else
+            {
+                argTypes.push_back(paramType);
+            }
+
+            argNumber++;
+        }
+
         auto funcProto = std::make_shared<FunctionPrototypeDOM>(fullName, params);
 
         funcProto->setNameWithoutNamespace(name);
@@ -1312,6 +1322,13 @@ class MLIRGenImpl
             }
 
             funcType = cachedFuncType;
+        }
+        else if (auto typeParameter = signatureDeclarationBaseAST->type)
+        {
+            auto returnType = getType(typeParameter);
+            funcProto->setReturnType(returnType);
+
+            funcType = builder.getFunctionType(argTypes, returnType);
         }
 
         return std::make_tuple(funcProto, funcType, argTypes);
