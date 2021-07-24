@@ -94,6 +94,13 @@ struct InterfaceFieldInfo
     mlir::Type type;
 };
 
+struct InterfaceMethodInfo
+{
+    std::string name;
+    mlir::FunctionType funcType;
+    int virtualIndex;
+};
+
 struct InterfaceInfo
 {
   public:
@@ -109,13 +116,13 @@ struct InterfaceInfo
 
     llvm::SmallVector<InterfaceFieldInfo> fields;
 
-    llvm::SmallVector<MethodInfo> methods;
+    llvm::SmallVector<InterfaceMethodInfo> methods;
 
     InterfaceInfo()
     {
     }
 
-    void getVirtualTable(llvm::SmallVector<MethodInfo> &vtable)
+    void getVirtualTable(llvm::SmallVector<InterfaceMethodInfo> &vtable)
     {
         for (auto &base : implements)
         {
@@ -130,23 +137,18 @@ struct InterfaceInfo
             if ((size_t)index < vtable.size())
             {
                 // found method
-                vtable[index].funcOp = method.funcOp;
-                method.isVirtual = true;
                 continue;
             }
 
-            if (method.isVirtual)
-            {
-                method.virtualIndex = vtable.size();
-                vtable.push_back(method);
-            }
+            method.virtualIndex = vtable.size();
+            vtable.push_back(method);
         }
     }
 
     int getMethodIndex(mlir::StringRef name)
     {
-        auto dist = std::distance(
-            methods.begin(), std::find_if(methods.begin(), methods.end(), [&](MethodInfo methodInfo) { return name == methodInfo.name; }));
+        auto dist = std::distance(methods.begin(), std::find_if(methods.begin(), methods.end(),
+                                                                [&](InterfaceMethodInfo methodInfo) { return name == methodInfo.name; }));
         return (signed)dist >= (signed)methods.size() ? -1 : dist;
     }
 
@@ -1220,21 +1222,21 @@ class MLIRGenImpl
         return params;
     }
 
-    std::tuple<mlir_ts::FuncOp, FunctionPrototypeDOM::TypePtr, bool> mlirGenFunctionPrototype(
-        FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
+    std::tuple<FunctionPrototypeDOM::TypePtr, mlir::FunctionType, SmallVector<mlir::Type>> mlirGenFunctionSignaturePrototype(
+        SignatureDeclarationBase signatureDeclarationBaseAST, const GenContext &genContext)
     {
-        auto location = loc(functionLikeDeclarationBaseAST);
-
-        std::vector<FunctionParamDOM::TypePtr> params = mlirGenParameters(functionLikeDeclarationBaseAST, genContext);
+        std::vector<FunctionParamDOM::TypePtr> params = mlirGenParameters(signatureDeclarationBaseAST, genContext);
         SmallVector<mlir::Type> argTypes;
         auto argNumber = 0;
+
+        mlir::FunctionType funcType;
 
         for (const auto &param : params)
         {
             auto paramType = param->getType();
             if (!paramType)
             {
-                return std::make_tuple(mlir_ts::FuncOp(), FunctionPrototypeDOM::TypePtr(nullptr), false);
+                return std::make_tuple(FunctionPrototypeDOM::TypePtr(nullptr), funcType, SmallVector<mlir::Type>{});
             }
 
             if (param->getIsOptional())
@@ -1249,30 +1251,36 @@ class MLIRGenImpl
             argNumber++;
         }
 
-        auto fullName = MLIRHelper::getName(functionLikeDeclarationBaseAST->name);
-        if (functionLikeDeclarationBaseAST == SyntaxKind::MethodDeclaration)
+        auto fullName = MLIRHelper::getName(signatureDeclarationBaseAST->name);
+        auto objectOwnerName = std::string();
+        if (auto classDeclaration = signatureDeclarationBaseAST->parent.as<ClassDeclaration>())
         {
-            // class method name
-            auto className = MLIRHelper::getName(functionLikeDeclarationBaseAST->parent.as<ClassDeclaration>()->name);
-            fullName = className + "." + fullName;
+            objectOwnerName = MLIRHelper::getName(classDeclaration->name);
         }
-        else if (functionLikeDeclarationBaseAST == SyntaxKind::GetAccessor)
+        else if (auto interfaceDeclaration = signatureDeclarationBaseAST->parent.as<InterfaceDeclaration>())
         {
-            // class method name
-            auto className = MLIRHelper::getName(functionLikeDeclarationBaseAST->parent.as<ClassDeclaration>()->name);
-            fullName = className + ".get_" + fullName;
+            objectOwnerName = MLIRHelper::getName(interfaceDeclaration->name);
         }
-        else if (functionLikeDeclarationBaseAST == SyntaxKind::SetAccessor)
+
+        if (signatureDeclarationBaseAST == SyntaxKind::MethodDeclaration)
         {
             // class method name
-            auto className = MLIRHelper::getName(functionLikeDeclarationBaseAST->parent.as<ClassDeclaration>()->name);
-            fullName = className + ".set_" + fullName;
+            fullName = objectOwnerName + "." + fullName;
         }
-        else if (functionLikeDeclarationBaseAST == SyntaxKind::Constructor)
+        else if (signatureDeclarationBaseAST == SyntaxKind::GetAccessor)
         {
             // class method name
-            auto className = MLIRHelper::getName(functionLikeDeclarationBaseAST->parent.as<ClassDeclaration>()->name);
-            fullName = className + "." + CONSTRUCTOR_NAME;
+            fullName = objectOwnerName + ".get_" + fullName;
+        }
+        else if (signatureDeclarationBaseAST == SyntaxKind::SetAccessor)
+        {
+            // class method name
+            fullName = objectOwnerName + ".set_" + fullName;
+        }
+        else if (signatureDeclarationBaseAST == SyntaxKind::Constructor)
+        {
+            // class method name
+            fullName = objectOwnerName + "." + CONSTRUCTOR_NAME;
         }
 
         auto name = fullName;
@@ -1280,7 +1288,7 @@ class MLIRGenImpl
         {
             // auto calculate name
             std::stringstream ssName;
-            ssName << "__uf" << hash_value(location);
+            ssName << "__uf" << hash_value(loc(signatureDeclarationBaseAST));
             name = fullName = ssName.str();
         }
         else
@@ -1291,8 +1299,6 @@ class MLIRGenImpl
         auto funcProto = std::make_shared<FunctionPrototypeDOM>(fullName, params);
 
         funcProto->setNameWithoutNamespace(name);
-
-        mlir::FunctionType funcType;
 
         // check if function already discovered
         auto funcIt = getFunctionMap().find(name);
@@ -1308,7 +1314,26 @@ class MLIRGenImpl
             funcType = cachedFuncType;
         }
 
+        return std::make_tuple(funcProto, funcType, argTypes);
+    }
+
+    std::tuple<mlir_ts::FuncOp, FunctionPrototypeDOM::TypePtr, bool> mlirGenFunctionPrototype(
+        FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
+    {
+        auto location = loc(functionLikeDeclarationBaseAST);
+
         mlir_ts::FuncOp funcOp;
+
+        auto res = mlirGenFunctionSignaturePrototype(functionLikeDeclarationBaseAST, genContext);
+        auto funcProto = std::get<0>(res);
+        if (!funcProto)
+        {
+            return std::make_tuple(funcOp, funcProto, false);
+        }
+
+        auto funcType = std::get<1>(res);
+        auto argTypes = std::get<2>(res);
+        auto fullName = funcProto->getName();
 
         // discover type & args
         if (!funcType)
@@ -3266,15 +3291,14 @@ llvm.return %5 : i32
         if (methodIndex >= 0)
         {
             auto methodInfo = interfaceInfo->methods[methodIndex];
-            auto funcOp = methodInfo.funcOp;
-            auto effectiveFuncType = funcOp.getType();
+            auto effectiveFuncType = methodInfo.funcType;
 
             // adding call of ctor
             NodeFactory nf(NodeFactoryFlags::None);
 
             auto interfaceSymbolRefOp = builder.create<mlir_ts::InterfaceSymbolRefOp>(
                 location, effectiveFuncType, interfaceValue, builder.getI32IntegerAttr(methodInfo.virtualIndex),
-                mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
+                mlir::FlatSymbolRefAttr::get(builder.getContext(), methodInfo.name));
             return interfaceSymbolRefOp;
         }
 
@@ -5258,10 +5282,10 @@ llvm.return %5 : i32
 
         if (interfaceMember == SyntaxKind::MethodSignature)
         {
-            auto funcLikeDeclaration = interfaceMember.as<FunctionLikeDeclarationBase>();
+            auto methodSignature = interfaceMember.as<MethodSignature>();
             std::string methodName;
             std::string propertyName;
-            getMethodNameOrPropertyName(funcLikeDeclaration, methodName, propertyName);
+            getMethodNameOrPropertyName(methodSignature, methodName, propertyName);
 
             if (methodName.empty())
             {
@@ -5275,44 +5299,45 @@ llvm.return %5 : i32
             funcGenContext.thisType = newInterfacePtr->interfaceType;
             funcGenContext.passResult = nullptr;
 
-            auto funcOp = mlirGenFunctionLikeDeclaration(funcLikeDeclaration, funcGenContext);
+            auto res = mlirGenFunctionSignaturePrototype(methodSignature, funcGenContext);
+            auto funcType = std::get<1>(res);
 
-            if (!funcOp)
+            if (!funcType)
             {
                 return mlir::failure();
             }
 
-            funcLikeDeclaration->processed = true;
+            methodSignature->processed = true;
 
             if (declareInterface)
             {
-                methodInfos.push_back({methodName, funcOp, false, true});
+                methodInfos.push_back({methodName, funcType});
             }
         }
 
         return mlir::success();
     }
 
-    mlir::LogicalResult getMethodNameOrPropertyName(FunctionLikeDeclarationBase funcLikeDeclaration, std::string &methodName,
+    mlir::LogicalResult getMethodNameOrPropertyName(SignatureDeclarationBase methodSignature, std::string &methodName,
                                                     std::string &propertyName)
     {
-        if (funcLikeDeclaration == SyntaxKind::Constructor)
+        if (methodSignature == SyntaxKind::Constructor)
         {
             methodName = std::string(CONSTRUCTOR_NAME);
         }
-        else if (funcLikeDeclaration == SyntaxKind::GetAccessor)
+        else if (methodSignature == SyntaxKind::GetAccessor)
         {
-            propertyName = MLIRHelper::getName(funcLikeDeclaration->name);
+            propertyName = MLIRHelper::getName(methodSignature->name);
             methodName = std::string("get_") + propertyName;
         }
-        else if (funcLikeDeclaration == SyntaxKind::SetAccessor)
+        else if (methodSignature == SyntaxKind::SetAccessor)
         {
-            propertyName = MLIRHelper::getName(funcLikeDeclaration->name);
+            propertyName = MLIRHelper::getName(methodSignature->name);
             methodName = std::string("set_") + propertyName;
         }
         else
         {
-            methodName = MLIRHelper::getName(funcLikeDeclaration->name);
+            methodName = MLIRHelper::getName(methodSignature->name);
         }
 
         return mlir::success();
