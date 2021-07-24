@@ -4385,14 +4385,14 @@ llvm.return %5 : i32
         {
             return builder.create<mlir_ts::ClassRefOp>(
                 location, genContext.thisType,
-                mlir::FlatSymbolRefAttr::get(builder.getContext(), genContext.thisType.getName().getValue()));
+                mlir::FlatSymbolRefAttr::get(builder.getContext(), genContext.thisType.cast<mlir_ts::ClassType>().getName().getValue()));
         }
 
         if (genContext.thisType && name == SUPER_NAME)
         {
             auto thisValue = mlirGen(location, THIS_NAME, genContext);
 
-            auto classInfo = getClassByFullName(genContext.thisType.getName().getValue());
+            auto classInfo = getClassByFullName(genContext.thisType.cast<mlir_ts::ClassType>().getName().getValue());
             auto baseClassInfo = classInfo->baseClasses.front();
 
             return mlirGenPropertyAccessExpression(location, thisValue, baseClassInfo->fullName, genContext);
@@ -4614,7 +4614,7 @@ llvm.return %5 : i32
             // repeat if not all resolved
             if (lastTimeNotResolved > 0 && lastTimeNotResolved == notResolved)
             {
-                // class can depends on other class declarations
+                // class can depend on other class declarations
                 // theModule.emitError("can't resolve dependencies in class: ") << newClassPtr->name;
                 return mlir::failure();
             }
@@ -5147,7 +5147,31 @@ llvm.return %5 : i32
             interfaceMember->processed = false;
         }
 
-        // TODO:
+        // add methods when we have classType
+        auto notResolved = 0;
+        do
+        {
+            auto lastTimeNotResolved = notResolved;
+            notResolved = 0;
+
+            for (auto &interfaceMember : interfaceDeclarationAST->members)
+            {
+                if (mlir::failed(mlirGenInterfaceMethodMember(interfaceDeclarationAST, newInterfacePtr, interfaceMember, declareInterface,
+                                                              genContext)))
+                {
+                    notResolved++;
+                }
+            }
+
+            // repeat if not all resolved
+            if (lastTimeNotResolved > 0 && lastTimeNotResolved == notResolved)
+            {
+                // interface can depend on other interface declarations
+                // theModule.emitError("can't resolve dependencies in intrerface: ") << newInterfacePtr->name;
+                return mlir::failure();
+            }
+
+        } while (notResolved > 0);
 
         return mlir::success();
     }
@@ -5172,6 +5196,62 @@ llvm.return %5 : i32
 
             auto interfaceFullNameSymbol = mlir::FlatSymbolRefAttr::get(builder.getContext(), newInterfacePtr->fullName);
             newInterfacePtr->interfaceType = getInterfaceType(interfaceFullNameSymbol /*, fieldInfos*/);
+        }
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult mlirGenInterfaceMethodMember(InterfaceDeclaration interfaceDeclarationAST, InterfaceInfo::TypePtr newInterfacePtr,
+                                                     TypeElement interfaceMember, bool declareInterface, const GenContext &genContext)
+    {
+        if (interfaceMember->processed)
+        {
+            return mlir::success();
+        }
+
+        auto location = loc(interfaceMember);
+
+        auto &methodInfos = newInterfacePtr->methods;
+
+        mlir::Value initValue;
+        mlir::Attribute fieldId;
+        mlir::Type type;
+        StringRef memberNamePtr;
+
+        if (interfaceMember == SyntaxKind::MethodDeclaration || interfaceMember == SyntaxKind::GetAccessor ||
+            interfaceMember == SyntaxKind::SetAccessor)
+        {
+            auto funcLikeDeclaration = interfaceMember.as<FunctionLikeDeclarationBase>();
+            std::string methodName;
+            std::string propertyName;
+            getMethodNameOrPropertyName(funcLikeDeclaration, methodName, propertyName);
+
+            if (methodName.empty())
+            {
+                llvm_unreachable("not implemented");
+                return mlir::failure();
+            }
+
+            interfaceMember->parent = interfaceMember;
+
+            auto funcGenContext = GenContext(genContext);
+            funcGenContext.thisType = newInterfacePtr->interfaceType;
+            funcGenContext.passResult = nullptr;
+
+            auto funcOp = mlirGenFunctionLikeDeclaration(funcLikeDeclaration, funcGenContext);
+
+            if (!funcOp)
+            {
+                return mlir::failure();
+            }
+
+            funcLikeDeclaration->processed = true;
+
+            if (declareInterface)
+            {
+                methodInfos.push_back({methodName, funcOp, false, true});
+                addAccessor(newInterfacePtr, interfaceMember, propertyName, funcOp, false, true);
+            }
         }
 
         return mlir::success();
@@ -5223,6 +5303,30 @@ llvm.return %5 : i32
         else if (classMember == SyntaxKind::SetAccessor)
         {
             newClassPtr->accessors[accessorIndex].set = funcOp;
+        }
+    }
+
+    void addAccessor(InterfaceInfo::TypePtr newInterfacePtr, TypeElement interfaceMember, std::string &propertyName, mlir_ts::FuncOp funcOp,
+                     bool isStatic, bool isVirtual)
+    {
+        auto &accessorInfos = newInterfacePtr->accessors;
+
+        auto accessorIndex = newInterfacePtr->getAccessorIndex(propertyName);
+        if (accessorIndex < 0)
+        {
+            accessorInfos.push_back({propertyName, {}, {}, isStatic, isVirtual});
+            accessorIndex = newInterfacePtr->getAccessorIndex(propertyName);
+        }
+
+        assert(accessorIndex >= 0);
+
+        if (interfaceMember == SyntaxKind::GetAccessor)
+        {
+            newInterfacePtr->accessors[accessorIndex].get = funcOp;
+        }
+        else if (interfaceMember == SyntaxKind::SetAccessor)
+        {
+            newInterfacePtr->accessors[accessorIndex].set = funcOp;
         }
     }
 
