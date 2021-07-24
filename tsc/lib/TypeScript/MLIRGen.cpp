@@ -1262,7 +1262,7 @@ class MLIRGenImpl
             objectOwnerName = MLIRHelper::getName(interfaceDeclaration->name);
         }
 
-        if (signatureDeclarationBaseAST == SyntaxKind::MethodDeclaration)
+        if (signatureDeclarationBaseAST == SyntaxKind::MethodDeclaration || signatureDeclarationBaseAST == SyntaxKind::MethodSignature)
         {
             // class method name
             fullName = objectOwnerName + "." + fullName;
@@ -5293,7 +5293,7 @@ llvm.return %5 : i32
                 return mlir::failure();
             }
 
-            interfaceMember->parent = interfaceMember;
+            interfaceMember->parent = interfaceDeclarationAST;
 
             auto funcGenContext = GenContext(genContext);
             funcGenContext.thisType = newInterfacePtr->interfaceType;
