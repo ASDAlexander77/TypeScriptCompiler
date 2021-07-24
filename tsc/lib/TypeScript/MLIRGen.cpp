@@ -88,6 +88,12 @@ struct AccessorInfo
     bool isVirtual;
 };
 
+struct InterfaceFieldInfo
+{
+    mlir::Attribute id;
+    mlir::Type type;
+};
+
 struct InterfaceInfo
 {
   public:
@@ -101,9 +107,9 @@ struct InterfaceInfo
 
     llvm::SmallVector<InterfaceInfo::TypePtr> implements;
 
-    llvm::SmallVector<MethodInfo> methods;
+    llvm::SmallVector<InterfaceFieldInfo> fields;
 
-    llvm::SmallVector<AccessorInfo> accessors;
+    llvm::SmallVector<MethodInfo> methods;
 
     InterfaceInfo()
     {
@@ -144,11 +150,11 @@ struct InterfaceInfo
         return (signed)dist >= (signed)methods.size() ? -1 : dist;
     }
 
-    int getAccessorIndex(mlir::StringRef name)
+    int getFieldIndex(mlir::Attribute id)
     {
-        auto dist = std::distance(accessors.begin(), std::find_if(accessors.begin(), accessors.end(),
-                                                                  [&](AccessorInfo accessorInfo) { return name == accessorInfo.name; }));
-        return (signed)dist >= (signed)accessors.size() ? -1 : dist;
+        auto dist = std::distance(
+            fields.begin(), std::find_if(fields.begin(), fields.end(), [&](InterfaceFieldInfo fieldInfo) { return id == fieldInfo.id; }));
+        return (signed)dist >= (signed)fields.size() ? -1 : dist;
     }
 };
 
@@ -5211,6 +5217,7 @@ llvm.return %5 : i32
 
         auto location = loc(interfaceMember);
 
+        auto &fieldInfos = newInterfacePtr->fields;
         auto &methodInfos = newInterfacePtr->methods;
 
         mlir::Value initValue;
@@ -5218,8 +5225,38 @@ llvm.return %5 : i32
         mlir::Type type;
         StringRef memberNamePtr;
 
-        if (interfaceMember == SyntaxKind::MethodDeclaration || interfaceMember == SyntaxKind::GetAccessor ||
-            interfaceMember == SyntaxKind::SetAccessor)
+        MLIRCodeLogic mcl(builder);
+        auto noneType = mlir::NoneType::get(builder.getContext());
+
+        if (declareInterface && interfaceMember == SyntaxKind::PropertySignature)
+        {
+            // property declaration
+            auto propertyDeclaration = interfaceMember.as<PropertySignature>();
+
+            auto memberName = MLIRHelper::getName(propertyDeclaration->name);
+            if (memberName.empty())
+            {
+                llvm_unreachable("not implemented");
+                return mlir::failure();
+            }
+
+            memberNamePtr = StringRef(memberName).copy(stringAllocator);
+            fieldId = mcl.TupleFieldName(memberNamePtr);
+
+            auto typeAndInit = getTypeAndInit(propertyDeclaration, genContext);
+            type = typeAndInit.first;
+
+            LLVM_DEBUG(dbgs() << "\n+++ interface field: " << fieldId << " type: " << type << "\n\n");
+
+            if (!type || type == noneType)
+            {
+                return mlir::failure();
+            }
+
+            fieldInfos.push_back({fieldId, type});
+        }
+
+        if (interfaceMember == SyntaxKind::MethodSignature)
         {
             auto funcLikeDeclaration = interfaceMember.as<FunctionLikeDeclarationBase>();
             std::string methodName;
@@ -5250,7 +5287,6 @@ llvm.return %5 : i32
             if (declareInterface)
             {
                 methodInfos.push_back({methodName, funcOp, false, true});
-                addAccessor(newInterfacePtr, interfaceMember, propertyName, funcOp, false, true);
             }
         }
 
@@ -5303,30 +5339,6 @@ llvm.return %5 : i32
         else if (classMember == SyntaxKind::SetAccessor)
         {
             newClassPtr->accessors[accessorIndex].set = funcOp;
-        }
-    }
-
-    void addAccessor(InterfaceInfo::TypePtr newInterfacePtr, TypeElement interfaceMember, std::string &propertyName, mlir_ts::FuncOp funcOp,
-                     bool isStatic, bool isVirtual)
-    {
-        auto &accessorInfos = newInterfacePtr->accessors;
-
-        auto accessorIndex = newInterfacePtr->getAccessorIndex(propertyName);
-        if (accessorIndex < 0)
-        {
-            accessorInfos.push_back({propertyName, {}, {}, isStatic, isVirtual});
-            accessorIndex = newInterfacePtr->getAccessorIndex(propertyName);
-        }
-
-        assert(accessorIndex >= 0);
-
-        if (interfaceMember == SyntaxKind::GetAccessor)
-        {
-            newInterfacePtr->accessors[accessorIndex].get = funcOp;
-        }
-        else if (interfaceMember == SyntaxKind::SetAccessor)
-        {
-            newInterfacePtr->accessors[accessorIndex].set = funcOp;
         }
     }
 
