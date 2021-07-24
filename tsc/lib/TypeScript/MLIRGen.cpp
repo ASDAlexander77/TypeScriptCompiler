@@ -3025,7 +3025,7 @@ llvm.return %5 : i32
                 }
             })
             .Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
-                value = InterfaceMembers(location, objectValue, interfaceType.getName().getValue(), name, false, false, genContext);
+                value = InterfaceMembers(location, objectValue, interfaceType.getName().getValue(), name, genContext);
             })
             .Default([](auto type) { llvm_unreachable("not implemented"); });
 
@@ -3254,7 +3254,25 @@ llvm.return %5 : i32
                                  mlir::StringRef name, const GenContext &genContext)
     {
         assert(interfaceInfo);
-        llvm_unreachable("not implemented");
+
+        // check method access
+        auto methodIndex = interfaceInfo->getMethodIndex(name);
+        if (methodIndex >= 0)
+        {
+            auto methodInfo = interfaceInfo->methods[methodIndex];
+            auto funcOp = methodInfo.funcOp;
+            auto effectiveFuncType = funcOp.getType();
+
+            // adding call of ctor
+            NodeFactory nf(NodeFactoryFlags::None);
+
+            auto interfaceSymbolRefOp = builder.create<mlir_ts::InterfaceSymbolRefOp>(
+                location, effectiveFuncType, interfaceValue, builder.getI32IntegerAttr(methodInfo.virtualIndex),
+                mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
+            return interfaceSymbolRefOp;
+        }
+
+        return mlir::Value();
     }
 
     template <typename T>

@@ -174,6 +174,26 @@ def ThisAccessorRefOp : TypeScript_Op<"ThisAccessorRef",
   let assemblyFormat = "`(` $thisVal `:` type($thisVal) `)` $getAccessor $setAccessor attr-dict `:` type($value)";  
 }
 
+def InterfaceSymbolRefOp : TypeScript_Op<"InterfaceSymbolRef", 
+    [NoSideEffect]> {
+  let summary = "symbol reference as to interface member";
+
+  let arguments = (ins AnyType:$interfaceVal, I32Attr:$index, FlatSymbolRefAttr:$identifier);
+  let results = (outs AnyType:$value);
+
+  let builders = [
+    OpBuilder<(ins "Value":$interfaceVal, "IntegerAttr":$index, "FlatSymbolRefAttr":$identifier),
+    [{ build($_builder, $_state, identifier.getType(), interfaceVal, index, identifier); }]>];
+
+  let extraClassDeclaration = [{
+    Attribute getValue() { return (*this)->getAttr("identifier"); }
+  }];
+
+  let hasCanonicalizer = 1;
+
+  let assemblyFormat = "$interfaceVal `:` type($interfaceVal) `[` $index `]` attr-dict `:` type($value)";
+}
+
 def TypeRefOp : TypeScript_Op<"TypeRef", 
     [NoSideEffect]> {
   let summary = "symbol reference to type";

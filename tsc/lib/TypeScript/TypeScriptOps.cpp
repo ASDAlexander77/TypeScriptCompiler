@@ -158,6 +158,15 @@ void mlir_ts::ThisAccessorRefOp::getCanonicalizationPatterns(OwningRewritePatter
 }
 
 //===----------------------------------------------------------------------===//
+// InterfaceSymbolRefOp
+//===----------------------------------------------------------------------===//
+
+void mlir_ts::InterfaceSymbolRefOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
+{
+    results.insert<RemoveUnused<mlir_ts::InterfaceSymbolRefOp>>(context);
+}
+
+//===----------------------------------------------------------------------===//
 // TypeRefOp
 //===----------------------------------------------------------------------===//
 
