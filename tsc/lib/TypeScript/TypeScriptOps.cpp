@@ -291,7 +291,7 @@ LogicalResult verify(mlir_ts::CastOp op)
 
 namespace
 {
-struct ConvertCastOpToFunctionCallOrRemoveNotNeededCasts : public OpRewritePattern<mlir_ts::CastOp>
+struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
 {
     using OpRewritePattern<mlir_ts::CastOp>::OpRewritePattern;
 
@@ -343,7 +343,7 @@ struct ConvertCastOpToFunctionCallOrRemoveNotNeededCasts : public OpRewritePatte
 
 void mlir_ts::CastOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
 {
-    results.insert<ConvertCastOpToFunctionCallOrRemoveNotNeededCasts>(context);
+    results.insert<NormalizeCast>(context);
 }
 
 //===----------------------------------------------------------------------===//
