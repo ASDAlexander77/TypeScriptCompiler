@@ -2228,7 +2228,7 @@ struct ThisVirtualSymbolRefLowering : public TsLlvmPattern<mlir_ts::ThisVirtualS
         TypeHelper th(rewriter);
         CodeLogicHelper clh(thisVirtualSymbolRefOp, rewriter);
 
-        auto ptrToArrOfPtrs = rewriter.create<mlir_ts::CastOp>(loc, th.getI8PtrPtrPtrType(), thisVirtualSymbolRefOp.vtable());
+        auto ptrToArrOfPtrs = rewriter.create<mlir_ts::CastOp>(loc, th.getI8PtrPtrType(), thisVirtualSymbolRefOp.vtable());
 
         auto index = clh.createI32ConstantOf(thisVirtualSymbolRefOp.index());
         auto methodPtrPtr = rewriter.create<LLVM::GEPOp>(loc, th.getI8PtrPtrType(), ptrToArrOfPtrs, ValueRange{index});
@@ -2258,7 +2258,7 @@ struct InterfaceSymbolRefLowering : public TsLlvmPattern<mlir_ts::InterfaceSymbo
         auto thisVal =
             rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), interfaceSymbolRefOp.interfaceVal(), clh.getStructIndexAttr(1));
 
-        auto ptrToArrOfPtrs = rewriter.create<mlir_ts::CastOp>(loc, th.getI8PtrPtrPtrType(), vtable);
+        auto ptrToArrOfPtrs = rewriter.create<mlir_ts::CastOp>(loc, th.getI8PtrPtrType(), vtable);
 
         auto index = clh.createI32ConstantOf(interfaceSymbolRefOp.index());
         auto methodPtrPtr = rewriter.create<LLVM::GEPOp>(loc, th.getI8PtrPtrType(), ptrToArrOfPtrs, ValueRange{index});
@@ -2357,9 +2357,9 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
 
         SmallVector<mlir::Type> rtInterfaceType;
         // vtable
-        rtInterfaceType.push_back(th.getI8PtrPtrType());
+        rtInterfaceType.push_back(th.getI8PtrType());
         // this
-        rtInterfaceType.push_back(th.getI8PtrPtrType());
+        rtInterfaceType.push_back(th.getI8PtrType());
 
         return LLVM::LLVMStructType::getLiteral(type.getContext(), rtInterfaceType, false);
     });
