@@ -176,7 +176,7 @@ def ThisAccessorRefOp : TypeScript_Op<"ThisAccessorRef",
 }
 
 def InterfaceSymbolRefOp : TypeScript_Op<"InterfaceSymbolRef", 
-    [NoSideEffect]> {
+    [NoSideEffect,DeclareOpInterfaceMethods<OpAsmOpInterface>]> {
   let summary = "symbol reference as to interface member";
 
   let arguments = (ins AnyType:$interfaceVal, I32Attr:$index, StrAttr:$identifier);
