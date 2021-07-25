@@ -2241,6 +2241,34 @@ struct ThisVirtualSymbolRefLowering : public TsLlvmPattern<mlir_ts::ThisVirtualS
     }
 };
 
+struct InterfaceSymbolRefLowering : public TsLlvmPattern<mlir_ts::InterfaceSymbolRefOp>
+{
+    using TsLlvmPattern<mlir_ts::InterfaceSymbolRefOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::InterfaceSymbolRefOp interfaceSymbolRefOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        Location loc = interfaceSymbolRefOp.getLoc();
+
+        TypeHelper th(rewriter);
+        CodeLogicHelper clh(interfaceSymbolRefOp, rewriter);
+
+        auto vtable = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrPtrType(), interfaceSymbolRefOp, clh.getStructIndexAttr(0));
+        // auto thisVal = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrPtrType(), interfaceSymbolRefOp, clh.getStructIndexAttr(1));
+
+        auto ptrToArrOfPtrs = rewriter.create<mlir_ts::CastOp>(loc, th.getI8PtrPtrPtrType(), vtable);
+
+        auto index = clh.createI32ConstantOf(interfaceSymbolRefOp.index());
+        auto methodPtrPtr = rewriter.create<LLVM::GEPOp>(loc, th.getI8PtrPtrType(), ptrToArrOfPtrs, ValueRange{index});
+        auto methodPtr = rewriter.create<LLVM::LoadOp>(loc, methodPtrPtr);
+        auto methodTyped = rewriter.create<mlir_ts::CastOp>(loc, interfaceSymbolRefOp.getType(), methodPtr);
+
+        rewriter.replaceOp(interfaceSymbolRefOp, ValueRange{methodTyped});
+
+        return success();
+    }
+};
+
 static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, mlir::ModuleOp &m)
 {
     converter.addConversion([&](mlir_ts::AnyType type) { return LLVM::LLVMPointerType::get(IntegerType::get(m.getContext(), 8)); });
@@ -2321,6 +2349,18 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
 
     converter.addConversion(
         [&](mlir_ts::ClassType type) { return LLVM::LLVMPointerType::get(converter.convertType(type.getStorageType())); });
+
+    converter.addConversion([&](mlir_ts::InterfaceType type) {
+        TypeHelper th(m.getContext());
+
+        SmallVector<mlir::Type> rtInterfaceType;
+        // vtable
+        rtInterfaceType.push_back(th.getI8PtrPtrType());
+        // this
+        rtInterfaceType.push_back(th.getI8PtrPtrType());
+
+        return LLVM::LLVMStructType::getLiteral(type.getContext(), rtInterfaceType, false);
+    });
 
     converter.addConversion([&](mlir_ts::OptionalType type) {
         SmallVector<mlir::Type> convertedTypes;
@@ -2403,7 +2443,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
                     PrintOpLowering, StoreOpLowering, SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering,
                     StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering,
                     MemoryCopyOpLowering, LoadSaveValueLowering, ThrowOpLoweringVCWin32, TrampolineOpLowering, TryOpLowering,
-                    VariableOpLowering, InvokeOpLowering, ThisVirtualSymbolRefLowering>(typeConverter, &getContext(), &tsLlvmContext);
+                    VariableOpLowering, InvokeOpLowering, ThisVirtualSymbolRefLowering, InterfaceSymbolRefLowering>(
+        typeConverter, &getContext(), &tsLlvmContext);
 
     populateTypeScriptConversionPatterns(typeConverter, m);
 

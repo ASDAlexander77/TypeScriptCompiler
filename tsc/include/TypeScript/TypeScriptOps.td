@@ -178,11 +178,11 @@ def InterfaceSymbolRefOp : TypeScript_Op<"InterfaceSymbolRef",
     [NoSideEffect]> {
   let summary = "symbol reference as to interface member";
 
-  let arguments = (ins AnyType:$interfaceVal, I32Attr:$index, FlatSymbolRefAttr:$identifier);
+  let arguments = (ins AnyType:$interfaceVal, I32Attr:$index, StrAttr:$identifier);
   let results = (outs AnyType:$value);
 
   let builders = [
-    OpBuilder<(ins "Value":$interfaceVal, "IntegerAttr":$index, "FlatSymbolRefAttr":$identifier),
+    OpBuilder<(ins "Value":$interfaceVal, "IntegerAttr":$index, "StringAttr":$identifier),
     [{ build($_builder, $_state, identifier.getType(), interfaceVal, index, identifier); }]>];
 
   let extraClassDeclaration = [{
@@ -191,7 +191,7 @@ def InterfaceSymbolRefOp : TypeScript_Op<"InterfaceSymbolRef",
 
   let hasCanonicalizer = 1;
 
-  let assemblyFormat = "$interfaceVal `:` type($interfaceVal) `[` $index `]` attr-dict `:` type($value)";
+  let assemblyFormat = "`(` $interfaceVal `:` type($interfaceVal) `)` `[` $index `]` attr-dict `:` type($value)";
 }
 
 def TypeRefOp : TypeScript_Op<"TypeRef", 

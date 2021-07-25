@@ -3313,9 +3313,9 @@ llvm.return %5 : i32
             // adding call of ctor
             NodeFactory nf(NodeFactoryFlags::None);
 
-            auto interfaceSymbolRefOp = builder.create<mlir_ts::InterfaceSymbolRefOp>(
-                location, effectiveFuncType, interfaceValue, builder.getI32IntegerAttr(methodInfo.virtualIndex),
-                mlir::FlatSymbolRefAttr::get(builder.getContext(), methodInfo.name));
+            auto interfaceSymbolRefOp = builder.create<mlir_ts::InterfaceSymbolRefOp>(location, effectiveFuncType, interfaceValue,
+                                                                                      builder.getI32IntegerAttr(methodInfo.virtualIndex),
+                                                                                      builder.getStringAttr(methodInfo.name));
             return interfaceSymbolRefOp;
         }
 

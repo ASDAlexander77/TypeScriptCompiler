@@ -217,6 +217,7 @@ void mlir_ts::LoadOp::getCanonicalizationPatterns(OwningRewritePatternList &resu
 
 LogicalResult verify(mlir_ts::CastOp op)
 {
+    // funcType -> funcType
     auto inFuncType = op.in().getType().dyn_cast_or_null<mlir::FunctionType>();
     auto resFuncType = op.res().getType().dyn_cast_or_null<mlir::FunctionType>();
     if (inFuncType && resFuncType)
@@ -303,8 +304,10 @@ struct ConvertCastOpToFunctionCallOrRemoveNotNeededCasts : public OpRewritePatte
         if (in.getType() == res.getType())
         {
             rewriter.replaceOp(castOp, in);
+            return success();
         }
-        else if (auto stringType = res.getType().isa<mlir_ts::StringType>())
+
+        if (auto stringType = res.getType().isa<mlir_ts::StringType>())
         {
             if (auto classType = in.getType().dyn_cast_or_null<mlir_ts::ClassType>())
             {
@@ -315,6 +318,21 @@ struct ConvertCastOpToFunctionCallOrRemoveNotNeededCasts : public OpRewritePatte
                     rewriter.create<mlir_ts::CallOp>(castOp->getLoc(), fullToStringName.str(), TypeRange{stringType}, ValueRange{in});
                 auto res = callRes.getResult(0);
                 rewriter.replaceOp(castOp, res);
+                return success();
+            }
+        }
+
+        // null -> interface cast
+        auto anyType = in.getType().dyn_cast_or_null<mlir_ts::AnyType>();
+        auto interfaceType = res.getType().dyn_cast_or_null<mlir_ts::InterfaceType>();
+        if (anyType && interfaceType)
+        {
+            if (auto nullOp = in.getDefiningOp<mlir_ts::NullOp>())
+            {
+                auto undef = rewriter.create<mlir_ts::UndefOp>(castOp->getLoc(), interfaceType);
+                rewriter.replaceOp(castOp, ValueRange{undef});
+                rewriter.eraseOp(nullOp);
+                return success();
             }
         }
 
