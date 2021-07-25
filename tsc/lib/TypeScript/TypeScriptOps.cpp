@@ -319,15 +319,31 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
             return success();
         }
 
-        if (auto stringType = res.getType().isa<mlir_ts::StringType>())
+        // class to string
+        if (auto stringType = res.getType().dyn_cast_or_null<mlir_ts::StringType>())
         {
             if (auto classType = in.getType().dyn_cast_or_null<mlir_ts::ClassType>())
             {
                 auto className = classType.getName().getValue();
                 auto fullToStringName = className + ".toString";
-                auto stringType = mlir_ts::StringType::get(rewriter.getContext());
                 auto callRes =
                     rewriter.create<mlir_ts::CallOp>(castOp->getLoc(), fullToStringName.str(), TypeRange{stringType}, ValueRange{in});
+                auto res = callRes.getResult(0);
+                rewriter.replaceOp(castOp, res);
+                return success();
+            }
+        }
+
+        // class to interface
+        if (auto interfaceType = res.getType().dyn_cast_or_null<mlir_ts::InterfaceType>())
+        {
+            if (auto classType = in.getType().dyn_cast_or_null<mlir_ts::ClassType>())
+            {
+                auto className = classType.getName().getValue();
+                auto interfaceName = interfaceType.getName().getValue();
+                auto fullToInterfaceName = className + ".toInterface<" + interfaceName + ">";
+                auto callRes =
+                    rewriter.create<mlir_ts::CallOp>(castOp->getLoc(), fullToInterfaceName.str(), TypeRange{interfaceType}, ValueRange{in});
                 auto res = callRes.getResult(0);
                 rewriter.replaceOp(castOp, res);
                 return success();

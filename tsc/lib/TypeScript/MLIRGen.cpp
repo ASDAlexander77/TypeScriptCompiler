@@ -3938,12 +3938,12 @@ llvm.return %5 : i32
 
     mlir::Value mlirGen(TrueLiteral trueLiteral, const GenContext &genContext)
     {
-        return builder.create<mlir_ts::ConstantOp>(loc(trueLiteral), getBooleanType(), mlir::BoolAttr::get(theModule.getContext(), true));
+        return builder.create<mlir_ts::ConstantOp>(loc(trueLiteral), getBooleanType(), mlir::BoolAttr::get(builder.getContext(), true));
     }
 
     mlir::Value mlirGen(FalseLiteral falseLiteral, const GenContext &genContext)
     {
-        return builder.create<mlir_ts::ConstantOp>(loc(falseLiteral), getBooleanType(), mlir::BoolAttr::get(theModule.getContext(), false));
+        return builder.create<mlir_ts::ConstantOp>(loc(falseLiteral), getBooleanType(), mlir::BoolAttr::get(builder.getContext(), false));
     }
 
     mlir::Value mlirGen(NumericLiteral numericLiteral, const GenContext &genContext)
