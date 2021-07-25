@@ -861,7 +861,7 @@ def TypeScript_AnyStructRefLike : AnyTypeOf<[
   ]>;
 
 def TypeScript_AnyRefLike : AnyTypeOf<[
-    TypeScript_Ref, TypeScript_ValueRef, TypeScript_AnyStructRefLike
+    TypeScript_Ref, TypeScript_ValueRef, TypeScript_AnyStructRefLike, TypeScript_Any
   ]>;
 
 def TypeScript_AnyStructLike : AnyTypeOf<[

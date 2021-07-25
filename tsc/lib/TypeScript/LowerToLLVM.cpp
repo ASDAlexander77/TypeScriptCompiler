@@ -2253,10 +2253,10 @@ struct InterfaceSymbolRefLowering : public TsLlvmPattern<mlir_ts::InterfaceSymbo
         TypeHelper th(rewriter);
         CodeLogicHelper clh(interfaceSymbolRefOp, rewriter);
 
-        auto vtable = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrPtrType(), interfaceSymbolRefOp.interfaceVal(),
-                                                            clh.getStructIndexAttr(0));
-        auto thisVal = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrPtrType(), interfaceSymbolRefOp.interfaceVal(),
-                                                             clh.getStructIndexAttr(1));
+        auto vtable =
+            rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), interfaceSymbolRefOp.interfaceVal(), clh.getStructIndexAttr(0));
+        auto thisVal =
+            rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), interfaceSymbolRefOp.interfaceVal(), clh.getStructIndexAttr(1));
 
         auto ptrToArrOfPtrs = rewriter.create<mlir_ts::CastOp>(loc, th.getI8PtrPtrPtrType(), vtable);
 
@@ -2265,7 +2265,7 @@ struct InterfaceSymbolRefLowering : public TsLlvmPattern<mlir_ts::InterfaceSymbo
         auto methodPtr = rewriter.create<LLVM::LoadOp>(loc, methodPtrPtr);
         auto methodTyped = rewriter.create<mlir_ts::CastOp>(loc, interfaceSymbolRefOp.getResult(0).getType(), methodPtr);
 
-        rewriter.replaceOp(interfaceSymbolRefOp, ValueRange{methodTyped});
+        rewriter.replaceOp(interfaceSymbolRefOp, ValueRange{methodTyped, thisVal});
 
         return success();
     }

@@ -1144,6 +1144,11 @@ class MLIRGenImpl
             params.push_back(std::make_shared<FunctionParamDOM>(THIS_NAME, genContext.thisType, loc(parametersContextAST)));
         }
 
+        if (parametersContextAST->parent.is<InterfaceDeclaration>())
+        {
+            params.push_back(std::make_shared<FunctionParamDOM>(THIS_NAME, getAnyType(), loc(parametersContextAST)));
+        }
+
         auto noneType = mlir::NoneType::get(builder.getContext());
 
         auto formalParams = parametersContextAST->parameters;
@@ -3445,6 +3450,11 @@ llvm.return %5 : i32
                 else if (auto thisVirtualSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::ThisVirtualSymbolRefOp>())
                 {
                     operands.push_back(thisVirtualSymbolRefOp.thisVal());
+                }
+                else if (auto interfaceSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::InterfaceSymbolRefOp>())
+                {
+                    // operands.push_back(interfaceSymbolRefOp.thisRef());
+                    operands.push_back(interfaceSymbolRefOp.getResult(1));
                 }
 
                 const_cast<GenContext &>(genContext).destFuncType = calledFuncType;

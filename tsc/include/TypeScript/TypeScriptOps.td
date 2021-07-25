@@ -180,7 +180,7 @@ def InterfaceSymbolRefOp : TypeScript_Op<"InterfaceSymbolRef",
   let summary = "symbol reference as to interface member";
 
   let arguments = (ins AnyType:$interfaceVal, I32Attr:$index, StrAttr:$identifier);
-  let results = (outs TypeScript_AnyRef:$funcOrFieldReference, TypeScript_AnyRef:$thisRef);
+  let results = (outs FunctionType:$funcOrFieldReference, TypeScript_AnyRefLike:$thisRef);
 
   let builders = [
     OpBuilder<(ins "Value":$interfaceVal, "IntegerAttr":$index, "StringAttr":$identifier),
