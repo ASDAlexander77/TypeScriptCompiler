@@ -4,6 +4,7 @@
 include "TypeScriptDialect.td"
 include "TypeScriptTypes.td"
 include "mlir/IR/SymbolInterfaces.td"
+include "mlir/IR/OpAsmInterface.td"
 include "mlir/Interfaces/CallInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/LoopLikeInterface.td"
@@ -179,7 +180,7 @@ def InterfaceSymbolRefOp : TypeScript_Op<"InterfaceSymbolRef",
   let summary = "symbol reference as to interface member";
 
   let arguments = (ins AnyType:$interfaceVal, I32Attr:$index, StrAttr:$identifier);
-  let results = (outs AnyType:$value);
+  let results = (outs TypeScript_AnyRef:$funcOrFieldReference, TypeScript_AnyRef:$thisRef);
 
   let builders = [
     OpBuilder<(ins "Value":$interfaceVal, "IntegerAttr":$index, "StringAttr":$identifier),
@@ -191,7 +192,7 @@ def InterfaceSymbolRefOp : TypeScript_Op<"InterfaceSymbolRef",
 
   let hasCanonicalizer = 1;
 
-  let assemblyFormat = "`(` $interfaceVal `:` type($interfaceVal) `)` `[` $index `]` attr-dict `:` type($value)";
+  let assemblyFormat = "`(` $interfaceVal `:` type($interfaceVal) `)` `[` $index `]` attr-dict `:` type($funcOrFieldReference) `,` type($thisRef)";
 }
 
 def TypeRefOp : TypeScript_Op<"TypeRef", 
