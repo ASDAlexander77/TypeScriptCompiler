@@ -4653,6 +4653,16 @@ llvm.return %5 : i32
 
         mlirGenClassVirtualTableDefinition(location, newClassPtr, genContext);
 
+        // generate cast for every interface
+        for (auto &heritageClause : classDeclarationAST->heritageClauses)
+        {
+            if (mlir::failed(
+                    mlirGenClassHeritageClauseImplements(classDeclarationAST, newClassPtr, heritageClause, declareClass, genContext)))
+            {
+                return mlir::failure();
+            }
+        }
+
         // add methods when we have classType
         auto notResolved = 0;
         do
@@ -4728,8 +4738,8 @@ llvm.return %5 : i32
         // add base classes
         for (auto &heritageClause : classDeclarationAST->heritageClauses)
         {
-            if (mlir::failed(
-                    mlirGenClassHeritageClause(classDeclarationAST, newClassPtr, heritageClause, fieldInfos, declareClass, genContext)))
+            if (mlir::failed(mlirGenClassHeritageClauseExtends(classDeclarationAST, newClassPtr, heritageClause, fieldInfos, declareClass,
+                                                               genContext)))
             {
                 return mlir::failure();
             }
@@ -4759,9 +4769,9 @@ llvm.return %5 : i32
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirGenClassHeritageClause(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr,
-                                                   HeritageClause heritageClause, SmallVector<mlir_ts::FieldInfo> &fieldInfos,
-                                                   bool declareClass, const GenContext &genContext)
+    mlir::LogicalResult mlirGenClassHeritageClauseExtends(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr,
+                                                          HeritageClause heritageClause, SmallVector<mlir_ts::FieldInfo> &fieldInfos,
+                                                          bool declareClass, const GenContext &genContext)
     {
         if (heritageClause->token != SyntaxKind::ExtendsKeyword)
         {
@@ -4935,6 +4945,48 @@ llvm.return %5 : i32
             auto body = nf.createBlock(statements, /*multiLine*/ false);
             auto generatedConstructor = nf.createConstructorDeclaration(undefined, undefined, undefined, body);
             classDeclarationAST->members.push_back(generatedConstructor);
+        }
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult mlirGenClassHeritageClauseImplements(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr,
+                                                             HeritageClause heritageClause, bool declareClass, const GenContext &genContext)
+    {
+        if (heritageClause->token != SyntaxKind::ImplementsKeyword)
+        {
+            return mlir::success();
+        }
+
+        NodeFactory nf(NodeFactoryFlags::None);
+
+        // TODO: finish code to prevent multiple adding cast method
+        // TODO: finish method.
+
+        for (auto &extendingType : heritageClause->types)
+        {
+            auto ifaceType = mlirGen(extendingType->expression, genContext);
+            TypeSwitch<mlir::Type>(ifaceType.getType())
+                .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
+                    auto interfaceInfo = getInterfaceByFullName(interfaceType.getName().getValue());
+
+                    auto ifaceName = interfaceInfo->name;
+
+                    std::string name = "toInterface<" + ifaceName.str() + ">";
+
+                    // add cast method
+                    NodeArray<Statement> statements;
+
+                    // default return
+                    auto nullExpr = nf.createToken(SyntaxKind::NullKeyword);
+                    statements.push_back(nf.createReturnStatement(nullExpr));
+
+                    auto body = nf.createBlock(statements, /*multiLine*/ false);
+                    auto methodInterfaceCast = nf.createMethodDeclaration(undefined, undefined, undefined, nf.createIdentifier(stows(name)),
+                                                                          undefined, undefined, undefined, undefined, body);
+                    classDeclarationAST->members.push_back(methodInterfaceCast);
+                })
+                .Default([&](auto type) { llvm_unreachable("not implemented"); });
         }
 
         return mlir::success();
