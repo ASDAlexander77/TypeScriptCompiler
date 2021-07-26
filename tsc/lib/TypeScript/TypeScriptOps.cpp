@@ -341,11 +341,12 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
             {
                 auto className = classType.getName().getValue();
                 auto interfaceName = interfaceType.getName().getValue();
-                auto fullToInterfaceName = className + ".toInterface<" + interfaceName + ">";
-                auto callRes =
-                    rewriter.create<mlir_ts::CallOp>(castOp->getLoc(), fullToInterfaceName.str(), TypeRange{interfaceType}, ValueRange{in});
-                auto res = callRes.getResult(0);
-                rewriter.replaceOp(castOp, res);
+                std::string fullToInterfaceName;
+                fullToInterfaceName += className.str() + "." + interfaceName.str() + "." + VTABLE_NAME;
+                auto newInterface =
+                    rewriter.create<mlir_ts::NewInterfaceOp>(castOp->getLoc(), TypeRange{interfaceType}, in,
+                                                             mlir::FlatSymbolRefAttr::get(rewriter.getContext(), fullToInterfaceName));
+                rewriter.replaceOp(castOp, ValueRange{newInterface});
                 return success();
             }
         }

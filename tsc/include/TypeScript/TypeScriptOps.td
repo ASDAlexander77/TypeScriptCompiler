@@ -503,6 +503,18 @@ def TypeScript_NewOp : TypeScript_Op<"New"> {
   let assemblyFormat = "`{` $stackAlloc `}` attr-dict `:` type($instance)";
 }
 
+def TypeScript_NewInterfaceOp : TypeScript_Op<"NewInterface"> {
+  let summary = "create new interface";
+  let description = [{
+    create new interface
+  }];
+
+  let arguments = (ins TypeScript_AnyRefLike:$thisVal, FlatSymbolRefAttr:$interfaceVTable);
+  let results = (outs TypeScript_Interface:$instance);
+
+  let assemblyFormat = "`(` $thisVal `:` type($thisVal) `)` `{` $interfaceVTable `}` attr-dict `:` type($instance)";
+}
+
 def TypeScript_CreateArrayOp : TypeScript_Op<"CreateArray"> {
   let summary = "create array";
   let description = [{

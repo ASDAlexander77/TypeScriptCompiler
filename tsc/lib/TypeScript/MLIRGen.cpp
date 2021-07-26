@@ -4950,6 +4950,44 @@ llvm.return %5 : i32
         return mlir::success();
     }
 
+    mlir::LogicalResult mlirGenClassVirtualTableDefinitionForInterface(mlir::Location location, ClassInfo::TypePtr newClassPtr,
+                                                                       InterfaceInfo::TypePtr newInterfacePtr, const GenContext &genContext)
+    {
+        // TODO: ...
+        llvm::SmallVector<MethodInfo> virtualTable;
+        // newClassPtr->getVirtualTable(virtualTable);
+
+        MLIRTypeHelper mth(builder.getContext());
+
+        // register global
+        auto fullClassInterfaceVTableFieldName = concat(newClassPtr->fullName, newInterfacePtr->fullName, VTABLE_NAME);
+        registerVariable(
+            location, fullClassInterfaceVTableFieldName, true, VariableClass::Var,
+            [&]() {
+                // build vtable from names of methods
+
+                MLIRCodeLogic mcl(builder);
+
+                auto virtTuple = getVirtualTableType(virtualTable);
+
+                mlir::Value vtableValue = builder.create<mlir_ts::UndefOp>(location, virtTuple);
+                auto fieldIndex = 0;
+                for (auto method : virtualTable)
+                {
+                    auto methodConstName = builder.create<mlir_ts::SymbolRefOp>(
+                        location, method.funcOp.getType(), mlir::FlatSymbolRefAttr::get(builder.getContext(), method.funcOp.sym_name()));
+
+                    vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
+                        location, virtTuple, methodConstName, vtableValue, builder.getArrayAttr(mth.getStructIndexAttrValue(fieldIndex++)));
+                }
+
+                return std::pair<mlir::Type, mlir::Value>{virtTuple, vtableValue};
+            },
+            genContext);
+
+        return mlir::success();
+    }
+
     mlir::LogicalResult mlirGenClassHeritageClauseImplements(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr,
                                                              HeritageClause heritageClause, bool declareClass, const GenContext &genContext)
     {
@@ -4963,28 +5001,18 @@ llvm.return %5 : i32
         // TODO: finish code to prevent multiple adding cast method
         // TODO: finish method.
 
-        for (auto &extendingType : heritageClause->types)
+        for (auto &implementingType : heritageClause->types)
         {
-            auto ifaceType = mlirGen(extendingType->expression, genContext);
+            if (implementingType->processed)
+            {
+                continue;
+            }
+
+            auto ifaceType = mlirGen(implementingType->expression, genContext);
             TypeSwitch<mlir::Type>(ifaceType.getType())
                 .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
                     auto interfaceInfo = getInterfaceByFullName(interfaceType.getName().getValue());
-
-                    auto ifaceName = interfaceInfo->name;
-
-                    std::string name = "toInterface<" + ifaceName.str() + ">";
-
-                    // add cast method
-                    NodeArray<Statement> statements;
-
-                    // default return
-                    auto nullExpr = nf.createToken(SyntaxKind::NullKeyword);
-                    statements.push_back(nf.createReturnStatement(nullExpr));
-
-                    auto body = nf.createBlock(statements, /*multiLine*/ false);
-                    auto methodInterfaceCast = nf.createMethodDeclaration(undefined, undefined, undefined, nf.createIdentifier(stows(name)),
-                                                                          undefined, undefined, undefined, undefined, body);
-                    classDeclarationAST->members.push_back(methodInterfaceCast);
+                    mlirGenClassVirtualTableDefinitionForInterface(loc(implementingType), newClassPtr, interfaceInfo, genContext);
                 })
                 .Default([&](auto type) { llvm_unreachable("not implemented"); });
         }
