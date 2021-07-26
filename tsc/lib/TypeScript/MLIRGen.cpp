@@ -4757,8 +4757,8 @@ llvm.return %5 : i32
         // add base classes
         for (auto &heritageClause : classDeclarationAST->heritageClauses)
         {
-            if (mlir::failed(mlirGenClassHeritageClauseExtends(classDeclarationAST, newClassPtr, heritageClause, fieldInfos, declareClass,
-                                                               genContext)))
+            if (mlir::failed(
+                    mlirGenClassHeritageClause(classDeclarationAST, newClassPtr, heritageClause, fieldInfos, declareClass, genContext)))
             {
                 return mlir::failure();
             }
@@ -4788,33 +4788,55 @@ llvm.return %5 : i32
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirGenClassHeritageClauseExtends(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr,
-                                                          HeritageClause heritageClause, SmallVector<mlir_ts::FieldInfo> &fieldInfos,
-                                                          bool declareClass, const GenContext &genContext)
+    mlir::LogicalResult mlirGenClassHeritageClause(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr,
+                                                   HeritageClause heritageClause, SmallVector<mlir_ts::FieldInfo> &fieldInfos,
+                                                   bool declareClass, const GenContext &genContext)
     {
-        if (heritageClause->token != SyntaxKind::ExtendsKeyword)
+        MLIRCodeLogic mcl(builder);
+
+        if (heritageClause->token == SyntaxKind::ExtendsKeyword)
         {
+            auto &baseClassInfos = newClassPtr->baseClasses;
+
+            for (auto &extendingType : heritageClause->types)
+            {
+                auto baseType = mlirGen(extendingType->expression, genContext);
+                TypeSwitch<mlir::Type>(baseType.getType())
+                    .template Case<mlir_ts::ClassType>([&](auto classType) {
+                        auto classInfo = getClassByFullName(classType.getName().getValue());
+
+                        auto baseName = classType.getName().getValue();
+                        auto fieldId = mcl.TupleFieldName(baseName);
+                        fieldInfos.push_back({fieldId, classType.getStorageType()});
+
+                        baseClassInfos.push_back(classInfo);
+                    })
+                    .Default([&](auto type) { llvm_unreachable("not implemented"); });
+            }
             return mlir::success();
         }
 
-        MLIRCodeLogic mcl(builder);
-
-        auto &baseClassInfos = newClassPtr->baseClasses;
-
-        for (auto &extendingType : heritageClause->types)
+        if (heritageClause->token == SyntaxKind::ImplementsKeyword)
         {
-            auto baseType = mlirGen(extendingType->expression, genContext);
-            TypeSwitch<mlir::Type>(baseType.getType())
-                .template Case<mlir_ts::ClassType>([&](auto classType) {
-                    auto classInfo = getClassByFullName(classType.getName().getValue());
+            newClassPtr->hasVirtualTable = true;
 
-                    auto baseName = classType.getName().getValue();
-                    auto fieldId = mcl.TupleFieldName(baseName);
-                    fieldInfos.push_back({fieldId, classType.getStorageType()});
+            auto &interfaceInfos = newClassPtr->implements;
 
-                    baseClassInfos.push_back(classInfo);
-                })
-                .Default([&](auto type) { llvm_unreachable("not implemented"); });
+            for (auto &implementingType : heritageClause->types)
+            {
+                if (implementingType->processed)
+                {
+                    continue;
+                }
+
+                auto ifaceType = mlirGen(implementingType->expression, genContext);
+                TypeSwitch<mlir::Type>(ifaceType.getType())
+                    .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
+                        auto interfaceInfo = getInterfaceByFullName(interfaceType.getName().getValue());
+                        interfaceInfos.push_back(interfaceInfo);
+                    })
+                    .Default([&](auto type) { llvm_unreachable("not implemented"); });
+            }
         }
 
         return mlir::success();
@@ -5015,8 +5037,6 @@ llvm.return %5 : i32
             return mlir::success();
         }
 
-        NodeFactory nf(NodeFactoryFlags::None);
-
         // TODO: finish code to prevent multiple adding cast method
         // TODO: finish method.
 
@@ -5060,7 +5080,14 @@ llvm.return %5 : i32
         llvm::SmallVector<mlir_ts::FieldInfo> fields;
         for (auto vtableRecord : virtualTable)
         {
-            fields.push_back({mcl.TupleFieldName(vtableRecord.methodInfo.name), vtableRecord.methodInfo.funcOp.getType()});
+            if (vtableRecord.isInterfaceVTable)
+            {
+                fields.push_back({mcl.TupleFieldName(vtableRecord.methodInfo.name), getAnyType()});
+            }
+            else
+            {
+                fields.push_back({mcl.TupleFieldName(vtableRecord.methodInfo.name), vtableRecord.methodInfo.funcOp.getType()});
+            }
         }
 
         auto virtTuple = getTupleType(fields);
@@ -5094,14 +5121,27 @@ llvm.return %5 : i32
 
                 mlir::Value vtableValue = builder.create<mlir_ts::UndefOp>(location, virtTuple);
                 auto fieldIndex = 0;
-                for (auto method : virtualTable)
+                for (auto vtRecord : virtualTable)
                 {
-                    auto methodConstName = builder.create<mlir_ts::SymbolRefOp>(
-                        location, method.methodInfo.funcOp.getType(),
-                        mlir::FlatSymbolRefAttr::get(builder.getContext(), method.methodInfo.funcOp.sym_name()));
+                    if (vtRecord.isInterfaceVTable)
+                    {
+                        // TODO: null for now
+                        auto interfaceVTableValue = builder.create<mlir_ts::NullOp>(location, getAnyType());
 
-                    vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
-                        location, virtTuple, methodConstName, vtableValue, builder.getArrayAttr(mth.getStructIndexAttrValue(fieldIndex++)));
+                        vtableValue =
+                            builder.create<mlir_ts::InsertPropertyOp>(location, virtTuple, interfaceVTableValue, vtableValue,
+                                                                      builder.getArrayAttr(mth.getStructIndexAttrValue(fieldIndex++)));
+                    }
+                    else
+                    {
+                        auto methodConstName = builder.create<mlir_ts::SymbolRefOp>(
+                            location, vtRecord.methodInfo.funcOp.getType(),
+                            mlir::FlatSymbolRefAttr::get(builder.getContext(), vtRecord.methodInfo.funcOp.sym_name()));
+
+                        vtableValue =
+                            builder.create<mlir_ts::InsertPropertyOp>(location, virtTuple, methodConstName, vtableValue,
+                                                                      builder.getArrayAttr(mth.getStructIndexAttrValue(fieldIndex++)));
+                    }
                 }
 
                 return std::pair<mlir::Type, mlir::Value>{virtTuple, vtableValue};
