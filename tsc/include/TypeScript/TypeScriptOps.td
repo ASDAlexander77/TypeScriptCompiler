@@ -509,10 +509,10 @@ def TypeScript_NewInterfaceOp : TypeScript_Op<"NewInterface"> {
     create new interface
   }];
 
-  let arguments = (ins TypeScript_AnyRefLike:$thisVal, FlatSymbolRefAttr:$interfaceVTable);
+  let arguments = (ins TypeScript_AnyRefLike:$thisVal, TypeScript_AnyRefLike:$interfaceVTable);
   let results = (outs TypeScript_Interface:$instance);
 
-  let assemblyFormat = "`(` $thisVal `:` type($thisVal) `)` `{` $interfaceVTable `}` attr-dict `:` type($instance)";
+  let assemblyFormat = "`(` $thisVal `:` type($thisVal) `,` $interfaceVTable `:` type($interfaceVTable) `)` attr-dict `:` type($instance)";
 }
 
 def TypeScript_CreateArrayOp : TypeScript_Op<"CreateArray"> {

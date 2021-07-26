@@ -2271,6 +2271,32 @@ struct InterfaceSymbolRefLowering : public TsLlvmPattern<mlir_ts::InterfaceSymbo
     }
 };
 
+struct NewInterfaceLowering : public TsLlvmPattern<mlir_ts::NewInterfaceOp>
+{
+    using TsLlvmPattern<mlir_ts::NewInterfaceOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::NewInterfaceOp newInterfaceOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        Location loc = newInterfaceOp.getLoc();
+
+        TypeHelper th(rewriter);
+        CodeLogicHelper clh(newInterfaceOp, rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+
+        auto llvmInterfaceType = tch.convertType(newInterfaceOp.getType());
+
+        auto structVal = rewriter.create<mlir_ts::UndefOp>(loc, llvmInterfaceType);
+        auto structVal2 = rewriter.create<LLVM::InsertValueOp>(loc, structVal, newInterfaceOp.thisVal(), clh.getStructIndexAttr(0));
+        auto structVal3 =
+            rewriter.create<LLVM::InsertValueOp>(loc, structVal2, newInterfaceOp.interfaceVTable(), clh.getStructIndexAttr(1));
+
+        rewriter.replaceOp(newInterfaceOp, ValueRange{structVal3});
+
+        return success();
+    }
+};
+
 static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, mlir::ModuleOp &m)
 {
     converter.addConversion([&](mlir_ts::AnyType type) { return LLVM::LLVMPointerType::get(IntegerType::get(m.getContext(), 8)); });
@@ -2445,7 +2471,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
                     PrintOpLowering, StoreOpLowering, SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering,
                     StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering,
                     MemoryCopyOpLowering, LoadSaveValueLowering, ThrowOpLoweringVCWin32, TrampolineOpLowering, TryOpLowering,
-                    VariableOpLowering, InvokeOpLowering, ThisVirtualSymbolRefLowering, InterfaceSymbolRefLowering>(
+                    VariableOpLowering, InvokeOpLowering, ThisVirtualSymbolRefLowering, InterfaceSymbolRefLowering, NewInterfaceLowering>(
         typeConverter, &getContext(), &tsLlvmContext);
 
     populateTypeScriptConversionPatterns(typeConverter, m);

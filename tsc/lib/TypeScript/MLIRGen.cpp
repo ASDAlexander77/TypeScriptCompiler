@@ -5487,13 +5487,12 @@ llvm.return %5 : i32
         {
             if (auto classType = value.getType().dyn_cast_or_null<mlir_ts::ClassType>())
             {
-                auto className = classType.getName().getValue();
-                auto interfaceName = interfaceType.getName().getValue();
-                std::string fullToInterfaceName;
-                fullToInterfaceName += className.str() + "." + interfaceName.str() + "." + VTABLE_NAME;
-                auto newInterface =
-                    builder.create<mlir_ts::NewInterfaceOp>(location, mlir::TypeRange{interfaceType}, value,
-                                                            mlir::FlatSymbolRefAttr::get(builder.getContext(), fullToInterfaceName));
+                // auto className = classType.getName().getValue();
+                // auto interfaceName = interfaceType.getName().getValue();
+
+                auto emptyVTable = builder.create<mlir_ts::NullOp>(location, getAnyType());
+
+                auto newInterface = builder.create<mlir_ts::NewInterfaceOp>(location, mlir::TypeRange{interfaceType}, value, emptyVTable);
                 return newInterface;
             }
         }
