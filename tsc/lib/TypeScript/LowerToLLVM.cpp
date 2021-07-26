@@ -1751,19 +1751,13 @@ struct AddressOfConstStringOpLowering : public TsLlvmPattern<mlir_ts::AddressOfC
                                   ConversionPatternRewriter &rewriter) const final
     {
         TypeHelper th(rewriter);
-        auto parentModule = addressOfConstStringOp->getParentOfType<ModuleOp>();
 
-        if (auto global = parentModule.lookupSymbol<LLVM::GlobalOp>(addressOfConstStringOp.global_name()))
-        {
-            auto loc = addressOfConstStringOp->getLoc();
-            auto globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
-            auto cst0 = rewriter.create<LLVM::ConstantOp>(loc, th.getI64Type(), th.getIndexAttrValue(0));
-            rewriter.replaceOpWithNewOp<LLVM::GEPOp>(addressOfConstStringOp, th.getI8PtrType(), globalPtr, ArrayRef<Value>({cst0, cst0}));
+        auto loc = addressOfConstStringOp->getLoc();
+        auto globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, th.getI8PtrType(), addressOfConstStringOp.global_name());
+        auto cst0 = rewriter.create<LLVM::ConstantOp>(loc, th.getI64Type(), th.getIndexAttrValue(0));
+        rewriter.replaceOpWithNewOp<LLVM::GEPOp>(addressOfConstStringOp, th.getI8PtrType(), globalPtr, ArrayRef<Value>({cst0, cst0}));
 
-            return success();
-        }
-
-        return failure();
+        return success();
     }
 };
 
