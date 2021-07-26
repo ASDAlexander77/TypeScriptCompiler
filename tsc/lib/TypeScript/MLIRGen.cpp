@@ -72,8 +72,6 @@ struct StaticFieldInfo
 
 struct MethodInfo
 {
-    MethodInfo() = default;
-
     std::string name;
     mlir_ts::FuncOp funcOp;
     bool isStatic;
@@ -262,6 +260,23 @@ struct ClassInfo
         }
 
         // do vtable for current class
+        for (auto &implement : implements)
+        {
+            auto index = std::distance(vtable.begin(), std::find_if(vtable.begin(), vtable.end(), [&](auto vTableRecord) {
+                                           return implement->fullName == vTableRecord.methodInfo.name;
+                                       }));
+            if ((size_t)index < vtable.size())
+            {
+                // found interface
+                continue;
+            }
+
+            MethodInfo methodInfo;
+            methodInfo.name = implement->fullName.str();
+            vtable.push_back({methodInfo, true});
+        }
+
+        // methods
         for (auto &method : methods)
         {
             auto index = std::distance(vtable.begin(), std::find_if(vtable.begin(), vtable.end(), [&](auto vTableMethod) {
