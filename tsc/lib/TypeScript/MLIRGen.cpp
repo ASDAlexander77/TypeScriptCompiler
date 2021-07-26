@@ -948,6 +948,15 @@ class MLIRGenImpl
             {
                 mlir::OpBuilder::InsertionGuard insertGuard(builder);
                 builder.setInsertionPointToStart(theModule.getBody());
+                // find last string
+                auto lastUse = [&](mlir::Operation *op) {
+                    if (auto globalOp = dyn_cast_or_null<mlir_ts::GlobalOp>(op))
+                    {
+                        builder.setInsertionPointAfter(globalOp);
+                    }
+                };
+
+                theModule.getBody()->walk(lastUse);
 
                 effectiveName = getFullNamespaceName(name);
 
@@ -4666,8 +4675,6 @@ llvm.return %5 : i32
 
         mlirGenClassDefaultConstructor(classDeclarationAST, newClassPtr, genContext);
 
-        mlirGenClassVirtualTableDefinition(location, newClassPtr, genContext);
-
         // add methods when we have classType
         auto notResolved = 0;
         do
@@ -4702,6 +4709,8 @@ llvm.return %5 : i32
                 return mlir::failure();
             }
         }
+
+        mlirGenClassVirtualTableDefinition(location, newClassPtr, genContext);
 
         return mlir::success();
     }
@@ -5138,8 +5147,9 @@ llvm.return %5 : i32
                     if (vtRecord.isInterfaceVTable)
                     {
                         // TODO: write correct full name for vtable
+                        auto fullClassInterfaceVTableFieldName = concat(newClassPtr->fullName, vtRecord.methodInfo.name, VTABLE_NAME);
                         auto interfaceVTableValue =
-                            resolveFullNameIdentifier(location, vtRecord.methodInfo.name + VTABLE_NAME, true, genContext);
+                            resolveFullNameIdentifier(location, fullClassInterfaceVTableFieldName, true, genContext);
                         assert(interfaceVTableValue);
 
                         vtableValue =
