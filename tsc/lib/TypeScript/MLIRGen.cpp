@@ -72,11 +72,21 @@ struct StaticFieldInfo
 
 struct MethodInfo
 {
+    MethodInfo() = default;
+
     std::string name;
     mlir_ts::FuncOp funcOp;
     bool isStatic;
     bool isVirtual;
     int virtualIndex;
+};
+
+struct VirtualMethodOrInterfaceVTableInfo
+{
+    VirtualMethodOrInterfaceVTableInfo() = default;
+
+    MethodInfo methodInfo;
+    bool isInterfaceVTable;
 };
 
 struct AccessorInfo
@@ -244,7 +254,7 @@ struct ClassInfo
         return false;
     }
 
-    void getVirtualTable(llvm::SmallVector<MethodInfo> &vtable)
+    void getVirtualTable(llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo> &vtable)
     {
         for (auto &base : baseClasses)
         {
@@ -254,12 +264,13 @@ struct ClassInfo
         // do vtable for current class
         for (auto &method : methods)
         {
-            auto index = std::distance(vtable.begin(), std::find_if(vtable.begin(), vtable.end(),
-                                                                    [&](auto vTableMethod) { return method.name == vTableMethod.name; }));
+            auto index = std::distance(vtable.begin(), std::find_if(vtable.begin(), vtable.end(), [&](auto vTableMethod) {
+                                           return method.name == vTableMethod.methodInfo.name;
+                                       }));
             if ((size_t)index < vtable.size())
             {
                 // found method
-                vtable[index].funcOp = method.funcOp;
+                vtable[index].methodInfo.funcOp = method.funcOp;
                 method.isVirtual = true;
                 continue;
             }
@@ -267,7 +278,7 @@ struct ClassInfo
             if (method.isVirtual)
             {
                 method.virtualIndex = vtable.size();
-                vtable.push_back(method);
+                vtable.push_back({method, false});
             }
         }
     }
@@ -4646,7 +4657,7 @@ llvm.return %5 : i32
 
         mlirGenClassVirtualTableDefinition(location, newClassPtr, genContext);
 
-        // generate cast for every interface
+        // generate vtable for interfaces
         for (auto &heritageClause : classDeclarationAST->heritageClauses)
         {
             if (mlir::failed(
@@ -5018,9 +5029,23 @@ llvm.return %5 : i32
         MLIRCodeLogic mcl(builder);
 
         llvm::SmallVector<mlir_ts::FieldInfo> fields;
-        for (auto method : virtualTable)
+        for (auto vtableRecord : virtualTable)
         {
-            fields.push_back({mcl.TupleFieldName(method.name), method.funcOp.getType()});
+            fields.push_back({mcl.TupleFieldName(vtableRecord.name), vtableRecord.funcOp.getType()});
+        }
+
+        auto virtTuple = getTupleType(fields);
+        return virtTuple;
+    }
+
+    mlir::Type getVirtualTableType(llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo> &virtualTable)
+    {
+        MLIRCodeLogic mcl(builder);
+
+        llvm::SmallVector<mlir_ts::FieldInfo> fields;
+        for (auto vtableRecord : virtualTable)
+        {
+            fields.push_back({mcl.TupleFieldName(vtableRecord.methodInfo.name), vtableRecord.methodInfo.funcOp.getType()});
         }
 
         auto virtTuple = getTupleType(fields);
@@ -5036,7 +5061,7 @@ llvm.return %5 : i32
         }
 
         // TODO: ...
-        llvm::SmallVector<MethodInfo> virtualTable;
+        llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo> virtualTable;
         newClassPtr->getVirtualTable(virtualTable);
 
         MLIRTypeHelper mth(builder.getContext());
@@ -5057,7 +5082,8 @@ llvm.return %5 : i32
                 for (auto method : virtualTable)
                 {
                     auto methodConstName = builder.create<mlir_ts::SymbolRefOp>(
-                        location, method.funcOp.getType(), mlir::FlatSymbolRefAttr::get(builder.getContext(), method.funcOp.sym_name()));
+                        location, method.methodInfo.funcOp.getType(),
+                        mlir::FlatSymbolRefAttr::get(builder.getContext(), method.methodInfo.funcOp.sym_name()));
 
                     vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
                         location, virtTuple, methodConstName, vtableValue, builder.getArrayAttr(mth.getStructIndexAttrValue(fieldIndex++)));
