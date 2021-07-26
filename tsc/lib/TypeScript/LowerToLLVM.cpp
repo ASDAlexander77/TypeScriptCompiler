@@ -2287,9 +2287,10 @@ struct NewInterfaceLowering : public TsLlvmPattern<mlir_ts::NewInterfaceOp>
         auto llvmInterfaceType = tch.convertType(newInterfaceOp.getType());
 
         auto structVal = rewriter.create<mlir_ts::UndefOp>(loc, llvmInterfaceType);
-        auto structVal2 = rewriter.create<LLVM::InsertValueOp>(loc, structVal, newInterfaceOp.thisVal(), clh.getStructIndexAttr(0));
-        auto structVal3 =
-            rewriter.create<LLVM::InsertValueOp>(loc, structVal2, newInterfaceOp.interfaceVTable(), clh.getStructIndexAttr(1));
+        auto structVal2 =
+            rewriter.create<LLVM::InsertValueOp>(loc, structVal, clh.castToI8Ptr(newInterfaceOp.thisVal()), clh.getStructIndexAttr(0));
+        auto structVal3 = rewriter.create<LLVM::InsertValueOp>(loc, structVal2, clh.castToI8Ptr(newInterfaceOp.interfaceVTable()),
+                                                               clh.getStructIndexAttr(1));
 
         rewriter.replaceOp(newInterfaceOp, ValueRange{structVal3});
 
