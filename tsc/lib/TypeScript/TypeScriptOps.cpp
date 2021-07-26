@@ -319,38 +319,6 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
             return success();
         }
 
-        // class to string
-        if (auto stringType = res.getType().dyn_cast_or_null<mlir_ts::StringType>())
-        {
-            if (auto classType = in.getType().dyn_cast_or_null<mlir_ts::ClassType>())
-            {
-                auto className = classType.getName().getValue();
-                auto fullToStringName = className + ".toString";
-                auto callRes =
-                    rewriter.create<mlir_ts::CallOp>(castOp->getLoc(), fullToStringName.str(), TypeRange{stringType}, ValueRange{in});
-                auto res = callRes.getResult(0);
-                rewriter.replaceOp(castOp, res);
-                return success();
-            }
-        }
-
-        // class to interface
-        if (auto interfaceType = res.getType().dyn_cast_or_null<mlir_ts::InterfaceType>())
-        {
-            if (auto classType = in.getType().dyn_cast_or_null<mlir_ts::ClassType>())
-            {
-                auto className = classType.getName().getValue();
-                auto interfaceName = interfaceType.getName().getValue();
-                std::string fullToInterfaceName;
-                fullToInterfaceName += className.str() + "." + interfaceName.str() + "." + VTABLE_NAME;
-                auto newInterface =
-                    rewriter.create<mlir_ts::NewInterfaceOp>(castOp->getLoc(), TypeRange{interfaceType}, in,
-                                                             mlir::FlatSymbolRefAttr::get(rewriter.getContext(), fullToInterfaceName));
-                rewriter.replaceOp(castOp, ValueRange{newInterface});
-                return success();
-            }
-        }
-
         // null -> interface cast
         auto anyType = in.getType().dyn_cast_or_null<mlir_ts::AnyType>();
         auto interfaceType = res.getType().dyn_cast_or_null<mlir_ts::InterfaceType>();

@@ -909,7 +909,7 @@ class MLIRGenImpl
                 auto actualType = mth.convertConstTypeToType(type, copyRequired);
                 if (init && actualType != type)
                 {
-                    auto castValue = builder.create<mlir_ts::CastOp>(location, actualType, init);
+                    auto castValue = cast(location, actualType, init, genContext);
                     init = castValue;
                 }
 
@@ -1081,7 +1081,7 @@ class MLIRGenImpl
                 }
                 else if (type != init.getType())
                 {
-                    auto castValue = builder.create<mlir_ts::CastOp>(loc(initializer), type, init);
+                    auto castValue = cast(loc(initializer), type, init, genContext);
                     init = castValue;
                 }
             }
@@ -1701,7 +1701,7 @@ class MLIRGenImpl
 
                     if (optType != defaultValue.getType())
                     {
-                        defaultValue = builder.create<mlir_ts::CastOp>(location, optType, defaultValue);
+                        defaultValue = cast(location, optType, defaultValue, genContext);
                     }
 
                     builder.create<mlir_ts::ParamDefaultValueOp>(location, defaultValue);
@@ -1845,7 +1845,7 @@ class MLIRGenImpl
         auto typeInfo = getType(typeAssertionAST->type);
         auto exprValue = mlirGen(typeAssertionAST->expression, genContext);
 
-        auto castedValue = builder.create<mlir_ts::CastOp>(location, typeInfo, exprValue);
+        auto castedValue = cast(location, typeInfo, exprValue, genContext);
         return castedValue;
     }
 
@@ -1856,7 +1856,7 @@ class MLIRGenImpl
         auto typeInfo = getType(asExpressionAST->type);
         auto exprValue = mlirGen(asExpressionAST->expression, genContext);
 
-        auto castedValue = builder.create<mlir_ts::CastOp>(location, typeInfo, exprValue);
+        auto castedValue = cast(location, typeInfo, exprValue, genContext);
         return castedValue;
     }
 
@@ -1901,7 +1901,7 @@ class MLIRGenImpl
                 auto returnType = funcOp.getCallableResults().front();
                 if (returnType != expressionValue.getType())
                 {
-                    auto castValue = builder.create<mlir_ts::CastOp>(location, returnType, expressionValue);
+                    auto castValue = cast(location, returnType, expressionValue, genContext);
                     expressionValue = castValue;
                 }
             }
@@ -1947,7 +1947,7 @@ class MLIRGenImpl
 
         if (condValue.getType() != getBooleanType())
         {
-            condValue = builder.create<mlir_ts::CastOp>(location, getBooleanType(), condValue);
+            condValue = cast(location, getBooleanType(), condValue, genContext);
         }
 
         auto ifOp = builder.create<mlir_ts::IfOp>(location, condValue, hasElse);
@@ -2269,7 +2269,7 @@ class MLIRGenImpl
                 auto condition = builder.create<mlir_ts::LogicalBinaryOp>(
                     location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsToken), switchValue, caseValue);
 
-                auto conditionI1 = builder.create<mlir_ts::CastOp>(location, builder.getI1Type(), condition);
+                auto conditionI1 = cast(location, builder.getI1Type(), condition, genContext);
 
                 builder.create<mlir::CondBranchOp>(location, conditionI1, caseBodyBlock, /*trueArguments=*/mlir::ValueRange{},
                                                    lastConditionBlock, /*falseArguments=*/mlir::ValueRange{});
@@ -2454,7 +2454,7 @@ llvm.return %5 : i32
 
             if (expressionValue.getType() != getBooleanType())
             {
-                boolValue = builder.create<mlir_ts::CastOp>(location, getBooleanType(), expressionValue);
+                boolValue = cast(location, getBooleanType(), expressionValue, genContext);
             }
 
             return builder.create<mlir_ts::ArithmeticUnaryOp>(location, getBooleanType(), builder.getI32IntegerAttr((int)opCode),
@@ -2507,7 +2507,7 @@ llvm.return %5 : i32
 
         if (condValue.getType() != getBooleanType())
         {
-            condValue = builder.create<mlir_ts::CastOp>(location, getBooleanType(), condValue);
+            condValue = cast(location, getBooleanType(), condValue, genContext);
         }
 
         // detect value type
@@ -2562,7 +2562,7 @@ llvm.return %5 : i32
 
         auto resultType = leftExpressionValue.getType();
 
-        auto condValue = builder.create<mlir_ts::CastOp>(location, getBooleanType(), leftExpressionValue);
+        auto condValue = cast(location, getBooleanType(), leftExpressionValue, genContext);
 
         auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{resultType}, condValue, true);
 
@@ -2587,7 +2587,7 @@ llvm.return %5 : i32
         // sync right part
         if (resultTrue.getType() != resultFalse.getType())
         {
-            resultFalse = builder.create<mlir_ts::CastOp>(location, resultTrue.getType(), resultFalse);
+            resultFalse = cast(location, resultTrue.getType(), resultFalse, genContext);
         }
 
         builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{resultFalse});
@@ -2688,7 +2688,7 @@ llvm.return %5 : i32
         {
             if (rightExpressionValue.getType().dyn_cast_or_null<mlir_ts::CharType>())
             {
-                rightExpressionValue = builder.create<mlir_ts::CastOp>(loc(rightExpression), getStringType(), rightExpressionValue);
+                rightExpressionValue = cast(loc(rightExpression), getStringType(), rightExpressionValue, genContext);
             }
         }
 
@@ -2697,7 +2697,7 @@ llvm.return %5 : i32
         // saving
         if (leftExpressionValueBeforeCast.getType() != result.getType())
         {
-            result = builder.create<mlir_ts::CastOp>(loc(leftExpression), leftExpressionValueBeforeCast.getType(), result);
+            result = cast(loc(leftExpression), leftExpressionValueBeforeCast.getType(), result, genContext);
         }
 
         // TODO: finish it for field access, review CodeLogicHelper.saveResult
@@ -2784,12 +2784,12 @@ llvm.return %5 : i32
             // TODO: temporary hack
             if (leftExpressionValue.getType().dyn_cast_or_null<mlir_ts::CharType>())
             {
-                leftExpressionValue = builder.create<mlir_ts::CastOp>(loc(leftExpression), getStringType(), leftExpressionValue);
+                leftExpressionValue = cast(loc(leftExpression), getStringType(), leftExpressionValue, genContext);
             }
 
             if (rightExpressionValue.getType().dyn_cast_or_null<mlir_ts::CharType>())
             {
-                rightExpressionValue = builder.create<mlir_ts::CastOp>(loc(rightExpression), getStringType(), rightExpressionValue);
+                rightExpressionValue = cast(loc(rightExpression), getStringType(), rightExpressionValue, genContext);
             }
 
             // end todo
@@ -2799,14 +2799,12 @@ llvm.return %5 : i32
                 // cast from optional<T> type
                 if (auto leftOptType = leftExpressionValue.getType().dyn_cast_or_null<mlir_ts::OptionalType>())
                 {
-                    leftExpressionValue =
-                        builder.create<mlir_ts::CastOp>(loc(leftExpression), leftOptType.getElementType(), leftExpressionValue);
+                    leftExpressionValue = cast(loc(leftExpression), leftOptType.getElementType(), leftExpressionValue, genContext);
                 }
 
                 if (auto rightOptType = rightExpressionValue.getType().dyn_cast_or_null<mlir_ts::OptionalType>())
                 {
-                    rightExpressionValue =
-                        builder.create<mlir_ts::CastOp>(loc(rightExpression), rightOptType.getElementType(), rightExpressionValue);
+                    rightExpressionValue = cast(loc(rightExpression), rightOptType.getElementType(), rightExpressionValue, genContext);
                 }
             }
         }
@@ -2823,12 +2821,12 @@ llvm.return %5 : i32
             // cast to int
             if (leftExpressionValue.getType() != builder.getI32Type())
             {
-                leftExpressionValue = builder.create<mlir_ts::CastOp>(loc(leftExpression), builder.getI32Type(), leftExpressionValue);
+                leftExpressionValue = cast(loc(leftExpression), builder.getI32Type(), leftExpressionValue, genContext);
             }
 
             if (rightExpressionValue.getType() != builder.getI32Type())
             {
-                rightExpressionValue = builder.create<mlir_ts::CastOp>(loc(rightExpression), builder.getI32Type(), rightExpressionValue);
+                rightExpressionValue = cast(loc(rightExpression), builder.getI32Type(), rightExpressionValue, genContext);
             }
 
             break;
@@ -2838,12 +2836,12 @@ llvm.return %5 : i32
 
             if (leftExpressionValue.getType() != builder.getF32Type())
             {
-                leftExpressionValue = builder.create<mlir_ts::CastOp>(loc(leftExpression), builder.getF32Type(), leftExpressionValue);
+                leftExpressionValue = cast(loc(leftExpression), builder.getF32Type(), leftExpressionValue, genContext);
             }
 
             if (rightExpressionValue.getType() != builder.getF32Type())
             {
-                rightExpressionValue = builder.create<mlir_ts::CastOp>(loc(rightExpression), builder.getF32Type(), rightExpressionValue);
+                rightExpressionValue = cast(loc(rightExpression), builder.getF32Type(), rightExpressionValue, genContext);
             }
 
             break;
@@ -2867,14 +2865,12 @@ llvm.return %5 : i32
                 {
                     if (leftExpressionValue.getType() != builder.getF32Type())
                     {
-                        leftExpressionValue =
-                            builder.create<mlir_ts::CastOp>(loc(leftExpression), builder.getF32Type(), leftExpressionValue);
+                        leftExpressionValue = cast(loc(leftExpression), builder.getF32Type(), leftExpressionValue, genContext);
                     }
 
                     if (rightExpressionValue.getType() != builder.getF32Type())
                     {
-                        rightExpressionValue =
-                            builder.create<mlir_ts::CastOp>(loc(rightExpression), builder.getF32Type(), rightExpressionValue);
+                        rightExpressionValue = cast(loc(rightExpression), builder.getF32Type(), rightExpressionValue, genContext);
                     }
                 }
                 else
@@ -2885,14 +2881,12 @@ llvm.return %5 : i32
                     {
                         if (leftExpressionValue.getType() != builder.getI32Type())
                         {
-                            leftExpressionValue =
-                                builder.create<mlir_ts::CastOp>(loc(leftExpression), builder.getI32Type(), leftExpressionValue);
+                            leftExpressionValue = cast(loc(leftExpression), builder.getI32Type(), leftExpressionValue, genContext);
                         }
 
                         if (rightExpressionValue.getType() != builder.getI32Type())
                         {
-                            rightExpressionValue =
-                                builder.create<mlir_ts::CastOp>(loc(rightExpression), builder.getI32Type(), rightExpressionValue);
+                            rightExpressionValue = cast(loc(rightExpression), builder.getI32Type(), rightExpressionValue, genContext);
                         }
                     }
                 }
@@ -2902,8 +2896,7 @@ llvm.return %5 : i32
         default:
             if (leftExpressionValue.getType() != rightExpressionValue.getType())
             {
-                rightExpressionValue =
-                    builder.create<mlir_ts::CastOp>(loc(rightExpression), leftExpressionValue.getType(), rightExpressionValue);
+                rightExpressionValue = cast(loc(rightExpression), leftExpressionValue.getType(), rightExpressionValue, genContext);
             }
 
             break;
@@ -2939,7 +2932,7 @@ llvm.return %5 : i32
         {
             if (leftExpressionValueBeforeCast.getType() != result.getType())
             {
-                result = builder.create<mlir_ts::CastOp>(loc(leftExpression), leftExpressionValueBeforeCast.getType(), result);
+                result = cast(loc(leftExpression), leftExpressionValueBeforeCast.getType(), result, genContext);
             }
 
             // TODO: finish it for field access, review CodeLogicHelper.saveResult
@@ -3150,7 +3143,7 @@ llvm.return %5 : i32
                         assert(thisValue);
                     }
 
-                    effectiveThisValue = builder.create<mlir_ts::CastOp>(location, classInfo->classType, thisValue);
+                    effectiveThisValue = cast(location, classInfo->classType, thisValue, genContext);
                 }
 
                 if (methodInfo.isVirtual)
@@ -3578,7 +3571,7 @@ llvm.return %5 : i32
 
             if (value.getType() != funcType.getInput(i))
             {
-                auto castValue = builder.create<mlir_ts::CastOp>(loc(expression), funcType.getInput(i), value);
+                auto castValue = cast(loc(expression), funcType.getInput(i), value, genContext);
                 operands.push_back(castValue);
             }
             else
@@ -3646,7 +3639,7 @@ llvm.return %5 : i32
         auto effectiveThisValue = thisValue;
         if (castThisValueToClass)
         {
-            effectiveThisValue = builder.create<mlir_ts::CastOp>(location, classInfo->classType, thisValue);
+            effectiveThisValue = cast(location, classInfo->classType, thisValue, genContext);
         }
 
         auto varDecl = std::make_shared<VariableDeclarationDOM>(CONSTRUCTOR_TEMPVAR_NAME, classInfo->classType, location);
@@ -3665,7 +3658,7 @@ llvm.return %5 : i32
             auto vtableAddress = resolveFullNameIdentifier(location, fullClassVTableFieldName, true, genContext);
 
             assert(vtableAddress);
-            auto anyTypeValue = builder.create<mlir_ts::CastOp>(location, getAnyType(), vtableAddress);
+            auto anyTypeValue = cast(location, getAnyType(), vtableAddress, genContext);
             auto varDecl = std::make_shared<VariableDeclarationDOM>(VTABLE_NAME, anyTypeValue.getType(), location);
             declare(varDecl, anyTypeValue);
 
@@ -3724,7 +3717,7 @@ llvm.return %5 : i32
 
             if (count.getType() != builder.getI32Type())
             {
-                count = builder.create<mlir_ts::CastOp>(location, builder.getI32Type(), count);
+                count = cast(location, builder.getI32Type(), count, genContext);
             }
 
             auto newArrOp = builder.create<mlir_ts::NewArrayOp>(location, getArrayType(type), count);
@@ -3748,7 +3741,7 @@ llvm.return %5 : i32
         {
             if (auto arrayType = expr.getType().dyn_cast_or_null<mlir_ts::ArrayType>())
             {
-                expr = builder.create<mlir_ts::CastOp>(location, mlir_ts::RefType::get(arrayType.getElementType()), expr);
+                expr = cast(location, mlir_ts::RefType::get(arrayType.getElementType()), expr, genContext);
             }
             else
             {
@@ -3843,7 +3836,7 @@ llvm.return %5 : i32
 
             if (exprValue.getType() != stringType)
             {
-                exprValue = builder.create<mlir_ts::CastOp>(location, stringType, exprValue);
+                exprValue = cast(location, stringType, exprValue, genContext);
             }
 
             // expr value
@@ -3898,7 +3891,7 @@ llvm.return %5 : i32
         auto arrayAttr = mlir::ArrayAttr::get(builder.getContext(), strs);
         auto constStringArray = builder.create<mlir_ts::ConstantOp>(location, getConstArrayType(getStringType(), strs.size()), arrayAttr);
 
-        auto strArrayValue = builder.create<mlir_ts::CastOp>(location, getArrayType(getStringType()), constStringArray);
+        auto strArrayValue = cast(location, getArrayType(getStringType()), constStringArray, genContext);
 
         vals.insert(vals.begin(), strArrayValue);
 
@@ -3914,7 +3907,7 @@ llvm.return %5 : i32
         {
             if (value.getType() != funcType.getInput(i))
             {
-                auto castValue = builder.create<mlir_ts::CastOp>(value.getLoc(), funcType.getInput(i), value);
+                auto castValue = cast(value.getLoc(), funcType.getInput(i), value, genContext);
                 operands.push_back(castValue);
             }
             else
@@ -5472,6 +5465,40 @@ llvm.return %5 : i32
         {
             newClassPtr->accessors[accessorIndex].set = funcOp;
         }
+    }
+
+    mlir::Value cast(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext)
+    {
+        // class to string
+        if (auto stringType = type.dyn_cast_or_null<mlir_ts::StringType>())
+        {
+            if (auto classType = value.getType().dyn_cast_or_null<mlir_ts::ClassType>())
+            {
+                auto className = classType.getName().getValue();
+                auto fullToStringName = className + ".toString";
+                auto callRes =
+                    builder.create<mlir_ts::CallOp>(location, fullToStringName.str(), mlir::TypeRange{stringType}, mlir::ValueRange{value});
+                return callRes.getResult(0);
+            }
+        }
+
+        // class to interface
+        if (auto interfaceType = type.dyn_cast_or_null<mlir_ts::InterfaceType>())
+        {
+            if (auto classType = value.getType().dyn_cast_or_null<mlir_ts::ClassType>())
+            {
+                auto className = classType.getName().getValue();
+                auto interfaceName = interfaceType.getName().getValue();
+                std::string fullToInterfaceName;
+                fullToInterfaceName += className.str() + "." + interfaceName.str() + "." + VTABLE_NAME;
+                auto newInterface =
+                    builder.create<mlir_ts::NewInterfaceOp>(location, mlir::TypeRange{interfaceType}, value,
+                                                            mlir::FlatSymbolRefAttr::get(builder.getContext(), fullToInterfaceName));
+                return newInterface;
+            }
+        }
+
+        return builder.create<mlir_ts::CastOp>(location, type, value);
     }
 
     mlir::Type getType(Node typeReferenceAST)
