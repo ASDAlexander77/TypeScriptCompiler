@@ -5137,8 +5137,10 @@ llvm.return %5 : i32
                 {
                     if (vtRecord.isInterfaceVTable)
                     {
-                        // TODO: null for now
-                        auto interfaceVTableValue = builder.create<mlir_ts::NullOp>(location, getAnyType());
+                        // TODO: write correct full name for vtable
+                        auto interfaceVTableValue =
+                            resolveFullNameIdentifier(location, vtRecord.methodInfo.name + VTABLE_NAME, true, genContext);
+                        assert(interfaceVTableValue);
 
                         vtableValue =
                             builder.create<mlir_ts::InsertPropertyOp>(location, virtTuple, interfaceVTableValue, vtableValue,
