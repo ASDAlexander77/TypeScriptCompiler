@@ -109,6 +109,8 @@ struct InterfaceMethodInfo
     int virtualIndex;
 };
 
+struct ClassInfo;
+
 struct InterfaceInfo
 {
   public:
@@ -130,27 +132,21 @@ struct InterfaceInfo
     {
     }
 
-    void getVirtualTable(llvm::SmallVector<InterfaceMethodInfo> &vtable)
+    mlir::LogicalResult getVirtualTable(llvm::SmallVector<MethodInfo> &vtable, std::function<MethodInfo &(std::string)> resoveMethod)
     {
-        for (auto &base : implements)
-        {
-            base->getVirtualTable(vtable);
-        }
-
         // do vtable for current class
         for (auto &method : methods)
         {
-            auto index = std::distance(vtable.begin(), std::find_if(vtable.begin(), vtable.end(),
-                                                                    [&](auto vTableMethod) { return method.name == vTableMethod.name; }));
-            if ((size_t)index < vtable.size())
+            auto &classMethodInfo = resoveMethod(method.name);
+            if (classMethodInfo.name.empty())
             {
-                // found method
-                continue;
+                return mlir::failure();
             }
 
-            method.virtualIndex = vtable.size();
-            vtable.push_back(method);
+            vtable.push_back(classMethodInfo);
         }
+
+        return mlir::success();
     }
 
     int getMethodIndex(mlir::StringRef name)
@@ -4672,16 +4668,6 @@ llvm.return %5 : i32
 
         mlirGenClassVirtualTableDefinition(location, newClassPtr, genContext);
 
-        // generate vtable for interfaces
-        for (auto &heritageClause : classDeclarationAST->heritageClauses)
-        {
-            if (mlir::failed(
-                    mlirGenClassHeritageClauseImplements(classDeclarationAST, newClassPtr, heritageClause, declareClass, genContext)))
-            {
-                return mlir::failure();
-            }
-        }
-
         // add methods when we have classType
         auto notResolved = 0;
         do
@@ -4706,6 +4692,16 @@ llvm.return %5 : i32
             }
 
         } while (notResolved > 0);
+
+        // generate vtable for interfaces
+        for (auto &heritageClause : classDeclarationAST->heritageClauses)
+        {
+            if (mlir::failed(
+                    mlirGenClassHeritageClauseImplements(classDeclarationAST, newClassPtr, heritageClause, declareClass, genContext)))
+            {
+                return mlir::failure();
+            }
+        }
 
         return mlir::success();
     }
@@ -4994,9 +4990,26 @@ llvm.return %5 : i32
     mlir::LogicalResult mlirGenClassVirtualTableDefinitionForInterface(mlir::Location location, ClassInfo::TypePtr newClassPtr,
                                                                        InterfaceInfo::TypePtr newInterfacePtr, const GenContext &genContext)
     {
+        MethodInfo emptyMethod;
         // TODO: ...
         llvm::SmallVector<MethodInfo> virtualTable;
-        // newClassPtr->getVirtualTable(virtualTable);
+        auto result = newInterfacePtr->getVirtualTable(virtualTable, [&](std::string name) -> MethodInfo & {
+            auto index = newClassPtr->getMethodIndex(name);
+            if (index >= 0)
+            {
+                return newClassPtr->methods[index];
+            }
+
+            emitError(location) << "can't find method '" << name << "' for interface '" << newInterfacePtr->name << "' in class '"
+                                << newClassPtr->name << "'";
+
+            return emptyMethod;
+        });
+
+        if (mlir::failed(result))
+        {
+            return result;
+        }
 
         MLIRTypeHelper mth(builder.getContext());
 
@@ -5037,7 +5050,6 @@ llvm.return %5 : i32
             return mlir::success();
         }
 
-        // TODO: finish code to prevent multiple adding cast method
         // TODO: finish method.
 
         for (auto &implementingType : heritageClause->types)
