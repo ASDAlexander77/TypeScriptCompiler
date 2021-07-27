@@ -2274,11 +2274,7 @@ struct InterfaceSymbolRefLowering : public TsLlvmPattern<mlir_ts::InterfaceSymbo
         auto thisVal =
             rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), interfaceSymbolRefOp.interfaceVal(), clh.getStructIndexAttr(1));
 
-        auto ptrToArrOfPtrs = rewriter.create<mlir_ts::CastOp>(loc, th.getI8PtrPtrType(), vtable);
-
-        auto index = clh.createI32ConstantOf(interfaceSymbolRefOp.index());
-        auto methodPtrPtr = rewriter.create<LLVM::GEPOp>(loc, th.getI8PtrPtrType(), ptrToArrOfPtrs, ValueRange{index});
-        auto methodPtr = rewriter.create<LLVM::LoadOp>(loc, methodPtrPtr);
+        auto methodPtr = rewriter.create<mlir_ts::VTableOffsetRefOp>(loc, th.getI8PtrType(), vtable, interfaceSymbolRefOp.index());
         auto methodTyped = rewriter.create<mlir_ts::CastOp>(loc, interfaceSymbolRefOp.getResult(0).getType(), methodPtr);
 
         rewriter.replaceOp(interfaceSymbolRefOp, ValueRange{methodTyped, thisVal});
@@ -2303,10 +2299,10 @@ struct NewInterfaceLowering : public TsLlvmPattern<mlir_ts::NewInterfaceOp>
         auto llvmInterfaceType = tch.convertType(newInterfaceOp.getType());
 
         auto structVal = rewriter.create<mlir_ts::UndefOp>(loc, llvmInterfaceType);
-        auto structVal2 =
-            rewriter.create<LLVM::InsertValueOp>(loc, structVal, clh.castToI8Ptr(newInterfaceOp.thisVal()), clh.getStructIndexAttr(0));
-        auto structVal3 = rewriter.create<LLVM::InsertValueOp>(loc, structVal2, clh.castToI8Ptr(newInterfaceOp.interfaceVTable()),
-                                                               clh.getStructIndexAttr(1));
+        auto structVal2 = rewriter.create<LLVM::InsertValueOp>(loc, structVal, clh.castToI8Ptr(newInterfaceOp.interfaceVTable()),
+                                                               clh.getStructIndexAttr(0));
+        auto structVal3 =
+            rewriter.create<LLVM::InsertValueOp>(loc, structVal2, clh.castToI8Ptr(newInterfaceOp.thisVal()), clh.getStructIndexAttr(1));
 
         rewriter.replaceOp(newInterfaceOp, ValueRange{structVal3});
 
