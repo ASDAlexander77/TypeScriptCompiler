@@ -1,6 +1,7 @@
 #define DEBUG_TYPE "mlir"
 
 #include "TypeScript/TypeScriptOps.h"
+#include "TypeScript/CommonGenLogic.h"
 #include "TypeScript/Defines.h"
 #include "TypeScript/TypeScriptDialect.h"
 
@@ -232,70 +233,15 @@ LogicalResult verify(mlir_ts::CastOp op)
     // funcType -> funcType
     auto inFuncType = op.in().getType().dyn_cast_or_null<mlir::FunctionType>();
     auto resFuncType = op.res().getType().dyn_cast_or_null<mlir::FunctionType>();
+
     if (inFuncType && resFuncType)
     {
-        // TODO: make 1 common function
-        if (inFuncType.getInputs().size() != resFuncType.getInputs().size())
+        ::typescript::MLIRTypeHelper mth(op.getContext());
+        auto result = mth.TestFunctionTypesMatch(inFuncType, resFuncType);
+        if (::typescript::MatchResultType::Match != result.result)
         {
-            return op.emitOpError("can't cast function type to other function type with different count of parameters ")
-                   << '(' << inFuncType << ") must match the "
-                   << "function type(" << resFuncType << ')';
-        }
-
-        for (unsigned i = 0, e = inFuncType.getInputs().size(); i != e; ++i)
-        {
-            if (inFuncType.getInput(i) != resFuncType.getInput(i))
-            {
-                return op.emitOpError("can't cast function type to other function type with different parameters #")
-                       << i << '(' << inFuncType.getInput(i) << ") must match the type of the corresponding argument in "
-                       << "function argument(" << resFuncType.getInput(i) << ')';
-            }
-        }
-
-        auto inRetCount = inFuncType.getResults().size();
-        auto resRetCount = resFuncType.getResults().size();
-
-        auto noneType = mlir::NoneType::get(op.getContext());
-        auto voidType = mlir_ts::VoidType::get(op.getContext());
-
-        for (auto retType : inFuncType.getResults())
-        {
-            auto isVoid = !retType || retType == noneType || retType == voidType;
-            if (isVoid)
-            {
-                inRetCount--;
-            }
-        }
-
-        for (auto retType : resFuncType.getResults())
-        {
-            auto isVoid = !retType || retType == noneType || retType == voidType;
-            if (isVoid)
-            {
-                resRetCount--;
-            }
-        }
-
-        if (inRetCount != resRetCount)
-        {
-            return op.emitOpError("can't cast function type to other function type with different count of returns ")
-                   << '(' << inFuncType << ") must match the "
-                   << "function type(" << resFuncType << ')';
-        }
-
-        for (unsigned i = 0, e = inFuncType.getResults().size(); i != e; ++i)
-        {
-            auto inRetType = inFuncType.getResult(i);
-            auto resRetType = resFuncType.getResult(i);
-
-            auto isInVoid = !inRetType || inRetType == noneType || inRetType == voidType;
-            auto isResVoid = !resRetType || resRetType == noneType || resRetType == voidType;
-            if (!isInVoid && !isResVoid && inRetType != resRetType)
-            {
-                return op.emitOpError("can't cast function type to other function type with different return types #")
-                       << i << '(' << inRetType << ") must match the return type of the corresponding return in "
-                       << "function return(" << resRetType << ')';
-            }
+            op->emitError("can't cast function type '") << inFuncType << " to type '" << resFuncType << "'";
+            return failure();
         }
     }
 

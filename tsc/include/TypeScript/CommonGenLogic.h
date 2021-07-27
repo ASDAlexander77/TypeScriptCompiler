@@ -113,6 +113,21 @@ class MLIRHelper
     }
 };
 
+enum class MatchResultType
+{
+    Match,
+    NotMatchArgCount,
+    NotMatchArg,
+    NotMatchResultCount,
+    NotMatchResult
+};
+
+struct MatchResult
+{
+    MatchResultType result;
+    unsigned index;
+};
+
 class MLIRTypeHelper
 {
     mlir::MLIRContext *context;
@@ -156,6 +171,67 @@ class MLIRTypeHelper
 
         copyRequired = false;
         return type;
+    }
+
+    MatchResult TestFunctionTypesMatch(mlir::FunctionType inFuncType, mlir::FunctionType resFuncType, unsigned startParam = 0)
+    {
+        // TODO: make 1 common function
+        if (inFuncType.getInputs().size() != resFuncType.getInputs().size())
+        {
+            return {MatchResultType::NotMatchArgCount, 0};
+        }
+
+        for (unsigned i = startParam, e = inFuncType.getInputs().size(); i != e; ++i)
+        {
+            if (inFuncType.getInput(i) != resFuncType.getInput(i))
+            {
+                return {MatchResultType::NotMatchArg, i};
+            }
+        }
+
+        auto inRetCount = inFuncType.getResults().size();
+        auto resRetCount = resFuncType.getResults().size();
+
+        auto noneType = mlir::NoneType::get(context);
+        auto voidType = mlir_ts::VoidType::get(context);
+
+        for (auto retType : inFuncType.getResults())
+        {
+            auto isVoid = !retType || retType == noneType || retType == voidType;
+            if (isVoid)
+            {
+                inRetCount--;
+            }
+        }
+
+        for (auto retType : resFuncType.getResults())
+        {
+            auto isVoid = !retType || retType == noneType || retType == voidType;
+            if (isVoid)
+            {
+                resRetCount--;
+            }
+        }
+
+        if (inRetCount != resRetCount)
+        {
+            return {MatchResultType::NotMatchResultCount, 0};
+        }
+
+        for (unsigned i = 0, e = inFuncType.getResults().size(); i != e; ++i)
+        {
+            auto inRetType = inFuncType.getResult(i);
+            auto resRetType = resFuncType.getResult(i);
+
+            auto isInVoid = !inRetType || inRetType == noneType || inRetType == voidType;
+            auto isResVoid = !resRetType || resRetType == noneType || resRetType == voidType;
+            if (!isInVoid && !isResVoid && inRetType != resRetType)
+            {
+                return {MatchResultType::NotMatchResult, i};
+            }
+        }
+
+        return {MatchResultType::Match, 0};
     }
 };
 } // namespace typescript
