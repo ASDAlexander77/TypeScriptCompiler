@@ -326,7 +326,7 @@ struct ClassInfo
     int getImplementIndex(mlir::StringRef name)
     {
         auto dist = std::distance(implements.begin(), std::find_if(implements.begin(), implements.end(), [&](ImplementInfo implementInfo) {
-                                      return name == implementInfo.implement->name;
+                                      return name == implementInfo.implement->fullName;
                                   }));
         return (signed)dist >= (signed)implements.size() ? -1 : dist;
     }
@@ -5608,7 +5608,6 @@ llvm.return %5 : i32
             if (auto classType = value.getType().dyn_cast_or_null<mlir_ts::ClassType>())
             {
                 auto vtableAccess = mlirGenPropertyAccessExpression(location, value, VTABLE_NAME, genContext);
-                // TODO: add interface index
 
                 auto classInfo = getClassByFullName(classType.getName().getValue());
                 assert(classInfo);
@@ -5618,8 +5617,11 @@ llvm.return %5 : i32
                 {
                     auto interfaceVirtTableIndex = classInfo->implements[implementIndex].virtualIndex;
 
+                    auto interfaceVTablePtr =
+                        builder.create<mlir_ts::VTableOffsetRefOp>(location, getAnyType(), vtableAccess, interfaceVirtTableIndex);
+
                     auto newInterface =
-                        builder.create<mlir_ts::NewInterfaceOp>(location, mlir::TypeRange{interfaceType}, value, vtableAccess);
+                        builder.create<mlir_ts::NewInterfaceOp>(location, mlir::TypeRange{interfaceType}, value, interfaceVTablePtr);
                     return newInterface;
                 }
 

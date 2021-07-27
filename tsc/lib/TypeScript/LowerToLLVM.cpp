@@ -2212,6 +2212,30 @@ struct CaptureOpLowering : public TsLlvmPattern<mlir_ts::CaptureOp>
     }
 };
 
+struct VTableOffsetRefLowering : public TsLlvmPattern<mlir_ts::VTableOffsetRefOp>
+{
+    using TsLlvmPattern<mlir_ts::VTableOffsetRefOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::VTableOffsetRefOp vtableOffsetRefOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        Location loc = vtableOffsetRefOp.getLoc();
+
+        TypeHelper th(rewriter);
+        CodeLogicHelper clh(vtableOffsetRefOp, rewriter);
+
+        auto ptrToArrOfPtrs = rewriter.create<mlir_ts::CastOp>(loc, th.getI8PtrPtrType(), vtableOffsetRefOp.vtable());
+
+        auto index = clh.createI32ConstantOf(vtableOffsetRefOp.index());
+        auto methodOrInterfacePtrPtr = rewriter.create<LLVM::GEPOp>(loc, th.getI8PtrPtrType(), ptrToArrOfPtrs, ValueRange{index});
+        auto methodOrInterfacePtr = rewriter.create<LLVM::LoadOp>(loc, methodOrInterfacePtrPtr);
+
+        rewriter.replaceOp(vtableOffsetRefOp, ValueRange{methodOrInterfacePtr});
+
+        return success();
+    }
+};
+
 struct ThisVirtualSymbolRefLowering : public TsLlvmPattern<mlir_ts::ThisVirtualSymbolRefOp>
 {
     using TsLlvmPattern<mlir_ts::ThisVirtualSymbolRefOp>::TsLlvmPattern;
@@ -2222,13 +2246,9 @@ struct ThisVirtualSymbolRefLowering : public TsLlvmPattern<mlir_ts::ThisVirtualS
         Location loc = thisVirtualSymbolRefOp.getLoc();
 
         TypeHelper th(rewriter);
-        CodeLogicHelper clh(thisVirtualSymbolRefOp, rewriter);
 
-        auto ptrToArrOfPtrs = rewriter.create<mlir_ts::CastOp>(loc, th.getI8PtrPtrType(), thisVirtualSymbolRefOp.vtable());
-
-        auto index = clh.createI32ConstantOf(thisVirtualSymbolRefOp.index());
-        auto methodPtrPtr = rewriter.create<LLVM::GEPOp>(loc, th.getI8PtrPtrType(), ptrToArrOfPtrs, ValueRange{index});
-        auto methodPtr = rewriter.create<LLVM::LoadOp>(loc, methodPtrPtr);
+        auto methodPtr = rewriter.create<mlir_ts::VTableOffsetRefOp>(loc, th.getI8PtrType(), thisVirtualSymbolRefOp.vtable(),
+                                                                     thisVirtualSymbolRefOp.index());
         auto methodTyped = rewriter.create<mlir_ts::CastOp>(loc, thisVirtualSymbolRefOp.getType(), methodPtr);
 
         rewriter.replaceOp(thisVirtualSymbolRefOp, ValueRange{methodTyped});
@@ -2458,18 +2478,19 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 
     // The only remaining operation to lower from the `typescript` dialect, is the PrintOp.
     TsLlvmContext tsLlvmContext;
-    patterns.insert<CallOpLowering, CallIndirectOpLowering, CaptureOpLowering, ExitOpLowering, ReturnOpLowering, ReturnValOpLowering,
-                    AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering,
-                    AssertOpLowering, CastOpLowering, ConstantOpLowering, CreateOptionalOpLowering, UndefOptionalOpLowering,
-                    HasValueOpLowering, ValueOpLowering, SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering, EntryOpLowering,
-                    FuncOpLowering, LoadOpLowering, ElementRefOpLowering, PropertyRefOpLowering, ExtractPropertyOpLowering,
-                    LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering,
-                    NewArrayOpLowering, PushOpLowering, PopOpLowering, DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering,
-                    PrintOpLowering, StoreOpLowering, SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering,
-                    StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering,
-                    MemoryCopyOpLowering, LoadSaveValueLowering, ThrowOpLoweringVCWin32, TrampolineOpLowering, TryOpLowering,
-                    VariableOpLowering, InvokeOpLowering, ThisVirtualSymbolRefLowering, InterfaceSymbolRefLowering, NewInterfaceLowering>(
-        typeConverter, &getContext(), &tsLlvmContext);
+    patterns
+        .insert<CallOpLowering, CallIndirectOpLowering, CaptureOpLowering, ExitOpLowering, ReturnOpLowering, ReturnValOpLowering,
+                AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering,
+                AssertOpLowering, CastOpLowering, ConstantOpLowering, CreateOptionalOpLowering, UndefOptionalOpLowering, HasValueOpLowering,
+                ValueOpLowering, SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering, EntryOpLowering, FuncOpLowering,
+                LoadOpLowering, ElementRefOpLowering, PropertyRefOpLowering, ExtractPropertyOpLowering, LogicalBinaryOpLowering,
+                NullOpLowering, NewOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, PushOpLowering,
+                PopOpLowering, DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering, PrintOpLowering, StoreOpLowering,
+                SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering, StringLengthOpLowering, StringConcatOpLowering,
+                StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering, MemoryCopyOpLowering, LoadSaveValueLowering,
+                ThrowOpLoweringVCWin32, TrampolineOpLowering, TryOpLowering, VariableOpLowering, InvokeOpLowering,
+                ThisVirtualSymbolRefLowering, InterfaceSymbolRefLowering, NewInterfaceLowering, VTableOffsetRefLowering>(
+            typeConverter, &getContext(), &tsLlvmContext);
 
     populateTypeScriptConversionPatterns(typeConverter, m);
 
