@@ -5152,8 +5152,10 @@ llvm.return %5 : i32
                             resolveFullNameIdentifier(location, fullClassInterfaceVTableFieldName, true, genContext);
                         assert(interfaceVTableValue);
 
+                        auto interfaceVTableValueAsAny = cast(location, getAnyType(), interfaceVTableValue, genContext);
+
                         vtableValue =
-                            builder.create<mlir_ts::InsertPropertyOp>(location, virtTuple, interfaceVTableValue, vtableValue,
+                            builder.create<mlir_ts::InsertPropertyOp>(location, virtTuple, interfaceVTableValueAsAny, vtableValue,
                                                                       builder.getArrayAttr(mth.getStructIndexAttrValue(fieldIndex++)));
                     }
                     else
