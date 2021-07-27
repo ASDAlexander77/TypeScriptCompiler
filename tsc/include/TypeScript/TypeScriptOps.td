@@ -90,10 +90,6 @@ def SymbolRefOp : TypeScript_Op<"SymbolRef",
   let arguments = (ins FlatSymbolRefAttr:$identifier);
   let results = (outs AnyType:$value);
 
-  let builders = [
-    OpBuilder<(ins "FlatSymbolRefAttr":$identifier),
-    [{ build($_builder, $_state, identifier.getType(), identifier); }]>];
-
   let extraClassDeclaration = [{
     Attribute getValue() { return (*this)->getAttr("identifier"); }
   }];
@@ -107,12 +103,8 @@ def ThisSymbolRefOp : TypeScript_Op<"ThisSymbolRef",
     [NoSideEffect]> {
   let summary = "symbol reference as to this member";
 
-  let arguments = (ins AnyType:$thisVal, FlatSymbolRefAttr:$identifier);
+  let arguments = (ins TypeScript_AnyRefLike:$thisVal, FlatSymbolRefAttr:$identifier);
   let results = (outs AnyType:$value);
-
-  let builders = [
-    OpBuilder<(ins "Value":$thisVal, "FlatSymbolRefAttr":$identifier),
-    [{ build($_builder, $_state, identifier.getType(), thisVal, identifier); }]>];
 
   let extraClassDeclaration = [{
     Attribute getValue() { return (*this)->getAttr("identifier"); }
@@ -123,11 +115,26 @@ def ThisSymbolRefOp : TypeScript_Op<"ThisSymbolRef",
   let assemblyFormat = "`(` $thisVal `:` type($thisVal) `)` attr-dict `:` type($value)";
 }
 
+def VTableOffsetRefOp : TypeScript_Op<"VTableOffsetRef", 
+    [NoSideEffect]> {
+  let summary = "gets reference in vtable";
+
+  let arguments = (ins TypeScript_AnyRefLike:$vtable, I32Attr:$index);
+  let results = (outs TypeScript_AnyRefLike:$value);
+
+  let extraClassDeclaration = [{
+    Attribute getValue() { return (*this)->getAttr("identifier"); }
+  }];
+
+  let assemblyFormat = "`(` $vtable `[` $index `]` `:` type($vtable) `)` attr-dict `:` type($value)";
+}
+
+
 def ThisVirtualSymbolRefOp : TypeScript_Op<"ThisVirtualSymbolRef", 
     [NoSideEffect]> {
   let summary = "symbol reference as to virtual this member";
 
-  let arguments = (ins AnyType:$thisVal, AnyType:$vtable, I32Attr:$index, FlatSymbolRefAttr:$identifier);
+  let arguments = (ins TypeScript_AnyRefLike:$thisVal, TypeScript_AnyRefLike:$vtable, I32Attr:$index, FlatSymbolRefAttr:$identifier);
   let results = (outs AnyType:$value);
 
   let builders = [

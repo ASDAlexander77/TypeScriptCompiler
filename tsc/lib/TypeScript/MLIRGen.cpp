@@ -109,8 +109,6 @@ struct InterfaceMethodInfo
     int virtualIndex;
 };
 
-struct ClassInfo;
-
 struct InterfaceInfo
 {
   public:
@@ -132,12 +130,12 @@ struct InterfaceInfo
     {
     }
 
-    mlir::LogicalResult getVirtualTable(llvm::SmallVector<MethodInfo> &vtable, std::function<MethodInfo &(std::string)> resoveMethod)
+    mlir::LogicalResult getVirtualTable(llvm::SmallVector<MethodInfo> &vtable, std::function<MethodInfo &(std::string)> resolveMethod)
     {
         // do vtable for current class
         for (auto &method : methods)
         {
-            auto &classMethodInfo = resoveMethod(method.name);
+            auto &classMethodInfo = resolveMethod(method.name);
             if (classMethodInfo.name.empty())
             {
                 return mlir::failure();
@@ -164,6 +162,12 @@ struct InterfaceInfo
     }
 };
 
+struct ImplementInfo
+{
+    InterfaceInfo::TypePtr implement;
+    int virtualIndex;
+};
+
 struct ClassInfo
 {
   public:
@@ -177,7 +181,7 @@ struct ClassInfo
 
     llvm::SmallVector<ClassInfo::TypePtr> baseClasses;
 
-    llvm::SmallVector<InterfaceInfo::TypePtr> implements;
+    llvm::SmallVector<ImplementInfo> implements;
 
     llvm::SmallVector<StaticFieldInfo> staticFields;
 
@@ -259,7 +263,7 @@ struct ClassInfo
         for (auto &implement : implements)
         {
             auto index = std::distance(vtable.begin(), std::find_if(vtable.begin(), vtable.end(), [&](auto vTableRecord) {
-                                           return implement->fullName == vTableRecord.methodInfo.name;
+                                           return implement.implement->fullName == vTableRecord.methodInfo.name;
                                        }));
             if ((size_t)index < vtable.size())
             {
@@ -268,7 +272,8 @@ struct ClassInfo
             }
 
             MethodInfo methodInfo;
-            methodInfo.name = implement->fullName.str();
+            methodInfo.name = implement.implement->fullName.str();
+            implement.virtualIndex = vtable.size();
             vtable.push_back({methodInfo, true});
         }
 
@@ -316,6 +321,14 @@ struct ClassInfo
         auto dist = std::distance(accessors.begin(), std::find_if(accessors.begin(), accessors.end(),
                                                                   [&](AccessorInfo accessorInfo) { return name == accessorInfo.name; }));
         return (signed)dist >= (signed)accessors.size() ? -1 : dist;
+    }
+
+    int getImplementIndex(mlir::StringRef name)
+    {
+        auto dist = std::distance(implements.begin(), std::find_if(implements.begin(), implements.end(), [&](ImplementInfo implementInfo) {
+                                      return name == implementInfo.implement->name;
+                                  }));
+        return (signed)dist >= (signed)implements.size() ? -1 : dist;
     }
 };
 
@@ -4838,7 +4851,7 @@ llvm.return %5 : i32
                 TypeSwitch<mlir::Type>(ifaceType.getType())
                     .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
                         auto interfaceInfo = getInterfaceByFullName(interfaceType.getName().getValue());
-                        interfaceInfos.push_back(interfaceInfo);
+                        interfaceInfos.push_back({interfaceInfo, -1});
                     })
                     .Default([&](auto type) { llvm_unreachable("not implemented"); });
             }
@@ -5594,13 +5607,25 @@ llvm.return %5 : i32
         {
             if (auto classType = value.getType().dyn_cast_or_null<mlir_ts::ClassType>())
             {
-                // auto className = classType.getName().getValue();
-                // auto interfaceName = interfaceType.getName().getValue();
+                auto vtableAccess = mlirGenPropertyAccessExpression(location, value, VTABLE_NAME, genContext);
+                // TODO: add interface index
 
-                auto emptyVTable = builder.create<mlir_ts::NullOp>(location, getAnyType());
+                auto classInfo = getClassByFullName(classType.getName().getValue());
+                assert(classInfo);
 
-                auto newInterface = builder.create<mlir_ts::NewInterfaceOp>(location, mlir::TypeRange{interfaceType}, value, emptyVTable);
-                return newInterface;
+                auto implementIndex = classInfo->getImplementIndex(interfaceType.getName().getValue());
+                if (implementIndex >= 0)
+                {
+                    auto interfaceVirtTableIndex = classInfo->implements[implementIndex].virtualIndex;
+
+                    auto newInterface =
+                        builder.create<mlir_ts::NewInterfaceOp>(location, mlir::TypeRange{interfaceType}, value, vtableAccess);
+                    return newInterface;
+                }
+
+                assert(false);
+
+                return mlir::Value();
             }
         }
 
