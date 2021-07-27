@@ -5028,8 +5028,8 @@ llvm.return %5 : i32
                 auto result = mth.TestFunctionTypesMatch(funcType, foundMethodFunctionType, 1);
                 if (result.result != MatchResultType::Match)
                 {
-                    emitError(location) << "method signature not matching for '" << name << "' for interface '" << newInterfacePtr->name
-                                        << "' in class '" << newClassPtr->name << "'";
+                    emitError(location) << "method signature not matching for '" << name << "' for interface '" << newInterfacePtr->fullName
+                                        << "' in class '" << newClassPtr->fullName << "'";
 
                     return emptyMethod;
                 }
@@ -5037,8 +5037,8 @@ llvm.return %5 : i32
                 return foundMethod;
             }
 
-            emitError(location) << "can't find method '" << name << "' for interface '" << newInterfacePtr->name << "' in class '"
-                                << newClassPtr->name << "'";
+            emitError(location) << "can't find method '" << name << "' for interface '" << newInterfacePtr->fullName << "' in class '"
+                                << newClassPtr->fullName << "'";
 
             return emptyMethod;
         });
