@@ -130,12 +130,13 @@ struct InterfaceInfo
     {
     }
 
-    mlir::LogicalResult getVirtualTable(llvm::SmallVector<MethodInfo> &vtable, std::function<MethodInfo &(std::string)> resolveMethod)
+    mlir::LogicalResult getVirtualTable(llvm::SmallVector<MethodInfo> &vtable,
+                                        std::function<MethodInfo &(std::string, mlir::FunctionType)> resolveMethod)
     {
         // do vtable for current class
         for (auto &method : methods)
         {
-            auto &classMethodInfo = resolveMethod(method.name);
+            auto &classMethodInfo = resolveMethod(method.name, method.funcType);
             if (classMethodInfo.name.empty())
             {
                 return mlir::failure();
@@ -5015,11 +5016,84 @@ llvm.return %5 : i32
         MethodInfo emptyMethod;
         // TODO: ...
         llvm::SmallVector<MethodInfo> virtualTable;
-        auto result = newInterfacePtr->getVirtualTable(virtualTable, [&](std::string name) -> MethodInfo & {
+        auto result = newInterfacePtr->getVirtualTable(virtualTable, [&](std::string name, mlir::FunctionType funcType) -> MethodInfo & {
             auto index = newClassPtr->getMethodIndex(name);
             if (index >= 0)
             {
-                return newClassPtr->methods[index];
+                auto &foundMethod = newClassPtr->methods[index];
+                auto foundMethodFunctionType = foundMethod.funcOp.getType().cast<mlir::FunctionType>();
+
+                // test types
+                if (funcType.getInputs().size() != foundMethodFunctionType.getInputs().size())
+                {
+                    emitError(location) << "arguments count is not matching, method '" << name << " for interface '"
+                                        << newInterfacePtr->name << "' in class '" << newClassPtr->name << "'";
+                    return emptyMethod;
+                }
+
+                // 1 to skip this param
+                for (unsigned i = 1, e = funcType.getInputs().size(); i != e; ++i)
+                {
+                    auto inArgType = funcType.getInput(i);
+                    auto resArgType = foundMethodFunctionType.getInput(i);
+
+                    if (inArgType != resArgType)
+                    {
+                        emitError(location) << "argument types are not matching, method '" << name << "' function arg: '" << inArgType
+                                            << "' interface arg '" << resArgType << "' for interface '" << newInterfacePtr->name
+                                            << "' in class '" << newClassPtr->name << "'";
+                        return emptyMethod;
+                    }
+                }
+
+                auto inRetCount = funcType.getResults().size();
+                auto resRetCount = foundMethodFunctionType.getResults().size();
+
+                auto noneType = mlir::NoneType::get(builder.getContext());
+                auto voidType = mlir_ts::VoidType::get(builder.getContext());
+
+                for (auto retType : funcType.getResults())
+                {
+                    auto isVoid = !retType || retType == noneType || retType == voidType;
+                    if (isVoid)
+                    {
+                        inRetCount--;
+                    }
+                }
+
+                for (auto retType : foundMethodFunctionType.getResults())
+                {
+                    auto isVoid = !retType || retType == noneType || retType == voidType;
+                    if (isVoid)
+                    {
+                        resRetCount--;
+                    }
+                }
+
+                if (inRetCount != resRetCount)
+                {
+                    emitError(location) << "returns are not matching. method '" << name << "' for interface '" << newInterfacePtr->name
+                                        << "' in class '" << newClassPtr->name << "'";
+                    return emptyMethod;
+                }
+
+                for (unsigned i = 0, e = funcType.getResults().size(); i != e; ++i)
+                {
+                    auto inRetType = funcType.getResult(i);
+                    auto resRetType = foundMethodFunctionType.getResult(i);
+
+                    auto isInVoid = !inRetType || inRetType == noneType || inRetType == voidType;
+                    auto isResVoid = !resRetType || resRetType == noneType || resRetType == voidType;
+                    if (!isInVoid && !isResVoid && inRetType != resRetType)
+                    {
+                        emitError(location) << "return types are not matching. method '" << name << "' #" << i << '(' << inRetType
+                                            << ") and (" << resRetType << ") for interface '" << newInterfacePtr->name << "' in class '"
+                                            << newClassPtr->name << "'";
+                        return emptyMethod;
+                    }
+                }
+
+                return foundMethod;
             }
 
             emitError(location) << "can't find method '" << name << "' for interface '" << newInterfacePtr->name << "' in class '"

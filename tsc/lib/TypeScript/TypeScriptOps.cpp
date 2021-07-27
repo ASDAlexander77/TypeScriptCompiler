@@ -234,6 +234,7 @@ LogicalResult verify(mlir_ts::CastOp op)
     auto resFuncType = op.res().getType().dyn_cast_or_null<mlir::FunctionType>();
     if (inFuncType && resFuncType)
     {
+        // TODO: make 1 common function
         if (inFuncType.getInputs().size() != resFuncType.getInputs().size())
         {
             return op.emitOpError("can't cast function type to other function type with different count of parameters ")
@@ -292,8 +293,8 @@ LogicalResult verify(mlir_ts::CastOp op)
             if (!isInVoid && !isResVoid && inRetType != resRetType)
             {
                 return op.emitOpError("can't cast function type to other function type with different return types #")
-                       << i << '(' << inFuncType.getResult(i) << ") must match the return type of the corresponding return in "
-                       << "function return(" << resFuncType.getResult(i) << ')';
+                       << i << '(' << inRetType << ") must match the return type of the corresponding return in "
+                       << "function return(" << resRetType << ')';
             }
         }
     }
