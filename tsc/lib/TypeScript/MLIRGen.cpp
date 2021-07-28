@@ -1,3 +1,5 @@
+#define ENABLE_RTTI true
+
 #define DEBUG_TYPE "mlir"
 
 #include "TypeScript/MLIRGen.h"
@@ -4694,7 +4696,9 @@ llvm.return %5 : i32
 
         mlirGenClassDefaultConstructor(classDeclarationAST, newClassPtr, genContext);
 
+#ifdef ENABLE_RTTI
         mlirGenClassInstanceOfMethod(classDeclarationAST, newClassPtr, genContext);
+#endif
 
         // add methods when we have classType
         auto notResolved = 0;
@@ -4790,7 +4794,10 @@ llvm.return %5 : i32
             }
         }
 
+#if ENABLE_RTTI
+        newClassPtr->hasVirtualTable = true;
         mlirGenCustomRTTI(location, classDeclarationAST, newClassPtr, declareClass, genContext);
+#endif
 
         for (auto &classMember : classDeclarationAST->members)
         {
@@ -4892,6 +4899,12 @@ llvm.return %5 : i32
 
         auto isAbstract = hasModifier(classMember, SyntaxKind::AbstractKeyword);
         if (isAbstract)
+        {
+            newClassPtr->hasVirtualTable = true;
+        }
+
+        auto isVirtual = (classMember->transformFlags & TransformFlags::ForceVirtual) == TransformFlags::ForceVirtual;
+        if (isVirtual)
         {
             newClassPtr->hasVirtualTable = true;
         }
@@ -5075,7 +5088,20 @@ llvm.return %5 : i32
                 nf.createIdentifier(LINSTANCEOF_PARAM_NAME), nf.createToken(SyntaxKind::EqualsEqualsToken),
                 nf.createPropertyAccessExpression(nf.createToken(SyntaxKind::ThisKeyword), nf.createIdentifier(LRTTI_NAME)));
 
-            auto returnStat = nf.createReturnStatement(cmpRttiToParam);
+            auto cmpLogic = cmpRttiToParam;
+
+            if (!newClassPtr->baseClasses.empty())
+            {
+                NodeArray<Expression> argumentsArray;
+                argumentsArray.push_back(nf.createIdentifier(LINSTANCEOF_PARAM_NAME));
+                cmpLogic = nf.createBinaryExpression(
+                    cmpRttiToParam, nf.createToken(SyntaxKind::BarBarEqualsToken),
+                    nf.createCallExpression(
+                        nf.createPropertyAccessExpression(nf.createToken(SyntaxKind::SuperKeyword), nf.createIdentifier(LINSTANCEOF_NAME)),
+                        undefined, argumentsArray));
+            }
+
+            auto returnStat = nf.createReturnStatement(cmpLogic);
             statements.push_back(returnStat);
 
             auto body = nf.createBlock(statements, false);
@@ -5087,6 +5113,7 @@ llvm.return %5 : i32
             auto instanceOfMethod =
                 nf.createMethodDeclaration(undefined, undefined, undefined, nf.createIdentifier(LINSTANCEOF_NAME), undefined, undefined,
                                            parameters, nf.createToken(SyntaxKind::BooleanKeyword), body);
+            instanceOfMethod->transformFlags |= TransformFlags::ForceVirtual;
             classDeclarationAST->members.push_back(instanceOfMethod);
 
             newClassPtr->hasRTTI = true;
@@ -5314,6 +5341,7 @@ llvm.return %5 : i32
 
         auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
         auto isAbstract = hasModifier(classMember, SyntaxKind::AbstractKeyword);
+        auto isVirtual = (classMember->transformFlags & TransformFlags::ForceVirtual) == TransformFlags::ForceVirtual;
         auto isConstructor = classMember == SyntaxKind::Constructor;
         if (classMember == SyntaxKind::MethodDeclaration || isConstructor || classMember == SyntaxKind::GetAccessor ||
             classMember == SyntaxKind::SetAccessor)
@@ -5354,8 +5382,8 @@ llvm.return %5 : i32
 
             if (declareClass)
             {
-                methodInfos.push_back({methodName, funcOp, isStatic, isAbstract});
-                addAccessor(newClassPtr, classMember, propertyName, funcOp, isStatic, isAbstract);
+                methodInfos.push_back({methodName, funcOp, isStatic, isAbstract || isVirtual});
+                addAccessor(newClassPtr, classMember, propertyName, funcOp, isStatic, isAbstract || isVirtual);
             }
         }
 
