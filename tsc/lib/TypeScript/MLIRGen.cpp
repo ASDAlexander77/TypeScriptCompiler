@@ -3220,8 +3220,15 @@ llvm.return %5 : i32
                     effectiveThisValue = cast(location, classInfo->classType, thisValue, genContext);
                 }
 
-                if (methodInfo.isVirtual && !genContext.superCall)
+                if (!baseClass && methodInfo.isVirtual)
                 {
+                    LLVM_DEBUG(dbgs() << "Virtual call: func '" << funcOp.getName() << "' in context func. '"
+                                      << const_cast<GenContext &>(genContext).funcOp.getName() << "'\n";);
+
+                    LLVM_DEBUG(dbgs() << "Virtual call: this val: '" << effectiveThisValue << "'\n";);
+
+                    // auto inTheSameFunc = funcOp.getName() == const_cast<GenContext &>(genContext).funcOp.getName();
+
                     auto vtableAccess = mlirGenPropertyAccessExpression(location, effectiveThisValue, VTABLE_NAME, genContext);
 
                     auto thisVirtualSymbOp = builder.create<mlir_ts::ThisVirtualSymbolRefOp>(
@@ -3270,10 +3277,7 @@ llvm.return %5 : i32
         {
             if (first && name == SUPER_NAME)
             {
-                GenContext superCallContext(genContext);
-                superCallContext.superCall = true;
-
-                auto value = mlirGenPropertyAccessExpression(location, thisValue, baseClass->fullName, superCallContext);
+                auto value = mlirGenPropertyAccessExpression(location, thisValue, baseClass->fullName, genContext);
                 return value;
             }
 
@@ -4520,10 +4524,7 @@ llvm.return %5 : i32
             auto classInfo = getClassByFullName(genContext.thisType.cast<mlir_ts::ClassType>().getName().getValue());
             auto baseClassInfo = classInfo->baseClasses.front();
 
-            GenContext superCallContext(genContext);
-            superCallContext.superCall = true;
-
-            return mlirGenPropertyAccessExpression(location, thisValue, baseClassInfo->fullName, superCallContext);
+            return mlirGenPropertyAccessExpression(location, thisValue, baseClassInfo->fullName, genContext);
         }
 
         value = resolveFullNameIdentifier(location, name, false, genContext);
@@ -4863,12 +4864,12 @@ llvm.return %5 : i32
             {
                 auto baseType = mlirGen(extendingType->expression, genContext);
                 TypeSwitch<mlir::Type>(baseType.getType())
-                    .template Case<mlir_ts::ClassType>([&](auto classType) {
-                        auto classInfo = getClassByFullName(classType.getName().getValue());
+                    .template Case<mlir_ts::ClassType>([&](auto baseClassType) {
+                        auto classInfo = getClassByFullName(baseClassType.getName().getValue());
 
-                        auto baseName = classType.getName().getValue();
+                        auto baseName = baseClassType.getName().getValue();
                         auto fieldId = mcl.TupleFieldName(baseName);
-                        fieldInfos.push_back({fieldId, classType.getStorageType()});
+                        fieldInfos.push_back({fieldId, baseClassType.getStorageType()});
 
                         baseClassInfos.push_back(classInfo);
                     })
