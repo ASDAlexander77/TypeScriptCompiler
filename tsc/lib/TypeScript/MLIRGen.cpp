@@ -2668,6 +2668,32 @@ llvm.return %5 : i32
         auto resultType = result.getType();
         auto type = getTypeByTypeName(binaryExpressionAST->right, genContext);
 
+        if (auto classType = type.dyn_cast_or_null<mlir_ts::ClassType>())
+        {
+            auto classInfo = getClassByFullName(classType.getName().getValue());
+            auto fullNameClassRtti = concat(classInfo->fullName, RTTI_NAME);
+
+            // to remove temp var .ctor after call
+            SymbolTableScopeT varScope(symbolTable);
+
+            auto varDecl = std::make_shared<VariableDeclarationDOM>(CLASSINFO_RTTI_TEMPVAR_NAME, classInfo->classType, location);
+            declare(varDecl, result);
+
+            NodeFactory nf(NodeFactoryFlags::None);
+
+            auto thisToken = nf.createIdentifier(S(CLASSINFO_RTTI_TEMPVAR_NAME));
+
+            NodeArray<Expression> argumentsArray;
+            argumentsArray.push_back(nf.createIdentifier(stows(fullNameClassRtti.str())));
+            auto callLogic = nf.createCallExpression(nf.createPropertyAccessExpression(nf.createIdentifier(S(CLASSINFO_RTTI_TEMPVAR_NAME)),
+                                                                                       nf.createIdentifier(S(INSTANCEOF_NAME))),
+                                                     undefined, argumentsArray);
+
+            auto callInstanceOfValue = mlirGen(callLogic, genContext);
+            return callInstanceOfValue;
+        }
+
+        // default logic
         return builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(resultType == type));
     }
 
@@ -3196,9 +3222,6 @@ llvm.return %5 : i32
 
                 if (methodInfo.isVirtual)
                 {
-                    // adding call of ctor
-                    NodeFactory nf(NodeFactoryFlags::None);
-
                     auto vtableAccess = mlirGenPropertyAccessExpression(location, effectiveThisValue, VTABLE_NAME, genContext);
 
                     auto thisVirtualSymbOp = builder.create<mlir_ts::ThisVirtualSymbolRefOp>(
@@ -3247,7 +3270,10 @@ llvm.return %5 : i32
         {
             if (first && name == SUPER_NAME)
             {
-                auto value = mlirGenPropertyAccessExpression(location, thisValue, baseClass->fullName, genContext);
+                GenContext superCallContext(genContext);
+                superCallContext.superCall = true;
+
+                auto value = mlirGenPropertyAccessExpression(location, thisValue, baseClass->fullName, superCallContext);
                 return value;
             }
 
@@ -3355,9 +3381,6 @@ llvm.return %5 : i32
         {
             auto methodInfo = interfaceInfo->methods[methodIndex];
             auto effectiveFuncType = methodInfo.funcType;
-
-            // adding call of ctor
-            NodeFactory nf(NodeFactoryFlags::None);
 
             auto interfaceSymbolRefOp = builder.create<mlir_ts::InterfaceSymbolRefOp>(
                 location, effectiveFuncType, getAnyType(), interfaceValue, builder.getI32IntegerAttr(methodInfo.virtualIndex),
