@@ -3220,7 +3220,7 @@ llvm.return %5 : i32
                     effectiveThisValue = cast(location, classInfo->classType, thisValue, genContext);
                 }
 
-                if (methodInfo.isVirtual)
+                if (methodInfo.isVirtual && !genContext.superCall)
                 {
                     auto vtableAccess = mlirGenPropertyAccessExpression(location, effectiveThisValue, VTABLE_NAME, genContext);
 
@@ -4520,7 +4520,10 @@ llvm.return %5 : i32
             auto classInfo = getClassByFullName(genContext.thisType.cast<mlir_ts::ClassType>().getName().getValue());
             auto baseClassInfo = classInfo->baseClasses.front();
 
-            return mlirGenPropertyAccessExpression(location, thisValue, baseClassInfo->fullName, genContext);
+            GenContext superCallContext(genContext);
+            superCallContext.superCall = true;
+
+            return mlirGenPropertyAccessExpression(location, thisValue, baseClassInfo->fullName, superCallContext);
         }
 
         value = resolveFullNameIdentifier(location, name, false, genContext);
