@@ -193,9 +193,10 @@ struct ClassInfo
     bool hasConstructor;
     bool hasInitializers;
     bool hasVirtualTable;
+    bool hasRTTI;
     bool isAbstract;
 
-    ClassInfo() : hasConstructor(false), hasInitializers(false), hasVirtualTable(false), isAbstract(false)
+    ClassInfo() : hasConstructor(false), hasInitializers(false), hasVirtualTable(false), isAbstract(false), hasRTTI(false)
     {
     }
 
@@ -5051,6 +5052,11 @@ llvm.return %5 : i32
         // if we do not have constructor but have initializers we need to create empty dummy constructor
         // if (newClassPtr->getHasVirtualTable())
         {
+            if (newClassPtr->hasRTTI)
+            {
+                return mlir::success();
+            }
+
             NodeFactory nf(NodeFactoryFlags::None);
 
             NodeArray<Statement> statements;
@@ -5082,6 +5088,8 @@ llvm.return %5 : i32
                 nf.createMethodDeclaration(undefined, undefined, undefined, nf.createIdentifier(LINSTANCEOF_NAME), undefined, undefined,
                                            parameters, nf.createToken(SyntaxKind::BooleanKeyword), body);
             classDeclarationAST->members.push_back(instanceOfMethod);
+
+            newClassPtr->hasRTTI = true;
         }
 
         return mlir::success();
