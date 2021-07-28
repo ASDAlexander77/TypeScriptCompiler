@@ -14,6 +14,12 @@
 #define LVTABLE_NAME L".vtbl"
 #define LCONSTRUCTOR_NAME L"constructor"
 #define LCONSTRUCTOR_TEMPVAR_NAME L".ctor"
+#define RTTI_NAME ".rtti"
+#define LRTTI_NAME L".rtti"
+#define INSTANCEOF_NAME ".instanceOf"
+#define LINSTANCEOF_NAME L".instanceOf"
+#define INSTANCEOF_PARAM_NAME "rttiParam"
+#define LINSTANCEOF_PARAM_NAME L"rttiParam"
 #define MAIN_ENTRY_NAME "main"
 #define TS_NEST_ATTRIBUTE "ts.nest"
 

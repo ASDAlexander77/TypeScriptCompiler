@@ -9,27 +9,35 @@ interface IFoo {
     foo2(): number;
 }
 
-class Cls1 implements Ifaces.IFoo, IFoo {
-    foo(): number {
-        print("Hello");
-        return 1;
-    }
+class Cls1 implements Ifaces.IFoo, IFoo
+{
+	foo() : number
+	{
+		print("Hello");
+		return 1;
+	}
 
-    foo2(): number {
-        print("Hello 2");
-        return 2;
-    }
+	foo2() : number
+	{
+		print("Hello 2");
+		return 2;
+	}
 }
 
-function main() {
-    const cls1 = new Cls1();
-    assert(cls1.foo() == 1);
+function main()
+{
+	const cls1 = new Cls1();
+	assert(cls1.foo() == 1);
 
-    const ifoo: Ifaces.IFoo = cls1;
-    assert(ifoo.foo() == 1);
+	const ifoo: Ifaces.IFoo = cls1;
+	assert(ifoo.foo() == 1);
 
-    const ifoo2: IFoo = cls1;
-    assert(ifoo2.foo() == 1);
-    assert(ifoo2.foo2() == 2);
-    print("done.");
+	const ifoo2: IFoo = cls1;
+	assert(ifoo2.foo() == 1);
+	assert(ifoo2.foo2() == 2);
+
+	const ifoo3 = cls1 as Ifaces.IFoo;
+	assert(ifoo3.foo() == 1);
+
+	print("done.");
 }

@@ -4680,7 +4680,7 @@ llvm.return %5 : i32
             return mlir::failure();
         }
 
-        if (mlir::failed(mlirGenClassStorageType(classDeclarationAST, newClassPtr, declareClass, genContext)))
+        if (mlir::failed(mlirGenClassStorageType(location, classDeclarationAST, newClassPtr, declareClass, genContext)))
         {
             return mlir::failure();
         }
@@ -4692,6 +4692,8 @@ llvm.return %5 : i32
         }
 
         mlirGenClassDefaultConstructor(classDeclarationAST, newClassPtr, genContext);
+
+        mlirGenClassInstanceOfMethod(classDeclarationAST, newClassPtr, genContext);
 
         // add methods when we have classType
         auto notResolved = 0;
@@ -4771,8 +4773,8 @@ llvm.return %5 : i32
         return newClassPtr;
     }
 
-    mlir::LogicalResult mlirGenClassStorageType(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr, bool declareClass,
-                                                const GenContext &genContext)
+    mlir::LogicalResult mlirGenClassStorageType(mlir::Location location, ClassLikeDeclaration classDeclarationAST,
+                                                ClassInfo::TypePtr newClassPtr, bool declareClass, const GenContext &genContext)
     {
         MLIRCodeLogic mcl(builder);
         SmallVector<mlir_ts::FieldInfo> fieldInfos;
@@ -4786,6 +4788,8 @@ llvm.return %5 : i32
                 return mlir::failure();
             }
         }
+
+        mlirGenCustomRTTI(location, classDeclarationAST, newClassPtr, declareClass, genContext);
 
         for (auto &classMember : classDeclarationAST->members)
         {
@@ -5009,6 +5013,75 @@ llvm.return %5 : i32
             auto body = nf.createBlock(statements, /*multiLine*/ false);
             auto generatedConstructor = nf.createConstructorDeclaration(undefined, undefined, undefined, body);
             classDeclarationAST->members.push_back(generatedConstructor);
+        }
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult mlirGenCustomRTTI(mlir::Location location, ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr,
+                                          bool declareClass, const GenContext &genContext)
+    {
+        MLIRCodeLogic mcl(builder);
+
+        auto fieldId = mcl.TupleFieldName(RTTI_NAME);
+
+        // register global
+        auto fullClassStaticFieldName = concat(newClassPtr->fullName, RTTI_NAME);
+        registerVariable(
+            location, fullClassStaticFieldName, true, VariableClass::Var,
+            [&]() {
+                auto stringType = getStringType();
+                auto init = builder.create<mlir_ts::ConstantOp>(location, stringType, getStringAttr(newClassPtr->fullName.str()));
+                return std::make_pair(stringType, init);
+            },
+            genContext);
+
+        if (declareClass)
+        {
+            auto &staticFieldInfos = newClassPtr->staticFields;
+            staticFieldInfos.push_back({fieldId, fullClassStaticFieldName});
+        }
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult mlirGenClassInstanceOfMethod(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr,
+                                                     const GenContext &genContext)
+    {
+        // if we do not have constructor but have initializers we need to create empty dummy constructor
+        // if (newClassPtr->getHasVirtualTable())
+        {
+            NodeFactory nf(NodeFactoryFlags::None);
+
+            NodeArray<Statement> statements;
+
+            /*
+            if (!newClassPtr->baseClasses.empty())
+            {
+                auto superExpr = nf.createToken(SyntaxKind::SuperKeyword);
+                auto callSuper = nf.createCallExpression(superExpr, undefined, undefined);
+                statements.push_back(nf.createExpressionStatement(callSuper));
+            }
+            */
+
+            // temp return false;
+            auto cmpRttiToParam = nf.createBinaryExpression(
+                nf.createIdentifier(LINSTANCEOF_PARAM_NAME), nf.createToken(SyntaxKind::EqualsEqualsToken),
+                nf.createPropertyAccessExpression(nf.createToken(SyntaxKind::ThisKeyword), nf.createIdentifier(LRTTI_NAME)));
+
+            auto returnStat = nf.createReturnStatement(cmpRttiToParam);
+            statements.push_back(returnStat);
+
+            auto body = nf.createBlock(statements, false);
+
+            NodeArray<ParameterDeclaration> parameters;
+            parameters.push_back(nf.createParameterDeclaration(undefined, undefined, undefined, nf.createIdentifier(LINSTANCEOF_PARAM_NAME),
+                                                               undefined, nf.createToken(SyntaxKind::StringKeyword), undefined));
+
+            auto instanceOfMethod =
+                nf.createMethodDeclaration(undefined, undefined, undefined, nf.createIdentifier(LINSTANCEOF_NAME), undefined, undefined,
+                                           parameters, nf.createToken(SyntaxKind::BooleanKeyword), body);
+            classDeclarationAST->members.push_back(instanceOfMethod);
         }
 
         return mlir::success();
