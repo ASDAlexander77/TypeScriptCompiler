@@ -3701,8 +3701,12 @@ llvm.return %5 : i32
             // set temp vtable
             auto fullClassVTableFieldName = concat(classInfo->fullName, VTABLE_NAME);
             auto vtableAddress = resolveFullNameIdentifier(location, fullClassVTableFieldName, true, genContext);
+            if (!vtableAddress)
+            {
+                assert(genContext.allowPartialResolve);
+                return mlir::failure();
+            }
 
-            assert(vtableAddress);
             auto anyTypeValue = cast(location, getAnyType(), vtableAddress, genContext);
             auto varDecl = std::make_shared<VariableDeclarationDOM>(VTABLE_NAME, anyTypeValue.getType(), location);
             declare(varDecl, anyTypeValue);
@@ -5095,12 +5099,19 @@ llvm.return %5 : i32
             }
 
             auto ifaceType = mlirGen(implementingType->expression, genContext);
+            auto success = false;
             TypeSwitch<mlir::Type>(ifaceType.getType())
                 .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
                     auto interfaceInfo = getInterfaceByFullName(interfaceType.getName().getValue());
-                    mlirGenClassVirtualTableDefinitionForInterface(loc(implementingType), newClassPtr, interfaceInfo, genContext);
+                    success = !failed(
+                        mlirGenClassVirtualTableDefinitionForInterface(loc(implementingType), newClassPtr, interfaceInfo, genContext));
                 })
                 .Default([&](auto type) { llvm_unreachable("not implemented"); });
+
+            if (!success)
+            {
+                return mlir::failure();
+            }
         }
 
         return mlir::success();
@@ -5544,7 +5555,7 @@ llvm.return %5 : i32
 
             if (declareInterface)
             {
-                methodInfos.push_back({methodName, funcType});
+                methodInfos.push_back({methodName, funcType, (int)methodInfos.size()});
             }
         }
 

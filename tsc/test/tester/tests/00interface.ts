@@ -30,7 +30,6 @@ function main() {
 
     const ifoo2: IFoo = cls1;
     assert(ifoo2.foo() == 1);
-    // TODO:
-    //assert(ifoo2.foo2() == 2);
+    assert(ifoo2.foo2() == 2);
     print("done.");
 }
