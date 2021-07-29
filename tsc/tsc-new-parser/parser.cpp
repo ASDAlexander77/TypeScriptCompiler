@@ -4274,7 +4274,7 @@ struct Parser
         return node;
     }
 
-    auto parseConditionalExpressionRest(Expression leftOperand, number pos) -> Expression
+    auto parseConditionalExpressionRest(Expression leftOperand, pos_type pos) -> Expression
     {
         // we Note are passed in an expression which was produced from parseBinaryExpressionOrHigher.
         auto questionToken = parseOptionalToken(SyntaxKind::QuestionToken);
@@ -4309,7 +4309,7 @@ struct Parser
         return t == SyntaxKind::InKeyword || t == SyntaxKind::OfKeyword;
     }
 
-    auto parseBinaryExpressionRest(OperatorPrecedence precedence, Expression leftOperand, number pos) -> Expression
+    auto parseBinaryExpressionRest(OperatorPrecedence precedence, Expression leftOperand, pos_type pos) -> Expression
     {
         while (true)
         {
@@ -4391,7 +4391,7 @@ struct Parser
         return getBinaryOperatorPrecedence(token()) > (OperatorPrecedence)0;
     }
 
-    auto makeBinaryExpression(Expression left, BinaryOperatorToken operatorToken, Expression right, number pos) -> BinaryExpression
+    auto makeBinaryExpression(Expression left, BinaryOperatorToken operatorToken, Expression right, pos_type pos) -> BinaryExpression
     {
         return finishNode(factory.createBinaryExpression(left, operatorToken, right), pos);
     }
@@ -7297,7 +7297,7 @@ struct Parser
         return finished;
     }
 
-    auto parseImportClause(Identifier identifier, number pos, boolean isTypeOnly) -> ImportClause
+    auto parseImportClause(Identifier identifier, pos_type pos, boolean isTypeOnly) -> ImportClause
     {
         // ImportClause:
         //  ImportedDefaultBinding
@@ -7436,7 +7436,7 @@ struct Parser
         return finishNode(node, pos);
     }
 
-    auto parseNamespaceExport(number pos) -> NamespaceExport
+    auto parseNamespaceExport(pos_type pos) -> NamespaceExport
     {
         return finishNode(factory.createNamespaceExport(parseIdentifierName()), pos);
     }
