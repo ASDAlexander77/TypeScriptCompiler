@@ -112,18 +112,25 @@ struct InterfaceMethodInfo
     int virtualIndex;
 };
 
+struct PositionFieldInfo
+{
+    mlir::Attribute id;
+    mlir::Type type;
+    int index;
+};
+
 struct VirtualMethodOrFieldInfo
 {
     VirtualMethodOrFieldInfo(MethodInfo methodInfo) : methodInfo(methodInfo), isField(false)
     {
     }
 
-    VirtualMethodOrFieldInfo(InterfaceFieldInfo fieldInfo) : fieldInfo(fieldInfo), isField(true)
+    VirtualMethodOrFieldInfo(PositionFieldInfo fieldInfo) : fieldInfo(fieldInfo), isField(true)
     {
     }
 
     MethodInfo methodInfo;
-    InterfaceFieldInfo fieldInfo;
+    PositionFieldInfo fieldInfo;
     bool isField;
 };
 
@@ -149,9 +156,10 @@ struct InterfaceInfo
     }
 
     mlir::LogicalResult getVirtualTable(llvm::SmallVector<VirtualMethodOrFieldInfo> &vtable,
+                                        std::function<PositionFieldInfo(mlir::Attribute, mlir::Type)> resolveField,
                                         std::function<MethodInfo &(std::string, mlir::FunctionType)> resolveMethod)
     {
-        // do vtable for current class
+        // do vtable for current
         for (auto &method : methods)
         {
             auto &classMethodInfo = resolveMethod(method.name, method.funcType);
@@ -161,6 +169,17 @@ struct InterfaceInfo
             }
 
             vtable.push_back({classMethodInfo});
+        }
+
+        for (auto &field : fields)
+        {
+            auto fieldInfo = resolveField(field.id, field.type);
+            if (!fieldInfo.id)
+            {
+                return mlir::failure();
+            }
+
+            vtable.push_back({fieldInfo});
         }
 
         return mlir::success();
@@ -5188,31 +5207,54 @@ llvm.return %5 : i32
 
         MethodInfo emptyMethod;
         // TODO: ...
+        auto classStorageType = newClassPtr->classType.getStorageType().cast<mlir_ts::ClassStorageType>();
+
         llvm::SmallVector<VirtualMethodOrFieldInfo> virtualTable;
-        auto result = newInterfacePtr->getVirtualTable(virtualTable, [&](std::string name, mlir::FunctionType funcType) -> MethodInfo & {
-            auto index = newClassPtr->getMethodIndex(name);
-            if (index >= 0)
-            {
-                auto &foundMethod = newClassPtr->methods[index];
-                auto foundMethodFunctionType = foundMethod.funcOp.getType().cast<mlir::FunctionType>();
-
-                auto result = mth.TestFunctionTypesMatch(funcType, foundMethodFunctionType, 1);
-                if (result.result != MatchResultType::Match)
+        auto result = newInterfacePtr->getVirtualTable(
+            virtualTable,
+            [&](mlir::Attribute id, mlir::Type fieldType) -> PositionFieldInfo {
+                auto index = classStorageType.getIndex(id);
+                if (index >= 0)
                 {
-                    emitError(location) << "method signature not matching for '" << name << "' for interface '" << newInterfacePtr->fullName
-                                        << "' in class '" << newClassPtr->fullName << "'";
+                    auto fieldInfo = classStorageType.getFieldInfo(index);
 
-                    return emptyMethod;
+                    if (fieldType != fieldInfo.type)
+                    {
+                        emitError(location) << "field type not matching for '" << id << "' for interface '" << newInterfacePtr->fullName
+                                            << "' in class '" << newClassPtr->fullName << "'";
+
+                        return PositionFieldInfo{};
+                    }
+
+                    return PositionFieldInfo{fieldInfo.id, fieldInfo.type, index};
                 }
 
-                return foundMethod;
-            }
+                return PositionFieldInfo{};
+            },
+            [&](std::string name, mlir::FunctionType funcType) -> MethodInfo & {
+                auto index = newClassPtr->getMethodIndex(name);
+                if (index >= 0)
+                {
+                    auto &foundMethod = newClassPtr->methods[index];
+                    auto foundMethodFunctionType = foundMethod.funcOp.getType().cast<mlir::FunctionType>();
 
-            emitError(location) << "can't find method '" << name << "' for interface '" << newInterfacePtr->fullName << "' in class '"
-                                << newClassPtr->fullName << "'";
+                    auto result = mth.TestFunctionTypesMatch(funcType, foundMethodFunctionType, 1);
+                    if (result.result != MatchResultType::Match)
+                    {
+                        emitError(location) << "method signature not matching for '" << name << "' for interface '"
+                                            << newInterfacePtr->fullName << "' in class '" << newClassPtr->fullName << "'";
 
-            return emptyMethod;
-        });
+                        return emptyMethod;
+                    }
+
+                    return foundMethod;
+                }
+
+                emitError(location) << "can't find method '" << name << "' for interface '" << newInterfacePtr->fullName << "' in class '"
+                                    << newClassPtr->fullName << "'";
+
+                return emptyMethod;
+            });
 
         if (mlir::failed(result))
         {
@@ -5246,8 +5288,10 @@ llvm.return %5 : i32
 
                         vtableValue =
                             builder.create<mlir_ts::InsertPropertyOp>(location, virtTuple, methodConstName, vtableValue,
-                                                                      builder.getArrayAttr(mth.getStructIndexAttrValue(fieldIndex++)));
+                                                                      builder.getArrayAttr(mth.getStructIndexAttrValue(fieldIndex)));
                     }
+
+                    fieldIndex++;
                 }
 
                 return std::pair<mlir::Type, mlir::Value>{virtTuple, vtableValue};
