@@ -1,4 +1,5 @@
 #define ENABLE_RTTI true
+#define ALL_METHODS_VIRTUAL true
 
 #define DEBUG_TYPE "mlir"
 
@@ -4919,7 +4920,8 @@ llvm.return %5 : i32
         mlir::Type type;
         StringRef memberNamePtr;
 
-        if (classMember == SyntaxKind::Constructor)
+        auto isConstructor = classMember == SyntaxKind::Constructor;
+        if (isConstructor)
         {
             newClassPtr->hasConstructor = true;
         }
@@ -4931,6 +4933,9 @@ llvm.return %5 : i32
         }
 
         auto isVirtual = (classMember->transformFlags & TransformFlags::ForceVirtual) == TransformFlags::ForceVirtual;
+#ifdef ALL_METHODS_VIRTUAL
+        isVirtual = !isConstructor;
+#endif
         if (isVirtual)
         {
             newClassPtr->hasVirtualTable = true;
@@ -5366,10 +5371,13 @@ llvm.return %5 : i32
         mlir::Type type;
         StringRef memberNamePtr;
 
+        auto isConstructor = classMember == SyntaxKind::Constructor;
         auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
         auto isAbstract = hasModifier(classMember, SyntaxKind::AbstractKeyword);
         auto isVirtual = (classMember->transformFlags & TransformFlags::ForceVirtual) == TransformFlags::ForceVirtual;
-        auto isConstructor = classMember == SyntaxKind::Constructor;
+#ifdef ALL_METHODS_VIRTUAL
+        isVirtual = !isConstructor;
+#endif
         if (classMember == SyntaxKind::MethodDeclaration || isConstructor || classMember == SyntaxKind::GetAccessor ||
             classMember == SyntaxKind::SetAccessor)
         {

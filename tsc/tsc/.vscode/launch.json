@@ -98,6 +98,17 @@
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal"
-        }
+        },
+        {
+            "name": "(Windows) Out.exe current - Launch",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "C:/temp/MLIR_to_exe/out.exe",
+            "args": [],
+            "stopAtEntry": true,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "externalTerminal"
+        }        
     ]
 }
