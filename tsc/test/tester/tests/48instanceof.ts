@@ -13,7 +13,7 @@ namespace InstanceOf {
     class Bar3 extends Bar {}
 
     function testNot(v: any) {
-        assert(!(v instanceof Foo), "tn");
+        //assert(!(v instanceof Foo), "tn");
     }
 
     export function run() {
@@ -51,4 +51,5 @@ namespace InstanceOf {
 
 function main() {
     InstanceOf.run();
+    print("done.");
 }

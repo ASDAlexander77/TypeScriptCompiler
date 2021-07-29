@@ -146,7 +146,6 @@ tsc-compile-wasm.bat hello
 Run ``run.html``
 ```
 <!DOCTYPE html>
-<!-- add.html -->
 <html>
   <head></head>
   <body>

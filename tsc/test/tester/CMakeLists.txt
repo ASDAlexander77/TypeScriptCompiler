@@ -94,7 +94,7 @@ add_test(NAME test-compile-41-anonymoustypes COMMAND test-runner "${PROJECT_SOUR
 add_test(NAME test-compile-43-nestednamespace COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/43nestednamespace.ts")
 add_test(NAME test-compile-44-toplevelcode COMMAND test-runner -llc -builtins "${PROJECT_SOURCE_DIR}/test/tester/tests/44toplevelcode.ts")
 add_test(NAME test-compile-45-enumtostring COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/45enumtostring.ts")
-#add_test(NAME test-compile-48-instanceof COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/48instanceof.ts")
+add_test(NAME test-compile-48-instanceof COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/48instanceof.ts")
 add_test(NAME test-compile-Grammar_and_types COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/Grammar_and_types.ts")
 
 add_test(NAME test-jit-00-assert COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")
@@ -176,5 +176,5 @@ add_test(NAME test-jit-41-anonymoustypes COMMAND test-runner -jit "${PROJECT_SOU
 add_test(NAME test-jit-43-nestednamespace COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/43nestednamespace.ts")
 add_test(NAME test-jit-44-toplevelcode COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/44toplevelcode.ts")
 add_test(NAME test-jit-45-enumtostring COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/45enumtostring.ts")
-#add_test(NAME test-jit-48-instanceof COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/48instanceof.ts")
+add_test(NAME test-jit-48-instanceof COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/48instanceof.ts")
 add_test(NAME test-jit-Grammar_and_types COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/Grammar_and_types.ts")
