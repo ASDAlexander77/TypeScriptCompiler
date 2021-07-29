@@ -17,20 +17,20 @@ function testIf(): void {
 }
 
 function testRight(a: number, b: number, c: number) {
-    assert((a >> b) == c, "f>>0")
-    assert((a >> (b + 32)) == c, "f>>")
-    assert((a >> (b - 32)) == c, "f>>")
-    assert((a >> (b + 0x80000000)) == c, "f>>")
+    assert(a >> b == c, "f>>0");
+    assert(a >> (b + 32) == c, "f>>");
+    assert(a >> (b - 32) == c, "f>>");
+    assert(a >> (b + 0x80000000) == c, "f>>");
 }
 function testLeft(a: number, b: number, c: number) {
-    assert((a << b) == c, "f<<0")
-    assert((a << (b + 32)) == c, "f<<")
-    assert((a << (b - 32)) == c, "f<<")
-    assert((a << (b + 0x80000000)) == c, "f<<")
+    assert(a << b == c, "f<<0");
+    assert(a << (b + 32) == c, "f<<");
+    assert(a << (b - 32) == c, "f<<");
+    assert(a << (b + 0x80000000) == c, "f<<");
 }
 function testZ(a: number) {
-    assert((a >> 0) == a, "z>>")
-    assert((a << 0) == a, "z<<")
+    assert(a >> 0 == a, "z>>");
+    assert(a << 0 == a, "z<<");
     //assert((a >> 32) == a, "z>>")
     //assert((a >> 0x80000000) == a, "z>>")
     //assert((a >> -32) == a, "z>>")
@@ -38,15 +38,15 @@ function testZ(a: number) {
     //assert((a << -32) == a, "z<<")
 }
 function testRightU(a: number, b: number, c: number) {
-    assert((a >>> b) == c, "f>>>0")
-    assert((a >>> (b + 32)) == c, "f>>>")
-    assert((a >>> (b - 32)) == c, "f>>>")
-    assert((a >>> (b + 0x80000000)) == c, "f>>>")
+    assert(a >>> b == c, "f>>>0");
+    assert(a >>> (b + 32) == c, "f>>>");
+    assert(a >>> (b - 32) == c, "f>>>");
+    assert(a >>> (b + 0x80000000) == c, "f>>>");
 }
 
 function testNums(): void {
-    print("TN")
-    let z = 12
+    print("TN");
+    let z = 12;
     print("ZZ" + z);
     let tt = 2;
     let x = 40 + tt;
@@ -54,39 +54,39 @@ function testNums(): void {
     x = 40 / tt;
     assert(x == 20, "div");
     let x3 = doStuff(x, 2);
-    print("nums#0")
+    print("nums#0");
     assert(x3 == 10, "call order");
     glb1 = 5;
     incrBy_2();
     assert(glb1 == 7, "glb1");
     incrBy_2();
-    print("nums#1")
+    print("nums#1");
     assert(glb1 == 9, "glb2");
     //assert(Math.abs(-42) == 42, "abs");
     //assert(Math.abs(42) == 42, "abs");
     //assert(Math.sign(42) == 1, "abs");
-    print("nums#3")
+    print("nums#3");
     testIf();
 
     tt = 3;
 
-    assert((tt & 6) == 2, "&")
-    assert((tt | 6) == 7, "|")
-    assert((tt ^ 6) == 5, "^")
-    assert((~1) == -2, "~")
+    assert((tt & 6) == 2, "&");
+    assert((tt | 6) == 7, "|");
+    assert((tt ^ 6) == 5, "^");
+    assert(~1 == -2, "~");
     let k1 = 1;
-    assert((~k1) == -2, "~")
+    assert(~k1 == -2, "~");
     tt = 10;
-    assert((-tt >> 2) == -3, ">>")
-    assert((-tt >>> 20) == 4095, ">>>")
-    assert((-tt << 2) == -40, "<<")
-    assert((tt << 2) == 40, "<<+")
-    assert((tt >> 2) == 2, ">>+")
-    assert((tt >>> 2) == 2, ">>>+")
+    assert(-tt >> 2 == -3, ">>");
+    assert(-tt >>> 20 == 4095, ">>>");
+    assert(-tt << 2 == -40, "<<");
+    assert(tt << 2 == 40, "<<+");
+    assert(tt >> 2 == 2, ">>+");
+    assert(tt >>> 2 == 2, ">>>+");
 
-    testZ(0)
-    testZ(30)
-    testZ(-30)
+    testZ(0);
+    testZ(30);
+    testZ(-30);
     /*
     testZ(0x3fffffff)
     testZ(0x7fffffff)
@@ -112,39 +112,39 @@ function testNums(): void {
     testLeft(1, 30, 0x40000000)
     testLeft(1, 31, 0x80000000 >> 0)
     */
-    testLeft(1, 32, 1)
+    testLeft(1, 32, 1);
 
     tt = 2;
-    assert(-tt * -3 == 6, "-2*-3")
-    assert(-tt * 3 == -6, "-2*3")
-    assert(tt * 3 == 6, "2*3")
-    assert(tt * -3 == -6, "2*-3")
-    print("nums#4")
+    assert(-tt * -3 == 6, "-2*-3");
+    assert(-tt * 3 == -6, "-2*3");
+    assert(tt * 3 == 6, "2*3");
+    assert(tt * -3 == -6, "2*-3");
+    print("nums#4");
 
-    tt = 100
-    assert(105 % tt == 5, "perc")
+    tt = 100;
+    assert(105 % tt == 5, "perc");
 
-    assert((2 ** 3) == 8, "**")
+    assert(2 ** 3 == 8, "**");
     let ke = 3;
-    assert((ke ** 3) == ke * ke * ke, "**")
+    assert(ke ** 3 == ke * ke * ke, "**");
 
     // test number->bool conversion, #1057
     // x==20 here
     if (!x) {
-        assert(false, "wrong bang")
+        assert(false, "wrong bang");
     }
 
     let r = fib(15);
-    print("FB")
+    print("FB");
     print("FIB" + r);
     assert(r == 987, "fib");
 
-    print("nums#5")
+    print("nums#5");
 
-    tt = 1
+    tt = 1;
 
-    assert(tt > 0.5, "<")
-    assert(tt < 1.5, "<")
+    assert(tt > 0.5, "<");
+    assert(tt < 1.5, "<");
 }
 
 function fib(p: number): number {
@@ -160,36 +160,34 @@ function doStuff(x: number, x2: number): number {
     return x3;
 }
 
-
 function incrBy_2(): void {
     glb1 = glb1 + 2;
 }
 
-
 function testComma() {
-    glb1 = 0
-    let x = (incrBy_2(), 77)
-    assert(x == 77, "x")
-    assert(glb1 == 2, "g")
+    glb1 = 0;
+    let x = (incrBy_2(), 77);
+    assert(x == 77, "x");
+    assert(glb1 == 2, "g");
     // make sure there are no leaks
-    let y = ("aaa" + "zz", "x" + "yyy")
-    assert(y.length == 4, "y")
+    let y = ("aaa" + "zz", "x" + "yyy");
+    assert(y.length == 4, "y");
 }
 
 function isnan(x: number) {
-    return (x !== x) === (x === x)
+    return (x !== x) === (x === x);
 }
 
 function mydiv(x: number, y: number) {
-    return x / y
+    return x / y;
 }
 
 function testNaN() {
-    assert(isnan(mydiv(0, 0)))
-    assert(isnan(0 / 0))
+    assert(isnan(mydiv(0, 0)));
+    assert(isnan(0 / 0));
     //assert(isnan(parseFloat("foobar")))
     //assert(isnan(NaN))
-    assert(!isnan(0))
+    assert(!isnan(0));
     //assert(!isnan(Infinity))
     //let inf = Infinity
     //assert(1 / Infinity == 0)
@@ -198,36 +196,35 @@ function testNaN() {
 
 function testUnaryPlus() {
     function testOne(v: number) {
-        assert(+v + 1 == 2, "t1")
+        assert(+v + 1 == 2, "t1");
     }
     function testZero(v: number) {
-        print("v:" + v)
-        assert(+v + 1 == 1, "t0")
+        print("v:" + v);
+        assert(+v + 1 == 1, "t0");
     }
     function test35(v: number) {
-        assert(+v + 1 == 4.5, "t35")
+        assert(+v + 1 == 4.5, "t35");
     }
-    testOne(1)
-    testOne("1")
-    testOne(" 1 ")
+    testOne(1);
+    testOne("1");
+    testOne(" 1 ");
     //testOne(true)
-    testZero(0)
-    testZero(" 0")
-    testZero("0")
+    testZero(0);
+    testZero(" 0");
+    testZero("0");
     //testZero(null)
     //testZero(false)
-    test35(3.5)
-    test35("3.5")
+    test35(3.5);
+    test35("3.5");
     //let qq: any = undefined
     //assert(isNaN(+qq))
 }
 
-function main()
-{
-   testComma();
-   testNums();
-   testNaN();
-   testUnaryPlus();
+function main() {
+    testComma();
+    testNums();
+    testNaN();
+    testUnaryPlus();
 
-   print("done.");   
+    print("done.");
 }

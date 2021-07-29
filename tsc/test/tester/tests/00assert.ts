@@ -1,10 +1,8 @@
-function main()
-{
-	assert(f1(), "assert failed.");
+function main() {
+    assert(f1(), "assert failed.");
     print("done.");
 }
 
-function f1(): boolean
-{
+function f1(): boolean {
     return true;
 }

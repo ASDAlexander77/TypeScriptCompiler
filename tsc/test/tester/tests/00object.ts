@@ -1,6 +1,5 @@
-function t(a: { name: string })
-{
-   print(a.name);
+function t(a: { name: string }) {
+    print(a.name);
 }
 
 function main() {
@@ -18,7 +17,7 @@ function main() {
 
     print(object2.a, object2.b, object2.c);
 
-    const a = 'foo';
+    const a = "foo";
     const b = 42;
     const c = {};
     const object3 = { a: a, b: b, c: c };
@@ -29,11 +28,11 @@ function main() {
 
     print(object4.a);
 
-    const object5 : { name: string } = { name: "foo" };
+    const object5: { name: string } = { name: "foo" };
 
     print(object5.name);
 
     t(object5);
 
-    print("done.");    
+    print("done.");
 }

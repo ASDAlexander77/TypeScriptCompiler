@@ -32,7 +32,7 @@ function test2() {
 }
 
 function test3() {
-    let a = 10.5
+    let a = 10.5;
     switch (a) {
         case 10.5:
             print("cool. 10.5");
@@ -56,5 +56,5 @@ function main() {
     test3();
     test4();
 
-    print("done.");    
+    print("done.");
 }

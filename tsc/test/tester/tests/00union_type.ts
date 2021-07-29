@@ -17,9 +17,8 @@ function testUnionIndexer(): void {
     assert(arr[index] === arr[2]);
 }
 
-function main()
-{
-  testUnionIndexer();
+function main() {
+    testUnionIndexer();
 
-  print("done.");  
+    print("done.");
 }
