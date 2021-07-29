@@ -292,6 +292,7 @@ struct ClassInfo
             {
                 // found method
                 vtable[index].methodInfo.funcOp = method.funcOp;
+                method.virtualIndex = index;
                 method.isVirtual = true;
                 continue;
             }
