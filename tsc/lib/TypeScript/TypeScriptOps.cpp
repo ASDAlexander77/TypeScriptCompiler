@@ -436,15 +436,6 @@ LogicalResult mlir_ts::CallOp::verifySymbolUses(SymbolTableCollection &symbolTab
     auto optionalFromValue = (int)fnType.getNumInputs() - (int)getNumOperands();
     for (unsigned i = 0, e = optionalFromValue == -1 ? fnType.getNumInputs() : getOperands().size(); i != e; ++i)
     {
-        if (auto symRef = dyn_cast_or_null<mlir_ts::SymbolRefOp>(getOperand(i).getDefiningOp()))
-        {
-            auto val = symbolTable.lookupNearestSymbolFrom(*this, symRef.identifierAttr());
-            if (!val)
-            {
-                return emitOpError() << "can't find variable:  '" << symRef.identifierAttr() << "'";
-            }
-        }
-
         if (getOperand(i).getType() != fnType.getInput(i))
         {
             /*
@@ -491,15 +482,6 @@ LogicalResult mlir_ts::CallIndirectOp::verifySymbolUses(SymbolTableCollection &s
     auto optionalFromValue = (int)fnType.getNumInputs() - (int)getNumOperands();
     for (unsigned i = 0, e = optionalFromValue == -1 ? fnType.getNumInputs() : getOperands().size(); i != e; ++i)
     {
-        if (auto symRef = dyn_cast_or_null<mlir_ts::SymbolRefOp>(getOperand(i + 1).getDefiningOp()))
-        {
-            auto val = symbolTable.lookupNearestSymbolFrom(*this, symRef.identifierAttr());
-            if (!val)
-            {
-                return emitOpError() << "can't find variable:  '" << symRef.identifierAttr() << "'";
-            }
-        }
-
         if (getOperand(i + 1).getType() != fnType.getInput(i))
         {
             /*

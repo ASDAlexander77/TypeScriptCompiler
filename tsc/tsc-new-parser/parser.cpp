@@ -783,9 +783,9 @@ struct Parser
         parseErrorAtPosition(scanner.getTextPos(), length, message);
     }
 
-    auto getNodePos() -> number
+    auto getNodePos() -> pos_type
     {
-        return scanner.getStartPos();
+        return {scanner.getStartPos(), scanner.getTokenPos()};
     }
 
     auto hasPrecedingJSDocComment()
@@ -1084,25 +1084,28 @@ struct Parser
         }
     }
 
-    auto createNodeArray(NodeArray<Node> elements, number pos, number end = -1, boolean hasTrailingComma = false) -> NodeArray<Node>
+    auto createNodeArray(NodeArray<Node> elements, pos_type pos, number end = -1, boolean hasTrailingComma = false) -> NodeArray<Node>
     {
         auto array = factory.createNodeArray(elements, hasTrailingComma);
         setTextRangePosEnd(array, pos, end != -1 ? end : scanner.getStartPos());
+        array->pos.textPos = pos.textPos;
         return array;
     }
 
     template <typename T>
-    auto createNodeArray(NodeArray<T> elements, number pos, number end = -1, boolean hasTrailingComma = false) -> NodeArray<T>
+    auto createNodeArray(NodeArray<T> elements, pos_type pos, number end = -1, boolean hasTrailingComma = false) -> NodeArray<T>
     {
         auto array = factory.createNodeArray<T>(elements, hasTrailingComma);
         setTextRangePosEnd(array, pos, end != -1 ? end : scanner.getStartPos());
+        array->pos.textPos = pos.textPos;
         return array;
     }
 
     // TODO: use template instead of Node method to avoid casts
-    auto finishNode(Node node, number pos, number end = -1) -> Node
+    auto finishNode(Node node, pos_type pos, number end = -1) -> Node
     {
         setTextRangePosEnd(node, pos, end != -1 ? end : scanner.getStartPos());
+        node->pos.textPos = pos.textPos;
         if (!!contextFlags)
         {
             node->flags |= contextFlags;

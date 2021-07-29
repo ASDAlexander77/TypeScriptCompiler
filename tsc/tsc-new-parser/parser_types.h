@@ -11,6 +11,27 @@
 namespace ts
 {
 
+struct pos_type
+{
+    number pos;
+    number textPos;
+
+    pos_type() = default;
+
+    pos_type(number pos) : pos(pos), textPos(-1)
+    {
+    }
+
+    pos_type(number pos, number textPos) : pos(pos), textPos(textPos)
+    {
+    }
+
+    inline operator number()
+    {
+        return pos;
+    }
+};
+
 namespace data
 {
 using NodeId = number;
@@ -35,7 +56,7 @@ struct TextRange
 {
     TextRange() = default;
 
-    number pos;
+    pos_type pos;
     number _end;
 };
 
