@@ -218,7 +218,7 @@ class MLIRTypeHelper
             return {MatchResultType::NotMatchResultCount, 0};
         }
 
-        for (unsigned i = 0, e = inFuncType.getResults().size(); i != e; ++i)
+        for (unsigned i = 0, e = inRetCount; i != e; ++i)
         {
             auto inRetType = inFuncType.getResult(i);
             auto resRetType = resFuncType.getResult(i);

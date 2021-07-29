@@ -1329,7 +1329,7 @@ class MLIRGenImpl
     }
 
     std::tuple<FunctionPrototypeDOM::TypePtr, mlir::FunctionType, SmallVector<mlir::Type>> mlirGenFunctionSignaturePrototype(
-        SignatureDeclarationBase signatureDeclarationBaseAST, const GenContext &genContext)
+        SignatureDeclarationBase signatureDeclarationBaseAST, bool defaultVoid, const GenContext &genContext)
     {
         auto res = getNameOfFunction(signatureDeclarationBaseAST, genContext);
         auto fullName = std::get<0>(res);
@@ -1385,6 +1385,13 @@ class MLIRGenImpl
 
             funcType = builder.getFunctionType(argTypes, returnType);
         }
+        else if (defaultVoid)
+        {
+            auto returnType = getVoidType();
+            funcProto->setReturnType(returnType);
+
+            funcType = builder.getFunctionType(argTypes, returnType);
+        }
 
         return std::make_tuple(funcProto, funcType, argTypes);
     }
@@ -1396,7 +1403,7 @@ class MLIRGenImpl
 
         mlir_ts::FuncOp funcOp;
 
-        auto res = mlirGenFunctionSignaturePrototype(functionLikeDeclarationBaseAST, genContext);
+        auto res = mlirGenFunctionSignaturePrototype(functionLikeDeclarationBaseAST, false, genContext);
         auto funcProto = std::get<0>(res);
         if (!funcProto)
         {
@@ -5692,7 +5699,7 @@ llvm.return %5 : i32
             funcGenContext.thisType = newInterfacePtr->interfaceType;
             funcGenContext.passResult = nullptr;
 
-            auto res = mlirGenFunctionSignaturePrototype(methodSignature, funcGenContext);
+            auto res = mlirGenFunctionSignaturePrototype(methodSignature, true, funcGenContext);
             auto funcType = std::get<1>(res);
 
             if (!funcType)
