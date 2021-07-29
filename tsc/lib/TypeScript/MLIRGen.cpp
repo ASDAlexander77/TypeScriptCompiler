@@ -112,6 +112,21 @@ struct InterfaceMethodInfo
     int virtualIndex;
 };
 
+struct VirtualMethodOrFieldInfo
+{
+    VirtualMethodOrFieldInfo(MethodInfo methodInfo) : methodInfo(methodInfo), isField(false)
+    {
+    }
+
+    VirtualMethodOrFieldInfo(InterfaceFieldInfo fieldInfo) : fieldInfo(fieldInfo), isField(true)
+    {
+    }
+
+    MethodInfo methodInfo;
+    InterfaceFieldInfo fieldInfo;
+    bool isField;
+};
+
 struct InterfaceInfo
 {
   public:
@@ -133,7 +148,7 @@ struct InterfaceInfo
     {
     }
 
-    mlir::LogicalResult getVirtualTable(llvm::SmallVector<MethodInfo> &vtable,
+    mlir::LogicalResult getVirtualTable(llvm::SmallVector<VirtualMethodOrFieldInfo> &vtable,
                                         std::function<MethodInfo &(std::string, mlir::FunctionType)> resolveMethod)
     {
         // do vtable for current class
@@ -145,7 +160,7 @@ struct InterfaceInfo
                 return mlir::failure();
             }
 
-            vtable.push_back(classMethodInfo);
+            vtable.push_back({classMethodInfo});
         }
 
         return mlir::success();
@@ -5173,7 +5188,7 @@ llvm.return %5 : i32
 
         MethodInfo emptyMethod;
         // TODO: ...
-        llvm::SmallVector<MethodInfo> virtualTable;
+        llvm::SmallVector<VirtualMethodOrFieldInfo> virtualTable;
         auto result = newInterfacePtr->getVirtualTable(virtualTable, [&](std::string name, mlir::FunctionType funcType) -> MethodInfo & {
             auto index = newClassPtr->getMethodIndex(name);
             if (index >= 0)
@@ -5217,13 +5232,22 @@ llvm.return %5 : i32
 
                 mlir::Value vtableValue = builder.create<mlir_ts::UndefOp>(location, virtTuple);
                 auto fieldIndex = 0;
-                for (auto method : virtualTable)
+                for (auto methodOrField : virtualTable)
                 {
-                    auto methodConstName = builder.create<mlir_ts::SymbolRefOp>(
-                        location, method.funcOp.getType(), mlir::FlatSymbolRefAttr::get(builder.getContext(), method.funcOp.sym_name()));
+                    if (methodOrField.isField)
+                    {
+                        llvm_unreachable("not implemented");
+                    }
+                    else
+                    {
+                        auto methodConstName = builder.create<mlir_ts::SymbolRefOp>(
+                            location, methodOrField.methodInfo.funcOp.getType(),
+                            mlir::FlatSymbolRefAttr::get(builder.getContext(), methodOrField.methodInfo.funcOp.sym_name()));
 
-                    vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
-                        location, virtTuple, methodConstName, vtableValue, builder.getArrayAttr(mth.getStructIndexAttrValue(fieldIndex++)));
+                        vtableValue =
+                            builder.create<mlir_ts::InsertPropertyOp>(location, virtTuple, methodConstName, vtableValue,
+                                                                      builder.getArrayAttr(mth.getStructIndexAttrValue(fieldIndex++)));
+                    }
                 }
 
                 return std::pair<mlir::Type, mlir::Value>{virtTuple, vtableValue};
@@ -5269,14 +5293,21 @@ llvm.return %5 : i32
         return mlir::success();
     }
 
-    mlir::Type getVirtualTableType(llvm::SmallVector<MethodInfo> &virtualTable)
+    mlir::Type getVirtualTableType(llvm::SmallVector<VirtualMethodOrFieldInfo> &virtualTable)
     {
         MLIRCodeLogic mcl(builder);
 
         llvm::SmallVector<mlir_ts::FieldInfo> fields;
         for (auto vtableRecord : virtualTable)
         {
-            fields.push_back({mcl.TupleFieldName(vtableRecord.name), vtableRecord.funcOp.getType()});
+            if (vtableRecord.isField)
+            {
+                fields.push_back({vtableRecord.fieldInfo.id, mlir_ts::RefType::get(vtableRecord.fieldInfo.type)});
+            }
+            else
+            {
+                fields.push_back({mcl.TupleFieldName(vtableRecord.methodInfo.name), vtableRecord.methodInfo.funcOp.getType()});
+            }
         }
 
         auto virtTuple = getTupleType(fields);
