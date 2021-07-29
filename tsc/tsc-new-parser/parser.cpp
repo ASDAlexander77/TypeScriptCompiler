@@ -387,7 +387,7 @@ struct Parser
         // members so they can be in the future
         processCommentPragmas(sourceFile, sourceText);
 
-        auto reportPragmaDiagnostic = [&](number pos, number end, DiagnosticMessage diagnostic) -> void {
+        auto reportPragmaDiagnostic = [&](pos_type pos, number end, DiagnosticMessage diagnostic) -> void {
             parseDiagnostics.push_back(createDetachedDiagnostic(fileName, pos, end, diagnostic));
         };
         processPragmasIntoFields(sourceFile, reportPragmaDiagnostic);
@@ -2882,7 +2882,7 @@ struct Parser
         return token() == SyntaxKind::ColonToken || token() == SyntaxKind::CommaToken || token() == SyntaxKind::CloseBracketToken;
     }
 
-    auto parseIndexSignatureDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
+    auto parseIndexSignatureDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
         -> IndexSignatureDeclaration
     {
         auto parameters = parseBracketedList<ParameterDeclaration>(ParsingContext::Parameters, std::bind(&Parser::parseParameter, this),
@@ -2893,7 +2893,7 @@ struct Parser
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
-    auto parsePropertyOrMethodSignature(number pos, boolean hasJSDoc, NodeArray<Modifier> modifiers) -> Node
+    auto parsePropertyOrMethodSignature(pos_type pos, boolean hasJSDoc, NodeArray<Modifier> modifiers) -> Node
     {
         auto name = parsePropertyName();
         auto questionToken = parseOptionalToken(SyntaxKind::QuestionToken);
@@ -3905,7 +3905,7 @@ struct Parser
         }
     }
 
-    auto parseSimpleArrowFunctionExpression(number pos, Identifier identifier, NodeArray<Modifier> asyncModifier) -> ArrowFunction
+    auto parseSimpleArrowFunctionExpression(pos_type pos, Identifier identifier, NodeArray<Modifier> asyncModifier) -> ArrowFunction
     {
         Debug::_assert(token() == SyntaxKind::EqualsGreaterThanToken,
                        S("parseSimpleArrowFunctionExpression should only have been called if we had a =>"));
@@ -5142,7 +5142,7 @@ struct Parser
         return false;
     }
 
-    auto parsePropertyAccessExpressionRest(number pos, LeftHandSideExpression expression, QuestionDotToken questionDotToken)
+    auto parsePropertyAccessExpressionRest(pos_type pos, LeftHandSideExpression expression, QuestionDotToken questionDotToken)
     {
         auto name = parseRightSideOfDot(/*allowIdentifierNames*/ true, /*allowPrivateIdentifiers*/ true);
         auto isOptionalChain = (number)questionDotToken || tryReparseOptionalChain(expression);
@@ -5157,7 +5157,7 @@ struct Parser
         return finishNode(propertyAccess, pos);
     }
 
-    auto parseElementAccessExpressionRest(number pos, LeftHandSideExpression expression, QuestionDotToken questionDotToken)
+    auto parseElementAccessExpressionRest(pos_type pos, LeftHandSideExpression expression, QuestionDotToken questionDotToken)
     {
         Expression argumentExpression;
         if (token() == SyntaxKind::CloseBracketToken)
@@ -5185,7 +5185,7 @@ struct Parser
         return finishNode(indexedAccess, pos);
     }
 
-    auto parseMemberExpressionRest(number pos, LeftHandSideExpression expression, boolean allowOptionalChain) -> MemberExpression
+    auto parseMemberExpressionRest(pos_type pos, LeftHandSideExpression expression, boolean allowOptionalChain) -> MemberExpression
     {
         while (true)
         {
@@ -5244,7 +5244,7 @@ struct Parser
         return node;
     }
 
-    auto parseTaggedTemplateRest(number pos, LeftHandSideExpression tag, QuestionDotToken questionDotToken,
+    auto parseTaggedTemplateRest(pos_type pos, LeftHandSideExpression tag, QuestionDotToken questionDotToken,
                                  NodeArray<TypeNode> typeArguments) -> Node
     {
         auto tagExpression =
@@ -5261,7 +5261,7 @@ struct Parser
         return finishNode(tagExpression, pos);
     }
 
-    auto parseCallExpressionRest(number pos, LeftHandSideExpression expression) -> LeftHandSideExpression
+    auto parseCallExpressionRest(pos_type pos, LeftHandSideExpression expression) -> LeftHandSideExpression
     {
         while (true)
         {
@@ -6330,7 +6330,7 @@ struct Parser
         });
     }
 
-    auto parseDeclarationWorker(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers) -> Statement
+    auto parseDeclarationWorker(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers) -> Statement
     {
         switch (token())
         {
@@ -6559,7 +6559,7 @@ struct Parser
         return nextTokenIsIdentifier() && nextToken() == SyntaxKind::CloseParenToken;
     }
 
-    auto parseVariableStatement(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
+    auto parseVariableStatement(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
         -> VariableStatement
     {
         auto declarationList = parseVariableDeclarationList(/*inForStatementInitializer*/ false);
@@ -6570,7 +6570,7 @@ struct Parser
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
-    auto parseFunctionDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
+    auto parseFunctionDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
         -> FunctionDeclaration
     {
         auto savedAwaitContext = inAwaitContext();
@@ -6610,7 +6610,7 @@ struct Parser
         return false;
     }
 
-    auto tryParseConstructorDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
+    auto tryParseConstructorDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
         -> ConstructorDeclaration
     {
         return tryParse<ConstructorDeclaration>([&]() {
@@ -6633,7 +6633,7 @@ struct Parser
         return undefined;
     }
 
-    auto parseMethodDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers,
+    auto parseMethodDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers,
                                 AsteriskToken asteriskToken, PropertyName name, QuestionToken questionToken,
                                 ExclamationToken exclamationToken, DiagnosticMessage diagnosticMessage = undefined) -> MethodDeclaration
     {
@@ -6650,7 +6650,7 @@ struct Parser
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
-    auto parsePropertyDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers,
+    auto parsePropertyDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers,
                                   PropertyName name, QuestionToken questionToken) -> PropertyDeclaration
     {
         auto exclamationToken =
@@ -6664,7 +6664,7 @@ struct Parser
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
-    auto parsePropertyOrMethodDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
+    auto parsePropertyOrMethodDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
         -> Node
     {
         auto asteriskToken = parseOptionalToken(SyntaxKind::AsteriskToken);
@@ -6680,7 +6680,7 @@ struct Parser
         return parsePropertyDeclaration(pos, hasJSDoc, decorators, modifiers, name, questionToken);
     }
 
-    auto parseAccessorDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers,
+    auto parseAccessorDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers,
                                   SyntaxKind kind) -> AccessorDeclaration
     {
         auto name = parsePropertyName();
@@ -6949,13 +6949,13 @@ struct Parser
                                                  /*modifiers*/ undefined, SyntaxKind::ClassExpression);
     }
 
-    auto parseClassDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
+    auto parseClassDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
         -> ClassDeclaration
     {
         return parseClassDeclarationOrExpression(pos, hasJSDoc, decorators, modifiers, SyntaxKind::ClassDeclaration);
     }
 
-    auto parseClassDeclarationOrExpression(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers,
+    auto parseClassDeclarationOrExpression(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers,
                                            SyntaxKind kind) -> ClassLikeDeclaration
     {
         auto savedAwaitContext = inAwaitContext();
@@ -7053,7 +7053,7 @@ struct Parser
         return parseList<ClassElement>(ParsingContext::ClassMembers, std::bind(&Parser::parseClassElement, this));
     }
 
-    auto parseInterfaceDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
+    auto parseInterfaceDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
         -> InterfaceDeclaration
     {
         parseExpected(SyntaxKind::InterfaceKeyword);
@@ -7065,7 +7065,7 @@ struct Parser
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
-    auto parseTypeAliasDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
+    auto parseTypeAliasDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
         -> TypeAliasDeclaration
     {
         parseExpected(SyntaxKind::TypeKeyword);
@@ -7093,7 +7093,7 @@ struct Parser
         return withJSDoc(finishNode(factory.createEnumMember(name, initializer), pos), hasJSDoc);
     }
 
-    auto parseEnumDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
+    auto parseEnumDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
         -> EnumDeclaration
     {
         parseExpected(SyntaxKind::EnumKeyword);
@@ -7129,7 +7129,7 @@ struct Parser
         return finishNode(factory.createModuleBlock(statements), pos);
     }
 
-    auto parseModuleOrNamespaceDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers,
+    auto parseModuleOrNamespaceDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers,
                                            NodeFlags flags) -> ModuleDeclaration
     {
         // If we are parsing a dotted namespace name, we want to
@@ -7145,8 +7145,8 @@ struct Parser
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
-    auto parseAmbientExternalModuleDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
-        -> ModuleDeclaration
+    auto parseAmbientExternalModuleDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
+                                               NodeArray<Modifier> modifiers) -> ModuleDeclaration
     {
         auto flags = NodeFlags::None;
         LiteralLikeNode name;
@@ -7174,7 +7174,7 @@ struct Parser
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
-    auto parseModuleDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
+    auto parseModuleDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
         -> ModuleDeclaration
     {
         NodeFlags flags = NodeFlags::None;
@@ -7213,7 +7213,7 @@ struct Parser
         return nextToken() == SyntaxKind::SlashToken;
     }
 
-    auto parseNamespaceExportDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
+    auto parseNamespaceExportDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
         -> NamespaceExportDeclaration
     {
         parseExpected(SyntaxKind::AsKeyword);
@@ -7228,7 +7228,7 @@ struct Parser
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
-    auto parseImportDeclarationOrImportEqualsDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
+    auto parseImportDeclarationOrImportEqualsDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
                                                          NodeArray<Modifier> modifiers) -> Node
     {
         parseExpected(SyntaxKind::ImportKeyword);
@@ -7286,7 +7286,7 @@ struct Parser
         return token() == SyntaxKind::CommaToken || token() == SyntaxKind::FromKeyword;
     }
 
-    auto parseImportEqualsDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers,
+    auto parseImportEqualsDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers,
                                       Identifier identifier, boolean isTypeOnly) -> ImportEqualsDeclaration
     {
         parseExpected(SyntaxKind::EqualsToken);
@@ -7441,7 +7441,7 @@ struct Parser
         return finishNode(factory.createNamespaceExport(parseIdentifierName()), pos);
     }
 
-    auto parseExportDeclaration(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
+    auto parseExportDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
         -> ExportDeclaration
     {
         auto savedAwaitContext = inAwaitContext();
@@ -7477,7 +7477,7 @@ struct Parser
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
-    auto parseExportAssignment(number pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
+    auto parseExportAssignment(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
         -> ExportAssignment
     {
         auto savedAwaitContext = inAwaitContext();
