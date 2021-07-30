@@ -381,6 +381,8 @@ struct NamespaceInfo
 
     mlir::StringRef fullName;
 
+    mlir_ts::NamespaceType namespaceType;
+
     llvm::StringMap<mlir_ts::FuncOp> functionMap;
 
     llvm::StringMap<VariableDeclarationDOM::TypePtr> globalsMap;
@@ -522,6 +524,7 @@ class MLIRGenImpl
             auto newNamespacePtr = std::make_shared<NamespaceInfo>();
             newNamespacePtr->name = namePtr;
             newNamespacePtr->fullName = fullNamePtr;
+            newNamespacePtr->namespaceType = getNamespaceType(fullNamePtr);
             namespacesMap.insert({namePtr, newNamespacePtr});
             fullNamespacesMap.insert(fullNamePtr, newNamespacePtr);
             currentNamespace = newNamespacePtr;
@@ -3088,30 +3091,7 @@ llvm.return %5 : i32
 
         auto name = MLIRHelper::getName(qualifiedName->right);
 
-        mlir::Value value;
-        if (!expressionValue.getType() || expressionValue.getType() == mlir::NoneType::get(builder.getContext()))
-        {
-            if (auto namespaceRef = dyn_cast_or_null<mlir_ts::NamespaceRefOp>(expressionValue.getDefiningOp()))
-            {
-                // todo resolve namespace
-                auto namespaceInfo = getNamespaceByFullName(namespaceRef.identifier());
-
-                assert(namespaceInfo);
-
-                auto saveNamespace = currentNamespace;
-                currentNamespace = namespaceInfo;
-
-                value = mlirGen(location, name, genContext);
-
-                currentNamespace = saveNamespace;
-            }
-
-            return value;
-        }
-
-        emitError(location, "Can't resolve qualified name");
-
-        llvm_unreachable("not implemented");
+        return mlirGenPropertyAccessExpression(location, expressionValue, name, genContext);
     }
 
     mlir::Value mlirGen(PropertyAccessExpression propertyAccessExpression, const GenContext &genContext)
@@ -3132,37 +3112,8 @@ llvm.return %5 : i32
                                                 const GenContext &genContext)
     {
         assert(objectValue);
-        auto value = mlirGenNamespaceAccess(location, objectValue, name, genContext);
-        if (value)
-        {
-            return value;
-        }
-
         MLIRPropertyAccessCodeLogic cl(builder, location, objectValue, name);
         return mlirGenPropertyAccessExpressionLogic(location, objectValue, cl, genContext);
-    }
-
-    mlir::Value mlirGenNamespaceAccess(mlir::Location location, mlir::Value objectValue, mlir::StringRef name, const GenContext &genContext)
-    {
-        mlir::Value value;
-        // TODO: maybe it is better to use Namespace type as ClassType?
-        if (auto namespaceRef = dyn_cast_or_null<mlir_ts::NamespaceRefOp>(objectValue.getDefiningOp()))
-        {
-            // todo resolve namespace
-            auto namespaceInfo = getNamespaceByFullName(namespaceRef.identifier());
-
-            assert(namespaceInfo);
-
-            auto saveNamespace = currentNamespace;
-            currentNamespace = namespaceInfo;
-
-            value = mlirGen(location, name, genContext);
-
-            currentNamespace = saveNamespace;
-            return value;
-        }
-
-        return value;
     }
 
     mlir::Value mlirGenPropertyAccessExpression(mlir::Location location, mlir::Value objectValue, mlir::Attribute id,
@@ -3176,7 +3127,7 @@ llvm.return %5 : i32
                                                      const GenContext &genContext)
     {
         mlir::Value value;
-        mlir::StringRef name = cl.getName();
+        auto name = cl.getName();
         TypeSwitch<mlir::Type>(objectValue.getType())
             .Case<mlir_ts::EnumType>([&](auto enumType) { value = cl.Enum(enumType); })
             .Case<mlir_ts::ConstTupleType>([&](auto constTupleType) { value = cl.Tuple(constTupleType); })
@@ -3188,6 +3139,17 @@ llvm.return %5 : i32
             .Case<mlir_ts::ConstArrayType>([&](auto arrayType) { value = cl.Array(arrayType); })
             .Case<mlir_ts::ArrayType>([&](auto arrayType) { value = cl.Array(arrayType); })
             .Case<mlir_ts::RefType>([&](auto refType) { value = cl.Ref(refType); })
+            .Case<mlir_ts::NamespaceType>([&](auto namespaceType) {
+                auto namespaceInfo = getNamespaceByFullName(namespaceType.getName().getValue());
+                assert(namespaceInfo);
+
+                auto saveNamespace = currentNamespace;
+                currentNamespace = namespaceInfo;
+
+                value = mlirGen(location, name, genContext);
+
+                currentNamespace = saveNamespace;
+            })
             .Case<mlir_ts::ClassStorageType>([&](auto classStorageType) {
                 value = cl.TupleNoError(classStorageType);
                 if (!value)
@@ -4473,8 +4435,8 @@ llvm.return %5 : i32
         {
             auto namespaceInfo = getNamespaceMap().lookup(name);
             assert(namespaceInfo);
-            return builder.create<mlir_ts::NamespaceRefOp>(location,
-                                                           mlir::FlatSymbolRefAttr::get(builder.getContext(), namespaceInfo->fullName));
+            auto nsName = mlir::FlatSymbolRefAttr::get(builder.getContext(), namespaceInfo->fullName);
+            return builder.create<mlir_ts::NamespaceRefOp>(location, namespaceInfo->namespaceType, nsName);
         }
 
         if (getImportEqualsMap().count(name))
@@ -4484,8 +4446,8 @@ llvm.return %5 : i32
             if (namespaceInfo)
             {
                 assert(namespaceInfo);
-                return builder.create<mlir_ts::NamespaceRefOp>(location,
-                                                               mlir::FlatSymbolRefAttr::get(builder.getContext(), namespaceInfo->fullName));
+                auto nsName = mlir::FlatSymbolRefAttr::get(builder.getContext(), namespaceInfo->fullName);
+                return builder.create<mlir_ts::NamespaceRefOp>(location, namespaceInfo->namespaceType, nsName);
             }
 
             auto classInfo = getClassByFullName(fullName);
@@ -6085,6 +6047,12 @@ llvm.return %5 : i32
     mlir_ts::ClassType getClassType(mlir::FlatSymbolRefAttr name, mlir::Type storageType)
     {
         return mlir_ts::ClassType::get(name, storageType);
+    }
+
+    mlir_ts::NamespaceType getNamespaceType(mlir::StringRef name)
+    {
+        auto nsNameAttr = mlir::FlatSymbolRefAttr::get(builder.getContext(), name);
+        return mlir_ts::NamespaceType::get(nsNameAttr);
     }
 
     mlir_ts::InterfaceType getInterfaceType(mlir::FlatSymbolRefAttr name)

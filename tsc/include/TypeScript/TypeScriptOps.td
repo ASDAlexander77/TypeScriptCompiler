@@ -220,10 +220,6 @@ def NamespaceRefOp : TypeScript_Op<"NamespaceRef",
   let arguments = (ins FlatSymbolRefAttr:$identifier);
   let results = (outs AnyType:$value);
 
-  let builders = [
-    OpBuilder<(ins "FlatSymbolRefAttr":$identifier),
-    [{ build($_builder, $_state, identifier.getType(), identifier); }]>];
-
   let extraClassDeclaration = [{
     Attribute getValue() { return (*this)->getAttr("identifier"); }
   }];
@@ -240,10 +236,6 @@ def ClassRefOp : TypeScript_Op<"ClassRef",
   let arguments = (ins FlatSymbolRefAttr:$identifier);
   let results = (outs TypeScript_Class:$value);
 
-  let builders = [
-    OpBuilder<(ins "FlatSymbolRefAttr":$identifier),
-    [{ build($_builder, $_state, identifier.getType(), identifier); }]>];
-
   let extraClassDeclaration = [{
     Attribute getValue() { return (*this)->getAttr("identifier"); }
   }];
@@ -259,10 +251,6 @@ def InterfaceRefOp : TypeScript_Op<"InterfaceRef",
 
   let arguments = (ins FlatSymbolRefAttr:$identifier);
   let results = (outs TypeScript_Interface:$value);
-
-  let builders = [
-    OpBuilder<(ins "FlatSymbolRefAttr":$identifier),
-    [{ build($_builder, $_state, identifier.getType(), identifier); }]>];
 
   let extraClassDeclaration = [{
     Attribute getValue() { return (*this)->getAttr("identifier"); }

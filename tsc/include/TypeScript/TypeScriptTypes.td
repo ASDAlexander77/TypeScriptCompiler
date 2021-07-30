@@ -641,6 +641,44 @@ def TypeScript_Class : TypeScript_Type<"Class"> {
   let skipDefaultBuilders = 1;  
 }
 
+def TypeScript_Namespace : TypeScript_Type<"Namespace"> {
+  let mnemonic = "namespace";
+
+  let description = [{
+    Syntax:
+
+    ```
+    namespace-type ::= `namespace`
+    ```
+
+    Examples:
+
+    ```mlir
+    namespace<@n1>
+    ```
+  }];
+  let parameters = (ins "FlatSymbolRefAttr":$name);
+
+  // We define the printer inline.
+  let printer = [{ $_printer << "namespace<" << getImpl()->name << ">"; }];  
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$name), [{
+      return Base::get(name.getContext(), name);
+    }]>
+  ];
+
+  // Parses the above format
+  let parser = [{
+    Attribute name;
+    if ($_parser.parseLess()) return Type();
+    if ($_parser.parseAttribute(name)) return Type();
+    return get(name.dyn_cast_or_null<FlatSymbolRefAttr>());
+  }];  
+
+  let skipDefaultBuilders = 1;  
+}
+
 def TypeScript_Interface : TypeScript_Type<"Interface"> {
   let mnemonic = "iface";
 
@@ -654,8 +692,7 @@ def TypeScript_Interface : TypeScript_Type<"Interface"> {
     Examples:
 
     ```mlir
-    iface
-    iface
+    iface<@f1>
     ```
   }];
   let parameters = (ins "FlatSymbolRefAttr":$name);
