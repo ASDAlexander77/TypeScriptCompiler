@@ -2310,6 +2310,29 @@ struct NewInterfaceLowering : public TsLlvmPattern<mlir_ts::NewInterfaceOp>
     }
 };
 
+struct ThisPropertyRefLowering : public TsLlvmPattern<mlir_ts::ThisPropertyRefOp>
+{
+    using TsLlvmPattern<mlir_ts::ThisPropertyRefOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ThisPropertyRefOp thisPropertyRefOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        Location loc = thisPropertyRefOp.getLoc();
+
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+
+        auto p1 = rewriter.create<LLVM::PtrToIntOp>(loc, th.getIndexType(), thisPropertyRefOp.objectRef());
+        auto p2 = rewriter.create<LLVM::PtrToIntOp>(loc, th.getIndexType(), thisPropertyRefOp.offset());
+        auto padded = rewriter.create<LLVM::AddOp>(loc, th.getIndexType(), p1, p2);
+        auto typedPtr = rewriter.create<LLVM::IntToPtrOp>(loc, tch.convertType(thisPropertyRefOp.getType()), padded);
+
+        rewriter.replaceOp(thisPropertyRefOp, ValueRange{typedPtr});
+
+        return success();
+    }
+};
+
 static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, mlir::ModuleOp &m)
 {
     converter.addConversion([&](mlir_ts::AnyType type) { return LLVM::LLVMPointerType::get(IntegerType::get(m.getContext(), 8)); });
@@ -2474,19 +2497,18 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 
     // The only remaining operation to lower from the `typescript` dialect, is the PrintOp.
     TsLlvmContext tsLlvmContext;
-    patterns
-        .insert<CallOpLowering, CallIndirectOpLowering, CaptureOpLowering, ExitOpLowering, ReturnOpLowering, ReturnValOpLowering,
-                AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering,
-                AssertOpLowering, CastOpLowering, ConstantOpLowering, CreateOptionalOpLowering, UndefOptionalOpLowering, HasValueOpLowering,
-                ValueOpLowering, SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering, EntryOpLowering, FuncOpLowering,
-                LoadOpLowering, ElementRefOpLowering, PropertyRefOpLowering, ExtractPropertyOpLowering, LogicalBinaryOpLowering,
-                NullOpLowering, NewOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, PushOpLowering,
-                PopOpLowering, DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering, PrintOpLowering, StoreOpLowering,
-                SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering, StringLengthOpLowering, StringConcatOpLowering,
-                StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering, MemoryCopyOpLowering, LoadSaveValueLowering,
-                ThrowOpLoweringVCWin32, TrampolineOpLowering, TryOpLowering, VariableOpLowering, InvokeOpLowering,
-                ThisVirtualSymbolRefLowering, InterfaceSymbolRefLowering, NewInterfaceLowering, VTableOffsetRefLowering>(
-            typeConverter, &getContext(), &tsLlvmContext);
+    patterns.insert<CallOpLowering, CallIndirectOpLowering, CaptureOpLowering, ExitOpLowering, ReturnOpLowering, ReturnValOpLowering,
+                    AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering,
+                    AssertOpLowering, CastOpLowering, ConstantOpLowering, CreateOptionalOpLowering, UndefOptionalOpLowering,
+                    HasValueOpLowering, ValueOpLowering, SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering, EntryOpLowering,
+                    FuncOpLowering, LoadOpLowering, ElementRefOpLowering, PropertyRefOpLowering, ExtractPropertyOpLowering,
+                    LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering,
+                    NewArrayOpLowering, PushOpLowering, PopOpLowering, DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering,
+                    PrintOpLowering, StoreOpLowering, SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering,
+                    StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering,
+                    MemoryCopyOpLowering, LoadSaveValueLowering, ThrowOpLoweringVCWin32, TrampolineOpLowering, TryOpLowering,
+                    VariableOpLowering, InvokeOpLowering, ThisVirtualSymbolRefLowering, InterfaceSymbolRefLowering, NewInterfaceLowering,
+                    VTableOffsetRefLowering, ThisPropertyRefLowering>(typeConverter, &getContext(), &tsLlvmContext);
 
     populateTypeScriptConversionPatterns(typeConverter, m);
 
