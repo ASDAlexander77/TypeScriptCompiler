@@ -3131,37 +3131,38 @@ llvm.return %5 : i32
     mlir::Value mlirGenPropertyAccessExpression(mlir::Location location, mlir::Value objectValue, mlir::StringRef name,
                                                 const GenContext &genContext)
     {
-        mlir::Value value;
-
         assert(objectValue);
-
-        // TODO: create NamespaceType instead of using this hacky code
-        if (!objectValue.getType() || objectValue.getType() == mlir::NoneType::get(builder.getContext()))
+        auto value = mlirGenNamespaceAccess(location, objectValue, name, genContext);
+        if (value)
         {
-            if (auto namespaceRef = dyn_cast_or_null<mlir_ts::NamespaceRefOp>(objectValue.getDefiningOp()))
-            {
-                // todo resolve namespace
-                auto namespaceInfo = getNamespaceByFullName(namespaceRef.identifier());
-
-                assert(namespaceInfo);
-
-                auto saveNamespace = currentNamespace;
-                currentNamespace = namespaceInfo;
-
-                value = mlirGen(location, name, genContext);
-
-                currentNamespace = saveNamespace;
-                return value;
-            }
-
-            LLVM_DEBUG(dbgs() << "mlirGenPropertyAccessExpression name: " << name << " object: " << objectValue << "\n");
-            assert(genContext.allowPartialResolve);
-
             return value;
         }
 
         MLIRPropertyAccessCodeLogic cl(builder, location, objectValue, name);
         return mlirGenPropertyAccessExpressionLogic(location, objectValue, cl, genContext);
+    }
+
+    mlir::Value mlirGenNamespaceAccess(mlir::Location location, mlir::Value objectValue, mlir::StringRef name, const GenContext &genContext)
+    {
+        mlir::Value value;
+        // TODO: maybe it is better to use Namespace type as ClassType?
+        if (auto namespaceRef = dyn_cast_or_null<mlir_ts::NamespaceRefOp>(objectValue.getDefiningOp()))
+        {
+            // todo resolve namespace
+            auto namespaceInfo = getNamespaceByFullName(namespaceRef.identifier());
+
+            assert(namespaceInfo);
+
+            auto saveNamespace = currentNamespace;
+            currentNamespace = namespaceInfo;
+
+            value = mlirGen(location, name, genContext);
+
+            currentNamespace = saveNamespace;
+            return value;
+        }
+
+        return value;
     }
 
     mlir::Value mlirGenPropertyAccessExpression(mlir::Location location, mlir::Value objectValue, mlir::Attribute id,
@@ -3204,14 +3205,14 @@ llvm.return %5 : i32
             .Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
                 value = InterfaceMembers(location, objectValue, interfaceType.getName().getValue(), name, genContext);
             })
-            .Default([](auto type) { llvm_unreachable("not implemented"); });
+            .Default([](auto type) {});
 
         if (value || genContext.allowPartialResolve)
         {
             return value;
         }
 
-        emitError(location, "Can't resolve property name");
+        emitError(location, "Can't resolve property name of type: '") << objectValue.getType() << "'";
 
         llvm_unreachable("not implemented");
     }
