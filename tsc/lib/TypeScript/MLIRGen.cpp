@@ -103,6 +103,7 @@ struct InterfaceFieldInfo
 {
     mlir::Attribute id;
     mlir::Type type;
+    int virtualIndex;
 };
 
 struct InterfaceMethodInfo
@@ -112,25 +113,18 @@ struct InterfaceMethodInfo
     int virtualIndex;
 };
 
-struct PositionFieldInfo
-{
-    mlir::Attribute id;
-    mlir::Type type;
-    int index;
-};
-
 struct VirtualMethodOrFieldInfo
 {
     VirtualMethodOrFieldInfo(MethodInfo methodInfo) : methodInfo(methodInfo), isField(false)
     {
     }
 
-    VirtualMethodOrFieldInfo(PositionFieldInfo fieldInfo) : fieldInfo(fieldInfo), isField(true)
+    VirtualMethodOrFieldInfo(mlir_ts::FieldInfo fieldInfo) : fieldInfo(fieldInfo), isField(true)
     {
     }
 
     MethodInfo methodInfo;
-    PositionFieldInfo fieldInfo;
+    mlir_ts::FieldInfo fieldInfo;
     bool isField;
 };
 
@@ -156,7 +150,7 @@ struct InterfaceInfo
     }
 
     mlir::LogicalResult getVirtualTable(llvm::SmallVector<VirtualMethodOrFieldInfo> &vtable,
-                                        std::function<PositionFieldInfo(mlir::Attribute, mlir::Type)> resolveField,
+                                        std::function<mlir_ts::FieldInfo(mlir::Attribute, mlir::Type)> resolveField,
                                         std::function<MethodInfo &(std::string, mlir::FunctionType)> resolveMethod)
     {
         // do vtable for current
@@ -3409,7 +3403,18 @@ llvm.return %5 : i32
         {
             auto fieldInfo = interfaceInfo->fields[fieldIndex];
 
-            llvm_unreachable("not implemented");
+            auto fieldRefType = mlir_ts::RefType::get(fieldInfo.type);
+
+            auto interfaceSymbolRefOp =
+                builder.create<mlir_ts::InterfaceSymbolRefOp>(location, fieldRefType, getAnyType(), interfaceValue,
+                                                              builder.getI32IntegerAttr(fieldInfo.virtualIndex), builder.getStringAttr(""));
+
+            auto propField = builder.create<mlir_ts::ThisPropertyRefOp>(location, fieldRefType, interfaceSymbolRefOp.getResult(1),
+                                                                        interfaceSymbolRefOp.getResult(0));
+
+            auto value = builder.create<mlir_ts::LoadOp>(location, fieldRefType.getElementType(), propField);
+
+            return value;
         }
 
         // check method access
@@ -5197,13 +5202,14 @@ llvm.return %5 : i32
         MLIRCodeLogic mcl(builder);
 
         MethodInfo emptyMethod;
+        mlir_ts::FieldInfo emptyFieldInfo;
         // TODO: ...
         auto classStorageType = newClassPtr->classType.getStorageType().cast<mlir_ts::ClassStorageType>();
 
         llvm::SmallVector<VirtualMethodOrFieldInfo> virtualTable;
         auto result = newInterfacePtr->getVirtualTable(
             virtualTable,
-            [&](mlir::Attribute id, mlir::Type fieldType) -> PositionFieldInfo {
+            [&](mlir::Attribute id, mlir::Type fieldType) -> mlir_ts::FieldInfo {
                 auto index = classStorageType.getIndex(id);
                 if (index >= 0)
                 {
@@ -5214,13 +5220,13 @@ llvm.return %5 : i32
                         emitError(location) << "field type not matching for '" << id << "' for interface '" << newInterfacePtr->fullName
                                             << "' in class '" << newClassPtr->fullName << "'";
 
-                        return PositionFieldInfo{};
+                        return emptyFieldInfo;
                     }
 
-                    return PositionFieldInfo{fieldInfo.id, fieldInfo.type, index};
+                    return fieldInfo;
                 }
 
-                return PositionFieldInfo{};
+                return emptyFieldInfo;
             },
             [&](std::string name, mlir::FunctionType funcType) -> MethodInfo & {
                 auto index = newClassPtr->getMethodIndex(name);

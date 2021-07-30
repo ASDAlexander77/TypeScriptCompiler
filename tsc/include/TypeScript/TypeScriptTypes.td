@@ -905,4 +905,8 @@ def TypeScript_AnyStructLike : AnyTypeOf<[
     TypeScript_ConstTuple, TypeScript_Tuple, TypeScript_Class, TypeScript_ClassStorage
   ]>;
 
+def TypeScript_AnyRefOrFuncType : AnyTypeOf<[
+    TypeScript_Ref, FunctionType
+  ]>;
+
 #endif // TYPESCRIPT_TYPEDEFS

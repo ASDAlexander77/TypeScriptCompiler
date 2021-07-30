@@ -135,7 +135,7 @@ def ThisVirtualSymbolRefOp : TypeScript_Op<"ThisVirtualSymbolRef",
   let summary = "symbol reference as to virtual this member";
 
   let arguments = (ins TypeScript_AnyRefLike:$thisVal, TypeScript_AnyRefLike:$vtable, I32Attr:$index, FlatSymbolRefAttr:$identifier);
-  let results = (outs AnyType:$value);
+  let results = (outs TypeScript_AnyRefLike:$value);
 
   let builders = [
     OpBuilder<(ins "Value":$thisVal, "Value":$vtable, "IntegerAttr":$index, "FlatSymbolRefAttr":$identifier),
@@ -187,7 +187,7 @@ def InterfaceSymbolRefOp : TypeScript_Op<"InterfaceSymbolRef",
   let summary = "symbol reference as to interface member";
 
   let arguments = (ins AnyType:$interfaceVal, I32Attr:$index, StrAttr:$identifier);
-  let results = (outs FunctionType:$funcOrFieldReference, TypeScript_AnyRefLike:$thisRef);
+  let results = (outs TypeScript_AnyRefOrFuncType:$funcOrFieldReference, TypeScript_AnyRefLike:$thisRef);
 
   let builders = [
     OpBuilder<(ins "Value":$interfaceVal, "IntegerAttr":$index, "StringAttr":$identifier),
@@ -934,7 +934,7 @@ def TypeScript_ElementRefOp : TypeScript_Op<"ElementRef"> {
     TypeScript_AnyRef:$result
   );
 
-  //let assemblyFormat = "$array_reference `[` $index `]` attr-dict `:` type($result)";
+  let assemblyFormat = "$array `[` $index `]` attr-dict `:` type($array) `[` type($index) `]` `->` type($result)";
 }
 
 def TypeScript_PropertyRefOp : TypeScript_Op<"PropertyRef"> {
@@ -953,7 +953,26 @@ def TypeScript_PropertyRefOp : TypeScript_Op<"PropertyRef"> {
     TypeScript_AnyRef:$result
   );
 
-  //let assemblyFormat = "$object_reference `,` $propertyIndex attr-dict `:` type($result)";
+  let assemblyFormat = "$objectRef `<` $position `>` attr-dict `:` type($objectRef) `->` type($result)";
+}
+
+def TypeScript_ThisPropertyRefOp : TypeScript_Op<"ThisPropertyRef"> {
+  let description = [{
+    ```mlir
+    %2 = ts.this_property_ref %1, %2 : !ts.ref<f32>
+    ```
+  }];
+
+  let arguments = (ins
+    TypeScript_AnyRefLike:$objectRef,
+    TypeScript_AnyRef:$offset
+  );
+
+  let results = (outs
+    TypeScript_AnyRef:$result
+  );
+
+  let assemblyFormat = "$objectRef `+` $offset attr-dict `:` type($objectRef) `+` type($offset) `->` type($result)";
 }
 
 def TypeScript_ArithmeticUnaryOp : TypeScript_Op<"ArithmeticUnary"> {
