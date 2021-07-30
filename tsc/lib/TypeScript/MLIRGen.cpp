@@ -3165,7 +3165,7 @@ llvm.return %5 : i32
                 }
             })
             .Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
-                value = InterfaceMembers(location, objectValue, interfaceType.getName().getValue(), name, genContext);
+                value = InterfaceMembers(location, objectValue, interfaceType.getName().getValue(), cl.getAttribute(), genContext);
             })
             .Default([](auto type) {});
 
@@ -3382,38 +3382,48 @@ llvm.return %5 : i32
         return false;
     }
 
-    mlir::Value InterfaceMembers(mlir::Location location, mlir::Value interfaceValue, mlir::StringRef interfaceFullName,
-                                 mlir::StringRef name, const GenContext &genContext)
+    mlir::Value InterfaceMembers(mlir::Location location, mlir::Value interfaceValue, mlir::StringRef interfaceFullName, mlir::Attribute id,
+                                 const GenContext &genContext)
     {
         auto interfaceInfo = getInterfaceByFullName(interfaceFullName);
         assert(interfaceInfo);
 
         // static field access
-        auto value = InterfaceMembers(location, interfaceValue, interfaceInfo, name, genContext);
+        auto value = InterfaceMembers(location, interfaceValue, interfaceInfo, id, genContext);
         if (!value && !genContext.allowPartialResolve)
         {
-            emitError(location, "Interface member '") << name << "' can't be found";
+            emitError(location, "Interface member '") << id << "' can't be found";
         }
 
         return value;
     }
 
     mlir::Value InterfaceMembers(mlir::Location location, mlir::Value interfaceValue, InterfaceInfo::TypePtr interfaceInfo,
-                                 mlir::StringRef name, const GenContext &genContext)
+                                 mlir::Attribute id, const GenContext &genContext)
     {
         assert(interfaceInfo);
 
-        // check method access
-        auto methodIndex = interfaceInfo->getMethodIndex(name);
-        if (methodIndex >= 0)
+        // check field access
+        auto fieldIndex = interfaceInfo->getFieldIndex(id);
+        if (fieldIndex >= 0)
         {
-            auto methodInfo = interfaceInfo->methods[methodIndex];
-            auto effectiveFuncType = methodInfo.funcType;
+        }
 
-            auto interfaceSymbolRefOp = builder.create<mlir_ts::InterfaceSymbolRefOp>(
-                location, effectiveFuncType, getAnyType(), interfaceValue, builder.getI32IntegerAttr(methodInfo.virtualIndex),
-                builder.getStringAttr(methodInfo.name));
-            return interfaceSymbolRefOp.getResult(0);
+        // check method access
+        if (auto nameAttr = id.dyn_cast_or_null<mlir::StringAttr>())
+        {
+            auto name = nameAttr.getValue();
+            auto methodIndex = interfaceInfo->getMethodIndex(name);
+            if (methodIndex >= 0)
+            {
+                auto methodInfo = interfaceInfo->methods[methodIndex];
+                auto effectiveFuncType = methodInfo.funcType;
+
+                auto interfaceSymbolRefOp = builder.create<mlir_ts::InterfaceSymbolRefOp>(
+                    location, effectiveFuncType, getAnyType(), interfaceValue, builder.getI32IntegerAttr(methodInfo.virtualIndex),
+                    builder.getStringAttr(methodInfo.name));
+                return interfaceSymbolRefOp.getResult(0);
+            }
         }
 
         return mlir::Value();

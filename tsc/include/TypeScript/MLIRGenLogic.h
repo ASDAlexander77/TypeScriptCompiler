@@ -662,6 +662,11 @@ class MLIRPropertyAccessCodeLogic
         return name;
     }
 
+    mlir::Attribute getAttribute()
+    {
+        return fieldId;
+    }
+
   private:
     mlir::Attribute getExprConstAttr()
     {
