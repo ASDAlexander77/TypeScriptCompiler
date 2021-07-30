@@ -3212,7 +3212,7 @@ llvm.return %5 : i32
             return value;
         }
 
-        emitError(location, "Can't resolve property name of type: '") << objectValue.getType() << "'";
+        emitError(location, "Can't resolve property name '") << name << "' of type " << objectValue.getType();
 
         llvm_unreachable("not implemented");
     }
