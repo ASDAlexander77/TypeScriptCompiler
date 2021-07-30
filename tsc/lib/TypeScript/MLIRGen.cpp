@@ -3407,6 +3407,9 @@ llvm.return %5 : i32
         auto fieldIndex = interfaceInfo->getFieldIndex(id);
         if (fieldIndex >= 0)
         {
+            auto fieldInfo = interfaceInfo->fields[fieldIndex];
+
+            llvm_unreachable("not implemented");
         }
 
         // check method access
