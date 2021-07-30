@@ -409,6 +409,10 @@ class MLIRPropertyAccessCodeLogic
     MLIRPropertyAccessCodeLogic(mlir::OpBuilder &builder, mlir::Location &location, mlir::Value &expression, mlir::Attribute fieldId)
         : builder(builder), location(location), expression(expression), fieldId(fieldId)
     {
+        if (auto strAttr = fieldId.dyn_cast_or_null<mlir::StringAttr>())
+        {
+            name = strAttr.getValue();
+        }
     }
 
     mlir::Value Enum(mlir_ts::EnumType enumType)
@@ -653,12 +657,12 @@ class MLIRPropertyAccessCodeLogic
         return builder.create<mlir_ts::LoadOp>(location, elementType, propRef);
     }
 
-  private:
     StringRef getName()
     {
         return name;
     }
 
+  private:
     mlir::Attribute getExprConstAttr()
     {
         MLIRCodeLogic mcl(builder);

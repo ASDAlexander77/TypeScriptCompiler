@@ -3161,7 +3161,21 @@ llvm.return %5 : i32
         }
 
         MLIRPropertyAccessCodeLogic cl(builder, location, objectValue, name);
+        return mlirGenPropertyAccessExpressionLogic(location, objectValue, cl, genContext);
+    }
 
+    mlir::Value mlirGenPropertyAccessExpression(mlir::Location location, mlir::Value objectValue, mlir::Attribute id,
+                                                const GenContext &genContext)
+    {
+        MLIRPropertyAccessCodeLogic cl(builder, location, objectValue, id);
+        return mlirGenPropertyAccessExpressionLogic(location, objectValue, cl, genContext);
+    }
+
+    mlir::Value mlirGenPropertyAccessExpressionLogic(mlir::Location location, mlir::Value objectValue, MLIRPropertyAccessCodeLogic &cl,
+                                                     const GenContext &genContext)
+    {
+        mlir::Value value;
+        mlir::StringRef name = cl.getName();
         TypeSwitch<mlir::Type>(objectValue.getType())
             .Case<mlir_ts::EnumType>([&](auto enumType) { value = cl.Enum(enumType); })
             .Case<mlir_ts::ConstTupleType>([&](auto constTupleType) { value = cl.Tuple(constTupleType); })
@@ -5204,6 +5218,7 @@ llvm.return %5 : i32
                                                                        InterfaceInfo::TypePtr newInterfacePtr, const GenContext &genContext)
     {
         MLIRTypeHelper mth(builder.getContext());
+        MLIRCodeLogic mcl(builder);
 
         MethodInfo emptyMethod;
         // TODO: ...
@@ -5278,7 +5293,14 @@ llvm.return %5 : i32
                 {
                     if (methodOrField.isField)
                     {
-                        llvm_unreachable("not implemented");
+                        auto nullObj = builder.create<mlir_ts::NullOp>(location, getAnyType());
+                        auto classNull = cast(location, newClassPtr->classType, nullObj, genContext);
+                        auto fieldValue = mlirGenPropertyAccessExpression(location, classNull, methodOrField.fieldInfo.id, genContext);
+                        auto fieldRef = mcl.GetReferenceOfLoadOp(fieldValue);
+
+                        // insert &(null)->field
+                        vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
+                            location, virtTuple, fieldRef, vtableValue, builder.getArrayAttr(mth.getStructIndexAttrValue(fieldIndex)));
                     }
                     else
                     {
