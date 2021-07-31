@@ -378,22 +378,23 @@ def TypeScript_ConstTuple : TypeScript_Type<"ConstTuple"> {
 
     int getIndex(Attribute id)
     {
-        return std::distance(begin(), std::find_if(begin(), end(), [&](::mlir::typescript::FieldInfo fldInf){ return id == fldInf.id; }));
+        auto dist = std::distance(begin(), std::find_if(begin(), end(), [&](::mlir::typescript::FieldInfo fldInf){ return id == fldInf.id; }));
+        return (signed)dist >= (signed)size() ? -1 : dist;
     }
 
     /// Return the element type at index 'index'.
     ::mlir::typescript::FieldInfo getFieldInfo(size_t index) const {
-      assert(index < size() && "invalid index for tuple type");
+      assert(index >= 0 && index < size() && "invalid index for tuple type");
       return getFields()[index];
     }
 
     Attribute getId(size_t index) const {
-      assert(index < size() && "invalid index for tuple type");
+      assert(index >= 0 && index < size() && "invalid index for tuple type");
       return getFields()[index].id;
     }
 
     Type getType(size_t index) const {
-      assert(index < size() && "invalid index for tuple type");
+      assert(index >= 0 && index < size() && "invalid index for tuple type");
       return getFields()[index].type;
     }
   }];
@@ -476,22 +477,23 @@ def TypeScript_Tuple : TypeScript_Type<"Tuple"> {
 
     int getIndex(Attribute id)
     {
-        return std::distance(begin(), std::find_if(begin(), end(), [&](::mlir::typescript::FieldInfo fldInf){ return id == fldInf.id; }));
+        auto dist = std::distance(begin(), std::find_if(begin(), end(), [&](::mlir::typescript::FieldInfo fldInf){ return id == fldInf.id; }));
+        return (signed)dist >= (signed)size() ? -1 : dist;
     }
 
     /// Return the element type at index 'index'.
     ::mlir::typescript::FieldInfo getFieldInfo(size_t index) const {
-      assert(index < size() && "invalid index for tuple type");
+      assert(index >= 0 && index < size() && "invalid index for tuple type");
       return getFields()[index];
     }
 
     Attribute getId(size_t index) const {
-      assert(index < size() && "invalid index for tuple type");
+      assert(index >= 0 && index < size() && "invalid index for tuple type");
       return getFields()[index].id;
     }
 
     Type getType(size_t index) const {
-      assert(index < size() && "invalid index for tuple type");
+      assert(index >= 0 && index < size() && "invalid index for tuple type");
       return getFields()[index].type;
     }
   }];
@@ -577,22 +579,23 @@ def TypeScript_ClassStorage : TypeScript_Type<"ClassStorage"> {
 
     int getIndex(Attribute id)
     {
-        return std::distance(begin(), std::find_if(begin(), end(), [&](::mlir::typescript::FieldInfo fldInf){ return id == fldInf.id; }));
+        auto dist = std::distance(begin(), std::find_if(begin(), end(), [&](::mlir::typescript::FieldInfo fldInf){ return id == fldInf.id; }));
+        return (signed)dist >= (signed)size() ? -1 : dist;
     }
 
     /// Return the element type at index 'index'.
     ::mlir::typescript::FieldInfo getFieldInfo(size_t index) const {
-      assert(index < size() && "invalid index for tuple type");
+      assert(index >= 0 && index < size() && "invalid index for tuple type");
       return getFields()[index];
     }
 
     Attribute getId(size_t index) const {
-      assert(index < size() && "invalid index for tuple type");
+      assert(index >= 0 && index < size() && "invalid index for tuple type");
       return getFields()[index].id;
     }
 
     Type getType(size_t index) const {
-      assert(index < size() && "invalid index for tuple type");
+      assert(index >= 0 && index < size() && "invalid index for tuple type");
       return getFields()[index].type;
     }
   }];
