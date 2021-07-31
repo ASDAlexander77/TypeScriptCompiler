@@ -162,6 +162,7 @@ struct InterfaceInfo
                 return mlir::failure();
             }
 
+            method.virtualIndex = vtable.size();
             vtable.push_back({classMethodInfo});
         }
 
@@ -173,6 +174,7 @@ struct InterfaceInfo
                 return mlir::failure();
             }
 
+            field.virtualIndex = vtable.size();
             vtable.push_back({fieldInfo});
         }
 
