@@ -1686,7 +1686,8 @@ static auto getTextOfNodeFromSourceText(safe_string sourceText, Node node, boole
         return string();
     }
 
-    auto text = sourceText.substring(includeTrivia ? node->pos : scanner->skipTrivia(sourceText, node->pos), node->_end);
+    auto text = sourceText.substring(
+        includeTrivia ? static_cast<number>(node->pos) : scanner->skipTrivia(sourceText, static_cast<number>(node->pos)), node->_end);
 
     if (isJSDocTypeExpressionOrChild(node))
     {
