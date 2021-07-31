@@ -103,14 +103,14 @@ struct InterfaceFieldInfo
 {
     mlir::Attribute id;
     mlir::Type type;
-    int virtualIndex;
+    int interfacePosIndex;
 };
 
 struct InterfaceMethodInfo
 {
     std::string name;
     mlir::FunctionType funcType;
-    int virtualIndex;
+    int interfacePosIndex;
 };
 
 struct VirtualMethodOrFieldInfo
@@ -162,7 +162,7 @@ struct InterfaceInfo
                 return mlir::failure();
             }
 
-            method.virtualIndex = vtable.size();
+            method.interfacePosIndex = vtable.size();
             vtable.push_back({classMethodInfo});
         }
 
@@ -174,7 +174,7 @@ struct InterfaceInfo
                 return mlir::failure();
             }
 
-            field.virtualIndex = vtable.size();
+            field.interfacePosIndex = vtable.size();
             vtable.push_back({fieldInfo});
         }
 
@@ -3407,9 +3407,9 @@ llvm.return %5 : i32
 
             auto fieldRefType = mlir_ts::RefType::get(fieldInfo.type);
 
-            auto interfaceSymbolRefOp =
-                builder.create<mlir_ts::InterfaceSymbolRefOp>(location, fieldRefType, getAnyType(), interfaceValue,
-                                                              builder.getI32IntegerAttr(fieldInfo.virtualIndex), builder.getStringAttr(""));
+            auto interfaceSymbolRefOp = builder.create<mlir_ts::InterfaceSymbolRefOp>(
+                location, fieldRefType, getAnyType(), interfaceValue, builder.getI32IntegerAttr(fieldInfo.interfacePosIndex),
+                builder.getStringAttr(""));
 
             auto propField = builder.create<mlir_ts::ThisPropertyRefOp>(location, fieldRefType, interfaceSymbolRefOp.getResult(1),
                                                                         interfaceSymbolRefOp.getResult(0));
@@ -3430,7 +3430,7 @@ llvm.return %5 : i32
                 auto effectiveFuncType = methodInfo.funcType;
 
                 auto interfaceSymbolRefOp = builder.create<mlir_ts::InterfaceSymbolRefOp>(
-                    location, effectiveFuncType, getAnyType(), interfaceValue, builder.getI32IntegerAttr(methodInfo.virtualIndex),
+                    location, effectiveFuncType, getAnyType(), interfaceValue, builder.getI32IntegerAttr(methodInfo.interfacePosIndex),
                     builder.getStringAttr(methodInfo.name));
                 return interfaceSymbolRefOp.getResult(0);
             }
