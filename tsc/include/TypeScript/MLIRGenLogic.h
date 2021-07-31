@@ -46,12 +46,12 @@ using llvm::Twine;
 using VariablePairT = std::pair<mlir::Value, ts::VariableDeclarationDOM::TypePtr>;
 using SymbolTableScopeT = llvm::ScopedHashTableScope<StringRef, VariablePairT>;
 
-#define VALIDATE_VALUE(value, loc)                                                                                                         \
+#define VALIDATE(value)                                                                                                                    \
     if (!value)                                                                                                                            \
     {                                                                                                                                      \
         if (!genContext.allowPartialResolve)                                                                                               \
         {                                                                                                                                  \
-            emitError(loc, "expression has no result");                                                                                    \
+            emitError(value.getDefiningOp()->getLoc(), "expression has no result");                                                        \
         }                                                                                                                                  \
                                                                                                                                            \
         return mlir::Value();                                                                                                              \
@@ -61,13 +61,11 @@ using SymbolTableScopeT = llvm::ScopedHashTableScope<StringRef, VariablePairT>;
     {                                                                                                                                      \
         if (!genContext.allowPartialResolve)                                                                                               \
         {                                                                                                                                  \
-            emitError(loc, "can't find variable: ") << unresolved.identifier();                                                            \
+            emitError(value.getDefiningOp()->getLoc(), "can't find variable: ") << unresolved.identifier();                                \
         }                                                                                                                                  \
                                                                                                                                            \
         return mlir::Value();                                                                                                              \
     }
-
-#define VALIDATE_EXPR(value, expression) VALIDATE_VALUE(value, loc(expression))
 
 namespace
 {
@@ -238,7 +236,7 @@ class MLIRCustomMethods
         // validate params
         for (auto &oper : operands)
         {
-            VALIDATE_VALUE(oper, oper.getDefiningOp()->getLoc())
+            VALIDATE(oper)
         }
 
         mlir::Value result;
@@ -515,7 +513,20 @@ class MLIRPropertyAccessCodeLogic
         }
     }
 
-    mlir::Value Float(mlir::FloatType intType)
+    mlir::Value Float(mlir::FloatType floatType)
+    {
+        auto propName = getName();
+        if (propName == "toString")
+        {
+            return builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()), expression);
+        }
+        else
+        {
+            llvm_unreachable("not implemented");
+        }
+    }
+
+    mlir::Value Number(mlir_ts::NumberType numberType)
     {
         auto propName = getName();
         if (propName == "toString")

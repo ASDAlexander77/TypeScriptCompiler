@@ -347,9 +347,33 @@ struct ClassInfo
 
     int getMethodIndex(mlir::StringRef name)
     {
-        auto dist = std::distance(
-            methods.begin(), std::find_if(methods.begin(), methods.end(), [&](MethodInfo methodInfo) { return name == methodInfo.name; }));
+        auto dist = std::distance(methods.begin(), std::find_if(methods.begin(), methods.end(), [&](MethodInfo methodInfo) {
+                                      LLVM_DEBUG(dbgs() << "\nmatching method: " << name << " to " << methodInfo.name << "\n\n";);
+                                      return name == methodInfo.name;
+                                  }));
         return (signed)dist >= (signed)methods.size() ? -1 : dist;
+    }
+
+    MethodInfo *findMethod(mlir::StringRef name, bool &foundMethod)
+    {
+        foundMethod = false;
+        auto index = getMethodIndex(name);
+        if (index >= 0)
+        {
+            foundMethod = true;
+            return &methods[index];
+        }
+
+        for (auto &baseClass : baseClasses)
+        {
+            auto *method = baseClass->findMethod(name, foundMethod);
+            if (foundMethod)
+            {
+                return method;
+            }
+        }
+
+        return nullptr;
     }
 
     int getAccessorIndex(mlir::StringRef name)
@@ -2534,7 +2558,7 @@ llvm.return %5 : i32
         auto expression = prefixUnaryExpressionAST->operand;
         auto expressionValue = mlirGen(expression, genContext);
 
-        VALIDATE_EXPR(expressionValue, expression)
+        VALIDATE(expressionValue)
 
         auto boolValue = expressionValue;
 
@@ -2572,7 +2596,7 @@ llvm.return %5 : i32
         auto expression = postfixUnaryExpressionAST->operand;
         auto expressionValue = mlirGen(expression, genContext);
 
-        VALIDATE_EXPR(expressionValue, expression)
+        VALIDATE(expressionValue)
 
         switch (opCode)
         {
@@ -2593,7 +2617,7 @@ llvm.return %5 : i32
         auto condExpression = conditionalExpressionAST->condition;
         auto condValue = mlirGen(condExpression, genContext);
 
-        VALIDATE_EXPR(condValue, condExpression);
+        VALIDATE(condValue);
 
         if (condValue.getType() != getBooleanType())
         {
@@ -2607,7 +2631,7 @@ llvm.return %5 : i32
             auto whenTrueExpression = conditionalExpressionAST->whenTrue;
             auto resultTrueTemp = mlirGen(whenTrueExpression, genContext);
 
-            VALIDATE_EXPR(resultTrueTemp, whenTrueExpression);
+            VALIDATE(resultTrueTemp);
 
             resultType = resultTrueTemp.getType();
 
@@ -2621,7 +2645,7 @@ llvm.return %5 : i32
         auto whenTrueExpression = conditionalExpressionAST->whenTrue;
         auto resultTrue = mlirGen(whenTrueExpression, genContext);
 
-        VALIDATE_EXPR(resultTrue, whenTrueExpression);
+        VALIDATE(resultTrue);
 
         builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{resultTrue});
 
@@ -2629,7 +2653,7 @@ llvm.return %5 : i32
         auto whenFalseExpression = conditionalExpressionAST->whenFalse;
         auto resultFalse = mlirGen(whenFalseExpression, genContext);
 
-        VALIDATE_EXPR(resultFalse, whenFalseExpression);
+        VALIDATE(resultFalse);
 
         builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{resultFalse});
 
@@ -2648,7 +2672,7 @@ llvm.return %5 : i32
         // condition
         auto leftExpressionValue = mlirGen(leftExpression, genContext);
 
-        VALIDATE_EXPR(leftExpressionValue, leftExpression)
+        VALIDATE(leftExpressionValue)
 
         auto resultType = leftExpressionValue.getType();
 
@@ -2661,7 +2685,7 @@ llvm.return %5 : i32
 
         if (andOp)
         {
-            VALIDATE_EXPR(resultTrue, rightExpression)
+            VALIDATE(resultTrue)
         }
 
         builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{resultTrue});
@@ -2671,7 +2695,7 @@ llvm.return %5 : i32
 
         if (!andOp)
         {
-            VALIDATE_EXPR(resultFalse, rightExpression)
+            VALIDATE(resultFalse)
         }
 
         // sync right part
@@ -2784,7 +2808,7 @@ llvm.return %5 : i32
 
         auto leftExpressionValue = mlirGen(leftExpression, genContext);
 
-        VALIDATE_EXPR(leftExpressionValue, leftExpression)
+        VALIDATE(leftExpressionValue)
 
         if (auto funcType = leftExpressionValue.getType().dyn_cast_or_null<mlir::FunctionType>())
         {
@@ -2793,7 +2817,7 @@ llvm.return %5 : i32
 
         auto rightExpressionValue = mlirGen(rightExpression, genContext);
 
-        VALIDATE_EXPR(rightExpressionValue, rightExpression)
+        VALIDATE(rightExpressionValue)
 
         // clear state
         const_cast<GenContext &>(genContext).argTypeDestFuncType = nullptr;
@@ -2877,8 +2901,8 @@ llvm.return %5 : i32
         auto leftExpressionValue = mlirGen(leftExpression, genContext);
         auto rightExpressionValue = mlirGen(rightExpression, genContext);
 
-        VALIDATE_EXPR(rightExpressionValue, rightExpression)
-        VALIDATE_EXPR(leftExpressionValue, leftExpression)
+        VALIDATE(rightExpressionValue)
+        VALIDATE(leftExpressionValue)
 
         // check if const expr.
         if (genContext.allowConstEval)
@@ -3083,7 +3107,7 @@ llvm.return %5 : i32
         auto expression = qualifiedName->left;
         auto expressionValue = mlirGenModuleReference(expression, genContext);
 
-        VALIDATE_EXPR(expressionValue, expression)
+        VALIDATE(expressionValue)
 
         auto name = MLIRHelper::getName(qualifiedName->right);
 
@@ -3097,7 +3121,7 @@ llvm.return %5 : i32
         auto expression = propertyAccessExpression->expression.as<Expression>();
         auto expressionValue = mlirGen(expression, genContext);
 
-        VALIDATE_EXPR(expressionValue, expression)
+        VALIDATE(expressionValue)
 
         auto name = MLIRHelper::getName(propertyAccessExpression->name);
 
@@ -3130,7 +3154,8 @@ llvm.return %5 : i32
             .Case<mlir_ts::TupleType>([&](auto tupleType) { value = cl.Tuple(tupleType); })
             .Case<mlir_ts::BooleanType>([&](auto intType) { value = cl.Bool(intType); })
             .Case<mlir::IntegerType>([&](auto intType) { value = cl.Int(intType); })
-            .Case<mlir::FloatType>([&](auto intType) { value = cl.Float(intType); })
+            .Case<mlir::FloatType>([&](auto floatType) { value = cl.Float(floatType); })
+            .Case<mlir_ts::NumberType>([&](auto numberType) { value = cl.Number(numberType); })
             .Case<mlir_ts::StringType>([&](auto stringType) { value = cl.String(stringType); })
             .Case<mlir_ts::ConstArrayType>([&](auto arrayType) { value = cl.Array(arrayType); })
             .Case<mlir_ts::ArrayType>([&](auto arrayType) { value = cl.Array(arrayType); })
@@ -3626,7 +3651,7 @@ llvm.return %5 : i32
         {
             for (auto &oper : operands)
             {
-                VALIDATE_VALUE(oper, oper.getDefiningOp()->getLoc())
+                VALIDATE(oper)
             }
 
             // default call by name
@@ -3925,6 +3950,13 @@ llvm.return %5 : i32
             return typeOfValue;
         }
 
+        if (type == getNumberType())
+        {
+            auto typeOfValue =
+                builder.create<mlir_ts::ConstantOp>(loc(typeOfExpression), getNumberType(), getStringAttr(std::string("number")));
+            return typeOfValue;
+        }
+
         if (type == getStringType())
         {
             auto typeOfValue =
@@ -3973,7 +4005,7 @@ llvm.return %5 : i32
             auto expression = span->expression;
             auto exprValue = mlirGen(expression, genContext);
 
-            VALIDATE_EXPR(exprValue, expression)
+            VALIDATE(exprValue)
 
             if (exprValue.getType() != stringType)
             {
@@ -4019,7 +4051,7 @@ llvm.return %5 : i32
             auto expression = span->expression;
             auto exprValue = mlirGen(expression, genContext);
 
-            VALIDATE_EXPR(exprValue, expression)
+            VALIDATE(exprValue)
 
             vals.push_back(exprValue);
 
@@ -4814,6 +4846,12 @@ llvm.return %5 : i32
 
         } while (notResolved > 0);
 
+        // generate vtable for interfaces in base class
+        if (mlir::failed(mlirGenClassBaseInterfaces(location, newClassPtr, declareClass, genContext)))
+        {
+            return mlir::failure();
+        }
+
         // generate vtable for interfaces
         for (auto &heritageClause : classDeclarationAST->heritageClauses)
         {
@@ -5249,22 +5287,23 @@ llvm.return %5 : i32
                 return emptyFieldInfo;
             },
             [&](std::string name, mlir::FunctionType funcType) -> MethodInfo & {
-                auto index = newClassPtr->getMethodIndex(name);
-                if (index >= 0)
+                auto found = false;
+                auto foundMethodPtr = newClassPtr->findMethod(name, found);
+                if (found)
                 {
-                    auto &foundMethod = newClassPtr->methods[index];
-                    auto foundMethodFunctionType = foundMethod.funcOp.getType().cast<mlir::FunctionType>();
+                    auto foundMethodFunctionType = foundMethodPtr->funcOp.getType().cast<mlir::FunctionType>();
 
                     auto result = mth.TestFunctionTypesMatch(funcType, foundMethodFunctionType, 1);
                     if (result.result != MatchResultType::Match)
                     {
-                        emitError(location) << "method signature not matching for '" << name << "' for interface '"
-                                            << newInterfacePtr->fullName << "' in class '" << newClassPtr->fullName << "'";
+                        emitError(location) << "method signature not matching for '" << name << "'{" << funcType << "} for interface '"
+                                            << newInterfacePtr->fullName << "' in class '" << newClassPtr->fullName << "'"
+                                            << " found method: " << foundMethodFunctionType;
 
                         return emptyMethod;
                     }
 
-                    return foundMethod;
+                    return *foundMethodPtr;
                 }
 
                 emitError(location) << "can't find method '" << name << "' for interface '" << newInterfacePtr->fullName << "' in class '"
@@ -5325,6 +5364,23 @@ llvm.return %5 : i32
         return mlir::success();
     }
 
+    mlir::LogicalResult mlirGenClassBaseInterfaces(mlir::Location location, ClassInfo::TypePtr newClassPtr, bool declareClass,
+                                                   const GenContext &genContext)
+    {
+        for (auto &baseClass : newClassPtr->baseClasses)
+        {
+            for (auto &implement : baseClass->implements)
+            {
+                if (mlir::failed(mlirGenClassVirtualTableDefinitionForInterface(location, newClassPtr, implement.implement, genContext)))
+                {
+                    return mlir::failure();
+                }
+            }
+        }
+
+        return mlir::success();
+    }
+
     mlir::LogicalResult mlirGenClassHeritageClauseImplements(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr,
                                                              HeritageClause heritageClause, bool declareClass, const GenContext &genContext)
     {
@@ -5332,8 +5388,6 @@ llvm.return %5 : i32
         {
             return mlir::success();
         }
-
-        // TODO: finish method.
 
         for (auto &implementingType : heritageClause->types)
         {
@@ -5438,6 +5492,7 @@ llvm.return %5 : i32
                         auto fullClassInterfaceVTableFieldName = concat(newClassPtr->fullName, vtRecord.methodInfo.name, VTABLE_NAME);
                         auto interfaceVTableValue =
                             resolveFullNameIdentifier(location, fullClassInterfaceVTableFieldName, true, genContext);
+
                         assert(interfaceVTableValue);
 
                         auto interfaceVTableValueAsAny = cast(location, getAnyType(), interfaceVTableValue, genContext);
