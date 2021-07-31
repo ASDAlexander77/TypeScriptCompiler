@@ -201,7 +201,7 @@ class AssertOpLowering : public TsLlvmPattern<mlir_ts::AssertOp>
         auto fileName = StringRef("");
         TypeSwitch<LocationAttr>(loc).Case<FileLineColLoc>([&](FileLineColLoc loc) {
             fileName = loc.getFilename();
-            line = loc.getLine() + 1;
+            line = loc.getLine();
             column = loc.getColumn();
         });
 
