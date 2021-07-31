@@ -1418,7 +1418,8 @@ class CastLogicHelper
                                         ArrayRef<mlir::Type>{rewriter.getI32Type(), th.getI8PtrType(), rewriter.getI32Type()}, true));
 
         auto bufferSizeValue = clh.createI32ConstantOf(50);
-        auto newStringValue = rewriter.create<LLVM::AllocaOp>(loc, i8PtrTy, bufferSizeValue, true);
+        // auto newStringValue = rewriter.create<LLVM::AllocaOp>(loc, i8PtrTy, bufferSizeValue, true);
+        auto newStringValue = ch.MemoryAllocBitcast(i8PtrTy, bufferSizeValue);
         auto base = clh.createI32ConstantOf(10);
 
         return rewriter.create<LLVM::CallOp>(loc, _itoaFuncOp, ValueRange{in, newStringValue, base}).getResult(0);
@@ -1433,7 +1434,8 @@ class CastLogicHelper
                                           ArrayRef<mlir::Type>{rewriter.getI32Type(), th.getI8PtrType(), rewriter.getI32Type()}, true));
 
         auto bufferSizeValue = clh.createI32ConstantOf(50);
-        auto newStringValue = rewriter.create<LLVM::AllocaOp>(loc, i8PtrTy, bufferSizeValue, true);
+        // auto newStringValue = rewriter.create<LLVM::AllocaOp>(loc, i8PtrTy, bufferSizeValue, true);
+        auto newStringValue = ch.MemoryAllocBitcast(i8PtrTy, bufferSizeValue);
         auto base = clh.createI32ConstantOf(10);
 
         return rewriter.create<LLVM::CallOp>(loc, _itoaFuncOp, ValueRange{in, newStringValue, base}).getResult(0);
@@ -1448,7 +1450,8 @@ class CastLogicHelper
                                         ArrayRef<mlir::Type>{rewriter.getF64Type(), rewriter.getI32Type(), th.getI8PtrType()}, true));
 
         auto bufferSizeValue = clh.createI32ConstantOf(50);
-        auto newStringValue = rewriter.create<LLVM::AllocaOp>(loc, i8PtrTy, bufferSizeValue, true);
+        // auto newStringValue = rewriter.create<LLVM::AllocaOp>(loc, i8PtrTy, bufferSizeValue, true);
+        auto newStringValue = ch.MemoryAllocBitcast(i8PtrTy, bufferSizeValue);
         auto doubleValue = rewriter.create<LLVM::FPExtOp>(loc, rewriter.getF64Type(), in);
         auto precision = clh.createI32ConstantOf(16);
 
