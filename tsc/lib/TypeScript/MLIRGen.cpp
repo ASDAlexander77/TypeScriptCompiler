@@ -354,6 +354,29 @@ struct ClassInfo
         return (signed)dist >= (signed)methods.size() ? -1 : dist;
     }
 
+    mlir_ts::FieldInfo findField(mlir::Attribute id, bool &foundField)
+    {
+        foundField = false;
+        auto storageClass = classType.getStorageType().cast<mlir_ts::ClassStorageType>();
+        auto index = storageClass.getIndex(id);
+        if (index >= 0)
+        {
+            foundField = true;
+            return storageClass.getFieldInfo(index);
+        }
+
+        for (auto &baseClass : baseClasses)
+        {
+            auto field = baseClass->findField(id, foundField);
+            if (foundField)
+            {
+                return field;
+            }
+        }
+
+        return mlir_ts::FieldInfo();
+    }
+
     MethodInfo *findMethod(mlir::StringRef name, bool &foundMethod)
     {
         foundMethod = false;
@@ -5268,12 +5291,11 @@ llvm.return %5 : i32
         auto result = newInterfacePtr->getVirtualTable(
             virtualTable,
             [&](mlir::Attribute id, mlir::Type fieldType) -> mlir_ts::FieldInfo {
-                auto index = classStorageType.getIndex(id);
-                if (index >= 0)
+                auto found = false;
+                auto foundField = newClassPtr->findField(id, found);
+                if (found)
                 {
-                    auto fieldInfo = classStorageType.getFieldInfo(index);
-
-                    if (fieldType != fieldInfo.type)
+                    if (fieldType != foundField.type)
                     {
                         emitError(location) << "field type not matching for '" << id << "' for interface '" << newInterfacePtr->fullName
                                             << "' in class '" << newClassPtr->fullName << "'";
@@ -5281,7 +5303,7 @@ llvm.return %5 : i32
                         return emptyFieldInfo;
                     }
 
-                    return fieldInfo;
+                    return foundField;
                 }
 
                 return emptyFieldInfo;
