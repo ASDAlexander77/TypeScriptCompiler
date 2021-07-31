@@ -5904,11 +5904,7 @@ llvm.return %5 : i32
                     return newInterface;
                 }
 
-                if (!genContext.allowPartialResolve)
-                {
-                    emitError(location) << "type: " << classType << " missing interface: " << interfaceType;
-                }
-
+                emitError(location) << "type: " << classType << " missing interface: " << interfaceType;
                 return mlir::Value();
             }
         }
