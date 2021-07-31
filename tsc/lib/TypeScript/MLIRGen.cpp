@@ -198,8 +198,9 @@ struct InterfaceInfo
 
 struct ImplementInfo
 {
-    InterfaceInfo::TypePtr implement;
+    InterfaceInfo::TypePtr interface;
     int virtualIndex;
+    bool processed;
 };
 
 struct ClassInfo
@@ -298,7 +299,7 @@ struct ClassInfo
         for (auto &implement : implements)
         {
             auto index = std::distance(vtable.begin(), std::find_if(vtable.begin(), vtable.end(), [&](auto vTableRecord) {
-                                           return implement.implement->fullName == vTableRecord.methodInfo.name;
+                                           return implement.interface->fullName == vTableRecord.methodInfo.name;
                                        }));
             if ((size_t)index < vtable.size())
             {
@@ -307,7 +308,7 @@ struct ClassInfo
             }
 
             MethodInfo methodInfo;
-            methodInfo.name = implement.implement->fullName.str();
+            methodInfo.name = implement.interface->fullName.str();
             implement.virtualIndex = vtable.size();
             vtable.push_back({methodInfo, true});
         }
@@ -409,7 +410,7 @@ struct ClassInfo
     int getImplementIndex(mlir::StringRef name)
     {
         auto dist = std::distance(implements.begin(), std::find_if(implements.begin(), implements.end(), [&](ImplementInfo implementInfo) {
-                                      return name == implementInfo.implement->fullName;
+                                      return name == implementInfo.interface->fullName;
                                   }));
         return (signed)dist >= (signed)implements.size() ? -1 : dist;
     }
@@ -5018,7 +5019,7 @@ llvm.return %5 : i32
                 TypeSwitch<mlir::Type>(ifaceType.getType())
                     .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
                         auto interfaceInfo = getInterfaceByFullName(interfaceType.getName().getValue());
-                        interfaceInfos.push_back({interfaceInfo, -1});
+                        interfaceInfos.push_back({interfaceInfo, -1, false});
                     })
                     .Default([&](auto type) { llvm_unreachable("not implemented"); });
             }
@@ -5393,10 +5394,17 @@ llvm.return %5 : i32
         {
             for (auto &implement : baseClass->implements)
             {
-                if (mlir::failed(mlirGenClassVirtualTableDefinitionForInterface(location, newClassPtr, implement.implement, genContext)))
+                if (implement.processed)
+                {
+                    continue;
+                }
+
+                if (mlir::failed(mlirGenClassVirtualTableDefinitionForInterface(location, newClassPtr, implement.interface, genContext)))
                 {
                     return mlir::failure();
                 }
+
+                implement.processed = true;
             }
         }
 
