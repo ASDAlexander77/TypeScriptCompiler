@@ -3554,42 +3554,8 @@ llvm.return %5 : i32
         auto testResult = false;
         TypeSwitch<mlir::Type>(funcRefValue.getType())
             .Case<mlir::FunctionType>([&](auto calledFuncType) {
-                SmallVector<mlir::Value, 4> operands;
-                if (auto thisSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::ThisSymbolRefOp>())
-                {
-                    operands.push_back(thisSymbolRefOp.thisVal());
-                }
-                else if (auto thisVirtualSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::ThisVirtualSymbolRefOp>())
-                {
-                    operands.push_back(thisVirtualSymbolRefOp.thisVal());
-                }
-                else if (auto interfaceSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::InterfaceSymbolRefOp>())
-                {
-                    // operands.push_back(interfaceSymbolRefOp.thisRef());
-                    operands.push_back(interfaceSymbolRefOp.getResult(1));
-                }
-
-                const_cast<GenContext &>(genContext).destFuncType = calledFuncType;
-                if (mlir::failed(mlirGenCallOperands(location, calledFuncType, callExpression->arguments, operands, genContext)))
-                {
-                    if (!genContext.allowPartialResolve)
-                    {
-                        emitError(location) << "Call Method: can't resolve values of all parameters";
-                    }
-                }
-                else
-                {
-                    // default call by name
-                    auto callIndirectOp = builder.create<mlir_ts::CallIndirectOp>(location, funcRefValue, operands);
-
-                    if (calledFuncType.getNumResults() > 0)
-                    {
-                        value = callIndirectOp.getResult(0);
-                        testResult = true;
-                    }
-                }
-
-                const_cast<GenContext &>(genContext).destFuncType = nullptr;
+                value = mlirGenCallFunction(location, calledFuncType, funcRefValue, callExpression->typeArguments,
+                                            callExpression->arguments, testResult, genContext);
             })
             .Case<mlir_ts::ClassType>([&](auto classType) {
                 // seems we are calling type constructor
@@ -3624,6 +3590,58 @@ llvm.return %5 : i32
 
         assert(!testResult);
         return mlir::Value();
+    }
+
+    mlir::Value mlirGenCallFunction(mlir::Location location, mlir::FunctionType calledFuncType, mlir::Value funcRefValue,
+                                    NodeArray<TypeNode> typeArguments, NodeArray<Expression> arguments, bool &hasReturn,
+                                    const GenContext &genContext)
+    {
+        hasReturn = false;
+        mlir::Value value;
+
+        SmallVector<mlir::Value, 4> operands;
+        if (auto thisSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::ThisSymbolRefOp>())
+        {
+            operands.push_back(thisSymbolRefOp.thisVal());
+        }
+        else if (auto thisVirtualSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::ThisVirtualSymbolRefOp>())
+        {
+            operands.push_back(thisVirtualSymbolRefOp.thisVal());
+        }
+        else if (auto interfaceSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::InterfaceSymbolRefOp>())
+        {
+            // operands.push_back(interfaceSymbolRefOp.thisRef());
+            operands.push_back(interfaceSymbolRefOp.getResult(1));
+        }
+
+        const_cast<GenContext &>(genContext).destFuncType = calledFuncType;
+        if (mlir::failed(mlirGenCallOperands(location, calledFuncType, arguments, operands, genContext)))
+        {
+            if (!genContext.allowPartialResolve)
+            {
+                emitError(location) << "Call Method: can't resolve values of all parameters";
+            }
+        }
+        else
+        {
+            for (auto &oper : operands)
+            {
+                VALIDATE_VALUE(oper, oper.getDefiningOp()->getLoc())
+            }
+
+            // default call by name
+            auto callIndirectOp = builder.create<mlir_ts::CallIndirectOp>(location, funcRefValue, operands);
+
+            if (calledFuncType.getNumResults() > 0)
+            {
+                value = callIndirectOp.getResult(0);
+                hasReturn = true;
+            }
+        }
+
+        const_cast<GenContext &>(genContext).destFuncType = nullptr;
+
+        return value;
     }
 
     mlir::LogicalResult mlirGenCallOperands(mlir::Location location, mlir::FunctionType calledFuncType,
@@ -5886,7 +5904,10 @@ llvm.return %5 : i32
                     return newInterface;
                 }
 
-                assert(false);
+                if (!genContext.allowPartialResolve)
+                {
+                    emitError(location) << "type: " << classType << " missing interface: " << interfaceType;
+                }
 
                 return mlir::Value();
             }

@@ -135,7 +135,7 @@ def ThisVirtualSymbolRefOp : TypeScript_Op<"ThisVirtualSymbolRef",
   let summary = "symbol reference as to virtual this member";
 
   let arguments = (ins TypeScript_AnyRefLike:$thisVal, TypeScript_AnyRefLike:$vtable, I32Attr:$index, FlatSymbolRefAttr:$identifier);
-  let results = (outs TypeScript_AnyRefLike:$value);
+  let results = (outs TypeScript_AnyRefOrFuncType:$value);
 
   let builders = [
     OpBuilder<(ins "Value":$thisVal, "Value":$vtable, "IntegerAttr":$index, "FlatSymbolRefAttr":$identifier),
