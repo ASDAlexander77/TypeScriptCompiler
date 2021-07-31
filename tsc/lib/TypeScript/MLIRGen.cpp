@@ -6464,7 +6464,7 @@ llvm.return %5 : i32
     mlir::Location loc(TextRange loc)
     {
         // return builder.getFileLineColLoc(builder.getIdentifier(fileName), loc->pos, loc->_end);
-        auto posLineChar = parser.getLineAndCharacterOfPosition(sourceFile, loc->pos.textPos != -1 ? loc->pos.textPos : loc->pos);
+        auto posLineChar = parser.getLineAndCharacterOfPosition(sourceFile, loc->pos.textPos != -1 ? loc->pos.textPos : loc->pos.pos);
         return mlir::FileLineColLoc::get(builder.getContext(), builder.getIdentifier(fileName), posLineChar.line + 1,
                                          posLineChar.character + 1);
     }

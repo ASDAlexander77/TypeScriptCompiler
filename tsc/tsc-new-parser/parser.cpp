@@ -4838,7 +4838,7 @@ struct Parser
         // of one sort or another.
         if (inExpressionContext && token() == SyntaxKind::LessThanToken)
         {
-            auto topBadPos = topInvalidNodePosition == -1 ? result->pos : topInvalidNodePosition;
+            auto topBadPos = topInvalidNodePosition == -1 ? static_cast<number>(result->pos) : topInvalidNodePosition;
             auto invalidElement =
                 tryParse<Node>([&]() { return parseJsxElementOrSelfClosingElementOrFragment(/*inExpressionContext*/ true, topBadPos); });
             if (invalidElement)
