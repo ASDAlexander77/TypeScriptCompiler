@@ -22,8 +22,8 @@
 #define LINSTANCEOF_PARAM_NAME L"rttiParam"
 #define MAIN_ENTRY_NAME "main"
 #define TS_NEST_ATTRIBUTE "ts.nest"
-#define CLASSINFO_RTTI_TEMPVAR_NAME ".ins_of"
-#define LCLASSINFO_RTTI_TEMPVAR_NAME L".ins_of"
+#define THIS_TEMPVAR_NAME ".this"
+#define LTHIS_TEMPVAR_NAME L".this"
 
 #if __LP64__
 #define TRAMPOLINE_SIZE 48

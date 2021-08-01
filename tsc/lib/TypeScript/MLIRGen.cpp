@@ -2750,6 +2750,25 @@ llvm.return %5 : i32
         return mlirGen(cond, genContext);
     }
 
+    mlir::Value mlirGenCallThisMethod(mlir::Location location, mlir::Value thisValue, StringRef methodName,
+                                      NodeArray<TypeNode> typeArguments, NodeArray<Expression> arguments, const GenContext &genContext)
+    {
+        // to remove temp var .ctor after call
+        SymbolTableScopeT varScope(symbolTable);
+
+        auto varDecl = std::make_shared<VariableDeclarationDOM>(THIS_TEMPVAR_NAME, thisValue.getType(), location);
+        declare(varDecl, thisValue);
+
+        NodeFactory nf(NodeFactoryFlags::None);
+
+        auto thisToken = nf.createIdentifier(S(THIS_TEMPVAR_NAME));
+        auto callLogic = nf.createCallExpression(nf.createPropertyAccessExpression(thisToken, nf.createIdentifier(stows(methodName.str()))),
+                                                 typeArguments, arguments);
+
+        auto callInstanceOfValue = mlirGen(callLogic, genContext);
+        return callInstanceOfValue;
+    }
+
     mlir::Value mlirGenInstanceOfLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
     {
         auto location = loc(binaryExpressionAST);
@@ -2763,24 +2782,10 @@ llvm.return %5 : i32
             auto classInfo = getClassByFullName(classType.getName().getValue());
             auto fullNameClassRtti = concat(classInfo->fullName, RTTI_NAME);
 
-            // to remove temp var .ctor after call
-            SymbolTableScopeT varScope(symbolTable);
-
-            auto varDecl = std::make_shared<VariableDeclarationDOM>(CLASSINFO_RTTI_TEMPVAR_NAME, classInfo->classType, location);
-            declare(varDecl, result);
-
             NodeFactory nf(NodeFactoryFlags::None);
-
-            auto thisToken = nf.createIdentifier(S(CLASSINFO_RTTI_TEMPVAR_NAME));
-
             NodeArray<Expression> argumentsArray;
             argumentsArray.push_back(nf.createIdentifier(stows(fullNameClassRtti.str())));
-            auto callLogic = nf.createCallExpression(nf.createPropertyAccessExpression(nf.createIdentifier(S(CLASSINFO_RTTI_TEMPVAR_NAME)),
-                                                                                       nf.createIdentifier(S(INSTANCEOF_NAME))),
-                                                     undefined, argumentsArray);
-
-            auto callInstanceOfValue = mlirGen(callLogic, genContext);
-            return callInstanceOfValue;
+            return mlirGenCallThisMethod(location, result, INSTANCEOF_NAME, undefined, argumentsArray, genContext);
         }
 
         // default logic
@@ -5958,11 +5963,7 @@ llvm.return %5 : i32
         {
             if (auto classType = value.getType().dyn_cast_or_null<mlir_ts::ClassType>())
             {
-                auto className = classType.getName().getValue();
-                auto fullToStringName = className + ".toString";
-                auto callRes =
-                    builder.create<mlir_ts::CallOp>(location, fullToStringName.str(), mlir::TypeRange{stringType}, mlir::ValueRange{value});
-                return callRes.getResult(0);
+                return mlirGenCallThisMethod(location, value, "toString", undefined, undefined, genContext);
             }
         }
 
