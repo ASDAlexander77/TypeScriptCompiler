@@ -9,7 +9,7 @@
 
 # Demo
 
-[![Demo](https://asdalexander77.github.io/img/tsc_emit.gif)]()
+[![Demo](https://asdalexander77.github.io/img/tsc_emit.gif)](https://github.com/ASDAlexander77/TypeScriptCompiler/releases/)
 
 Chat Room
 ---------
