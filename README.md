@@ -2,7 +2,7 @@
 ###### Powered by [![LLVM|MLIR](https://llvm.org/img/LLVM-Logo-Derivative-1.png)](https://llvm.org/)
 
 <p align="left">
-  <a aria-label="License" href="https://github.com/ASDAlexander77/TypeScriptCompiler/LICENSE">
+  <a aria-label="License" href="https://github.com/ASDAlexander77/TypeScriptCompiler/blob/main/LICENSE">
     <img alt="" src="https://img.shields.io/npm/l/next.svg?style=for-the-badge&labelColor=000000">
   </a>
 </p>
