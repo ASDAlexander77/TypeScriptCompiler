@@ -1335,7 +1335,13 @@ class CastLogicHelper
         auto isResAny = resType.isa<mlir_ts::AnyType>();
         if (isResAny)
         {
-            return castToAny(in);
+            return castToAny(in, inLLVMType);
+        }
+
+        auto isInAny = inType.isa<mlir_ts::AnyType>();
+        if (isInAny)
+        {
+            return castFromAny(in, resLLVMType);
         }
 
         auto isInString = inType.dyn_cast_or_null<mlir_ts::StringType>();
@@ -1528,15 +1534,15 @@ class CastLogicHelper
         return structValue3;
     }
 
-    mlir::Value castToAny(mlir::Value in)
+    mlir::Value castToAny(mlir::Value in, mlir::Type inLLVMType)
     {
         // TODO: add type id to track data type
 
-        auto llvmStorageType = tch.convertType(in.getType());
-        auto llvmStorageTypePtr = LLVM::LLVMPointerType::get(llvmStorageType);
+        auto llvmStorageType = inLLVMType;
         auto dataWithSizeType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {th.getIndexType(), llvmStorageType}, false);
+        auto dataWithSizeTypePtr = LLVM::LLVMPointerType::get(dataWithSizeType);
 
-        auto memValue = ch.MemoryAllocBitcast(llvmStorageTypePtr, llvmStorageType);
+        auto memValue = ch.MemoryAllocBitcast(dataWithSizeTypePtr, dataWithSizeType);
 
         // set value size
         auto size = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), llvmStorageType);
@@ -1552,6 +1558,26 @@ class CastLogicHelper
         rewriter.create<LLVM::StoreOp>(loc, in, ptrValue);
 
         return clh.castToI8Ptr(memValue);
+    }
+
+    mlir::Value castFromAny(mlir::Value in, mlir::Type resLLVMType)
+    {
+        // TODO: add type id to track data type
+        // TODO: add data size check
+
+        auto llvmStorageType = resLLVMType;
+        auto dataWithSizeType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {th.getIndexType(), llvmStorageType}, false);
+        auto dataWithSizeTypePtr = LLVM::LLVMPointerType::get(dataWithSizeType);
+
+        auto inDataWithSizeTypedValue = rewriter.create<LLVM::BitcastOp>(loc, dataWithSizeTypePtr, in);
+
+        auto zero = clh.createI32ConstantOf(0);
+        auto one = clh.createI32ConstantOf(1);
+
+        // set actual value
+        auto ptrValue =
+            rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(llvmStorageType), inDataWithSizeTypedValue, ValueRange{zero, one});
+        return rewriter.create<LLVM::LoadOp>(loc, ptrValue);
     }
 };
 
