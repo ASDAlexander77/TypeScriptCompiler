@@ -7,7 +7,9 @@
   </a>
 </p>
 
-[![Demo](https://asdalexander77.github.io/img/tsc_emit.gif)]
+# Demo
+
+[![Demo](https://asdalexander77.github.io/img/tsc_emit.gif)]()
 
 Chat Room
 ---------
