@@ -1277,7 +1277,7 @@ class MLIRGenImpl
 
         if (parametersContextAST->parent.is<InterfaceDeclaration>())
         {
-            params.push_back(std::make_shared<FunctionParamDOM>(THIS_NAME, getAnyType(), loc(parametersContextAST)));
+            params.push_back(std::make_shared<FunctionParamDOM>(THIS_NAME, getOpaqueType(), loc(parametersContextAST)));
         }
 
         auto noneType = mlir::NoneType::get(builder.getContext());
@@ -3462,7 +3462,7 @@ llvm.return %5 : i32
             auto fieldRefType = mlir_ts::RefType::get(fieldInfo.type);
 
             auto interfaceSymbolRefOp = builder.create<mlir_ts::InterfaceSymbolRefOp>(
-                location, fieldRefType, getAnyType(), interfaceValue, builder.getI32IntegerAttr(fieldInfo.interfacePosIndex),
+                location, fieldRefType, getOpaqueType(), interfaceValue, builder.getI32IntegerAttr(fieldInfo.interfacePosIndex),
                 builder.getStringAttr(""));
 
             auto propField = builder.create<mlir_ts::ThisPropertyRefOp>(location, fieldRefType, interfaceSymbolRefOp.getResult(1),
@@ -3484,7 +3484,7 @@ llvm.return %5 : i32
                 auto effectiveFuncType = methodInfo.funcType;
 
                 auto interfaceSymbolRefOp = builder.create<mlir_ts::InterfaceSymbolRefOp>(
-                    location, effectiveFuncType, getAnyType(), interfaceValue, builder.getI32IntegerAttr(methodInfo.interfacePosIndex),
+                    location, effectiveFuncType, getOpaqueType(), interfaceValue, builder.getI32IntegerAttr(methodInfo.interfacePosIndex),
                     builder.getStringAttr(methodInfo.name));
                 return interfaceSymbolRefOp.getResult(0);
             }
@@ -3853,7 +3853,7 @@ llvm.return %5 : i32
                 return mlir::failure();
             }
 
-            auto anyTypeValue = cast(location, getAnyType(), vtableAddress, genContext);
+            auto anyTypeValue = cast(location, getOpaqueType(), vtableAddress, genContext);
             auto varDecl = std::make_shared<VariableDeclarationDOM>(VTABLE_NAME, anyTypeValue.getType(), location);
             declare(varDecl, anyTypeValue);
 
@@ -4014,6 +4014,13 @@ llvm.return %5 : i32
             return typeOfValue;
         }
 
+        if (type == getOpaqueType())
+        {
+            auto typeOfValue =
+                builder.create<mlir_ts::ConstantOp>(loc(typeOfExpression), getStringType(), getStringAttr(std::string("object")));
+            return typeOfValue;
+        }
+
         llvm_unreachable("not implemented");
     }
 
@@ -4128,7 +4135,7 @@ llvm.return %5 : i32
 
     mlir::Value mlirGen(NullLiteral nullLiteral, const GenContext &genContext)
     {
-        return builder.create<mlir_ts::NullOp>(loc(nullLiteral), getAnyType());
+        return builder.create<mlir_ts::NullOp>(loc(nullLiteral), getNullType());
     }
 
     mlir::Value mlirGen(TrueLiteral trueLiteral, const GenContext &genContext)
@@ -4969,7 +4976,7 @@ llvm.return %5 : i32
             {
                 MLIRCodeLogic mcl(builder);
                 auto fieldId = mcl.TupleFieldName(VTABLE_NAME);
-                fieldInfos.insert(fieldInfos.begin(), {fieldId, getAnyType()});
+                fieldInfos.insert(fieldInfos.begin(), {fieldId, getOpaqueType()});
             }
 
             auto classFullNameSymbol = mlir::FlatSymbolRefAttr::get(builder.getContext(), newClassPtr->fullName);
@@ -5362,7 +5369,7 @@ llvm.return %5 : i32
                 {
                     if (methodOrField.isField)
                     {
-                        auto nullObj = builder.create<mlir_ts::NullOp>(location, getAnyType());
+                        auto nullObj = builder.create<mlir_ts::NullOp>(location, getNullType());
                         auto classNull = cast(location, newClassPtr->classType, nullObj, genContext);
                         auto fieldValue = mlirGenPropertyAccessExpression(location, classNull, methodOrField.fieldInfo.id, genContext);
                         auto fieldRef = mcl.GetReferenceOfLoadOp(fieldValue);
@@ -5480,7 +5487,7 @@ llvm.return %5 : i32
         {
             if (vtableRecord.isInterfaceVTable)
             {
-                fields.push_back({mcl.TupleFieldName(vtableRecord.methodInfo.name), getAnyType()});
+                fields.push_back({mcl.TupleFieldName(vtableRecord.methodInfo.name), getOpaqueType()});
             }
             else
             {
@@ -5530,7 +5537,7 @@ llvm.return %5 : i32
 
                         assert(interfaceVTableValue);
 
-                        auto interfaceVTableValueAsAny = cast(location, getAnyType(), interfaceVTableValue, genContext);
+                        auto interfaceVTableValueAsAny = cast(location, getOpaqueType(), interfaceVTableValue, genContext);
 
                         vtableValue =
                             builder.create<mlir_ts::InsertPropertyOp>(location, virtTuple, interfaceVTableValueAsAny, vtableValue,
@@ -5807,10 +5814,10 @@ llvm.return %5 : i32
             // add virtual table field
             MLIRCodeLogic mcl(builder);
             auto vtFieldId = mcl.TupleFieldName(VTABLE_NAME);
-            fieldInfos.insert(fieldInfos.begin(), {vtFieldId, getAnyType()});
+            fieldInfos.insert(fieldInfos.begin(), {vtFieldId, getOpaqueType()});
 
             auto thisFieldId = mcl.TupleFieldName(THIS_NAME);
-            fieldInfos.insert(fieldInfos.begin(), {thisFieldId, getAnyType()});
+            fieldInfos.insert(fieldInfos.begin(), {thisFieldId, getOpaqueType()});
             */
 
             auto interfaceFullNameSymbol = mlir::FlatSymbolRefAttr::get(builder.getContext(), newInterfacePtr->fullName);
@@ -5983,7 +5990,7 @@ llvm.return %5 : i32
                     auto interfaceVirtTableIndex = classInfo->implements[implementIndex].virtualIndex;
 
                     auto interfaceVTablePtr =
-                        builder.create<mlir_ts::VTableOffsetRefOp>(location, getAnyType(), vtableAccess, interfaceVirtTableIndex);
+                        builder.create<mlir_ts::VTableOffsetRefOp>(location, getOpaqueType(), vtableAccess, interfaceVirtTableIndex);
 
                     auto newInterface =
                         builder.create<mlir_ts::NewInterfaceOp>(location, mlir::TypeRange{interfaceType}, value, interfaceVTablePtr);
@@ -6414,6 +6421,16 @@ llvm.return %5 : i32
     mlir_ts::AnyType getAnyType()
     {
         return mlir_ts::AnyType::get(builder.getContext());
+    }
+
+    mlir_ts::NullType getNullType()
+    {
+        return mlir_ts::NullType::get(builder.getContext());
+    }
+
+    mlir_ts::OpaqueType getOpaqueType()
+    {
+        return mlir_ts::OpaqueType::get(builder.getContext());
     }
 
     mlir::LogicalResult declare(VariableDeclarationDOM::TypePtr var, mlir::Value value, bool redeclare = false)

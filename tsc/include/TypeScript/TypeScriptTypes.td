@@ -21,6 +21,14 @@ def TypeScript_Any : TypeScript_Type<"Any"> {
     let mnemonic = "any";
 }
 
+def TypeScript_Null : TypeScript_Type<"Null"> {
+    let mnemonic = "null";
+}
+
+def TypeScript_Opaque : TypeScript_Type<"Opaque"> {
+    let mnemonic = "opaque";
+}
+
 def TypeScript_Boolean : TypeScript_Type<"Boolean"> {
     let mnemonic = "boolean";
 }
@@ -901,7 +909,7 @@ def TypeScript_AnyStructRefLike : AnyTypeOf<[
   ]>;
 
 def TypeScript_AnyRefLike : AnyTypeOf<[
-    TypeScript_Ref, TypeScript_ValueRef, TypeScript_AnyStructRefLike, TypeScript_Array, TypeScript_String, TypeScript_Any
+    TypeScript_Ref, TypeScript_ValueRef, TypeScript_AnyStructRefLike, TypeScript_Array, TypeScript_String, TypeScript_Any, TypeScript_Null, TypeScript_Opaque
   ]>;
 
 def TypeScript_AnyStructLike : AnyTypeOf<[

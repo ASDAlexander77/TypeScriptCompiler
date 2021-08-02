@@ -2337,6 +2337,10 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
 {
     converter.addConversion([&](mlir_ts::AnyType type) { return LLVM::LLVMPointerType::get(IntegerType::get(m.getContext(), 8)); });
 
+    converter.addConversion([&](mlir_ts::NullType type) { return LLVM::LLVMPointerType::get(IntegerType::get(m.getContext(), 8)); });
+
+    converter.addConversion([&](mlir_ts::OpaqueType type) { return LLVM::LLVMPointerType::get(IntegerType::get(m.getContext(), 8)); });
+
     converter.addConversion([&](mlir_ts::VoidType type) { return LLVM::LLVMVoidType::get(m.getContext()); });
 
     converter.addConversion([&](mlir_ts::BooleanType type) {

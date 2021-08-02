@@ -375,7 +375,7 @@ def TypeScript_NullOp : TypeScript_Op<"Null", []> {
   let arguments = (ins);
 
   let results = (outs
-    TypeScript_Any:$result
+    TypeScript_Null:$result
   );
 
   let verifier = [{ return success(); }];
