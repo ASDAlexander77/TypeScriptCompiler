@@ -1332,6 +1332,12 @@ class CastLogicHelper
             return castToArrayType(in, resType);
         }
 
+        auto isResAny = resType.isa<mlir_ts::AnyType>();
+        if (isResAny)
+        {
+            return castToAny(in);
+        }
+
         auto isInString = inType.dyn_cast_or_null<mlir_ts::StringType>();
         if (isInString && (resLLVMType.isInteger(32) || resLLVMType.isInteger(64)))
         {
@@ -1353,28 +1359,6 @@ class CastLogicHelper
         {
             auto val = rewriter.create<mlir_ts::ValueOp>(loc, optType.getElementType(), in);
             return cast(val, tch.convertType(val.getType()), resType, resLLVMType);
-        }
-
-        if (isResString)
-        {
-            if (auto classType = inType.dyn_cast_or_null<mlir_ts::ClassType>())
-            {
-                /*
-                // function is removed because it is not referenced
-                // call toString
-                auto className = classType.getName().getValue();
-                auto fullToStringName = className + ".toString";
-                auto stringType = mlir_ts::StringType::get(rewriter.getContext());
-                auto funcType = th.getFunctionType(tch.convertType(stringType), {tch.convertType(classType)});
-                auto llvmFuncOp = rewriter.create<LLVM::LLVMFuncOp>(loc, fullToStringName.str(), funcType);
-                auto callRes = rewriter.create<LLVM::CallOp>(loc, llvmFuncOp, ValueRange{in});
-                return callRes.getResult(0);
-                */
-                emitError(loc, "invalid cast operator type 1: '") << inType << "', type 2: '" << resType << "'";
-                llvm_unreachable("not implemented");
-
-                return mlir::Value();
-            }
         }
 
         // ptrs cast
@@ -1542,6 +1526,32 @@ class CastLogicHelper
             rewriter.create<LLVM::InsertValueOp>(loc, llvmRtArrayStructType, structValue2, sizeValue, clh.getStructIndexAttr(1));
 
         return structValue3;
+    }
+
+    mlir::Value castToAny(mlir::Value in)
+    {
+        // TODO: add type id to track data type
+
+        auto llvmStorageType = tch.convertType(in.getType());
+        auto llvmStorageTypePtr = LLVM::LLVMPointerType::get(llvmStorageType);
+        auto dataWithSizeType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {th.getIndexType(), llvmStorageType}, false);
+
+        auto memValue = ch.MemoryAllocBitcast(llvmStorageTypePtr, llvmStorageType);
+
+        // set value size
+        auto size = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), llvmStorageType);
+
+        auto zero = clh.createI32ConstantOf(0);
+        auto one = clh.createI32ConstantOf(1);
+
+        auto ptrSize = rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(th.getI32Type()), memValue, ValueRange{zero, zero});
+        rewriter.create<LLVM::StoreOp>(loc, size, ptrSize);
+
+        // set actual value
+        auto ptrValue = rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(llvmStorageType), memValue, ValueRange{zero, one});
+        rewriter.create<LLVM::StoreOp>(loc, in, ptrValue);
+
+        return clh.castToI8Ptr(memValue);
     }
 };
 
