@@ -1,6 +1,8 @@
 os: windows
-language: shell
-script: 
+language: cpp
+before_script:
+  - choco install python --pre 
+script:
   - pwd
   - cp -f ./docs/fix/AddCompilerRT.cmake ./3rdParty/llvm-project/compiler-rt/cmake/Modules/
   - mkdir -p __build/llvm/release
