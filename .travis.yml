@@ -3,11 +3,6 @@ language: shell
 script: 
   - pwd
   - dir
-  - cmd.exe /c dir
-  - powershell -Command start-process "cmd.exe" "/c prepare_3rdParty.bat release"
-  - cd tsc
-  - powershell -Command start-process "cmd.exe" "/c config_tsc_release.bat"
-  - powershell -Command start-process "cmd.exe" "/c build_tsc_release.bat"
   - ./prepare_3rdParty.bat release
   - cd tsc
   - ./config_tsc_release.bat
