@@ -1163,11 +1163,27 @@ class MLIRGenImpl
             auto index = 0;
             for (auto arrayBindingElement : arrayBindingPattern->elements)
             {
-                MLIRPropertyAccessCodeLogic cl(builder, location, init, builder.getI32IntegerAttr(index++));
+                MLIRPropertyAccessCodeLogic cl(builder, location, init, builder.getI32IntegerAttr(index));
                 mlir::Value subInit;
                 TypeSwitch<mlir::Type>(type)
                     .template Case<mlir_ts::ConstTupleType>([&](auto constTupleType) { subInit = cl.Tuple(constTupleType, true); })
                     .template Case<mlir_ts::TupleType>([&](auto tupleType) { subInit = cl.Tuple(tupleType, true); })
+                    .template Case<mlir_ts::ConstArrayType>([&](auto constArrayType) {
+                        // TODO: unify it with ElementAccess
+                        auto constIndex =
+                            builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(index));
+                        auto elemRef = builder.create<mlir_ts::ElementRefOp>(
+                            location, mlir_ts::RefType::get(constArrayType.getElementType()), init, constIndex);
+                        subInit = builder.create<mlir_ts::LoadOp>(location, constArrayType.getElementType(), elemRef);
+                    })
+                    .template Case<mlir_ts::ArrayType>([&](auto tupleType) {
+                        // TODO: unify it with ElementAccess
+                        auto constIndex =
+                            builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(index));
+                        auto elemRef = builder.create<mlir_ts::ElementRefOp>(location, mlir_ts::RefType::get(tupleType.getElementType()),
+                                                                             init, constIndex);
+                        subInit = builder.create<mlir_ts::LoadOp>(location, tupleType.getElementType(), elemRef);
+                    })
                     .Default([&](auto type) { llvm_unreachable("not implemented"); });
 
                 if (!processDeclaration(
@@ -1176,6 +1192,8 @@ class MLIRGenImpl
                 {
                     return false;
                 }
+
+                index++;
             }
         }
         else
