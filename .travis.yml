@@ -2,8 +2,9 @@ os: windows
 language: shell
 script: 
   - pwd
-  - dir
-  - ./prepare_3rdParty.bat release
+  - copy /Y ./docs/fix/AddCompilerRT.cmake ./3rdParty/llvm-project/compiler-rt/cmake/Modules/
+  - ./scripts/config_llvm_release.bat
+  - ./scripts/build_llvm_release.bat
   - cd tsc
   - ./config_tsc_release.bat
   - ./build_tsc_release.bat

@@ -1,6 +1,5 @@
 pushd
-mkdir ..\__build\tsc-release
-cd ..\__build\tsc-release
-rem cmake ../../tsc -G "Visual Studio 16 2019" -DCMAKE_BUILD_TYPE=Debug -Thost=x64 -DMLIR_DIR=%~dp0../3rdParty/llvm/debug/lib/cmake/mlir -DLLVM_EXTERNAL_LIT=%~dp0../__build/llvm/debug/bin/llvm-lit.py
+mkdir ../__build/tsc-release
+cd ../__build/tsc-release
 cmake ../../tsc -G "Visual Studio 16 2019" -A x64 -DCMAKE_BUILD_TYPE=Release -Wno-dev
 popd
