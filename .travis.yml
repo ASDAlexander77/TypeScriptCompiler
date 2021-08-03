@@ -1,7 +1,7 @@
 os: windows
 language: shell
 script: 
-  - prepare_3rdParty.bat release
+  - powershell -Command start-process "cmd.exe" "/c prepare_3rdParty.bat release"
   - cd tsc
-  - config_tsc_release.bat
-  - build_tsc_release.bat
+  - powershell -Command start-process "cmd.exe" "/c config_tsc_release.bat"
+  - powershell -Command start-process "cmd.exe" "/c build_tsc_release.bat"
