@@ -392,10 +392,10 @@ class Scanner
     auto iterateCommentRanges(boolean reduce, safe_string text, number pos, boolean trailing, cb_type<T, U> cb, T state, U initial = U())
         -> U
     {
-        number pendingPos;
-        number pendingEnd;
-        SyntaxKind pendingKind;
-        boolean pendingHasTrailingNewLine;
+        number pendingPos = 0;
+        number pendingEnd = 0;
+        SyntaxKind pendingKind = SyntaxKind::Unknown;
+        boolean pendingHasTrailingNewLine = false;
         auto hasPendingCommentRange = false;
         auto collecting = trailing;
         auto accumulator = initial;
