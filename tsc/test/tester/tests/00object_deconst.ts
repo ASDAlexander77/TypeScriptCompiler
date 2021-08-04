@@ -13,5 +13,30 @@ function main() {
     assert(r == 2);
     print(aa2, q, r);
 
+    const user = {
+        id: 42,
+        is_verified: true,
+    };
+
+    const { id, is_verified } = user;
+
+    print(id); // 42
+    print(is_verified); // true
+
+    assert(id == 42);
+    assert(is_verified);
+
+    // TODO: finish it
+    /*
+    const o = { p: 42, q: true };
+    const { p: foo, q: bar } = o;
+
+    print(foo); // 42
+    print(bar); // true
+
+    assert(foo == 42);
+    assert(bar);
+    */
+
     print("done.");
 }
