@@ -53,7 +53,7 @@ jobs:
       run: (New-Object System.Net.WebClient).DownloadFile('https://www.dropbox.com/s/o8hrv8ppqayu6vg/llvm_13_release.zip?dl=0', 'llvm_13_release.zip')
 
     - name: unzip
-      run: Expand-Archive -Path ./llvm_13_release.zip -DestinationPath ./3rdParty/llvm/
+      run: Expand-Archive -Path "llvm_13_release.zip" -DestinationPath "3rdParty\llvm\"
       shell: pwsh
 
     - name: Configure CMake
