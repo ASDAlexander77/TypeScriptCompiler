@@ -2901,6 +2901,11 @@ llvm.return %5 : i32
         auto leftExpression = binaryExpressionAST->left;
         auto rightExpression = binaryExpressionAST->right;
 
+        if (leftExpression == SyntaxKind::ArrayLiteralExpression)
+        {
+            return mlirGenSaveLogicArray(location, leftExpression.as<ArrayLiteralExpression>(), rightExpression, genContext);
+        }
+
         auto leftExpressionValue = mlirGen(leftExpression, genContext);
 
         VALIDATE(leftExpressionValue)
@@ -2918,6 +2923,40 @@ llvm.return %5 : i32
         const_cast<GenContext &>(genContext).argTypeDestFuncType = nullptr;
 
         return mlirGenSaveLogicOneItem(location, leftExpressionValue, rightExpressionValue, genContext);
+    }
+
+    mlir::Value mlirGenSaveLogicArray(mlir::Location location, ArrayLiteralExpression arrayLiteralExpression, Expression rightExpression,
+                                      const GenContext &genContext)
+    {
+        auto rightExpressionValue = mlirGen(rightExpression, genContext);
+
+        VALIDATE(rightExpressionValue)
+
+        mlir::Type elementType;
+        TypeSwitch<mlir::Type>(rightExpressionValue.getType())
+            .Case<mlir_ts::ArrayType>([&](auto arrayType) { elementType = arrayType.getElementType(); })
+            .Case<mlir_ts::ConstArrayType>([&](auto constArrayType) { elementType = constArrayType.getElementType(); })
+            .Default([](auto type) { llvm_unreachable("not implemented"); });
+
+        auto index = 0;
+        for (auto leftItem : arrayLiteralExpression->elements)
+        {
+            auto leftExpressionValue = mlirGen(leftItem, genContext);
+
+            VALIDATE(leftExpressionValue)
+
+            // TODO: unify array access like Property access
+            auto indexValue = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(index++));
+
+            auto elemRef =
+                builder.create<mlir_ts::ElementRefOp>(location, mlir_ts::RefType::get(elementType), rightExpressionValue, indexValue);
+            auto rightValue = builder.create<mlir_ts::LoadOp>(location, elementType, elemRef);
+
+            mlirGenSaveLogicOneItem(location, leftExpressionValue, rightValue, genContext);
+        }
+
+        // no passing value
+        return mlir::Value();
     }
 
     mlir::Value mlirGen(BinaryExpression binaryExpressionAST, const GenContext &genContext)
