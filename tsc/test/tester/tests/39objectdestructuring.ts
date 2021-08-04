@@ -63,10 +63,10 @@ namespace ObjectDestructuring {
     }
 
     // TODO:
-    /*
     function objectAssignment() {
-        //let {aa,bb} = {aa:10,bb:20}
-        //console.log(aa + bb)
+        let { aa, bb } = { aa: 10, bb: 20 };
+        print(aa + bb);
+        /*
 
         let {
             aa,
@@ -81,8 +81,9 @@ namespace ObjectDestructuring {
         assert(y == "foo", "{}");
 
         print("objectAssignment done");
-    }
   */
+    }
+
     export function run() {
         glb1 = 0;
 
