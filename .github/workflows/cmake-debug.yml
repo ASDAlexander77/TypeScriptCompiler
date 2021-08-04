@@ -49,8 +49,8 @@ jobs:
     
     - name: Download 3rd party
       continue-on-error: false
-      shell: cmd
-      run: wget -O llvm_13_release.zip -q https://www.dropbox.com/s/o8hrv8ppqayu6vg/llvm_13_release.zip?dl=0
+      shell: pwsh
+      run: (New-Object System.Net.WebClient).DownloadFile('https://www.dropbox.com/s/o8hrv8ppqayu6vg/llvm_13_release.zip?dl=0', 'llvm_13_release.zip')
 
     - name: unzip
       run: Expand-Archive ./llvm_13_release.zip ./3rdParty/llvm/
