@@ -76,6 +76,7 @@ jobs:
       run: config_tsc_release.bat
 
     - name: Build
+      continue-on-error: true
       shell: cmd
       working-directory: ${{github.workspace}}/tsc
       run: build_tsc_release.bat
