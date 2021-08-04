@@ -4,7 +4,7 @@ git:
   submodules: false
 before_script:
 #  - choco install python --pre 
-  - wget -O llvm_13_release.zip -q https://www.dropbox.com/s/o8hrv8ppqayu6vg/llvm_13_release.zip?dl=0
+  - wget -O llvm_13_release.zip -q https://www.dropbox.com/s/o8hrv8ppqayu6vg/llvm_13_release.zip?dl=1
   - pwd
   - dir
   - mkdir -p __build/llvm/release
