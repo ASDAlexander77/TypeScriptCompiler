@@ -5,6 +5,7 @@
 #include <regex>
 #include <sstream>
 #include <string>
+#include <cctype>
 
 #if _MSC_VER
 #pragma warning(disable : 4062)
