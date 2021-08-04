@@ -2,16 +2,13 @@ os: windows
 language: cpp
 before_script:
   - choco install python --pre 
+  - wget https://www.dropbox.com/s/o8hrv8ppqayu6vg/llvm_13_release.zip?dl=0
+  - mkdir -p __build/llvm/release
+  - mkdir -p ../__build/tsc-release
+  - mkdir -p 3rdParty/llvm/
+  - unzip llvm_13_release.zip ./3rdParty/llvm/
 script:
   - pwd
-  - cp -f ./docs/fix/AddCompilerRT.cmake ./3rdParty/llvm-project/compiler-rt/cmake/Modules/
-  - mkdir -p __build/llvm/release
-  - cd ./__build/llvm
-  - cmake ../../3rdParty/llvm-project/llvm -G "Visual Studio 15 2017" -A x64 -DPython3_EXECUTABLE="C:/Python310/python.exe" -DLLVM_TARGETS_TO_BUILD="host" -DCMAKE_BUILD_TYPE=Release -Thost=x64 -DCMAKE_INSTALL_PREFIX=../../3rdParty/llvm/release -DLLVM_INSTALL_UTILS=ON -DLLVM_ENABLE_ASSERTIONS=OFF -DLLVM_ENABLE_PROJECTS="clang;compiler-rt;lld;mlir" -DLLVM_ENABLE_EH=ON -DLLVM_ENABLE_RTTI=ON -DLLVM_REQUIRES_RTTI=ON -DLLVM_ENABLE_PIC=ON
-  - cmake --build . --config Release --target install -j 8
-  - cmake --install . --config Release
-  - cd ../../tsc
-  - mkdir -p ../__build/tsc-release
-  - cd ../__build/tsc-release
+  - cd __build/tsc-release
   - cmake ../../tsc -G "Visual Studio 15 2017" -A x64 -DCMAKE_BUILD_TYPE=Release -Wno-dev
   - cmake --build . --config Release -j 8
