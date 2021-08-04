@@ -61,6 +61,7 @@ jobs:
       run: Invoke-WebRequest -Uri "https://www.dropbox.com/s/o8hrv8ppqayu6vg/llvm_13_release.zip?dl=1" -OutFile "llvm_13_release.zip"
 
     - name: unzip
+      continue-on-error: false
       run: Expand-Archive -Path "llvm_13_release.zip" -DestinationPath "3rdParty\llvm\"
       shell: pwsh
 
@@ -69,6 +70,7 @@ jobs:
       shell: pwsh
 
     - name: Configure CMake
+      continue-on-error: true
       shell: cmd
       working-directory: ${{github.workspace}}/tsc
       run: config_tsc_release.bat
