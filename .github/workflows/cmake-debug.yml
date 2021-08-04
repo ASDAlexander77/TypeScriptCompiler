@@ -41,11 +41,19 @@ jobs:
 
     - name: Create __Build Folder
       shell: cmd
-      run: IF NOT EXIST "c:\__build" (mkdir c:\__build)
+      run: IF NOT EXIST ".\__build" (mkdir .\__build)
 
-    - name: Link __Build Folder
+    - name: Create __Build/llvm Folder
       shell: cmd
-      run: IF EXIST "c:\__build" mklink /d .\__build c:\__build
+      run: IF NOT EXIST ".\__build\llvm" (mkdir .\__build\llvm)
+    
+    - name: Create __Build/llvm/release Folder
+      shell: cmd
+      run: IF NOT EXIST ".\__build\llvm\release" (mkdir .\__build\llvm\release)
+
+    - name: Create __Build/tsc-release Folder
+      shell: cmd
+      run: IF NOT EXIST ".\__build\tsc-release" (mkdir .\__build\tsc-release)
     
     - name: Download 3rd party
       continue-on-error: false
@@ -54,6 +62,10 @@ jobs:
 
     - name: unzip
       run: Expand-Archive -Path "llvm_13_release.zip" -DestinationPath "3rdParty\llvm\"
+      shell: pwsh
+
+    - name: dir
+      run: dir
       shell: pwsh
 
     - name: Configure CMake
