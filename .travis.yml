@@ -1,5 +1,7 @@
 os: windows
 language: cpp
+git:
+  submodules: false
 before_script:
   - choco install python --pre 
   - wget https://www.dropbox.com/s/o8hrv8ppqayu6vg/llvm_13_release.zip?dl=0
