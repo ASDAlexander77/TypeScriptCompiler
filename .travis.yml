@@ -8,11 +8,10 @@ before_script:
   - pwd
   - dir
   - mkdir -p __build/llvm/release
-  - mkdir -p ../__build/tsc-release
+  - mkdir -p __build/tsc-release
   - mkdir -p 3rdParty/llvm/
-  - unzip ./llvm_13_release.zip -d ./3rdParty/llvm/
+  - unzip -q ./llvm_13_release.zip -d ./3rdParty/llvm/
 script:
-  - pwd
   - cd __build/tsc-release
   - cmake ../../tsc -G "Visual Studio 15 2017" -A x64 -DCMAKE_BUILD_TYPE=Release -Wno-dev
   - cmake --build . --config Release -j 8
