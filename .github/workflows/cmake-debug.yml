@@ -47,20 +47,24 @@ jobs:
       shell: cmd
       run: IF EXIST "c:\__build" mklink /d .\__build c:\__build
     
-    - name: Prepare 3rd party
+    - name: Download 3rd party
       continue-on-error: false
       shell: cmd
-      run: prepare_3rdParty.bat
+      run: wget -O llvm_13_release.zip -q https://www.dropbox.com/s/o8hrv8ppqayu6vg/llvm_13_release.zip?dl=0
+
+    - name: unzip
+      run: Expand-Archive ./llvm_13_release.zip ./3rdParty/llvm/
+      shell: pwsh
 
     - name: Configure CMake
       shell: cmd
       working-directory: ${{github.workspace}}/tsc
-      run: config_tsc_debug.bat
+      run: config_tsc_release.bat
 
     - name: Build
       shell: cmd
       working-directory: ${{github.workspace}}/tsc
-      run: build_tsc_debug.bat
+      run: build_tsc_release.bat
 
     - name: Test
       shell: cmd
