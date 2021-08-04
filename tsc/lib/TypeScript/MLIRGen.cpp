@@ -1205,6 +1205,16 @@ class MLIRGenImpl
         auto index = 0;
         for (auto objectBindingElement : objectBindingPattern->elements)
         {
+            if (objectBindingElement->name == SyntaxKind::ObjectBindingPattern)
+            {
+                // nested obj, objectBindingElement->propertyName -> name
+                auto name = MLIRHelper::getName(objectBindingElement->propertyName);
+                auto subInit = mlirGenPropertyAccessExpression(location, init, name, genContext);
+
+                return processDeclarationObjectBindingPattern(
+                    location, objectBindingElement, varClass, [&]() { return std::make_pair(subInit.getType(), subInit); }, genContext);
+            }
+
             auto name = MLIRHelper::getName(objectBindingElement->name);
             auto subInit = mlirGenPropertyAccessExpression(location, init, name, genContext);
 
