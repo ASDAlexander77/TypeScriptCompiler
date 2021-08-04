@@ -2846,36 +2846,16 @@ llvm.return %5 : i32
         return builder.create<mlir_ts::ConstantOp>(location, resultType, builder.getI64IntegerAttr(result));
     }
 
-    mlir::Value mlirGenSaveLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
+    mlir::Value mlirGenSaveLogicOneItem(mlir::Location location, mlir::Value leftExpressionValue, mlir::Value rightExpressionValue,
+                                        const GenContext &genContext)
     {
-        auto location = loc(binaryExpressionAST);
-
-        auto leftExpression = binaryExpressionAST->left;
-        auto rightExpression = binaryExpressionAST->right;
-
-        auto leftExpressionValue = mlirGen(leftExpression, genContext);
-
-        VALIDATE(leftExpressionValue)
-
-        if (auto funcType = leftExpressionValue.getType().dyn_cast_or_null<mlir::FunctionType>())
-        {
-            const_cast<GenContext &>(genContext).argTypeDestFuncType = funcType;
-        }
-
-        auto rightExpressionValue = mlirGen(rightExpression, genContext);
-
-        VALIDATE(rightExpressionValue)
-
-        // clear state
-        const_cast<GenContext &>(genContext).argTypeDestFuncType = nullptr;
-
         auto leftExpressionValueBeforeCast = leftExpressionValue;
 
         if (leftExpressionValue.getType() != rightExpressionValue.getType())
         {
             if (rightExpressionValue.getType().dyn_cast_or_null<mlir_ts::CharType>())
             {
-                rightExpressionValue = cast(loc(rightExpression), getStringType(), rightExpressionValue, genContext);
+                rightExpressionValue = cast(rightExpressionValue.getLoc(), getStringType(), rightExpressionValue, genContext);
             }
         }
 
@@ -2884,7 +2864,7 @@ llvm.return %5 : i32
         // saving
         if (leftExpressionValueBeforeCast.getType() != result.getType())
         {
-            result = cast(loc(leftExpression), leftExpressionValueBeforeCast.getType(), result, genContext);
+            result = cast(leftExpressionValue.getLoc(), leftExpressionValueBeforeCast.getType(), result, genContext);
         }
 
         // TODO: finish it for field access, review CodeLogicHelper.saveResult
@@ -2912,6 +2892,32 @@ llvm.return %5 : i32
         }
 
         return result;
+    }
+
+    mlir::Value mlirGenSaveLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
+    {
+        auto location = loc(binaryExpressionAST);
+
+        auto leftExpression = binaryExpressionAST->left;
+        auto rightExpression = binaryExpressionAST->right;
+
+        auto leftExpressionValue = mlirGen(leftExpression, genContext);
+
+        VALIDATE(leftExpressionValue)
+
+        if (auto funcType = leftExpressionValue.getType().dyn_cast_or_null<mlir::FunctionType>())
+        {
+            const_cast<GenContext &>(genContext).argTypeDestFuncType = funcType;
+        }
+
+        auto rightExpressionValue = mlirGen(rightExpression, genContext);
+
+        VALIDATE(rightExpressionValue)
+
+        // clear state
+        const_cast<GenContext &>(genContext).argTypeDestFuncType = nullptr;
+
+        return mlirGenSaveLogicOneItem(location, leftExpressionValue, rightExpressionValue, genContext);
     }
 
     mlir::Value mlirGen(BinaryExpression binaryExpressionAST, const GenContext &genContext)
