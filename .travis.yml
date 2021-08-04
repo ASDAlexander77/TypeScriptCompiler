@@ -5,11 +5,12 @@ git:
 before_script:
 #  - choco install python --pre 
   - wget -q https://www.dropbox.com/s/o8hrv8ppqayu6vg/llvm_13_release.zip?dl=0
-  - ls -l
+  - pwd
+  - dir
   - mkdir -p __build/llvm/release
   - mkdir -p ../__build/tsc-release
   - mkdir -p 3rdParty/llvm/
-  - unzip llvm_13_release.zip ./3rdParty/llvm/
+  - unzip ./llvm_13_release.zip ./3rdParty/llvm/
 script:
   - pwd
   - cd __build/tsc-release
