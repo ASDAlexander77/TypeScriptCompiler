@@ -1148,6 +1148,80 @@ class MLIRGenImpl
     }
 
     template <typename ItemTy>
+    bool processDeclarationArrayBindingPattern(mlir::Location location, ItemTy item, VariableClass varClass,
+                                               std::function<std::pair<mlir::Type, mlir::Value>()> func, const GenContext &genContext)
+    {
+        auto res = func();
+        auto type = std::get<0>(res);
+        auto init = std::get<1>(res);
+
+        auto arrayBindingPattern = item->name.template as<ArrayBindingPattern>();
+        auto index = 0;
+        for (auto arrayBindingElement : arrayBindingPattern->elements)
+        {
+            MLIRPropertyAccessCodeLogic cl(builder, location, init, builder.getI32IntegerAttr(index));
+            mlir::Value subInit;
+            TypeSwitch<mlir::Type>(type)
+                .template Case<mlir_ts::ConstTupleType>([&](auto constTupleType) { subInit = cl.Tuple(constTupleType, true); })
+                .template Case<mlir_ts::TupleType>([&](auto tupleType) { subInit = cl.Tuple(tupleType, true); })
+                .template Case<mlir_ts::ConstArrayType>([&](auto constArrayType) {
+                    // TODO: unify it with ElementAccess
+                    auto constIndex = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(index));
+                    auto elemRef = builder.create<mlir_ts::ElementRefOp>(location, mlir_ts::RefType::get(constArrayType.getElementType()),
+                                                                         init, constIndex);
+                    subInit = builder.create<mlir_ts::LoadOp>(location, constArrayType.getElementType(), elemRef);
+                })
+                .template Case<mlir_ts::ArrayType>([&](auto tupleType) {
+                    // TODO: unify it with ElementAccess
+                    auto constIndex = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(index));
+                    auto elemRef = builder.create<mlir_ts::ElementRefOp>(location, mlir_ts::RefType::get(tupleType.getElementType()), init,
+                                                                         constIndex);
+                    subInit = builder.create<mlir_ts::LoadOp>(location, tupleType.getElementType(), elemRef);
+                })
+                .Default([&](auto type) { llvm_unreachable("not implemented"); });
+
+            if (!processDeclaration(
+                    arrayBindingElement.template as<BindingElement>(), varClass,
+                    [&]() { return std::make_pair(subInit.getType(), subInit); }, genContext))
+            {
+                return false;
+            }
+
+            index++;
+        }
+
+        return true;
+    }
+
+    template <typename ItemTy>
+    bool processDeclarationObjectBindingPattern(mlir::Location location, ItemTy item, VariableClass varClass,
+                                                std::function<std::pair<mlir::Type, mlir::Value>()> func, const GenContext &genContext)
+    {
+        auto res = func();
+        auto type = std::get<0>(res);
+        auto init = std::get<1>(res);
+
+        auto objectBindingPattern = item->name.template as<ObjectBindingPattern>();
+        auto index = 0;
+        for (auto objectBindingElement : objectBindingPattern->elements)
+        {
+            auto name = MLIRHelper::getName(objectBindingElement->name);
+            auto subInit = mlirGenPropertyAccessExpression(location, init, name, genContext);
+
+            if (!processDeclaration(
+                    objectBindingElement.template as<BindingElement>(), varClass,
+                    [&]() { return std::make_pair(subInit.getType(), subInit); }, genContext))
+            {
+                return false;
+            }
+
+            index++;
+        }
+
+        return true;
+    }
+
+    template <typename ItemTy>
     bool processDeclaration(ItemTy item, VariableClass varClass, std::function<std::pair<mlir::Type, mlir::Value>()> func,
                             const GenContext &genContext)
     {
@@ -1155,45 +1229,16 @@ class MLIRGenImpl
 
         if (item->name == SyntaxKind::ArrayBindingPattern)
         {
-            auto res = func();
-            auto type = std::get<0>(res);
-            auto init = std::get<1>(res);
-
-            auto arrayBindingPattern = item->name.template as<ArrayBindingPattern>();
-            auto index = 0;
-            for (auto arrayBindingElement : arrayBindingPattern->elements)
+            if (!processDeclarationArrayBindingPattern(location, item, varClass, func, genContext))
             {
-                MLIRPropertyAccessCodeLogic cl(builder, location, init, builder.getI32IntegerAttr(index));
-                mlir::Value subInit;
-                TypeSwitch<mlir::Type>(type)
-                    .template Case<mlir_ts::ConstTupleType>([&](auto constTupleType) { subInit = cl.Tuple(constTupleType, true); })
-                    .template Case<mlir_ts::TupleType>([&](auto tupleType) { subInit = cl.Tuple(tupleType, true); })
-                    .template Case<mlir_ts::ConstArrayType>([&](auto constArrayType) {
-                        // TODO: unify it with ElementAccess
-                        auto constIndex =
-                            builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(index));
-                        auto elemRef = builder.create<mlir_ts::ElementRefOp>(
-                            location, mlir_ts::RefType::get(constArrayType.getElementType()), init, constIndex);
-                        subInit = builder.create<mlir_ts::LoadOp>(location, constArrayType.getElementType(), elemRef);
-                    })
-                    .template Case<mlir_ts::ArrayType>([&](auto tupleType) {
-                        // TODO: unify it with ElementAccess
-                        auto constIndex =
-                            builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(index));
-                        auto elemRef = builder.create<mlir_ts::ElementRefOp>(location, mlir_ts::RefType::get(tupleType.getElementType()),
-                                                                             init, constIndex);
-                        subInit = builder.create<mlir_ts::LoadOp>(location, tupleType.getElementType(), elemRef);
-                    })
-                    .Default([&](auto type) { llvm_unreachable("not implemented"); });
-
-                if (!processDeclaration(
-                        arrayBindingElement.template as<BindingElement>(), varClass,
-                        [&]() { return std::make_pair(subInit.getType(), subInit); }, genContext))
-                {
-                    return false;
-                }
-
-                index++;
+                return false;
+            }
+        }
+        else if (item->name == SyntaxKind::ObjectBindingPattern)
+        {
+            if (!processDeclarationObjectBindingPattern(location, item, varClass, func, genContext))
+            {
+                return false;
             }
         }
         else
