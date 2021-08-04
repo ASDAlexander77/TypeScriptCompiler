@@ -19,25 +19,25 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    - name: check disk space
-      run: Get-PSDrive
-      shell: pwsh
+#    - name: check disk space
+#      run: Get-PSDrive
+#      shell: pwsh
 
     - uses: actions/checkout@v2
 
-    - name: Cache Build 3rd Party
-      id: cache-3rd-party
-      uses: actions/cache@v2
-      with:
-        path: __build/llvm
-        key: ${{ runner.os }}-build-llvm
+#    - name: Cache Build 3rd Party
+#      id: cache-3rd-party
+#      uses: actions/cache@v2
+#      with:
+#        path: __build/llvm
+#        key: ${{ runner.os }}-build-llvm
 
-    - name: Cache 3rd Party binaries
-      id: cache-3rd-party-binary
-      uses: actions/cache@v2
-      with:
-        path: 3rdParty
-        key: ${{ runner.os }}-3rd-party
+#    - name: Cache 3rd Party binaries
+#      id: cache-3rd-party-binary
+#      uses: actions/cache@v2
+#      with:
+#        path: 3rdParty
+#        key: ${{ runner.os }}-3rd-party
 
     - name: Create __Build Folder
       shell: cmd
@@ -60,16 +60,12 @@ jobs:
       shell: pwsh
       run: Invoke-WebRequest -Uri "https://www.dropbox.com/s/o8hrv8ppqayu6vg/llvm_13_release.zip?dl=1" -OutFile "llvm_13_release.zip"
 
-    - name: unzip
+    - name: UnZip 3rd party
       continue-on-error: false
       run: Expand-Archive -Path "llvm_13_release.zip" -DestinationPath "3rdParty\llvm\"
       shell: pwsh
 
-    - name: dir
-      run: dir
-      shell: pwsh
-
-    - name: Configure CMake
+    - name: Configure
       continue-on-error: true
       shell: cmd
       working-directory: ${{github.workspace}}/tsc
