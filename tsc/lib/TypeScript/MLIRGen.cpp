@@ -4421,6 +4421,7 @@ llvm.return %5 : i32
         SmallVector<mlir::Type> types;
         SmallVector<mlir_ts::FieldInfo> fieldInfos;
         SmallVector<mlir::Attribute> values;
+
         for (auto &item : objectLiteral->properties)
         {
             mlir::Value itemValue;
