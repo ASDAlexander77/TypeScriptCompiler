@@ -4449,6 +4449,25 @@ llvm.return %5 : i32
                 auto namePtr = StringRef(name).copy(stringAllocator);
                 fieldId = mcl.TupleFieldName(namePtr);
             }
+            else if (item == SyntaxKind::MethodDeclaration)
+            {
+                auto funcGenContext = GenContext(genContext);
+                // funcGenContext.thisType = newClassPtr->classType;
+                funcGenContext.passResult = nullptr;
+                auto funcLikeDecl = item.as<FunctionLikeDeclarationBase>();
+
+                // TODO: provide this type, otherwise it is not working
+                auto funcOp = mlirGenFunctionLikeDeclaration(funcLikeDecl, funcGenContext);
+
+                assert(funcOp);
+
+                auto symbolRefOp = builder.create<mlir_ts::SymbolRefOp>(loc(item), funcOp.getType(), funcOp.getName());
+                itemValue = symbolRefOp;
+
+                auto name = MLIRHelper::getName(funcLikeDecl->name);
+                auto namePtr = StringRef(name).copy(stringAllocator);
+                fieldId = mcl.TupleFieldName(namePtr);
+            }
             else
             {
                 llvm_unreachable("object literal is not implemented(1)");
