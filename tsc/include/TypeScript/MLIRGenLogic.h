@@ -606,9 +606,13 @@ class MLIRPropertyAccessCodeLogic
 
     template <typename T> mlir::Value Ref(T refType)
     {
-        if (auto tupleType = refType.getElementType().template dyn_cast_or_null<mlir_ts::TupleType>())
+        if (auto constTupleType = refType.getElementType().template dyn_cast_or_null<mlir_ts::ConstTupleType>())
         {
-            return Ref(tupleType);
+            return RefLogic(constTupleType);
+        }
+        else if (auto tupleType = refType.getElementType().template dyn_cast_or_null<mlir_ts::TupleType>())
+        {
+            return RefLogic(tupleType);
         }
         else
         {
@@ -616,7 +620,23 @@ class MLIRPropertyAccessCodeLogic
         }
     }
 
-    mlir::Value Ref(mlir_ts::TupleType tupleType)
+    mlir::Value Object(mlir_ts::ObjectType objectType)
+    {
+        if (auto constTupleType = objectType.getStorageType().template dyn_cast_or_null<mlir_ts::ConstTupleType>())
+        {
+            return RefLogic(constTupleType);
+        }
+        else if (auto tupleType = objectType.getStorageType().template dyn_cast_or_null<mlir_ts::TupleType>())
+        {
+            return RefLogic(tupleType);
+        }
+        else
+        {
+            llvm_unreachable("not implemented");
+        }
+    }
+
+    template <typename T> mlir::Value RefLogic(T tupleType)
     {
         MLIRCodeLogic mcl(builder);
 

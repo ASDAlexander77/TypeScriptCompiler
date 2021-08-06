@@ -3318,6 +3318,7 @@ llvm.return %5 : i32
             .Case<mlir_ts::ConstArrayType>([&](auto arrayType) { value = cl.Array(arrayType); })
             .Case<mlir_ts::ArrayType>([&](auto arrayType) { value = cl.Array(arrayType); })
             .Case<mlir_ts::RefType>([&](auto refType) { value = cl.Ref(refType); })
+            .Case<mlir_ts::ObjectType>([&](auto objectType) { value = cl.Object(objectType); })
             .Case<mlir_ts::NamespaceType>([&](auto namespaceType) {
                 auto namespaceInfo = getNamespaceByFullName(namespaceType.getName().getValue());
                 assert(namespaceInfo);
@@ -3795,6 +3796,32 @@ llvm.return %5 : i32
         {
             // operands.push_back(interfaceSymbolRefOp.thisRef());
             operands.push_back(interfaceSymbolRefOp.getResult(1));
+        }
+        else
+        {
+            // 0 index is for method ptr
+            unsigned thisIndex = 0;
+            auto isFirstArgThis =
+                calledFuncType.getNumInputs() > thisIndex && calledFuncType.getInput(thisIndex).isa<mlir_ts::ObjectType>();
+            auto noFirstArg = calledFuncType.getNumInputs() > thisIndex && operands.size() == 0;
+            if (isFirstArgThis && (noFirstArg || operands.front().getType() != calledFuncType.getInput(thisIndex)))
+            {
+                if (auto loadOp = funcRefValue.getDefiningOp<mlir_ts::LoadOp>())
+                {
+                    // if we have 'this' and method comes from PropertyRef, you need to add this to params
+                    if (auto propRef = loadOp.reference().getDefiningOp<mlir_ts::PropertyRefOp>())
+                    {
+                        auto castThis = builder.create<mlir_ts::CastOp>(location, calledFuncType.getInput(thisIndex), propRef.objectRef());
+                        operands.push_back(castThis);
+                    }
+                }
+                else
+                {
+                    // add undef
+                    auto undefThis = builder.create<mlir_ts::UndefOp>(location, calledFuncType.getInput(thisIndex));
+                    // operands.push_back(undefThis);
+                }
+            }
         }
 
         const_cast<GenContext &>(genContext).destFuncType = calledFuncType;
@@ -4506,6 +4533,8 @@ llvm.return %5 : i32
         }
 
         // process all methods
+        SmallVector<std::reference_wrapper<mlir_ts::FieldInfo>> methodInfos;
+
         for (auto &item : objectLiteral->properties)
         {
             mlir::Value itemValue;
@@ -4534,10 +4563,12 @@ llvm.return %5 : i32
                 }
 
                 // recreate type with "this" param as "any"
-                auto newFuncType = getFunctionTypeWithOpaqueThis(funcOp);
+                auto newFuncType = getFunctionTypeWithOpaqueThis(funcOp, true);
 
                 // place holder
                 addFuncFieldInfo(fieldId, funcName, newFuncType);
+
+                methodInfos.push_back(fieldInfos[fieldInfos.size() - 1]);
             }
             else
             {
@@ -4573,8 +4604,10 @@ llvm.return %5 : i32
             }
         }
 
-        for (auto &fieldInfo : fieldInfos)
+        // for (auto &fieldInfo : fieldInfos)
+        for (auto &fieldRef : methodInfos)
         {
+            auto &fieldInfo = fieldRef.get();
             if (auto funcType = fieldInfo.type.dyn_cast_or_null<mlir::FunctionType>())
             {
                 fieldInfo.type = getFunctionTypeWithThisType(funcType, objThis);
@@ -4587,19 +4620,20 @@ llvm.return %5 : i32
         return builder.create<mlir_ts::ConstantOp>(loc(objectLiteral), constTupleTypeWithReplacedThis, arrayAttr);
     }
 
-    mlir::FunctionType getFunctionTypeWithThisType(mlir::FunctionType funcType, mlir::Type thisType)
+    mlir::FunctionType getFunctionTypeWithThisType(mlir::FunctionType funcType, mlir::Type thisType, bool replace = false)
     {
         SmallVector<mlir::Type> args;
         args.push_back(thisType);
-        auto argsWithoutFirst = funcType.getInputs().slice(1);
+        auto argsWithoutFirst =
+            funcType.getInputs().slice(replace || funcType.getNumInputs() > 0 && funcType.getInput(0) == getOpaqueType() ? 1 : 0);
         args.append(argsWithoutFirst.begin(), argsWithoutFirst.end());
         auto newFuncType = builder.getFunctionType(args, funcType.getResults());
         return newFuncType;
     }
 
-    mlir::FunctionType getFunctionTypeWithOpaqueThis(mlir_ts::FuncOp funcOp)
+    mlir::FunctionType getFunctionTypeWithOpaqueThis(mlir_ts::FuncOp funcOp, bool replace = false)
     {
-        return getFunctionTypeWithThisType(funcOp.getType(), getOpaqueType());
+        return getFunctionTypeWithThisType(funcOp.getType(), getOpaqueType(), replace);
     }
 
     mlir::Value mlirGen(Identifier identifier, const GenContext &genContext)

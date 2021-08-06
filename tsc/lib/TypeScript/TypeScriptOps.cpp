@@ -438,19 +438,8 @@ LogicalResult mlir_ts::CallOp::verifySymbolUses(SymbolTableCollection &symbolTab
     {
         if (getOperand(i).getType() != fnType.getInput(i))
         {
-            /*
-            OptionalType optType;
-            TypeSwitch<Type>(fnType.getInput(i))
-                .Case<OptionalType>([&](auto node) { optType = node; });
-
-            if (!optType || optType.getElementType() != getOperand(i).getType())
-            {
-            */
             return emitOpError("operand type mismatch: expected operand type ")
                    << fnType.getInput(i) << ", but provided " << getOperand(i).getType() << " for operand number " << i;
-            /*
-            }
-            */
         }
     }
 
@@ -484,19 +473,8 @@ LogicalResult mlir_ts::CallIndirectOp::verifySymbolUses(SymbolTableCollection &s
     {
         if (getOperand(i + 1).getType() != fnType.getInput(i))
         {
-            /*
-            OptionalType optType;
-            TypeSwitch<Type>(fnType.getInput(i))
-                .Case<OptionalType>([&](auto node) { optType = node; });
-
-            if (!optType || optType.getElementType() != getOperand(i).getType())
-            {
-            */
             return emitOpError("operand type mismatch: expected operand type ")
-                   << fnType.getInput(i) << ", but provided " << getOperand(i).getType() << " for operand number " << i;
-            /*
-            }
-            */
+                   << fnType.getInput(i) << ", but provided " << getOperand(i + 1).getType() << " for operand number " << i;
         }
     }
 
