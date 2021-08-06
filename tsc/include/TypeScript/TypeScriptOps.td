@@ -406,6 +406,7 @@ def TypeScript_UndefOp : TypeScript_Op<"Undef", []> {
     AnyType:$result
   );
 
+  let hasCanonicalizer = 1;
   let verifier = [{ return success(); }];
 
   let assemblyFormat = "attr-dict `:` type($result)";

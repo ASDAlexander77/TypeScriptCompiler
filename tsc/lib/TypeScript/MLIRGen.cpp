@@ -3815,11 +3815,17 @@ llvm.return %5 : i32
                         operands.push_back(castThis);
                     }
                 }
+                if (auto extractPropertyOp = funcRefValue.getDefiningOp<mlir_ts::ExtractPropertyOp>())
+                {
+                    auto castThis =
+                        builder.create<mlir_ts::CastOp>(location, calledFuncType.getInput(thisIndex), extractPropertyOp.object());
+                    operands.push_back(castThis);
+                }
                 else
                 {
                     // add undef
                     auto undefThis = builder.create<mlir_ts::UndefOp>(location, calledFuncType.getInput(thisIndex));
-                    // operands.push_back(undefThis);
+                    operands.push_back(undefThis);
                 }
             }
         }

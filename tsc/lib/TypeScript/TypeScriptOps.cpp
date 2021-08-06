@@ -225,6 +225,15 @@ void mlir_ts::LoadOp::getCanonicalizationPatterns(OwningRewritePatternList &resu
 }
 
 //===----------------------------------------------------------------------===//
+// UndefOp
+//===----------------------------------------------------------------------===//
+
+void mlir_ts::UndefOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
+{
+    results.insert<RemoveUnused<mlir_ts::UndefOp>>(context);
+}
+
+//===----------------------------------------------------------------------===//
 // CastOp
 //===----------------------------------------------------------------------===//
 
