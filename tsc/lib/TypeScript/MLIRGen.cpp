@@ -1445,7 +1445,19 @@ class MLIRGenImpl
             objectOwnerName = MLIRHelper::getName(signatureDeclarationBaseAST->parent.as<InterfaceDeclaration>()->name);
         }
 
-        if (signatureDeclarationBaseAST == SyntaxKind::MethodDeclaration || signatureDeclarationBaseAST == SyntaxKind::MethodSignature)
+        if (signatureDeclarationBaseAST == SyntaxKind::MethodDeclaration)
+        {
+            if (!genContext.thisType.isa<mlir_ts::ObjectType>())
+            {
+                // class method name
+                fullName = objectOwnerName + "." + fullName;
+            }
+            else
+            {
+                fullName = "";
+            }
+        }
+        else if (signatureDeclarationBaseAST == SyntaxKind::MethodSignature)
         {
             // class method name
             fullName = objectOwnerName + "." + fullName;
@@ -1470,9 +1482,7 @@ class MLIRGenImpl
         if (fullName.empty())
         {
             // auto calculate name
-            std::stringstream ssName;
-            ssName << "__uf" << hash_value(loc(signatureDeclarationBaseAST));
-            name = fullName = ssName.str();
+            name = fullName = MLIRHelper::getAnonymousName(loc(signatureDeclarationBaseAST));
         }
         else
         {
@@ -4422,6 +4432,37 @@ llvm.return %5 : i32
         SmallVector<mlir_ts::FieldInfo> fieldInfos;
         SmallVector<mlir::Attribute> values;
 
+        auto addFuncFieldInfo = [&](mlir::Attribute fieldId, mlir::StringRef funcName, mlir::FunctionType funcType) {
+            auto type = funcType;
+            values.push_back(mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName));
+            types.push_back(type);
+            fieldInfos.push_back({fieldId, type});
+        };
+
+        auto addFieldInfo = [&](mlir::Attribute fieldId, mlir::Value itemValue) {
+            mlir::Type type;
+            mlir::Attribute value;
+            if (auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(itemValue.getDefiningOp()))
+            {
+                value = constOp.valueAttr();
+                type = constOp.getType();
+            }
+            else if (auto symRefOp = dyn_cast_or_null<mlir_ts::SymbolRefOp>(itemValue.getDefiningOp()))
+            {
+                value = symRefOp.identifierAttr();
+                type = symRefOp.getType();
+            }
+            else
+            {
+                llvm_unreachable("object literal is not implemented(1), must be const object or global symbol");
+            }
+
+            values.push_back(value);
+            types.push_back(type);
+            fieldInfos.push_back({fieldId, type});
+        };
+
+        // add all fields
         for (auto &item : objectLiteral->properties)
         {
             mlir::Value itemValue;
@@ -4452,22 +4493,7 @@ llvm.return %5 : i32
             }
             else if (item == SyntaxKind::MethodDeclaration)
             {
-                auto funcGenContext = GenContext(genContext);
-                // funcGenContext.thisType = newClassPtr->classType;
-                funcGenContext.passResult = nullptr;
-                auto funcLikeDecl = item.as<FunctionLikeDeclarationBase>();
-
-                // TODO: provide this type, otherwise it is not working
-                auto funcOp = mlirGenFunctionLikeDeclaration(funcLikeDecl, funcGenContext);
-
-                assert(funcOp);
-
-                auto symbolRefOp = builder.create<mlir_ts::SymbolRefOp>(loc(item), funcOp.getType(), funcOp.getName());
-                itemValue = symbolRefOp;
-
-                auto name = MLIRHelper::getName(funcLikeDecl->name);
-                auto namePtr = StringRef(name).copy(stringAllocator);
-                fieldId = mcl.TupleFieldName(namePtr);
+                continue;
             }
             else
             {
@@ -4476,31 +4502,89 @@ llvm.return %5 : i32
 
             assert(itemValue);
 
-            mlir::Type type;
-            mlir::Attribute value;
-            if (auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(itemValue.getDefiningOp()))
+            addFieldInfo(fieldId, itemValue);
+        }
+
+        // process all methods
+        for (auto &item : objectLiteral->properties)
+        {
+            mlir::Value itemValue;
+            mlir::Attribute fieldId;
+            if (item == SyntaxKind::MethodDeclaration)
             {
-                value = constOp.valueAttr();
-                type = constOp.getType();
-            }
-            else if (auto symRefOp = dyn_cast_or_null<mlir_ts::SymbolRefOp>(itemValue.getDefiningOp()))
-            {
-                value = symRefOp.identifierAttr();
-                type = symRefOp.getType();
+                auto funcLikeDecl = item.as<FunctionLikeDeclarationBase>();
+                auto name = MLIRHelper::getName(funcLikeDecl->name);
+                auto namePtr = StringRef(name).copy(stringAllocator);
+                fieldId = mcl.TupleFieldName(namePtr);
+
+                auto funcName = MLIRHelper::getAnonymousName(loc(item));
+
+                auto funcGenContext = GenContext(genContext);
+                funcGenContext.thisType = getObjectType(getConstTupleType(fieldInfos));
+                // funcGenContext.thisType = mlir_ts::RefType::get(getConstTupleType(fieldInfos));
+                funcGenContext.passResult = nullptr;
+
+                auto funcOpWithFuncProto = mlirGenFunctionPrototype(funcLikeDecl, funcGenContext);
+                auto &funcOp = std::get<0>(funcOpWithFuncProto);
+                // auto &funcProto = std::get<1>(funcOpWithFuncProto);
+                auto result = std::get<2>(funcOpWithFuncProto);
+                if (!result || !funcOp)
+                {
+                    continue;
+                }
+
+                // recreate type with "this" param as "any"
+                auto newFuncType = getFunctionTypeWithOpaqueThis(funcOp);
+
+                // place holder
+                addFuncFieldInfo(fieldId, funcName, newFuncType);
             }
             else
             {
-                llvm_unreachable("object literal is not implemented(1), must be const object or global symbol");
                 continue;
             }
+        }
 
-            values.push_back(value);
-            types.push_back(type);
-            fieldInfos.push_back({fieldId, type});
+        // final type
+        auto constTupleType = getConstTupleType(fieldInfos);
+
+        LLVM_DEBUG(dbgs() << "obj: " << constTupleType << "\n";);
+
+        // process all methods
+        for (auto &item : objectLiteral->properties)
+        {
+            mlir::Value itemValue;
+            mlir::Attribute fieldId;
+            if (item == SyntaxKind::MethodDeclaration)
+            {
+                auto funcGenContext = GenContext(genContext);
+                funcGenContext.thisType = getObjectType(constTupleType);
+                // funcGenContext.thisType = mlir_ts::RefType::get(constTupleType);
+                funcGenContext.passResult = nullptr;
+                auto funcLikeDecl = item.as<FunctionLikeDeclarationBase>();
+
+                mlir::OpBuilder::InsertionGuard guard(builder);
+                auto funcOp = mlirGenFunctionLikeDeclaration(funcLikeDecl, funcGenContext);
+            }
+            else
+            {
+                continue;
+            }
         }
 
         auto arrayAttr = mlir::ArrayAttr::get(builder.getContext(), values);
-        return builder.create<mlir_ts::ConstantOp>(loc(objectLiteral), getConstTupleType(fieldInfos), arrayAttr);
+        return builder.create<mlir_ts::ConstantOp>(loc(objectLiteral), constTupleType, arrayAttr);
+    }
+
+    mlir::FunctionType getFunctionTypeWithOpaqueThis(mlir_ts::FuncOp funcOp)
+    {
+        auto funcType = funcOp.getType();
+        SmallVector<mlir::Type> args;
+        args.push_back(getOpaqueType());
+        auto argsWithoutFirst = funcType.getInputs().slice(1);
+        args.append(argsWithoutFirst.begin(), argsWithoutFirst.end());
+        auto newFuncType = builder.getFunctionType(args, funcType.getResults());
+        return newFuncType;
     }
 
     mlir::Value mlirGen(Identifier identifier, const GenContext &genContext)
@@ -6454,6 +6538,11 @@ llvm.return %5 : i32
     mlir_ts::TupleType getTupleType(mlir::SmallVector<mlir_ts::FieldInfo> &fieldInfos)
     {
         return mlir_ts::TupleType::get(builder.getContext(), fieldInfos);
+    }
+
+    mlir_ts::ObjectType getObjectType(mlir::Type type)
+    {
+        return mlir_ts::ObjectType::get(type);
     }
 
     mlir::FunctionType getFunctionType(FunctionTypeNode functionType)

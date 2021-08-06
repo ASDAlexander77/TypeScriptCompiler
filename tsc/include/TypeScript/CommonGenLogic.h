@@ -75,6 +75,14 @@ class MLIRHelper
         return mlir::StringRef(nameValue).copy(stringAllocator);
     }
 
+    static std::string getAnonymousName(mlir::Location loc)
+    {
+        // auto calculate name
+        std::stringstream ssName;
+        ssName << "__uf" << hash_value(loc);
+        return ssName.str();
+    }
+
     static bool matchLabelOrNotSet(mlir::StringAttr loopLabel, mlir::StringAttr opLabel)
     {
         auto loopHasValue = loopLabel && loopLabel.getValue().size() > 0;

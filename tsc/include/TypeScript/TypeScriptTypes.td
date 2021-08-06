@@ -53,10 +53,6 @@ def TypeScript_Char : TypeScript_Type<"Char"> {
     let mnemonic = "char";
 }
 
-def TypeScript_Object : TypeScript_Type<"Object"> {
-    let mnemonic = "object";
-}
-
 def TypeScript_UndefPlaceHolder : TypeScript_Type<"UndefPlaceHolder"> {
     let mnemonic = "undef_ph";
 }
@@ -505,6 +501,46 @@ def TypeScript_Tuple : TypeScript_Type<"Tuple"> {
       return getFields()[index].type;
     }
   }];
+}
+
+def TypeScript_Object : TypeScript_Type<"Object"> {
+  let mnemonic = "object";
+
+  let description = [{
+    Syntax:
+
+    ```
+    object-type ::= `object<` type `>`
+    ```
+
+    Examples:
+
+    ```mlir
+    object<tuple<i32>>
+    object<any>
+    ```
+  }];
+  let parameters = (ins "Type":$storageType);
+
+  // We define the printer inline.
+  let printer = [{ $_printer << "object<" << getImpl()->storageType << ">"; }];  
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "Type":$storageType), [{
+      return Base::get(storageType.getContext(), storageType);
+    }]>
+  ];
+
+  // Parses the above format
+  let parser = [{
+    Type storageType;
+    if ($_parser.parseLess()) return Type();
+    if ($_parser.parseType(storageType)) return Type();
+    if ($_parser.parseGreater()) return Type();
+    return get(storageType);
+  }];  
+
+  let skipDefaultBuilders = 1;  
 }
 
 def TypeScript_ClassStorage : TypeScript_Type<"ClassStorage"> {
