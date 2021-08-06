@@ -4547,6 +4547,7 @@ llvm.return %5 : i32
 
         // final type
         auto constTupleType = getConstTupleType(fieldInfos);
+        auto objThis = getObjectType(constTupleType);
 
         LLVM_DEBUG(dbgs() << "obj: " << constTupleType << "\n";);
 
@@ -4558,7 +4559,7 @@ llvm.return %5 : i32
             if (item == SyntaxKind::MethodDeclaration)
             {
                 auto funcGenContext = GenContext(genContext);
-                funcGenContext.thisType = getObjectType(constTupleType);
+                funcGenContext.thisType = objThis;
                 // funcGenContext.thisType = mlir_ts::RefType::get(constTupleType);
                 funcGenContext.passResult = nullptr;
                 auto funcLikeDecl = item.as<FunctionLikeDeclarationBase>();
@@ -4572,19 +4573,33 @@ llvm.return %5 : i32
             }
         }
 
+        for (auto &fieldInfo : fieldInfos)
+        {
+            if (auto funcType = fieldInfo.type.dyn_cast_or_null<mlir::FunctionType>())
+            {
+                fieldInfo.type = getFunctionTypeWithThisType(funcType, objThis);
+            }
+        }
+
+        auto constTupleTypeWithReplacedThis = getConstTupleType(fieldInfos);
+
         auto arrayAttr = mlir::ArrayAttr::get(builder.getContext(), values);
-        return builder.create<mlir_ts::ConstantOp>(loc(objectLiteral), constTupleType, arrayAttr);
+        return builder.create<mlir_ts::ConstantOp>(loc(objectLiteral), constTupleTypeWithReplacedThis, arrayAttr);
     }
 
-    mlir::FunctionType getFunctionTypeWithOpaqueThis(mlir_ts::FuncOp funcOp)
+    mlir::FunctionType getFunctionTypeWithThisType(mlir::FunctionType funcType, mlir::Type thisType)
     {
-        auto funcType = funcOp.getType();
         SmallVector<mlir::Type> args;
-        args.push_back(getOpaqueType());
+        args.push_back(thisType);
         auto argsWithoutFirst = funcType.getInputs().slice(1);
         args.append(argsWithoutFirst.begin(), argsWithoutFirst.end());
         auto newFuncType = builder.getFunctionType(args, funcType.getResults());
         return newFuncType;
+    }
+
+    mlir::FunctionType getFunctionTypeWithOpaqueThis(mlir_ts::FuncOp funcOp)
+    {
+        return getFunctionTypeWithThisType(funcOp.getType(), getOpaqueType());
     }
 
     mlir::Value mlirGen(Identifier identifier, const GenContext &genContext)
