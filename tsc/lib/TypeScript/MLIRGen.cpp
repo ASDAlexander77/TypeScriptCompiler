@@ -4467,6 +4467,7 @@ llvm.return %5 : i32
         SmallVector<mlir::Type> types;
         SmallVector<mlir_ts::FieldInfo> fieldInfos;
         SmallVector<mlir::Attribute> values;
+        SmallVector<std::reference_wrapper<mlir_ts::FieldInfo>> methodInfos;
 
         auto addFuncFieldInfo = [&](mlir::Attribute fieldId, mlir::StringRef funcName, mlir::FunctionType funcType) {
             auto type = funcType;
@@ -4498,6 +4499,56 @@ llvm.return %5 : i32
             fieldInfos.push_back({fieldId, type});
         };
 
+        auto getFieldIdForProperty = [&](PropertyAssignment &propertyAssignment) {
+            auto name = MLIRHelper::getName(propertyAssignment->name);
+            if (name.empty())
+            {
+                auto value = mlirGen(propertyAssignment->name.as<Expression>(), genContext);
+                return mcl.ExtractAttr(value);
+            }
+
+            auto namePtr = StringRef(name).copy(stringAllocator);
+            return mcl.TupleFieldName(namePtr);
+        };
+
+        auto getFieldIdForShorthandProperty = [&](ShorthandPropertyAssignment &shorthandPropertyAssignment) {
+            auto name = MLIRHelper::getName(shorthandPropertyAssignment->name);
+            auto namePtr = StringRef(name).copy(stringAllocator);
+            return mcl.TupleFieldName(namePtr);
+        };
+
+        auto getFieldIdForFunctionLike = [&](FunctionLikeDeclarationBase &funcLikeDecl) {
+            auto name = MLIRHelper::getName(funcLikeDecl->name);
+            auto namePtr = StringRef(name).copy(stringAllocator);
+            return mcl.TupleFieldName(namePtr);
+        };
+
+        auto processFunctionLikeProto = [&](mlir::Attribute fieldId, FunctionLikeDeclarationBase &funcLikeDecl) {
+            auto funcName = MLIRHelper::getAnonymousName(loc(funcLikeDecl));
+
+            auto funcGenContext = GenContext(genContext);
+            funcGenContext.thisType = getObjectType(getConstTupleType(fieldInfos));
+            // funcGenContext.thisType = mlir_ts::RefType::get(getConstTupleType(fieldInfos));
+            funcGenContext.passResult = nullptr;
+
+            auto funcOpWithFuncProto = mlirGenFunctionPrototype(funcLikeDecl, funcGenContext);
+            auto &funcOp = std::get<0>(funcOpWithFuncProto);
+            // auto &funcProto = std::get<1>(funcOpWithFuncProto);
+            auto result = std::get<2>(funcOpWithFuncProto);
+            if (!result || !funcOp)
+            {
+                return;
+            }
+
+            // recreate type with "this" param as "any"
+            auto newFuncType = getFunctionTypeWithOpaqueThis(funcOp, true);
+
+            // place holder
+            addFuncFieldInfo(fieldId, funcName, newFuncType);
+
+            methodInfos.push_back(fieldInfos[fieldInfos.size() - 1]);
+        };
+
         // add all fields
         for (auto &item : objectLiteral->properties)
         {
@@ -4507,25 +4558,13 @@ llvm.return %5 : i32
             {
                 auto propertyAssignment = item.as<PropertyAssignment>();
                 itemValue = mlirGen(propertyAssignment->initializer, genContext);
-                auto name = MLIRHelper::getName(propertyAssignment->name);
-                if (name.empty())
-                {
-                    auto value = mlirGen(propertyAssignment->name.as<Expression>(), genContext);
-                    fieldId = mcl.ExtractAttr(value);
-                }
-                else
-                {
-                    auto namePtr = StringRef(name).copy(stringAllocator);
-                    fieldId = mcl.TupleFieldName(namePtr);
-                }
+                fieldId = getFieldIdForProperty(propertyAssignment);
             }
             else if (item == SyntaxKind::ShorthandPropertyAssignment)
             {
                 auto shorthandPropertyAssignment = item.as<ShorthandPropertyAssignment>();
                 itemValue = mlirGen(shorthandPropertyAssignment->name.as<Expression>(), genContext);
-                auto name = MLIRHelper::getName(shorthandPropertyAssignment->name);
-                auto namePtr = StringRef(name).copy(stringAllocator);
-                fieldId = mcl.TupleFieldName(namePtr);
+                fieldId = getFieldIdForShorthandProperty(shorthandPropertyAssignment);
             }
             else if (item == SyntaxKind::MethodDeclaration)
             {
@@ -4542,8 +4581,6 @@ llvm.return %5 : i32
         }
 
         // process all methods
-        SmallVector<std::reference_wrapper<mlir_ts::FieldInfo>> methodInfos;
-
         for (auto &item : objectLiteral->properties)
         {
             mlir::Value itemValue;
@@ -4551,37 +4588,8 @@ llvm.return %5 : i32
             if (item == SyntaxKind::MethodDeclaration)
             {
                 auto funcLikeDecl = item.as<FunctionLikeDeclarationBase>();
-                auto name = MLIRHelper::getName(funcLikeDecl->name);
-                auto namePtr = StringRef(name).copy(stringAllocator);
-                fieldId = mcl.TupleFieldName(namePtr);
-
-                auto funcName = MLIRHelper::getAnonymousName(loc(item));
-
-                auto funcGenContext = GenContext(genContext);
-                funcGenContext.thisType = getObjectType(getConstTupleType(fieldInfos));
-                // funcGenContext.thisType = mlir_ts::RefType::get(getConstTupleType(fieldInfos));
-                funcGenContext.passResult = nullptr;
-
-                auto funcOpWithFuncProto = mlirGenFunctionPrototype(funcLikeDecl, funcGenContext);
-                auto &funcOp = std::get<0>(funcOpWithFuncProto);
-                // auto &funcProto = std::get<1>(funcOpWithFuncProto);
-                auto result = std::get<2>(funcOpWithFuncProto);
-                if (!result || !funcOp)
-                {
-                    continue;
-                }
-
-                // recreate type with "this" param as "any"
-                auto newFuncType = getFunctionTypeWithOpaqueThis(funcOp, true);
-
-                // place holder
-                addFuncFieldInfo(fieldId, funcName, newFuncType);
-
-                methodInfos.push_back(fieldInfos[fieldInfos.size() - 1]);
-            }
-            else
-            {
-                continue;
+                fieldId = getFieldIdForFunctionLike(funcLikeDecl);
+                processFunctionLikeProto(fieldId, funcLikeDecl);
             }
         }
 
@@ -4606,10 +4614,6 @@ llvm.return %5 : i32
 
                 mlir::OpBuilder::InsertionGuard guard(builder);
                 auto funcOp = mlirGenFunctionLikeDeclaration(funcLikeDecl, funcGenContext);
-            }
-            else
-            {
-                continue;
             }
         }
 
