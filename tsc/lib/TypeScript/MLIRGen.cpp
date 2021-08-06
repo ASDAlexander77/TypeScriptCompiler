@@ -1348,6 +1348,11 @@ class MLIRGenImpl
             params.push_back(std::make_shared<FunctionParamDOM>(THIS_NAME, genContext.thisType, loc(parametersContextAST)));
         }
 
+        if (!isStatic && genContext.thisType && parametersContextAST == SyntaxKind::FunctionExpression)
+        {
+            params.push_back(std::make_shared<FunctionParamDOM>(THIS_NAME, genContext.thisType, loc(parametersContextAST)));
+        }
+
         if (parametersContextAST->parent.is<InterfaceDeclaration>())
         {
             params.push_back(std::make_shared<FunctionParamDOM>(THIS_NAME, getOpaqueType(), loc(parametersContextAST)));
@@ -4549,6 +4554,15 @@ llvm.return %5 : i32
             methodInfos.push_back(fieldInfos[fieldInfos.size() - 1]);
         };
 
+        auto processFunctionLike = [&](mlir_ts::ObjectType objThis, FunctionLikeDeclarationBase &funcLikeDecl) {
+            auto funcGenContext = GenContext(genContext);
+            funcGenContext.thisType = objThis;
+            funcGenContext.passResult = nullptr;
+
+            mlir::OpBuilder::InsertionGuard guard(builder);
+            auto funcOp = mlirGenFunctionLikeDeclaration(funcLikeDecl, funcGenContext);
+        };
+
         // add all fields
         for (auto &item : objectLiteral->properties)
         {
@@ -4557,12 +4571,22 @@ llvm.return %5 : i32
             if (item == SyntaxKind::PropertyAssignment)
             {
                 auto propertyAssignment = item.as<PropertyAssignment>();
+                if (propertyAssignment->initializer == SyntaxKind::FunctionExpression)
+                {
+                    continue;
+                }
+
                 itemValue = mlirGen(propertyAssignment->initializer, genContext);
                 fieldId = getFieldIdForProperty(propertyAssignment);
             }
             else if (item == SyntaxKind::ShorthandPropertyAssignment)
             {
                 auto shorthandPropertyAssignment = item.as<ShorthandPropertyAssignment>();
+                if (shorthandPropertyAssignment->initializer == SyntaxKind::FunctionExpression)
+                {
+                    continue;
+                }
+
                 itemValue = mlirGen(shorthandPropertyAssignment->name.as<Expression>(), genContext);
                 fieldId = getFieldIdForShorthandProperty(shorthandPropertyAssignment);
             }
@@ -4583,9 +4607,32 @@ llvm.return %5 : i32
         // process all methods
         for (auto &item : objectLiteral->properties)
         {
-            mlir::Value itemValue;
             mlir::Attribute fieldId;
-            if (item == SyntaxKind::MethodDeclaration)
+            if (item == SyntaxKind::PropertyAssignment)
+            {
+                auto propertyAssignment = item.as<PropertyAssignment>();
+                if (propertyAssignment->initializer != SyntaxKind::FunctionExpression)
+                {
+                    continue;
+                }
+
+                auto funcLikeDecl = propertyAssignment->initializer.as<FunctionLikeDeclarationBase>();
+                fieldId = getFieldIdForProperty(propertyAssignment);
+                processFunctionLikeProto(fieldId, funcLikeDecl);
+            }
+            else if (item == SyntaxKind::ShorthandPropertyAssignment)
+            {
+                auto shorthandPropertyAssignment = item.as<ShorthandPropertyAssignment>();
+                if (shorthandPropertyAssignment->initializer != SyntaxKind::FunctionExpression)
+                {
+                    continue;
+                }
+
+                auto funcLikeDecl = shorthandPropertyAssignment->initializer.as<FunctionLikeDeclarationBase>();
+                fieldId = getFieldIdForShorthandProperty(shorthandPropertyAssignment);
+                processFunctionLikeProto(fieldId, funcLikeDecl);
+            }
+            else if (item == SyntaxKind::MethodDeclaration)
             {
                 auto funcLikeDecl = item.as<FunctionLikeDeclarationBase>();
                 fieldId = getFieldIdForFunctionLike(funcLikeDecl);
@@ -4602,18 +4649,32 @@ llvm.return %5 : i32
         // process all methods
         for (auto &item : objectLiteral->properties)
         {
-            mlir::Value itemValue;
-            mlir::Attribute fieldId;
-            if (item == SyntaxKind::MethodDeclaration)
+            if (item == SyntaxKind::PropertyAssignment)
             {
-                auto funcGenContext = GenContext(genContext);
-                funcGenContext.thisType = objThis;
-                // funcGenContext.thisType = mlir_ts::RefType::get(constTupleType);
-                funcGenContext.passResult = nullptr;
-                auto funcLikeDecl = item.as<FunctionLikeDeclarationBase>();
+                auto propertyAssignment = item.as<PropertyAssignment>();
+                if (propertyAssignment->initializer != SyntaxKind::FunctionExpression)
+                {
+                    continue;
+                }
 
-                mlir::OpBuilder::InsertionGuard guard(builder);
-                auto funcOp = mlirGenFunctionLikeDeclaration(funcLikeDecl, funcGenContext);
+                auto funcLikeDecl = propertyAssignment->initializer.as<FunctionLikeDeclarationBase>();
+                processFunctionLike(objThis, funcLikeDecl);
+            }
+            else if (item == SyntaxKind::ShorthandPropertyAssignment)
+            {
+                auto shorthandPropertyAssignment = item.as<ShorthandPropertyAssignment>();
+                if (shorthandPropertyAssignment->initializer != SyntaxKind::FunctionExpression)
+                {
+                    continue;
+                }
+
+                auto funcLikeDecl = shorthandPropertyAssignment->initializer.as<FunctionLikeDeclarationBase>();
+                processFunctionLike(objThis, funcLikeDecl);
+            }
+            else if (item == SyntaxKind::MethodDeclaration)
+            {
+                auto funcLikeDecl = item.as<FunctionLikeDeclarationBase>();
+                processFunctionLike(objThis, funcLikeDecl);
             }
         }
 
