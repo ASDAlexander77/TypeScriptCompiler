@@ -1387,6 +1387,19 @@ class CastLogicHelper
             }
         }
 
+        // value to ref of value
+        if (auto destPtr = resLLVMType.dyn_cast_or_null<LLVM::LLVMPointerType>())
+        {
+            if (destPtr.getElementType() == inLLVMType)
+            {
+                // alloc and return address
+                auto countValue = clh.createI32ConstantOf(1);
+                auto valueAddr = rewriter.create<LLVM::AllocaOp>(loc, destPtr, countValue);
+                rewriter.create<mlir_ts::StoreOp>(loc, in, valueAddr);
+                return valueAddr;
+            }
+        }
+
         emitError(loc, "invalid cast operator type 1: '") << inLLVMType << "', type 2: '" << resLLVMType << "'";
         llvm_unreachable("not implemented");
 

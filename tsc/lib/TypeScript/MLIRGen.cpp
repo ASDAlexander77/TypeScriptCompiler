@@ -3817,8 +3817,11 @@ llvm.return %5 : i32
                 }
                 if (auto extractPropertyOp = funcRefValue.getDefiningOp<mlir_ts::ExtractPropertyOp>())
                 {
-                    auto castThis =
-                        builder.create<mlir_ts::CastOp>(location, calledFuncType.getInput(thisIndex), extractPropertyOp.object());
+                    // allocate in stack
+                    auto valueAddr = builder.create<mlir_ts::VariableOp>(
+                        location, mlir_ts::RefType::get(extractPropertyOp.object().getType()), extractPropertyOp.object());
+
+                    auto castThis = builder.create<mlir_ts::CastOp>(location, calledFuncType.getInput(thisIndex), valueAddr);
                     operands.push_back(castThis);
                 }
                 else
