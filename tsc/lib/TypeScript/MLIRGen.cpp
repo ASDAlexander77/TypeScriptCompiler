@@ -3815,7 +3815,7 @@ llvm.return %5 : i32
                         operands.push_back(castThis);
                     }
                 }
-                if (auto extractPropertyOp = funcRefValue.getDefiningOp<mlir_ts::ExtractPropertyOp>())
+                else if (auto extractPropertyOp = funcRefValue.getDefiningOp<mlir_ts::ExtractPropertyOp>())
                 {
                     // allocate in stack
                     auto valueAddr = builder.create<mlir_ts::VariableOp>(
