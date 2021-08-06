@@ -4322,8 +4322,16 @@ llvm.return %5 : i32
     {
         if (numericLiteral->text.find(S(".")) == string::npos)
         {
-            return builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), builder.getI32Type(),
-                                                       builder.getI32IntegerAttr(to_unsigned_integer(numericLiteral->text)));
+            try
+            {
+                return builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), builder.getI32Type(),
+                                                           builder.getI32IntegerAttr(to_unsigned_integer(numericLiteral->text)));
+            }
+            catch (const std::out_of_range &e)
+            {
+                return builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), builder.getI64Type(),
+                                                           builder.getI64IntegerAttr(to_bignumber(numericLiteral->text)));
+            }
         }
 
         return builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), builder.getF32Type(),
