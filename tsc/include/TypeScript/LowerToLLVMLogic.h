@@ -728,11 +728,16 @@ class LLVMCodeHelper
             auto type = originalType.getType(position);
 
             auto llvmType = typesRange[position];
-            if (item.isa<StringAttr>())
+            if (auto unitAttr = item.dyn_cast_or_null<UnitAttr>())
+            {
+                auto itemValue = rewriter.create<mlir_ts::UndefOp>(loc, llvmType);
+                tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemValue, rewriter.getI64ArrayAttr(position++));
+            }
+            else if (auto stringAttr = item.dyn_cast_or_null<StringAttr>())
             {
                 OpBuilder::InsertionGuard guard(rewriter);
 
-                auto strValue = item.cast<StringAttr>().getValue().str();
+                auto strValue = stringAttr.getValue().str();
                 auto itemVal = getOrCreateGlobalString(strValue);
 
                 tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemVal, rewriter.getI64ArrayAttr(position++));

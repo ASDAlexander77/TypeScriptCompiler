@@ -4327,7 +4327,7 @@ llvm.return %5 : i32
                 return builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), builder.getI32Type(),
                                                            builder.getI32IntegerAttr(to_unsigned_integer(numericLiteral->text)));
             }
-            catch (const std::out_of_range &e)
+            catch (const std::out_of_range &)
             {
                 return builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), builder.getI64Type(),
                                                            builder.getI64IntegerAttr(to_bignumber(numericLiteral->text)));
@@ -4504,7 +4504,8 @@ llvm.return %5 : i32
             }
             else
             {
-                llvm_unreachable("object literal is not implemented(1), must be const object or global symbol");
+                value = builder.getUnitAttr();
+                type = itemValue.getType();
             }
 
             values.push_back(value);
