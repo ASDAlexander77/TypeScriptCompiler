@@ -4481,6 +4481,7 @@ llvm.return %5 : i32
         SmallVector<mlir_ts::FieldInfo> fieldInfos;
         SmallVector<mlir::Attribute> values;
         SmallVector<std::reference_wrapper<mlir_ts::FieldInfo>> methodInfos;
+        SmallVector<std::pair<mlir::Attribute, mlir::Value>> fieldsToSet;
 
         auto addFuncFieldInfo = [&](mlir::Attribute fieldId, mlir::StringRef funcName, mlir::FunctionType funcType) {
             auto type = funcType;
@@ -4506,6 +4507,7 @@ llvm.return %5 : i32
             {
                 value = builder.getUnitAttr();
                 type = itemValue.getType();
+                fieldsToSet.push_back({fieldId, itemValue});
             }
 
             values.push_back(value);
@@ -4700,7 +4702,27 @@ llvm.return %5 : i32
         auto constTupleTypeWithReplacedThis = getConstTupleType(fieldInfos);
 
         auto arrayAttr = mlir::ArrayAttr::get(builder.getContext(), values);
-        return builder.create<mlir_ts::ConstantOp>(loc(objectLiteral), constTupleTypeWithReplacedThis, arrayAttr);
+        auto constantVal = builder.create<mlir_ts::ConstantOp>(loc(objectLiteral), constTupleTypeWithReplacedThis, arrayAttr);
+        if (fieldsToSet.empty())
+        {
+            return constantVal;
+        }
+
+        // we need to cast it to tuple and set values
+        auto location = constantVal.getLoc();
+        MLIRTypeHelper mth(builder.getContext());
+        bool copyRequired = false;
+        auto tupleVar = builder.create<mlir_ts::VariableOp>(
+            location, mlir_ts::RefType::get(mth.convertConstTypeToType(constantVal.getType(), copyRequired)), constantVal,
+            builder.getBoolAttr(false));
+        for (auto fieldToSet : fieldsToSet)
+        {
+            auto location = fieldToSet.second.getLoc();
+            auto getField = mlirGenPropertyAccessExpression(location, tupleVar, fieldToSet.first, genContext);
+            auto savedValue = mlirGenSaveLogicOneItem(location, getField, fieldToSet.second, genContext);
+        }
+
+        return tupleVar;
     }
 
     mlir::FunctionType getFunctionTypeWithThisType(mlir::FunctionType funcType, mlir::Type thisType, bool replace = false)
