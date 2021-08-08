@@ -1378,7 +1378,7 @@ class MLIRGenImpl
             if (initializer)
             {
                 // we need to add temporary block
-                auto tempFuncType = builder.getFunctionType(llvm::None, llvm::None);
+                auto tempFuncType = getFunctionType(llvm::None, llvm::None);
                 auto tempFuncOp = mlir::FuncOp::create(loc(initializer), name, tempFuncType);
                 auto &entryBlock = *tempFuncOp.addEntryBlock();
 
@@ -1552,14 +1552,14 @@ class MLIRGenImpl
             auto returnType = getType(typeParameter);
             funcProto->setReturnType(returnType);
 
-            funcType = builder.getFunctionType(argTypes, returnType);
+            funcType = getFunctionType(argTypes, returnType);
         }
         else if (defaultVoid)
         {
             auto returnType = getVoidType();
             funcProto->setReturnType(returnType);
 
-            funcType = builder.getFunctionType(argTypes, returnType);
+            funcType = getFunctionType(argTypes, returnType);
         }
 
         return std::make_tuple(funcProto, funcType, argTypes);
@@ -1603,12 +1603,12 @@ class MLIRGenImpl
                 // create funcType
                 if (funcProto->getReturnType())
                 {
-                    funcType = builder.getFunctionType(argTypes, funcProto->getReturnType());
+                    funcType = getFunctionType(argTypes, funcProto->getReturnType());
                 }
                 else
                 {
                     // no return type
-                    funcType = builder.getFunctionType(argTypes, llvm::None);
+                    funcType = getFunctionType(argTypes, llvm::None);
                 }
             }
             else
@@ -1664,7 +1664,7 @@ class MLIRGenImpl
 
         mlir::OpBuilder::InsertionGuard guard(builder);
 
-        auto partialDeclFuncType = builder.getFunctionType(argTypes, llvm::None);
+        auto partialDeclFuncType = getFunctionType(argTypes, llvm::None);
         auto dummyFuncOp = mlir_ts::FuncOp::create(loc(functionLikeDeclarationBaseAST), name, partialDeclFuncType);
 
         {
@@ -4732,7 +4732,7 @@ llvm.return %5 : i32
         auto argsWithoutFirst =
             funcType.getInputs().slice(replace || funcType.getNumInputs() > 0 && funcType.getInput(0) == getOpaqueType() ? 1 : 0);
         args.append(argsWithoutFirst.begin(), argsWithoutFirst.end());
-        auto newFuncType = builder.getFunctionType(args, funcType.getResults());
+        auto newFuncType = getFunctionType(args, funcType.getResults());
         return newFuncType;
     }
 
@@ -4803,7 +4803,7 @@ llvm.return %5 : i32
         auto captureVars = getCaptureVarsMap().find(name);
         if (captureVars != getCaptureVarsMap().end())
         {
-            auto newFuncType = builder.getFunctionType(funcType.getInputs().slice(1), funcType.getResults());
+            auto newFuncType = getFunctionType(funcType.getInputs().slice(1), funcType.getResults());
 
             auto funcSymbolOp =
                 builder.create<mlir_ts::SymbolRefOp>(location, funcType, mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
@@ -6697,6 +6697,16 @@ llvm.return %5 : i32
     mlir_ts::ObjectType getObjectType(mlir::Type type)
     {
         return mlir_ts::ObjectType::get(type);
+    }
+
+    mlir_ts::BoundFunctionType getBoundFunctionType(ArrayRef<mlir::Type> inputs, ArrayRef<mlir::Type> results)
+    {
+        return mlir_ts::BoundFunctionType::get(builder.getContext(), inputs, results);
+    }
+
+    mlir::FunctionType getFunctionType(ArrayRef<mlir::Type> inputs, ArrayRef<mlir::Type> results)
+    {
+        return builder.getFunctionType(inputs, results);
     }
 
     mlir::FunctionType getFunctionType(FunctionTypeNode functionType)

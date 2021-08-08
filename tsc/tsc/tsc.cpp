@@ -146,11 +146,13 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module
         // TODO: experiment
         pm.addPass(mlir::createCanonicalizerPass());
 
-        mlir::OpPassManager &optPM = pm.nest<mlir::typescript::FuncOp>();
-        optPM.addPass(mlir::createCanonicalizerPass());
-        optPM.addPass(mlir::typescript::createLoadBoundPropertiesPass());
-        optPM.addPass(mlir::createCanonicalizerPass());
-        optPM.addPass(mlir::createCSEPass());
+        // mlir::OpPassManager &optPM = pm.nest<mlir::typescript::FuncOp>();
+        // disabled as it was experiment
+        // optPM.addPass(mlir::typescript::createLoadBoundPropertiesPass());
+        // optPM.addPass(mlir::createCanonicalizerPass());
+
+        // TODO: this failing test about accessors
+        // optPM.addPass(mlir::createCSEPass());
     }
 
     if (isLoweringToAffine)
@@ -167,9 +169,9 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module
         // Add optimizations if enabled.
         if (enableOpt)
         {
-            // TODO: do I need th8is?
+            // TODO: do I need this?
             // optPM.addPass(mlir::createLoopFusionPass());
-            // TODO: do I need th8is?
+            // TODO: do I need this?
             // optPM.addPass(mlir::createMemRefDataFlowOptPass());
         }
     }
