@@ -17,12 +17,14 @@ add_mlir_dialect_library(MLIRTypeScript
     MLIRGen.cpp
     LowerToAffineLoops.cpp
     LowerToLLVM.cpp
-
+    LoadBoundPropertiesPass.cpp
+    
     ADDITIONAL_HEADER_DIRS
     ${PROJECT_SOURCE_DIR}/tsc-new-parser
 
     DEPENDS
     MLIRTypeScriptOpsIncGen
+    MLIRTypeScriptLoadBoundPropertiesInterfaceIncGen
 
     LINK_LIBS PUBLIC
     tsc-new-parser-lib

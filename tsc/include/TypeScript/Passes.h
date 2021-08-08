@@ -9,6 +9,8 @@ namespace mlir
 
     namespace typescript
     {
+        std::unique_ptr<mlir::Pass> createLoadBoundPropertiesPass();
+
         /// Create a pass for lowering to operations in the `Affine` and `Std` dialects,
         /// for a subset of the TypeScript IR (e.g. matmul).
         std::unique_ptr<mlir::Pass> createLowerToAffinePass();

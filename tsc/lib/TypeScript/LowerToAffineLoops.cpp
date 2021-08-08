@@ -3,6 +3,7 @@
 #include "TypeScript/Passes.h"
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
+#include "TypeScript/TypeScriptFunctionPass.h"
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -585,28 +586,6 @@ struct ThisAccessorRefOpLowering : public TsPattern<mlir_ts::ThisAccessorRefOp>
 /// This is a partial lowering to affine loops of the typescript operations that are
 /// computationally intensive (like add+mul for example...) while keeping the
 /// rest of the code in the TypeScript dialect.
-
-class TypeScriptFunctionPass : public OperationPass<mlir_ts::FuncOp>
-{
-  public:
-    using OperationPass<mlir_ts::FuncOp>::OperationPass;
-
-    /// The polymorphic API that runs the pass over the currently held function.
-    virtual void runOnFunction() = 0;
-
-    /// The polymorphic API that runs the pass over the currently held operation.
-    void runOnOperation() final
-    {
-        if (!getFunction().isExternal())
-            runOnFunction();
-    }
-
-    /// Return the current function being transformed.
-    mlir_ts::FuncOp getFunction()
-    {
-        return this->getOperation();
-    }
-};
 
 namespace
 {
