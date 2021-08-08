@@ -6709,7 +6709,7 @@ llvm.return %5 : i32
         return builder.getFunctionType(inputs, results);
     }
 
-    mlir::FunctionType getFunctionType(FunctionTypeNode functionType)
+    mlir_ts::BoundFunctionType getFunctionType(FunctionTypeNode functionType)
     {
         auto resultType = getType(functionType->type);
         SmallVector<mlir::Type> argTypes;
@@ -6724,7 +6724,8 @@ llvm.return %5 : i32
             argTypes.push_back(type);
         }
 
-        return mlir::FunctionType::get(builder.getContext(), argTypes, resultType);
+        auto funcType = mlir::FunctionType::get(builder.getContext(), argTypes, resultType);
+        return mlir_ts::BoundFunctionType::get(builder.getContext(), funcType);
     }
 
     mlir::Type getUnionType(UnionTypeNode unionTypeNode)

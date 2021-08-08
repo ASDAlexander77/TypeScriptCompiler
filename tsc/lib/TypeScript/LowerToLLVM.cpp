@@ -2405,6 +2405,23 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         return LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, false);
     });
 
+    converter.addConversion([&](mlir_ts::BoundFunctionType type) {
+        SmallVector<mlir::Type> convertedInputs;
+        for (auto subType : type.getInputs())
+        {
+            convertedInputs.push_back(converter.convertType(subType));
+        }
+
+        SmallVector<mlir::Type> convertedResults;
+        for (auto subType : type.getResults())
+        {
+            convertedResults.push_back(converter.convertType(subType));
+        }
+
+        // TODO: convert results into LLVMStruct
+        return LLVM::LLVMFunctionType::get(convertedResults.front(), convertedInputs);
+    });
+
     converter.addConversion(
         [&](mlir_ts::ObjectType type) { return LLVM::LLVMPointerType::get(converter.convertType(type.getStorageType())); });
 
