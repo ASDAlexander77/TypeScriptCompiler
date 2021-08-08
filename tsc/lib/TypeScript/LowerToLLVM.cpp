@@ -2418,8 +2418,12 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
             convertedResults.push_back(converter.convertType(subType));
         }
 
-        // TODO: convert results into LLVMStruct
-        return LLVM::LLVMFunctionType::get(convertedResults.front(), convertedInputs);
+        auto funcType = mlir::FunctionType::get(type.getContext(), convertedInputs, convertedResults);
+
+        LLVMTypeConverter::SignatureConversion result(convertedInputs.size());
+        auto llvmFuncType = converter.convertFunctionSignature(funcType, false, result);
+        auto llvmPtrType = LLVM::LLVMPointerType::get(llvmFuncType);
+        return llvmPtrType;
     });
 
     converter.addConversion(

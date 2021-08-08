@@ -156,6 +156,18 @@ class MLIRCodeLogic
         return mlir::Value();
     }
 
+    mlir::Type getEffectiveFunctionType(mlir::Type elementType)
+    {
+#ifdef USE_BOUND_FUNCTION_FOR_OBJECTS
+        if (auto funcType = elementType.dyn_cast_or_null<mlir::FunctionType>())
+        {
+            return mlir_ts::BoundFunctionType::get(builder.getContext(), funcType);
+        }
+#endif
+
+        return elementType;
+    }
+
     mlir::Attribute TupleFieldName(StringRef name)
     {
         assert(!name.empty());
@@ -436,11 +448,7 @@ class MLIRPropertyAccessCodeLogic
         // resolve index
         auto pair = mcl.TupleFieldType(location, tupleType, fieldId, indexAccess);
         auto fieldIndex = pair.first;
-        auto elementType = pair.second;
-        if (auto funcType = elementType.dyn_cast_or_null<mlir::FunctionType>())
-        {
-            elementType = mlir_ts::BoundFunctionType::get(builder.getContext(), funcType);
-        }
+        auto elementType = mcl.getEffectiveFunctionType(pair.second);
 
         if (fieldIndex < 0)
         {
@@ -470,11 +478,7 @@ class MLIRPropertyAccessCodeLogic
         // resolve index
         auto pair = mcl.TupleFieldTypeNoError(location, tupleType, fieldId, indexAccess);
         auto fieldIndex = pair.first;
-        auto elementType = pair.second;
-        if (auto funcType = elementType.dyn_cast_or_null<mlir::FunctionType>())
-        {
-            elementType = mlir_ts::BoundFunctionType::get(builder.getContext(), funcType);
-        }
+        auto elementType = mcl.getEffectiveFunctionType(pair.second);
 
         if (fieldIndex < 0)
         {
@@ -651,11 +655,7 @@ class MLIRPropertyAccessCodeLogic
         // resolve index
         auto pair = mcl.TupleFieldType(location, tupleType, fieldId);
         auto fieldIndex = pair.first;
-        auto elementType = pair.second;
-        if (auto funcType = elementType.dyn_cast_or_null<mlir::FunctionType>())
-        {
-            elementType = mlir_ts::BoundFunctionType::get(builder.getContext(), funcType);
-        }
+        auto elementType = mcl.getEffectiveFunctionType(pair.second);
 
         if (fieldIndex < 0)
         {
@@ -687,11 +687,7 @@ class MLIRPropertyAccessCodeLogic
         // resolve index
         auto pair = mcl.TupleFieldTypeNoError(location, classStorageType, fieldId);
         auto fieldIndex = pair.first;
-        auto elementType = pair.second;
-        if (auto funcType = elementType.dyn_cast_or_null<mlir::FunctionType>())
-        {
-            elementType = mlir_ts::BoundFunctionType::get(builder.getContext(), funcType);
-        }
+        auto elementType = mcl.getEffectiveFunctionType(pair.second);
 
         if (fieldIndex < 0)
         {

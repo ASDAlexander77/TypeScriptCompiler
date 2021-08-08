@@ -1,5 +1,6 @@
 #define ENABLE_RTTI true
 #define ALL_METHODS_VIRTUAL true
+#define USE_BOUND_FUNCTION_FOR_OBJECTS true
 
 #define DEBUG_TYPE "mlir"
 
@@ -6709,7 +6710,7 @@ llvm.return %5 : i32
         return builder.getFunctionType(inputs, results);
     }
 
-    mlir_ts::BoundFunctionType getFunctionType(FunctionTypeNode functionType)
+    mlir::Type getFunctionType(FunctionTypeNode functionType)
     {
         auto resultType = getType(functionType->type);
         SmallVector<mlir::Type> argTypes;
@@ -6725,7 +6726,11 @@ llvm.return %5 : i32
         }
 
         auto funcType = mlir::FunctionType::get(builder.getContext(), argTypes, resultType);
+#ifndef USE_BOUND_FUNCTION_FOR_OBJECTS
+        return funcType;
+#else
         return mlir_ts::BoundFunctionType::get(builder.getContext(), funcType);
+#endif
     }
 
     mlir::Type getUnionType(UnionTypeNode unionTypeNode)
