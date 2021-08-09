@@ -43,6 +43,9 @@ namespace mlir_ts = mlir::typescript;
 #define IDENT(name) Identifier::get(rewriter.getContext(), name)
 #define NAMED_ATTR(name, attr) ArrayAttr::get(rewriter.getContext(), {ATTR(name), ATTR(attr)})
 
+#define DATA_VALUE_INDEX 0
+#define THIS_VALUE_INDEX 1
+
 namespace
 {
 struct TsLlvmContext
@@ -1632,8 +1635,10 @@ struct LoadOpLowering : public TsLlvmPattern<mlir_ts::LoadOp>
             auto llvmType = tch.convertType(boundRefType.getElementType());
             auto llvmRefType = LLVM::LLVMPointerType::get(boundRefType.getElementType());
 
-            auto thisVal = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), loadOp.reference(), clh.getStructIndexAttr(1));
-            auto valueRefVal = rewriter.create<LLVM::ExtractValueOp>(loc, llvmRefType, loadOp.reference(), clh.getStructIndexAttr(0));
+            auto thisVal =
+                rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), loadOp.reference(), clh.getStructIndexAttr(THIS_VALUE_INDEX));
+            auto valueRefVal =
+                rewriter.create<LLVM::ExtractValueOp>(loc, llvmRefType, loadOp.reference(), clh.getStructIndexAttr(DATA_VALUE_INDEX));
 
             auto elementType = boundRefType.getElementType();
             auto elementTypeConverted = tch.convertType(elementType);
@@ -1642,9 +1647,7 @@ struct LoadOpLowering : public TsLlvmPattern<mlir_ts::LoadOp>
 
             if (auto funcType = boundRefType.getElementType().dyn_cast_or_null<mlir::FunctionType>())
             {
-                mlir::Value boundMethodValue = rewriter.create<mlir_ts::CreateBoundFunctionOp>(
-                    loc, mlir_ts::BoundFunctionType::get(funcType.getContext(), funcType.getInputs(), funcType.getResults()), thisVal,
-                    loadedValue);
+                mlir::Value boundMethodValue = rewriter.create<mlir_ts::CreateBoundFunctionOp>(loc, loadOp.getType(), thisVal, loadedValue);
 
                 rewriter.replaceOp(loadOp, boundMethodValue);
             }
@@ -2312,10 +2315,10 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
         TypeHelper th(rewriter);
         CodeLogicHelper clh(interfaceSymbolRefOp, rewriter);
 
-        auto vtable =
-            rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), interfaceSymbolRefOp.interfaceVal(), clh.getStructIndexAttr(0));
-        auto thisVal =
-            rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), interfaceSymbolRefOp.interfaceVal(), clh.getStructIndexAttr(1));
+        auto vtable = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), interfaceSymbolRefOp.interfaceVal(),
+                                                            clh.getStructIndexAttr(DATA_VALUE_INDEX));
+        auto thisVal = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), interfaceSymbolRefOp.interfaceVal(),
+                                                             clh.getStructIndexAttr(THIS_VALUE_INDEX));
 
         auto methodPtr = rewriter.create<mlir_ts::VTableOffsetRefOp>(loc, th.getI8PtrType(), vtable, interfaceSymbolRefOp.index());
         auto methodTyped = rewriter.create<mlir_ts::CastOp>(loc, interfaceSymbolRefOp.getResult(0).getType(), methodPtr);
@@ -2343,9 +2346,9 @@ struct NewInterfaceOpLowering : public TsLlvmPattern<mlir_ts::NewInterfaceOp>
 
         auto structVal = rewriter.create<mlir_ts::UndefOp>(loc, llvmInterfaceType);
         auto structVal2 = rewriter.create<LLVM::InsertValueOp>(loc, structVal, clh.castToI8Ptr(newInterfaceOp.interfaceVTable()),
-                                                               clh.getStructIndexAttr(0));
-        auto structVal3 =
-            rewriter.create<LLVM::InsertValueOp>(loc, structVal2, clh.castToI8Ptr(newInterfaceOp.thisVal()), clh.getStructIndexAttr(1));
+                                                               clh.getStructIndexAttr(DATA_VALUE_INDEX));
+        auto structVal3 = rewriter.create<LLVM::InsertValueOp>(loc, structVal2, clh.castToI8Ptr(newInterfaceOp.thisVal()),
+                                                               clh.getStructIndexAttr(THIS_VALUE_INDEX));
 
         rewriter.replaceOp(newInterfaceOp, ValueRange{structVal3});
 
@@ -2392,10 +2395,10 @@ struct CreateBoundRefOpLowering : public TsLlvmPattern<mlir_ts::CreateBoundRefOp
         auto llvmBoundRefType = tch.convertType(createBoundRefOp.getType());
 
         auto structVal = rewriter.create<mlir_ts::UndefOp>(loc, llvmBoundRefType);
-        auto structVal2 =
-            rewriter.create<LLVM::InsertValueOp>(loc, structVal, clh.castToI8Ptr(createBoundRefOp.valueRef()), clh.getStructIndexAttr(0));
-        auto structVal3 =
-            rewriter.create<LLVM::InsertValueOp>(loc, structVal2, clh.castToI8Ptr(createBoundRefOp.thisVal()), clh.getStructIndexAttr(1));
+        auto structVal2 = rewriter.create<LLVM::InsertValueOp>(loc, structVal, clh.castToI8Ptr(createBoundRefOp.valueRef()),
+                                                               clh.getStructIndexAttr(DATA_VALUE_INDEX));
+        auto structVal3 = rewriter.create<LLVM::InsertValueOp>(loc, structVal2, clh.castToI8Ptr(createBoundRefOp.thisVal()),
+                                                               clh.getStructIndexAttr(THIS_VALUE_INDEX));
 
         rewriter.replaceOp(createBoundRefOp, ValueRange{structVal3});
 
@@ -2419,10 +2422,10 @@ struct CreateBoundFunctionOpLowering : public TsLlvmPattern<mlir_ts::CreateBound
         auto llvmBoundFunctionType = tch.convertType(createBoundFunctionOp.getType());
 
         auto structVal = rewriter.create<mlir_ts::UndefOp>(loc, llvmBoundFunctionType);
-        auto structVal2 =
-            rewriter.create<LLVM::InsertValueOp>(loc, structVal, clh.castToI8Ptr(createBoundFunctionOp.func()), clh.getStructIndexAttr(0));
+        auto structVal2 = rewriter.create<LLVM::InsertValueOp>(loc, structVal, clh.castToI8Ptr(createBoundFunctionOp.func()),
+                                                               clh.getStructIndexAttr(DATA_VALUE_INDEX));
         auto structVal3 = rewriter.create<LLVM::InsertValueOp>(loc, structVal2, clh.castToI8Ptr(createBoundFunctionOp.thisVal()),
-                                                               clh.getStructIndexAttr(1));
+                                                               clh.getStructIndexAttr(THIS_VALUE_INDEX));
 
         rewriter.replaceOp(createBoundFunctionOp, ValueRange{structVal3});
 
@@ -2444,7 +2447,8 @@ struct GetThisOpLowering : public TsLlvmPattern<mlir_ts::GetThisOp>
 
         auto llvmThisType = tch.convertType(getThisOp.getType());
 
-        auto thisVal = rewriter.create<LLVM::ExtractValueOp>(loc, llvmThisType, getThisOp.boundFunc(), clh.getStructIndexAttr(1));
+        auto thisVal =
+            rewriter.create<LLVM::ExtractValueOp>(loc, llvmThisType, getThisOp.boundFunc(), clh.getStructIndexAttr(THIS_VALUE_INDEX));
 
         rewriter.replaceOp(getThisOp, ValueRange{thisVal});
 
@@ -2467,7 +2471,8 @@ struct GetMethodOpLowering : public TsLlvmPattern<mlir_ts::GetMethodOp>
 
         auto llvmMethodType = tch.convertType(getMethodOp.getType());
 
-        auto methodVal = rewriter.create<LLVM::ExtractValueOp>(loc, llvmMethodType, getMethodOp.boundFunc(), clh.getStructIndexAttr(0));
+        auto methodVal =
+            rewriter.create<LLVM::ExtractValueOp>(loc, llvmMethodType, getMethodOp.boundFunc(), clh.getStructIndexAttr(DATA_VALUE_INDEX));
 
         rewriter.replaceOp(getMethodOp, ValueRange{methodVal});
 
@@ -2545,6 +2550,13 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         }
 
         return LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, false);
+    });
+
+    converter.addConversion([&](mlir_ts::BoundRefType type) {
+        SmallVector<mlir::Type> llvmStructType;
+        llvmStructType.push_back(converter.convertType(type.getElementType()));
+        llvmStructType.push_back(LLVM::LLVMPointerType::get(IntegerType::get(m.getContext(), 8)));
+        return LLVM::LLVMStructType::getLiteral(type.getContext(), llvmStructType, false);
     });
 
     converter.addConversion([&](mlir_ts::BoundFunctionType type) {
