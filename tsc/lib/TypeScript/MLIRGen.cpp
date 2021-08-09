@@ -6726,6 +6726,11 @@ llvm.return %5 : i32
         return mlir_ts::ObjectType::get(type);
     }
 
+    mlir_ts::BoundFunctionType getBoundFunctionType(mlir::FunctionType funcType)
+    {
+        return mlir_ts::BoundFunctionType::get(builder.getContext(), funcType.getInputs(), funcType.getResults());
+    }
+
     mlir_ts::BoundFunctionType getBoundFunctionType(ArrayRef<mlir::Type> inputs, ArrayRef<mlir::Type> results)
     {
         return mlir_ts::BoundFunctionType::get(builder.getContext(), inputs, results);
@@ -6755,7 +6760,7 @@ llvm.return %5 : i32
 #ifndef USE_BOUND_FUNCTION_FOR_OBJECTS
         return funcType;
 #else
-        return mlir_ts::BoundFunctionType::get(builder.getContext(), funcType);
+        return getBoundFunctionType(funcType);
 #endif
     }
 

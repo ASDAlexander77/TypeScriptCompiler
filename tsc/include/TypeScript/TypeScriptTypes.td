@@ -139,7 +139,6 @@ def TypeScript_ValueRef : TypeScript_Type<"ValueRef"> {
 
 }
 
-
 def TypeScript_Optional : TypeScript_Type<"Optional"> {
   let mnemonic = "optional";
 
@@ -764,6 +763,46 @@ def TypeScript_Interface : TypeScript_Type<"Interface"> {
   }];  
 
   let skipDefaultBuilders = 1;  
+}
+
+def TypeScript_BoundRef : TypeScript_Type<"BoundRef"> {
+  let mnemonic = "bound_ref";
+
+  let description = [{
+    Syntax:
+
+    ```
+    bound-ref-type ::= `bound_ref` `<` type `>`
+    ```
+
+    Examples:
+
+    ```mlir
+    bound-ref<f32>
+    bound-ref<i32>
+    ```
+  }];
+  let parameters = (ins "Type":$elementType);
+
+  // We define the printer inline.
+  let printer = [{ $_printer << "bound_ref<" << getImpl()->elementType << ">"; }];
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "Type":$elementType), [{
+      return Base::get(elementType.getContext(), elementType);
+    }]>
+  ];
+
+  // Parses the above format
+  let parser = [{
+    Type elementType;
+    if ($_parser.parseLess()) return Type();
+    if ($_parser.parseType(elementType)) return Type();
+    if ($_parser.parseGreater()) return Type();
+    return get(elementType);
+  }];
+
+  let skipDefaultBuilders = 1;
 }
 
 def TypeScript_BoundFunction : TypeScript_Type<"BoundFunction"> {

@@ -951,7 +951,7 @@ def TypeScript_PropertyRefOp : TypeScript_Op<"PropertyRef"> {
   );
 
   let results = (outs
-    TypeScript_AnyRef:$result
+    TypeScript_Ref:$result
   );
 
   let assemblyFormat = "$objectRef `<` $position `>` attr-dict `:` type($objectRef) `->` type($result)";
@@ -974,6 +974,24 @@ def TypeScript_ThisPropertyRefOp : TypeScript_Op<"ThisPropertyRef"> {
   );
 
   let assemblyFormat = "$objectRef `+` $offset attr-dict `:` type($objectRef) `+` type($offset) `->` type($result)";
+}
+
+def TypeScript_CreateBoundRefOp : TypeScript_Op<"CreateBoundRef"> {
+  let description = [{
+    ```mlir
+    %2 = ts.create_bound_ref %1, %2 : !ts.bound_ref<i32>
+    ```
+  }];
+
+  let arguments = (ins
+    TypeScript_AnyRefLike:$thisVal, TypeScript_AnyRef:$valueRef
+  );
+
+  let results = (outs
+    TypeScript_BoundRef:$result
+  );
+
+  let assemblyFormat = "$thisVal `:``:` $valueRef `:` type($thisVal) `,` type($valueRef) attr-dict `->` type($result)";
 }
 
 def TypeScript_CreateBoundFunctionOp : TypeScript_Op<"CreateBoundFunction"> {

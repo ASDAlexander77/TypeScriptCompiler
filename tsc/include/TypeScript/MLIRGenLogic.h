@@ -156,16 +156,16 @@ class MLIRCodeLogic
         return mlir::Value();
     }
 
-    mlir::Type getEffectiveFunctionType(mlir::Type elementType)
+    bool isBoundReference(mlir::Type elementType)
     {
 #ifdef USE_BOUND_FUNCTION_FOR_OBJECTS
         if (auto funcType = elementType.dyn_cast_or_null<mlir::FunctionType>())
         {
-            return mlir_ts::BoundFunctionType::get(builder.getContext(), funcType);
+            return true;
         }
 #endif
 
-        return elementType;
+        return false;
     }
 
     mlir::Type getEffectiveFunctionTypeForTupleField(mlir::Type elementType)
@@ -460,7 +460,8 @@ class MLIRPropertyAccessCodeLogic
         // resolve index
         auto pair = mcl.TupleFieldType(location, tupleType, fieldId, indexAccess);
         auto fieldIndex = pair.first;
-        auto elementType = mcl.getEffectiveFunctionType(pair.second);
+        auto elementType = pair.second;
+        auto isBoundRef = mcl.isBoundReference(elementType);
 
         if (fieldIndex < 0)
         {
@@ -470,8 +471,9 @@ class MLIRPropertyAccessCodeLogic
         auto refValue = getExprLoadRefValue();
         if (refValue)
         {
-            auto propRef = builder.create<mlir_ts::PropertyRefOp>(location, mlir_ts::RefType::get(elementType), refValue,
-                                                                  builder.getI32IntegerAttr(fieldIndex));
+            auto refType = isBoundRef ? static_cast<mlir::Type>(mlir_ts::BoundRefType::get(elementType))
+                                      : static_cast<mlir::Type>(mlir_ts::RefType::get(elementType));
+            auto propRef = builder.create<mlir_ts::PropertyRefOp>(location, refType, refValue, builder.getI32IntegerAttr(fieldIndex));
 
             return builder.create<mlir_ts::LoadOp>(location, elementType, propRef);
         }
@@ -490,7 +492,8 @@ class MLIRPropertyAccessCodeLogic
         // resolve index
         auto pair = mcl.TupleFieldTypeNoError(location, tupleType, fieldId, indexAccess);
         auto fieldIndex = pair.first;
-        auto elementType = mcl.getEffectiveFunctionType(pair.second);
+        auto elementType = pair.second;
+        auto isBoundRef = mcl.isBoundReference(elementType);
 
         if (fieldIndex < 0)
         {
@@ -500,8 +503,9 @@ class MLIRPropertyAccessCodeLogic
         auto refValue = getExprLoadRefValue();
         if (refValue)
         {
-            auto propRef = builder.create<mlir_ts::PropertyRefOp>(location, mlir_ts::RefType::get(elementType), refValue,
-                                                                  builder.getI32IntegerAttr(fieldIndex));
+            auto refType = isBoundRef ? static_cast<mlir::Type>(mlir_ts::BoundRefType::get(elementType))
+                                      : static_cast<mlir::Type>(mlir_ts::RefType::get(elementType));
+            auto propRef = builder.create<mlir_ts::PropertyRefOp>(location, refType, refValue, builder.getI32IntegerAttr(fieldIndex));
 
             return builder.create<mlir_ts::LoadOp>(location, elementType, propRef);
         }
@@ -667,15 +671,17 @@ class MLIRPropertyAccessCodeLogic
         // resolve index
         auto pair = mcl.TupleFieldType(location, tupleType, fieldId);
         auto fieldIndex = pair.first;
-        auto elementType = mcl.getEffectiveFunctionType(pair.second);
+        auto elementType = pair.second;
+        auto isBoundRef = mcl.isBoundReference(elementType);
 
         if (fieldIndex < 0)
         {
             return mlir::Value();
         }
 
-        auto propRef = builder.create<mlir_ts::PropertyRefOp>(location, mlir_ts::RefType::get(elementType), expression,
-                                                              builder.getI32IntegerAttr(fieldIndex));
+        auto refType = isBoundRef ? static_cast<mlir::Type>(mlir_ts::BoundRefType::get(elementType))
+                                  : static_cast<mlir::Type>(mlir_ts::RefType::get(elementType));
+        auto propRef = builder.create<mlir_ts::PropertyRefOp>(location, refType, expression, builder.getI32IntegerAttr(fieldIndex));
 
         return builder.create<mlir_ts::LoadOp>(location, elementType, propRef);
     }
@@ -699,15 +705,17 @@ class MLIRPropertyAccessCodeLogic
         // resolve index
         auto pair = mcl.TupleFieldTypeNoError(location, classStorageType, fieldId);
         auto fieldIndex = pair.first;
-        auto elementType = mcl.getEffectiveFunctionType(pair.second);
+        auto elementType = pair.second;
+        auto isBoundRef = mcl.isBoundReference(elementType);
 
         if (fieldIndex < 0)
         {
             return mlir::Value();
         }
 
-        auto propRef = builder.create<mlir_ts::PropertyRefOp>(location, mlir_ts::RefType::get(elementType), expression,
-                                                              builder.getI32IntegerAttr(fieldIndex));
+        auto refType = isBoundRef ? static_cast<mlir::Type>(mlir_ts::BoundRefType::get(elementType))
+                                  : static_cast<mlir::Type>(mlir_ts::RefType::get(elementType));
+        auto propRef = builder.create<mlir_ts::PropertyRefOp>(location, refType, expression, builder.getI32IntegerAttr(fieldIndex));
 
         return builder.create<mlir_ts::LoadOp>(location, elementType, propRef);
     }
