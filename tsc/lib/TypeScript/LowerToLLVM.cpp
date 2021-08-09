@@ -1644,9 +1644,7 @@ struct LoadOpLowering : public TsLlvmPattern<mlir_ts::LoadOp>
 
             if (auto funcType = boundRefType.getElementType().dyn_cast_or_null<mlir::FunctionType>())
             {
-                // mlir::Value boundMethodValue = rewriter.create<mlir_ts::CreateBoundFunctionOp>(loc, loadOp.getType(), thisVal,
-                // loadedValue);
-                mlir::Value boundMethodValue = rewriter.create<mlir_ts::UndefOp>(loc, loadOp.getType());
+                mlir::Value boundMethodValue = rewriter.create<mlir_ts::CreateBoundFunctionOp>(loc, loadOp.getType(), thisVal, loadedValue);
 
                 LLVM_DEBUG(llvm::dbgs() << "LoadOp Bound Ref: LLVM Type :" << tch.convertType(loadOp.getType()) << "\n";);
 
@@ -2396,8 +2394,8 @@ struct CreateBoundRefOpLowering : public TsLlvmPattern<mlir_ts::CreateBoundRefOp
         auto llvmBoundRefType = tch.convertType(createBoundRefOp.getType());
 
         auto structVal = rewriter.create<mlir_ts::UndefOp>(loc, llvmBoundRefType);
-        auto structVal2 = rewriter.create<LLVM::InsertValueOp>(loc, structVal, clh.castToI8Ptr(createBoundRefOp.valueRef()),
-                                                               clh.getStructIndexAttr(DATA_VALUE_INDEX));
+        auto structVal2 =
+            rewriter.create<LLVM::InsertValueOp>(loc, structVal, createBoundRefOp.valueRef(), clh.getStructIndexAttr(DATA_VALUE_INDEX));
         auto structVal3 = rewriter.create<LLVM::InsertValueOp>(loc, structVal2, clh.castToI8Ptr(createBoundRefOp.thisVal()),
                                                                clh.getStructIndexAttr(THIS_VALUE_INDEX));
 
@@ -2559,7 +2557,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
 
     converter.addConversion([&](mlir_ts::BoundRefType type) {
         SmallVector<mlir::Type> llvmStructType;
-        llvmStructType.push_back(converter.convertType(type.getElementType()));
+        llvmStructType.push_back(converter.convertType(mlir_ts::RefType::get(type.getElementType())));
         llvmStructType.push_back(LLVM::LLVMPointerType::get(IntegerType::get(m.getContext(), 8)));
         return LLVM::LLVMStructType::getLiteral(type.getContext(), llvmStructType, false);
     });
