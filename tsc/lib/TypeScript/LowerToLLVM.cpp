@@ -1633,27 +1633,28 @@ struct LoadOpLowering : public TsLlvmPattern<mlir_ts::LoadOp>
         {
             auto loc = loadOp->getLoc();
             auto llvmType = tch.convertType(boundRefType.getElementType());
-            auto llvmRefType = LLVM::LLVMPointerType::get(boundRefType.getElementType());
+            auto llvmRefType = LLVM::LLVMPointerType::get(llvmType);
 
             auto thisVal =
                 rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), loadOp.reference(), clh.getStructIndexAttr(THIS_VALUE_INDEX));
             auto valueRefVal =
                 rewriter.create<LLVM::ExtractValueOp>(loc, llvmRefType, loadOp.reference(), clh.getStructIndexAttr(DATA_VALUE_INDEX));
 
-            auto elementType = boundRefType.getElementType();
-            auto elementTypeConverted = tch.convertType(elementType);
-
             mlir::Value loadedValue = rewriter.create<LLVM::LoadOp>(loc, valueRefVal);
 
             if (auto funcType = boundRefType.getElementType().dyn_cast_or_null<mlir::FunctionType>())
             {
-                mlir::Value boundMethodValue = rewriter.create<mlir_ts::CreateBoundFunctionOp>(loc, loadOp.getType(), thisVal, loadedValue);
+                // mlir::Value boundMethodValue = rewriter.create<mlir_ts::CreateBoundFunctionOp>(loc, loadOp.getType(), thisVal,
+                // loadedValue);
+                mlir::Value boundMethodValue = rewriter.create<mlir_ts::UndefOp>(loc, loadOp.getType());
+
+                LLVM_DEBUG(llvm::dbgs() << "LoadOp Bound Ref: LLVM Type :" << tch.convertType(loadOp.getType()) << "\n";);
 
                 rewriter.replaceOp(loadOp, boundMethodValue);
             }
             else
             {
-                rewriter.replaceOp(loadOp, loadedValue);
+                // rewriter.replaceOp(loadOp, loadedValue);
             }
 
             return success();
@@ -2421,10 +2422,14 @@ struct CreateBoundFunctionOpLowering : public TsLlvmPattern<mlir_ts::CreateBound
 
         auto llvmBoundFunctionType = tch.convertType(createBoundFunctionOp.getType());
 
+        LLVM_DEBUG(llvm::dbgs() << "CreateBoundFunction: LLVM Type :" << llvmBoundFunctionType << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "CreateBoundFunction: Func Type :" << tch.convertType(createBoundFunctionOp.func().getType()) << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "CreateBoundFunction: This Type :" << createBoundFunctionOp.thisVal().getType() << "\n";);
+
         auto structVal = rewriter.create<mlir_ts::UndefOp>(loc, llvmBoundFunctionType);
-        auto structVal2 = rewriter.create<LLVM::InsertValueOp>(loc, structVal, clh.castToI8Ptr(createBoundFunctionOp.func()),
-                                                               clh.getStructIndexAttr(DATA_VALUE_INDEX));
-        auto structVal3 = rewriter.create<LLVM::InsertValueOp>(loc, structVal2, clh.castToI8Ptr(createBoundFunctionOp.thisVal()),
+        auto structVal2 =
+            rewriter.create<LLVM::InsertValueOp>(loc, structVal, createBoundFunctionOp.func(), clh.getStructIndexAttr(DATA_VALUE_INDEX));
+        auto structVal3 = rewriter.create<LLVM::InsertValueOp>(loc, structVal2, createBoundFunctionOp.thisVal(),
                                                                clh.getStructIndexAttr(THIS_VALUE_INDEX));
 
         rewriter.replaceOp(createBoundFunctionOp, ValueRange{structVal3});
