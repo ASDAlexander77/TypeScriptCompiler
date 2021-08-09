@@ -2423,7 +2423,12 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         LLVMTypeConverter::SignatureConversion result(convertedInputs.size());
         auto llvmFuncType = converter.convertFunctionSignature(funcType, false, result);
         auto llvmPtrType = LLVM::LLVMPointerType::get(llvmFuncType);
-        return llvmPtrType;
+        // return llvmPtrType;
+
+        SmallVector<mlir::Type> llvmStructType;
+        llvmStructType.push_back(llvmPtrType);
+        llvmStructType.push_back(LLVM::LLVMPointerType::get(IntegerType::get(m.getContext(), 8)));
+        return LLVM::LLVMStructType::getLiteral(type.getContext(), llvmStructType, false);
     });
 
     converter.addConversion(

@@ -168,6 +168,18 @@ class MLIRCodeLogic
         return elementType;
     }
 
+    mlir::Type getEffectiveFunctionTypeForTupleField(mlir::Type elementType)
+    {
+#ifdef USE_BOUND_FUNCTION_FOR_OBJECTS
+        if (auto boundFuncType = elementType.dyn_cast_or_null<mlir_ts::BoundFunctionType>())
+        {
+            return mlir::FunctionType::get(builder.getContext(), boundFuncType.getInputs(), boundFuncType.getResults());
+        }
+#endif
+
+        return elementType;
+    }
+
     mlir::Attribute TupleFieldName(StringRef name)
     {
         assert(!name.empty());

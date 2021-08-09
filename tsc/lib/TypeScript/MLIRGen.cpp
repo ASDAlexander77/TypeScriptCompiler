@@ -6649,7 +6649,8 @@ llvm.return %5 : i32
                 auto propertySignature = typeItem.as<PropertySignature>();
                 auto namePtr = MLIRHelper::getName(propertySignature->name, stringAllocator);
 
-                auto type = getType(propertySignature->type);
+                auto originalType = getType(propertySignature->type);
+                auto type = mcl.getEffectiveFunctionTypeForTupleField(originalType);
 
                 assert(type);
                 types.push_back({mcl.TupleFieldName(namePtr), type});
