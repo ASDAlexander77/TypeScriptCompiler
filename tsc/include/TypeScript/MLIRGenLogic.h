@@ -156,16 +156,18 @@ class MLIRCodeLogic
         return mlir::Value();
     }
 
-    bool isBoundReference(mlir::Type elementType)
+    mlir::Type isBoundReference(mlir::Type elementType, bool &isBound)
     {
 #ifdef USE_BOUND_FUNCTION_FOR_OBJECTS
         if (auto funcType = elementType.dyn_cast_or_null<mlir::FunctionType>())
         {
-            return true;
+            isBound = true;
+            return mlir_ts::BoundFunctionType::get(builder.getContext(), funcType.getInputs(), funcType.getResults());
         }
 #endif
 
-        return false;
+        isBound = false;
+        return elementType;
     }
 
     mlir::Type getEffectiveFunctionTypeForTupleField(mlir::Type elementType)
@@ -460,8 +462,8 @@ class MLIRPropertyAccessCodeLogic
         // resolve index
         auto pair = mcl.TupleFieldType(location, tupleType, fieldId, indexAccess);
         auto fieldIndex = pair.first;
-        auto elementType = pair.second;
-        auto isBoundRef = mcl.isBoundReference(elementType);
+        bool isBoundRef = false;
+        auto elementType = mcl.isBoundReference(pair.second, isBoundRef);
 
         if (fieldIndex < 0)
         {
@@ -492,8 +494,8 @@ class MLIRPropertyAccessCodeLogic
         // resolve index
         auto pair = mcl.TupleFieldTypeNoError(location, tupleType, fieldId, indexAccess);
         auto fieldIndex = pair.first;
-        auto elementType = pair.second;
-        auto isBoundRef = mcl.isBoundReference(elementType);
+        bool isBoundRef = false;
+        auto elementType = mcl.isBoundReference(pair.second, isBoundRef);
 
         if (fieldIndex < 0)
         {
@@ -671,8 +673,8 @@ class MLIRPropertyAccessCodeLogic
         // resolve index
         auto pair = mcl.TupleFieldType(location, tupleType, fieldId);
         auto fieldIndex = pair.first;
-        auto elementType = pair.second;
-        auto isBoundRef = mcl.isBoundReference(elementType);
+        bool isBoundRef = false;
+        auto elementType = mcl.isBoundReference(pair.second, isBoundRef);
 
         if (fieldIndex < 0)
         {
@@ -705,8 +707,8 @@ class MLIRPropertyAccessCodeLogic
         // resolve index
         auto pair = mcl.TupleFieldTypeNoError(location, classStorageType, fieldId);
         auto fieldIndex = pair.first;
-        auto elementType = pair.second;
-        auto isBoundRef = mcl.isBoundReference(elementType);
+        bool isBoundRef = false;
+        auto elementType = mcl.isBoundReference(pair.second, isBoundRef);
 
         if (fieldIndex < 0)
         {
