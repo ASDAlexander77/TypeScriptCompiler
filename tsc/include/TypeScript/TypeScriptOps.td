@@ -976,6 +976,24 @@ def TypeScript_ThisPropertyRefOp : TypeScript_Op<"ThisPropertyRef"> {
   let assemblyFormat = "$objectRef `+` $offset attr-dict `:` type($objectRef) `+` type($offset) `->` type($result)";
 }
 
+def TypeScript_GetThis : TypeScript_Op<"GetThis"> {
+  let description = [{
+    ```mlir
+    %2 = ts.get_this %1 : !ts.ref<any>
+    ```
+  }];
+
+  let arguments = (ins
+    TypeScript_BoundFunction:$boundFunc
+  );
+
+  let results = (outs
+    TypeScript_AnyRef:$result
+  );
+
+  let assemblyFormat = "$boundFunc `:` type($boundFunc) attr-dict `->` type($result)";
+}
+
 def TypeScript_ArithmeticUnaryOp : TypeScript_Op<"ArithmeticUnary"> {
   let description = [{
     ```mlir

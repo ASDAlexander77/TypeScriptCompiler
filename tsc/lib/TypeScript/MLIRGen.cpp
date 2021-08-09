@@ -3782,61 +3782,76 @@ llvm.return %5 : i32
         return mlir::Value();
     }
 
+    mlir::Value getThisParam(mlir::Location location, mlir::FunctionType calledFuncType, mlir::Value funcRefValue)
+    {
+        if (auto thisSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::ThisSymbolRefOp>())
+        {
+            return thisSymbolRefOp.thisVal();
+        }
+
+        if (auto thisVirtualSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::ThisVirtualSymbolRefOp>())
+        {
+            return thisVirtualSymbolRefOp.thisVal();
+        }
+
+        if (auto interfaceSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::InterfaceSymbolRefOp>())
+        {
+            // operands.push_back(interfaceSymbolRefOp.thisRef());
+            return interfaceSymbolRefOp.getResult(1);
+        }
+
+        // 0 index is for method ptr
+        unsigned thisIndex = 0;
+        auto isFirstArgThis = calledFuncType.getNumInputs() > thisIndex && calledFuncType.getInput(thisIndex).isa<mlir_ts::ObjectType>();
+        if (isFirstArgThis)
+        {
+            if (auto loadOp = funcRefValue.getDefiningOp<mlir_ts::LoadOp>())
+            {
+                // if we have 'this' and method comes from PropertyRef, you need to add this to params
+                if (auto propRef = loadOp.reference().getDefiningOp<mlir_ts::PropertyRefOp>())
+                {
+                    auto castThis = builder.create<mlir_ts::CastOp>(location, calledFuncType.getInput(thisIndex), propRef.objectRef());
+                    return castThis;
+                }
+            }
+            else if (auto extractPropertyOp = funcRefValue.getDefiningOp<mlir_ts::ExtractPropertyOp>())
+            {
+                // allocate in stack
+                auto valueAddr = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(extractPropertyOp.object().getType()),
+                                                                     extractPropertyOp.object());
+
+                auto castThis = builder.create<mlir_ts::CastOp>(location, calledFuncType.getInput(thisIndex), valueAddr);
+                return castThis;
+            }
+
+            // add undef
+            auto undefThis = builder.create<mlir_ts::UndefOp>(location, calledFuncType.getInput(thisIndex));
+            return undefThis;
+        }
+
+        // no this
+        return mlir::Value();
+    }
+
     mlir::Value mlirGenCallFunction(mlir::Location location, mlir::FunctionType calledFuncType, mlir::Value funcRefValue,
                                     NodeArray<TypeNode> typeArguments, NodeArray<Expression> arguments, bool &hasReturn,
                                     const GenContext &genContext)
+    {
+        auto thisValue = getThisParam(location, calledFuncType, funcRefValue);
+        return mlirGenCallFunction(location, calledFuncType, funcRefValue, thisValue, typeArguments, arguments, hasReturn, genContext);
+    }
+
+    mlir::Value mlirGenCallFunction(mlir::Location location, mlir::FunctionType calledFuncType, mlir::Value funcRefValue,
+                                    mlir::Value thisValue, NodeArray<TypeNode> typeArguments, NodeArray<Expression> arguments,
+                                    bool &hasReturn, const GenContext &genContext)
     {
         hasReturn = false;
         mlir::Value value;
 
         SmallVector<mlir::Value, 4> operands;
-        if (auto thisSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::ThisSymbolRefOp>())
+        if (thisValue)
         {
-            operands.push_back(thisSymbolRefOp.thisVal());
-        }
-        else if (auto thisVirtualSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::ThisVirtualSymbolRefOp>())
-        {
-            operands.push_back(thisVirtualSymbolRefOp.thisVal());
-        }
-        else if (auto interfaceSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::InterfaceSymbolRefOp>())
-        {
-            // operands.push_back(interfaceSymbolRefOp.thisRef());
-            operands.push_back(interfaceSymbolRefOp.getResult(1));
-        }
-        else
-        {
-            // 0 index is for method ptr
-            unsigned thisIndex = 0;
-            auto isFirstArgThis =
-                calledFuncType.getNumInputs() > thisIndex && calledFuncType.getInput(thisIndex).isa<mlir_ts::ObjectType>();
-            auto noFirstArg = calledFuncType.getNumInputs() > thisIndex && operands.size() == 0;
-            if (isFirstArgThis && (noFirstArg || operands.front().getType() != calledFuncType.getInput(thisIndex)))
-            {
-                if (auto loadOp = funcRefValue.getDefiningOp<mlir_ts::LoadOp>())
-                {
-                    // if we have 'this' and method comes from PropertyRef, you need to add this to params
-                    if (auto propRef = loadOp.reference().getDefiningOp<mlir_ts::PropertyRefOp>())
-                    {
-                        auto castThis = builder.create<mlir_ts::CastOp>(location, calledFuncType.getInput(thisIndex), propRef.objectRef());
-                        operands.push_back(castThis);
-                    }
-                }
-                else if (auto extractPropertyOp = funcRefValue.getDefiningOp<mlir_ts::ExtractPropertyOp>())
-                {
-                    // allocate in stack
-                    auto valueAddr = builder.create<mlir_ts::VariableOp>(
-                        location, mlir_ts::RefType::get(extractPropertyOp.object().getType()), extractPropertyOp.object());
-
-                    auto castThis = builder.create<mlir_ts::CastOp>(location, calledFuncType.getInput(thisIndex), valueAddr);
-                    operands.push_back(castThis);
-                }
-                else
-                {
-                    // add undef
-                    auto undefThis = builder.create<mlir_ts::UndefOp>(location, calledFuncType.getInput(thisIndex));
-                    operands.push_back(undefThis);
-                }
-            }
+            operands.push_back(thisValue);
         }
 
         const_cast<GenContext &>(genContext).destFuncType = calledFuncType;
@@ -4720,6 +4735,9 @@ llvm.return %5 : i32
         {
             auto location = fieldToSet.second.getLoc();
             auto getField = mlirGenPropertyAccessExpression(location, tupleVar, fieldToSet.first, genContext);
+
+            VALIDATE(fieldToSet.second)
+
             auto savedValue = mlirGenSaveLogicOneItem(location, getField, fieldToSet.second, genContext);
         }
 
