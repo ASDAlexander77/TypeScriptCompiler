@@ -1022,10 +1022,6 @@ def TypeScript_Intersection : TypeScript_Type<"Intersection"> {
   }];
 }
 
-def TypeScript_IsRefType : CPred<"$_self.isa<::mlir::typescript::RefType>()">;
-
-def TypeScript_AnyRef : DialectType<TypeScript_Dialect, TypeScript_IsRefType, "any reference type">;
-
 def TypeScript_IsTupleType : CPred<"$_self.isa<::mlir::typescript::TupleType>()">;
 
 def TypeScript_AnyTuple : DialectType<TypeScript_Dialect, TypeScript_IsTupleType, "any tuple type">;
@@ -1068,6 +1064,10 @@ def TypeScript_AnyStructLike : AnyTypeOf<[
 
 def TypeScript_AnyRefOrFuncType : AnyTypeOf<[
     TypeScript_Ref, FunctionType, TypeScript_BoundFunction
+  ]>;
+
+def TypeScript_RefOrBoundRef : AnyTypeOf<[
+    TypeScript_Ref, TypeScript_BoundRef
   ]>;
 
 #endif // TYPESCRIPT_TYPEDEFS

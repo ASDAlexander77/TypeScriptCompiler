@@ -847,7 +847,7 @@ def TypeScript_VariableOp : TypeScript_Op<"Variable", []> {
   );
 
   let results = (outs
-    TypeScript_AnyRef:$reference
+    TypeScript_Ref:$reference
   );
 
   let assemblyFormat = "`(` $initializer `:` type($initializer) `)` `{` $captured `}` attr-dict `:` type($reference)";
@@ -856,26 +856,26 @@ def TypeScript_VariableOp : TypeScript_Op<"Variable", []> {
 def TypeScript_StoreOp : TypeScript_Op<"Store",
       [TypesMatchWith<"type of 'value' matches element type of 'reference'",
                      "reference", "value",
-                     "$_self.cast<RefType>().getElementType()">]> {
+                     "($_self.isa<RefType>() ? $_self.cast<RefType>().getElementType() : $_self.cast<BoundRefType>().getElementType())">]> {
   let summary = "stores the value into the reference";
   let description = [{
     The `store` operation stores the value into the reference storage.
   }];
 
-  let arguments = (ins AnyType:$value, Arg<TypeScript_AnyRef, "the reference to store to", [MemWrite]>:$reference);
+  let arguments = (ins AnyType:$value, Arg<TypeScript_RefOrBoundRef, "the reference to store to", [MemWrite]>:$reference);
   let assemblyFormat = "$value `,` $reference attr-dict `:` type($reference)";
 }
 
 def TypeScript_LoadOp : TypeScript_Op<"Load",
       [TypesMatchWith<"type of 'value' matches element type of 'reference'",
                      "reference", "result",
-                     "$_self.cast<RefType>().getElementType()">]> {
+                     "($_self.isa<RefType>() ? $_self.cast<RefType>().getElementType() : $_self.cast<BoundRefType>().getElementType())">]> {
   let summary = "loads the value from the reference type";
   let description = [{
     The `load` operation loads the value from the reference value.
   }];
 
-  let arguments = (ins Arg<TypeScript_AnyRef, "the reference to load from", [MemRead]>:$reference);
+  let arguments = (ins Arg<TypeScript_RefOrBoundRef, "the reference to load from", [MemRead]>:$reference);
   let results = (outs AnyType:$result);
   let assemblyFormat = "`(` $reference `:` type($reference) `)` attr-dict `:` type($result)";
 
@@ -932,7 +932,7 @@ def TypeScript_ElementRefOp : TypeScript_Op<"ElementRef"> {
   );
 
   let results = (outs
-    TypeScript_AnyRef:$result
+    TypeScript_Ref:$result
   );
 
   let assemblyFormat = "$array `[` $index `]` attr-dict `:` type($array) `[` type($index) `]` `->` type($result)";
@@ -951,7 +951,7 @@ def TypeScript_PropertyRefOp : TypeScript_Op<"PropertyRef"> {
   );
 
   let results = (outs
-    TypeScript_Ref:$result
+    TypeScript_RefOrBoundRef:$result
   );
 
   let assemblyFormat = "$objectRef `<` $position `>` attr-dict `:` type($objectRef) `->` type($result)";
@@ -966,11 +966,11 @@ def TypeScript_ThisPropertyRefOp : TypeScript_Op<"ThisPropertyRef"> {
 
   let arguments = (ins
     TypeScript_AnyRefLike:$objectRef,
-    TypeScript_AnyRef:$offset
+    TypeScript_Ref:$offset
   );
 
   let results = (outs
-    TypeScript_AnyRef:$result
+    TypeScript_Ref:$result
   );
 
   let assemblyFormat = "$objectRef `+` $offset attr-dict `:` type($objectRef) `+` type($offset) `->` type($result)";
@@ -984,7 +984,7 @@ def TypeScript_CreateBoundRefOp : TypeScript_Op<"CreateBoundRef"> {
   }];
 
   let arguments = (ins
-    TypeScript_AnyRefLike:$thisVal, TypeScript_AnyRef:$valueRef
+    TypeScript_AnyRefLike:$thisVal, TypeScript_Ref:$valueRef
   );
 
   let results = (outs
@@ -1173,7 +1173,7 @@ def TypeScript_EntryOp : TypeScript_Op<"Entry"> {
   );  
 
   let results = (outs
-    Optional<TypeScript_AnyRef>:$reference
+    Optional<TypeScript_Ref>:$reference
   );  
 }
 
@@ -1209,7 +1209,7 @@ def TypeScript_ReturnValOp : TypeScript_Op<"ReturnVal"> {
 
   let arguments = (ins
     AnyType:$operand,
-    TypeScript_AnyRef:$reference
+    TypeScript_Ref:$reference
   );
 }
 
@@ -1466,7 +1466,7 @@ def TypeScript_CatchOp : TypeScript_Op<"Catch",
 
 def TypeScript_AddressOfOp : TypeScript_Op<"Addressof"> {
   let arguments = (ins FlatSymbolRefAttr:$global_name);
-  let results = (outs TypeScript_AnyRef:$reference);
+  let results = (outs TypeScript_Ref:$reference);
 
   let builders = [
     OpBuilder<(ins "GlobalOp":$global,
@@ -1498,10 +1498,10 @@ def TypeScript_AddressOfConstStringOp : TypeScript_Op<"AddressOfConstString"> {
 
 def TypeScript_AddressOfElementOp : TypeScript_Op<"AddressOfElement"> {
   let arguments = (ins 
-        TypeScript_AnyRef:$reference,
+        TypeScript_Ref:$reference,
         Index:$elementIndex
   );
-  let results = (outs TypeScript_AnyRef:$reference_of_element);
+  let results = (outs TypeScript_Ref:$reference_of_element);
 }
 
 def TypeScript_GlobalOp : TypeScript_Op<"Global",
