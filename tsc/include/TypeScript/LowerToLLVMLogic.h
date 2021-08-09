@@ -866,9 +866,15 @@ class LLVMCodeHelper
         auto loc = op->getLoc();
         auto globalPtr = arrayOrStringOrTuple;
 
-        assert(elementRefType.isa<mlir_ts::RefType>());
+        auto isRefType = elementRefType.isa<mlir_ts::RefType>();
+        auto isBoundRefType = elementRefType.isa<mlir_ts::BoundRefType>();
 
-        auto ptrType = tch.convertType(elementRefType);
+        assert(isRefType || isBoundRefType);
+
+        auto elementType = isRefType ? elementRefType.cast<mlir_ts::RefType>().getElementType()
+                                     : elementRefType.cast<mlir_ts::BoundRefType>().getElementType();
+
+        auto ptrType = LLVM::LLVMPointerType::get(tch.convertType(elementType));
 
         SmallVector<Value> indexes;
         // add first index which 64 bit (struct field MUST BE 32 bit index)

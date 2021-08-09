@@ -853,23 +853,19 @@ def TypeScript_VariableOp : TypeScript_Op<"Variable", []> {
   let assemblyFormat = "`(` $initializer `:` type($initializer) `)` `{` $captured `}` attr-dict `:` type($reference)";
 }
 
-def TypeScript_StoreOp : TypeScript_Op<"Store",
-      [TypesMatchWith<"type of 'value' matches element type of 'reference'",
-                     "reference", "value",
-                     "($_self.isa<RefType>() ? $_self.cast<RefType>().getElementType() : $_self.cast<BoundRefType>().getElementType())">]> {
+// TODO: add verify logic to match types for BoundRef and BoundFunction
+def TypeScript_StoreOp : TypeScript_Op<"Store", []> {
   let summary = "stores the value into the reference";
   let description = [{
     The `store` operation stores the value into the reference storage.
   }];
 
   let arguments = (ins AnyType:$value, Arg<TypeScript_RefOrBoundRef, "the reference to store to", [MemWrite]>:$reference);
-  let assemblyFormat = "$value `,` $reference attr-dict `:` type($reference)";
+  let assemblyFormat = "$value `:` type($value) `,` $reference attr-dict `:` type($reference)";
 }
 
-def TypeScript_LoadOp : TypeScript_Op<"Load",
-      [TypesMatchWith<"type of 'value' matches element type of 'reference'",
-                     "reference", "result",
-                     "($_self.isa<RefType>() ? $_self.cast<RefType>().getElementType() : $_self.cast<BoundRefType>().getElementType())">]> {
+// TODO: add verify logic to match types for BoundRef and BoundFunction
+def TypeScript_LoadOp : TypeScript_Op<"Load", []> {
   let summary = "loads the value from the reference type";
   let description = [{
     The `load` operation loads the value from the reference value.
