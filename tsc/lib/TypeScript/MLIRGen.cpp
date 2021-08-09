@@ -3747,6 +3747,13 @@ llvm.return %5 : i32
                 value = mlirGenCallFunction(location, calledFuncType, funcRefValue, callExpression->typeArguments,
                                             callExpression->arguments, testResult, genContext);
             })
+            .Case<mlir_ts::BoundFunctionType>([&](auto calledBoundFuncType) {
+                auto calledFuncType = getFunctionType(calledBoundFuncType.getInputs(), calledBoundFuncType.getResults());
+                auto thisValue = builder.create<mlir_ts::GetThisOp>(location, calledFuncType.getInput(0), funcRefValue);
+                auto castedBoundFuncRefValue = cast(location, calledFuncType, funcRefValue, genContext);
+                value = mlirGenCallFunction(location, calledFuncType, castedBoundFuncRefValue, thisValue, callExpression->typeArguments,
+                                            callExpression->arguments, testResult, genContext);
+            })
             .Case<mlir_ts::ClassType>([&](auto classType) {
                 // seems we are calling type constructor
                 auto newOp = builder.create<mlir_ts::NewOp>(location, classType, builder.getBoolAttr(true));

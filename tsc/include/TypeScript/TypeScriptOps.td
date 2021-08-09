@@ -976,7 +976,25 @@ def TypeScript_ThisPropertyRefOp : TypeScript_Op<"ThisPropertyRef"> {
   let assemblyFormat = "$objectRef `+` $offset attr-dict `:` type($objectRef) `+` type($offset) `->` type($result)";
 }
 
-def TypeScript_GetThis : TypeScript_Op<"GetThis"> {
+def TypeScript_CreateBoundFunctionOp : TypeScript_Op<"CreateBoundFunction"> {
+  let description = [{
+    ```mlir
+    %2 = ts.create_bound_function %1, %2 : !ts.this_func<()->void>
+    ```
+  }];
+
+  let arguments = (ins
+    TypeScript_AnyRefLike:$thisVal, FunctionType:$func
+  );
+
+  let results = (outs
+    TypeScript_BoundFunction:$result
+  );
+
+  let assemblyFormat = "$thisVal `:``:` $func `:` type($thisVal) `,` type($func) attr-dict `->` type($result)";
+}
+
+def TypeScript_GetThisOp : TypeScript_Op<"GetThis"> {
   let description = [{
     ```mlir
     %2 = ts.get_this %1 : !ts.ref<any>
@@ -988,7 +1006,25 @@ def TypeScript_GetThis : TypeScript_Op<"GetThis"> {
   );
 
   let results = (outs
-    TypeScript_AnyRef:$result
+    TypeScript_AnyRefLike:$result
+  );
+
+  let assemblyFormat = "$boundFunc `:` type($boundFunc) attr-dict `->` type($result)";
+}
+
+def TypeScript_GetMethodOp : TypeScript_Op<"GetMethod"> {
+  let description = [{
+    ```mlir
+    %2 = ts.get_method %1 : !ts.ref<()->void>
+    ```
+  }];
+
+  let arguments = (ins
+    TypeScript_BoundFunction:$boundFunc
+  );
+
+  let results = (outs
+    FunctionType:$result
   );
 
   let assemblyFormat = "$boundFunc `:` type($boundFunc) attr-dict `->` type($result)";

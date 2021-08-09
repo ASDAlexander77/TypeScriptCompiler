@@ -2333,6 +2333,51 @@ struct ThisPropertyRefLowering : public TsLlvmPattern<mlir_ts::ThisPropertyRefOp
     }
 };
 
+struct GetThisOpLowering : public TsLlvmPattern<mlir_ts::GetThisOp>
+{
+    using TsLlvmPattern<mlir_ts::GetThisOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::GetThisOp getThisOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+    {
+        Location loc = getThisOp.getLoc();
+
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+        CodeLogicHelper clh(getThisOp, rewriter);
+
+        auto llvmThisType = tch.convertType(getThisOp.getType());
+
+        auto thisVal = rewriter.create<LLVM::ExtractValueOp>(loc, llvmThisType, getThisOp.boundFunc(), clh.getStructIndexAttr(1));
+
+        rewriter.replaceOp(getThisOp, ValueRange{thisVal});
+
+        return success();
+    }
+};
+
+struct GetMethodOpLowering : public TsLlvmPattern<mlir_ts::GetMethodOp>
+{
+    using TsLlvmPattern<mlir_ts::GetMethodOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::GetMethodOp getMethodOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        Location loc = getMethodOp.getLoc();
+
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+        CodeLogicHelper clh(getMethodOp, rewriter);
+
+        auto llvmMethodType = tch.convertType(getMethodOp.getType());
+
+        auto methodVal = rewriter.create<LLVM::ExtractValueOp>(loc, llvmMethodType, getMethodOp.boundFunc(), clh.getStructIndexAttr(0));
+
+        rewriter.replaceOp(getMethodOp, ValueRange{methodVal});
+
+        return success();
+    }
+};
+
 static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, mlir::ModuleOp &m)
 {
     converter.addConversion([&](mlir_ts::AnyType type) { return LLVM::LLVMPointerType::get(IntegerType::get(m.getContext(), 8)); });
@@ -2541,7 +2586,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
                     StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering,
                     MemoryCopyOpLowering, LoadSaveValueLowering, ThrowOpLoweringVCWin32, TrampolineOpLowering, TryOpLowering,
                     VariableOpLowering, InvokeOpLowering, ThisVirtualSymbolRefLowering, InterfaceSymbolRefLowering, NewInterfaceLowering,
-                    VTableOffsetRefLowering, ThisPropertyRefLowering>(typeConverter, &getContext(), &tsLlvmContext);
+                    VTableOffsetRefLowering, ThisPropertyRefLowering, GetThisOpLowering, GetMethodOpLowering>(typeConverter, &getContext(),
+                                                                                                              &tsLlvmContext);
 
     populateTypeScriptConversionPatterns(typeConverter, m);
 

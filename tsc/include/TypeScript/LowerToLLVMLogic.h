@@ -1405,6 +1405,14 @@ class CastLogicHelper
             }
         }
 
+        if (auto resFuncType = resType.dyn_cast_or_null<mlir::FunctionType>())
+        {
+            if (auto inBoundFunc = inType.dyn_cast_or_null<mlir_ts::BoundFunctionType>())
+            {
+                return rewriter.create<mlir_ts::GetMethodOp>(loc, resFuncType, in);
+            }
+        }
+
         emitError(loc, "invalid cast operator type 1: '") << inLLVMType << "', type 2: '" << resLLVMType << "'";
         llvm_unreachable("not implemented");
 
