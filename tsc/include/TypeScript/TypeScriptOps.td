@@ -1151,7 +1151,7 @@ def TypeScript_LogicalBinaryOp : TypeScript_Op<"LogicalBinary"> {
   let assemblyFormat = "$operand1 `(` $opCode `)` $operand2 attr-dict `:` type($operand1) `,` type($operand2) `->` type($result)";
 }
 
-def TypeScript_CastOp : TypeScript_Op<"Cast"> {
+def TypeScript_CastOp : TypeScript_Op<"Cast", [RecursiveSideEffects]> {
   let description = [{
     Example:
       ts.cast %v : i32 to f16

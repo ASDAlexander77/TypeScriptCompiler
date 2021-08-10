@@ -3808,6 +3808,7 @@ llvm.return %5 : i32
         }
 
         // 0 index is for method ptr
+        /*
         unsigned thisIndex = 0;
         auto isFirstArgThis = calledFuncType.getNumInputs() > thisIndex && calledFuncType.getInput(thisIndex).isa<mlir_ts::ObjectType>();
         if (isFirstArgThis)
@@ -3835,6 +3836,7 @@ llvm.return %5 : i32
             auto undefThis = builder.create<mlir_ts::UndefOp>(location, calledFuncType.getInput(thisIndex));
             return undefThis;
         }
+        */
 
         // no this
         return mlir::Value();
@@ -6475,7 +6477,7 @@ llvm.return %5 : i32
         }
         else if (kind == SyntaxKind::ObjectKeyword)
         {
-            return getObjectType(getVoidType());
+            return getObjectType(getAnyType());
         }
         else if (kind == SyntaxKind::AnyKeyword)
         {

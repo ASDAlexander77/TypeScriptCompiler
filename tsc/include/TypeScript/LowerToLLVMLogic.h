@@ -1357,7 +1357,7 @@ class CastLogicHelper
 
         if (auto obj = resType.dyn_cast_or_null<mlir_ts::ObjectType>())
         {
-            if (obj.getStorageType().isa<mlir_ts::VoidType>())
+            if (obj.getStorageType().isa<mlir_ts::AnyType>())
             {
                 return castToOpaqueType(in, inLLVMType);
             }
