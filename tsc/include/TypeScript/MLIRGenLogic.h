@@ -712,7 +712,10 @@ class MLIRPropertyAccessCodeLogic
         auto fieldIndex = pair.first;
         bool isBoundRef = false;
         auto elementTypeForRef = pair.second;
-        auto elementType = mcl.isBoundReference(pair.second, isBoundRef);
+        auto elementType = elementTypeForRef;
+        /* as this is class, we do not take reference to class as for object */
+        // auto elementType = mcl.isBoundReference(pair.second,
+        // isBoundRef);
 
         if (fieldIndex < 0)
         {
