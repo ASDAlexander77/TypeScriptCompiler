@@ -1631,30 +1631,7 @@ struct LoadOpLowering : public TsLlvmPattern<mlir_ts::LoadOp>
 
         if (auto boundRefType = loadOp.reference().getType().dyn_cast_or_null<mlir_ts::BoundRefType>())
         {
-            auto loc = loadOp->getLoc();
-            auto llvmType = tch.convertType(boundRefType.getElementType());
-            auto llvmRefType = LLVM::LLVMPointerType::get(llvmType);
-
-            auto thisVal =
-                rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), loadOp.reference(), clh.getStructIndexAttr(THIS_VALUE_INDEX));
-            auto valueRefVal =
-                rewriter.create<LLVM::ExtractValueOp>(loc, llvmRefType, loadOp.reference(), clh.getStructIndexAttr(DATA_VALUE_INDEX));
-
-            mlir::Value loadedValue = rewriter.create<LLVM::LoadOp>(loc, valueRefVal);
-
-            if (auto funcType = boundRefType.getElementType().dyn_cast_or_null<mlir::FunctionType>())
-            {
-                mlir::Value boundMethodValue = rewriter.create<mlir_ts::CreateBoundFunctionOp>(loc, loadOp.getType(), thisVal, loadedValue);
-
-                LLVM_DEBUG(llvm::dbgs() << "LoadOp Bound Ref: LLVM Type :" << tch.convertType(loadOp.getType()) << "\n";);
-
-                rewriter.replaceOp(loadOp, boundMethodValue);
-            }
-            else
-            {
-                // rewriter.replaceOp(loadOp, loadedValue);
-            }
-
+            rewriter.replaceOpWithNewOp<mlir_ts::LoadBoundRefOp>(loadOp, loadOp.getType(), loadOp.reference());
             return success();
         }
 
@@ -2378,6 +2355,49 @@ struct ThisPropertyRefOpLowering : public TsLlvmPattern<mlir_ts::ThisPropertyRef
     }
 };
 
+struct LoadBoundRefOpLowering : public TsLlvmPattern<mlir_ts::LoadBoundRefOp>
+{
+    using TsLlvmPattern<mlir_ts::LoadBoundRefOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::LoadBoundRefOp loadBoundRefOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        auto loc = loadBoundRefOp.getLoc();
+
+        TypeHelper th(rewriter);
+        CodeLogicHelper clh(loadBoundRefOp, rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+
+        auto boundRefType = loadBoundRefOp.reference().getType().cast<mlir_ts::BoundRefType>();
+
+        auto llvmType = tch.convertType(boundRefType.getElementType());
+        auto llvmRefType = LLVM::LLVMPointerType::get(llvmType);
+
+        auto thisVal = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), loadBoundRefOp.reference(),
+                                                             clh.getStructIndexAttr(THIS_VALUE_INDEX));
+        auto valueRefVal =
+            rewriter.create<LLVM::ExtractValueOp>(loc, llvmRefType, loadBoundRefOp.reference(), clh.getStructIndexAttr(DATA_VALUE_INDEX));
+
+        mlir::Value loadedValue = rewriter.create<LLVM::LoadOp>(loc, valueRefVal);
+
+        if (auto funcType = boundRefType.getElementType().dyn_cast_or_null<mlir::FunctionType>())
+        {
+            mlir::Value boundMethodValue =
+                rewriter.create<mlir_ts::CreateBoundFunctionOp>(loc, loadBoundRefOp.getType(), thisVal, loadedValue);
+
+            LLVM_DEBUG(llvm::dbgs() << "LoadOp Bound Ref: LLVM Type :" << tch.convertType(loadBoundRefOp.getType()) << "\n";);
+
+            rewriter.replaceOp(loadBoundRefOp, boundMethodValue);
+        }
+        else
+        {
+            rewriter.replaceOp(loadBoundRefOp, loadedValue);
+        }
+
+        return success();
+    }
+};
+
 struct CreateBoundRefOpLowering : public TsLlvmPattern<mlir_ts::CreateBoundRefOp>
 {
     using TsLlvmPattern<mlir_ts::CreateBoundRefOp>::TsLlvmPattern;
@@ -2450,10 +2470,12 @@ struct GetThisOpLowering : public TsLlvmPattern<mlir_ts::GetThisOp>
 
         auto llvmThisType = tch.convertType(getThisOp.getType());
 
-        auto thisVal =
+        mlir::Value thisVal =
             rewriter.create<LLVM::ExtractValueOp>(loc, llvmThisType, getThisOp.boundFunc(), clh.getStructIndexAttr(THIS_VALUE_INDEX));
 
-        rewriter.replaceOp(getThisOp, ValueRange{thisVal});
+        auto thisValCasted = rewriter.create<LLVM::BitcastOp>(loc, tch.convertType(getThisOp.getType()), thisVal);
+
+        rewriter.replaceOp(getThisOp, {thisValCasted});
 
         return success();
     }
@@ -2687,20 +2709,20 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 
     // The only remaining operation to lower from the `typescript` dialect, is the PrintOp.
     TsLlvmContext tsLlvmContext;
-    patterns
-        .insert<CallOpLowering, CallIndirectOpLowering, CaptureOpLowering, ExitOpLowering, ReturnOpLowering, ReturnValOpLowering,
-                AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering,
-                AssertOpLowering, CastOpLowering, ConstantOpLowering, CreateOptionalOpLowering, UndefOptionalOpLowering, HasValueOpLowering,
-                ValueOpLowering, SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering, EntryOpLowering, FuncOpLowering,
-                LoadOpLowering, ElementRefOpLowering, PropertyRefOpLowering, ExtractPropertyOpLowering, LogicalBinaryOpLowering,
-                NullOpLowering, NewOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, PushOpLowering,
-                PopOpLowering, DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering, PrintOpLowering, StoreOpLowering,
-                SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering, StringLengthOpLowering, StringConcatOpLowering,
-                StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering, MemoryCopyOpLowering, LoadSaveValueLowering,
-                ThrowOpLoweringVCWin32, TrampolineOpLowering, TryOpLowering, VariableOpLowering, InvokeOpLowering,
-                ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering, NewInterfaceOpLowering, VTableOffsetRefOpLowering,
-                ThisPropertyRefOpLowering, CreateBoundRefOpLowering, CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering>(
-            typeConverter, &getContext(), &tsLlvmContext);
+    patterns.insert<CallOpLowering, CallIndirectOpLowering, CaptureOpLowering, ExitOpLowering, ReturnOpLowering, ReturnValOpLowering,
+                    AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering,
+                    AssertOpLowering, CastOpLowering, ConstantOpLowering, CreateOptionalOpLowering, UndefOptionalOpLowering,
+                    HasValueOpLowering, ValueOpLowering, SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering, EntryOpLowering,
+                    FuncOpLowering, LoadOpLowering, ElementRefOpLowering, PropertyRefOpLowering, ExtractPropertyOpLowering,
+                    LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering,
+                    NewArrayOpLowering, PushOpLowering, PopOpLowering, DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering,
+                    PrintOpLowering, StoreOpLowering, SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering,
+                    StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering,
+                    MemoryCopyOpLowering, LoadSaveValueLowering, ThrowOpLoweringVCWin32, TrampolineOpLowering, TryOpLowering,
+                    VariableOpLowering, InvokeOpLowering, ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering,
+                    NewInterfaceOpLowering, VTableOffsetRefOpLowering, ThisPropertyRefOpLowering, LoadBoundRefOpLowering,
+                    CreateBoundRefOpLowering, CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering>(
+        typeConverter, &getContext(), &tsLlvmContext);
 
     populateTypeScriptConversionPatterns(typeConverter, m);
 

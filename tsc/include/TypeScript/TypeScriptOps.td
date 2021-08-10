@@ -864,7 +864,6 @@ def TypeScript_StoreOp : TypeScript_Op<"Store", []> {
   let assemblyFormat = "$value `:` type($value) `,` $reference attr-dict `:` type($reference)";
 }
 
-// TODO: add verify logic to match types for BoundRef and BoundFunction
 def TypeScript_LoadOp : TypeScript_Op<"Load", []> {
   let summary = "loads the value from the reference type";
   let description = [{
@@ -970,6 +969,17 @@ def TypeScript_ThisPropertyRefOp : TypeScript_Op<"ThisPropertyRef"> {
   );
 
   let assemblyFormat = "$objectRef `+` $offset attr-dict `:` type($objectRef) `+` type($offset) `->` type($result)";
+}
+
+def TypeScript_LoadBoundRefOp : TypeScript_Op<"LoadBoundRef", []> {
+  let summary = "loads the value from the bound reference type";
+  let description = [{
+    The `load` operation loads the value from the bound reference value.
+  }];
+
+  let arguments = (ins Arg<TypeScript_BoundRef, "the bound reference to load from", [MemRead]>:$reference);
+  let results = (outs AnyType:$result);
+  let assemblyFormat = "`(` $reference `:` type($reference) `)` attr-dict `:` type($result)";
 }
 
 def TypeScript_CreateBoundRefOp : TypeScript_Op<"CreateBoundRef"> {
