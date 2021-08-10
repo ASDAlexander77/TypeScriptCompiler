@@ -1,1 +1,1 @@
-1) Optimize param this of class (use direct value from param)
+1) Add step to optimaze "bound ref" calls for "let" and "const" on objects

@@ -1415,7 +1415,9 @@ class CastLogicHelper
         {
             if (auto inBoundFunc = inType.dyn_cast_or_null<mlir_ts::BoundFunctionType>())
             {
-                return rewriter.create<mlir_ts::GetMethodOp>(loc, resFuncType, in);
+                auto thisVal = rewriter.create<mlir_ts::GetThisOp>(loc, mlir_ts::OpaqueType::get(rewriter.getContext()), in);
+                auto methodVal = rewriter.create<mlir_ts::GetMethodOp>(loc, resFuncType, in);
+                return rewriter.create<mlir_ts::TrampolineOp>(loc, resFuncType, methodVal, thisVal);
             }
         }
 

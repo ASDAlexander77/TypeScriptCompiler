@@ -472,6 +472,12 @@ class MLIRPropertyAccessCodeLogic
         }
 
         auto refValue = getExprLoadRefValue();
+        if (isBoundRef && !refValue)
+        {
+            // allocate in stack
+            refValue = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(expression.getType()), expression);
+        }
+
         if (refValue)
         {
             auto refType = isBoundRef ? static_cast<mlir::Type>(mlir_ts::BoundRefType::get(elementTypeForRef))
@@ -505,6 +511,12 @@ class MLIRPropertyAccessCodeLogic
         }
 
         auto refValue = getExprLoadRefValue();
+        if (isBoundRef && !refValue)
+        {
+            // allocate in stack
+            refValue = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(expression.getType()), expression);
+        }
+
         if (refValue)
         {
             auto refType = isBoundRef ? static_cast<mlir::Type>(mlir_ts::BoundRefType::get(elementTypeForRef))
