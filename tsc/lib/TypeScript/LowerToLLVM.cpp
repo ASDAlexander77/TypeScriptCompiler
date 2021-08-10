@@ -997,8 +997,7 @@ struct CastOpLowering : public TsLlvmPattern<mlir_ts::CastOp>
         TypeConverterHelper tch(getTypeConverter());
 
         auto in = op.in();
-        auto res = op.res();
-        auto resType = res.getType();
+        auto resType = op.res().getType();
 
         CastLogicHelper castLogic(op, rewriter, tch);
         auto result = castLogic.cast(in, resType);
@@ -2134,8 +2133,10 @@ struct TrampolineOpLowering : public TsLlvmPattern<mlir_ts::TrampolineOp>
         auto location = trampolineOp->getLoc();
 
         TypeHelper th(rewriter);
+        TypeConverterHelper tch(getTypeConverter());
         CodeLogicHelper clh(trampolineOp, rewriter);
         LLVMCodeHelper ch(trampolineOp, rewriter, getTypeConverter());
+        CastLogicHelper castLogic(trampolineOp, rewriter, tch);
 
         auto i8PtrTy = th.getI8PtrType();
 
@@ -2166,7 +2167,10 @@ struct TrampolineOpLowering : public TsLlvmPattern<mlir_ts::TrampolineOp>
 
         rewriter.create<LLVM::CallOp>(location, enableExecuteStackFuncOp, ValueRange{adjustedTrampolinePtr});
 
-        mlir::Value castFunc = rewriter.create<mlir_ts::CastOp>(location, trampolineOp.getType(), adjustedTrampolinePtr);
+        // mlir::Value castFunc = rewriter.create<mlir_ts::CastOp>(location, trampolineOp.getType(), adjustedTrampolinePtr);
+        // replacement
+        auto castFunc = castLogic.cast(adjustedTrampolinePtr, trampolineOp.getType());
+
         rewriter.replaceOp(trampolineOp, castFunc);
 
         return success();
