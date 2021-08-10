@@ -482,7 +482,7 @@ class MLIRPropertyAccessCodeLogic
         }
 
         MLIRTypeHelper mth(builder.getContext());
-        return builder.create<mlir_ts::ExtractPropertyOp>(location, elementType, expression,
+        return builder.create<mlir_ts::ExtractPropertyOp>(location, elementTypeForRef, expression,
                                                           builder.getArrayAttr(mth.getStructIndexAttrValue(fieldIndex)));
     }
 
@@ -515,7 +515,7 @@ class MLIRPropertyAccessCodeLogic
         }
 
         MLIRTypeHelper mth(builder.getContext());
-        return builder.create<mlir_ts::ExtractPropertyOp>(location, elementType, expression,
+        return builder.create<mlir_ts::ExtractPropertyOp>(location, elementTypeForRef, expression,
                                                           builder.getArrayAttr(mth.getStructIndexAttrValue(fieldIndex)));
     }
 
