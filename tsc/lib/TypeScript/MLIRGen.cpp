@@ -6475,7 +6475,7 @@ llvm.return %5 : i32
         }
         else if (kind == SyntaxKind::ObjectKeyword)
         {
-            return getOpaqueType();
+            return getObjectType(getVoidType());
         }
         else if (kind == SyntaxKind::AnyKeyword)
         {
