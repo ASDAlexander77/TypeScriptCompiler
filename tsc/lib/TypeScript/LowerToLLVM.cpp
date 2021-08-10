@@ -1955,10 +1955,18 @@ struct MemoryCopyOpLowering : public TsLlvmPattern<mlir_ts::MemoryCopyOp>
         values.push_back(clh.castToI8Ptr(memoryCopyOp.dst()));
         values.push_back(clh.castToI8Ptr(memoryCopyOp.src()));
 
-        auto valueType = memoryCopyOp.src().getType().cast<LLVM::LLVMPointerType>().getElementType();
+        auto llvmSrcType = tch.convertType(memoryCopyOp.src().getType());
+        auto srcValueType = llvmSrcType.cast<LLVM::LLVMPointerType>().getElementType();
+        auto srcSize = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), srcValueType);
 
-        auto size = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), valueType);
-        values.push_back(size);
+        auto llvmDstType = tch.convertType(memoryCopyOp.dst().getType());
+        auto dstValueType = llvmDstType.cast<LLVM::LLVMPointerType>().getElementType();
+        auto dstSize = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), dstValueType);
+
+        auto cmpVal = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ult, srcSize, dstSize);
+        auto minSize = rewriter.create<LLVM::SelectOp>(loc, cmpVal, srcSize, dstSize);
+
+        values.push_back(minSize);
 
         auto immarg = clh.createI1ConstantOf(false);
         values.push_back(immarg);
@@ -2497,14 +2505,21 @@ struct GetMethodOpLowering : public TsLlvmPattern<mlir_ts::GetMethodOp>
         TypeHelper th(rewriter);
         TypeConverterHelper tch(getTypeConverter());
         CodeLogicHelper clh(getMethodOp, rewriter);
+        CastLogicHelper castLogic(getMethodOp, rewriter, tch);
 
-        auto llvmMethodType = tch.convertType(getMethodOp.getType());
+        auto boundType = getMethodOp.boundFunc().getType().cast<mlir_ts::BoundFunctionType>();
+        auto funcType = rewriter.getFunctionType(boundType.getInputs(), boundType.getResults());
+        auto llvmMethodType = tch.convertType(funcType);
 
-        auto methodVal =
+        mlir::Value methodVal =
             rewriter.create<LLVM::ExtractValueOp>(loc, llvmMethodType, getMethodOp.boundFunc(), clh.getStructIndexAttr(DATA_VALUE_INDEX));
 
-        rewriter.replaceOp(getMethodOp, ValueRange{methodVal});
+        if (methodVal.getType() != getMethodOp.getType())
+        {
+            methodVal = castLogic.cast(methodVal, getMethodOp.getType());
+        }
 
+        rewriter.replaceOp(getMethodOp, ValueRange{methodVal});
         return success();
     }
 };

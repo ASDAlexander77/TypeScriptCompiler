@@ -1384,6 +1384,17 @@ class CastLogicHelper
             return rewriter.create<LLVM::BitcastOp>(loc, resLLVMType, in);
         }
 
+        // struct to struct. TODO: add validation
+        if (inLLVMType.isa<LLVM::LLVMStructType>() && resLLVMType.isa<LLVM::LLVMStructType>())
+        {
+            auto srcAddr = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(inType), in, rewriter.getBoolAttr(false));
+            auto dstAddr =
+                rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(resType), mlir::Value(), rewriter.getBoolAttr(false));
+            rewriter.create<mlir_ts::MemoryCopyOp>(loc, dstAddr, srcAddr);
+            auto val = rewriter.create<mlir_ts::LoadOp>(loc, resType, dstAddr);
+            return val;
+        }
+
         // array to ref of element
         if (auto arrayType = inType.dyn_cast_or_null<mlir_ts::ArrayType>())
         {
@@ -1415,9 +1426,13 @@ class CastLogicHelper
         {
             if (auto inBoundFunc = inType.dyn_cast_or_null<mlir_ts::BoundFunctionType>())
             {
-                // auto thisVal = rewriter.create<mlir_ts::GetThisOp>(loc, mlir_ts::OpaqueType::get(rewriter.getContext()), in);
-                // auto methodVal = rewriter.create<mlir_ts::GetMethodOp>(loc, resFuncType, in);
-                // return rewriter.create<mlir_ts::TrampolineOp>(loc, resFuncType, methodVal, thisVal);
+                // somehow llvm.trampoline accepts only direct method symbol
+                /*
+                auto thisVal = rewriter.create<mlir_ts::GetThisOp>(loc, mlir_ts::OpaqueType::get(rewriter.getContext()), in);
+                auto methodVal = rewriter.create<mlir_ts::GetMethodOp>(loc, resFuncType, in);
+                return rewriter.create<mlir_ts::TrampolineOp>(loc, resFuncType, methodVal, thisVal);
+                */
+                op->emitWarning("losing this reference");
                 return rewriter.create<mlir_ts::GetMethodOp>(loc, resFuncType, in);
             }
         }
