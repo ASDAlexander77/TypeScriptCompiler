@@ -6757,11 +6757,11 @@ llvm.return %5 : i32
         }
 
         auto funcType = mlir::FunctionType::get(builder.getContext(), argTypes, resultType);
-#ifndef USE_BOUND_FUNCTION_FOR_OBJECTS
+        //#ifndef USE_BOUND_FUNCTION_FOR_OBJECTS
         return funcType;
-#else
-        return getBoundFunctionType(funcType);
-#endif
+        //#else
+        //        return getBoundFunctionType(funcType);
+        //#endif
     }
 
     mlir::Type getUnionType(UnionTypeNode unionTypeNode)
