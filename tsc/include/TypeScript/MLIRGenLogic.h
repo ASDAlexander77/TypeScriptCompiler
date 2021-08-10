@@ -146,6 +146,7 @@ class MLIRCodeLogic
 
     mlir::Value GetReferenceOfLoadOp(mlir::Value value)
     {
+        // TODO: sync with Common Logic
         if (auto loadOp = dyn_cast_or_null<mlir_ts::LoadOp>(value.getDefiningOp()))
         {
             // this LoadOp will be removed later as unused

@@ -1355,6 +1355,12 @@ class CastLogicHelper
             return castFromAny(in, resLLVMType);
         }
 
+        auto isResObject = resType.isa<mlir_ts::OpaqueType>();
+        if (isResObject)
+        {
+            return castToOpaqueType(in, inLLVMType);
+        }
+
         auto isInString = inType.dyn_cast_or_null<mlir_ts::StringType>();
         if (isInString && (resLLVMType.isInteger(32) || resLLVMType.isInteger(64)))
         {
@@ -1415,9 +1421,7 @@ class CastLogicHelper
             if (destPtr.getElementType() == inLLVMType)
             {
                 // alloc and return address
-                auto countValue = clh.createI32ConstantOf(1);
-                auto valueAddr = rewriter.create<LLVM::AllocaOp>(loc, destPtr, countValue);
-                rewriter.create<mlir_ts::StoreOp>(loc, in, valueAddr);
+                auto valueAddr = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(inType), in, rewriter.getBoolAttr(false));
                 return valueAddr;
             }
         }
@@ -1433,6 +1437,20 @@ class CastLogicHelper
                 return rewriter.create<mlir_ts::TrampolineOp>(loc, resFuncType, methodVal, thisVal);
                 */
                 op->emitWarning("losing this reference");
+                /*
+                // you can wrap into () => {} lambda call to capture vars
+                const user = {
+                    firstName: "World",
+                    sayHi() {
+                        print(`Hello ${this.firstName}`);
+                    },
+                };
+
+                let hi2 = user.sayHi;
+                call_func_1(() => {
+                     hi2();
+                });
+                */
                 return rewriter.create<mlir_ts::GetMethodOp>(loc, resFuncType, in);
             }
         }
@@ -1628,6 +1646,19 @@ class CastLogicHelper
         auto ptrValue =
             rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(llvmStorageType), inDataWithSizeTypedValue, ValueRange{zero, one});
         return rewriter.create<LLVM::LoadOp>(loc, ptrValue);
+    }
+
+    mlir::Value castToOpaqueType(mlir::Value in, mlir::Type inLLVMType)
+    {
+        MLIRTypeHelper mth(rewriter.getContext());
+        auto variableOp = mth.GetReferenceOfLoadOp(in);
+        if (variableOp)
+        {
+            return clh.castToI8Ptr(variableOp);
+        }
+
+        auto valueAddr = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(in.getType()), in, rewriter.getBoolAttr(false));
+        return clh.castToI8Ptr(valueAddr);
     }
 };
 

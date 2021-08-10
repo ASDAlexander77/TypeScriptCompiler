@@ -241,6 +241,18 @@ class MLIRTypeHelper
 
         return {MatchResultType::Match, 0};
     }
+
+    mlir::Value GetReferenceOfLoadOp(mlir::Value value)
+    {
+        if (auto loadOp = mlir::dyn_cast_or_null<mlir_ts::LoadOp>(value.getDefiningOp()))
+        {
+            // this LoadOp will be removed later as unused
+            auto refValue = loadOp.reference();
+            return refValue;
+        }
+
+        return mlir::Value();
+    }
 };
 } // namespace typescript
 

@@ -6473,6 +6473,10 @@ llvm.return %5 : i32
             GenContext genContext;
             return getTypeByTypeQuery(typeReferenceAST.as<TypeQueryNode>(), genContext);
         }
+        else if (kind == SyntaxKind::ObjectKeyword)
+        {
+            return getOpaqueType();
+        }
         else if (kind == SyntaxKind::AnyKeyword)
         {
             return getAnyType();
