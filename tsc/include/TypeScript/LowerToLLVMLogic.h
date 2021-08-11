@@ -1348,12 +1348,22 @@ class CastLogicHelper
 
     Value cast(mlir::Value in, mlir::Type inLLVMType, mlir::Type resType, mlir::Type resLLVMType)
     {
-        if (inLLVMType == resLLVMType)
+        auto val = castTypeScriptTypes(in, inLLVMType, resType, resLLVMType);
+        if (val)
+        {
+            return val;
+        }
+
+        return castLLVMTypes(in, inLLVMType, resType, resLLVMType);
+    }
+
+    Value castTypeScriptTypes(mlir::Value in, mlir::Type inLLVMType, mlir::Type resType, mlir::Type resLLVMType)
+    {
+        auto inType = in.getType();
+        if (inType == resType)
         {
             return in;
         }
-
-        auto inType = in.getType();
 
         if (inType.isa<mlir_ts::CharType>() && resType.isa<mlir_ts::StringType>())
         {
@@ -1361,64 +1371,7 @@ class CastLogicHelper
             return rewriter.create<mlir_ts::CharToStringOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
         }
 
-        if ((inLLVMType.isInteger(32) || inLLVMType.isInteger(64)) && (resLLVMType.isF32() || resLLVMType.isF64()))
-        {
-            return rewriter.create<SIToFPOp>(loc, resLLVMType, in);
-        }
-
-        if ((inLLVMType.isF32() || inLLVMType.isF64()) && (resLLVMType.isInteger(32) || resLLVMType.isInteger(64)))
-        {
-            return rewriter.create<FPToSIOp>(loc, resLLVMType, in);
-        }
-
-        if ((inLLVMType.isInteger(64) || inLLVMType.isInteger(32) || inLLVMType.isInteger(8)) && resLLVMType.isInteger(1))
-        {
-            return rewriter.create<CmpIOp>(loc, CmpIPredicate::ne, in, clh.createI32ConstantOf(0));
-        }
-
-        if (inLLVMType.isa<LLVM::LLVMPointerType>() && resLLVMType.isInteger(1))
-        {
-            auto intVal = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), in);
-            return rewriter.create<CmpIOp>(loc, CmpIPredicate::ne, intVal, clh.createI64ConstantOf(0));
-        }
-
-        if (inLLVMType.isInteger(1) && (resLLVMType.isInteger(8) || resLLVMType.isInteger(32) || resLLVMType.isInteger(64)))
-        {
-            return rewriter.create<ZeroExtendIOp>(loc, in, resLLVMType);
-        }
-
-        if (inLLVMType.isInteger(8) && resLLVMType.isInteger(32))
-        {
-            return rewriter.create<ZeroExtendIOp>(loc, in, resLLVMType);
-        }
-
-        if ((inLLVMType.isInteger(8) || inLLVMType.isInteger(32)) && resLLVMType.isInteger(64))
-        {
-            return rewriter.create<ZeroExtendIOp>(loc, in, resLLVMType);
-        }
-
-        if ((inLLVMType.isInteger(64) || inLLVMType.isInteger(32) || inLLVMType.isInteger(16)) && resLLVMType.isInteger(8))
-        {
-            return rewriter.create<TruncateIOp>(loc, in, resLLVMType);
-        }
-
-        if (inLLVMType.isInteger(64) && resLLVMType.isInteger(32))
-        {
-            return rewriter.create<TruncateIOp>(loc, in, resLLVMType);
-        }
-
-        if (inLLVMType.isF32() && (resLLVMType.isF64() || resLLVMType.isF128()))
-        {
-            return rewriter.create<FPExtOp>(loc, in, resLLVMType);
-        }
-
-        if ((inLLVMType.isF64() || inLLVMType.isF128()) && resLLVMType.isF32())
-        {
-            return rewriter.create<FPTruncOp>(loc, in, resLLVMType);
-        }
-
         auto isResString = resType.isa<mlir_ts::StringType>();
-
         if (inLLVMType.isInteger(1) && isResString)
         {
             return castBoolToString(in);
@@ -1492,23 +1445,6 @@ class CastLogicHelper
             return cast(val, tch.convertType(val.getType()), resType, resLLVMType);
         }
 
-        // ptrs cast
-        if (inLLVMType.isa<LLVM::LLVMPointerType>() && resLLVMType.isa<LLVM::LLVMPointerType>())
-        {
-            return rewriter.create<LLVM::BitcastOp>(loc, resLLVMType, in);
-        }
-
-        // struct to struct. TODO: add validation
-        if (inLLVMType.isa<LLVM::LLVMStructType>() && resLLVMType.isa<LLVM::LLVMStructType>())
-        {
-            auto srcAddr = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(inType), in, rewriter.getBoolAttr(false));
-            auto dstAddr =
-                rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(resType), mlir::Value(), rewriter.getBoolAttr(false));
-            rewriter.create<mlir_ts::MemoryCopyOp>(loc, dstAddr, srcAddr);
-            auto val = rewriter.create<mlir_ts::LoadOp>(loc, resType, dstAddr);
-            return val;
-        }
-
         // array to ref of element
         if (auto arrayType = inType.dyn_cast_or_null<mlir_ts::ArrayType>())
         {
@@ -1520,17 +1456,6 @@ class CastLogicHelper
                     return rewriter.create<LLVM::ExtractValueOp>(loc, resLLVMType, in,
                                                                  rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(0)));
                 }
-            }
-        }
-
-        // value to ref of value
-        if (auto destPtr = resLLVMType.dyn_cast_or_null<LLVM::LLVMPointerType>())
-        {
-            if (destPtr.getElementType() == inLLVMType)
-            {
-                // alloc and return address
-                auto valueAddr = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(inType), in, rewriter.getBoolAttr(false));
-                return valueAddr;
             }
         }
 
@@ -1560,6 +1485,101 @@ class CastLogicHelper
                 });
                 */
                 return rewriter.create<mlir_ts::GetMethodOp>(loc, resFuncType, in);
+            }
+        }
+
+        return mlir::Value();
+    }
+
+    Value castLLVMTypes(mlir::Value in, mlir::Type inLLVMType, mlir::Type resType, mlir::Type resLLVMType)
+    {
+        if (inLLVMType == resLLVMType)
+        {
+            return in;
+        }
+
+        auto inType = in.getType();
+        if ((inLLVMType.isInteger(32) || inLLVMType.isInteger(64)) && (resLLVMType.isF32() || resLLVMType.isF64()))
+        {
+            return rewriter.create<SIToFPOp>(loc, resLLVMType, in);
+        }
+
+        if ((inLLVMType.isF32() || inLLVMType.isF64()) && (resLLVMType.isInteger(32) || resLLVMType.isInteger(64)))
+        {
+            return rewriter.create<FPToSIOp>(loc, resLLVMType, in);
+        }
+
+        if ((inLLVMType.isInteger(64) || inLLVMType.isInteger(32) || inLLVMType.isInteger(8)) && resLLVMType.isInteger(1))
+        {
+            return rewriter.create<CmpIOp>(loc, CmpIPredicate::ne, in, clh.createI32ConstantOf(0));
+        }
+
+        if (inLLVMType.isa<LLVM::LLVMPointerType>() && resLLVMType.isInteger(1))
+        {
+            auto intVal = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), in);
+            return rewriter.create<CmpIOp>(loc, CmpIPredicate::ne, intVal, clh.createI64ConstantOf(0));
+        }
+
+        if (inLLVMType.isInteger(1) && (resLLVMType.isInteger(8) || resLLVMType.isInteger(32) || resLLVMType.isInteger(64)))
+        {
+            return rewriter.create<ZeroExtendIOp>(loc, in, resLLVMType);
+        }
+
+        if (inLLVMType.isInteger(8) && resLLVMType.isInteger(32))
+        {
+            return rewriter.create<ZeroExtendIOp>(loc, in, resLLVMType);
+        }
+
+        if ((inLLVMType.isInteger(8) || inLLVMType.isInteger(32)) && resLLVMType.isInteger(64))
+        {
+            return rewriter.create<ZeroExtendIOp>(loc, in, resLLVMType);
+        }
+
+        if ((inLLVMType.isInteger(64) || inLLVMType.isInteger(32) || inLLVMType.isInteger(16)) && resLLVMType.isInteger(8))
+        {
+            return rewriter.create<TruncateIOp>(loc, in, resLLVMType);
+        }
+
+        if (inLLVMType.isInteger(64) && resLLVMType.isInteger(32))
+        {
+            return rewriter.create<TruncateIOp>(loc, in, resLLVMType);
+        }
+
+        if (inLLVMType.isF32() && (resLLVMType.isF64() || resLLVMType.isF128()))
+        {
+            return rewriter.create<FPExtOp>(loc, in, resLLVMType);
+        }
+
+        if ((inLLVMType.isF64() || inLLVMType.isF128()) && resLLVMType.isF32())
+        {
+            return rewriter.create<FPTruncOp>(loc, in, resLLVMType);
+        }
+
+        // ptrs cast
+        if (inLLVMType.isa<LLVM::LLVMPointerType>() && resLLVMType.isa<LLVM::LLVMPointerType>())
+        {
+            return rewriter.create<LLVM::BitcastOp>(loc, resLLVMType, in);
+        }
+
+        // struct to struct. TODO: add validation
+        if (inLLVMType.isa<LLVM::LLVMStructType>() && resLLVMType.isa<LLVM::LLVMStructType>())
+        {
+            auto srcAddr = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(inType), in, rewriter.getBoolAttr(false));
+            auto dstAddr =
+                rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(resType), mlir::Value(), rewriter.getBoolAttr(false));
+            rewriter.create<mlir_ts::MemoryCopyOp>(loc, dstAddr, srcAddr);
+            auto val = rewriter.create<mlir_ts::LoadOp>(loc, resType, dstAddr);
+            return val;
+        }
+
+        // value to ref of value
+        if (auto destPtr = resLLVMType.dyn_cast_or_null<LLVM::LLVMPointerType>())
+        {
+            if (destPtr.getElementType() == inLLVMType)
+            {
+                // alloc and return address
+                auto valueAddr = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(inType), in, rewriter.getBoolAttr(false));
+                return valueAddr;
             }
         }
 
