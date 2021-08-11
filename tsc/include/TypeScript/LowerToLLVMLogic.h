@@ -1231,21 +1231,28 @@ class AnyLogic
     CodeLogicHelper clh;
     Location loc;
 
+  protected:
+    mlir::Type sizeType;
+    mlir::Type typeOfValueType;
+
   public:
     AnyLogic(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, Location loc)
         : op(op), rewriter(rewriter), tch(tch), th(rewriter), ch(op, rewriter, &tch.typeConverter), clh(op, rewriter), loc(loc)
     {
+        sizeType = th.getIndexType();
+        typeOfValueType = th.getI8PtrType();
+    }
+
+    LLVM::LLVMStructType getStorageType(mlir::Type llvmStorageType)
+    {
+        return LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {sizeType, typeOfValueType, llvmStorageType}, false);
     }
 
     mlir::Value castToAny(mlir::Value in, mlir::Type inLLVMType)
     {
         // TODO: add type id to track data type
-        auto sizeType = th.getIndexType();
-        auto typeOfValueType = th.getI8PtrType();
-
         auto llvmStorageType = inLLVMType;
-        auto dataWithSizeType =
-            LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {sizeType, typeOfValueType, llvmStorageType}, false);
+        auto dataWithSizeType = getStorageType(llvmStorageType);
         auto dataWithSizeTypePtr = LLVM::LLVMPointerType::get(dataWithSizeType);
 
         auto memValue = ch.MemoryAllocBitcast(dataWithSizeTypePtr, dataWithSizeType);
@@ -1277,12 +1284,8 @@ class AnyLogic
     {
         // TODO: add type id to track data type
         // TODO: add data size check
-        auto sizeType = th.getIndexType();
-        auto typeOfValueType = th.getI8PtrType();
-
         auto llvmStorageType = resLLVMType;
-        auto dataWithSizeType =
-            LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {sizeType, typeOfValueType, llvmStorageType}, false);
+        auto dataWithSizeType = getStorageType(llvmStorageType);
         auto dataWithSizeTypePtr = LLVM::LLVMPointerType::get(dataWithSizeType);
 
         auto inDataWithSizeTypedValue = rewriter.create<LLVM::BitcastOp>(loc, dataWithSizeTypePtr, in);
@@ -1294,6 +1297,27 @@ class AnyLogic
         // set actual value
         auto ptrValue =
             rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(llvmStorageType), inDataWithSizeTypedValue, ValueRange{zero, two});
+        return rewriter.create<LLVM::LoadOp>(loc, ptrValue);
+    }
+
+    mlir::Value typeOfFromAny(mlir::Value in)
+    {
+        // TODO: add type id to track data type
+        // TODO: add data size check
+        // any random type
+        auto llvmStorageType = th.getI8Type();
+        auto dataWithSizeType = getStorageType(llvmStorageType);
+        auto dataWithSizeTypePtr = LLVM::LLVMPointerType::get(dataWithSizeType);
+
+        auto inDataWithSizeTypedValue = rewriter.create<LLVM::BitcastOp>(loc, dataWithSizeTypePtr, in);
+
+        auto zero = clh.createI32ConstantOf(0);
+        auto one = clh.createI32ConstantOf(1);
+        // auto two = clh.createI32ConstantOf(2);
+
+        // set actual value
+        auto ptrValue = rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(th.getI8PtrType()), inDataWithSizeTypedValue,
+                                                     ValueRange{zero, one});
         return rewriter.create<LLVM::LoadOp>(loc, ptrValue);
     }
 };
@@ -1941,10 +1965,12 @@ class OptionalLogicHelper
 
 class TypeOfOpHelper
 {
-    ConversionPatternRewriter &rewriter;
+    Operation *op;
+    PatternRewriter &rewriter;
+    TypeConverterHelper &tch;
 
   public:
-    TypeOfOpHelper(ConversionPatternRewriter &rewriter) : rewriter(rewriter)
+    TypeOfOpHelper(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch) : op(op), rewriter(rewriter), tch(tch)
     {
     }
 
@@ -1959,21 +1985,23 @@ class TypeOfOpHelper
     {
         if (type.isIntOrIndex() && !type.isIndex())
         {
-            std::string val = "i";
-            val += type.getIntOrFloatBitWidth();
-            auto typeOfValue = strValue(loc, val);
+            std::stringstream val;
+            val << "i" << type.getIntOrFloatBitWidth();
+            auto typeOfValue = strValue(loc, val.str());
+            return typeOfValue;
+        }
+
+        if (type.isIntOrFloat() && !type.isIntOrIndex())
+        {
+            std::stringstream val;
+            val << "f" << type.getIntOrFloatBitWidth();
+            auto typeOfValue = strValue(loc, val.str());
             return typeOfValue;
         }
 
         if (type.isIndex())
         {
             auto typeOfValue = strValue(loc, "ptrint");
-            return typeOfValue;
-        }
-
-        if (type.isIntOrIndexOrFloat() && !type.isIntOrIndex())
-        {
-            auto typeOfValue = strValue(loc, "number");
             return typeOfValue;
         }
 
@@ -2043,13 +2071,6 @@ class TypeOfOpHelper
             return typeOfValue;
         }
 
-        // should take value from "any structure"
-        if (type.isa<mlir_ts::AnyType>())
-        {
-            auto typeOfValue = strValue(loc, "object");
-            return typeOfValue;
-        }
-
         if (type.isa<mlir_ts::UnknownType>())
         {
             auto typeOfValue = strValue(loc, "unknown");
@@ -2078,6 +2099,12 @@ class TypeOfOpHelper
 
     mlir::Value typeOfLogic(mlir::Location loc, mlir::Value value)
     {
+        if (value.getType().isa<mlir_ts::AnyType>())
+        {
+            AnyLogic al(op, rewriter, tch, loc);
+            return al.typeOfFromAny(value);
+        }
+
         return typeOfLogic(loc, value.getType());
     }
 };

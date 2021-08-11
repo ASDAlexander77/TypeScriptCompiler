@@ -2532,7 +2532,9 @@ struct TypeOfOpLowering : public TsLlvmPattern<mlir_ts::TypeOfOp>
     {
         Location loc = typeOfOp.getLoc();
 
-        TypeOfOpHelper toh(rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+
+        TypeOfOpHelper toh(typeOfOp, rewriter, tch);
         auto typeOfValue = toh.typeOfLogic(loc, typeOfOp.value());
 
         rewriter.replaceOp(typeOfOp, ValueRange{typeOfValue});
