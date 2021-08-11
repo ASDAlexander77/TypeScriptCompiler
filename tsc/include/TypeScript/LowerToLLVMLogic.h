@@ -1649,19 +1649,23 @@ class CastLogicHelper
     {
         // TODO: add type id to track data type
         // TODO: add data size check
+        auto sizeType = th.getIndexType();
+        auto typeOfValueType = th.getI8PtrType();
 
         auto llvmStorageType = resLLVMType;
-        auto dataWithSizeType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {th.getIndexType(), llvmStorageType}, false);
+        auto dataWithSizeType =
+            LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {sizeType, typeOfValueType, llvmStorageType}, false);
         auto dataWithSizeTypePtr = LLVM::LLVMPointerType::get(dataWithSizeType);
 
         auto inDataWithSizeTypedValue = rewriter.create<LLVM::BitcastOp>(loc, dataWithSizeTypePtr, in);
 
         auto zero = clh.createI32ConstantOf(0);
-        auto one = clh.createI32ConstantOf(1);
+        // auto one = clh.createI32ConstantOf(1);
+        auto two = clh.createI32ConstantOf(2);
 
         // set actual value
         auto ptrValue =
-            rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(llvmStorageType), inDataWithSizeTypedValue, ValueRange{zero, one});
+            rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(llvmStorageType), inDataWithSizeTypedValue, ValueRange{zero, two});
         return rewriter.create<LLVM::LoadOp>(loc, ptrValue);
     }
 
@@ -1924,6 +1928,20 @@ class TypeOfOpHelper
 
     mlir::Value typeOfLogic(mlir::Location loc, mlir::Type type)
     {
+        if (type.isIntOrIndex() && !type.isIndex())
+        {
+            std::string val = "i";
+            val += type.getIntOrFloatBitWidth();
+            auto typeOfValue = strValue(loc, val);
+            return typeOfValue;
+        }
+
+        if (type.isIndex())
+        {
+            auto typeOfValue = strValue(loc, "ptrint");
+            return typeOfValue;
+        }
+
         if (type.isIntOrIndexOrFloat() && !type.isIntOrIndex())
         {
             auto typeOfValue = strValue(loc, "number");
@@ -2023,6 +2041,8 @@ class TypeOfOpHelper
         {
             return typeOfLogic(loc, subType.getElementType());
         }
+
+        LLVM_DEBUG(llvm::dbgs() << "TypeOf: " << type << "\n");
 
         llvm_unreachable("not implemented");
     }

@@ -2768,7 +2768,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
                     MemoryCopyOpLowering, LoadSaveValueLowering, ThrowOpLoweringVCWin32, TrampolineOpLowering, TryOpLowering,
                     VariableOpLowering, InvokeOpLowering, ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering,
                     NewInterfaceOpLowering, VTableOffsetRefOpLowering, ThisPropertyRefOpLowering, LoadBoundRefOpLowering,
-                    CreateBoundRefOpLowering, CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering>(
+                    CreateBoundRefOpLowering, CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering>(
         typeConverter, &getContext(), &tsLlvmContext);
 
     populateTypeScriptConversionPatterns(typeConverter, m);
