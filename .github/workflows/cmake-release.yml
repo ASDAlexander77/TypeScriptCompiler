@@ -8,7 +8,7 @@ on:
 
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
-  BUILD_TYPE: Debug
+  BUILD_TYPE: Release
 
 jobs:
   build:
@@ -39,21 +39,21 @@ jobs:
         path: 3rdParty
         key: ${{ runner.os }}-3rd-party
 
-    - name: Create __Build Folder
-      shell: cmd
-      run: IF NOT EXIST ".\__build" (mkdir .\__build)
+    - name: Cache 3rd Party binaries - LLVM 13 Release
+      id: cache-3rd-party-binary-llvm-13-release
+      uses: actions/cache@v2
+      with:
+        path: llvm_13_release.zip
+        key: ${{ runner.os }}-3rd-party-llvm-13-release
 
-    - name: Create __Build/llvm Folder
-      shell: cmd
-      run: IF NOT EXIST ".\__build\llvm" (mkdir .\__build\llvm)
-    
-    - name: Create __Build/llvm/release Folder
-      shell: cmd
-      run: IF NOT EXIST ".\__build\llvm\release" (mkdir .\__build\llvm\release)
+    - name: Delete __Build TS folders
+      continue-on-error: true
+      run: Remove-Item -Recurse -Force ".\__build\tsc"; Remove-Item -Recurse -Force ".\__build\tsc-release"
+      shell: pwsh
 
-    - name: Create __Build/tsc-release Folder
-      shell: cmd
-      run: IF NOT EXIST ".\__build\tsc-release" (mkdir .\__build\tsc-release)
+    - name: Create __Build Folders
+      run: if (!(Test-Path -Path ".\__build\llvm\release")) { New-Item -ItemType Directory -Force -Path ".\__build\llvm\release" }; if (!(Test-Path -Path ".\__build\tsc")) { New-Item -ItemType Directory -Force -Path ".\__build\tsc" }; if (!(Test-Path -Path ".\__build\tsc-release")) { New-Item -ItemType Directory -Force -Path ".\__build\tsc-release" }
+      shell: pwsh
     
     - name: Download 3rd party
       continue-on-error: true
