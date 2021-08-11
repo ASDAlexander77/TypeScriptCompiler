@@ -30,8 +30,6 @@ function main1() {
         print(result.value); // 1 3 5 7 9
         result = it.next();
     }
-
-    print("done.");
 }
 
 function makeRangeIterator2(start: int, end: int, step: int) {
@@ -71,4 +69,6 @@ function main2() {
 function main() {
     main1();
     main2();
+
+    print("done.");
 }
