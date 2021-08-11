@@ -456,86 +456,108 @@ struct NamespaceInfo
 class MLIRGenImpl
 {
   public:
-    MLIRGenImpl(const mlir::MLIRContext &context) : builder(&const_cast<mlir::MLIRContext &>(context))
+    MLIRGenImpl(const mlir::MLIRContext &context) : builder(&const_cast<mlir::MLIRContext &>(context)), hasErrors(false)
     {
         fileName = "<unknown>";
         rootNamespace = currentNamespace = std::make_shared<NamespaceInfo>();
     }
 
-    MLIRGenImpl(const mlir::MLIRContext &context, const llvm::StringRef &fileNameParam) : builder(&const_cast<mlir::MLIRContext &>(context))
+    MLIRGenImpl(const mlir::MLIRContext &context, const llvm::StringRef &fileNameParam)
+        : builder(&const_cast<mlir::MLIRContext &>(context)), hasErrors(false)
     {
         fileName = fileNameParam;
         rootNamespace = currentNamespace = std::make_shared<NamespaceInfo>();
     }
 
-    mlir::ModuleOp mlirGenSourceFile(SourceFile module)
+    mlir::LogicalResult mlirDiscoverAllDependencies(SourceFile module)
     {
-        sourceFile = module;
+        mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
+            // suppress all
+        });
 
-        // We create an empty MLIR module and codegen functions one at a time and
-        // add them to the module.
-        theModule = mlir::ModuleOp::create(loc(module), fileName);
-        builder.setInsertionPointToStart(theModule.getBody());
-
-        SymbolTableScopeT varScope(symbolTable);
-        llvm::ScopedHashTableScope<StringRef, NamespaceInfo::TypePtr> fullNamespacesMapScope(fullNamespacesMap);
-        llvm::ScopedHashTableScope<StringRef, ClassInfo::TypePtr> fullNameClassesMapScope(fullNameClassesMap);
-        llvm::ScopedHashTableScope<StringRef, InterfaceInfo::TypePtr> fullNameInterfacesMapScope(fullNameInterfacesMap);
-        llvm::ScopedHashTableScope<StringRef, VariableDeclarationDOM::TypePtr> fullNameGlobalsMapScope(fullNameGlobalsMap);
-
+        // Process of discovery here
+        GenContext genContextPartial = {0};
+        genContextPartial.allowPartialResolve = true;
+        genContextPartial.dummyRun = true;
+        genContextPartial.cleanUps = new mlir::SmallVector<mlir::Block *>();
+        auto notResolved = 0;
+        do
         {
-            mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
-                // suppress all
-            });
-
-            // Process of discovery here
-            GenContext genContextPartial = {0};
-            genContextPartial.allowPartialResolve = true;
-            genContextPartial.dummyRun = true;
-            genContextPartial.cleanUps = new mlir::SmallVector<mlir::Block *>();
-            auto notResolved = 0;
-            do
-            {
-                auto lastTimeNotResolved = notResolved;
-                notResolved = 0;
-                GenContext genContext = {0};
-                for (auto &statement : module->statements)
-                {
-                    if (statement->processed)
-                    {
-                        continue;
-                    }
-
-                    if (failed(mlirGen(statement, genContextPartial)))
-                    {
-                        notResolved++;
-                    }
-                    else
-                    {
-                        statement->processed = true;
-                    }
-                }
-
-                if (lastTimeNotResolved > 0 && lastTimeNotResolved == notResolved)
-                {
-                    theModule.emitError("can't resolve dependencies");
-                    return nullptr;
-                }
-
-            } while (notResolved > 0);
-
-            genContextPartial.clean();
-
-            // clean up
-            theModule.getBody()->clear();
-
-            // clear state
+            auto lastTimeNotResolved = notResolved;
+            notResolved = 0;
+            GenContext genContext = {0};
             for (auto &statement : module->statements)
             {
-                statement->processed = false;
+                if (statement->processed)
+                {
+                    continue;
+                }
+
+                if (failed(mlirGen(statement, genContextPartial)))
+                {
+                    notResolved++;
+                }
+                else
+                {
+                    statement->processed = true;
+                }
+            }
+
+            if (lastTimeNotResolved > 0 && lastTimeNotResolved == notResolved)
+            {
+                theModule.emitError("can't resolve dependencies");
+                return mlir::failure();
+            }
+
+        } while (notResolved > 0);
+
+        genContextPartial.clean();
+
+        // clean up
+        theModule.getBody()->clear();
+
+        // clear state
+        for (auto &statement : module->statements)
+        {
+            statement->processed = false;
+        }
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult mlirCodeGenModule(SourceFile module)
+    {
+        hasErrors = false;
+
+        // Process generating here
+        GenContext genContext = {0};
+        for (auto &statement : module->statements)
+        {
+            if (failed(mlirGen(statement, genContext)))
+            {
+                return mlir::failure();
             }
         }
 
+        if (hasErrors)
+        {
+            return mlir::failure();
+        }
+
+        // Verify the module after we have finished constructing it, this will check
+        // the structural properties of the IR and invoke any specific verifiers we
+        // have on the TypeScript operations.
+        if (failed(mlir::verify(theModule)))
+        {
+            theModule.emitError("module verification error");
+            return mlir::failure();
+        }
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult mlirCodeGenModuleWithDiagnostics(SourceFile module)
+    {
         auto printMsg = [](llvm::raw_fd_ostream &os, mlir::Diagnostic &diag, const char *msg) {
             if (!diag.getLocation().isa<mlir::UnknownLoc>())
                 os << diag.getLocation() << ": ";
@@ -546,7 +568,6 @@ class MLIRGenImpl
             os.flush();
         };
 
-        auto hasErrors = false;
         mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
             switch (diag.getSeverity())
             {
@@ -571,31 +592,35 @@ class MLIRGenImpl
             }
         });
 
-        // Process generating here
-        GenContext genContext = {0};
-        for (auto &statement : module->statements)
+        if (failed(mlirCodeGenModule(module)) || hasErrors)
         {
-            if (failed(mlirGen(statement, genContext)))
-            {
-                return nullptr;
-            }
+            return mlir::failure();
         }
 
-        if (hasErrors)
+        return mlir::success();
+    }
+
+    mlir::ModuleOp mlirGenSourceFile(SourceFile module)
+    {
+        sourceFile = module;
+
+        // We create an empty MLIR module and codegen functions one at a time and
+        // add them to the module.
+        theModule = mlir::ModuleOp::create(loc(module), fileName);
+        builder.setInsertionPointToStart(theModule.getBody());
+
+        SymbolTableScopeT varScope(symbolTable);
+        llvm::ScopedHashTableScope<StringRef, NamespaceInfo::TypePtr> fullNamespacesMapScope(fullNamespacesMap);
+        llvm::ScopedHashTableScope<StringRef, ClassInfo::TypePtr> fullNameClassesMapScope(fullNameClassesMap);
+        llvm::ScopedHashTableScope<StringRef, InterfaceInfo::TypePtr> fullNameInterfacesMapScope(fullNameInterfacesMap);
+        llvm::ScopedHashTableScope<StringRef, VariableDeclarationDOM::TypePtr> fullNameGlobalsMapScope(fullNameGlobalsMap);
+
+        if (mlir::succeeded(mlirDiscoverAllDependencies(module)) && mlir::succeeded(mlirCodeGenModuleWithDiagnostics(module)))
         {
-            return nullptr;
+            return theModule;
         }
 
-        // Verify the module after we have finished constructing it, this will check
-        // the structural properties of the IR and invoke any specific verifiers we
-        // have on the TypeScript operations.
-        if (failed(mlir::verify(theModule)))
-        {
-            theModule.emitError("module verification error");
-            return nullptr;
-        }
-
-        return theModule;
+        return nullptr;
     }
 
     mlir::LogicalResult mlirGenNamespace(ModuleDeclaration moduleDeclarationAST, const GenContext &genContext)
@@ -7039,6 +7064,8 @@ llvm.return %5 : i32
 
     /// A "module" matches a TypeScript source file: containing a list of functions.
     mlir::ModuleOp theModule;
+
+    bool hasErrors;
 
     /// The builder is a helper class to create IR inside a function. The builder
     /// is stateful, in particular it keeps an "insertion point": this is where
