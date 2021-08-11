@@ -83,6 +83,40 @@ class MLIRGenImpl
         rootNamespace = currentNamespace = std::make_shared<NamespaceInfo>();
     }
 
+    mlir::ModuleOp mlirGenSourceFile(SourceFile module)
+    {
+        if (failed(mlirGenCodeGenInit(module)))
+        {
+            return nullptr;
+        }
+
+        SymbolTableScopeT varScope(symbolTable);
+        llvm::ScopedHashTableScope<StringRef, NamespaceInfo::TypePtr> fullNamespacesMapScope(fullNamespacesMap);
+        llvm::ScopedHashTableScope<StringRef, ClassInfo::TypePtr> fullNameClassesMapScope(fullNameClassesMap);
+        llvm::ScopedHashTableScope<StringRef, InterfaceInfo::TypePtr> fullNameInterfacesMapScope(fullNameInterfacesMap);
+        llvm::ScopedHashTableScope<StringRef, VariableDeclarationDOM::TypePtr> fullNameGlobalsMapScope(fullNameGlobalsMap);
+
+        if (mlir::succeeded(mlirDiscoverAllDependencies(module)) && mlir::succeeded(mlirCodeGenModuleWithDiagnostics(module)))
+        {
+            return theModule;
+        }
+
+        return nullptr;
+    }
+
+  private:
+    mlir::LogicalResult mlirGenCodeGenInit(SourceFile module)
+    {
+        sourceFile = module;
+
+        // We create an empty MLIR module and codegen functions one at a time and
+        // add them to the module.
+        theModule = mlir::ModuleOp::create(loc(module), fileName);
+        builder.setInsertionPointToStart(theModule.getBody());
+
+        return mlir::success();
+    }
+
     mlir::LogicalResult mlirDiscoverAllDependencies(SourceFile module)
     {
         mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
@@ -212,29 +246,6 @@ class MLIRGenImpl
         }
 
         return mlir::success();
-    }
-
-    mlir::ModuleOp mlirGenSourceFile(SourceFile module)
-    {
-        sourceFile = module;
-
-        // We create an empty MLIR module and codegen functions one at a time and
-        // add them to the module.
-        theModule = mlir::ModuleOp::create(loc(module), fileName);
-        builder.setInsertionPointToStart(theModule.getBody());
-
-        SymbolTableScopeT varScope(symbolTable);
-        llvm::ScopedHashTableScope<StringRef, NamespaceInfo::TypePtr> fullNamespacesMapScope(fullNamespacesMap);
-        llvm::ScopedHashTableScope<StringRef, ClassInfo::TypePtr> fullNameClassesMapScope(fullNameClassesMap);
-        llvm::ScopedHashTableScope<StringRef, InterfaceInfo::TypePtr> fullNameInterfacesMapScope(fullNameInterfacesMap);
-        llvm::ScopedHashTableScope<StringRef, VariableDeclarationDOM::TypePtr> fullNameGlobalsMapScope(fullNameGlobalsMap);
-
-        if (mlir::succeeded(mlirDiscoverAllDependencies(module)) && mlir::succeeded(mlirCodeGenModuleWithDiagnostics(module)))
-        {
-            return theModule;
-        }
-
-        return nullptr;
     }
 
     mlir::LogicalResult mlirGenNamespace(ModuleDeclaration moduleDeclarationAST, const GenContext &genContext)
