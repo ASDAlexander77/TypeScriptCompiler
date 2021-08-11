@@ -21,6 +21,10 @@ def TypeScript_Any : TypeScript_Type<"Any"> {
     let mnemonic = "any";
 }
 
+def TypeScript_Unknown : TypeScript_Type<"Unknown"> {
+    let mnemonic = "Unknown";
+}
+
 def TypeScript_Null : TypeScript_Type<"Null"> {
     let mnemonic = "null";
 }

@@ -6483,6 +6483,11 @@ llvm.return %5 : i32
         {
             return getAnyType();
         }
+        else if (kind == SyntaxKind::UnknownKeyword)
+        {
+            // TODO: do I need to have special type?
+            return getUnknownType();
+        }
 
         llvm_unreachable("not implemented type declaration");
         // return getAnyType();
@@ -6856,6 +6861,11 @@ llvm.return %5 : i32
     mlir_ts::AnyType getAnyType()
     {
         return mlir_ts::AnyType::get(builder.getContext());
+    }
+
+    mlir_ts::UnknownType getUnknownType()
+    {
+        return mlir_ts::UnknownType::get(builder.getContext());
     }
 
     mlir_ts::NullType getNullType()

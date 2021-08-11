@@ -1363,6 +1363,11 @@ class CastLogicHelper
             }
         }
 
+        if (auto obj = resType.dyn_cast_or_null<mlir_ts::UnknownType>())
+        {
+            return castToOpaqueType(in, inLLVMType);
+        }
+
         auto isInString = inType.dyn_cast_or_null<mlir_ts::StringType>();
         if (isInString && (resLLVMType.isInteger(32) || resLLVMType.isInteger(64)))
         {

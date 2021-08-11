@@ -6,6 +6,10 @@ function call_func(f: (o: object) => void, user: { firstName: string }) {
     f(user);
 }
 
+function call_func2(f: (o: unknown) => void, user: { firstName: string }) {
+    f(user);
+}
+
 function main() {
     const user = {
         firstName: "World",
@@ -27,6 +31,7 @@ function main() {
     });
 
     call_func(user.sayHi, user);
+    call_func2(user.sayHi, user);
 
     print("done.");
 }
