@@ -71,12 +71,6 @@ struct ParamOptionalOpLowering : public TsPattern<mlir_ts::ParamOptionalOp>
 
         if (paramOp.defaultValueRegion().empty())
         {
-            // MLIRTypeHelper mth(rewriter.getContext());
-
-            // auto copyRequired = false;
-            // auto actualType = mth.convertConstTypeToType(paramOp.getType(), copyRequired);
-
-            // rewriter.replaceOpWithNewOp<mlir_ts::VariableOp>(paramOp, actualType, paramOp.argValue());
             rewriter.replaceOpWithNewOp<mlir_ts::VariableOp>(paramOp, paramOp.getType(), paramOp.argValue(), rewriter.getBoolAttr(false));
             return success();
         }

@@ -160,24 +160,24 @@ class MLIRTypeHelper
         return type && (type.isIntOrIndexOrFloat() || type.isa<mlir_ts::TupleType>());
     }
 
-    mlir::Type convertConstTypeToType(mlir::Type type, bool &copyRequired)
+    mlir::Type convertConstArrayTypeToArrayType(mlir::Type type)
     {
         if (auto constArrayType = type.dyn_cast_or_null<mlir_ts::ConstArrayType>())
         {
-            copyRequired = true;
             return mlir_ts::ArrayType::get(constArrayType.getElementType());
         }
 
-        /*
+        return type;
+    }
+
+    mlir::Type convertConstTupleTypeToTupleType(mlir::Type type)
+    {
         // tuple is value and copied already
         if (auto constTupleType = type.dyn_cast_or_null<mlir_ts::ConstTupleType>())
         {
-            copyRequired = true;
             return mlir_ts::TupleType::get(context, constTupleType.getFields());
         }
-        */
 
-        copyRequired = false;
         return type;
     }
 

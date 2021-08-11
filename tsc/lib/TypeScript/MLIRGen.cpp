@@ -1028,8 +1028,7 @@ class MLIRGenImpl
 
                 MLIRTypeHelper mth(builder.getContext());
 
-                auto copyRequired = false;
-                auto actualType = mth.convertConstTypeToType(type, copyRequired);
+                auto actualType = mth.convertConstArrayTypeToArrayType(type);
                 if (init && actualType != type)
                 {
                     auto castValue = cast(location, actualType, init, genContext);
@@ -1695,8 +1694,7 @@ class MLIRGenImpl
                 {
                     // TODO: do we need to convert it here? maybe send it as const object?
                     MLIRTypeHelper mth(builder.getContext());
-                    bool copyRequired;
-                    funcProto->setReturnType(mth.convertConstTypeToType(discoveredType, copyRequired));
+                    funcProto->setReturnType(mth.convertConstArrayTypeToArrayType(discoveredType));
                     LLVM_DEBUG(llvm::dbgs() << "ret type: " << funcProto->getReturnType() << ", name: " << name << "\n";);
                 }
 
@@ -4407,8 +4405,7 @@ llvm.return %5 : i32
                 return mlirGenArrayLiteralExpressionNonConst(arrayLiteral, genContext);
             }
 
-            bool copyRequired;
-            auto type = mth.convertConstTypeToType(constOp.getType(), copyRequired);
+            auto type = mth.convertConstArrayTypeToArrayType(constOp.getType());
 
             values.push_back(constOp.valueAttr());
             types.push_back(type);
@@ -4682,10 +4679,9 @@ llvm.return %5 : i32
         // we need to cast it to tuple and set values
         auto location = constantVal.getLoc();
         MLIRTypeHelper mth(builder.getContext());
-        bool copyRequired = false;
-        auto tupleVar = builder.create<mlir_ts::VariableOp>(
-            location, mlir_ts::RefType::get(mth.convertConstTypeToType(constantVal.getType(), copyRequired)), constantVal,
-            builder.getBoolAttr(false));
+        auto tupleType = mth.convertConstTupleTypeToTupleType(constantVal.getType());
+        auto tupleVar =
+            builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(tupleType), constantVal, builder.getBoolAttr(false));
         for (auto fieldToSet : fieldsToSet)
         {
             auto location = fieldToSet.second.getLoc();
@@ -4696,7 +4692,9 @@ llvm.return %5 : i32
             auto savedValue = mlirGenSaveLogicOneItem(location, getField, fieldToSet.second, genContext);
         }
 
-        return tupleVar;
+        auto loadedValue = builder.create<mlir_ts::LoadOp>(location, tupleType, tupleVar);
+
+        return loadedValue;
     }
 
     mlir::FunctionType getFunctionTypeWithThisType(mlir::FunctionType funcType, mlir::Type thisType, bool replace = false)

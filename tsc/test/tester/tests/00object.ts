@@ -34,5 +34,13 @@ function main() {
 
     t(object5);
 
+    let object6: { name: string };
+    object6 = { name: "foo" };
+    print(object6.name);
+
+    let object7: { name: string };
+    object7 = { name: "foo" + 1 };
+    print(object7.name);
+
     print("done.");
 }
