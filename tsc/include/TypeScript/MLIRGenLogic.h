@@ -67,59 +67,6 @@ using SymbolTableScopeT = llvm::ScopedHashTableScope<StringRef, VariablePairT>;
         return mlir::Value();                                                                                                              \
     }
 
-namespace
-{
-struct PassResult
-{
-    PassResult() : functionReturnTypeShouldBeProvided(false)
-    {
-    }
-
-    mlir::Type functionReturnType;
-    bool functionReturnTypeShouldBeProvided;
-    llvm::StringMap<ts::VariableDeclarationDOM::TypePtr> outerVariables;
-};
-
-struct GenContext
-{
-    GenContext() = default;
-
-    // TODO: you are using "theModule.getBody()->clear();", do you need this hack anymore?
-    void clean()
-    {
-        if (cleanUps)
-        {
-            for (auto op : *cleanUps)
-            {
-                op->erase();
-            }
-
-            delete cleanUps;
-            cleanUps = nullptr;
-        }
-
-        if (passResult)
-        {
-            delete passResult;
-            passResult = nullptr;
-        }
-    }
-
-    bool allowPartialResolve;
-    bool dummyRun;
-    bool allowConstEval;
-    mlir_ts::FuncOp funcOp;
-    llvm::StringMap<ts::VariableDeclarationDOM::TypePtr> *capturedVars;
-    mlir::Type thisType;
-    mlir::FunctionType destFuncType;
-    mlir::Type argTypeDestFuncType;
-    PassResult *passResult;
-    mlir::SmallVector<mlir::Block *> *cleanUps;
-    NodeArray<Statement> generatedStatements;
-};
-
-} // namespace
-
 namespace typescript
 {
 
