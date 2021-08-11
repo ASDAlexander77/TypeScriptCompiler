@@ -70,14 +70,14 @@ namespace
 class MLIRGenImpl
 {
   public:
-    MLIRGenImpl(const mlir::MLIRContext &context) : builder(&const_cast<mlir::MLIRContext &>(context)), hasErrors(false)
+    MLIRGenImpl(const mlir::MLIRContext &context) : hasErrors(false), builder(&const_cast<mlir::MLIRContext &>(context))
     {
         fileName = "<unknown>";
         rootNamespace = currentNamespace = std::make_shared<NamespaceInfo>();
     }
 
     MLIRGenImpl(const mlir::MLIRContext &context, const llvm::StringRef &fileNameParam)
-        : builder(&const_cast<mlir::MLIRContext &>(context)), hasErrors(false)
+        : hasErrors(false), builder(&const_cast<mlir::MLIRContext &>(context))
     {
         fileName = fileNameParam;
         rootNamespace = currentNamespace = std::make_shared<NamespaceInfo>();
@@ -6687,15 +6687,15 @@ llvm.return %5 : i32
                                          posLineChar.character + 1);
     }
 
-    /// A "module" matches a TypeScript source file: containing a list of functions.
-    mlir::ModuleOp theModule;
-
     bool hasErrors;
 
     /// The builder is a helper class to create IR inside a function. The builder
     /// is stateful, in particular it keeps an "insertion point": this is where
     /// the next operations will be introduced.
     mlir::OpBuilder builder;
+
+    /// A "module" matches a TypeScript source file: containing a list of functions.
+    mlir::ModuleOp theModule;
 
     mlir::StringRef fileName;
 
