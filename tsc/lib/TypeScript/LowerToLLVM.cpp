@@ -1088,6 +1088,42 @@ struct NewOpLowering : public TsLlvmPattern<mlir_ts::NewOp>
     }
 };
 
+struct CreateTupleOpLowering : public TsLlvmPattern<mlir_ts::CreateTupleOp>
+{
+    using TsLlvmPattern<mlir_ts::CreateTupleOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::CreateTupleOp createTupleOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        LLVMCodeHelper ch(createTupleOp, rewriter, getTypeConverter());
+        CodeLogicHelper clh(createTupleOp, rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+        TypeHelper th(rewriter);
+
+        auto loc = createTupleOp.getLoc();
+        auto tupleType = createTupleOp.getType().cast<mlir_ts::TupleType>();
+
+        auto tupleVar =
+            rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(tupleType), mlir::Value(), rewriter.getBoolAttr(false));
+
+        // set values here
+        mlir::Value zero = clh.createIndexConstantOf(0);
+        auto index = 0;
+        for (auto item : createTupleOp.items())
+        {
+            mlir::Value fieldIndex = clh.createStructIndexConstantOf(index++);
+            auto valuePtrType = LLVM::LLVMPointerType::get(tch.convertType(item.getType()));
+            auto offset = rewriter.create<LLVM::GEPOp>(loc, valuePtrType, tupleVar, ValueRange{zero, fieldIndex});
+            rewriter.create<LLVM::StoreOp>(loc, item, offset);
+        }
+
+        auto loadedValue = rewriter.create<mlir_ts::LoadOp>(loc, tupleType, tupleVar);
+
+        rewriter.replaceOp(createTupleOp, ValueRange{loadedValue});
+        return success();
+    }
+};
+
 struct CreateArrayOpLowering : public TsLlvmPattern<mlir_ts::CreateArrayOp>
 {
     using TsLlvmPattern<mlir_ts::CreateArrayOp>::TsLlvmPattern;
@@ -2763,9 +2799,9 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
                     AssertOpLowering, CastOpLowering, ConstantOpLowering, CreateOptionalOpLowering, UndefOptionalOpLowering,
                     HasValueOpLowering, ValueOpLowering, SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering, EntryOpLowering,
                     FuncOpLowering, LoadOpLowering, ElementRefOpLowering, PropertyRefOpLowering, ExtractPropertyOpLowering,
-                    LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering,
-                    NewArrayOpLowering, PushOpLowering, PopOpLowering, DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering,
-                    PrintOpLowering, StoreOpLowering, SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering,
+                    LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateTupleOpLowering, CreateArrayOpLowering,
+                    NewEmptyArrayOpLowering, NewArrayOpLowering, PushOpLowering, PopOpLowering, DeleteOpLowering, ParseFloatOpLowering,
+                    ParseIntOpLowering, PrintOpLowering, StoreOpLowering, SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering,
                     StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering,
                     MemoryCopyOpLowering, LoadSaveValueLowering, ThrowOpLoweringVCWin32, TrampolineOpLowering, TryOpLowering,
                     VariableOpLowering, InvokeOpLowering, ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering,

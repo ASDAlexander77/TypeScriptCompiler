@@ -4332,6 +4332,7 @@ llvm.return %5 : i32
         auto location = loc(arrayLiteral);
 
         MLIRTypeHelper mth(builder.getContext());
+        MLIRCodeLogic mcl(builder);
 
         // first value
         auto isTuple = false;
@@ -4364,8 +4365,13 @@ llvm.return %5 : i32
 
         if (isTuple)
         {
-            llvm_unreachable("not implemented");
-            return mlir::Value();
+            SmallVector<mlir_ts::FieldInfo> fieldInfos;
+            for (auto type : types)
+            {
+                fieldInfos.push_back({mlir::Attribute(), type});
+            }
+
+            return builder.create<mlir_ts::CreateTupleOp>(loc(arrayLiteral), getTupleType(fieldInfos), values);
         }
 
         if (!elementType)
@@ -4676,12 +4682,18 @@ llvm.return %5 : i32
             return constantVal;
         }
 
-        // we need to cast it to tuple and set values
-        auto location = constantVal.getLoc();
         MLIRTypeHelper mth(builder.getContext());
         auto tupleType = mth.convertConstTupleTypeToTupleType(constantVal.getType());
+        auto location = constantVal.getLoc();
+        return mlirGenCreateTuple(location, tupleType, constantVal, fieldsToSet, genContext);
+    }
+
+    mlir::Value mlirGenCreateTuple(mlir::Location location, mlir::Type tupleType, mlir::Value initValue,
+                                   SmallVector<std::pair<mlir::Attribute, mlir::Value>> &fieldsToSet, const GenContext &genContext)
+    {
+        // we need to cast it to tuple and set values
         auto tupleVar =
-            builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(tupleType), constantVal, builder.getBoolAttr(false));
+            builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(tupleType), initValue, builder.getBoolAttr(false));
         for (auto fieldToSet : fieldsToSet)
         {
             auto location = fieldToSet.second.getLoc();
@@ -4693,7 +4705,6 @@ llvm.return %5 : i32
         }
 
         auto loadedValue = builder.create<mlir_ts::LoadOp>(location, tupleType, tupleVar);
-
         return loadedValue;
     }
 

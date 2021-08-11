@@ -521,6 +521,18 @@ def TypeScript_NewInterfaceOp : TypeScript_Op<"NewInterface"> {
   let assemblyFormat = "`(` $thisVal `:` type($thisVal) `,` $interfaceVTable `:` type($interfaceVTable) `)` attr-dict `:` type($instance)";
 }
 
+def TypeScript_CreateTupleOp : TypeScript_Op<"CreateTuple"> {
+  let summary = "create tuple";
+  let description = [{
+    create tuple
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$items);
+  let results = (outs TypeScript_Tuple:$instance);
+
+  let assemblyFormat = "`[` $items `:` type($items) `]` attr-dict `:` type($instance)";
+}
+
 def TypeScript_CreateArrayOp : TypeScript_Op<"CreateArray"> {
   let summary = "create array";
   let description = [{

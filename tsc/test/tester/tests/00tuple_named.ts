@@ -19,5 +19,10 @@ function main()
 
 	print (c.user.name, " << end (should be value Test2)");
 
+    let a: [ v1: number, v2: string ];
+	a = [10.0 + 20.0, "asd"];
+
+	print (a.v1, a.v2);
+
     print("done.");    
 }
