@@ -6,10 +6,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set_Options()
 
-add_definitions("-DTEST_VCPATH=\"C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/SDK/ScopeCppSDK/vc15/VC/lib\"")
-add_definitions("-DTEST_SDKPATH=\"C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/SDK/ScopeCppSDK/vc15/SDK/lib\"")
-add_definitions("-DTEST_EXEPATH=\"${CMAKE_BINARY_DIR}/../3rdParty/llvm/debug/bin\"")
-add_definitions("-DTEST_TSCEXEPATH=\"${CMAKE_BINARY_DIR}/tsc/bin\"")
+add_compile_definitions("-DTEST_VCPATH=\"C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/SDK/ScopeCppSDK/vc15/VC/lib\"")
+add_compile_definitions("-DTEST_SDKPATH=\"C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/SDK/ScopeCppSDK/vc15/SDK/lib\"")
+add_compile_definitions("-DTEST_EXEPATH=\"${CMAKE_BINARY_DIR}/../3rdParty/llvm/debug/bin\"")
+add_compile_definitions("-DTEST_TSCEXEPATH=\"${CMAKE_BINARY_DIR}/tsc/bin\"")
 
 add_executable(test-runner test-runner.cpp)
 target_link_libraries(test-runner PRIVATE ${LIBS})
