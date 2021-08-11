@@ -4156,116 +4156,13 @@ llvm.return %5 : i32
         return value;
     }
 
-    mlir::Value mlirGenTypeOf(mlir::Location location, mlir::Type type, const GenContext &genContext)
-    {
-        if (type.isIntOrIndexOrFloat() && !type.isIntOrIndex())
-        {
-            auto typeOfValue = builder.create<mlir_ts::ConstantOp>(location, getStringType(), getStringAttr(std::string("number")));
-            return typeOfValue;
-        }
-
-        if (type == getBooleanType())
-        {
-            auto typeOfValue = builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), getStringAttr(std::string("boolean")));
-            return typeOfValue;
-        }
-
-        if (type == getNumberType())
-        {
-            auto typeOfValue = builder.create<mlir_ts::ConstantOp>(location, getNumberType(), getStringAttr(std::string("number")));
-            return typeOfValue;
-        }
-
-        if (type == getStringType())
-        {
-            auto typeOfValue = builder.create<mlir_ts::ConstantOp>(location, getStringType(), getStringAttr(std::string("string")));
-            return typeOfValue;
-        }
-
-        if (type.isa<mlir_ts::ArrayType>())
-        {
-            auto typeOfValue = builder.create<mlir_ts::ConstantOp>(location, getStringType(), getStringAttr(std::string("array")));
-            return typeOfValue;
-        }
-
-        if (type.isa<mlir::FunctionType>())
-        {
-            auto typeOfValue = builder.create<mlir_ts::ConstantOp>(location, getStringType(), getStringAttr(std::string("function")));
-            return typeOfValue;
-        }
-
-        if (type.isa<mlir_ts::ClassType>())
-        {
-            auto typeOfValue = builder.create<mlir_ts::ConstantOp>(location, getStringType(), getStringAttr(std::string("class")));
-            return typeOfValue;
-        }
-
-        if (type.isa<mlir_ts::ClassStorageType>())
-        {
-            auto typeOfValue = builder.create<mlir_ts::ConstantOp>(location, getStringType(), getStringAttr(std::string("class")));
-            return typeOfValue;
-        }
-
-        if (type.isa<mlir_ts::ObjectType>())
-        {
-            auto typeOfValue = builder.create<mlir_ts::ConstantOp>(location, getStringType(), getStringAttr(std::string("object")));
-            return typeOfValue;
-        }
-
-        if (type == getOpaqueType())
-        {
-            auto typeOfValue = builder.create<mlir_ts::ConstantOp>(location, getStringType(), getStringAttr(std::string("object")));
-            return typeOfValue;
-        }
-
-        if (type == getSymbolType())
-        {
-            auto typeOfValue = builder.create<mlir_ts::ConstantOp>(location, getStringType(), getStringAttr(std::string("symbol")));
-            return typeOfValue;
-        }
-
-        if (type == getUndefinedType())
-        {
-            auto typeOfValue = builder.create<mlir_ts::ConstantOp>(location, getStringType(), getStringAttr(std::string("undefined")));
-            return typeOfValue;
-        }
-
-        // should take value from "any structure"
-        if (type == getAnyType())
-        {
-            auto typeOfValue = builder.create<mlir_ts::ConstantOp>(location, getStringType(), getStringAttr(std::string("object")));
-            return typeOfValue;
-        }
-
-        if (type == getUnknownType())
-        {
-            auto typeOfValue = builder.create<mlir_ts::ConstantOp>(location, getStringType(), getStringAttr(std::string("unknown")));
-            return typeOfValue;
-        }
-
-        if (auto subType = type.dyn_cast_or_null<mlir_ts::RefType>())
-        {
-            return mlirGenTypeOf(location, subType.getElementType(), genContext);
-        }
-
-        if (auto subType = type.dyn_cast_or_null<mlir_ts::ValueRefType>())
-        {
-            return mlirGenTypeOf(location, subType.getElementType(), genContext);
-        }
-
-        if (auto subType = type.dyn_cast_or_null<mlir_ts::OptionalType>())
-        {
-            return mlirGenTypeOf(location, subType.getElementType(), genContext);
-        }
-
-        llvm_unreachable("not implemented");
-    }
-
     mlir::Value mlirGen(TypeOfExpression typeOfExpression, const GenContext &genContext)
     {
+        auto location = loc(typeOfExpression);
+
         auto result = mlirGen(typeOfExpression->expression, genContext);
-        auto type = result.getType();
-        return mlirGenTypeOf(loc(typeOfExpression), type, genContext);
+        auto typeOfValue = builder.create<mlir_ts::TypeOfOp>(location, getStringType(), result);
+        return typeOfValue;
     }
 
     mlir::Value mlirGen(TemplateLiteralLikeNode templateExpressionAST, const GenContext &genContext)

@@ -2524,6 +2524,22 @@ struct GetMethodOpLowering : public TsLlvmPattern<mlir_ts::GetMethodOp>
     }
 };
 
+struct TypeOfOpLowering : public TsLlvmPattern<mlir_ts::TypeOfOp>
+{
+    using TsLlvmPattern<mlir_ts::TypeOfOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::TypeOfOp typeOfOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+    {
+        Location loc = typeOfOp.getLoc();
+
+        TypeOfOpHelper toh(rewriter);
+        auto typeOfValue = toh.typeOfLogic(loc, typeOfOp.value());
+
+        rewriter.replaceOp(typeOfOp, ValueRange{typeOfValue});
+        return success();
+    }
+};
+
 static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, mlir::ModuleOp &m)
 {
     converter.addConversion([&](mlir_ts::AnyType type) { return LLVM::LLVMPointerType::get(IntegerType::get(m.getContext(), 8)); });

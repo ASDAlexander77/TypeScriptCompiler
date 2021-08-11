@@ -1612,24 +1612,34 @@ class CastLogicHelper
     mlir::Value castToAny(mlir::Value in, mlir::Type inLLVMType)
     {
         // TODO: add type id to track data type
+        auto sizeType = th.getIndexType();
+        auto typeOfValueType = th.getI8PtrType();
 
         auto llvmStorageType = inLLVMType;
-        auto dataWithSizeType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {th.getIndexType(), llvmStorageType}, false);
+        auto dataWithSizeType =
+            LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {sizeType, typeOfValueType, llvmStorageType}, false);
         auto dataWithSizeTypePtr = LLVM::LLVMPointerType::get(dataWithSizeType);
 
         auto memValue = ch.MemoryAllocBitcast(dataWithSizeTypePtr, dataWithSizeType);
 
         // set value size
-        auto size = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getIndexType(), llvmStorageType);
+        auto size = rewriter.create<mlir_ts::SizeOfOp>(loc, sizeType, llvmStorageType);
+
+        // get typeof value
+        auto typeOfValue = rewriter.create<mlir_ts::TypeOfOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
 
         auto zero = clh.createI32ConstantOf(0);
         auto one = clh.createI32ConstantOf(1);
+        auto two = clh.createI32ConstantOf(2);
 
-        auto ptrSize = rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(th.getI32Type()), memValue, ValueRange{zero, zero});
+        auto ptrSize = rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(sizeType), memValue, ValueRange{zero, zero});
         rewriter.create<LLVM::StoreOp>(loc, size, ptrSize);
 
+        auto typeOfStr = rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(typeOfValueType), memValue, ValueRange{zero, one});
+        rewriter.create<LLVM::StoreOp>(loc, typeOfValue, typeOfStr);
+
         // set actual value
-        auto ptrValue = rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(llvmStorageType), memValue, ValueRange{zero, one});
+        auto ptrValue = rewriter.create<LLVM::GEPOp>(loc, LLVM::LLVMPointerType::get(llvmStorageType), memValue, ValueRange{zero, two});
         rewriter.create<LLVM::StoreOp>(loc, in, ptrValue);
 
         return clh.castToI8Ptr(memValue);
@@ -1893,6 +1903,133 @@ class OptionalLogicHelper
 
             return LogicOp_<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, opCmpCode, left, right, rewriter, typeConverter);
         }
+    }
+};
+
+class TypeOfOpHelper
+{
+    ConversionPatternRewriter &rewriter;
+
+  public:
+    TypeOfOpHelper(ConversionPatternRewriter &rewriter) : rewriter(rewriter)
+    {
+    }
+
+    mlir::Value strValue(mlir::Location loc, std::string value)
+    {
+        auto strType = mlir_ts::StringType::get(rewriter.getContext());
+        auto typeOfValue = rewriter.create<mlir_ts::ConstantOp>(loc, strType, rewriter.getStringAttr(value));
+        return typeOfValue;
+    }
+
+    mlir::Value typeOfLogic(mlir::Location loc, mlir::Type type)
+    {
+        if (type.isIntOrIndexOrFloat() && !type.isIntOrIndex())
+        {
+            auto typeOfValue = strValue(loc, "number");
+            return typeOfValue;
+        }
+
+        if (type.isa<mlir_ts::BooleanType>())
+        {
+            auto typeOfValue = strValue(loc, "boolean");
+            return typeOfValue;
+        }
+
+        if (type.isa<mlir_ts::NumberType>())
+        {
+            auto typeOfValue = strValue(loc, "number");
+            return typeOfValue;
+        }
+
+        if (type.isa<mlir_ts::StringType>())
+        {
+            auto typeOfValue = strValue(loc, "string");
+            return typeOfValue;
+        }
+
+        if (type.isa<mlir_ts::ArrayType>())
+        {
+            auto typeOfValue = strValue(loc, "array");
+            return typeOfValue;
+        }
+
+        if (type.isa<mlir::FunctionType>())
+        {
+            auto typeOfValue = strValue(loc, "function");
+            return typeOfValue;
+        }
+
+        if (type.isa<mlir_ts::ClassType>())
+        {
+            auto typeOfValue = strValue(loc, "class");
+            return typeOfValue;
+        }
+
+        if (type.isa<mlir_ts::ClassStorageType>())
+        {
+            auto typeOfValue = strValue(loc, "class");
+            return typeOfValue;
+        }
+
+        if (type.isa<mlir_ts::ObjectType>())
+        {
+            auto typeOfValue = strValue(loc, "object");
+            return typeOfValue;
+        }
+
+        if (type.isa<mlir_ts::OpaqueType>())
+        {
+            auto typeOfValue = strValue(loc, "object");
+            return typeOfValue;
+        }
+
+        if (type.isa<mlir_ts::SymbolType>())
+        {
+            auto typeOfValue = strValue(loc, "symbol");
+            return typeOfValue;
+        }
+
+        if (type.isa<mlir_ts::UndefinedType>())
+        {
+            auto typeOfValue = strValue(loc, "undefined");
+            return typeOfValue;
+        }
+
+        // should take value from "any structure"
+        if (type.isa<mlir_ts::AnyType>())
+        {
+            auto typeOfValue = strValue(loc, "object");
+            return typeOfValue;
+        }
+
+        if (type.isa<mlir_ts::UnknownType>())
+        {
+            auto typeOfValue = strValue(loc, "unknown");
+            return typeOfValue;
+        }
+
+        if (auto subType = type.dyn_cast_or_null<mlir_ts::RefType>())
+        {
+            return typeOfLogic(loc, subType.getElementType());
+        }
+
+        if (auto subType = type.dyn_cast_or_null<mlir_ts::ValueRefType>())
+        {
+            return typeOfLogic(loc, subType.getElementType());
+        }
+
+        if (auto subType = type.dyn_cast_or_null<mlir_ts::OptionalType>())
+        {
+            return typeOfLogic(loc, subType.getElementType());
+        }
+
+        llvm_unreachable("not implemented");
+    }
+
+    mlir::Value typeOfLogic(mlir::Location loc, mlir::Value value)
+    {
+        return typeOfLogic(loc, value.getType());
     }
 };
 
