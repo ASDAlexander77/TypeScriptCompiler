@@ -2640,6 +2640,10 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
 
     converter.addConversion([&](mlir_ts::UnknownType type) { return LLVM::LLVMPointerType::get(IntegerType::get(m.getContext(), 8)); });
 
+    converter.addConversion([&](mlir_ts::SymbolType type) { return IntegerType::get(m.getContext(), 32); });
+
+    converter.addConversion([&](mlir_ts::UndefinedType type) { return IntegerType::get(m.getContext(), 1); });
+
     converter.addConversion([&](mlir_ts::ClassStorageType type) {
         SmallVector<mlir::Type> convertedTypes;
         for (auto subType : type.getFields())

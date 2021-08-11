@@ -22,7 +22,15 @@ def TypeScript_Any : TypeScript_Type<"Any"> {
 }
 
 def TypeScript_Unknown : TypeScript_Type<"Unknown"> {
-    let mnemonic = "Unknown";
+    let mnemonic = "unknown";
+}
+
+def TypeScript_Symbol : TypeScript_Type<"Symbol"> {
+    let mnemonic = "symbol";
+}
+
+def TypeScript_Undefined : TypeScript_Type<"Undefined"> {
+    let mnemonic = "undefined";
 }
 
 def TypeScript_Null : TypeScript_Type<"Null"> {
