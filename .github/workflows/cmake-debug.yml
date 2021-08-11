@@ -58,11 +58,11 @@ jobs:
     - name: Download 3rd party
       continue-on-error: true
       shell: pwsh
-      run: Invoke-WebRequest -Uri "https://www.dropbox.com/s/o8hrv8ppqayu6vg/llvm_13_release.zip?dl=1" -OutFile "llvm_13_release.zip"
+      run: if (-not(Test-Path -Path "llvm_13_release.zip" -PathType Leaf)) { Invoke-WebRequest -Uri "https://www.dropbox.com/s/o8hrv8ppqayu6vg/llvm_13_release.zip?dl=1" -OutFile "llvm_13_release.zip" }
 
     - name: UnZip 3rd party
       continue-on-error: true
-      run: Expand-Archive -Path "llvm_13_release.zip" -DestinationPath "3rdParty\llvm\"
+      run: if (Test-Path -Path "llvm_13_release.zip" -PathType Leaf) { Expand-Archive -Path "llvm_13_release.zip" -DestinationPath "3rdParty\llvm\" }
       shell: pwsh
 
     - name: Configure
