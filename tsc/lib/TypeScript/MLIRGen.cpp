@@ -15,6 +15,7 @@
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Types.h"
 #include "mlir/IR/Verifier.h"
+#include "mlir/IR/Diagnostics.h"
 
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
@@ -482,52 +483,93 @@ class MLIRGenImpl
         llvm::ScopedHashTableScope<StringRef, InterfaceInfo::TypePtr> fullNameInterfacesMapScope(fullNameInterfacesMap);
         llvm::ScopedHashTableScope<StringRef, VariableDeclarationDOM::TypePtr> fullNameGlobalsMapScope(fullNameGlobalsMap);
 
-        // Process of discovery here
-        GenContext genContextPartial = {0};
-        genContextPartial.allowPartialResolve = true;
-        genContextPartial.dummyRun = true;
-        genContextPartial.cleanUps = new mlir::SmallVector<mlir::Block *>();
-        auto notResolved = 0;
-        do
         {
-            auto lastTimeNotResolved = notResolved;
-            notResolved = 0;
-            GenContext genContext = {0};
+            mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
+                // suppress all
+            });
+
+            // Process of discovery here
+            GenContext genContextPartial = {0};
+            genContextPartial.allowPartialResolve = true;
+            genContextPartial.dummyRun = true;
+            genContextPartial.cleanUps = new mlir::SmallVector<mlir::Block *>();
+            auto notResolved = 0;
+            do
+            {
+                auto lastTimeNotResolved = notResolved;
+                notResolved = 0;
+                GenContext genContext = {0};
+                for (auto &statement : module->statements)
+                {
+                    if (statement->processed)
+                    {
+                        continue;
+                    }
+
+                    if (failed(mlirGen(statement, genContextPartial)))
+                    {
+                        notResolved++;
+                    }
+                    else
+                    {
+                        statement->processed = true;
+                    }
+                }
+
+                if (lastTimeNotResolved > 0 && lastTimeNotResolved == notResolved)
+                {
+                    theModule.emitError("can't resolve dependencies");
+                    return nullptr;
+                }
+
+            } while (notResolved > 0);
+
+            genContextPartial.clean();
+
+            // clean up
+            theModule.getBody()->clear();
+
+            // clear state
             for (auto &statement : module->statements)
             {
-                if (statement->processed)
-                {
-                    continue;
-                }
-
-                if (failed(mlirGen(statement, genContextPartial)))
-                {
-                    notResolved++;
-                }
-                else
-                {
-                    statement->processed = true;
-                }
+                statement->processed = false;
             }
-
-            if (lastTimeNotResolved > 0 && lastTimeNotResolved == notResolved)
-            {
-                theModule.emitError("can't resolve dependencies");
-                return nullptr;
-            }
-
-        } while (notResolved > 0);
-
-        genContextPartial.clean();
-
-        // clean up
-        theModule.getBody()->clear();
-
-        // clear state
-        for (auto &statement : module->statements)
-        {
-            statement->processed = false;
         }
+
+        auto printMsg = [](llvm::raw_fd_ostream &os, mlir::Diagnostic &diag, const char *msg) {
+            if (!diag.getLocation().isa<mlir::UnknownLoc>())
+                os << diag.getLocation() << ": ";
+            os << msg;
+
+            // The default behavior for errors is to emit them to stderr.
+            os << diag << '\n';
+            os.flush();
+        };
+
+        auto hasErrors = false;
+        mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
+            switch (diag.getSeverity())
+            {
+            case mlir::DiagnosticSeverity::Note:
+                printMsg(llvm::outs(), diag, "note: ");
+                for (auto &note : diag.getNotes())
+                {
+                    printMsg(llvm::outs(), note, "note: ");
+                }
+
+                break;
+            case mlir::DiagnosticSeverity::Warning:
+                printMsg(llvm::outs(), diag, "warning: ");
+                break;
+            case mlir::DiagnosticSeverity::Error:
+                hasErrors = true;
+                printMsg(llvm::errs(), diag, "error: ");
+                break;
+            case mlir::DiagnosticSeverity::Remark:
+                printMsg(llvm::outs(), diag, "information: ");
+                break;
+            }
+        });
 
         // Process generating here
         GenContext genContext = {0};
@@ -539,14 +581,18 @@ class MLIRGenImpl
             }
         }
 
+        if (hasErrors)
+        {
+            return nullptr;
+        }
+
         // Verify the module after we have finished constructing it, this will check
         // the structural properties of the IR and invoke any specific verifiers we
         // have on the TypeScript operations.
         if (failed(mlir::verify(theModule)))
         {
-            // TODO: uncomment it
             theModule.emitError("module verification error");
-            // return nullptr;
+            return nullptr;
         }
 
         return theModule;
@@ -2957,8 +3003,9 @@ llvm.return %5 : i32
         }
         else
         {
-            LLVM_DEBUG(dbgs() << "left expr.: " << leftExpressionValueBeforeCast << "\n";);
-            llvm_unreachable("not implemented");
+            LLVM_DEBUG(dbgs() << "\n\n\n @@@ ... left expr.: " << leftExpressionValueBeforeCast << " ...\n";);
+            emitError(location, "saving to constant object");
+            return mlir::Value();
         }
 
         return result;
