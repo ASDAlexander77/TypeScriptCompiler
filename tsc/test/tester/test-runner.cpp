@@ -166,10 +166,10 @@ int runFolder(const char *folder)
 
 void createCompileBatchFile()
 {
-    if (exists("compile.bat"))
-    {
-        return;
-    }
+    // if (exists("compile.bat"))
+    // {
+    //     return;
+    // }
 
     std::ofstream batFile("compile.bat");
     batFile << "echo off" << std::endl;
@@ -192,13 +192,13 @@ void createCompileBatchFile()
 
 void createCompileBatchFileWithRT()
 {
-    if (exists("compile_rt.bat"))
-    {
-        return;
-    }
+    // if (exists("compile_rt.bat"))
+    // {
+    //     return;
+    // }
 
     std::ofstream batFile("compile_rt.bat");
-    //batFile << "echo off" << std::endl;
+    // batFile << "echo off" << std::endl;
     batFile << "set FILENAME=%1" << std::endl;
     batFile << "set LIBPATH=" << TEST_LIBPATH << std::endl;
     batFile << "set SDKPATH=" << TEST_SDKPATH << std::endl;
@@ -220,10 +220,10 @@ void createCompileBatchFileWithRT()
 
 void createJitCompileBatchFile()
 {
-    if (exists("compile_jit.bat"))
-    {
-        return;
-    }
+    // if (exists("compile_jit.bat"))
+    // {
+    //     return;
+    // }
 
     std::ofstream batFile("compile_jit.bat");
     batFile << "echo off" << std::endl;
@@ -244,10 +244,10 @@ void createJitCompileBatchFile()
 
 void createJitBatchFile()
 {
-    if (exists("jit.bat"))
-    {
-        return;
-    }
+    // if (exists("jit.bat"))
+    // {
+    //     return;
+    // }
 
     std::ofstream batFile("jit.bat");
     batFile << "echo off" << std::endl;
