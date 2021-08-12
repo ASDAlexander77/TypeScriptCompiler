@@ -54,7 +54,8 @@ namespace fs = std::experimental::filesystem;
 #endif
 
 #ifndef TEST_CLANGLIBPATH
-#define TEST_CLANGLIBPATH "C:/dev/TypeScriptCompiler/3rdParty/llvm/debug/lib/clang/13.0.0/lib/windows"
+//#define TEST_CLANGLIBPATH "C:/dev/TypeScriptCompiler/3rdParty/llvm/debug/lib/clang/13.0.0/lib/windows"
+#error TEST_CLANGLIBPATH must be provided
 #endif
 
 #ifndef TEST_FILE
