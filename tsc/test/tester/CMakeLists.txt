@@ -11,8 +11,8 @@ target_link_libraries(test-runner PRIVATE ${LIBS})
 target_compile_definitions(test-runner PUBLIC "TEST_VCPATH=\"C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/SDK/ScopeCppSDK/vc15/VC/lib\"")
 target_compile_definitions(test-runner PUBLIC "TEST_SDKPATH=\"C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/SDK/ScopeCppSDK/vc15/SDK/lib\"")
 target_compile_definitions(test-runner PUBLIC "TEST_TSC_EXEPATH=\"${CMAKE_BINARY_DIR}/bin\"")
-target_compile_definitions(test-runner PUBLIC "TEST_EXEPATH=\"${CMAKE_BINARY_DIR}/../llvm/debug/bin\"")
-target_compile_definitions(test-runner PUBLIC "TEST_CLANGLIBPATH=\"${CMAKE_BINARY_DIR}/../llvm/debug/lib/clang/13.0.0/lib/windows\"")
+target_compile_definitions(test-runner PUBLIC "TEST_EXEPATH=\"${CMAKE_BINARY_DIR}/../../3rdParty/llvm/release/bin\"")
+target_compile_definitions(test-runner PUBLIC "TEST_CLANGLIBPATH=\"${CMAKE_BINARY_DIR}/../../3rdParty/llvm/release/lib/clang/13.0.0/lib/windows\"")
 
 
 ######## enable testing ############                     

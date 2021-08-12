@@ -35,6 +35,10 @@ namespace fs = std::experimental::filesystem;
 #define PCLOSE pclose
 #endif
 
+#define SEARCH_LIBPATH "\"C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\""
+#define SEARCH_SDKPATH "\"C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\""
+#define FILTER_LIB "\"lib\\x64\""
+
 #ifndef TEST_LIBPATH
 #define TEST_LIBPATH "C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/SDK/ScopeCppSDK/vc15/VC/lib"
 #endif
@@ -174,14 +178,22 @@ void createCompileBatchFile()
     std::ofstream batFile("compile.bat");
     batFile << "echo off" << std::endl;
     batFile << "set FILENAME=%1" << std::endl;
-    batFile << "set LIBPATH=" << TEST_LIBPATH << std::endl;
-    batFile << "set SDKPATH=" << TEST_SDKPATH << std::endl;
+    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_LIBPATH " libvcruntime.lib ^| find " FILTER_LIB
+               "`) DO ( SET libname=%%F )"
+            << std::endl;
+    batFile << "FOR %%A in (\"%libname%\") do ( Set LIBPATH1=\"%%~dpA\" )" << std::endl;
+    batFile << "Set LIBPATH=%LIBPATH1:~0,-3%\"" << std::endl;
+    // batFile << "set LIBPATH=" << TEST_LIBPATH << std::endl;
+    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_SDKPATH " libucrt.lib`) DO ( SET libname=%%F )" << std::endl;
+    batFile << "FOR %%A in (\"%libname%\") do ( Set SDKPATH1=\"%%~dpA\" )" << std::endl;
+    batFile << "Set SDKPATH=%SDKPATH1:~0,-3%\"" << std::endl;
+    // batFile << "set SDKPATH=" << TEST_SDKPATH << std::endl;
     batFile << "set EXEPATH=" << TEST_EXEPATH << std::endl;
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "%TSCEXEPATH%\\tsc.exe --emit=llvm %2 2> %FILENAME%.il" << std::endl;
     batFile << "%EXEPATH%\\llc.exe --filetype=obj -o=%FILENAME%.o %FILENAME%.il" << std::endl;
-    batFile << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o \"%LIBPATH%\\libcmt.lib\" \"%LIBPATH%\\libvcruntime.lib\" "
-               "\"%SDKPATH%\\kernel32.lib\" \"%SDKPATH%\\libucrt.lib\" \"%SDKPATH%\\uuid.lib\""
+    batFile << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% libcmt.lib libvcruntime.lib "
+               "kernel32.lib libucrt.lib uuid.lib"
             << std::endl;
     batFile << "del %FILENAME%.il" << std::endl;
     batFile << "del %FILENAME%.o" << std::endl;
@@ -200,17 +212,24 @@ void createCompileBatchFileWithRT()
     std::ofstream batFile("compile_rt.bat");
     // batFile << "echo off" << std::endl;
     batFile << "set FILENAME=%1" << std::endl;
-    batFile << "set LIBPATH=" << TEST_LIBPATH << std::endl;
-    batFile << "set SDKPATH=" << TEST_SDKPATH << std::endl;
+    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_LIBPATH " libvcruntime.lib ^| find " FILTER_LIB
+               "`) DO ( SET libname=%%F )"
+            << std::endl;
+    batFile << "FOR %%A in (\"%libname%\") do ( Set LIBPATH1=\"%%~dpA\" )" << std::endl;
+    batFile << "Set LIBPATH=%LIBPATH1:~0,-3%\"" << std::endl;
+    // batFile << "set LIBPATH=" << TEST_LIBPATH << std::endl;
+    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_SDKPATH " libucrt.lib`) DO ( SET libname=%%F )" << std::endl;
+    batFile << "FOR %%A in (\"%libname%\") do ( Set SDKPATH1=\"%%~dpA\" )" << std::endl;
+    batFile << "Set SDKPATH=%SDKPATH1:~0,-3%\"" << std::endl;
+    // batFile << "set SDKPATH=" << TEST_SDKPATH << std::endl;
     batFile << "set EXEPATH=" << TEST_EXEPATH << std::endl;
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "set CLANGLIBPATH=" << TEST_CLANGLIBPATH << std::endl;
     batFile << "%TSCEXEPATH%\\tsc.exe --emit=llvm %2 2> %FILENAME%.il" << std::endl;
     batFile << "%EXEPATH%\\llc.exe --filetype=obj -o=%FILENAME%.o %FILENAME%.il" << std::endl;
-    batFile
-        << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:\"%LIBPATH%\" \"%LIBPATH%\\libcmt.lib\" \"%LIBPATH%\\libvcruntime.lib\" "
-           "\"%SDKPATH%\\kernel32.lib\" \"%SDKPATH%\\libucrt.lib\" \"%SDKPATH%\\uuid.lib\" \"%CLANGLIBPATH%\\clang_rt.builtins-x86_64.lib\""
-        << std::endl;
+    batFile << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%CLANGLIBPATH% libcmt.lib "
+               "libvcruntime.lib kernel32.lib libucrt.lib uuid.lib clang_rt.builtins-x86_64.lib"
+            << std::endl;
     batFile << "del %FILENAME%.il" << std::endl;
     batFile << "del %FILENAME%.o" << std::endl;
     batFile << "echo on" << std::endl;
@@ -228,13 +247,20 @@ void createJitCompileBatchFile()
     std::ofstream batFile("compile_jit.bat");
     batFile << "echo off" << std::endl;
     batFile << "set FILENAME=%1" << std::endl;
-    batFile << "set LIBPATH=" << TEST_LIBPATH << std::endl;
-    batFile << "set SDKPATH=" << TEST_SDKPATH << std::endl;
-    batFile << "set EXEPATH=" << TEST_EXEPATH << std::endl;
+    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_LIBPATH " libvcruntime.lib ^| find " FILTER_LIB
+               "`) DO ( SET libname=%%F )"
+            << std::endl;
+    batFile << "FOR %%A in (\"%libname%\") do ( Set LIBPATH1=\"%%~dpA\" )" << std::endl;
+    batFile << "Set LIBPATH=%LIBPATH1:~0,-3%\"" << std::endl;
+    // batFile << "set LIBPATH=" << TEST_LIBPATH << std::endl;
+    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_SDKPATH " libucrt.lib`) DO ( SET libname=%%F )" << std::endl;
+    batFile << "FOR %%A in (\"%libname%\") do ( Set SDKPATH1=\"%%~dpA\" )" << std::endl;
+    batFile << "Set SDKPATH=%SDKPATH1:~0,-3%\"" << std::endl;
+    // batFile << "set SDKPATH=" << TEST_SDKPATH << std::endl;
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit -dump-object-file -object-filename=%FILENAME%.o %2" << std::endl;
-    batFile << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o \"%LIBPATH%\\libcmt.lib\" \"%LIBPATH%\\libvcruntime.lib\" "
-               "\"%SDKPATH%\\kernel32.lib\" \"%SDKPATH%\\libucrt.lib\" \"%SDKPATH%\\uuid.lib\""
+    batFile << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% libcmt.lib libvcruntime.lib "
+               "kernel32.lib libucrt.lib uuid.lib"
             << std::endl;
     batFile << "del %FILENAME%.o" << std::endl;
     batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
