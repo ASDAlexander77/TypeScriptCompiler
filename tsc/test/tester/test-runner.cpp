@@ -35,6 +35,8 @@ namespace fs = std::experimental::filesystem;
 #define PCLOSE pclose
 #endif
 
+//#define NEW_BAT 1
+
 //#define SEARCH 1
 #define SEARCH_LIBPATH "\"C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\""
 #define SEARCH_SDKPATH "\"C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\""
@@ -171,10 +173,12 @@ int runFolder(const char *folder)
 
 void createCompileBatchFile()
 {
-    // if (exists("compile.bat"))
-    // {
-    //     return;
-    // }
+#ifndef NEW_BAT
+    if (exists("compile.bat"))
+    {
+        return;
+    }
+#endif
 
     std::ofstream batFile("compile.bat");
     batFile << "echo off" << std::endl;
@@ -208,10 +212,12 @@ void createCompileBatchFile()
 
 void createCompileBatchFileWithRT()
 {
-    // if (exists("compile_rt.bat"))
-    // {
-    //     return;
-    // }
+#ifndef NEW_BAT
+    if (exists("compile_rt.bat"))
+    {
+        return;
+    }
+#endif
 
     std::ofstream batFile("compile_rt.bat");
     // batFile << "echo off" << std::endl;
@@ -246,10 +252,12 @@ void createCompileBatchFileWithRT()
 
 void createJitCompileBatchFile()
 {
-    // if (exists("compile_jit.bat"))
-    // {
-    //     return;
-    // }
+#ifndef NEW_BAT
+    if (exists("compile_jit.bat"))
+    {
+        return;
+    }
+#endif
 
     std::ofstream batFile("compile_jit.bat");
     batFile << "echo off" << std::endl;
@@ -280,10 +288,12 @@ void createJitCompileBatchFile()
 
 void createJitBatchFile()
 {
-    // if (exists("jit.bat"))
-    // {
-    //     return;
-    // }
+#ifndef NEW_BAT
+    if (exists("jit.bat"))
+    {
+        return;
+    }
+#endif
 
     std::ofstream batFile("jit.bat");
     batFile << "echo off" << std::endl;
