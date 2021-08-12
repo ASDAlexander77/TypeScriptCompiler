@@ -48,7 +48,7 @@ jobs:
 
     - name: Delete __Build TS folders
       continue-on-error: true
-      run: Remove-Item -Recurse -Force ".\__build\tsc"; Remove-Item -Recurse -Force ".\__build\tsc-release"
+      run: if (Test-Path -Path ".\__build\tsc") { Remove-Item -Recurse -Force ".\__build\tsc" }; if (Test-Path -Path ".\__build\tsc-release") { Remove-Item -Recurse -Force ".\__build\tsc-release" }
       shell: pwsh
 
     - name: Create __Build Folders
