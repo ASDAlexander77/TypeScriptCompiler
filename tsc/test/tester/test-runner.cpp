@@ -198,7 +198,7 @@ void createCompileBatchFileWithRT()
     }
 
     std::ofstream batFile("compile_rt.bat");
-    batFile << "echo off" << std::endl;
+    //batFile << "echo off" << std::endl;
     batFile << "set FILENAME=%1" << std::endl;
     batFile << "set LIBPATH=" << TEST_LIBPATH << std::endl;
     batFile << "set SDKPATH=" << TEST_SDKPATH << std::endl;
