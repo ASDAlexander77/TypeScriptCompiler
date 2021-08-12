@@ -39,8 +39,9 @@ namespace fs = std::experimental::filesystem;
 
 #define SEARCH 1
 #define SEARCH_LIBPATH "\"C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\""
-#define SEARCH_SDKPATH "\"C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\""
+#define SEARCH_SDKPATH "\"C:\\Program Files (x86)\\Windows Kits\\10\\Lib\""
 #define FILTER_LIB "\"lib\\x64\""
+#define FILTER_SDK "\"ucrt\\x64\""
 
 #ifndef TEST_LIBPATH
 #define TEST_LIBPATH "C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/SDK/ScopeCppSDK/vc15/VC/lib"
@@ -189,7 +190,9 @@ void createCompileBatchFile()
             << std::endl;
     batFile << "FOR %%A in (\"%libname%\") do ( Set LIBPATH1=\"%%~dpA\" )" << std::endl;
     batFile << "Set LIBPATH=%LIBPATH1:~0,-3%\"" << std::endl;
-    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_SDKPATH " libucrt.lib`) DO ( SET libname=%%F )" << std::endl;
+    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_SDKPATH " libucrt.lib ^| find " FILTER_LIB
+               "`) DO ( SET libname=%%F )"
+            << std::endl;
     batFile << "FOR %%A in (\"%libname%\") do ( Set SDKPATH1=\"%%~dpA\" )" << std::endl;
     batFile << "Set SDKPATH=%SDKPATH1:~0,-3%\"" << std::endl;
 #else
@@ -228,7 +231,9 @@ void createCompileBatchFileWithRT()
             << std::endl;
     batFile << "FOR %%A in (\"%libname%\") do ( Set LIBPATH1=\"%%~dpA\" )" << std::endl;
     batFile << "Set LIBPATH=%LIBPATH1:~0,-3%\"" << std::endl;
-    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_SDKPATH " libucrt.lib`) DO ( SET libname=%%F )" << std::endl;
+    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_SDKPATH " libucrt.lib ^| find " FILTER_LIB
+               "`) DO ( SET libname=%%F )"
+            << std::endl;
     batFile << "FOR %%A in (\"%libname%\") do ( Set SDKPATH1=\"%%~dpA\" )" << std::endl;
     batFile << "Set SDKPATH=%SDKPATH1:~0,-3%\"" << std::endl;
 #else
@@ -268,7 +273,9 @@ void createJitCompileBatchFile()
             << std::endl;
     batFile << "FOR %%A in (\"%libname%\") do ( Set LIBPATH1=\"%%~dpA\" )" << std::endl;
     batFile << "Set LIBPATH=%LIBPATH1:~0,-3%\"" << std::endl;
-    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_SDKPATH " libucrt.lib`) DO ( SET libname=%%F )" << std::endl;
+    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_SDKPATH " libucrt.lib ^| find " FILTER_LIB
+               "`) DO ( SET libname=%%F )"
+            << std::endl;
     batFile << "FOR %%A in (\"%libname%\") do ( Set SDKPATH1=\"%%~dpA\" )" << std::endl;
     batFile << "Set SDKPATH=%SDKPATH1:~0,-3%\"" << std::endl;
 #else
