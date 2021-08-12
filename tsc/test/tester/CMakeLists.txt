@@ -6,13 +6,13 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 set_Options()
 
-add_compile_definitions("TEST_VCPATH=\"C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/SDK/ScopeCppSDK/vc15/VC/lib\"")
-add_compile_definitions("TEST_SDKPATH=\"C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/SDK/ScopeCppSDK/vc15/SDK/lib\"")
-add_compile_definitions("TEST_EXEPATH=\"${CMAKE_BINARY_DIR}/../3rdParty/llvm/debug/bin\"")
-add_compile_definitions("TEST_TSCEXEPATH=\"${CMAKE_BINARY_DIR}/tsc/bin\"")
-
 add_executable(test-runner test-runner.cpp)
 target_link_libraries(test-runner PRIVATE ${LIBS})
+target_compile_definitions(test-runner PUBLIC "TEST_VCPATH=\"C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/SDK/ScopeCppSDK/vc15/VC/lib\"")
+target_compile_definitions(test-runner PUBLIC "TEST_SDKPATH=\"C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/SDK/ScopeCppSDK/vc15/SDK/lib\"")
+target_compile_definitions(test-runner PUBLIC "TEST_EXEPATH=\"${CMAKE_BINARY_DIR}/../3rdParty/llvm/debug/bin\"")
+target_compile_definitions(test-runner PUBLIC "TEST_TSC_EXEPATH=\"${CMAKE_BINARY_DIR}/bin\"")
+
 
 ######## enable testing ############                     
 add_test(NAME test-compile-00-assert COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")

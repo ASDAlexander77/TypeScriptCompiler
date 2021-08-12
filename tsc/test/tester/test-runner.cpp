@@ -44,11 +44,13 @@ namespace fs = std::experimental::filesystem;
 #endif
 
 #ifndef TEST_EXEPATH
-#define TEST_EXEPATH "C:/dev/TypeScriptCompiler/3rdParty/llvm/debug/bin"
+//#define TEST_EXEPATH "C:/dev/TypeScriptCompiler/3rdParty/llvm/debug/bin"
+#error TEST_EXEPATH must be provided
 #endif
 
 #ifndef TEST_TSC_EXEPATH
-#define TEST_TSC_EXEPATH "C:/dev/TypeScriptCompiler/__build/tsc/bin"
+//#define TEST_TSC_EXEPATH "C:/dev/TypeScriptCompiler/__build/tsc/bin"
+#error TEST_TSC_EXEPATH must be provided
 #endif
 
 #ifndef TEST_CLANGLIBPATH
