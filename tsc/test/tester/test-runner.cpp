@@ -35,9 +35,9 @@ namespace fs = std::experimental::filesystem;
 #define PCLOSE pclose
 #endif
 
-//#define NEW_BAT 1
+#define NEW_BAT 1
 
-//#define SEARCH 1
+#define SEARCH 1
 #define SEARCH_LIBPATH "\"C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\""
 #define SEARCH_SDKPATH "\"C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\""
 #define FILTER_LIB "\"lib\\x64\""
