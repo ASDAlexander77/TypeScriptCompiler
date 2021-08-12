@@ -1,5 +1,29 @@
 message(STATUS ">>> test >>> runner")
 
+message(STATUS ">>> CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION >>> ${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}")
+message(STATUS ">>> CMAKE_CXX_COMPILER >>> ${CMAKE_CXX_COMPILER}")
+
+
+# Find the Windows Kits directory.
+get_filename_component(windows_kits_dir "[HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows Kits\\Installed Roots;KitsRoot10]" ABSOLUTE)
+message(STATUS ">>> windows_kits_dir >>> ${windows_kits_dir}")
+set(programfilesx86 "ProgramFiles(x86)")
+
+find_path(WINDOWS_KITS_DIR_LIB 
+    NAMES Lib/${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}/um/${CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE}/kernel32.lib
+    PATHS $ENV{CMAKE_WINDOWS_KITS_10_DIR} "${windows_kits_dir}" "$ENV{ProgramFiles}/Windows Kits/10" "$ENV{${programfilesx86}}/Windows Kits/10")
+if (NOT("${WINDOWS_KITS_DIR_LIB}" STREQUAL "" OR "${WINDOWS_KITS_DIR_LIB}" STREQUAL "WINDOWS_KITS_DIR_LIB-NOTFOUND"))
+    set(WINDOWS_KITS_DIR_LIB "${WINDOWS_KITS_DIR_LIB}/Lib/${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}/um/${CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE}")
+endif()
+
+message(STATUS ">>> WINDOWS_KITS_DIR_LIB >>> ${WINDOWS_KITS_DIR_LIB}")
+
+# Find the VC Libs
+string(REPLACE "bin/Hostx64/${CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE}/cl.exe" "lib/${CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE}" VC_LIB_DIR "${CMAKE_CXX_COMPILER}")
+
+message(STATUS ">>> VC_LIB_DIR >>> ${VC_LIB_DIR}")
+
+
 set(CMAKE_CXX_STANDARD 17 CACHE STRING "C++ standard to conform to")
 set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -8,8 +32,8 @@ set_Options()
 
 add_executable(test-runner test-runner.cpp)
 target_link_libraries(test-runner PRIVATE ${LIBS})
-target_compile_definitions(test-runner PUBLIC "TEST_VCPATH=\"C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/SDK/ScopeCppSDK/vc15/VC/lib\"")
-target_compile_definitions(test-runner PUBLIC "TEST_SDKPATH=\"C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/SDK/ScopeCppSDK/vc15/SDK/lib\"")
+target_compile_definitions(test-runner PUBLIC "TEST_LIBPATH=\"${VC_LIB_DIR}\"")
+target_compile_definitions(test-runner PUBLIC "TEST_SDKPATH=\"${WINDOWS_KITS_DIR_LIB}\"")
 target_compile_definitions(test-runner PUBLIC "TEST_TSC_EXEPATH=\"${CMAKE_BINARY_DIR}/bin\"")
 target_compile_definitions(test-runner PUBLIC "TEST_EXEPATH=\"${CMAKE_BINARY_DIR}/../../3rdParty/llvm/release/bin\"")
 target_compile_definitions(test-runner PUBLIC "TEST_CLANGLIBPATH=\"${CMAKE_BINARY_DIR}/../../3rdParty/llvm/release/lib/clang/13.0.0/lib/windows\"")
