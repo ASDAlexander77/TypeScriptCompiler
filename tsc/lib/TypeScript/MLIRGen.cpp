@@ -406,6 +406,9 @@ class MLIRGenImpl
                     return mlir::failure();
                 }
             }
+
+            // clean up
+            const_cast<GenContext &>(genContext).generatedStatements.clear();
         }
 
         for (auto &statement : blockAST->statements)
@@ -1851,10 +1854,76 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult checkSafeCast(mlir::Value cond, const GenContext &genContext)
+    mlir::LogicalResult checkSafeCast(Expression expr, const GenContext &genContext)
     {
-        if (auto logicOp = cond.getDefiningOp<mlir_ts::LogicalBinaryOp>())
+        if (auto binExpr = expr.as<BinaryExpression>())
         {
+            auto op = (SyntaxKind)binExpr->operatorToken;
+            if (op == SyntaxKind::EqualsEqualsToken || op == SyntaxKind::EqualsEqualsEqualsToken)
+            {
+                auto left = binExpr->left;
+                auto right = binExpr->right;
+
+                auto processLeftRight = [&](Expression typeOfVal, Expression constVal) {
+                    if (auto typeOfOp = typeOfVal.as<TypeOfExpression>())
+                    {
+                        if (!typeOfOp->expression.is<Identifier>())
+                        {
+                            return mlir::failure();
+                        }
+
+                        if (auto stringLiteral = constVal.as<ts::StringLiteral>())
+                        {
+                            // create 'expression' = <string>'expression;
+                            NodeFactory nf(NodeFactoryFlags::None);
+
+                            auto text = stringLiteral->text;
+                            Node typeToken;
+                            if (text == S("string"))
+                            {
+                                typeToken = nf.createToken(SyntaxKind::StringKeyword);
+                            }
+
+                            if (text == S("number"))
+                            {
+                                typeToken = nf.createToken(SyntaxKind::NumberKeyword);
+                            }
+
+                            if (text == S("boolean"))
+                            {
+                                typeToken = nf.createToken(SyntaxKind::BooleanKeyword);
+                            }
+
+                            if (typeToken)
+                            {
+                                // init
+                                NodeArray<VariableDeclaration> declarations;
+                                auto _safe_casted = typeOfOp->expression;
+                                declarations.push_back(nf.createVariableDeclaration(
+                                    _safe_casted, undefined, undefined, nf.createTypeAssertion(typeToken, typeOfOp->expression)));
+
+                                auto varDeclList = nf.createVariableDeclarationList(declarations, NodeFlags::Const);
+
+                                auto expr_statement = nf.createVariableStatement(undefined, varDeclList);
+
+                                const_cast<GenContext &>(genContext).generatedStatements.push_back(expr_statement.as<Statement>());
+                            }
+
+                            return mlir::success();
+                        }
+                    }
+
+                    return mlir::failure();
+                };
+
+                if (mlir::failed(processLeftRight(left, right)))
+                {
+                    if (mlir::failed(processLeftRight(right, left)))
+                    {
+                        return mlir::success();
+                    }
+                }
+            }
         }
 
         return mlir::success();
@@ -1883,7 +1952,7 @@ class MLIRGenImpl
         auto ifOp = builder.create<mlir_ts::IfOp>(location, condValue, hasElse);
 
         // check if we do safe-cast here
-        checkSafeCast(condValue, genContext);
+        checkSafeCast(ifStatementAST->expression, genContext);
 
         builder.setInsertionPointToStart(&ifOp.thenRegion().front());
         mlirGen(ifStatementAST->thenStatement, genContext);
@@ -5681,9 +5750,6 @@ llvm.return %5 : i32
             }
 
             auto funcOp = mlirGenFunctionLikeDeclaration(funcLikeDeclaration, funcGenContext);
-
-            // clean up
-            const_cast<GenContext &>(genContext).generatedStatements.clear();
 
             if (!funcOp)
             {
