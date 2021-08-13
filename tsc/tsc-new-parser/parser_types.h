@@ -55,7 +55,7 @@ using SymbolTable = std::map<string, Symbol>;
 struct TextRange
 {
     TextRange() = default;
-    TextRange(pos_type pos, number _end) : pos(pos), _end(_end) {};
+    TextRange(pos_type pos, number _end) : pos(pos), _end(_end){};
 
     pos_type pos;
     number _end;
@@ -77,26 +77,26 @@ template <typename T /*extends Node*/> struct NodeArray : ReadonlyArray<T>, Text
     using std::vector<T>::size;
 
     NodeArray()
-        : ReadonlyArray<T>(),
-          TextRange(), isUndefined{false}, hasTrailingComma{false}, isMissingList{false}, transformFlags{TransformFlags::None}
+        : ReadonlyArray<T>(), TextRange(), isUndefined(false), hasTrailingComma(false), isMissingList(false),
+          transformFlags(TransformFlags::None)
     {
     }
     NodeArray(undefined_t)
-        : ReadonlyArray<T>(),
-          TextRange(), isUndefined{true}, hasTrailingComma{false}, isMissingList{false}, transformFlags{TransformFlags::None}
+        : ReadonlyArray<T>(), TextRange(), isUndefined(true), hasTrailingComma(false), isMissingList(false),
+          transformFlags(TransformFlags::None)
     {
     }
 
     template <typename U>
     NodeArray(NodeArray<U> other)
-        : ReadonlyArray<T>(other.begin(), other.end()), TextRange(other.pos, other._end), isUndefined{other.isUndefined},
-          hasTrailingComma{other.hasTrailingComma}, isMissingList{other.isMissingList}, transformFlags{other.transformFlags}
+        : ReadonlyArray<T>(other.begin(), other.end()), TextRange(other.pos, other._end), isUndefined(other.isUndefined),
+          hasTrailingComma(other.hasTrailingComma), isMissingList(other.isMissingList), transformFlags(other.transformFlags)
     {
     }
 
     NodeArray(T item)
-        : ReadonlyArray<T>({item}),
-          TextRange(), isUndefined{false}, hasTrailingComma{false}, isMissingList{false}, transformFlags{TransformFlags::None}
+        : ReadonlyArray<T>({item}), TextRange(), isUndefined(false), hasTrailingComma(false), isMissingList(false),
+          transformFlags(TransformFlags::None)
     {
     }
 
