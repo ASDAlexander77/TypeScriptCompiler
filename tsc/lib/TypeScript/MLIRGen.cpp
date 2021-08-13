@@ -1851,6 +1851,13 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    mlir::LogicalResult checkSafeCast(mlir::Value cond, const GenContext &genContext)
+    {
+        auto logicOp = cond.getDefiningOp<mlir_ts::LogicalBinaryOp>();
+
+        return mlir::success();
+    }
+
     mlir::LogicalResult mlirGen(IfStatement ifStatementAST, const GenContext &genContext)
     {
         SymbolTableScopeT varScope(symbolTable);
@@ -1872,6 +1879,9 @@ class MLIRGenImpl
         }
 
         auto ifOp = builder.create<mlir_ts::IfOp>(location, condValue, hasElse);
+
+        // check if we do safe-cast here
+        checkSafeCast(condValue, genContext);
 
         builder.setInsertionPointToStart(&ifOp.thenRegion().front());
         mlirGen(ifStatementAST->thenStatement, genContext);

@@ -18,6 +18,15 @@ endif()
 
 message(STATUS ">>> WINDOWS_KITS_DIR_LIB >>> ${WINDOWS_KITS_DIR_LIB}")
 
+find_path(WINDOWS_KITS_DIR_UCRT_LIB 
+    NAMES Lib/${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}/ucrt/${CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE}/libucrt.lib
+    PATHS $ENV{CMAKE_WINDOWS_KITS_10_DIR} "${windows_kits_dir}" "$ENV{ProgramFiles}/Windows Kits/10" "$ENV{${programfilesx86}}/Windows Kits/10")
+if (NOT("${WINDOWS_KITS_DIR_UCRT_LIB}" STREQUAL "" OR "${WINDOWS_KITS_DIR_UCRT_LIB}" STREQUAL "WINDOWS_KITS_DIR_UCRT_LIB-NOTFOUND"))
+    set(WINDOWS_KITS_DIR_UCRT_LIB "${WINDOWS_KITS_DIR_UCRT_LIB}/Lib/${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}/ucrt/${CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE}")
+endif()
+
+message(STATUS ">>> WINDOWS_KITS_DIR_UCRT_LIB >>> ${WINDOWS_KITS_DIR_UCRT_LIB}")
+
 # Find the VC Libs
 string(REPLACE "bin/Hostx64/${CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE}/cl.exe" "lib/${CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE}" VC_LIB_DIR "${CMAKE_CXX_COMPILER}")
 
@@ -34,6 +43,7 @@ add_executable(test-runner test-runner.cpp)
 target_link_libraries(test-runner PRIVATE ${LIBS})
 target_compile_definitions(test-runner PUBLIC "TEST_LIBPATH=\"${VC_LIB_DIR}\"")
 target_compile_definitions(test-runner PUBLIC "TEST_SDKPATH=\"${WINDOWS_KITS_DIR_LIB}\"")
+target_compile_definitions(test-runner PUBLIC "TEST_UCRTPATH=\"${WINDOWS_KITS_DIR_UCRT_LIB}\"")
 target_compile_definitions(test-runner PUBLIC "TEST_TSC_EXEPATH=\"${CMAKE_BINARY_DIR}/bin\"")
 target_compile_definitions(test-runner PUBLIC "TEST_EXEPATH=\"${CMAKE_BINARY_DIR}/../../3rdParty/llvm/release/bin\"")
 target_compile_definitions(test-runner PUBLIC "TEST_CLANGLIBPATH=\"${CMAKE_BINARY_DIR}/../../3rdParty/llvm/release/lib/clang/13.0.0/lib/windows\"")

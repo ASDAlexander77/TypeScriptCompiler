@@ -41,17 +41,24 @@ namespace fs = std::experimental::filesystem;
 //#define SEARCH_SDK 1
 #define SEARCH_LIBPATH "\"C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\""
 #define SEARCH_SDKPATH "\"C:\\Program Files (x86)\\Windows Kits\\10\\Lib\""
+#define SEARCH_UCRTPATH "\"C:\\Program Files (x86)\\Windows Kits\\10\\Lib\""
 #define FILTER_LIB "\"lib\\x64\""
-#define FILTER_SDK "\"ucrt\\x64\""
+#define FILTER_SDK "\"um\\x64\""
+#define FILTER_UCRTSDK "\"ucrt\\x64\""
 
 #ifndef TEST_LIBPATH
-//#define TEST_LIBPATH "C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/SDK/ScopeCppSDK/vc15/VC/lib"
+//#define TEST_LIBPATH "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Tools\MSVC\14.29.30037\lib\x64"
 #error TEST_LIBPATH must be provided
 #endif
 
 #ifndef TEST_SDKPATH
-//#define TEST_SDKPATH "C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/SDK/ScopeCppSDK/vc15/SDK/lib"
+//#define TEST_SDKPATH "C:\Program Files (x86)\Windows Kits\10\Lib\10.0.18362.0\um\x64"
 #error TEST_SDKPATH must be provided
+#endif
+
+#ifndef TEST_UCRTPATH
+//#define TEST_UCRTPATH "C:\Program Files (x86)\Windows Kits\10\Lib\10.0.18362.0\ucrt\x64"
+#error TEST_UCRTPATH must be provided
 #endif
 
 #ifndef TEST_EXEPATH
@@ -205,11 +212,21 @@ void createCompileBatchFile()
 #else
     batFile << "set SDKPATH=\"" << TEST_SDKPATH << "\"" << std::endl;
 #endif
+#ifdef SEARCH_UCRTSDK
+    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_UCRTPATH " libucrt.lib ^| find " FILTER_UCRTLIB
+               "`) DO ( SET libname=%%F )"
+            << std::endl;
+    batFile << "FOR %%A in (\"%libname%\") do ( Set SDKPATH1=\"%%~dpA\" )" << std::endl;
+    batFile << "Set SDKPATH=%SDKPATH1:~0,-3%\"" << std::endl;
+#else
+    batFile << "set UCRTPATH=\"" << TEST_UCRTPATH << "\"" << std::endl;
+#endif
     batFile << "set EXEPATH=" << TEST_EXEPATH << std::endl;
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "%TSCEXEPATH%\\tsc.exe --emit=llvm %2 2> %FILENAME%.il" << std::endl;
     batFile << "%EXEPATH%\\llc.exe --filetype=obj -o=%FILENAME%.o %FILENAME%.il" << std::endl;
-    batFile << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% libcmt.lib libvcruntime.lib kernel32.lib"
+    batFile << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% "
+               "/defaultlib:libcmt.lib libvcruntime.lib"
             << std::endl;
     batFile << "del %FILENAME%.il" << std::endl;
     batFile << "del %FILENAME%.o" << std::endl;
@@ -248,14 +265,24 @@ void createCompileBatchFileWithRT()
 #else
     batFile << "set SDKPATH=\"" << TEST_SDKPATH << "\"" << std::endl;
 #endif
+#ifdef SEARCH_UCRTSDK
+    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_UCRTPATH " libucrt.lib ^| find " FILTER_UCRTLIB
+               "`) DO ( SET libname=%%F )"
+            << std::endl;
+    batFile << "FOR %%A in (\"%libname%\") do ( Set SDKPATH1=\"%%~dpA\" )" << std::endl;
+    batFile << "Set SDKPATH=%SDKPATH1:~0,-3%\"" << std::endl;
+#else
+    batFile << "set UCRTPATH=\"" << TEST_UCRTPATH << "\"" << std::endl;
+#endif
     batFile << "set EXEPATH=" << TEST_EXEPATH << std::endl;
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "set CLANGLIBPATH=" << TEST_CLANGLIBPATH << std::endl;
     batFile << "%TSCEXEPATH%\\tsc.exe --emit=llvm %2 2> %FILENAME%.il" << std::endl;
     batFile << "%EXEPATH%\\llc.exe --filetype=obj -o=%FILENAME%.o %FILENAME%.il" << std::endl;
-    batFile << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%CLANGLIBPATH% libcmt.lib "
-               "libvcruntime.lib kernel32.lib clang_rt.builtins-x86_64.lib"
-            << std::endl;
+    batFile
+        << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% /libpath:%CLANGLIBPATH% "
+           "/defaultlib:libcmt.lib libvcruntime.lib clang_rt.builtins-x86_64.lib"
+        << std::endl;
     batFile << "del %FILENAME%.il" << std::endl;
     batFile << "del %FILENAME%.o" << std::endl;
     batFile << "echo on" << std::endl;
@@ -293,9 +320,19 @@ void createJitCompileBatchFile()
 #else
     batFile << "set SDKPATH=\"" << TEST_SDKPATH << "\"" << std::endl;
 #endif
+#ifdef SEARCH_UCRTSDK
+    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_UCRTPATH " libucrt.lib ^| find " FILTER_UCRTLIB
+               "`) DO ( SET libname=%%F )"
+            << std::endl;
+    batFile << "FOR %%A in (\"%libname%\") do ( Set SDKPATH1=\"%%~dpA\" )" << std::endl;
+    batFile << "Set SDKPATH=%SDKPATH1:~0,-3%\"" << std::endl;
+#else
+    batFile << "set UCRTPATH=\"" << TEST_UCRTPATH << "\"" << std::endl;
+#endif
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit -dump-object-file -object-filename=%FILENAME%.o %2" << std::endl;
-    batFile << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% libcmt.lib libvcruntime.lib kernel32.lib"
+    batFile << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% "
+               "/defaultlib:libcmt.lib libvcruntime.lib"
             << std::endl;
     batFile << "del %FILENAME%.o" << std::endl;
     batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
