@@ -35,7 +35,7 @@ namespace fs = std::experimental::filesystem;
 #define PCLOSE pclose
 #endif
 
-//#define NEW_BAT 1
+#define NEW_BAT 1
 
 //#define SEARCH_LIB 1
 //#define SEARCH_SDK 1
@@ -197,7 +197,7 @@ void createCompileBatchFile()
     batFile << "set LIBPATH=\"" << TEST_LIBPATH << "\"" << std::endl;
 #endif
 #ifdef SEARCH_SDK
-    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_SDKPATH " libucrt.lib ^| find " FILTER_LIB
+    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_SDKPATH " kernel32.lib ^| find " FILTER_LIB
                "`) DO ( SET libname=%%F )"
             << std::endl;
     batFile << "FOR %%A in (\"%libname%\") do ( Set SDKPATH1=\"%%~dpA\" )" << std::endl;
@@ -240,7 +240,7 @@ void createCompileBatchFileWithRT()
     batFile << "set LIBPATH=\"" << TEST_LIBPATH << "\"" << std::endl;
 #endif
 #ifdef SEARCH_SDK
-    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_SDKPATH " libucrt.lib ^| find " FILTER_LIB
+    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_SDKPATH " kernel32.lib ^| find " FILTER_LIB
                "`) DO ( SET libname=%%F )"
             << std::endl;
     batFile << "FOR %%A in (\"%libname%\") do ( Set SDKPATH1=\"%%~dpA\" )" << std::endl;
@@ -285,7 +285,7 @@ void createJitCompileBatchFile()
     batFile << "set LIBPATH=\"" << TEST_LIBPATH << "\"" << std::endl;
 #endif
 #ifdef SEARCH_SDK
-    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_SDKPATH " libucrt.lib ^| find " FILTER_LIB
+    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_SDKPATH " kernel32.lib ^| find " FILTER_LIB
                "`) DO ( SET libname=%%F )"
             << std::endl;
     batFile << "FOR %%A in (\"%libname%\") do ( Set SDKPATH1=\"%%~dpA\" )" << std::endl;
