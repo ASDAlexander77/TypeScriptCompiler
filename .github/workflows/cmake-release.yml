@@ -66,13 +66,13 @@ jobs:
       shell: pwsh
 
     - name: Configure
-      continue-on-error: true
+      continue-on-error: false
       shell: cmd
       working-directory: ${{github.workspace}}/tsc
       run: config_tsc_release.bat
 
     - name: Build
-      continue-on-error: true
+      continue-on-error: false
       shell: cmd
       working-directory: ${{github.workspace}}/tsc
       run: build_tsc_release.bat

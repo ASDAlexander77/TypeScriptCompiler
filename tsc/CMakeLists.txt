@@ -70,10 +70,6 @@ include(AddLLVM)
 include(AddMLIR)
 include(HandleLLVMOptions)
 
-#file(REAL_PATH "${MLIR_INCLUDE_DIR}/../../../${CMAKE_BUILD_TYPE}/bin/llvm-lit.py" LLVM_EXTERNAL_LIT)
-get_filename_component(LLVM_EXTERNAL_LIT "${MLIR_INCLUDE_DIR}/../../../${CMAKE_BUILD_TYPE}/bin/llvm-lit.py" REALPATH BASE_DIR "${MLIR_INCLUDE_DIR}")
-message(STATUS "LLVM_EXTERNAL_LIT is ${LLVM_EXTERNAL_LIT}")
-
 include_directories(${LLVM_INCLUDE_DIRS})
 include_directories(${MLIR_INCLUDE_DIRS})
 include_directories(${PROJECT_SOURCE_DIR}/include)

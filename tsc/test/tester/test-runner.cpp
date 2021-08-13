@@ -35,7 +35,7 @@ namespace fs = std::experimental::filesystem;
 #define PCLOSE pclose
 #endif
 
-#define NEW_BAT 1
+//#define NEW_BAT 1
 
 //#define SEARCH_LIB 1
 //#define SEARCH_SDK 1
