@@ -67,20 +67,20 @@ jobs:
 
     - name: Configure
       continue-on-error: false
-      shell: cmd
-      working-directory: ${{github.workspace}}/tsc
-      run: config_tsc_release.bat
+      working-directory: ${{github.workspace}}/__build/tsc-release
+      run: cmake ../../tsc -G "Visual Studio 16 2019" -A x64 -DCMAKE_BUILD_TYPE=Release -Wno-dev
+      shell: pwsh
 
     - name: Build
       continue-on-error: false
-      shell: cmd
-      working-directory: ${{github.workspace}}/tsc
-      run: build_tsc_release.bat
+      working-directory: ${{github.workspace}}/__build/tsc-release
+      run: cmake --build . --config Release -j 8
+      shell: pwsh
 
     - name: Test
-      shell: cmd
       working-directory: ${{github.workspace}}/__build/tsc-release
       # Execute tests defined by the CMake configuration.  
       # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
       run: ctest -j18 -C Release -T test --output-on-failure -T test --output-on-failure
+      shell: pwsh
       

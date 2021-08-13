@@ -39,6 +39,7 @@ namespace fs = std::experimental::filesystem;
 
 //#define SEARCH_LIB 1
 //#define SEARCH_SDK 1
+//#define SEARCH_UCRTSDK 1
 #define SEARCH_LIBPATH "\"C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\""
 #define SEARCH_SDKPATH "\"C:\\Program Files (x86)\\Windows Kits\\10\\Lib\""
 #define SEARCH_UCRTPATH "\"C:\\Program Files (x86)\\Windows Kits\\10\\Lib\""

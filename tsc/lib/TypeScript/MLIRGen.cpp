@@ -1853,7 +1853,9 @@ class MLIRGenImpl
 
     mlir::LogicalResult checkSafeCast(mlir::Value cond, const GenContext &genContext)
     {
-        auto logicOp = cond.getDefiningOp<mlir_ts::LogicalBinaryOp>();
+        if (auto logicOp = cond.getDefiningOp<mlir_ts::LogicalBinaryOp>())
+        {
+        }
 
         return mlir::success();
     }
