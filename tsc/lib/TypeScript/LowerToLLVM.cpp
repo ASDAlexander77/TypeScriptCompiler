@@ -148,9 +148,9 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
 
         mlir::SmallVector<mlir::Value, 4> values;
         values.push_back(formatSpecifierCst);
-        for (auto item : op->getOperands())
-        {
-            auto type = item.getType();
+
+        std::function<void(mlir::Type, mlir::Value)> fval;
+        fval = [&](mlir::Type type, mlir::Value item) {
             auto llvmType = tch.convertType(type);
 
             if (llvmType.isIntOrIndexOrFloat() && !llvmType.isIntOrIndex())
@@ -169,12 +169,18 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
                 values.push_back(rewriter.create<LLVM::SelectOp>(item.getLoc(), boolPart,
                                                                  ch.getOrCreateGlobalString("__true__", std::string("true")),
                                                                  ch.getOrCreateGlobalString("__false__", std::string("false"))));
-                values.push_back(rewriter.create<mlir_ts::ValueOp>(item.getLoc(), o.getElementType(), item));
+                auto optVal = rewriter.create<mlir_ts::ValueOp>(item.getLoc(), o.getElementType(), item);
+                fval(optVal.getType(), optVal);
             }
             else
             {
                 values.push_back(item);
             }
+        };
+
+        for (auto item : op->getOperands())
+        {
+            fval(item.getType(), item);
         }
 
         // print new line

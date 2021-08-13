@@ -119,8 +119,11 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirDiscoverAllDependencies(SourceFile module)
     {
+        mlir::SmallVector<mlir::Diagnostic *> postponedMessages;
         mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
             // suppress all
+            hasErrors = true;
+            postponedMessages.push_back(new mlir::Diagnostic(std::move(diag)));
         });
 
         // Process of discovery here
@@ -131,6 +134,16 @@ class MLIRGenImpl
         auto notResolved = 0;
         do
         {
+            // clear previous errors
+            hasErrors = false;
+            for (auto diag : postponedMessages)
+            {
+                delete diag;
+            }
+
+            postponedMessages.clear();
+
+            // main cycles
             auto lastTimeNotResolved = notResolved;
             notResolved = 0;
             GenContext genContext = {0};
@@ -154,7 +167,7 @@ class MLIRGenImpl
             if (lastTimeNotResolved > 0 && lastTimeNotResolved == notResolved)
             {
                 theModule.emitError("can't resolve dependencies");
-                return mlir::failure();
+                break;
             }
 
         } while (notResolved > 0);
@@ -168,6 +181,20 @@ class MLIRGenImpl
         for (auto &statement : module->statements)
         {
             statement->processed = false;
+        }
+
+        if (hasErrors)
+        {
+            // print errors
+            for (auto diag : postponedMessages)
+            {
+                publishDiagnostic(*diag);
+                delete diag;
+            }
+
+            postponedMessages.clear();
+
+            return mlir::failure();
         }
 
         return mlir::success();
@@ -204,7 +231,7 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirCodeGenModuleWithDiagnostics(SourceFile module)
+    void publishDiagnostic(mlir::Diagnostic &diag)
     {
         auto printMsg = [](llvm::raw_fd_ostream &os, mlir::Diagnostic &diag, const char *msg) {
             if (!diag.getLocation().isa<mlir::UnknownLoc>())
@@ -216,29 +243,32 @@ class MLIRGenImpl
             os.flush();
         };
 
-        mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
-            switch (diag.getSeverity())
+        switch (diag.getSeverity())
+        {
+        case mlir::DiagnosticSeverity::Note:
+            printMsg(llvm::outs(), diag, "note: ");
+            for (auto &note : diag.getNotes())
             {
-            case mlir::DiagnosticSeverity::Note:
-                printMsg(llvm::outs(), diag, "note: ");
-                for (auto &note : diag.getNotes())
-                {
-                    printMsg(llvm::outs(), note, "note: ");
-                }
-
-                break;
-            case mlir::DiagnosticSeverity::Warning:
-                printMsg(llvm::outs(), diag, "warning: ");
-                break;
-            case mlir::DiagnosticSeverity::Error:
-                hasErrors = true;
-                printMsg(llvm::errs(), diag, "error: ");
-                break;
-            case mlir::DiagnosticSeverity::Remark:
-                printMsg(llvm::outs(), diag, "information: ");
-                break;
+                printMsg(llvm::outs(), note, "note: ");
             }
-        });
+
+            break;
+        case mlir::DiagnosticSeverity::Warning:
+            printMsg(llvm::outs(), diag, "warning: ");
+            break;
+        case mlir::DiagnosticSeverity::Error:
+            hasErrors = true;
+            printMsg(llvm::errs(), diag, "error: ");
+            break;
+        case mlir::DiagnosticSeverity::Remark:
+            printMsg(llvm::outs(), diag, "information: ");
+            break;
+        }
+    }
+
+    mlir::LogicalResult mlirCodeGenModuleWithDiagnostics(SourceFile module)
+    {
+        mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) { publishDiagnostic(diag); });
 
         if (failed(mlirCodeGenModule(module)) || hasErrors)
         {
@@ -2908,6 +2938,18 @@ llvm.return %5 : i32
 
                 if (auto rightOptType = rightExpressionValue.getType().dyn_cast_or_null<mlir_ts::OptionalType>())
                 {
+                    rightExpressionValue = cast(loc(rightExpression), rightOptType.getElementType(), rightExpressionValue, genContext);
+                }
+            }
+        }
+        else if (!MLIRLogicHelper::isLogicOp(opCode))
+        {
+            // special case both are optionals
+            if (auto leftOptType = leftExpressionValue.getType().dyn_cast_or_null<mlir_ts::OptionalType>())
+            {
+                if (auto rightOptType = rightExpressionValue.getType().dyn_cast_or_null<mlir_ts::OptionalType>())
+                {
+                    leftExpressionValue = cast(loc(leftExpression), leftOptType.getElementType(), leftExpressionValue, genContext);
                     rightExpressionValue = cast(loc(rightExpression), rightOptType.getElementType(), rightExpressionValue, genContext);
                 }
             }
@@ -6250,6 +6292,10 @@ llvm.return %5 : i32
         {
             return getUndefinedType();
         }
+        else if (kind == SyntaxKind::UndefinedKeyword)
+        {
+            return getUndefinedType();
+        }
 
         llvm_unreachable("not implemented type declaration");
         // return getAnyType();
@@ -6539,8 +6585,9 @@ llvm.return %5 : i32
 
     mlir::Type getUnionType(UnionTypeNode unionTypeNode)
     {
-        mlir::SmallVector<mlir::Type> types;
-        auto oneType = true;
+        bool isUndefined = false;
+        bool isNullable = false;
+        mlir::SmallPtrSet<mlir::Type, 2> types;
         mlir::Type currentType;
         for (auto typeItem : unionTypeNode->types)
         {
@@ -6550,22 +6597,37 @@ llvm.return %5 : i32
                 llvm_unreachable("wrong type");
             }
 
-            if (currentType && currentType != type)
+            if (type.isa<mlir_ts::UndefinedType>())
             {
-                oneType = false;
+                isUndefined = true;
+                continue;
             }
 
-            currentType = type;
-
-            types.push_back(type);
+            types.insert(type);
         }
 
-        if (oneType)
+        if (std::distance(types.begin(), types.end()) == 1)
         {
-            return currentType;
+            if (isUndefined || isNullable)
+            {
+                return getOptionalType(*(types.begin()));
+            }
+
+            return *(types.begin());
         }
 
-        return getUnionType(types);
+        mlir::SmallVector<mlir::Type> typesAll;
+        for (auto type : types)
+        {
+            typesAll.push_back(type);
+        }
+
+        if (isUndefined || isNullable)
+        {
+            return getOptionalType(getUnionType(typesAll));
+        }
+
+        return getUnionType(typesAll);
     }
 
     mlir_ts::UnionType getUnionType(mlir::SmallVector<mlir::Type> &types)

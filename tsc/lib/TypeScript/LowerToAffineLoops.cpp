@@ -139,8 +139,26 @@ struct PrefixUnaryOpLowering : public TsPattern<mlir_ts::PrefixUnaryOp>
             break;
         }
 
-        rewriter.replaceOpWithNewOp<mlir_ts::ArithmeticBinaryOp>(op, op.getType(), rewriter.getI32IntegerAttr(static_cast<int32_t>(opCode)),
-                                                                 op.operand1(), cst1);
+        auto value = op.operand1();
+        auto effectiveType = op.getType();
+        bool castBack = false;
+        if (auto optType = effectiveType.dyn_cast_or_null<mlir_ts::OptionalType>())
+        {
+            castBack = true;
+            effectiveType = optType.getElementType();
+            value = rewriter.create<mlir_ts::CastOp>(value.getLoc(), effectiveType, value);
+        }
+
+        mlir::Value result = rewriter.create<mlir_ts::ArithmeticBinaryOp>(
+            op->getLoc(), effectiveType, rewriter.getI32IntegerAttr(static_cast<int32_t>(opCode)), value, cst1);
+
+        if (castBack)
+        {
+            result = rewriter.create<mlir_ts::CastOp>(value.getLoc(), op.getType(), result);
+        }
+
+        rewriter.replaceOp(op, result);
+
         clh.saveResult(op, op->getResult(0));
 
         return success();
@@ -167,11 +185,27 @@ struct PostfixUnaryOpLowering : public TsPattern<mlir_ts::PostfixUnaryOp>
             break;
         }
 
-        auto result = rewriter.create<mlir_ts::ArithmeticBinaryOp>(
-            op->getLoc(), op.getType(), rewriter.getI32IntegerAttr(static_cast<int32_t>(opCode)), op.operand1(), cst1);
+        auto value = op.operand1();
+        auto effectiveType = op.getType();
+        bool castBack = false;
+        if (auto optType = effectiveType.dyn_cast_or_null<mlir_ts::OptionalType>())
+        {
+            castBack = true;
+            effectiveType = optType.getElementType();
+            value = rewriter.create<mlir_ts::CastOp>(value.getLoc(), effectiveType, value);
+        }
+
+        mlir::Value result = rewriter.create<mlir_ts::ArithmeticBinaryOp>(
+            op->getLoc(), effectiveType, rewriter.getI32IntegerAttr(static_cast<int32_t>(opCode)), value, cst1);
+        if (castBack)
+        {
+            result = rewriter.create<mlir_ts::CastOp>(value.getLoc(), op.getType(), result);
+        }
+
         clh.saveResult(op, result);
 
         rewriter.replaceOp(op, op.operand1());
+
         return success();
     }
 };
