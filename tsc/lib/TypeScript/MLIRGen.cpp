@@ -1864,7 +1864,7 @@ class MLIRGenImpl
                 auto left = binExpr->left;
                 auto right = binExpr->right;
 
-                auto processLeftRight = [&](Expression typeOfVal, Expression constVal) {
+                auto processTypeOf = [&](Expression typeOfVal, Expression constVal) {
                     if (auto typeOfOp = typeOfVal.as<TypeOfExpression>())
                     {
                         if (!typeOfOp->expression.is<Identifier>())
@@ -1916,12 +1916,36 @@ class MLIRGenImpl
                     return mlir::failure();
                 };
 
-                if (mlir::failed(processLeftRight(left, right)))
+                if (mlir::failed(processTypeOf(left, right)))
                 {
-                    if (mlir::failed(processLeftRight(right, left)))
-                    {
-                        return mlir::success();
-                    }
+                    processTypeOf(right, left);
+                    return mlir::success();
+                }
+
+                return mlir::success();
+            }
+
+            if (op == SyntaxKind::InstanceOfKeyword)
+            {
+                auto instanceOf = binExpr;
+                if (instanceOf->left.is<Identifier>())
+                {
+                    // create 'expression' = <string>'expression;
+                    NodeFactory nf(NodeFactoryFlags::None);
+
+                    // init
+                    NodeArray<VariableDeclaration> declarations;
+                    auto _safe_casted = instanceOf->left;
+                    declarations.push_back(nf.createVariableDeclaration(
+                        _safe_casted, undefined, undefined,
+                        nf.createTypeAssertion(nf.createTypeReferenceNode(instanceOf->right), instanceOf->left)));
+
+                    auto varDeclList = nf.createVariableDeclarationList(declarations, NodeFlags::Const);
+
+                    auto expr_statement = nf.createVariableStatement(undefined, varDeclList);
+
+                    const_cast<GenContext &>(genContext).generatedStatements.push_back(expr_statement.as<Statement>());
+                    return mlir::success();
                 }
             }
         }
@@ -5391,7 +5415,7 @@ llvm.return %5 : i32
             // temp return false;
             auto cmpRttiToParam = nf.createBinaryExpression(
                 nf.createIdentifier(LINSTANCEOF_PARAM_NAME), nf.createToken(SyntaxKind::EqualsEqualsToken),
-                nf.createPropertyAccessExpression(nf.createToken(SyntaxKind::ThisKeyword), nf.createIdentifier(LRTTI_NAME)));
+                nf.createPropertyAccessExpression(nf.createToken(SyntaxKind::ThisKeyword), nf.createIdentifier(S(RTTI_NAME))));
 
             auto cmpLogic = cmpRttiToParam;
 
