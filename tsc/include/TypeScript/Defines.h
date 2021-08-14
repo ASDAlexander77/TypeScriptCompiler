@@ -2,7 +2,8 @@
 #define DEFINES_H_
 
 #define IDENTIFIER_ATTR_NAME "identifier"
-#define RETURN_VARIABLE_NAME "__0return"
+#define RETURN_VARIABLE_NAME ".return"
+#define CAPTURED_NAME ".captured"
 #define LABEL_ATTR_NAME "label"
 #define UNDEFINED_NAME "undefined"
 #define THIS_NAME "this"

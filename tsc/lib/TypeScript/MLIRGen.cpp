@@ -1598,8 +1598,8 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirGenFunctionThisParam(mlir::Location loc, int &firstIndex, FunctionPrototypeDOM::TypePtr funcProto,
-                                                 mlir::Block::BlockArgListType arguments, const GenContext &genContext)
+    mlir::LogicalResult mlirGenFunctionCapturedParam(mlir::Location loc, int &firstIndex, FunctionPrototypeDOM::TypePtr funcProto,
+                                                     mlir::Block::BlockArgListType arguments, const GenContext &genContext)
     {
         if (genContext.capturedVars == nullptr)
         {
@@ -1609,12 +1609,12 @@ class MLIRGenImpl
         firstIndex++;
         auto capturedVars = *genContext.capturedVars;
 
-        auto thisParam = arguments[firstIndex];
-        auto thisRefType = thisParam.getType();
+        auto capturedParam = arguments[firstIndex];
+        auto capturedRefType = capturedParam.getType();
 
-        auto thisParamVar = std::make_shared<VariableDeclarationDOM>(THIS_NAME, thisRefType, loc);
+        auto capturedParamVar = std::make_shared<VariableDeclarationDOM>(CAPTURED_NAME, capturedRefType, loc);
 
-        declare(thisParamVar, thisParam);
+        declare(capturedParamVar, capturedParam);
 
         return mlir::success();
     }
@@ -1701,22 +1701,23 @@ class MLIRGenImpl
             auto name = variableInfo->getName();
 
             // load this.<var name>
-            auto _this = nf.createIdentifier(stows(THIS_NAME));
+            auto _captured = nf.createIdentifier(stows(CAPTURED_NAME));
             auto _name = nf.createIdentifier(stows(std::string(name)));
-            auto _this_name = nf.createPropertyAccessExpression(_this, _name);
-            auto thisVarValue = mlirGen(_this_name, genContext);
+            auto _captured_name = nf.createPropertyAccessExpression(_captured, _name);
+            auto capturedVarValue = mlirGen(_captured_name, genContext);
             auto variableRefType = mlir_ts::RefType::get(variableInfo->getType());
 
             auto capturedParam = std::make_shared<VariableDeclarationDOM>(name, variableRefType, variableInfo->getLoc());
-            if (thisVarValue.getType().isa<mlir_ts::RefType>())
+            assert(capturedVarValue);
+            if (capturedVarValue.getType().isa<mlir_ts::RefType>())
             {
                 capturedParam->setReadWriteAccess();
             }
 
-            LLVM_DEBUG(dbgs() << "\n --- captured 'this->" << name << "' [" << thisVarValue << "] ref val type: " << variableRefType
-                              << "\n\n");
+            LLVM_DEBUG(dbgs() << "\n --- captured '\".captured\"->" << name << "' [" << capturedVarValue
+                              << "] ref val type: " << variableRefType << "\n\n");
 
-            declare(capturedParam, thisVarValue);
+            declare(capturedParam, capturedVarValue);
         }
 
         return mlir::success();
@@ -1760,7 +1761,7 @@ class MLIRGenImpl
         }
 
         // register this if lambda function
-        if (failed(mlirGenFunctionThisParam(location, firstIndex, funcProto, arguments, genContext)))
+        if (failed(mlirGenFunctionCapturedParam(location, firstIndex, funcProto, arguments, genContext)))
         {
             return mlir::failure();
         }
