@@ -1517,6 +1517,15 @@ class CastLogicHelper
             }
         }
 
+        if (auto nullType = inType.dyn_cast_or_null<mlir_ts::NullType>())
+        {
+            if (auto ifaceType = resType.dyn_cast_or_null<mlir_ts::InterfaceType>())
+            {
+                // create null interface
+                return rewriter.create<mlir_ts::NewInterfaceOp>(loc, ifaceType, in, in);
+            }
+        }
+
         return mlir::Value();
     }
 
