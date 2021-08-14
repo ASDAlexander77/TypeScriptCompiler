@@ -94,7 +94,6 @@ class MLIRGenImpl
         llvm::ScopedHashTableScope<StringRef, NamespaceInfo::TypePtr> fullNamespacesMapScope(fullNamespacesMap);
         llvm::ScopedHashTableScope<StringRef, ClassInfo::TypePtr> fullNameClassesMapScope(fullNameClassesMap);
         llvm::ScopedHashTableScope<StringRef, InterfaceInfo::TypePtr> fullNameInterfacesMapScope(fullNameInterfacesMap);
-        llvm::ScopedHashTableScope<StringRef, VariableDeclarationDOM::TypePtr> fullNameGlobalsMapScope(fullNameGlobalsMap);
 
         if (mlir::succeeded(mlirDiscoverAllDependencies(module)) && mlir::succeeded(mlirCodeGenModuleWithDiagnostics(module)))
         {
@@ -125,6 +124,8 @@ class MLIRGenImpl
             hasErrors = true;
             postponedMessages.push_back(new mlir::Diagnostic(std::move(diag)));
         });
+
+        llvm::ScopedHashTableScope<StringRef, VariableDeclarationDOM::TypePtr> fullNameGlobalsMapScope(fullNameGlobalsMap);
 
         // Process of discovery here
         GenContext genContextPartial = {0};
@@ -203,6 +204,8 @@ class MLIRGenImpl
     mlir::LogicalResult mlirCodeGenModule(SourceFile module)
     {
         hasErrors = false;
+
+        llvm::ScopedHashTableScope<StringRef, VariableDeclarationDOM::TypePtr> fullNameGlobalsMapScope(fullNameGlobalsMap);
 
         // Process generating here
         GenContext genContext = {0};
@@ -5496,10 +5499,16 @@ llvm.return %5 : i32
     mlir::Value mlirGenCreateInterfaceVTableForClass(mlir::Location location, ClassInfo::TypePtr newClassPtr,
                                                      InterfaceInfo::TypePtr newInterfacePtr, const GenContext &genContext)
     {
+        auto fullClassInterfaceVTableFieldName = interfaceVTableNameForClass(newClassPtr, newInterfacePtr);
+        auto existValue = resolveFullNameIdentifier(location, fullClassInterfaceVTableFieldName, true, genContext);
+        if (existValue)
+        {
+            return existValue;
+        }
+
         if (mlir::succeeded(mlirGenClassVirtualTableDefinitionForInterface(location, newClassPtr, newInterfacePtr, genContext)))
         {
-            auto fullClassInterfaceVTableFieldName = interfaceVTableNameForClass(newClassPtr, newInterfacePtr);
-            return resolveFullNameIdentifier(location, fullClassInterfaceVTableFieldName, false, genContext);
+            return resolveFullNameIdentifier(location, fullClassInterfaceVTableFieldName, true, genContext);
         }
 
         return mlir::Value();
@@ -6219,9 +6228,15 @@ llvm.return %5 : i32
                 auto interfaceInfo = getInterfaceByFullName(interfaceType.getName().getValue());
                 assert(interfaceInfo);
 
-                if (auto createdInterface = mlirGenCreateInterfaceVTableForClass(location, classInfo, interfaceInfo, genContext))
+                if (auto createdInterfaceVTableForClass =
+                        mlirGenCreateInterfaceVTableForClass(location, classInfo, interfaceInfo, genContext))
                 {
-                    return createdInterface;
+                    LLVM_DEBUG(llvm::dbgs() << "\n"
+                                            << "@ created interface:" << createdInterfaceVTableForClass << "\n";);
+                    auto newInterface = builder.create<mlir_ts::NewInterfaceOp>(location, mlir::TypeRange{interfaceType}, value,
+                                                                                createdInterfaceVTableForClass);
+
+                    return newInterface;
                 }
 
                 emitError(location) << "type: " << classType << " missing interface: " << interfaceType;
