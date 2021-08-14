@@ -2755,7 +2755,7 @@ llvm.return %5 : i32
         {
             if (rightExpressionValue.getType().dyn_cast_or_null<mlir_ts::CharType>())
             {
-                rightExpressionValue = cast(rightExpressionValue.getLoc(), getStringType(), rightExpressionValue, genContext);
+                rightExpressionValue = cast(location, getStringType(), rightExpressionValue, genContext);
             }
         }
 
@@ -2764,7 +2764,7 @@ llvm.return %5 : i32
         // saving
         if (leftExpressionValueBeforeCast.getType() != result.getType())
         {
-            result = cast(leftExpressionValue.getLoc(), leftExpressionValueBeforeCast.getType(), result, genContext);
+            result = cast(location, leftExpressionValueBeforeCast.getType(), result, genContext);
         }
 
         // TODO: finish it for field access, review CodeLogicHelper.saveResult
