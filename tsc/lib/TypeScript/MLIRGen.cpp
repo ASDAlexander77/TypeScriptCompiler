@@ -5493,6 +5493,23 @@ llvm.return %5 : i32
         return mlir::success();
     }
 
+    mlir::Value mlirGenCreateInterfaceVTableForClass(mlir::Location location, ClassInfo::TypePtr newClassPtr,
+                                                     InterfaceInfo::TypePtr newInterfacePtr, const GenContext &genContext)
+    {
+        if (mlir::succeeded(mlirGenClassVirtualTableDefinitionForInterface(location, newClassPtr, newInterfacePtr, genContext)))
+        {
+            auto fullClassInterfaceVTableFieldName = interfaceVTableNameForClass(newClassPtr, newInterfacePtr);
+            return resolveFullNameIdentifier(location, fullClassInterfaceVTableFieldName, false, genContext);
+        }
+
+        return mlir::Value();
+    }
+
+    StringRef interfaceVTableNameForClass(ClassInfo::TypePtr newClassPtr, InterfaceInfo::TypePtr newInterfacePtr)
+    {
+        return concat(newClassPtr->fullName, newInterfacePtr->fullName, VTABLE_NAME);
+    }
+
     mlir::LogicalResult mlirGenClassVirtualTableDefinitionForInterface(mlir::Location location, ClassInfo::TypePtr newClassPtr,
                                                                        InterfaceInfo::TypePtr newInterfacePtr, const GenContext &genContext)
     {
@@ -5557,7 +5574,7 @@ llvm.return %5 : i32
         }
 
         // register global
-        auto fullClassInterfaceVTableFieldName = concat(newClassPtr->fullName, newInterfacePtr->fullName, VTABLE_NAME);
+        auto fullClassInterfaceVTableFieldName = interfaceVTableNameForClass(newClassPtr, newInterfacePtr);
         registerVariable(
             location, fullClassInterfaceVTableFieldName, true, VariableClass::Var,
             [&]() {
@@ -6196,6 +6213,15 @@ llvm.return %5 : i32
                     auto newInterface =
                         builder.create<mlir_ts::NewInterfaceOp>(location, mlir::TypeRange{interfaceType}, value, interfaceVTablePtr);
                     return newInterface;
+                }
+
+                // create interface vtable from current class
+                auto interfaceInfo = getInterfaceByFullName(interfaceType.getName().getValue());
+                assert(interfaceInfo);
+
+                if (auto createdInterface = mlirGenCreateInterfaceVTableForClass(location, classInfo, interfaceInfo, genContext))
+                {
+                    return createdInterface;
                 }
 
                 emitError(location) << "type: " << classType << " missing interface: " << interfaceType;
