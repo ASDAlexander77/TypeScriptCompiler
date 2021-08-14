@@ -26,10 +26,27 @@ function test3() {
     print(car2[7]); // Mazda
 }
 
+type int = 1;
+
+function tuple_cast() {
+    let result: [value: int, done: boolean];
+
+    let v: int | undefined;
+    v = 1;
+
+    result = [v, false];
+
+    print(result[0], result[1]);
+
+    assert(result[0] == 1);
+    assert(result[1] == false);
+}
+
 function main() {
     test1();
     test2();
     test3();
+    tuple_cast();
 
     print("done.");
 }

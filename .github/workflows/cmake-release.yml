@@ -1,13 +1,15 @@
 name: CMake - Test - Live
 
 on:
-  push:
-    branches: [ main ]
+#  push:
+#    branches: [ main ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
     branches: [ main ]
-
+  schedule:
+    # 8:30 and 18:30 UTC:
+    - cron:  '30 8,18 * * *'
 env:
   # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Release

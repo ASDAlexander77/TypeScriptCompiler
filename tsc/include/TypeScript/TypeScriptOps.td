@@ -533,6 +533,18 @@ def TypeScript_CreateTupleOp : TypeScript_Op<"CreateTuple"> {
   let assemblyFormat = "`[` $items `:` type($items) `]` attr-dict `:` type($instance)";
 }
 
+def TypeScript_DeconstructTupleOp : TypeScript_Op<"DeconstructTuple"> {
+  let summary = "deconstruct tuple";
+  let description = [{
+    deconstruct tuple
+  }];
+
+  let arguments = (ins TypeScript_Tuple:$instance);
+  let results = (outs Variadic<AnyType>:$results);
+
+  let assemblyFormat = "$instance `:` type($instance) attr-dict `:` `{` type($results) `}`";
+}
+
 def TypeScript_CreateArrayOp : TypeScript_Op<"CreateArray"> {
   let summary = "create array";
   let description = [{

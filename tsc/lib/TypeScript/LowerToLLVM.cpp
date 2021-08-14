@@ -1117,15 +1117,68 @@ struct CreateTupleOpLowering : public TsLlvmPattern<mlir_ts::CreateTupleOp>
         auto index = 0;
         for (auto item : createTupleOp.items())
         {
-            mlir::Value fieldIndex = clh.createStructIndexConstantOf(index++);
-            auto valuePtrType = LLVM::LLVMPointerType::get(tch.convertType(item.getType()));
-            auto offset = rewriter.create<LLVM::GEPOp>(loc, valuePtrType, tupleVar, ValueRange{zero, fieldIndex});
+            mlir::Value fieldIndex = clh.createStructIndexConstantOf(index);
+            auto llvmValueType = tch.convertType(item.getType());
+            auto llvmValuePtrType = LLVM::LLVMPointerType::get(llvmValueType);
+            auto offset = rewriter.create<LLVM::GEPOp>(loc, llvmValuePtrType, tupleVar, ValueRange{zero, fieldIndex});
+
+            // cast item if needed
+            auto destItemType = tupleType.getFields()[index].type;
+            auto llvmDestValueType = tch.convertType(destItemType);
+            if (llvmDestValueType != llvmValueType)
+            {
+                CastLogicHelper castLogic(createTupleOp, rewriter, tch);
+                item = castLogic.cast(item, llvmValueType, destItemType, llvmDestValueType);
+                if (!item)
+                {
+                    return failure();
+                }
+            }
+
             rewriter.create<LLVM::StoreOp>(loc, item, offset);
+
+            index++;
         }
 
         auto loadedValue = rewriter.create<mlir_ts::LoadOp>(loc, tupleType, tupleVar);
 
         rewriter.replaceOp(createTupleOp, ValueRange{loadedValue});
+        return success();
+    }
+};
+
+struct DeconstructTupleOpLowering : public TsLlvmPattern<mlir_ts::DeconstructTupleOp>
+{
+    using TsLlvmPattern<mlir_ts::DeconstructTupleOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::DeconstructTupleOp deconstructTupleOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        LLVMCodeHelper ch(deconstructTupleOp, rewriter, getTypeConverter());
+        CodeLogicHelper clh(deconstructTupleOp, rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+        TypeHelper th(rewriter);
+
+        auto loc = deconstructTupleOp.getLoc();
+        auto tupleVar = deconstructTupleOp.instance();
+        auto tupleType = tupleVar.getType().cast<mlir_ts::TupleType>();
+
+        // values
+        SmallVector<mlir::Value> results;
+
+        // set values here
+        auto index = 0;
+        for (auto &item : tupleType.getFields())
+        {
+            auto llvmValueType = tch.convertType(item.type);
+            auto value = rewriter.create<LLVM::ExtractValueOp>(loc, llvmValueType, tupleVar, clh.getStructIndexAttr(index));
+
+            results.push_back(value);
+
+            index++;
+        }
+
+        rewriter.replaceOp(deconstructTupleOp, ValueRange{results});
         return success();
     }
 };
@@ -2805,12 +2858,12 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
                     AssertOpLowering, CastOpLowering, ConstantOpLowering, CreateOptionalOpLowering, UndefOptionalOpLowering,
                     HasValueOpLowering, ValueOpLowering, SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering, EntryOpLowering,
                     FuncOpLowering, LoadOpLowering, ElementRefOpLowering, PropertyRefOpLowering, ExtractPropertyOpLowering,
-                    LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateTupleOpLowering, CreateArrayOpLowering,
-                    NewEmptyArrayOpLowering, NewArrayOpLowering, PushOpLowering, PopOpLowering, DeleteOpLowering, ParseFloatOpLowering,
-                    ParseIntOpLowering, PrintOpLowering, StoreOpLowering, SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering,
-                    StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering,
-                    MemoryCopyOpLowering, LoadSaveValueLowering, ThrowOpLoweringVCWin32, TrampolineOpLowering, TryOpLowering,
-                    VariableOpLowering, InvokeOpLowering, ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering,
+                    LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateTupleOpLowering, DeconstructTupleOpLowering,
+                    CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, PushOpLowering, PopOpLowering, DeleteOpLowering,
+                    ParseFloatOpLowering, ParseIntOpLowering, PrintOpLowering, StoreOpLowering, SizeOfOpLowering, InsertPropertyOpLowering,
+                    LengthOfOpLowering, StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering, CharToStringOpLowering,
+                    UndefOpLowering, MemoryCopyOpLowering, LoadSaveValueLowering, ThrowOpLoweringVCWin32, TrampolineOpLowering,
+                    TryOpLowering, VariableOpLowering, InvokeOpLowering, ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering,
                     NewInterfaceOpLowering, VTableOffsetRefOpLowering, ThisPropertyRefOpLowering, LoadBoundRefOpLowering,
                     CreateBoundRefOpLowering, CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering>(
         typeConverter, &getContext(), &tsLlvmContext);

@@ -1502,6 +1502,21 @@ class CastLogicHelper
             }
         }
 
+        if (auto tupleTypeIn = inType.dyn_cast_or_null<mlir_ts::TupleType>())
+        {
+            if (auto tupleTypeRes = resType.dyn_cast_or_null<mlir_ts::TupleType>())
+            {
+                SmallVector<mlir::Type> types;
+                for (auto &field : tupleTypeIn.getFields())
+                {
+                    types.push_back(field.type);
+                }
+
+                auto results = rewriter.create<mlir_ts::DeconstructTupleOp>(loc, types, in);
+                return rewriter.create<mlir_ts::CreateTupleOp>(loc, tupleTypeRes, results.getResults());
+            }
+        }
+
         return mlir::Value();
     }
 

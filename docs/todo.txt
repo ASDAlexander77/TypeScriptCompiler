@@ -1,1 +1,2 @@
 1) Add step to optimaze "bound ref" calls for "let" and "const" on objects
+2) Add optimizator to cast tuple to tuple (to eliminate multiple createTuple with Cast Tuple, which can be converted into one CreateTuple Op)
