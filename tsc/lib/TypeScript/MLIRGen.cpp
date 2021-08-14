@@ -3592,8 +3592,8 @@ llvm.return %5 : i32
             .Case<mlir_ts::BoundFunctionType>([&](auto calledBoundFuncType) {
                 auto calledFuncType = getFunctionType(calledBoundFuncType.getInputs(), calledBoundFuncType.getResults());
                 auto thisValue = builder.create<mlir_ts::GetThisOp>(location, calledFuncType.getInput(0), funcRefValue);
-                auto castedBoundFuncRefValue = cast(location, calledFuncType, funcRefValue, genContext);
-                value = mlirGenCallFunction(location, calledFuncType, castedBoundFuncRefValue, thisValue, callExpression->typeArguments,
+                auto unboundFuncRefValue = builder.create<mlir_ts::GetMethodOp>(location, calledFuncType, funcRefValue);
+                value = mlirGenCallFunction(location, calledFuncType, unboundFuncRefValue, thisValue, callExpression->typeArguments,
                                             callExpression->arguments, testResult, genContext);
             })
             .Case<mlir_ts::ClassType>([&](auto classType) {
