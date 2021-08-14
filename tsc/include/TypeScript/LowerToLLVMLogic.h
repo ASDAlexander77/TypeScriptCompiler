@@ -6,6 +6,7 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 
+#include "mlir/Target/LLVMIR/TypeTranslation.h"
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
 #include "mlir/Conversion/SCFToStandard/SCFToStandard.h"
 #include "mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h"
@@ -189,6 +190,14 @@ class LLVMTypeConverterHelper
     int32_t getPointerBitwidth(unsigned addressSpace)
     {
         return typeConverter.getPointerBitwidth(addressSpace);
+    }
+
+    int32_t getTypeSize(mlir::Type llvmType)
+    {
+        llvm::LLVMContext llvmContext;
+        LLVM::TypeToLLVMIRTranslator typeToLLVMIRTranslator(llvmContext);
+        auto type = typeToLLVMIRTranslator.translateType(llvmType);
+        return typeConverter.getDataLayout().getTypeAllocSize(type);
     }
 };
 
@@ -1569,6 +1578,16 @@ class CastLogicHelper
         // struct to struct. TODO: add validation
         if (inLLVMType.isa<LLVM::LLVMStructType>() && resLLVMType.isa<LLVM::LLVMStructType>())
         {
+            LLVMTypeConverterHelper llvmtch((LLVMTypeConverter &)tch.typeConverter);
+            auto size1 = llvmtch.getTypeSize(inLLVMType);
+            auto size2 = llvmtch.getTypeSize(resLLVMType);
+
+            if (size1 != size2)
+            {
+                op->emitWarning("types have different sizes: ")
+                    << inLLVMType << " size of " << size1 << ", " << resLLVMType << " size of " << size2;
+            }
+
             auto srcAddr = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(inType), in, rewriter.getBoolAttr(false));
             auto dstAddr =
                 rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(resType), mlir::Value(), rewriter.getBoolAttr(false));
