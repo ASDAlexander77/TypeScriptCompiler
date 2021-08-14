@@ -124,12 +124,48 @@ int loadMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module)
     return 0;
 }
 
+void publishDiagnostic(mlir::Diagnostic &diag)
+{
+    auto printMsg = [](llvm::raw_fd_ostream &os, mlir::Diagnostic &diag, const char *msg) {
+        if (!diag.getLocation().isa<mlir::UnknownLoc>())
+            os << diag.getLocation() << ": ";
+        os << msg;
+
+        // The default behavior for errors is to emit them to stderr.
+        os << diag << '\n';
+        os.flush();
+    };
+
+    switch (diag.getSeverity())
+    {
+    case mlir::DiagnosticSeverity::Note:
+        printMsg(llvm::outs(), diag, "note: ");
+        for (auto &note : diag.getNotes())
+        {
+            printMsg(llvm::outs(), note, "note: ");
+        }
+
+        break;
+    case mlir::DiagnosticSeverity::Warning:
+        printMsg(llvm::outs(), diag, "warning: ");
+        break;
+    case mlir::DiagnosticSeverity::Error:
+        printMsg(llvm::errs(), diag, "error: ");
+        break;
+    case mlir::DiagnosticSeverity::Remark:
+        printMsg(llvm::outs(), diag, "information: ");
+        break;
+    }
+}
+
 int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module)
 {
     if (int error = loadMLIR(context, module))
     {
         return error;
     }
+
+    mlir::ScopedDiagnosticHandler diagHandler(&context, [&](mlir::Diagnostic &diag) { publishDiagnostic(diag); });
 
     mlir::PassManager pm(&context);
     // Apply any generic pass manager command line options and run the pipeline.
@@ -360,7 +396,9 @@ int main(int argc, char **argv)
     cl::ParseCommandLineOptions(argc, argv, "TypeScript compiler\n");
 
     if (emitAction == Action::DumpAST)
+    {
         return dumpAST();
+    }
 
     // If we aren't dumping the AST, then we are compiling with/to MLIR.
 
@@ -373,7 +411,9 @@ int main(int argc, char **argv)
 
     mlir::OwningModuleRef module;
     if (int error = loadAndProcessMLIR(context, module))
+    {
         return error;
+    }
 
     // If we aren't exporting to non-mlir, then we are done.
     bool isOutputingMLIR = emitAction <= Action::DumpMLIRLLVM;
@@ -385,11 +425,15 @@ int main(int argc, char **argv)
 
     // Check to see if we are compiling to LLVM IR.
     if (emitAction == Action::DumpLLVMIR)
+    {
         return dumpLLVMIR(*module);
+    }
 
     // Otherwise, we must be running the jit.
     if (emitAction == Action::RunJIT)
+    {
         return runJit(*module);
+    }
 
     llvm::errs() << "No action specified (parsing only?), use -emit=<action>\n";
     return -1;
