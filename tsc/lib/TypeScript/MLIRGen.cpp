@@ -2766,32 +2766,48 @@ llvm.return %5 : i32
             }
         }
 
-        auto result = rightExpressionValue;
+        auto savingValue = rightExpressionValue;
 
-        // saving
-        if (leftExpressionValueBeforeCast.getType() != result.getType())
-        {
-            result = cast(location, leftExpressionValueBeforeCast.getType(), result, genContext);
-        }
+        auto syncSavingValue = [&](mlir::Type destType) {
+            if (destType != savingValue.getType())
+            {
+                savingValue = cast(location, destType, savingValue, genContext);
+            }
+        };
 
         // TODO: finish it for field access, review CodeLogicHelper.saveResult
         if (auto loadOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::LoadOp>())
         {
+            mlir::Type destType;
+            TypeSwitch<mlir::Type>(loadOp.reference().getType())
+                .Case<mlir_ts::RefType>([&](auto refType) { destType = refType.getElementType(); })
+                .Case<mlir_ts::BoundRefType>([&](auto boundRefType) { destType = boundRefType.getElementType(); });
+
+            assert(destType);
+
+            LLVM_DEBUG(llvm::dbgs() << "\n~~~ Dest type: " << destType << "\n";);
+
+            syncSavingValue(destType);
+
             // TODO: when saving const array into variable we need to allocate space and copy array as we need to have writable array
-            builder.create<mlir_ts::StoreOp>(location, result, loadOp.reference());
+            builder.create<mlir_ts::StoreOp>(location, savingValue, loadOp.reference());
         }
         else if (auto accessorRefOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::AccessorRefOp>())
         {
+            syncSavingValue(accessorRefOp.getType());
+
             auto callRes = builder.create<mlir_ts::CallOp>(location, accessorRefOp.setAccessor().getValue(), mlir::TypeRange{getVoidType()},
-                                                           mlir::ValueRange{result});
-            result = callRes.getResult(0);
+                                                           mlir::ValueRange{savingValue});
+            savingValue = callRes.getResult(0);
         }
         else if (auto thisAccessorRefOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ThisAccessorRefOp>())
         {
+            syncSavingValue(thisAccessorRefOp.getType());
+
             auto callRes =
                 builder.create<mlir_ts::CallOp>(location, thisAccessorRefOp.setAccessor().getValue(), mlir::TypeRange{getVoidType()},
-                                                mlir::ValueRange{thisAccessorRefOp.thisVal(), result});
-            result = callRes.getResult(0);
+                                                mlir::ValueRange{thisAccessorRefOp.thisVal(), savingValue});
+            savingValue = callRes.getResult(0);
         }
         else
         {
@@ -2800,7 +2816,7 @@ llvm.return %5 : i32
             return mlir::Value();
         }
 
-        return result;
+        return savingValue;
     }
 
     mlir::Value mlirGenSaveLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)

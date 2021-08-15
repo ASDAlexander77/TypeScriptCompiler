@@ -216,6 +216,14 @@ class MLIRTypeHelper
         {
             if (inFuncType.getInput(i) != resFuncType.getInput(i))
             {
+                /*
+                if (i == 0 && (inFuncType.getInput(i).isa<mlir_ts::OpaqueType>() || resFuncType.getInput(i).isa<mlir_ts::OpaqueType>()))
+                {
+                    // allow not to match opaque time at first position
+                    continue;
+                }
+                */
+
                 return {MatchResultType::NotMatchArg, i};
             }
         }
