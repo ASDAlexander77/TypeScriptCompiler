@@ -89,13 +89,14 @@ Hello World!
 File ``tsc-compile.bat``
 ```cmd
 rem set %LLVM% and %TSCBIN%
-set LLVMPATH=%LLVM%\llvm\release\bin
-set TSCPATH=%TSCBIN%\tsc\bin
-set VCFLD=C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\SDK\ScopeCppSDK\vc15
-set LIBPATH=%VCFLD%\VC\lib
-set SDKPATH=%VCFLD%\SDK\lib
+set FILENAME=%1
+set LLVMPATH=C:\TypeScriptCompiler\3rdParty\llvm\release\bin
+set TSCPATH=C:\TypeScriptCompiler\__build\tsc\bin
+set LIBPATH="C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Tools\MSVC\14.29.30037\lib\x64"
+set SDKPATH="C:\Program Files (x86)\Windows Kits\10\Lib\10.0.18362.0\um\x64"
+set UCRTPATH="C:\Program Files (x86)\Windows Kits\10\Lib\10.0.18362.0\ucrt\x64"
 %TSCPATH%\tsc.exe --emit=jit -dump-object-file -object-filename=%FILENAME%.o %FILENAME%.ts
-%LLVMPATH%\lld.exe -flavor link %FILENAME%.o /libpath:"%LIBPATH%" /libpath:"%SDKPATH%" "%LIBPATH%\libcmt.lib" "%LIBPATH%\libvcruntime.lib" "%SDKPATH%\kernel32.lib" "%SDKPATH%\libucrt.lib" "%SDKPATH%\uuid.lib"
+%LLVMPATH%\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% /defaultlib:libcmt.lib libvcruntime.lib
 ```
 Compile 
 ```cmd
