@@ -214,42 +214,40 @@ class MLIRCustomMethods
         }
 
         mlir::Value result;
-        // print - internal command;
-        if (functionName.compare(StringRef("print")) == 0)
+        if (functionName == "print")
         {
+            // print - internal command;
             mlir::succeeded(mlirGenPrint(location, operands));
         }
-        else
-            // assert - internal command;
-            if (functionName.compare(StringRef("assert")) == 0)
+        else if (functionName == "assert")
         {
+            // assert - internal command;
             mlir::succeeded(mlirGenAssert(location, operands));
         }
-        else
-            // assert - internal command;
-            if (functionName.compare(StringRef("parseInt")) == 0)
+        else if (functionName == "parseInt")
         {
+            // assert - internal command;
             result = mlirGenParseInt(location, operands);
         }
-        else if (functionName.compare(StringRef("parseFloat")) == 0)
+        else if (functionName == "parseFloat")
         {
             result = mlirGenParseFloat(location, operands);
         }
-        else if (functionName.compare(StringRef("sizeof")) == 0)
+        else if (functionName == "sizeof")
         {
             result = mlirGenSizeOf(location, operands);
         }
-        else if (functionName.compare(StringRef("__array_push")) == 0)
+        else if (functionName == "__array_push")
         {
             result = mlirGenArrayPush(location, operands);
         }
-        else if (functionName.compare(StringRef("__array_pop")) == 0)
+        else if (functionName == "__array_pop")
         {
             result = mlirGenArrayPop(location, operands);
         }
         /*
         else
-        if (functionName.compare(StringRef("#_last_field")) == 0)
+        if (functionName == "#_last_field")
         {
             mlir::TypeSwitch<mlir::Type>(operands.front().getType())
                 .Case<mlir_ts::ConstTupleType>([&](auto tupleType)
