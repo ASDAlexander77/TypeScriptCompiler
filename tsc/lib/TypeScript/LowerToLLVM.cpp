@@ -2291,6 +2291,10 @@ struct CaptureOpLowering : public TsLlvmPattern<mlir_ts::CaptureOp>
         TypeHelper th(rewriter);
 
         auto captureRefType = captureOp.getType();
+
+        LLVM_DEBUG(llvm::dbgs() << "\n ...capture result type: " << captureRefType << "\n\n";);
+
+        assert(captureRefType.isa<mlir_ts::RefType>());
         auto captureStoreType = captureRefType.cast<mlir_ts::RefType>().getElementType().cast<mlir_ts::TupleType>();
 
         LLVM_DEBUG(llvm::dbgs() << "\n ...capture store type: " << captureStoreType << "\n\n";);

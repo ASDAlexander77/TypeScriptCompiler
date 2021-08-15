@@ -1354,6 +1354,9 @@ class MLIRGenImpl
         auto hasCapturedVars = funcProto->getHasCapturedVars() || (it != getCaptureVarsMap().end());
         if (hasCapturedVars)
         {
+            // important set when it is discovered and in process second type
+            funcProto->setHasCapturedVars(true);
+
             SmallVector<mlir::NamedAttribute> attrs;
             SmallVector<mlir::DictionaryAttr> argAttrs;
 
@@ -4305,9 +4308,21 @@ llvm.return %5 : i32
         SmallVector<std::reference_wrapper<mlir_ts::FieldInfo>> methodInfos;
         SmallVector<std::pair<mlir::Attribute, mlir::Value>> fieldsToSet;
 
+        auto location = loc(objectLiteral);
+
         auto addFuncFieldInfo = [&](mlir::Attribute fieldId, mlir::StringRef funcName, mlir::FunctionType funcType) {
             auto type = funcType;
-            values.push_back(mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName));
+
+            if (auto trampOp = resolveFunctionWithCapture(location, funcName, funcType, genContext))
+            {
+                values.push_back(builder.getUnitAttr());
+                fieldsToSet.push_back({fieldId, trampOp});
+            }
+            else
+            {
+                values.push_back(mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName));
+            }
+
             types.push_back(type);
             fieldInfos.push_back({fieldId, type});
         };
@@ -4371,15 +4386,36 @@ llvm.return %5 : i32
 
             auto funcOpWithFuncProto = mlirGenFunctionPrototype(funcLikeDecl, funcGenContext);
             auto &funcOp = std::get<0>(funcOpWithFuncProto);
-            // auto &funcProto = std::get<1>(funcOpWithFuncProto);
+            auto &funcProto = std::get<1>(funcOpWithFuncProto);
             auto result = std::get<2>(funcOpWithFuncProto);
             if (!result || !funcOp)
             {
                 return;
             }
 
+            // fix this parameter type (taking in account that first type can be captured type)
+            auto funcType = funcOp.getType();
+
+            LLVM_DEBUG(llvm::dbgs() << "Object FuncType: " << funcType << "\n";);
+
+            auto capturedType = funcType.getInput(0);
+            if (funcProto->getHasCapturedVars())
+            {
+                // save first param as it is captured vars type, and remove it to fix "this" param
+                funcType = getFunctionType(funcType.getInputs().slice(1), funcType.getResults());
+                LLVM_DEBUG(llvm::dbgs() << "Object without captured FuncType: " << funcType << "\n";);
+            }
+
             // recreate type with "this" param as "any"
-            auto newFuncType = getFunctionTypeWithOpaqueThis(funcOp, true);
+            MLIRTypeHelper mth(builder.getContext());
+
+            auto newFuncType = mth.getFunctionTypeWithOpaqueThis(funcType, true);
+            LLVM_DEBUG(llvm::dbgs() << "Object with this as opaque: " << newFuncType << "\n";);
+            if (funcProto->getHasCapturedVars())
+            {
+                newFuncType = mth.getFunctionTypeAddingFirstArgType(newFuncType, capturedType);
+                LLVM_DEBUG(llvm::dbgs() << "Object with this as opaque and returned captured as first: " << newFuncType << "\n";);
+            }
 
             // place holder
             addFuncFieldInfo(fieldId, funcName, newFuncType);
@@ -4517,7 +4553,8 @@ llvm.return %5 : i32
             auto &fieldInfo = fieldRef.get();
             if (auto funcType = fieldInfo.type.dyn_cast_or_null<mlir::FunctionType>())
             {
-                fieldInfo.type = getFunctionTypeWithThisType(funcType, objThis);
+                MLIRTypeHelper mth(builder.getContext());
+                fieldInfo.type = mth.getFunctionTypeWithThisType(funcType, objThis);
             }
         }
 
@@ -4532,8 +4569,7 @@ llvm.return %5 : i32
 
         MLIRTypeHelper mth(builder.getContext());
         auto tupleType = mth.convertConstTupleTypeToTupleType(constantVal.getType());
-        auto location = constantVal.getLoc();
-        return mlirGenCreateTuple(location, tupleType, constantVal, fieldsToSet, genContext);
+        return mlirGenCreateTuple(constantVal.getLoc(), tupleType, constantVal, fieldsToSet, genContext);
     }
 
     mlir::Value mlirGenCreateTuple(mlir::Location location, mlir::Type tupleType, mlir::Value initValue,
@@ -4554,22 +4590,6 @@ llvm.return %5 : i32
 
         auto loadedValue = builder.create<mlir_ts::LoadOp>(location, tupleType, tupleVar);
         return loadedValue;
-    }
-
-    mlir::FunctionType getFunctionTypeWithThisType(mlir::FunctionType funcType, mlir::Type thisType, bool replace = false)
-    {
-        SmallVector<mlir::Type> args;
-        args.push_back(thisType);
-        auto argsWithoutFirst =
-            funcType.getInputs().slice(replace || funcType.getNumInputs() > 0 && funcType.getInput(0) == getOpaqueType() ? 1 : 0);
-        args.append(argsWithoutFirst.begin(), argsWithoutFirst.end());
-        auto newFuncType = getFunctionType(args, funcType.getResults());
-        return newFuncType;
-    }
-
-    mlir::FunctionType getFunctionTypeWithOpaqueThis(mlir_ts::FuncOp funcOp, bool replace = false)
-    {
-        return getFunctionTypeWithThisType(funcOp.getType(), getOpaqueType(), replace);
     }
 
     mlir::Value mlirGen(Identifier identifier, const GenContext &genContext)
@@ -4671,7 +4691,7 @@ llvm.return %5 : i32
         return mlir::Value();
     }
 
-    mlir::Value resolveIdentifierInNamespace(mlir::Location location, StringRef name, const GenContext &genContext)
+    mlir::Value resolveFunctionNameInNamespace(mlir::Location location, StringRef name, const GenContext &genContext)
     {
         // resolving function
         auto fn = getFunctionMap().find(name);
@@ -4688,6 +4708,17 @@ llvm.return %5 : i32
             auto symbOp = builder.create<mlir_ts::SymbolRefOp>(location, funcType,
                                                                mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
             return symbOp;
+        }
+
+        return mlir::Value();
+    }
+
+    mlir::Value resolveIdentifierInNamespace(mlir::Location location, StringRef name, const GenContext &genContext)
+    {
+        auto value = resolveFunctionNameInNamespace(location, name, genContext);
+        if (value)
+        {
+            return value;
         }
 
         if (getGlobalsMap().count(name))

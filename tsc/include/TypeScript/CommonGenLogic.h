@@ -181,6 +181,29 @@ class MLIRTypeHelper
         return type;
     }
 
+    mlir::FunctionType getFunctionTypeWithThisType(mlir::FunctionType funcType, mlir::Type thisType, bool replace = false)
+    {
+        mlir::SmallVector<mlir::Type> args;
+        args.push_back(thisType);
+        auto offset = replace || funcType.getNumInputs() > 0 && funcType.getInput(0) == mlir_ts::OpaqueType::get(context) ? 1 : 0;
+        auto sliced = funcType.getInputs().slice(offset);
+        args.append(sliced.begin(), sliced.end());
+        auto newFuncType = mlir::FunctionType::get(context, args, funcType.getResults());
+        return newFuncType;
+    }
+
+    mlir::FunctionType getFunctionTypeWithOpaqueThis(mlir::FunctionType funcType, bool replace = false)
+    {
+        return getFunctionTypeWithThisType(funcType, mlir_ts::OpaqueType::get(context), replace);
+    }
+
+    mlir::FunctionType getFunctionTypeAddingFirstArgType(mlir::FunctionType funcType, mlir::Type firstArgType)
+    {
+        mlir::SmallVector<mlir::Type> funcArgTypes(funcType.getInputs().begin(), funcType.getInputs().end());
+        funcArgTypes.insert(funcArgTypes.begin(), firstArgType);
+        return mlir::FunctionType::get(context, funcArgTypes, funcType.getResults());
+    }
+
     MatchResult TestFunctionTypesMatch(mlir::FunctionType inFuncType, mlir::FunctionType resFuncType, unsigned startParam = 0)
     {
         // TODO: make 1 common function
