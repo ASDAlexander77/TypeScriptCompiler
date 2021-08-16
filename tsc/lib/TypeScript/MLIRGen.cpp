@@ -2088,6 +2088,9 @@ class MLIRGenImpl
         // condition
         builder.setInsertionPointToStart(&whileOp.cond().front());
         auto conditionValue = mlirGen(whileStatementAST->expression, genContext);
+
+        VALIDATE_LOGIC(conditionValue)
+
         builder.create<mlir_ts::ConditionOp>(location, conditionValue, mlir::ValueRange{});
 
         // body

@@ -67,6 +67,27 @@ using SymbolTableScopeT = llvm::ScopedHashTableScope<StringRef, VariablePairT>;
         return mlir::Value();                                                                                                              \
     }
 
+#define VALIDATE_LOGIC(value)                                                                                                              \
+    if (!value)                                                                                                                            \
+    {                                                                                                                                      \
+        if (!genContext.allowPartialResolve)                                                                                               \
+        {                                                                                                                                  \
+            emitError(value.getDefiningOp()->getLoc(), "expression has no result");                                                        \
+        }                                                                                                                                  \
+                                                                                                                                           \
+        return mlir::failure();                                                                                                            \
+    }                                                                                                                                      \
+                                                                                                                                           \
+    if (auto unresolved = dyn_cast_or_null<mlir_ts::UnresolvedSymbolRefOp>(value.getDefiningOp()))                                         \
+    {                                                                                                                                      \
+        if (!genContext.allowPartialResolve)                                                                                               \
+        {                                                                                                                                  \
+            emitError(value.getDefiningOp()->getLoc(), "can't find variable: ") << unresolved.identifier();                                \
+        }                                                                                                                                  \
+                                                                                                                                           \
+        return mlir::failure();                                                                                                            \
+    }
+
 namespace typescript
 {
 
