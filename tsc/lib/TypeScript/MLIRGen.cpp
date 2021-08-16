@@ -1642,36 +1642,33 @@ class MLIRGenImpl
             // process optional parameters
             if (param->hasInitValue())
             {
-                auto optType = getOptionalType(param->getType());
-
-                auto paramOptionalOp = builder.create<mlir_ts::ParamOptionalOp>(location, mlir_ts::RefType::get(optType), arguments[index]);
+                auto dataType = param->getType();
+                auto paramOptionalOp =
+                    builder.create<mlir_ts::ParamOptionalOp>(location, mlir_ts::RefType::get(dataType), arguments[index]);
 
                 paramValue = paramOptionalOp;
 
-                if (param->hasInitValue())
+                /*auto *defValueBlock =*/builder.createBlock(&paramOptionalOp.defaultValueRegion());
+
+                mlir::Value defaultValue;
+                auto initExpression = param->getInitValue();
+                if (initExpression)
                 {
-                    /*auto *defValueBlock =*/builder.createBlock(&paramOptionalOp.defaultValueRegion());
-
-                    mlir::Value defaultValue;
-                    auto initExpression = param->getInitValue();
-                    if (initExpression)
-                    {
-                        defaultValue = mlirGen(initExpression, genContext);
-                    }
-                    else
-                    {
-                        llvm_unreachable("unknown statement");
-                    }
-
-                    if (optType != defaultValue.getType())
-                    {
-                        defaultValue = cast(location, optType, defaultValue, genContext);
-                    }
-
-                    builder.create<mlir_ts::ParamDefaultValueOp>(location, defaultValue);
-
-                    builder.setInsertionPointAfter(paramOptionalOp);
+                    defaultValue = mlirGen(initExpression, genContext);
                 }
+                else
+                {
+                    llvm_unreachable("unknown statement");
+                }
+
+                if (defaultValue.getType() != dataType)
+                {
+                    defaultValue = cast(location, dataType, defaultValue, genContext);
+                }
+
+                builder.create<mlir_ts::ParamDefaultValueOp>(location, defaultValue);
+
+                builder.setInsertionPointAfter(paramOptionalOp);
             }
             else if (param->getIsOptional())
             {

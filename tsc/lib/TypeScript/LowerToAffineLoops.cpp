@@ -69,26 +69,22 @@ struct ParamOptionalOpLowering : public TsPattern<mlir_ts::ParamOptionalOp>
 
         auto location = paramOp.getLoc();
 
-        if (paramOp.defaultValueRegion().empty())
-        {
-            rewriter.replaceOpWithNewOp<mlir_ts::VariableOp>(paramOp, paramOp.getType(), paramOp.argValue(), rewriter.getBoolAttr(false));
-            return success();
-        }
+        auto dataTypeIn = paramOp.argValue().getType().cast<mlir_ts::OptionalType>().getElementType();
+        auto storeType = paramOp.getType().cast<mlir_ts::RefType>().getElementType();
 
-        Value variable = rewriter.create<mlir_ts::VariableOp>(location, paramOp.getType(), mlir::Value(), rewriter.getBoolAttr(false));
+        assert(storeType == storeType);
 
         // ts.if
         auto hasValue = rewriter.create<mlir_ts::HasValueOp>(location, th.getBooleanType(), paramOp.argValue());
-        auto ifOp = rewriter.create<mlir_ts::IfOp>(location, paramOp.argValue().getType(), hasValue, true);
-
-        auto sp = rewriter.saveInsertionPoint();
+        auto ifOp = rewriter.create<mlir_ts::IfOp>(location, storeType, hasValue, true);
 
         // then block
         auto &thenRegion = ifOp.thenRegion();
 
         rewriter.setInsertionPointToStart(&thenRegion.back());
 
-        rewriter.create<mlir_ts::ResultOp>(location, paramOp.argValue());
+        mlir::Value value = rewriter.create<mlir_ts::ValueOp>(location, storeType, paramOp.argValue());
+        rewriter.create<mlir_ts::ResultOp>(location, value);
 
         // else block
         auto &elseRegion = ifOp.elseRegion();
@@ -98,10 +94,11 @@ struct ParamOptionalOpLowering : public TsPattern<mlir_ts::ParamOptionalOp>
         rewriter.inlineRegionBefore(paramOp.defaultValueRegion(), &ifOp.elseRegion().back());
         rewriter.eraseBlock(&ifOp.elseRegion().back());
 
-        rewriter.restoreInsertionPoint(sp);
+        rewriter.setInsertionPointAfter(ifOp);
 
-        // save op
-        rewriter.create<mlir_ts::StoreOp>(location, ifOp.results().front(), variable);
+        Value variable =
+            rewriter.create<mlir_ts::VariableOp>(location, paramOp.getType(), ifOp.results().front(), rewriter.getBoolAttr(false));
+
         rewriter.replaceOp(paramOp, variable);
 
         return success();
@@ -660,18 +657,18 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     // a partial lowering, we explicitly mark the TypeScript operations that don't want
     // to lower, `typescript.print`, as `legal`.
     target.addIllegalDialect<mlir_ts::TypeScriptDialect>();
-    target.addLegalOp<mlir_ts::AddressOfOp, mlir_ts::AddressOfConstStringOp, mlir_ts::AddressOfElementOp, mlir_ts::ArithmeticBinaryOp,
-                      mlir_ts::ArithmeticUnaryOp, mlir_ts::AssertOp, mlir_ts::CallOp, mlir_ts::CallIndirectOp, mlir_ts::CaptureOp,
-                      mlir_ts::CastOp, mlir_ts::ConstantOp, mlir_ts::EntryOp, mlir_ts::ExitOp, mlir_ts::ElementRefOp, mlir_ts::FuncOp,
-                      mlir_ts::GlobalOp, mlir_ts::GlobalResultOp, mlir_ts::HasValueOp, mlir_ts::NullOp, mlir_ts::ParseFloatOp,
-                      mlir_ts::ParseIntOp, mlir_ts::PrintOp, mlir_ts::SizeOfOp, mlir_ts::ReturnOp, mlir_ts::ReturnValOp, mlir_ts::StoreOp,
-                      mlir_ts::SymbolRefOp, mlir_ts::LengthOfOp, mlir_ts::StringLengthOp, mlir_ts::StringConcatOp, mlir_ts::LoadOp,
-                      mlir_ts::NewOp, mlir_ts::CreateTupleOp, mlir_ts::DeconstructTupleOp, mlir_ts::CreateArrayOp, mlir_ts::NewEmptyArrayOp,
-                      mlir_ts::NewArrayOp, mlir_ts::DeleteOp, mlir_ts::PropertyRefOp, mlir_ts::InsertPropertyOp, mlir_ts::ExtractPropertyOp,
-                      mlir_ts::LogicalBinaryOp, mlir_ts::UndefOp, mlir_ts::VariableOp, mlir_ts::ThrowOp, mlir_ts::TryOp,
-                      mlir_ts::TrampolineOp, mlir_ts::InvokeOp, mlir_ts::ResultOp, mlir_ts::ThisVirtualSymbolRefOp,
-                      mlir_ts::InterfaceSymbolRefOp, mlir_ts::PushOp, mlir_ts::PopOp, mlir_ts::NewInterfaceOp, mlir_ts::VTableOffsetRefOp,
-                      mlir_ts::ThisPropertyRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp, mlir_ts::TypeOfOp>();
+    target.addLegalOp<
+        mlir_ts::AddressOfOp, mlir_ts::AddressOfConstStringOp, mlir_ts::AddressOfElementOp, mlir_ts::ArithmeticBinaryOp,
+        mlir_ts::ArithmeticUnaryOp, mlir_ts::AssertOp, mlir_ts::CallOp, mlir_ts::CallIndirectOp, mlir_ts::CaptureOp, mlir_ts::CastOp,
+        mlir_ts::ConstantOp, mlir_ts::EntryOp, mlir_ts::ExitOp, mlir_ts::ElementRefOp, mlir_ts::FuncOp, mlir_ts::GlobalOp,
+        mlir_ts::GlobalResultOp, mlir_ts::HasValueOp, mlir_ts::ValueOp, mlir_ts::NullOp, mlir_ts::ParseFloatOp, mlir_ts::ParseIntOp,
+        mlir_ts::PrintOp, mlir_ts::SizeOfOp, mlir_ts::ReturnOp, mlir_ts::ReturnValOp, mlir_ts::StoreOp, mlir_ts::SymbolRefOp,
+        mlir_ts::LengthOfOp, mlir_ts::StringLengthOp, mlir_ts::StringConcatOp, mlir_ts::LoadOp, mlir_ts::NewOp, mlir_ts::CreateTupleOp,
+        mlir_ts::DeconstructTupleOp, mlir_ts::CreateArrayOp, mlir_ts::NewEmptyArrayOp, mlir_ts::NewArrayOp, mlir_ts::DeleteOp,
+        mlir_ts::PropertyRefOp, mlir_ts::InsertPropertyOp, mlir_ts::ExtractPropertyOp, mlir_ts::LogicalBinaryOp, mlir_ts::UndefOp,
+        mlir_ts::VariableOp, mlir_ts::ThrowOp, mlir_ts::TryOp, mlir_ts::TrampolineOp, mlir_ts::InvokeOp, mlir_ts::ResultOp,
+        mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::InterfaceSymbolRefOp, mlir_ts::PushOp, mlir_ts::PopOp, mlir_ts::NewInterfaceOp,
+        mlir_ts::VTableOffsetRefOp, mlir_ts::ThisPropertyRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp, mlir_ts::TypeOfOp>();
 
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.
