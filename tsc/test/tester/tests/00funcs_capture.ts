@@ -24,8 +24,20 @@ function main_func_in_object() {
     s.f();
 }
 
+function main_func_in_object2(a?: number) {
+    const s = {
+        f() {
+            assert(a == 11);
+            print(a);
+        },
+    };
+
+    s.f();
+}
+
 function main() {
     main_func();
     main_func_in_object();
+    main_func_in_object2(11);
     print("done.");
 }

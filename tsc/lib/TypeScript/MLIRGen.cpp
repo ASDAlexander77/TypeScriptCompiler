@@ -1673,6 +1673,7 @@ class MLIRGenImpl
             else if (param->getIsOptional())
             {
                 auto optType = getOptionalType(param->getType());
+                param->setType(optType);
                 paramValue = builder.create<mlir_ts::ParamOp>(location, mlir_ts::RefType::get(optType), arguments[index]);
             }
             else

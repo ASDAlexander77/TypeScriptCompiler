@@ -68,6 +68,10 @@ class VariableDeclarationDOM : public BaseDOM
     {
         return type;
     }
+    void setType(mlir::Type type_)
+    {
+        type = type_;
+    }
     const mlir::Location &getLoc() const
     {
         return loc;
