@@ -1125,7 +1125,6 @@ class MLIRGenImpl
                     if (!type || type == noneType)
                     {
                         auto baseType = initValue.getType();
-                        // type = OptionalType::get(baseType);
                         type = baseType;
                     }
                 }
@@ -1250,7 +1249,7 @@ class MLIRGenImpl
                 return std::make_tuple(FunctionPrototypeDOM::TypePtr(nullptr), funcType, SmallVector<mlir::Type>{});
             }
 
-            if (param->getIsOptional())
+            if (param->getIsOptional() && !paramType.isa<mlir_ts::OptionalType>())
             {
                 argTypes.push_back(getOptionalType(paramType));
             }
@@ -1670,7 +1669,7 @@ class MLIRGenImpl
 
                 builder.setInsertionPointAfter(paramOptionalOp);
             }
-            else if (param->getIsOptional())
+            else if (param->getIsOptional() && !param->getType().isa<mlir_ts::OptionalType>())
             {
                 auto optType = getOptionalType(param->getType());
                 param->setType(optType);
