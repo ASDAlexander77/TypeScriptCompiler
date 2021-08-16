@@ -1505,7 +1505,7 @@ class MLIRGenImpl
             }
         }
 
-        if (auto trampOp = resolveFunctionWithCapture(location, funcOp.getName(), funcOp.getType(), genContext))
+        if (auto trampOp = resolveFunctionWithCapture(location, funcOp.getName(), funcOp.getType(), false, genContext))
         {
             return trampOp;
         }
@@ -4602,7 +4602,9 @@ llvm.return %5 : i32
                 MLIRTypeHelper mth(builder.getContext());
                 fieldInfo.type = mth.getFunctionTypeReplaceOpaqueWithThisType(funcType, objThis);
 
-                if (auto trampOp = resolveFunctionWithCapture(location, funcName, fieldInfo.type.cast<mlir::FunctionType>(), genContext))
+                // TODO: investigate if you can allocate trampolines in heap "change false -> true"
+                if (auto trampOp =
+                        resolveFunctionWithCapture(location, funcName, fieldInfo.type.cast<mlir::FunctionType>(), false, genContext))
                 {
                     fieldsToSet.push_back({fieldInfo.id, trampOp});
                 }
@@ -4702,7 +4704,7 @@ llvm.return %5 : i32
         return mlir::Value();
     }
 
-    mlir::Value resolveFunctionWithCapture(mlir::Location location, StringRef name, mlir::FunctionType funcType,
+    mlir::Value resolveFunctionWithCapture(mlir::Location location, StringRef name, mlir::FunctionType funcType, bool allocTrampolineInHeap,
                                            const GenContext &genContext)
     {
         // check if required capture of vars
@@ -4740,7 +4742,8 @@ llvm.return %5 : i32
 
             // add attributes to track which one sent by ref.
             auto captured = builder.create<mlir_ts::CaptureOp>(location, funcType.getInput(0), capturedValues);
-            return builder.create<mlir_ts::TrampolineOp>(location, newFuncType, funcSymbolOp, captured);
+            return builder.create<mlir_ts::TrampolineOp>(location, newFuncType, funcSymbolOp, captured,
+                                                         builder.getBoolAttr(allocTrampolineInHeap));
         }
 
         return mlir::Value();
@@ -4755,7 +4758,7 @@ llvm.return %5 : i32
             auto funcOp = fn->getValue();
             auto funcType = funcOp.getType();
 
-            if (auto trampOp = resolveFunctionWithCapture(location, name, funcType, genContext))
+            if (auto trampOp = resolveFunctionWithCapture(location, name, funcType, false, genContext))
             {
                 return trampOp;
             }

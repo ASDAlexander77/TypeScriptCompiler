@@ -1035,9 +1035,9 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
         auto llvmReferenceType = tch.convertType(referenceType);
 
 #ifdef ALLOC_ALL_VARS_IN_HEAP
-        auto isCaptured = varOp.captured().hasValue() && varOp.captured().getValue();
-#elif ALLOC_CAPTURED_VARS_IN_HEAP
         auto isCaptured = true;
+#elif ALLOC_CAPTURED_VARS_IN_HEAP
+        auto isCaptured = varOp.captured().hasValue() && varOp.captured().getValue();
 #else
         auto isCaptured = false;
 #endif
@@ -2259,12 +2259,22 @@ struct TrampolineOpLowering : public TsLlvmPattern<mlir_ts::TrampolineOp>
         auto bufferType = th.getPointerType(th.getI8Array(TRAMPOLINE_SIZE));
 
 #ifdef ALLOC_TRAMPOLINE_IN_HEAP
-        auto trampolinePtr = ch.MemoryAlloc(bufferType);
+        auto allocInHeap = true;
 #else
-        auto trampoline = rewriter.create<LLVM::AllocaOp>(location, bufferType, clh.createI32ConstantOf(1));
-        auto const0 = clh.createI32ConstantOf(0);
-        auto trampolinePtr = rewriter.create<LLVM::GEPOp>(location, i8PtrTy, ValueRange{trampoline, const0, const0});
+        auto allocInHeap = trampolineOp.allocInHeap().hasValue() && trampolineOp.allocInHeap().getValue();
 #endif
+
+        mlir::Value trampolinePtr;
+        if (allocInHeap)
+        {
+            trampolinePtr = ch.MemoryAlloc(bufferType);
+        }
+        else
+        {
+            auto trampoline = rewriter.create<LLVM::AllocaOp>(location, bufferType, clh.createI32ConstantOf(1));
+            auto const0 = clh.createI32ConstantOf(0);
+            trampolinePtr = rewriter.create<LLVM::GEPOp>(location, i8PtrTy, ValueRange{trampoline, const0, const0});
+        }
 
         // init trampoline
         rewriter.create<LLVM::CallOp>(

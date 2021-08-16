@@ -1,4 +1,5 @@
-// ALLOC_CAPTURED_VARS_IN_HEAP and ALLOC_TRAMPOLINE_IN_HEAP must be defined to run it correctly
+// TODO: review it if you can fix (seems some param values are not captured)
+// ALLOC_ALL_VARS_IN_HEAP and ALLOC_TRAMPOLINE_IN_HEAP must be defined to run it correctly
 
 type int = 1;
 

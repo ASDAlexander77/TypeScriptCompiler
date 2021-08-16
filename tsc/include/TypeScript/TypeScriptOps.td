@@ -753,7 +753,7 @@ def TypeScript_CaptureOp : TypeScript_Op<"Capture", []> {
 def TypeScript_TrampolineOp : TypeScript_Op<"Trampoline", []> {
   let summary = "trampoline logic";
 
-  let arguments = (ins FunctionType:$callee, AnyType:$data_reference);
+  let arguments = (ins FunctionType:$callee, AnyType:$data_reference, OptionalAttr<BoolAttr>:$allocInHeap);
   let results = (outs FunctionType:$newCallee);
 }
 
