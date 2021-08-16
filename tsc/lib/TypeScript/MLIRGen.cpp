@@ -1565,10 +1565,14 @@ class MLIRGenImpl
             getFunctionMap().insert({name, funcOp});
 
             LLVM_DEBUG(llvm::dbgs() << "\n... reg. func: " << name << " type:" << funcOp.getType() << "\n";);
+            LLVM_DEBUG(llvm::dbgs() << "\n... reg. func: " << name
+                                    << " num inputs:" << funcOp.getType().cast<mlir::FunctionType>().getNumInputs() << "\n";);
         }
         else
         {
             LLVM_DEBUG(llvm::dbgs() << "\n... re-process. func: " << name << " type:" << funcOp.getType() << "\n";);
+            LLVM_DEBUG(llvm::dbgs() << "\n... re-process. func: " << name
+                                    << " num inputs:" << funcOp.getType().cast<mlir::FunctionType>().getNumInputs() << "\n";);
         }
 
         builder.setInsertionPointAfter(funcOp);
@@ -4339,6 +4343,7 @@ llvm.return %5 : i32
                 values.push_back(mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName));
             }
 
+            LLVM_DEBUG(llvm::dbgs() << "\n... obj. func: " << fieldId << " type: " << funcType << "[" << funcType.getNumInputs() << "]\n";);
             types.push_back(type);
             fieldInfos.push_back({fieldId, type});
         };
@@ -4529,8 +4534,6 @@ llvm.return %5 : i32
         auto constTupleType = getConstTupleType(fieldInfos);
         auto objThis = getObjectType(constTupleType);
 
-        LLVM_DEBUG(dbgs() << "obj: " << constTupleType << "\n";);
-
         // process all methods
         for (auto &item : objectLiteral->properties)
         {
@@ -4563,6 +4566,7 @@ llvm.return %5 : i32
             }
         }
 
+        // fix all method types again
         // for (auto &fieldInfo : fieldInfos)
         for (auto &fieldRef : methodInfos)
         {
@@ -4570,7 +4574,7 @@ llvm.return %5 : i32
             if (auto funcType = fieldInfo.type.dyn_cast_or_null<mlir::FunctionType>())
             {
                 MLIRTypeHelper mth(builder.getContext());
-                fieldInfo.type = mth.getFunctionTypeWithThisType(funcType, objThis);
+                fieldInfo.type = mth.getFunctionTypeReplaceOpaqueWithThisType(funcType, objThis);
             }
         }
 

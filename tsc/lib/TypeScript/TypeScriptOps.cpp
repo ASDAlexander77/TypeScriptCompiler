@@ -246,10 +246,11 @@ LogicalResult verify(mlir_ts::CastOp op)
     if (inFuncType && resFuncType)
     {
         ::typescript::MLIRTypeHelper mth(op.getContext());
-        auto result = mth.TestFunctionTypesMatch(inFuncType, resFuncType);
+        auto result = mth.TestFunctionTypesMatchWithObjectMethods(inFuncType, resFuncType);
         if (::typescript::MatchResultType::Match != result.result)
         {
-            op->emitError("can't cast function type '") << inFuncType << " to type '" << resFuncType << "'";
+            op->emitError("can't cast function type ") << inFuncType << "[" << inFuncType.getNumInputs() << "] to type " << resFuncType
+                                                       << "[" << resFuncType.getNumInputs() << "]";
             return failure();
         }
     }

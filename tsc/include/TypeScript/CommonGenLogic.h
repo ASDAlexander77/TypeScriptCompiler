@@ -204,6 +204,21 @@ class MLIRTypeHelper
         return mlir::FunctionType::get(context, funcArgTypes, funcType.getResults());
     }
 
+    mlir::FunctionType getFunctionTypeReplaceOpaqueWithThisType(mlir::FunctionType funcType, mlir::Type opaqueReplacementType)
+    {
+        mlir::SmallVector<mlir::Type> funcArgTypes(funcType.getInputs().begin(), funcType.getInputs().end());
+        for (auto &type : funcArgTypes)
+        {
+            if (type.isa<mlir_ts::OpaqueType>())
+            {
+                type = opaqueReplacementType;
+                break;
+            }
+        }
+
+        return mlir::FunctionType::get(context, funcArgTypes, funcType.getResults());
+    }
+
     MatchResult TestFunctionTypesMatch(mlir::FunctionType inFuncType, mlir::FunctionType resFuncType, unsigned startParam = 0)
     {
         // TODO: make 1 common function
@@ -215,6 +230,100 @@ class MLIRTypeHelper
         for (unsigned i = startParam, e = inFuncType.getInputs().size(); i != e; ++i)
         {
             if (inFuncType.getInput(i) != resFuncType.getInput(i))
+            {
+                /*
+                if (i == 0 && (inFuncType.getInput(i).isa<mlir_ts::OpaqueType>() || resFuncType.getInput(i).isa<mlir_ts::OpaqueType>()))
+                {
+                    // allow not to match opaque time at first position
+                    continue;
+                }
+                */
+
+                return {MatchResultType::NotMatchArg, i};
+            }
+        }
+
+        auto inRetCount = inFuncType.getResults().size();
+        auto resRetCount = resFuncType.getResults().size();
+
+        auto noneType = mlir::NoneType::get(context);
+        auto voidType = mlir_ts::VoidType::get(context);
+
+        for (auto retType : inFuncType.getResults())
+        {
+            auto isVoid = !retType || retType == noneType || retType == voidType;
+            if (isVoid)
+            {
+                inRetCount--;
+            }
+        }
+
+        for (auto retType : resFuncType.getResults())
+        {
+            auto isVoid = !retType || retType == noneType || retType == voidType;
+            if (isVoid)
+            {
+                resRetCount--;
+            }
+        }
+
+        if (inRetCount != resRetCount)
+        {
+            return {MatchResultType::NotMatchResultCount, 0};
+        }
+
+        for (unsigned i = 0, e = inRetCount; i != e; ++i)
+        {
+            auto inRetType = inFuncType.getResult(i);
+            auto resRetType = resFuncType.getResult(i);
+
+            auto isInVoid = !inRetType || inRetType == noneType || inRetType == voidType;
+            auto isResVoid = !resRetType || resRetType == noneType || resRetType == voidType;
+            if (!isInVoid && !isResVoid && inRetType != resRetType)
+            {
+                return {MatchResultType::NotMatchResult, i};
+            }
+        }
+
+        return {MatchResultType::Match, 0};
+    }
+
+    MatchResult TestFunctionTypesMatchWithObjectMethods(mlir::FunctionType inFuncType, mlir::FunctionType resFuncType,
+                                                        unsigned startParamIn = 0, unsigned startParamRes = 0)
+    {
+        // 1 we need to skip opaque and objects
+        if (startParamIn <= 0 && inFuncType.getNumInputs() > 0 &&
+            (inFuncType.getInput(0).isa<mlir_ts::OpaqueType>() || inFuncType.getInput(0).isa<mlir_ts::ObjectType>()))
+        {
+            startParamIn = 1;
+        }
+
+        if (startParamIn <= 1 && inFuncType.getNumInputs() > 1 &&
+            (inFuncType.getInput(1).isa<mlir_ts::OpaqueType>() || inFuncType.getInput(1).isa<mlir_ts::ObjectType>()))
+        {
+            startParamIn = 2;
+        }
+
+        if (startParamRes <= 0 && resFuncType.getNumInputs() > 0 &&
+            (resFuncType.getInput(0).isa<mlir_ts::OpaqueType>() || resFuncType.getInput(0).isa<mlir_ts::ObjectType>()))
+        {
+            startParamRes = 1;
+        }
+
+        if (startParamRes <= 1 && resFuncType.getNumInputs() > 1 &&
+            (resFuncType.getInput(1).isa<mlir_ts::OpaqueType>() || resFuncType.getInput(1).isa<mlir_ts::ObjectType>()))
+        {
+            startParamRes = 2;
+        }
+
+        if (inFuncType.getInputs().size() - startParamIn != resFuncType.getInputs().size() - startParamRes)
+        {
+            return {MatchResultType::NotMatchArgCount, 0};
+        }
+
+        for (unsigned i = startParamIn, e = inFuncType.getInputs().size(); i != e; ++i)
+        {
+            if (inFuncType.getInput(i) != resFuncType.getInput(i + startParamRes))
             {
                 /*
                 if (i == 0 && (inFuncType.getInput(i).isa<mlir_ts::OpaqueType>() || resFuncType.getInput(i).isa<mlir_ts::OpaqueType>()))
