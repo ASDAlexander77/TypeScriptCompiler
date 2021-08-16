@@ -1005,6 +1005,16 @@ def TypeScript_ThisPropertyRefOp : TypeScript_Op<"ThisPropertyRef"> {
   let assemblyFormat = "$objectRef `+` $offset attr-dict `:` type($objectRef) `+` type($offset) `->` type($result)";
 }
 
+def TypeScript_StoreBoundRefOp : TypeScript_Op<"StoreBoundRef", []> {
+  let summary = "stores the value into the bound reference";
+  let description = [{
+    The `store` operation stores the value into the bound reference storage.
+  }];
+
+  let arguments = (ins AnyType:$value, Arg<TypeScript_BoundRef, "the bound reference to store to", [MemWrite]>:$reference);
+  let assemblyFormat = "$value `:` type($value) `,` $reference attr-dict `:` type($reference)";
+}
+
 def TypeScript_LoadBoundRefOp : TypeScript_Op<"LoadBoundRef", []> {
   let summary = "loads the value from the bound reference type";
   let description = [{

@@ -4326,17 +4326,19 @@ llvm.return %5 : i32
         SmallVector<mlir_ts::FieldInfo> fieldInfos;
         SmallVector<mlir::Attribute> values;
         SmallVector<std::reference_wrapper<mlir_ts::FieldInfo>> methodInfos;
+        SmallVector<std::pair<std::string, std::reference_wrapper<mlir_ts::FieldInfo>>> methodInfosWithCaptures;
         SmallVector<std::pair<mlir::Attribute, mlir::Value>> fieldsToSet;
 
         auto location = loc(objectLiteral);
 
-        auto addFuncFieldInfo = [&](mlir::Attribute fieldId, mlir::StringRef funcName, mlir::FunctionType funcType) {
+        auto addFuncFieldInfo = [&](mlir::Attribute fieldId, std::string funcName, mlir::FunctionType funcType) {
             auto type = funcType;
 
-            if (auto trampOp = resolveFunctionWithCapture(location, funcName, funcType, genContext))
+            auto captureVars = getCaptureVarsMap().find(funcName);
+            auto hasCaptures = captureVars != getCaptureVarsMap().end();
+            if (hasCaptures)
             {
                 values.push_back(builder.getUnitAttr());
-                fieldsToSet.push_back({fieldId, trampOp});
             }
             else
             {
@@ -4346,6 +4348,15 @@ llvm.return %5 : i32
             LLVM_DEBUG(llvm::dbgs() << "\n... obj. func: " << fieldId << " type: " << funcType << "[" << funcType.getNumInputs() << "]\n";);
             types.push_back(type);
             fieldInfos.push_back({fieldId, type});
+
+            if (hasCaptures)
+            {
+                methodInfosWithCaptures.push_back({funcName, fieldInfos[fieldInfos.size() - 1]});
+            }
+            else
+            {
+                methodInfos.push_back(fieldInfos[fieldInfos.size() - 1]);
+            }
         };
 
         auto addFieldInfo = [&](mlir::Attribute fieldId, mlir::Value itemValue) {
@@ -4440,8 +4451,6 @@ llvm.return %5 : i32
 
             // place holder
             addFuncFieldInfo(fieldId, funcName, newFuncType);
-
-            methodInfos.push_back(fieldInfos[fieldInfos.size() - 1]);
         };
 
         auto processFunctionLike = [&](mlir_ts::ObjectType objThis, FunctionLikeDeclarationBase &funcLikeDecl) {
@@ -4567,7 +4576,6 @@ llvm.return %5 : i32
         }
 
         // fix all method types again
-        // for (auto &fieldInfo : fieldInfos)
         for (auto &fieldRef : methodInfos)
         {
             auto &fieldInfo = fieldRef.get();
@@ -4575,6 +4583,28 @@ llvm.return %5 : i32
             {
                 MLIRTypeHelper mth(builder.getContext());
                 fieldInfo.type = mth.getFunctionTypeReplaceOpaqueWithThisType(funcType, objThis);
+            }
+        }
+
+        // fix all method types again and load captured functions
+        for (auto &fieldRefWithName : methodInfosWithCaptures)
+        {
+            auto funcName = std::get<0>(fieldRefWithName);
+            auto fieldRef = std::get<1>(fieldRefWithName);
+            auto &fieldInfo = fieldRef.get();
+            if (auto funcType = fieldInfo.type.dyn_cast_or_null<mlir::FunctionType>())
+            {
+                MLIRTypeHelper mth(builder.getContext());
+                fieldInfo.type = mth.getFunctionTypeReplaceOpaqueWithThisType(funcType, objThis);
+
+                if (auto trampOp = resolveFunctionWithCapture(location, funcName, fieldInfo.type.cast<mlir::FunctionType>(), genContext))
+                {
+                    fieldsToSet.push_back({fieldInfo.id, trampOp});
+                }
+                else
+                {
+                    assert(false);
+                }
             }
         }
 
