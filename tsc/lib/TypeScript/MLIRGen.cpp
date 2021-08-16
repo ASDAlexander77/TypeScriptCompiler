@@ -1635,13 +1635,13 @@ class MLIRGenImpl
             index++;
             mlir::Value paramValue;
 
+            // process init expression
+            auto location = param->getLoc();
+
             // alloc all args
             // process optional parameters
-            if (param->getIsOptional() || param->hasInitValue())
+            if (param->hasInitValue())
             {
-                // process init expression
-                auto location = param->getLoc();
-
                 auto optType = getOptionalType(param->getType());
 
                 auto paramOptionalOp = builder.create<mlir_ts::ParamOptionalOp>(location, mlir_ts::RefType::get(optType), arguments[index]);
@@ -1673,9 +1673,14 @@ class MLIRGenImpl
                     builder.setInsertionPointAfter(paramOptionalOp);
                 }
             }
+            else if (param->getIsOptional())
+            {
+                auto optType = getOptionalType(param->getType());
+                paramValue = builder.create<mlir_ts::ParamOp>(location, mlir_ts::RefType::get(optType), arguments[index]);
+            }
             else
             {
-                paramValue = builder.create<mlir_ts::ParamOp>(param->getLoc(), mlir_ts::RefType::get(param->getType()), arguments[index]);
+                paramValue = builder.create<mlir_ts::ParamOp>(location, mlir_ts::RefType::get(param->getType()), arguments[index]);
             }
 
             if (paramValue)
