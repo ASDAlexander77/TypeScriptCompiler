@@ -1655,4 +1655,9 @@ def TypeScript_ThrowOp : TypeScript_Op<"Throw"> {
   let results = (outs );
 }
 
+def TypeScript_DebuggerOp : TypeScript_Op<"Debugger"> {
+  let summary = "debugger";
+}
+
+
 #endif // TYPESCRIPT_OPS

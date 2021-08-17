@@ -559,6 +559,10 @@ class MLIRGenImpl
         {
             return mlirGen(statementAST.as<ModuleDeclaration>(), genContext);
         }
+        else if (kind == SyntaxKind::DebuggerStatement)
+        {
+            return mlirGen(statementAST.as<DebuggerStatement>(), genContext);
+        }
         else if (kind == SyntaxKind::EmptyStatement ||
                  kind == SyntaxKind::Unknown /*TODO: temp solution to treat null statements as empty*/)
         {
@@ -2265,6 +2269,14 @@ class MLIRGenImpl
         auto res = mlirGen(labeledStatementAST->statement, genContext);
 
         return res;
+    }
+
+    mlir::LogicalResult mlirGen(DebuggerStatement debuggerStatementAST, const GenContext &genContext)
+    {
+        auto location = loc(debuggerStatementAST);
+
+        builder.create<mlir_ts::DebuggerOp>(location);
+        return mlir::success();
     }
 
     mlir::LogicalResult mlirGen(ContinueStatement continueStatementAST, const GenContext &genContext)
