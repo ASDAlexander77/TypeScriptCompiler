@@ -1,1 +1,2 @@
 add_subdirectory(TypeScript)
+add_subdirectory(TypeScriptGC)

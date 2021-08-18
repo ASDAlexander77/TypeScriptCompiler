@@ -23,6 +23,47 @@ namespace mlir_ts = mlir::typescript;
 namespace
 {
 
+class ProcessNestAttribute
+{
+    Operation *op;
+    LLVM::ModuleTranslation &moduleTranslation;
+    LLVMFuncOp funcOp;
+    llvm::Function *llvmFunc;
+
+  public:
+    ProcessNestAttribute(Operation *op, LLVM::ModuleTranslation &moduleTranslation) : op(op), moduleTranslation(moduleTranslation)
+    {
+        funcOp = dyn_cast_or_null<LLVMFuncOp>(op);
+        llvmFunc = moduleTranslation.lookupFunction(funcOp.getName());
+    }
+
+    LogicalResult processNested()
+    {
+        unsigned int argIdx = 0;
+        for (auto kvp : llvm::zip(funcOp.getArguments(), llvmFunc->args()))
+        {
+            llvm::Argument &llvmArg = std::get<1>(kvp);
+            BlockArgument mlirArg = std::get<0>(kvp);
+
+            if (auto attr = funcOp.getArgAttrOfType<UnitAttr>(argIdx, TS_NEST_ATTRIBUTE))
+            {
+                auto argTy = mlirArg.getType();
+                llvmArg.addAttr(llvm::Attribute::AttrKind::Nest);
+            }
+
+            argIdx++;
+        }
+
+        return success();
+    }
+
+    LogicalResult processGc()
+    {
+        llvmFunc->setGC(TYPESCRIPT_GC_NAME);
+        return success();
+    }
+};
+
 /// Implementation of the dialect interface that converts operations belonging
 /// to the TypeScript dialect to LLVM IR.
 class TypeScriptDialectLLVMIRTranslationInterface : public LLVMTranslationDialectInterface
@@ -35,28 +76,23 @@ class TypeScriptDialectLLVMIRTranslationInterface : public LLVMTranslationDialec
     {
         LLVM_DEBUG(llvm::dbgs() << "\n === amendOperation === \n");
         LLVM_DEBUG(llvm::dbgs() << "attribute: " << attribute.first << " val: " << attribute.second << "\n");
+
+        auto isNestAttr = attribute.first == TS_NEST_ATTRIBUTE;
+        auto isGcAttr = attribute.first == TS_GC_ATTRIBUTE;
+
         // TODO:
-        if (attribute.first != TS_NEST_ATTRIBUTE)
+        if (isNestAttr || isGcAttr)
         {
-            return success();
-        }
-
-        auto func = dyn_cast_or_null<LLVMFuncOp>(op);
-        llvm::Function *llvmFunc = moduleTranslation.lookupFunction(func.getName());
-
-        unsigned int argIdx = 0;
-        for (auto kvp : llvm::zip(func.getArguments(), llvmFunc->args()))
-        {
-            llvm::Argument &llvmArg = std::get<1>(kvp);
-            BlockArgument mlirArg = std::get<0>(kvp);
-
-            if (auto attr = func.getArgAttrOfType<UnitAttr>(argIdx, TS_NEST_ATTRIBUTE))
+            ProcessNestAttribute pna(op, moduleTranslation);
+            if (isNestAttr && mlir::failed(pna.processNested()))
             {
-                auto argTy = mlirArg.getType();
-                llvmArg.addAttr(llvm::Attribute::AttrKind::Nest);
+                return mlir::failure();
             }
 
-            argIdx++;
+            if (isGcAttr && mlir::failed(pna.processGc()))
+            {
+                return mlir::failure();
+            }
         }
 
         return success();

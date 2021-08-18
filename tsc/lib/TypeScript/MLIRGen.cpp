@@ -1,6 +1,7 @@
 #define ENABLE_RTTI true
 #define ALL_METHODS_VIRTUAL true
 #define USE_BOUND_FUNCTION_FOR_OBJECTS true
+#define ADD_GC_ATTRIBUTE true
 
 #define DEBUG_TYPE "mlir"
 
@@ -1363,6 +1364,10 @@ class MLIRGenImpl
             SmallVector<mlir::NamedAttribute> attrs;
             SmallVector<mlir::DictionaryAttr> argAttrs;
 
+#ifdef ADD_GC_ATTRIBUTE
+            attrs.push_back({builder.getIdentifier(TS_GC_ATTRIBUTE), mlir::UnitAttr::get(builder.getContext())});
+#endif
+
             for (auto argType : funcType.getInputs())
             {
                 SmallVector<mlir::NamedAttribute> argAttrsForType;
@@ -1382,7 +1387,13 @@ class MLIRGenImpl
         }
         else
         {
+#ifdef ADD_GC_ATTRIBUTE
+            SmallVector<mlir::NamedAttribute> attrs;
+            attrs.push_back({builder.getIdentifier(TS_GC_ATTRIBUTE), mlir::UnitAttr::get(builder.getContext())});
+            funcOp = mlir_ts::FuncOp::create(location, fullName, funcType, attrs);
+#else
             funcOp = mlir_ts::FuncOp::create(location, fullName, funcType);
+#endif
         }
 
         return std::make_tuple(funcOp, funcProto, true);

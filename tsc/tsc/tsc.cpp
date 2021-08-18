@@ -1,8 +1,10 @@
+#include "TypeScript/Defines.h"
 #include "TypeScript/MLIRGen.h"
 #include "TypeScript/Passes.h"
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/TypeScriptToLLVMIRTranslation.h"
+#include "TypeScript/TypeScriptGC.h"
 
 #include "TypeScript/rt.h"
 
@@ -28,6 +30,8 @@
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
+
+#include "llvm/IR/GCStrategy.h"
 
 using namespace typescript;
 namespace cl = llvm::cl;
@@ -290,6 +294,9 @@ int runJit(mlir::ModuleOp module)
     // can JIT-compile.
     mlir::registerLLVMDialectTranslation(*module->getContext());
     mlir::typescript::registerTypeScriptDialectTranslation(*module->getContext());
+
+    // force linking
+    mlir::typescript::registerTypeScriptGC();
 
     // An optimization pipeline to use within the execution engine.
     auto optPipeline = mlir::makeOptimizingTransformer(
