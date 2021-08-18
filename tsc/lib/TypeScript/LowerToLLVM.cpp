@@ -5,6 +5,7 @@
 //#define ALLOC_TRAMPOLINE_IN_HEAP 1
 #define DEBUG_TYPE "llvm"
 
+#include "TypeScript/Config.h"
 #include "TypeScript/Defines.h"
 #include "TypeScript/Passes.h"
 #include "TypeScript/TypeScriptDialect.h"
@@ -1046,6 +1047,21 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
 
         auto allocated = isCaptured ? ch.MemoryAllocBitcast(llvmReferenceType, storageType)
                                     : rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, clh.createI32ConstantOf(1));
+
+#ifdef GC_ENABLE
+        // register root in stack
+        if (storageType.isa<mlir_ts::ClassType>() || storageType.isa<mlir_ts::StringType>() || storageType.isa<mlir_ts::ArrayType>() ||
+            storageType.isa<mlir_ts::AnyType>())
+        {
+            TypeHelper th(rewriter);
+
+            auto i8PtrPtrTy = th.getI8PtrPtrType();
+            auto i8PtrTy = th.getI8PtrType();
+            auto gcRootOp = ch.getOrInsertFunction("llvm.gcroot", th.getFunctionType(th.getVoidType(), {i8PtrPtrTy, i8PtrTy}));
+            auto nullPtr = rewriter.create<LLVM::NullOp>(location, i8PtrTy);
+            rewriter.create<LLVM::CallOp>(location, gcRootOp, ValueRange{allocated, nullPtr});
+        }
+#endif
 
         auto value = varOp.initializer();
         if (value)

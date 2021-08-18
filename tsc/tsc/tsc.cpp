@@ -1,6 +1,4 @@
-#define GC_ENABLE 1
-//#define TSGC_ENABLE 1
-
+#include "TypeScript/Config.h"
 #include "TypeScript/Defines.h"
 #include "TypeScript/MLIRGen.h"
 #include "TypeScript/Passes.h"
