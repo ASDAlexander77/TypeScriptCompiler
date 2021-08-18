@@ -6,6 +6,9 @@
 #include "llvm/Support/Casting.h"
 #include "llvm/ADT/StringMap.h"
 
+#include "llvm/CodeGen/LinkAllAsmWriterComponents.h"
+#include "llvm/CodeGen/LinkAllCodegenComponents.h"
+
 using namespace llvm;
 
 namespace

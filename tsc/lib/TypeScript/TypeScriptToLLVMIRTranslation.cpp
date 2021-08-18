@@ -59,7 +59,10 @@ class ProcessNestAttribute
 
     LogicalResult processGc()
     {
-        llvmFunc->setGC(TYPESCRIPT_GC_NAME);
+        // llvmFunc->setGC(TYPESCRIPT_GC_NAME);
+        llvmFunc->setGC("coreclr");
+        // llvmFunc->setGC("erlang");
+        // llvmFunc->setGC("ocaml");
         return success();
     }
 };

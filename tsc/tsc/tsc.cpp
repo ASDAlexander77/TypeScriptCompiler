@@ -1,3 +1,6 @@
+#define GC_ENABLE 1
+//#define TSGC_ENABLE 1
+
 #include "TypeScript/Defines.h"
 #include "TypeScript/MLIRGen.h"
 #include "TypeScript/Passes.h"
@@ -31,7 +34,11 @@
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Support/raw_ostream.h"
 
+#ifdef GC_ENABLE
 #include "llvm/IR/GCStrategy.h"
+#include "llvm/CodeGen/LinkAllAsmWriterComponents.h"
+#include "llvm/CodeGen/LinkAllCodegenComponents.h"
+#endif
 
 using namespace typescript;
 namespace cl = llvm::cl;
@@ -255,6 +262,10 @@ int dumpLLVMIR(mlir::ModuleOp module)
     // Register the translation to LLVM IR with the MLIR context.
     mlir::registerLLVMDialectTranslation(*module->getContext());
     mlir::typescript::registerTypeScriptDialectTranslation(*module->getContext());
+
+#ifdef TSGC_ENABLE
+    mlir::typescript::registerTypeScriptGC();
+#endif
 
     // Convert the module to LLVM IR in a new LLVM IR context.
     llvm::LLVMContext llvmContext;
