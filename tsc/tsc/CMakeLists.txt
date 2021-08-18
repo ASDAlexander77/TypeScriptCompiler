@@ -30,7 +30,7 @@ set(LIBS
     MLIRTargetLLVMIRExport
     MLIRTransforms
     MLIRTypeScript
-    MLIRTypeScriptGC
+    #MLIRTypeScriptGC
     )
 
 add_llvm_executable(tsc tsc.cpp rt.cpp)

@@ -296,7 +296,7 @@ int runJit(mlir::ModuleOp module)
     mlir::typescript::registerTypeScriptDialectTranslation(*module->getContext());
 
     // force linking
-    mlir::typescript::registerTypeScriptGC();
+    // mlir::typescript::registerTypeScriptGC();
 
     // An optimization pipeline to use within the execution engine.
     auto optPipeline = mlir::makeOptimizingTransformer(

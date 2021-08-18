@@ -33,6 +33,7 @@ static GCMetadataPrinterRegistry::Add<TypeScriptGCPrinter> TSGCPRN(TYPESCRIPT_GC
 // to force linking
 void mlir::typescript::registerTypeScriptGCPrinter()
 {
+    static GCMetadataPrinterRegistry::Add<TypeScriptGCPrinter> TSGCPRN1(TYPESCRIPT_GC_NAME, "typescript garbage collector");
 }
 
 void TypeScriptGCPrinter::finishAssembly(Module &M, GCModuleInfo &Info, AsmPrinter &AP)

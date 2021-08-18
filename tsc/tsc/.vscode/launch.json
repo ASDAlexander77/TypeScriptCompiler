@@ -69,7 +69,7 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
-            "args": ["-emit=jit", "C:/temp/1.ts"],
+            "args": ["-emit=jit", "C:/temp/1.ts", "--shared-libs=C:/dev/TypeScriptCompiler/__build/tsc/bin/TypeScriptGC.dll"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],

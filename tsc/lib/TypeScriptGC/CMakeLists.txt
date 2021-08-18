@@ -1,60 +1,60 @@
-add_llvm_library(TypeScriptGC MODULE
-  TypeScriptGC.cpp
-  TypeScriptGCPrinter.cpp
+# add_llvm_library(TypeScriptGC MODULE
+#   TypeScriptGC.cpp
+#   TypeScriptGCPrinter.cpp
 
-  ADDITIONAL_HEADER_DIRS
-  ${LLVM_MAIN_INCLUDE_DIR}/llvm/IR
+#   ADDITIONAL_HEADER_DIRS
+#   ${LLVM_MAIN_INCLUDE_DIR}/llvm/IR
 
-  LINK_LIBS
-  ${LLVM_PTHREAD_LIB}
+#   LINK_LIBS
+#   ${LLVM_PTHREAD_LIB}
 
-  DEPENDS
-  intrinsics_gen
+#   DEPENDS
+#   intrinsics_gen
 
-  LINK_COMPONENTS
-  AsmPrinter
-  Analysis
-  BinaryFormat
-  CodeGen
-  Core
-  DebugInfoCodeView
-  DebugInfoDWARF
-  DebugInfoMSF
-  MC
-  MCParser
-  Remarks
-  Support
-  Target
+#   LINK_COMPONENTS
+#   AsmPrinter
+#   Analysis
+#   BinaryFormat
+#   CodeGen
+#   Core
+#   DebugInfoCodeView
+#   DebugInfoDWARF
+#   DebugInfoMSF
+#   MC
+#   MCParser
+#   Remarks
+#   Support
+#   Target
   
-  PLUGIN_TOOL
-  llc
-  )
+#   PLUGIN_TOOL
+#   llc
+#   )
 
   add_mlir_library(MLIRTypeScriptGC
-  TypeScriptGC.cpp
-  TypeScriptGCPrinter.cpp
+    TypeScriptGC.cpp
+    TypeScriptGCPrinter.cpp
 
-  ADDITIONAL_HEADER_DIRS
-  ${LLVM_MAIN_INCLUDE_DIR}/llvm/IR
+    ADDITIONAL_HEADER_DIRS
+    ${LLVM_MAIN_INCLUDE_DIR}/llvm/IR
 
-  LINK_LIBS
-  ${LLVM_PTHREAD_LIB}
+    LINK_LIBS
+    ${LLVM_PTHREAD_LIB}
 
-  DEPENDS
-  intrinsics_gen
+    DEPENDS
+    intrinsics_gen
 
-  LINK_COMPONENTS
-  AsmPrinter
-  Analysis
-  BinaryFormat
-  CodeGen
-  Core
-  DebugInfoCodeView
-  DebugInfoDWARF
-  DebugInfoMSF
-  MC
-  MCParser
-  Remarks
-  Support
-  Target
+    LINK_COMPONENTS
+    AsmPrinter
+    Analysis
+    BinaryFormat
+    CodeGen
+    Core
+    DebugInfoCodeView
+    DebugInfoDWARF
+    DebugInfoMSF
+    MC
+    MCParser
+    Remarks
+    Support
+    Target
   )

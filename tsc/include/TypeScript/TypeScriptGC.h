@@ -8,6 +8,7 @@ namespace typescript
 {
 
 void registerTypeScriptGC();
+void registerTypeScriptGCStrategy();
 void registerTypeScriptGCPrinter();
 
 } // namespace typescript

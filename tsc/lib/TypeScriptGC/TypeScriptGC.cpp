@@ -4,6 +4,7 @@
 #include "llvm/IR/GCStrategy.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/Support/Casting.h"
+#include "llvm/ADT/StringMap.h"
 
 using namespace llvm;
 
@@ -32,5 +33,31 @@ static GCRegistry::Add<TypeScriptGC> TSGC(TYPESCRIPT_GC_NAME, "typescript garbag
 // to force linking
 void mlir::typescript::registerTypeScriptGC()
 {
+}
+
+void mlir::typescript::registerTypeScriptGCStrategy()
+{
+    static GCRegistry::Add<TypeScriptGC> TSGC1(TYPESCRIPT_GC_NAME, "typescript garbage collector");
     mlir::typescript::registerTypeScriptGCPrinter();
+}
+
+// Export symbols for the MLIR runner integration. All other symbols are hidden.
+#ifdef _WIN32
+#define API __declspec(dllexport)
+#else
+#define API __attribute__((visibility("default")))
+#endif
+
+extern "C" API void __mlir_runner_init(llvm::StringMap<void *> &exportSymbols);
+
+// to support shared_libs
+void __mlir_runner_init(llvm::StringMap<void *> &exportSymbols)
+{
+    // NOT WORKING ANYWAY
+    mlir::typescript::registerTypeScriptGCStrategy();
+}
+
+extern "C" API void __mlir_runner_destroy()
+{
+    // nothing todo.
 }
