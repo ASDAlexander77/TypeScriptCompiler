@@ -1532,6 +1532,22 @@ class CastLogicHelper
             }
         }
 
+        if (auto tupleTypeIn = inType.dyn_cast_or_null<mlir_ts::ConstTupleType>())
+        {
+            if (auto stringTypeRes = resType.dyn_cast_or_null<mlir_ts::StringType>())
+            {
+                return castObjectToString<mlir_ts::ConstTupleType>(in, tupleTypeIn);
+            }
+        }
+
+        if (auto tupleTypeIn = inType.dyn_cast_or_null<mlir_ts::TupleType>())
+        {
+            if (auto stringTypeRes = resType.dyn_cast_or_null<mlir_ts::StringType>())
+            {
+                return castObjectToString<mlir_ts::TupleType>(in, tupleTypeIn);
+            }
+        }
+
         return mlir::Value();
     }
 
@@ -1807,6 +1823,35 @@ class CastLogicHelper
 
         auto valueAddr = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(in.getType()), in, rewriter.getBoolAttr(false));
         return clh.castToI8Ptr(valueAddr);
+    }
+
+    template <typename TupleTy> mlir::Value castObjectToString(mlir::Value in, TupleTy tupleTypeIn)
+    {
+        // calling method from object
+        MLIRTypeHelper mth(rewriter.getContext());
+        auto fieldId = mth.TupleFieldName("toString");
+        auto fieldIndex = tupleTypeIn.getIndex(fieldId);
+        if (fieldIndex < 0)
+        {
+            // can't cast
+            return mlir::Value();
+        }
+
+        auto fieldInfo = tupleTypeIn.getFieldInfo(fieldIndex);
+
+        auto inCasted = cast(in, mlir_ts::ObjectType::get(tupleTypeIn));
+
+        auto propField = rewriter.create<mlir_ts::PropertyRefOp>(loc, mlir_ts::RefType::get(fieldInfo.type), inCasted,
+                                                                 rewriter.getI32IntegerAttr(fieldIndex));
+
+        auto value = rewriter.create<mlir_ts::LoadOp>(loc, fieldInfo.type, propField);
+
+        auto funcType = fieldInfo.type.cast<mlir::FunctionType>();
+
+        auto objTypeCasted = cast(inCasted, funcType.getInput(0));
+
+        auto results = rewriter.create<mlir_ts::CallIndirectOp>(loc, value, ValueRange{objTypeCasted});
+        return results.getResult(0);
     }
 };
 

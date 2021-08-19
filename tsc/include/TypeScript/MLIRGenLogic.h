@@ -125,20 +125,6 @@ class MLIRCodeLogic
         return mlir::Value();
     }
 
-    mlir::Type isBoundReference(mlir::Type elementType, bool &isBound)
-    {
-#ifdef USE_BOUND_FUNCTION_FOR_OBJECTS
-        if (auto funcType = elementType.dyn_cast_or_null<mlir::FunctionType>())
-        {
-            isBound = true;
-            return mlir_ts::BoundFunctionType::get(builder.getContext(), funcType.getInputs(), funcType.getResults());
-        }
-#endif
-
-        isBound = false;
-        return elementType;
-    }
-
     mlir::Type getEffectiveFunctionTypeForTupleField(mlir::Type elementType)
     {
 #ifdef USE_BOUND_FUNCTION_FOR_OBJECTS
@@ -154,7 +140,8 @@ class MLIRCodeLogic
     mlir::Attribute TupleFieldName(StringRef name)
     {
         assert(!name.empty());
-        return mlir::StringAttr::get(builder.getContext(), name);
+        MLIRTypeHelper mth(builder.getContext());
+        return mth.TupleFieldName(name);
     }
 
     template <typename T>
@@ -424,6 +411,7 @@ class MLIRPropertyAccessCodeLogic
     {
         mlir::Value value;
 
+        MLIRTypeHelper mth(builder.getContext());
         MLIRCodeLogic mcl(builder);
 
         // resolve index
@@ -431,7 +419,7 @@ class MLIRPropertyAccessCodeLogic
         auto fieldIndex = pair.first;
         bool isBoundRef = false;
         auto elementTypeForRef = pair.second;
-        auto elementType = mcl.isBoundReference(pair.second, isBoundRef);
+        auto elementType = mth.isBoundReference(pair.second, isBoundRef);
 
         if (fieldIndex < 0)
         {
@@ -454,7 +442,6 @@ class MLIRPropertyAccessCodeLogic
             return builder.create<mlir_ts::LoadOp>(location, elementType, propRef);
         }
 
-        MLIRTypeHelper mth(builder.getContext());
         return builder.create<mlir_ts::ExtractPropertyOp>(location, elementTypeForRef, expression,
                                                           builder.getArrayAttr(mth.getStructIndexAttrValue(fieldIndex)));
     }
@@ -463,6 +450,7 @@ class MLIRPropertyAccessCodeLogic
     {
         mlir::Value value;
 
+        MLIRTypeHelper mth(builder.getContext());
         MLIRCodeLogic mcl(builder);
 
         // resolve index
@@ -470,7 +458,7 @@ class MLIRPropertyAccessCodeLogic
         auto fieldIndex = pair.first;
         bool isBoundRef = false;
         auto elementTypeForRef = pair.second;
-        auto elementType = mcl.isBoundReference(pair.second, isBoundRef);
+        auto elementType = mth.isBoundReference(pair.second, isBoundRef);
 
         if (fieldIndex < 0)
         {
@@ -493,7 +481,6 @@ class MLIRPropertyAccessCodeLogic
             return builder.create<mlir_ts::LoadOp>(location, elementType, propRef);
         }
 
-        MLIRTypeHelper mth(builder.getContext());
         return builder.create<mlir_ts::ExtractPropertyOp>(location, elementTypeForRef, expression,
                                                           builder.getArrayAttr(mth.getStructIndexAttrValue(fieldIndex)));
     }
@@ -649,6 +636,7 @@ class MLIRPropertyAccessCodeLogic
 
     template <typename T> mlir::Value RefLogic(T tupleType)
     {
+        MLIRTypeHelper mth(builder.getContext());
         MLIRCodeLogic mcl(builder);
 
         // resolve index
@@ -656,7 +644,7 @@ class MLIRPropertyAccessCodeLogic
         auto fieldIndex = pair.first;
         bool isBoundRef = false;
         auto elementTypeForRef = pair.second;
-        auto elementType = mcl.isBoundReference(pair.second, isBoundRef);
+        auto elementType = mth.isBoundReference(pair.second, isBoundRef);
 
         if (fieldIndex < 0)
         {

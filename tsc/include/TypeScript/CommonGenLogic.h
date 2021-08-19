@@ -157,7 +157,28 @@ class MLIRTypeHelper
 
     bool isValueType(mlir::Type type)
     {
-        return type && (type.isIntOrIndexOrFloat() || type.isa<mlir_ts::TupleType>());
+        return type && (type.isIntOrIndexOrFloat() || type.isa<mlir_ts::TupleType>() || type.isa<mlir_ts::ConstTupleType>() ||
+                        type.isa<mlir_ts::ConstArrayType>());
+    }
+
+    mlir::Attribute TupleFieldName(mlir::StringRef name)
+    {
+        assert(!name.empty());
+        return mlir::StringAttr::get(context, name);
+    }
+
+    mlir::Type isBoundReference(mlir::Type elementType, bool &isBound)
+    {
+#ifdef USE_BOUND_FUNCTION_FOR_OBJECTS
+        if (auto funcType = elementType.dyn_cast_or_null<mlir::FunctionType>())
+        {
+            isBound = true;
+            return mlir_ts::BoundFunctionType::get(context, funcType.getInputs(), funcType.getResults());
+        }
+#endif
+
+        isBound = false;
+        return elementType;
     }
 
     mlir::Type convertConstArrayTypeToArrayType(mlir::Type type)
@@ -394,6 +415,7 @@ class MLIRTypeHelper
         return mlir::Value();
     }
 };
+
 } // namespace typescript
 
 #endif // MLIR_TYPESCRIPT_COMMONGENLOGIC_H_

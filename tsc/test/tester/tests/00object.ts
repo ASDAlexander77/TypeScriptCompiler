@@ -19,7 +19,11 @@ function main() {
 
     const a = "foo";
     const b = 42;
-    const c = {};
+    const c = {
+        toString() {
+            return "Hi";
+        },
+    };
     const object3 = { a: a, b: b, c: c };
 
     print(object3.a, object3.b, object3.c);

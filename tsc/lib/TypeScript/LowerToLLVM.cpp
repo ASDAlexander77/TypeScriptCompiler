@@ -2703,6 +2703,9 @@ struct CreateBoundFunctionOpLowering : public TsLlvmPattern<mlir_ts::CreateBound
         CodeLogicHelper clh(createBoundFunctionOp, rewriter);
         TypeConverterHelper tch(getTypeConverter());
 
+        assert(createBoundFunctionOp.getType());
+        assert(createBoundFunctionOp.getType().isa<mlir_ts::BoundFunctionType>());
+
         auto llvmBoundFunctionType = tch.convertType(createBoundFunctionOp.getType());
 
         LLVM_DEBUG(llvm::dbgs() << "CreateBoundFunction: LLVM Type :" << llvmBoundFunctionType << "\n";);
