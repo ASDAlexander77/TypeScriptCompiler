@@ -1626,7 +1626,7 @@ def TypeScript_StringLengthOp : TypeScript_Op<"StringLength"> {
 }
 
 def TypeScript_StringConcatOp : TypeScript_Op<"StringConcat"> {
-  let arguments = (ins Variadic<TypeScript_String>:$ops);
+  let arguments = (ins Variadic<TypeScript_String>:$ops, OptionalAttr<BoolAttr>:$allocInStack);
   let results = (outs TypeScript_String:$result);
 }
 

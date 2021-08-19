@@ -238,7 +238,7 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
             values.push_back(result);
         }
 
-        mlir::Value result = rewriter.create<mlir_ts::StringConcatOp>(loc, strType, values);
+        mlir::Value result = rewriter.create<mlir_ts::StringConcatOp>(loc, strType, values, rewriter.getBoolAttr(true));
 
         rewriter.create<LLVM::CallOp>(loc, putsFuncOp, result);
 
@@ -460,8 +460,10 @@ class StringConcatOpLowering : public TsLlvmPattern<mlir_ts::StringConcatOp>
             size = rewriter.create<LLVM::AddOp>(loc, rewriter.getI64Type(), ValueRange{size, size1.getResult(0)});
         }
 
-        // mlir::Value newStringValue = rewriter.create<LLVM::AllocaOp>(op->getLoc(), i8PtrTy, size, true);
-        mlir::Value newStringValue = ch.MemoryAllocBitcast(i8PtrTy, size);
+        auto allocInStack = op.allocInStack().hasValue() && op.allocInStack().getValue();
+
+        mlir::Value newStringValue =
+            allocInStack ? rewriter.create<LLVM::AllocaOp>(op->getLoc(), i8PtrTy, size, true) : ch.MemoryAllocBitcast(i8PtrTy, size);
 
         // copy
         auto concat = false;
