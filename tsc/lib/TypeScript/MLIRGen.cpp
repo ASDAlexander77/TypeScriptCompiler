@@ -2738,13 +2738,16 @@ llvm.return %5 : i32
 
         if (auto classType = type.dyn_cast_or_null<mlir_ts::ClassType>())
         {
-            auto classInfo = getClassByFullName(classType.getName().getValue());
-            auto fullNameClassRtti = concat(classInfo->fullName, RTTI_NAME);
+            if (resultType.isa<mlir_ts::ClassType>())
+            {
+                auto classInfo = getClassByFullName(classType.getName().getValue());
+                auto fullNameClassRtti = concat(classInfo->fullName, RTTI_NAME);
 
-            NodeFactory nf(NodeFactoryFlags::None);
-            NodeArray<Expression> argumentsArray;
-            argumentsArray.push_back(nf.createIdentifier(stows(fullNameClassRtti.str())));
-            return mlirGenCallThisMethod(location, result, INSTANCEOF_NAME, undefined, argumentsArray, genContext);
+                NodeFactory nf(NodeFactoryFlags::None);
+                NodeArray<Expression> argumentsArray;
+                argumentsArray.push_back(nf.createIdentifier(stows(fullNameClassRtti.str())));
+                return mlirGenCallThisMethod(location, result, INSTANCEOF_NAME, undefined, argumentsArray, genContext);
+            }
         }
 
         // default logic
