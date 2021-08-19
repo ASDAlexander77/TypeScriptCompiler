@@ -1837,7 +1837,7 @@ class CastLogicHelper
             return mlir::Value();
         }
 
-        auto fieldInfo = tupleTypeIn.getFieldInfo(fieldIndex);
+        ::mlir::typescript::FieldInfo fieldInfo = tupleTypeIn.getFieldInfo(fieldIndex);
 
         auto inCasted = cast(in, mlir_ts::ObjectType::get(tupleTypeIn));
 
