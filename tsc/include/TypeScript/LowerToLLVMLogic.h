@@ -1671,7 +1671,7 @@ class CastLogicHelper
 
         auto _itoaFuncOp = ch.getOrInsertFunction(
             "_i64toa", th.getFunctionType(th.getI8PtrType(),
-                                          ArrayRef<mlir::Type>{rewriter.getI32Type(), th.getI8PtrType(), rewriter.getI32Type()}, true));
+                                          ArrayRef<mlir::Type>{rewriter.getI64Type(), th.getI8PtrType(), rewriter.getI32Type()}, true));
 
         auto bufferSizeValue = clh.createI32ConstantOf(50);
         // auto newStringValue = rewriter.create<LLVM::AllocaOp>(loc, i8PtrTy, bufferSizeValue, true);
