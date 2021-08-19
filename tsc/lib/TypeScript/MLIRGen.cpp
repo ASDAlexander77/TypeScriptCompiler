@@ -1,7 +1,9 @@
 #define ENABLE_RTTI true
 #define ALL_METHODS_VIRTUAL true
 #define USE_BOUND_FUNCTION_FOR_OBJECTS true
+#ifdef GC_ENABLE
 #define ADD_GC_ATTRIBUTE true
+#endif
 
 #define DEBUG_TYPE "mlir"
 

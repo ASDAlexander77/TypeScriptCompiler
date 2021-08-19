@@ -1,6 +1,7 @@
 __build
 build
 /3rdParty/llvm
+/3rdParty/gc
 /3rdParty/antlr4
 .vs
 .antlr

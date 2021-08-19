@@ -287,6 +287,12 @@ class CodeLogicHelper
         return rewriter.create<LLVM::BitcastOp>(loc, th.getI8PtrType(), value);
     }
 
+    Value castToI8PtrPtr(mlir::Value value)
+    {
+        TypeHelper th(rewriter);
+        return rewriter.create<LLVM::BitcastOp>(loc, th.getI8PtrPtrType(), value);
+    }
+
     Value conditionalExpressionLowering(Type type, Value condition, function_ref<Value(OpBuilder &, Location)> thenBuilder,
                                         function_ref<Value(OpBuilder &, Location)> elseBuilder)
     {

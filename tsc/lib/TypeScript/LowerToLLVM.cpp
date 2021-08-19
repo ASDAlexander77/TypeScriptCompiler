@@ -68,6 +68,7 @@ template <typename OpTy> class TsLlvmPattern : public OpConversionPattern<OpTy>
     TsLlvmContext *tsLlvmContext;
 };
 
+#ifdef PRINTF_SUPPORT
 class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
 {
   public:
@@ -193,6 +194,45 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
         return success();
     }
 };
+#else
+class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::PrintOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::PrintOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+    {
+        TypeHelper th(rewriter);
+        LLVMCodeHelper ch(op, rewriter, getTypeConverter());
+        TypeConverterHelper tch(getTypeConverter());
+
+        CastLogicHelper castLogic(op, rewriter, tch);
+
+        auto loc = op->getLoc();
+
+        // Get a symbol reference to the printf function, inserting it if necessary.
+        auto putsFuncOp = ch.getOrInsertFunction("puts", th.getFunctionType(rewriter.getI32Type(), th.getI8PtrType(), false));
+
+        auto strType = mlir_ts::StringType::get(rewriter.getContext());
+
+        for (auto item : op->getOperands())
+        {
+            auto result = castLogic.cast(item, strType);
+            if (!result)
+            {
+                return failure();
+            }
+
+            rewriter.create<LLVM::CallOp>(loc, putsFuncOp, result);
+        }
+
+        // Notify the rewriter that this operation has been removed.
+        rewriter.eraseOp(op);
+
+        return success();
+    }
+};
+#endif
 
 class AssertOpLowering : public TsLlvmPattern<mlir_ts::AssertOp>
 {
@@ -852,6 +892,8 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
 
     LogicalResult matchAndRewrite(mlir_ts::FuncOp funcOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
     {
+        auto location = funcOp->getLoc();
+
         auto &typeConverter = *getTypeConverter();
         auto fnType = funcOp.getType();
 
@@ -876,14 +918,21 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
             argDictAttrs.append(argAttrRange.begin(), argAttrRange.end());
         }
 
+        std::string name;
         auto newFuncOp = rewriter.create<mlir::FuncOp>(
             funcOp.getLoc(), funcOp.getName(),
             rewriter.getFunctionType(signatureInputsConverter.getConvertedTypes(), signatureResultsConverter.getConvertedTypes()),
             ArrayRef<NamedAttribute>{}, argDictAttrs);
         for (const auto &namedAttr : funcOp->getAttrs())
         {
-            if (namedAttr.first == function_like_impl::getTypeAttrName() || namedAttr.first == SymbolTable::getSymbolAttrName())
+            if (namedAttr.first == function_like_impl::getTypeAttrName())
             {
+                continue;
+            }
+
+            if (namedAttr.first == SymbolTable::getSymbolAttrName())
+            {
+                name = namedAttr.second.dyn_cast_or_null<mlir::StringAttr>().getValue().str();
                 continue;
             }
 
@@ -929,6 +978,19 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
         {
             return failure();
         }
+
+#ifdef GC_BDWGC_ENABLE
+        if (name == "main")
+        {
+            rewriter.setInsertionPointToStart(&newFuncOp.getBody().front());
+
+            TypeHelper th(rewriter);
+            LLVMCodeHelper ch(funcOp, rewriter, getTypeConverter());
+            auto i8PtrTy = th.getI8PtrType();
+            auto gcInitFuncOp = ch.getOrInsertFunction("GC_init", th.getFunctionType(th.getVoidType(), mlir::ArrayRef<mlir::Type>{}));
+            rewriter.create<LLVM::CallOp>(location, gcInitFuncOp, ValueRange{});
+        }
+#endif
 
         rewriter.eraseOp(funcOp);
 
@@ -1049,17 +1111,26 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
                                     : rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, clh.createI32ConstantOf(1));
 
 #ifdef GC_ENABLE
-        // register root in stack
-        if (storageType.isa<mlir_ts::ClassType>() || storageType.isa<mlir_ts::StringType>() || storageType.isa<mlir_ts::ArrayType>() ||
-            storageType.isa<mlir_ts::AnyType>())
+        // register root which is in stack, if you call Malloc - it is not in stack anymore
+        if (!isCaptured)
         {
-            TypeHelper th(rewriter);
+            if (storageType.isa<mlir_ts::ClassType>() || storageType.isa<mlir_ts::StringType>() || storageType.isa<mlir_ts::ArrayType>() ||
+                storageType.isa<mlir_ts::ObjectType>() || storageType.isa<mlir_ts::AnyType>())
+            {
+                if (auto ptrType = llvmReferenceType.dyn_cast_or_null<LLVM::LLVMPointerType>())
+                {
+                    if (ptrType.getElementType().isa<LLVM::LLVMPointerType>())
+                    {
+                        TypeHelper th(rewriter);
 
-            auto i8PtrPtrTy = th.getI8PtrPtrType();
-            auto i8PtrTy = th.getI8PtrType();
-            auto gcRootOp = ch.getOrInsertFunction("llvm.gcroot", th.getFunctionType(th.getVoidType(), {i8PtrPtrTy, i8PtrTy}));
-            auto nullPtr = rewriter.create<LLVM::NullOp>(location, i8PtrTy);
-            rewriter.create<LLVM::CallOp>(location, gcRootOp, ValueRange{allocated, nullPtr});
+                        auto i8PtrPtrTy = th.getI8PtrPtrType();
+                        auto i8PtrTy = th.getI8PtrType();
+                        auto gcRootOp = ch.getOrInsertFunction("llvm.gcroot", th.getFunctionType(th.getVoidType(), {i8PtrPtrTy, i8PtrTy}));
+                        auto nullPtr = rewriter.create<LLVM::NullOp>(location, i8PtrTy);
+                        rewriter.create<LLVM::CallOp>(location, gcRootOp, ValueRange{clh.castToI8PtrPtr(allocated), nullPtr});
+                    }
+                }
+            }
         }
 #endif
 
