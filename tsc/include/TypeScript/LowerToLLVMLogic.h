@@ -1844,13 +1844,13 @@ class CastLogicHelper
         auto propField = rewriter.create<mlir_ts::PropertyRefOp>(loc, mlir_ts::RefType::get(fieldInfo.type), inCasted,
                                                                  rewriter.getI32IntegerAttr(fieldIndex));
 
-        auto value = rewriter.create<mlir_ts::LoadOp>(loc, fieldInfo.type, propField);
+        mlir::Value value = rewriter.create<mlir_ts::LoadOp>(loc, fieldInfo.type, propField);
 
         auto funcType = fieldInfo.type.cast<mlir::FunctionType>();
 
-        auto objTypeCasted = cast(inCasted, funcType.getInput(0));
+        mlir::Value objTypeCasted = cast(inCasted, funcType.getInput(0));
 
-        auto results = rewriter.create<mlir_ts::CallIndirectOp>(loc, value, ValueRange{objTypeCasted});
+        auto results = rewriter.create<mlir_ts::CallIndirectOp>(loc, value, ValueRange(objTypeCasted));
         return results.getResult(0);
     }
 };
