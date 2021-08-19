@@ -215,6 +215,8 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
 
         auto strType = mlir_ts::StringType::get(rewriter.getContext());
 
+        SmallVector<mlir::Value> values;
+        mlir::Value spaceString;
         for (auto item : op->getOperands())
         {
             auto result = castLogic.cast(item, strType);
@@ -223,8 +225,22 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
                 return failure();
             }
 
-            rewriter.create<LLVM::CallOp>(loc, putsFuncOp, result);
+            if (values.size() > 0)
+            {
+                if (!spaceString)
+                {
+                    spaceString = rewriter.create<mlir_ts::ConstantOp>(loc, strType, rewriter.getStringAttr(" "));
+                }
+
+                values.push_back(spaceString);
+            }
+
+            values.push_back(result);
         }
+
+        mlir::Value result = rewriter.create<mlir_ts::StringConcatOp>(loc, strType, values);
+
+        rewriter.create<LLVM::CallOp>(loc, putsFuncOp, result);
 
         // Notify the rewriter that this operation has been removed.
         rewriter.eraseOp(op);
