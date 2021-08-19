@@ -238,9 +238,16 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
             values.push_back(result);
         }
 
-        mlir::Value result = rewriter.create<mlir_ts::StringConcatOp>(loc, strType, values, rewriter.getBoolAttr(true));
+        if (values.size() > 1)
+        {
+            mlir::Value result = rewriter.create<mlir_ts::StringConcatOp>(loc, strType, values, rewriter.getBoolAttr(true));
 
-        rewriter.create<LLVM::CallOp>(loc, putsFuncOp, result);
+            rewriter.create<LLVM::CallOp>(loc, putsFuncOp, result);
+        }
+        else
+        {
+            rewriter.create<LLVM::CallOp>(loc, putsFuncOp, values.front());
+        }
 
         // Notify the rewriter that this operation has been removed.
         rewriter.eraseOp(op);
