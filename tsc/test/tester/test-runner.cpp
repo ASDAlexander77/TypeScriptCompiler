@@ -77,6 +77,11 @@ namespace fs = std::experimental::filesystem;
 #error TEST_CLANGLIBPATH must be provided
 #endif
 
+#ifndef TEST_GCPATH
+//#define TEST_GCPATH "C:\dev\TypeScriptCompiler\3rdParty\gc\Release"
+#error TEST_GCPATH must be provided
+#endif
+
 #ifndef TEST_FILE
 #define TEST_FILE "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/00funcs_capture.ts"
 #endif
@@ -288,6 +293,60 @@ void createCompileBatchFileWithRT()
     batFile << "del %FILENAME%.o" << std::endl;
     batFile << "echo on" << std::endl;
     batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
+    batFile.close();
+}
+
+void createCompileBatchFileGC()
+{
+#ifndef NEW_BAT
+    if (exists("compile_gc.bat"))
+    {
+        return;
+    }
+#endif
+
+    std::ofstream batFile("compile_gc.bat");
+    batFile << "echo off" << std::endl;
+    batFile << "set FILENAME=%1" << std::endl;
+#ifdef SEARCH_LIB
+    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_LIBPATH " libvcruntime.lib ^| find " FILTER_LIB
+               "`) DO ( SET libname=%%F )"
+            << std::endl;
+    batFile << "FOR %%A in (\"%libname%\") do ( Set LIBPATH1=\"%%~dpA\" )" << std::endl;
+    batFile << "Set LIBPATH=%LIBPATH1:~0,-3%\"" << std::endl;
+#else
+    batFile << "set LIBPATH=\"" << TEST_LIBPATH << "\"" << std::endl;
+#endif
+#ifdef SEARCH_SDK
+    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_SDKPATH " kernel32.lib ^| find " FILTER_LIB
+               "`) DO ( SET libname=%%F )"
+            << std::endl;
+    batFile << "FOR %%A in (\"%libname%\") do ( Set SDKPATH1=\"%%~dpA\" )" << std::endl;
+    batFile << "Set SDKPATH=%SDKPATH1:~0,-3%\"" << std::endl;
+#else
+    batFile << "set SDKPATH=\"" << TEST_SDKPATH << "\"" << std::endl;
+#endif
+#ifdef SEARCH_UCRTSDK
+    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_UCRTPATH " libucrt.lib ^| find " FILTER_UCRTLIB
+               "`) DO ( SET libname=%%F )"
+            << std::endl;
+    batFile << "FOR %%A in (\"%libname%\") do ( Set SDKPATH1=\"%%~dpA\" )" << std::endl;
+    batFile << "Set SDKPATH=%SDKPATH1:~0,-3%\"" << std::endl;
+#else
+    batFile << "set UCRTPATH=\"" << TEST_UCRTPATH << "\"" << std::endl;
+#endif
+    batFile << "set EXEPATH=" << TEST_EXEPATH << std::endl;
+    batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "set GCLIBPATH=" << TEST_GCPATH << std::endl;
+    batFile << "%TSCEXEPATH%\\tsc.exe --emit=llvm %2 2> %FILENAME%.il" << std::endl;
+    batFile << "%EXEPATH%\\llc.exe --filetype=obj -o=%FILENAME%.o %FILENAME%.il" << std::endl;
+    batFile << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% "
+               "/defaultlib:libcmt.lib libvcruntime.lib"
+            << std::endl;
+    batFile << "del %FILENAME%.il" << std::endl;
+    batFile << "del %FILENAME%.o" << std::endl;
+    batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
+    batFile << "echo on" << std::endl;
     batFile.close();
 }
 

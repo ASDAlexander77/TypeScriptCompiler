@@ -1598,19 +1598,14 @@ struct DeleteOpLowering : public TsLlvmPattern<mlir_ts::DeleteOp>
     LogicalResult matchAndRewrite(mlir_ts::DeleteOp deleteOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
     {
         LLVMCodeHelper ch(deleteOp, rewriter, getTypeConverter());
-        CodeLogicHelper clh(deleteOp, rewriter);
-        TypeConverterHelper tch(getTypeConverter());
-        TypeHelper th(rewriter);
 
-        auto loc = deleteOp.getLoc();
+        if (mlir::failed(ch.MemoryFree(deleteOp.reference())))
+        {
+            return mlir::failure();
+        }
 
-        auto i8PtrTy = th.getI8PtrType();
-        auto freeFuncOp = ch.getOrInsertFunction("free", th.getFunctionType(th.getVoidType(), {i8PtrTy}));
-
-        auto casted = clh.castToI8Ptr(deleteOp.reference());
-
-        rewriter.replaceOpWithNewOp<LLVM::CallOp>(deleteOp, freeFuncOp, ValueRange{casted});
-        return success();
+        rewriter.eraseOp(deleteOp);
+        return mlir::success();
     }
 };
 

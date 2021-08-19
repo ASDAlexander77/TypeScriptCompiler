@@ -957,6 +957,12 @@ class LLVMCodeHelper
         auto val = rewriter.create<LLVM::BitcastOp>(loc, res, alloc);
         return val;
     }
+
+    template <typename T> LogicalResult _MemoryFree(mlir::Value ptrValue);
+    LogicalResult MemoryFree(mlir::Value ptrValue)
+    {
+        return _MemoryFree<int>(ptrValue);
+    }
 };
 
 class LLVMRTTIHelperVCWin32
@@ -1864,7 +1870,11 @@ template <typename T> Value LLVMCodeHelper::_MemoryAlloc(mlir::Value sizeOfAlloc
     auto loc = op->getLoc();
 
     auto i8PtrTy = th.getI8PtrType();
+#ifdef GC_BDWGC_ENABLE
+    auto mallocFuncOp = getOrInsertFunction("GC_malloc", th.getFunctionType(i8PtrTy, {th.getIndexType()}));
+#else
     auto mallocFuncOp = getOrInsertFunction("malloc", th.getFunctionType(i8PtrTy, {th.getIndexType()}));
+#endif
 
     auto effectiveSize = sizeOfAlloc;
     if (effectiveSize.getType() != th.getIndexType())
@@ -1878,9 +1888,11 @@ template <typename T> Value LLVMCodeHelper::_MemoryAlloc(mlir::Value sizeOfAlloc
 
     if (zero == MemoryAllocSet::Zero)
     {
+#ifndef GC_BDWGC_ENABLE
         auto memsetFuncOp = getOrInsertFunction("memset", th.getFunctionType(i8PtrTy, {i8PtrTy, th.getI32Type(), th.getIndexType()}));
         auto const0 = clh.createI32ConstantOf(0);
         rewriter.create<LLVM::CallOp>(loc, memsetFuncOp, ValueRange{ptr, const0, effectiveSize});
+#endif
     }
 
     return ptr;
@@ -1901,7 +1913,11 @@ template <typename T> Value LLVMCodeHelper::_MemoryRealloc(mlir::Value ptrValue,
         effectivePtrValue = rewriter.create<LLVM::BitcastOp>(loc, i8PtrTy, ptrValue);
     }
 
+#ifdef GC_BDWGC_ENABLE
+    auto mallocFuncOp = getOrInsertFunction("GC_realloc", th.getFunctionType(i8PtrTy, {i8PtrTy, th.getIndexType()}));
+#else
     auto mallocFuncOp = getOrInsertFunction("realloc", th.getFunctionType(i8PtrTy, {i8PtrTy, th.getIndexType()}));
+#endif
 
     auto effectiveSize = sizeOfAlloc;
     if (effectiveSize.getType() != th.getIndexType())
@@ -1912,6 +1928,28 @@ template <typename T> Value LLVMCodeHelper::_MemoryRealloc(mlir::Value ptrValue,
 
     auto callResults = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{effectivePtrValue, effectiveSize});
     return callResults.getResult(0);
+}
+
+template <typename T> mlir::LogicalResult LLVMCodeHelper::_MemoryFree(mlir::Value ptrValue)
+{
+    TypeHelper th(rewriter);
+    TypeConverterHelper tch(typeConverter);
+
+    auto loc = op->getLoc();
+
+    auto i8PtrTy = th.getI8PtrType();
+
+#ifdef GC_BDWGC_ENABLE
+    auto freeFuncOp = getOrInsertFunction("GC_free", th.getFunctionType(th.getVoidType(), {i8PtrTy}));
+#else
+    auto freeFuncOp = getOrInsertFunction("free", th.getFunctionType(th.getVoidType(), {i8PtrTy}));
+#endif
+
+    auto casted = rewriter.create<LLVM::BitcastOp>(loc, i8PtrTy, ptrValue);
+
+    rewriter.create<LLVM::CallOp>(loc, freeFuncOp, ValueRange{casted});
+
+    return mlir::success();
 }
 
 template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
