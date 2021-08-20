@@ -79,6 +79,11 @@ jobs:
       run: if (Test-Path -Path "gc-8.0.4.tar.gz" -PathType Leaf) { tar -xvzf gc-8.0.4.tar.gz -C ./3rdParty/ }
       shell: pwsh
 
+    - name: Dir
+      continue-on-error: true
+      run: dir; dir 3rdParty/*.*
+      shell: pwsh
+
     - name: Configure GC
       continue-on-error: false
       working-directory: ${{github.workspace}}/__build/gc-release
