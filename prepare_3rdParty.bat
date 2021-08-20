@@ -30,12 +30,6 @@ IF EXIST ".\3rdParty\gc\%BUILD%\gc-lib.lib" (
   cd %p%
   @call scripts\build_gc_%BUILD%.bat
   cd %p%
-  if "%BUILD%"=="debug" (
-    IF NOT EXIST ".\3rdParty\gc\%BUILD%" (mkdir .\3rdParty\gc\%BUILD%\)
-    copy .\__build\gc\%BUILD%\*.* .\3rdParty\gc\%BUILD%\
-  )
-  if "%BUILD%"=="release" (
-    IF NOT EXIST ".\3rdParty\gc\%BUILD%" (mkdir .\3rdParty\gc\%BUILD%\)
-    copy .\__build\gc-release\%BUILD%\*.* .\3rdParty\gc\%BUILD%\
-  )
+  if "%BUILD%"=="debug" ( xcopy .\__build\gc\%BUILD%\*.* .\3rdParty\gc\%BUILD%\ )
+  if "%BUILD%"=="release" ( xcopy .\__build\gc-release\%BUILD%\*.* .\3rdParty\gc\%BUILD%\ )
 )
