@@ -56,17 +56,45 @@ jobs:
       shell: pwsh
 
     - name: Create __Build Folders
-      run: if (!(Test-Path -Path ".\__build\llvm\release")) { New-Item -ItemType Directory -Force -Path ".\__build\llvm\release" }; if (!(Test-Path -Path ".\__build\tsc")) { New-Item -ItemType Directory -Force -Path ".\__build\tsc" }; if (!(Test-Path -Path ".\__build\tsc-release")) { New-Item -ItemType Directory -Force -Path ".\__build\tsc-release" }
+      run: if (!(Test-Path -Path ".\__build\llvm\release")) { New-Item -ItemType Directory -Force -Path ".\__build\llvm\release" }; if (!(Test-Path -Path ".\__build\gc\release")) { New-Item -ItemType Directory -Force -Path ".\__build\gc\release" }; if (!(Test-Path -Path ".\__build\tsc")) { New-Item -ItemType Directory -Force -Path ".\__build\tsc" }; if (!(Test-Path -Path ".\__build\tsc-release")) { New-Item -ItemType Directory -Force -Path ".\__build\tsc-release" }
       shell: pwsh
     
-    - name: Download 3rd party
+    - name: Download 3rd party - LLVM
       continue-on-error: true
       shell: pwsh
       run: if (-not(Test-Path -Path "llvm_13_release.zip" -PathType Leaf)) { Invoke-WebRequest -Uri "https://www.dropbox.com/s/o8hrv8ppqayu6vg/llvm_13_release.zip?dl=1" -OutFile "llvm_13_release.zip" }
 
-    - name: UnZip 3rd party
+    - name: UnZip 3rd party - LLVM
       continue-on-error: true
       run: if (Test-Path -Path "llvm_13_release.zip" -PathType Leaf) { Expand-Archive -Path "llvm_13_release.zip" -DestinationPath "3rdParty\llvm\" }
+      shell: pwsh
+
+    - name: Download 3rd party source - GC
+      continue-on-error: true
+      shell: pwsh
+      run: if (-not(Test-Path -Path "gc-8.0.4.tar.gz" -PathType Leaf)) { Invoke-WebRequest -Uri "https://www.hboehm.info/gc/gc_source/gc-8.0.4.tar.gz" -OutFile "gc-8.0.4.tar.gz" }
+
+    - name: UnZip 3rd party source - GC
+      continue-on-error: true
+      run: if (Test-Path -Path "gc-8.0.4.tar.gz" -PathType Leaf) { tar -xvzf gc-8.0.4.tar.gz -C ./3rdParty/ }
+      shell: pwsh
+
+    - name: Configure GC
+      continue-on-error: false
+      working-directory: ${{github.workspace}}/__build/gc-release
+      run: cmake ../../3rdParty/gc-8.0.4 -G "Visual Studio 16 2019" -A x64 -Wno-dev
+      shell: pwsh
+
+    - name: Build GC
+      continue-on-error: false
+      working-directory: ${{github.workspace}}/__build/gc-release
+      run: cmake --build . --config Release -j 8
+      shell: pwsh
+
+    - name: Copy GC
+      continue-on-error: false
+      working-directory: ${{github.workspace}}/__build/gc-release
+      run:  copy .\Release\*.* ..\..\3rdParty\gc\release\
       shell: pwsh
 
     - name: Configure
