@@ -56,7 +56,7 @@ jobs:
       shell: pwsh
 
     - name: Create __Build Folders
-      run: if (!(Test-Path -Path ".\__build\llvm\release")) { New-Item -ItemType Directory -Force -Path ".\__build\llvm\release" }; if (!(Test-Path -Path ".\__build\gc\release")) { New-Item -ItemType Directory -Force -Path ".\__build\gc\release" }; if (!(Test-Path -Path ".\__build\tsc")) { New-Item -ItemType Directory -Force -Path ".\__build\tsc" }; if (!(Test-Path -Path ".\__build\tsc-release")) { New-Item -ItemType Directory -Force -Path ".\__build\tsc-release" }
+      run: if (!(Test-Path -Path ".\__build\llvm\release")) { New-Item -ItemType Directory -Force -Path ".\__build\llvm\release" }; if (!(Test-Path -Path ".\__build\gc-release")) { New-Item -ItemType Directory -Force -Path ".\__build\gc-release" }; if (!(Test-Path -Path ".\__build\tsc")) { New-Item -ItemType Directory -Force -Path ".\__build\tsc" }; if (!(Test-Path -Path ".\__build\tsc-release")) { New-Item -ItemType Directory -Force -Path ".\__build\tsc-release" }
       shell: pwsh
     
     - name: Download 3rd party - LLVM
@@ -77,11 +77,6 @@ jobs:
     - name: UnZip 3rd party source - GC
       continue-on-error: true
       run: if (Test-Path -Path "gc-8.0.4.tar.gz" -PathType Leaf) { tar -xvzf gc-8.0.4.tar.gz -C ./3rdParty/ }
-      shell: pwsh
-
-    - name: Dir
-      continue-on-error: true
-      run: dir; dir 3rdParty/*.*
       shell: pwsh
 
     - name: Configure GC
