@@ -49,7 +49,7 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
         auto f = getModule();
 
         f.walk([&](mlir::Operation *op) {
-            if (auto funcOp = dyn_cast<LLVM::LLVMFuncOp>(op))
+            if (auto funcOp = dyn_cast_or_null<LLVM::LLVMFuncOp>(op))
             {
                 auto symbolAttr = funcOp->getAttrOfType<StringAttr>(SymbolTable::getSymbolAttrName());
                 if (!symbolAttr)
@@ -68,24 +68,21 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
                     return;
                 }
 
-                StringRef newName;
-                if (!mapName(symbolAttr.getValue(), newName))
-                {
-                    return;
-                }
-
-                funcOp->setAttr(SymbolTable::getSymbolAttrName(), mlir::StringAttr::get(op->getContext(), newName));
+                renameFunction(name, funcOp);
             }
 
-            if (auto callOp = dyn_cast<LLVM::CallOp>(op))
+            if (auto callOp = dyn_cast_or_null<LLVM::CallOp>(op))
             {
-                StringRef newName;
-                if (!mapName(callOp.callee().getValue(), newName))
+                auto name = callOp.callee().getValue();
+
+                if (name == "memset")
                 {
+                    removeRedundantMemSet(callOp);
+
                     return;
                 }
 
-                callOp.calleeAttr(::mlir::FlatSymbolRefAttr::get(op->getContext(), newName));
+                renameCall(name, callOp);
             }
         });
     }
@@ -112,6 +109,28 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
         return true;
     }
 
+    void renameFunction(StringRef name, LLVM::LLVMFuncOp funcOp)
+    {
+        StringRef newName;
+        if (!mapName(name, newName))
+        {
+            return;
+        }
+
+        funcOp->setAttr(SymbolTable::getSymbolAttrName(), mlir::StringAttr::get(funcOp->getContext(), newName));
+    }
+
+    void renameCall(StringRef name, LLVM::CallOp callOp)
+    {
+        StringRef newName;
+        if (!mapName(name, newName))
+        {
+            return;
+        }
+
+        callOp.calleeAttr(::mlir::FlatSymbolRefAttr::get(callOp->getContext(), newName));
+    }
+
     void injectInit(LLVM::LLVMFuncOp funcOp)
     {
         ConversionPatternRewriter rewriter(funcOp.getContext());
@@ -122,6 +141,21 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
         auto i8PtrTy = th.getI8PtrType();
         auto gcInitFuncOp = ch.getOrInsertFunction("GC_init", th.getFunctionType(th.getVoidType(), mlir::ArrayRef<mlir::Type>{}));
         rewriter.create<LLVM::CallOp>(funcOp->getLoc(), gcInitFuncOp, ValueRange{});
+    }
+
+    void removeRedundantMemSet(LLVM::CallOp memSetCallOp)
+    {
+        // this is memset, find out if it is used by GC_malloc
+        LLVM_DEBUG(llvm::dbgs() << "DBG: " << memSetCallOp.getOperand(0) << "\n";);
+        if (auto probMemAllocCall = dyn_cast_or_null<LLVM::CallOp>(memSetCallOp.getOperand(0).getDefiningOp()))
+        {
+            auto name = probMemAllocCall.callee().getValue();
+            if (name == "GC_malloc")
+            {
+                ConversionPatternRewriter rewriter(memSetCallOp.getContext());
+                rewriter.replaceOp(memSetCallOp, ValueRange{probMemAllocCall.getResult(0)});
+            }
+        }
     }
 };
 } // end anonymous namespace
