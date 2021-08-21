@@ -38,6 +38,9 @@
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
 #endif
 
+#define GC_NOT_DLL 1
+#include "gc.h"
+
 using namespace typescript;
 namespace cl = llvm::cl;
 
@@ -371,6 +374,16 @@ int runJit(mlir::ModuleOp module)
 
         // adding my ref to __enable_execute_stack
         symbolMap[interner("__enable_execute_stack")] = llvm::JITEvaluatedSymbol::fromPointer(_mlir__enable_execute_stack);
+
+        if (!disableGC)
+        {
+            // adding GC references
+            symbolMap[interner("GC_init")] = llvm::JITEvaluatedSymbol::fromPointer(GC_init);
+            symbolMap[interner("GC_malloc")] = llvm::JITEvaluatedSymbol::fromPointer(GC_malloc);
+            symbolMap[interner("GC_realloc")] = llvm::JITEvaluatedSymbol::fromPointer(GC_realloc);
+            symbolMap[interner("GC_free")] = llvm::JITEvaluatedSymbol::fromPointer(GC_free);
+            symbolMap[interner("GC_get_heap_size")] = llvm::JITEvaluatedSymbol::fromPointer(GC_get_heap_size);
+        }
 
         return symbolMap;
     };

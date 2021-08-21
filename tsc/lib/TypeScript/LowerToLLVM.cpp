@@ -1005,16 +1005,18 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
             return failure();
         }
 
-        if (name == "main")
-        {
-            rewriter.setInsertionPointToStart(&newFuncOp.getBody().front());
+        /*
+                if (name == "main")
+                {
+                    rewriter.setInsertionPointToStart(&newFuncOp.getBody().front());
 
-            TypeHelper th(rewriter);
-            LLVMCodeHelper ch(funcOp, rewriter, getTypeConverter());
-            auto i8PtrTy = th.getI8PtrType();
-            auto gcInitFuncOp = ch.getOrInsertFunction("GC_init", th.getFunctionType(th.getVoidType(), mlir::ArrayRef<mlir::Type>{}));
-            rewriter.create<LLVM::CallOp>(location, gcInitFuncOp, ValueRange{});
-        }
+                    TypeHelper th(rewriter);
+                    LLVMCodeHelper ch(funcOp, rewriter, getTypeConverter());
+                    auto i8PtrTy = th.getI8PtrType();
+                    auto gcInitFuncOp = ch.getOrInsertFunction("GC_init", th.getFunctionType(th.getVoidType(),
+           mlir::ArrayRef<mlir::Type>{})); rewriter.create<LLVM::CallOp>(location, gcInitFuncOp, ValueRange{});
+                }
+        */
 
         rewriter.eraseOp(funcOp);
 
