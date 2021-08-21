@@ -39,7 +39,7 @@ set(LIBS
     #MLIRTypeScriptGC
     )
 
-add_llvm_executable(tsc tsc.cpp rt.cpp)
+add_llvm_executable(tsc tsc.cpp rt.cpp gc.cpp)
 
 llvm_update_compile_flags(tsc)
 target_link_libraries(tsc PRIVATE ${LIBS})
