@@ -94,11 +94,14 @@ static cl::opt<std::string> objectFilename{"object-filename", cl::desc("Dump JIT
 
 // static cl::opt<std::string> targetTriple("mtriple", cl::desc("Override target triple for module"));
 
+cl::OptionCategory clTsCompilingOptionsCategory{"TypeScript compiling options"};
+static cl::opt<bool> disableGC("nogc", cl::desc("Disable Garbage collection"), cl::cat(clTsCompilingOptionsCategory));
+
 int loadMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module)
 {
     auto fileName = llvm::StringRef(inputFilename);
 
-    // Handle '.TypeScript' input to the compiler.
+    // Handle '.ts' input to the compiler.
     if (inputType != InputType::MLIR && !fileName.endswith(".mlir"))
     {
         auto fileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(inputFilename);
@@ -108,7 +111,9 @@ int loadMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module)
             return -1;
         }
 
-        module = mlirGenFromSource(context, fileName, fileOrErr.get()->getBuffer());
+        CompileOptions compileOptions;
+        compileOptions.disableGC = disableGC;
+        module = mlirGenFromSource(context, fileName, fileOrErr.get()->getBuffer(), compileOptions);
         return !module ? 1 : 0;
     }
 
@@ -225,6 +230,10 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module
     {
         // Finish lowering the TypeScript IR to the LLVM dialect.
         pm.addPass(mlir::typescript::createLowerToLLVMPass());
+        if (!disableGC)
+        {
+            pm.addPass(mlir::typescript::createGCPass());
+        }
     }
 
     if (mlir::failed(pm.run(*module)))

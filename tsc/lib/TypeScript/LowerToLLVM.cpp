@@ -7,6 +7,7 @@
 
 #include "TypeScript/Config.h"
 #include "TypeScript/Defines.h"
+#include "TypeScript/DataStructs.h"
 #include "TypeScript/Passes.h"
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
@@ -1004,7 +1005,6 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
             return failure();
         }
 
-#ifdef GC_BDWGC_ENABLE
         if (name == "main")
         {
             rewriter.setInsertionPointToStart(&newFuncOp.getBody().front());
@@ -1015,7 +1015,6 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
             auto gcInitFuncOp = ch.getOrInsertFunction("GC_init", th.getFunctionType(th.getVoidType(), mlir::ArrayRef<mlir::Type>{}));
             rewriter.create<LLVM::CallOp>(location, gcInitFuncOp, ValueRange{});
         }
-#endif
 
         rewriter.eraseOp(funcOp);
 

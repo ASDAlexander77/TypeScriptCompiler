@@ -1,5 +1,6 @@
 #define DEBUG_TYPE "affine"
 
+#include "TypeScript/DataStructs.h"
 #include "TypeScript/Passes.h"
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"

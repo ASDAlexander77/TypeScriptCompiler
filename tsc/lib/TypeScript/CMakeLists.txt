@@ -15,9 +15,10 @@ add_mlir_dialect_library(MLIRTypeScript
     TypeScriptOps.cpp
     TypeScriptToLLVMIRTranslation.cpp
     MLIRGen.cpp
-    LowerToAffineLoops.cpp
+    LowerToAffineLoops.cpp   
     LowerToLLVM.cpp
     LoadBoundPropertiesPass.cpp
+    GCPass.cpp
     
     ADDITIONAL_HEADER_DIRS
     ${PROJECT_SOURCE_DIR}/tsc-new-parser

@@ -3,6 +3,5 @@
 
 //#define GC_ENABLE 1
 //#define TSGC_ENABLE 1
-//#define GC_BDWGC_ENABLE 1
 
 #endif // CONFIG_H_

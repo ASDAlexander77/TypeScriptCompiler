@@ -4,21 +4,24 @@
 #include <memory>
 #include <string>
 
+#include "TypeScript/DataStructs.h"
+
 namespace mlir
 {
-    class MLIRContext;
-    class OwningModuleRef;
+class MLIRContext;
+class OwningModuleRef;
 } // namespace mlir
 
 namespace llvm
 {
-    class StringRef;
-} // namespace mlir
+class StringRef;
+} // namespace llvm
 
 namespace typescript
 {
-    ::std::string dumpFromSource(const llvm::StringRef &fileName, const llvm::StringRef &source);
-    mlir::OwningModuleRef mlirGenFromSource(const mlir::MLIRContext &context, const llvm::StringRef &fileName, const llvm::StringRef &source);
+::std::string dumpFromSource(const llvm::StringRef &fileName, const llvm::StringRef &source);
+mlir::OwningModuleRef mlirGenFromSource(const mlir::MLIRContext &context, const llvm::StringRef &fileName, const llvm::StringRef &source,
+                                        CompileOptions compileOptions);
 } // namespace typescript
 
 #endif // MLIR_TYPESCRIPT_MLIRGEN_H_

@@ -73,14 +73,15 @@ namespace
 class MLIRGenImpl
 {
   public:
-    MLIRGenImpl(const mlir::MLIRContext &context) : hasErrors(false), builder(&const_cast<mlir::MLIRContext &>(context))
+    MLIRGenImpl(const mlir::MLIRContext &context, CompileOptions compileOptions)
+        : hasErrors(false), builder(&const_cast<mlir::MLIRContext &>(context)), compileOptions(compileOptions)
     {
         fileName = "<unknown>";
         rootNamespace = currentNamespace = std::make_shared<NamespaceInfo>();
     }
 
-    MLIRGenImpl(const mlir::MLIRContext &context, const llvm::StringRef &fileNameParam)
-        : hasErrors(false), builder(&const_cast<mlir::MLIRContext &>(context))
+    MLIRGenImpl(const mlir::MLIRContext &context, const llvm::StringRef &fileNameParam, CompileOptions compileOptions)
+        : hasErrors(false), builder(&const_cast<mlir::MLIRContext &>(context)), compileOptions(compileOptions)
     {
         fileName = fileNameParam;
         rootNamespace = currentNamespace = std::make_shared<NamespaceInfo>();
@@ -7017,6 +7018,8 @@ llvm.return %5 : i32
     /// the next operations will be introduced.
     mlir::OpBuilder builder;
 
+    CompileOptions compileOptions;
+
     /// A "module" matches a TypeScript source file: containing a list of functions.
     mlir::ModuleOp theModule;
 
@@ -7107,12 +7110,13 @@ namespace typescript
     return wstos(s.str());
 }
 
-mlir::OwningModuleRef mlirGenFromSource(const mlir::MLIRContext &context, const llvm::StringRef &fileName, const llvm::StringRef &source)
+mlir::OwningModuleRef mlirGenFromSource(const mlir::MLIRContext &context, const llvm::StringRef &fileName, const llvm::StringRef &source,
+                                        CompileOptions compileOptions)
 {
     Parser parser;
     auto sourceFile =
         parser.parseSourceFile(stows(static_cast<std::string>(fileName)), stows(static_cast<std::string>(source)), ScriptTarget::Latest);
-    return MLIRGenImpl(context, fileName).mlirGenSourceFile(sourceFile);
+    return MLIRGenImpl(context, fileName, compileOptions).mlirGenSourceFile(sourceFile);
 }
 
 } // namespace typescript
