@@ -1,5 +1,4 @@
 #define GC_NOT_DLL 1
-#define GC_NAMESPACE 1
 #include "gc.h"
 
 void _mlir__GC_init()

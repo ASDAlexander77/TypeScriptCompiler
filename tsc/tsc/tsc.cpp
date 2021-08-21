@@ -1,3 +1,5 @@
+#define DEBUG_TYPE "tsc"
+
 #include "TypeScript/Config.h"
 #include "TypeScript/Defines.h"
 #include "TypeScript/MLIRGen.h"
@@ -8,7 +10,6 @@
 #include "TypeScript/TypeScriptGC.h"
 
 #include "TypeScript/rt.h"
-#include "TypeScript/gc.h"
 
 #include "mlir/ExecutionEngine/ExecutionEngine.h"
 #include "mlir/ExecutionEngine/OptUtils.h"
@@ -346,6 +347,8 @@ int runJit(mlir::ModuleOp module)
     // Handle libraries that do support mlir-runner init/destroy callbacks.
     for (auto &libPath : libPaths)
     {
+        LLVM_DEBUG(llvm::dbgs() << "checking path: " << libPath.c_str() << "\n";);
+
         auto lib = llvm::sys::DynamicLibrary::getPermanentLibrary(libPath.c_str());
         void *initSym = lib.getAddressOfSymbol("__mlir_runner_init");
         void *destroySim = lib.getAddressOfSymbol("__mlir_runner_destroy");
@@ -357,6 +360,8 @@ int runJit(mlir::ModuleOp module)
             continue;
         }
 
+        LLVM_DEBUG(llvm::dbgs() << "added path: " << libPath.c_str() << "\n";);
+
         auto initFn = reinterpret_cast<MlirRunnerInitFn>(initSym);
         initFn(exportSymbols);
 
@@ -364,23 +369,23 @@ int runJit(mlir::ModuleOp module)
         destroyFns.push_back(destroyFn);
     }
 
+    auto noGC = false;
+
     // Build a runtime symbol map from the config and exported symbols.
     auto runtimeSymbolMap = [&](llvm::orc::MangleAndInterner interner) {
         auto symbolMap = llvm::orc::SymbolMap();
         for (auto &exportSymbol : exportSymbols)
+        {
+            LLVM_DEBUG(llvm::dbgs() << "loading symbol: " << exportSymbol.getKey() << "\n";);
             symbolMap[interner(exportSymbol.getKey())] = llvm::JITEvaluatedSymbol::fromPointer(exportSymbol.getValue());
+        }
 
         // adding my ref to __enable_execute_stack
         symbolMap[interner("__enable_execute_stack")] = llvm::JITEvaluatedSymbol::fromPointer(_mlir__enable_execute_stack);
 
-        if (!disableGC)
+        if (!disableGC && symbolMap.count(interner("GC_init")) == 0)
         {
-            // adding GC references
-            symbolMap[interner("GC_init")] = llvm::JITEvaluatedSymbol::fromPointer(_mlir__GC_init);
-            symbolMap[interner("GC_malloc")] = llvm::JITEvaluatedSymbol::fromPointer(_mlir__GC_malloc);
-            symbolMap[interner("GC_realloc")] = llvm::JITEvaluatedSymbol::fromPointer(_mlir__GC_realloc);
-            symbolMap[interner("GC_free")] = llvm::JITEvaluatedSymbol::fromPointer(_mlir__GC_free);
-            symbolMap[interner("GC_get_heap_size")] = llvm::JITEvaluatedSymbol::fromPointer(_mlir__GC_get_heap_size);
+            noGC = true;
         }
 
         return symbolMap;
@@ -405,6 +410,12 @@ int runJit(mlir::ModuleOp module)
 
         engine->dumpToObjectFile(objectFilename.empty() ? inputFilename + ".o" : objectFilename);
         return 0;
+    }
+
+    if (noGC)
+    {
+        llvm::errs() << "JIT initialization failed. Missing GC library. Did you forget to provide it via '--shared-libs'?\n";
+        return -1;
     }
 
     // Invoke the JIT-compiled function.

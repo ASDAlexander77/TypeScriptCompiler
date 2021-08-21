@@ -1,10 +1,5 @@
 set_Options()
 
-include_directories("${PROJECT_SOURCE_DIR}/../3rdParty/gc-8.0.4/include/")
-
-string(TOLOWER "${CMAKE_BUILD_TYPE}" CMAKE_BUILD_TYPE_LOWERCASE)
-link_directories("${PROJECT_SOURCE_DIR}/../3rdParty/gc/${CMAKE_BUILD_TYPE_LOWERCASE}/")
-
 set(LLVM_LINK_COMPONENTS
     Core
     Support
@@ -35,11 +30,10 @@ set(LIBS
     MLIRTargetLLVMIRExport
     MLIRTransforms
     MLIRTypeScript
-    gc-lib
     #MLIRTypeScriptGC
     )
 
-add_llvm_executable(tsc tsc.cpp rt.cpp gc.cpp)
+add_llvm_executable(tsc tsc.cpp rt.cpp)
 
 llvm_update_compile_flags(tsc)
 target_link_libraries(tsc PRIVATE ${LIBS})
