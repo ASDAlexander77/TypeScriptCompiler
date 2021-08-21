@@ -7,6 +7,8 @@
 #include "TypeScript/TypeScriptFunctionPass.h"
 #include "TypeScript/Passes.h"
 
+#include "TypeScript/LowerToLLVMLogic.h"
+
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
@@ -14,9 +16,6 @@
 #include "llvm/Support/raw_ostream.h"
 
 namespace mlir_ts = mlir::typescript;
-
-using namespace mlir;
-using namespace typescript;
 
 namespace
 {
@@ -52,19 +51,24 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
         f.walk([&](mlir::Operation *op) {
             if (auto funcOp = dyn_cast<LLVM::LLVMFuncOp>(op))
             {
-                if (!funcOp.getBody().empty())
-                {
-                    return;
-                }
-
                 auto symbolAttr = funcOp->getAttrOfType<StringAttr>(SymbolTable::getSymbolAttrName());
                 if (!symbolAttr)
                 {
                     return;
                 }
 
-                StringRef newName;
                 auto name = std::string(symbolAttr.getValue());
+                if (!funcOp.getBody().empty())
+                {
+                    if (name == "main")
+                    {
+                        injectInit(funcOp);
+                    }
+
+                    return;
+                }
+
+                StringRef newName;
                 if (!mapName(symbolAttr.getValue(), newName))
                 {
                     return;
@@ -106,6 +110,18 @@ class GCPass : public mlir::PassWrapper<GCPass, ModulePass>
         }
 
         return true;
+    }
+
+    void injectInit(LLVM::LLVMFuncOp funcOp)
+    {
+        ConversionPatternRewriter rewriter(funcOp.getContext());
+        rewriter.setInsertionPointToStart(&funcOp.getBody().front());
+
+        TypeHelper th(rewriter.getContext());
+        LLVMCodeHelper ch(funcOp, rewriter, nullptr);
+        auto i8PtrTy = th.getI8PtrType();
+        auto gcInitFuncOp = ch.getOrInsertFunction("GC_init", th.getFunctionType(th.getVoidType(), mlir::ArrayRef<mlir::Type>{}));
+        rewriter.create<LLVM::CallOp>(funcOp->getLoc(), gcInitFuncOp, ValueRange{});
     }
 };
 } // end anonymous namespace
