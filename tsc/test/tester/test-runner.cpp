@@ -447,6 +447,58 @@ void createJitCompileBatchFile()
     batFile << "set UCRTPATH=\"" << TEST_UCRTPATH << "\"" << std::endl;
 #endif
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit -nogc -dump-object-file "
+               "-object-filename=%FILENAME%.o %2"
+            << std::endl;
+    batFile << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% "
+               "/defaultlib:libcmt.lib libvcruntime.lib"
+            << std::endl;
+    batFile << "del %FILENAME%.o" << std::endl;
+    batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
+    batFile << "echo on" << std::endl;
+    batFile.close();
+}
+
+void createJitCompileBatchFileGC()
+{
+#ifndef NEW_BAT
+    if (exists("compile_jit_gc.bat"))
+    {
+        return;
+    }
+#endif
+
+    std::ofstream batFile("compile_jit_gc.bat");
+    batFile << "echo off" << std::endl;
+    batFile << "set FILENAME=%1" << std::endl;
+#ifdef SEARCH_LIB
+    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_LIBPATH " libvcruntime.lib ^| find " FILTER_LIB
+               "`) DO ( SET libname=%%F )"
+            << std::endl;
+    batFile << "FOR %%A in (\"%libname%\") do ( Set LIBPATH1=\"%%~dpA\" )" << std::endl;
+    batFile << "Set LIBPATH=%LIBPATH1:~0,-3%\"" << std::endl;
+#else
+    batFile << "set LIBPATH=\"" << TEST_LIBPATH << "\"" << std::endl;
+#endif
+#ifdef SEARCH_SDK
+    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_SDKPATH " kernel32.lib ^| find " FILTER_LIB
+               "`) DO ( SET libname=%%F )"
+            << std::endl;
+    batFile << "FOR %%A in (\"%libname%\") do ( Set SDKPATH1=\"%%~dpA\" )" << std::endl;
+    batFile << "Set SDKPATH=%SDKPATH1:~0,-3%\"" << std::endl;
+#else
+    batFile << "set SDKPATH=\"" << TEST_SDKPATH << "\"" << std::endl;
+#endif
+#ifdef SEARCH_UCRTSDK
+    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_UCRTPATH " libucrt.lib ^| find " FILTER_UCRTLIB
+               "`) DO ( SET libname=%%F )"
+            << std::endl;
+    batFile << "FOR %%A in (\"%libname%\") do ( Set SDKPATH1=\"%%~dpA\" )" << std::endl;
+    batFile << "Set SDKPATH=%SDKPATH1:~0,-3%\"" << std::endl;
+#else
+    batFile << "set UCRTPATH=\"" << TEST_UCRTPATH << "\"" << std::endl;
+#endif
+    batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit --shared-libs=../../bin/TypeScriptGCWrapper.dll -dump-object-file "
                "-object-filename=%FILENAME%.o %2"
             << std::endl;
@@ -469,6 +521,24 @@ void createJitBatchFile()
 #endif
 
     std::ofstream batFile("jit.bat");
+    batFile << "echo off" << std::endl;
+    batFile << "set FILENAME=%1" << std::endl;
+    batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "echo on" << std::endl;
+    batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit -nogc %2 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
+    batFile.close();
+}
+
+void createJitBatchFileGC()
+{
+#ifndef NEW_BAT
+    if (exists("jit_gc.bat"))
+    {
+        return;
+    }
+#endif
+
+    std::ofstream batFile("jit_gc.bat");
     batFile << "echo off" << std::endl;
     batFile << "set FILENAME=%1" << std::endl;
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
@@ -554,19 +624,47 @@ void testFile(const char *file)
     std::stringstream ss;
     if (isJit)
     {
-        ss << "jit.bat " << stem.generic_string() << ms.count() << " " << file;
+        if (noGC)
+        {
+            ss << "jit.bat " << stem.generic_string() << ms.count() << " " << file;
+        }
+        else
+        {
+            ss << "jit_gc.bat " << stem.generic_string() << ms.count() << " " << file;
+        }
     }
     else if (isJitCompile)
     {
-        ss << "compile_jit.bat " << stem.generic_string() << ms.count() << " " << file;
+        if (noGC)
+        {
+            ss << "compile_jit.bat " << stem.generic_string() << ms.count() << " " << file;
+        }
+        else
+        {
+            ss << "compile_jit_gc.bat " << stem.generic_string() << ms.count() << " " << file;
+        }
     }
     else if (enableBuiltins)
     {
-        ss << "compile_rt.bat " << stem.generic_string() << ms.count() << " " << file;
+        if (noGC)
+        {
+            ss << "compile_rt.bat " << stem.generic_string() << ms.count() << " " << file;
+        }
+        else
+        {
+            ss << "compile_gc_rt.bat " << stem.generic_string() << ms.count() << " " << file;
+        }
     }
     else
     {
-        ss << "compile.bat " << stem.generic_string() << ms.count() << " " << file;
+        if (noGC)
+        {
+            ss << "compile.bat " << stem.generic_string() << ms.count() << " " << file;
+        }
+        else
+        {
+            ss << "compile_qc.bat " << stem.generic_string() << ms.count() << " " << file;
+        }
     }
 
     try
@@ -632,21 +730,49 @@ int main(int argc, char **argv)
 
         if (isJit)
         {
-            createJitBatchFile();
-        }
-        else if (isJitCompile)
-        {
-            createJitCompileBatchFile();
-        }
-        else
-        {
             if (noGC)
             {
-                createCompileBatchFileWithRT();
+                createJitBatchFile();
             }
             else
             {
-                createCompileBatchFileGCWithRT();
+                createJitBatchFileGC();
+            }
+        }
+        else if (isJitCompile)
+        {
+            if (noGC)
+            {
+                createJitCompileBatchFile();
+            }
+            else
+            {
+                createJitCompileBatchFileGC();
+            }
+        }
+        else
+        {
+            if (enableBuiltins)
+            {
+                if (noGC)
+                {
+                    createCompileBatchFileWithRT();
+                }
+                else
+                {
+                    createCompileBatchFileGCWithRT();
+                }
+            }
+            else
+            {
+                if (noGC)
+                {
+                    createCompileBatchFile();
+                }
+                else
+                {
+                    createCompileBatchFileGC();
+                }
             }
         }
 
