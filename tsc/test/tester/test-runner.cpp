@@ -447,7 +447,7 @@ void createJitCompileBatchFile()
     batFile << "set UCRTPATH=\"" << TEST_UCRTPATH << "\"" << std::endl;
 #endif
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit --shared-libs=../../bin\TypeScriptGCWrapper.dll -dump-object-file "
+    batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit --shared-libs=../../bin/TypeScriptGCWrapper.dll -dump-object-file "
                "-object-filename=%FILENAME%.o %2"
             << std::endl;
     batFile << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% "
@@ -473,7 +473,7 @@ void createJitBatchFile()
     batFile << "set FILENAME=%1" << std::endl;
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "echo on" << std::endl;
-    batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit --shared-libs=../../bin\TypeScriptGCWrapper.dll %2 1> %FILENAME%.txt 2> %FILENAME%.err"
+    batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit --shared-libs=../../bin/TypeScriptGCWrapper.dll %2 1> %FILENAME%.txt 2> %FILENAME%.err"
             << std::endl;
     batFile.close();
 }
