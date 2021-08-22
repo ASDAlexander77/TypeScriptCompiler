@@ -73,8 +73,6 @@ struct ParamOptionalOpLowering : public TsPattern<mlir_ts::ParamOptionalOp>
         auto dataTypeIn = paramOp.argValue().getType().cast<mlir_ts::OptionalType>().getElementType();
         auto storeType = paramOp.getType().cast<mlir_ts::RefType>().getElementType();
 
-        assert(storeType == storeType);
-
         // ts.if
         auto hasValue = rewriter.create<mlir_ts::HasValueOp>(location, th.getBooleanType(), paramOp.argValue());
         auto ifOp = rewriter.create<mlir_ts::IfOp>(location, storeType, hasValue, true);
@@ -664,11 +662,11 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
                       mlir_ts::GlobalOp, mlir_ts::GlobalResultOp, mlir_ts::HasValueOp, mlir_ts::ValueOp, mlir_ts::NullOp,
                       mlir_ts::ParseFloatOp, mlir_ts::ParseIntOp, mlir_ts::PrintOp, mlir_ts::SizeOfOp, mlir_ts::ReturnOp,
                       mlir_ts::ReturnValOp, mlir_ts::StoreOp, mlir_ts::SymbolRefOp, mlir_ts::LengthOfOp, mlir_ts::StringLengthOp,
-                      mlir_ts::StringConcatOp, mlir_ts::LoadOp, mlir_ts::NewOp, mlir_ts::CreateTupleOp, mlir_ts::DeconstructTupleOp,
-                      mlir_ts::CreateArrayOp, mlir_ts::NewEmptyArrayOp, mlir_ts::NewArrayOp, mlir_ts::DeleteOp, mlir_ts::PropertyRefOp,
-                      mlir_ts::InsertPropertyOp, mlir_ts::ExtractPropertyOp, mlir_ts::LogicalBinaryOp, mlir_ts::UndefOp,
-                      mlir_ts::VariableOp, mlir_ts::ThrowOp, mlir_ts::TryOp, mlir_ts::TrampolineOp, mlir_ts::InvokeOp, mlir_ts::ResultOp,
-                      mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::InterfaceSymbolRefOp, mlir_ts::PushOp, mlir_ts::PopOp,
+                      mlir_ts::StringConcatOp, mlir_ts::StringCompareOp, mlir_ts::LoadOp, mlir_ts::NewOp, mlir_ts::CreateTupleOp,
+                      mlir_ts::DeconstructTupleOp, mlir_ts::CreateArrayOp, mlir_ts::NewEmptyArrayOp, mlir_ts::NewArrayOp, mlir_ts::DeleteOp,
+                      mlir_ts::PropertyRefOp, mlir_ts::InsertPropertyOp, mlir_ts::ExtractPropertyOp, mlir_ts::LogicalBinaryOp,
+                      mlir_ts::UndefOp, mlir_ts::VariableOp, mlir_ts::ThrowOp, mlir_ts::TryOp, mlir_ts::TrampolineOp, mlir_ts::InvokeOp,
+                      mlir_ts::ResultOp, mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::InterfaceSymbolRefOp, mlir_ts::PushOp, mlir_ts::PopOp,
                       mlir_ts::NewInterfaceOp, mlir_ts::VTableOffsetRefOp, mlir_ts::ThisPropertyRefOp, mlir_ts::GetThisOp,
                       mlir_ts::GetMethodOp, mlir_ts::TypeOfOp, mlir_ts::DebuggerOp>();
 

@@ -728,6 +728,45 @@ class MLIRPropertyAccessCodeLogic
     }
 };
 
+class MLIRCodeLogicHelper
+{
+    mlir::OpBuilder &builder;
+    mlir::Location &location;
+
+  public:
+    MLIRCodeLogicHelper(mlir::OpBuilder &builder, mlir::Location &location) : builder(builder), location(location)
+    {
+    }
+
+    mlir::Value conditionalExpression(mlir::Type type, mlir::Value condition,
+                                      mlir::function_ref<mlir::Value(mlir::OpBuilder &, mlir::Location)> thenBuilder,
+                                      mlir::function_ref<mlir::Value(mlir::OpBuilder &, mlir::Location)> elseBuilder)
+    {
+        // ts.if
+        auto ifOp = builder.create<mlir_ts::IfOp>(location, type, condition, true);
+
+        // then block
+        auto &thenRegion = ifOp.thenRegion();
+
+        builder.setInsertionPointToStart(&thenRegion.back());
+
+        mlir::Value value = thenBuilder(builder, location);
+        builder.create<mlir_ts::ResultOp>(location, value);
+
+        // else block
+        auto &elseRegion = ifOp.elseRegion();
+
+        builder.setInsertionPointToStart(&elseRegion.back());
+
+        mlir::Value elseValue = elseBuilder(builder, location);
+        builder.create<mlir_ts::ResultOp>(location, elseValue);
+
+        builder.setInsertionPointAfter(ifOp);
+
+        return ifOp.results().front();
+    }
+};
+
 class MLIRLogicHelper
 {
   public:

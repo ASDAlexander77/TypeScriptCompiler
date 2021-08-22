@@ -2737,19 +2737,65 @@ llvm.return %5 : i32
         auto resultType = result.getType();
         auto type = getTypeByTypeName(binaryExpressionAST->right, genContext);
 
+#ifdef ENABLE_RTTI
         if (auto classType = type.dyn_cast_or_null<mlir_ts::ClassType>())
         {
+            auto classInfo = getClassByFullName(classType.getName().getValue());
+            auto fullNameClassRtti = concat(classInfo->fullName, RTTI_NAME);
+
             if (resultType.isa<mlir_ts::ClassType>())
             {
-                auto classInfo = getClassByFullName(classType.getName().getValue());
-                auto fullNameClassRtti = concat(classInfo->fullName, RTTI_NAME);
-
                 NodeFactory nf(NodeFactoryFlags::None);
                 NodeArray<Expression> argumentsArray;
                 argumentsArray.push_back(nf.createIdentifier(stows(fullNameClassRtti.str())));
                 return mlirGenCallThisMethod(location, result, INSTANCEOF_NAME, undefined, argumentsArray, genContext);
             }
+
+            if (resultType.isa<mlir_ts::AnyType>())
+            {
+                auto typeOfAnyValue = builder.create<mlir_ts::TypeOfOp>(location, getStringType(), result);
+                auto classStrConst = builder.create<mlir_ts::ConstantOp>(location, getStringType(), builder.getStringAttr("class"));
+                auto cmpResult = builder.create<mlir_ts::StringCompareOp>(location, getBooleanType(), typeOfAnyValue, classStrConst,
+                                                                          builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsToken));
+
+                MLIRCodeLogicHelper mclh(builder, location);
+                auto returnValue = mclh.conditionalExpression(
+                    getBooleanType(), cmpResult,
+                    [&](auto builder, auto location) {
+                        auto thisPtrValue = cast(location, getOpaqueType(), result, genContext);
+
+                        // get VTable we can use VTableOffset
+                        auto vtablePtr =
+                            builder.create<mlir_ts::VTableOffsetRefOp>(location, getOpaqueType(), thisPtrValue, 0 /*VTABLE index*/);
+
+                        // get InstanceOf method, this is 0 index in vtable
+                        auto instanceOfPtr =
+                            builder.create<mlir_ts::VTableOffsetRefOp>(location, getOpaqueType(), vtablePtr, 0 /*InstanceOf index*/);
+
+                        auto rttiOfClassValue = resolveFullNameIdentifier(location, fullNameClassRtti, false, genContext);
+
+                        assert(rttiOfClassValue);
+
+                        auto instanceOfFuncType = mlir::FunctionType::get(
+                            builder.getContext(), mlir::TypeRange{getOpaqueType(), getStringType()}, mlir::TypeRange{getBooleanType()});
+
+                        auto funcPtr = cast(location, instanceOfFuncType, instanceOfPtr, genContext);
+
+                        // call methos, we need to send, this, and rtti info
+                        auto callResult =
+                            builder.create<mlir_ts::CallIndirectOp>(location, funcPtr, mlir::ValueRange{thisPtrValue, rttiOfClassValue});
+
+                        return callResult.getResult(0);
+                    },
+                    [&](auto builder, auto location) { // default false value
+                                                       // compare typeOfValue
+                        return builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(false));
+                    });
+
+                return returnValue;
+            }
         }
+#endif
 
         // default logic
         return builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(resultType == type));
