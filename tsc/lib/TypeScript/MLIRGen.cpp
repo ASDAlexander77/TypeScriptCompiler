@@ -2841,7 +2841,7 @@ llvm.return %5 : i32
                 MLIRCodeLogicHelper mclh(builder, location);
                 auto returnValue = mclh.conditionalExpression(
                     getBooleanType(), cmpResult,
-                    [&](auto builder, auto location) {
+                    [&](mlir::OpBuilder &builder, mlir::Location location) {
                         auto thisPtrValue = cast(location, getOpaqueType(), result, genContext);
 
                         // get VTable we can use VTableOffset
@@ -2867,8 +2867,8 @@ llvm.return %5 : i32
 
                         return callResult.getResult(0);
                     },
-                    [&](auto builder, auto location) { // default false value
-                                                       // compare typeOfValue
+                    [&](mlir::OpBuilder &builder, mlir::Location location) { // default false value
+                                                                             // compare typeOfValue
                         return builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(false));
                     });
 
