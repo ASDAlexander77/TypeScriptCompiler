@@ -1,4 +1,4 @@
-#include "TypeScript/gc.h"
+#include "TypeScript/gcwrapper.h"
 
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/ThreadPool.h"
