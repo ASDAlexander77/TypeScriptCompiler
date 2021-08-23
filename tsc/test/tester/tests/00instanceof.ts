@@ -9,6 +9,20 @@ class Cls1 {
 
 class Cls2 extends Cls1 {}
 
+class C {}
+
+class C2 extends C {}
+
+class D {}
+
+function iftrue(a: any) {
+    assert(a instanceof C);
+}
+
+function iffalse(a: any) {
+    assert(!(a instanceof C));
+}
+
 function main() {
     assert("asd" instanceof str);
 
@@ -19,6 +33,12 @@ function main() {
     assert(!(cls1 instanceof Cls2));
     assert(cls2 instanceof Cls2);
     assert(cls2 instanceof Cls1);
+
+    iffalse(1);
+    iffalse("asd");
+    iftrue(new C());
+    iftrue(new C2());
+    iffalse(new D());
 
     print("done.");
 }
