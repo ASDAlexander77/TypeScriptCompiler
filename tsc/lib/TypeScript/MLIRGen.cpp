@@ -6545,12 +6545,7 @@ llvm.return %5 : i32
 
     mlir::Type getTypeByTypeQuery(TypeQueryNode typeQueryAST, const GenContext &genContext)
     {
-        auto value = mlirGen(typeQueryAST->exprName.as<Expression>(), genContext);
-        assert(value);
-
-        LLVM_DEBUG(dbgs() << "typeQuery: "; value.getType().dump(); dbgs() << "\n";);
-
-        return value.getType();
+        return getTypeByTypeName(typeQueryAST->exprName, genContext);
     }
 
     mlir_ts::VoidType getVoidType()
