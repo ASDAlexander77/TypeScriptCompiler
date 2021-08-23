@@ -1,3 +1,5 @@
+#include <stddef.h>
+
 #define GC_NOT_DLL 1
 #include "gc.h"
 

@@ -2232,11 +2232,14 @@ class MLIRGenImpl
         return mlirGen(forStatNode, genContext);
     }
 
-    mlir::LogicalResult mlirGen(ForOfStatement forOfStatementAST, const GenContext &genContext)
+    mlir::LogicalResult mlirGenES3(ForOfStatement forOfStatementAST, mlir::Value exprValue, const GenContext &genContext)
     {
         SymbolTableScopeT varScope(symbolTable);
 
         auto location = loc(forOfStatementAST);
+
+        auto varDecl = std::make_shared<VariableDeclarationDOM>(EXPR_TEMPVAR_NAME, exprValue.getType(), location);
+        declare(varDecl, exprValue);
 
         NodeFactory nf(NodeFactoryFlags::None);
 
@@ -2246,7 +2249,7 @@ class MLIRGenImpl
         declarations.push_back(nf.createVariableDeclaration(_i, undefined, undefined, nf.createNumericLiteral(S("0"))));
 
         auto _a = nf.createIdentifier(S("_a_"));
-        auto arrayVar = nf.createVariableDeclaration(_a, undefined, undefined, forOfStatementAST->expression);
+        auto arrayVar = nf.createVariableDeclaration(_a, undefined, undefined, nf.createIdentifier(S(EXPR_TEMPVAR_NAME)));
         arrayVar->transformFlags |= TransformFlags::ForceConstRef;
         declarations.push_back(arrayVar);
 
@@ -2273,6 +2276,83 @@ class MLIRGenImpl
         auto forStatNode = nf.createForStatement(initVars, cond, incr, block);
 
         return mlirGen(forStatNode, genContext);
+    }
+
+    mlir::LogicalResult mlirGenES2015(ForOfStatement forOfStatementAST, mlir::Value exprValue, const GenContext &genContext)
+    {
+        SymbolTableScopeT varScope(symbolTable);
+
+        auto location = loc(forOfStatementAST);
+
+        auto varDecl = std::make_shared<VariableDeclarationDOM>(EXPR_TEMPVAR_NAME, exprValue.getType(), location);
+        declare(varDecl, exprValue);
+
+        NodeFactory nf(NodeFactoryFlags::None);
+
+        // init
+        NodeArray<VariableDeclaration> declarations;
+        auto _b = nf.createIdentifier(S("_b_"));
+        auto _next = nf.createIdentifier(S("next"));
+        auto _bVar = nf.createVariableDeclaration(_b, undefined, undefined, nf.createIdentifier(S(EXPR_TEMPVAR_NAME)));
+        //_bVar->transformFlags |= TransformFlags::ForceConst;
+        declarations.push_back(_bVar);
+
+        NodeArray<Expression> nextArgs;
+
+        auto _c = nf.createIdentifier(S("_c_"));
+        auto _done = nf.createIdentifier(S("done"));
+        auto _value = nf.createIdentifier(S("value"));
+        auto _cVar = nf.createVariableDeclaration(
+            _c, undefined, undefined, nf.createCallExpression(nf.createPropertyAccessExpression(_b, _next), undefined, nextArgs));
+        declarations.push_back(_cVar);
+
+        // condition
+        auto cond =
+            nf.createPrefixUnaryExpression(nf.createToken(SyntaxKind::ExclamationToken), nf.createPropertyAccessExpression(_c, _done));
+
+        // incr
+        auto incr = nf.createBinaryExpression(_c, nf.createToken(SyntaxKind::EqualsToken),
+                                              nf.createCallExpression(nf.createPropertyAccessExpression(_b, _next), undefined, nextArgs));
+
+        // block
+        NodeArray<ts::Statement> statements;
+
+        auto varDeclList = forOfStatementAST->initializer.as<VariableDeclarationList>();
+        varDeclList->declarations.front()->initializer = nf.createPropertyAccessExpression(_c, _value);
+
+        auto initVars = nf.createVariableDeclarationList(declarations, NodeFlags::Let /*varDeclList->flags*/);
+
+        statements.push_back(nf.createVariableStatement(undefined, varDeclList));
+        statements.push_back(forOfStatementAST->statement);
+        auto block = nf.createBlock(statements);
+
+        // final For statement
+        auto forStatNode = nf.createForStatement(initVars, cond, incr, block);
+
+        return mlirGen(forStatNode, genContext);
+    }
+
+    mlir::LogicalResult mlirGen(ForOfStatement forOfStatementAST, const GenContext &genContext)
+    {
+        auto location = loc(forOfStatementAST);
+
+        auto exprValue = mlirGen(forOfStatementAST->expression, genContext);
+
+        GenContext checkCallGenContext(genContext);
+        checkCallGenContext.allowPartialResolve = true;
+        auto checkResult = mlirGenPropertyAccessExpression(location, exprValue, "next", checkCallGenContext);
+        if (checkResult)
+        {
+            // cleanup
+            checkResult.getDefiningOp()->erase();
+
+            if (mlir::succeeded(mlirGenES2015(forOfStatementAST, exprValue, genContext)))
+            {
+                return mlir::success();
+            }
+        }
+
+        return mlirGenES3(forOfStatementAST, exprValue, genContext);
     }
 
     mlir::LogicalResult mlirGen(LabeledStatement labeledStatementAST, const GenContext &genContext)

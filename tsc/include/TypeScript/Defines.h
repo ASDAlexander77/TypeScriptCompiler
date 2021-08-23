@@ -25,6 +25,8 @@
 #define TS_NEST_ATTRIBUTE "ts.nest"
 #define THIS_TEMPVAR_NAME ".this"
 #define LTHIS_TEMPVAR_NAME L".this"
+#define EXPR_TEMPVAR_NAME ".expr"
+#define LEXPR_TEMPVAR_NAME L".expr"
 #define TS_GC_ATTRIBUTE "ts.gc"
 #define TYPESCRIPT_GC_NAME "tsgc"
 

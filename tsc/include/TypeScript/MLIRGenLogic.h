@@ -492,10 +492,8 @@ class MLIRPropertyAccessCodeLogic
         {
             return builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()), expression);
         }
-        else
-        {
-            llvm_unreachable("not implemented");
-        }
+
+        return mlir::Value();
     }
 
     mlir::Value Int(mlir::IntegerType intType)
@@ -505,10 +503,8 @@ class MLIRPropertyAccessCodeLogic
         {
             return builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()), expression);
         }
-        else
-        {
-            llvm_unreachable("not implemented");
-        }
+
+        return mlir::Value();
     }
 
     mlir::Value Float(mlir::FloatType floatType)
@@ -518,10 +514,8 @@ class MLIRPropertyAccessCodeLogic
         {
             return builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()), expression);
         }
-        else
-        {
-            llvm_unreachable("not implemented");
-        }
+
+        return mlir::Value();
     }
 
     mlir::Value Number(mlir_ts::NumberType numberType)
@@ -531,10 +525,8 @@ class MLIRPropertyAccessCodeLogic
         {
             return builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()), expression);
         }
-        else
-        {
-            llvm_unreachable("not implemented");
-        }
+
+        return mlir::Value();
     }
 
     mlir::Value String(mlir_ts::StringType stringType)
@@ -544,10 +536,8 @@ class MLIRPropertyAccessCodeLogic
         {
             return builder.create<mlir_ts::StringLengthOp>(location, builder.getI32Type(), expression);
         }
-        else
-        {
-            llvm_unreachable("not implemented");
-        }
+
+        return mlir::Value();
     }
 
     template <typename T> mlir::Value Array(T arrayType)
@@ -565,10 +555,8 @@ class MLIRPropertyAccessCodeLogic
                 auto sizeValue = builder.create<mlir_ts::LengthOfOp>(location, builder.getI32Type(), expression);
                 return sizeValue;
             }
-            else
-            {
-                llvm_unreachable("not implemented");
-            }
+
+            return mlir::Value();
         }
         else if (propName == "push")
         {
@@ -578,10 +566,8 @@ class MLIRPropertyAccessCodeLogic
                                                                        mlir::FlatSymbolRefAttr::get(builder.getContext(), "__array_push"));
                 return symbOp;
             }
-            else
-            {
-                llvm_unreachable("not implemented");
-            }
+
+            return mlir::Value();
         }
         else if (propName == "pop")
         {
@@ -591,15 +577,11 @@ class MLIRPropertyAccessCodeLogic
                                                                        mlir::FlatSymbolRefAttr::get(builder.getContext(), "__array_pop"));
                 return symbOp;
             }
-            else
-            {
-                llvm_unreachable("not implemented");
-            }
+
+            return mlir::Value();
         }
-        else
-        {
-            llvm_unreachable("not implemented");
-        }
+
+        return mlir::Value();
     }
 
     template <typename T> mlir::Value Ref(T refType)
