@@ -1,3 +1,5 @@
+#include <cstddef>
+
 void _mlir__GC_init();
 
 void *_mlir__GC_malloc(size_t size);
