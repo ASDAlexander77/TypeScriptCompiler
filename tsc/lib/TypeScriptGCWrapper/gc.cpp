@@ -1,4 +1,4 @@
-#include <stddef.h>
+#include <cstddef>
 
 #define GC_NOT_DLL 1
 #include "gc.h"
