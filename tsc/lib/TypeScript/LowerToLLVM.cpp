@@ -2979,6 +2979,36 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
     converter.addConversion([&](mlir_ts::UndefPlaceHolderType type) {
         return IntegerType::get(m.getContext(), 8 /*, mlir::IntegerType::SignednessSemantics::Unsigned*/);
     });
+
+    converter.addConversion([&](mlir_ts::UnionType type) {
+        LLVMTypeConverterHelper ltch(converter);
+
+        auto currentSize = 0;
+        mlir::Type selectedType;
+        for (auto subType : type)
+        {
+            auto converted = converter.convertType(subType);
+            auto typeSize = ltch.getTypeSize(converted);
+            if (typeSize > currentSize)
+            {
+                selectedType = converted;
+            }
+        }
+
+        SmallVector<mlir::Type> convertedTypes;
+        convertedTypes.push_back(selectedType);
+        return LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, false);
+    });
+
+    converter.addConversion([&](mlir_ts::IntersectionType type) {
+        SmallVector<mlir::Type> convertedTypes;
+        for (auto subType : type)
+        {
+            convertedTypes.push_back(converter.convertType(subType));
+        }
+
+        return LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, false);
+    });
 };
 
 } // end anonymous namespace

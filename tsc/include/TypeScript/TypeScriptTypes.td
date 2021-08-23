@@ -970,7 +970,7 @@ def TypeScript_Intersection : TypeScript_Type<"Intersection"> {
     Syntax:
 
     ```
-    union-type ::= `intersection` `<` (type ( `,` type)*)? `>`
+    intersection-type ::= `intersection` `<` (type ( `,` type)*)? `>`
     ```
 
     The value of `intersection` type represents a fixed-size intersection of elements,
@@ -992,7 +992,7 @@ def TypeScript_Intersection : TypeScript_Type<"Intersection"> {
   let parameters = (ins ArrayRefParameter<"Type", "type">:$types);
 
   let printer = [{
-    $_printer << "union" << "<";
+    $_printer << "intersection" << "<";
     size_t i = 0;
     for (auto typeItem : getImpl()->types) 
     {
