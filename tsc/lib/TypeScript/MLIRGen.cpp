@@ -4394,11 +4394,8 @@ llvm.return %5 : i32
             }
         }
 
-        SmallVector<mlir::Type> constTypes;
         SmallVector<mlir::Attribute> constValues;
         auto nonConst = false;
-        isTuple = false;
-        elementType = mlir::Type();
         for (auto &itemValue : values)
         {
             auto constOp = itemValue.getDefiningOp<mlir_ts::ConstantOp>();
@@ -4408,19 +4405,7 @@ llvm.return %5 : i32
                 break;
             }
 
-            auto type = mth.convertConstArrayTypeToArrayType(constOp.getType());
-
             constValues.push_back(constOp.valueAttr());
-            constTypes.push_back(type);
-            if (!elementType)
-            {
-                elementType = type;
-            }
-            else if (elementType != type)
-            {
-                // this is tuple.
-                isTuple = true;
-            }
         }
 
         if (nonConst)
@@ -4449,6 +4434,25 @@ llvm.return %5 : i32
         }
         else
         {
+            // recheck types, we know all of them are consts
+            isTuple = false;
+            elementType = mlir::Type();
+            SmallVector<mlir::Type> constTypes;
+            for (auto &itemValue : values)
+            {
+                auto type = mth.convertConstArrayTypeToArrayType(itemValue.getType());
+                constTypes.push_back(type);
+                if (!elementType)
+                {
+                    elementType = type;
+                }
+                else if (elementType != type)
+                {
+                    // this is tuple.
+                    isTuple = true;
+                }
+            }
+
             auto arrayAttr = mlir::ArrayAttr::get(builder.getContext(), constValues);
             if (isTuple)
             {
@@ -4461,7 +4465,6 @@ llvm.return %5 : i32
                 return builder.create<mlir_ts::ConstantOp>(loc(arrayLiteral), getConstTupleType(fieldInfos), arrayAttr);
             }
 
-            elementType = mth.convertConstArrayTypeToArrayType(elementType);
             if (!elementType)
             {
                 // in case of empty array
