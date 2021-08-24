@@ -1541,13 +1541,54 @@ class MLIRGenImpl
     {
         NodeFactory nf(NodeFactoryFlags::None);
 
-        // functionLikeDeclarationBaseAST->body
-        NodeArray<Statement> statements;
+        auto stepIdent = nf.createIdentifier(S("step"));
+        auto valueIdent = nf.createIdentifier(S("value"));
+        auto doneIdent = nf.createIdentifier(S("done"));
+
+        // create return object
+        NodeArray<ObjectLiteralElementLike> generatorObjectProperties;
+
+        // add step field
+        auto stepProp = nf.createPropertyAssignment(stepIdent, nf.createNumericLiteral(S("0"), TokenFlags::None));
+        generatorObjectProperties.push_back(stepProp);
+
+        // create body of next method
+        NodeArray<Statement> nextStatements;
+
+        // add main switcher
+        // TODO: continue...
+
+        // add next statements
+        // add default return with empty
+        NodeArray<ObjectLiteralElementLike> defaultRetObjectProperties;
+        auto valueProp = nf.createPropertyAssignment(valueIdent, nf.createNumericLiteral(S("0"), TokenFlags::None));
+        defaultRetObjectProperties.push_back(valueProp);
+
+        auto doneProp = nf.createPropertyAssignment(doneIdent, nf.createToken(SyntaxKind::TrueKeyword));
+        defaultRetObjectProperties.push_back(doneProp);
+
+        auto defaultRetObject = nf.createObjectLiteralExpression(defaultRetObjectProperties, false);
+        auto defaultRet = nf.createReturnStatement(defaultRetObject);
+        nextStatements.push_back(defaultRet);
+
+        // create next body
+        auto nextBody = nf.createBlock(nextStatements, /*multiLine*/ false);
+
+        // create method next in object
+        auto nextMethodDecl = nf.createMethodDeclaration(undefined, undefined, undefined, nf.createIdentifier(S("next")), undefined,
+                                                         undefined, undefined, undefined, nextBody);
+        generatorObjectProperties.push_back(nextMethodDecl);
+
+        auto generatorObject = nf.createObjectLiteralExpression(generatorObjectProperties, false);
+
+        // generator body
+        NodeArray<Statement> generatorStatements;
 
         // step 1, add return object
-        nf.createReturnStatement();
+        auto retStat = nf.createReturnStatement(generatorObject);
+        generatorStatements.push_back(retStat);
 
-        auto body = nf.createBlock(statements, /*multiLine*/ false);
+        auto body = nf.createBlock(generatorStatements, /*multiLine*/ false);
         auto funcOp =
             nf.createFunctionDeclaration(functionLikeDeclarationBaseAST->decorators, functionLikeDeclarationBaseAST->modifiers, undefined,
                                          functionLikeDeclarationBaseAST->name, functionLikeDeclarationBaseAST->typeParameters,
