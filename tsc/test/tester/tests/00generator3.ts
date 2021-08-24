@@ -27,5 +27,7 @@ function main() {
         print(o);
     }
 
-    assert(count == 6);
+    assert(count == 5);
+
+    print("done.");
 }
