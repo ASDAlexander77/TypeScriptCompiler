@@ -1052,6 +1052,11 @@ class MLIRGenImpl
             auto initFunc = [&]() { return getTypeAndInit(item, genContext); };
 
             auto valClassItem = varClass;
+            if ((item->transformFlags & TransformFlags::ForceConst) == TransformFlags::ForceConst)
+            {
+                valClassItem = VariableClass::Const;
+            }
+
             if ((item->transformFlags & TransformFlags::ForceConstRef) == TransformFlags::ForceConstRef)
             {
                 valClassItem = VariableClass::ConstRef;
@@ -1532,8 +1537,34 @@ class MLIRGenImpl
         return funcSymbolRef;
     }
 
+    mlir_ts::FuncOp mlirGenFunctionGenerator(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
+    {
+        NodeFactory nf(NodeFactoryFlags::None);
+
+        // functionLikeDeclarationBaseAST->body
+        NodeArray<Statement> statements;
+
+        // step 1, add return object
+        nf.createReturnStatement();
+
+        auto body = nf.createBlock(statements, /*multiLine*/ false);
+        auto funcOp =
+            nf.createFunctionDeclaration(functionLikeDeclarationBaseAST->decorators, functionLikeDeclarationBaseAST->modifiers, undefined,
+                                         functionLikeDeclarationBaseAST->name, functionLikeDeclarationBaseAST->typeParameters,
+                                         functionLikeDeclarationBaseAST->parameters, functionLikeDeclarationBaseAST->type, body);
+
+        return mlirGenFunctionLikeDeclaration(funcOp, genContext);
+    }
+
     mlir_ts::FuncOp mlirGenFunctionLikeDeclaration(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
     {
+        // check if it is generator
+        if (functionLikeDeclarationBaseAST->asteriskToken)
+        {
+            // this is generator, let's generate other function out of it
+            return mlirGenFunctionGenerator(functionLikeDeclarationBaseAST, genContext);
+        }
+
         SymbolTableScopeT varScope(symbolTable);
 
         auto location = loc(functionLikeDeclarationBaseAST);
