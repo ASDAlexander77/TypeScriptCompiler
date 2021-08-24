@@ -4358,18 +4358,18 @@ llvm.return %5 : i32
         return builder.create<mlir_ts::ConstantOp>(loc(noSubstitutionTemplateLiteral), getStringType(), getStringAttr(text));
     }
 
-    mlir::Value mlirGenArrayLiteralExpressionNonConst(ts::ArrayLiteralExpression arrayLiteral, const GenContext &genContext)
+    mlir::Value mlirGen(ts::ArrayLiteralExpression arrayLiteral, const GenContext &genContext)
     {
         auto location = loc(arrayLiteral);
 
         MLIRTypeHelper mth(builder.getContext());
-        MLIRCodeLogic mcl(builder);
 
         // first value
         auto isTuple = false;
         mlir::Type elementType;
         SmallVector<mlir::Type> types;
         SmallVector<mlir::Value> values;
+
         for (auto &item : arrayLiteral->elements)
         {
             auto itemValue = mlirGen(item, genContext);
@@ -4394,58 +4394,24 @@ llvm.return %5 : i32
             }
         }
 
-        if (isTuple)
+        SmallVector<mlir::Type> constTypes;
+        SmallVector<mlir::Attribute> constValues;
+        auto nonConst = false;
+        isTuple = false;
+        elementType = mlir::Type();
+        for (auto &itemValue : values)
         {
-            SmallVector<mlir_ts::FieldInfo> fieldInfos;
-            for (auto type : types)
-            {
-                fieldInfos.push_back({mlir::Attribute(), type});
-            }
-
-            return builder.create<mlir_ts::CreateTupleOp>(loc(arrayLiteral), getTupleType(fieldInfos), values);
-        }
-
-        if (!elementType)
-        {
-            // in case of empty array
-            llvm_unreachable("not implemented");
-            return mlir::Value();
-        }
-
-        auto newArrayOp = builder.create<mlir_ts::CreateArrayOp>(loc(arrayLiteral), getArrayType(elementType), values);
-        return newArrayOp;
-    }
-
-    mlir::Value mlirGen(ts::ArrayLiteralExpression arrayLiteral, const GenContext &genContext)
-    {
-        auto location = loc(arrayLiteral);
-
-        MLIRTypeHelper mth(builder.getContext());
-
-        // first value
-        auto isTuple = false;
-        mlir::Type elementType;
-        SmallVector<mlir::Type> types;
-        SmallVector<mlir::Attribute> values;
-        for (auto &item : arrayLiteral->elements)
-        {
-            auto itemValue = mlirGen(item, genContext);
-            if (!itemValue)
-            {
-                // omitted expression
-                continue;
-            }
-
             auto constOp = itemValue.getDefiningOp<mlir_ts::ConstantOp>();
             if (!constOp)
             {
-                return mlirGenArrayLiteralExpressionNonConst(arrayLiteral, genContext);
+                nonConst = true;
+                break;
             }
 
             auto type = mth.convertConstArrayTypeToArrayType(constOp.getType());
 
-            values.push_back(constOp.valueAttr());
-            types.push_back(type);
+            constValues.push_back(constOp.valueAttr());
+            constTypes.push_back(type);
             if (!elementType)
             {
                 elementType = type;
@@ -4457,25 +4423,53 @@ llvm.return %5 : i32
             }
         }
 
-        auto arrayAttr = mlir::ArrayAttr::get(builder.getContext(), values);
-        if (isTuple)
+        if (nonConst)
         {
-            SmallVector<mlir_ts::FieldInfo> fieldInfos;
-            for (auto type : types)
+            // non const array
+            if (isTuple)
             {
-                fieldInfos.push_back({mlir::Attribute(), type});
+                SmallVector<mlir_ts::FieldInfo> fieldInfos;
+                for (auto type : types)
+                {
+                    fieldInfos.push_back({mlir::Attribute(), type});
+                }
+
+                return builder.create<mlir_ts::CreateTupleOp>(loc(arrayLiteral), getTupleType(fieldInfos), values);
             }
 
-            return builder.create<mlir_ts::ConstantOp>(loc(arrayLiteral), getConstTupleType(fieldInfos), arrayAttr);
-        }
+            if (!elementType)
+            {
+                // in case of empty array
+                llvm_unreachable("not implemented");
+                return mlir::Value();
+            }
 
-        if (!elementType)
+            auto newArrayOp = builder.create<mlir_ts::CreateArrayOp>(loc(arrayLiteral), getArrayType(elementType), values);
+            return newArrayOp;
+        }
+        else
         {
-            // in case of empty array
-            elementType = getAnyType();
-        }
+            auto arrayAttr = mlir::ArrayAttr::get(builder.getContext(), constValues);
+            if (isTuple)
+            {
+                SmallVector<mlir_ts::FieldInfo> fieldInfos;
+                for (auto type : constTypes)
+                {
+                    fieldInfos.push_back({mlir::Attribute(), type});
+                }
 
-        return builder.create<mlir_ts::ConstantOp>(loc(arrayLiteral), getConstArrayType(elementType, values.size()), arrayAttr);
+                return builder.create<mlir_ts::ConstantOp>(loc(arrayLiteral), getConstTupleType(fieldInfos), arrayAttr);
+            }
+
+            elementType = mth.convertConstArrayTypeToArrayType(elementType);
+            if (!elementType)
+            {
+                // in case of empty array
+                elementType = getAnyType();
+            }
+
+            return builder.create<mlir_ts::ConstantOp>(loc(arrayLiteral), getConstArrayType(elementType, constValues.size()), arrayAttr);
+        }
     }
 
     mlir::Value mlirGen(ts::ObjectLiteralExpression objectLiteral, const GenContext &genContext)
