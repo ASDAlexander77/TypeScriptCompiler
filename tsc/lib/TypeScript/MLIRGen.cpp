@@ -1556,7 +1556,21 @@ class MLIRGenImpl
         NodeArray<Statement> nextStatements;
 
         // add main switcher
-        // TODO: continue...
+        auto stepAccess = nf.createPropertyAccessExpression(nf.createToken(SyntaxKind::ThisKeyword), stepIdent);
+        auto stepIncr = nf.createPostfixUnaryExpression(stepAccess, nf.createToken(SyntaxKind::PlusPlusToken));
+
+        NodeArray<Statement> firstCaseStatements;
+
+        // add function body to statements to first step
+        firstCaseStatements.push_back(functionLikeDeclarationBaseAST->body);
+
+        // fist case
+        NodeArray<CaseOrDefaultClause> clauses;
+        auto firstCase = nf.createCaseClause(nf.createNumericLiteral(S("0"), TokenFlags::None), firstCaseStatements);
+        clauses.push_back(firstCase);
+
+        auto switchStat = nf.createSwitchStatement(stepIncr, nf.createCaseBlock(clauses));
+        nextStatements.push_back(switchStat);
 
         // add next statements
         // add default return with empty
