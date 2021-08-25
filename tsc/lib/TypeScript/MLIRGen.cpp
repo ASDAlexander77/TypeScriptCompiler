@@ -1991,7 +1991,17 @@ class MLIRGenImpl
     mlir::Value mlirGen(YieldExpression yieldExpressionAST, const GenContext &genContext)
     {
         NodeFactory nf(NodeFactoryFlags::None);
-        return mlirGen(getYieldReturnObject(nf, yieldExpressionAST->expression, false), genContext);
+        auto yieldValue = mlirGen(getYieldReturnObject(nf, yieldExpressionAST->expression, false), genContext);
+
+        // record return type if not provided
+        if (genContext.passResult)
+        {
+            LLVM_DEBUG(dbgs() << "\n...yield return type: " << yieldValue.getType() << "\n\n");
+
+            genContext.passResult->functionReturnType = yieldValue.getType();
+        }
+
+        return yieldValue;
     }
 
     mlir::LogicalResult mlirGenReturnValue(mlir::Location location, mlir::Value expressionValue, const GenContext &genContext)
