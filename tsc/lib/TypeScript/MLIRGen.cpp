@@ -710,6 +710,10 @@ class MLIRGenImpl
         {
             return mlirGen(expressionAST.as<VoidExpression>(), genContext);
         }
+        else if (kind == SyntaxKind::YieldExpression)
+        {
+            return mlirGen(expressionAST.as<YieldExpression>(), genContext);
+        }
         else if (kind == SyntaxKind::Unknown /*TODO: temp solution to treat null expr as empty expr*/)
         {
             return mlir::Value();
@@ -1542,8 +1546,6 @@ class MLIRGenImpl
         NodeFactory nf(NodeFactoryFlags::None);
 
         auto stepIdent = nf.createIdentifier(S("step"));
-        auto valueIdent = nf.createIdentifier(S("value"));
-        auto doneIdent = nf.createIdentifier(S("done"));
 
         // create return object
         NodeArray<ObjectLiteralElementLike> generatorObjectProperties;
@@ -1559,31 +1561,57 @@ class MLIRGenImpl
         auto stepAccess = nf.createPropertyAccessExpression(nf.createToken(SyntaxKind::ThisKeyword), stepIdent);
         auto stepIncr = nf.createPostfixUnaryExpression(stepAccess, nf.createToken(SyntaxKind::PlusPlusToken));
 
-        NodeArray<Statement> firstCaseStatements;
+        NodeArray<CaseOrDefaultClause> clauses;
+
+        auto currentStep = 0;
 
         // add function body to statements to first step
-        firstCaseStatements.push_back(functionLikeDeclarationBaseAST->body);
+        if (functionLikeDeclarationBaseAST->body == SyntaxKind::Block)
+        {
+            NodeArray<Statement> caseStatements;
 
-        // fist case
-        NodeArray<CaseOrDefaultClause> clauses;
-        auto firstCase = nf.createCaseClause(nf.createNumericLiteral(S("0"), TokenFlags::None), firstCaseStatements);
-        clauses.push_back(firstCase);
+            // process every statement
+            auto block = functionLikeDeclarationBaseAST->body.as<Block>();
+            for (auto statement : block->statements)
+            {
+                if (statement == SyntaxKind::ExpressionStatement)
+                {
+                    auto exprStat = statement.as<ExpressionStatement>();
+                    if (exprStat->expression == SyntaxKind::YieldExpression)
+                    {
+                        caseStatements.push_back(nf.createReturnStatement(exprStat->expression));
+
+                        // next step
+                        auto nextCase =
+                            nf.createCaseClause(nf.createNumericLiteral(to_string(currentStep++), TokenFlags::None), caseStatements);
+                        clauses.push_back(nextCase);
+                        caseStatements = NodeArray<Statement>();
+
+                        continue;
+                    }
+                }
+
+                caseStatements.push_back(statement);
+            }
+
+            // add last step
+            auto nextCase = nf.createCaseClause(nf.createNumericLiteral(to_string(currentStep), TokenFlags::None), caseStatements);
+            clauses.push_back(nextCase);
+        }
+        else
+        {
+            NodeArray<Statement> firstCaseStatements;
+            firstCaseStatements.push_back(functionLikeDeclarationBaseAST->body);
+            auto firstCase = nf.createCaseClause(nf.createNumericLiteral(S("0"), TokenFlags::None), firstCaseStatements);
+            clauses.push_back(firstCase);
+        }
 
         auto switchStat = nf.createSwitchStatement(stepIncr, nf.createCaseBlock(clauses));
         nextStatements.push_back(switchStat);
 
         // add next statements
         // add default return with empty
-        NodeArray<ObjectLiteralElementLike> defaultRetObjectProperties;
-        auto valueProp = nf.createPropertyAssignment(valueIdent, nf.createNumericLiteral(S("0"), TokenFlags::None));
-        defaultRetObjectProperties.push_back(valueProp);
-
-        auto doneProp = nf.createPropertyAssignment(doneIdent, nf.createToken(SyntaxKind::TrueKeyword));
-        defaultRetObjectProperties.push_back(doneProp);
-
-        auto defaultRetObject = nf.createObjectLiteralExpression(defaultRetObjectProperties, false);
-        auto defaultRet = nf.createReturnStatement(defaultRetObject);
-        nextStatements.push_back(defaultRet);
+        nextStatements.push_back(nf.createReturnStatement(getYieldReturnObject(nf, nf.createIdentifier(S("undefined")), true)));
 
         // create next body
         auto nextBody = nf.createBlock(nextStatements, /*multiLine*/ false);
@@ -1942,6 +1970,28 @@ class MLIRGenImpl
 
         builder.create<mlir_ts::ReturnOp>(location);
         return mlir::success();
+    }
+
+    ObjectLiteralExpression getYieldReturnObject(NodeFactory &nf, Expression expr, bool stop)
+    {
+        auto valueIdent = nf.createIdentifier(S("value"));
+        auto doneIdent = nf.createIdentifier(S("done"));
+
+        NodeArray<ObjectLiteralElementLike> retObjectProperties;
+        auto valueProp = nf.createPropertyAssignment(valueIdent, expr);
+        retObjectProperties.push_back(valueProp);
+
+        auto doneProp = nf.createPropertyAssignment(doneIdent, nf.createToken(SyntaxKind::TrueKeyword));
+        retObjectProperties.push_back(doneProp);
+
+        auto retObject = nf.createObjectLiteralExpression(retObjectProperties, stop);
+        return retObject;
+    };
+
+    mlir::Value mlirGen(YieldExpression yieldExpressionAST, const GenContext &genContext)
+    {
+        NodeFactory nf(NodeFactoryFlags::None);
+        return mlirGen(getYieldReturnObject(nf, yieldExpressionAST->expression, false), genContext);
     }
 
     mlir::LogicalResult mlirGenReturnValue(mlir::Location location, mlir::Value expressionValue, const GenContext &genContext)
