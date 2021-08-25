@@ -1543,6 +1543,7 @@ class MLIRGenImpl
 
     mlir_ts::FuncOp mlirGenFunctionGenerator(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
     {
+        auto location = loc(functionLikeDeclarationBaseAST);
         NodeFactory nf(NodeFactoryFlags::None);
 
         auto stepIdent = nf.createIdentifier(S("step"));
@@ -1636,7 +1637,30 @@ class MLIRGenImpl
                                          functionLikeDeclarationBaseAST->name, functionLikeDeclarationBaseAST->typeParameters,
                                          functionLikeDeclarationBaseAST->parameters, functionLikeDeclarationBaseAST->type, body);
 
-        return mlirGenFunctionLikeDeclaration(funcOp, genContext);
+        auto genFuncOp = mlirGenFunctionLikeDeclaration(funcOp, genContext);
+
+        /*
+                // add default return { value; undefined, done: true }
+                // funcOp->body
+                auto resultType = genFuncOp.getType().getResult(0);
+                builder.setInsertionPointToEnd(&genFuncOp.body().back());
+
+                // find last ExitOp
+                auto lastUse = [&](mlir::Operation *op) {
+                    if (auto exitOp = dyn_cast_or_null<mlir_ts::ExitOp>(op))
+                    {
+                        builder.setInsertionPoint(exitOp);
+                    }
+                };
+
+                genFuncOp.body().back().walk(lastUse);
+
+                builder.create<mlir_ts::UndefOp>(location, resultType);
+
+                builder.setInsertionPointAfter(genFuncOp);
+        */
+
+        return genFuncOp;
     }
 
     mlir_ts::FuncOp mlirGenFunctionLikeDeclaration(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
@@ -4741,6 +4765,11 @@ class MLIRGenImpl
                 value = symRefOp.identifierAttr();
                 type = symRefOp.getType();
             }
+            else if (auto undefOp = dyn_cast_or_null<mlir_ts::UndefOp>(itemValue.getDefiningOp()))
+            {
+                value = builder.getUnitAttr();
+                type = undefOp.getType();
+            }
             else
             {
                 value = builder.getUnitAttr();
@@ -6929,6 +6958,16 @@ class MLIRGenImpl
     mlir_ts::ValueRefType getValueRefType(mlir::Type elementType)
     {
         return mlir_ts::ValueRefType::get(elementType);
+    }
+
+    bool isUndefinedType(mlir::Type type)
+    {
+        if (auto optType = type.dyn_cast_or_null<mlir_ts::OptionalType>())
+        {
+            return optType == getUndefPlaceHolderType();
+        }
+
+        return false;
     }
 
     mlir::Value getUndefined(mlir::Location location)
