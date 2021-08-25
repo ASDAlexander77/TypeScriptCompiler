@@ -1990,18 +1990,84 @@ class MLIRGenImpl
 
     mlir::Value mlirGen(YieldExpression yieldExpressionAST, const GenContext &genContext)
     {
+        if (genContext.passResult)
+        {
+            genContext.passResult->functionReturnTypeShouldBeProvided = true;
+        }
+
         NodeFactory nf(NodeFactoryFlags::None);
         auto yieldValue = mlirGen(getYieldReturnObject(nf, yieldExpressionAST->expression, false), genContext);
 
         // record return type if not provided
         if (genContext.passResult)
         {
-            LLVM_DEBUG(dbgs() << "\n...yield return type: " << yieldValue.getType() << "\n\n");
-
-            genContext.passResult->functionReturnType = yieldValue.getType();
+            processReturnType(yieldValue, genContext);
         }
 
         return yieldValue;
+    }
+
+    mlir::LogicalResult processReturnType(mlir::Value expressionValue, const GenContext &genContext)
+    {
+        // record return type if not provided
+        if (genContext.passResult)
+        {
+            auto type = expressionValue.getType();
+            LLVM_DEBUG(dbgs() << "\n...store return type: " << type << "\n\n");
+
+            // if return type is not detected, take first and exit
+            if (!genContext.passResult->functionReturnType)
+            {
+                genContext.passResult->functionReturnType = type;
+                return mlir::success();
+            }
+
+            auto undefType = getUndefinedType();
+            auto nullType = getNullType();
+            auto undefPlaceHolderType = getUndefPlaceHolderType();
+
+            std::function<bool(mlir::Type)> testType;
+            testType = [&](mlir::Type type) {
+                if (type == undefType || type == nullType || type == undefPlaceHolderType)
+                {
+                    return false;
+                }
+
+                if (auto optType = type.dyn_cast_or_null<mlir_ts::OptionalType>())
+                {
+                    return testType(optType.getElementType());
+                }
+
+                return true;
+            };
+
+            // filter out types, such as: undefined, objects with undefined values etc
+            if (type == undefType || type == nullType)
+            {
+                return mlir::failure();
+            }
+
+            if (auto constTuple = type.dyn_cast_or_null<mlir_ts::ConstTupleType>())
+            {
+                if (llvm::any_of(constTuple.getFields(), [&](::mlir::typescript::FieldInfo fi) { return testType(fi.type); }))
+                {
+                    return mlir::failure();
+                }
+            }
+
+            if (auto tuple = type.dyn_cast_or_null<mlir_ts::TupleType>())
+            {
+                if (llvm::any_of(tuple.getFields(), [&](::mlir::typescript::FieldInfo fi) { return testType(fi.type); }))
+                {
+                    return mlir::failure();
+                }
+            }
+
+            // we can save result type after joining two types
+            genContext.passResult->functionReturnType = type;
+        }
+
+        return mlir::success();
     }
 
     mlir::LogicalResult mlirGenReturnValue(mlir::Location location, mlir::Value expressionValue, const GenContext &genContext)
@@ -2041,7 +2107,7 @@ class MLIRGenImpl
         // record return type if not provided
         if (genContext.passResult)
         {
-            genContext.passResult->functionReturnType = expressionValue.getType();
+            processReturnType(expressionValue, genContext);
         }
 
         auto retVarInfo = symbolTable.lookup(RETURN_VARIABLE_NAME);
@@ -2670,47 +2736,47 @@ class MLIRGenImpl
         // exception info
 
         /*
-llvm.mlir.global external constant @_ZTIi() : !llvm.ptr<i8>
-llvm.func @foo(!llvm.ptr<i8>)
-llvm.func @bar(!llvm.ptr<i8>) -> !llvm.ptr<i8>
-llvm.func @__gxx_personality_v0(...) -> i32
+    llvm.mlir.global external constant @_ZTIi() : !llvm.ptr<i8>
+    llvm.func @foo(!llvm.ptr<i8>)
+    llvm.func @bar(!llvm.ptr<i8>) -> !llvm.ptr<i8>
+    llvm.func @__gxx_personality_v0(...) -> i32
 
-// CHECK-LABEL: @invokeLandingpad
-llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personality_v0 } {
-// CHECK: %[[a1:[0-9]+]] = alloca i8
-%0 = llvm.mlir.constant(0 : i32) : i32
-%1 = llvm.mlir.constant("\01") : !llvm.array<1 x i8>
-%2 = llvm.mlir.addressof @_ZTIi : !llvm.ptr<ptr<i8>>
-%3 = llvm.bitcast %2 : !llvm.ptr<ptr<i8>> to !llvm.ptr<i8>
-%4 = llvm.mlir.null : !llvm.ptr<ptr<i8>>
-%5 = llvm.mlir.constant(1 : i32) : i32
-%6 = llvm.alloca %5 x i8 : (i32) -> !llvm.ptr<i8>
-// CHECK: invoke void @foo(i8* %[[a1]])
-// CHECK-NEXT: to label %[[normal:[0-9]+]] unwind label %[[unwind:[0-9]+]]
-llvm.invoke @foo(%6) to ^bb2 unwind ^bb1 : (!llvm.ptr<i8>) -> ()
+    // CHECK-LABEL: @invokeLandingpad
+    llvm.func @invokeLandingpad() -> i32 attributes { personality = @__gxx_personality_v0 } {
+    // CHECK: %[[a1:[0-9]+]] = alloca i8
+    %0 = llvm.mlir.constant(0 : i32) : i32
+    %1 = llvm.mlir.constant("\01") : !llvm.array<1 x i8>
+    %2 = llvm.mlir.addressof @_ZTIi : !llvm.ptr<ptr<i8>>
+    %3 = llvm.bitcast %2 : !llvm.ptr<ptr<i8>> to !llvm.ptr<i8>
+    %4 = llvm.mlir.null : !llvm.ptr<ptr<i8>>
+    %5 = llvm.mlir.constant(1 : i32) : i32
+    %6 = llvm.alloca %5 x i8 : (i32) -> !llvm.ptr<i8>
+    // CHECK: invoke void @foo(i8* %[[a1]])
+    // CHECK-NEXT: to label %[[normal:[0-9]+]] unwind label %[[unwind:[0-9]+]]
+    llvm.invoke @foo(%6) to ^bb2 unwind ^bb1 : (!llvm.ptr<i8>) -> ()
 
-// CHECK: [[unwind]]:
-^bb1:
-// CHECK: %{{[0-9]+}} = landingpad { i8*, i32 }
-// CHECK-NEXT:             catch i8** null
-// CHECK-NEXT:             catch i8* bitcast (i8** @_ZTIi to i8*)
-// CHECK-NEXT:             filter [1 x i8] c"\01"
-%7 = llvm.landingpad (catch %4 : !llvm.ptr<ptr<i8>>) (catch %3 : !llvm.ptr<i8>) (filter %1 : !llvm.array<1 x i8>) : !llvm.struct<(ptr<i8>,
-i32)>
-// CHECK: br label %[[final:[0-9]+]]
-llvm.br ^bb3
+    // CHECK: [[unwind]]:
+    ^bb1:
+    // CHECK: %{{[0-9]+}} = landingpad { i8*, i32 }
+    // CHECK-NEXT:             catch i8** null
+    // CHECK-NEXT:             catch i8* bitcast (i8** @_ZTIi to i8*)
+    // CHECK-NEXT:             filter [1 x i8] c"\01"
+    %7 = llvm.landingpad (catch %4 : !llvm.ptr<ptr<i8>>) (catch %3 : !llvm.ptr<i8>) (filter %1 : !llvm.array<1 x i8>) :
+    !llvm.struct<(ptr<i8>, i32)>
+    // CHECK: br label %[[final:[0-9]+]]
+    llvm.br ^bb3
 
-// CHECK: [[normal]]:
-// CHECK-NEXT: ret i32 1
-^bb2:	// 2 preds: ^bb0, ^bb3
-llvm.return %5 : i32
+    // CHECK: [[normal]]:
+    // CHECK-NEXT: ret i32 1
+    ^bb2:	// 2 preds: ^bb0, ^bb3
+    llvm.return %5 : i32
 
-// CHECK: [[final]]:
-// CHECK-NEXT: %{{[0-9]+}} = invoke i8* @bar(i8* %[[a1]])
-// CHECK-NEXT:          to label %[[normal]] unwind label %[[unwind]]
-^bb3:	// pred: ^bb1
-%8 = llvm.invoke @bar(%6) to ^bb2 unwind ^bb1 : (!llvm.ptr<i8>) -> !llvm.ptr<i8>
-}
+    // CHECK: [[final]]:
+    // CHECK-NEXT: %{{[0-9]+}} = invoke i8* @bar(i8* %[[a1]])
+    // CHECK-NEXT:          to label %[[normal]] unwind label %[[unwind]]
+    ^bb3:	// pred: ^bb1
+    %8 = llvm.invoke @bar(%6) to ^bb2 unwind ^bb1 : (!llvm.ptr<i8>) -> !llvm.ptr<i8>
+    }
 
         */
     }
