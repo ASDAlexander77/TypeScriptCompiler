@@ -276,6 +276,8 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
             return success();
         }
 
+        auto loc = castOp->getLoc();
+
         // null -> interface cast
         auto anyType = in.getType().dyn_cast_or_null<mlir_ts::AnyType>();
         auto interfaceType = res.getType().dyn_cast_or_null<mlir_ts::InterfaceType>();
@@ -287,6 +289,21 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
                 rewriter.replaceOp(castOp, ValueRange{undef});
                 rewriter.eraseOp(nullOp);
                 return success();
+            }
+        }
+
+        // const tuple -> const tuple, for example { value: undefined, done: true } -> { value: <int>, done: <boolean> }
+        if (auto constTupleIn = in.getType().dyn_cast_or_null<mlir_ts::ConstTupleType>())
+        {
+            if (auto constTupleRes = res.getType().dyn_cast_or_null<mlir_ts::ConstTupleType>())
+            {
+                // create other const tuple from source const tuple
+                if (auto constOp = in.getDefiningOp<mlir_ts::ConstantOp>())
+                {
+                    auto newConstOp = rewriter.create<mlir_ts::ConstantOp>(loc, constTupleRes, constOp.valueAttr());
+                    rewriter.replaceOp(castOp, ValueRange{newConstOp});
+                    rewriter.eraseOp(constOp);
+                }
             }
         }
 

@@ -2005,7 +2005,7 @@ class MLIRGenImpl
         auto valueProp = nf.createPropertyAssignment(valueIdent, expr);
         retObjectProperties.push_back(valueProp);
 
-        auto doneProp = nf.createPropertyAssignment(doneIdent, nf.createToken(SyntaxKind::TrueKeyword));
+        auto doneProp = nf.createPropertyAssignment(doneIdent, nf.createToken(stop ? SyntaxKind::TrueKeyword : SyntaxKind::FalseKeyword));
         retObjectProperties.push_back(doneProp);
 
         auto retObject = nf.createObjectLiteralExpression(retObjectProperties, stop);
@@ -6958,16 +6958,6 @@ class MLIRGenImpl
     mlir_ts::ValueRefType getValueRefType(mlir::Type elementType)
     {
         return mlir_ts::ValueRefType::get(elementType);
-    }
-
-    bool isUndefinedType(mlir::Type type)
-    {
-        if (auto optType = type.dyn_cast_or_null<mlir_ts::OptionalType>())
-        {
-            return optType == getUndefPlaceHolderType();
-        }
-
-        return false;
     }
 
     mlir::Value getUndefined(mlir::Location location)

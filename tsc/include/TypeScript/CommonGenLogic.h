@@ -167,6 +167,16 @@ class MLIRTypeHelper
         return mlir::StringAttr::get(context, name);
     }
 
+    bool isUndefinedType(mlir::Type type)
+    {
+        if (auto optType = type.dyn_cast_or_null<mlir_ts::OptionalType>())
+        {
+            return optType == mlir_ts::UndefPlaceHolderType::get(context);
+        }
+
+        return false;
+    }
+
     mlir::Type isBoundReference(mlir::Type elementType, bool &isBound)
     {
 #ifdef USE_BOUND_FUNCTION_FOR_OBJECTS

@@ -1,8 +1,11 @@
-let called = false;
+let c = 0;
 
 function* foo() {
-    print("Hello World");
-    called = true;
+    c++;
+    yield 1;
+    c++;
+    yield 2;
+    c++;
 }
 
 function main() {
@@ -10,7 +13,7 @@ function main() {
         print(o);
     }
 
-    assert(called);
+    assert(c == 3);
 
     print("done.");
 }
