@@ -543,8 +543,6 @@ struct SwitchOpLowering : public TsPattern<mlir_ts::SwitchOp>
     {
         Location loc = switchOp.getLoc();
 
-        LLVM_DEBUG(llvm::dbgs() << "\n\n\n SWITCH-BEFORE: " << switchOp << "\n\n\n";);
-
         // Split the current block before the WhileOp to create the inlining point.
         OpBuilder::InsertionGuard guard(rewriter);
         Block *currentBlock = rewriter.getInsertionBlock();
