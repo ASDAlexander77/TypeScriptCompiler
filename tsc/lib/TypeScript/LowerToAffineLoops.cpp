@@ -543,13 +543,23 @@ struct SwitchOpLowering : public TsPattern<mlir_ts::SwitchOp>
     {
         Location loc = switchOp.getLoc();
 
+        LLVM_DEBUG(llvm::dbgs() << "\n\n\n SWITCH-BEFORE: " << switchOp << "\n\n\n";);
+
         // Split the current block before the WhileOp to create the inlining point.
         OpBuilder::InsertionGuard guard(rewriter);
         Block *currentBlock = rewriter.getInsertionBlock();
         Block *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
 
         auto *casesRegion = &switchOp.casesRegion().front();
-        auto *casesRegionLast = &switchOp.casesRegion().back();
+
+        auto *casesRegionWithMerge = &switchOp.casesRegion().back();
+        for (auto &block : switchOp.casesRegion())
+        {
+            if (isa<mlir_ts::MergeOp>(block.getTerminator()))
+            {
+                casesRegionWithMerge = &block;
+            }
+        }
 
         // Branch to the "casesRegion" region.
         rewriter.setInsertionPointToEnd(currentBlock);
@@ -558,9 +568,17 @@ struct SwitchOpLowering : public TsPattern<mlir_ts::SwitchOp>
         rewriter.inlineRegionBefore(switchOp.casesRegion(), continuation);
 
         // replace merge with br
-        rewriter.setInsertionPointToEnd(casesRegionLast);
-        auto mergeOp = cast<mlir_ts::MergeOp>(casesRegionLast->getTerminator());
-        rewriter.replaceOpWithNewOp<BranchOp>(mergeOp, continuation, ValueRange{});
+        assert(casesRegionWithMerge);
+        rewriter.setInsertionPointToEnd(casesRegionWithMerge);
+
+        if (auto mergeOp = dyn_cast_or_null<mlir_ts::MergeOp>(casesRegionWithMerge->getTerminator()))
+        {
+            rewriter.replaceOpWithNewOp<BranchOp>(mergeOp, continuation, ValueRange{});
+        }
+        else
+        {
+            assert(false);
+        }
 
         rewriter.replaceOp(switchOp, continuation->getArguments());
 

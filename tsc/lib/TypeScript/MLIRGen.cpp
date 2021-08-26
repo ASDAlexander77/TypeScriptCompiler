@@ -2776,6 +2776,8 @@ class MLIRGenImpl
             }
         }
 
+        LLVM_DEBUG(llvm::dbgs() << "\nSWITCH: " << switchOp << "\n");
+
         return mlir::success();
     }
 
