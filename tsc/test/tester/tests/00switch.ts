@@ -50,11 +50,30 @@ function test4() {
     }
 }
 
+function test5() {
+    let a = 3;
+    switch (a) {
+        case 1:
+        case 2:
+        case 3:
+            break;
+        case 4:
+            let i = 22;
+            break;
+        case 5:
+            i++;
+            break;
+        default:
+            break;
+    }
+}
+
 function main() {
     test1();
     test2();
     test3();
     test4();
+    test5();
 
     print("done.");
 }
