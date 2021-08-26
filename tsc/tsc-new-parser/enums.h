@@ -470,6 +470,7 @@ enum class TransformFlags : number
     ForceConst = 1 << 25,
     ForceConstRef = 1 << 26,
     ForceVirtual = 1 << 27,
+    VarsInObjectContext = 1 << 28,
 
     // Please leave this as 1 << 29.
     // It is the maximum bit we can set before we outgrow the size of a v8 small integer (SMI) on an x86 system.

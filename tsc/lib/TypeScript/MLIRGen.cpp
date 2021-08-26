@@ -1439,6 +1439,10 @@ class MLIRGenImpl
             genContextWithPassResult.dummyRun = true;
             genContextWithPassResult.cleanUps = new SmallVector<mlir::Block *>();
             genContextWithPassResult.passResult = new PassResult();
+            genContextWithPassResult.allocateVarsInContextThis =
+                (functionLikeDeclarationBaseAST->transformFlags & TransformFlags::VarsInObjectContext) ==
+                TransformFlags::VarsInObjectContext;
+
             if (succeeded(mlirGenFunctionBody(functionLikeDeclarationBaseAST, dummyFuncOp, funcProto, genContextWithPassResult)))
             {
                 auto &passResult = genContextWithPassResult.passResult;
@@ -1620,6 +1624,7 @@ class MLIRGenImpl
         // create method next in object
         auto nextMethodDecl = nf.createMethodDeclaration(undefined, undefined, undefined, nf.createIdentifier(S("next")), undefined,
                                                          undefined, undefined, undefined, nextBody);
+        nextMethodDecl->transformFlags |= TransformFlags::VarsInObjectContext;
         generatorObjectProperties.push_back(nextMethodDecl);
 
         auto generatorObject = nf.createObjectLiteralExpression(generatorObjectProperties, false);
@@ -1638,28 +1643,6 @@ class MLIRGenImpl
                                          functionLikeDeclarationBaseAST->parameters, functionLikeDeclarationBaseAST->type, body);
 
         auto genFuncOp = mlirGenFunctionLikeDeclaration(funcOp, genContext);
-
-        /*
-                // add default return { value; undefined, done: true }
-                // funcOp->body
-                auto resultType = genFuncOp.getType().getResult(0);
-                builder.setInsertionPointToEnd(&genFuncOp.body().back());
-
-                // find last ExitOp
-                auto lastUse = [&](mlir::Operation *op) {
-                    if (auto exitOp = dyn_cast_or_null<mlir_ts::ExitOp>(op))
-                    {
-                        builder.setInsertionPoint(exitOp);
-                    }
-                };
-
-                genFuncOp.body().back().walk(lastUse);
-
-                builder.create<mlir_ts::UndefOp>(location, resultType);
-
-                builder.setInsertionPointAfter(genFuncOp);
-        */
-
         return genFuncOp;
     }
 
@@ -1689,6 +1672,8 @@ class MLIRGenImpl
         auto funcGenContext = GenContext(genContext);
         funcGenContext.funcOp = funcOp;
         funcGenContext.passResult = nullptr;
+        funcGenContext.allocateVarsInContextThis =
+            (functionLikeDeclarationBaseAST->transformFlags & TransformFlags::VarsInObjectContext) == TransformFlags::VarsInObjectContext;
 
         auto it = getCaptureVarsMap().find(funcProto->getName());
         if (it != getCaptureVarsMap().end())
@@ -2630,12 +2615,20 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult mlirGenSwitchCase(mlir::Location location, mlir::Value switchValue, NodeArray<ts::CaseOrDefaultClause> &clauses,
-                                          int index, mlir::Block *&lastBlock, mlir::Block *&lastConditionBlock, mlir::Block *mergeBlock,
-                                          const GenContext &genContext)
+                                          int index, mlir::Block *mergeBlock, mlir::Block *&defaultBlock,
+                                          SmallVector<mlir::CondBranchOp> &pendingConditions, SmallVector<mlir::BranchOp> &pendingBranches,
+                                          mlir::CondBranchOp &previousConditionOp, const GenContext &genContext)
     {
+        enum
+        {
+            trueIndex = 0,
+            falseIndex = 1
+        };
+
         auto caseBlock = clauses[index];
         auto statements = caseBlock->statements;
         // inline block
+        // TODO: should I inline block as it is isolator of local vars?
         if (statements.size() == 1)
         {
             auto firstStatement = statements.front();
@@ -2645,13 +2638,58 @@ class MLIRGenImpl
             }
         }
 
-        mlir::Block *caseBodyBlock = nullptr;
-        mlir::Block *caseConditionBlock = nullptr;
-
+        // condition
+        auto isDefaultCase = SyntaxKind::DefaultClause == (SyntaxKind)caseBlock;
+        if (SyntaxKind::CaseClause == (SyntaxKind)caseBlock)
         {
             mlir::OpBuilder::InsertionGuard guard(builder);
-            caseBodyBlock = builder.createBlock(lastConditionBlock);
+            auto caseConditionBlock = builder.createBlock(mergeBlock);
+            if (previousConditionOp)
+            {
+                previousConditionOp->setSuccessor(caseConditionBlock, falseIndex);
+            }
 
+            auto caseValue = mlirGen(caseBlock.as<CaseClause>()->expression, genContext);
+
+            auto condition = builder.create<mlir_ts::LogicalBinaryOp>(
+                location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsToken), switchValue, caseValue);
+
+            auto conditionI1 = cast(location, builder.getI1Type(), condition, genContext);
+
+            auto condBranchOp =
+                builder.create<mlir::CondBranchOp>(location, conditionI1, mergeBlock, /*trueArguments=*/mlir::ValueRange{}, mergeBlock,
+                                                   /*falseArguments=*/mlir::ValueRange{});
+
+            previousConditionOp = condBranchOp;
+
+            pendingConditions.push_back(condBranchOp);
+        }
+
+        // statements block
+        {
+            mlir::OpBuilder::InsertionGuard guard(builder);
+            auto caseBodyBlock = builder.createBlock(mergeBlock);
+            if (isDefaultCase)
+            {
+                defaultBlock = caseBodyBlock;
+            }
+
+            // set pending BranchOps
+            for (auto pendingBranch : pendingBranches)
+            {
+                pendingBranch.setDest(caseBodyBlock);
+            }
+
+            pendingBranches.clear();
+
+            for (auto pendingCondition : pendingConditions)
+            {
+                pendingCondition.setSuccessor(caseBodyBlock, trueIndex);
+            }
+
+            pendingConditions.clear();
+
+            // process body case
             auto hasBreak = false;
             for (auto statement : statements)
             {
@@ -2665,38 +2703,11 @@ class MLIRGenImpl
             }
 
             // exit;
-            builder.create<mlir::BranchOp>(location, hasBreak ? mergeBlock : lastBlock);
-
-            lastBlock = caseBodyBlock;
-        }
-
-        switch ((SyntaxKind)caseBlock)
-        {
-        case SyntaxKind::CaseClause: {
+            auto branchOp = builder.create<mlir::BranchOp>(location, mergeBlock);
+            if (!hasBreak && !isDefaultCase)
             {
-
-                mlir::OpBuilder::InsertionGuard guard(builder);
-                caseConditionBlock = builder.createBlock(lastBlock);
-
-                auto caseValue = mlirGen(caseBlock.as<CaseClause>()->expression, genContext);
-
-                auto condition = builder.create<mlir_ts::LogicalBinaryOp>(
-                    location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsToken), switchValue, caseValue);
-
-                auto conditionI1 = cast(location, builder.getI1Type(), condition, genContext);
-
-                builder.create<mlir::CondBranchOp>(location, conditionI1, caseBodyBlock, /*trueArguments=*/mlir::ValueRange{},
-                                                   lastConditionBlock, /*falseArguments=*/mlir::ValueRange{});
-
-                lastConditionBlock = caseConditionBlock;
+                pendingBranches.push_back(branchOp);
             }
-
-            // create condition block
-        }
-        break;
-        case SyntaxKind::DefaultClause:
-            lastConditionBlock = lastBlock;
-            break;
         }
 
         return mlir::success();
@@ -2704,6 +2715,8 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGen(SwitchStatement switchStatementAST, const GenContext &genContext)
     {
+        SymbolTableScopeT varScope(symbolTable);
+
         auto location = loc(switchStatementAST);
 
         auto switchValue = mlirGen(switchStatementAST->expression, genContext);
@@ -2714,31 +2727,21 @@ class MLIRGenImpl
         switchOp.addMergeBlock();
         auto *mergeBlock = switchOp.getMergeBlock();
 
-        auto *lastBlock = mergeBlock;
-        auto *lastConditionBlock = mergeBlock;
-
         auto &clauses = switchStatementAST->caseBlock->clauses;
 
-        // process default first (in our case it will be the last)
-        for (int index = clauses.size() - 1; index >= 0; index--)
-        {
-            if (SyntaxKind::DefaultClause == (SyntaxKind)clauses[index])
-                if (mlir::failed(
-                        mlirGenSwitchCase(location, switchValue, clauses, index, lastBlock, lastConditionBlock, mergeBlock, genContext)))
-                {
-                    return mlir::failure();
-                }
-        }
+        SmallVector<mlir::CondBranchOp> pendingConditions;
+        SmallVector<mlir::BranchOp> pendingBranches;
+        mlir::CondBranchOp previousConditionOp;
+        mlir::Block *defaultBlock = nullptr;
 
-        // process rest without default
-        for (int index = clauses.size() - 1; index >= 0; index--)
+        // process without default
+        for (int index = 0; index < clauses.size(); index++)
         {
-            if (SyntaxKind::DefaultClause != (SyntaxKind)clauses[index])
-                if (mlir::failed(
-                        mlirGenSwitchCase(location, switchValue, clauses, index, lastBlock, lastConditionBlock, mergeBlock, genContext)))
-                {
-                    return mlir::failure();
-                }
+            if (mlir::failed(mlirGenSwitchCase(location, switchValue, clauses, index, mergeBlock, defaultBlock, pendingConditions,
+                                               pendingBranches, previousConditionOp, genContext)))
+            {
+                return mlir::failure();
+            }
         }
 
         return mlir::success();

@@ -85,6 +85,7 @@ struct GenContext
     bool allowPartialResolve;
     bool dummyRun;
     bool allowConstEval;
+    bool allocateVarsInContextThis;
     mlir_ts::FuncOp funcOp;
     llvm::StringMap<ts::VariableDeclarationDOM::TypePtr> *capturedVars;
     mlir::Type thisType;
