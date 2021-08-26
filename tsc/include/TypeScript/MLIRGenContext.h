@@ -86,6 +86,8 @@ struct GenContext
     bool dummyRun;
     bool allowConstEval;
     bool allocateVarsInContextThis;
+    bool allocateVarsOutsideOfOperation;
+    mlir::Operation *currentOperation;
     mlir_ts::FuncOp funcOp;
     llvm::StringMap<ts::VariableDeclarationDOM::TypePtr> *capturedVars;
     mlir::Type thisType;

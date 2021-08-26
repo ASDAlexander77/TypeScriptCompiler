@@ -1439,9 +1439,6 @@ class MLIRGenImpl
             genContextWithPassResult.dummyRun = true;
             genContextWithPassResult.cleanUps = new SmallVector<mlir::Block *>();
             genContextWithPassResult.passResult = new PassResult();
-            genContextWithPassResult.allocateVarsInContextThis =
-                (functionLikeDeclarationBaseAST->transformFlags & TransformFlags::VarsInObjectContext) ==
-                TransformFlags::VarsInObjectContext;
 
             if (succeeded(mlirGenFunctionBody(functionLikeDeclarationBaseAST, dummyFuncOp, funcProto, genContextWithPassResult)))
             {
@@ -2755,6 +2752,10 @@ class MLIRGenImpl
 
         auto switchOp = builder.create<mlir_ts::SwitchOp>(location, switchValue);
 
+        GenContext switchGenContext(genContext);
+        switchGenContext.allocateVarsOutsideOfOperation = true;
+        switchGenContext.currentOperation = switchOp;
+
         // add merge block
         switchOp.addMergeBlock();
         auto *mergeBlock = switchOp.getMergeBlock();
@@ -2770,7 +2771,7 @@ class MLIRGenImpl
         for (int index = 0; index < clauses.size(); index++)
         {
             if (mlir::failed(mlirGenSwitchCase(location, switchValue, clauses, index, mergeBlock, defaultBlock, pendingConditions,
-                                               pendingBranches, previousConditionOrFirstBranchOp, genContext)))
+                                               pendingBranches, previousConditionOrFirstBranchOp, switchGenContext)))
             {
                 return mlir::failure();
             }
