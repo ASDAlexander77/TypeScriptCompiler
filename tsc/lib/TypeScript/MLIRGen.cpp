@@ -739,6 +739,12 @@ class MLIRGenImpl
         mlir::Type varType;
         if (!isGlobal)
         {
+            mlir::OpBuilder::InsertionGuard insertGuard(builder);
+            if (genContext.allocateVarsOutsideOfOperation)
+            {
+                builder.setInsertionPoint(genContext.currentOperation);
+            }
+
             auto res = func();
             auto type = std::get<0>(res);
             auto init = std::get<1>(res);
