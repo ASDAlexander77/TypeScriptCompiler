@@ -2617,7 +2617,7 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGenSwitchCase(mlir::Location location, mlir::Value switchValue, NodeArray<ts::CaseOrDefaultClause> &clauses,
                                           int index, mlir::Block *mergeBlock, mlir::Block *&defaultBlock,
                                           SmallVector<mlir::CondBranchOp> &pendingConditions, SmallVector<mlir::BranchOp> &pendingBranches,
-                                          mlir::CondBranchOp &previousConditionOp, const GenContext &genContext)
+                                          mlir::Operation *&previousConditionOrFirstBranchOp, const GenContext &genContext)
     {
         enum
         {
@@ -2638,15 +2638,32 @@ class MLIRGenImpl
             }
         }
 
+        auto setPreviousCondOrJumpOp = [&](mlir::Operation *jump, mlir::Block *where) {
+            if (auto condOp = dyn_cast_or_null<mlir::CondBranchOp>(jump))
+            {
+                condOp->setSuccessor(where, falseIndex);
+                return;
+            }
+
+            if (auto branchOp = dyn_cast_or_null<mlir::BranchOp>(jump))
+            {
+                branchOp.setDest(where);
+                return;
+            }
+
+            llvm_unreachable("not implemented");
+        };
+
         // condition
         auto isDefaultCase = SyntaxKind::DefaultClause == (SyntaxKind)caseBlock;
+        auto isDefaultAsFirstCase = index == 0 && clauses.size() > 1;
         if (SyntaxKind::CaseClause == (SyntaxKind)caseBlock)
         {
             mlir::OpBuilder::InsertionGuard guard(builder);
             auto caseConditionBlock = builder.createBlock(mergeBlock);
-            if (previousConditionOp)
+            if (previousConditionOrFirstBranchOp)
             {
-                previousConditionOp->setSuccessor(caseConditionBlock, falseIndex);
+                setPreviousCondOrJumpOp(previousConditionOrFirstBranchOp, caseConditionBlock);
             }
 
             auto caseValue = mlirGen(caseBlock.as<CaseClause>()->expression, genContext);
@@ -2656,13 +2673,24 @@ class MLIRGenImpl
 
             auto conditionI1 = cast(location, builder.getI1Type(), condition, genContext);
 
-            auto condBranchOp =
-                builder.create<mlir::CondBranchOp>(location, conditionI1, mergeBlock, /*trueArguments=*/mlir::ValueRange{}, mergeBlock,
-                                                   /*falseArguments=*/mlir::ValueRange{});
+            auto condBranchOp = builder.create<mlir::CondBranchOp>(location, conditionI1, mergeBlock, /*trueArguments=*/mlir::ValueRange{},
+                                                                   defaultBlock ? defaultBlock : mergeBlock,
+                                                                   /*falseArguments=*/mlir::ValueRange{});
 
-            previousConditionOp = condBranchOp;
+            previousConditionOrFirstBranchOp = condBranchOp;
 
             pendingConditions.push_back(condBranchOp);
+        }
+        else if (isDefaultAsFirstCase)
+        {
+            mlir::OpBuilder::InsertionGuard guard(builder);
+            /*auto defaultCaseJumpBlock =*/builder.createBlock(mergeBlock);
+
+            // this is first default and there is more conditions
+            // add jump to first condition
+            auto branchOp = builder.create<mlir::BranchOp>(location, mergeBlock);
+
+            previousConditionOrFirstBranchOp = branchOp;
         }
 
         // statements block
@@ -2672,6 +2700,10 @@ class MLIRGenImpl
             if (isDefaultCase)
             {
                 defaultBlock = caseBodyBlock;
+                if (!isDefaultAsFirstCase && previousConditionOrFirstBranchOp)
+                {
+                    setPreviousCondOrJumpOp(previousConditionOrFirstBranchOp, caseBodyBlock);
+                }
             }
 
             // set pending BranchOps
@@ -2731,14 +2763,14 @@ class MLIRGenImpl
 
         SmallVector<mlir::CondBranchOp> pendingConditions;
         SmallVector<mlir::BranchOp> pendingBranches;
-        mlir::CondBranchOp previousConditionOp;
+        mlir::Operation *previousConditionOrFirstBranchOp = nullptr;
         mlir::Block *defaultBlock = nullptr;
 
         // process without default
         for (int index = 0; index < clauses.size(); index++)
         {
             if (mlir::failed(mlirGenSwitchCase(location, switchValue, clauses, index, mergeBlock, defaultBlock, pendingConditions,
-                                               pendingBranches, previousConditionOp, genContext)))
+                                               pendingBranches, previousConditionOrFirstBranchOp, genContext)))
             {
                 return mlir::failure();
             }
