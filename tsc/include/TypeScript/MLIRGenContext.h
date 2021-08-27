@@ -55,6 +55,7 @@ struct PassResult
     mlir::Type functionReturnType;
     bool functionReturnTypeShouldBeProvided;
     llvm::StringMap<ts::VariableDeclarationDOM::TypePtr> outerVariables;
+    mlir::Type newThisType;
 };
 
 struct GenContext

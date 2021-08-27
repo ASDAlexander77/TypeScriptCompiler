@@ -726,6 +726,16 @@ class MLIRGenImpl
         llvm_unreachable("unknown expression");
     }
 
+    mlir::Value registerVariableInThisContext(mlir::Location location, StringRef name, mlir::Type type, const GenContext &genContext)
+    {
+        auto objType = genContext.thisType.dyn_cast_or_null<mlir_ts::ObjectType>();
+        auto storageType = objType.getStorageType().cast<mlir_ts::ConstTupleType>();
+
+        // save this type
+        SmallVector<::mlir::typescript::FieldInfo> fields(storageType.begin(), storageType.end());
+        return mlir::Value();
+    }
+
     bool registerVariable(mlir::Location location, StringRef name, bool isFullName, VariableClass varClass,
                           std::function<std::pair<mlir::Type, mlir::Value>()> func, const GenContext &genContext)
     {
@@ -787,8 +797,16 @@ class MLIRGenImpl
 
                 varType = actualType;
 
-                variableOp =
-                    builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(actualType), init, builder.getBoolAttr(false));
+                if (genContext.allocateVarsInContextThis)
+                {
+                    variableOp = registerVariableInThisContext(location, name, actualType, genContext);
+                    // TODO: call init
+                }
+                else
+                {
+                    variableOp =
+                        builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(actualType), init, builder.getBoolAttr(false));
+                }
             }
         }
         else
@@ -1677,6 +1695,10 @@ class MLIRGenImpl
         funcGenContext.passResult = nullptr;
         funcGenContext.allocateVarsInContextThis =
             (functionLikeDeclarationBaseAST->transformFlags & TransformFlags::VarsInObjectContext) == TransformFlags::VarsInObjectContext;
+        if (funcGenContext.allocateVarsInContextThis)
+        {
+            funcGenContext.passResult = new PassResult();
+        }
 
         auto it = getCaptureVarsMap().find(funcProto->getName());
         if (it != getCaptureVarsMap().end())
