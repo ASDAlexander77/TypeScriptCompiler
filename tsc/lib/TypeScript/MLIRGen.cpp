@@ -769,66 +769,76 @@ class MLIRGenImpl
         mlir::Type varType;
         if (!isGlobal)
         {
-            mlir::OpBuilder::InsertionGuard insertGuard(builder);
-            if (genContext.allocateVarsOutsideOfOperation)
-            {
-                builder.setInsertionPoint(genContext.currentOperation);
-            }
+            mlir::Value init;
 
-            auto res = func();
-            auto type = std::get<0>(res);
-            auto init = std::get<1>(res);
-            if (!type && genContext.allowPartialResolve)
+            // scope to restore inserting point
             {
-                return false;
-            }
-
-            assert(type);
-            varType = type;
-
-            if (isConst)
-            {
-                variableOp = init;
-                // special cast to support ForOf
-                if (varClass == VariableClass::ConstRef)
+                mlir::OpBuilder::InsertionGuard insertGuard(builder);
+                if (genContext.allocateVarsOutsideOfOperation)
                 {
-                    MLIRCodeLogic mcl(builder);
-                    variableOp = mcl.GetReferenceOfLoadOp(init);
+                    builder.setInsertionPoint(genContext.currentOperation);
+                }
+
+                auto res = func();
+                auto type = std::get<0>(res);
+                init = std::get<1>(res);
+                if (!type && genContext.allowPartialResolve)
+                {
+                    return false;
+                }
+
+                assert(type);
+                varType = type;
+
+                if (isConst)
+                {
+                    variableOp = init;
+                    // special cast to support ForOf
+                    if (varClass == VariableClass::ConstRef)
+                    {
+                        MLIRCodeLogic mcl(builder);
+                        variableOp = mcl.GetReferenceOfLoadOp(init);
+                        if (!variableOp)
+                        {
+                            // convert ConstRef to Const again as this is const object (it seems)
+                            variableOp = init;
+                            varClass = VariableClass::Const;
+                        }
+                    }
+                }
+                else
+                {
+                    assert(type);
+
+                    MLIRTypeHelper mth(builder.getContext());
+
+                    auto actualType = mth.convertConstArrayTypeToArrayType(type);
+                    if (init && actualType != type)
+                    {
+                        auto castValue = cast(location, actualType, init, genContext);
+                        init = castValue;
+                    }
+
+                    varType = actualType;
+
+                    if (genContext.allocateVarsInContextThis)
+                    {
+                        variableOp = registerVariableInThisContext(location, name, actualType, genContext);
+                    }
+
                     if (!variableOp)
                     {
-                        // convert ConstRef to Const again as this is const object (it seems)
-                        variableOp = init;
-                        varClass = VariableClass::Const;
+                        // default case
+                        variableOp = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(actualType), init,
+                                                                         builder.getBoolAttr(false));
                     }
                 }
             }
-            else
+
+            // init must be in its normal place
+            if (genContext.allocateVarsInContextThis && variableOp && init)
             {
-                assert(type);
-
-                MLIRTypeHelper mth(builder.getContext());
-
-                auto actualType = mth.convertConstArrayTypeToArrayType(type);
-                if (init && actualType != type)
-                {
-                    auto castValue = cast(location, actualType, init, genContext);
-                    init = castValue;
-                }
-
-                varType = actualType;
-
-                if (genContext.allocateVarsInContextThis)
-                {
-                    variableOp = registerVariableInThisContext(location, name, actualType, genContext);
-                    // TODO: call init
-                }
-
-                if (!variableOp)
-                {
-                    // default case
-                    variableOp =
-                        builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(actualType), init, builder.getBoolAttr(false));
-                }
+                builder.create<mlir_ts::StoreOp>(location, init, variableOp);
             }
         }
         else
