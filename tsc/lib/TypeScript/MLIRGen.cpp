@@ -748,7 +748,12 @@ class MLIRGenImpl
 
         assert(thisVarValue);
 
-        return thisVarValue;
+        MLIRCodeLogic mcl(builder);
+        auto thisVarValueRef = mcl.GetReferenceOfLoadOp(thisVarValue);
+
+        assert(thisVarValueRef);
+
+        return thisVarValueRef;
     }
 
     bool registerVariable(mlir::Location location, StringRef name, bool isFullName, VariableClass varClass,
@@ -4928,8 +4933,7 @@ class MLIRGenImpl
             // process local vars in this context
             if (funcProto->getHasExtraFields())
             {
-                auto name = MLIRHelper::getName(funcLikeDecl->name);
-                auto localVars = getLocalVarsInThisContextMap().find(name);
+                auto localVars = getLocalVarsInThisContextMap().find(funcName);
                 if (localVars != getLocalVarsInThisContextMap().end())
                 {
                     for (auto fieldInfo : localVars->getValue())

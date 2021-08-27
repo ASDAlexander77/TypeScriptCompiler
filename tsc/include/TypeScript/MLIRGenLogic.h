@@ -93,10 +93,14 @@ namespace typescript
 
 class MLIRCodeLogic
 {
-    mlir::OpBuilder &builder;
+    mlir::MLIRContext *context;
 
   public:
-    MLIRCodeLogic(mlir::OpBuilder &builder) : builder(builder)
+    MLIRCodeLogic(mlir::MLIRContext *context) : context(context)
+    {
+    }
+
+    MLIRCodeLogic(mlir::OpBuilder builder) : context(builder.getContext())
     {
     }
 
@@ -130,7 +134,7 @@ class MLIRCodeLogic
 #ifdef USE_BOUND_FUNCTION_FOR_OBJECTS
         if (auto boundFuncType = elementType.dyn_cast_or_null<mlir_ts::BoundFunctionType>())
         {
-            return mlir::FunctionType::get(builder.getContext(), boundFuncType.getInputs(), boundFuncType.getResults());
+            return mlir::FunctionType::get(context, boundFuncType.getInputs(), boundFuncType.getResults());
         }
 #endif
 
@@ -140,7 +144,7 @@ class MLIRCodeLogic
     mlir::Attribute TupleFieldName(StringRef name)
     {
         assert(!name.empty());
-        MLIRTypeHelper mth(builder.getContext());
+        MLIRTypeHelper mth(context);
         return mth.TupleFieldName(name);
     }
 
@@ -193,7 +197,7 @@ class MLIRCodeLogic
                                                 value->getReadWriteAccess() ? mlir_ts::RefType::get(value->getType()) : value->getType()});
         }
 
-        auto lambdaType = mlir_ts::TupleType::get(builder.getContext(), fields);
+        auto lambdaType = mlir_ts::TupleType::get(context, fields);
         return lambdaType;
     }
 
