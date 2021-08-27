@@ -212,6 +212,17 @@ class MLIRTypeHelper
         return type;
     }
 
+    mlir::Type convertTupleTypeToConstTupleType(mlir::Type type)
+    {
+        // tuple is value and copied already
+        if (auto tupleType = type.dyn_cast_or_null<mlir_ts::TupleType>())
+        {
+            return mlir_ts::ConstTupleType::get(context, tupleType.getFields());
+        }
+
+        return type;
+    }
+
     mlir::FunctionType getFunctionTypeWithThisType(mlir::FunctionType funcType, mlir::Type thisType, bool replace = false)
     {
         mlir::SmallVector<mlir::Type> args;

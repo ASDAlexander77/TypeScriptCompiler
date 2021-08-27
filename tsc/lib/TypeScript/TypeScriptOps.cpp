@@ -305,6 +305,24 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
                     rewriter.eraseOp(constOp);
                 }
             }
+            else if (auto tupleRes = res.getType().dyn_cast_or_null<mlir_ts::TupleType>())
+            {
+                // if types are equal - ignore it
+                if (mlir_ts::TupleType::get(rewriter.getContext(), constTupleIn.getFields()) != tupleRes)
+                {
+                    // create other const tuple from source const tuple
+                    if (auto constOp = in.getDefiningOp<mlir_ts::ConstantOp>())
+                    {
+                        ::typescript::MLIRTypeHelper mth(rewriter.getContext());
+                        auto constTupleType = mth.convertTupleTypeToConstTupleType(tupleRes);
+
+                        auto newConstOp = rewriter.create<mlir_ts::ConstantOp>(loc, constTupleType, constOp.valueAttr());
+                        rewriter.replaceOp(constOp, ValueRange{newConstOp});
+                        auto newCastOp = rewriter.create<mlir_ts::CastOp>(loc, tupleRes, newConstOp);
+                        rewriter.replaceOp(castOp, ValueRange{newCastOp});
+                    }
+                }
+            }
         }
 
         return success();
