@@ -728,12 +728,33 @@ class MLIRGenImpl
 
     mlir::Value registerVariableInThisContext(mlir::Location location, StringRef name, mlir::Type type, const GenContext &genContext)
     {
-        auto objType = genContext.thisType.dyn_cast_or_null<mlir_ts::ObjectType>();
-        auto storageType = objType.getStorageType().cast<mlir_ts::ConstTupleType>();
+        if (genContext.passResult)
+        {
+            // create new type with added field
+            auto objType = genContext.thisType.dyn_cast_or_null<mlir_ts::ObjectType>();
+            auto storageType = objType.getStorageType().cast<mlir_ts::ConstTupleType>();
 
-        // save this type
-        SmallVector<::mlir::typescript::FieldInfo> fields(storageType.begin(), storageType.end());
-        return mlir::Value();
+            // save this type
+            SmallVector<::mlir::typescript::FieldInfo> fields(storageType.begin(), storageType.end());
+            auto newConstTupleType = getConstTupleType(fields);
+            auto newObjType = getObjectType(newConstTupleType);
+
+            genContext.passResult->newThisType = newObjType;
+        }
+
+        // resolve object property
+
+        NodeFactory nf(NodeFactoryFlags::None);
+        // load this.<var name>
+        auto _this = nf.createToken(SyntaxKind::ThisKeyword);
+        auto _name = nf.createIdentifier(stows(std::string(name)));
+        auto _this_name = nf.createPropertyAccessExpression(_this, _name);
+
+        auto thisVarValue = mlirGen(_this_name, genContext);
+
+        assert(thisVarValue);
+
+        return thisVarValue;
     }
 
     bool registerVariable(mlir::Location location, StringRef name, bool isFullName, VariableClass varClass,
@@ -1463,6 +1484,9 @@ class MLIRGenImpl
             genContextWithPassResult.dummyRun = true;
             genContextWithPassResult.cleanUps = new SmallVector<mlir::Block *>();
             genContextWithPassResult.passResult = new PassResult();
+            genContextWithPassResult.allocateVarsInContextThis =
+                (functionLikeDeclarationBaseAST->transformFlags & TransformFlags::VarsInObjectContext) ==
+                TransformFlags::VarsInObjectContext;
 
             if (succeeded(mlirGenFunctionBody(functionLikeDeclarationBaseAST, dummyFuncOp, funcProto, genContextWithPassResult)))
             {
@@ -1693,12 +1717,10 @@ class MLIRGenImpl
         auto funcGenContext = GenContext(genContext);
         funcGenContext.funcOp = funcOp;
         funcGenContext.passResult = nullptr;
+        // if funcGenContext.passResult is null and allocateVarsInContextThis is true, this type should contain fully defined object with
+        // local variables as fields
         funcGenContext.allocateVarsInContextThis =
             (functionLikeDeclarationBaseAST->transformFlags & TransformFlags::VarsInObjectContext) == TransformFlags::VarsInObjectContext;
-        if (funcGenContext.allocateVarsInContextThis)
-        {
-            funcGenContext.passResult = new PassResult();
-        }
 
         auto it = getCaptureVarsMap().find(funcProto->getName());
         if (it != getCaptureVarsMap().end())
