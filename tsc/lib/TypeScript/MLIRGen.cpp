@@ -1291,7 +1291,7 @@ class MLIRGenImpl
         if (fullName.empty())
         {
             // auto calculate name
-            name = fullName = MLIRHelper::getAnonymousName(loc(signatureDeclarationBaseAST));
+            name = fullName = MLIRHelper::getAnonymousName(loc_check(signatureDeclarationBaseAST));
         }
         else
         {
@@ -1694,6 +1694,11 @@ class MLIRGenImpl
         auto nextMethodDecl = nf.createMethodDeclaration(undefined, undefined, undefined, nf.createIdentifier(S("next")), undefined,
                                                          undefined, undefined, undefined, nextBody);
         nextMethodDecl->transformFlags |= TransformFlags::VarsInObjectContext;
+
+        // copy location info, to fix issue with names of anonymous functions
+        nextMethodDecl->pos = functionLikeDeclarationBaseAST->pos;
+        nextMethodDecl->_end = functionLikeDeclarationBaseAST->_end;
+
         generatorObjectProperties.push_back(nextMethodDecl);
 
         auto generatorObject = nf.createObjectLiteralExpression(generatorObjectProperties, false);
@@ -4925,7 +4930,7 @@ class MLIRGenImpl
         };
 
         auto processFunctionLikeProto = [&](mlir::Attribute fieldId, FunctionLikeDeclarationBase &funcLikeDecl) {
-            auto funcName = MLIRHelper::getAnonymousName(loc(funcLikeDecl));
+            auto funcName = MLIRHelper::getAnonymousName(loc_check(funcLikeDecl));
 
             auto funcGenContext = GenContext(genContext);
             funcGenContext.thisType = getObjectType(getConstTupleType(fieldInfos));
@@ -7504,6 +7509,12 @@ class MLIRGenImpl
         auto posLineChar = parser.getLineAndCharacterOfPosition(sourceFile, loc->pos.textPos != -1 ? loc->pos.textPos : loc->pos.pos);
         return mlir::FileLineColLoc::get(builder.getContext(), builder.getIdentifier(fileName), posLineChar.line + 1,
                                          posLineChar.character + 1);
+    }
+
+    mlir::Location loc_check(TextRange loc_)
+    {
+        assert(loc_->pos != loc_->_end);
+        return loc(loc_);
     }
 
     bool hasErrors;
