@@ -1412,6 +1412,12 @@ class MLIRGenImpl
             }
         }
 
+        // we need it, when we run rediscovery second time
+        if (!funcProto->getHasExtraFields())
+        {
+            funcProto->setHasExtraFields(getLocalVarsInThisContextMap().find(funcProto->getName()) != getLocalVarsInThisContextMap().end());
+        }
+
         auto it = getCaptureVarsMap().find(funcProto->getName());
         auto hasCapturedVars = funcProto->getHasCapturedVars() || (it != getCaptureVarsMap().end());
         if (hasCapturedVars)
