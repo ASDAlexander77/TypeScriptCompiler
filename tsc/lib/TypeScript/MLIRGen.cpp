@@ -730,16 +730,10 @@ class MLIRGenImpl
     {
         if (genContext.passResult)
         {
+            MLIRTypeHelper mth(builder.getContext());
             // create new type with added field
-            auto objType = genContext.thisType.dyn_cast_or_null<mlir_ts::ObjectType>();
-            auto storageType = objType.getStorageType().cast<mlir_ts::ConstTupleType>();
-
-            // save this type
-            SmallVector<::mlir::typescript::FieldInfo> fields(storageType.begin(), storageType.end());
-            auto newConstTupleType = getConstTupleType(fields);
-            auto newObjType = getObjectType(newConstTupleType);
-
-            genContext.passResult->newThisType = newObjType;
+            genContext.passResult->extraFieldsInThisContext.push_back({mth.TupleFieldName(name), type});
+            return mlir::Value();
         }
 
         // resolve object property
@@ -823,8 +817,10 @@ class MLIRGenImpl
                     variableOp = registerVariableInThisContext(location, name, actualType, genContext);
                     // TODO: call init
                 }
-                else
+
+                if (!variableOp)
                 {
+                    // default case
                     variableOp =
                         builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(actualType), init, builder.getBoolAttr(false));
                 }
