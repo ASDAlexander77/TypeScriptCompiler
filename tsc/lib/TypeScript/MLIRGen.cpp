@@ -1516,6 +1516,13 @@ class MLIRGenImpl
                     LLVM_DEBUG(llvm::dbgs() << "has captured vars, name: " << name << "\n";);
                 }
 
+                if (passResult->extraFieldsInThisContext.size() > 0)
+                {
+                    getLocalVarsInThisContextMap().insert({name, passResult->extraFieldsInThisContext});
+
+                    funcProto->setHasExtraFields(true);
+                }
+
                 genContextWithPassResult.clean();
                 return mlir::success();
             }
@@ -4836,6 +4843,12 @@ class MLIRGenImpl
             }
         };
 
+        auto addFieldInfoToArrays = [&](mlir::Attribute fieldId, mlir::Type type) {
+            values.push_back(builder.getUnitAttr());
+            types.push_back(type);
+            fieldInfos.push_back({fieldId, type});
+        };
+
         auto addFieldInfo = [&](mlir::Attribute fieldId, mlir::Value itemValue) {
             mlir::Type type;
             mlir::Attribute value;
@@ -4911,6 +4924,20 @@ class MLIRGenImpl
             auto funcType = funcOp.getType();
 
             LLVM_DEBUG(llvm::dbgs() << "Object FuncType: " << funcType << "\n";);
+
+            // process local vars in this context
+            if (funcProto->getHasExtraFields())
+            {
+                auto name = MLIRHelper::getName(funcLikeDecl->name);
+                auto localVars = getLocalVarsInThisContextMap().find(name);
+                if (localVars != getLocalVarsInThisContextMap().end())
+                {
+                    for (auto fieldInfo : localVars->getValue())
+                    {
+                        addFieldInfoToArrays(fieldInfo.id, fieldInfo.type);
+                    }
+                }
+            }
 
             auto capturedType = funcType.getInput(0);
             if (funcProto->getHasCapturedVars())
@@ -7402,6 +7429,11 @@ class MLIRGenImpl
     auto getCaptureVarsMap() -> llvm::StringMap<llvm::StringMap<ts::VariableDeclarationDOM::TypePtr>> &
     {
         return currentNamespace->captureVarsMap;
+    }
+
+    auto getLocalVarsInThisContextMap() -> llvm::StringMap<llvm::SmallVector<mlir::typescript::FieldInfo>> &
+    {
+        return currentNamespace->localVarsInThisContextMap;
     }
 
     auto getClassesMap() -> llvm::StringMap<ClassInfo::TypePtr> &

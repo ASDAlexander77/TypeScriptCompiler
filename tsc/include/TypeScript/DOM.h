@@ -146,13 +146,14 @@ class FunctionPrototypeDOM
     mlir::Type returnType;
     bool discovered;
     bool hasCapturedVars;
+    bool hasExtraFields;
     bool noBody;
 
   public:
     using TypePtr = std::shared_ptr<FunctionPrototypeDOM>;
 
     FunctionPrototypeDOM(StringRef name, std::vector<FunctionParamDOM::TypePtr> args)
-        : name(name.str()), args(args), returnType(), discovered(false), hasCapturedVars(false)
+        : name(name.str()), args(args), returnType(), discovered(false), hasCapturedVars(false), hasExtraFields(false), noBody(false)
     {
     }
 
@@ -201,6 +202,15 @@ class FunctionPrototypeDOM
     void setHasCapturedVars(bool hasCapturedVars_)
     {
         hasCapturedVars = hasCapturedVars_;
+    }
+
+    bool getHasExtraFields() const
+    {
+        return hasExtraFields;
+    }
+    void setHasExtraFields(bool hasExtraFields_)
+    {
+        hasExtraFields = hasExtraFields_;
     }
 
     bool getNoBody() const

@@ -473,6 +473,8 @@ struct NamespaceInfo
 
     llvm::StringMap<llvm::StringMap<ts::VariableDeclarationDOM::TypePtr>> captureVarsMap;
 
+    llvm::StringMap<llvm::SmallVector<mlir::typescript::FieldInfo>> localVarsInThisContextMap;
+
     llvm::StringMap<mlir::Type> typeAliasMap;
 
     llvm::StringMap<mlir::StringRef> importEqualsMap;
