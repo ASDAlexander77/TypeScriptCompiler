@@ -2132,20 +2132,22 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
-            if (auto constTuple = type.dyn_cast_or_null<mlir_ts::ConstTupleType>())
+            MLIRTypeHelper mth(builder.getContext());
+            if (mth.hasUndefines(type))
             {
-                if (llvm::any_of(constTuple.getFields(), [&](::mlir::typescript::FieldInfo fi) { return testType(fi.type); }))
+                return mlir::failure();
+            }
+
+            if (mth.hasUndefines(genContext.passResult->functionReturnType))
+            {
+                if (!mth.isCastableTypes(genContext.passResult->functionReturnType, type))
                 {
                     return mlir::failure();
                 }
             }
-
-            if (auto tuple = type.dyn_cast_or_null<mlir_ts::TupleType>())
+            else if (!mth.isCastableTypes(type, genContext.passResult->functionReturnType))
             {
-                if (llvm::any_of(tuple.getFields(), [&](::mlir::typescript::FieldInfo fi) { return testType(fi.type); }))
-                {
-                    return mlir::failure();
-                }
+                return mlir::failure();
             }
 
             // we can save result type after joining two types

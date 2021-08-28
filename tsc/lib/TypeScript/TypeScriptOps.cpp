@@ -295,20 +295,25 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
         // const tuple -> const tuple, for example { value: undefined, done: true } -> { value: <int>, done: <boolean> }
         if (auto constTupleIn = in.getType().dyn_cast_or_null<mlir_ts::ConstTupleType>())
         {
+            ::typescript::MLIRTypeHelper mth(rewriter.getContext());
+
             if (auto constTupleRes = res.getType().dyn_cast_or_null<mlir_ts::ConstTupleType>())
             {
-                // create other const tuple from source const tuple
-                if (auto constOp = in.getDefiningOp<mlir_ts::ConstantOp>())
+                if (mth.isCastableTypesLogic(constTupleIn, constTupleRes))
                 {
-                    auto newConstOp = rewriter.create<mlir_ts::ConstantOp>(loc, constTupleRes, constOp.valueAttr());
-                    rewriter.replaceOp(castOp, ValueRange{newConstOp});
-                    rewriter.eraseOp(constOp);
+                    // create other const tuple from source const tuple
+                    if (auto constOp = in.getDefiningOp<mlir_ts::ConstantOp>())
+                    {
+                        auto newConstOp = rewriter.create<mlir_ts::ConstantOp>(loc, constTupleRes, constOp.valueAttr());
+                        rewriter.replaceOp(castOp, ValueRange{newConstOp});
+                        rewriter.eraseOp(constOp);
+                    }
                 }
             }
             else if (auto tupleRes = res.getType().dyn_cast_or_null<mlir_ts::TupleType>())
             {
-                // if types are equal - ignore it
-                if (mlir_ts::TupleType::get(rewriter.getContext(), constTupleIn.getFields()) != tupleRes)
+                if (mlir_ts::TupleType::get(rewriter.getContext(), constTupleIn.getFields()) != tupleRes &&
+                    mth.isCastableTypesLogic(constTupleIn, tupleRes))
                 {
                     // create other const tuple from source const tuple
                     if (auto constOp = in.getDefiningOp<mlir_ts::ConstantOp>())

@@ -435,6 +435,113 @@ class MLIRTypeHelper
 
         return mlir::Value();
     }
+
+    template <typename T1, typename T2> bool isCastableTypesLogic(T1 type, T2 matchType)
+    {
+        if (type.getFields().size() != matchType.getFields().size())
+        {
+            return false;
+        }
+
+        auto undefType = mlir_ts::UndefinedType::get(context);
+        auto nullType = mlir_ts::NullType::get(context);
+        auto undefPlaceHolderType = mlir_ts::UndefPlaceHolderType::get(context);
+
+        std::function<bool(mlir::Type)> testType;
+        testType = [&](mlir::Type type) {
+            if (type == undefType || type == nullType || type == undefPlaceHolderType)
+            {
+                return true;
+            }
+
+            if (auto optType = type.dyn_cast_or_null<mlir_ts::OptionalType>())
+            {
+                return testType(optType.getElementType());
+            }
+
+            return false;
+        };
+
+        if (!llvm::all_of(llvm::zip(type.getFields(), matchType.getFields()),
+                          [&](std::tuple<const ::mlir::typescript::FieldInfo &, const ::mlir::typescript::FieldInfo &> pair) {
+                              return std::get<0>(pair).type == std::get<1>(pair).type || testType(std::get<0>(pair).type);
+                          }))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    bool isCastableTypes(mlir::Type type, mlir::Type matchType)
+    {
+        if (auto constTuple = type.dyn_cast_or_null<mlir_ts::ConstTupleType>())
+        {
+            if (auto matchConstTuple = matchType.dyn_cast_or_null<mlir_ts::ConstTupleType>())
+            {
+                return isCastableTypesLogic(constTuple, matchConstTuple);
+            }
+
+            if (auto matchTuple = matchType.dyn_cast_or_null<mlir_ts::TupleType>())
+            {
+                return isCastableTypesLogic(constTuple, matchTuple);
+            }
+        }
+
+        if (auto tuple = type.dyn_cast_or_null<mlir_ts::TupleType>())
+        {
+            if (auto matchTuple = matchType.dyn_cast_or_null<mlir_ts::TupleType>())
+            {
+                return isCastableTypesLogic(tuple, matchTuple);
+            }
+        }
+
+        return false;
+    }
+
+    template <typename T> bool hasUndefinesLogic(T type)
+    {
+        auto undefType = mlir_ts::UndefinedType::get(context);
+        auto nullType = mlir_ts::NullType::get(context);
+        auto undefPlaceHolderType = mlir_ts::UndefPlaceHolderType::get(context);
+
+        std::function<bool(mlir::Type)> testType;
+        testType = [&](mlir::Type type) {
+            if (type == undefType || type == nullType || type == undefPlaceHolderType)
+            {
+                return true;
+            }
+
+            if (auto optType = type.dyn_cast_or_null<mlir_ts::OptionalType>())
+            {
+                return testType(optType.getElementType());
+            }
+
+            return false;
+        };
+
+        if (!llvm::any_of(type.getFields(), [&](::mlir::typescript::FieldInfo fi) { return testType(fi.type); }))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    bool hasUndefines(mlir::Type type)
+    {
+        if (auto constTuple = type.dyn_cast_or_null<mlir_ts::ConstTupleType>())
+        {
+            return hasUndefinesLogic(constTuple);
+        }
+
+        if (auto tuple = type.dyn_cast_or_null<mlir_ts::TupleType>())
+        {
+            return hasUndefinesLogic(tuple);
+        }
+
+        return false;
+    }
 };
 
 } // namespace typescript
