@@ -2659,7 +2659,28 @@ class MLIRGenImpl
         auto location = loc(labeledStatementAST);
 
         label = MLIRHelper::getName(labeledStatementAST->label);
+
+        auto kind = (SyntaxKind)labeledStatementAST->statement;
+        auto noLabelOp = kind == SyntaxKind::WhileStatement || kind == SyntaxKind::DoStatement || kind == SyntaxKind::ForStatement ||
+                         kind == SyntaxKind::ForInStatement || kind == SyntaxKind::ForOfStatement;
+
+        if (noLabelOp)
+        {
+            auto res = mlirGen(labeledStatementAST->statement, genContext);
+            return res;
+        }
+
+        auto labelOp = builder.create<mlir_ts::LabelOp>(location, builder.getStringAttr(label));
+
+        // add merge block
+        labelOp.addMergeBlock();
+        auto *mergeBlock = labelOp.getMergeBlock();
+
+        builder.setInsertionPointToStart(mergeBlock);
+
         auto res = mlirGen(labeledStatementAST->statement, genContext);
+
+        builder.setInsertionPointAfter(labelOp);
 
         return res;
     }

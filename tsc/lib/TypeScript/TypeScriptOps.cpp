@@ -961,3 +961,31 @@ void mlir_ts::TryOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attr
     regions.push_back(RegionSuccessor(&catches()));
     regions.push_back(RegionSuccessor(&finallyBlock()));
 }
+
+//===----------------------------------------------------------------------===//
+// LabelOp
+//===----------------------------------------------------------------------===//
+
+void mlir_ts::LabelOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attribute> operands,
+                                           SmallVectorImpl<RegionSuccessor> &regions)
+{
+    regions.push_back(RegionSuccessor(&labelRegion()));
+}
+
+Block *mlir_ts::LabelOp::getMergeBlock()
+{
+    assert(!labelRegion().empty() && "op region should not be empty!");
+    // The last block is the loop merge block.
+    return &labelRegion().back();
+}
+
+void mlir_ts::LabelOp::addMergeBlock()
+{
+    assert(labelRegion().empty() && "entry and merge block already exist");
+    auto *mergeBlock = new Block();
+    labelRegion().push_back(mergeBlock);
+    OpBuilder builder = OpBuilder::atBlockEnd(mergeBlock);
+
+    // Add a ts.merge op into the merge block.
+    builder.create<mlir_ts::MergeOp>(getLoc());
+}

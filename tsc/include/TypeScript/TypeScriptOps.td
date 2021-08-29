@@ -1456,6 +1456,24 @@ def TypeScript_BreakOp : TypeScript_Op<"Break"> {
   let arguments = (ins OptionalAttr<StrAttr>:$label);
 }
 
+def TypeScript_LabelOp : TypeScript_Op<"Label",
+      [DeclareOpInterfaceMethods<RegionBranchOpInterface>, RecursiveSideEffects,
+       NoRegionArguments]> {
+  let summary = "label operation";
+
+  let arguments = (ins  StrAttr:$label);
+  let results = (outs );
+  let regions = (region SizedRegion<1>:$labelRegion);
+
+  let extraClassDeclaration = [{
+    /// Returns the selection merge block.
+    Block *getMergeBlock();
+
+    /// Adds a selection merge block containing one ts.merge op.
+    void addMergeBlock();
+  }];  
+}
+
 def TypeScript_SwitchOp : TypeScript_Op<"Switch",
       [DeclareOpInterfaceMethods<RegionBranchOpInterface>,
        RecursiveSideEffects, NoRegionArguments]> {
@@ -1477,8 +1495,8 @@ def TypeScript_SwitchOp : TypeScript_Op<"Switch",
   }];
 }
 
-def TypeScript_MergeOp : TypeScript_Op<"Merge", [NoSideEffect, HasParent<"SwitchOp">, Terminator]> {
-  let summary = "A special terminator for merging a switch.";
+def TypeScript_MergeOp : TypeScript_Op<"Merge", [NoSideEffect, HasParent<"SwitchOp, LabelOp">, Terminator]> {
+  let summary = "A special terminator for merging a switch or label.";
 
   let arguments = (ins);
 

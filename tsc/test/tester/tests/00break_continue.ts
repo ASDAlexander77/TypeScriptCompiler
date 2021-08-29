@@ -5,6 +5,8 @@ function main() {
     test_for_empty();
     test_while_labeled();
 
+    test_label();
+
     print("done.");
 }
 
@@ -106,4 +108,22 @@ function test_while_labeled() {
     print("breaked outer");
 
     print("done.");
+}
+
+function test_label() {
+    let c = 3;
+    let a = 3;
+
+    lbl1: {
+        print("Hello1");
+        if (c-- <= 0) break lbl1;
+        continue lbl1;
+        print("break");
+        a--;
+    }
+
+    assert(c == 0);
+    assert(a == 3);
+
+    print("Hello2");
 }

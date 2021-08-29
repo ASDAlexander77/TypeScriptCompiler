@@ -495,6 +495,80 @@ struct ForOpLowering : public TsPattern<mlir_ts::ForOp>
     }
 };
 
+struct LabelOpLowering : public TsPattern<mlir_ts::LabelOp>
+{
+    using TsPattern<mlir_ts::LabelOp>::TsPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::LabelOp labelOp, PatternRewriter &rewriter) const final
+    {
+        // Split the current block before the WhileOp to create the inlining point.
+        OpBuilder::InsertionGuard guard(rewriter);
+        Location loc = labelOp.getLoc();
+
+        Block *currentBlock = rewriter.getInsertionBlock();
+        Block *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+
+        auto *begin = &labelOp.labelRegion().front();
+
+        auto labelAttr = labelOp.labelAttr();
+
+        // logic to support continue/break
+
+        auto visitorBreakContinue = [&](Operation *op) {
+            if (auto breakOp = dyn_cast_or_null<mlir_ts::BreakOp>(op))
+            {
+                auto set = MLIRHelper::matchLabelOrNotSet(labelAttr, breakOp.labelAttr());
+                if (set)
+                    tsContext->jumps[op] = continuation;
+            }
+            else if (auto continueOp = dyn_cast_or_null<mlir_ts::ContinueOp>(op))
+            {
+                auto set = MLIRHelper::matchLabelOrNotSet(labelAttr, continueOp.labelAttr());
+                if (set)
+                    tsContext->jumps[op] = begin;
+            }
+        };
+
+        labelOp.labelRegion().walk(visitorBreakContinue);
+
+        // end of logic for break/continue
+
+        auto *labelRegion = &labelOp.labelRegion().front();
+
+        auto *labelRegionWithMerge = &labelOp.labelRegion().back();
+        for (auto &block : labelOp.labelRegion())
+        {
+            if (isa<mlir_ts::MergeOp>(block.getTerminator()))
+            {
+                labelRegionWithMerge = &block;
+            }
+        }
+
+        // Branch to the "labelRegion" region.
+        rewriter.setInsertionPointToEnd(currentBlock);
+        rewriter.create<BranchOp>(loc, labelRegion, ValueRange{});
+
+        rewriter.inlineRegionBefore(labelOp.labelRegion(), continuation);
+
+        // replace merge with br
+        assert(labelRegionWithMerge);
+        rewriter.setInsertionPointToEnd(labelRegionWithMerge);
+
+        if (auto mergeOp = dyn_cast_or_null<mlir_ts::MergeOp>(labelRegionWithMerge->getTerminator()))
+        {
+            rewriter.replaceOpWithNewOp<BranchOp>(mergeOp, continuation, ValueRange{});
+        }
+        else
+        {
+            assert(false);
+        }
+
+        rewriter.replaceOp(labelOp, continuation->getArguments());
+
+        return success();
+    }
+};
+
 struct BreakOpLowering : public TsPattern<mlir_ts::BreakOp>
 {
     using TsPattern<mlir_ts::BreakOp>::TsPattern;
@@ -691,7 +765,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     OwningRewritePatternList patterns(&getContext());
     patterns.insert<ParamOpLowering, ParamOptionalOpLowering, ParamDefaultValueOpLowering, PrefixUnaryOpLowering, PostfixUnaryOpLowering,
                     IfOpLowering, DoWhileOpLowering, WhileOpLowering, ForOpLowering, BreakOpLowering, ContinueOpLowering, SwitchOpLowering,
-                    AccessorRefOpLowering, ThisAccessorRefOpLowering>(&getContext(), &tsContext);
+                    AccessorRefOpLowering, ThisAccessorRefOpLowering, LabelOpLowering>(&getContext(), &tsContext);
 
     // With the target and rewrite patterns defined, we can now attempt the
     // conversion. The conversion will signal failure if any of our `illegal`
