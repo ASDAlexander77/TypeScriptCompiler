@@ -912,6 +912,27 @@ struct ExitOpLowering : public TsLlvmPattern<mlir_ts::ExitOp>
     }
 };
 
+struct StateLabelOpLowering : public TsLlvmPattern<mlir_ts::StateLabelOp>
+{
+    using TsLlvmPattern<mlir_ts::StateLabelOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::StateLabelOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+    {
+        auto *opBlock = rewriter.getInsertionBlock();
+        auto opPosition = rewriter.getInsertionPoint();
+        auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
+
+        rewriter.setInsertionPointToEnd(opBlock);
+
+        rewriter.create<mlir::BranchOp>(op.getLoc(), continuationBlock);
+
+        rewriter.setInsertionPointToStart(continuationBlock);
+
+        rewriter.eraseOp(op);
+        return success();
+    }
+};
+
 struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
 {
     using TsLlvmPattern<mlir_ts::FuncOp>::TsLlvmPattern;
@@ -3077,7 +3098,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
                     TryOpLowering, VariableOpLowering, InvokeOpLowering, ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering,
                     NewInterfaceOpLowering, VTableOffsetRefOpLowering, ThisPropertyRefOpLowering, LoadBoundRefOpLowering,
                     StoreBoundRefOpLowering, CreateBoundRefOpLowering, CreateBoundFunctionOpLowering, GetThisOpLowering,
-                    GetMethodOpLowering, TypeOfOpLowering, DebuggerOpLowering>(typeConverter, &getContext(), &tsLlvmContext);
+                    GetMethodOpLowering, TypeOfOpLowering, DebuggerOpLowering, StateLabelOpLowering>(typeConverter, &getContext(),
+                                                                                                     &tsLlvmContext);
 
     populateTypeScriptConversionPatterns(typeConverter, m);
 

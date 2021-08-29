@@ -2661,6 +2661,12 @@ class MLIRGenImpl
         label = MLIRHelper::getName(labeledStatementAST->label);
 
         auto kind = (SyntaxKind)labeledStatementAST->statement;
+        if (kind == SyntaxKind::EmptyStatement && StringRef(label).startswith("state"))
+        {
+            builder.create<mlir_ts::StateLabelOp>(location, builder.getStringAttr(label));
+            return mlir::success();
+        }
+
         auto noLabelOp = kind == SyntaxKind::WhileStatement || kind == SyntaxKind::DoStatement || kind == SyntaxKind::ForStatement ||
                          kind == SyntaxKind::ForInStatement || kind == SyntaxKind::ForOfStatement;
 

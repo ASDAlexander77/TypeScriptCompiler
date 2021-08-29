@@ -1474,6 +1474,22 @@ def TypeScript_LabelOp : TypeScript_Op<"Label",
   }];  
 }
 
+def TypeScript_SwitchStateOp : TypeScript_Op<"SwitchState",
+      []> {
+  let summary = "switch state operation";
+
+  let arguments = (ins  I32:$state);
+  let results = (outs );
+}
+
+def TypeScript_StateLabelOp : TypeScript_Op<"StateLabel",
+      []> {
+  let summary = "state label operation";
+
+  let arguments = (ins  StrAttr:$label);
+  let results = (outs );
+}
+
 def TypeScript_SwitchOp : TypeScript_Op<"Switch",
       [DeclareOpInterfaceMethods<RegionBranchOpInterface>,
        RecursiveSideEffects, NoRegionArguments]> {
