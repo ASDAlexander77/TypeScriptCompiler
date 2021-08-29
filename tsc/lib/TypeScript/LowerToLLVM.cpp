@@ -2854,7 +2854,7 @@ class SwitchStateOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateOp>
         SmallVector<int32_t> caseValues;
         SmallVector<Block *> caseDestinations;
 
-        SmallPtrSet<Operation *, 16> stateLbls;
+        SmallPtrSet<Operation *, 16> stateLabels;
 
         auto index = 0;
 
@@ -2862,7 +2862,7 @@ class SwitchStateOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateOp>
         auto visitorAllStateLabels = [&](Operation *op) {
             if (auto stateLabelOp = dyn_cast_or_null<mlir_ts::StateLabelOp>(op))
             {
-                stateLbls.insert(op);
+                stateLabels.insert(op);
             }
         };
 
@@ -2870,7 +2870,7 @@ class SwitchStateOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateOp>
 
         {
             mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
-            for (auto op : stateLbls)
+            for (auto op : stateLabels)
             {
                 auto stateLabelOp = dyn_cast_or_null<mlir_ts::StateLabelOp>(op);
                 rewriter.setInsertionPoint(stateLabelOp);
