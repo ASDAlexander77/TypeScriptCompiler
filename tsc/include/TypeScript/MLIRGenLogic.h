@@ -257,6 +257,11 @@ class MLIRCustomMethods
         {
             result = mlirGenArrayPop(location, operands);
         }
+        else if (functionName == "switchstate")
+        {
+            // switchstate - internal command;
+            mlir::succeeded(mlirGenSwitchState(location, operands));
+        }
         /*
         else
         if (functionName == "#_last_field")
@@ -369,6 +374,12 @@ class MLIRCustomMethods
             builder.create<mlir_ts::PopOp>(location, operands.front().getType().cast<mlir_ts::ArrayType>().getElementType(), thisValue);
 
         return sizeOfValue;
+    }
+
+    mlir::LogicalResult mlirGenSwitchState(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    {
+        builder.create<mlir_ts::SwitchStateOp>(location, operands.front());
+        return mlir::success();
     }
 };
 
