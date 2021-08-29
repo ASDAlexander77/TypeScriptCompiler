@@ -912,27 +912,6 @@ struct ExitOpLowering : public TsLlvmPattern<mlir_ts::ExitOp>
     }
 };
 
-struct StateLabelOpLowering : public TsLlvmPattern<mlir_ts::StateLabelOp>
-{
-    using TsLlvmPattern<mlir_ts::StateLabelOp>::TsLlvmPattern;
-
-    LogicalResult matchAndRewrite(mlir_ts::StateLabelOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
-    {
-        auto *opBlock = rewriter.getInsertionBlock();
-        auto opPosition = rewriter.getInsertionPoint();
-        auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
-
-        rewriter.setInsertionPointToEnd(opBlock);
-
-        rewriter.create<mlir::BranchOp>(op.getLoc(), continuationBlock);
-
-        rewriter.setInsertionPointToStart(continuationBlock);
-
-        rewriter.eraseOp(op);
-        return success();
-    }
-};
-
 struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
 {
     using TsLlvmPattern<mlir_ts::FuncOp>::TsLlvmPattern;
@@ -2839,6 +2818,101 @@ class DebuggerOpLowering : public TsLlvmPattern<mlir_ts::DebuggerOp>
     }
 };
 
+struct StateLabelOpLowering : public TsLlvmPattern<mlir_ts::StateLabelOp>
+{
+    using TsLlvmPattern<mlir_ts::StateLabelOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::StateLabelOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+    {
+        auto *opBlock = rewriter.getInsertionBlock();
+        auto opPosition = rewriter.getInsertionPoint();
+        auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
+
+        rewriter.setInsertionPointToEnd(opBlock);
+
+        rewriter.create<mlir::BranchOp>(op.getLoc(), continuationBlock);
+
+        rewriter.setInsertionPointToStart(continuationBlock);
+
+        rewriter.eraseOp(op);
+        return success();
+    }
+};
+
+class SwitchStateOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::SwitchStateOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::SwitchStateOp switchStateOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        auto loc = switchStateOp->getLoc();
+
+        auto defaultBlock = FindReturnBlock(rewriter);
+
+        SmallVector<int32_t> caseValues;
+        SmallVector<Block *> caseDestinations;
+
+        SmallPtrSet<Operation *, 16> stateLbls;
+
+        auto index = 0;
+
+        // select all states
+        auto visitorAllStateLabels = [&](Operation *op) {
+            if (auto stateLabelOp = dyn_cast_or_null<mlir_ts::StateLabelOp>(op))
+            {
+                stateLbls.insert(op);
+            }
+        };
+
+        switchStateOp->getParentOp()->walk(visitorAllStateLabels);
+
+        {
+            mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
+            for (auto op : stateLbls)
+            {
+                auto stateLabelOp = dyn_cast_or_null<mlir_ts::StateLabelOp>(op);
+                rewriter.setInsertionPoint(stateLabelOp);
+
+                auto *opBlock = rewriter.getInsertionBlock();
+                auto opPosition = rewriter.getInsertionPoint();
+                auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
+
+                rewriter.setInsertionPointToEnd(opBlock);
+
+                rewriter.create<mlir::BranchOp>(stateLabelOp.getLoc(), continuationBlock);
+
+                rewriter.setInsertionPointToStart(continuationBlock);
+
+                rewriter.eraseOp(stateLabelOp);
+
+                // add switch
+                caseValues.push_back(index++);
+                caseDestinations.push_back(continuationBlock);
+            }
+        }
+
+        // make switch to be terminator
+        auto *opBlock = rewriter.getInsertionBlock();
+        auto opPosition = rewriter.getInsertionPoint();
+        auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
+
+        // switch
+        rewriter.setInsertionPointToEnd(opBlock);
+
+        rewriter.create<LLVM::SwitchOp>(loc, switchStateOp.state(), defaultBlock, ValueRange{}, caseValues, caseDestinations);
+
+        rewriter.eraseOp(switchStateOp);
+
+        rewriter.setInsertionPointToStart(continuationBlock);
+
+        LLVM_DEBUG(llvm::dbgs() << *switchStateOp->getParentOp() << "\n";);
+
+        return success();
+    }
+};
+
 static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, mlir::ModuleOp &m)
 {
     converter.addConversion([&](mlir_ts::AnyType type) { return LLVM::LLVMPointerType::get(IntegerType::get(m.getContext(), 8)); });
@@ -3098,8 +3172,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
                     TryOpLowering, VariableOpLowering, InvokeOpLowering, ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering,
                     NewInterfaceOpLowering, VTableOffsetRefOpLowering, ThisPropertyRefOpLowering, LoadBoundRefOpLowering,
                     StoreBoundRefOpLowering, CreateBoundRefOpLowering, CreateBoundFunctionOpLowering, GetThisOpLowering,
-                    GetMethodOpLowering, TypeOfOpLowering, DebuggerOpLowering, StateLabelOpLowering>(typeConverter, &getContext(),
-                                                                                                     &tsLlvmContext);
+                    GetMethodOpLowering, TypeOfOpLowering, DebuggerOpLowering, StateLabelOpLowering, SwitchStateOpLowering>(
+        typeConverter, &getContext(), &tsLlvmContext);
 
     populateTypeScriptConversionPatterns(typeConverter, m);
 
