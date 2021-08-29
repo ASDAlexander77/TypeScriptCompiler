@@ -122,7 +122,7 @@ function test_label() {
         a--;
     }
 
-    assert(c == 0);
+    assert(c < 0);
     assert(a == 3);
 
     print("Hello2");
