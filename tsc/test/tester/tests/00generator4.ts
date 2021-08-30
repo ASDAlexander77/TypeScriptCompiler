@@ -51,9 +51,27 @@ function main3() {
     assert(count == 4);
 }
 
+function* foo4() {
+    for (let i = 2; i < 4; i++) {
+        yield i;
+        yield i;
+    }
+}
+
+function main4() {
+    let count = 0;
+    for (const o of foo4()) {
+        print(o);
+        count++;
+    }
+
+    assert(count == 4);
+}
+
 function main() {
     main1();
     main2();
     main3();
+    main4();
     print("done.");
 }
