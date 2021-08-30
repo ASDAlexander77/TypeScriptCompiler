@@ -761,7 +761,7 @@ class MLIRGenImpl
     {
         auto isGlobalScope = !genContext.funcOp; /*symbolTable.getCurScope()->getParentScope() == nullptr*/
         auto isGlobal = isGlobalScope || varClass == VariableClass::Var;
-        auto isConst = varClass == VariableClass::Const || varClass == VariableClass::ConstRef;
+        auto isConst = (varClass == VariableClass::Const || varClass == VariableClass::ConstRef) && !genContext.allocateVarsInContextThis;
 
         auto effectiveName = name;
 
