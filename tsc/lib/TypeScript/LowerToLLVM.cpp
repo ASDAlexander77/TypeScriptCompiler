@@ -3189,6 +3189,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     {
         signalPassFailure();
     }
+
+    LLVM_DEBUG(llvm::dbgs() << "\nDUMP: \n" << module << "\n";);
 }
 
 /// Create a pass for lowering operations the remaining `TypeScript` operations, as

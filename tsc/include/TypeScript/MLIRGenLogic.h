@@ -260,7 +260,7 @@ class MLIRCustomMethods
         else if (functionName == "switchstate")
         {
             // switchstate - internal command;
-            mlir::succeeded(mlirGenSwitchState(location, operands));
+            mlir::succeeded(mlirGenSwitchState(location, operands, genContext));
         }
         /*
         else
@@ -376,9 +376,13 @@ class MLIRCustomMethods
         return sizeOfValue;
     }
 
-    mlir::LogicalResult mlirGenSwitchState(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    mlir::LogicalResult mlirGenSwitchState(const mlir::Location &location, ArrayRef<mlir::Value> operands, const GenContext &genContext)
     {
-        builder.create<mlir_ts::SwitchStateOp>(location, operands.front());
+        auto switchStateOp = builder.create<mlir_ts::SwitchStateOp>(location, operands.front());
+
+        const_cast<GenContext &>(genContext).allocateVarsOutsideOfOperation = true;
+        const_cast<GenContext &>(genContext).currentOperation = switchStateOp;
+
         return mlir::success();
     }
 };

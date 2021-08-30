@@ -17,7 +17,7 @@ add_mlir_dialect_library(MLIRTypeScript
     MLIRGen.cpp
     LowerToAffineLoops.cpp   
     LowerToLLVM.cpp
-    LoadBoundPropertiesPass.cpp
+    RelocateConstantPass.cpp
     GCPass.cpp
     
     ADDITIONAL_HEADER_DIRS
@@ -25,7 +25,6 @@ add_mlir_dialect_library(MLIRTypeScript
 
     DEPENDS
     MLIRTypeScriptOpsIncGen
-    MLIRTypeScriptLoadBoundPropertiesInterfaceIncGen
 
     LINK_LIBS PUBLIC
     tsc-new-parser-lib

@@ -214,6 +214,7 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module
         // Partially lower the TypeScript dialect with a few cleanups afterwards.
         optPM.addPass(mlir::typescript::createLowerToAffinePass());
         optPM.addPass(mlir::createCanonicalizerPass());
+        optPM.addPass(mlir::typescript::createRelocateConstantPass());
         optPM.addPass(mlir::createCSEPass());
 
         pm.addPass(mlir::createSymbolDCEPass());
