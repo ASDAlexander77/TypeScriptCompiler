@@ -33,8 +33,27 @@ function main2() {
     assert(count == 2);
 }
 
+function* foo3() {
+    let i = 1;
+    while (i < 3) {
+        yield ++i;
+        yield i;
+    }
+}
+
+function main3() {
+    let count = 0;
+    for (const o of foo3()) {
+        assert(2 == o || 3 == o);
+        count++;
+    }
+
+    assert(count == 4);
+}
+
 function main() {
     main1();
     main2();
+    main3();
     print("done.");
 }
