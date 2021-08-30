@@ -81,6 +81,8 @@ struct GenContext
             delete passResult;
             passResult = nullptr;
         }
+
+        cleanState();
     }
 
     void cleanState()

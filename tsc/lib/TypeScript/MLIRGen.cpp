@@ -1501,6 +1501,7 @@ class MLIRGenImpl
             genContextWithPassResult.dummyRun = true;
             genContextWithPassResult.cleanUps = new SmallVector<mlir::Block *>();
             genContextWithPassResult.passResult = new PassResult();
+            genContextWithPassResult.state = new int(1);
             genContextWithPassResult.allocateVarsInContextThis =
                 (functionLikeDeclarationBaseAST->transformFlags & TransformFlags::VarsInObjectContext) ==
                 TransformFlags::VarsInObjectContext;
@@ -1826,7 +1827,7 @@ class MLIRGenImpl
         auto funcGenContext = GenContext(genContext);
         funcGenContext.funcOp = funcOp;
         funcGenContext.passResult = nullptr;
-        funcGenContext.state = new int(0);
+        funcGenContext.state = new int(1);
         // if funcGenContext.passResult is null and allocateVarsInContextThis is true, this type should contain fully defined object with
         // local variables as fields
         funcGenContext.allocateVarsInContextThis =

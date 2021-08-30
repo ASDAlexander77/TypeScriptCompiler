@@ -2856,7 +2856,7 @@ class SwitchStateOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateOp>
 
         SmallPtrSet<Operation *, 16> stateLabels;
 
-        auto index = 0;
+        auto index = 1;
 
         // select all states
         auto visitorAllStateLabels = [&](Operation *op) {
@@ -2898,10 +2898,15 @@ class SwitchStateOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateOp>
         auto opPosition = rewriter.getInsertionPoint();
         auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
 
+        // insert 0 state label
+        caseValues.insert(caseValues.begin(), 0);
+        caseDestinations.insert(caseDestinations.begin(), continuationBlock);
+
         // switch
         rewriter.setInsertionPointToEnd(opBlock);
 
-        rewriter.create<LLVM::SwitchOp>(loc, switchStateOp.state(), defaultBlock, ValueRange{}, caseValues, caseDestinations);
+        rewriter.create<LLVM::SwitchOp>(loc, switchStateOp.state(), defaultBlock ? defaultBlock : continuationBlock, ValueRange{},
+                                        caseValues, caseDestinations);
 
         rewriter.eraseOp(switchStateOp);
 
