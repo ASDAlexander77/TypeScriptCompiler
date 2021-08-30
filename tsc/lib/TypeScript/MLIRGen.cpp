@@ -2208,6 +2208,8 @@ class MLIRGenImpl
             nf.createPropertyAccessExpression(nf.createToken(SyntaxKind::ThisKeyword), nf.createIdentifier(S("step"))),
             nf.createToken(SyntaxKind::EqualsToken), nf.createNumericLiteral(num.str(), TokenFlags::None));
 
+        mlirGen(setStateExpr, genContext);
+
         // return value
         auto yieldRetValue = getYieldReturnObject(nf, yieldExpressionAST->expression, false);
         auto yieldValue = mlirGen(yieldRetValue, genContext);
