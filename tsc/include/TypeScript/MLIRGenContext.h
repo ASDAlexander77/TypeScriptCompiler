@@ -83,6 +83,15 @@ struct GenContext
         }
     }
 
+    void cleanState()
+    {
+        if (state)
+        {
+            delete state;
+            state = nullptr;
+        }
+    }
+
     bool allowPartialResolve;
     bool dummyRun;
     bool allowConstEval;
@@ -97,6 +106,7 @@ struct GenContext
     PassResult *passResult;
     mlir::SmallVector<mlir::Block *> *cleanUps;
     NodeArray<Statement> generatedStatements;
+    int *state;
 };
 
 enum class VariableClass

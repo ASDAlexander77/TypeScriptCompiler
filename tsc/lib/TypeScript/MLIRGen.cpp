@@ -1614,7 +1614,8 @@ class MLIRGenImpl
         return funcSymbolRef;
     }
 
-    mlir_ts::FuncOp mlirGenFunctionGenerator(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
+    mlir_ts::FuncOp mlirGenFunctionGeneratorSwitchVersion(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST,
+                                                          const GenContext &genContext)
     {
         auto location = loc(functionLikeDeclarationBaseAST);
         NodeFactory nf(NodeFactoryFlags::None);
@@ -1720,6 +1721,85 @@ class MLIRGenImpl
         return genFuncOp;
     }
 
+    mlir_ts::FuncOp mlirGenFunctionGenerator(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
+    {
+        auto location = loc(functionLikeDeclarationBaseAST);
+        NodeFactory nf(NodeFactoryFlags::None);
+
+        auto stepIdent = nf.createIdentifier(S("step"));
+
+        // create return object
+        NodeArray<ObjectLiteralElementLike> generatorObjectProperties;
+
+        // add step field
+        auto stepProp = nf.createPropertyAssignment(stepIdent, nf.createNumericLiteral(S("0"), TokenFlags::None));
+        generatorObjectProperties.push_back(stepProp);
+
+        // create body of next method
+        NodeArray<Statement> nextStatements;
+
+        // add main switcher
+        auto stepAccess = nf.createPropertyAccessExpression(nf.createToken(SyntaxKind::ThisKeyword), stepIdent);
+
+        // call stateswitch
+        NodeArray<Expression> args;
+        args.push_back(stepAccess);
+        auto callStat = nf.createExpressionStatement(nf.createCallExpression(nf.createIdentifier(S("switchstate")), undefined, args));
+
+        nextStatements.push_back(callStat);
+
+        // add function body to statements to first step
+        if (functionLikeDeclarationBaseAST->body == SyntaxKind::Block)
+        {
+            // process every statement
+            auto block = functionLikeDeclarationBaseAST->body.as<Block>();
+            for (auto statement : block->statements)
+            {
+                nextStatements.push_back(statement);
+            }
+        }
+        else
+        {
+            nextStatements.push_back(functionLikeDeclarationBaseAST->body);
+        }
+
+        // add next statements
+        // add default return with empty
+        nextStatements.push_back(nf.createReturnStatement(getYieldReturnObject(nf, nf.createIdentifier(S("undefined")), true)));
+
+        // create next body
+        auto nextBody = nf.createBlock(nextStatements, /*multiLine*/ false);
+
+        // create method next in object
+        auto nextMethodDecl = nf.createMethodDeclaration(undefined, undefined, undefined, nf.createIdentifier(S("next")), undefined,
+                                                         undefined, undefined, undefined, nextBody);
+        nextMethodDecl->transformFlags |= TransformFlags::VarsInObjectContext;
+
+        // copy location info, to fix issue with names of anonymous functions
+        nextMethodDecl->pos = functionLikeDeclarationBaseAST->pos;
+        nextMethodDecl->_end = functionLikeDeclarationBaseAST->_end;
+
+        generatorObjectProperties.push_back(nextMethodDecl);
+
+        auto generatorObject = nf.createObjectLiteralExpression(generatorObjectProperties, false);
+
+        // generator body
+        NodeArray<Statement> generatorStatements;
+
+        // step 1, add return object
+        auto retStat = nf.createReturnStatement(generatorObject);
+        generatorStatements.push_back(retStat);
+
+        auto body = nf.createBlock(generatorStatements, /*multiLine*/ false);
+        auto funcOp =
+            nf.createFunctionDeclaration(functionLikeDeclarationBaseAST->decorators, functionLikeDeclarationBaseAST->modifiers, undefined,
+                                         functionLikeDeclarationBaseAST->name, functionLikeDeclarationBaseAST->typeParameters,
+                                         functionLikeDeclarationBaseAST->parameters, functionLikeDeclarationBaseAST->type, body);
+
+        auto genFuncOp = mlirGenFunctionLikeDeclaration(funcOp, genContext);
+        return genFuncOp;
+    }
+
     mlir_ts::FuncOp mlirGenFunctionLikeDeclaration(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
     {
         // check if it is generator
@@ -1746,6 +1826,7 @@ class MLIRGenImpl
         auto funcGenContext = GenContext(genContext);
         funcGenContext.funcOp = funcOp;
         funcGenContext.passResult = nullptr;
+        funcGenContext.state = new int(0);
         // if funcGenContext.passResult is null and allocateVarsInContextThis is true, this type should contain fully defined object with
         // local variables as fields
         funcGenContext.allocateVarsInContextThis =
@@ -1758,6 +1839,9 @@ class MLIRGenImpl
         }
 
         auto resultFromBody = mlirGenFunctionBody(functionLikeDeclarationBaseAST, funcOp, funcProto, funcGenContext);
+
+        funcGenContext.cleanState();
+
         if (mlir::failed(resultFromBody))
         {
             return funcOp;
@@ -2073,7 +2157,7 @@ class MLIRGenImpl
         return retObject;
     };
 
-    mlir::Value mlirGen(YieldExpression yieldExpressionAST, const GenContext &genContext)
+    mlir::Value mlirGenYieldExpressionSwitchVersion(YieldExpression yieldExpressionAST, const GenContext &genContext)
     {
         if (genContext.passResult)
         {
@@ -2090,6 +2174,52 @@ class MLIRGenImpl
         }
 
         return yieldValue;
+    }
+
+    mlir::Value mlirGen(YieldExpression yieldExpressionAST, const GenContext &genContext)
+    {
+        auto location = loc(yieldExpressionAST);
+
+        if (genContext.passResult)
+        {
+            genContext.passResult->functionReturnTypeShouldBeProvided = true;
+        }
+
+        // get state
+        auto state = 0;
+        if (genContext.state)
+        {
+            state = (*genContext.state)++;
+        }
+        else
+        {
+            assert(false);
+        }
+
+        // set restore point (return point)
+        stringstream num;
+        num << state;
+
+        NodeFactory nf(NodeFactoryFlags::None);
+
+        // save return point - state
+        auto setStateExpr = nf.createBinaryExpression(
+            nf.createPropertyAccessExpression(nf.createToken(SyntaxKind::ThisKeyword), nf.createIdentifier(S("step"))),
+            nf.createToken(SyntaxKind::EqualsToken), nf.createNumericLiteral(num.str(), TokenFlags::None));
+
+        // return value
+        auto yieldRetValue = getYieldReturnObject(nf, yieldExpressionAST->expression, false);
+        auto yieldValue = mlirGen(yieldRetValue, genContext);
+
+        mlirGenReturnValue(location, yieldValue, genContext);
+
+        std::stringstream label;
+        label << "state" << state;
+        builder.create<mlir_ts::StateLabelOp>(location, label.str());
+
+        // TODO: yield value to continue, should be loaded from "next(value)" parameter
+        // return yieldValue;
+        return mlir::Value();
     }
 
     mlir::LogicalResult processReturnType(mlir::Value expressionValue, const GenContext &genContext)
