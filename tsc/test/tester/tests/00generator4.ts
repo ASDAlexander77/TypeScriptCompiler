@@ -90,11 +90,39 @@ function main5() {
     assert(count == 4);
 }
 
+function* foo6_2() {
+    yield 2;
+    yield 3;
+}
+
+function* foo6() {
+    yield 1;
+
+    for (const o of foo6_2()) {
+        yield o;
+    }
+
+    yield 4;
+}
+
+function main6() {
+    let count = 0;
+    let t = 1;
+    for (const o of foo6()) {
+        print(o);
+        count++;
+        assert(t++ == o);
+    }
+
+    assert(count == 4);
+}
+
 function main() {
     main1();
     main2();
     main3();
     main4();
     main5();
+    main6();
     print("done.");
 }
