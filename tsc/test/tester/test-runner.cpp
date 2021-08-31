@@ -189,6 +189,7 @@ int runFolder(const char *folder)
     return 0;
 }
 
+#if WIN32
 void createCompileBatchFile()
 {
 #ifndef NEW_BAT
@@ -547,6 +548,139 @@ void createJitBatchFileGC()
             << std::endl;
     batFile.close();
 }
+#else
+void createCompileBatchFile()
+{
+#ifndef NEW_BAT
+    if (exists("compile.sh"))
+    {
+        return;
+    }
+#endif
+
+    std::ofstream batFile("compile.sh");
+    batFile << "echo off" << std::endl;
+    batFile.close();
+}
+
+void createCompileBatchFileWithRT()
+{
+#ifndef NEW_BAT
+    if (exists("compile_rt.sh"))
+    {
+        return;
+    }
+#endif
+
+    std::ofstream batFile("compile_rt.sh");
+    // batFile << "echo off" << std::endl;
+    batFile << "set FILENAME=%1" << std::endl;
+    batFile.close();
+}
+
+void createCompileBatchFileGC()
+{
+#ifndef NEW_BAT
+    if (exists("compile_gc.sh"))
+    {
+        return;
+    }
+#endif
+
+    std::ofstream batFile("compile_gc.sh");
+    batFile << "echo off" << std::endl;
+    batFile.close();
+}
+
+void createCompileBatchFileGCWithRT()
+{
+#ifndef NEW_BAT
+    if (exists("compile_gc_rt.sh"))
+    {
+        return;
+    }
+#endif
+
+    std::ofstream batFile("compile_gc_rt.sh");
+    batFile << "echo off" << std::endl;
+    batFile.close();
+}
+
+void createJitCompileBatchFile()
+{
+#ifndef NEW_BAT
+    if (exists("compile_jit.sh"))
+    {
+        return;
+    }
+#endif
+
+    std::ofstream batFile("compile_jit.sh");
+    batFile << "local FILENAME=$1" << std::endl;
+    batFile << "local TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "$TSCEXEPATH/tsc --emit=jit -nogc -dump-object-file "
+               "-object-filename=$FILENAME.o $2"
+            << std::endl;
+    batFile << "gcc -o $1 $1.o" << std::endl;
+    batFile << "del $FILENAME%.o" << std::endl;
+    batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
+    batFile.close();
+}
+
+void createJitCompileBatchFileGC()
+{
+#ifndef NEW_BAT
+    if (exists("compile_jit_gc.sh"))
+    {
+        return;
+    }
+#endif
+
+    std::ofstream batFile("compile_jit_gc.sh");
+    batFile << "local FILENAME=$1" << std::endl;
+    batFile << "local TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "$TSCEXEPATH/tsc --emit=jit --shared-libs=../../bin/libTypeScriptGCWrapper.so -dump-object-file "
+               "-object-filename=$FILENAME.o $2"
+            << std::endl;
+    batFile << "gcc -o $FILENAME $FILENAME.o" << std::endl;
+    batFile << "del $FILENAME%.o" << std::endl;
+    batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
+    batFile.close();
+}
+
+void createJitBatchFile()
+{
+#ifndef NEW_BAT
+    if (exists("jit.sh"))
+    {
+        return;
+    }
+#endif
+
+    std::ofstream batFile("jit.sh");
+    batFile << "local FILENAME=$1" << std::endl;
+    batFile << "local TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "$TSCEXEPATH/tsc --emit=jit -nogc $2 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
+    batFile.close();
+}
+
+void createJitBatchFileGC()
+{
+#ifndef NEW_BAT
+    if (exists("jit_gc.sh"))
+    {
+        return;
+    }
+#endif
+
+    std::ofstream batFile("jit_gc.sh");
+    batFile << "local FILENAME=$1" << std::endl;
+    batFile << "local TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "$TSCEXEPATH/tsc --emit=jit --shared-libs=../../bin/libTypeScriptGCWrapper.so $2 1> $FILENAME.txt 2> $FILENAME.err"
+            << std::endl;
+    batFile.close();
+}
+#endif
 
 void testFile(const char *file)
 {
@@ -622,48 +756,54 @@ void testFile(const char *file)
 
     // compile
     std::stringstream ss;
+#if WIN32
+#define BAT_NAME ".bat "
+#else
+#define BAT_NAME ".sh "
+#endif
+
     if (isJit)
     {
         if (noGC)
         {
-            ss << "jit.bat " << stem.generic_string() << ms.count() << " " << file;
+            ss << "jit" << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
         }
         else
         {
-            ss << "jit_gc.bat " << stem.generic_string() << ms.count() << " " << file;
+            ss << "jit_gc" << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
         }
     }
     else if (isJitCompile)
     {
         if (noGC)
         {
-            ss << "compile_jit.bat " << stem.generic_string() << ms.count() << " " << file;
+            ss << "compile_jit" << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
         }
         else
         {
-            ss << "compile_jit_gc.bat " << stem.generic_string() << ms.count() << " " << file;
+            ss << "compile_jit_gc" << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
         }
     }
     else if (enableBuiltins)
     {
         if (noGC)
         {
-            ss << "compile_rt.bat " << stem.generic_string() << ms.count() << " " << file;
+            ss << "compile_rt" << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
         }
         else
         {
-            ss << "compile_gc_rt.bat " << stem.generic_string() << ms.count() << " " << file;
+            ss << "compile_gc_rt" << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
         }
     }
     else
     {
         if (noGC)
         {
-            ss << "compile.bat " << stem.generic_string() << ms.count() << " " << file;
+            ss << "compile" << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
         }
         else
         {
-            ss << "compile_qc.bat " << stem.generic_string() << ms.count() << " " << file;
+            ss << "compile_gc" << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
         }
     }
 
