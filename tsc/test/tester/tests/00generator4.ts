@@ -137,6 +137,20 @@ function main7() {
     assert(count == 4);
 }
 
+function* foo8(index: number) {
+    while (index < 20) {
+        yield index;
+        index++;
+    }
+}
+
+function main8() {
+    let iterator = foo8(5);
+    assert(iterator.next().value == 5.0);
+
+    print(iterator.next().value == 6.0);
+}
+
 function main() {
     main1();
     main2();
@@ -145,5 +159,7 @@ function main() {
     main5();
     main6();
     main7();
+    // TODO: bug here, if you uncomment
+    //main8();
     print("done.");
 }
