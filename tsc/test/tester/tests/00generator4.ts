@@ -117,6 +117,26 @@ function main6() {
     assert(count == 4);
 }
 
+function* foo7() {
+    yield 1;
+
+    yield* foo6_2();
+
+    yield 4;
+}
+
+function main7() {
+    let count = 0;
+    let t = 1;
+    for (const o of foo7()) {
+        print(o);
+        count++;
+        assert(t++ == o);
+    }
+
+    assert(count == 4);
+}
+
 function main() {
     main1();
     main2();
@@ -124,5 +144,6 @@ function main() {
     main4();
     main5();
     main6();
+    main7();
     print("done.");
 }

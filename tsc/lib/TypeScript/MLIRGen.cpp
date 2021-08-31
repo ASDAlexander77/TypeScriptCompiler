@@ -1615,113 +1615,6 @@ class MLIRGenImpl
         return funcSymbolRef;
     }
 
-    mlir_ts::FuncOp mlirGenFunctionGeneratorSwitchVersion(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST,
-                                                          const GenContext &genContext)
-    {
-        auto location = loc(functionLikeDeclarationBaseAST);
-        NodeFactory nf(NodeFactoryFlags::None);
-
-        auto stepIdent = nf.createIdentifier(S("step"));
-
-        // create return object
-        NodeArray<ObjectLiteralElementLike> generatorObjectProperties;
-
-        // add step field
-        auto stepProp = nf.createPropertyAssignment(stepIdent, nf.createNumericLiteral(S("0"), TokenFlags::None));
-        generatorObjectProperties.push_back(stepProp);
-
-        // create body of next method
-        NodeArray<Statement> nextStatements;
-
-        // add main switcher
-        auto stepAccess = nf.createPropertyAccessExpression(nf.createToken(SyntaxKind::ThisKeyword), stepIdent);
-        auto stepIncr = nf.createPostfixUnaryExpression(stepAccess, nf.createToken(SyntaxKind::PlusPlusToken));
-
-        NodeArray<CaseOrDefaultClause> clauses;
-
-        auto currentStep = 0;
-
-        // add function body to statements to first step
-        if (functionLikeDeclarationBaseAST->body == SyntaxKind::Block)
-        {
-            NodeArray<Statement> caseStatements;
-
-            // process every statement
-            auto block = functionLikeDeclarationBaseAST->body.as<Block>();
-            for (auto statement : block->statements)
-            {
-                if (statement == SyntaxKind::ExpressionStatement)
-                {
-                    auto exprStat = statement.as<ExpressionStatement>();
-                    if (exprStat->expression == SyntaxKind::YieldExpression)
-                    {
-                        caseStatements.push_back(nf.createReturnStatement(exprStat->expression));
-
-                        // next step
-                        auto nextCase =
-                            nf.createCaseClause(nf.createNumericLiteral(to_string(currentStep++), TokenFlags::None), caseStatements);
-                        clauses.push_back(nextCase);
-                        caseStatements = NodeArray<Statement>();
-
-                        continue;
-                    }
-                }
-
-                caseStatements.push_back(statement);
-            }
-
-            // add last step
-            auto nextCase = nf.createCaseClause(nf.createNumericLiteral(to_string(currentStep), TokenFlags::None), caseStatements);
-            clauses.push_back(nextCase);
-        }
-        else
-        {
-            NodeArray<Statement> firstCaseStatements;
-            firstCaseStatements.push_back(functionLikeDeclarationBaseAST->body);
-            auto firstCase = nf.createCaseClause(nf.createNumericLiteral(S("0"), TokenFlags::None), firstCaseStatements);
-            clauses.push_back(firstCase);
-        }
-
-        auto switchStat = nf.createSwitchStatement(stepIncr, nf.createCaseBlock(clauses));
-        nextStatements.push_back(switchStat);
-
-        // add next statements
-        // add default return with empty
-        nextStatements.push_back(nf.createReturnStatement(getYieldReturnObject(nf, nf.createIdentifier(S("undefined")), true)));
-
-        // create next body
-        auto nextBody = nf.createBlock(nextStatements, /*multiLine*/ false);
-
-        // create method next in object
-        auto nextMethodDecl = nf.createMethodDeclaration(undefined, undefined, undefined, nf.createIdentifier(S("next")), undefined,
-                                                         undefined, undefined, undefined, nextBody);
-        nextMethodDecl->transformFlags |= TransformFlags::VarsInObjectContext;
-
-        // copy location info, to fix issue with names of anonymous functions
-        nextMethodDecl->pos = functionLikeDeclarationBaseAST->pos;
-        nextMethodDecl->_end = functionLikeDeclarationBaseAST->_end;
-
-        generatorObjectProperties.push_back(nextMethodDecl);
-
-        auto generatorObject = nf.createObjectLiteralExpression(generatorObjectProperties, false);
-
-        // generator body
-        NodeArray<Statement> generatorStatements;
-
-        // step 1, add return object
-        auto retStat = nf.createReturnStatement(generatorObject);
-        generatorStatements.push_back(retStat);
-
-        auto body = nf.createBlock(generatorStatements, /*multiLine*/ false);
-        auto funcOp =
-            nf.createFunctionDeclaration(functionLikeDeclarationBaseAST->decorators, functionLikeDeclarationBaseAST->modifiers, undefined,
-                                         functionLikeDeclarationBaseAST->name, functionLikeDeclarationBaseAST->typeParameters,
-                                         functionLikeDeclarationBaseAST->parameters, functionLikeDeclarationBaseAST->type, body);
-
-        auto genFuncOp = mlirGenFunctionLikeDeclaration(funcOp, genContext);
-        return genFuncOp;
-    }
-
     mlir_ts::FuncOp mlirGenFunctionGenerator(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
     {
         auto location = loc(functionLikeDeclarationBaseAST);
@@ -2158,27 +2051,33 @@ class MLIRGenImpl
         return retObject;
     };
 
-    mlir::Value mlirGenYieldExpressionSwitchVersion(YieldExpression yieldExpressionAST, const GenContext &genContext)
+    mlir::Value mlirGenYieldStar(YieldExpression yieldExpressionAST, const GenContext &genContext)
     {
-        if (genContext.passResult)
-        {
-            genContext.passResult->functionReturnTypeShouldBeProvided = true;
-        }
+        SymbolTableScopeT varScope(symbolTable);
 
         NodeFactory nf(NodeFactoryFlags::None);
-        auto yieldValue = mlirGen(getYieldReturnObject(nf, yieldExpressionAST->expression, false), genContext);
 
-        // record return type if not provided
-        if (genContext.passResult)
-        {
-            processReturnType(yieldValue, genContext);
-        }
+        auto _v_ident = nf.createIdentifier(S("_v_"));
 
-        return yieldValue;
+        NodeArray<VariableDeclaration> declarations;
+        declarations.push_back(nf.createVariableDeclaration(_v_ident));
+        auto declList = nf.createVariableDeclarationList(declarations, NodeFlags::Const);
+
+        auto forOfStat = nf.createForOfStatement(undefined, declList, yieldExpressionAST->expression,
+                                                 nf.createExpressionStatement(nf.createYieldExpression(undefined, _v_ident)));
+
+        mlirGen(forOfStat, genContext);
+
+        return mlir::Value();
     }
 
     mlir::Value mlirGen(YieldExpression yieldExpressionAST, const GenContext &genContext)
     {
+        if (yieldExpressionAST->asteriskToken)
+        {
+            return mlirGenYieldStar(yieldExpressionAST, genContext);
+        }
+
         auto location = loc(yieldExpressionAST);
 
         if (genContext.passResult)
