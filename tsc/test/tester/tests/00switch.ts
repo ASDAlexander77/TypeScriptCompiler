@@ -59,9 +59,11 @@ function test5() {
             break;
         case 4:
             let i = 22;
+            const j = 23;
             break;
         case 5:
             i++;
+            print(j);
             break;
         default:
             break;

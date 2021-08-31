@@ -761,7 +761,8 @@ class MLIRGenImpl
     {
         auto isGlobalScope = !genContext.funcOp; /*symbolTable.getCurScope()->getParentScope() == nullptr*/
         auto isGlobal = isGlobalScope || varClass == VariableClass::Var;
-        auto isConst = (varClass == VariableClass::Const || varClass == VariableClass::ConstRef) && !genContext.allocateVarsInContextThis;
+        auto isConst = (varClass == VariableClass::Const || varClass == VariableClass::ConstRef) &&
+                       !genContext.allocateVarsOutsideOfOperation && !genContext.allocateVarsInContextThis;
 
         auto effectiveName = name;
 
@@ -769,57 +770,55 @@ class MLIRGenImpl
         mlir::Type varType;
         if (!isGlobal)
         {
-            mlir::Value init;
-
-            // scope to restore inserting point
+            auto res = func();
+            auto type = std::get<0>(res);
+            auto init = std::get<1>(res);
+            if (!type && genContext.allowPartialResolve)
             {
-                mlir::OpBuilder::InsertionGuard insertGuard(builder);
-                if (genContext.allocateVarsOutsideOfOperation)
-                {
-                    builder.setInsertionPoint(genContext.currentOperation);
-                }
+                return false;
+            }
 
-                auto res = func();
-                auto type = std::get<0>(res);
-                init = std::get<1>(res);
-                if (!type && genContext.allowPartialResolve)
-                {
-                    return false;
-                }
+            assert(type);
+            varType = type;
 
+            if (isConst)
+            {
+                variableOp = init;
+                // special cast to support ForOf
+                if (varClass == VariableClass::ConstRef)
+                {
+                    MLIRCodeLogic mcl(builder);
+                    variableOp = mcl.GetReferenceOfLoadOp(init);
+                    if (!variableOp)
+                    {
+                        // convert ConstRef to Const again as this is const object (it seems)
+                        variableOp = init;
+                        varClass = VariableClass::Const;
+                    }
+                }
+            }
+            else
+            {
                 assert(type);
-                varType = type;
 
-                if (isConst)
+                MLIRTypeHelper mth(builder.getContext());
+
+                auto actualType = mth.convertConstArrayTypeToArrayType(type);
+                if (init && actualType != type)
                 {
-                    variableOp = init;
-                    // special cast to support ForOf
-                    if (varClass == VariableClass::ConstRef)
-                    {
-                        MLIRCodeLogic mcl(builder);
-                        variableOp = mcl.GetReferenceOfLoadOp(init);
-                        if (!variableOp)
-                        {
-                            // convert ConstRef to Const again as this is const object (it seems)
-                            variableOp = init;
-                            varClass = VariableClass::Const;
-                        }
-                    }
+                    auto castValue = cast(location, actualType, init, genContext);
+                    init = castValue;
                 }
-                else
+
+                varType = actualType;
+
+                // scope to restore inserting point
                 {
-                    assert(type);
-
-                    MLIRTypeHelper mth(builder.getContext());
-
-                    auto actualType = mth.convertConstArrayTypeToArrayType(type);
-                    if (init && actualType != type)
+                    mlir::OpBuilder::InsertionGuard insertGuard(builder);
+                    if (genContext.allocateVarsOutsideOfOperation)
                     {
-                        auto castValue = cast(location, actualType, init, genContext);
-                        init = castValue;
+                        builder.setInsertionPoint(genContext.currentOperation);
                     }
-
-                    varType = actualType;
 
                     if (genContext.allocateVarsInContextThis)
                     {
@@ -829,14 +828,15 @@ class MLIRGenImpl
                     if (!variableOp)
                     {
                         // default case
-                        variableOp = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(actualType), init,
+                        variableOp = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(actualType),
+                                                                         genContext.allocateVarsOutsideOfOperation ? mlir::Value() : init,
                                                                          builder.getBoolAttr(false));
                     }
                 }
             }
 
             // init must be in its normal place
-            if (genContext.allocateVarsInContextThis && variableOp && init)
+            if ((genContext.allocateVarsInContextThis || genContext.allocateVarsOutsideOfOperation) && variableOp && init)
             {
                 builder.create<mlir_ts::StoreOp>(location, init, variableOp);
             }
