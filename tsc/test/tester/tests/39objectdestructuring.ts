@@ -13,6 +13,7 @@ namespace ObjectDestructuring {
         public f: number;
     }
 
+    /*
     function testFunction(callBack: (x: X) => void) {
         const test = new X();
         test.a = 17;
@@ -27,6 +28,7 @@ namespace ObjectDestructuring {
 
         callBack(test);
     }
+    */
 
     function arrayAssignment() {
         let [a, b, c] = [1, "foo", 3];
