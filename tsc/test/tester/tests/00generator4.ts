@@ -68,10 +68,33 @@ function main4() {
     assert(count == 4);
 }
 
+function* foo5() {
+    yield 1;
+
+    for (const o of [2, 3]) {
+        yield o;
+    }
+
+    yield 4;
+}
+
+function main5() {
+    let count = 0;
+    let t = 1;
+    for (const o of foo5()) {
+        print(o);
+        count++;
+        assert(t++ == o);
+    }
+
+    assert(count == 4);
+}
+
 function main() {
     main1();
     main2();
     main3();
     main4();
+    main5();
     print("done.");
 }
