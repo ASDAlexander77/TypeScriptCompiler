@@ -623,7 +623,7 @@ void createCompileBatchFileGCWithRT()
     batFile << "$TSCEXEPATH/tsc --emit=jit --shared-libs=../../lib/libTypeScriptGCWrapper.so -dump-object-file "
                "-object-filename=$FILENAME.o $2"
             << std::endl;
-    batFile << "gcc -o $FILENAME -l$CLANGLIBPATH/clang_rt.builtins-x86_64.lib $FILENAME.o" << std::endl;
+    batFile << "gcc -o $FILENAME -Wl,-rpath=$CLANGLIBPATH -lclang_rt.builtins-x86_64 $FILENAME.o" << std::endl;
     batFile << "del $FILENAME.o" << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile.close();

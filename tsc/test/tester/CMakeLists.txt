@@ -57,7 +57,7 @@ else()
     target_compile_definitions(test-runner PUBLIC "TEST_GCPATH=\"${CMAKE_BINARY_DIR}/../../3rdParty/gc/Release\"")
     target_compile_definitions(test-runner PUBLIC "TEST_TSC_EXEPATH=\"${CMAKE_BINARY_DIR}/bin\"")
     target_compile_definitions(test-runner PUBLIC "TEST_EXEPATH=\"${CMAKE_BINARY_DIR}/../../3rdParty/llvm-ninja/release/bin\"")
-    target_compile_definitions(test-runner PUBLIC "TEST_CLANGLIBPATH=\"${CMAKE_BINARY_DIR}/../../3rdParty/llvm-ninja/release/lib/clang/13.0.0/lib/windows\"")
+    target_compile_definitions(test-runner PUBLIC "TEST_CLANGLIBPATH=\"${CMAKE_BINARY_DIR}/../../3rdParty/llvm-ninja/release/lib/clang/13.0.0/lib/linux\"")
 endif()
 
 
