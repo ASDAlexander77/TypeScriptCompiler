@@ -34,9 +34,11 @@ namespace fs = std::experimental::filesystem;
 #if WIN32
 #define POPEN _popen
 #define PCLOSE _pclose
+#define POPEN_MODE "rt"
 #else
 #define POPEN popen
 #define PCLOSE pclose
+#define POPEN_MODE "r"
 #endif
 
 //#define NEW_BAT 1
@@ -132,7 +134,7 @@ std::string exec(std::string cmd)
         std::array<char, 128> buffer;
         std::string result;
 
-        FILE *pipe = POPEN(cmd.c_str(), "rt");
+        FILE *pipe = POPEN(cmd.c_str(), POPEN_MODE);
         if (!pipe)
         {
             std::cerr << "Can't run cmd: " << cmd.c_str() << std::endl;
