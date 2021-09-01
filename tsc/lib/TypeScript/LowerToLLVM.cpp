@@ -196,6 +196,7 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
     }
 };
 #else
+
 #ifdef WIN32
 #include "TypeScript/win/assert.h"
 #else
