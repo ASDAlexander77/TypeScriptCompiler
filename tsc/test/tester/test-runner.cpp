@@ -131,6 +131,7 @@ std::string exec(std::string cmd)
         FILE *pipe = POPEN(cmd.c_str(), "rt");
         if (!pipe)
         {
+            std::cerr << "Can't run cmd: " << cmd.c_str() << std::endl;
             throw std::runtime_error("popen() failed!");
         }
 
