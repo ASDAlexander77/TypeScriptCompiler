@@ -2248,6 +2248,11 @@ class MLIRGenImpl
 
     mlir::LogicalResult checkSafeCast(Expression expr, const GenContext &genContext)
     {
+        if (expr != SyntaxKind::BinaryExpression)
+        {
+            return mlir::success();
+        }
+
         if (auto binExpr = expr.as<BinaryExpression>())
         {
             auto op = (SyntaxKind)binExpr->operatorToken;
