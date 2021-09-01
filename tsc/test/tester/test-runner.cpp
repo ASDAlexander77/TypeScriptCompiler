@@ -14,8 +14,10 @@
 #include <windows.h>
 #elif _POSIX_C_SOURCE >= 199309L
 #include <time.h> // for nanosleep
+#include <errno.h>
 #else
 #include <unistd.h> // for usleep
+#include <errno.h>
 #endif
 
 #if __cplusplus >= 201703L
@@ -132,6 +134,7 @@ std::string exec(std::string cmd)
         if (!pipe)
         {
             std::cerr << "Can't run cmd: " << cmd.c_str() << std::endl;
+            std::cerr << "errno: " << strerror(errno) << std::endl;
             throw std::runtime_error("popen() failed!");
         }
 
