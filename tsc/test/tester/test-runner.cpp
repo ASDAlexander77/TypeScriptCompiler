@@ -599,9 +599,9 @@ void createCompileBatchFileGC()
     batFile << "FILENAME=$1" << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "GCLIBPATH=" << TEST_GCPATH << std::endl;
-    batFile << "$TSCEXEPATH/tsc --emit=jit --shared-libs=../../lib/libTypeScriptGCWrapper.so $2 2>$FILENAME.li" << std::endl;
-    batFile << "/usr/bin/llc-12 --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
-    batFile << "gcc -fPIC -o $FILENAME -L$GCLIBPATH -lgc-lib $FILENAME.o" << std::endl;
+    batFile << "$TSCEXEPATH/tsc --emit=jit --shared-libs=../../lib/libTypeScriptGCWrapper.so $2 2>$FILENAME.il" << std::endl;
+    batFile << "/usr/bin/llc-12 -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
+    batFile << "gcc -o $FILENAME -L$GCLIBPATH -lgc-lib $FILENAME.o" << std::endl;
     batFile << "del $FILENAME.o" << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile.close();
@@ -621,9 +621,9 @@ void createCompileBatchFileGCWithRT()
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "GCLIBPATH=" << TEST_GCPATH << std::endl;
     batFile << "CLANGLIBPATH=" << TEST_CLANGLIBPATH << std::endl;
-    batFile << "$TSCEXEPATH/tsc --emit=llvm --shared-libs=../../lib/libTypeScriptGCWrapper.so $2 2>$FILENAME.li" << std::endl;
-    batFile << "/usr/bin/llc-12 --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
-    batFile << "gcc -fPIC -o $FILENAME -L$GCLIBPATH -L$CLANGLIBPATH -lgc-lib -lclang_rt.builtins-x86_64 $FILENAME.o" << std::endl;
+    batFile << "$TSCEXEPATH/tsc --emit=llvm --shared-libs=../../lib/libTypeScriptGCWrapper.so $2 2>$FILENAME.il" << std::endl;
+    batFile << "/usr/bin/llc-12 -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
+    batFile << "gcc -o $FILENAME -L$GCLIBPATH -L$CLANGLIBPATH -lgc-lib -lclang_rt.builtins-x86_64 $FILENAME.o" << std::endl;
     batFile << "del $FILENAME.o" << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile.close();
@@ -662,10 +662,11 @@ void createJitCompileBatchFileGC()
     std::ofstream batFile("compile_jit_gc.sh");
     batFile << "FILENAME=$1" << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "GCLIBPATH=" << TEST_GCPATH << std::endl;
     batFile << "$TSCEXEPATH/tsc --emit=jit --shared-libs=../../lib/libTypeScriptGCWrapper.so -dump-object-file "
                "-object-filename=$FILENAME.o $2"
             << std::endl;
-    batFile << "gcc -o $FILENAME $FILENAME.o" << std::endl;
+    batFile << "gcc -o $FILENAME -L$GCLIBPATH -lgc-lib $FILENAME.o" << std::endl;
     batFile << "del $FILENAME.o" << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile.close();
