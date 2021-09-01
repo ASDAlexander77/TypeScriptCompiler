@@ -51,6 +51,7 @@ target_compile_definitions(test-runner PUBLIC "TEST_CLANGLIBPATH=\"${CMAKE_BINAR
 
 
 ######## enable testing ############                     
+add_test(NAME test-compile-00-print COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00print.ts")
 add_test(NAME test-compile-00-assert COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")
 add_test(NAME test-compile-00-funcs COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs.ts")
 add_test(NAME test-compile-00-funcs_capture COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_capture.ts")
@@ -147,6 +148,7 @@ add_test(NAME test-compile-45-enumtostring COMMAND test-runner "${PROJECT_SOURCE
 add_test(NAME test-compile-48-instanceof COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/48instanceof.ts")
 add_test(NAME test-compile-Grammar_and_types COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/Grammar_and_types.ts")
 
+add_test(NAME test-jit-00-print COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00print.ts")
 add_test(NAME test-jit-00-assert COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")
 add_test(NAME test-jit-00-funcs COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs.ts")
 add_test(NAME test-jit-00-funcs_capture COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_capture.ts")
