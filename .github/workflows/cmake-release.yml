@@ -94,7 +94,7 @@ jobs:
     - name: Copy GC
       continue-on-error: false
       working-directory: ${{github.workspace}}/__build/gc-release
-      run:  xcopy .\Release\*.* ..\..\3rdParty\gc\release\
+      run:  xcopy /Y .\Release\*.* ..\..\3rdParty\gc\release\
       shell: pwsh
 
     - name: Configure
