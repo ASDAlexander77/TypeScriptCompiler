@@ -616,8 +616,8 @@ void createJitCompileBatchFile()
 #endif
 
     std::ofstream batFile("compile_jit.sh");
-    batFile << "local FILENAME=$1" << std::endl;
-    batFile << "local TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "FILENAME=$1" << std::endl;
+    batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "$TSCEXEPATH/tsc --emit=jit -nogc -dump-object-file "
                "-object-filename=$FILENAME.o $2"
             << std::endl;
@@ -637,8 +637,8 @@ void createJitCompileBatchFileGC()
 #endif
 
     std::ofstream batFile("compile_jit_gc.sh");
-    batFile << "local FILENAME=$1" << std::endl;
-    batFile << "local TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "FILENAME=$1" << std::endl;
+    batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "$TSCEXEPATH/tsc --emit=jit --shared-libs=../../bin/libTypeScriptGCWrapper.so -dump-object-file "
                "-object-filename=$FILENAME.o $2"
             << std::endl;
@@ -658,8 +658,8 @@ void createJitBatchFile()
 #endif
 
     std::ofstream batFile("jit.sh");
-    batFile << "local FILENAME=$1" << std::endl;
-    batFile << "local TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "FILENAME=$1" << std::endl;
+    batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "$TSCEXEPATH/tsc --emit=jit -nogc $2 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile.close();
 }
@@ -674,8 +674,8 @@ void createJitBatchFileGC()
 #endif
 
     std::ofstream batFile("jit_gc.sh");
-    batFile << "local FILENAME=$1" << std::endl;
-    batFile << "local TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "FILENAME=$1" << std::endl;
+    batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "$TSCEXEPATH/tsc --emit=jit --shared-libs=../../bin/libTypeScriptGCWrapper.so $2 1> $FILENAME.txt 2> $FILENAME.err"
             << std::endl;
     batFile.close();
