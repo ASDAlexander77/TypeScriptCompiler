@@ -15,9 +15,11 @@
 #elif _POSIX_C_SOURCE >= 199309L
 #include <time.h> // for nanosleep
 #include <errno.h>
+#include <string.h>
 #else
 #include <unistd.h> // for usleep
 #include <errno.h>
+#include <string.h>
 #endif
 
 #if __cplusplus >= 201703L
