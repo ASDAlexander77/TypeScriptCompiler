@@ -757,8 +757,10 @@ void testFile(const char *file)
     // compile
     std::stringstream ss;
 #if WIN32
+#define RUN_CMD ""
 #define BAT_NAME ".bat "
 #else
+#define RUN_CMD "sh -f "
 #define BAT_NAME ".sh "
 #endif
 
@@ -766,44 +768,44 @@ void testFile(const char *file)
     {
         if (noGC)
         {
-            ss << "jit" << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
+            ss << RUN_CMD << "jit" << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
         }
         else
         {
-            ss << "jit_gc" << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
+            ss << RUN_CMD << "jit_gc" << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
         }
     }
     else if (isJitCompile)
     {
         if (noGC)
         {
-            ss << "compile_jit" << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
+            ss << RUN_CMD << "compile_jit" << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
         }
         else
         {
-            ss << "compile_jit_gc" << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
+            ss << RUN_CMD << "compile_jit_gc" << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
         }
     }
     else if (enableBuiltins)
     {
         if (noGC)
         {
-            ss << "compile_rt" << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
+            ss << RUN_CMD << "compile_rt" << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
         }
         else
         {
-            ss << "compile_gc_rt" << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
+            ss << RUN_CMD << "compile_gc_rt" << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
         }
     }
     else
     {
         if (noGC)
         {
-            ss << "compile" << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
+            ss << RUN_CMD << "compile" << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
         }
         else
         {
-            ss << "compile_gc" << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
+            ss << RUN_CMD << "compile_gc" << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
         }
     }
 
