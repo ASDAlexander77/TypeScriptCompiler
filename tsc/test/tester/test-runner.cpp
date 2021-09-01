@@ -596,7 +596,14 @@ void createCompileBatchFileGC()
 #endif
 
     std::ofstream batFile("compile_gc.sh");
-    batFile << "echo off" << std::endl;
+    batFile << "FILENAME=$1" << std::endl;
+    batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "$TSCEXEPATH/tsc --emit=jit --shared-libs=../../lib/libTypeScriptGCWrapper.so -dump-object-file "
+               "-object-filename=$FILENAME.o $2"
+            << std::endl;
+    batFile << "gcc -o $FILENAME $FILENAME.o" << std::endl;
+    batFile << "del $FILENAME.o" << std::endl;
+    batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile.close();
 }
 
@@ -610,7 +617,15 @@ void createCompileBatchFileGCWithRT()
 #endif
 
     std::ofstream batFile("compile_gc_rt.sh");
-    batFile << "echo off" << std::endl;
+    batFile << "FILENAME=$1" << std::endl;
+    batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "CLANGLIBPATH=" << CLANGLIBPATH << std::endl;
+    batFile << "$TSCEXEPATH/tsc --emit=jit --shared-libs=../../lib/libTypeScriptGCWrapper.so -dump-object-file "
+               "-object-filename=$FILENAME.o $2"
+            << std::endl;
+    batFile << "gcc -o $FILENAME -l$CLANGLIBPATH/clang_rt.builtins-x86_64.lib $FILENAME.o" << std::endl;
+    batFile << "del $FILENAME.o" << std::endl;
+    batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile.close();
 }
 
@@ -630,7 +645,7 @@ void createJitCompileBatchFile()
                "-object-filename=$FILENAME.o $2"
             << std::endl;
     batFile << "gcc -o $1 $1.o" << std::endl;
-    batFile << "del $FILENAME%.o" << std::endl;
+    batFile << "del $FILENAME.o" << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile.close();
 }
@@ -651,7 +666,7 @@ void createJitCompileBatchFileGC()
                "-object-filename=$FILENAME.o $2"
             << std::endl;
     batFile << "gcc -o $FILENAME $FILENAME.o" << std::endl;
-    batFile << "del $FILENAME%.o" << std::endl;
+    batFile << "del $FILENAME.o" << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile.close();
 }
