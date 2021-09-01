@@ -567,7 +567,13 @@ void createCompileBatchFile()
 #endif
 
     std::ofstream batFile("compile.sh");
-    batFile << "echo off" << std::endl;
+    batFile << "FILENAME=$1" << std::endl;
+    batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "$TSCEXEPATH/tsc --emit=llvm -nogc $2 2>$FILENAME.il" << std::endl;
+    batFile << "/usr/bin/llc-12 -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
+    batFile << "gcc -o $FILENAME $FILENAME.o" << std::endl;
+    batFile << "del $FILENAME.o" << std::endl;
+    batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile.close();
 }
 
@@ -581,8 +587,14 @@ void createCompileBatchFileWithRT()
 #endif
 
     std::ofstream batFile("compile_rt.sh");
-    // batFile << "echo off" << std::endl;
-    batFile << "set FILENAME=%1" << std::endl;
+    batFile << "FILENAME=$1" << std::endl;
+    batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
+    batFile << "GCLIBPATH=" << TEST_GCPATH << std::endl;
+    batFile << "$TSCEXEPATH/tsc --emit=llvm -nogc $2 2>$FILENAME.il" << std::endl;
+    batFile << "/usr/bin/llc-12 -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
+    batFile << "gcc -o $FILENAME $FILENAME.o" << std::endl;
+    batFile << "del $FILENAME.o" << std::endl;
+    batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile.close();
 }
 
@@ -599,7 +611,7 @@ void createCompileBatchFileGC()
     batFile << "FILENAME=$1" << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "GCLIBPATH=" << TEST_GCPATH << std::endl;
-    batFile << "$TSCEXEPATH/tsc --emit=jit --shared-libs=../../lib/libTypeScriptGCWrapper.so $2 2>$FILENAME.il" << std::endl;
+    batFile << "$TSCEXEPATH/tsc --emit=llvm $2 2>$FILENAME.il" << std::endl;
     batFile << "/usr/bin/llc-12 -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
     batFile << "gcc -o $FILENAME -L$GCLIBPATH -lgc-lib $FILENAME.o" << std::endl;
     batFile << "del $FILENAME.o" << std::endl;
@@ -621,7 +633,7 @@ void createCompileBatchFileGCWithRT()
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "GCLIBPATH=" << TEST_GCPATH << std::endl;
     batFile << "CLANGLIBPATH=" << TEST_CLANGLIBPATH << std::endl;
-    batFile << "$TSCEXEPATH/tsc --emit=llvm --shared-libs=../../lib/libTypeScriptGCWrapper.so $2 2>$FILENAME.il" << std::endl;
+    batFile << "$TSCEXEPATH/tsc --emit=llvm $2 2>$FILENAME.il" << std::endl;
     batFile << "/usr/bin/llc-12 -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
     batFile << "gcc -o $FILENAME -L$GCLIBPATH -L$CLANGLIBPATH -lgc-lib -lclang_rt.builtins-x86_64 $FILENAME.o" << std::endl;
     batFile << "del $FILENAME.o" << std::endl;
