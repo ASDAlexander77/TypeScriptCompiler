@@ -619,7 +619,7 @@ void createCompileBatchFileGCWithRT()
     std::ofstream batFile("compile_gc_rt.sh");
     batFile << "FILENAME=$1" << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "CLANGLIBPATH=" << CLANGLIBPATH << std::endl;
+    batFile << "CLANGLIBPATH=" << TEST_CLANGLIBPATH << std::endl;
     batFile << "$TSCEXEPATH/tsc --emit=jit --shared-libs=../../lib/libTypeScriptGCWrapper.so -dump-object-file "
                "-object-filename=$FILENAME.o $2"
             << std::endl;
