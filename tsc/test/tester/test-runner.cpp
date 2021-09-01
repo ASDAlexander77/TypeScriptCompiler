@@ -572,7 +572,7 @@ void createCompileBatchFile()
     batFile << "$TSCEXEPATH/tsc --emit=llvm -nogc $2 2>$FILENAME.il" << std::endl;
     batFile << "/usr/bin/llc-12 -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
     batFile << "gcc -o $FILENAME $FILENAME.o" << std::endl;
-    batFile << "del $FILENAME.o" << std::endl;
+    batFile << "rm $FILENAME.o" << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile.close();
 }
@@ -593,7 +593,7 @@ void createCompileBatchFileWithRT()
     batFile << "$TSCEXEPATH/tsc --emit=llvm -nogc $2 2>$FILENAME.il" << std::endl;
     batFile << "/usr/bin/llc-12 -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
     batFile << "gcc -o $FILENAME $FILENAME.o" << std::endl;
-    batFile << "del $FILENAME.o" << std::endl;
+    batFile << "rm $FILENAME.o" << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile.close();
 }
@@ -614,7 +614,7 @@ void createCompileBatchFileGC()
     batFile << "$TSCEXEPATH/tsc --emit=llvm $2 2>$FILENAME.il" << std::endl;
     batFile << "/usr/bin/llc-12 -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
     batFile << "gcc -o $FILENAME -L$GCLIBPATH $FILENAME.o -lgc-lib" << std::endl;
-    batFile << "del $FILENAME.o" << std::endl;
+    batFile << "rm $FILENAME.o" << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile.close();
 }
@@ -636,7 +636,7 @@ void createCompileBatchFileGCWithRT()
     batFile << "$TSCEXEPATH/tsc --emit=llvm $2 2>$FILENAME.il" << std::endl;
     batFile << "/usr/bin/llc-12 -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
     batFile << "gcc -o $FILENAME -L$GCLIBPATH -L$CLANGLIBPATH $FILENAME.o -lgc-lib -lclang_rt.builtins-x86_64" << std::endl;
-    batFile << "del $FILENAME.o" << std::endl;
+    batFile << "rm $FILENAME.o" << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile.close();
 }
@@ -657,7 +657,7 @@ void createJitCompileBatchFile()
                "-object-filename=$FILENAME.o $2"
             << std::endl;
     batFile << "gcc -o $1 $1.o" << std::endl;
-    batFile << "del $FILENAME.o" << std::endl;
+    batFile << "rm $FILENAME.o" << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile.close();
 }
@@ -679,7 +679,7 @@ void createJitCompileBatchFileGC()
                "-object-filename=$FILENAME.o $2"
             << std::endl;
     batFile << "gcc -o $FILENAME -L$GCLIBPATH $FILENAME.o -lgc-lib" << std::endl;
-    batFile << "del $FILENAME.o" << std::endl;
+    batFile << "rm $FILENAME.o" << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile.close();
 }
@@ -742,7 +742,11 @@ void testFile(const char *file)
 
     auto cleanup = [&]() {
         std::stringstream mask;
+#if WIN32
         mask << "del " << stem << ms.count() << ".*";
+#else
+        mask << "rm " << stem << ms.count() << ".*";
+#endif
         auto delCmd = mask.str();
 
         // read output result
