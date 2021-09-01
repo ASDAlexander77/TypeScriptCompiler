@@ -2355,10 +2355,8 @@ class MLIRGenImpl
 
         // condition
         auto condValue = mlirGen(ifStatementAST->expression, genContext);
-        if (genContext.allowPartialResolve && !condValue)
-        {
-            return mlir::failure();
-        }
+
+        VALIDATE_LOGIC(condValue)
 
         if (condValue.getType() != getBooleanType())
         {
