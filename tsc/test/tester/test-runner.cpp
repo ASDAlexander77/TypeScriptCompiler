@@ -761,7 +761,7 @@ void testFile(const char *file)
 #define RUN_CMD ""
 #define BAT_NAME ".bat "
 #else
-#define RUN_CMD "/bin/sh -f "
+#define RUN_CMD "/bin/sh -f ./"
 #define BAT_NAME ".sh "
 #endif
 
