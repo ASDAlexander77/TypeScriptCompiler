@@ -1,6 +1,7 @@
 #ifndef MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_H_
 #define MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_H_
 
+#include "TypeScript/Config.h"
 #include "TypeScript/Defines.h"
 #include "TypeScript/Passes.h"
 #include "TypeScript/TypeScriptDialect.h"
@@ -1323,8 +1324,13 @@ class ConvertLogic
     {
         auto i8PtrTy = th.getI8PtrType();
 
-        auto sprintfFuncOp =
-            ch.getOrInsertFunction("sprintf", th.getFunctionType(rewriter.getI32Type(), {th.getI8PtrType(), th.getI8PtrType()}, true));
+#ifdef WIN32
+        auto sprintfFuncOp = ch.getOrInsertFunction(
+            "sprintf_s", th.getFunctionType(rewriter.getI32Type(), {th.getI8PtrType(), rewriter.getI32Type(), th.getI8PtrType()}, true));
+#else
+        auto sprintfFuncOp = ch.getOrInsertFunction(
+            "snprintf", th.getFunctionType(rewriter.getI32Type(), {th.getI8PtrType(), rewriter.getI32Type(), th.getI8PtrType()}, true));
+#endif
 
         auto bufferSizeValue = clh.createI32ConstantOf(buffSize);
         // auto newStringValue = rewriter.create<LLVM::AllocaOp>(loc, i8PtrTy, bufferSizeValue, true);
@@ -1337,7 +1343,7 @@ class ConvertLogic
 
         auto formatSpecifierCst = ch.getOrCreateGlobalString(formatVarName.str(), format);
 
-        rewriter.create<LLVM::CallOp>(loc, sprintfFuncOp, ValueRange{newStringValue, formatSpecifierCst, value});
+        rewriter.create<LLVM::CallOp>(loc, sprintfFuncOp, ValueRange{newStringValue, bufferSizeValue, formatSpecifierCst, value});
 
         return newStringValue;
     }
@@ -1349,7 +1355,8 @@ class ConvertLogic
 
     mlir::Value sprintfOfF32orF64(mlir::Value value)
     {
-        return sprintf(50, "%f", value);
+        auto doubleValue = rewriter.create<LLVM::FPExtOp>(loc, rewriter.getF64Type(), value);
+        return sprintf(50, "%g", doubleValue);
     }
 
     mlir::Value sprintfOfI64(mlir::Value value)
@@ -1359,7 +1366,7 @@ class ConvertLogic
 
     mlir::Value intToString(mlir::Value value)
     {
-#ifdef WIN32
+#ifndef USE_SPRINTF
         return itoa(value);
 #else
         return sprintfOfInt(value);
@@ -1368,7 +1375,7 @@ class ConvertLogic
 
     mlir::Value int64ToString(mlir::Value value)
     {
-#ifdef WIN32
+#ifndef USE_SPRINTF
         return i64toa(value);
 #else
         return sprintfOfI64(value);
@@ -1377,7 +1384,7 @@ class ConvertLogic
 
     mlir::Value f32OrF64ToString(mlir::Value value)
     {
-#ifdef WIN32
+#ifndef USE_SPRINTF
         return gcvt(value);
 #else
         return sprintfOfF32orF64(value);
