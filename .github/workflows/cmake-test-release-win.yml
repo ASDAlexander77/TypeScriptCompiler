@@ -62,21 +62,25 @@ jobs:
     - name: Download 3rd party - LLVM
       continue-on-error: true
       shell: pwsh
-      run: if (!(Test-Path -Path "llvm_13_release.zip" -PathType Leaf)) { Invoke-WebRequest -Uri "https://www.dropbox.com/s/o8hrv8ppqayu6vg/llvm_13_release.zip?dl=1" -OutFile "llvm_13_release.zip" }
+      if: hashFiles('llvm_13_release.zip') == ''
+      run: Invoke-WebRequest -Uri "https://www.dropbox.com/s/o8hrv8ppqayu6vg/llvm_13_release.zip?dl=1" -OutFile "llvm_13_release.zip"
 
     - name: UnZip 3rd party - LLVM
       continue-on-error: false
-      run: if (Test-Path -Path "llvm_13_release.zip" -PathType Leaf) { Expand-Archive -Path "llvm_13_release.zip" -DestinationPath "3rdParty\llvm\" }
+      if: hashFiles('llvm_13_release.zip') != ''
+      run: Expand-Archive -Path "llvm_13_release.zip" -DestinationPath "3rdParty\llvm\" -Force
       shell: pwsh
 
     - name: Download 3rd party source - GC
       continue-on-error: true
       shell: pwsh
-      run: if (!(Test-Path -Path "gc-8.0.4.tar.gz" -PathType Leaf)) { Invoke-WebRequest -Uri "https://www.hboehm.info/gc/gc_source/gc-8.0.4.tar.gz" -OutFile "gc-8.0.4.tar.gz" }
+      if: hashFiles('gc-8.0.4.tar.gz') == ''
+      run: Invoke-WebRequest -Uri "https://www.hboehm.info/gc/gc_source/gc-8.0.4.tar.gz" -OutFile "gc-8.0.4.tar.gz"
 
     - name: UnZip 3rd party source - GC
       continue-on-error: false
-      run: if (Test-Path -Path "gc-8.0.4.tar.gz" -PathType Leaf) { tar -xvzf gc-8.0.4.tar.gz -C ./3rdParty/ }
+      if: hashFiles('gc-8.0.4.tar.gz') != ''
+      run: tar -xvzf gc-8.0.4.tar.gz -C ./3rdParty/
       shell: pwsh
 
     - name: Configure GC
