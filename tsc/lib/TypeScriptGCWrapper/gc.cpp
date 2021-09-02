@@ -30,5 +30,7 @@ size_t _mlir__GC_get_heap_size()
 
 void _mlir__GC_win32_free_heap()
 {
+#ifdef WIN32
     GC_win32_free_heap();
+#endif
 }
