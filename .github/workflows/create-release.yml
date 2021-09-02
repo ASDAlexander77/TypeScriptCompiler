@@ -114,7 +114,7 @@ jobs:
 
       - name: Create Zip of Windows Asset
         working-directory: ${{github.workspace}}/__build
-        run: Get-ChildItem -Path .\tsc-release\bin\tsc.exe, .\tsc-release\bin\TypeScriptGCWrapper.dll, .\gc-release\${{ env.BUILD_TYPE }}\gc-lib.gc | Compress-Archive -DestinationPath ..\tsc.zip
+        run: Get-ChildItem -Path .\tsc-release\bin\tsc.exe, .\tsc-release\bin\TypeScriptGCWrapper.dll, .\gc-release\${{ env.BUILD_TYPE }}\gc-lib.lib | Compress-Archive -DestinationPath ..\tsc.zip
         shell: pwsh
 
       - name: Archive Zip of Windows Asset
@@ -242,13 +242,13 @@ jobs:
       - name: Create Tar.GZ of Linux Asset
         working-directory: ${{github.workspace}}/__build
         shell: sh
-        run: tar -czvf ./tsc.tgz ./tsc-ninja-release/bin/tsc ./tsc-ninja-release/lib/libTypeScriptGCWrapper.so ./gc-ninja-release/libgc-lib.a 
+        run: tar -czvf ../tsc.tar.gz ./tsc-ninja-release/bin/tsc ./tsc-ninja-release/lib/libTypeScriptGCWrapper.so ./gc-ninja-release/libgc-lib.a 
 
       - name: Archive Tar.GZ of Linux Asset
         uses: actions/upload-artifact@v2
         with:
           name: tsc-linux-asset
-          path: ./tsc.tgz
+          path: ../tsc.tar.gz
           retention-days: 1   
 
   create_release:
@@ -307,6 +307,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
-          asset_path: ./tsc.tgz
-          asset_name: tsc.tgz
+          asset_path: ./tsc.tar.gz
+          asset_name: tsc.tar.gz
           asset_content_type: application/tar+gzip
