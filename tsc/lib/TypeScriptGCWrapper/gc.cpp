@@ -27,3 +27,8 @@ size_t _mlir__GC_get_heap_size()
 {
     return GC_get_heap_size();
 }
+
+void _mlir__GC_win32_free_heap()
+{
+    GC_win32_free_heap();
+}

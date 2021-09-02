@@ -392,12 +392,6 @@ int runJit(mlir::ModuleOp module)
         return symbolMap;
     };
 
-    if (noGC)
-    {
-        llvm::errs() << "JIT initialization failed. Missing GC library. Did you forget to provide it via '--shared-libs'?\n";
-        return -1;
-    }
-
     // Create an MLIR execution engine. The execution engine eagerly JIT-compiles
     // the module.
     auto maybeEngine = mlir::ExecutionEngine::create(module, /*llvmModuleBuilder=*/nullptr, optPipeline);
@@ -405,6 +399,12 @@ int runJit(mlir::ModuleOp module)
     auto &engine = maybeEngine.get();
 
     engine->registerSymbols(runtimeSymbolMap);
+    if (noGC)
+    {
+        llvm::errs() << "JIT initialization failed. Missing GC library. Did you forget to provide it via "
+                        "'--shared-libs=TypeScriptGCWrapper.dll'? or you can switch it off by using '-nogc'\n";
+        return -1;
+    }
 
     if (dumpObjectFile)
     {

@@ -265,7 +265,7 @@ jobs:
           tag_name: ${{ github.ref }}
           release_name: Release ${{ github.ref }}
           draft: true
-          prerelease: false
+          prerelease: true
     outputs:
       upload_url: ${{ steps.create_release.outputs.upload_url }}
 

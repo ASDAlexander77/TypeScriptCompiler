@@ -29,5 +29,7 @@ void __mlir_runner_init(llvm::StringMap<void *> &exportSymbols)
 
 extern "C" API void __mlir_runner_destroy()
 {
-    // nothing todo.
+#ifdef WIN32
+    _mlir__GC_win32_free_heap();
+#endif
 }
