@@ -88,10 +88,10 @@ jobs:
       shell: sh
       run: sudo apt install ninja-build
 
-    - name: Install Clang 12
-      continue-on-error: false
-      shell: sh
-      run: sudo apt install clang-12
+#    - name: Install Clang 12
+#      continue-on-error: false
+#      shell: sh
+#      run: sudo apt install clang-12
 
     - name: Configure GC
       continue-on-error: false
@@ -109,7 +109,7 @@ jobs:
       continue-on-error: false
       working-directory: ${{github.workspace}}/__build/gc-ninja-release
       shell: sh
-      run: cp ./lib* ../../3rdParty/gc/release/
+      run: mkdir -p ../../3rdParty/gc/release/; cp ./lib* ../../3rdParty/gc/release/
 
     - name: Configure
       continue-on-error: false
