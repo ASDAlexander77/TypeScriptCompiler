@@ -122,7 +122,7 @@ jobs:
       continue-on-error: true
       working-directory: ${{github.workspace}}/__build/tsc-ninja-release
       shell: sh
-      run: cmake --build . --config ${{ env.BUILD_TYPE }} -j 8
+      run: cmake --build . --config ${{ env.BUILD_TYPE }} -j 4
 
     - name: Test
       continue-on-error: true
