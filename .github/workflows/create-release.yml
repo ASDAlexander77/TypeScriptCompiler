@@ -121,7 +121,7 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: tsc-windows-asset
-          path: ./tsc.zip
+          path: tsc.zip
           retention-days: 1          
   
   build_on_linux:
@@ -248,7 +248,7 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: tsc-linux-asset
-          path: ../tsc.tar.gz
+          path: tsc.tar.gz
           retention-days: 1   
 
   create_release:
