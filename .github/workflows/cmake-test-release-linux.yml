@@ -33,7 +33,7 @@ jobs:
       id: cache-3rd-party
       uses: actions/cache@v2
       with:
-        path: __build/llvm
+        path: __build/llvm-ninja
         key: ${{ runner.os }}-build-llvm-v1
 
     - name: Cache 3rd Party binaries
@@ -63,14 +63,14 @@ jobs:
       continue-on-error: true
       shell: sh
       if: hashFiles('llvm_13_release.tgz') == ''
-      run: curl -L https://www.dropbox.com/s/o8hrv8ppqayu6vg/llvm_13_release.tgz?dl=1 --output llvm_13_release.tgz
+      run: curl -L https://www.dropbox.com/s/schmu3qkja0xswu/llvm_13_release.tgz?dl=1 --output llvm_13_release.tgz
 
     - name: UnZip 3rd party - LLVM
       continue-on-error: false
       shell: sh
       if: hashFiles('llvm_13_release.tgz') != ''
-      #run: file llvm_13_release.tgz; tar -xf llvm_13_release.tgz -C ./3rdParty/llvm-ninja/
-      run: file llvm_13_release.tgz; unzip llvm_13_release.tgz -d ./3rdParty/llvm-ninja/
+      run: file llvm_13_release.tgz; tar -xf llvm_13_release.tgz -C ./3rdParty/llvm-ninja/
+      #run: file llvm_13_release.tgz; unzip llvm_13_release.tgz -d ./3rdParty/llvm-ninja/
 
     - name: Download 3rd party source - GC
       continue-on-error: true
