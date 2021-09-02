@@ -97,6 +97,11 @@ jobs:
       run:  xcopy /Y .\${{ env.BUILD_TYPE }}\*.* ..\..\3rdParty\gc\release\
       shell: pwsh
 
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v1
+      with:
+        languages: cpp
+
     - name: Configure
       continue-on-error: false
       working-directory: ${{github.workspace}}/__build/tsc-release
@@ -115,3 +120,6 @@ jobs:
       # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
       run: ctest -j18 -C ${{ env.BUILD_TYPE }} -T test --output-on-failure -T test --output-on-failure
       shell: pwsh
+      
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v1
