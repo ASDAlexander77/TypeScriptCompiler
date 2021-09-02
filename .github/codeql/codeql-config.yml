@@ -1,6 +1,10 @@
 name: "CodeQL config"
 
-queries: +security-and-quality
+queries:
+#  - name: Run custom queries
+#    uses: ./queries
+  - uses: security-extended
+  - uses: security-and-quality
 
 disable-default-queries: false
 
