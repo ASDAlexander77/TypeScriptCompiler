@@ -56,13 +56,13 @@ jobs:
       shell: pwsh
 
     - name: Create __Build Folders
-      run: if (!Test-Path -Path ".\__build\tsc-release") { New-Item -ItemType Directory -Force -Path ".\__build\tsc-release" }; if (!(Test-Path -Path ".\__build\llvm\release")) { New-Item -ItemType Directory -Force -Path ".\__build\llvm\release" }; if (!(Test-Path -Path ".\__build\gc-release")) { New-Item -ItemType Directory -Force -Path ".\__build\gc-release" };
+      run: if (!(Test-Path -Path ".\__build\tsc-release")) { New-Item -ItemType Directory -Force -Path ".\__build\tsc-release" }; if (!(Test-Path -Path ".\__build\llvm\release")) { New-Item -ItemType Directory -Force -Path ".\__build\llvm\release" }; if (!(Test-Path -Path ".\__build\gc-release")) { New-Item -ItemType Directory -Force -Path ".\__build\gc-release" };
       shell: pwsh
     
     - name: Download 3rd party - LLVM
       continue-on-error: true
       shell: pwsh
-      run: if (-not(Test-Path -Path "llvm_13_release.zip" -PathType Leaf)) { Invoke-WebRequest -Uri "https://www.dropbox.com/s/o8hrv8ppqayu6vg/llvm_13_release.zip?dl=1" -OutFile "llvm_13_release.zip" }
+      run: if (!(Test-Path -Path "llvm_13_release.zip" -PathType Leaf)) { Invoke-WebRequest -Uri "https://www.dropbox.com/s/o8hrv8ppqayu6vg/llvm_13_release.zip?dl=1" -OutFile "llvm_13_release.zip" }
 
     - name: UnZip 3rd party - LLVM
       continue-on-error: true
@@ -72,7 +72,7 @@ jobs:
     - name: Download 3rd party source - GC
       continue-on-error: true
       shell: pwsh
-      run: if (-not(Test-Path -Path "gc-8.0.4.tar.gz" -PathType Leaf)) { Invoke-WebRequest -Uri "https://www.hboehm.info/gc/gc_source/gc-8.0.4.tar.gz" -OutFile "gc-8.0.4.tar.gz" }
+      run: if (!(Test-Path -Path "gc-8.0.4.tar.gz" -PathType Leaf)) { Invoke-WebRequest -Uri "https://www.hboehm.info/gc/gc_source/gc-8.0.4.tar.gz" -OutFile "gc-8.0.4.tar.gz" }
 
     - name: UnZip 3rd party source - GC
       continue-on-error: true
