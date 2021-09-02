@@ -50,6 +50,14 @@ jobs:
         path: llvm_13_release.zip
         key: ${{ runner.os }}-3rd-party-llvm-13-release-v1
 
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v1
+      with:
+        languages: cpp
+
+#    - name: Autobuild CodeQL
+#      uses: github/codeql-action/autobuild@v1
+
     - name: Delete __Build TS folders
       continue-on-error: true
       run: if (Test-Path -Path ".\__build\tsc-release") { Remove-Item -Recurse -Force ".\__build\tsc-release" }
@@ -100,14 +108,6 @@ jobs:
       working-directory: ${{github.workspace}}/__build/gc-release
       run:  xcopy /Y .\${{ env.BUILD_TYPE }}\*.* ..\..\3rdParty\gc\release\
       shell: pwsh
-
-    - name: Initialize CodeQL
-      uses: github/codeql-action/init@v1
-      with:
-        languages: cpp
-
-    - name: Autobuild CodeQL
-      uses: github/codeql-action/autobuild@v1
 
     - name: Configure
       continue-on-error: false

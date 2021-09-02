@@ -1,0 +1,8 @@
+name: "CodeQL config"
+
+paths:
+  - tsc
+
+paths-ignore:
+  - __build
+  - 3rdParty
