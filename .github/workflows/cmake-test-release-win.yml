@@ -53,7 +53,7 @@ jobs:
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v1
       with:
-        languages: c/c++
+        languages: cpp
 
     - name: Delete __Build TS folders
       continue-on-error: true
