@@ -50,6 +50,11 @@ jobs:
         path: llvm_13_release.zip
         key: ${{ runner.os }}-3rd-party-llvm-13-release-v1
 
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v1
+      with:
+        languages: c/c++
+
     - name: Delete __Build TS folders
       continue-on-error: true
       run: if (Test-Path -Path ".\__build\tsc-release") { Remove-Item -Recurse -Force ".\__build\tsc-release" }
@@ -116,3 +121,5 @@ jobs:
       run: ctest -j18 -C ${{ env.BUILD_TYPE }} -T test --output-on-failure -T test --output-on-failure
       shell: pwsh
       
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v1
