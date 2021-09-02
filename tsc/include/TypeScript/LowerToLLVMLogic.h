@@ -1719,7 +1719,7 @@ class CastLogicHelper
 
     bool isFloat(mlir::Type type)
     {
-        return type.isIntOrFloat() && !isInt(type);
+        return type.isIntOrFloat() && !isIntOrBool(type);
     }
 
     Value castLLVMTypes(mlir::Value in, mlir::Type inLLVMType, mlir::Type resType, mlir::Type resLLVMType)
@@ -1742,7 +1742,12 @@ class CastLogicHelper
 
         if (isInt(inLLVMType) && isBool(resLLVMType))
         {
-            return rewriter.create<CmpIOp>(loc, CmpIPredicate::ne, in, clh.createI32ConstantOf(0));
+            return rewriter.create<CmpIOp>(loc, CmpIPredicate::ne, in, clh.createIConstantOf(inLLVMType.getIntOrFloatBitWidth(), 0));
+        }
+
+        if (isFloat(inLLVMType) && isBool(resLLVMType))
+        {
+            return rewriter.create<CmpFOp>(loc, CmpFPredicate::ONE, in, clh.createFConstantOf(inLLVMType.getIntOrFloatBitWidth(), 0.0));
         }
 
         if (inLLVMType.isa<LLVM::LLVMPointerType>() && isBool(resLLVMType))
@@ -1751,7 +1756,7 @@ class CastLogicHelper
             return rewriter.create<CmpIOp>(loc, CmpIPredicate::ne, intVal, clh.createI64ConstantOf(0));
         }
 
-        if (isInt(inLLVMType) && isInt(resLLVMType) && inLLVMType.getIntOrFloatBitWidth() < resLLVMType.getIntOrFloatBitWidth())
+        if (isIntOrBool(inLLVMType) && isInt(resLLVMType) && inLLVMType.getIntOrFloatBitWidth() < resLLVMType.getIntOrFloatBitWidth())
         {
             return rewriter.create<ZeroExtendIOp>(loc, in, resLLVMType);
         }
