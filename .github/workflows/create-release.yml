@@ -246,6 +246,7 @@ jobs:
           retention-days: 1   
 
   create_release:
+    needs: [build_on_windows, build_on_linux]
     name: Create Release
     runs-on: ubuntu-latest
     steps:
@@ -259,8 +260,11 @@ jobs:
           release_name: Release ${{ github.ref }}
           draft: true
           prerelease: false
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
 
   deploy_windows_asset:
+    needs: create_release
     name: Upload Release (Windows)
     runs-on: windows-latest
     steps:
@@ -275,12 +279,13 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ jobs.create_release.steps.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
+          upload_url: ${{ needs.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
           asset_path: ./tsc.zip
           asset_name: tsc.zip
           asset_content_type: application/zip
 
   deploy_linux_asset:
+    needs: create_release
     name: Upload Release (Linux)
     runs-on: ubuntu-latest
     steps:
@@ -295,7 +300,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ jobs.create_release.steps.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
+          upload_url: ${{ needs.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
           asset_path: ./tsc.tgz
           asset_name: tsc.tgz
           asset_content_type: application/tar+gzip
