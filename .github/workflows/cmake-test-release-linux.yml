@@ -20,7 +20,7 @@ jobs:
     # well on Windows or Mac.  You can convert this to a matrix build if you need
     # cross-platform coverage.
     # See: https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
 
     steps:
 #    - name: check disk space
@@ -47,72 +47,84 @@ jobs:
       id: cache-3rd-party-binary-llvm-13-release
       uses: actions/cache@v2
       with:
-        path: llvm_13_release.zip
+        path: llvm_13_release.tgz
         key: ${{ runner.os }}-3rd-party-llvm-13-release-v1
 
     - name: Delete __Build TS folders
       continue-on-error: true
-      run: if (Test-Path -Path ".\__build\tsc-release") { Remove-Item -Recurse -Force ".\__build\tsc-release" }
-      shell: pwsh
+      run: rm -R ./__build/tsc-ninja-release
+      shell: bush
 
     - name: Create __Build Folders
-      run: if (!Test-Path -Path ".\__build\tsc-release") { New-Item -ItemType Directory -Force -Path ".\__build\tsc-release" }; if (!(Test-Path -Path ".\__build\llvm\release")) { New-Item -ItemType Directory -Force -Path ".\__build\llvm\release" }; if (!(Test-Path -Path ".\__build\gc-release")) { New-Item -ItemType Directory -Force -Path ".\__build\gc-release" };
-      shell: pwsh
+      run: mkdir -p ./__build/tsc-ninja-release; mkdir -p ./__build/gc-ninja-release
+      shell: bush
     
     - name: Download 3rd party - LLVM
       continue-on-error: true
-      shell: pwsh
-      run: if (-not(Test-Path -Path "llvm_13_release.zip" -PathType Leaf)) { Invoke-WebRequest -Uri "https://www.dropbox.com/s/o8hrv8ppqayu6vg/llvm_13_release.zip?dl=1" -OutFile "llvm_13_release.zip" }
+      shell: bush
+      run: |
+	if [ ! -f "llvm_13_release.tgz" ]; then
+		curl https://www.dropbox.com/s/o8hrv8ppqayu6vg/llvm_13_release.tgz?dl=1 --output llvm_13_release.tgz
+	fi
 
     - name: UnZip 3rd party - LLVM
       continue-on-error: true
-      run: if (Test-Path -Path "llvm_13_release.zip" -PathType Leaf) { Expand-Archive -Path "llvm_13_release.zip" -DestinationPath "3rdParty\llvm\" }
-      shell: pwsh
+      shell: bush
+      run: |
+	if [ -f "llvm_13_release.tgz" ]; then
+		tar -xf llvm_13_release.tgz -C ./3rdParty/llvm/
+	fi
 
     - name: Download 3rd party source - GC
       continue-on-error: true
-      shell: pwsh
-      run: if (-not(Test-Path -Path "gc-8.0.4.tar.gz" -PathType Leaf)) { Invoke-WebRequest -Uri "https://www.hboehm.info/gc/gc_source/gc-8.0.4.tar.gz" -OutFile "gc-8.0.4.tar.gz" }
+      shell: bush
+      run: |
+	if [ ! -f "gc-8.0.4.tar.gz" ]; then
+		curl https://www.hboehm.info/gc/gc_source/gc-8.0.4.tar.gz --output gc-8.0.4.tar.gz
+	fi
 
     - name: UnZip 3rd party source - GC
       continue-on-error: true
-      run: if (Test-Path -Path "gc-8.0.4.tar.gz" -PathType Leaf) { tar -xvzf gc-8.0.4.tar.gz -C ./3rdParty/ }
-      shell: pwsh
+      shell: bush
+      run: |
+	if [ -f "gc-8.0.4.tar.gz" ]; then
+		tar -xvzf gc-8.0.4.tar.gz -C ./3rdParty/
+	fi
 
     - name: Configure GC
       continue-on-error: false
-      working-directory: ${{github.workspace}}/__build/gc-release
-      run: cmake ../../3rdParty/gc-8.0.4 -G "Visual Studio 16 2019" -A x64 -Wno-dev
-      shell: pwsh
+      working-directory: ${{github.workspace}}/__build/gc-ninja-release
+      shell: bush
+      run: cmake ../../3rdParty/gc-8.0.4 -G "Ninja" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -Wno-dev -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_INSTALL_PREFIX=../../3rdParty/gc/release
 
     - name: Build GC
       continue-on-error: false
-      working-directory: ${{github.workspace}}/__build/gc-release
+      working-directory: ${{github.workspace}}/__build/gc-ninja-release
+      shell: bush
       run: cmake --build . --config ${{ env.BUILD_TYPE }} -j 8
-      shell: pwsh
 
     - name: Copy GC
       continue-on-error: false
-      working-directory: ${{github.workspace}}/__build/gc-release
-      run:  xcopy /Y .\${{ env.BUILD_TYPE }}\*.* ..\..\3rdParty\gc\release\
-      shell: pwsh
+      working-directory: ${{github.workspace}}/__build/gc-ninja-release
+      shell: bush
+      run: cp ./lib* ../../3rdParty/gc/release/
 
     - name: Configure
       continue-on-error: false
-      working-directory: ${{github.workspace}}/__build/tsc-release
-      run: cmake ../../tsc -G "Visual Studio 16 2019" -A x64 -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -Wno-dev
-      shell: pwsh
+      working-directory: ${{github.workspace}}/__build/tsc-ninja-release
+      shell: bush
+      run: cmake ../../tsc -G "Ninja" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -Wno-dev
 
     - name: Build
       continue-on-error: false
-      working-directory: ${{github.workspace}}/__build/tsc-release
+      working-directory: ${{github.workspace}}/__build/tsc-ninja-release
+      shell: bush
       run: cmake --build . --config ${{ env.BUILD_TYPE }} -j 8
-      shell: pwsh
 
     - name: Test
-      working-directory: ${{github.workspace}}/__build/tsc-release
+      working-directory: ${{github.workspace}}/__build/tsc-ninja-release
+      shell: bush
       # Execute tests defined by the CMake configuration.  
       # See https://cmake.org/cmake/help/latest/manual/ctest.1.html for more detail
       run: ctest -j18 -C ${{ env.BUILD_TYPE }} -T test --output-on-failure -T test --output-on-failure
-      shell: pwsh
       
