@@ -119,12 +119,13 @@ jobs:
       run: cmake ../../tsc -G "Ninja" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -Wno-dev
 
     - name: Build
-      continue-on-error: false
+      continue-on-error: true
       working-directory: ${{github.workspace}}/__build/tsc-ninja-release
       shell: sh
       run: cmake --build . --config ${{ env.BUILD_TYPE }} -j 8
 
     - name: Test
+      continue-on-error: true
       working-directory: ${{github.workspace}}/__build/tsc-ninja-release
       shell: sh
       # Execute tests defined by the CMake configuration.  
