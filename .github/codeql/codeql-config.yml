@@ -1,8 +1,14 @@
 name: "CodeQL config"
 
-paths:
-  - tsc
+queries: +security-and-quality
 
-paths-ignore:
-  - __build
-  - 3rdParty
+disable-default-queries: false
+
+#no uaws in cpp
+#paths:
+#  - tsc
+
+#no uaws in cpp
+#paths-ignore:
+#  - __build
+#  - 3rdParty

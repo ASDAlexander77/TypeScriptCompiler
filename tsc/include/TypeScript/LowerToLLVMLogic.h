@@ -1702,6 +1702,26 @@ class CastLogicHelper
         return mlir::Value();
     }
 
+    bool isBool(mlir::Type type)
+    {
+        return type.isInteger(1);
+    }
+
+    bool isIntOrBool(mlir::Type type)
+    {
+        return type.isIntOrIndex() && !type.isIndex();
+    }
+
+    bool isInt(mlir::Type type)
+    {
+        return isIntOrBool(type) && !isBool(type);
+    }
+
+    bool isFloat(mlir::Type type)
+    {
+        return type.isIntOrFloat() && !isInt(type);
+    }
+
     Value castLLVMTypes(mlir::Value in, mlir::Type inLLVMType, mlir::Type resType, mlir::Type resLLVMType)
     {
         if (inLLVMType == resLLVMType)
@@ -1710,58 +1730,43 @@ class CastLogicHelper
         }
 
         auto inType = in.getType();
-        if ((inLLVMType.isInteger(32) || inLLVMType.isInteger(64)) && (resLLVMType.isF32() || resLLVMType.isF64()))
+        if (isInt(inLLVMType) && isFloat(resLLVMType))
         {
             return rewriter.create<SIToFPOp>(loc, resLLVMType, in);
         }
 
-        if ((inLLVMType.isF32() || inLLVMType.isF64()) && (resLLVMType.isInteger(32) || resLLVMType.isInteger(64)))
+        if (isFloat(inLLVMType) && isInt(resLLVMType))
         {
             return rewriter.create<FPToSIOp>(loc, resLLVMType, in);
         }
 
-        if ((inLLVMType.isInteger(64) || inLLVMType.isInteger(32) || inLLVMType.isInteger(8)) && resLLVMType.isInteger(1))
+        if (isInt(inLLVMType) && isBool(resLLVMType))
         {
             return rewriter.create<CmpIOp>(loc, CmpIPredicate::ne, in, clh.createI32ConstantOf(0));
         }
 
-        if (inLLVMType.isa<LLVM::LLVMPointerType>() && resLLVMType.isInteger(1))
+        if (inLLVMType.isa<LLVM::LLVMPointerType>() && isBool(resLLVMType))
         {
             auto intVal = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), in);
             return rewriter.create<CmpIOp>(loc, CmpIPredicate::ne, intVal, clh.createI64ConstantOf(0));
         }
 
-        if (inLLVMType.isInteger(1) && (resLLVMType.isInteger(8) || resLLVMType.isInteger(32) || resLLVMType.isInteger(64)))
+        if (isInt(inLLVMType) && isInt(resLLVMType) && inLLVMType.getIntOrFloatBitWidth() < resLLVMType.getIntOrFloatBitWidth())
         {
             return rewriter.create<ZeroExtendIOp>(loc, in, resLLVMType);
         }
 
-        if (inLLVMType.isInteger(8) && resLLVMType.isInteger(32))
-        {
-            return rewriter.create<ZeroExtendIOp>(loc, in, resLLVMType);
-        }
-
-        if ((inLLVMType.isInteger(8) || inLLVMType.isInteger(32)) && resLLVMType.isInteger(64))
-        {
-            return rewriter.create<ZeroExtendIOp>(loc, in, resLLVMType);
-        }
-
-        if ((inLLVMType.isInteger(64) || inLLVMType.isInteger(32) || inLLVMType.isInteger(16)) && resLLVMType.isInteger(8))
+        if (isInt(inLLVMType) && isInt(resLLVMType) && inLLVMType.getIntOrFloatBitWidth() > resLLVMType.getIntOrFloatBitWidth())
         {
             return rewriter.create<TruncateIOp>(loc, in, resLLVMType);
         }
 
-        if (inLLVMType.isInteger(64) && resLLVMType.isInteger(32))
-        {
-            return rewriter.create<TruncateIOp>(loc, in, resLLVMType);
-        }
-
-        if (inLLVMType.isF32() && (resLLVMType.isF64() || resLLVMType.isF128()))
+        if (isFloat(inLLVMType) && isFloat(resLLVMType) && inLLVMType.getIntOrFloatBitWidth() < resLLVMType.getIntOrFloatBitWidth())
         {
             return rewriter.create<FPExtOp>(loc, in, resLLVMType);
         }
 
-        if ((inLLVMType.isF64() || inLLVMType.isF128()) && resLLVMType.isF32())
+        if (isFloat(inLLVMType) && isFloat(resLLVMType) && inLLVMType.getIntOrFloatBitWidth() > resLLVMType.getIntOrFloatBitWidth())
         {
             return rewriter.create<FPTruncOp>(loc, in, resLLVMType);
         }
