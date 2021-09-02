@@ -121,6 +121,8 @@ jobs:
           retention-days: 1          
   
   build_on_linux:
+    name: Create/Upload Release Asset (Linux)
+
     # The CMake configure and build commands are platform agnostic and should work equally
     # well on Windows or Mac.  You can convert this to a matrix build if you need
     # cross-platform coverage.
