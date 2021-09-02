@@ -1,4 +1,4 @@
-name: Test - Release - Windows
+name: Test - Release - Linux
 
 on:
 #  push:
@@ -62,34 +62,26 @@ jobs:
     - name: Download 3rd party - LLVM
       continue-on-error: true
       shell: bush
-      run: |
-	if [ ! -f "llvm_13_release.tgz" ]; then
-		curl https://www.dropbox.com/s/o8hrv8ppqayu6vg/llvm_13_release.tgz?dl=1 --output llvm_13_release.tgz
-	fi
+      if: hashFiles('llvm_13_release.tgz') == ''
+      run: curl https://www.dropbox.com/s/o8hrv8ppqayu6vg/llvm_13_release.tgz?dl=1 --output llvm_13_release.tgz
 
     - name: UnZip 3rd party - LLVM
       continue-on-error: true
       shell: bush
-      run: |
-	if [ -f "llvm_13_release.tgz" ]; then
-		tar -xf llvm_13_release.tgz -C ./3rdParty/llvm/
-	fi
+      if: hashFiles('llvm_13_release.tgz') != ''
+      run: tar -xf llvm_13_release.tgz -C ./3rdParty/llvm/
 
     - name: Download 3rd party source - GC
       continue-on-error: true
       shell: bush
-      run: |
-	if [ ! -f "gc-8.0.4.tar.gz" ]; then
-		curl https://www.hboehm.info/gc/gc_source/gc-8.0.4.tar.gz --output gc-8.0.4.tar.gz
-	fi
+      if: hashFiles('gc-8.0.4.tar.gz') == ''
+      run: curl https://www.hboehm.info/gc/gc_source/gc-8.0.4.tar.gz --output gc-8.0.4.tar.gz
 
     - name: UnZip 3rd party source - GC
       continue-on-error: true
       shell: bush
-      run: |
-	if [ -f "gc-8.0.4.tar.gz" ]; then
-		tar -xvzf gc-8.0.4.tar.gz -C ./3rdParty/
-	fi
+      if: hashFiles('gc-8.0.4.tar.gz') != ''
+      run: tar -xvzf gc-8.0.4.tar.gz -C ./3rdParty/
 
     - name: Configure GC
       continue-on-error: false
