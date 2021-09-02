@@ -66,10 +66,10 @@ jobs:
       run: curl -L https://www.dropbox.com/s/o8hrv8ppqayu6vg/llvm_13_release.tgz?dl=1 --output llvm_13_release.tgz
 
     - name: UnZip 3rd party - LLVM
-      continue-on-error: true
+      continue-on-error: false
       shell: sh
       if: hashFiles('llvm_13_release.tgz') != ''
-      run: tar -xf llvm_13_release.tgz -C ./3rdParty/llvm-ninja/
+      run: file llvm_13_release.tgz; tar -xf llvm_13_release.tgz -C ./3rdParty/llvm-ninja/
 
     - name: Download 3rd party source - GC
       continue-on-error: true
@@ -78,7 +78,7 @@ jobs:
       run: curl https://www.hboehm.info/gc/gc_source/gc-8.0.4.tar.gz --output gc-8.0.4.tar.gz
 
     - name: UnZip 3rd party source - GC
-      continue-on-error: true
+      continue-on-error: false
       shell: sh
       if: hashFiles('gc-8.0.4.tar.gz') != ''
       run: tar -xvzf gc-8.0.4.tar.gz -C ./3rdParty/
