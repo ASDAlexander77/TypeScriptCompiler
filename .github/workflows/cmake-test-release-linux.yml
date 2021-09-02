@@ -83,6 +83,16 @@ jobs:
       if: hashFiles('gc-8.0.4.tar.gz') != ''
       run: tar -xvzf gc-8.0.4.tar.gz -C ./3rdParty/
 
+    - name: Install Ninja
+      continue-on-error: false
+      shell: sh
+      run: sudo apt install ninja-build
+
+    - name: Install Clang 12
+      continue-on-error: false
+      shell: sh
+      run: sudo apt install clang-12
+
     - name: Configure GC
       continue-on-error: false
       working-directory: ${{github.workspace}}/__build/gc-ninja-release
