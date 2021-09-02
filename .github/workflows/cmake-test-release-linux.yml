@@ -69,7 +69,7 @@ jobs:
       continue-on-error: true
       shell: sh
       if: hashFiles('llvm_13_release.tgz') != ''
-      run: tar -xf llvm_13_release.tgz -C ./3rdParty/llvm/
+      run: tar -xf llvm_13_release.tgz -C ./3rdParty/llvm-ninja/
 
     - name: Download 3rd party source - GC
       continue-on-error: true
