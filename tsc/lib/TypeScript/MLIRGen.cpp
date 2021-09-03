@@ -7,6 +7,7 @@
 
 #define DEBUG_TYPE "mlir"
 
+#include "TypeScript/Config.h"
 #include "TypeScript/MLIRGen.h"
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
@@ -24,6 +25,9 @@
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 #include "mlir/Dialect/SCF/SCF.h"
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
+#ifdef ENABLE_ASYNC
+#include "mlir/Dialect/Async/IR/Async.h"
+#endif
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/ScopedHashTable.h"
@@ -714,6 +718,10 @@ class MLIRGenImpl
         {
             return mlirGen(expressionAST.as<YieldExpression>(), genContext);
         }
+        else if (kind == SyntaxKind::AwaitExpression)
+        {
+            return mlirGen(expressionAST.as<AwaitExpression>(), genContext);
+        }
         else if (kind == SyntaxKind::Unknown /*TODO: temp solution to treat null expr as empty expr*/)
         {
             return mlir::Value();
@@ -1182,29 +1190,16 @@ class MLIRGenImpl
             auto initializer = arg->initializer;
             if (initializer)
             {
-                // we need to add temporary block
-                auto tempFuncType = getFunctionType(llvm::None, llvm::None);
-                auto tempFuncOp = mlir::FuncOp::create(loc(initializer), name, tempFuncType);
-                auto &entryBlock = *tempFuncOp.addEntryBlock();
-
-                auto insertPoint = builder.saveInsertionPoint();
-                builder.setInsertionPointToStart(&entryBlock);
-
-                auto initValue = mlirGen(initializer, genContext);
-                if (initValue)
+                auto evalType = evaluate(initializer, genContext);
+                if (evalType)
                 {
                     // TODO: set type if not provided
                     isOptional = true;
                     if (!type || type == noneType)
                     {
-                        auto baseType = initValue.getType();
-                        type = baseType;
+                        type = evalType;
                     }
                 }
-
-                // remove temp block
-                builder.restoreInsertionPoint(insertPoint);
-                entryBlock.erase();
             }
 
             if ((!type || type == noneType) && genContext.argTypeDestFuncType)
@@ -1311,6 +1306,8 @@ class MLIRGenImpl
         auto params = mlirGenParameters(signatureDeclarationBaseAST, genContext);
         SmallVector<mlir::Type> argTypes;
         auto argNumber = 0;
+
+        // auto isAsync = hasModifier(signatureDeclarationBaseAST, SyntaxKind::AsyncKeyword);
 
         mlir::FunctionType funcType;
 
@@ -2124,6 +2121,19 @@ class MLIRGenImpl
         return mlir::Value();
     }
 
+    mlir::Value mlirGen(AwaitExpression awaitExpressionAST, const GenContext &genContext)
+    {
+#ifdef ENABLE_ASYNC
+        auto location = loc(awaitExpressionAST);
+
+        // auto asyncExecOp = builder.create<mlir::async::ExecuteOp>();
+        // TODO:
+        return mlirGen(awaitExpressionAST->expression, genContext);
+#else
+        return mlirGen(awaitExpressionAST->expression, genContext);
+#endif
+    }
+
     mlir::LogicalResult processReturnType(mlir::Value expressionValue, const GenContext &genContext)
     {
         // record return type if not provided
@@ -2672,14 +2682,9 @@ class MLIRGenImpl
 
         auto exprValue = mlirGen(forOfStatementAST->expression, genContext);
 
-        GenContext checkCallGenContext(genContext);
-        checkCallGenContext.allowPartialResolve = true;
-        auto checkResult = mlirGenPropertyAccessExpression(location, exprValue, "next", checkCallGenContext);
-        if (checkResult)
+        auto propertyType = evaluateProperty(exprValue, "next", genContext);
+        if (propertyType)
         {
-            // cleanup
-            checkResult.getDefiningOp()->erase();
-
             if (mlir::succeeded(mlirGenES2015(forOfStatementAST, exprValue, genContext)))
             {
                 return mlir::success();
@@ -3106,19 +3111,8 @@ class MLIRGenImpl
         }
 
         // detect value type
-        mlir::Type resultType;
-        {
-            mlir::OpBuilder::InsertionGuard guard(builder);
-            auto whenTrueExpression = conditionalExpressionAST->whenTrue;
-            auto resultTrueTemp = mlirGen(whenTrueExpression, genContext);
-
-            VALIDATE(resultTrueTemp);
-
-            resultType = resultTrueTemp.getType();
-
-            // it is temp calculation, remove it
-            resultTrueTemp.getDefiningOp()->erase();
-        }
+        // TODO: sync types for 'when' and 'else'
+        auto resultType = evaluate(conditionalExpressionAST->whenTrue, genContext);
 
         auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{resultType}, condValue, true);
 
@@ -6871,6 +6865,61 @@ class MLIRGenImpl
         {
             newClassPtr->accessors[accessorIndex].set = funcOp;
         }
+    }
+
+    mlir::Type evaluate(Expression expr, const GenContext &genContext)
+    {
+        // we need to add temporary block
+        auto tempFuncType = getFunctionType(llvm::None, llvm::None);
+        auto tempFuncOp = mlir::FuncOp::create(loc(expr), ".tempfunc", tempFuncType);
+        auto &entryBlock = *tempFuncOp.addEntryBlock();
+
+        auto insertPoint = builder.saveInsertionPoint();
+        builder.setInsertionPointToStart(&entryBlock);
+
+        mlir::Type result;
+        GenContext evalGenContext(genContext);
+        evalGenContext.allowPartialResolve = true;
+        auto initValue = mlirGen(expr, evalGenContext);
+        if (initValue)
+        {
+            result = initValue.getType();
+        }
+
+        // remove temp block
+        builder.restoreInsertionPoint(insertPoint);
+        entryBlock.erase();
+        tempFuncOp.erase();
+
+        return result;
+    }
+
+    mlir::Type evaluateProperty(mlir::Value exprValue, std::string propertyName, const GenContext &genContext)
+    {
+        auto location = exprValue.getLoc();
+        // we need to add temporary block
+        auto tempFuncType = getFunctionType(llvm::None, llvm::None);
+        auto tempFuncOp = mlir::FuncOp::create(location, ".tempfunc", tempFuncType);
+        auto &entryBlock = *tempFuncOp.addEntryBlock();
+
+        auto insertPoint = builder.saveInsertionPoint();
+        builder.setInsertionPointToStart(&entryBlock);
+
+        mlir::Type result;
+        GenContext evalGenContext(genContext);
+        evalGenContext.allowPartialResolve = true;
+        auto initValue = mlirGenPropertyAccessExpression(location, exprValue, propertyName, evalGenContext);
+        if (initValue)
+        {
+            result = initValue.getType();
+        }
+
+        // remove temp block
+        builder.restoreInsertionPoint(insertPoint);
+        entryBlock.erase();
+        tempFuncOp.erase();
+
+        return result;
     }
 
     mlir::Value cast(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext)
