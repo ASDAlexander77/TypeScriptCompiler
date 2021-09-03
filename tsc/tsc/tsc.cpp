@@ -229,6 +229,7 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module
 
 #ifdef ENABLE_ASYNC
         pm.addPass(mlir::createAsyncToAsyncRuntimePass());
+        pm.addPass(mlir::createAsyncRuntimeRefCountingPass());
 #endif
 
         // Add optimizations if enabled.
