@@ -8,6 +8,9 @@
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/TypeScriptToLLVMIRTranslation.h"
 #include "TypeScript/TypeScriptGC.h"
+#ifdef ENABLE_ASYNC
+#include "TypeScript/NeededDialectsToLLVMIRTranslation.h"
+#endif
 
 #include "TypeScript/rt.h"
 
@@ -18,12 +21,17 @@
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/InitAllDialects.h"
+#include "mlir/InitAllPasses.h"
 #include "mlir/Parser.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 #include "mlir/Target/LLVMIR/Export.h"
 #include "mlir/Transforms/Passes.h"
+
+#ifdef ENABLE_ASYNC
+#include "mlir/Conversion/AsyncToLLVM/AsyncToLLVM.h"
+#endif
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/Module.h"
@@ -219,6 +227,10 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module
 
         pm.addPass(mlir::createSymbolDCEPass());
 
+#ifdef ENABLE_ASYNC
+        pm.addPass(mlir::createAsyncToAsyncRuntimePass());
+#endif
+
         // Add optimizations if enabled.
         if (enableOpt)
         {
@@ -232,6 +244,9 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module
     if (isLoweringToLLVM)
     {
         // Finish lowering the TypeScript IR to the LLVM dialect.
+#ifdef ENABLE_ASYNC
+        pm.addPass(mlir::createConvertAsyncToLLVMPass());
+#endif
         pm.addPass(mlir::typescript::createLowerToLLVMPass());
         if (!disableGC)
         {
@@ -275,6 +290,10 @@ int dumpLLVMIR(mlir::ModuleOp module)
 
 #ifdef TSGC_ENABLE
     mlir::typescript::registerTypeScriptGC();
+#endif
+
+#ifdef ENABLE_ASYNC
+    mlir::typescript::registerNeededDialectsTranslation(*module->getContext());
 #endif
 
     // Convert the module to LLVM IR in a new LLVM IR context.
@@ -456,6 +475,9 @@ int main(int argc, char **argv)
     context.getOrLoadDialect<mlir::StandardOpsDialect>();
     context.getOrLoadDialect<mlir::math::MathDialect>();
     context.getOrLoadDialect<mlir::LLVM::LLVMDialect>();
+#ifdef ENABLE_ASYNC
+    context.getOrLoadDialect<mlir::async::AsyncDialect>();
+#endif
 
     mlir::OwningModuleRef module;
     if (int error = loadAndProcessMLIR(context, module))

@@ -14,6 +14,7 @@ add_mlir_dialect_library(MLIRTypeScript
     TypeScriptDialect.cpp
     TypeScriptOps.cpp
     TypeScriptToLLVMIRTranslation.cpp
+    NeededDialectsToLLVMIRTranslation.cpp
     MLIRGen.cpp
     LowerToAffineLoops.cpp   
     LowerToLLVM.cpp

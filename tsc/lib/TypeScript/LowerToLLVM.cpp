@@ -21,6 +21,9 @@
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/SCF/SCF.h"
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
+#ifdef ENABLE_ASYNC
+#include "mlir/Conversion/AsyncToLLVM/AsyncToLLVM.h"
+#endif
 #include "mlir/Pass/Pass.h"
 #include "mlir/Target/LLVMIR/ModuleTranslation.h"
 #include "mlir/Transforms/DialectConversion.h"
@@ -3101,6 +3104,9 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     populateAffineToStdConversionPatterns(patterns);
     populateLoopToStdConversionPatterns(patterns);
     populateStdToLLVMConversionPatterns(typeConverter, patterns);
+#ifdef ENABLE_ASYNC
+    populateAsyncStructuralTypeConversionsAndLegality(typeConverter, patterns, target);
+#endif
 
     // The only remaining operation to lower from the `typescript` dialect, is the PrintOp.
     TsLlvmContext tsLlvmContext;
