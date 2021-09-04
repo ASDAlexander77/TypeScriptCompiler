@@ -377,6 +377,9 @@ int runJit(mlir::ModuleOp module)
         // Library does not support mlir runner, load it with ExecutionEngine.
         if (!initSym || !destroySim)
         {
+            LLVM_DEBUG(llvm::dbgs() << "skipping path (no __mlir_runner_init or __mlir_runner_destroy present): " << libPath.c_str()
+                                    << "\n";);
+
             executionEngineLibs.push_back(libPath);
             continue;
         }
