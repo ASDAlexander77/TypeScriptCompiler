@@ -368,7 +368,7 @@ int runJit(mlir::ModuleOp module)
     // Handle libraries that do support mlir-runner init/destroy callbacks.
     for (auto &libPath : libPaths)
     {
-        LLVM_DEBUG(llvm::dbgs() << "checking path: " << libPath.c_str() << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "loading lib at path: " << libPath.c_str() << "\n";);
 
         std::string errMsg;
         auto lib = llvm::sys::DynamicLibrary::getPermanentLibrary(libPath.c_str(), &errMsg);
