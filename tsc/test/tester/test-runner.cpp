@@ -428,6 +428,7 @@ void createJitCompileBatchFile()
     std::ofstream batFile("compile_jit.bat");
     batFile << "echo off" << std::endl;
     batFile << "set FILENAME=%1" << std::endl;
+    batFile << "set LLVMPATH=" << TEST_EXEPATH << std::endl;
 #ifdef SEARCH_LIB
     batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_LIBPATH " libvcruntime.lib ^| find " FILTER_LIB
                "`) DO ( SET libname=%%F )"
@@ -456,7 +457,7 @@ void createJitCompileBatchFile()
     batFile << "set UCRTPATH=\"" << TEST_UCRTPATH << "\"" << std::endl;
 #endif
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit -nogc -dump-object-file "
+    batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit -nogc --shared-libs=%LLVMPATH%/mlir_async_runtime.dll -dump-object-file "
                "-object-filename=%FILENAME%.o %2"
             << std::endl;
     batFile << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% "
@@ -480,6 +481,7 @@ void createJitCompileBatchFileGC()
     std::ofstream batFile("compile_jit_gc.bat");
     batFile << "echo off" << std::endl;
     batFile << "set FILENAME=%1" << std::endl;
+    batFile << "set LLVMPATH=" << TEST_EXEPATH << std::endl;
 #ifdef SEARCH_LIB
     batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_LIBPATH " libvcruntime.lib ^| find " FILTER_LIB
                "`) DO ( SET libname=%%F )"
@@ -508,7 +510,8 @@ void createJitCompileBatchFileGC()
     batFile << "set UCRTPATH=\"" << TEST_UCRTPATH << "\"" << std::endl;
 #endif
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit --shared-libs=../../bin/TypeScriptGCWrapper.dll -dump-object-file "
+    batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit --shared-libs=%TSCEXEPATH%/TypeScriptGCWrapper.dll "
+               "--shared-libs=%LLVMPATH%/mlir_async_runtime.dll -dump-object-file "
                "-object-filename=%FILENAME%.o %2"
             << std::endl;
     batFile << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% "
@@ -532,9 +535,12 @@ void createJitBatchFile()
     std::ofstream batFile("jit.bat");
     batFile << "echo off" << std::endl;
     batFile << "set FILENAME=%1" << std::endl;
+    batFile << "set LLVMPATH=" << TEST_EXEPATH << std::endl;
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "echo on" << std::endl;
-    batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit -nogc %2 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
+    batFile
+        << "%TSCEXEPATH%\\tsc.exe --emit=jit -nogc --shared-libs=%LLVMPATH%/mlir_async_runtime.dll %2 1> %FILENAME%.txt 2> %FILENAME%.err"
+        << std::endl;
     batFile.close();
 }
 
@@ -550,9 +556,11 @@ void createJitBatchFileGC()
     std::ofstream batFile("jit_gc.bat");
     batFile << "echo off" << std::endl;
     batFile << "set FILENAME=%1" << std::endl;
+    batFile << "set LLVMPATH=" << TEST_EXEPATH << std::endl;
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "echo on" << std::endl;
-    batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit --shared-libs=../../bin/TypeScriptGCWrapper.dll %2 1> %FILENAME%.txt 2> %FILENAME%.err"
+    batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit --shared-libs=%TSCEXEPATH%/TypeScriptGCWrapper.dll "
+               "--shared-libs=%LLVMPATH%/mlir_async_runtime.dll %2 1> %FILENAME%.txt 2> %FILENAME%.err"
             << std::endl;
     batFile.close();
 }
@@ -656,8 +664,9 @@ void createJitCompileBatchFile()
 
     std::ofstream batFile("compile_jit.sh");
     batFile << "FILENAME=$1" << std::endl;
+    batFile << "LLVMPATH=" << TEST_EXEPATH << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "$TSCEXEPATH/tsc --emit=jit -nogc -dump-object-file "
+    batFile << "$TSCEXEPATH/tsc --emit=jit -nogc --shared-libs=$LLVMPATH/../lib/libmlir_async_runtime.so -dump-object-file "
                "-object-filename=$FILENAME.o $2"
             << std::endl;
     batFile << "gcc -o $1 $1.o" << std::endl;
@@ -678,9 +687,11 @@ void createJitCompileBatchFileGC()
 
     std::ofstream batFile("compile_jit_gc.sh");
     batFile << "FILENAME=$1" << std::endl;
+    batFile << "LLVMPATH=" << TEST_EXEPATH << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "GCLIBPATH=" << TEST_GCPATH << std::endl;
-    batFile << "$TSCEXEPATH/tsc --emit=jit --shared-libs=../../lib/libTypeScriptGCWrapper.so -dump-object-file "
+    batFile << "$TSCEXEPATH/tsc --emit=jit --shared-libs=../../lib/libTypeScriptGCWrapper.so "
+               "--shared-libs=$LLVMPATH/../lib/libmlir_async_runtime.so -dump-object-file "
                "-object-filename=$FILENAME.o $2"
             << std::endl;
     batFile << "gcc -o $FILENAME -L$GCLIBPATH $FILENAME.o -lgc-lib" << std::endl;
@@ -701,8 +712,11 @@ void createJitBatchFile()
 
     std::ofstream batFile("jit.sh");
     batFile << "FILENAME=$1" << std::endl;
+    batFile << "LLVMPATH=" << TEST_EXEPATH << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "$TSCEXEPATH/tsc --emit=jit -nogc $2 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
+    batFile
+        << "$TSCEXEPATH/tsc --emit=jit -nogc --shared-libs=$LLVMPATH/../lib/libmlir_async_runtime.so $2 1> $FILENAME.txt 2> $FILENAME.err"
+        << std::endl;
     batFile.close();
 }
 
@@ -717,8 +731,10 @@ void createJitBatchFileGC()
 
     std::ofstream batFile("jit_gc.sh");
     batFile << "FILENAME=$1" << std::endl;
+    batFile << "LLVMPATH=" << TEST_EXEPATH << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "$TSCEXEPATH/tsc --emit=jit --shared-libs=../../lib/libTypeScriptGCWrapper.so $2 1> $FILENAME.txt 2> $FILENAME.err"
+    batFile << "$TSCEXEPATH/tsc --emit=jit --shared-libs=../../lib/libTypeScriptGCWrapper.so "
+               "--shared-libs=$LLVMPATH/../lib/libmlir_async_runtime.so $2 1> $FILENAME.txt 2> $FILENAME.err"
             << std::endl;
     batFile.close();
 }
