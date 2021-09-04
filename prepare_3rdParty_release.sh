@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 echo "Downloading LLVM"
 git submodule update --init --recursive
 echo "Configuring LLVM (Release)"
