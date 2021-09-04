@@ -370,16 +370,32 @@ int runJit(mlir::ModuleOp module)
     {
         LLVM_DEBUG(llvm::dbgs() << "checking path: " << libPath.c_str() << "\n";);
 
-        auto lib = llvm::sys::DynamicLibrary::getPermanentLibrary(libPath.c_str());
+        std::string errMsg;
+        auto lib = llvm::sys::DynamicLibrary::getPermanentLibrary(libPath.c_str(), &errMsg);
+
+        if (errMsg.size() > 0)
+        {
+            llvm::errs() << "Loading error lib: " << errMsg << "\n";
+            return -1;
+        }
+
+        LLVM_DEBUG(llvm::dbgs() << "loaded path: " << libPath.c_str() << "\n";);
+
         void *initSym = lib.getAddressOfSymbol("__mlir_runner_init");
+        if (!initSym)
+        {
+            LLVM_DEBUG(llvm::dbgs() << "missing __mlir_runner_init";);
+        }
+
         void *destroySim = lib.getAddressOfSymbol("__mlir_runner_destroy");
+        if (!destroySim)
+        {
+            LLVM_DEBUG(llvm::dbgs() << "missing __mlir_runner_destroy";);
+        }
 
         // Library does not support mlir runner, load it with ExecutionEngine.
         if (!initSym || !destroySim)
         {
-            LLVM_DEBUG(llvm::dbgs() << "skipping path (no __mlir_runner_init or __mlir_runner_destroy present): " << libPath.c_str()
-                                    << "\n";);
-
             executionEngineLibs.push_back(libPath);
             continue;
         }
