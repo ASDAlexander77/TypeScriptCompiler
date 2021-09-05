@@ -1120,6 +1120,11 @@ class MLIRGenImpl
             auto initFunc = [&]() { return getTypeAndInit(item, genContext); };
 
             auto valClassItem = varClass;
+            if ((item->transformFlags & TransformFlags::ForceConst) == TransformFlags::ForceConst)
+            {
+                valClassItem = VariableClass::Const;
+            }
+
             if ((item->transformFlags & TransformFlags::ForceConstRef) == TransformFlags::ForceConstRef)
             {
                 valClassItem = VariableClass::ConstRef;
@@ -2657,6 +2662,7 @@ class MLIRGenImpl
         auto _a = nf.createIdentifier(S("_a_"));
         auto arrayVar = nf.createVariableDeclaration(_a, undefined, undefined, nf.createIdentifier(S(EXPR_TEMPVAR_NAME)));
         arrayVar->transformFlags |= TransformFlags::ForceConstRef;
+
         declarations.push_back(arrayVar);
 
         // condition
@@ -5328,6 +5334,7 @@ class MLIRGenImpl
             // begin of logic: outer vars
             auto valueRegion = value.first.getParentRegion();
             auto isOuterVar = false;
+            // TODO: review code "valueRegion && valueRegion->getParentOp()" is to support async.execute
             if (genContext.funcOp && valueRegion && valueRegion->getParentOp())
             {
                 auto funcRegion = const_cast<GenContext &>(genContext).funcOp.getCallableRegion();
