@@ -1,6 +1,7 @@
 __build
 build
-3rdParty
+3rdParty/*
+!3rdParty/llvm-project
 .vs
 .antlr
 tsc/out
