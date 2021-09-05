@@ -1,10 +1,10 @@
 __build
 build
-/3rdParty
+3rdParty
 .vs
 .antlr
-/tsc/out
-/tsc/Testing
+tsc/out
+tsc/Testing
 package-lock.json
 node_modules
 gc-*
