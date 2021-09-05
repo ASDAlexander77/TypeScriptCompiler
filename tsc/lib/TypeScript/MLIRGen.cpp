@@ -2526,8 +2526,8 @@ class MLIRGenImpl
             auto groupType = mlir::async::GroupType::get(builder.getContext());
             auto asyncGroupOp = builder.create<mlir::async::CreateGroupOp>(location, groupType);
             asyncGroupResult = asyncGroupOp.result();
-            operands.push_back(asyncGroupOp);
-            types.push_back(groupType);
+            // operands.push_back(asyncGroupOp);
+            // types.push_back(groupType);
         }
 
         auto forOp = builder.create<mlir_ts::ForOp>(location, types, operands);
@@ -5328,7 +5328,7 @@ class MLIRGenImpl
             // begin of logic: outer vars
             auto valueRegion = value.first.getParentRegion();
             auto isOuterVar = false;
-            if (genContext.funcOp)
+            if (genContext.funcOp && valueRegion && valueRegion->getParentOp())
             {
                 auto funcRegion = const_cast<GenContext &>(genContext).funcOp.getCallableRegion();
                 isOuterVar = !funcRegion->isAncestor(valueRegion);
