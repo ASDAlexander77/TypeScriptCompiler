@@ -1120,11 +1120,6 @@ class MLIRGenImpl
             auto initFunc = [&]() { return getTypeAndInit(item, genContext); };
 
             auto valClassItem = varClass;
-            if ((item->transformFlags & TransformFlags::ForceConst) == TransformFlags::ForceConst)
-            {
-                valClassItem = VariableClass::Const;
-            }
-
             if ((item->transformFlags & TransformFlags::ForceConstRef) == TransformFlags::ForceConstRef)
             {
                 valClassItem = VariableClass::ConstRef;
@@ -2501,6 +2496,8 @@ class MLIRGenImpl
 
         auto location = loc(forStatementAST);
 
+        auto hasAwait = TransformFlags::ForAwait == (forStatementAST->transformFlags & TransformFlags::ForAwait);
+
         // initializer
         // TODO: why do we have ForInitialier
         if (forStatementAST->initializer.is<Expression>())
@@ -2522,6 +2519,16 @@ class MLIRGenImpl
 
         SmallVector<mlir::Type, 0> types;
         SmallVector<mlir::Value, 0> operands;
+
+        mlir::Value asyncGroupResult;
+        if (hasAwait)
+        {
+            auto groupType = mlir::async::GroupType::get(builder.getContext());
+            auto asyncGroupOp = builder.create<mlir::async::CreateGroupOp>(location, groupType);
+            asyncGroupResult = asyncGroupOp.result();
+            operands.push_back(asyncGroupOp);
+            types.push_back(groupType);
+        }
 
         auto forOp = builder.create<mlir_ts::ForOp>(location, types, operands);
         if (!label.empty())
@@ -2547,7 +2554,27 @@ class MLIRGenImpl
 
         // body
         builder.setInsertionPointToStart(&forOp.body().front());
-        mlirGen(forStatementAST->statement, genContext);
+        if (hasAwait)
+        {
+            // async body
+            auto asyncExecOp =
+                builder.create<mlir::async::ExecuteOp>(location, mlir::TypeRange{}, mlir::ValueRange{}, mlir::ValueRange{},
+                                                       [&](mlir::OpBuilder &builder, mlir::Location location, mlir::ValueRange values) {
+                                                           mlirGen(forStatementAST->statement, genContext);
+                                                           builder.create<mlir::async::YieldOp>(location, mlir::ValueRange{});
+                                                       });
+
+            // add to group
+            auto rankType = mlir::IndexType::get(builder.getContext());
+            // TODO: should i replace with value from arg0?
+            builder.create<mlir::async::AddToGroupOp>(location, rankType, asyncExecOp.token(), asyncGroupResult);
+        }
+        else
+        {
+            // default
+            mlirGen(forStatementAST->statement, genContext);
+        }
+
         builder.create<mlir_ts::ResultOp>(location);
 
         // increment
@@ -2556,6 +2583,12 @@ class MLIRGenImpl
         builder.create<mlir_ts::ResultOp>(location);
 
         builder.setInsertionPointAfter(forOp);
+
+        if (hasAwait)
+        {
+            // Wait for the completion of all subtasks.
+            builder.create<mlir::async::AwaitAllOp>(location, asyncGroupResult);
+        }
 
         return mlir::success();
     }
@@ -2647,6 +2680,10 @@ class MLIRGenImpl
 
         // final For statement
         auto forStatNode = nf.createForStatement(initVars, cond, incr, block);
+        if (forOfStatementAST->awaitModifier)
+        {
+            forStatNode->transformFlags |= TransformFlags::ForAwait;
+        }
 
         return mlirGen(forStatNode, genContext);
     }
@@ -2667,7 +2704,6 @@ class MLIRGenImpl
         auto _b = nf.createIdentifier(S("_b_"));
         auto _next = nf.createIdentifier(S("next"));
         auto _bVar = nf.createVariableDeclaration(_b, undefined, undefined, nf.createIdentifier(S(EXPR_TEMPVAR_NAME)));
-        //_bVar->transformFlags |= TransformFlags::ForceConst;
         declarations.push_back(_bVar);
 
         NodeArray<Expression> nextArgs;
@@ -2701,6 +2737,10 @@ class MLIRGenImpl
 
         // final For statement
         auto forStatNode = nf.createForStatement(initVars, cond, incr, block);
+        if (forOfStatementAST->awaitModifier)
+        {
+            forStatNode->transformFlags |= TransformFlags::ForAwait;
+        }
 
         return mlirGen(forStatNode, genContext);
     }
