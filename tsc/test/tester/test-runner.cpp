@@ -53,6 +53,13 @@ namespace fs = std::experimental::filesystem;
 #define FILTER_SDK "\"um\\x64\""
 #define FILTER_UCRTSDK "\"ucrt\\x64\""
 
+//#define LINUX_ASYNC_ENABLED 1
+#ifdef LINUX_ASYNC_ENABLED
+#define LINUX_ASYNC_INC "--shared-libs=$LLVMPATH/../lib/libmlir_async_runtime.so "
+#else
+#define LINUX_ASYNC_INC ""
+#endif
+
 #ifndef TEST_LIBPATH
 //#define TEST_LIBPATH "C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\VC\Tools\MSVC\14.29.30037\lib\x64"
 #error TEST_LIBPATH must be provided
@@ -666,7 +673,8 @@ void createJitCompileBatchFile()
     batFile << "FILENAME=$1" << std::endl;
     batFile << "LLVMPATH=" << TEST_EXEPATH << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "$TSCEXEPATH/tsc --emit=jit -nogc --shared-libs=$LLVMPATH/../lib/libmlir_async_runtime.so -dump-object-file "
+    batFile << "$TSCEXEPATH/tsc --emit=jit -nogc " << LINUX_ASYNC_INC
+            << " -dump-object-file "
                "-object-filename=$FILENAME.o $2"
             << std::endl;
     batFile << "gcc -o $1 $1.o" << std::endl;
@@ -690,8 +698,8 @@ void createJitCompileBatchFileGC()
     batFile << "LLVMPATH=" << TEST_EXEPATH << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "GCLIBPATH=" << TEST_GCPATH << std::endl;
-    batFile << "$TSCEXEPATH/tsc --emit=jit --shared-libs=../../lib/libTypeScriptGCWrapper.so "
-               "--shared-libs=$LLVMPATH/../lib/libmlir_async_runtime.so -dump-object-file "
+    batFile << "$TSCEXEPATH/tsc --emit=jit --shared-libs=../../lib/libTypeScriptGCWrapper.so " << LINUX_ASYNC_INC
+            << " -dump-object-file "
                "-object-filename=$FILENAME.o $2"
             << std::endl;
     batFile << "gcc -o $FILENAME -L$GCLIBPATH $FILENAME.o -lgc-lib" << std::endl;
@@ -714,9 +722,7 @@ void createJitBatchFile()
     batFile << "FILENAME=$1" << std::endl;
     batFile << "LLVMPATH=" << TEST_EXEPATH << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile
-        << "$TSCEXEPATH/tsc --emit=jit -nogc --shared-libs=$LLVMPATH/../lib/libmlir_async_runtime.so $2 1> $FILENAME.txt 2> $FILENAME.err"
-        << std::endl;
+    batFile << "$TSCEXEPATH/tsc --emit=jit -nogc " << LINUX_ASYNC_INC << " $2 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile.close();
 }
 
@@ -733,9 +739,8 @@ void createJitBatchFileGC()
     batFile << "FILENAME=$1" << std::endl;
     batFile << "LLVMPATH=" << TEST_EXEPATH << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "$TSCEXEPATH/tsc --emit=jit --shared-libs=../../lib/libTypeScriptGCWrapper.so "
-               "--shared-libs=$LLVMPATH/../lib/libmlir_async_runtime.so $2 1> $FILENAME.txt 2> $FILENAME.err"
-            << std::endl;
+    batFile << "$TSCEXEPATH/tsc --emit=jit --shared-libs=../../lib/libTypeScriptGCWrapper.so " << LINUX_ASYNC_INC
+            << " $2 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile.close();
 }
 #endif
