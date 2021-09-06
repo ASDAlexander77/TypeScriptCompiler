@@ -454,6 +454,11 @@ class MLIRGenImpl
 
         for (auto &statement : blockAST->statements)
         {
+            if (genContext.skipProcessed && statement->processed)
+            {
+                continue;
+            }
+
             if (failed(mlirGen(statement, genContext)))
             {
                 return mlir::failure();
@@ -2561,11 +2566,21 @@ class MLIRGenImpl
         builder.setInsertionPointToStart(&forOp.body().front());
         if (hasAwait)
         {
+            if (forStatementAST->statement == SyntaxKind::Block)
+            {
+                // TODO: it is kind of hack, maybe you can find better solution
+                auto firstStatement = forStatementAST->statement.as<Block>()->statements.front();
+                mlirGen(firstStatement, genContext);
+                firstStatement->processed = true;
+            }
+
             // async body
             auto asyncExecOp =
                 builder.create<mlir::async::ExecuteOp>(location, mlir::TypeRange{}, mlir::ValueRange{}, mlir::ValueRange{},
                                                        [&](mlir::OpBuilder &builder, mlir::Location location, mlir::ValueRange values) {
-                                                           mlirGen(forStatementAST->statement, genContext);
+                                                           GenContext execOpBodyGenContext(genContext);
+                                                           execOpBodyGenContext.skipProcessed = true;
+                                                           mlirGen(forStatementAST->statement, execOpBodyGenContext);
                                                            builder.create<mlir::async::YieldOp>(location, mlir::ValueRange{});
                                                        });
 
@@ -2675,11 +2690,18 @@ class MLIRGenImpl
         // block
         NodeArray<ts::Statement> statements;
 
+        NodeArray<VariableDeclaration> varOfConstDeclarations;
+        auto _ci = nf.createIdentifier(S("_ci_"));
+        varOfConstDeclarations.push_back(nf.createVariableDeclaration(_ci, undefined, undefined, _i));
+        auto varsOfConst = nf.createVariableDeclarationList(varOfConstDeclarations, NodeFlags::Const);
+
         auto varDeclList = forOfStatementAST->initializer.as<VariableDeclarationList>();
-        varDeclList->declarations.front()->initializer = nf.createElementAccessExpression(_a, _i);
+        varDeclList->declarations.front()->initializer = nf.createElementAccessExpression(_a, _ci);
 
         auto initVars = nf.createVariableDeclarationList(declarations, NodeFlags::Let /*varDeclList->flags*/);
 
+        // in async exec, we will put first statement outside fo async.exec, to convert ref<int> into <int>
+        statements.push_back(nf.createVariableStatement(undefined, varsOfConst));
         statements.push_back(nf.createVariableStatement(undefined, varDeclList));
         statements.push_back(forOfStatementAST->statement);
         auto block = nf.createBlock(statements);
