@@ -2192,7 +2192,24 @@ struct ThrowOpLoweringVCWin32 : public TsLlvmPattern<mlir_ts::ThrowOp>
         auto throwInfoPtr = rewriter.create<mlir::ConstantOp>(loc, throwInfoPtrTy, FlatSymbolRefAttr::get(rewriter.getContext(), "_TI1N"));
 
         // throw exception
-        rewriter.create<LLVM::CallOp>(loc, cxxThrowException, ValueRange{clh.castToI8Ptr(value), throwInfoPtr});
+        if (auto unwind = tsLlvmContext->unwind[throwOp])
+        {
+            OpBuilder::InsertionGuard guard(rewriter);
+
+            auto *opBlock = rewriter.getInsertionBlock();
+            auto opPosition = rewriter.getInsertionPoint();
+            auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
+
+            rewriter.setInsertionPointToEnd(opBlock);
+
+            rewriter.create<LLVM::InvokeOp>(
+                loc, TypeRange{th.getVoidType()}, mlir::FlatSymbolRefAttr::get(rewriter.getContext(), "_CxxThrowException"),
+                ValueRange{clh.castToI8Ptr(value), throwInfoPtr}, continuationBlock, ValueRange{}, unwind, ValueRange{});
+        }
+        else
+        {
+            rewriter.create<LLVM::CallOp>(loc, cxxThrowException, ValueRange{clh.castToI8Ptr(value), throwInfoPtr});
+        }
 
         rewriter.eraseOp(throwOp);
         return success();
@@ -2227,6 +2244,10 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
                 tsLlvmContext->unwind[op] = catchesRegion;
             }
             else if (auto callIndirectOp = dyn_cast_or_null<mlir_ts::CallIndirectOp>(op))
+            {
+                tsLlvmContext->unwind[op] = catchesRegion;
+            }
+            else if (auto throwOp = dyn_cast_or_null<mlir_ts::ThrowOp>(op))
             {
                 tsLlvmContext->unwind[op] = catchesRegion;
             }
