@@ -11,5 +11,5 @@ add_mlir_library(TypeScriptGCWrapper
   EXCLUDE_FROM_LIBMLIR
 
   LINK_LIBS PRIVATE
-  gc-lib
+  gcmt-lib
 )

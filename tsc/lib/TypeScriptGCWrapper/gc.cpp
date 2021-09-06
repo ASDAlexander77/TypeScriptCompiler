@@ -18,9 +18,6 @@
 
 void _mlir__GC_init()
 {
-#ifdef GC_THREADS
-    GC_use_threads_discovery();
-#endif
     GC_INIT();
 }
 
