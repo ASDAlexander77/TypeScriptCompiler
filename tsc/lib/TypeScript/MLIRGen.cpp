@@ -2575,7 +2575,6 @@ class MLIRGenImpl
             }
 
             // async body
-            // TODO: if using GC_malloc, it will cause bug to first instance of for/await
             auto asyncExecOp =
                 builder.create<mlir::async::ExecuteOp>(location, mlir::TypeRange{}, mlir::ValueRange{}, mlir::ValueRange{},
                                                        [&](mlir::OpBuilder &builder, mlir::Location location, mlir::ValueRange values) {
