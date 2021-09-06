@@ -1,6 +1,7 @@
 function main1() {
     for await (const v of [1, 2, 3, 4, 5]) {
         // TODO: if I add count++, it will work
+        // it seems issue with GC
         print(v);
     }
 }
