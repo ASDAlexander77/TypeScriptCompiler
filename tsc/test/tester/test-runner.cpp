@@ -53,6 +53,8 @@ namespace fs = std::experimental::filesystem;
 #define FILTER_SDK "\"um\\x64\""
 #define FILTER_UCRTSDK "\"ucrt\\x64\""
 
+#define GC_LIB "gcmt-lib"
+
 //#define LINUX_ASYNC_ENABLED 1
 #ifdef LINUX_ASYNC_ENABLED
 #define LINUX_ASYNC_INC "--shared-libs=$LLVMPATH/../lib/libmlir_async_runtime.so "
@@ -359,8 +361,8 @@ void createCompileBatchFileGC()
     batFile << "%EXEPATH%\\llc.exe --filetype=obj -o=%FILENAME%.o %FILENAME%.il" << std::endl;
     batFile
         << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% /libpath:%GCLIBPATH% "
-           "msvcrt.lib ucrt.lib kernel32.lib user32.lib gc-lib.lib"
-        << std::endl;
+           "msvcrt.lib ucrt.lib kernel32.lib user32.lib "
+        << GC_LIB << ".lib" << std::endl;
     batFile << "del %FILENAME%.il" << std::endl;
     batFile << "del %FILENAME%.o" << std::endl;
     batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
@@ -414,8 +416,8 @@ void createCompileBatchFileGCWithRT()
     batFile << "%EXEPATH%\\llc.exe --filetype=obj -o=%FILENAME%.o %FILENAME%.il" << std::endl;
     batFile
         << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% /libpath:%GCLIBPATH% "
-           "msvcrt.lib ucrt.lib kernel32.lib user32.lib gc-lib.lib clang_rt.builtins-x86_64.lib"
-        << std::endl;
+           "msvcrt.lib ucrt.lib kernel32.lib user32.lib "
+        << GC_LIB << ".lib clang_rt.builtins-x86_64.lib" << std::endl;
     batFile << "del %FILENAME%.il" << std::endl;
     batFile << "del %FILENAME%.o" << std::endl;
     batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
@@ -630,7 +632,7 @@ void createCompileBatchFileGC()
     batFile << "GCLIBPATH=" << TEST_GCPATH << std::endl;
     batFile << "$TSCEXEPATH/tsc --emit=llvm $2 2>$FILENAME.il" << std::endl;
     batFile << "/usr/bin/llc-12 -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
-    batFile << "gcc -o $FILENAME -L$GCLIBPATH $FILENAME.o -lgc-lib" << std::endl;
+    batFile << "gcc -o $FILENAME -L$GCLIBPATH $FILENAME.o -l" << GC_LIB << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile << "rm $FILENAME.o" << std::endl;
     batFile << "rm $FILENAME" << std::endl;
@@ -653,7 +655,7 @@ void createCompileBatchFileGCWithRT()
     batFile << "CLANGLIBPATH=" << TEST_CLANGLIBPATH << std::endl;
     batFile << "$TSCEXEPATH/tsc --emit=llvm $2 2>$FILENAME.il" << std::endl;
     batFile << "/usr/bin/llc-12 -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
-    batFile << "gcc -o $FILENAME -L$GCLIBPATH -L$CLANGLIBPATH $FILENAME.o -lgc-lib -lclang_rt.builtins-x86_64" << std::endl;
+    batFile << "gcc -o $FILENAME -L$GCLIBPATH -L$CLANGLIBPATH $FILENAME.o -l" << GC_LIB << " -lclang_rt.builtins-x86_64" << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile << "rm $FILENAME.o" << std::endl;
     batFile << "rm $FILENAME" << std::endl;
@@ -702,7 +704,7 @@ void createJitCompileBatchFileGC()
             << " -dump-object-file "
                "-object-filename=$FILENAME.o $2"
             << std::endl;
-    batFile << "gcc -o $FILENAME -L$GCLIBPATH $FILENAME.o -lgc-lib" << std::endl;
+    batFile << "gcc -o $FILENAME -L$GCLIBPATH $FILENAME.o -l" << GC_LIB << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile << "rm $FILENAME.o" << std::endl;
     batFile << "rm $FILENAME" << std::endl;
