@@ -95,10 +95,6 @@ jobs:
       run: tar -xvzf libatomic_ops-7.6.10.tar.gz -C ./3rdParty/
       shell: pwsh
 
-    - name: Create gc-8.0.4\libatomic_ops Folders
-      run: if (!(Test-Path -Path ".\3rdParty\gc-8.0.4\libatomic_ops")) { New-Item -ItemType Directory -Force -Path ".\3rdParty\gc-8.0.4\libatomic_ops" };
-      shell: pwsh
-
     - name: Copy Atomic_ops to GC
       continue-on-error: false
       run:  xcopy  /E /H /C /I /Y ".\3rdParty\libatomic_ops-7.6.10" ".\3rdParty\gc-8.0.4\libatomic_ops"
