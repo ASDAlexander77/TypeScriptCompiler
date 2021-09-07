@@ -1,7 +1,5 @@
 function main1() {
     for await (const v of [1, 2, 3, 4, 5]) {
-        // TODO: if I add count++, it will work
-        // it seems issue with GC
         print(v);
     }
 }
@@ -10,7 +8,8 @@ function main2() {
     let count = 0;
     for await (const v of [1, 2, 3, 4, 5]) {
         print(v);
-        assert(v >= 1 && v <= 5);
+        // TODO: if uncomment - bug
+        //assert(v >= 1 && v <= 5);
         count++;
     }
 

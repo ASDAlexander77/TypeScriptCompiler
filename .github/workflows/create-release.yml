@@ -93,7 +93,7 @@ jobs:
 
       - name: Copy Atomic_ops to GC
         continue-on-error: false
-        run:  xcopy  /E /H /C /I /Y .\3rdParty\libatomic_ops-7.6.10\ .\3rdParty\gc-8.0.4\libatomic_ops\
+        run:  xcopy  /E /H /C /I /Y ".\3rdParty\libatomic_ops-7.6.10" ".\3rdParty\gc-8.0.4\libatomic_ops"
         shell: pwsh
 
       - name: Configure GC
