@@ -11,7 +11,9 @@
 #ifdef ENABLE_ASYNC
 #include "TypeScript/NeededDialectsToLLVMIRTranslation.h"
 #endif
-#include "TypeScript/InitializeTypeScriptExceptionPass.h"
+#ifdef ENABLE_EXCEPTIONS
+#include "TypeScript/TypeScriptExceptionPass.h"
+#endif
 
 #include "TypeScript/rt.h"
 
@@ -284,7 +286,7 @@ int dumpAST()
     return 0;
 }
 
-int dumpLLVMIR(mlir::ModuleOp module)
+int initDialects(mlir::ModuleOp module)
 {
     // Register the translation to LLVM IR with the MLIR context.
     mlir::registerLLVMDialectTranslation(*module->getContext());
@@ -297,6 +299,37 @@ int dumpLLVMIR(mlir::ModuleOp module)
 #ifdef ENABLE_ASYNC
     mlir::typescript::registerNeededDialectsTranslation(*module->getContext());
 #endif
+
+    return 0;
+}
+
+std::function<llvm::Error(llvm::Module *)> initPasses(mlir::SmallVector<const llvm::PassInfo *> &passes, bool enableOpt)
+{
+#ifdef ENABLE_EXCEPTIONS
+    llvm::PassRegistry &Registry = *llvm::PassRegistry::getPassRegistry();
+    auto pass = Registry.getPassInfo(llvm::getTypeScriptExceptionPassID());
+    assert(pass);
+    if (pass)
+    {
+        passes.push_back(pass);
+    }
+
+    auto optPipeline = mlir::makeLLVMPassesTransformer(passes,
+                                                       /*optLevel=*/enableOpt ? 3 : 0,
+                                                       /*targetMachine=*/nullptr);
+#else
+    // An optimization pipeline to use within the execution engine.
+    auto optPipeline = mlir::makeOptimizingTransformer(
+        /*optLevel=*/enableOpt ? 3 : 0, /*sizeLevel=*/0,
+        /*targetMachine=*/nullptr);
+#endif
+
+    return optPipeline;
+}
+
+int dumpLLVMIR(mlir::ModuleOp module)
+{
+    initDialects(module);
 
     // Convert the module to LLVM IR in a new LLVM IR context.
     llvm::LLVMContext llvmContext;
@@ -315,9 +348,8 @@ int dumpLLVMIR(mlir::ModuleOp module)
     // TODO: seems I need to call makeLLVMPassesTransformer the same way as makeOptimizingTransformer
 
     /// Optionally run an optimization pipeline over the llvm module.
-    auto optPipeline = mlir::makeOptimizingTransformer(
-        /*optLevel=*/enableOpt ? 3 : 0, /*sizeLevel=*/0,
-        /*targetMachine=*/nullptr);
+    mlir::SmallVector<const llvm::PassInfo *> passes;
+    auto optPipeline = initPasses(passes, enableOpt);
     if (auto err = optPipeline(llvmModule.get()))
     {
         llvm::errs() << "Failed to optimize LLVM IR " << err << "\n";
@@ -330,22 +362,14 @@ int dumpLLVMIR(mlir::ModuleOp module)
 
 int runJit(mlir::ModuleOp module)
 {
+    initDialects(module);
+
     // Initialize LLVM targets.
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
 
-    // Register the translation from MLIR to LLVM IR, which must happen before we
-    // can JIT-compile.
-    mlir::registerLLVMDialectTranslation(*module->getContext());
-    mlir::typescript::registerTypeScriptDialectTranslation(*module->getContext());
-
-    // force linking
-    // mlir::typescript::registerTypeScriptGC();
-
-    // An optimization pipeline to use within the execution engine.
-    auto optPipeline = mlir::makeOptimizingTransformer(
-        /*optLevel=*/enableOpt ? 3 : 0, /*sizeLevel=*/0,
-        /*targetMachine=*/nullptr);
+    mlir::SmallVector<const llvm::PassInfo *> passes;
+    auto optPipeline = initPasses(passes, enableOpt);
 
     // If shared library implements custom mlir-runner library init and destroy
     // functions, we'll use them to register the library with the execution
@@ -482,10 +506,6 @@ int main(int argc, char **argv)
     mlir::registerAsmPrinterCLOptions();
     mlir::registerMLIRContextCLOptions();
     mlir::registerPassManagerCLOptions();
-
-    llvm::PassRegistry &Registry = *llvm::PassRegistry::getPassRegistry();
-    // TODO: find out where and how to add pass - createTypeScriptExceptionPass
-    llvm::typescript::initializeTypeScriptExceptionPassIRTransforms(Registry);
 
     cl::ParseCommandLineOptions(argc, argv, "TypeScript compiler\n");
 

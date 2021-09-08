@@ -5,7 +5,6 @@ set(LLVM_LINK_COMPONENTS
   )
 
 add_llvm_library(TypeScriptExceptionPass
-  InitializeTypeScriptExceptionPass.cpp
   TypeScriptExceptionPass.cpp
 
   ADDITIONAL_HEADER_DIRS

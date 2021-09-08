@@ -4,17 +4,13 @@
 #include "llvm/Pass.h"
 #include "llvm/PassRegistry.h"
 
+#define TYPESCRIPT_EXCEPTION_PASS_NAME "TypeScript Exception Pass"
+
 namespace llvm
 {
 
+const void *getTypeScriptExceptionPassID();
 void initializeTypeScriptExceptionPassPass(llvm::PassRegistry &);
-
-namespace typescript
-{
-
-llvm::FunctionPass *createTypeScriptExceptionPass();
-
-} // end namespace typescript
 
 } // end namespace llvm
 

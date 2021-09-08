@@ -5,6 +5,7 @@
 //#define TSGC_ENABLE 1
 
 #define ENABLE_ASYNC 1
+#define ENABLE_EXCEPTIONS 1
 
 #define USE_SPRINTF 1
 #ifndef WIN32
