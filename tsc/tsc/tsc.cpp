@@ -312,6 +312,8 @@ int dumpLLVMIR(mlir::ModuleOp module)
     llvm::InitializeNativeTargetAsmPrinter();
     mlir::ExecutionEngine::setupTargetTriple(llvmModule.get());
 
+    // TODO: seems I need to call makeLLVMPassesTransformer the same way as makeOptimizingTransformer
+
     /// Optionally run an optimization pipeline over the llvm module.
     auto optPipeline = mlir::makeOptimizingTransformer(
         /*optLevel=*/enableOpt ? 3 : 0, /*sizeLevel=*/0,
