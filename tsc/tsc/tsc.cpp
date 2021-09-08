@@ -11,6 +11,7 @@
 #ifdef ENABLE_ASYNC
 #include "TypeScript/NeededDialectsToLLVMIRTranslation.h"
 #endif
+#include "TypeScript/InitializeTypeScriptExceptionPass.h"
 
 #include "TypeScript/rt.h"
 
@@ -479,6 +480,10 @@ int main(int argc, char **argv)
     mlir::registerAsmPrinterCLOptions();
     mlir::registerMLIRContextCLOptions();
     mlir::registerPassManagerCLOptions();
+
+    llvm::PassRegistry &Registry = *llvm::PassRegistry::getPassRegistry();
+    // TODO: find out where and how to add pass - createTypeScriptExceptionPass
+    llvm::typescript::initializeTypeScriptExceptionPassIRTransforms(Registry);
 
     cl::ParseCommandLineOptions(argc, argv, "TypeScript compiler\n");
 

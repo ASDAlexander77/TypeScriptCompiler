@@ -31,6 +31,7 @@ set(LIBS
     MLIRTransforms
     MLIRTypeScript
     #MLIRTypeScriptGC
+    TypeScriptExceptionPass
     )
 
 add_llvm_executable(tsc tsc.cpp rt.cpp)

@@ -1,3 +1,4 @@
 add_subdirectory(TypeScript)
 #add_subdirectory(TypeScriptGC)
 add_subdirectory(TypeScriptGCWrapper)
+add_subdirectory(TypeScriptExceptionPass)
