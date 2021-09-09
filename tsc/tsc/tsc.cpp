@@ -306,12 +306,11 @@ int initDialects(mlir::ModuleOp module)
 std::function<llvm::Error(llvm::Module *)> initPasses(mlir::SmallVector<const llvm::PassInfo *> &passes, bool enableOpt)
 {
 #ifdef ENABLE_EXCEPTIONS
-    llvm::PassRegistry &Registry = *llvm::PassRegistry::getPassRegistry();
-    auto pass = Registry.getPassInfo(llvm::getTypeScriptExceptionPassID());
+    auto pass = llvm::PassRegistry::getPassRegistry()->getPassInfo(llvm::getTypeScriptExceptionPassID());
     assert(pass);
     if (pass)
     {
-        passes.push_back(pass);
+        // passes.push_back(pass);
     }
 
     auto optPipeline = mlir::makeLLVMPassesTransformer(passes,
