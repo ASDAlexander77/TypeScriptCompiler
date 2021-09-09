@@ -1,4 +1,4 @@
-#include "TypeScript\TypeScriptExceptionPass.h"
+#include "TypeScript/TypeScriptExceptionPass.h"
 
 #include "llvm/Analysis/DomTreeUpdater.h"
 #include "llvm/IR/Dominators.h"
