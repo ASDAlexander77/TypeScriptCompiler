@@ -70,8 +70,15 @@ struct TypeScriptExceptionPass : public FunctionPass
             auto *CSI = CatchSwitchInst::Create(LPI, nullptr /*unwind to caller*/, 1, "catch.switch", CurrentBB);
             CSI->addHandler(ContinuationBB);
 
-            // LLVM_DEBUG(llvm::dbgs() << "\nAdded: " << *CSI << "\n\n";);
-            // LLVM_DEBUG(llvm::dbgs() << "\nDone. Function Dump: " << F << "\n\n";);
+            auto nullI8Ptr = ConstantPointerNull::get(PointerType::get(IntegerType::get(Ctx, 8), 0));
+            auto iVal64 = ConstantInt::get(IntegerType::get(Ctx, 32), 32);
+
+            auto *CPI = CatchPadInst::Create(CSI, {nullI8Ptr, iVal64, nullI8Ptr}, "catchpad", LPI);
+
+            LPI->replaceAllUsesWith(CPI);
+            LPI->eraseFromParent();
+
+            // LLVM_DEBUG(llvm::dbgs() << "\nLanding Pad - Done. Function Dump: " << F << "\n\n";);
 
             MadeChange = true;
         }
@@ -81,16 +88,20 @@ struct TypeScriptExceptionPass : public FunctionPass
             llvm::IRBuilder<> Builder(RI);
             llvm::LLVMContext &Ctx = Builder.getContext();
 
-            LLVM_DEBUG(llvm::dbgs() << "\nTerminator before: " << *RI->getParent()->getTerminator() << "\n\n";);
+            // LLVM_DEBUG(llvm::dbgs() << "\nTerminator before: " << *RI->getParent()->getTerminator() << "\n\n";);
+            // auto *UI = new UnreachableInst(Ctx, RI->getParent());
 
-            auto *UI = new UnreachableInst(Ctx, RI->getParent());
+            auto CR = CatchReturnInst::Create(RI->getOperand(0), RI->getParent()->getNextNode(), RI->getParent());
 
-            LLVM_DEBUG(llvm::dbgs() << "\nTerminator after: " << *RI->getParent()->getTerminator() << "\n\n";);
+            RI->replaceAllUsesWith(CR);
+            RI->eraseFromParent();
+
+            // LLVM_DEBUG(llvm::dbgs() << "\nTerminator after: " << *RI->getParent()->getTerminator() << "\n\n";);
+            // LLVM_DEBUG(llvm::dbgs() << "\nResume - Done. Function Dump: " << F << "\n\n";);
 
             MadeChange = true;
         }
 
-        LLVM_DEBUG(llvm::dbgs() << "\nDone. Function: " << F.getName() << "\n\n";);
         LLVM_DEBUG(llvm::dbgs() << "\nDone. Function Dump: " << F << "\n\n";);
 
         return MadeChange;
