@@ -33,10 +33,9 @@ struct TypeScriptExceptionPass : public FunctionPass
         llvm::SmallVector<LandingPadInst *> landingPadInstWorkSet;
         llvm::SmallVector<ResumeInst *> resumeInstWorkSet;
         llvm::SmallDenseMap<LandingPadInst *, llvm::SmallVector<CallBase *> *> calls;
+        llvm::SmallDenseMap<LandingPadInst *, CatchPadInst *> landingPadNewOps;
 
         LLVM_DEBUG(llvm::dbgs() << "\nFunction: " << F.getName() << "\n\n";);
-
-        auto &DL = F.getParent()->getDataLayout();
 
         llvm::SmallVector<CallBase *> *currentCalls = nullptr;
         for (auto &I : instructions(F))
@@ -66,6 +65,9 @@ struct TypeScriptExceptionPass : public FunctionPass
             }
         }
 
+        llvm::SmallVector<LandingPadInst *> toRemoveLandingPad;
+        llvm::SmallVector<ResumeInst *> toRemoveResumeInstWorkSet;
+
         for (auto *LPI : landingPadInstWorkSet)
         {
             LLVM_DEBUG(llvm::dbgs() << "\nProcessing: " << *LPI << " isKnownSentinel: " << (LPI->isKnownSentinel() ? "true" : "false")
@@ -81,13 +83,12 @@ struct TypeScriptExceptionPass : public FunctionPass
 
             CurrentBB->getTerminator()->eraseFromParent();
 
-            auto *CSI = CatchSwitchInst::Create(LPI, nullptr /*unwind to caller*/, 1, "catch.switch", CurrentBB);
+            auto *CSI = CatchSwitchInst::Create(ConstantTokenNone::get(Ctx), nullptr /*unwind to caller*/, 1, "catch.switch", CurrentBB);
             CSI->addHandler(ContinuationBB);
 
             auto nullI8Ptr = ConstantPointerNull::get(PointerType::get(IntegerType::get(Ctx, 8), 0));
             auto iVal64 = ConstantInt::get(IntegerType::get(Ctx, 32), 64);
 
-            // auto *CPI = CatchPadInst::Create(CSI, {nullI8Ptr, iVal64, nullI8Ptr}, "catchpad", LPI);
             auto *CPI = CatchPadInst::Create(CSI, {nullI8Ptr, iVal64, nullI8Ptr}, "catchpad", LPI);
 
             // TODO: how to add funclet to cll
@@ -104,11 +105,8 @@ struct TypeScriptExceptionPass : public FunctionPass
                                         Instruction *InsertPt = nullptr);
             */
 
-            LPI->replaceAllUsesWith(CPI);
-            LPI->eraseFromParent();
-
-            auto *CTN = ConstantTokenNone::get(Ctx);
-            CSI->setParentPad(CTN);
+            toRemoveLandingPad.push_back(LPI);
+            landingPadNewOps[LPI] = CPI;
 
             // set funcset
             llvm::SmallVector<CallBase *> *callsByLandingPad = calls[LPI];
@@ -117,10 +115,10 @@ struct TypeScriptExceptionPass : public FunctionPass
                 for (auto callBase : *callsByLandingPad)
                 {
                     llvm::SmallVector<OperandBundleDef> opBundle;
-                    auto *tokenTy = llvm::Type::getTokenTy(Ctx);
-                    auto castedValue = CastInst::CreateBitOrPointerCast(CPI, tokenTy, "", callBase);
-                    opBundle.emplace_back(OperandBundleDef("funclet", castedValue));
+                    opBundle.emplace_back(OperandBundleDef("funclet", CPI));
                     auto *newCallBase = CallBase::Create(callBase, opBundle, callBase);
+                    callBase->replaceAllUsesWith(newCallBase);
+                    callBase->eraseFromParent();
                 }
             }
 
@@ -132,15 +130,14 @@ struct TypeScriptExceptionPass : public FunctionPass
         for (auto *RI : resumeInstWorkSet)
         {
             llvm::IRBuilder<> Builder(RI);
-            llvm::LLVMContext &Ctx = Builder.getContext();
-
-            // LLVM_DEBUG(llvm::dbgs() << "\nTerminator before: " << *RI->getParent()->getTerminator() << "\n\n";);
             // auto *UI = new UnreachableInst(Ctx, RI->getParent());
 
-            auto CR = CatchReturnInst::Create(RI->getOperand(0), RI->getParent()->getNextNode(), RI->getParent());
+            auto CR = CatchReturnInst::Create(landingPadNewOps[(llvm::LandingPadInst *)RI->getOperand(0)], RI->getParent()->getNextNode(),
+                                              RI->getParent());
 
             RI->replaceAllUsesWith(CR);
-            RI->eraseFromParent();
+
+            toRemoveResumeInstWorkSet.push_back(RI);
 
             // LLVM_DEBUG(llvm::dbgs() << "\nTerminator after: " << *RI->getParent()->getTerminator() << "\n\n";);
             // LLVM_DEBUG(llvm::dbgs() << "\nResume - Done. Function Dump: " << F << "\n\n";);
@@ -148,7 +145,18 @@ struct TypeScriptExceptionPass : public FunctionPass
             MadeChange = true;
         }
 
-        LLVM_DEBUG(llvm::dbgs() << "\nDone. Function Dump: " << F << "\n\n";);
+        // remove
+        for (auto RI : toRemoveResumeInstWorkSet)
+        {
+            RI->eraseFromParent();
+        }
+
+        for (auto LPI : toRemoveLandingPad)
+        {
+            LPI->eraseFromParent();
+        }
+
+        // LLVM_DEBUG(llvm::dbgs() << "\nDone. Function Dump: " << F << "\n\n";);
 
         // cleaups
         for (auto p : calls)

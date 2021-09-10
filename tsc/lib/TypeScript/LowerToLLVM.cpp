@@ -200,12 +200,18 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
 };
 #else
 
-#ifdef WIN32
-#include "TypeScript/win/assert.h"
-#else
-#include "TypeScript/unix/assert.h"
-#endif
+class AssertOpLowering : public TsLlvmPattern<mlir_ts::AssertOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::AssertOp>::TsLlvmPattern;
 
+    LogicalResult matchAndRewrite(mlir_ts::AssertOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+    {
+        TypeConverterHelper tch(getTypeConverter());
+        AssertLogic al(op, rewriter, tch, op->getLoc());
+        return al.logic(op.arg(), op.msg().str());
+    }
+};
 class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
 {
   public:
