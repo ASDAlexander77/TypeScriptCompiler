@@ -3105,16 +3105,39 @@ class MLIRGenImpl
         // body
         builder.setInsertionPointToStart(&tryOp.body().front());
         auto result = mlirGen(tryStatementAST->tryBlock, genContext);
+        if (mlir::failed(result))
+        {
+            return mlir::failure();
+        }
+
         // terminator
         builder.create<mlir_ts::ResultOp>(location);
 
         // catches
         builder.setInsertionPointToStart(&tryOp.catches().front());
+        if (tryStatementAST->catchClause->block)
+        {
+            result = mlirGen(tryStatementAST->catchClause->block, genContext);
+            if (mlir::failed(result))
+            {
+                return mlir::failure();
+            }
+        }
+
         // terminator
         builder.create<mlir_ts::ResultOp>(location);
 
         // finally
         builder.setInsertionPointToStart(&tryOp.finallyBlock().front());
+        if (tryStatementAST->finallyBlock)
+        {
+            result = mlirGen(tryStatementAST->finallyBlock, genContext);
+            if (mlir::failed(result))
+            {
+                return mlir::failure();
+            }
+        }
+
         // terminator
         builder.create<mlir_ts::ResultOp>(location);
 

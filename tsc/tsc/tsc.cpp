@@ -310,7 +310,7 @@ std::function<llvm::Error(llvm::Module *)> initPasses(mlir::SmallVector<const ll
     assert(pass);
     if (pass)
     {
-        // passes.push_back(pass);
+        passes.push_back(pass);
     }
 
     auto optPipeline = mlir::makeLLVMPassesTransformer(passes,

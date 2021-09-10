@@ -30,25 +30,39 @@ struct TypeScriptExceptionPass : public FunctionPass
     {
         auto MadeChange = false;
 
-        llvm::SmallPtrSet<LandingPadInst *, 16> landingPadInstWorkSet;
-        llvm::SmallPtrSet<ResumeInst *, 16> resumeInstWorkSet;
+        llvm::SmallVector<LandingPadInst *> landingPadInstWorkSet;
+        llvm::SmallVector<ResumeInst *> resumeInstWorkSet;
+        llvm::SmallDenseMap<LandingPadInst *, llvm::SmallVector<CallBase *> *> calls;
 
         LLVM_DEBUG(llvm::dbgs() << "\nFunction: " << F.getName() << "\n\n";);
 
         auto &DL = F.getParent()->getDataLayout();
 
+        llvm::SmallVector<CallBase *> *currentCalls = nullptr;
         for (auto &I : instructions(F))
         {
             if (auto *LPI = dyn_cast<LandingPadInst>(&I))
             {
-                landingPadInstWorkSet.insert(LPI);
+                landingPadInstWorkSet.push_back(LPI);
+                currentCalls = new llvm::SmallVector<CallBase *>();
+                calls[LPI] = currentCalls;
                 continue;
             }
 
             if (auto *RI = dyn_cast<ResumeInst>(&I))
             {
-                resumeInstWorkSet.insert(RI);
+                currentCalls = nullptr;
+                resumeInstWorkSet.push_back(RI);
                 continue;
+            }
+
+            if (currentCalls)
+            {
+                if (auto *CB = dyn_cast<CallBase>(&I))
+                {
+                    currentCalls->push_back(CB);
+                    continue;
+                }
             }
         }
 
@@ -71,12 +85,44 @@ struct TypeScriptExceptionPass : public FunctionPass
             CSI->addHandler(ContinuationBB);
 
             auto nullI8Ptr = ConstantPointerNull::get(PointerType::get(IntegerType::get(Ctx, 8), 0));
-            auto iVal64 = ConstantInt::get(IntegerType::get(Ctx, 32), 32);
+            auto iVal64 = ConstantInt::get(IntegerType::get(Ctx, 32), 64);
 
+            // auto *CPI = CatchPadInst::Create(CSI, {nullI8Ptr, iVal64, nullI8Ptr}, "catchpad", LPI);
             auto *CPI = CatchPadInst::Create(CSI, {nullI8Ptr, iVal64, nullI8Ptr}, "catchpad", LPI);
+
+            // TODO: how to add funclet to cll
+            //   CallInst *PersCI = IRB.CreateCall(CallPersonalityF, CatchCI, OperandBundleDef("funclet", CPI));
+            // Builder.CreateCall(func, callee, OperandBundleDef("funclet", CPI));
+            /*
+                /// Create a clone of \p CB with a different set of operand bundles and
+                /// insert it before \p InsertPt.
+                ///
+                /// The returned call instruction is identical \p CB in every way except that
+                /// the operand bundles for the new instruction are set to the operand bundles
+                /// in \p Bundles.
+                static CallBase *Create(CallBase *CB, ArrayRef<OperandBundleDef> Bundles,
+                                        Instruction *InsertPt = nullptr);
+            */
 
             LPI->replaceAllUsesWith(CPI);
             LPI->eraseFromParent();
+
+            auto *CTN = ConstantTokenNone::get(Ctx);
+            CSI->setParentPad(CTN);
+
+            // set funcset
+            llvm::SmallVector<CallBase *> *callsByLandingPad = calls[LPI];
+            if (callsByLandingPad)
+            {
+                for (auto callBase : *callsByLandingPad)
+                {
+                    llvm::SmallVector<OperandBundleDef> opBundle;
+                    auto *tokenTy = llvm::Type::getTokenTy(Ctx);
+                    auto castedValue = CastInst::CreateBitOrPointerCast(CPI, tokenTy, "", callBase);
+                    opBundle.emplace_back(OperandBundleDef("funclet", castedValue));
+                    auto *newCallBase = CallBase::Create(callBase, opBundle, callBase);
+                }
+            }
 
             // LLVM_DEBUG(llvm::dbgs() << "\nLanding Pad - Done. Function Dump: " << F << "\n\n";);
 
@@ -103,6 +149,12 @@ struct TypeScriptExceptionPass : public FunctionPass
         }
 
         LLVM_DEBUG(llvm::dbgs() << "\nDone. Function Dump: " << F << "\n\n";);
+
+        // cleaups
+        for (auto p : calls)
+        {
+            delete p.second;
+        }
 
         return MadeChange;
     }
