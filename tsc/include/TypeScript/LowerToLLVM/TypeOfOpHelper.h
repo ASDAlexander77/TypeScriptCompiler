@@ -9,14 +9,6 @@
 
 #include "TypeScript/LowerToLLVM/TypeHelper.h"
 #include "TypeScript/LowerToLLVM/TypeConverterHelper.h"
-#include "TypeScript/LowerToLLVM/LLVMTypeConverterHelper.h"
-#include "TypeScript/LowerToLLVM/CodeLogicHelper.h"
-#include "TypeScript/LowerToLLVM/LLVMCodeHelper.h"
-#include "TypeScript/LowerToLLVM/LLVMRTTIHelperVCWin32.h"
-#include "TypeScript/LowerToLLVM/AssertLogic.h"
-#include "TypeScript/LowerToLLVM/ConvertLogic.h"
-#include "TypeScript/LowerToLLVM/CastLogicHelper.h"
-#include "TypeScript/LowerToLLVM/OptionalLogicHelper.h"
 
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;

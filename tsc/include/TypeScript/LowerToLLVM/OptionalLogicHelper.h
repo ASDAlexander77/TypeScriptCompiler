@@ -7,11 +7,11 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 
-#include "TypeScript/LowerToLLVM/TypeHelper.h"
-#include "TypeScript/LowerToLLVM/TypeConverterHelper.h"
-#include "TypeScript/LowerToLLVM/LLVMTypeConverterHelper.h"
-#include "TypeScript/LowerToLLVM/CodeLogicHelper.h"
-#include "TypeScript/LowerToLLVM/LLVMCodeHelper.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+
+#include "scanner_enums.h"
 
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;

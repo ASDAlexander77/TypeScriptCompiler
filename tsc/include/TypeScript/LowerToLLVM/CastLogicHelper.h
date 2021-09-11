@@ -15,6 +15,8 @@
 #include "TypeScript/LowerToLLVM/ConvertLogic.h"
 #include "TypeScript/LowerToLLVM/AnyLogic.h"
 
+#include "TypeScript/CommonGenLogic.h"
+
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
 

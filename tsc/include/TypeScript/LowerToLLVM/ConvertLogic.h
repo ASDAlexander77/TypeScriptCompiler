@@ -12,27 +12,6 @@
 #include "TypeScript/LowerToLLVM/LLVMTypeConverterHelper.h"
 #include "TypeScript/LowerToLLVM/CodeLogicHelper.h"
 #include "TypeScript/LowerToLLVM/LLVMCodeHelper.h"
-#include "TypeScript/LowerToLLVM/LLVMRTTIHelperVCWin32.h"
-#include "TypeScript/LowerToLLVM/AssertLogic.h"
-
-#include "mlir/Target/LLVMIR/TypeTranslation.h"
-#include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
-#include "mlir/Conversion/SCFToStandard/SCFToStandard.h"
-#include "mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h"
-#include "mlir/Conversion/StandardToLLVM/ConvertStandardToLLVMPass.h"
-#include "mlir/Dialect/Affine/IR/AffineOps.h"
-#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/Dialect/SCF/SCF.h"
-#include "mlir/Dialect/StandardOps/IR/Ops.h"
-#include "mlir/Pass/Pass.h"
-#include "mlir/Transforms/DialectConversion.h"
-#include "llvm/ADT/Sequence.h"
-#include "llvm/ADT/TypeSwitch.h"
-#include "llvm/IR/DataLayout.h"
-
-#include "TypeScript/CommonGenLogic.h"
-
-#include "scanner_enums.h"
 
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
