@@ -1717,6 +1717,13 @@ struct LogicalBinaryOpLowering : public TsLlvmPattern<mlir_ts::LogicalBinaryOp>
 {
     using TsLlvmPattern<mlir_ts::LogicalBinaryOp>::TsLlvmPattern;
 
+    template <CmpIPredicate v1, CmpFPredicate v2>
+    mlir::Value logicOp(mlir_ts::LogicalBinaryOp logicalBinaryOp, SyntaxKind op, PatternRewriter &builder) const
+    {
+        return LogicOp<CmpIOp, CmpIPredicate, v1, CmpFOp, CmpFPredicate, v2>(
+            logicalBinaryOp, op, logicalBinaryOp.operand1(), logicalBinaryOp.operand2(), builder, *(LLVMTypeConverter *)getTypeConverter());
+    }
+
     LogicalResult matchAndRewrite(mlir_ts::LogicalBinaryOp logicalBinaryOp, ArrayRef<Value> operands,
                                   ConversionPatternRewriter &rewriter) const final
     {
@@ -1728,29 +1735,23 @@ struct LogicalBinaryOpLowering : public TsLlvmPattern<mlir_ts::LogicalBinaryOp>
         {
         case SyntaxKind::EqualsEqualsToken:
         case SyntaxKind::EqualsEqualsEqualsToken:
-            value = LogicOp<CmpIOp, CmpIPredicate, CmpIPredicate::eq, CmpFOp, CmpFPredicate, CmpFPredicate::OEQ>(
-                logicalBinaryOp, op, rewriter, *(LLVMTypeConverter *)getTypeConverter());
+            value = logicOp<CmpIPredicate::eq, CmpFPredicate::OEQ>(logicalBinaryOp, op, rewriter);
             break;
         case SyntaxKind::ExclamationEqualsToken:
         case SyntaxKind::ExclamationEqualsEqualsToken:
-            value = LogicOp<CmpIOp, CmpIPredicate, CmpIPredicate::ne, CmpFOp, CmpFPredicate, CmpFPredicate::ONE>(
-                logicalBinaryOp, op, rewriter, *(LLVMTypeConverter *)getTypeConverter());
+            value = logicOp<CmpIPredicate::ne, CmpFPredicate::ONE>(logicalBinaryOp, op, rewriter);
             break;
         case SyntaxKind::GreaterThanToken:
-            value = LogicOp<CmpIOp, CmpIPredicate, CmpIPredicate::sgt, CmpFOp, CmpFPredicate, CmpFPredicate::OGT>(
-                logicalBinaryOp, op, rewriter, *(LLVMTypeConverter *)getTypeConverter());
+            value = logicOp<CmpIPredicate::sgt, CmpFPredicate::OGT>(logicalBinaryOp, op, rewriter);
             break;
         case SyntaxKind::GreaterThanEqualsToken:
-            value = LogicOp<CmpIOp, CmpIPredicate, CmpIPredicate::sge, CmpFOp, CmpFPredicate, CmpFPredicate::OGE>(
-                logicalBinaryOp, op, rewriter, *(LLVMTypeConverter *)getTypeConverter());
+            value = logicOp<CmpIPredicate::sge, CmpFPredicate::OGE>(logicalBinaryOp, op, rewriter);
             break;
         case SyntaxKind::LessThanToken:
-            value = LogicOp<CmpIOp, CmpIPredicate, CmpIPredicate::slt, CmpFOp, CmpFPredicate, CmpFPredicate::OLT>(
-                logicalBinaryOp, op, rewriter, *(LLVMTypeConverter *)getTypeConverter());
+            value = logicOp<CmpIPredicate::slt, CmpFPredicate::OLT>(logicalBinaryOp, op, rewriter);
             break;
         case SyntaxKind::LessThanEqualsToken:
-            value = LogicOp<CmpIOp, CmpIPredicate, CmpIPredicate::sle, CmpFOp, CmpFPredicate, CmpFPredicate::OLE>(
-                logicalBinaryOp, op, rewriter, *(LLVMTypeConverter *)getTypeConverter());
+            value = logicOp<CmpIPredicate::sle, CmpFPredicate::OLE>(logicalBinaryOp, op, rewriter);
             break;
         default:
             llvm_unreachable("not implemented");
