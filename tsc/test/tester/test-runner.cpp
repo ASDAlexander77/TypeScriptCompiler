@@ -668,9 +668,7 @@ void createJitCompileBatchFile()
     batFile << "FILENAME=$1" << std::endl;
     batFile << "LLVMPATH=" << TEST_EXEPATH << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "$TSCEXEPATH/tsc --emit=jit -nogc " << LINUX_ASYNC_INC
-            << " -dump-object-file "
-               "-object-filename=$FILENAME.o $2"
+    batFile << "$TSCEXEPATH/tsc --emit=jit -nogc --shared-libs=../../lib/libTypeScriptRuntime.so -dump-object-file -object-filename=$FILENAME.o $2"
             << std::endl;
     batFile << "gcc -o $1 $1.o" << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
@@ -693,9 +691,7 @@ void createJitCompileBatchFileGC()
     batFile << "LLVMPATH=" << TEST_EXEPATH << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "GCLIBPATH=" << TEST_GCPATH << std::endl;
-    batFile << "$TSCEXEPATH/tsc --emit=jit --shared-libs=../../lib/libTypeScriptRuntime.so " << LINUX_ASYNC_INC
-            << " -dump-object-file "
-               "-object-filename=$FILENAME.o $2"
+    batFile << "$TSCEXEPATH/tsc --emit=jit --shared-libs=../../lib/libTypeScriptRuntime.so -dump-object-file -object-filename=$FILENAME.o $2"
             << std::endl;
     batFile << "gcc -o $FILENAME -L$GCLIBPATH $FILENAME.o -l" << GC_LIB << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
@@ -717,7 +713,7 @@ void createJitBatchFile()
     batFile << "FILENAME=$1" << std::endl;
     batFile << "LLVMPATH=" << TEST_EXEPATH << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "$TSCEXEPATH/tsc --emit=jit -nogc " << LINUX_ASYNC_INC << " $2 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
+    batFile << "$TSCEXEPATH/tsc --emit=jit -nogc --shared-libs=../../lib/libTypeScriptRuntime.so $2 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile.close();
 }
 
@@ -734,8 +730,7 @@ void createJitBatchFileGC()
     batFile << "FILENAME=$1" << std::endl;
     batFile << "LLVMPATH=" << TEST_EXEPATH << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "$TSCEXEPATH/tsc --emit=jit --shared-libs=../../lib/libTypeScriptRuntime.so " << LINUX_ASYNC_INC
-            << " $2 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
+    batFile << "$TSCEXEPATH/tsc --emit=jit --shared-libs=../../lib/libTypeScriptRuntime.so $2 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile.close();
 }
 #endif
