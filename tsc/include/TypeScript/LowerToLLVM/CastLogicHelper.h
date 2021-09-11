@@ -518,6 +518,12 @@ class CastLogicHelper
     }
 };
 
+template <typename T> Value castLogic(Value size, Type sizeType, Operation *op, PatternRewriter &rewriter, TypeConverterHelper tch)
+{
+    CastLogicHelper castLogic(op, rewriter, tch);
+    return castLogic.cast(size, sizeType);
+}
+
 } // namespace typescript
 
 #endif // MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_CASTLOGICHELPER_H_

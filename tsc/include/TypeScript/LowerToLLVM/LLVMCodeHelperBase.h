@@ -1,6 +1,9 @@
 #ifndef MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_LLVMCODEHELPERWRAP_H_
 #define MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_LLVMCODEHELPERWRAP_H_
 
+#include "TypeScript/LowerToLLVM/TypeHelper.h"
+#include "TypeScript/LowerToLLVM/TypeConverterHelper.h"
+
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
 
@@ -12,6 +15,8 @@ enum class MemoryAllocSet
     None,
     Zero
 };
+
+template <typename T> Value castLogic(Value size, Type sizeType, Operation *op, PatternRewriter &rewriter, TypeConverterHelper tch);
 
 class LLVMCodeHelperBase
 {
@@ -204,8 +209,7 @@ class LLVMCodeHelperBase
         auto effectiveSize = sizeOfAlloc;
         if (effectiveSize.getType() != th.getIndexType())
         {
-            CastLogicHelper castLogic(op, rewriter, tch);
-            effectiveSize = castLogic.cast(effectiveSize, th.getIndexType());
+            effectiveSize = castLogic<int>(effectiveSize, th.getIndexType(), op, rewriter, tch);
         }
 
         auto callResults = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{effectiveSize});
