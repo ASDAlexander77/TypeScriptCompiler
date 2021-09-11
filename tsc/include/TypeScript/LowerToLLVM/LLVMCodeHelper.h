@@ -472,7 +472,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
     }
 };
 
-template <typename T> Value LLVMCodeHelper::_MemoryAlloc(mlir::Value sizeOfAlloc, MemoryAllocSet zero)
+template <typename T> Value LLVMCodeHelperBase::_MemoryAlloc(mlir::Value sizeOfAlloc, MemoryAllocSet zero)
 {
     TypeHelper th(rewriter);
     TypeConverterHelper tch(typeConverter);
@@ -503,7 +503,7 @@ template <typename T> Value LLVMCodeHelper::_MemoryAlloc(mlir::Value sizeOfAlloc
     return ptr;
 }
 
-template <typename T> Value LLVMCodeHelper::_MemoryRealloc(mlir::Value ptrValue, mlir::Value sizeOfAlloc)
+template <typename T> Value LLVMCodeHelperBase::_MemoryRealloc(mlir::Value ptrValue, mlir::Value sizeOfAlloc)
 {
     TypeHelper th(rewriter);
     TypeConverterHelper tch(typeConverter);
@@ -531,7 +531,7 @@ template <typename T> Value LLVMCodeHelper::_MemoryRealloc(mlir::Value ptrValue,
     return callResults.getResult(0);
 }
 
-template <typename T> mlir::LogicalResult LLVMCodeHelper::_MemoryFree(mlir::Value ptrValue)
+template <typename T> mlir::LogicalResult LLVMCodeHelperBase::_MemoryFree(mlir::Value ptrValue)
 {
     TypeHelper th(rewriter);
     TypeConverterHelper tch(typeConverter);
