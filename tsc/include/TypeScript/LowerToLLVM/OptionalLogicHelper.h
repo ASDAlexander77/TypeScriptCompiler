@@ -8,8 +8,10 @@
 #include "TypeScript/TypeScriptOps.h"
 
 #include "TypeScript/LowerToLLVM/UnaryBinLogicalOrHelper.h"
+#include "TypeScript/LowerToLLVM/LLVMTypeConverterHelper.h"
 
 #include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 
@@ -190,7 +192,7 @@ template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2,
 Value OptinalTypeLogicalOp(Operation *binOp, SyntaxKind opCmpCode)
 {
     OptionalLogicHelper olh(binOp, builder, typeConverter);
-    auto value = olh.logicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op);
+    auto value = olh.logicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, opCmpCode);
     return value;
 }
 
