@@ -12,6 +12,20 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 
+#include "TypeScript/MLIRLogic/MLIRGenContext.h"
+#include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
+#include "TypeScript/MLIRLogic/MLIRCodeLogic.h"
+#include "TypeScript/VisitorAST.h"
+
+#include "TypeScript/DOM.h"
+#include "TypeScript/Defines.h"
+
+// parser includes
+#include "file_helper.h"
+#include "node_factory.h"
+#include "parser.h"
+#include "utilities.h"
+
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -30,23 +44,9 @@
 #endif
 
 #include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/ScopedHashTable.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
-
-#include "TypeScript/MLIRGenContext.h"
-#include "TypeScript/MLIRGenLogic.h"
-#include "TypeScript/VisitorAST.h"
-
-#include "TypeScript/DOM.h"
-#include "TypeScript/Defines.h"
-
-// parser includes
-#include "file_helper.h"
-#include "node_factory.h"
-#include "parser.h"
-#include "utilities.h"
 
 #include <numeric>
 

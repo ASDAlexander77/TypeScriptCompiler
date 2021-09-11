@@ -1,9 +1,10 @@
 #define DEBUG_TYPE "mlir"
 
 #include "TypeScript/TypeScriptOps.h"
-#include "TypeScript/CommonGenLogic.h"
 #include "TypeScript/Defines.h"
 #include "TypeScript/TypeScriptDialect.h"
+
+#include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
 
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
 

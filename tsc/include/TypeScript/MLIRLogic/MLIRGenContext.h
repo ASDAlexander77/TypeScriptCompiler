@@ -20,7 +20,6 @@
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
 
-#include "TypeScript/CommonGenLogic.h"
 #include "TypeScript/DOM.h"
 
 #include "parser_types.h"

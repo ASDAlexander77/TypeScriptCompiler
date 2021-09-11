@@ -1,26 +1,10 @@
-#ifndef MLIR_TYPESCRIPT_MLIRGENLOGIC_H_
-#define MLIR_TYPESCRIPT_MLIRGENLOGIC_H_
+#ifndef MLIR_TYPESCRIPT_MLIRGENLOGIC_MLIRCODELOGIC_H_
+#define MLIR_TYPESCRIPT_MLIRGENLOGIC_MLIRCODELOGIC_H_
 
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 
-#include "mlir/IR/Attributes.h"
-#include "mlir/IR/Builders.h"
-#include "mlir/IR/BuiltinOps.h"
-#include "mlir/IR/BuiltinTypes.h"
-#include "mlir/IR/MLIRContext.h"
-#include "mlir/IR/Types.h"
-
-#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/Dialect/LLVMIR/LLVMTypes.h"
-#include "mlir/Dialect/SCF/SCF.h"
-#include "mlir/Dialect/StandardOps/IR/Ops.h"
-
-#include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/TypeSwitch.h"
-#include "llvm/Support/Debug.h"
-
-#include "TypeScript/CommonGenLogic.h"
+#include "TypeScript/MLIRLogic/MLIRDefines.h"
 #include "TypeScript/DOM.h"
 
 #include "parser_types.h"
@@ -32,61 +16,6 @@
 using namespace ::typescript;
 using namespace ts;
 namespace mlir_ts = mlir::typescript;
-
-using llvm::ArrayRef;
-using llvm::cast;
-using llvm::dyn_cast;
-using llvm::dyn_cast_or_null;
-using llvm::isa;
-using llvm::makeArrayRef;
-using llvm::SmallVector;
-using llvm::StringRef;
-using llvm::Twine;
-
-using VariablePairT = std::pair<mlir::Value, ts::VariableDeclarationDOM::TypePtr>;
-using SymbolTableScopeT = llvm::ScopedHashTableScope<StringRef, VariablePairT>;
-
-#define VALIDATE(value)                                                                                                                    \
-    if (!value)                                                                                                                            \
-    {                                                                                                                                      \
-        if (!genContext.allowPartialResolve)                                                                                               \
-        {                                                                                                                                  \
-            emitError(value.getDefiningOp()->getLoc(), "expression has no result");                                                        \
-        }                                                                                                                                  \
-                                                                                                                                           \
-        return mlir::Value();                                                                                                              \
-    }                                                                                                                                      \
-                                                                                                                                           \
-    if (auto unresolved = dyn_cast_or_null<mlir_ts::UnresolvedSymbolRefOp>(value.getDefiningOp()))                                         \
-    {                                                                                                                                      \
-        if (!genContext.allowPartialResolve)                                                                                               \
-        {                                                                                                                                  \
-            emitError(value.getDefiningOp()->getLoc(), "can't find variable: ") << unresolved.identifier();                                \
-        }                                                                                                                                  \
-                                                                                                                                           \
-        return mlir::Value();                                                                                                              \
-    }
-
-#define VALIDATE_LOGIC(value)                                                                                                              \
-    if (!value)                                                                                                                            \
-    {                                                                                                                                      \
-        if (!genContext.allowPartialResolve)                                                                                               \
-        {                                                                                                                                  \
-            emitError(value.getDefiningOp()->getLoc(), "expression has no result");                                                        \
-        }                                                                                                                                  \
-                                                                                                                                           \
-        return mlir::failure();                                                                                                            \
-    }                                                                                                                                      \
-                                                                                                                                           \
-    if (auto unresolved = dyn_cast_or_null<mlir_ts::UnresolvedSymbolRefOp>(value.getDefiningOp()))                                         \
-    {                                                                                                                                      \
-        if (!genContext.allowPartialResolve)                                                                                               \
-        {                                                                                                                                  \
-            emitError(value.getDefiningOp()->getLoc(), "can't find variable: ") << unresolved.identifier();                                \
-        }                                                                                                                                  \
-                                                                                                                                           \
-        return mlir::failure();                                                                                                            \
-    }
 
 namespace typescript
 {
@@ -848,4 +777,4 @@ class MLIRLogicHelper
 };
 } // namespace typescript
 
-#endif // MLIR_TYPESCRIPT_MLIRGENLOGIC_H_
+#endif // MLIR_TYPESCRIPT_MLIRGENLOGIC_MLIRCODELOGIC_H_

@@ -7,6 +7,8 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 
+#include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
+
 #include "TypeScript/LowerToLLVM/TypeHelper.h"
 #include "TypeScript/LowerToLLVM/TypeConverterHelper.h"
 #include "TypeScript/LowerToLLVM/LLVMTypeConverterHelper.h"
@@ -14,8 +16,6 @@
 #include "TypeScript/LowerToLLVM/LLVMCodeHelper.h"
 #include "TypeScript/LowerToLLVM/ConvertLogic.h"
 #include "TypeScript/LowerToLLVM/AnyLogic.h"
-
-#include "TypeScript/CommonGenLogic.h"
 
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
