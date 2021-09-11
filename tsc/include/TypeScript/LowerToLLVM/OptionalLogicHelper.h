@@ -189,7 +189,7 @@ class OptionalLogicHelper
 };
 
 template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
-Value OptinalTypeLogicalOp(Operation *binOp, SyntaxKind opCmpCode)
+Value OptinalTypeLogicalOp(Operation *binOp, SyntaxKind opCmpCode, PatternRewriter &builder, LLVMTypeConverter &typeConverter)
 {
     OptionalLogicHelper olh(binOp, builder, typeConverter);
     auto value = olh.logicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, opCmpCode);
