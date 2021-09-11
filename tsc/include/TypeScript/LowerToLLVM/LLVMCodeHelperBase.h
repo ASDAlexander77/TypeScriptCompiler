@@ -245,8 +245,7 @@ class LLVMCodeHelperBase
         auto effectiveSize = sizeOfAlloc;
         if (effectiveSize.getType() != th.getIndexType())
         {
-            CastLogicHelper castLogic(op, rewriter, tch);
-            effectiveSize = castLogic.cast(effectiveSize, th.getIndexType());
+            effectiveSize = castLogic<int>(effectiveSize, th.getIndexType(), op, rewriter, tch);
         }
 
         auto callResults = rewriter.create<LLVM::CallOp>(loc, mallocFuncOp, ValueRange{effectivePtrValue, effectiveSize});
