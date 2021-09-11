@@ -1,8 +1,6 @@
 #ifndef MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_LLVMRTTIHELPERVCWIN32_H_
 #define MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_LLVMRTTIHELPERVCWIN32_H_
 
-#pragma warning(disable : 4834)
-
 #include "TypeScript/Config.h"
 #include "TypeScript/Defines.h"
 #include "TypeScript/Passes.h"

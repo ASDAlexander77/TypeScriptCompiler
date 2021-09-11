@@ -1,6 +1,12 @@
 #ifndef CONFIG_H_
 #define CONFIG_H_
 
+#if _MSC_VER
+#pragma warning(disable : 4062)
+#pragma warning(disable : 4834)
+#pragma warning(disable : 4996)
+#endif
+
 //#define GC_ENABLE 1
 //#define TSGC_ENABLE 1
 
