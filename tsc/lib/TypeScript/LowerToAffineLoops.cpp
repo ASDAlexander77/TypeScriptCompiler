@@ -6,6 +6,8 @@
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/TypeScriptFunctionPass.h"
 
+#include "TypeScript/LowerToLLVMLogic.h"
+
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/SCF/SCF.h"
@@ -15,8 +17,6 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Sequence.h"
 #include "llvm/Support/Debug.h"
-
-#include "TypeScript/LowerToLLVMLogic.h"
 
 #include "scanner_enums.h"
 

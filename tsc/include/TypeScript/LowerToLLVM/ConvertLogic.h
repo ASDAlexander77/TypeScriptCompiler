@@ -11,7 +11,7 @@
 #include "TypeScript/LowerToLLVM/TypeConverterHelper.h"
 #include "TypeScript/LowerToLLVM/LLVMTypeConverterHelper.h"
 #include "TypeScript/LowerToLLVM/CodeLogicHelper.h"
-#include "TypeScript/LowerToLLVM/LLVMCodeHelper.h"
+#include "TypeScript/LowerToLLVM/LLVMCodeHelperBase.h"
 
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
@@ -25,7 +25,7 @@ class ConvertLogic
     PatternRewriter &rewriter;
     TypeConverterHelper &tch;
     TypeHelper th;
-    LLVMCodeHelper ch;
+    LLVMCodeHelperBase ch;
     CodeLogicHelper clh;
     Location loc;
 
