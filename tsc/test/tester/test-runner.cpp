@@ -626,7 +626,7 @@ void createCompileBatchFileGC()
     batFile << "GCLIBPATH=" << TEST_GCPATH << std::endl;
     batFile << "$TSCEXEPATH/tsc --emit=llvm $2 2>$FILENAME.il" << std::endl;
     batFile << "/usr/bin/llc-12 -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
-    batFile << "gcc -o $FILENAME -L$GCLIBPATH $FILENAME.o -l" << GC_LIB << " " << LIBS std::endl;
+    batFile << "gcc -o $FILENAME -L$GCLIBPATH $FILENAME.o -l" << GC_LIB << " " << LIBS << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile << "rm $FILENAME.o" << std::endl;
     batFile << "rm $FILENAME" << std::endl;
