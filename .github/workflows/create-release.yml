@@ -99,7 +99,7 @@ jobs:
       - name: Configure GC
         continue-on-error: false
         working-directory: ${{github.workspace}}/__build/gc-release
-        run: cmake ../../3rdParty/gc-8.0.4 -G "Visual Studio 16 2019" -A x64 -Wno-dev
+        run: cmake ../../3rdParty/gc-8.0.4 -G "Visual Studio 16 2019" -A x64 -Wno-dev -Denable_threads=ON
         shell: pwsh
 
       - name: Build GC
@@ -243,7 +243,7 @@ jobs:
         continue-on-error: false
         working-directory: ${{github.workspace}}/__build/gc-ninja-release
         shell: sh
-        run: cmake ../../3rdParty/gc-8.0.4 -G "Ninja" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -Wno-dev -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_INSTALL_PREFIX=../../3rdParty/gc/release
+        run: cmake ../../3rdParty/gc-8.0.4 -G "Ninja" -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -Wno-dev -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_INSTALL_PREFIX=../../3rdParty/gc/release -Denable_threads=ON
 
       - name: Build GC
         continue-on-error: false

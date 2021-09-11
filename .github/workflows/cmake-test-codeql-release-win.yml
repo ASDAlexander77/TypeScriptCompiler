@@ -107,7 +107,7 @@ jobs:
     - name: Configure GC
       continue-on-error: false
       working-directory: ${{github.workspace}}/__build/gc-release
-      run: cmake ../../3rdParty/gc-8.0.4 -G "Visual Studio 16 2019" -A x64 -Wno-dev
+      run: cmake ../../3rdParty/gc-8.0.4 -G "Visual Studio 16 2019" -A x64 -Wno-dev -Denable_threads=ON
       shell: pwsh
 
     - name: Build GC
