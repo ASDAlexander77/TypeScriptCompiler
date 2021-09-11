@@ -7,11 +7,18 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 
+#include "TypeScript/LowerToLLVM/LLVMTypeConverterHelper.h"
+
+#include "scanner_enums.h"
+
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
 
 namespace typescript
 {
+
+template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
+Value OptinalTypeLogicalOp(Operation *binOp, SyntaxKind opCmpCode);
 
 template <typename UnaryOpTy, typename StdIOpTy, typename StdFOpTy> void UnaryOp(UnaryOpTy &unaryOp, PatternRewriter &builder)
 {
@@ -73,9 +80,7 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Val
 
     if (leftType.isa<mlir_ts::OptionalType>() || rightType.isa<mlir_ts::OptionalType>())
     {
-        OptionalLogicHelper olh(binOp, builder, typeConverter);
-        auto value = olh.logicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op);
-        return value;
+        return return OptinalTypeLogicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op);
     }
     else if (leftType.isIntOrIndex() || leftType.dyn_cast_or_null<mlir_ts::BooleanType>())
     {

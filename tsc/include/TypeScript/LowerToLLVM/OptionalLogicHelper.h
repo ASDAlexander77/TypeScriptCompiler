@@ -186,6 +186,14 @@ class OptionalLogicHelper
     }
 };
 
+template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
+Value OptinalTypeLogicalOp(Operation *binOp, SyntaxKind opCmpCode)
+{
+    OptionalLogicHelper olh(binOp, builder, typeConverter);
+    auto value = olh.logicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, op);
+    return value;
+}
+
 } // namespace typescript
 
 #endif // MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_OPTIONALLOGICHELPER_H_
