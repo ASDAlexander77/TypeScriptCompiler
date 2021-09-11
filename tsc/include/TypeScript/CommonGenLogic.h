@@ -1,6 +1,8 @@
 #ifndef MLIR_TYPESCRIPT_COMMONGENLOGIC_H_
 #define MLIR_TYPESCRIPT_COMMONGENLOGIC_H_
 
+#include "TypeScript/TypeScriptOps.h"
+
 #include "file_helper.h"
 #include "parser.h"
 

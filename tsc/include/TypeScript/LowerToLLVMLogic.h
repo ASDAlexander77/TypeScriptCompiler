@@ -21,8 +21,6 @@
 
 #include "TypeScript/CommonGenLogic.h"
 
-#include "scanner_enums.h"
-
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
 
