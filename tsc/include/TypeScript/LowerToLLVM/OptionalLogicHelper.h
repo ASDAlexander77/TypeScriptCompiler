@@ -7,6 +7,8 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 
+#include "TypeScript/LowerToLLVM/UnaryBinLogicalOrHelper.h"
+
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
@@ -114,7 +116,7 @@ class OptionalLogicHelper
                     auto rightSubType = rightOptType.getElementType();
                     left = rewriter.create<mlir_ts::ValueOp>(loc, leftSubType, left);
                     right = rewriter.create<mlir_ts::ValueOp>(loc, rightSubType, right);
-                    return LogicOp_<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, opCmpCode, left, right, rewriter, typeConverter);
+                    return LogicOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, opCmpCode, left, right, rewriter, typeConverter);
                 },
                 whenBothHasNoValues);
 
@@ -179,7 +181,7 @@ class OptionalLogicHelper
                 right = rewriter.create<mlir_ts::ValueOp>(loc, rightSubType, right);
             }
 
-            return LogicOp_<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, opCmpCode, left, right, rewriter, typeConverter);
+            return LogicOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, opCmpCode, left, right, rewriter, typeConverter);
         }
     }
 };

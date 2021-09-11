@@ -16,9 +16,6 @@ namespace mlir_ts = mlir::typescript;
 namespace typescript
 {
 
-template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
-mlir::Value LogicOp_(Operation *, SyntaxKind, mlir::Value, mlir::Value, PatternRewriter &, LLVMTypeConverter &);
-
 class TypeOfOpHelper
 {
     Operation *op;
