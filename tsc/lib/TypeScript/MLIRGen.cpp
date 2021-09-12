@@ -931,10 +931,12 @@ class MLIRGenImpl
             }
         }
 
+#ifndef NDEBUG
         if (variableOp)
         {
-            LLVM_DEBUG(dbgs() << "\n +++== variable = " << effectiveName << " type: " << varType << " op: " << variableOp << "==+++ \n";);
+            LLVM_DEBUG(dbgs() << "\n +++== variable = " << effectiveName << " type: " << varType << " op: " << variableOp << "==+++\n";);
         }
+#endif
 
         auto varDecl = std::make_shared<VariableDeclarationDOM>(effectiveName, varType, location);
         if (!isConst || varClass == VariableClass::ConstRef)
