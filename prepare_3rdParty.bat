@@ -33,9 +33,12 @@ IF EXIST ".\3rdParty\gc\%BUILD%\gc-lib.lib" (
   tar -xvzf libatomic_ops-7.6.10.tar.gz -C ./3rdParty/
   echo "Copy to  gc-<ver>/libatomic_ops"  
   xcopy  /E /H /C /I /Y .\3rdParty\libatomic_ops-7.6.10\ .\3rdParty\gc-8.0.4\libatomic_ops\
+  echo "Copy fixes"  
+  xcopy  /E /H /C /I /Y .\docsfix\gc\CMakeLists.txt .\3rdParty\gc-8.0.4\
+  xcopy  /E /H /C /I /Y .\docsfix\gc\tests\CMakeLists.txt .\3rdParty\gc-8.0.4\tests\
   cd %p%
   @call scripts\build_gc_%BUILD%.bat
   cd %p%
-  if "%BUILD%"=="debug" ( xcopy  /E /H /C /I /Y .\__build\gc\%BUILD%\ .\3rdParty\gc\%BUILD%\ )
-  if "%BUILD%"=="release" ( xcopy  /E /H /C /I /Y .\__build\gc-release\%BUILD%\ .\3rdParty\gc\%BUILD%\ )
+  if "%BUILD%"=="debug" ( xcopy  /E /H /C /I /Y .\__build\gc\%BUILD%\ .\3rdParty\gc\debug\ )
+  if "%BUILD%"=="release" ( xcopy  /E /H /C /I /Y .\__build\gc-release\%BUILD%\ .\3rdParty\gc\release\ )
 )

@@ -104,10 +104,15 @@ jobs:
       run:  xcopy  /E /H /C /I /Y ".\3rdParty\libatomic_ops-7.6.10" ".\3rdParty\gc-8.0.4\libatomic_ops"
       shell: pwsh
 
+    - name: Copy fixes to GC
+      continue-on-error: false
+      run: xcopy  /E /H /C /I /Y ".\docs\fix\gc\CMakeLists.txt" ".\3rdParty\gc-8.0.4\";xcopy  /E /H /C /I /Y ".\docs\fix\gc\tests\CMakeLists.txt" ".\3rdParty\gc-8.0.4\tests\"
+      shell: pwsh
+
     - name: Configure GC
       continue-on-error: false
       working-directory: ${{github.workspace}}/__build/gc-release
-      run: cmake ../../3rdParty/gc-8.0.4 -G "Visual Studio 16 2019" -A x64 -Wno-dev -Denable_threads=ON
+      run: cmake ../../3rdParty/gc-8.0.4 -G "Visual Studio 16 2019" -A x64 -Wno-dev -Denable_threads=ON -Denable_cplusplus=OFF
       shell: pwsh
 
     - name: Build GC
