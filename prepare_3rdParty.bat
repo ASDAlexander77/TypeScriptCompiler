@@ -34,8 +34,7 @@ IF EXIST ".\3rdParty\gc\%BUILD%\gc-lib.lib" (
   echo "Copy to  gc-<ver>/libatomic_ops"  
   xcopy  /E /H /C /I /Y .\3rdParty\libatomic_ops-7.6.10\ .\3rdParty\gc-8.0.4\libatomic_ops\
   echo "Copy fixes"  
-  xcopy  /E /H /C /I /Y .\docsfix\gc\CMakeLists.txt .\3rdParty\gc-8.0.4\
-  xcopy  /E /H /C /I /Y .\docsfix\gc\tests\CMakeLists.txt .\3rdParty\gc-8.0.4\tests\
+  xcopy  /E /H /C /I /Y .\docsfix\gc\ .\3rdParty\gc-8.0.4\
   cd %p%
   @call scripts\build_gc_%BUILD%.bat
   cd %p%

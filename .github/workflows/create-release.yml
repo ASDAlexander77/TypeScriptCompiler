@@ -98,7 +98,7 @@ jobs:
 
       - name: Copy fixes to GC
         continue-on-error: false
-        run: xcopy  /E /H /C /I /Y ".\docs\fix\gc\CMakeLists.txt" ".\3rdParty\gc-8.0.4\";xcopy  /E /H /C /I /Y ".\docs\fix\gc\tests\CMakeLists.txt" ".\3rdParty\gc-8.0.4\tests\"
+        run: xcopy  /E /H /C /I /Y ".\docs\fix\gc" ".\3rdParty\gc-8.0.4"
         shell: pwsh
 
       - name: Configure GC
@@ -237,7 +237,7 @@ jobs:
       - name: Copy fixes to GC
         continue-on-error: false
         shell: sh
-        run: cp -a ./docs/fix/gc/CMakeLists.txt ./3rdParty/gc-8.0.4/ ; cp -a ./docs/fix/gc/tests/CMakeLists.txt ./3rdParty/gc-8.0.4/tests/
+        run: cp -a ./docs/fix/gc/ ./3rdParty/gc-8.0.4/
 
       - name: Install Ninja
         continue-on-error: false
