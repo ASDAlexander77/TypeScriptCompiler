@@ -8,6 +8,7 @@ add_mlir_library(TypeScriptRuntime
   TypeScriptGC.cpp
   gc.cpp
   AsyncRuntime.cpp
+  mlir_init.cpp
 
   EXCLUDE_FROM_LIBMLIR
 

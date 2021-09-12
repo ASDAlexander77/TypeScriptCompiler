@@ -4,11 +4,12 @@
 #define GC_DEBUG
 #endif
 
-#ifndef GC_THREADS
-#define GC_THREADS
-#endif
+//#ifndef GC_THREADS
+//#define GC_THREADS
+//#endif
 
 #define GC_INSIDE_DLL
+#define GC_NAMESPACE
 
 #if defined _WIN32 || defined _WIN64 || defined PLATFORM_ANDROID || defined __ANDROID__
 #define GC_NOT_DLL

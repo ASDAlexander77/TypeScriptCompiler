@@ -524,7 +524,11 @@ extern "C" void mlirAsyncRuntimePrintCurrentThreadId()
     std::cout << "Current thread id: " << thisId << std::endl;
 }
 
-void __mlir_runner_init_asyncruntime(llvm::StringMap<void *> &exportSymbols)
+} // namespace runtime
+} // namespace mlir
+
+
+void init_asyncruntime(llvm::StringMap<void *> &exportSymbols)
 {
     auto exportSymbol = [&](llvm::StringRef name, auto ptr) {
         assert(exportSymbols.count(name) == 0 && "symbol already exists");
@@ -555,12 +559,9 @@ void __mlir_runner_init_asyncruntime(llvm::StringMap<void *> &exportSymbols)
     exportSymbol("mlirAsyncRuntimePrintCurrentThreadId", &mlir::runtime::mlirAsyncRuntimePrintCurrentThreadId);
 }
 
-void __mlir_runner_destroy_asyncruntime()
+void destroy_asyncruntime()
 {
     resetDefaultAsyncRuntime();
 }
-
-} // namespace runtime
-} // namespace mlir
 
 #endif // MLIR_ASYNCRUNTIME_DEFINE_FUNCTIONS

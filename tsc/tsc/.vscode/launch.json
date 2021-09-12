@@ -69,7 +69,7 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
-            "args": ["-emit=jit", "C:/temp/1.ts", "--shared-libs=${workspaceFolder}/../../__build/tsc/bin/TypeScriptGCWrapper.dll", "--shared-libs=${workspaceFolder}/../../3rdParty/llvm/debug/bin/mlir_async_runtime.dll"],
+            "args": ["-emit=jit", "C:/temp/1.ts", "--shared-libs=${workspaceFolder}/../../__build/tsc/bin/TypeScriptRuntime.dll"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
