@@ -2135,28 +2135,22 @@ class MLIRGenImpl
 
         auto resultType = evaluate(awaitExpressionAST->expression, genContext);
 
-        mlir::TypeRange typeRange;
+        auto asyncExecOp = builder.create<mlir::async::ExecuteOp>(
+            location, resultType ? mlir::TypeRange{resultType} : mlir::TypeRange(), mlir::ValueRange{}, mlir::ValueRange{},
+            [&](mlir::OpBuilder &builder, mlir::Location location, mlir::ValueRange values) {
+                auto value = mlirGen(awaitExpressionAST->expression, genContext);
+                if (value)
+                {
+                    builder.create<mlir::async::YieldOp>(location, mlir::ValueRange{value});
+                }
+                else
+                {
+                    builder.create<mlir::async::YieldOp>(location, mlir::ValueRange{});
+                }
+            });
         if (resultType)
         {
-            typeRange = mlir::TypeRange{resultType};
-        }
-
-        auto asyncExecOp =
-            builder.create<mlir::async::ExecuteOp>(location, typeRange, mlir::ValueRange{}, mlir::ValueRange{},
-                                                   [&](mlir::OpBuilder &builder, mlir::Location location, mlir::ValueRange values) {
-                                                       auto value = mlirGen(awaitExpressionAST->expression, genContext);
-                                                       if (value)
-                                                       {
-                                                           builder.create<mlir::async::YieldOp>(location, mlir::ValueRange{value});
-                                                       }
-                                                       else
-                                                       {
-                                                           builder.create<mlir::async::YieldOp>(location, mlir::ValueRange{});
-                                                       }
-                                                   });
-        if (resultType)
-        {
-            auto asyncAwaitOp = builder.create<mlir::async::AwaitOp>(location, asyncExecOp.results().front());
+            auto asyncAwaitOp = builder.create<mlir::async::AwaitOp>(location, asyncExecOp.results().back());
             return asyncAwaitOp.getResult(0);
         }
         else
