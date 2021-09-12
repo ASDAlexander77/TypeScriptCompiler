@@ -934,7 +934,7 @@ class MLIRGenImpl
 #ifndef NDEBUG
         if (variableOp)
         {
-            LLVM_DEBUG(dbgs() << "\n +++== variable = " << effectiveName << " type: " << varType << " op: " << variableOp << "==+++\n";);
+            // LLVM_DEBUG(dbgs() << "\n +++== variable = " << effectiveName << " type: " << varType << " op: " << variableOp << "==+++\n";);
         }
 #endif
 
