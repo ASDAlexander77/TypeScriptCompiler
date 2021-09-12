@@ -104,7 +104,7 @@ jobs:
     - name: Copy fixes to GC
       continue-on-error: false
       shell: sh
-      run: cp -a ./docs/fix/gc/ ./3rdParty/gc-8.0.4/
+      run: cp -ar ./docs/fix/gc/* ./3rdParty/gc-8.0.4/
 
     - name: Install Ninja
       continue-on-error: false
