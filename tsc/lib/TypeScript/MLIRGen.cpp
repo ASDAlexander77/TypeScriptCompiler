@@ -3136,7 +3136,10 @@ class MLIRGenImpl
         {
             if (!varName.empty())
             {
-                builder.create<mlir_ts::CatchOp>(location, resolveIdentifier(location, varName, genContext));
+                MLIRCodeLogic mcl(builder);
+                auto varInfo = resolveIdentifier(location, varName, genContext);
+                auto varRef = mcl.GetReferenceOfLoadOp(varInfo);
+                builder.create<mlir_ts::CatchOp>(location, varRef);
             }
 
             result = mlirGen(tryStatementAST->catchClause->block, genContext);
