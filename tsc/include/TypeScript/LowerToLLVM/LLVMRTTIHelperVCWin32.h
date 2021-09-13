@@ -285,6 +285,13 @@ class LLVMRTTIHelperVCWin32
         return success();
     }
 
+    mlir::Value throwInfoPtrValue(mlir::Location loc)
+    {
+        auto throwInfoPtr =
+            rewriter.create<mlir::ConstantOp>(loc, getThrowInfoPtrTy(), FlatSymbolRefAttr::get(rewriter.getContext(), throwInfoRef));
+        return throwInfoPtr;
+    }
+
     LLVM::LLVMStructType getThrowInfoTy()
     {
         return LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {th.getI32Type(), th.getI32Type(), th.getI32Type(), th.getI32Type()},

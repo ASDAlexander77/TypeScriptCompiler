@@ -2196,8 +2196,7 @@ struct ThrowOpLoweringVCWin32 : public TsLlvmPattern<mlir_ts::ThrowOp>
         auto value = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(throwOp.exception().getType()), throwOp.exception(),
                                                           rewriter.getBoolAttr(false));
 
-        auto throwInfoPtr =
-            rewriter.create<mlir::ConstantOp>(loc, throwInfoPtrTy, FlatSymbolRefAttr::get(rewriter.getContext(), rttih.throwInfoRef));
+        auto throwInfoPtr = rttih.throwInfoPtrValue(loc);
 
         // throw exception
         if (auto unwind = tsLlvmContext->unwind[throwOp])
@@ -2231,6 +2230,7 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
     LogicalResult matchAndRewrite(mlir_ts::TryOp tryOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
     {
         TypeHelper th(rewriter);
+        LLVMRTTIHelperVCWin32 rttih(tryOp, rewriter, *getTypeConverter());
 
         Location loc = tryOp.getLoc();
 
@@ -2275,8 +2275,13 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
 
         // Body:catch vars
         rewriter.setInsertionPointToStart(bodyRegion);
+        // catch (null)  = catch(...)
+        // auto catchAll = rewriter.create<LLVM::NullOp>(loc, th.getI8PtrType());
+        auto throwInfoPtr = rttih.throwInfoPtrValue(loc);
+        auto catch1 = throwInfoPtr;
 
-        auto catch1 = rewriter.create<LLVM::NullOp>(loc, th.getI8PtrType());
+        // filter means - allow all in = catch (...)
+        // auto filter = rewriter.create<LLVM::UndefOp>(loc, th.getI8PtrPtrType());
 
         // Body:exit -> replace ResultOp with br
         rewriter.setInsertionPointToEnd(bodyRegionLast);
@@ -2287,8 +2292,6 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         // catches;landingpad
         rewriter.setInsertionPointToStart(catchesRegion);
 
-        // filter means - allow all in = catch (...)
-        // auto filter = rewriter.create<LLVM::UndefOp>(loc, th.getI8PtrPtrType());
         auto landingPadTypeWin32 =
             LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {th.getI8PtrType(), th.getI32Type(), th.getI8PtrType()}, false);
         auto landingPadOp = rewriter.create<LLVM::LandingpadOp>(loc, landingPadTypeWin32, false, ValueRange{catch1 /*, filter*/});
