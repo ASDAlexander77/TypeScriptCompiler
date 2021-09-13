@@ -1,5 +1,7 @@
 #include "TypeScript/TypeScriptExceptionPass.h"
 
+#include "TypeScript/LowerToLLVM/LLVMRTTIHelperVCWin32Const.h"
+
 #include "llvm/Analysis/DomTreeUpdater.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
@@ -86,24 +88,58 @@ struct TypeScriptExceptionPass : public FunctionPass
             auto *CSI = CatchSwitchInst::Create(ConstantTokenNone::get(Ctx), nullptr /*unwind to caller*/, 1, "catch.switch", CurrentBB);
             CSI->addHandler(ContinuationBB);
 
-            auto nullI8Ptr = ConstantPointerNull::get(PointerType::get(IntegerType::get(Ctx, 8), 0));
-            auto iVal64 = ConstantInt::get(IntegerType::get(Ctx, 32), 64);
+            CatchPadInst *CPI = nullptr;
+            if (LPI->getNumClauses() > 0 && LPI->isCatch(0))
+            {
+                // check what is type of catch
+                auto value = LPI->getOperand(0);
+                auto isNullInst = isa<ConstantPointerNull>(value);
+                if (isNullInst)
+                {
+                    // catch (...) as catch value is null
+                    auto nullI8Ptr = ConstantPointerNull::get(PointerType::get(IntegerType::get(Ctx, 8), 0));
+                    auto iVal64 = ConstantInt::get(IntegerType::get(Ctx, 32), 64);
+                    CPI = CatchPadInst::Create(CSI, {nullI8Ptr, iVal64, nullI8Ptr}, "catchpad", LPI);
+                }
+                else
+                {
+                    auto type = value->getType();
+                    if (type->isPointerTy())
+                    {
+                        type = type->getPointerElementType();
+                    }
 
-            auto *CPI = CatchPadInst::Create(CSI, {nullI8Ptr, iVal64, nullI8Ptr}, "catchpad", LPI);
+                    if (type->isIntegerTy())
+                    {
+                        auto nullI8Ptr = ConstantPointerNull::get(PointerType::get(IntegerType::get(Ctx, 8), 0));
+                        auto iVal0 = ConstantInt::get(IntegerType::get(Ctx, 32), 0);
+                        auto foundIt = llvm::find_if(F.getParent()->getGlobalList(),
+                                                     [&](auto &item) { return item.getName() == typescript::I32Type::typeInfoRef; });
+                        if (foundIt != F.getParent()->getGlobalList().end())
+                        {
+                            auto &globalValue = *foundIt;
 
-            // TODO: how to add funclet to cll
-            //   CallInst *PersCI = IRB.CreateCall(CallPersonalityF, CatchCI, OperandBundleDef("funclet", CPI));
-            // Builder.CreateCall(func, callee, OperandBundleDef("funclet", CPI));
-            /*
-                /// Create a clone of \p CB with a different set of operand bundles and
-                /// insert it before \p InsertPt.
-                ///
-                /// The returned call instruction is identical \p CB in every way except that
-                /// the operand bundles for the new instruction are set to the operand bundles
-                /// in \p Bundles.
-                static CallBase *Create(CallBase *CB, ArrayRef<OperandBundleDef> Bundles,
-                                        Instruction *InsertPt = nullptr);
-            */
+                            Constant *zero_32 = Constant::getNullValue(IntegerType::getInt32Ty(Ctx));
+                            Constant *gep_params[] = {zero_32};
+
+                            Constant *throwInfoPtr = ConstantExpr::getGetElementPtr(globalValue.getValueType(), &globalValue, gep_params);
+                            CPI = CatchPadInst::Create(CSI, {throwInfoPtr, iVal0, nullI8Ptr}, "catchpad", LPI);
+                        }
+                        else
+                        {
+                            llvm_unreachable("not implemented, can't find ??_R0H@8");
+                        }
+                    }
+                    else
+                    {
+                        llvm_unreachable("not implemented");
+                    }
+                }
+            }
+            else
+            {
+                llvm_unreachable("not implemented");
+            }
 
             toRemoveLandingPad.push_back(LPI);
             landingPadNewOps[LPI] = CPI;

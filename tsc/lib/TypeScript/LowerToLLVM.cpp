@@ -2196,7 +2196,8 @@ struct ThrowOpLoweringVCWin32 : public TsLlvmPattern<mlir_ts::ThrowOp>
         auto value = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(throwOp.exception().getType()), throwOp.exception(),
                                                           rewriter.getBoolAttr(false));
 
-        auto throwInfoPtr = rewriter.create<mlir::ConstantOp>(loc, throwInfoPtrTy, FlatSymbolRefAttr::get(rewriter.getContext(), "_TI1N"));
+        auto throwInfoPtr =
+            rewriter.create<mlir::ConstantOp>(loc, throwInfoPtrTy, FlatSymbolRefAttr::get(rewriter.getContext(), rttih.throwInfoRef));
 
         // throw exception
         if (auto unwind = tsLlvmContext->unwind[throwOp])
@@ -2286,10 +2287,11 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         // catches;landingpad
         rewriter.setInsertionPointToStart(catchesRegion);
 
+        // filter means - allow all in = catch (...)
+        // auto filter = rewriter.create<LLVM::UndefOp>(loc, th.getI8PtrPtrType());
         auto landingPadTypeWin32 =
             LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {th.getI8PtrType(), th.getI32Type(), th.getI8PtrType()}, false);
-        auto landingPadOp = rewriter.create<LLVM::LandingpadOp>(loc, landingPadTypeWin32, false, ValueRange{catch1});
-        // rewriter.create<LLVM::ResumeOp>(loc, landingPadOp);
+        auto landingPadOp = rewriter.create<LLVM::LandingpadOp>(loc, landingPadTypeWin32, false, ValueRange{catch1 /*, filter*/});
 
         // catches:exit
         rewriter.setInsertionPointToEnd(catchesRegionLast);

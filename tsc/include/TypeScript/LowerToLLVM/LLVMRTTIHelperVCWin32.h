@@ -9,6 +9,7 @@
 
 #include "TypeScript/LowerToLLVM/TypeHelper.h"
 #include "TypeScript/LowerToLLVM/LLVMCodeHelper.h"
+#include "TypeScript/LowerToLLVM/LLVMRTTIHelperVCWin32Const.h"
 
 #include "mlir/Transforms/DialectConversion.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -19,6 +20,8 @@ namespace mlir_ts = mlir::typescript;
 namespace typescript
 {
 
+constexpr auto typeInfoExtRef = "??_7type_info@@6B@";
+constexpr auto imageBaseRef = "__ImageBase";
 class LLVMRTTIHelperVCWin32
 {
     Operation *op;
@@ -28,9 +31,34 @@ class LLVMRTTIHelperVCWin32
     LLVMCodeHelper ch;
 
   public:
+    const char *typeName;
+    const char *typeInfoRef;
+    const char *catchableTypeInfoRef;
+    const char *catchableTypeInfoArrayRef;
+    const char *throwInfoRef;
+
     LLVMRTTIHelperVCWin32(Operation *op, PatternRewriter &rewriter, TypeConverter &typeConverter)
         : op(op), rewriter(rewriter), parentModule(op->getParentOfType<ModuleOp>()), th(rewriter), ch(op, rewriter, &typeConverter)
     {
+        setI32AsCatchType();
+    }
+
+    void setF32AsCatchType()
+    {
+        typeName = F32Type::typeName;
+        typeInfoRef = F32Type::typeInfoRef;
+        catchableTypeInfoRef = F32Type::catchableTypeInfoRef;
+        catchableTypeInfoArrayRef = F32Type::catchableTypeInfoArrayRef;
+        throwInfoRef = F32Type::throwInfoRef;
+    }
+
+    void setI32AsCatchType()
+    {
+        typeName = I32Type::typeName;
+        typeInfoRef = I32Type::typeInfoRef;
+        catchableTypeInfoRef = I32Type::catchableTypeInfoRef;
+        catchableTypeInfoArrayRef = I32Type::catchableTypeInfoArrayRef;
+        throwInfoRef = I32Type::throwInfoRef;
     }
 
     LogicalResult setPersonality(mlir::FuncOp newFuncOp)
@@ -43,7 +71,7 @@ class LLVMRTTIHelperVCWin32
 
     LogicalResult typeInfo(mlir::Location loc)
     {
-        auto name = "??_7type_info@@6B@";
+        auto name = typeInfoExtRef;
         if (parentModule.lookupSymbol<LLVM::GlobalOp>(name))
         {
             return failure();
@@ -55,7 +83,7 @@ class LLVMRTTIHelperVCWin32
 
     LogicalResult typeDescriptor2(mlir::Location loc)
     {
-        auto name = "??_R0N@8";
+        auto name = typeInfoRef;
         if (parentModule.lookupSymbol<LLVM::GlobalOp>(name))
         {
             return failure();
@@ -70,14 +98,14 @@ class LLVMRTTIHelperVCWin32
             // begin
             Value structVal = rewriter.create<LLVM::UndefOp>(loc, rttiTypeDescriptor2Ty);
 
-            auto itemValue1 = rewriter.create<mlir::ConstantOp>(loc, th.getI8PtrPtrType(),
-                                                                FlatSymbolRefAttr::get(rewriter.getContext(), "??_7type_info@@6B@"));
+            auto itemValue1 =
+                rewriter.create<mlir::ConstantOp>(loc, th.getI8PtrPtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), typeInfoExtRef));
             ch.setStructValue(loc, structVal, itemValue1, 0);
 
             auto itemValue2 = rewriter.create<LLVM::NullOp>(loc, th.getI8PtrType());
             ch.setStructValue(loc, structVal, itemValue2, 1);
 
-            auto itemValue3 = rewriter.create<mlir::ConstantOp>(loc, th.getI8Array(3), ch.getStringAttrWith0(".N"));
+            auto itemValue3 = rewriter.create<mlir::ConstantOp>(loc, th.getI8Array(3), ch.getStringAttrWith0(typeName));
             ch.setStructValue(loc, structVal, itemValue3, 2);
 
             // end
@@ -91,7 +119,7 @@ class LLVMRTTIHelperVCWin32
 
     LogicalResult imageBase(mlir::Location loc)
     {
-        auto name = "__ImageBase";
+        auto name = imageBaseRef;
         if (parentModule.lookupSymbol<LLVM::GlobalOp>(name))
         {
             return failure();
@@ -103,7 +131,7 @@ class LLVMRTTIHelperVCWin32
 
     LogicalResult catchableType(mlir::Location loc)
     {
-        auto name = "_CT??_R0N@88";
+        auto name = catchableTypeInfoRef;
         if (parentModule.lookupSymbol<LLVM::GlobalOp>(name))
         {
             return failure();
@@ -123,12 +151,12 @@ class LLVMRTTIHelperVCWin32
             ch.setStructValue(loc, structVal, itemValue1, 0);
 
             // value 2
-            auto rttiTypeDescriptor2PtrValue = rewriter.create<mlir::ConstantOp>(loc, getRttiTypeDescriptor2PtrTy(),
-                                                                                 FlatSymbolRefAttr::get(rewriter.getContext(), "??_R0N@8"));
+            auto rttiTypeDescriptor2PtrValue = rewriter.create<mlir::ConstantOp>(
+                loc, getRttiTypeDescriptor2PtrTy(), FlatSymbolRefAttr::get(rewriter.getContext(), typeInfoRef));
             auto rttiTypeDescriptor2IntValue = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), rttiTypeDescriptor2PtrValue);
 
             auto imageBasePtrValue =
-                rewriter.create<mlir::ConstantOp>(loc, th.getI8PtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), "__ImageBase"));
+                rewriter.create<mlir::ConstantOp>(loc, th.getI8PtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), imageBaseRef));
             auto imageBaseIntValue = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), imageBasePtrValue);
 
             // sub
@@ -166,7 +194,7 @@ class LLVMRTTIHelperVCWin32
 
     LogicalResult catchableArrayType(mlir::Location loc)
     {
-        auto name = "_CTA1N";
+        auto name = catchableTypeInfoArrayRef;
         if (parentModule.lookupSymbol<LLVM::GlobalOp>(name))
         {
             return failure();
@@ -188,11 +216,11 @@ class LLVMRTTIHelperVCWin32
 
             // value 2
             auto rttiCatchableTypePtrValue = rewriter.create<mlir::ConstantOp>(
-                loc, getCatchableTypePtrTy(), FlatSymbolRefAttr::get(rewriter.getContext(), "_CT??_R0N@88"));
+                loc, getCatchableTypePtrTy(), FlatSymbolRefAttr::get(rewriter.getContext(), catchableTypeInfoRef));
             auto rttiCatchableTypeIntValue = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), rttiCatchableTypePtrValue);
 
             auto imageBasePtrValue =
-                rewriter.create<mlir::ConstantOp>(loc, th.getI8PtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), "__ImageBase"));
+                rewriter.create<mlir::ConstantOp>(loc, th.getI8PtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), imageBaseRef));
             auto imageBaseIntValue = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), imageBasePtrValue);
 
             // sub
@@ -219,7 +247,7 @@ class LLVMRTTIHelperVCWin32
 
     LogicalResult throwInfo(mlir::Location loc)
     {
-        auto name = "_TI1N";
+        auto name = throwInfoRef;
         if (parentModule.lookupSymbol<LLVM::GlobalOp>(name))
         {
             return failure();
@@ -235,12 +263,12 @@ class LLVMRTTIHelperVCWin32
             rewriter.getArrayAttr({rewriter.getI32IntegerAttr(0), rewriter.getI32IntegerAttr(0), rewriter.getI32IntegerAttr(0)}));
 
         // value 3
-        auto rttiCatchableArrayTypePtrValue =
-            rewriter.create<mlir::ConstantOp>(loc, getCatchableArrayTypePtrTy(), FlatSymbolRefAttr::get(rewriter.getContext(), "_CTA1N"));
+        auto rttiCatchableArrayTypePtrValue = rewriter.create<mlir::ConstantOp>(
+            loc, getCatchableArrayTypePtrTy(), FlatSymbolRefAttr::get(rewriter.getContext(), catchableTypeInfoArrayRef));
         auto rttiCatchableArrayTypeIntValue = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), rttiCatchableArrayTypePtrValue);
 
         auto imageBasePtrValue =
-            rewriter.create<mlir::ConstantOp>(loc, th.getI8PtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), "__ImageBase"));
+            rewriter.create<mlir::ConstantOp>(loc, th.getI8PtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), imageBaseRef));
         auto imageBaseIntValue = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), imageBasePtrValue);
 
         // sub
