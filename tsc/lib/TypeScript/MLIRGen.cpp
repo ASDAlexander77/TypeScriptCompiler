@@ -1109,6 +1109,36 @@ class MLIRGenImpl
         return std::make_pair(type, init);
     }
 
+    mlir::LogicalResult mlirGen(VariableDeclaration item, VariableClass varClass, const GenContext &genContext)
+    {
+        if (!item->type && !item->initializer)
+        {
+            auto name = MLIRHelper::getName(item->name);
+            emitError(loc(item)) << "type of variable '" << name << "' is not provided, variable must have type or initializer";
+            return mlir::failure();
+        }
+
+        auto initFunc = [&]() { return getTypeAndInit(item, genContext); };
+
+        auto valClassItem = varClass;
+        if ((item->transformFlags & TransformFlags::ForceConst) == TransformFlags::ForceConst)
+        {
+            valClassItem = VariableClass::Const;
+        }
+
+        if ((item->transformFlags & TransformFlags::ForceConstRef) == TransformFlags::ForceConstRef)
+        {
+            valClassItem = VariableClass::ConstRef;
+        }
+
+        if (!processDeclaration(item, valClassItem, initFunc, genContext))
+        {
+            return mlir::failure();
+        }
+
+        return mlir::success();
+    }
+
     mlir::LogicalResult mlirGen(VariableDeclarationList variableDeclarationListAST, const GenContext &genContext)
     {
         auto isLet = (variableDeclarationListAST->flags & NodeFlags::Let) == NodeFlags::Let;
@@ -1117,27 +1147,7 @@ class MLIRGenImpl
 
         for (auto &item : variableDeclarationListAST->declarations)
         {
-            if (!item->type && !item->initializer)
-            {
-                auto name = MLIRHelper::getName(item->name);
-                emitError(loc(item)) << "type of variable '" << name << "' is not provided, variable must have type or initializer";
-                return mlir::failure();
-            }
-
-            auto initFunc = [&]() { return getTypeAndInit(item, genContext); };
-
-            auto valClassItem = varClass;
-            if ((item->transformFlags & TransformFlags::ForceConst) == TransformFlags::ForceConst)
-            {
-                valClassItem = VariableClass::Const;
-            }
-
-            if ((item->transformFlags & TransformFlags::ForceConstRef) == TransformFlags::ForceConstRef)
-            {
-                valClassItem = VariableClass::ConstRef;
-            }
-
-            if (!processDeclaration(item, valClassItem, initFunc, genContext))
+            if (mlir::failed(mlirGen(item, varClass, genContext)))
             {
                 return mlir::failure();
             }
@@ -3088,6 +3098,17 @@ class MLIRGenImpl
     {
         auto location = loc(tryStatementAST);
 
+        std::string varName;
+        auto varDecl = tryStatementAST->catchClause->variableDeclaration;
+        if (varDecl)
+        {
+            varName = MLIRHelper::getName(varDecl->name);
+            if (mlir::failed(mlirGen(varDecl, VariableClass::Let, genContext)))
+            {
+                return mlir::failure();
+            }
+        }
+
         const_cast<GenContext &>(genContext).funcOp.personalityAttr(builder.getBoolAttr(true));
 
         auto tryOp = builder.create<mlir_ts::TryOp>(location);
@@ -3113,6 +3134,11 @@ class MLIRGenImpl
         builder.setInsertionPointToStart(&tryOp.catches().front());
         if (tryStatementAST->catchClause->block)
         {
+            if (!varName.empty())
+            {
+                builder.create<mlir_ts::CatchOp>(location, resolveIdentifier(location, varName, genContext));
+            }
+
             result = mlirGen(tryStatementAST->catchClause->block, genContext);
             if (mlir::failed(result))
             {

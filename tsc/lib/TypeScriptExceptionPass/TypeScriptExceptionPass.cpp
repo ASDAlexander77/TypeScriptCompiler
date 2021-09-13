@@ -103,37 +103,9 @@ struct TypeScriptExceptionPass : public FunctionPass
                 }
                 else
                 {
-                    auto type = value->getType();
-                    if (type->isPointerTy())
-                    {
-                        type = type->getPointerElementType();
-                    }
-
-                    if (type->isIntegerTy())
-                    {
-                        auto nullI8Ptr = ConstantPointerNull::get(PointerType::get(IntegerType::get(Ctx, 8), 0));
-                        auto iVal0 = ConstantInt::get(IntegerType::get(Ctx, 32), 0);
-                        auto foundIt = llvm::find_if(F.getParent()->getGlobalList(),
-                                                     [&](auto &item) { return item.getName() == typescript::I32Type::typeInfoRef; });
-                        if (foundIt != F.getParent()->getGlobalList().end())
-                        {
-                            auto &globalValue = *foundIt;
-
-                            Constant *zero_32 = Constant::getNullValue(IntegerType::getInt32Ty(Ctx));
-                            Constant *gep_params[] = {zero_32};
-
-                            Constant *throwInfoPtr = ConstantExpr::getGetElementPtr(globalValue.getValueType(), &globalValue, gep_params);
-                            CPI = CatchPadInst::Create(CSI, {throwInfoPtr, iVal0, nullI8Ptr}, "catchpad", LPI);
-                        }
-                        else
-                        {
-                            llvm_unreachable("not implemented, can't find ??_R0H@8");
-                        }
-                    }
-                    else
-                    {
-                        llvm_unreachable("not implemented");
-                    }
+                    auto nullI8Ptr = ConstantPointerNull::get(PointerType::get(IntegerType::get(Ctx, 8), 0));
+                    auto iVal0 = ConstantInt::get(IntegerType::get(Ctx, 32), 0);
+                    CPI = CatchPadInst::Create(CSI, {value, iVal0, nullI8Ptr}, "catchpad", LPI);
                 }
             }
             else
