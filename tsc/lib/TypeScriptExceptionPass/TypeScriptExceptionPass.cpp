@@ -36,15 +36,18 @@ struct TypeScriptExceptionPass : public FunctionPass
         llvm::SmallVector<ResumeInst *> resumeInstWorkSet;
         llvm::SmallDenseMap<LandingPadInst *, llvm::SmallVector<CallBase *> *> calls;
         llvm::SmallDenseMap<LandingPadInst *, CatchPadInst *> landingPadNewOps;
+        llvm::SmallDenseMap<LandingPadInst *, StoreInst *> landingPadStoreOps;
 
         LLVM_DEBUG(llvm::dbgs() << "\nFunction: " << F.getName() << "\n\n";);
 
         llvm::SmallVector<CallBase *> *currentCalls = nullptr;
+        LandingPadInst *currentLPI = nullptr;
         for (auto &I : instructions(F))
         {
             if (auto *LPI = dyn_cast<LandingPadInst>(&I))
             {
                 landingPadInstWorkSet.push_back(LPI);
+                currentLPI = LPI;
                 currentCalls = new llvm::SmallVector<CallBase *>();
                 calls[LPI] = currentCalls;
                 continue;
@@ -53,8 +56,21 @@ struct TypeScriptExceptionPass : public FunctionPass
             if (auto *RI = dyn_cast<ResumeInst>(&I))
             {
                 currentCalls = nullptr;
+                currentLPI = nullptr;
                 resumeInstWorkSet.push_back(RI);
                 continue;
+            }
+
+            // saving StoreInst to set response
+            if (currentLPI)
+            {
+                if (auto *SI = dyn_cast<StoreInst>(&I))
+                {
+                    if (!landingPadStoreOps[currentLPI])
+                    {
+                        landingPadStoreOps[currentLPI] = SI;
+                    }
+                }
             }
 
             if (currentCalls)
@@ -103,9 +119,11 @@ struct TypeScriptExceptionPass : public FunctionPass
                 }
                 else
                 {
-                    auto nullI8Ptr = ConstantPointerNull::get(PointerType::get(IntegerType::get(Ctx, 8), 0));
+                    auto varRef = landingPadStoreOps[LPI];
+                    assert(varRef);
                     auto iVal0 = ConstantInt::get(IntegerType::get(Ctx, 32), 0);
-                    CPI = CatchPadInst::Create(CSI, {value, iVal0, nullI8Ptr}, "catchpad", LPI);
+                    CPI = CatchPadInst::Create(CSI, {value, iVal0, varRef->getPointerOperand()}, "catchpad", LPI);
+                    varRef->eraseFromParent();
                 }
             }
             else
