@@ -21,6 +21,8 @@ def TypeScript_Dialect : Dialect {
 //===----------------------------------------------------------------------===//
 
 class TypeScript_Op<string mnemonic, list<OpTrait> traits = []> :
-        Op<TypeScript_Dialect, mnemonic, traits>;
+        Op<TypeScript_Dialect, mnemonic, traits> {
+          //string llvmBuilder = "";
+        }
 
 #endif // TYPESCRIPT_DIALECT
