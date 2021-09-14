@@ -285,6 +285,13 @@ class LLVMRTTIHelperVCWin32
         return success();
     }
 
+    mlir::Value typeInfoPtrValue(mlir::Location loc)
+    {
+        auto typeInfoPtr = rewriter.create<mlir::ConstantOp>(loc, getRttiTypeDescriptor2PtrTy(),
+                                                             FlatSymbolRefAttr::get(rewriter.getContext(), typeInfoRef));
+        return typeInfoPtr;
+    }
+
     mlir::Value throwInfoPtrValue(mlir::Location loc)
     {
         auto throwInfoPtr =

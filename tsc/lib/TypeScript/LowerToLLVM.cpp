@@ -2277,8 +2277,8 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         rewriter.setInsertionPointToStart(bodyRegion);
         // catch (null)  = catch(...)
         // auto catchAll = rewriter.create<LLVM::NullOp>(loc, th.getI8PtrType());
-        auto throwInfoPtr = rttih.throwInfoPtrValue(loc);
-        auto catch1 = throwInfoPtr;
+        auto typeInfoPtr = rttih.typeInfoPtrValue(loc);
+        auto catch1 = typeInfoPtr;
 
         // filter means - allow all in = catch (...)
         // auto filter = rewriter.create<LLVM::UndefOp>(loc, th.getI8PtrPtrType());
