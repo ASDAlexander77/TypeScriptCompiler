@@ -3113,6 +3113,10 @@ class MLIRGenImpl
 
         auto tryOp = builder.create<mlir_ts::TryOp>(location);
 
+        GenContext tryGenContext(genContext);
+        tryGenContext.allocateVarsOutsideOfOperation = true;
+        tryGenContext.currentOperation = tryOp;
+
         SmallVector<mlir::Type, 0> types;
 
         /*auto *body =*/builder.createBlock(&tryOp.body(), {}, types);
@@ -3121,7 +3125,7 @@ class MLIRGenImpl
 
         // body
         builder.setInsertionPointToStart(&tryOp.body().front());
-        auto result = mlirGen(tryStatementAST->tryBlock, genContext);
+        auto result = mlirGen(tryStatementAST->tryBlock, tryGenContext);
         if (mlir::failed(result))
         {
             return mlir::failure();
@@ -3137,12 +3141,12 @@ class MLIRGenImpl
             if (!varName.empty())
             {
                 MLIRCodeLogic mcl(builder);
-                auto varInfo = resolveIdentifier(location, varName, genContext);
+                auto varInfo = resolveIdentifier(location, varName, tryGenContext);
                 auto varRef = mcl.GetReferenceOfLoadOp(varInfo);
                 builder.create<mlir_ts::CatchOp>(location, varRef);
             }
 
-            result = mlirGen(tryStatementAST->catchClause->block, genContext);
+            result = mlirGen(tryStatementAST->catchClause->block, tryGenContext);
             if (mlir::failed(result))
             {
                 return mlir::failure();
@@ -3156,7 +3160,7 @@ class MLIRGenImpl
         builder.setInsertionPointToStart(&tryOp.finallyBlock().front());
         if (tryStatementAST->finallyBlock)
         {
-            result = mlirGen(tryStatementAST->finallyBlock, genContext);
+            result = mlirGen(tryStatementAST->finallyBlock, tryGenContext);
             if (mlir::failed(result))
             {
                 return mlir::failure();
