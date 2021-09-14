@@ -37,6 +37,7 @@ struct TypeScriptExceptionPass : public FunctionPass
         llvm::SmallDenseMap<LandingPadInst *, llvm::SmallVector<CallBase *> *> calls;
         llvm::SmallDenseMap<LandingPadInst *, CatchPadInst *> landingPadNewOps;
         llvm::SmallDenseMap<LandingPadInst *, StoreInst *> landingPadStoreOps;
+        llvm::SmallDenseMap<LandingPadInst *, Value *> landingPadStack;
 
         LLVM_DEBUG(llvm::dbgs() << "\nFunction: " << F.getName() << "\n\n";);
 
@@ -131,8 +132,12 @@ struct TypeScriptExceptionPass : public FunctionPass
                 llvm_unreachable("not implemented");
             }
 
+            // save stack
+            Value *SP = Builder.CreateCall(Intrinsic::getDeclaration(F.getParent(), Intrinsic::stacksave), {});
+
             toRemoveLandingPad.push_back(LPI);
             landingPadNewOps[LPI] = CPI;
+            landingPadStack[LPI] = SP;
 
             // set funcset
             llvm::SmallVector<CallBase *> *callsByLandingPad = calls[LPI];
@@ -158,8 +163,16 @@ struct TypeScriptExceptionPass : public FunctionPass
             llvm::IRBuilder<> Builder(RI);
             // auto *UI = new UnreachableInst(Ctx, RI->getParent());
 
-            auto CR = CatchReturnInst::Create(landingPadNewOps[(llvm::LandingPadInst *)RI->getOperand(0)], RI->getParent()->getNextNode(),
-                                              RI->getParent());
+            auto *LPI = (llvm::LandingPadInst *)RI->getOperand(0);
+
+            assert(landingPadStack[LPI]);
+
+            // restore stack
+            Builder.CreateCall(Intrinsic::getDeclaration(F.getParent(), Intrinsic::stackrestore), {landingPadStack[LPI]});
+
+            assert(landingPadNewOps[LPI]);
+
+            auto CR = CatchReturnInst::Create(landingPadNewOps[LPI], RI->getParent()->getNextNode(), RI->getParent());
 
             RI->replaceAllUsesWith(CR);
 
