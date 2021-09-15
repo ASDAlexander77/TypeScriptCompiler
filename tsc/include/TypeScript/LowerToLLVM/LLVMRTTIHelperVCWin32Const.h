@@ -21,6 +21,17 @@ constexpr auto catchableTypeInfoArrayRef = "_CTA1H";
 constexpr auto throwInfoRef = "_TI1H";
 } // namespace I32Type
 
+namespace I8PtrType
+{
+constexpr auto typeName = ".PEAD";
+constexpr auto typeInfoRef = "??_R0PEAD@8";
+constexpr auto typeInfoRef2 = "??_R0PEAX@88";
+constexpr auto catchableTypeInfoRef = "_CT??_R0PEAD@88";
+constexpr auto catchableTypeInfoRef2 = "_CT??_R0PEAX@88";
+constexpr auto catchableTypeInfoArrayRef = "_CTA2PEAD";
+constexpr auto throwInfoRef = "_TIC2PEAD";
+} // namespace I8PtrType
+
 } // namespace typescript
 
 #endif // MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_LLVMRTTIHELPERVCWIN32_H_

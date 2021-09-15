@@ -2176,13 +2176,13 @@ struct ThrowOpLoweringVCWin32 : public TsLlvmPattern<mlir_ts::ThrowOp>
             rttih.typeInfo(loc);
 
             // ??_R0N@8
-            rttih.typeDescriptor2(loc);
+            rttih.typeDescriptors(loc);
 
             // __ImageBase
             rttih.imageBase(loc);
 
             // _CT??_R0N@88
-            rttih.catchableType(loc);
+            rttih.catchableTypes(loc);
 
             // _CTA1N
             rttih.catchableArrayType(loc);
