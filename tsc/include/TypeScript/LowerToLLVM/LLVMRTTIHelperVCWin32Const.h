@@ -25,7 +25,7 @@ namespace I8PtrType
 {
 constexpr auto typeName = ".PEAD";
 constexpr auto typeInfoRef = "??_R0PEAD@8";
-constexpr auto typeInfoRef2 = "??_R0PEAX@88";
+constexpr auto typeInfoRef2 = "??_R0PEAX@8";
 constexpr auto catchableTypeInfoRef = "_CT??_R0PEAD@88";
 constexpr auto catchableTypeInfoRef2 = "_CT??_R0PEAX@88";
 constexpr auto catchableTypeInfoArrayRef = "_CTA2PEAD";

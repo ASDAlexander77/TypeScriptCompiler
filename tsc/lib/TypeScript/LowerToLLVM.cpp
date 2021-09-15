@@ -2321,14 +2321,16 @@ struct CatchOpLowering : public TsLlvmPattern<mlir_ts::CatchOp>
 
     LogicalResult matchAndRewrite(mlir_ts::CatchOp catchOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
     {
-        // TypeHelper th(rewriter);
+        TypeHelper th(rewriter);
         // LLVMRTTIHelperVCWin32 rttih(catchOp, rewriter, *getTypeConverter());
 
         // this is hook to process it later
+        auto catchType = catchOp.catchArg().getType().cast<mlir_ts::RefType>().getElementType();
+        auto llvmCatchType = getTypeConverter()->convertType(catchType);
 
         Location loc = catchOp.getLoc();
 
-        auto undefVal = rewriter.create<LLVM::UndefOp>(loc, catchOp.catchArg().getType().cast<mlir_ts::RefType>().getElementType());
+        auto undefVal = rewriter.create<LLVM::UndefOp>(loc, llvmCatchType);
         rewriter.create<LLVM::StoreOp>(loc, undefVal, catchOp.catchArg());
 
         rewriter.eraseOp(catchOp);
