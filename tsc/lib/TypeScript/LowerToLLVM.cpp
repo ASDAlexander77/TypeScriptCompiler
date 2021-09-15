@@ -2147,13 +2147,14 @@ struct ThrowOpLoweringVCWin32 : public TsLlvmPattern<mlir_ts::ThrowOp>
 
     LogicalResult matchAndRewrite(mlir_ts::ThrowOp throwOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
     {
+        auto loc = throwOp.getLoc();
+
         LLVMCodeHelper ch(throwOp, rewriter, getTypeConverter());
         CodeLogicHelper clh(throwOp, rewriter);
         TypeConverterHelper tch(getTypeConverter());
         TypeHelper th(rewriter);
         LLVMRTTIHelperVCWin32 rttih(throwOp, rewriter, *getTypeConverter());
-
-        auto loc = throwOp.getLoc();
+        rttih.setRTTIForType(loc, throwOp.exception().getType());
 
         auto throwInfoTy = rttih.getThrowInfoTy();
         auto throwInfoPtrTy = rttih.getThrowInfoPtrTy();
@@ -2162,34 +2163,6 @@ struct ThrowOpLoweringVCWin32 : public TsLlvmPattern<mlir_ts::ThrowOp>
 
         auto cxxThrowException =
             ch.getOrInsertFunction("_CxxThrowException", th.getFunctionType(th.getVoidType(), {i8PtrTy, throwInfoPtrTy}));
-
-        // prepare RTTI info for throw
-        {
-            auto parentModule = throwOp->getParentOfType<ModuleOp>();
-
-            OpBuilder::InsertionGuard guard(rewriter);
-
-            rewriter.setInsertionPointToStart(parentModule.getBody());
-            ch.seekLast(parentModule.getBody());
-
-            // ??_7type_info@@6B@
-            rttih.typeInfo(loc);
-
-            // ??_R0N@8
-            rttih.typeDescriptors(loc);
-
-            // __ImageBase
-            rttih.imageBase(loc);
-
-            // _CT??_R0N@88
-            rttih.catchableTypes(loc);
-
-            // _CTA1N
-            rttih.catchableArrayType(loc);
-
-            // _TI1N
-            rttih.throwInfo(loc);
-        }
 
         // prepare first param
         // we need temp var
@@ -2229,10 +2202,18 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
 
     LogicalResult matchAndRewrite(mlir_ts::TryOp tryOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
     {
+        Location loc = tryOp.getLoc();
+
         TypeHelper th(rewriter);
         LLVMRTTIHelperVCWin32 rttih(tryOp, rewriter, *getTypeConverter());
 
-        Location loc = tryOp.getLoc();
+        auto visitorCatchContinue = [&](Operation *op) {
+            if (auto catchOp = dyn_cast_or_null<mlir_ts::CatchOp>(op))
+            {
+                rttih.setRTTIForType(loc, catchOp.catchArg().getType().cast<mlir_ts::RefType>().getElementType());
+            }
+        };
+        tryOp.catches().walk(visitorCatchContinue);
 
         OpBuilder::InsertionGuard guard(rewriter);
         Block *currentBlock = rewriter.getInsertionBlock();
@@ -2260,12 +2241,11 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
                 tsLlvmContext->unwind[op] = catchesRegion;
             }
         };
+        tryOp.body().walk(visitorCallOpContinue);
 
         // Branch to the "body" region.
         rewriter.setInsertionPointToEnd(currentBlock);
         rewriter.create<BranchOp>(loc, bodyRegion, ValueRange{});
-
-        tryOp.body().walk(visitorCallOpContinue);
 
         rewriter.inlineRegionBefore(tryOp.body(), continuation);
 

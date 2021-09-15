@@ -24,6 +24,7 @@ constexpr auto throwInfoRef = "_TI1H";
 namespace I8PtrType
 {
 constexpr auto typeName = ".PEAD";
+constexpr auto typeName2 = ".PEAX";
 constexpr auto typeInfoRef = "??_R0PEAD@8";
 constexpr auto typeInfoRef2 = "??_R0PEAX@8";
 constexpr auto catchableTypeInfoRef = "_CT??_R0PEAD@88";

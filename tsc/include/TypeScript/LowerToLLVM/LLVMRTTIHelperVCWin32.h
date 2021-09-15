@@ -32,6 +32,7 @@ class LLVMRTTIHelperVCWin32
 
   public:
     const char *typeName;
+    const char *typeName2;
     const char *typeInfoRef;
     const char *typeInfoRef2;
     const char *catchableTypeInfoRef;
@@ -43,7 +44,7 @@ class LLVMRTTIHelperVCWin32
     LLVMRTTIHelperVCWin32(Operation *op, PatternRewriter &rewriter, TypeConverter &typeConverter)
         : op(op), rewriter(rewriter), parentModule(op->getParentOfType<ModuleOp>()), th(rewriter), ch(op, rewriter, &typeConverter)
     {
-        setI32AsCatchType();
+        // setI32AsCatchType();
     }
 
     void setF32AsCatchType()
@@ -69,6 +70,7 @@ class LLVMRTTIHelperVCWin32
     void setI8PtrAsCatchType()
     {
         typeName = I8PtrType::typeName;
+        typeName2 = I8PtrType::typeName2;
         typeInfoRef = I8PtrType::typeInfoRef;
         typeInfoRef2 = I8PtrType::typeInfoRef2;
         catchableTypeInfoRef = I8PtrType::catchableTypeInfoRef;
@@ -86,6 +88,66 @@ class LLVMRTTIHelperVCWin32
         return success();
     }
 
+    void setType(mlir::Type type)
+    {
+        TypeSwitch<Type>(type)
+            .Case<mlir::IntegerType>([&](auto intType) {
+                if (intType.getIntOrFloatBitWidth() == 32)
+                {
+                    setI32AsCatchType();
+                }
+                else
+                {
+                    llvm_unreachable("not implemented");
+                }
+            })
+            .Case<mlir::FloatType>([&](auto floatType) {
+                if (floatType.getIntOrFloatBitWidth() == 32)
+                {
+                    setF32AsCatchType();
+                }
+                else
+                {
+                    llvm_unreachable("not implemented");
+                }
+            })
+            .Case<mlir_ts::NumberType>([&](auto numberType) {
+                setF32AsCatchType();
+            })
+            .Case<mlir_ts::StringType>([&](auto stringType) { setI8PtrAsCatchType(); })
+            .Default([&](auto type) { llvm_unreachable("not implemented"); });
+    }
+
+    void setRTTIForType(mlir::Location loc, mlir::Type type)
+    {
+        setType(type);
+
+        auto parentModule = op->getParentOfType<ModuleOp>();
+
+        OpBuilder::InsertionGuard guard(rewriter);
+
+        rewriter.setInsertionPointToStart(parentModule.getBody());
+        ch.seekLast(parentModule.getBody());
+
+        // ??_7type_info@@6B@
+        typeInfo(loc);
+
+        // ??_R0N@8
+        typeDescriptors(loc);
+
+        // __ImageBase
+        imageBase(loc);
+
+        // _CT??_R0N@88
+        catchableTypes(loc);
+
+        // _CTA1N
+        catchableArrayType(loc);
+
+        // _TI1N
+        throwInfo(loc);
+    }
+
     LogicalResult typeInfo(mlir::Location loc)
     {
         auto name = typeInfoExtRef;
@@ -100,20 +162,20 @@ class LLVMRTTIHelperVCWin32
 
     LogicalResult typeDescriptors(mlir::Location loc)
     {
-        if (mlir::failed(typeDescriptor(loc, typeInfoRef)))
+        if (mlir::failed(typeDescriptor(loc, typeInfoRef, typeName)))
         {
             return mlir::failure();
         }
 
         if (!type2)
         {
-            return typeDescriptor(loc, typeInfoRef2);
+            return typeDescriptor(loc, typeInfoRef2, typeName2);
         }
 
         return mlir::success();
     }
 
-    LogicalResult typeDescriptor(mlir::Location loc, StringRef typeInfoRefName)
+    LogicalResult typeDescriptor(mlir::Location loc, StringRef typeInfoRefName, StringRef typeName)
     {
         auto name = typeInfoRefName;
         if (parentModule.lookupSymbol<LLVM::GlobalOp>(name))
@@ -121,7 +183,7 @@ class LLVMRTTIHelperVCWin32
             return failure();
         }
 
-        auto rttiTypeDescriptor2Ty = getRttiTypeDescriptor2Ty();
+        auto rttiTypeDescriptor2Ty = getRttiTypeDescriptor2Ty(StringRef(typeName).size());
         auto _r0n_Value = rewriter.create<LLVM::GlobalOp>(loc, rttiTypeDescriptor2Ty, false, LLVM::Linkage::LinkonceODR, name, Attribute{});
 
         {
@@ -137,7 +199,8 @@ class LLVMRTTIHelperVCWin32
             auto itemValue2 = rewriter.create<LLVM::NullOp>(loc, th.getI8PtrType());
             ch.setStructValue(loc, structVal, itemValue2, 1);
 
-            auto itemValue3 = rewriter.create<mlir::ConstantOp>(loc, th.getI8Array(3), ch.getStringAttrWith0(typeName));
+            auto itemValue3 = rewriter.create<mlir::ConstantOp>(loc, th.getI8Array(StringRef(typeName).size() + 1),
+                                                                ch.getStringAttrWith0(typeName.str()));
             ch.setStructValue(loc, structVal, itemValue3, 2);
 
             // end
@@ -163,20 +226,20 @@ class LLVMRTTIHelperVCWin32
 
     LogicalResult catchableTypes(mlir::Location loc)
     {
-        if (mlir::failed(catchableType(loc, catchableTypeInfoRef, typeInfoRef)))
+        if (mlir::failed(catchableType(loc, catchableTypeInfoRef, typeInfoRef, typeName)))
         {
             return mlir::failure();
         }
 
         if (!type2)
         {
-            return catchableType(loc, catchableTypeInfoRef2, typeInfoRef2);
+            return catchableType(loc, catchableTypeInfoRef2, typeInfoRef2, typeName2);
         }
 
         return mlir::success();
     }
 
-    LogicalResult catchableType(mlir::Location loc, StringRef catchableTypeInfoRefName, StringRef typeInfoRefName)
+    LogicalResult catchableType(mlir::Location loc, StringRef catchableTypeInfoRefName, StringRef typeInfoRefName, StringRef typeName)
     {
         auto name = catchableTypeInfoRefName;
         if (parentModule.lookupSymbol<LLVM::GlobalOp>(name))
@@ -198,8 +261,9 @@ class LLVMRTTIHelperVCWin32
             ch.setStructValue(loc, structVal, itemValue1, 0);
 
             // value 2
-            auto rttiTypeDescriptor2PtrValue = rewriter.create<mlir::ConstantOp>(
-                loc, getRttiTypeDescriptor2PtrTy(), FlatSymbolRefAttr::get(rewriter.getContext(), typeInfoRefName));
+            auto rttiTypeDescriptor2PtrValue =
+                rewriter.create<mlir::ConstantOp>(loc, getRttiTypeDescriptor2PtrTy(StringRef(typeName).size()),
+                                                  FlatSymbolRefAttr::get(rewriter.getContext(), typeInfoRefName));
             auto rttiTypeDescriptor2IntValue = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), rttiTypeDescriptor2PtrValue);
 
             auto imageBasePtrValue =
@@ -356,7 +420,7 @@ class LLVMRTTIHelperVCWin32
 
     mlir::Value typeInfoPtrValue(mlir::Location loc)
     {
-        auto typeInfoPtr = rewriter.create<mlir::ConstantOp>(loc, getRttiTypeDescriptor2PtrTy(),
+        auto typeInfoPtr = rewriter.create<mlir::ConstantOp>(loc, getRttiTypeDescriptor2PtrTy(StringRef(typeName).size()),
                                                              FlatSymbolRefAttr::get(rewriter.getContext(), typeInfoRef));
         return typeInfoPtr;
     }
@@ -379,14 +443,15 @@ class LLVMRTTIHelperVCWin32
         return LLVM::LLVMPointerType::get(getThrowInfoTy());
     }
 
-    LLVM::LLVMStructType getRttiTypeDescriptor2Ty()
+    LLVM::LLVMStructType getRttiTypeDescriptor2Ty(int nameSize)
     {
-        return LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {th.getI8PtrPtrType(), th.getI8PtrType(), th.getI8Array(3)}, false);
+        return LLVM::LLVMStructType::getLiteral(rewriter.getContext(),
+                                                {th.getI8PtrPtrType(), th.getI8PtrType(), th.getI8Array(nameSize + 1)}, false);
     }
 
-    LLVM::LLVMPointerType getRttiTypeDescriptor2PtrTy()
+    LLVM::LLVMPointerType getRttiTypeDescriptor2PtrTy(int nameSize)
     {
-        return LLVM::LLVMPointerType::get(getRttiTypeDescriptor2Ty());
+        return LLVM::LLVMPointerType::get(getRttiTypeDescriptor2Ty(nameSize));
     }
 
     LLVM::LLVMStructType getCatchableTypeTy()

@@ -1,7 +1,5 @@
 #include "TypeScript/TypeScriptExceptionPass.h"
 
-#include "TypeScript/LowerToLLVM/LLVMRTTIHelperVCWin32Const.h"
-
 #include "llvm/Analysis/DomTreeUpdater.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
@@ -128,8 +126,8 @@ struct TypeScriptExceptionPass : public FunctionPass
                 {
                     auto varRef = landingPadStoreOps[LPI];
                     assert(varRef);
-                    auto iVal0 = ConstantInt::get(IntegerType::get(Ctx, 32), 0);
-                    CPI = CatchPadInst::Create(CSI, {value, iVal0, varRef->getPointerOperand()}, "catchpad", LPI);
+                    auto iValTypeId = ConstantInt::get(IntegerType::get(Ctx, 32), getTypeNumber(varRef->getPointerOperandType()));
+                    CPI = CatchPadInst::Create(CSI, {value, iValTypeId, varRef->getPointerOperand()}, "catchpad", LPI);
                     varRef->eraseFromParent();
                 }
             }
@@ -218,6 +216,17 @@ struct TypeScriptExceptionPass : public FunctionPass
         }
 
         return MadeChange;
+    }
+
+    int getTypeNumber(Type *catchValType)
+    {
+        if (catchValType->isIntegerTy() || catchValType->isFloatTy())
+        {
+            return 0;
+        }
+
+        // default if char*, class etc
+        return 1;
     }
 };
 } // namespace
