@@ -38,6 +38,7 @@ struct TypeScriptExceptionPass : public FunctionPass
         llvm::SmallDenseMap<LandingPadInst *, CatchPadInst *> landingPadNewOps;
         llvm::SmallDenseMap<LandingPadInst *, StoreInst *> landingPadStoreOps;
         llvm::SmallDenseMap<LandingPadInst *, Value *> landingPadStack;
+        llvm::SmallDenseMap<LandingPadInst *, bool> landingPadHasAlloca;
 
         LLVM_DEBUG(llvm::dbgs() << "\nFunction: " << F.getName() << "\n\n";);
 
@@ -71,6 +72,11 @@ struct TypeScriptExceptionPass : public FunctionPass
                     {
                         landingPadStoreOps[currentLPI] = SI;
                     }
+                }
+
+                if (auto *AI = dyn_cast<AllocaInst>(&I))
+                {
+                    landingPadHasAlloca[currentLPI] = true;
                 }
             }
 
@@ -133,11 +139,16 @@ struct TypeScriptExceptionPass : public FunctionPass
             }
 
             // save stack
-            Value *SP = Builder.CreateCall(Intrinsic::getDeclaration(F.getParent(), Intrinsic::stacksave), {});
+            Value *SP = nullptr;
+            auto hasAlloca = landingPadHasAlloca[LPI];
+            if (hasAlloca)
+            {
+                SP = Builder.CreateCall(Intrinsic::getDeclaration(F.getParent(), Intrinsic::stacksave), {});
+                landingPadStack[LPI] = SP;
+            }
 
             toRemoveLandingPad.push_back(LPI);
             landingPadNewOps[LPI] = CPI;
-            landingPadStack[LPI] = SP;
 
             // set funcset
             llvm::SmallVector<CallBase *> *callsByLandingPad = calls[LPI];
@@ -165,10 +176,13 @@ struct TypeScriptExceptionPass : public FunctionPass
 
             auto *LPI = (llvm::LandingPadInst *)RI->getOperand(0);
 
-            assert(landingPadStack[LPI]);
-
-            // restore stack
-            Builder.CreateCall(Intrinsic::getDeclaration(F.getParent(), Intrinsic::stackrestore), {landingPadStack[LPI]});
+            auto hasAlloca = landingPadHasAlloca[LPI];
+            if (hasAlloca)
+            {
+                assert(landingPadStack[LPI]);
+                // restore stack
+                Builder.CreateCall(Intrinsic::getDeclaration(F.getParent(), Intrinsic::stackrestore), {landingPadStack[LPI]});
+            }
 
             assert(landingPadNewOps[LPI]);
 
