@@ -5,28 +5,28 @@ function main1() {
     let t = 1;
 
     try {
-        throw 1;
+        throw 2;
     } catch (v: int) {
         print("Hello ", v);
-        v = t;
+        t = v;
     }
 
-    assert(v == t);
+    assert(2 == t);
 }
 
 function main2() {
     print("try/catch 2");
 
-    let t = 1;
+    let t = 1.0;
 
     try {
         throw 2.0;
     } catch (v: number) {
         print("Hello ", v);
-        v = t;
+        t = v;
     }
 
-    assert(v == t);
+    assert(2.0 == t);
 }
 
 function main3() {
@@ -38,10 +38,10 @@ function main3() {
         throw "Hello World";
     } catch (v: string) {
         print(v);
-        v = t;
+        t = 2;
     }
 
-    assert(v == t);
+    assert(2 == t);
 }
 
 function main4() {
@@ -53,10 +53,29 @@ function main4() {
         throw <any>123;
     } catch (v: any) {
         print(<int>v);
-        v = t;
+        t = <int>v;
     }
 
-    assert(v == t);
+    assert(t == 123);
+}
+
+class Error {
+    i = 10;
+}
+
+function main5() {
+    print("try/catch 5");
+
+    let t = 1;
+
+    try {
+        throw <any>new Error();
+    } catch (v: any) {
+        print((<Error>v).i);
+        t = (<Error>v).i;
+    }
+
+    assert(10 == t);
 }
 
 function main() {
@@ -64,5 +83,6 @@ function main() {
     main2();
     main3();
     main4();
+    main5();
     print("done.");
 }

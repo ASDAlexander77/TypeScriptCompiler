@@ -123,6 +123,7 @@ class LLVMRTTIHelperVCWin32
             })
             .Case<mlir_ts::NumberType>([&](auto numberType) { setF32AsCatchType(); })
             .Case<mlir_ts::StringType>([&](auto stringType) { setStringTypeAsCatchType(); })
+            .Case<mlir_ts::ClassType>([&](auto classType) { setI8PtrAsCatchType(); })
             .Case<mlir_ts::AnyType>([&](auto stringType) { setI8PtrAsCatchType(); })
             .Default([&](auto type) { llvm_unreachable("not implemented"); });
     }
