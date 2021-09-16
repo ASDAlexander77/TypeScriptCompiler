@@ -24,6 +24,14 @@ namespace typescript
 
 constexpr auto typeInfoExtRef = "??_7type_info@@6B@";
 constexpr auto imageBaseRef = "__ImageBase";
+
+struct TypeNames
+{
+    std::string typeName;
+    std::string typeInfoRef;
+    std::string catchableTypeInfoRef;
+};
+
 class LLVMRTTIHelperVCWin32
 {
     Operation *op;
@@ -32,16 +40,11 @@ class LLVMRTTIHelperVCWin32
     TypeHelper th;
     LLVMCodeHelper ch;
 
+    SmallVector<TypeNames> types;
+
   public:
-    std::string typeName;
-    std::string typeName2;
-    std::string typeInfoRef;
-    std::string typeInfoRef2;
-    std::string catchableTypeInfoRef;
-    std::string catchableTypeInfoRef2;
     std::string catchableTypeInfoArrayRef;
     std::string throwInfoRef;
-    bool type2 = false;
 
     LLVMRTTIHelperVCWin32(Operation *op, PatternRewriter &rewriter, TypeConverter &typeConverter)
         : op(op), rewriter(rewriter), parentModule(op->getParentOfType<ModuleOp>()), th(rewriter), ch(op, rewriter, &typeConverter)
@@ -51,58 +54,47 @@ class LLVMRTTIHelperVCWin32
 
     void setF32AsCatchType()
     {
-        typeName = F32Type::typeName;
-        typeInfoRef = F32Type::typeInfoRef;
-        catchableTypeInfoRef = F32Type::catchableTypeInfoRef;
+        types.push_back({F32Type::typeName, F32Type::typeInfoRef, F32Type::catchableTypeInfoRef});
+
         catchableTypeInfoArrayRef = F32Type::catchableTypeInfoArrayRef;
         throwInfoRef = F32Type::throwInfoRef;
-        type2 = false;
     }
 
     void setI32AsCatchType()
     {
-        typeName = I32Type::typeName;
-        typeInfoRef = I32Type::typeInfoRef;
-        catchableTypeInfoRef = I32Type::catchableTypeInfoRef;
+        types.push_back({I32Type::typeName, I32Type::typeInfoRef, I32Type::catchableTypeInfoRef});
+
         catchableTypeInfoArrayRef = I32Type::catchableTypeInfoArrayRef;
         throwInfoRef = I32Type::throwInfoRef;
-        type2 = false;
     }
 
     void setStringTypeAsCatchType()
     {
-        typeName = StringType::typeName;
-        typeName2 = StringType::typeName2;
-        typeInfoRef = StringType::typeInfoRef;
-        typeInfoRef2 = StringType::typeInfoRef2;
-        catchableTypeInfoRef = StringType::catchableTypeInfoRef;
-        catchableTypeInfoRef2 = StringType::catchableTypeInfoRef2;
+        types.push_back({StringType::typeName, StringType::typeInfoRef, StringType::catchableTypeInfoRef});
+        types.push_back({StringType::typeName2, StringType::typeInfoRef2, StringType::catchableTypeInfoRef2});
+
         catchableTypeInfoArrayRef = StringType::catchableTypeInfoArrayRef;
         throwInfoRef = StringType::throwInfoRef;
-        type2 = true;
     }
 
     void setI8PtrAsCatchType()
     {
-        typeName = I8PtrType::typeName;
-        typeInfoRef = I8PtrType::typeInfoRef;
-        catchableTypeInfoRef = I8PtrType::catchableTypeInfoRef;
+        types.push_back({I8PtrType::typeName, I8PtrType::typeInfoRef, I8PtrType::catchableTypeInfoRef});
+
         catchableTypeInfoArrayRef = I8PtrType::catchableTypeInfoArrayRef;
         throwInfoRef = I8PtrType::throwInfoRef;
-        type2 = false;
     }
 
     void setClassTypeAsCatchType(StringRef name)
     {
-        typeName = join(name, ClassType::typeName, ClassType::typeNameSuffix);
-        typeName2 = ClassType::typeName2;
-        typeInfoRef = join(name, ClassType::typeInfoRef, ClassType::typeInfoRefSuffix);
-        typeInfoRef2 = ClassType::typeInfoRef2;
-        catchableTypeInfoRef = join(name, ClassType::catchableTypeInfoRef, ClassType::catchableTypeInfoRefSuffix);
-        catchableTypeInfoRef2 = ClassType::catchableTypeInfoRef2;
-        catchableTypeInfoArrayRef = join(name, ClassType::catchableTypeInfoArrayRef, ClassType::catchableTypeInfoArrayRefSuffix);
-        throwInfoRef = join(name, ClassType::throwInfoRef, ClassType::throwInfoRefSuffix);
-        type2 = true;
+        types.push_back({join(name, ClassType::typeName, ClassType::typeNameSuffix),
+                         join(name, ClassType::typeInfoRef, ClassType::typeInfoRefSuffix),
+                         join(name, ClassType::catchableTypeInfoRef, ClassType::catchableTypeInfoRefSuffix)});
+
+        types.push_back({ClassType::typeName2, ClassType::typeInfoRef2, ClassType::catchableTypeInfoRef2});
+
+        catchableTypeInfoArrayRef = ClassType::catchableTypeInfoArrayRef;
+        throwInfoRef = ClassType::throwInfoRef;
     }
 
     std::string join(StringRef name, const char *prefix, const char *suffix)
@@ -196,14 +188,12 @@ class LLVMRTTIHelperVCWin32
 
     LogicalResult typeDescriptors(mlir::Location loc)
     {
-        if (mlir::failed(typeDescriptor(loc, typeInfoRef, typeName)))
+        for (auto type : types)
         {
-            return mlir::failure();
-        }
-
-        if (type2)
-        {
-            return typeDescriptor(loc, typeInfoRef2, typeName2);
+            if (mlir::failed(typeDescriptor(loc, type.typeInfoRef, type.typeName)))
+            {
+                return mlir::failure();
+            }
         }
 
         return mlir::success();
@@ -260,14 +250,12 @@ class LLVMRTTIHelperVCWin32
 
     LogicalResult catchableTypes(mlir::Location loc)
     {
-        if (mlir::failed(catchableType(loc, catchableTypeInfoRef, typeInfoRef, typeName)))
+        for (auto type : types)
         {
-            return mlir::failure();
-        }
-
-        if (type2)
-        {
-            return catchableType(loc, catchableTypeInfoRef2, typeInfoRef2, typeName2);
+            if (mlir::failed(catchableType(loc, type.catchableTypeInfoRef, type.typeInfoRef, type.typeName)))
+            {
+                return mlir::failure();
+            }
         }
 
         return mlir::success();
@@ -364,7 +352,7 @@ class LLVMRTTIHelperVCWin32
             return failure();
         }
 
-        auto arraySize = type2 ? 2 : 1;
+        auto arraySize = types.size();
 
         // _CT??_R0N@88
         auto ehCatchableArrayTypeTy = getCatchableArrayTypeTy(arraySize);
@@ -381,19 +369,20 @@ class LLVMRTTIHelperVCWin32
             ch.setStructValue(loc, structVal, sizeValue, 0);
 
             // value 2
-            auto value1 = catchableArrayTypeItem(loc, catchableTypeInfoRef);
-            mlir::Value value2;
-            if (type2)
+            SmallVector<mlir::Value> values;
+            for (auto type : types)
             {
-                value2 = catchableArrayTypeItem(loc, catchableTypeInfoRef2);
+                auto value = catchableArrayTypeItem(loc, type.catchableTypeInfoRef);
+                values.push_back(value);
             }
 
             // make array
             Value arrayVal = rewriter.create<LLVM::UndefOp>(loc, th.getArrayType(th.getI32Type(), arraySize));
-            ch.setStructValue(loc, arrayVal, value1, 0);
-            if (type2)
+
+            auto index = 0;
+            for (auto value : values)
             {
-                ch.setStructValue(loc, arrayVal, value2, 1);
+                ch.setStructValue(loc, arrayVal, value, index++);
             }
 
             // [size, {values...}]
@@ -416,7 +405,7 @@ class LLVMRTTIHelperVCWin32
             return failure();
         }
 
-        auto arraySize = type2 ? 2 : 1;
+        auto arraySize = types.size();
 
         auto throwInfoTy = getThrowInfoTy();
         auto _TI1NValue = rewriter.create<LLVM::GlobalOp>(loc, throwInfoTy, true, LLVM::Linkage::LinkonceODR, name, Attribute{});
@@ -424,10 +413,9 @@ class LLVMRTTIHelperVCWin32
         // Throw Info
         ch.setStructWritingPoint(_TI1NValue);
 
-        Value structValue =
-            ch.getStructFromArrayAttr(loc, throwInfoTy,
-                                      rewriter.getArrayAttr({rewriter.getI32IntegerAttr(type2 ? 1 : 0), rewriter.getI32IntegerAttr(0),
-                                                             rewriter.getI32IntegerAttr(0)}));
+        Value structValue = ch.getStructFromArrayAttr(
+            loc, throwInfoTy,
+            rewriter.getArrayAttr({rewriter.getI32IntegerAttr(0), rewriter.getI32IntegerAttr(0), rewriter.getI32IntegerAttr(0)}));
 
         // value 3
         auto rttiCatchableArrayTypePtrValue = rewriter.create<mlir::ConstantOp>(
@@ -454,8 +442,9 @@ class LLVMRTTIHelperVCWin32
 
     mlir::Value typeInfoPtrValue(mlir::Location loc)
     {
-        auto typeInfoPtr = rewriter.create<mlir::ConstantOp>(loc, getRttiTypeDescriptor2PtrTy(StringRef(typeName).size()),
-                                                             FlatSymbolRefAttr::get(rewriter.getContext(), typeInfoRef));
+        auto firstType = types.front();
+        auto typeInfoPtr = rewriter.create<mlir::ConstantOp>(loc, getRttiTypeDescriptor2PtrTy(StringRef(firstType.typeName).size()),
+                                                             FlatSymbolRefAttr::get(rewriter.getContext(), firstType.typeInfoRef));
         return typeInfoPtr;
     }
 
