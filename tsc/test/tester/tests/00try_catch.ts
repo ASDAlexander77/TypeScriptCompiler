@@ -44,9 +44,25 @@ function main3() {
     assert(v == t);
 }
 
+function main4() {
+    print("try/catch 4");
+
+    let t = 1;
+
+    try {
+        throw <any>123;
+    } catch (v: any) {
+        print(<int>v);
+        v = t;
+    }
+
+    assert(v == t);
+}
+
 function main() {
     main1();
     main2();
     main3();
+    main4();
     print("done.");
 }

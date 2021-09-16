@@ -54,7 +54,7 @@ class LLVMRTTIHelperVCWin32
         catchableTypeInfoRef = F32Type::catchableTypeInfoRef;
         catchableTypeInfoArrayRef = F32Type::catchableTypeInfoArrayRef;
         throwInfoRef = F32Type::throwInfoRef;
-        type2 = true;
+        type2 = false;
     }
 
     void setI32AsCatchType()
@@ -64,17 +64,27 @@ class LLVMRTTIHelperVCWin32
         catchableTypeInfoRef = I32Type::catchableTypeInfoRef;
         catchableTypeInfoArrayRef = I32Type::catchableTypeInfoArrayRef;
         throwInfoRef = I32Type::throwInfoRef;
+        type2 = false;
+    }
+
+    void setStringTypeAsCatchType()
+    {
+        typeName = StringType::typeName;
+        typeName2 = StringType::typeName2;
+        typeInfoRef = StringType::typeInfoRef;
+        typeInfoRef2 = StringType::typeInfoRef2;
+        catchableTypeInfoRef = StringType::catchableTypeInfoRef;
+        catchableTypeInfoRef2 = StringType::catchableTypeInfoRef2;
+        catchableTypeInfoArrayRef = StringType::catchableTypeInfoArrayRef;
+        throwInfoRef = StringType::throwInfoRef;
         type2 = true;
     }
 
     void setI8PtrAsCatchType()
     {
         typeName = I8PtrType::typeName;
-        typeName2 = I8PtrType::typeName2;
         typeInfoRef = I8PtrType::typeInfoRef;
-        typeInfoRef2 = I8PtrType::typeInfoRef2;
         catchableTypeInfoRef = I8PtrType::catchableTypeInfoRef;
-        catchableTypeInfoRef2 = I8PtrType::catchableTypeInfoRef2;
         catchableTypeInfoArrayRef = I8PtrType::catchableTypeInfoArrayRef;
         throwInfoRef = I8PtrType::throwInfoRef;
         type2 = false;
@@ -111,10 +121,9 @@ class LLVMRTTIHelperVCWin32
                     llvm_unreachable("not implemented");
                 }
             })
-            .Case<mlir_ts::NumberType>([&](auto numberType) {
-                setF32AsCatchType();
-            })
-            .Case<mlir_ts::StringType>([&](auto stringType) { setI8PtrAsCatchType(); })
+            .Case<mlir_ts::NumberType>([&](auto numberType) { setF32AsCatchType(); })
+            .Case<mlir_ts::StringType>([&](auto stringType) { setStringTypeAsCatchType(); })
+            .Case<mlir_ts::AnyType>([&](auto stringType) { setI8PtrAsCatchType(); })
             .Default([&](auto type) { llvm_unreachable("not implemented"); });
     }
 
@@ -167,7 +176,7 @@ class LLVMRTTIHelperVCWin32
             return mlir::failure();
         }
 
-        if (!type2)
+        if (type2)
         {
             return typeDescriptor(loc, typeInfoRef2, typeName2);
         }
@@ -231,7 +240,7 @@ class LLVMRTTIHelperVCWin32
             return mlir::failure();
         }
 
-        if (!type2)
+        if (type2)
         {
             return catchableType(loc, catchableTypeInfoRef2, typeInfoRef2, typeName2);
         }
@@ -330,7 +339,7 @@ class LLVMRTTIHelperVCWin32
             return failure();
         }
 
-        auto arraySize = type2 ? 1 : 2;
+        auto arraySize = type2 ? 2 : 1;
 
         // _CT??_R0N@88
         auto ehCatchableArrayTypeTy = getCatchableArrayTypeTy(arraySize);
@@ -349,7 +358,7 @@ class LLVMRTTIHelperVCWin32
             // value 2
             auto value1 = catchableArrayTypeItem(loc, catchableTypeInfoRef);
             mlir::Value value2;
-            if (!type2)
+            if (type2)
             {
                 value2 = catchableArrayTypeItem(loc, catchableTypeInfoRef2);
             }
@@ -357,7 +366,7 @@ class LLVMRTTIHelperVCWin32
             // make array
             Value arrayVal = rewriter.create<LLVM::UndefOp>(loc, th.getArrayType(th.getI32Type(), arraySize));
             ch.setStructValue(loc, arrayVal, value1, 0);
-            if (!type2)
+            if (type2)
             {
                 ch.setStructValue(loc, arrayVal, value2, 1);
             }
@@ -382,7 +391,7 @@ class LLVMRTTIHelperVCWin32
             return failure();
         }
 
-        auto arraySize = type2 ? 1 : 2;
+        auto arraySize = type2 ? 2 : 1;
 
         auto throwInfoTy = getThrowInfoTy();
         auto _TI1NValue = rewriter.create<LLVM::GlobalOp>(loc, throwInfoTy, true, LLVM::Linkage::LinkonceODR, name, Attribute{});
@@ -392,7 +401,7 @@ class LLVMRTTIHelperVCWin32
 
         Value structValue =
             ch.getStructFromArrayAttr(loc, throwInfoTy,
-                                      rewriter.getArrayAttr({rewriter.getI32IntegerAttr(type2 ? 0 : 1), rewriter.getI32IntegerAttr(0),
+                                      rewriter.getArrayAttr({rewriter.getI32IntegerAttr(type2 ? 1 : 0), rewriter.getI32IntegerAttr(0),
                                                              rewriter.getI32IntegerAttr(0)}));
 
         // value 3
