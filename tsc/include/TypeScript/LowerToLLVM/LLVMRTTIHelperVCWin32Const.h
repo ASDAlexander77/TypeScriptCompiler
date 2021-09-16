@@ -42,6 +42,23 @@ constexpr auto catchableTypeInfoArrayRef = "_CTA1PEAX";
 constexpr auto throwInfoRef = "_TIC1PEAX";
 } // namespace I8PtrType
 
+namespace ClassType
+{
+constexpr auto typeName = ".PEAV";
+constexpr auto typeNameSuffix = "@@";
+constexpr auto typeName2 = ".PEAX";
+constexpr auto typeInfoRef = "??_R0PEAV";
+constexpr auto typeInfoRefSuffix = "@@@8";
+constexpr auto typeInfoRef2 = "??_R0PEAX@8";
+constexpr auto catchableTypeInfoRef = "_CT??_R0PEAV";
+constexpr auto catchableTypeInfoRefSuffix = "@@@88";
+constexpr auto catchableTypeInfoRef2 = "_CT??_R0PEAX@88";
+constexpr auto catchableTypeInfoArrayRef = "_CTA2PEAV";
+constexpr auto catchableTypeInfoArrayRefSuffix = "@@";
+constexpr auto throwInfoRef = "_TI2PEAV";
+constexpr auto throwInfoRefSuffix = "@@";
+} // namespace ClassType
+
 } // namespace typescript
 
 #endif // MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_LLVMRTTIHELPERVCWIN32_H_

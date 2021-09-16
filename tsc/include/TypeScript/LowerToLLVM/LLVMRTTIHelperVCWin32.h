@@ -14,6 +14,8 @@
 #include "mlir/Transforms/DialectConversion.h"
 #include "llvm/ADT/TypeSwitch.h"
 
+#include <sstream>
+
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
 
@@ -31,14 +33,14 @@ class LLVMRTTIHelperVCWin32
     LLVMCodeHelper ch;
 
   public:
-    const char *typeName;
-    const char *typeName2;
-    const char *typeInfoRef;
-    const char *typeInfoRef2;
-    const char *catchableTypeInfoRef;
-    const char *catchableTypeInfoRef2;
-    const char *catchableTypeInfoArrayRef;
-    const char *throwInfoRef;
+    std::string typeName;
+    std::string typeName2;
+    std::string typeInfoRef;
+    std::string typeInfoRef2;
+    std::string catchableTypeInfoRef;
+    std::string catchableTypeInfoRef2;
+    std::string catchableTypeInfoArrayRef;
+    std::string throwInfoRef;
     bool type2 = false;
 
     LLVMRTTIHelperVCWin32(Operation *op, PatternRewriter &rewriter, TypeConverter &typeConverter)
@@ -90,6 +92,28 @@ class LLVMRTTIHelperVCWin32
         type2 = false;
     }
 
+    void setClassTypeAsCatchType(StringRef name)
+    {
+        typeName = join(name, ClassType::typeName, ClassType::typeNameSuffix);
+        typeName2 = ClassType::typeName2;
+        typeInfoRef = join(name, ClassType::typeInfoRef, ClassType::typeInfoRefSuffix);
+        typeInfoRef2 = ClassType::typeInfoRef2;
+        catchableTypeInfoRef = join(name, ClassType::catchableTypeInfoRef, ClassType::catchableTypeInfoRefSuffix);
+        catchableTypeInfoRef2 = ClassType::catchableTypeInfoRef2;
+        catchableTypeInfoArrayRef = join(name, ClassType::catchableTypeInfoArrayRef, ClassType::catchableTypeInfoArrayRefSuffix);
+        throwInfoRef = join(name, ClassType::throwInfoRef, ClassType::throwInfoRefSuffix);
+        type2 = true;
+    }
+
+    std::string join(StringRef name, const char *prefix, const char *suffix)
+    {
+        std::stringstream ss;
+        ss << prefix;
+        ss << name.str();
+        ss << suffix;
+        return ss.str();
+    }
+
     LogicalResult setPersonality(mlir::FuncOp newFuncOp)
     {
         auto cxxFrameHandler3 = ch.getOrInsertFunction("__CxxFrameHandler3", th.getFunctionType(th.getI32Type(), {}, true));
@@ -123,7 +147,7 @@ class LLVMRTTIHelperVCWin32
             })
             .Case<mlir_ts::NumberType>([&](auto numberType) { setF32AsCatchType(); })
             .Case<mlir_ts::StringType>([&](auto stringType) { setStringTypeAsCatchType(); })
-            .Case<mlir_ts::ClassType>([&](auto classType) { setI8PtrAsCatchType(); })
+            .Case<mlir_ts::ClassType>([&](auto classType) { setClassTypeAsCatchType(classType.getName().getValue()); })
             .Case<mlir_ts::AnyType>([&](auto stringType) { setI8PtrAsCatchType(); })
             .Default([&](auto type) { llvm_unreachable("not implemented"); });
     }

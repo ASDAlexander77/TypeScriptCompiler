@@ -78,11 +78,27 @@ function main5() {
     assert(10 == t);
 }
 
+function main6() {
+    print("try/catch 6");
+
+    let t = 1;
+
+    try {
+        throw new Error();
+    } catch (v: Error) {
+        print(v.i);
+        t = v.i;
+    }
+
+    assert(10 == t);
+}
+
 function main() {
     main1();
     main2();
     main3();
     main4();
     main5();
+    main6();
     print("done.");
 }
