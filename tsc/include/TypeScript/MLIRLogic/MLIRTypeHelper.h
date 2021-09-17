@@ -33,9 +33,62 @@ class MLIRTypeHelper
     {
     }
 
-    mlir::Type getI32Type()
+    // types
+    mlir::IntegerType getI8Type()
+    {
+        return mlir::IntegerType::get(context, 8);
+    }
+
+    mlir::IntegerType getI32Type()
     {
         return mlir::IntegerType::get(context, 32);
+    }
+
+    mlir::IntegerType getI64Type()
+    {
+        return mlir::IntegerType::get(context, 32);
+    }
+
+    mlir_ts::StringType getStringType()
+    {
+        return mlir_ts::StringType::get(context);
+    }
+
+    mlir_ts::OpaqueType getOpaqueType()
+    {
+        return mlir_ts::OpaqueType::get(context);
+    }
+
+    mlir_ts::RefType getRefType(mlir::Type type)
+    {
+        return mlir_ts::RefType::get(type);
+    }
+
+    mlir_ts::ConstArrayType getConstArrayType(mlir::Type elementType, unsigned size)
+    {
+        assert(elementType);
+        return mlir_ts::ConstArrayType::get(elementType, size);
+    }
+
+    mlir_ts::ConstArrayType getI8Array(unsigned size)
+    {
+        return getConstArrayType(getI8Type(), size);
+    }
+
+    mlir_ts::ConstArrayType getI32Array(unsigned size)
+    {
+        return getConstArrayType(getI32Type(), size);
+    }
+
+    mlir_ts::TupleType getTupleType(mlir::ArrayRef<mlir::Type> types)
+    {
+        llvm::SmallVector<mlir_ts::FieldInfo> fields;
+        for (auto type : types)
+        {
+            fields.push_back(mlir_ts::FieldInfo{nullptr, type});
+        }
+
+        return mlir_ts::TupleType::get(context, fields);
     }
 
     mlir::IntegerAttr getStructIndexAttrValue(int32_t value)

@@ -15,6 +15,7 @@
 #include "TypeScript/MLIRLogic/MLIRGenContext.h"
 #include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
 #include "TypeScript/MLIRLogic/MLIRCodeLogic.h"
+#include "TypeScript/MLIRLogic/MLIRRTTIHelperVCWin32.h"
 #include "TypeScript/VisitorAST.h"
 
 #include "TypeScript/DOM.h"
