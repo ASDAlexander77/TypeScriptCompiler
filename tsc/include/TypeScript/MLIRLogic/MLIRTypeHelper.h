@@ -46,7 +46,7 @@ class MLIRTypeHelper
 
     mlir::IntegerType getI64Type()
     {
-        return mlir::IntegerType::get(context, 32);
+        return mlir::IntegerType::get(context, 64);
     }
 
     mlir_ts::StringType getStringType()

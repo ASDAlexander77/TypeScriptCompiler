@@ -3040,7 +3040,7 @@ class MLIRGenImpl
 
         auto exception = mlirGen(throwStatementAST->expression, genContext);
 
-        // auto throwOp = builder.create<mlir_ts::ThrowOp>(location, exception);
+        auto throwOp = builder.create<mlir_ts::ThrowOp>(location, exception);
 
         MLIRRTTIHelperVCWin32 rtti(builder, theModule);
         rtti.setRTTIForType(location, exception.getType());

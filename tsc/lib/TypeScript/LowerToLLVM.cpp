@@ -2166,9 +2166,9 @@ struct ThrowOpLoweringVCWin32 : public TsLlvmPattern<mlir_ts::ThrowOp>
         TypeConverterHelper tch(getTypeConverter());
         TypeHelper th(rewriter);
         LLVMRTTIHelperVCWin32 rttih(throwOp, rewriter, *getTypeConverter());
-        rttih.setRTTIForType(loc, throwOp.exception().getType());
+        // rttih.setRTTIForType(loc, throwOp.exception().getType());
+        rttih.setType(throwOp.exception().getType());
 
-        auto throwInfoTy = rttih.getThrowInfoTy();
         auto throwInfoPtrTy = rttih.getThrowInfoPtrTy();
 
         auto i8PtrTy = th.getI8PtrType();
@@ -2222,7 +2222,8 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         auto visitorCatchContinue = [&](Operation *op) {
             if (auto catchOp = dyn_cast_or_null<mlir_ts::CatchOp>(op))
             {
-                rttih.setRTTIForType(loc, catchOp.catchArg().getType().cast<mlir_ts::RefType>().getElementType());
+                // rttih.setRTTIForType(loc, catchOp.catchArg().getType().cast<mlir_ts::RefType>().getElementType());
+                rttih.setType(catchOp.catchArg().getType().cast<mlir_ts::RefType>().getElementType());
             }
         };
         tryOp.catches().walk(visitorCatchContinue);
