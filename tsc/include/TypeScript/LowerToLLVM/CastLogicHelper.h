@@ -289,6 +289,16 @@ class CastLogicHelper
             return rewriter.create<CmpIOp>(loc, CmpIPredicate::ne, intVal, clh.createI64ConstantOf(0));
         }
 
+        if (inLLVMType.isa<LLVM::LLVMPointerType>() && isInt(resLLVMType))
+        {
+            return rewriter.create<LLVM::PtrToIntOp>(loc, resLLVMType, in);
+        }
+
+        if (isInt(inLLVMType) && resLLVMType.isa<LLVM::LLVMPointerType>())
+        {
+            return rewriter.create<LLVM::IntToPtrOp>(loc, resLLVMType, in);
+        }
+
         if (isIntOrBool(inLLVMType) && isInt(resLLVMType) && inLLVMType.getIntOrFloatBitWidth() < resLLVMType.getIntOrFloatBitWidth())
         {
             return rewriter.create<ZeroExtendIOp>(loc, in, resLLVMType);

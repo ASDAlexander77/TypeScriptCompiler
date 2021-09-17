@@ -233,6 +233,49 @@ def TypeScript_Enum : TypeScript_Type<"Enum"> {
   let skipDefaultBuilders = 1;  
 }
 
+def TypeScript_ConstArrayValue : TypeScript_Type<"ConstArrayValue"> {
+  let mnemonic = "const_array_value";
+
+  let description = [{
+    Syntax:
+
+    ```
+    array-type ::= `const_array_value<` type `,` size `>`
+    ```
+
+    Examples:
+
+    ```mlir
+    const_array_value<f32, 1>
+    const_array_value<i32, 10>
+    ```
+  }];
+  let parameters = (ins "Type":$elementType, "unsigned":$size);
+
+  // We define the printer inline.
+  let printer = [{ $_printer << "const_array_value<" << getImpl()->elementType << "," << getImpl()->size << ">"; }];  
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "Type":$elementType, "unsigned":$size), [{
+      return Base::get(elementType.getContext(), elementType, size);
+    }]>
+  ];
+
+  // Parses the above format
+  let parser = [{
+    Type elementType;
+    if ($_parser.parseLess()) return Type();
+    if ($_parser.parseType(elementType)) return Type();
+    if ($_parser.parseComma()) return Type();
+    int size;
+    if ($_parser.parseInteger(size)) return Type();
+    if ($_parser.parseGreater()) return Type();
+    return get(elementType, size);
+  }];  
+
+  let skipDefaultBuilders = 1;  
+}
+
 def TypeScript_ConstArray : TypeScript_Type<"ConstArray"> {
   let mnemonic = "const_array";
 
@@ -1071,7 +1114,7 @@ def TypeScript_AnyRefLike : AnyTypeOf<[
   ]>;
 
 def TypeScript_AnyStructLike : AnyTypeOf<[
-    TypeScript_ConstTuple, TypeScript_Tuple, TypeScript_Class, TypeScript_ClassStorage
+    TypeScript_ConstTuple, TypeScript_Tuple, TypeScript_ConstArrayValue, TypeScript_Class, TypeScript_ClassStorage
   ]>;
 
 def TypeScript_AnyRefOrFuncType : AnyTypeOf<[

@@ -33,6 +33,11 @@ class MLIRCodeLogic
     {
     }
 
+    mlir::StringAttr getStringAttrWith0(std::string value)
+    {
+        return mlir::StringAttr::get(context, StringRef(value.data(), value.length() + 1));
+    }
+
     mlir::Attribute ExtractAttr(mlir::Value value, bool removeOpIfSuccess = false)
     {
         auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(value.getDefiningOp());

@@ -59,9 +59,20 @@ class MLIRTypeHelper
         return mlir_ts::OpaqueType::get(context);
     }
 
+    mlir_ts::NullType getNullType()
+    {
+        return mlir_ts::NullType::get(context);
+    }
+
     mlir_ts::RefType getRefType(mlir::Type type)
     {
         return mlir_ts::RefType::get(type);
+    }
+
+    mlir_ts::ConstArrayValueType getConstArrayValueType(mlir::Type elementType, unsigned size)
+    {
+        assert(elementType);
+        return mlir_ts::ConstArrayValueType::get(elementType, size);
     }
 
     mlir_ts::ConstArrayType getConstArrayType(mlir::Type elementType, unsigned size)
@@ -70,14 +81,14 @@ class MLIRTypeHelper
         return mlir_ts::ConstArrayType::get(elementType, size);
     }
 
-    mlir_ts::ConstArrayType getI8Array(unsigned size)
+    mlir_ts::ConstArrayValueType getI8Array(unsigned size)
     {
-        return getConstArrayType(getI8Type(), size);
+        return getConstArrayValueType(getI8Type(), size);
     }
 
-    mlir_ts::ConstArrayType getI32Array(unsigned size)
+    mlir_ts::ConstArrayValueType getI32Array(unsigned size)
     {
-        return getConstArrayType(getI32Type(), size);
+        return getConstArrayValueType(getI32Type(), size);
     }
 
     mlir_ts::TupleType getTupleType(mlir::ArrayRef<mlir::Type> types)

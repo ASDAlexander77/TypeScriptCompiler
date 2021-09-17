@@ -58,7 +58,8 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         return strVarName.str();
     }
 
-    mlir::LogicalResult createGlobalVarIfNew(StringRef name, mlir::Type type, mlir::Attribute value, bool isConst, mlir::Region &initRegion)
+    mlir::LogicalResult createGlobalVarIfNew(StringRef name, mlir::Type type, mlir::Attribute value, bool isConst, mlir::Region &initRegion,
+                                             LLVM::Linkage linkage = LLVM::Linkage::Internal)
     {
         auto loc = op->getLoc();
         auto parentModule = op->getParentOfType<ModuleOp>();
@@ -74,7 +75,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
             seekLast(parentModule.getBody());
 
-            global = rewriter.create<LLVM::GlobalOp>(loc, type, isConst, LLVM::Linkage::Internal, name, value);
+            global = rewriter.create<LLVM::GlobalOp>(loc, type, isConst, linkage, name, value);
 
             if (!value && !initRegion.empty())
             {

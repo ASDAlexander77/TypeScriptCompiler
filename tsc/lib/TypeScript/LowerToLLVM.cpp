@@ -44,13 +44,6 @@ namespace mlir_ts = mlir::typescript;
 // TypeScriptToLLVM RewritePatterns
 //===----------------------------------------------------------------------===//
 
-#define ATTR(attr) StringAttr::get(rewriter.getContext(), attr)
-#define IDENT(name) Identifier::get(rewriter.getContext(), name)
-#define NAMED_ATTR(name, attr) ArrayAttr::get(rewriter.getContext(), {ATTR(name), ATTR(attr)})
-
-#define DATA_VALUE_INDEX 0
-#define THIS_VALUE_INDEX 1
-
 namespace
 {
 struct TsLlvmContext
@@ -1887,9 +1880,28 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
     LogicalResult matchAndRewrite(mlir_ts::GlobalOp globalOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
     {
         LLVMCodeHelper lch(globalOp, rewriter, getTypeConverter());
+
+        auto linkage = LLVM::Linkage::Internal;
+        if (auto linkageAttr = globalOp->getAttrOfType<StringAttr>("Linkage"))
+        {
+            auto val = linkageAttr.getValue();
+            if (val == "External")
+            {
+                linkage = LLVM::Linkage::External;
+            }
+            else if (val == "Linkonce")
+            {
+                linkage = LLVM::Linkage::Linkonce;
+            }
+            else if (val == "LinkonceODR")
+            {
+                linkage = LLVM::Linkage::LinkonceODR;
+            }
+        }
+
         // TODO: include initialize block
         lch.createGlobalVarIfNew(globalOp.sym_name(), getTypeConverter()->convertType(globalOp.type()), globalOp.valueAttr(),
-                                 globalOp.constant(), globalOp.getInitializerRegion());
+                                 globalOp.constant(), globalOp.getInitializerRegion(), linkage);
         rewriter.eraseOp(globalOp);
         return success();
     }
@@ -2931,6 +2943,10 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
 
     converter.addConversion(
         [&](mlir_ts::ConstArrayType type) { return LLVM::LLVMPointerType::get(converter.convertType(type.getElementType())); });
+
+    converter.addConversion([&](mlir_ts::ConstArrayValueType type) {
+        return LLVM::LLVMArrayType::get(converter.convertType(type.getElementType()), type.getSize());
+    });
 
     converter.addConversion([&](mlir_ts::ArrayType type) {
         TypeHelper th(m.getContext());

@@ -36,4 +36,11 @@
 #define TRAMPOLINE_SIZE 40
 #endif
 
+#define ATTR(attr) mlir::StringAttr::get(rewriter.getContext(), attr)
+#define IDENT(name) mlir::Identifier::get(name, rewriter.getContext())
+#define NAMED_ATTR(name, attr) mlir::ArrayAttr::get(rewriter.getContext(), {ATTR(name), ATTR(attr)})
+
+#define DATA_VALUE_INDEX 0
+#define THIS_VALUE_INDEX 1
+
 #endif // DEFINES_H_
