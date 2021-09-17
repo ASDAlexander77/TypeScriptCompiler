@@ -35,11 +35,10 @@ struct TypeNames
 
 class MLIRRTTIHelperVCWin32
 {
-    mlir::Operation *op;
     mlir::OpBuilder &rewriter;
+    mlir::ModuleOp &parentModule;
     MLIRTypeHelper mth;
     MLIRLogicHelper mlh;
-    mlir::ModuleOp parentModule;
 
     SmallVector<TypeNames> types;
 
@@ -47,8 +46,8 @@ class MLIRRTTIHelperVCWin32
     std::string catchableTypeInfoArrayRef;
     std::string throwInfoRef;
 
-    MLIRRTTIHelperVCWin32(mlir::Operation *op, mlir::OpBuilder &rewriter, mlir::TypeConverter &typeConverter)
-        : op(op), rewriter(rewriter), mth(rewriter.getContext()), parentModule(op->getParentOfType<mlir::ModuleOp>())
+    MLIRRTTIHelperVCWin32(mlir::OpBuilder &rewriter, mlir::ModuleOp &parentModule)
+        : rewriter(rewriter), parentModule(parentModule), mth(rewriter.getContext()), mlh()
     {
         // setI32AsCatchType();
     }
@@ -154,8 +153,6 @@ class MLIRRTTIHelperVCWin32
     {
         setType(type);
 
-        auto parentModule = op->getParentOfType<mlir::ModuleOp>();
-
         mlir::OpBuilder::InsertionGuard guard(rewriter);
 
         rewriter.setInsertionPointToStart(parentModule.getBody());
@@ -215,7 +212,8 @@ class MLIRRTTIHelperVCWin32
 
     mlir::LogicalResult setStructValue(mlir::Location loc, mlir::Value &tupleValue, mlir::Value value, int index)
     {
-        auto tpl = tupleValue.getType().cast<mlir::TupleType>();
+        auto tpl = tupleValue.getType();
+        assert(tpl.isa<mlir_ts::TupleType>() || tpl.isa<mlir_ts::ConstTupleType>() || tpl.isa<mlir_ts::ConstArrayType>());
         tupleValue = rewriter.create<mlir_ts::InsertPropertyOp>(loc, tpl, value, tupleValue, rewriter.getI64ArrayAttr(index));
         return mlir::success();
     }
