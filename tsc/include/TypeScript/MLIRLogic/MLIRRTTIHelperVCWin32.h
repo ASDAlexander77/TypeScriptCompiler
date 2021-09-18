@@ -15,6 +15,7 @@
 #include "llvm/ADT/TypeSwitch.h"
 
 #include <sstream>
+#include <functional>
 
 using namespace ::typescript;
 using namespace ts;
@@ -85,6 +86,21 @@ class MLIRRTTIHelperVCWin32
         throwInfoRef = I8PtrType::throwInfoRef;
     }
 
+    void setClassTypeAsCatchType(ArrayRef<StringRef> names)
+    {
+        for (auto name : names)
+        {
+            types.push_back({join(name, ClassType::typeName, ClassType::typeNameSuffix),
+                             join(name, ClassType::typeInfoRef, ClassType::typeInfoRefSuffix),
+                             join(name, ClassType::catchableTypeInfoRef, ClassType::catchableTypeInfoRefSuffix)});
+        }
+
+        types.push_back({ClassType::typeName2, ClassType::typeInfoRef2, ClassType::catchableTypeInfoRef2});
+
+        catchableTypeInfoArrayRef = ClassType::catchableTypeInfoArrayRef;
+        throwInfoRef = ClassType::throwInfoRef;
+    }
+
     void setClassTypeAsCatchType(StringRef name)
     {
         types.push_back({join(name, ClassType::typeName, ClassType::typeNameSuffix),
@@ -106,7 +122,7 @@ class MLIRRTTIHelperVCWin32
         return ss.str();
     }
 
-    void setType(mlir::Type type)
+    void setType(mlir::Type type, std::function<ClassInfo::TypePtr(StringRef fullClassName)> resolveClassInfo)
     {
         llvm::TypeSwitch<mlir::Type>(type)
             .Case<mlir::IntegerType>([&](auto intType) {
@@ -131,7 +147,15 @@ class MLIRRTTIHelperVCWin32
             })
             .Case<mlir_ts::NumberType>([&](auto numberType) { setF32AsCatchType(); })
             .Case<mlir_ts::StringType>([&](auto stringType) { setStringTypeAsCatchType(); })
-            .Case<mlir_ts::ClassType>([&](auto classType) { setClassTypeAsCatchType(classType.getName().getValue()); })
+            .Case<mlir_ts::ClassType>([&](auto classType) {
+                // we need all bases as well
+                auto classInfo = resolveClassInfo(classType.getName().getValue());
+
+                SmallVector<StringRef> classAndBases;
+                classInfo->getBasesWithRoot(classAndBases);
+
+                setClassTypeAsCatchType(classAndBases);
+            })
             .Case<mlir_ts::AnyType>([&](auto anyType) { setI8PtrAsCatchType(); })
             .Default([&](auto type) { llvm_unreachable("not implemented"); });
     }
@@ -149,9 +173,9 @@ class MLIRRTTIHelperVCWin32
         block->walk(lastUse);
     }
 
-    void setRTTIForType(mlir::Location loc, mlir::Type type)
+    void setRTTIForType(mlir::Location loc, mlir::Type type, std::function<ClassInfo::TypePtr(StringRef fullClassName)> resolveClassInfo)
     {
-        setType(type);
+        setType(type, resolveClassInfo);
 
         mlir::OpBuilder::InsertionGuard guard(rewriter);
 
@@ -196,10 +220,7 @@ class MLIRRTTIHelperVCWin32
     {
         for (auto type : types)
         {
-            if (mlir::failed(typeDescriptor(loc, type.typeInfoRef, type.typeName)))
-            {
-                return mlir::failure();
-            }
+            typeDescriptor(loc, type.typeInfoRef, type.typeName);
         }
 
         return mlir::success();
@@ -284,10 +305,7 @@ class MLIRRTTIHelperVCWin32
     {
         for (auto type : types)
         {
-            if (mlir::failed(catchableType(loc, type.catchableTypeInfoRef, type.typeInfoRef, type.typeName)))
-            {
-                return mlir::failure();
-            }
+            catchableType(loc, type.catchableTypeInfoRef, type.typeInfoRef, type.typeName);
         }
 
         return mlir::success();

@@ -93,6 +93,23 @@ function main6() {
     assert(10 == t);
 }
 
+class AdvError extends Error {}
+
+function main7() {
+    print("try/catch 7");
+
+    let t = 1;
+
+    try {
+        throw new AdvError();
+    } catch (v: Error) {
+        print(v.i);
+        t = v.i;
+    }
+
+    assert(10 == t);
+}
+
 function main() {
     main1();
     main2();
@@ -100,5 +117,6 @@ function main() {
     main4();
     main5();
     main6();
+    main7();
     print("done.");
 }

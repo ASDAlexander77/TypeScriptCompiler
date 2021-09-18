@@ -388,6 +388,18 @@ struct ClassInfo
         }
     }
 
+    auto getBasesWithRoot(SmallVector<StringRef> &classNames) -> bool
+    {
+        classNames.push_back(fullName);
+
+        for (auto &base : baseClasses)
+        {
+            base->getBasesWithRoot(classNames);
+        }
+
+        return true;
+    }
+
     /// Iterate over the held elements.
     using iterator = ArrayRef<::mlir::typescript::FieldInfo>::iterator;
 

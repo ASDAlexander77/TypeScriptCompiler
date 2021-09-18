@@ -3042,8 +3042,11 @@ class MLIRGenImpl
 
         auto throwOp = builder.create<mlir_ts::ThrowOp>(location, exception);
 
-        MLIRRTTIHelperVCWin32 rtti(builder, theModule);
-        rtti.setRTTIForType(location, exception.getType());
+        if (!genContext.allowPartialResolve)
+        {
+            MLIRRTTIHelperVCWin32 rtti(builder, theModule);
+            rtti.setRTTIForType(location, exception.getType(), [&](StringRef classFullName) { return getClassByFullName(classFullName); });
+        }
 
         return mlir::success();
     }
@@ -3098,6 +3101,13 @@ class MLIRGenImpl
                 auto varInfo = resolveIdentifier(location, varName, tryGenContext);
                 auto varRef = mcl.GetReferenceOfLoadOp(varInfo);
                 builder.create<mlir_ts::CatchOp>(location, varRef);
+
+                if (!genContext.allowPartialResolve)
+                {
+                    MLIRRTTIHelperVCWin32 rtti(builder, theModule);
+                    rtti.setRTTIForType(location, varInfo.getType(),
+                                        [&](StringRef classFullName) { return getClassByFullName(classFullName); });
+                }
             }
 
             result = mlirGen(tryStatementAST->catchClause->block, tryGenContext);
