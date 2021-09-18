@@ -2,6 +2,10 @@
 
 #include <typeinfo>
 
+#ifdef _WIN32
+#pragma comment(linker, "/EXPORT:??_7type_info@@6B@")
+#endif
+
 void init_gcruntime(llvm::StringMap<void *> &exportSymbols);
 void destroy_gcruntime();
 

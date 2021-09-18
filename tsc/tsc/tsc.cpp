@@ -469,7 +469,7 @@ int runJit(mlir::ModuleOp module)
 #ifdef WIN32
         llvm::errs() << "JIT initialization failed. Missing GC library. Did you forget to provide it via "
                         "'--shared-libs=TypeScriptRuntime.dll'? or you can switch it off by using '-nogc'\n";
-#else                        
+#else
         llvm::errs() << "JIT initialization failed. Missing GC library. Did you forget to provide it via "
                         "'--shared-libs=libTypeScriptRuntime.so'? or you can switch it off by using '-nogc'\n";
 #endif
