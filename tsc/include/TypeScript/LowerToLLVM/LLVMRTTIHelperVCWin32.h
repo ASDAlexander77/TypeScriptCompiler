@@ -440,6 +440,11 @@ class LLVMRTTIHelperVCWin32
         return success();
     }
 
+    bool hasType()
+    {
+        return types.size() > 0;
+    }
+
     mlir::Value typeInfoPtrValue(mlir::Location loc)
     {
         auto firstType = types.front();
