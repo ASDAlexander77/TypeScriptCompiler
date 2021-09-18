@@ -24,4 +24,3 @@ void destroy_gcruntime()
     _mlir__GC_win32_free_heap();
 #endif
 }
-

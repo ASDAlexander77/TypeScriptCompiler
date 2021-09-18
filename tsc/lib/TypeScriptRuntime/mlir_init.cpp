@@ -1,5 +1,7 @@
 #include "llvm/ADT/StringMap.h"
 
+#include <typeinfo>
+
 void init_gcruntime(llvm::StringMap<void *> &exportSymbols);
 void destroy_gcruntime();
 
