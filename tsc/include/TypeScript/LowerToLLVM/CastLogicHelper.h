@@ -232,6 +232,14 @@ class CastLogicHelper
             }
         }
 
+        if (auto undefPHTypeIn = inType.dyn_cast_or_null<mlir_ts::UndefPlaceHolderType>())
+        {
+            if (auto stringTypeRes = resType.dyn_cast_or_null<mlir_ts::StringType>())
+            {
+                return rewriter.create<mlir_ts::ConstantOp>(loc, stringTypeRes, rewriter.getStringAttr("undefined"));
+            }
+        }
+
         return mlir::Value();
     }
 
