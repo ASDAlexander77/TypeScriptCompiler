@@ -1,4 +1,5 @@
 {
     "cmake.configureOnOpen": false,
+    "cmake.parallelJobs": 4,
     "C_Cpp.errorSquiggles": "Disabled"
 }

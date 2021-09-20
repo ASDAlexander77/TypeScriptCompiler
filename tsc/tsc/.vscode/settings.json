@@ -1,3 +1,5 @@
 {
-    "cmake.configureOnOpen": false
+    "cmake.configureOnOpen": false,
+    "cmake.parallelJobs": 4
+
 }
