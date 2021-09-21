@@ -12,7 +12,11 @@
 #include "TypeScript/LowerToLLVM/LLVMTypeConverterHelper.h"
 #include "TypeScript/LowerToLLVM/CodeLogicHelper.h"
 #include "TypeScript/LowerToLLVM/LLVMCodeHelper.h"
+#if WIN32
 #include "TypeScript/LowerToLLVM/LLVMRTTIHelperVCWin32.h"
+#else
+#include "TypeScript/LowerToLLVM/LLVMRTTIHelperVCLinux.h"
+#endif
 #include "TypeScript/LowerToLLVM/AssertLogic.h"
 #include "TypeScript/LowerToLLVM/ConvertLogic.h"
 #include "TypeScript/LowerToLLVM/CastLogicHelper.h"

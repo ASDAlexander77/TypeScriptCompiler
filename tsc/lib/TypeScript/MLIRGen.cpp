@@ -15,7 +15,11 @@
 #include "TypeScript/MLIRLogic/MLIRGenContext.h"
 #include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
 #include "TypeScript/MLIRLogic/MLIRCodeLogic.h"
+#ifdef WIN32
 #include "TypeScript/MLIRLogic/MLIRRTTIHelperVCWin32.h"
+#else
+#include "TypeScript/MLIRLogic/MLIRRTTIHelperVCLinux.h"
+#endif
 #include "TypeScript/VisitorAST.h"
 
 #include "TypeScript/DOM.h"
@@ -3044,7 +3048,11 @@ class MLIRGenImpl
 
         if (!genContext.allowPartialResolve)
         {
+#ifdef WIN32
             MLIRRTTIHelperVCWin32 rtti(builder, theModule);
+#else
+            MLIRRTTIHelperVCLinux rtti(builder, theModule);
+#endif
             rtti.setRTTIForType(location, exception.getType(), [&](StringRef classFullName) { return getClassByFullName(classFullName); });
         }
 
@@ -3104,7 +3112,11 @@ class MLIRGenImpl
 
                 if (!genContext.allowPartialResolve)
                 {
+#ifdef WIN32
                     MLIRRTTIHelperVCWin32 rtti(builder, theModule);
+#else
+                    MLIRRTTIHelperVCLinux rtti(builder, theModule);
+#endif
                     rtti.setRTTIForType(location, varInfo.getType(),
                                         [&](StringRef classFullName) { return getClassByFullName(classFullName); });
                 }

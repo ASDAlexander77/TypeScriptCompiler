@@ -9,6 +9,7 @@
 
 #include "TypeScript/LowerToLLVM/TypeHelper.h"
 #include "TypeScript/LowerToLLVM/LLVMCodeHelper.h"
+#include "TypeScript/LowerToLLVM/LLVMRTTIHelperVCLinuxConst.h"
 
 #include "mlir/Transforms/DialectConversion.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -24,8 +25,6 @@ namespace typescript
 struct TypeNames
 {
     std::string typeName;
-    std::string typeInfoRef;
-    std::string catchableTypeInfoRef;
 };
 
 class LLVMRTTIHelperVCLinux
@@ -39,12 +38,34 @@ class LLVMRTTIHelperVCLinux
     SmallVector<TypeNames> types;
 
   public:
-    std::string catchableTypeInfoArrayRef;
-    std::string throwInfoRef;
-
     LLVMRTTIHelperVCLinux(Operation *op, PatternRewriter &rewriter, TypeConverter &typeConverter)
         : op(op), rewriter(rewriter), parentModule(op->getParentOfType<ModuleOp>()), th(rewriter), ch(op, rewriter, &typeConverter)
     {
+    }
+
+    void setF32AsCatchType()
+    {
+        types.push_back({F32Type::typeName});
+    }
+
+    void setI32AsCatchType()
+    {
+        types.push_back({I32Type::typeName});
+    }
+
+    void setStringTypeAsCatchType()
+    {
+        types.push_back({StringType::typeName});
+    }
+
+    void setI8PtrAsCatchType()
+    {
+        types.push_back({I8PtrType::typeName});
+    }
+
+    void setClassTypeAsCatchType(StringRef name)
+    {
+        types.push_back({ClassType::typeName});
     }
 
     LogicalResult setPersonality(mlir::FuncOp newFuncOp)
@@ -54,6 +75,59 @@ class LLVMRTTIHelperVCLinux
 
         newFuncOp->setAttr(rewriter.getIdentifier("personality"), FlatSymbolRefAttr::get(rewriter.getContext(), name));
         return success();
+    }
+
+    void setType(mlir::Type type)
+    {
+        TypeSwitch<Type>(type)
+            .Case<mlir::IntegerType>([&](auto intType) {
+                if (intType.getIntOrFloatBitWidth() == 32)
+                {
+                    setI32AsCatchType();
+                }
+                else
+                {
+                    llvm_unreachable("not implemented");
+                }
+            })
+            .Case<mlir::FloatType>([&](auto floatType) {
+                if (floatType.getIntOrFloatBitWidth() == 32)
+                {
+                    setF32AsCatchType();
+                }
+                else
+                {
+                    llvm_unreachable("not implemented");
+                }
+            })
+            .Case<mlir_ts::NumberType>([&](auto numberType) { setF32AsCatchType(); })
+            .Case<mlir_ts::StringType>([&](auto stringType) { setStringTypeAsCatchType(); })
+            .Case<mlir_ts::ClassType>([&](auto classType) { setClassTypeAsCatchType(classType.getName().getValue()); })
+            .Case<mlir_ts::AnyType>([&](auto anyType) { setI8PtrAsCatchType(); })
+            .Default([&](auto type) { llvm_unreachable("not implemented"); });
+    }
+
+    bool hasType()
+    {
+        return types.size() > 0;
+    }
+
+    mlir::Value typeInfoPtrValue(mlir::Location loc)
+    {
+        // TODO: ...
+        return mlir::Value();
+    }
+
+    mlir::Value throwInfoPtrValue(mlir::Location loc)
+    {
+        // TODO: ...
+        return mlir::Value();
+    }
+
+    mlir::Type getThrowInfoPtrTy()
+    {
+        // TODO:
+        return mlir::Type();
     }
 };
 } // namespace typescript

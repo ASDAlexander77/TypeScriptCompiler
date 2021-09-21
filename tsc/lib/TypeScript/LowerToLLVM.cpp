@@ -2156,6 +2156,7 @@ struct MemoryCopyOpLowering : public TsLlvmPattern<mlir_ts::MemoryCopyOp>
     }
 };
 
+#ifdef WIN32
 struct ThrowOpLoweringVCWin32 : public TsLlvmPattern<mlir_ts::ThrowOp>
 {
     // add LLVM attributes to fix issue with shift >> 32
@@ -2212,6 +2213,69 @@ struct ThrowOpLoweringVCWin32 : public TsLlvmPattern<mlir_ts::ThrowOp>
     }
 };
 
+using ThrowOpLowering = ThrowOpLoweringVCWin32;
+
+#else
+struct ThrowOpLoweringVCLinux : public TsLlvmPattern<mlir_ts::ThrowOp>
+{
+    // add LLVM attributes to fix issue with shift >> 32
+    using TsLlvmPattern<mlir_ts::ThrowOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ThrowOp throwOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+    {
+        auto loc = throwOp.getLoc();
+
+        LLVMCodeHelper ch(throwOp, rewriter, getTypeConverter());
+        CodeLogicHelper clh(throwOp, rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+        TypeHelper th(rewriter);
+        LLVMRTTIHelperVCLinux rttih(throwOp, rewriter, *getTypeConverter());
+        // rttih.setRTTIForType(loc, throwOp.exception().getType());
+        rttih.setType(throwOp.exception().getType());
+
+        auto throwInfoPtrTy = rttih.getThrowInfoPtrTy();
+
+        auto i8PtrTy = th.getI8PtrType();
+
+        auto cxxThrowException =
+            ch.getOrInsertFunction("_CxxThrowException", th.getFunctionType(th.getVoidType(), {i8PtrTy, throwInfoPtrTy}));
+
+        // prepare first param
+        // we need temp var
+        auto value = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(throwOp.exception().getType()), throwOp.exception(),
+                                                          rewriter.getBoolAttr(false));
+
+        auto throwInfoPtr = rttih.throwInfoPtrValue(loc);
+
+        // throw exception
+        if (auto unwind = tsLlvmContext->unwind[throwOp])
+        {
+            OpBuilder::InsertionGuard guard(rewriter);
+
+            auto *opBlock = rewriter.getInsertionBlock();
+            auto opPosition = rewriter.getInsertionPoint();
+            auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
+
+            rewriter.setInsertionPointToEnd(opBlock);
+
+            rewriter.create<LLVM::InvokeOp>(
+                loc, TypeRange{th.getVoidType()}, mlir::FlatSymbolRefAttr::get(rewriter.getContext(), "_CxxThrowException"),
+                ValueRange{clh.castToI8Ptr(value), throwInfoPtr}, continuationBlock, ValueRange{}, unwind, ValueRange{});
+        }
+        else
+        {
+            rewriter.create<LLVM::CallOp>(loc, cxxThrowException, ValueRange{clh.castToI8Ptr(value), throwInfoPtr});
+        }
+
+        rewriter.eraseOp(throwOp);
+        return success();
+    }
+};
+
+using ThrowOpLowering = ThrowOpLoweringVCLinux;
+
+#endif
+
 struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
 {
     using TsLlvmPattern<mlir_ts::TryOp>::TsLlvmPattern;
@@ -2221,7 +2285,11 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         Location loc = tryOp.getLoc();
 
         TypeHelper th(rewriter);
+#ifdef WIN32
         LLVMRTTIHelperVCWin32 rttih(tryOp, rewriter, *getTypeConverter());
+#else
+        LLVMRTTIHelperVCLinux rttih(tryOp, rewriter, *getTypeConverter());
+#endif
 
         auto visitorCatchContinue = [&](Operation *op) {
             if (auto catchOp = dyn_cast_or_null<mlir_ts::CatchOp>(op))
@@ -3166,21 +3234,21 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 
     // The only remaining operation to lower from the `typescript` dialect, is the PrintOp.
     TsLlvmContext tsLlvmContext;
-    patterns
-        .insert<CallOpLowering, CallIndirectOpLowering, CaptureOpLowering, ExitOpLowering, ReturnOpLowering, ReturnValOpLowering,
-                AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering,
-                AssertOpLowering, CastOpLowering, ConstantOpLowering, CreateOptionalOpLowering, UndefOptionalOpLowering, HasValueOpLowering,
-                ValueOpLowering, SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering, EntryOpLowering, FuncOpLowering,
-                LoadOpLowering, ElementRefOpLowering, PropertyRefOpLowering, ExtractPropertyOpLowering, LogicalBinaryOpLowering,
-                NullOpLowering, NewOpLowering, CreateTupleOpLowering, DeconstructTupleOpLowering, CreateArrayOpLowering,
-                NewEmptyArrayOpLowering, NewArrayOpLowering, PushOpLowering, PopOpLowering, DeleteOpLowering, ParseFloatOpLowering,
-                ParseIntOpLowering, PrintOpLowering, StoreOpLowering, SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering,
-                StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering,
-                MemoryCopyOpLowering, LoadSaveValueLowering, ThrowOpLoweringVCWin32, TrampolineOpLowering, TryOpLowering, CatchOpLowering,
-                VariableOpLowering, InvokeOpLowering, ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering, NewInterfaceOpLowering,
-                VTableOffsetRefOpLowering, ThisPropertyRefOpLowering, LoadBoundRefOpLowering, StoreBoundRefOpLowering,
-                CreateBoundRefOpLowering, CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering,
-                DebuggerOpLowering, StateLabelOpLowering, SwitchStateOpLowering>(typeConverter, &getContext(), &tsLlvmContext);
+    patterns.insert<CallOpLowering, CallIndirectOpLowering, CaptureOpLowering, ExitOpLowering, ReturnOpLowering, ReturnValOpLowering,
+                    AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering,
+                    AssertOpLowering, CastOpLowering, ConstantOpLowering, CreateOptionalOpLowering, UndefOptionalOpLowering,
+                    HasValueOpLowering, ValueOpLowering, SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering, EntryOpLowering,
+                    FuncOpLowering, LoadOpLowering, ElementRefOpLowering, PropertyRefOpLowering, ExtractPropertyOpLowering,
+                    LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateTupleOpLowering, DeconstructTupleOpLowering,
+                    CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, PushOpLowering, PopOpLowering, DeleteOpLowering,
+                    ParseFloatOpLowering, ParseIntOpLowering, PrintOpLowering, StoreOpLowering, SizeOfOpLowering, InsertPropertyOpLowering,
+                    LengthOfOpLowering, StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering, CharToStringOpLowering,
+                    UndefOpLowering, MemoryCopyOpLowering, LoadSaveValueLowering, ThrowOpLowering, TrampolineOpLowering, TryOpLowering,
+                    CatchOpLowering, VariableOpLowering, InvokeOpLowering, ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering,
+                    NewInterfaceOpLowering, VTableOffsetRefOpLowering, ThisPropertyRefOpLowering, LoadBoundRefOpLowering,
+                    StoreBoundRefOpLowering, CreateBoundRefOpLowering, CreateBoundFunctionOpLowering, GetThisOpLowering,
+                    GetMethodOpLowering, TypeOfOpLowering, DebuggerOpLowering, StateLabelOpLowering, SwitchStateOpLowering>(
+        typeConverter, &getContext(), &tsLlvmContext);
 
     populateTypeScriptConversionPatterns(typeConverter, m);
 
