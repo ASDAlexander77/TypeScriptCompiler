@@ -108,9 +108,10 @@ class LLVMRTTIHelperVCWin32
 
     LogicalResult setPersonality(mlir::FuncOp newFuncOp)
     {
-        auto cxxFrameHandler3 = ch.getOrInsertFunction("__CxxFrameHandler3", th.getFunctionType(th.getI32Type(), {}, true));
+        auto name = "__CxxFrameHandler3";
+        auto cxxFrameHandler3 = ch.getOrInsertFunction(name, th.getFunctionType(th.getI32Type(), {}, true));
 
-        newFuncOp->setAttr(rewriter.getIdentifier("personality"), FlatSymbolRefAttr::get(rewriter.getContext(), "__CxxFrameHandler3"));
+        newFuncOp->setAttr(rewriter.getIdentifier("personality"), FlatSymbolRefAttr::get(rewriter.getContext(), name));
         return success();
     }
 

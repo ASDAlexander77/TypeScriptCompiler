@@ -909,7 +909,11 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
 
         if (funcOp.personality().hasValue() && funcOp.personality().getValue())
         {
+#if WIN32
             LLVMRTTIHelperVCWin32 rttih(funcOp, rewriter, typeConverter);
+#else
+            LLVMRTTIHelperVCLinux rttih(funcOp, rewriter, typeConverter);
+#endif
             rttih.setPersonality(newFuncOp);
         }
 
