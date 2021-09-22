@@ -115,7 +115,7 @@ class LLVMRTTIHelperVCLinux
     mlir::Value typeInfoPtrValue(mlir::Location loc)
     {
         // TODO:
-        return mlir::Value();
+        return throwInfoPtrValue(loc);
     }
 
     mlir::Value throwInfoPtrValue(mlir::Location loc)

@@ -2316,6 +2316,12 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         };
         tryOp.catches().walk(visitorCatchContinue);
 
+        // add to variables to store exception info: i8*, i32
+        auto ptrValueRef =
+            rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(th.getI8PtrType()), mlir::Value(), rewriter.getBoolAttr(false));
+        auto i32ValueRef =
+            rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(th.getI32Type()), mlir::Value(), rewriter.getBoolAttr(false));
+
         OpBuilder::InsertionGuard guard(rewriter);
         Block *currentBlock = rewriter.getInsertionBlock();
         Block *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
@@ -2368,12 +2374,29 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         auto resultOp = cast<mlir_ts::ResultOp>(bodyRegionLast->getTerminator());
         rewriter.replaceOpWithNewOp<BranchOp>(resultOp, continuation, ValueRange{});
 
-        // catches;landingpad
+        // catches:landingpad
         rewriter.setInsertionPointToStart(catchesRegion);
 
-        auto landingPadTypeWin32 =
-            LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {th.getI8PtrType(), th.getI32Type(), th.getI8PtrType()}, false);
-        auto landingPadOp = rewriter.create<LLVM::LandingpadOp>(loc, landingPadTypeWin32, false, ValueRange{catch1});
+        auto landingPadTypeLinux = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {th.getI8PtrType(), th.getI32Type()}, false);
+        auto landingPadOp = rewriter.create<LLVM::LandingpadOp>(loc, landingPadTypeLinux, false, ValueRange{catch1});
+
+        // catches:extract
+        auto ptrFromExcept = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), landingPadOp, th.getIndexAttrValue(0));
+        rewriter.create<mlir_ts::StoreOp>(loc, ptrFromExcept, ptrValueRef);
+        auto i32FromExcept = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI32Type(), landingPadOp, th.getIndexAttrValue(1));
+        rewriter.create<mlir_ts::StoreOp>(loc, i32FromExcept, i32ValueRef);
+
+        // br<->extract
+        Block *currentBlockBr = rewriter.getInsertionBlock();
+        Block *continuationBr = rewriter.splitBlock(currentBlockBr, rewriter.getInsertionPoint());
+
+        rewriter.setInsertionPointToEnd(currentBlockBr);
+        rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBr);
+
+        rewriter.setInsertionPointToStart(continuationBr);
+
+        // end of br
+        // catch: compare
 
         // catches:exit
         rewriter.setInsertionPointToEnd(catchesRegionLast);
