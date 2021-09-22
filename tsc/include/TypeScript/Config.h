@@ -20,4 +20,10 @@
 #endif
 #endif
 
+#ifdef WIN32
+#define WIN_EXCEPTION 1
+#else
+#define LINUX_EXCEPTION 1
+#endif
+
 #endif // CONFIG_H_

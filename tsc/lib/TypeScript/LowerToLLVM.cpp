@@ -909,7 +909,7 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
 
         if (funcOp.personality().hasValue() && funcOp.personality().getValue())
         {
-#if WIN32
+#if WIN_EXCEPTION
             LLVMRTTIHelperVCWin32 rttih(funcOp, rewriter, typeConverter);
 #else
             LLVMRTTIHelperVCLinux rttih(funcOp, rewriter, typeConverter);
@@ -2156,7 +2156,7 @@ struct MemoryCopyOpLowering : public TsLlvmPattern<mlir_ts::MemoryCopyOp>
     }
 };
 
-#ifdef WIN32
+#ifdef WIN_EXCEPTION
 struct ThrowOpLoweringVCWin32 : public TsLlvmPattern<mlir_ts::ThrowOp>
 {
     // add LLVM attributes to fix issue with shift >> 32
@@ -2178,8 +2178,8 @@ struct ThrowOpLoweringVCWin32 : public TsLlvmPattern<mlir_ts::ThrowOp>
 
         auto i8PtrTy = th.getI8PtrType();
 
-        auto cxxThrowException =
-            ch.getOrInsertFunction("_CxxThrowException", th.getFunctionType(th.getVoidType(), {i8PtrTy, throwInfoPtrTy}));
+        auto throwFuncName = "_CxxThrowException";
+        auto cxxThrowException = ch.getOrInsertFunction(throwFuncName, th.getFunctionType(th.getVoidType(), {i8PtrTy, throwInfoPtrTy}));
 
         // prepare first param
         // we need temp var
@@ -2200,7 +2200,7 @@ struct ThrowOpLoweringVCWin32 : public TsLlvmPattern<mlir_ts::ThrowOp>
             rewriter.setInsertionPointToEnd(opBlock);
 
             rewriter.create<LLVM::InvokeOp>(
-                loc, TypeRange{th.getVoidType()}, mlir::FlatSymbolRefAttr::get(rewriter.getContext(), "_CxxThrowException"),
+                loc, TypeRange{th.getVoidType()}, mlir::FlatSymbolRefAttr::get(rewriter.getContext(), throwFuncName),
                 ValueRange{clh.castToI8Ptr(value), throwInfoPtr}, continuationBlock, ValueRange{}, unwind, ValueRange{});
         }
         else
@@ -2233,19 +2233,31 @@ struct ThrowOpLoweringVCLinux : public TsLlvmPattern<mlir_ts::ThrowOp>
         // rttih.setRTTIForType(loc, throwOp.exception().getType());
         rttih.setType(throwOp.exception().getType());
 
-        auto throwInfoPtrTy = rttih.getThrowInfoPtrTy();
-
         auto i8PtrTy = th.getI8PtrType();
 
-        auto cxxThrowException =
-            ch.getOrInsertFunction("_CxxThrowException", th.getFunctionType(th.getVoidType(), {i8PtrTy, throwInfoPtrTy}));
+        auto allocExceptFuncName = "__cxa_allocate_exception";
+
+        auto cxxAllocException = ch.getOrInsertFunction(allocExceptFuncName, th.getFunctionType(i8PtrTy, {th.getI64Type()}));
+
+        auto throwFuncName = "__cxa_throw";
+
+        auto cxxThrowException = ch.getOrInsertFunction(throwFuncName, th.getFunctionType(th.getVoidType(), {i8PtrTy, i8PtrTy, i8PtrTy}));
 
         // prepare first param
         // we need temp var
-        auto value = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(throwOp.exception().getType()), throwOp.exception(),
-                                                          rewriter.getBoolAttr(false));
+        // auto value = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(throwOp.exception().getType()), throwOp.exception(),
+        //                                                  rewriter.getBoolAttr(false));
 
-        auto throwInfoPtr = rttih.throwInfoPtrValue(loc);
+        auto size = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getI64Type(), throwOp.exception().getType());
+
+        auto callInfo = rewriter.create<LLVM::CallOp>(
+            loc, TypeRange{i8PtrTy}, mlir::FlatSymbolRefAttr::get(rewriter.getContext(), allocExceptFuncName), ValueRange{size});
+
+        auto value = callInfo.getResult(0);
+
+        // save value
+        auto refValue = rewriter.create<mlir_ts::CastOp>(loc, mlir_ts::RefType::get(throwOp.exception().getType()), value);
+        rewriter.create<mlir_ts::StoreOp>(loc, throwOp.exception(), refValue);
 
         // throw exception
         if (auto unwind = tsLlvmContext->unwind[throwOp])
@@ -2258,13 +2270,17 @@ struct ThrowOpLoweringVCLinux : public TsLlvmPattern<mlir_ts::ThrowOp>
 
             rewriter.setInsertionPointToEnd(opBlock);
 
-            rewriter.create<LLVM::InvokeOp>(
-                loc, TypeRange{th.getVoidType()}, mlir::FlatSymbolRefAttr::get(rewriter.getContext(), "_CxxThrowException"),
-                ValueRange{clh.castToI8Ptr(value), throwInfoPtr}, continuationBlock, ValueRange{}, unwind, ValueRange{});
+            auto nullValue = rewriter.create<LLVM::NullOp>(loc, i8PtrTy);
+            rewriter.create<LLVM::InvokeOp>(loc, TypeRange{th.getVoidType()},
+                                            mlir::FlatSymbolRefAttr::get(rewriter.getContext(), throwFuncName),
+                                            ValueRange{value, clh.castToI8Ptr(rttih.throwInfoPtrValue(loc)), nullValue}, continuationBlock,
+                                            ValueRange{}, unwind, ValueRange{});
         }
         else
         {
-            rewriter.create<LLVM::CallOp>(loc, cxxThrowException, ValueRange{clh.castToI8Ptr(value), throwInfoPtr});
+            auto nullValue = rewriter.create<LLVM::NullOp>(loc, i8PtrTy);
+            rewriter.create<LLVM::CallOp>(loc, cxxThrowException,
+                                          ValueRange{value, clh.castToI8Ptr(rttih.throwInfoPtrValue(loc)), nullValue});
         }
 
         rewriter.eraseOp(throwOp);
@@ -2285,7 +2301,7 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         Location loc = tryOp.getLoc();
 
         TypeHelper th(rewriter);
-#ifdef WIN32
+#ifdef WIN_EXCEPTION
         LLVMRTTIHelperVCWin32 rttih(tryOp, rewriter, *getTypeConverter());
 #else
         LLVMRTTIHelperVCLinux rttih(tryOp, rewriter, *getTypeConverter());

@@ -114,20 +114,19 @@ class LLVMRTTIHelperVCLinux
 
     mlir::Value typeInfoPtrValue(mlir::Location loc)
     {
-        // TODO: ...
+        // TODO:
         return mlir::Value();
     }
 
     mlir::Value throwInfoPtrValue(mlir::Location loc)
     {
-        // TODO: ...
-        return mlir::Value();
-    }
+        auto typeName = types.front().typeName;
 
-    mlir::Type getThrowInfoPtrTy()
-    {
-        // TODO:
-        return mlir::Type();
+        assert(typeName.size() > 0);
+
+        auto throwInfoPtr =
+            rewriter.create<mlir::ConstantOp>(loc, th.getI8PtrPtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), typeName));
+        return throwInfoPtr;
     }
 };
 } // namespace typescript

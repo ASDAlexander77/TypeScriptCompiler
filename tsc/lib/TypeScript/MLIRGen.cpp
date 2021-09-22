@@ -15,7 +15,7 @@
 #include "TypeScript/MLIRLogic/MLIRGenContext.h"
 #include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
 #include "TypeScript/MLIRLogic/MLIRCodeLogic.h"
-#ifdef WIN32
+#ifdef WIN_EXCEPTION
 #include "TypeScript/MLIRLogic/MLIRRTTIHelperVCWin32.h"
 #else
 #include "TypeScript/MLIRLogic/MLIRRTTIHelperVCLinux.h"
@@ -3048,7 +3048,7 @@ class MLIRGenImpl
 
         if (!genContext.allowPartialResolve)
         {
-#ifdef WIN32
+#ifdef WIN_EXCEPTION
             MLIRRTTIHelperVCWin32 rtti(builder, theModule);
 #else
             MLIRRTTIHelperVCLinux rtti(builder, theModule);
@@ -3112,7 +3112,7 @@ class MLIRGenImpl
 
                 if (!genContext.allowPartialResolve)
                 {
-#ifdef WIN32
+#ifdef WIN_EXCEPTION
                     MLIRRTTIHelperVCWin32 rtti(builder, theModule);
 #else
                     MLIRRTTIHelperVCLinux rtti(builder, theModule);

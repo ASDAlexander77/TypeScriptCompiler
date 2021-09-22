@@ -5,12 +5,12 @@ namespace typescript
 {
 namespace F32Type
 {
-constexpr auto typeName = "_ZTId";
+constexpr auto typeName = "_ZTIf";
 } // namespace F32Type
 
 namespace I32Type
 {
-constexpr auto typeName = "";
+constexpr auto typeName = "_ZTId";
 } // namespace I32Type
 
 namespace StringType
