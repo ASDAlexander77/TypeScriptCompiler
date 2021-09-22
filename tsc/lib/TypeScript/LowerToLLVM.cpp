@@ -2402,7 +2402,7 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
 
         // end of br
         // catch: compare
-        auto loadedI32Value = rewriter.create<LLVM::LoadOp>(loc, i32ValueRef);
+        auto loadedI32Value = rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), i32ValueRef);
 
         auto typeIdFuncName = "llvm.eh.typeid.for";
         auto typeIdFunc = ch.getOrInsertFunction(typeIdFuncName, th.getFunctionType(th.getI32Type(), {i8PtrTy}));
@@ -2423,7 +2423,7 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         rewriter.setInsertionPointToStart(continuationBrCmp);
 
         // catch: begin catch
-        auto loadedI8PtrValue = rewriter.create<LLVM::LoadOp>(loc, ptrValueRef);
+        auto loadedI8PtrValue = rewriter.create<LLVM::LoadOp>(loc, i8PtrTy, ptrValueRef);
 
         auto beginCatchFuncName = "__cxa_begin_catch";
         auto beginCatchFunc = ch.getOrInsertFunction(beginCatchFuncName, th.getFunctionType(i8PtrTy, {i8PtrTy}));
