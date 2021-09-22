@@ -65,6 +65,18 @@
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
         },
         {
+            "name": "(Linux) ./tsc - LLVM",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/../../__build/tsc-ninja/bin/tsc",
+            "args": ["-emit=llvm", "/mnt/c/temp/1.ts"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "externalTerminal",
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+        },        
+        {
             "name": "(Windows) tsc.exe - JIT",
             "type": "cppvsdbg",
             "request": "launch",
