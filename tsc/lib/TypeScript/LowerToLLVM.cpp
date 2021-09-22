@@ -2301,11 +2301,16 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         Location loc = tryOp.getLoc();
 
         TypeHelper th(rewriter);
+        LLVMCodeHelper ch(tryOp, rewriter, getTypeConverter());
+        CodeLogicHelper clh(tryOp, rewriter);
+
 #ifdef WIN_EXCEPTION
         LLVMRTTIHelperVCWin32 rttih(tryOp, rewriter, *getTypeConverter());
 #else
         LLVMRTTIHelperVCLinux rttih(tryOp, rewriter, *getTypeConverter());
 #endif
+
+        auto i8PtrTy = th.getI8PtrType();
 
         auto visitorCatchContinue = [&](Operation *op) {
             if (auto catchOp = dyn_cast_or_null<mlir_ts::CatchOp>(op))
@@ -2381,9 +2386,9 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         auto landingPadOp = rewriter.create<LLVM::LandingpadOp>(loc, landingPadTypeLinux, false, ValueRange{catch1});
 
         // catches:extract
-        auto ptrFromExcept = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), landingPadOp, th.getIndexAttrValue(0));
+        auto ptrFromExcept = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), landingPadOp, clh.getStructIndexAttr(0));
         rewriter.create<mlir_ts::StoreOp>(loc, ptrFromExcept, ptrValueRef);
-        auto i32FromExcept = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI32Type(), landingPadOp, th.getIndexAttrValue(1));
+        auto i32FromExcept = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI32Type(), landingPadOp, clh.getStructIndexAttr(1));
         rewriter.create<mlir_ts::StoreOp>(loc, i32FromExcept, i32ValueRef);
 
         // br<->extract
@@ -2397,13 +2402,52 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
 
         // end of br
         // catch: compare
+        auto loadedI32Value = rewriter.create<LLVM::LoadOp>(loc, i32ValueRef);
 
-        // catches:exit
+        auto typeIdFuncName = "llvm.eh.typeid.for";
+        auto typeIdFunc = ch.getOrInsertFunction(typeIdFuncName, th.getFunctionType(th.getI32Type(), {i8PtrTy}));
+
+        auto callInfo = rewriter.create<LLVM::CallOp>(loc, typeIdFunc, ValueRange{clh.castToI8Ptr(rttih.throwInfoPtrValue(loc))});
+        auto typeIdValue = callInfo.getResult(0);
+
+        // icmp
+        auto cmpValue = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, loadedI32Value, typeIdValue);
+
+        // br->condition
+        Block *currentBlockBrCmp = rewriter.getInsertionBlock();
+        Block *continuationBrCmp = rewriter.splitBlock(currentBlockBrCmp, rewriter.getInsertionPoint());
+
+        rewriter.setInsertionPointToEnd(currentBlockBr);
+        rewriter.create<LLVM::CondBrOp>(loc, cmpValue, continuationBrCmp, continuation);
+
+        rewriter.setInsertionPointToStart(continuationBrCmp);
+
+        // catch: begin catch
+        auto loadedI8PtrValue = rewriter.create<LLVM::LoadOp>(loc, ptrValueRef);
+
+        auto beginCatchFuncName = "__cxa_begin_catch";
+        auto beginCatchFunc = ch.getOrInsertFunction(beginCatchFuncName, th.getFunctionType(i8PtrTy, {i8PtrTy}));
+
+        auto beginCatchCallInfo =
+            rewriter.create<LLVM::CallOp>(loc, beginCatchFunc, ValueRange{clh.castToI8Ptr(rttih.throwInfoPtrValue(loc))});
+
+        // catch: load value
+        // TODO:
+
+        // catches: end catch
         rewriter.setInsertionPointToEnd(catchesRegionLast);
 
         auto yieldOpCatches = cast<mlir_ts::ResultOp>(catchesRegionLast->getTerminator());
-        // rewriter.replaceOpWithNewOp<BranchOp>(yieldOpCatches, continuation, yieldOpCatches.results());
-        rewriter.replaceOpWithNewOp<LLVM::ResumeOp>(yieldOpCatches, landingPadOp);
+
+        auto endCatchFuncName = "__cxa_end_catch";
+        auto endCatchFunc = ch.getOrInsertFunction(endCatchFuncName, th.getFunctionType(th.getVoidType(), {th.getVoidType()}));
+
+        rewriter.create<LLVM::CallOp>(loc, endCatchFunc, ValueRange{});
+
+        // exit br
+        rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuation);
+
+        rewriter.eraseOp(yieldOpCatches);
 
         // finally:exit
         rewriter.setInsertionPointToEnd(finallyBlockRegionLast);
