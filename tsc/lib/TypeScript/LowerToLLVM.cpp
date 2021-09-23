@@ -2593,7 +2593,7 @@ struct CatchOpLowering : public TsLlvmPattern<mlir_ts::CatchOp>
         {
             // linux version
             mlir::Value val;
-            if (llvmCatchType.isa<LLVM::LLVMPointerType>())
+            if (!llvmCatchType.isa<LLVM::LLVMPointerType>())
             {
                 auto ptrVal = rewriter.create<LLVM::BitcastOp>(loc, th.getPointerType(llvmCatchType), catchDataValue);
                 val = rewriter.create<LLVM::LoadOp>(loc, llvmCatchType, ptrVal);
