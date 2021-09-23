@@ -50,6 +50,7 @@ struct TsLlvmContext
 {
     // invoke normal, unwind
     DenseMap<Operation *, mlir::Block *> unwind;
+    DenseMap<Operation *, mlir::Value> catchOpData;
 };
 
 template <typename OpTy> class TsLlvmPattern : public OpConversionPattern<OpTy>
@@ -2406,19 +2407,18 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         LLVMCodeHelper ch(tryOp, rewriter, getTypeConverter());
         CodeLogicHelper clh(tryOp, rewriter);
 
-#ifdef WIN_EXCEPTION
-        LLVMRTTIHelperVCWin32 rttih(tryOp, rewriter, *getTypeConverter());
-#else
         LLVMRTTIHelperVCLinux rttih(tryOp, rewriter, *getTypeConverter());
-#endif
 
         auto i8PtrTy = th.getI8PtrType();
 
+        Operation *catchOpPtr = nullptr;
         auto visitorCatchContinue = [&](Operation *op) {
             if (auto catchOp = dyn_cast_or_null<mlir_ts::CatchOp>(op))
             {
                 // rttih.setRTTIForType(loc, catchOp.catchArg().getType().cast<mlir_ts::RefType>().getElementType());
                 rttih.setType(catchOp.catchArg().getType().cast<mlir_ts::RefType>().getElementType());
+                assert(!catchOpPtr);
+                catchOpPtr = op;
             }
         };
         tryOp.catches().walk(visitorCatchContinue);
@@ -2516,6 +2516,11 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         auto beginCatchCallInfo =
             rewriter.create<LLVM::CallOp>(loc, beginCatchFunc, ValueRange{clh.castToI8Ptr(rttih.throwInfoPtrValue(loc))});
 
+        if (catchOpPtr)
+        {
+            tsLlvmContext->catchOpData[catchOpPtr] = beginCatchCallInfo->getResult(0);
+        }
+
         // catch: load value
         // TODO:
 
@@ -2586,8 +2591,20 @@ struct CatchOpLowering : public TsLlvmPattern<mlir_ts::CatchOp>
 
         Location loc = catchOp.getLoc();
 
-        auto undefVal = rewriter.create<LLVM::UndefOp>(loc, llvmCatchType);
-        rewriter.create<LLVM::StoreOp>(loc, undefVal, catchOp.catchArg());
+        auto catchDataValue = tsLlvmContext->catchOpData[catchOp];
+        if (catchDataValue)
+        {
+            // linux version
+            auto ptrVal = rewriter.create<LLVM::BitcastOp>(loc, th.getPointerType(llvmCatchType), catchDataValue);
+            auto val = rewriter.create<LLVM::LoadOp>(loc, llvmCatchType, ptrVal);
+            rewriter.create<LLVM::StoreOp>(loc, val, catchOp.catchArg());
+        }
+        else
+        {
+            // windows version
+            auto undefVal = rewriter.create<LLVM::UndefOp>(loc, llvmCatchType);
+            rewriter.create<LLVM::StoreOp>(loc, undefVal, catchOp.catchArg());
+        }
 
         rewriter.eraseOp(catchOp);
 
