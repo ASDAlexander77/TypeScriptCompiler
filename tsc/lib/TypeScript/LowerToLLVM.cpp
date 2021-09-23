@@ -2513,8 +2513,7 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         auto beginCatchFuncName = "__cxa_begin_catch";
         auto beginCatchFunc = ch.getOrInsertFunction(beginCatchFuncName, th.getFunctionType(i8PtrTy, {i8PtrTy}));
 
-        auto beginCatchCallInfo =
-            rewriter.create<LLVM::CallOp>(loc, beginCatchFunc, ValueRange{clh.castToI8Ptr(rttih.throwInfoPtrValue(loc))});
+        auto beginCatchCallInfo = rewriter.create<LLVM::CallOp>(loc, beginCatchFunc, ValueRange{loadedI8PtrValue});
 
         if (catchOpPtr)
         {
@@ -2567,8 +2566,6 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         rewriter.replaceOpWithNewOp<BranchOp>(yieldOpFinallyBlock, continuation, yieldOpFinallyBlock.results());
 
         rewriter.replaceOp(tryOp, continuation->getArguments());
-
-        LLVM_DEBUG(llvm::dbgs() << "\n>>>???>>> DUMP: \n" << *tryOp->getParentOp() << "\n";);
 
         return success();
     }
