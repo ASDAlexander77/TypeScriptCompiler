@@ -13,9 +13,14 @@ namespace I32Type
 constexpr auto typeName = "_ZTIi";
 } // namespace I32Type
 
-namespace StringType
+namespace ConstStringType
 {
 constexpr auto typeName = "_ZTIPKc";
+} // namespace ConstStringType
+
+namespace StringType
+{
+constexpr auto typeName = "_ZTIPc";
 } // namespace StringType
 
 namespace I8PtrType
