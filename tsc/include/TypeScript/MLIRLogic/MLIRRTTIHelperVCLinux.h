@@ -36,6 +36,7 @@ struct TypeNames
 {
     std::string typeName;
     TypeInfo infoType;
+    int baseIndex;
 };
 
 class MLIRRTTIHelperVCLinux
@@ -85,7 +86,7 @@ class MLIRRTTIHelperVCLinux
             types.push_back({name.str(), index < countM1 ? TypeInfo::SingleInheritance_ClassTypeInfo : TypeInfo::ClassTypeInfo});
             if (first)
             {
-                types.push_back({name.str(), TypeInfo::Pointer_TypeInfo});
+                types.push_back({name.str(), TypeInfo::Pointer_TypeInfo, index < countM1 ? index + 1 : -1});
             }
 
             first = false;
@@ -170,7 +171,8 @@ class MLIRRTTIHelperVCLinux
                 typeInfoClass(loc, type.typeName, type.infoType);
                 break;
             case TypeInfo::SingleInheritance_ClassTypeInfo:
-                typeInfoSingleInheritanceClass(loc, type.typeName, type.infoType, types[index + 1].typeName, types[index + 1].infoType);
+                typeInfoSingleInheritanceClass(loc, type.typeName, type.infoType, types[type.baseIndex + 1].typeName,
+                                               types[type.baseIndex + 1].infoType);
                 break;
             default:
                 typeInfoValue(loc, type.typeName);
