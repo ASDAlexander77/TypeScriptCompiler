@@ -44,12 +44,13 @@ class MLIRRTTIHelperVCLinux
     mlir::ModuleOp &parentModule;
     MLIRTypeHelper mth;
     MLIRLogicHelper mlh;
+    MLIRCodeLogic mcl;
 
     SmallVector<TypeNames> types;
 
   public:
     MLIRRTTIHelperVCLinux(mlir::OpBuilder &rewriter, mlir::ModuleOp &parentModule)
-        : rewriter(rewriter), parentModule(parentModule), mth(rewriter.getContext()), mlh()
+        : rewriter(rewriter), parentModule(parentModule), mth(rewriter.getContext()), mlh(), mcl(rewriter)
     {
         // setI32AsCatchType();
     }
@@ -269,7 +270,7 @@ class MLIRRTTIHelperVCLinux
         attrs.push_back({IDENT("Linkage"), ATTR("LinkonceODR")});
 
         rewriter.create<mlir_ts::GlobalOp>(loc, stringConstType(className, ti), true,
-                                           /*LLVM::Linkage::LinkonceODR,*/ name, rewriter.getStringAttr(label), attrs);
+                                           /*LLVM::Linkage::LinkonceODR,*/ name, mcl.getStringAttrWith0(label), attrs);
 
         return mlir::success();
     }
@@ -344,13 +345,15 @@ class MLIRRTTIHelperVCLinux
             auto itemValue1 = rewriter.create<mlir_ts::AddressOfOp>(
                 loc, mth.getRefType(mth.getOpaqueType()), mlir::FlatSymbolRefAttr::get(rewriter.getContext(), getClassInfoName(ti)),
                 mlir::IntegerAttr::get(mth.getI32Type(), 2));
-            setStructValue(loc, structVal, itemValue1, 0);
+            auto castValue1 = rewriter.create<mlir_ts::CastOp>(loc, mth.getOpaqueType(), itemValue1);
+            setStructValue(loc, structVal, castValue1, 0);
 
-            auto itemValue2 = rewriter.create<mlir_ts::ConstantOp>(
-                loc, stringConstType(className, ti),
-                mlir::FlatSymbolRefAttr::get(rewriter.getContext(), stringConstRefName(className, ti)));
+            auto itemValue2 = rewriter.create<mlir_ts::AddressOfOp>(
+                loc, mth.getRefType(stringConstType(className, ti)),
+                mlir::FlatSymbolRefAttr::get(rewriter.getContext(), stringConstRefName(className, ti)), mlir::IntegerAttr());
 
-            setStructValue(loc, structVal, itemValue2, 1);
+            auto castValue2 = rewriter.create<mlir_ts::CastOp>(loc, mth.getOpaqueType(), itemValue2);
+            setStructValue(loc, structVal, castValue2, 1);
 
             if (ti == TypeInfo::Pointer_TypeInfo)
             {
@@ -358,20 +361,22 @@ class MLIRRTTIHelperVCLinux
                 setStructValue(loc, structVal, itemValueI32, 2);
 
                 // add base class name
-                auto itemValue3 = rewriter.create<mlir_ts::ConstantOp>(
-                    loc, mlir_ts::RefType::get(getTIType(ti)),
-                    mlir::FlatSymbolRefAttr::get(rewriter.getContext(), typeInfoRefName(className, ti)));
+                auto itemValue4 = rewriter.create<mlir_ts::AddressOfOp>(
+                    loc, mth.getRefType(getTIType(ti)), mlir::FlatSymbolRefAttr::get(rewriter.getContext(), typeInfoRefName(className, ti)),
+                    mlir::IntegerAttr());
 
-                setStructValue(loc, structVal, itemValue3, 3);
+                auto castValue4 = rewriter.create<mlir_ts::CastOp>(loc, mth.getOpaqueType(), itemValue4);
+                setStructValue(loc, structVal, castValue4, 3);
             }
             else if (ti == TypeInfo::SingleInheritance_ClassTypeInfo)
             {
                 // add base class name
-                auto itemValue2 = rewriter.create<mlir_ts::ConstantOp>(
-                    loc, mlir_ts::RefType::get(getTIType(baseti)),
-                    mlir::FlatSymbolRefAttr::get(rewriter.getContext(), typeInfoRefName(baseName, baseti)));
+                auto itemValue3 = rewriter.create<mlir_ts::AddressOfOp>(
+                    loc, mth.getRefType(getTIType(baseti)),
+                    mlir::FlatSymbolRefAttr::get(rewriter.getContext(), typeInfoRefName(baseName, baseti)), mlir::IntegerAttr());
 
-                setStructValue(loc, structVal, itemValue2, 2);
+                auto castValue3 = rewriter.create<mlir_ts::CastOp>(loc, mth.getOpaqueType(), itemValue3);
+                setStructValue(loc, structVal, castValue3, 2);
             }
 
             // end

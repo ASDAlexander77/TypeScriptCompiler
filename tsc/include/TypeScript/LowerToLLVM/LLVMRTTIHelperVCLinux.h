@@ -34,12 +34,15 @@ class LLVMRTTIHelperVCLinux
     ModuleOp parentModule;
     TypeHelper th;
     LLVMCodeHelper ch;
+    CodeLogicHelper clh;
 
+    bool classType;
     SmallVector<TypeNames> types;
 
   public:
     LLVMRTTIHelperVCLinux(Operation *op, PatternRewriter &rewriter, TypeConverter &typeConverter)
-        : op(op), rewriter(rewriter), parentModule(op->getParentOfType<ModuleOp>()), th(rewriter), ch(op, rewriter, &typeConverter)
+        : op(op), rewriter(rewriter), parentModule(op->getParentOfType<ModuleOp>()), th(rewriter), ch(op, rewriter, &typeConverter),
+          clh(op, rewriter), classType(false)
     {
     }
 
@@ -71,6 +74,7 @@ class LLVMRTTIHelperVCLinux
         ss << name.str();
 
         types.push_back({ss.str()});
+        classType = true;
     }
 
     LogicalResult setPersonality(mlir::FuncOp newFuncOp)
@@ -129,11 +133,28 @@ class LLVMRTTIHelperVCLinux
 
         assert(typeName.size() > 0);
 
-        MLIRTypeHelper mth(rewriter.getContext());
-        auto tiType = mth.getTupleType({mth.getOpaqueType(), mth.getOpaqueType(), mth.getI32Type(), mth.getOpaqueType()});
+        mlir::Type tiType;
+        if (classType)
+        {
+            SmallVector<mlir::Type> tiTypes;
+            tiTypes.push_back(th.getI8PtrType());
+            tiTypes.push_back(th.getI8PtrType());
+            tiTypes.push_back(th.getI32Type());
+            tiTypes.push_back(th.getI8PtrType());
 
-        auto throwInfoPtr =
-            rewriter.create<mlir::ConstantOp>(loc, th.getPointerType(tiType), FlatSymbolRefAttr::get(rewriter.getContext(), typeName));
+            tiType = th.getPointerType(LLVM::LLVMStructType::getLiteral(rewriter.getContext(), tiTypes, false));
+        }
+        else
+        {
+            tiType = th.getI8PtrType();
+        }
+
+        mlir::Value throwInfoPtr = rewriter.create<mlir::ConstantOp>(loc, tiType, FlatSymbolRefAttr::get(rewriter.getContext(), typeName));
+        if (classType)
+        {
+            throwInfoPtr = clh.castToI8Ptr(throwInfoPtr);
+        }
+
         return throwInfoPtr;
     }
 };
