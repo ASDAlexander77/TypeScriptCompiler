@@ -31,6 +31,9 @@ constexpr auto typeName = "_ZTIPv";
 namespace ClassType
 {
 constexpr auto typeName = "";
+constexpr auto classTypeInfoName = "_ZTVN10__cxxabiv117__class_type_infoE";
+constexpr auto singleInheritanceClassTypeInfoName = "_ZTVN10__cxxabiv120__si_class_type_infoE";
+constexpr auto pointerTypeInfoName = "_ZTVN10__cxxabiv119__pointer_type_infoE";
 } // namespace ClassType
 
 } // namespace typescript
