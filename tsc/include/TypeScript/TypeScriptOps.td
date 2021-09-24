@@ -1549,19 +1549,19 @@ def TypeScript_CatchOp : TypeScript_Op<"Catch",
 }
 
 def TypeScript_AddressOfOp : TypeScript_Op<"Addressof"> {
-  let arguments = (ins FlatSymbolRefAttr:$global_name);
+  let arguments = (ins FlatSymbolRefAttr:$global_name, OptionalAttr<I32Attr>:$offset);
   let results = (outs TypeScript_Ref:$reference);
 
   let builders = [
     OpBuilder<(ins "GlobalOp":$global,
       CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs),
     [{
-      build($_builder, $_state, RefType::get(global.getType()), global.sym_name());
+      build($_builder, $_state, RefType::get(global.getType()), global.sym_name(), mlir::IntegerAttr());
       $_state.addAttributes(attrs);
     }]>,
     OpBuilder<(ins "FuncOp":$func, CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs),
     [{
-      build($_builder, $_state, RefType::get(func.getType()), func.getName());
+      build($_builder, $_state, RefType::get(func.getType()), func.getName(), mlir::IntegerAttr());
       $_state.addAttributes(attrs);
     }]>
   ];

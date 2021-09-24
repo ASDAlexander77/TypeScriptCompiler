@@ -1934,7 +1934,8 @@ struct AddressOfOpLowering : public TsLlvmPattern<mlir_ts::AddressOfOp>
         LLVMCodeHelper lch(addressOfOp, rewriter, getTypeConverter());
         TypeConverterHelper tch(getTypeConverter());
 
-        auto value = lch.getAddressOfGlobalVar(addressOfOp.global_name(), tch.convertType(addressOfOp.getType()));
+        auto value = lch.getAddressOfGlobalVar(addressOfOp.global_name(), tch.convertType(addressOfOp.getType()),
+                                               addressOfOp.offset() ? addressOfOp.offset().getValue() : 0);
         rewriter.replaceOp(addressOfOp, value);
         return success();
     }

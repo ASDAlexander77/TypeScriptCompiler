@@ -931,7 +931,7 @@ class MLIRGenImpl
                 globalOp.typeAttr(mlir::TypeAttr::get(type));
 
                 // save value
-                auto address = builder.create<mlir_ts::AddressOfOp>(location, mlir_ts::RefType::get(type), name);
+                auto address = builder.create<mlir_ts::AddressOfOp>(location, mlir_ts::RefType::get(type), name, mlir::IntegerAttr());
                 builder.create<mlir_ts::StoreOp>(location, init, address);
             }
         }
@@ -5609,7 +5609,8 @@ class MLIRGenImpl
         }
         else
         {
-            auto address = builder.create<mlir_ts::AddressOfOp>(location, mlir_ts::RefType::get(value->getType()), value->getName());
+            auto address = builder.create<mlir_ts::AddressOfOp>(location, mlir_ts::RefType::get(value->getType()), value->getName(),
+                                                                ::mlir::IntegerAttr());
             if (asAddess)
             {
                 return address;

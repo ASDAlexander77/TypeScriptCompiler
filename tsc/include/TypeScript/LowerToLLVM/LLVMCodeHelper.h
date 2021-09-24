@@ -91,7 +91,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         return failure();
     }
 
-    Value getAddressOfGlobalVar(StringRef name, mlir::Type type)
+    Value getAddressOfGlobalVar(StringRef name, mlir::Type type, int32_t index = 0)
     {
         auto loc = op->getLoc();
         auto parentModule = op->getParentOfType<ModuleOp>();
@@ -100,8 +100,8 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
         // Get the pointer to the first character in the global string.
         Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, type, name);
-        Value cst0 = rewriter.create<LLVM::ConstantOp>(loc, th.getIndexType(), th.getIndexAttrValue(0));
-        return rewriter.create<LLVM::GEPOp>(loc, globalPtr.getType(), globalPtr, ArrayRef<Value>({cst0}));
+        Value cstIdx = rewriter.create<LLVM::ConstantOp>(loc, th.getIndexType(), th.getIndexAttrValue(index));
+        return rewriter.create<LLVM::GEPOp>(loc, globalPtr.getType(), globalPtr, ArrayRef<Value>({cstIdx}));
     }
 
     StringAttr getStringAttrWith0(std::string value)

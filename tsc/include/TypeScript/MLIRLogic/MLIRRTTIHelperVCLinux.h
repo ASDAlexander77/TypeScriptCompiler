@@ -231,10 +231,17 @@ class MLIRRTTIHelperVCLinux
         }
     }
 
-    mlir::LogicalResult stringConst(mlir::Location loc, StringRef className, TypeInfo ti)
+    std::string stringConstRefName(StringRef className, TypeInfo ti)
     {
         auto label = join(className, prefixLabel(ti), className.size(), "");
         auto name = join(label, "_ZTS", "");
+        return name;
+    }
+
+    mlir::LogicalResult stringConst(mlir::Location loc, StringRef className, TypeInfo ti)
+    {
+        auto label = join(className, prefixLabel(ti), className.size(), "");
+        auto name = stringConstRefName(className, ti);
         if (parentModule.lookupSymbol<mlir_ts::GlobalOp>(name))
         {
             return mlir::failure();
@@ -270,6 +277,14 @@ class MLIRRTTIHelperVCLinux
         rewriter.setInsertionPoint(block, block->begin());
     }
 
+    mlir::LogicalResult setStructValue(mlir::Location loc, mlir::Value &tupleValue, mlir::Value value, int index)
+    {
+        auto tpl = tupleValue.getType();
+        assert(tpl.isa<mlir_ts::TupleType>() || tpl.isa<mlir_ts::ConstTupleType>() || tpl.isa<mlir_ts::ConstArrayValueType>());
+        tupleValue = rewriter.create<mlir_ts::InsertPropertyOp>(loc, tpl, value, tupleValue, rewriter.getI64ArrayAttr(index));
+        return mlir::success();
+    }
+
     mlir::LogicalResult typeInfoRef(mlir::Location loc, StringRef className, TypeInfo ti)
     {
         auto label = join(className, prefixLabel(ti), className.size(), "");
@@ -289,6 +304,16 @@ class MLIRRTTIHelperVCLinux
 
         {
             setGlobalOpWritingPoint(globalOp);
+
+            // begin
+            mlir::Value structVal = rewriter.create<mlir_ts::UndefOp>(loc, typeInfoType);
+
+            auto stringConstRefName = stringConstRefName(className, ti);
+
+            auto itemValue1 = rewriter.create<mlir_ts::AddressOfOp>(loc, mth.getRefType(mth.getOpaqueType()),
+                                                                    mlir::FlatSymbolRefAttr::get(rewriter.getContext(), stringConstRefName),
+                                                                    mlir::IntegerAttr::get(mth.getI32Type(), 2));
+            setStructValue(loc, structVal, itemValue1, 0);
         }
 
         return mlir::success();
