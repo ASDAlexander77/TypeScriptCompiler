@@ -65,7 +65,12 @@ class LLVMRTTIHelperVCLinux
 
     void setClassTypeAsCatchType(StringRef name)
     {
-        types.push_back({ClassType::typeName});
+        std::stringstream ss;
+        ss << "_ZTIP";
+        ss << name.str().size();
+        ss << name.str();
+
+        types.push_back({ss.str()});
     }
 
     LogicalResult setPersonality(mlir::FuncOp newFuncOp)
@@ -125,7 +130,7 @@ class LLVMRTTIHelperVCLinux
         assert(typeName.size() > 0);
 
         auto throwInfoPtr =
-            rewriter.create<mlir::ConstantOp>(loc, th.getI8PtrPtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), typeName));
+            rewriter.create<mlir::ConstantOp>(loc, th.getI8PtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), typeName));
         return throwInfoPtr;
     }
 };
