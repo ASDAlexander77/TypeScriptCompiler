@@ -77,11 +77,11 @@ class MLIRRTTIHelperVCLinux
     void setClassTypeAsCatchType(ArrayRef<StringRef> names)
     {
         auto first = true;
-        auto count = names.size();
+        auto countM1 = names.size() - 1;
         auto index = 0;
         for (auto name : names)
         {
-            types.push_back({name.str(), index < count ? TypeInfo::SingleInheritance_ClassTypeInfo : TypeInfo::ClassTypeInfo});
+            types.push_back({name.str(), index < countM1 ? TypeInfo::SingleInheritance_ClassTypeInfo : TypeInfo::ClassTypeInfo});
             if (first)
             {
                 types.push_back({name.str(), TypeInfo::Pointer_TypeInfo});
@@ -231,18 +231,21 @@ class MLIRRTTIHelperVCLinux
 
     std::string labelValue(StringRef className, TypeInfo ti)
     {
+        assert(className.size());
         auto label = join(className, prefixLabel(ti), className.size(), "");
         return label;
     }
 
     std::string stringConstRefName(StringRef className, TypeInfo ti)
     {
+        assert(className.size());
         auto name = join(labelValue(className, ti), "_ZTS", "");
         return name;
     }
 
     std::string typeInfoRefName(StringRef className, TypeInfo ti)
     {
+        assert(className.size());
         auto name = join(labelValue(className, ti), "_ZTI", "");
         return name;
     }
@@ -349,22 +352,32 @@ class MLIRRTTIHelperVCLinux
 
             setStructValue(loc, structVal, itemValue2, 1);
 
-            auto shift = 2;
             if (ti == TypeInfo::Pointer_TypeInfo)
             {
-                // add base class name
                 auto itemValueI32 = rewriter.create<mlir_ts::ConstantOp>(loc, mth.getI32Type(), mth.getI32AttrValue(0));
-                setStructValue(loc, structVal, itemValueI32, shift++);
-            }
+                setStructValue(loc, structVal, itemValueI32, 2);
 
-            if (ti == TypeInfo::SingleInheritance_ClassTypeInfo || ti == TypeInfo::Pointer_TypeInfo)
-            {
                 // add base class name
                 auto itemValue3 = rewriter.create<mlir_ts::ConstantOp>(
-                    loc, getTIType(baseti), mlir::FlatSymbolRefAttr::get(rewriter.getContext(), typeInfoRefName(baseName, baseti)));
+                    loc, mlir_ts::RefType::get(getTIType(ti)),
+                    mlir::FlatSymbolRefAttr::get(rewriter.getContext(), typeInfoRefName(className, ti)));
 
-                setStructValue(loc, structVal, itemValue3, shift);
+                setStructValue(loc, structVal, itemValue3, 3);
             }
+            else if (ti == TypeInfo::SingleInheritance_ClassTypeInfo)
+            {
+                // add base class name
+                auto itemValue2 = rewriter.create<mlir_ts::ConstantOp>(
+                    loc, mlir_ts::RefType::get(getTIType(baseti)),
+                    mlir::FlatSymbolRefAttr::get(rewriter.getContext(), typeInfoRefName(baseName, baseti)));
+
+                setStructValue(loc, structVal, itemValue2, 2);
+            }
+
+            // end
+            rewriter.create<mlir_ts::GlobalResultOp>(loc, mlir::ValueRange{structVal});
+
+            rewriter.setInsertionPointAfter(globalOp);
         }
 
         return mlir::success();

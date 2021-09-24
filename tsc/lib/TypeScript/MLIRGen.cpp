@@ -6012,13 +6012,15 @@ class MLIRGenImpl
                 auto baseType = mlirGen(extendingType->expression, genContext);
                 TypeSwitch<mlir::Type>(baseType.getType())
                     .template Case<mlir_ts::ClassType>([&](auto baseClassType) {
-                        auto classInfo = getClassByFullName(baseClassType.getName().getValue());
-
                         auto baseName = baseClassType.getName().getValue();
                         auto fieldId = mcl.TupleFieldName(baseName);
                         fieldInfos.push_back({fieldId, baseClassType.getStorageType()});
 
-                        baseClassInfos.push_back(classInfo);
+                        auto classInfo = getClassByFullName(baseName);
+                        if (std::find(baseClassInfos.begin(), baseClassInfos.end(), classInfo) == baseClassInfos.end())
+                        {
+                            baseClassInfos.push_back(classInfo);
+                        }
                     })
                     .Default([&](auto type) { llvm_unreachable("not implemented"); });
             }
