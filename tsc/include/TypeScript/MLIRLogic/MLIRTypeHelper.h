@@ -102,6 +102,11 @@ class MLIRTypeHelper
         return mlir_ts::TupleType::get(context, fields);
     }
 
+    mlir::IntegerAttr getI32AttrValue(int32_t value)
+    {
+        return mlir::IntegerAttr::get(getI32Type(), mlir::APInt(32, value));
+    }
+
     mlir::IntegerAttr getStructIndexAttrValue(int32_t value)
     {
         return mlir::IntegerAttr::get(getI32Type(), mlir::APInt(32, value));

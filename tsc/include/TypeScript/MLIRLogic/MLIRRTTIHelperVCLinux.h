@@ -81,10 +81,7 @@ class MLIRRTTIHelperVCLinux
         auto index = 0;
         for (auto name : names)
         {
-            auto currentType = index < count ? TypeInfo::SingleInheritance_ClassTypeInfo : TypeInfo::ClassTypeInfo;
-
-            types.push_back({name.str(), currentType});
-
+            types.push_back({name.str(), index < count ? TypeInfo::SingleInheritance_ClassTypeInfo : TypeInfo::ClassTypeInfo});
             if (first)
             {
                 types.push_back({name.str(), TypeInfo::Pointer_TypeInfo});
@@ -162,23 +159,24 @@ class MLIRRTTIHelperVCLinux
         seekLast(parentModule.getBody());
 
         // _ZTId
+        auto index = 0;
         for (auto type : types)
         {
             switch (type.infoType)
             {
             case TypeInfo::ClassTypeInfo:
-                typeInfoClass(loc, type.typeName);
+            case TypeInfo::Pointer_TypeInfo:
+                typeInfoClass(loc, type.typeName, type.infoType);
                 break;
             case TypeInfo::SingleInheritance_ClassTypeInfo:
-                typeInfoSingleInheritanceClass(loc, type.typeName);
-                break;
-            case TypeInfo::Pointer_TypeInfo:
-                typeInfoPointerClass(loc, type.typeName);
+                typeInfoSingleInheritanceClass(loc, type.typeName, type.infoType, types[index + 1].typeName, types[index + 1].infoType);
                 break;
             default:
                 typeInfoValue(loc, type.typeName);
                 break;
             }
+
+            index++;
         }
     }
 
@@ -231,16 +229,33 @@ class MLIRRTTIHelperVCLinux
         }
     }
 
-    std::string stringConstRefName(StringRef className, TypeInfo ti)
+    std::string labelValue(StringRef className, TypeInfo ti)
     {
         auto label = join(className, prefixLabel(ti), className.size(), "");
-        auto name = join(label, "_ZTS", "");
+        return label;
+    }
+
+    std::string stringConstRefName(StringRef className, TypeInfo ti)
+    {
+        auto name = join(labelValue(className, ti), "_ZTS", "");
         return name;
+    }
+
+    std::string typeInfoRefName(StringRef className, TypeInfo ti)
+    {
+        auto name = join(labelValue(className, ti), "_ZTI", "");
+        return name;
+    }
+
+    mlir::Type stringConstType(StringRef className, TypeInfo ti)
+    {
+        auto label = labelValue(className, ti);
+        return getStringConstType(label.size() + 1);
     }
 
     mlir::LogicalResult stringConst(mlir::Location loc, StringRef className, TypeInfo ti)
     {
-        auto label = join(className, prefixLabel(ti), className.size(), "");
+        auto label = labelValue(className, ti);
         auto name = stringConstRefName(className, ti);
         if (parentModule.lookupSymbol<mlir_ts::GlobalOp>(name))
         {
@@ -250,7 +265,7 @@ class MLIRRTTIHelperVCLinux
         SmallVector<mlir::NamedAttribute> attrs;
         attrs.push_back({IDENT("Linkage"), ATTR("LinkonceODR")});
 
-        rewriter.create<mlir_ts::GlobalOp>(loc, getStringConstType(label.size() + 1), true,
+        rewriter.create<mlir_ts::GlobalOp>(loc, stringConstType(className, ti), true,
                                            /*LLVM::Linkage::LinkonceODR,*/ name, rewriter.getStringAttr(label), attrs);
 
         return mlir::success();
@@ -266,6 +281,21 @@ class MLIRRTTIHelperVCLinux
             return mth.getTupleType({mth.getOpaqueType(), mth.getOpaqueType(), mth.getI32Type(), mth.getOpaqueType()});
         default:
             return mth.getTupleType({mth.getOpaqueType(), mth.getOpaqueType()});
+        }
+    }
+
+    const char *getClassInfoName(TypeInfo ti)
+    {
+        switch (ti)
+        {
+        case TypeInfo::SingleInheritance_ClassTypeInfo:
+            return ClassType::singleInheritanceClassTypeInfoName;
+        case TypeInfo::Pointer_TypeInfo:
+            return ClassType::pointerTypeInfoName;
+        case TypeInfo::ClassTypeInfo:
+            return ClassType::classTypeInfoName;
+        default:
+            llvm_unreachable("not implemented");
         }
     }
 
@@ -285,10 +315,10 @@ class MLIRRTTIHelperVCLinux
         return mlir::success();
     }
 
-    mlir::LogicalResult typeInfoRef(mlir::Location loc, StringRef className, TypeInfo ti)
+    mlir::LogicalResult typeInfoRef(mlir::Location loc, StringRef className, TypeInfo ti, StringRef baseName = "",
+                                    TypeInfo baseti = TypeInfo::Value)
     {
-        auto label = join(className, prefixLabel(ti), className.size(), "");
-        auto name = join(label, "_ZTI", "");
+        auto name = typeInfoRefName(className, ti);
         if (parentModule.lookupSymbol<mlir_ts::GlobalOp>(name))
         {
             return mlir::failure();
@@ -308,38 +338,51 @@ class MLIRRTTIHelperVCLinux
             // begin
             mlir::Value structVal = rewriter.create<mlir_ts::UndefOp>(loc, typeInfoType);
 
-            auto stringConstRefName = stringConstRefName(className, ti);
-
-            auto itemValue1 = rewriter.create<mlir_ts::AddressOfOp>(loc, mth.getRefType(mth.getOpaqueType()),
-                                                                    mlir::FlatSymbolRefAttr::get(rewriter.getContext(), stringConstRefName),
-                                                                    mlir::IntegerAttr::get(mth.getI32Type(), 2));
+            auto itemValue1 = rewriter.create<mlir_ts::AddressOfOp>(
+                loc, mth.getRefType(mth.getOpaqueType()), mlir::FlatSymbolRefAttr::get(rewriter.getContext(), getClassInfoName(ti)),
+                mlir::IntegerAttr::get(mth.getI32Type(), 2));
             setStructValue(loc, structVal, itemValue1, 0);
+
+            auto itemValue2 = rewriter.create<mlir_ts::ConstantOp>(
+                loc, stringConstType(className, ti),
+                mlir::FlatSymbolRefAttr::get(rewriter.getContext(), stringConstRefName(className, ti)));
+
+            setStructValue(loc, structVal, itemValue2, 1);
+
+            auto shift = 2;
+            if (ti == TypeInfo::Pointer_TypeInfo)
+            {
+                // add base class name
+                auto itemValueI32 = rewriter.create<mlir_ts::ConstantOp>(loc, mth.getI32Type(), mth.getI32AttrValue(0));
+                setStructValue(loc, structVal, itemValueI32, shift++);
+            }
+
+            if (ti == TypeInfo::SingleInheritance_ClassTypeInfo || ti == TypeInfo::Pointer_TypeInfo)
+            {
+                // add base class name
+                auto itemValue3 = rewriter.create<mlir_ts::ConstantOp>(
+                    loc, getTIType(baseti), mlir::FlatSymbolRefAttr::get(rewriter.getContext(), typeInfoRefName(baseName, baseti)));
+
+                setStructValue(loc, structVal, itemValue3, shift);
+            }
         }
 
         return mlir::success();
     }
 
-    mlir::LogicalResult typeInfoClass(mlir::Location loc, StringRef name)
+    mlir::LogicalResult typeInfoClass(mlir::Location loc, StringRef name, TypeInfo ti)
     {
-        typeInfoValue(loc, ClassType::classTypeInfoName);
-        stringConst(loc, name, TypeInfo::ClassTypeInfo);
-        typeInfoRef(loc, name, TypeInfo::ClassTypeInfo);
+        typeInfoValue(loc, getClassInfoName(ti));
+        stringConst(loc, name, ti);
+        typeInfoRef(loc, name, ti);
         return mlir::success();
     }
 
-    mlir::LogicalResult typeInfoSingleInheritanceClass(mlir::Location loc, StringRef name)
+    mlir::LogicalResult typeInfoSingleInheritanceClass(mlir::Location loc, StringRef name, TypeInfo ti, StringRef baseName, TypeInfo baseti)
     {
-        typeInfoValue(loc, ClassType::singleInheritanceClassTypeInfoName);
-        stringConst(loc, name, TypeInfo::SingleInheritance_ClassTypeInfo);
-        typeInfoRef(loc, name, TypeInfo::SingleInheritance_ClassTypeInfo);
-        return mlir::success();
-    }
-
-    mlir::LogicalResult typeInfoPointerClass(mlir::Location loc, StringRef name)
-    {
-        typeInfoValue(loc, ClassType::pointerTypeInfoName);
-        stringConst(loc, name, TypeInfo::Pointer_TypeInfo);
-        typeInfoRef(loc, name, TypeInfo::Pointer_TypeInfo);
+        typeInfoValue(loc, getClassInfoName(ti));
+        stringConst(loc, name, ti);
+        typeInfoRef(loc, name, ti, baseName, baseti);
         return mlir::success();
     }
 };
