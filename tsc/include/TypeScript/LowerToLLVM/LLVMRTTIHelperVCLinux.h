@@ -129,8 +129,11 @@ class LLVMRTTIHelperVCLinux
 
         assert(typeName.size() > 0);
 
+        MLIRTypeHelper mth(rewriter.getContext());
+        auto tiType = mth.getTupleType({mth.getOpaqueType(), mth.getOpaqueType(), mth.getI32Type(), mth.getOpaqueType()});
+
         auto throwInfoPtr =
-            rewriter.create<mlir::ConstantOp>(loc, th.getI8PtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), typeName));
+            rewriter.create<mlir::ConstantOp>(loc, th.getPointerType(tiType), FlatSymbolRefAttr::get(rewriter.getContext(), typeName));
         return throwInfoPtr;
     }
 };
