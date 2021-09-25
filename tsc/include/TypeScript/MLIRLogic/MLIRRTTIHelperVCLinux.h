@@ -81,16 +81,19 @@ class MLIRRTTIHelperVCLinux
         auto first = true;
         auto countM1 = names.size() - 1;
         auto index = 0;
+        auto baseIndex = 2;
         for (auto name : names)
         {
-            types.push_back({name.str(), index < countM1 ? TypeInfo::SingleInheritance_ClassTypeInfo : TypeInfo::ClassTypeInfo});
+            types.push_back({name.str(), index < countM1 ? TypeInfo::SingleInheritance_ClassTypeInfo : TypeInfo::ClassTypeInfo,
+                             index < countM1 ? baseIndex : -1});
             if (first)
             {
-                types.push_back({name.str(), TypeInfo::Pointer_TypeInfo, index < countM1 ? index + 1 : -1});
+                types.push_back({name.str(), TypeInfo::Pointer_TypeInfo, index < countM1 ? baseIndex : -1});
             }
 
             first = false;
             index++;
+            baseIndex++;
         }
     }
 
@@ -168,11 +171,16 @@ class MLIRRTTIHelperVCLinux
             {
             case TypeInfo::ClassTypeInfo:
             case TypeInfo::Pointer_TypeInfo:
-                typeInfoClass(loc, type.typeName, type.infoType);
-                break;
             case TypeInfo::SingleInheritance_ClassTypeInfo:
-                typeInfoSingleInheritanceClass(loc, type.typeName, type.infoType, types[type.baseIndex + 1].typeName,
-                                               types[type.baseIndex + 1].infoType);
+                if (type.baseIndex >= 0)
+                {
+                    typeInfoClass(loc, type.typeName, type.infoType, types[type.baseIndex].typeName, types[type.baseIndex].infoType);
+                }
+                else
+                {
+                    typeInfoClass(loc, type.typeName, type.infoType, "", TypeInfo::Value);
+                }
+
                 break;
             default:
                 typeInfoValue(loc, type.typeName);
@@ -364,8 +372,8 @@ class MLIRRTTIHelperVCLinux
 
                 // add base class name
                 auto itemValue4 = rewriter.create<mlir_ts::AddressOfOp>(
-                    loc, mth.getRefType(getTIType(ti)), mlir::FlatSymbolRefAttr::get(rewriter.getContext(), typeInfoRefName(className, ti)),
-                    mlir::IntegerAttr());
+                    loc, mth.getRefType(getTIType(baseti)),
+                    mlir::FlatSymbolRefAttr::get(rewriter.getContext(), typeInfoRefName(baseName, baseti)), mlir::IntegerAttr());
 
                 auto castValue4 = rewriter.create<mlir_ts::CastOp>(loc, mth.getOpaqueType(), itemValue4);
                 setStructValue(loc, structVal, castValue4, 3);
@@ -390,15 +398,7 @@ class MLIRRTTIHelperVCLinux
         return mlir::success();
     }
 
-    mlir::LogicalResult typeInfoClass(mlir::Location loc, StringRef name, TypeInfo ti)
-    {
-        typeInfoValue(loc, getClassInfoName(ti));
-        stringConst(loc, name, ti);
-        typeInfoRef(loc, name, ti);
-        return mlir::success();
-    }
-
-    mlir::LogicalResult typeInfoSingleInheritanceClass(mlir::Location loc, StringRef name, TypeInfo ti, StringRef baseName, TypeInfo baseti)
+    mlir::LogicalResult typeInfoClass(mlir::Location loc, StringRef name, TypeInfo ti, StringRef baseName, TypeInfo baseti)
     {
         typeInfoValue(loc, getClassInfoName(ti));
         stringConst(loc, name, ti);
