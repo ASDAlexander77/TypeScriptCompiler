@@ -85,11 +85,11 @@ class MLIRRTTIHelperVCLinux
         {
             if (first)
             {
-                types.push_back({name.str(), TypeInfo::Pointer_TypeInfo, index + 1});
+                types.push_back({name.str(), TypeInfo::Pointer_TypeInfo, 1});
             }
 
             types.push_back({name.str(), index < countM1 ? TypeInfo::SingleInheritance_ClassTypeInfo : TypeInfo::ClassTypeInfo,
-                             index < countM1 ? index + 1 : -1});
+                             index < countM1 ? index + 2 : -1});
 
             first = false;
             index++;
