@@ -142,14 +142,15 @@ class LLVMRTTIHelperVCLinux
             tiTypes.push_back(th.getI32Type());
             tiTypes.push_back(th.getI8PtrType());
 
-            tiType = th.getPointerType(LLVM::LLVMStructType::getLiteral(rewriter.getContext(), tiTypes, false));
+            tiType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), tiTypes, false);
         }
         else
         {
             tiType = th.getI8PtrType();
         }
 
-        mlir::Value throwInfoPtr = rewriter.create<mlir::ConstantOp>(loc, tiType, FlatSymbolRefAttr::get(rewriter.getContext(), typeName));
+        mlir::Value throwInfoPtr =
+            rewriter.create<mlir::ConstantOp>(loc, th.getPointerType(tiType), FlatSymbolRefAttr::get(rewriter.getContext(), typeName));
         if (classType)
         {
             throwInfoPtr = clh.castToI8Ptr(throwInfoPtr);
