@@ -81,26 +81,19 @@ class MLIRRTTIHelperVCLinux
         auto first = true;
         auto countM1 = names.size() - 1;
         auto index = 0;
-        auto baseIndex = 2;
         for (auto name : names)
         {
-            types.push_back({name.str(), index < countM1 ? TypeInfo::SingleInheritance_ClassTypeInfo : TypeInfo::ClassTypeInfo,
-                             index < countM1 ? baseIndex : -1});
             if (first)
             {
-                types.push_back({name.str(), TypeInfo::Pointer_TypeInfo, index < countM1 ? baseIndex : -1});
+                types.push_back({name.str(), TypeInfo::Pointer_TypeInfo, index + 1});
             }
+
+            types.push_back({name.str(), index < countM1 ? TypeInfo::SingleInheritance_ClassTypeInfo : TypeInfo::ClassTypeInfo,
+                             index < countM1 ? index + 1 : -1});
 
             first = false;
             index++;
-            baseIndex++;
         }
-    }
-
-    void setClassTypeAsCatchType(StringRef name)
-    {
-        types.push_back({name.str(), TypeInfo::ClassTypeInfo});
-        types.push_back({name.str(), TypeInfo::Pointer_TypeInfo});
     }
 
     void setType(mlir::Type type, std::function<ClassInfo::TypePtr(StringRef fullClassName)> resolveClassInfo)
