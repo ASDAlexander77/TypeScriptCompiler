@@ -2538,7 +2538,8 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         rewriter.setInsertionPointToEnd(catchesRegionLast);
 
         auto yieldOpCatches = cast<mlir_ts::ResultOp>(catchesRegionLast->getTerminator());
-        rewriter.replaceOpWithNewOp<BranchOp>(yieldOpCatches, continuation, ValueRange{});
+        // rewriter.replaceOpWithNewOp<BranchOp>(yieldOpCatches, continuation, ValueRange{});
+        rewriter.replaceOpWithNewOp<BranchOp>(yieldOpCatches, finallyBlockRegion, ValueRange{});
 
         // br: insert br after extract values
         rewriter.setInsertionPointAfter(storeOpBrPlace);
@@ -2557,6 +2558,7 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         Block *continuationBrCmp = rewriter.splitBlock(currentBlockBrCmp, rewriter.getInsertionPoint());
 
         rewriter.setInsertionPointAfterValue(cmpValue);
+        // TODO: when catch not matching - should go into result (rethrow)
         rewriter.create<CondBranchOp>(loc, cmpValue, continuationBrCmp, continuation);
         // end of condbr
 
