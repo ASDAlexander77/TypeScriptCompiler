@@ -3064,13 +3064,17 @@ class MLIRGenImpl
         auto location = loc(tryStatementAST);
 
         std::string varName;
-        auto varDecl = tryStatementAST->catchClause->variableDeclaration;
-        if (varDecl)
+        auto catchClause = tryStatementAST->catchClause;
+        if (catchClause)
         {
-            varName = MLIRHelper::getName(varDecl->name);
-            if (mlir::failed(mlirGen(varDecl, VariableClass::Let, genContext)))
+            auto varDecl = catchClause->variableDeclaration;
+            if (varDecl)
             {
-                return mlir::failure();
+                varName = MLIRHelper::getName(varDecl->name);
+                if (mlir::failed(mlirGen(varDecl, VariableClass::Let, genContext)))
+                {
+                    return mlir::failure();
+                }
             }
         }
 
@@ -3101,7 +3105,7 @@ class MLIRGenImpl
 
         // catches
         builder.setInsertionPointToStart(&tryOp.catches().front());
-        if (tryStatementAST->catchClause->block)
+        if (catchClause && catchClause->block)
         {
             if (!varName.empty())
             {
