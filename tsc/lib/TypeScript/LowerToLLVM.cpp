@@ -2324,7 +2324,7 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         auto *bodyRegionLast = &tryOp.body().back();
         auto *catchesRegion = &tryOp.catches().front();
         auto *catchesRegionLast = &tryOp.catches().back();
-        // auto *finallyBlockRegion = &tryOp.finallyBlock().front();
+        auto *finallyBlockRegion = &tryOp.finallyBlock().front();
         auto *finallyBlockRegionLast = &tryOp.finallyBlock().back();
 
         // logic to set Invoke attribute CallOp
@@ -2366,7 +2366,8 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         rewriter.setInsertionPointToEnd(bodyRegionLast);
 
         auto resultOp = cast<mlir_ts::ResultOp>(bodyRegionLast->getTerminator());
-        rewriter.replaceOpWithNewOp<BranchOp>(resultOp, continuation, ValueRange{});
+        // rewriter.replaceOpWithNewOp<BranchOp>(resultOp, continuation, ValueRange{});
+        rewriter.replaceOpWithNewOp<BranchOp>(resultOp, finallyBlockRegion, ValueRange{});
 
         // catches;landingpad
         rewriter.setInsertionPointToStart(catchesRegion);
@@ -2438,7 +2439,7 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         auto *bodyRegionLast = &tryOp.body().back();
         auto *catchesRegion = &tryOp.catches().front();
         auto *catchesRegionLast = &tryOp.catches().back();
-        // auto *finallyBlockRegion = &tryOp.finallyBlock().front();
+        auto *finallyBlockRegion = &tryOp.finallyBlock().front();
         auto *finallyBlockRegionLast = &tryOp.finallyBlock().back();
 
         // logic to set Invoke attribute CallOp
@@ -2480,7 +2481,8 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         rewriter.setInsertionPointToEnd(bodyRegionLast);
 
         auto resultOp = cast<mlir_ts::ResultOp>(bodyRegionLast->getTerminator());
-        rewriter.replaceOpWithNewOp<BranchOp>(resultOp, continuation, ValueRange{});
+        // rewriter.replaceOpWithNewOp<BranchOp>(resultOp, continuation, ValueRange{});
+        rewriter.replaceOpWithNewOp<BranchOp>(resultOp, finallyBlockRegion, ValueRange{});
 
         // catches:landingpad
         rewriter.setInsertionPointToStart(catchesRegion);
