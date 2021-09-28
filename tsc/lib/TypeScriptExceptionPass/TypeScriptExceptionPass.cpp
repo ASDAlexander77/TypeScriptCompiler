@@ -35,10 +35,9 @@ struct TypeScriptExceptionPass : public FunctionPass
         llvm::SmallDenseMap<LandingPadInst *, llvm::SmallVector<CallBase *> *> calls;
         llvm::SmallDenseMap<LandingPadInst *, CatchPadInst *> landingPadNewOps;
         llvm::SmallDenseMap<LandingPadInst *, StoreInst *> landingPadStoreOps;
+        llvm::SmallDenseMap<LandingPadInst *, InvokeInst *> landingPadUnwindOps;
         llvm::SmallDenseMap<LandingPadInst *, Value *> landingPadStack;
         llvm::SmallDenseMap<LandingPadInst *, bool> landingPadHasAlloca;
-        llvm::SmallDenseMap<int64_t, LandingPadInst *> landingPadTryId;
-        llvm::SmallDenseMap<LandingPadInst *, int64_t> landingPadUnwindTo;
 
         LLVM_DEBUG(llvm::dbgs() << "\nFunction: " << F.getName() << "\n\n";);
 
@@ -66,6 +65,14 @@ struct TypeScriptExceptionPass : public FunctionPass
             // saving StoreInst to set response
             if (currentLPI)
             {
+                if (auto *II = dyn_cast<InvokeInst>(&I))
+                {
+                    if (!landingPadUnwindOps[currentLPI])
+                    {
+                        landingPadUnwindOps[currentLPI] = II;
+                    }
+                }
+
                 if (auto *SI = dyn_cast<StoreInst>(&I))
                 {
                     if (!landingPadStoreOps[currentLPI])
@@ -108,7 +115,11 @@ struct TypeScriptExceptionPass : public FunctionPass
 
             CurrentBB->getTerminator()->eraseFromParent();
 
-            auto *CSI = CatchSwitchInst::Create(ConstantTokenNone::get(Ctx), nullptr /*unwind to caller*/, 1, "catch.switch", CurrentBB);
+            auto *II = landingPadUnwindOps[LPI];
+            auto *CSI = CatchSwitchInst::Create(ConstantTokenNone::get(Ctx),
+                                                II ? II->getUnwindDest() : nullptr
+                                                /*unwind to caller if null*/,
+                                                1, "catch.switch", CurrentBB);
             CSI->addHandler(ContinuationBB);
 
             CatchPadInst *CPI = nullptr;
@@ -156,12 +167,23 @@ struct TypeScriptExceptionPass : public FunctionPass
             {
                 for (auto callBase : *callsByLandingPad)
                 {
+                    if (callBase == II)
+                    {
+                        continue;
+                    }
+
                     llvm::SmallVector<OperandBundleDef> opBundle;
                     opBundle.emplace_back(OperandBundleDef("funclet", CPI));
                     auto *newCallBase = CallBase::Create(callBase, opBundle, callBase);
                     callBase->replaceAllUsesWith(newCallBase);
                     callBase->eraseFromParent();
                 }
+            }
+
+            if (II)
+            {
+                BranchInst::Create(II->getNormalDest(), II);
+                II->eraseFromParent();
             }
 
             // LLVM_DEBUG(llvm::dbgs() << "\nLanding Pad - Done. Function Dump: " << F << "\n\n";);
