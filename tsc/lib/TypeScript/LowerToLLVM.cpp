@@ -2317,24 +2317,6 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         };
         tryOp.catches().walk(visitorCatchContinue);
 
-        LLVM::LandingpadOp parentLandingpadOp = nullptr;
-        auto unwindTo = tryOp->getAttr("unwind_to");
-        if (unwindTo)
-        {
-            auto findParentLandingPad = [&](Operation *op) {
-                if (auto landingpadOp = dyn_cast_or_null<LLVM::LandingpadOp>(op))
-                {
-                    if (landingpadOp->getAttr("try_id").cast<mlir::IntegerAttr>().getValue() ==
-                        unwindTo.cast<mlir::IntegerAttr>().getValue())
-                    {
-                        // we need to find the latest on, if it set override it
-                        parentLandingpadOp = landingpadOp;
-                    }
-                }
-            };
-            tryOp.getOperation()->getParentOp()->walk(findParentLandingPad);
-        }
-
         OpBuilder::InsertionGuard guard(rewriter);
         Block *currentBlock = rewriter.getInsertionBlock();
         Block *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
@@ -2394,12 +2376,6 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         auto landingPadTypeWin32 =
             LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {th.getI8PtrType(), th.getI32Type(), th.getI8PtrType()}, false);
         auto landingPadOp = rewriter.create<LLVM::LandingpadOp>(loc, landingPadTypeWin32, false, ValueRange{catch1});
-        landingPadOp->setAttr("try_id", tryOp->getAttr("try_id"));
-        auto unwindId = tryOp->getAttr("unwind_to");
-        if (unwindId)
-        {
-            landingPadOp->setAttr("unwind_to", unwindId);
-        }
 
         // catches:exit
         rewriter.setInsertionPointToEnd(catchesRegionLast);
@@ -2415,31 +2391,6 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         rewriter.replaceOpWithNewOp<BranchOp>(yieldOpFinallyBlock, continuation, yieldOpFinallyBlock.results());
 
         rewriter.replaceOp(tryOp, continuation->getArguments());
-
-        // HACK: add unwind info
-        // setup unwind label
-        if (parentLandingpadOp)
-        {
-            rewriter.setInsertionPointAfterValue(landingPadOp);
-
-            assert(parentLandingpadOp->getAttr("try_id").cast<mlir::IntegerAttr>().getValue() ==
-                   tryOp->getAttr("unwind_to").cast<mlir::IntegerAttr>().getValue());
-
-            auto unwindFuncName = "__unwind_dest_dummy";
-            auto unwindFunc = ch.getOrInsertFunction(unwindFuncName, th.getFunctionType(th.getVoidType(), ArrayRef<mlir::Type>{}));
-
-            OpBuilder::InsertionGuard guard(rewriter);
-
-            auto *opBlock = rewriter.getInsertionBlock();
-            auto opPosition = rewriter.getInsertionPoint();
-            auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
-
-            rewriter.setInsertionPointToEnd(opBlock);
-
-            auto block = parentLandingpadOp->getBlock();
-            rewriter.create<LLVM::InvokeOp>(loc, th.getVoidType(), mlir::FlatSymbolRefAttr::get(rewriter.getContext(), unwindFuncName),
-                                            ValueRange{}, continuationBlock, ValueRange{}, block, ValueRange{});
-        }
 
         return success();
     }

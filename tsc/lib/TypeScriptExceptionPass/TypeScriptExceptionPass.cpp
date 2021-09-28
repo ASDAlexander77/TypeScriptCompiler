@@ -167,23 +167,12 @@ struct TypeScriptExceptionPass : public FunctionPass
             {
                 for (auto callBase : *callsByLandingPad)
                 {
-                    if (callBase == II)
-                    {
-                        continue;
-                    }
-
                     llvm::SmallVector<OperandBundleDef> opBundle;
                     opBundle.emplace_back(OperandBundleDef("funclet", CPI));
                     auto *newCallBase = CallBase::Create(callBase, opBundle, callBase);
                     callBase->replaceAllUsesWith(newCallBase);
                     callBase->eraseFromParent();
                 }
-            }
-
-            if (II)
-            {
-                BranchInst::Create(II->getNormalDest(), II);
-                II->eraseFromParent();
             }
 
             // LLVM_DEBUG(llvm::dbgs() << "\nLanding Pad - Done. Function Dump: " << F << "\n\n";);
