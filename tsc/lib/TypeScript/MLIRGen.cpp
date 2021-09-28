@@ -3086,7 +3086,7 @@ class MLIRGenImpl
         auto parentTryOp = tryOp->getParentOfType<mlir_ts::TryOp>();
         if (parentTryOp)
         {
-            tryOp->setAttr("unwind_to", builder.getI64IntegerAttr((int64_t)tryOp.getOperation()));
+            tryOp->setAttr("unwind_to", builder.getI64IntegerAttr((int64_t)parentTryOp.getOperation()));
         }
 
         GenContext tryGenContext(genContext);
