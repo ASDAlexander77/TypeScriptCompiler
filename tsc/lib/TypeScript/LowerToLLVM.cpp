@@ -2316,6 +2316,16 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         };
         tryOp.catches().walk(visitorCatchContinue);
 
+        LLVM::LandingpadOp parentLandingpadOp = nullptr;
+        auto findParentLandingPad = [&](Operation *op) {
+            if (auto landingpadOp = dyn_cast_or_null<LLVM::LandingpadOp>(op))
+            {
+                // we need to find the latest on, if it set override it
+                parentLandingpadOp = landingpadOp;
+            }
+        };
+        tryOp.getOperation()->getParentOp()->walk(findParentLandingPad);
+
         OpBuilder::InsertionGuard guard(rewriter);
         Block *currentBlock = rewriter.getInsertionBlock();
         Block *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
@@ -2375,6 +2385,15 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         auto landingPadTypeWin32 =
             LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {th.getI8PtrType(), th.getI32Type(), th.getI8PtrType()}, false);
         auto landingPadOp = rewriter.create<LLVM::LandingpadOp>(loc, landingPadTypeWin32, false, ValueRange{catch1});
+
+        // find landing pad already processed which must be parent tryOp
+        /*
+        if (parentLandingpadOp)
+        {
+            // THIS IS HACK, to be able to track relation between landing pads
+            rewriter.create<BranchOp>(loc, &parentLandingpadOp->getParentRegion()->front(), ValueRange{});
+        }
+        */
 
         // catches:exit
         rewriter.setInsertionPointToEnd(catchesRegionLast);

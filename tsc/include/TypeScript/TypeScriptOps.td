@@ -1534,6 +1534,8 @@ def TypeScript_TryOp : TypeScript_Op<"Try",
   let extraClassDeclaration = [{
     OperandRange getSuccessorEntryOperands(unsigned index);
   }];
+
+  let assemblyFormat = "attr-dict $body $catches $finallyBlock";
 }
 
 def TypeScript_CatchOp : TypeScript_Op<"Catch",

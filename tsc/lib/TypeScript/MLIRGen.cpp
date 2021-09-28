@@ -3082,6 +3082,19 @@ class MLIRGenImpl
 
         auto tryOp = builder.create<mlir_ts::TryOp>(location);
 
+        auto nesting = 0;
+        auto parentTryOp = tryOp;
+        while (parentTryOp)
+        {
+            parentTryOp = parentTryOp->getParentOfType<mlir_ts::TryOp>();
+            if (parentTryOp)
+            {
+                nesting++;
+            }
+        }
+
+        tryOp->setAttr("nesting", builder.getI32IntegerAttr(nesting));
+
         GenContext tryGenContext(genContext);
         tryGenContext.allocateVarsOutsideOfOperation = true;
         tryGenContext.currentOperation = tryOp;
