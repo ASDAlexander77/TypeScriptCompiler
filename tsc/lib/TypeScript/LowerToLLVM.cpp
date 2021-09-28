@@ -2318,14 +2318,22 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         tryOp.catches().walk(visitorCatchContinue);
 
         LLVM::LandingpadOp parentLandingpadOp = nullptr;
-        auto findParentLandingPad = [&](Operation *op) {
-            if (auto landingpadOp = dyn_cast_or_null<LLVM::LandingpadOp>(op))
-            {
-                // we need to find the latest on, if it set override it
-                parentLandingpadOp = landingpadOp;
-            }
-        };
-        tryOp.getOperation()->getParentOp()->walk(findParentLandingPad);
+        auto unwindTo = tryOp->getAttr("unwind_to");
+        if (unwindTo)
+        {
+            auto findParentLandingPad = [&](Operation *op) {
+                if (auto landingpadOp = dyn_cast_or_null<LLVM::LandingpadOp>(op))
+                {
+                    if (parentLandingpadOp->getAttr("try_id").cast<mlir::IntegerAttr>().getValue() ==
+                        unwindTo.cast<mlir::IntegerAttr>().getValue())
+                    {
+                        // we need to find the latest on, if it set override it
+                        parentLandingpadOp = landingpadOp;
+                    }
+                }
+            };
+            tryOp.getOperation()->getParentOp()->walk(findParentLandingPad);
+        }
 
         OpBuilder::InsertionGuard guard(rewriter);
         Block *currentBlock = rewriter.getInsertionBlock();
@@ -2388,15 +2396,15 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         auto landingPadOp = rewriter.create<LLVM::LandingpadOp>(loc, landingPadTypeWin32, false, ValueRange{catch1});
         if (parentLandingpadOp)
         {
-            // assert(parentLandingpadOp->getAttr("try_id").cast<mlir::IntegerAttr>().getValue() ==
-            //        tryOp->getAttr("unwind_to").cast<mlir::IntegerAttr>().getValue());
+            assert(parentLandingpadOp->getAttr("try_id").cast<mlir::IntegerAttr>().getValue() ==
+                   tryOp->getAttr("unwind_to").cast<mlir::IntegerAttr>().getValue());
 
-            // auto unwindFuncName = "__unwind_dest_dummy";
-            // auto unwindFunc = ch.getOrInsertFunction(unwindFuncName, th.getFunctionType(th.getVoidType(), ArrayRef<mlir::Type>{}));
+            auto unwindFuncName = "__unwind_dest_dummy";
+            auto unwindFunc = ch.getOrInsertFunction(unwindFuncName, th.getFunctionType(th.getVoidType(), ArrayRef<mlir::Type>{}));
 
-            // auto block = parentLandingpadOp->getBlock();
-            // rewriter.create<LLVM::InvokeOp>(loc, th.getVoidType(), mlir::FlatSymbolRefAttr::get(rewriter.getContext(), unwindFuncName),
-            //                                 ValueRange{}, block, ValueRange{}, block, ValueRange{});
+            auto block = parentLandingpadOp->getBlock();
+            rewriter.create<LLVM::InvokeOp>(loc, th.getVoidType(), mlir::FlatSymbolRefAttr::get(rewriter.getContext(), unwindFuncName),
+                                            ValueRange{}, block, ValueRange{}, block, ValueRange{});
         }
 
         // to help find out right nesting
