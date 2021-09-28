@@ -122,8 +122,13 @@ class MLIRRTTIHelperVCWin32
         return ss.str();
     }
 
-    void setType(mlir::Type type, std::function<ClassInfo::TypePtr(StringRef fullClassName)> resolveClassInfo)
+    bool setType(mlir::Type type, std::function<ClassInfo::TypePtr(StringRef fullClassName)> resolveClassInfo)
     {
+        if (!type || type == rewriter.getNoneType())
+        {
+            return false;
+        }
+
         llvm::TypeSwitch<mlir::Type>(type)
             .Case<mlir::IntegerType>([&](auto intType) {
                 if (intType.getIntOrFloatBitWidth() == 32)
@@ -157,7 +162,12 @@ class MLIRRTTIHelperVCWin32
                 setClassTypeAsCatchType(classAndBases);
             })
             .Case<mlir_ts::AnyType>([&](auto anyType) { setI8PtrAsCatchType(); })
-            .Default([&](auto type) { llvm_unreachable("not implemented"); });
+            .Default([&](auto type) {
+                LLVM_DEBUG(llvm::dbgs() << "...throw type: " << type << "\n";);
+                llvm_unreachable("not implemented");
+            });
+
+        return true;
     }
 
     void seekLast(mlir::Block *block)
@@ -175,7 +185,11 @@ class MLIRRTTIHelperVCWin32
 
     void setRTTIForType(mlir::Location loc, mlir::Type type, std::function<ClassInfo::TypePtr(StringRef fullClassName)> resolveClassInfo)
     {
-        setType(type, resolveClassInfo);
+        if (!setType(type, resolveClassInfo))
+        {
+            // no type provided
+            return;
+        }
 
         mlir::OpBuilder::InsertionGuard guard(rewriter);
 
