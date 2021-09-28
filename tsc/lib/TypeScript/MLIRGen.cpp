@@ -3081,19 +3081,13 @@ class MLIRGenImpl
         const_cast<GenContext &>(genContext).funcOp.personalityAttr(builder.getBoolAttr(true));
 
         auto tryOp = builder.create<mlir_ts::TryOp>(location);
+        tryOp->setAttr("try_id", builder.getI64IntegerAttr((int64_t)tryOp.getOperation()));
 
-        auto nesting = 0;
-        auto parentTryOp = tryOp;
-        while (parentTryOp)
+        auto parentTryOp = tryOp->getParentOfType<mlir_ts::TryOp>();
+        if (parentTryOp)
         {
-            parentTryOp = parentTryOp->getParentOfType<mlir_ts::TryOp>();
-            if (parentTryOp)
-            {
-                nesting++;
-            }
+            tryOp->setAttr("unwind_to", builder.getI64IntegerAttr((int64_t)tryOp.getOperation()));
         }
-
-        tryOp->setAttr("nesting", builder.getI32IntegerAttr(nesting));
 
         GenContext tryGenContext(genContext);
         tryGenContext.allocateVarsOutsideOfOperation = true;
