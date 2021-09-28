@@ -2305,6 +2305,7 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         Location loc = tryOp.getLoc();
 
         TypeHelper th(rewriter);
+        LLVMCodeHelper ch(tryOp, rewriter, getTypeConverter());
         LLVMRTTIHelperVCWin32 rttih(tryOp, rewriter, *getTypeConverter());
 
         auto visitorCatchContinue = [&](Operation *op) {
@@ -2316,7 +2317,6 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         };
         tryOp.catches().walk(visitorCatchContinue);
 
-        /*
         LLVM::LandingpadOp parentLandingpadOp = nullptr;
         auto findParentLandingPad = [&](Operation *op) {
             if (auto landingpadOp = dyn_cast_or_null<LLVM::LandingpadOp>(op))
@@ -2326,7 +2326,6 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
             }
         };
         tryOp.getOperation()->getParentOp()->walk(findParentLandingPad);
-        */
 
         OpBuilder::InsertionGuard guard(rewriter);
         Block *currentBlock = rewriter.getInsertionBlock();
@@ -2387,13 +2386,29 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         auto landingPadTypeWin32 =
             LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {th.getI8PtrType(), th.getI32Type(), th.getI8PtrType()}, false);
         auto landingPadOp = rewriter.create<LLVM::LandingpadOp>(loc, landingPadTypeWin32, false, ValueRange{catch1});
+        if (parentLandingpadOp)
+        {
+            // assert(parentLandingpadOp->getAttr("try_id").cast<mlir::IntegerAttr>().getValue() ==
+            //        tryOp->getAttr("unwind_to").cast<mlir::IntegerAttr>().getValue());
+
+            // auto unwindFuncName = "__unwind_dest_dummy";
+            // auto unwindFunc = ch.getOrInsertFunction(unwindFuncName, th.getFunctionType(th.getVoidType(), ArrayRef<mlir::Type>{}));
+
+            // auto block = parentLandingpadOp->getBlock();
+            // rewriter.create<LLVM::InvokeOp>(loc, th.getVoidType(), mlir::FlatSymbolRefAttr::get(rewriter.getContext(), unwindFuncName),
+            //                                 ValueRange{}, block, ValueRange{}, block, ValueRange{});
+        }
+
         // to help find out right nesting
+        /*
         landingPadOp->setAttr("try_id", tryOp->getAttr("try_id"));
         auto unwindId = tryOp->getAttr("unwind_to");
         if (unwindId)
         {
             landingPadOp->setAttr("unwind_to", unwindId);
+
         }
+        */
 
         // find landing pad already processed which must be parent tryOp
         /*

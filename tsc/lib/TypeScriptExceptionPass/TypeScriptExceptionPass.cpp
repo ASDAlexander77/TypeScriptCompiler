@@ -37,6 +37,8 @@ struct TypeScriptExceptionPass : public FunctionPass
         llvm::SmallDenseMap<LandingPadInst *, StoreInst *> landingPadStoreOps;
         llvm::SmallDenseMap<LandingPadInst *, Value *> landingPadStack;
         llvm::SmallDenseMap<LandingPadInst *, bool> landingPadHasAlloca;
+        llvm::SmallDenseMap<int64_t, LandingPadInst *> landingPadTryId;
+        llvm::SmallDenseMap<LandingPadInst *, int64_t> landingPadUnwindTo;
 
         LLVM_DEBUG(llvm::dbgs() << "\nFunction: " << F.getName() << "\n\n";);
 
