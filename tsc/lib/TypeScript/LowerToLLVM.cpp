@@ -759,42 +759,15 @@ struct EntryOpLowering : public TsLlvmPattern<mlir_ts::EntryOp>
     }
 };
 
-static mlir::Block *FindReturnBlock(PatternRewriter &rewriter)
-{
-    auto *region = rewriter.getInsertionBlock()->getParent();
-    if (!region)
-    {
-        return nullptr;
-    }
-
-    auto result = std::find_if(region->begin(), region->end(), [&](auto &item) {
-        if (item.empty())
-        {
-            return false;
-        }
-
-        auto *op = &item.back();
-        // auto name = op->getName().getStringRef();
-        auto isReturn = dyn_cast<LLVM::ReturnOp>(op) != nullptr;
-        return isReturn;
-    });
-
-    if (result == region->end())
-    {
-        llvm_unreachable("return op. can't be found");
-        return nullptr;
-    }
-
-    return &*result;
-}
-
 struct ReturnOpLowering : public TsLlvmPattern<mlir_ts::ReturnOp>
 {
     using TsLlvmPattern<mlir_ts::ReturnOp>::TsLlvmPattern;
 
     LogicalResult matchAndRewrite(mlir_ts::ReturnOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
     {
-        auto retBlock = FindReturnBlock(rewriter);
+        CodeLogicHelper clh(op, rewriter);
+
+        auto retBlock = clh.FindReturnBlock();
 
         // Split block at `assert` operation.
         auto *opBlock = rewriter.getInsertionBlock();
@@ -818,7 +791,9 @@ struct ReturnValOpLowering : public TsLlvmPattern<mlir_ts::ReturnValOp>
 
     LogicalResult matchAndRewrite(mlir_ts::ReturnValOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
     {
-        auto retBlock = FindReturnBlock(rewriter);
+        CodeLogicHelper clh(op, rewriter);
+
+        auto retBlock = clh.FindReturnBlock();
 
         rewriter.create<LLVM::StoreOp>(op.getLoc(), op.operand(), op.reference());
 
@@ -846,7 +821,9 @@ struct ExitOpLowering : public TsLlvmPattern<mlir_ts::ExitOp>
 
     LogicalResult matchAndRewrite(mlir_ts::ExitOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
     {
-        auto retBlock = FindReturnBlock(rewriter);
+        CodeLogicHelper clh(op, rewriter);
+
+        auto retBlock = clh.FindReturnBlock();
 
         rewriter.create<mlir::BranchOp>(op.getLoc(), retBlock);
 
@@ -2168,6 +2145,8 @@ struct ThrowOpLoweringVCWin32 : public TsLlvmPattern<mlir_ts::ThrowOp>
     {
         auto loc = throwOp.getLoc();
 
+        auto parent = throwOp->getParentOp();
+
         LLVMCodeHelper ch(throwOp, rewriter, getTypeConverter());
         CodeLogicHelper clh(throwOp, rewriter);
         TypeConverterHelper tch(getTypeConverter());
@@ -2182,6 +2161,8 @@ struct ThrowOpLoweringVCWin32 : public TsLlvmPattern<mlir_ts::ThrowOp>
 
         auto throwFuncName = "_CxxThrowException";
         auto cxxThrowException = ch.getOrInsertFunction(throwFuncName, th.getFunctionType(th.getVoidType(), {i8PtrTy, throwInfoPtrTy}));
+
+        rewriter.eraseOp(throwOp);
 
         // prepare first param
         // we need temp var
@@ -2205,6 +2186,8 @@ struct ThrowOpLoweringVCWin32 : public TsLlvmPattern<mlir_ts::ThrowOp>
 
         auto throwInfoPtr = rttih.throwInfoPtrValue(loc);
 
+        auto unreachable = clh.FindUnreachableBlockOrCreate();
+
         // throw exception
         if (auto unwind = tsLlvmContext->unwind[throwOp])
         {
@@ -2218,14 +2201,21 @@ struct ThrowOpLoweringVCWin32 : public TsLlvmPattern<mlir_ts::ThrowOp>
 
             rewriter.create<LLVM::InvokeOp>(
                 loc, TypeRange{th.getVoidType()}, mlir::FlatSymbolRefAttr::get(rewriter.getContext(), throwFuncName),
-                ValueRange{clh.castToI8Ptr(value), throwInfoPtr}, continuationBlock, ValueRange{}, unwind, ValueRange{});
+                ValueRange{clh.castToI8Ptr(value), throwInfoPtr}, unreachable, ValueRange{}, unwind, ValueRange{});
+
+            rewriter.setInsertionPointToStart(continuationBlock);
         }
         else
         {
+            OpBuilder::InsertionGuard guard(rewriter);
+
             rewriter.create<LLVM::CallOp>(loc, cxxThrowException, ValueRange{clh.castToI8Ptr(value), throwInfoPtr});
+            rewriter.create<LLVM::UnreachableOp>(loc);
+            clh.CutBlock();
         }
 
-        rewriter.eraseOp(throwOp);
+        LLVM_DEBUG(llvm::dbgs() << "\nDUMP THROW: \n" << *parent << "\n";);
+
         return success();
     }
 };
@@ -3154,9 +3144,11 @@ class SwitchStateOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateOp>
     LogicalResult matchAndRewrite(mlir_ts::SwitchStateOp switchStateOp, ArrayRef<Value> operands,
                                   ConversionPatternRewriter &rewriter) const final
     {
+        CodeLogicHelper clh(switchStateOp, rewriter);
+
         auto loc = switchStateOp->getLoc();
 
-        auto defaultBlock = FindReturnBlock(rewriter);
+        auto defaultBlock = clh.FindReturnBlock();
 
         SmallVector<int32_t> caseValues;
         SmallVector<Block *> caseDestinations;

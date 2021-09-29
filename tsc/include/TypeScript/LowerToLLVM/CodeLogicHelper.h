@@ -155,6 +155,78 @@ class CodeLogicHelper
             llvm_unreachable("not implemented");
         }
     }
+
+    mlir::Block *FindReturnBlock()
+    {
+        auto *region = rewriter.getInsertionBlock()->getParent();
+        if (!region)
+        {
+            return nullptr;
+        }
+
+        auto result = std::find_if(region->begin(), region->end(), [&](auto &item) {
+            if (item.empty())
+            {
+                return false;
+            }
+
+            auto *op = &item.back();
+            // auto name = op->getName().getStringRef();
+            auto isReturn = dyn_cast<LLVM::ReturnOp>(op) != nullptr;
+            return isReturn;
+        });
+
+        if (result == region->end())
+        {
+            llvm_unreachable("return op. can't be found");
+            return nullptr;
+        }
+
+        return &*result;
+    }
+
+    mlir::Block *FindUnreachableBlockOrCreate()
+    {
+        auto *region = rewriter.getInsertionBlock()->getParent();
+        if (!region)
+        {
+            return nullptr;
+        }
+
+        auto result = std::find_if(region->begin(), region->end(), [&](auto &item) {
+            if (item.empty())
+            {
+                return false;
+            }
+
+            auto *op = &item.back();
+            // auto name = op->getName().getStringRef();
+            auto isUnreachable = dyn_cast<LLVM::UnreachableOp>(op) != nullptr;
+            return isUnreachable;
+        });
+
+        if (result == region->end())
+        {
+            OpBuilder::InsertionGuard guard(rewriter);
+
+            auto *opBlock = &region->back();
+            rewriter.setInsertionPointToEnd(opBlock);
+            auto *continuationBlock = rewriter.splitBlock(opBlock, rewriter.getInsertionPoint());
+            rewriter.setInsertionPointToStart(continuationBlock);
+            rewriter.create<LLVM::UnreachableOp>(loc);
+            return continuationBlock;
+        }
+
+        return &*result;
+    }
+
+    mlir::Block *CutBlock()
+    {
+        auto *opBlock = rewriter.getInsertionBlock();
+        auto opPosition = rewriter.getInsertionPoint();
+        auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
+        return continuationBlock;
+    }
 };
 } // namespace typescript
 
