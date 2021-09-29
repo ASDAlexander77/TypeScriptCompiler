@@ -6,8 +6,8 @@
 #define DEBUG_TYPE "llvm"
 
 #include "TypeScript/Config.h"
-#include "TypeScript/Defines.h"
 #include "TypeScript/DataStructs.h"
+#include "TypeScript/Defines.h"
 #include "TypeScript/Passes.h"
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
@@ -2512,19 +2512,23 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         auto i32FromExcept = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI32Type(), landingPadOp, clh.getStructIndexAttr(1));
         auto storeOpBrPlace = rewriter.create<mlir_ts::StoreOp>(loc, i32FromExcept, i32ValueRef);
 
-        // br<->extract, will be inserted later
-        // catch: compare
-        auto loadedI32Value = rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), i32ValueRef);
+        mlir::Value cmpValue;
+        if (rttih.hasType())
+        {
+            // br<->extract, will be inserted later
+            // catch: compare
+            auto loadedI32Value = rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), i32ValueRef);
 
-        auto typeIdFuncName = "llvm.eh.typeid.for";
-        auto typeIdFunc = ch.getOrInsertFunction(typeIdFuncName, th.getFunctionType(th.getI32Type(), {i8PtrTy}));
+            auto typeIdFuncName = "llvm.eh.typeid.for";
+            auto typeIdFunc = ch.getOrInsertFunction(typeIdFuncName, th.getFunctionType(th.getI32Type(), {i8PtrTy}));
 
-        auto callInfo = rewriter.create<LLVM::CallOp>(loc, typeIdFunc, ValueRange{clh.castToI8Ptr(rttih.throwInfoPtrValue(loc))});
-        auto typeIdValue = callInfo.getResult(0);
+            auto callInfo = rewriter.create<LLVM::CallOp>(loc, typeIdFunc, ValueRange{clh.castToI8Ptr(rttih.throwInfoPtrValue(loc))});
+            auto typeIdValue = callInfo.getResult(0);
 
-        // icmp
-        auto cmpValue = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, loadedI32Value, typeIdValue);
-        // condbr, will be inserted later
+            // icmp
+            cmpValue = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, loadedI32Value, typeIdValue);
+            // condbr, will be inserted later
+        }
 
         // catch: begin catch
         auto loadedI8PtrValue = rewriter.create<LLVM::LoadOp>(loc, i8PtrTy, ptrValueRef);
@@ -2567,16 +2571,19 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBr);
         // end of br
 
-        // condbr
-        rewriter.setInsertionPointAfterValue(cmpValue);
+        if (cmpValue)
+        {
+            // condbr
+            rewriter.setInsertionPointAfterValue(cmpValue);
 
-        Block *currentBlockBrCmp = rewriter.getInsertionBlock();
-        Block *continuationBrCmp = rewriter.splitBlock(currentBlockBrCmp, rewriter.getInsertionPoint());
+            Block *currentBlockBrCmp = rewriter.getInsertionBlock();
+            Block *continuationBrCmp = rewriter.splitBlock(currentBlockBrCmp, rewriter.getInsertionPoint());
 
-        rewriter.setInsertionPointAfterValue(cmpValue);
-        // TODO: when catch not matching - should go into result (rethrow)
-        rewriter.create<CondBranchOp>(loc, cmpValue, continuationBrCmp, continuation);
-        // end of condbr
+            rewriter.setInsertionPointAfterValue(cmpValue);
+            // TODO: when catch not matching - should go into result (rethrow)
+            rewriter.create<CondBranchOp>(loc, cmpValue, continuationBrCmp, continuation);
+            // end of condbr
+        }
 
         // end of jumps
 
