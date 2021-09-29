@@ -4748,7 +4748,7 @@ class MLIRGenImpl
         auto stringType = getStringType();
         SmallVector<mlir::Value, 4> strs;
 
-        auto text = wstos(templateExpressionAST->head->rawText);
+        auto text = convertWideToUTF8(templateExpressionAST->head->rawText);
         auto head = builder.create<mlir_ts::ConstantOp>(location, stringType, getStringAttr(text));
 
         // first string
@@ -4768,7 +4768,7 @@ class MLIRGenImpl
             // expr value
             strs.push_back(exprValue);
 
-            auto spanText = wstos(span->literal->rawText);
+            auto spanText = convertWideToUTF8(span->literal->rawText);
             auto spanValue = builder.create<mlir_ts::ConstantOp>(location, stringType, getStringAttr(spanText));
 
             // text
@@ -4794,7 +4794,7 @@ class MLIRGenImpl
         SmallVector<mlir::Attribute, 4> strs;
         SmallVector<mlir::Value, 4> vals;
 
-        auto text = wstos(templateExpressionAST->head->rawText);
+        auto text = convertWideToUTF8(templateExpressionAST->head->rawText);
 
         // first string
         strs.push_back(getStringAttr(text));
@@ -4808,7 +4808,7 @@ class MLIRGenImpl
 
             vals.push_back(exprValue);
 
-            auto spanText = wstos(span->literal->rawText);
+            auto spanText = convertWideToUTF8(span->literal->rawText);
             // text
             strs.push_back(getStringAttr(spanText));
         }
@@ -4893,14 +4893,14 @@ class MLIRGenImpl
 
     mlir::Value mlirGen(ts::StringLiteral stringLiteral, const GenContext &genContext)
     {
-        auto text = wstos(stringLiteral->text);
+        auto text = convertWideToUTF8(stringLiteral->text);
 
         return builder.create<mlir_ts::ConstantOp>(loc(stringLiteral), getStringType(), getStringAttr(text));
     }
 
     mlir::Value mlirGen(ts::NoSubstitutionTemplateLiteral noSubstitutionTemplateLiteral, const GenContext &genContext)
     {
-        auto text = wstos(noSubstitutionTemplateLiteral->text);
+        auto text = convertWideToUTF8(noSubstitutionTemplateLiteral->text);
 
         return builder.create<mlir_ts::ConstantOp>(loc(noSubstitutionTemplateLiteral), getStringType(), getStringAttr(text));
     }
@@ -7866,7 +7866,7 @@ namespace typescript
     };
 
     auto result = forEachChild(sourceFile.as<Node>(), visitNode, visitArray);
-    return wstos(s.str());
+    return convertWideToUTF8(s.str());
 }
 
 mlir::OwningModuleRef mlirGenFromSource(const mlir::MLIRContext &context, const llvm::StringRef &fileName, const llvm::StringRef &source,

@@ -17,3 +17,15 @@ else()
 endif()
 
 endmacro()
+
+macro(set_Options_With_FS)
+
+set_Options()
+
+if(MSVC)
+else()
+    SET (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -lstdc++fs")
+    link_libraries(stdc++fs)
+endif()
+
+endmacro()

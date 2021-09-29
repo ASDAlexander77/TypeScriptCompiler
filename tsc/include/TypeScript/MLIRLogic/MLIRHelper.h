@@ -2,14 +2,22 @@
 #define MLIR_TYPESCRIPT_COMMONGENLOGIC_MLIRHELPER_H_
 
 #include "TypeScript/TypeScriptOps.h"
+#include "llvm/Support/ConvertUTF.h"
 
 #include "parser.h"
-#include "file_helper.h"
 
 namespace mlir_ts = mlir::typescript;
 
 namespace typescript
 {
+
+static std::string convertWideToUTF8(const std::wstring &ws)
+{
+    std::string s;
+    llvm::convertWideToUTF8(ws, s);
+    return s;
+}
+
 class MLIRHelper
 {
   public:
@@ -18,7 +26,7 @@ class MLIRHelper
         std::string nameValue;
         if (identifier)
         {
-            nameValue = wstos(identifier->escapedText);
+            nameValue = convertWideToUTF8(identifier->escapedText);
         }
 
         return nameValue;
@@ -29,7 +37,7 @@ class MLIRHelper
         std::string nameValue;
         if (identifier)
         {
-            nameValue = wstos(identifier->escapedText);
+            nameValue = convertWideToUTF8(identifier->escapedText);
         }
 
         return nameValue;
