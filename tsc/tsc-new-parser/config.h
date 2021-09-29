@@ -25,7 +25,7 @@ using stringstream = std::wstringstream;
 
 #define to_number_base(x, y) std::stoi(x, nullptr, y)
 #define S(x) L##x
-#define to_string(x) std::to_wstring(x)
+#define to_string_val(x) std::to_wstring(x)
 #define to_number(x) std::stoi(x)
 #define to_integer(x) std::stoi(x)
 #define to_unsigned_integer(x) std::stoul(x)

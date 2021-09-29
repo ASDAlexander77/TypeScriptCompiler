@@ -187,7 +187,7 @@ static auto parsePseudoBigInt(string stringValue) -> string
                 segmentsRemaining = true;
             }
         }
-        base10Value = to_string(mod10) + base10Value;
+        base10Value = to_string_val(mod10) + base10Value;
     }
     return base10Value;
 }
