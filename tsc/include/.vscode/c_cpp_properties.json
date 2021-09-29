@@ -19,7 +19,26 @@
             "cStandard": "c17",
             "cppStandard": "c++17",
             "intelliSenseMode": "msvc-x64"
-        }
+        },
+        {
+            "name": "Linux",
+            "includePath": [                
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/../include",
+                "${workspaceFolder}/../../3rdParty/llvm-ninja/debug/include",
+                "${workspaceFolder}/../../__build/tsc/include",
+                "${workspaceFolder}/../tsc-new-parser"
+            ],
+            "defines": [
+                "_DEBUG",
+                "UNICODE",
+                "_UNICODE"                
+            ],
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "clang-x64"
+          }
     ],
     "version": 4
 }
