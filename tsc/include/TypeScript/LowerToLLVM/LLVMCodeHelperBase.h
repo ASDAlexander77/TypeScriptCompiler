@@ -82,9 +82,9 @@ class LLVMCodeHelperBase
     {
         // find last string
         auto lastUse = [&](Operation *op) {
-            if (auto op = dyn_cast_or_null<T>(op))
+            if (auto opT = dyn_cast_or_null<T>(op))
             {
-                rewriter.setInsertionPointAfter(op);
+                rewriter.setInsertionPointAfter(opT);
             }
         };
 
