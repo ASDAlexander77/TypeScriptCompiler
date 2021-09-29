@@ -2185,8 +2185,23 @@ struct ThrowOpLoweringVCWin32 : public TsLlvmPattern<mlir_ts::ThrowOp>
 
         // prepare first param
         // we need temp var
-        auto value = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(throwOp.exception().getType()), throwOp.exception(),
-                                                          rewriter.getBoolAttr(false));
+        mlir::Value value;
+        {
+            OpBuilder::InsertionGuard guard(rewriter);
+
+            auto found = ch.seekFirstNonConstantOp(throwOp->getParentOfType<LLVM::LLVMFuncOp>());
+            if (found)
+            {
+                rewriter.setInsertionPointAfter(found);
+            }
+
+            // value = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(throwOp.exception().getType()), throwOp.exception(),
+            //                                             rewriter.getBoolAttr(false));
+            value = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(throwOp.exception().getType()), mlir::Value(),
+                                                         rewriter.getBoolAttr(false));
+        }
+
+        rewriter.create<mlir_ts::StoreOp>(loc, throwOp.exception(), value);
 
         auto throwInfoPtr = rttih.throwInfoPtrValue(loc);
 

@@ -76,6 +76,47 @@ class LLVMCodeHelperBase
         block->walk(lastUse);
     }
 
+    template <typename T> void seekLastOp(Block *block)
+    {
+        // find last string
+        auto lastUse = [&](Operation *op) {
+            if (auto op = template dyn_cast_or_null<T>(op))
+            {
+                rewriter.setInsertionPointAfter(op);
+            }
+        };
+
+        block->walk(lastUse);
+    }
+
+    template <typename T> Operation *seekFirstNonConstantOp(T funcOp)
+    {
+        auto found = false;
+        Operation *foundOp;
+        // find last string
+        auto lastUse = [&](Operation *op) {
+            if (found)
+            {
+                return;
+            }
+
+            auto constantOp = dyn_cast_or_null<mlir_ts::ConstantOp>(op);
+            if (!constantOp)
+            {
+                auto constOp = dyn_cast_or_null<mlir::ConstantOp>(op);
+                if (!constOp)
+                {
+                    found = true;
+                    foundOp = op;
+                }
+            }
+        };
+
+        funcOp.walk(lastUse);
+
+        return foundOp;
+    }
+
     std::string getStorageStringName(std::string value)
     {
         auto opHash = std::hash<std::string>{}(value);
