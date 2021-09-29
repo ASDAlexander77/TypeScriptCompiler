@@ -1710,7 +1710,7 @@ auto Scanner::scanNumber() -> ScanResult
         checkForIdentifierStartAfterNumericLiteral(start, decimalFragment.empty() && !!(tokenFlags & TokenFlags::Scientific));
         return {
             SyntaxKind::NumericLiteral,
-            to_string(+to_float(result)) // if value is not an integer, it can be safely coerced to a number
+            to_string_val(+to_float(result)) // if value is not an integer, it can be safely coerced to a number
         };
     }
     else
@@ -2290,10 +2290,10 @@ auto Scanner::checkBigIntSuffix() -> SyntaxKind
     else
     { // not a bigint, so can convert to number in simplified form
         // Number() may not support 0b or 0o, so use stoi() instead
-        auto numericValue = !!(tokenFlags & TokenFlags::BinarySpecifier)  ? to_string(to_bignumber_base(tokenValue, 2))  // skip "0b"
-                            : !!(tokenFlags & TokenFlags::OctalSpecifier) ? to_string(to_bignumber_base(tokenValue, 8))  // skip "0o"
-                            : !!(tokenFlags & TokenFlags::HexSpecifier)   ? to_string(to_bignumber_base(tokenValue, 16)) // skip "0x"
-                                                                          : to_string(to_bignumber(tokenValue));
+        auto numericValue = !!(tokenFlags & TokenFlags::BinarySpecifier)  ? to_string_val(to_bignumber_base(tokenValue, 2))  // skip "0b"
+                            : !!(tokenFlags & TokenFlags::OctalSpecifier) ? to_string_val(to_bignumber_base(tokenValue, 8))  // skip "0o"
+                            : !!(tokenFlags & TokenFlags::HexSpecifier)   ? to_string_val(to_bignumber_base(tokenValue, 16)) // skip "0x"
+                                                                          : to_string_val(to_bignumber(tokenValue));
         tokenValue = numericValue;
         return SyntaxKind::NumericLiteral;
     }
@@ -2620,7 +2620,7 @@ auto Scanner::scan() -> SyntaxKind
             // Try to parse as an octal
             if (pos + 1 < end && isOctalDigit(text[pos + 1]))
             {
-                tokenValue = to_string(scanOctalDigits());
+                tokenValue = to_string_val(scanOctalDigits());
                 tokenFlags |= TokenFlags::Octal;
                 return token = SyntaxKind::NumericLiteral;
             }
