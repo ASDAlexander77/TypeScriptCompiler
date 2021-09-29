@@ -41,6 +41,9 @@ function main3() {
         t = 2;
     }
 
+    // TODO: we need to have next line to force optimizator not to break code
+    print(t);
+
     assert(2 == t);
 }
 
@@ -93,7 +96,7 @@ function main6() {
     assert(10 == t);
 }
 
-class AdvError extends Error {}
+class AdvError extends Error { }
 
 function main7() {
     print("try/catch 7");
