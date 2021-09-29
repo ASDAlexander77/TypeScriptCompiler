@@ -1,8 +1,10 @@
 #ifndef MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_LLVMCODEHELPERWRAP_H_
 #define MLIR_TYPESCRIPT_LOWERTOLLVMLOGIC_LLVMCODEHELPERWRAP_H_
 
-#include "TypeScript/LowerToLLVM/TypeHelper.h"
 #include "TypeScript/LowerToLLVM/TypeConverterHelper.h"
+#include "TypeScript/LowerToLLVM/TypeHelper.h"
+
+#include "mlir/Dialect/StandardOps/IR/Ops.h"
 
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
@@ -80,7 +82,7 @@ class LLVMCodeHelperBase
     {
         // find last string
         auto lastUse = [&](Operation *op) {
-            if (auto op = template dyn_cast_or_null<T>(op))
+            if (auto op = dyn_cast_or_null<T>(op))
             {
                 rewriter.setInsertionPointAfter(op);
             }
