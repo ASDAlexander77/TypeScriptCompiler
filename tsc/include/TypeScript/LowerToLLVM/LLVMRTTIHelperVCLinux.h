@@ -7,9 +7,9 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 
-#include "TypeScript/LowerToLLVM/TypeHelper.h"
 #include "TypeScript/LowerToLLVM/LLVMCodeHelper.h"
 #include "TypeScript/LowerToLLVM/LLVMRTTIHelperVCLinuxConst.h"
+#include "TypeScript/LowerToLLVM/TypeHelper.h"
 
 #include "mlir/Transforms/DialectConversion.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -22,11 +22,6 @@ namespace mlir_ts = mlir::typescript;
 namespace typescript
 {
 
-struct TypeNames
-{
-    std::string typeName;
-};
-
 class LLVMRTTIHelperVCLinux
 {
     Operation *op;
@@ -37,7 +32,7 @@ class LLVMRTTIHelperVCLinux
     CodeLogicHelper clh;
 
     bool classType;
-    SmallVector<TypeNames> types;
+    SmallVector<std::string> types;
 
   public:
     LLVMRTTIHelperVCLinux(Operation *op, PatternRewriter &rewriter, TypeConverter &typeConverter)
@@ -129,9 +124,11 @@ class LLVMRTTIHelperVCLinux
 
     mlir::Value throwInfoPtrValue(mlir::Location loc)
     {
-        auto typeName = types.front().typeName;
+        auto typeName = types.front();
 
         assert(typeName.size() > 0);
+
+        LLVM_DEBUG(llvm::dbgs() << "\n Throw info name: " << typeName << "\n");
 
         mlir::Type tiType;
         if (classType)
