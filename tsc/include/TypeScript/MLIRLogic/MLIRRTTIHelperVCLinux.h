@@ -7,15 +7,15 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 
-#include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
-#include "TypeScript/MLIRLogic/MLIRCodeLogic.h"
 #include "TypeScript/LowerToLLVM/LLVMRTTIHelperVCLinuxConst.h"
+#include "TypeScript/MLIRLogic/MLIRCodeLogic.h"
+#include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
 
 #include "mlir/Transforms/DialectConversion.h"
 #include "llvm/ADT/TypeSwitch.h"
 
-#include <sstream>
 #include <functional>
+#include <sstream>
 
 using namespace ::typescript;
 using namespace ts;
@@ -58,22 +58,22 @@ class MLIRRTTIHelperVCLinux
 
     void setF32AsCatchType()
     {
-        types.push_back({F32Type::typeName, TypeInfo::Value});
+        types.push_back({F32Type::typeName, TypeInfo::Value, -1});
     }
 
     void setI32AsCatchType()
     {
-        types.push_back({I32Type::typeName, TypeInfo::Value});
+        types.push_back({I32Type::typeName, TypeInfo::Value, -1});
     }
 
     void setStringTypeAsCatchType()
     {
-        types.push_back({StringType::typeName, TypeInfo::Value});
+        types.push_back({StringType::typeName, TypeInfo::Value, -1});
     }
 
     void setI8PtrAsCatchType()
     {
-        types.push_back({I8PtrType::typeName, TypeInfo::Value});
+        types.push_back({I8PtrType::typeName, TypeInfo::Value, -1});
     }
 
     void setClassTypeAsCatchType(ArrayRef<StringRef> names)

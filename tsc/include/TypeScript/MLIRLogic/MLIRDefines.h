@@ -2,6 +2,8 @@
 #ifndef MLIR_TYPESCRIPT_MLIRGENLOGIC_MLIRDEFINES_H_
 #define MLIR_TYPESCRIPT_MLIRGENLOGIC_MLIRDEFINES_H_
 
+#include "TypeScript/DOM.h"
+
 #include "llvm/ADT/ScopedHashTable.h"
 
 #define VALIDATE(value)                                                                                                                    \

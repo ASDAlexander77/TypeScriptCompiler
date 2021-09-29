@@ -7,14 +7,14 @@
 
 #define DEBUG_TYPE "mlir"
 
-#include "TypeScript/Config.h"
 #include "TypeScript/MLIRGen.h"
+#include "TypeScript/Config.h"
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 
+#include "TypeScript/MLIRLogic/MLIRCodeLogic.h"
 #include "TypeScript/MLIRLogic/MLIRGenContext.h"
 #include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
-#include "TypeScript/MLIRLogic/MLIRCodeLogic.h"
 #ifdef WIN_EXCEPTION
 #include "TypeScript/MLIRLogic/MLIRRTTIHelperVCWin32.h"
 #else
@@ -35,10 +35,10 @@
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Types.h"
 #include "mlir/IR/Verifier.h"
-#include "mlir/IR/Diagnostics.h"
 
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
@@ -6669,7 +6669,7 @@ class MLIRGenImpl
 
             if (declareClass)
             {
-                methodInfos.push_back({methodName, funcOp, isStatic, isAbstract || isVirtual});
+                methodInfos.push_back({methodName, funcOp, isStatic, isAbstract || isVirtual, -1});
                 addAccessor(newClassPtr, classMember, propertyName, funcOp, isStatic, isAbstract || isVirtual);
             }
         }
@@ -6917,7 +6917,7 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
-            fieldInfos.push_back({fieldId, type});
+            fieldInfos.push_back({fieldId, type, -1});
         }
 
         if (interfaceMember == SyntaxKind::MethodSignature)

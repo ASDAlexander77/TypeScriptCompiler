@@ -5,7 +5,10 @@
 #include "TypeScript/TypeScriptOps.h"
 
 #include "TypeScript/MLIRLogic/MLIRDefines.h"
-#include "TypeScript/DOM.h"
+#include "TypeScript/MLIRLogic/MLIRGenContext.h"
+#include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
+
+#include "llvm/Support/Debug.h"
 
 #include "parser_types.h"
 
