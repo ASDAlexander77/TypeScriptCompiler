@@ -7,10 +7,10 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 
-#include "TypeScript/LowerToLLVM/TypeHelper.h"
-#include "TypeScript/LowerToLLVM/TypeConverterHelper.h"
-#include "TypeScript/LowerToLLVM/LLVMCodeHelper.h"
 #include "TypeScript/LowerToLLVM/CodeLogicHelper.h"
+#include "TypeScript/LowerToLLVM/LLVMCodeHelper.h"
+#include "TypeScript/LowerToLLVM/TypeConverterHelper.h"
+#include "TypeScript/LowerToLLVM/TypeHelper.h"
 
 #include "mlir/IR/PatternMatch.h"
 
@@ -24,7 +24,6 @@ class AssertLogic
 {
     Operation *op;
     PatternRewriter &rewriter;
-    TypeConverterHelper &tch;
     TypeHelper th;
     LLVMCodeHelper ch;
     CodeLogicHelper clh;
@@ -36,7 +35,7 @@ class AssertLogic
 
   public:
     AssertLogic(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch, Location loc)
-        : op(op), rewriter(rewriter), tch(tch), th(rewriter), ch(op, rewriter, &tch.typeConverter), clh(op, rewriter), loc(loc)
+        : op(op), rewriter(rewriter), th(rewriter), ch(op, rewriter, &tch.typeConverter), clh(op, rewriter), loc(loc)
     {
         sizeType = th.getIndexType();
         typeOfValueType = th.getI8PtrType();
