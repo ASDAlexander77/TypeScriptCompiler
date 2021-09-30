@@ -31,19 +31,22 @@ struct TypeScriptExceptionPass : public FunctionPass
         auto MadeChange = false;
 
         llvm::SmallVector<LandingPadInst *> landingPadInstWorkSet;
-        llvm::SmallVector<ResumeInst *> resumeInstWorkSet;
+        llvm::SmallVector<BranchInst *> resumeInstWorkSet;
         llvm::SmallDenseMap<LandingPadInst *, llvm::SmallVector<CallBase *> *> calls;
         llvm::SmallDenseMap<LandingPadInst *, CatchPadInst *> landingPadNewOps;
         llvm::SmallDenseMap<LandingPadInst *, StoreInst *> landingPadStoreOps;
         llvm::SmallDenseMap<LandingPadInst *, InvokeInst *> landingPadUnwindOps;
         llvm::SmallDenseMap<LandingPadInst *, Value *> landingPadStack;
         llvm::SmallDenseMap<LandingPadInst *, bool> landingPadHasAlloca;
+        llvm::SmallDenseMap<BranchInst *, LandingPadInst *> landingPadByBranch;
 
         LLVM_DEBUG(llvm::dbgs() << "\nFunction: " << F.getName() << "\n\n";);
         LLVM_DEBUG(llvm::dbgs() << "\nDump Before: " << F << "\n\n";);
 
         llvm::SmallVector<CallBase *> *currentCalls = nullptr;
         LandingPadInst *currentLPI = nullptr;
+        auto endOfCatch = false;
+        llvm::SmallVector<CallInst *> toRemoveCallInstWorkSet;
         for (auto &I : instructions(F))
         {
             if (auto *LPI = dyn_cast<LandingPadInst>(&I))
@@ -52,15 +55,21 @@ struct TypeScriptExceptionPass : public FunctionPass
                 currentLPI = LPI;
                 currentCalls = new llvm::SmallVector<CallBase *>();
                 calls[LPI] = currentCalls;
+                endOfCatch = false;
                 continue;
             }
 
-            if (auto *RI = dyn_cast<ResumeInst>(&I))
+            if (endOfCatch)
             {
-                currentCalls = nullptr;
-                currentLPI = nullptr;
-                resumeInstWorkSet.push_back(RI);
-                continue;
+                if (auto *BI = dyn_cast<BranchInst>(&I))
+                {
+                    landingPadByBranch[BI] = currentLPI;
+                    currentCalls = nullptr;
+                    currentLPI = nullptr;
+                    resumeInstWorkSet.push_back(BI);
+                    endOfCatch = false;
+                    continue;
+                }
             }
 
             // saving StoreInst to set response
@@ -86,6 +95,18 @@ struct TypeScriptExceptionPass : public FunctionPass
                 {
                     landingPadHasAlloca[currentLPI] = true;
                 }
+
+                if (auto *CI = dyn_cast<CallInst>(&I))
+                {
+                    LLVM_DEBUG(llvm::dbgs() << "\nCall: " << CI->getCalledFunction()->getName() << "");
+
+                    if (CI->getCalledFunction()->getName() == "__cxa_end_catch")
+                    {
+                        toRemoveCallInstWorkSet.push_back(CI);
+                        endOfCatch = true;
+                        continue;
+                    }
+                }
             }
 
             if (currentCalls)
@@ -99,7 +120,7 @@ struct TypeScriptExceptionPass : public FunctionPass
         }
 
         llvm::SmallVector<LandingPadInst *> toRemoveLandingPad;
-        llvm::SmallVector<ResumeInst *> toRemoveResumeInstWorkSet;
+        llvm::SmallVector<BranchInst *> toRemoveResumeInstWorkSet;
 
         for (auto *LPI : landingPadInstWorkSet)
         {
@@ -181,12 +202,11 @@ struct TypeScriptExceptionPass : public FunctionPass
             MadeChange = true;
         }
 
-        for (auto *RI : resumeInstWorkSet)
+        for (auto *BI : resumeInstWorkSet)
         {
-            llvm::IRBuilder<> Builder(RI);
-            // auto *UI = new UnreachableInst(Ctx, RI->getParent());
+            llvm::IRBuilder<> Builder(BI);
 
-            auto *LPI = (llvm::LandingPadInst *)RI->getOperand(0);
+            auto *LPI = landingPadByBranch[BI];
 
             auto hasAlloca = landingPadHasAlloca[LPI];
             if (hasAlloca)
@@ -198,11 +218,11 @@ struct TypeScriptExceptionPass : public FunctionPass
 
             assert(landingPadNewOps[LPI]);
 
-            auto CR = CatchReturnInst::Create(landingPadNewOps[LPI], RI->getParent()->getNextNode(), RI->getParent());
+            auto CR = CatchReturnInst::Create(landingPadNewOps[LPI], BI->getSuccessor(0), BI->getParent());
 
-            RI->replaceAllUsesWith(CR);
+            BI->replaceAllUsesWith(CR);
 
-            toRemoveResumeInstWorkSet.push_back(RI);
+            toRemoveResumeInstWorkSet.push_back(BI);
 
             // LLVM_DEBUG(llvm::dbgs() << "\nTerminator after: " << *RI->getParent()->getTerminator() << "\n\n";);
             // LLVM_DEBUG(llvm::dbgs() << "\nResume - Done. Function Dump: " << F << "\n\n";);
@@ -211,6 +231,11 @@ struct TypeScriptExceptionPass : public FunctionPass
         }
 
         // remove
+        for (auto CI : toRemoveCallInstWorkSet)
+        {
+            CI->eraseFromParent();
+        }
+
         for (auto RI : toRemoveResumeInstWorkSet)
         {
             RI->eraseFromParent();

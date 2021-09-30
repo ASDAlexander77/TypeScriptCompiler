@@ -2393,9 +2393,17 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         // catches:exit
         rewriter.setInsertionPointToEnd(catchesRegionLast);
 
+        // join blocks
         auto yieldOpCatches = cast<mlir_ts::ResultOp>(catchesRegionLast->getTerminator());
-        // rewriter.replaceOpWithNewOp<BranchOp>(yieldOpCatches, continuation, yieldOpCatches.results());
-        rewriter.replaceOpWithNewOp<LLVM::ResumeOp>(yieldOpCatches, landingPadOp);
+
+        // we need it to mark end of exception
+        auto endCatchFuncName = "__cxa_end_catch";
+        auto endCatchFunc = ch.getOrInsertFunction(endCatchFuncName, th.getFunctionType(th.getVoidType(), ArrayRef<Type>{}));
+
+        rewriter.create<LLVM::CallOp>(loc, endCatchFunc, ValueRange{});
+
+        rewriter.replaceOpWithNewOp<BranchOp>(yieldOpCatches, finallyBlockRegion, ValueRange{});
+        // rewriter.replaceOpWithNewOp<LLVM::ResumeOp>(yieldOpCatches, landingPadOp);
 
         // finally:exit
         rewriter.setInsertionPointToEnd(finallyBlockRegionLast);
