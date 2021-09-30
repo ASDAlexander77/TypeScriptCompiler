@@ -40,6 +40,7 @@ struct TypeScriptExceptionPass : public FunctionPass
         llvm::SmallDenseMap<LandingPadInst *, bool> landingPadHasAlloca;
 
         LLVM_DEBUG(llvm::dbgs() << "\nFunction: " << F.getName() << "\n\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\nDump Before: " << F << "\n\n";);
 
         llvm::SmallVector<CallBase *> *currentCalls = nullptr;
         LandingPadInst *currentLPI = nullptr;
@@ -227,6 +228,9 @@ struct TypeScriptExceptionPass : public FunctionPass
         {
             delete p.second;
         }
+
+        LLVM_DEBUG(llvm::dbgs() << "\nChange: " << MadeChange << "\n\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\nDump After: " << F << "\n\n";);
 
         return MadeChange;
     }
