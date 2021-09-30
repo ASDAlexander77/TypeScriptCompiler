@@ -141,7 +141,7 @@ class MLIRGenImpl
         llvm::ScopedHashTableScope<StringRef, VariableDeclarationDOM::TypePtr> fullNameGlobalsMapScope(fullNameGlobalsMap);
 
         // Process of discovery here
-        GenContext genContextPartial = {0};
+        GenContext genContextPartial{};
         genContextPartial.allowPartialResolve = true;
         genContextPartial.dummyRun = true;
         genContextPartial.cleanUps = new mlir::SmallVector<mlir::Block *>();
@@ -160,7 +160,7 @@ class MLIRGenImpl
             // main cycles
             auto lastTimeNotResolved = notResolved;
             notResolved = 0;
-            GenContext genContext = {0};
+            GenContext genContext{};
             for (auto &statement : module->statements)
             {
                 if (statement->processed)
@@ -221,7 +221,7 @@ class MLIRGenImpl
         llvm::ScopedHashTableScope<StringRef, VariableDeclarationDOM::TypePtr> fullNameGlobalsMapScope(fullNameGlobalsMap);
 
         // Process generating here
-        GenContext genContext = {0};
+        GenContext genContext{};
         for (auto &statement : module->statements)
         {
             if (failed(mlirGen(statement, genContext)))
@@ -321,7 +321,7 @@ class MLIRGenImpl
             currentNamespace = it->getValue();
         }
 
-        GenContext moduleGenContext = {0};
+        GenContext moduleGenContext{};
         auto result = mlirGenBody(moduleDeclarationAST->body, genContext);
 
         currentNamespace = savedNamespace;
@@ -350,7 +350,7 @@ class MLIRGenImpl
         auto parentModule = theModule;
         theModule = moduleOp;
 
-        GenContext moduleGenContext = {0};
+        GenContext moduleGenContext{};
         auto result = mlirGenBody(moduleDeclarationAST->body, genContext);
 
         // restore
@@ -1513,7 +1513,7 @@ class MLIRGenImpl
             // simulate scope
             SymbolTableScopeT varScope(symbolTable);
 
-            GenContext genContextWithPassResult = {0};
+            GenContext genContextWithPassResult{};
             genContextWithPassResult.funcOp = dummyFuncOp;
             genContextWithPassResult.thisType = genContext.thisType;
             genContextWithPassResult.allowPartialResolve = true;
