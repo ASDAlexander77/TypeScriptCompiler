@@ -1529,7 +1529,7 @@ def TypeScript_TryOp : TypeScript_Op<"Try",
 
   let arguments = (ins );
   let results = (outs );
-  let regions = (region SizedRegion<1>:$body, SizedRegion<1>:$catches, AnyRegion:$finallyBlock);
+  let regions = (region AnyRegion:$body, AnyRegion:$catches, AnyRegion:$finallyBlock);
 
   let extraClassDeclaration = [{
     OperandRange getSuccessorEntryOperands(unsigned index);

@@ -965,8 +965,11 @@ struct CallOpLowering : public TsLlvmPattern<mlir_ts::CallOp>
 
                 rewriter.setInsertionPointToEnd(opBlock);
 
-                rewriter.create<LLVM::InvokeOp>(op->getLoc(), op.getResultTypes(), op.calleeAttr(), op.getArgOperands(), continuationBlock,
-                                                ValueRange{}, unwind, ValueRange{});
+                LLVM_DEBUG(llvm::dbgs() << "...call -> invoke: " << op.calleeAttr() << "\n";);
+                LLVM_DEBUG(for (auto opit : op.getOperands()) llvm::dbgs() << "...call -> invoke operands: " << opit << "\n";);
+
+                rewriter.create<mlir_ts::InvokeOp>(op->getLoc(), op.getResultTypes(), op.calleeAttr(), op.getOperands(), continuationBlock,
+                                                   ValueRange{}, unwind, ValueRange{});
             }
 
             rewriter.eraseOp(op);
@@ -998,9 +1001,16 @@ struct InvokeOpLowering : public TsLlvmPattern<mlir_ts::InvokeOp>
 
     LogicalResult matchAndRewrite(mlir_ts::InvokeOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
     {
+        TypeConverterHelper tch(getTypeConverter());
+        SmallVector<mlir::Type> llvmTypes;
+        for (auto type : op.getResultTypes())
+        {
+            llvmTypes.push_back(tch.convertType(type));
+        }
+
         // just replace
-        rewriter.replaceOpWithNewOp<LLVM::InvokeOp>(op, op.getResultTypes(), op.getOperands(), op.normalDest(), op.normalDestOperands(),
-                                                    op.unwindDest(), op.unwindDestOperands());
+        rewriter.replaceOpWithNewOp<LLVM::InvokeOp>(op, llvmTypes, op.calleeAttr(), op.getOperands(), op.normalDest(),
+                                                    op.normalDestOperands(), op.unwindDest(), op.unwindDestOperands());
         return success();
     }
 };
@@ -2145,8 +2155,6 @@ struct ThrowOpLoweringVCWin32 : public TsLlvmPattern<mlir_ts::ThrowOp>
     {
         auto loc = throwOp.getLoc();
 
-        auto parent = throwOp->getParentOp();
-
         LLVMCodeHelper ch(throwOp, rewriter, getTypeConverter());
         CodeLogicHelper clh(throwOp, rewriter);
         TypeConverterHelper tch(getTypeConverter());
@@ -2214,8 +2222,6 @@ struct ThrowOpLoweringVCWin32 : public TsLlvmPattern<mlir_ts::ThrowOp>
             rewriter.create<mlir::BranchOp>(loc, unreachable);
             clh.CutBlock();
         }
-
-        LLVM_DEBUG(llvm::dbgs() << "\nDUMP THROW: \n" << *parent << "\n";);
 
         return success();
     }

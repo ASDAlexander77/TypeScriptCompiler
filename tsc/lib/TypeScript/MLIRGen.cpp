@@ -3081,6 +3081,7 @@ class MLIRGenImpl
         const_cast<GenContext &>(genContext).funcOp.personalityAttr(builder.getBoolAttr(true));
 
         auto tryOp = builder.create<mlir_ts::TryOp>(location);
+        /*
         tryOp->setAttr("try_id", builder.getI64IntegerAttr((int64_t)tryOp.getOperation()));
 
         auto parentTryOp = tryOp->getParentOfType<mlir_ts::TryOp>();
@@ -3088,6 +3089,7 @@ class MLIRGenImpl
         {
             tryOp->setAttr("unwind_to", builder.getI64IntegerAttr((int64_t)parentTryOp.getOperation()));
         }
+        */
 
         GenContext tryGenContext(genContext);
         tryGenContext.allocateVarsOutsideOfOperation = true;
