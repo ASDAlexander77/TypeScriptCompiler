@@ -52,6 +52,8 @@ class AssertLogic
 
     mlir::LogicalResult logicWin32(mlir::Value condValue, std::string msg)
     {
+        auto unreachable = clh.FindUnreachableBlockOrCreate();
+
         auto line = 0;
         auto column = 0;
         auto fileName = StringRef("");
@@ -97,7 +99,8 @@ class AssertLogic
         Value lineNumberRes = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(line));
 
         rewriter.create<LLVM::CallOp>(loc, assertFuncOp, ValueRange{msgCst, fileCst, lineNumberRes});
-        rewriter.create<LLVM::UnreachableOp>(loc);
+        // rewriter.create<LLVM::UnreachableOp>(loc);
+        rewriter.create<mlir::BranchOp>(loc, unreachable);
 
         // Generate assertion test.
         rewriter.setInsertionPointToEnd(opBlock);
@@ -108,6 +111,8 @@ class AssertLogic
 
     mlir::LogicalResult logicUnix(mlir::Value condValue, std::string msg)
     {
+        auto unreachable = clh.FindUnreachableBlockOrCreate();
+
         auto line = 0;
         auto column = 0;
         auto fileName = StringRef("");
@@ -154,7 +159,8 @@ class AssertLogic
         Value funcName = rewriter.create<LLVM::NullOp>(loc, i8PtrTy);
 
         rewriter.create<LLVM::CallOp>(loc, assertFuncOp, ValueRange{msgCst, fileCst, lineNumberRes, funcName});
-        rewriter.create<LLVM::UnreachableOp>(loc);
+        // rewriter.create<LLVM::UnreachableOp>(loc);
+        rewriter.create<mlir::BranchOp>(loc, unreachable);
 
         // Generate assertion test.
         rewriter.setInsertionPointToEnd(opBlock);

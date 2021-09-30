@@ -2210,7 +2210,8 @@ struct ThrowOpLoweringVCWin32 : public TsLlvmPattern<mlir_ts::ThrowOp>
             OpBuilder::InsertionGuard guard(rewriter);
 
             rewriter.create<LLVM::CallOp>(loc, cxxThrowException, ValueRange{clh.castToI8Ptr(value), throwInfoPtr});
-            rewriter.create<LLVM::UnreachableOp>(loc);
+            // rewriter.create<LLVM::UnreachableOp>(loc);
+            rewriter.create<mlir::BranchOp>(loc, unreachable);
             clh.CutBlock();
         }
 
@@ -2239,6 +2240,8 @@ struct ThrowOpLoweringVCLinux : public TsLlvmPattern<mlir_ts::ThrowOp>
         LLVMRTTIHelperVCLinux rttih(throwOp, rewriter, *getTypeConverter());
         // rttih.setRTTIForType(loc, throwOp.exception().getType());
         rttih.setType(throwOp.exception().getType());
+
+        auto unreachable = clh.FindUnreachableBlockOrCreate();
 
         auto i8PtrTy = th.getI8PtrType();
 
@@ -2280,14 +2283,19 @@ struct ThrowOpLoweringVCLinux : public TsLlvmPattern<mlir_ts::ThrowOp>
             auto nullValue = rewriter.create<LLVM::NullOp>(loc, i8PtrTy);
             rewriter.create<LLVM::InvokeOp>(loc, TypeRange{th.getVoidType()},
                                             mlir::FlatSymbolRefAttr::get(rewriter.getContext(), throwFuncName),
-                                            ValueRange{value, clh.castToI8Ptr(rttih.throwInfoPtrValue(loc)), nullValue}, continuationBlock,
+                                            ValueRange{value, clh.castToI8Ptr(rttih.throwInfoPtrValue(loc)), nullValue}, unreachable,
                                             ValueRange{}, unwind, ValueRange{});
+
+            rewriter.setInsertionPointToStart(continuationBlock);
         }
         else
         {
             auto nullValue = rewriter.create<LLVM::NullOp>(loc, i8PtrTy);
             rewriter.create<LLVM::CallOp>(loc, cxxThrowException,
                                           ValueRange{value, clh.castToI8Ptr(rttih.throwInfoPtrValue(loc)), nullValue});
+            // rewriter.create<LLVM::UnreachableOp>(loc);
+            rewriter.create<mlir::BranchOp>(loc, unreachable);
+            clh.CutBlock();
         }
 
         rewriter.eraseOp(throwOp);
