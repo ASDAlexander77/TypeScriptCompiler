@@ -3268,7 +3268,6 @@ struct JumpLabelOpLowering : public TsLlvmPattern<mlir_ts::JumpLabelOp>
                                   ConversionPatternRewriter &rewriter) const final
     {
         rewriter.eraseOp(jumpLabelOp);
-
         return success();
     }
 };

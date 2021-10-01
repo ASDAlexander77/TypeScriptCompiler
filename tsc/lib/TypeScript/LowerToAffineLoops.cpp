@@ -580,7 +580,11 @@ struct BreakOpLowering : public TsPattern<mlir_ts::BreakOp>
 
         auto jump = tsContext->jumps[breakOp];
         assert(jump);
-        // rewriter.replaceOpWithNewOp<BranchOp>(breakOp, jump /*break=continuation*/);
+
+        /*
+        rewriter.replaceOpWithNewOp<BranchOp>(breakOp, jump);
+        */
+
         auto jumpLabel = rewriter.getStringAttr(std::to_string(static_cast<int64_t>((uintptr_t)jump)));
 
         {
@@ -590,10 +594,6 @@ struct BreakOpLowering : public TsPattern<mlir_ts::BreakOp>
         }
 
         rewriter.replaceOpWithNewOp<mlir_ts::JumpOp>(breakOp, jumpLabel);
-
-        auto *opBlock = rewriter.getInsertionBlock();
-        auto opPosition = rewriter.getInsertionPoint();
-        /*auto *continuationBlock = */ rewriter.splitBlock(opBlock, opPosition);
 
         return success();
     }
@@ -610,7 +610,11 @@ struct ContinueOpLowering : public TsPattern<mlir_ts::ContinueOp>
 
         auto jump = tsContext->jumps[continueOp];
         assert(jump);
-        // rewriter.replaceOpWithNewOp<BranchOp>(continueOp, jump /*break=incremental-or-condition block*/);
+
+        /*
+        rewriter.replaceOpWithNewOp<BranchOp>(continueOp, jump);
+        */
+
         auto jumpLabel = rewriter.getStringAttr(std::to_string(static_cast<int64_t>((uintptr_t)jump)));
 
         {
@@ -620,10 +624,6 @@ struct ContinueOpLowering : public TsPattern<mlir_ts::ContinueOp>
         }
 
         rewriter.replaceOpWithNewOp<mlir_ts::JumpOp>(continueOp, jumpLabel);
-
-        auto *opBlock = rewriter.getInsertionBlock();
-        auto opPosition = rewriter.getInsertionPoint();
-        /*auto *continuationBlock = */ rewriter.splitBlock(opBlock, opPosition);
 
         return success();
     }

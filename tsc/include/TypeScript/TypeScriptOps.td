@@ -1474,7 +1474,7 @@ def TypeScript_LabelOp : TypeScript_Op<"Label",
   }];  
 }
 
-def TypeScript_JumpOp : TypeScript_Op<"Jump", [NoSideEffect, Terminator]> {
+def TypeScript_JumpOp : TypeScript_Op<"Jump"> {
   let summary = "jump";
 
   let arguments = (ins StrAttr:$label);
