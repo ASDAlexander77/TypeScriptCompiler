@@ -3239,6 +3239,22 @@ class SwitchStateOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateOp>
     }
 };
 
+struct GotoOpLowering : public TsLlvmPattern<mlir_ts::GotoOp>
+{
+    using TsLlvmPattern<mlir_ts::GotoOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::GotoOp gotoOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+    {
+        rewriter.replaceOpWithNewOp<BranchOp>(gotoOp, gotoOp.dest(), gotoOp.destOperands());
+
+        auto *opBlock = rewriter.getInsertionBlock();
+        auto opPosition = rewriter.getInsertionPoint();
+        /*auto *continuationBlock = */ rewriter.splitBlock(opBlock, opPosition);
+
+        return success();
+    }
+};
+
 static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, mlir::ModuleOp &m)
 {
     converter.addConversion([&](mlir_ts::AnyType type) { return LLVM::LLVMPointerType::get(IntegerType::get(m.getContext(), 8)); });
@@ -3505,7 +3521,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
                     CatchOpLowering, VariableOpLowering, InvokeOpLowering, ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering,
                     NewInterfaceOpLowering, VTableOffsetRefOpLowering, ThisPropertyRefOpLowering, LoadBoundRefOpLowering,
                     StoreBoundRefOpLowering, CreateBoundRefOpLowering, CreateBoundFunctionOpLowering, GetThisOpLowering,
-                    GetMethodOpLowering, TypeOfOpLowering, DebuggerOpLowering, StateLabelOpLowering, SwitchStateOpLowering>(
+                    GetMethodOpLowering, TypeOfOpLowering, DebuggerOpLowering, StateLabelOpLowering, SwitchStateOpLowering, GotoOpLowering>(
         typeConverter, &getContext(), &tsLlvmContext);
 
     populateTypeScriptConversionPatterns(typeConverter, m);

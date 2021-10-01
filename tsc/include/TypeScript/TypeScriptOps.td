@@ -1456,6 +1456,21 @@ def TypeScript_BreakOp : TypeScript_Op<"Break"> {
   let arguments = (ins OptionalAttr<StrAttr>:$label);
 }
 
+def TypeScript_GotoOp : TypeScript_Op<"Goto"> {
+  let summary = "jump";
+
+  let arguments = (ins Variadic<AnyType>:$destOperands);
+  let successors = (successor AnySuccessor:$dest);
+
+  let builders = [
+    OpBuilder<(ins "Block *":$dest,
+                  CArg<"ValueRange", "{}">:$destOperands), [{
+      $_state.addSuccessors(dest);
+      $_state.addOperands(destOperands);
+    }]>];
+
+}
+
 def TypeScript_LabelOp : TypeScript_Op<"Label",
       [DeclareOpInterfaceMethods<RegionBranchOpInterface>, RecursiveSideEffects,
        NoRegionArguments]> {
