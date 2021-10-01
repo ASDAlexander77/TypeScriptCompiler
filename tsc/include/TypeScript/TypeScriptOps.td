@@ -1456,7 +1456,7 @@ def TypeScript_BreakOp : TypeScript_Op<"Break"> {
   let arguments = (ins OptionalAttr<StrAttr>:$label);
 }
 
-def TypeScript_GotoOp : TypeScript_Op<"Goto"> {
+def TypeScript_GotoOp : TypeScript_Op<"Goto", [NoSideEffect, Terminator]> {
   let summary = "jump";
 
   let arguments = (ins Variadic<AnyType>:$destOperands);
