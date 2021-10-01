@@ -1286,7 +1286,7 @@ def TypeScript_IfOp : TypeScript_Op<"If",
 
   let arguments = (ins TypeScript_Boolean:$condition);
   let results = (outs Variadic<AnyType>:$results);
-  let regions = (region SizedRegion<1>:$thenRegion, AnyRegion:$elseRegion);
+  let regions = (region AnyRegion:$thenRegion, AnyRegion:$elseRegion);
 
   let skipDefaultBuilders = 1;
   let builders = [
@@ -1359,7 +1359,7 @@ def TypeScript_WhileOp : TypeScript_Op<"While",
 
   let arguments = (ins Variadic<AnyType>:$inits);
   let results = (outs Variadic<AnyType>:$results);
-  let regions = (region SizedRegion<1>:$cond, SizedRegion<1>:$body);
+  let regions = (region SizedRegion<1>:$cond, AnyRegion:$body);
 
   let extraClassDeclaration = [{
     OperandRange getSuccessorEntryOperands(unsigned index);
@@ -1379,7 +1379,7 @@ def TypeScript_DoWhileOp : TypeScript_Op<"DoWhile",
 
   let arguments = (ins Variadic<AnyType>:$inits);
   let results = (outs Variadic<AnyType>:$results);
-  let regions = (region SizedRegion<1>:$body, SizedRegion<1>:$cond);
+  let regions = (region AnyRegion:$body, SizedRegion<1>:$cond);
 
   let extraClassDeclaration = [{
     OperandRange getSuccessorEntryOperands(unsigned index);
@@ -1396,7 +1396,7 @@ def TypeScript_ForOp : TypeScript_Op<"For",
 
   let arguments = (ins Variadic<AnyType>:$inits);
   let results = (outs Variadic<AnyType>:$results);
-  let regions = (region SizedRegion<1>:$cond, SizedRegion<1>:$body, SizedRegion<1>:$incr);
+  let regions = (region SizedRegion<1>:$cond, AnyRegion:$body, SizedRegion<1>:$incr);
 
   let extraClassDeclaration = [{
     OperandRange getSuccessorEntryOperands(unsigned index);
@@ -1463,7 +1463,7 @@ def TypeScript_LabelOp : TypeScript_Op<"Label",
 
   let arguments = (ins  StrAttr:$label);
   let results = (outs );
-  let regions = (region SizedRegion<1>:$labelRegion);
+  let regions = (region AnyRegion:$labelRegion);
 
   let extraClassDeclaration = [{
     /// Returns the selection merge block.
