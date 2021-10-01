@@ -583,25 +583,7 @@ struct BreakOpLowering : public TsPattern<mlir_ts::BreakOp>
         auto jump = tsContext->jumps[breakOp];
         assert(jump);
 
-        /*
         rewriter.replaceOpWithNewOp<BranchOp>(breakOp, jump);
-        */
-
-        auto jumpLabel = rewriter.getStringAttr(std::to_string(static_cast<int64_t>((uintptr_t)jump)));
-
-        {
-            if (jump->getPredecessors().empty())
-            {
-                clh.BeginBlock(loc);
-            }
-
-            OpBuilder::InsertionGuard guard(rewriter);
-            rewriter.setInsertionPointToStart(jump);
-            rewriter.create<mlir_ts::JumpLabelOp>(loc, jumpLabel);
-        }
-
-        rewriter.replaceOpWithNewOp<mlir_ts::JumpOp>(breakOp, jumpLabel);
-
         clh.CutBlock();
 
         return success();
@@ -622,25 +604,7 @@ struct ContinueOpLowering : public TsPattern<mlir_ts::ContinueOp>
         auto jump = tsContext->jumps[continueOp];
         assert(jump);
 
-        /*
         rewriter.replaceOpWithNewOp<BranchOp>(continueOp, jump);
-        */
-
-        auto jumpLabel = rewriter.getStringAttr(std::to_string(static_cast<int64_t>((uintptr_t)jump)));
-
-        {
-            if (jump->getPredecessors().empty())
-            {
-                clh.BeginBlock(loc);
-            }
-
-            OpBuilder::InsertionGuard guard(rewriter);
-            rewriter.setInsertionPointToStart(jump);
-            rewriter.create<mlir_ts::JumpLabelOp>(loc, jumpLabel);
-        }
-
-        rewriter.replaceOpWithNewOp<mlir_ts::JumpOp>(continueOp, jumpLabel);
-
         clh.CutBlock();
 
         return success();
@@ -784,19 +748,19 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     // a partial lowering, we explicitly mark the TypeScript operations that don't want
     // to lower, `typescript.print`, as `legal`.
     target.addIllegalDialect<mlir_ts::TypeScriptDialect>();
-    target.addLegalOp<
-        mlir_ts::AddressOfOp, mlir_ts::AddressOfConstStringOp, mlir_ts::AddressOfElementOp, mlir_ts::ArithmeticBinaryOp,
-        mlir_ts::ArithmeticUnaryOp, mlir_ts::AssertOp, mlir_ts::CallOp, mlir_ts::CallIndirectOp, mlir_ts::CaptureOp, mlir_ts::CastOp,
-        mlir_ts::ConstantOp, mlir_ts::EntryOp, mlir_ts::ExitOp, mlir_ts::ElementRefOp, mlir_ts::FuncOp, mlir_ts::GlobalOp,
-        mlir_ts::GlobalResultOp, mlir_ts::HasValueOp, mlir_ts::ValueOp, mlir_ts::NullOp, mlir_ts::ParseFloatOp, mlir_ts::ParseIntOp,
-        mlir_ts::PrintOp, mlir_ts::SizeOfOp, mlir_ts::ReturnOp, mlir_ts::ReturnValOp, mlir_ts::StoreOp, mlir_ts::SymbolRefOp,
-        mlir_ts::LengthOfOp, mlir_ts::StringLengthOp, mlir_ts::StringConcatOp, mlir_ts::StringCompareOp, mlir_ts::LoadOp, mlir_ts::NewOp,
-        mlir_ts::CreateTupleOp, mlir_ts::DeconstructTupleOp, mlir_ts::CreateArrayOp, mlir_ts::NewEmptyArrayOp, mlir_ts::NewArrayOp,
-        mlir_ts::DeleteOp, mlir_ts::PropertyRefOp, mlir_ts::InsertPropertyOp, mlir_ts::ExtractPropertyOp, mlir_ts::LogicalBinaryOp,
-        mlir_ts::UndefOp, mlir_ts::VariableOp, mlir_ts::ThrowOp, mlir_ts::TryOp, mlir_ts::CatchOp, mlir_ts::TrampolineOp, mlir_ts::InvokeOp,
-        mlir_ts::ResultOp, mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::InterfaceSymbolRefOp, mlir_ts::PushOp, mlir_ts::PopOp,
-        mlir_ts::NewInterfaceOp, mlir_ts::VTableOffsetRefOp, mlir_ts::ThisPropertyRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp,
-        mlir_ts::TypeOfOp, mlir_ts::DebuggerOp, mlir_ts::SwitchStateOp, mlir_ts::StateLabelOp, mlir_ts::JumpOp, mlir_ts::JumpLabelOp>();
+    target.addLegalOp<mlir_ts::AddressOfOp, mlir_ts::AddressOfConstStringOp, mlir_ts::AddressOfElementOp, mlir_ts::ArithmeticBinaryOp,
+                      mlir_ts::ArithmeticUnaryOp, mlir_ts::AssertOp, mlir_ts::CallOp, mlir_ts::CallIndirectOp, mlir_ts::CaptureOp,
+                      mlir_ts::CastOp, mlir_ts::ConstantOp, mlir_ts::EntryOp, mlir_ts::ExitOp, mlir_ts::ElementRefOp, mlir_ts::FuncOp,
+                      mlir_ts::GlobalOp, mlir_ts::GlobalResultOp, mlir_ts::HasValueOp, mlir_ts::ValueOp, mlir_ts::NullOp,
+                      mlir_ts::ParseFloatOp, mlir_ts::ParseIntOp, mlir_ts::PrintOp, mlir_ts::SizeOfOp, mlir_ts::ReturnOp,
+                      mlir_ts::ReturnValOp, mlir_ts::StoreOp, mlir_ts::SymbolRefOp, mlir_ts::LengthOfOp, mlir_ts::StringLengthOp,
+                      mlir_ts::StringConcatOp, mlir_ts::StringCompareOp, mlir_ts::LoadOp, mlir_ts::NewOp, mlir_ts::CreateTupleOp,
+                      mlir_ts::DeconstructTupleOp, mlir_ts::CreateArrayOp, mlir_ts::NewEmptyArrayOp, mlir_ts::NewArrayOp, mlir_ts::DeleteOp,
+                      mlir_ts::PropertyRefOp, mlir_ts::InsertPropertyOp, mlir_ts::ExtractPropertyOp, mlir_ts::LogicalBinaryOp,
+                      mlir_ts::UndefOp, mlir_ts::VariableOp, mlir_ts::ThrowOp, mlir_ts::TryOp, mlir_ts::CatchOp, mlir_ts::TrampolineOp,
+                      mlir_ts::InvokeOp, mlir_ts::ResultOp, mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::InterfaceSymbolRefOp, mlir_ts::PushOp,
+                      mlir_ts::PopOp, mlir_ts::NewInterfaceOp, mlir_ts::VTableOffsetRefOp, mlir_ts::ThisPropertyRefOp, mlir_ts::GetThisOp,
+                      mlir_ts::GetMethodOp, mlir_ts::TypeOfOp, mlir_ts::DebuggerOp, mlir_ts::SwitchStateOp, mlir_ts::StateLabelOp>();
 
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.

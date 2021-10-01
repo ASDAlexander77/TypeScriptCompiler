@@ -3239,35 +3239,6 @@ class SwitchStateOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateOp>
     }
 };
 
-struct JumpOpLowering : public TsLlvmPattern<mlir_ts::JumpOp>
-{
-    using TsLlvmPattern<mlir_ts::JumpOp>::TsLlvmPattern;
-
-    LogicalResult matchAndRewrite(mlir_ts::JumpOp jumpOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
-    {
-        CodeLogicHelper clh(jumpOp, rewriter);
-
-        // TODO: find jump block
-        auto *dest = clh.FindJumpBlock(jumpOp.label());
-
-        rewriter.replaceOpWithNewOp<BranchOp>(jumpOp, dest, ValueRange{});
-
-        return success();
-    }
-};
-
-struct JumpLabelOpLowering : public TsLlvmPattern<mlir_ts::JumpLabelOp>
-{
-    using TsLlvmPattern<mlir_ts::JumpLabelOp>::TsLlvmPattern;
-
-    LogicalResult matchAndRewrite(mlir_ts::JumpLabelOp jumpLabelOp, ArrayRef<Value> operands,
-                                  ConversionPatternRewriter &rewriter) const final
-    {
-        rewriter.eraseOp(jumpLabelOp);
-        return success();
-    }
-};
-
 static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, mlir::ModuleOp &m)
 {
     converter.addConversion([&](mlir_ts::AnyType type) { return LLVM::LLVMPointerType::get(IntegerType::get(m.getContext(), 8)); });
@@ -3521,20 +3492,20 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 
     // The only remaining operation to lower from the `typescript` dialect, is the PrintOp.
     TsLlvmContext tsLlvmContext;
-    patterns.insert<
-        CallOpLowering, CallIndirectOpLowering, CaptureOpLowering, ExitOpLowering, ReturnOpLowering, ReturnValOpLowering,
-        AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering, AssertOpLowering,
-        CastOpLowering, ConstantOpLowering, CreateOptionalOpLowering, UndefOptionalOpLowering, HasValueOpLowering, ValueOpLowering,
-        SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering, EntryOpLowering, FuncOpLowering, LoadOpLowering,
-        ElementRefOpLowering, PropertyRefOpLowering, ExtractPropertyOpLowering, LogicalBinaryOpLowering, NullOpLowering, NewOpLowering,
-        CreateTupleOpLowering, DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering,
-        PushOpLowering, PopOpLowering, DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering, PrintOpLowering, StoreOpLowering,
-        SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering, StringLengthOpLowering, StringConcatOpLowering,
-        StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering, MemoryCopyOpLowering, LoadSaveValueLowering, ThrowOpLowering,
-        TrampolineOpLowering, TryOpLowering, CatchOpLowering, VariableOpLowering, InvokeOpLowering, ThisVirtualSymbolRefOpLowering,
-        InterfaceSymbolRefOpLowering, NewInterfaceOpLowering, VTableOffsetRefOpLowering, ThisPropertyRefOpLowering, LoadBoundRefOpLowering,
-        StoreBoundRefOpLowering, CreateBoundRefOpLowering, CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering,
-        TypeOfOpLowering, DebuggerOpLowering, StateLabelOpLowering, SwitchStateOpLowering, JumpOpLowering, JumpLabelOpLowering>(
+    patterns.insert<CallOpLowering, CallIndirectOpLowering, CaptureOpLowering, ExitOpLowering, ReturnOpLowering, ReturnValOpLowering,
+                    AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering,
+                    AssertOpLowering, CastOpLowering, ConstantOpLowering, CreateOptionalOpLowering, UndefOptionalOpLowering,
+                    HasValueOpLowering, ValueOpLowering, SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering, EntryOpLowering,
+                    FuncOpLowering, LoadOpLowering, ElementRefOpLowering, PropertyRefOpLowering, ExtractPropertyOpLowering,
+                    LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateTupleOpLowering, DeconstructTupleOpLowering,
+                    CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, PushOpLowering, PopOpLowering, DeleteOpLowering,
+                    ParseFloatOpLowering, ParseIntOpLowering, PrintOpLowering, StoreOpLowering, SizeOfOpLowering, InsertPropertyOpLowering,
+                    LengthOfOpLowering, StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering, CharToStringOpLowering,
+                    UndefOpLowering, MemoryCopyOpLowering, LoadSaveValueLowering, ThrowOpLowering, TrampolineOpLowering, TryOpLowering,
+                    CatchOpLowering, VariableOpLowering, InvokeOpLowering, ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering,
+                    NewInterfaceOpLowering, VTableOffsetRefOpLowering, ThisPropertyRefOpLowering, LoadBoundRefOpLowering,
+                    StoreBoundRefOpLowering, CreateBoundRefOpLowering, CreateBoundFunctionOpLowering, GetThisOpLowering,
+                    GetMethodOpLowering, TypeOfOpLowering, DebuggerOpLowering, StateLabelOpLowering, SwitchStateOpLowering>(
         typeConverter, &getContext(), &tsLlvmContext);
 
     populateTypeScriptConversionPatterns(typeConverter, m);

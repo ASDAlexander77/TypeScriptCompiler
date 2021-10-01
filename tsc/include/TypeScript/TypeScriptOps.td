@@ -1474,19 +1474,6 @@ def TypeScript_LabelOp : TypeScript_Op<"Label",
   }];  
 }
 
-def TypeScript_JumpOp : TypeScript_Op<"Jump", [Terminator]> {
-  let summary = "jump";
-
-  let arguments = (ins StrAttr:$label);
-}
-
-def TypeScript_JumpLabelOp : TypeScript_Op<"JumpLabel"> {
-  let summary = "jump label operation";
-
-  let arguments = (ins  StrAttr:$label);
-  let results = (outs );
-}
-
 def TypeScript_SwitchStateOp : TypeScript_Op<"SwitchState",
       []> {
   let summary = "switch state operation";
