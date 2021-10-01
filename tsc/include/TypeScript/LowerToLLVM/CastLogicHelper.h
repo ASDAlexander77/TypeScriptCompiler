@@ -42,7 +42,7 @@ class CastLogicHelper
     {
     }
 
-    Value cast(mlir::Value in, mlir::Type resType)
+    mlir::Value cast(mlir::Value in, mlir::Type resType)
     {
         auto inType = in.getType();
         auto inLLVMType = tch.convertType(inType);
@@ -50,7 +50,7 @@ class CastLogicHelper
         return cast(in, inLLVMType, resType, resLLVMType);
     }
 
-    Value cast(mlir::Value in, mlir::Type inLLVMType, mlir::Type resType, mlir::Type resLLVMType)
+    mlir::Value cast(mlir::Value in, mlir::Type inLLVMType, mlir::Type resType, mlir::Type resLLVMType)
     {
         auto val = castTypeScriptTypes(in, inLLVMType, resType, resLLVMType);
         if (val)
@@ -61,7 +61,7 @@ class CastLogicHelper
         return castLLVMTypes(in, inLLVMType, resType, resLLVMType);
     }
 
-    Value castTypeScriptTypes(mlir::Value in, mlir::Type inLLVMType, mlir::Type resType, mlir::Type resLLVMType)
+    mlir::Value castTypeScriptTypes(mlir::Value in, mlir::Type inLLVMType, mlir::Type resType, mlir::Type resLLVMType)
     {
         auto inType = in.getType();
         if (inType == resType)
@@ -263,7 +263,7 @@ class CastLogicHelper
         return type.isIntOrFloat() && !isIntOrBool(type);
     }
 
-    Value castLLVMTypes(mlir::Value in, mlir::Type inLLVMType, mlir::Type resType, mlir::Type resLLVMType)
+    mlir::Value castLLVMTypes(mlir::Value in, mlir::Type inLLVMType, mlir::Type resType, mlir::Type resLLVMType)
     {
         if (inLLVMType == resLLVMType)
         {
@@ -536,7 +536,8 @@ class CastLogicHelper
     }
 };
 
-template <typename T> Value castLogic(Value size, Type sizeType, Operation *op, PatternRewriter &rewriter, TypeConverterHelper tch)
+template <typename T>
+mlir::Value castLogic(mlir::Value size, mlir::Type sizeType, mlir::Operation *op, PatternRewriter &rewriter, TypeConverterHelper tch)
 {
     CastLogicHelper castLogic(op, rewriter, tch);
     return castLogic.cast(size, sizeType);

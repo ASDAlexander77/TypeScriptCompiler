@@ -57,7 +57,7 @@ class AssertLogic
         auto line = 0;
         auto column = 0;
         auto fileName = StringRef("");
-        TypeSwitch<LocationAttr>(loc).Case<FileLineColLoc>([&](FileLineColLoc loc) {
+        mlir::TypeSwitch<LocationAttr>(loc).Case<FileLineColLoc>([&](FileLineColLoc loc) {
             fileName = loc.getFilename();
             line = loc.getLine();
             column = loc.getColumn();
@@ -96,7 +96,7 @@ class AssertLogic
 
         // auto nullCst = rewriter.create<LLVM::NullOp>(loc, getI8PtrType(context));
 
-        Value lineNumberRes = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(line));
+        mlir::Value lineNumberRes = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(line));
 
         rewriter.create<LLVM::CallOp>(loc, assertFuncOp, ValueRange{msgCst, fileCst, lineNumberRes});
         // rewriter.create<LLVM::UnreachableOp>(loc);
@@ -116,7 +116,7 @@ class AssertLogic
         auto line = 0;
         auto column = 0;
         auto fileName = StringRef("");
-        TypeSwitch<LocationAttr>(loc).Case<FileLineColLoc>([&](FileLineColLoc loc) {
+        mlir::TypeSwitch<mlir::LocationAttr>(loc).Case<mlir::FileLineColLoc>([&](FileLineColLoc loc) {
             fileName = loc.getFilename();
             line = loc.getLine();
             column = loc.getColumn();
@@ -155,8 +155,8 @@ class AssertLogic
 
         // auto nullCst = rewriter.create<LLVM::NullOp>(loc, getI8PtrType(context));
 
-        Value lineNumberRes = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(line));
-        Value funcName = rewriter.create<LLVM::NullOp>(loc, i8PtrTy);
+        mlir::Value lineNumberRes = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(line));
+        mlir::Value funcName = rewriter.create<LLVM::NullOp>(loc, i8PtrTy);
 
         rewriter.create<LLVM::CallOp>(loc, assertFuncOp, ValueRange{msgCst, fileCst, lineNumberRes, funcName});
         // rewriter.create<LLVM::UnreachableOp>(loc);

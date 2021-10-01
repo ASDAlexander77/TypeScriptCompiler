@@ -29,37 +29,37 @@ class TypeHelper
     {
     }
 
-    Type getBooleanType()
+    mlir::Type getBooleanType()
     {
         return mlir_ts::BooleanType::get(context);
     }
 
-    Type getI8Type()
+    mlir::Type getI8Type()
     {
-        return IntegerType::get(context, 8);
+        return mlir::IntegerType::get(context, 8);
     }
 
-    Type getI32Type()
+    mlir::Type getI32Type()
     {
-        return IntegerType::get(context, 32);
+        return mlir::IntegerType::get(context, 32);
     }
 
-    Type getI64Type()
+    mlir::Type getI64Type()
     {
-        return IntegerType::get(context, 64);
+        return mlir::IntegerType::get(context, 64);
     }
 
-    Type getF32Type()
+    mlir::Type getF32Type()
     {
         return FloatType::getF32(context);
     }
 
-    IntegerAttr getStructIndexAttrValue(int32_t value)
+    mlir::IntegerAttr getStructIndexAttrValue(int32_t value)
     {
         return IntegerAttr::get(getI32Type(), APInt(32, value));
     }
 
-    Type getIndexType()
+    mlir::Type getIndexType()
     {
         return getI64Type();
     }
@@ -69,9 +69,9 @@ class TypeHelper
         return IntegerAttr::get(getIndexType(), APInt(64, value));
     }
 
-    Type getLLVMBoolType()
+    mlir::Type getLLVMBoolType()
     {
-        return IntegerType::get(context, 1 /*, IntegerType::SignednessSemantics::Unsigned*/);
+        return mlir::IntegerType::get(context, 1 /*, IntegerType::SignednessSemantics::Unsigned*/);
     }
 
     LLVM::LLVMVoidType getVoidType()
@@ -104,22 +104,22 @@ class TypeHelper
         return LLVM::LLVMArrayType::get(getI32Type(), size);
     }
 
-    LLVM::LLVMPointerType getPointerType(Type elementType)
+    LLVM::LLVMPointerType getPointerType(mlir::Type elementType)
     {
         return LLVM::LLVMPointerType::get(elementType);
     }
 
-    LLVM::LLVMArrayType getArrayType(Type elementType, size_t size)
+    LLVM::LLVMArrayType getArrayType(mlir::Type elementType, size_t size)
     {
         return LLVM::LLVMArrayType::get(elementType, size);
     }
 
-    LLVM::LLVMFunctionType getFunctionType(Type result, ArrayRef<Type> arguments, bool isVarArg = false)
+    LLVM::LLVMFunctionType getFunctionType(mlir::Type result, ArrayRef<mlir::Type> arguments, bool isVarArg = false)
     {
         return LLVM::LLVMFunctionType::get(result, arguments, isVarArg);
     }
 
-    LLVM::LLVMFunctionType getFunctionType(ArrayRef<Type> arguments, bool isVarArg = false)
+    LLVM::LLVMFunctionType getFunctionType(ArrayRef<mlir::Type> arguments, bool isVarArg = false)
     {
         return LLVM::LLVMFunctionType::get(getVoidType(), arguments, isVarArg);
     }

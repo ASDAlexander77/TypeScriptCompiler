@@ -1,10 +1,16 @@
 #define DEBUG_TYPE "affine"
 
+#include "TypeScript/Config.h"
 #include "TypeScript/DataStructs.h"
 #include "TypeScript/Passes.h"
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/TypeScriptFunctionPass.h"
+#ifdef WIN_EXCEPTION
+#include "TypeScript/MLIRLogic/MLIRRTTIHelperVCWin32.h"
+#else
+#include "TypeScript/MLIRLogic/MLIRRTTIHelperVCLinux.h"
+#endif
 
 #include "TypeScript/LowerToLLVMLogic.h"
 
@@ -30,7 +36,9 @@ namespace
 struct TSContext
 {
     // name, break, continue
-    DenseMap<Operation *, mlir::Block *> jumps;
+    mlir::DenseMap<Operation *, mlir::Block *> jumps;
+    mlir::DenseMap<Operation *, mlir::Value> catchOpData;
+    mlir::DenseMap<Operation *, mlir::Block *> unwind;
 };
 
 template <typename OpTy> class TsPattern : public OpRewritePattern<OpTy>
@@ -95,7 +103,7 @@ struct ParamOptionalOpLowering : public TsPattern<mlir_ts::ParamOptionalOp>
 
         rewriter.setInsertionPointAfter(ifOp);
 
-        Value variable =
+        mlir::Value variable =
             rewriter.create<mlir_ts::VariableOp>(location, paramOp.getType(), ifOp.results().front(), rewriter.getBoolAttr(false));
 
         rewriter.replaceOp(paramOp, variable);
@@ -220,7 +228,7 @@ struct IfOpLowering : public TsPattern<mlir_ts::IfOp>
         auto *condBlock = rewriter.getInsertionBlock();
         auto opPosition = rewriter.getInsertionPoint();
         auto *remainingOpsBlock = rewriter.splitBlock(condBlock, opPosition);
-        Block *continueBlock;
+        mlir::Block *continueBlock;
         if (ifOp.getNumResults() == 0)
         {
             continueBlock = remainingOpsBlock;
@@ -261,8 +269,8 @@ struct IfOpLowering : public TsPattern<mlir_ts::IfOp>
         rewriter.setInsertionPointToEnd(condBlock);
         auto castToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), ifOp.condition());
         rewriter.create<CondBranchOp>(loc, castToI1, thenBlock,
-                                      /*trueArgs=*/ArrayRef<Value>(), elseBlock,
-                                      /*falseArgs=*/ArrayRef<Value>());
+                                      /*trueArgs=*/ArrayRef<mlir::Value>(), elseBlock,
+                                      /*falseArgs=*/ArrayRef<mlir::Value>());
 
         // Ok, we're done!
         rewriter.replaceOp(ifOp, continueBlock->getArguments());
@@ -354,8 +362,8 @@ struct DoWhileOpLowering : public TsPattern<mlir_ts::DoWhileOp>
 
         // Split the current block before the WhileOp to create the inlining point.
         OpBuilder::InsertionGuard guard(rewriter);
-        Block *currentBlock = rewriter.getInsertionBlock();
-        Block *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+        mlir::Block *currentBlock = rewriter.getInsertionBlock();
+        mlir::Block *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
 
         // Only the "before" region should be inlined.
         auto *body = &doWhileOp.body().front();
@@ -505,8 +513,8 @@ struct LabelOpLowering : public TsPattern<mlir_ts::LabelOp>
         OpBuilder::InsertionGuard guard(rewriter);
         Location loc = labelOp.getLoc();
 
-        Block *currentBlock = rewriter.getInsertionBlock();
-        Block *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+        mlir::Block *currentBlock = rewriter.getInsertionBlock();
+        mlir::Block *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
 
         auto *begin = &labelOp.labelRegion().front();
 
@@ -621,8 +629,8 @@ struct SwitchOpLowering : public TsPattern<mlir_ts::SwitchOp>
 
         // Split the current block before the WhileOp to create the inlining point.
         OpBuilder::InsertionGuard guard(rewriter);
-        Block *currentBlock = rewriter.getInsertionBlock();
-        Block *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+        mlir::Block *currentBlock = rewriter.getInsertionBlock();
+        mlir::Block *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
 
         auto *casesRegion = &switchOp.casesRegion().front();
 
@@ -688,6 +696,194 @@ struct ThisAccessorRefOpLowering : public TsPattern<mlir_ts::ThisAccessorRefOp>
                                                         TypeRange{thisAccessorRefOp.getType()}, ValueRange{thisAccessorRefOp.thisVal()});
 
         rewriter.replaceOp(thisAccessorRefOp, callRes.getResult(0));
+
+        return success();
+    }
+};
+
+struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
+{
+    using TsPattern<mlir_ts::TryOp>::TsPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::TryOp tryOp, PatternRewriter &rewriter) const final
+    {
+        Location loc = tryOp.getLoc();
+
+        MLIRTypeHelper mth(rewriter.getContext());
+        CodeLogicHelper clh(tryOp, rewriter);
+
+#ifdef WIN_EXCEPTION
+        MLIRRTTIHelperVCWin32 rttih(rewriter, tryOp->getParent<mlir::ModuleOp>());
+#else
+        MLIRRTTIHelperVCLinux rttih(rewriter, tryOp->getParent<mlir::ModuleOp>());
+#endif
+
+        auto i8PtrTy = mth.getOpaqueType();
+
+        Operation *catchOpPtr = nullptr;
+        auto visitorCatchContinue = [&](Operation *op) {
+            if (auto catchOp = dyn_cast_or_null<mlir_ts::CatchOp>(op))
+            {
+                rttih.setType(catchOp.catchArg().getType().cast<mlir_ts::RefType>().getElementType());
+                assert(!catchOpPtr);
+                catchOpPtr = op;
+            }
+        };
+        tryOp.catches().walk(visitorCatchContinue);
+
+        // add to variables to store exception info: i8*, i32
+        auto ptrValueRef = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(mth.getOpaqueType()), mlir::Value(),
+                                                                rewriter.getBoolAttr(false));
+        auto i32ValueRef =
+            rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(mth.getI32Type()), mlir::Value(), rewriter.getBoolAttr(false));
+
+        OpBuilder::InsertionGuard guard(rewriter);
+        Block *currentBlock = rewriter.getInsertionBlock();
+        Block *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+
+        auto *bodyRegion = &tryOp.body().front();
+        auto *bodyRegionLast = &tryOp.body().back();
+        auto *catchesRegion = &tryOp.catches().front();
+        auto *catchesRegionLast = &tryOp.catches().back();
+        auto *finallyBlockRegion = &tryOp.finallyBlock().front();
+        auto *finallyBlockRegionLast = &tryOp.finallyBlock().back();
+
+        // logic to set Invoke attribute CallOp
+        auto visitorCallOpContinue = [&](Operation *op) {
+            if (auto callOp = dyn_cast_or_null<mlir_ts::CallOp>(op))
+            {
+                tsContext->unwind[op] = catchesRegion;
+            }
+            else if (auto callIndirectOp = dyn_cast_or_null<mlir_ts::CallIndirectOp>(op))
+            {
+                tsContext->unwind[op] = catchesRegion;
+            }
+            else if (auto throwOp = dyn_cast_or_null<mlir_ts::ThrowOp>(op))
+            {
+                tsContext->unwind[op] = catchesRegion;
+            }
+        };
+        tryOp.body().walk(visitorCallOpContinue);
+
+        // Branch to the "body" region.
+        rewriter.setInsertionPointToEnd(currentBlock);
+        rewriter.create<BranchOp>(loc, bodyRegion, ValueRange{});
+
+        rewriter.inlineRegionBefore(tryOp.body(), continuation);
+
+        rewriter.inlineRegionBefore(tryOp.catches(), continuation);
+
+        rewriter.inlineRegionBefore(tryOp.finallyBlock(), continuation);
+
+        // Body:catch vars
+        rewriter.setInsertionPointToStart(bodyRegion);
+        auto catch1 = rttih.hasType() ? (mlir::Value)rttih.typeInfoPtrValue(loc)
+                                      : /*catch all*/ (mlir::Value)rewriter.create<LLVM::NullOp>(loc, th.getI8PtrType());
+
+        // filter means - allow all in = catch (...)
+        // auto filter = rewriter.create<LLVM::UndefOp>(loc, th.getI8PtrPtrType());
+
+        // Body:exit -> replace ResultOp with br
+        rewriter.setInsertionPointToEnd(bodyRegionLast);
+
+        auto resultOp = cast<mlir_ts::ResultOp>(bodyRegionLast->getTerminator());
+        // rewriter.replaceOpWithNewOp<BranchOp>(resultOp, continuation, ValueRange{});
+        rewriter.replaceOpWithNewOp<BranchOp>(resultOp, finallyBlockRegion, ValueRange{});
+
+        // catches:landingpad
+        rewriter.setInsertionPointToStart(catchesRegion);
+
+        auto landingPadTypeLinux = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {th.getI8PtrType(), th.getI32Type()}, false);
+        auto landingPadOp = rewriter.create<LLVM::LandingpadOp>(loc, landingPadTypeLinux, false, ValueRange{catch1});
+
+        // catches:extract
+        auto ptrFromExcept = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), landingPadOp, clh.getStructIndexAttr(0));
+        rewriter.create<mlir_ts::StoreOp>(loc, ptrFromExcept, ptrValueRef);
+        auto i32FromExcept = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI32Type(), landingPadOp, clh.getStructIndexAttr(1));
+        auto storeOpBrPlace = rewriter.create<mlir_ts::StoreOp>(loc, i32FromExcept, i32ValueRef);
+
+        mlir::Value cmpValue;
+        if (rttih.hasType())
+        {
+            // br<->extract, will be inserted later
+            // catch: compare
+            auto loadedI32Value = rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), i32ValueRef);
+
+            auto typeIdFuncName = "llvm.eh.typeid.for";
+            auto typeIdFunc = ch.getOrInsertFunction(typeIdFuncName, th.getFunctionType(th.getI32Type(), {i8PtrTy}));
+
+            auto callInfo = rewriter.create<LLVM::CallOp>(loc, typeIdFunc, ValueRange{clh.castToI8Ptr(rttih.throwInfoPtrValue(loc))});
+            auto typeIdValue = callInfo.getResult(0);
+
+            // icmp
+            cmpValue = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, loadedI32Value, typeIdValue);
+            // condbr, will be inserted later
+        }
+
+        // catch: begin catch
+        auto loadedI8PtrValue = rewriter.create<LLVM::LoadOp>(loc, i8PtrTy, ptrValueRef);
+
+        auto beginCatchFuncName = "__cxa_begin_catch";
+        auto beginCatchFunc = ch.getOrInsertFunction(beginCatchFuncName, th.getFunctionType(i8PtrTy, {i8PtrTy}));
+
+        auto beginCatchCallInfo = rewriter.create<LLVM::CallOp>(loc, beginCatchFunc, ValueRange{loadedI8PtrValue});
+
+        if (catchOpPtr)
+        {
+            tsLlvmContext->catchOpData[catchOpPtr] = beginCatchCallInfo->getResult(0);
+        }
+
+        // catch: load value
+        // TODO:
+
+        // catches: end catch
+        rewriter.setInsertionPoint(catchesRegionLast->getTerminator());
+
+        auto endCatchFuncName = "__cxa_end_catch";
+        auto endCatchFunc = ch.getOrInsertFunction(endCatchFuncName, th.getFunctionType(th.getVoidType(), ArrayRef<Type>{}));
+
+        rewriter.create<LLVM::CallOp>(loc, endCatchFunc, ValueRange{});
+
+        // exit br
+        rewriter.setInsertionPointToEnd(catchesRegionLast);
+
+        auto yieldOpCatches = cast<mlir_ts::ResultOp>(catchesRegionLast->getTerminator());
+        // rewriter.replaceOpWithNewOp<BranchOp>(yieldOpCatches, continuation, ValueRange{});
+        rewriter.replaceOpWithNewOp<BranchOp>(yieldOpCatches, finallyBlockRegion, ValueRange{});
+
+        // br: insert br after extract values
+        rewriter.setInsertionPointAfter(storeOpBrPlace);
+
+        Block *currentBlockBr = rewriter.getInsertionBlock();
+        Block *continuationBr = rewriter.splitBlock(currentBlockBr, rewriter.getInsertionPoint());
+
+        rewriter.setInsertionPointToEnd(currentBlockBr);
+        rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBr);
+        // end of br
+
+        if (cmpValue)
+        {
+            // condbr
+            rewriter.setInsertionPointAfterValue(cmpValue);
+
+            Block *currentBlockBrCmp = rewriter.getInsertionBlock();
+            Block *continuationBrCmp = rewriter.splitBlock(currentBlockBrCmp, rewriter.getInsertionPoint());
+
+            rewriter.setInsertionPointAfterValue(cmpValue);
+            // TODO: when catch not matching - should go into result (rethrow)
+            rewriter.create<CondBranchOp>(loc, cmpValue, continuationBrCmp, continuation);
+            // end of condbr
+        }
+
+        // end of jumps
+
+        // finally:exit
+        rewriter.setInsertionPointToEnd(finallyBlockRegionLast);
+
+        auto yieldOpFinallyBlock = cast<mlir_ts::ResultOp>(finallyBlockRegionLast->getTerminator());
+        rewriter.replaceOpWithNewOp<BranchOp>(yieldOpFinallyBlock, continuation, yieldOpFinallyBlock.results());
+
+        rewriter.replaceOp(tryOp, continuation->getArguments());
 
         return success();
     }
@@ -767,7 +963,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     OwningRewritePatternList patterns(&getContext());
     patterns.insert<ParamOpLowering, ParamOptionalOpLowering, ParamDefaultValueOpLowering, PrefixUnaryOpLowering, PostfixUnaryOpLowering,
                     IfOpLowering, DoWhileOpLowering, WhileOpLowering, ForOpLowering, BreakOpLowering, ContinueOpLowering, SwitchOpLowering,
-                    AccessorRefOpLowering, ThisAccessorRefOpLowering, LabelOpLowering>(&getContext(), &tsContext);
+                    AccessorRefOpLowering, ThisAccessorRefOpLowering, LabelOpLowering, TryOpLowering>(&getContext(), &tsContext);
 
     // With the target and rewrite patterns defined, we can now attempt the
     // conversion. The conversion will signal failure if any of our `illegal`

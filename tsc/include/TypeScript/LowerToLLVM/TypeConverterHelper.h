@@ -25,7 +25,7 @@ class TypeConverterHelper
         assert(typeConverter);
     }
 
-    Type convertType(Type type)
+    mlir::Type convertType(mlir::Type type)
     {
         if (type)
         {
@@ -38,7 +38,7 @@ class TypeConverterHelper
         return type;
     }
 
-    Type makePtrToValue(Type type)
+    mlir::Type makePtrToValue(mlir::Type type)
     {
         if (auto constArray = type.dyn_cast_or_null<mlir_ts::ConstArrayType>())
         {

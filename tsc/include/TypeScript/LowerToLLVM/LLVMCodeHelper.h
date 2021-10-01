@@ -91,7 +91,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         return failure();
     }
 
-    Value getAddressOfGlobalVar(StringRef name, mlir::Type type, int32_t index = 0)
+    mlir::Value getAddressOfGlobalVar(StringRef name, mlir::Type type, int32_t index = 0)
     {
         auto loc = op->getLoc();
         auto parentModule = op->getParentOfType<ModuleOp>();
@@ -99,9 +99,9 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         TypeHelper th(rewriter);
 
         // Get the pointer to the first character in the global string.
-        Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, type, name);
-        Value cstIdx = rewriter.create<LLVM::ConstantOp>(loc, th.getIndexType(), th.getIndexAttrValue(index));
-        return rewriter.create<LLVM::GEPOp>(loc, globalPtr.getType(), globalPtr, ArrayRef<Value>({cstIdx}));
+        mlir::Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, type, name);
+        mlir::Value cstIdx = rewriter.create<LLVM::ConstantOp>(loc, th.getIndexType(), th.getIndexAttrValue(index));
+        return rewriter.create<LLVM::GEPOp>(loc, globalPtr.getType(), globalPtr, ArrayRef<mlir::Value>({cstIdx}));
     }
 
     StringAttr getStringAttrWith0(std::string value)
@@ -109,14 +109,14 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         return rewriter.getStringAttr(StringRef(value.data(), value.length() + 1));
     }
 
-    Value getOrCreateGlobalArray(Type originalElementType, Type llvmElementType, unsigned size, ArrayAttr arrayAttr)
+    mlir::Value getOrCreateGlobalArray(mlir::Type originalElementType, mlir::Type llvmElementType, unsigned size, ArrayAttr arrayAttr)
     {
         auto vecVarName = calc_hash_value(arrayAttr, "a_");
         return getOrCreateGlobalArray(originalElementType, vecVarName, llvmElementType, size, arrayAttr);
     }
 
-    Value getReadOnlyRTArray(mlir::Location loc, mlir_ts::ArrayType originalArrayType, LLVM::LLVMStructType llvmArrayType,
-                             ArrayAttr arrayValue)
+    mlir::Value getReadOnlyRTArray(mlir::Location loc, mlir_ts::ArrayType originalArrayType, LLVM::LLVMStructType llvmArrayType,
+                                   ArrayAttr arrayValue)
     {
         auto llvmSubElementType = llvmArrayType.getBody()[0].cast<LLVM::LLVMPointerType>().getElementType();
 
@@ -141,7 +141,8 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         return structValue3;
     }
 
-    Value getOrCreateGlobalArray(Type originalElementType, StringRef name, Type llvmElementType, unsigned size, ArrayAttr arrayAttr)
+    mlir::Value getOrCreateGlobalArray(mlir::Type originalElementType, StringRef name, mlir::Type llvmElementType, unsigned size,
+                                       ArrayAttr arrayAttr)
     {
         auto loc = op->getLoc();
         auto parentModule = op->getParentOfType<ModuleOp>();
@@ -165,7 +166,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                 seekLast<DenseElementsAttr>(parentModule.getBody());
 
                 // end
-                auto dataType = VectorType::get({static_cast<int64_t>(value.size())}, llvmElementType);
+                auto dataType = mlir::VectorType::get({static_cast<int64_t>(value.size())}, llvmElementType);
                 auto attr = DenseElementsAttr::get(dataType, value);
                 global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, attr);
             }
@@ -175,11 +176,11 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
                 OpBuilder::InsertionGuard guard(rewriter);
 
-                global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, Attribute{});
+                global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, mlir::Attribute{});
 
                 setStructWritingPoint(global);
 
-                Value arrayVal = rewriter.create<LLVM::UndefOp>(loc, arrayType);
+                mlir::Value arrayVal = rewriter.create<LLVM::UndefOp>(loc, arrayType);
 
                 auto position = 0;
                 for (auto item : arrayAttr.getValue())
@@ -198,11 +199,11 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
                 OpBuilder::InsertionGuard guard(rewriter);
 
-                global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, Attribute{});
+                global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, mlir::Attribute{});
 
                 setStructWritingPoint(global);
 
-                Value arrayVal = rewriter.create<LLVM::UndefOp>(loc, arrayType);
+                mlir::Value arrayVal = rewriter.create<LLVM::UndefOp>(loc, arrayType);
 
                 for (auto item : arrayAttr.getValue())
                 {
@@ -218,11 +219,11 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
                 OpBuilder::InsertionGuard guard(rewriter);
 
-                global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, Attribute{});
+                global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, mlir::Attribute{});
 
                 setStructWritingPoint(global);
 
-                Value arrayVal = rewriter.create<LLVM::UndefOp>(loc, arrayType);
+                mlir::Value arrayVal = rewriter.create<LLVM::UndefOp>(loc, arrayType);
 
                 // TODO: implement ReadOnlyRTArray; as RTArray may contains ConstArray data (so using not editable memory)
 
@@ -248,11 +249,11 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
                 OpBuilder::InsertionGuard guard(rewriter);
 
-                global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, Attribute{});
+                global = rewriter.create<LLVM::GlobalOp>(loc, arrayType, true, LLVM::Linkage::Internal, name, mlir::Attribute{});
 
                 setStructWritingPoint(global);
 
-                Value arrayVal = rewriter.create<LLVM::UndefOp>(loc, arrayType);
+                mlir::Value arrayVal = rewriter.create<LLVM::UndefOp>(loc, arrayType);
 
                 auto position = 0;
                 for (auto item : arrayAttr.getValue())
@@ -273,15 +274,15 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         }
 
         // Get the pointer to the first character in the global string.
-        Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
-        Value cst0 = rewriter.create<LLVM::ConstantOp>(loc, th.getIndexType(), th.getIndexAttrValue(0));
-        return rewriter.create<LLVM::GEPOp>(loc, pointerType, globalPtr, ArrayRef<Value>({cst0, cst0}));
+        mlir::Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
+        mlir::Value cst0 = rewriter.create<LLVM::ConstantOp>(loc, th.getIndexType(), th.getIndexAttrValue(0));
+        return rewriter.create<LLVM::GEPOp>(loc, pointerType, globalPtr, ArrayRef<mlir::Value>({cst0, cst0}));
     }
 
     mlir::LogicalResult setStructWritingPoint(LLVM::GlobalOp globalOp)
     {
         Region &region = globalOp.getInitializerRegion();
-        Block *block = rewriter.createBlock(&region);
+        mlir::Block *block = rewriter.createBlock(&region);
 
         rewriter.setInsertionPoint(block, block->begin());
 
@@ -294,9 +295,9 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         return mlir::success();
     }
 
-    Value getStructFromArrayAttr(Location loc, LLVM::LLVMStructType llvmStructType, ArrayAttr arrayAttr)
+    mlir::Value getStructFromArrayAttr(Location loc, LLVM::LLVMStructType llvmStructType, ArrayAttr arrayAttr)
     {
-        Value structVal = rewriter.create<LLVM::UndefOp>(loc, llvmStructType);
+        mlir::Value structVal = rewriter.create<LLVM::UndefOp>(loc, llvmStructType);
 
         auto typesRange = llvmStructType.getBody();
 
@@ -313,10 +314,10 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         return structVal;
     }
 
-    Value getTupleFromArrayAttr(Location loc, mlir_ts::ConstTupleType originalType, LLVM::LLVMStructType llvmStructType,
-                                ArrayAttr arrayAttr)
+    mlir::Value getTupleFromArrayAttr(Location loc, mlir_ts::ConstTupleType originalType, LLVM::LLVMStructType llvmStructType,
+                                      ArrayAttr arrayAttr)
     {
-        Value tupleVal = rewriter.create<LLVM::UndefOp>(loc, llvmStructType);
+        mlir::Value tupleVal = rewriter.create<LLVM::UndefOp>(loc, llvmStructType);
 
         auto typesRange = llvmStructType.getBody();
 
@@ -374,14 +375,14 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         return tupleVal;
     }
 
-    Value getOrCreateGlobalTuple(mlir_ts::ConstTupleType originalType, LLVM::LLVMStructType llvmStructType, ArrayAttr arrayAttr)
+    mlir::Value getOrCreateGlobalTuple(mlir_ts::ConstTupleType originalType, LLVM::LLVMStructType llvmStructType, ArrayAttr arrayAttr)
     {
         auto varName = calc_hash_value(arrayAttr, "tp_");
         return getOrCreateGlobalTuple(originalType, llvmStructType, varName, arrayAttr);
     }
 
-    Value getOrCreateGlobalTuple(mlir_ts::ConstTupleType originalType, LLVM::LLVMStructType llvmStructType, StringRef name,
-                                 ArrayAttr arrayAttr)
+    mlir::Value getOrCreateGlobalTuple(mlir_ts::ConstTupleType originalType, LLVM::LLVMStructType llvmStructType, StringRef name,
+                                       ArrayAttr arrayAttr)
     {
         auto loc = op->getLoc();
         auto parentModule = op->getParentOfType<ModuleOp>();
@@ -399,7 +400,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
             seekLast(parentModule.getBody());
 
-            global = rewriter.create<LLVM::GlobalOp>(loc, llvmStructType, true, LLVM::Linkage::Internal, name, Attribute{});
+            global = rewriter.create<LLVM::GlobalOp>(loc, llvmStructType, true, LLVM::Linkage::Internal, name, mlir::Attribute{});
 
             setStructWritingPoint(global);
 
@@ -408,12 +409,12 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         }
 
         // Get the pointer to the first character in the global string.
-        Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
-        Value cst0 = rewriter.create<LLVM::ConstantOp>(loc, th.getIndexType(), th.getIndexAttrValue(0));
-        return rewriter.create<LLVM::GEPOp>(loc, pointerType, globalPtr, ArrayRef<Value>({cst0}));
+        mlir::Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
+        mlir::Value cst0 = rewriter.create<LLVM::ConstantOp>(loc, th.getIndexType(), th.getIndexAttrValue(0));
+        return rewriter.create<LLVM::GEPOp>(loc, pointerType, globalPtr, ArrayRef<mlir::Value>({cst0}));
     }
 
-    Value GetAddressOfArrayElement(Type elementRefType, Value arrayOrStringOrTuple, Value index)
+    mlir::Value GetAddressOfArrayElement(mlir::Type elementRefType, mlir::Value arrayOrStringOrTuple, mlir::Value index)
     {
         TypeHelper th(rewriter);
         TypeConverterHelper tch(typeConverter);
@@ -438,7 +439,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         return addr;
     }
 
-    Value GetAddressOfStructElement(Type elementRefType, Value arrayOrStringOrTuple, int32_t index)
+    mlir::Value GetAddressOfStructElement(mlir::Type elementRefType, mlir::Value arrayOrStringOrTuple, int32_t index)
     {
         // index of struct MUST BE 32 bit
         TypeHelper th(rewriter);
@@ -457,7 +458,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
         auto ptrType = LLVM::LLVMPointerType::get(tch.convertType(elementType));
 
-        SmallVector<Value> indexes;
+        SmallVector<mlir::Value> indexes;
         // add first index which 64 bit (struct field MUST BE 32 bit index)
         // auto firstIndex = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI64Type(), rewriter.getI64IntegerAttr(0));
         auto firstIndex = rewriter.create<LLVM::ConstantOp>(loc, rewriter.getI32Type(), rewriter.getI32IntegerAttr(0));

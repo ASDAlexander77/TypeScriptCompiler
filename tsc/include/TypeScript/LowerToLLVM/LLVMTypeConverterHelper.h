@@ -26,9 +26,9 @@ class LLVMTypeConverterHelper
     {
     }
 
-    Type getIntPtrType(unsigned addressSpace)
+    mlir::Type getIntPtrType(unsigned addressSpace)
     {
-        return IntegerType::get(&typeConverter.getContext(), typeConverter.getPointerBitwidth(addressSpace));
+        return mlir::IntegerType::get(&typeConverter.getContext(), typeConverter.getPointerBitwidth(addressSpace));
     }
 
     int32_t getPointerBitwidth(unsigned addressSpace)

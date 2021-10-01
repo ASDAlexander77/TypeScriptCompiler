@@ -18,22 +18,23 @@ enum class MemoryAllocSet
     Zero
 };
 
-template <typename T> Value castLogic(Value size, Type sizeType, Operation *op, PatternRewriter &rewriter, TypeConverterHelper tch);
+template <typename T>
+mlir::Value castLogic(mlir::Value size, mlir::Type sizeType, mlir::Operation *op, PatternRewriter &rewriter, TypeConverterHelper tch);
 
 class LLVMCodeHelperBase
 {
   protected:
-    Operation *op;
+    mlir::Operation *op;
     PatternRewriter &rewriter;
     TypeConverter *typeConverter;
 
   public:
-    LLVMCodeHelperBase(Operation *op, PatternRewriter &rewriter, TypeConverter *typeConverter)
+    LLVMCodeHelperBase(mlir::Operation *op, PatternRewriter &rewriter, TypeConverter *typeConverter)
         : op(op), rewriter(rewriter), typeConverter(typeConverter)
     {
     }
 
-    template <typename T> void seekLast(Block *block)
+    template <typename T> void seekLast(mlir::Block *block)
     {
         // find last string
         auto lastUse = [&](Operation *op) {
@@ -49,10 +50,10 @@ class LLVMCodeHelperBase
         block->walk(lastUse);
     }
 
-    void seekLast(Block *block)
+    void seekLast(mlir::Block *block)
     {
         // find last string
-        auto lastUse = [&](Operation *op) {
+        auto lastUse = [&](mlir::Operation *op) {
             if (auto globalOp = dyn_cast_or_null<LLVM::GlobalOp>(op))
             {
                 rewriter.setInsertionPointAfter(globalOp);
@@ -62,7 +63,7 @@ class LLVMCodeHelperBase
         block->walk(lastUse);
     }
 
-    void seekLastWithBody(Block *block)
+    void seekLastWithBody(mlir::Block *block)
     {
         // find last string
         auto lastUse = [&](Operation *op) {
@@ -78,7 +79,7 @@ class LLVMCodeHelperBase
         block->walk(lastUse);
     }
 
-    template <typename T> void seekLastOp(Block *block)
+    template <typename T> void seekLastOp(mlir::Block *block)
     {
         // find last string
         auto lastUse = [&](Operation *op) {
@@ -132,7 +133,7 @@ class LLVMCodeHelperBase
   private:
     /// Return a value representing an access into a global string with the given
     /// name, creating the string if necessary.
-    Value getOrCreateGlobalString_(StringRef name, StringRef value)
+    mlir::Value getOrCreateGlobalString_(StringRef name, StringRef value)
     {
         auto loc = op->getLoc();
         auto parentModule = op->getParentOfType<ModuleOp>();
@@ -153,18 +154,18 @@ class LLVMCodeHelperBase
         }
 
         // Get the pointer to the first character in the global string.
-        Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
-        Value cst0 = rewriter.create<LLVM::ConstantOp>(loc, th.getIndexType(), th.getIndexAttrValue(0));
-        return rewriter.create<LLVM::GEPOp>(loc, th.getI8PtrType(), globalPtr, ArrayRef<Value>({cst0, cst0}));
+        mlir::Value globalPtr = rewriter.create<LLVM::AddressOfOp>(loc, global);
+        mlir::Value cst0 = rewriter.create<LLVM::ConstantOp>(loc, th.getIndexType(), th.getIndexAttrValue(0));
+        return rewriter.create<LLVM::GEPOp>(loc, th.getI8PtrType(), globalPtr, ArrayRef<mlir::Value>({cst0, cst0}));
     }
 
   public:
-    Value getOrCreateGlobalString(std::string value)
+    mlir::Value getOrCreateGlobalString(std::string value)
     {
         return getOrCreateGlobalString(getStorageStringName(value), value);
     }
 
-    Value getOrCreateGlobalString(StringRef name, std::string value)
+    mlir::Value getOrCreateGlobalString(StringRef name, std::string value)
     {
         return getOrCreateGlobalString_(name, StringRef(value.data(), value.length() + 1));
     }
@@ -186,12 +187,12 @@ class LLVMCodeHelperBase
         return rewriter.create<LLVM::LLVMFuncOp>(loc, name, llvmFnType);
     }
 
-    Value MemoryAlloc(mlir::Value sizeOfAlloc, MemoryAllocSet zero = MemoryAllocSet::None)
+    mlir::Value MemoryAlloc(mlir::Value sizeOfAlloc, MemoryAllocSet zero = MemoryAllocSet::None)
     {
         return _MemoryAlloc<int>(sizeOfAlloc, zero);
     }
 
-    Value MemoryAlloc(mlir::Type storageType, MemoryAllocSet zero = MemoryAllocSet::None)
+    mlir::Value MemoryAlloc(mlir::Type storageType, MemoryAllocSet zero = MemoryAllocSet::None)
     {
         TypeHelper th(rewriter);
 
@@ -201,7 +202,7 @@ class LLVMCodeHelperBase
         return MemoryAlloc(sizeOfTypeValue, zero);
     }
 
-    Value MemoryAllocBitcast(mlir::Type res, mlir::Type storageType, MemoryAllocSet zero = MemoryAllocSet::None)
+    mlir::Value MemoryAllocBitcast(mlir::Type res, mlir::Type storageType, MemoryAllocSet zero = MemoryAllocSet::None)
     {
         auto loc = op->getLoc();
 
@@ -210,7 +211,7 @@ class LLVMCodeHelperBase
         return val;
     }
 
-    Value MemoryAllocBitcast(mlir::Type res, mlir::Value sizeOfAlloc, MemoryAllocSet zero = MemoryAllocSet::None)
+    mlir::Value MemoryAllocBitcast(mlir::Type res, mlir::Value sizeOfAlloc, MemoryAllocSet zero = MemoryAllocSet::None)
     {
         auto loc = op->getLoc();
 
@@ -219,12 +220,12 @@ class LLVMCodeHelperBase
         return val;
     }
 
-    Value MemoryRealloc(mlir::Value ptrValue, mlir::Value sizeOfAlloc)
+    mlir::Value MemoryRealloc(mlir::Value ptrValue, mlir::Value sizeOfAlloc)
     {
         return _MemoryRealloc<int>(ptrValue, sizeOfAlloc);
     }
 
-    Value MemoryReallocBitcast(mlir::Type res, mlir::Value ptrValue, mlir::Value sizeOfAlloc)
+    mlir::Value MemoryReallocBitcast(mlir::Type res, mlir::Value ptrValue, mlir::Value sizeOfAlloc)
     {
         auto loc = op->getLoc();
 
@@ -238,7 +239,7 @@ class LLVMCodeHelperBase
         return _MemoryFree<int>(ptrValue);
     }
 
-    template <typename T> Value _MemoryAlloc(mlir::Value sizeOfAlloc, MemoryAllocSet zero)
+    template <typename T> mlir::Value _MemoryAlloc(mlir::Value sizeOfAlloc, MemoryAllocSet zero)
     {
         TypeHelper th(rewriter);
         TypeConverterHelper tch(typeConverter);
@@ -268,7 +269,7 @@ class LLVMCodeHelperBase
         return ptr;
     }
 
-    template <typename T> Value _MemoryRealloc(mlir::Value ptrValue, mlir::Value sizeOfAlloc)
+    template <typename T> mlir::Value _MemoryRealloc(mlir::Value ptrValue, mlir::Value sizeOfAlloc)
     {
         TypeHelper th(rewriter);
         TypeConverterHelper tch(typeConverter);

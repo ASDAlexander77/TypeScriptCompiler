@@ -22,16 +22,6 @@ namespace mlir_ts = mlir::typescript;
 namespace typescript
 {
 
-constexpr auto typeInfoExtRef = "??_7type_info@@6B@";
-constexpr auto imageBaseRef = "__ImageBase";
-
-struct TypeNames
-{
-    std::string typeName;
-    std::string typeInfoRef;
-    std::string catchableTypeInfoRef;
-};
-
 class LLVMRTTIHelperVCWin32
 {
     Operation *op;
@@ -117,7 +107,7 @@ class LLVMRTTIHelperVCWin32
 
     void setType(mlir::Type type)
     {
-        TypeSwitch<Type>(type)
+        mlir::TypeSwitch<mlir::Type>(type)
             .Case<mlir::IntegerType>([&](auto intType) {
                 if (intType.getIntOrFloatBitWidth() == 32)
                 {
@@ -183,7 +173,7 @@ class LLVMRTTIHelperVCWin32
             return failure();
         }
 
-        rewriter.create<LLVM::GlobalOp>(loc, th.getI8PtrType(), true, LLVM::Linkage::External, name, Attribute{});
+        rewriter.create<LLVM::GlobalOp>(loc, th.getI8PtrType(), true, LLVM::Linkage::External, name, mlir::Attribute{});
         return success();
     }
 
@@ -209,13 +199,14 @@ class LLVMRTTIHelperVCWin32
         }
 
         auto rttiTypeDescriptor2Ty = getRttiTypeDescriptor2Ty(StringRef(typeName).size());
-        auto _r0n_Value = rewriter.create<LLVM::GlobalOp>(loc, rttiTypeDescriptor2Ty, false, LLVM::Linkage::LinkonceODR, name, Attribute{});
+        auto _r0n_Value =
+            rewriter.create<LLVM::GlobalOp>(loc, rttiTypeDescriptor2Ty, false, LLVM::Linkage::LinkonceODR, name, mlir::Attribute{});
 
         {
             ch.setStructWritingPoint(_r0n_Value);
 
             // begin
-            Value structVal = rewriter.create<LLVM::UndefOp>(loc, rttiTypeDescriptor2Ty);
+            mlir::Value structVal = rewriter.create<LLVM::UndefOp>(loc, rttiTypeDescriptor2Ty);
 
             auto itemValue1 =
                 rewriter.create<mlir::ConstantOp>(loc, th.getI8PtrPtrType(), FlatSymbolRefAttr::get(rewriter.getContext(), typeInfoExtRef));
@@ -245,7 +236,7 @@ class LLVMRTTIHelperVCWin32
             return failure();
         }
 
-        rewriter.create<LLVM::GlobalOp>(loc, th.getI8Type(), true, LLVM::Linkage::External, name, Attribute{});
+        rewriter.create<LLVM::GlobalOp>(loc, th.getI8Type(), true, LLVM::Linkage::External, name, mlir::Attribute{});
         return success();
     }
 
@@ -272,13 +263,14 @@ class LLVMRTTIHelperVCWin32
 
         // _CT??_R0N@88
         auto ehCatchableTypeTy = getCatchableTypeTy();
-        auto _ct_r0n_Value = rewriter.create<LLVM::GlobalOp>(loc, ehCatchableTypeTy, true, LLVM::Linkage::LinkonceODR, name, Attribute{});
+        auto _ct_r0n_Value =
+            rewriter.create<LLVM::GlobalOp>(loc, ehCatchableTypeTy, true, LLVM::Linkage::LinkonceODR, name, mlir::Attribute{});
 
         {
             ch.setStructWritingPoint(_ct_r0n_Value);
 
             // begin
-            Value structVal = rewriter.create<LLVM::UndefOp>(loc, ehCatchableTypeTy);
+            mlir::Value structVal = rewriter.create<LLVM::UndefOp>(loc, ehCatchableTypeTy);
 
             auto itemValue1 = rewriter.create<mlir::ConstantOp>(loc, th.getI32Type(), rewriter.getI32IntegerAttr(1));
             ch.setStructValue(loc, structVal, itemValue1, 0);
@@ -358,13 +350,13 @@ class LLVMRTTIHelperVCWin32
         // _CT??_R0N@88
         auto ehCatchableArrayTypeTy = getCatchableArrayTypeTy(arraySize);
         auto _cta1nValue =
-            rewriter.create<LLVM::GlobalOp>(loc, ehCatchableArrayTypeTy, true, LLVM::Linkage::LinkonceODR, name, Attribute{});
+            rewriter.create<LLVM::GlobalOp>(loc, ehCatchableArrayTypeTy, true, LLVM::Linkage::LinkonceODR, name, mlir::Attribute{});
 
         {
             ch.setStructWritingPoint(_cta1nValue);
 
             // begin
-            Value structVal = rewriter.create<LLVM::UndefOp>(loc, ehCatchableArrayTypeTy);
+            mlir::Value structVal = rewriter.create<LLVM::UndefOp>(loc, ehCatchableArrayTypeTy);
 
             auto sizeValue = rewriter.create<mlir::ConstantOp>(loc, th.getI32Type(), rewriter.getI32IntegerAttr(arraySize));
             ch.setStructValue(loc, structVal, sizeValue, 0);
@@ -378,7 +370,7 @@ class LLVMRTTIHelperVCWin32
             }
 
             // make array
-            Value arrayVal = rewriter.create<LLVM::UndefOp>(loc, th.getArrayType(th.getI32Type(), arraySize));
+            mlir::Value arrayVal = rewriter.create<LLVM::UndefOp>(loc, th.getArrayType(th.getI32Type(), arraySize));
 
             auto index = 0;
             for (auto value : values)
@@ -409,12 +401,12 @@ class LLVMRTTIHelperVCWin32
         auto arraySize = types.size();
 
         auto throwInfoTy = getThrowInfoTy();
-        auto _TI1NValue = rewriter.create<LLVM::GlobalOp>(loc, throwInfoTy, true, LLVM::Linkage::LinkonceODR, name, Attribute{});
+        auto _TI1NValue = rewriter.create<LLVM::GlobalOp>(loc, throwInfoTy, true, LLVM::Linkage::LinkonceODR, name, mlir::Attribute{});
 
         // Throw Info
         ch.setStructWritingPoint(_TI1NValue);
 
-        Value structValue = ch.getStructFromArrayAttr(
+        mlir::Value structValue = ch.getStructFromArrayAttr(
             loc, throwInfoTy,
             rewriter.getArrayAttr({rewriter.getI32IntegerAttr(0), rewriter.getI32IntegerAttr(0), rewriter.getI32IntegerAttr(0)}));
 

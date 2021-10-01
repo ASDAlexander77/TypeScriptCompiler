@@ -24,9 +24,6 @@ namespace mlir_ts = mlir::typescript;
 namespace typescript
 {
 
-constexpr auto typeInfoExtRef = "??_7type_info@@6B@";
-constexpr auto imageBaseRef = "__ImageBase";
-
 struct TypeNames
 {
     std::string typeName;

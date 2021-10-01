@@ -36,7 +36,7 @@ class OptionalLogicHelper
     }
 
     template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
-    Value logicalOp(Operation *binOp, SyntaxKind opCmpCode)
+    mlir::Value logicalOp(Operation *binOp, SyntaxKind opCmpCode)
     {
         auto loc = binOp->getLoc();
 
@@ -189,7 +189,7 @@ class OptionalLogicHelper
 };
 
 template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
-Value OptionalTypeLogicalOp(Operation *binOp, SyntaxKind opCmpCode, PatternRewriter &builder, LLVMTypeConverter &typeConverter)
+mlir::Value OptionalTypeLogicalOp(Operation *binOp, SyntaxKind opCmpCode, PatternRewriter &builder, LLVMTypeConverter &typeConverter)
 {
     OptionalLogicHelper olh(binOp, builder, typeConverter);
     auto value = olh.logicalOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, opCmpCode);

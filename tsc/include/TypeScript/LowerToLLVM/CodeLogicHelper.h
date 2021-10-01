@@ -35,13 +35,13 @@ class CodeLogicHelper
         return rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(index));
     }
 
-    Value createIConstantOf(unsigned width, unsigned value)
+    mlir::Value createIConstantOf(unsigned width, unsigned value)
     {
         return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(width),
                                                  rewriter.getIntegerAttr(rewriter.getIntegerType(width), value));
     }
 
-    Value createFConstantOf(unsigned width, double value)
+    mlir::Value createFConstantOf(unsigned width, double value)
     {
         auto ftype = rewriter.getF32Type();
         if (width == 16)
@@ -60,56 +60,57 @@ class CodeLogicHelper
         return rewriter.create<LLVM::ConstantOp>(loc, ftype, rewriter.getFloatAttr(ftype, value));
     }
 
-    Value createI8ConstantOf(unsigned value)
+    mlir::Value createI8ConstantOf(unsigned value)
     {
         return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(8),
                                                  rewriter.getIntegerAttr(rewriter.getIntegerType(8), value));
     }
 
-    Value createI32ConstantOf(unsigned value)
+    mlir::Value createI32ConstantOf(unsigned value)
     {
         return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(32), rewriter.getIntegerAttr(rewriter.getI32Type(), value));
     }
 
-    Value createI64ConstantOf(unsigned value)
+    mlir::Value createI64ConstantOf(unsigned value)
     {
         return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(64), rewriter.getIntegerAttr(rewriter.getI64Type(), value));
     }
 
-    Value createI1ConstantOf(bool value)
+    mlir::Value createI1ConstantOf(bool value)
     {
         return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(1), rewriter.getIntegerAttr(rewriter.getI1Type(), value));
     }
 
-    Value createF32ConstantOf(float value)
+    mlir::Value createF32ConstantOf(float value)
     {
         return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getF32Type(), rewriter.getIntegerAttr(rewriter.getF32Type(), value));
     }
 
-    Value createIndexConstantOf(unsigned value)
+    mlir::Value createIndexConstantOf(unsigned value)
     {
         return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(64), rewriter.getIntegerAttr(rewriter.getI64Type(), value));
     }
 
-    Value createStructIndexConstantOf(unsigned value)
+    mlir::Value createStructIndexConstantOf(unsigned value)
     {
         return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(32), rewriter.getIntegerAttr(rewriter.getI32Type(), value));
     }
 
-    Value castToI8Ptr(mlir::Value value)
+    mlir::Value castToI8Ptr(mlir::Value value)
     {
         TypeHelper th(rewriter);
         return rewriter.create<LLVM::BitcastOp>(loc, th.getI8PtrType(), value);
     }
 
-    Value castToI8PtrPtr(mlir::Value value)
+    mlir::Value castToI8PtrPtr(mlir::Value value)
     {
         TypeHelper th(rewriter);
         return rewriter.create<LLVM::BitcastOp>(loc, th.getI8PtrPtrType(), value);
     }
 
-    Value conditionalExpressionLowering(Type type, Value condition, function_ref<Value(OpBuilder &, Location)> thenBuilder,
-                                        function_ref<Value(OpBuilder &, Location)> elseBuilder)
+    mlir::Value conditionalExpressionLowering(mlir::Type type, mlir::Value condition,
+                                              mlir::function_ref<mlir::Value(OpBuilder &, Location)> thenBuilder,
+                                              mlir::function_ref<mlir::Value(OpBuilder &, Location)> elseBuilder)
     {
         // Split block
         auto *opBlock = rewriter.getInsertionBlock();
@@ -143,7 +144,7 @@ class CodeLogicHelper
         return resultBlock->getArguments().front();
     }
 
-    template <typename OpTy> void saveResult(OpTy &op, Value result)
+    template <typename OpTy> void saveResult(OpTy &op, mlir::Value result)
     {
         auto defOp = op.operand1().getDefiningOp();
         // TODO: finish it for field access
