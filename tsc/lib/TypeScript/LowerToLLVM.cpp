@@ -3252,10 +3252,6 @@ struct JumpOpLowering : public TsLlvmPattern<mlir_ts::JumpOp>
 
         rewriter.replaceOpWithNewOp<BranchOp>(jumpOp, dest, ValueRange{});
 
-        auto *opBlock = rewriter.getInsertionBlock();
-        auto opPosition = rewriter.getInsertionPoint();
-        /*auto *continuationBlock = */ rewriter.splitBlock(opBlock, opPosition);
-
         return success();
     }
 };

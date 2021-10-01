@@ -7,6 +7,7 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 
+#include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/IR/PatternMatch.h"
 
 using namespace mlir;
@@ -251,6 +252,19 @@ class CodeLogicHelper
         }
 
         return &*result;
+    }
+
+    void BeginBlock(mlir::Location loc)
+    {
+        auto *opBlock = rewriter.getInsertionBlock();
+        auto opPosition = rewriter.getInsertionPoint();
+        auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
+
+        rewriter.setInsertionPointToEnd(opBlock);
+
+        rewriter.create<mlir::BranchOp>(loc, continuationBlock);
+
+        rewriter.setInsertionPointToStart(continuationBlock);
     }
 
     mlir::Block *CutBlock()

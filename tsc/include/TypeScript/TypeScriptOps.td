@@ -1474,14 +1474,13 @@ def TypeScript_LabelOp : TypeScript_Op<"Label",
   }];  
 }
 
-def TypeScript_JumpOp : TypeScript_Op<"Jump"> {
+def TypeScript_JumpOp : TypeScript_Op<"Jump", [Terminator]> {
   let summary = "jump";
 
   let arguments = (ins StrAttr:$label);
 }
 
-def TypeScript_JumpLabelOp : TypeScript_Op<"JumpLabel",
-      []> {
+def TypeScript_JumpLabelOp : TypeScript_Op<"JumpLabel"> {
   let summary = "jump label operation";
 
   let arguments = (ins  StrAttr:$label);

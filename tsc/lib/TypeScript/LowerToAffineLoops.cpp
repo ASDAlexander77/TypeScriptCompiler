@@ -575,6 +575,8 @@ struct BreakOpLowering : public TsPattern<mlir_ts::BreakOp>
 
     LogicalResult matchAndRewrite(mlir_ts::BreakOp breakOp, PatternRewriter &rewriter) const final
     {
+        CodeLogicHelper clh(breakOp, rewriter);
+
         OpBuilder::InsertionGuard guard(rewriter);
         Location loc = breakOp.getLoc();
 
@@ -588,12 +590,19 @@ struct BreakOpLowering : public TsPattern<mlir_ts::BreakOp>
         auto jumpLabel = rewriter.getStringAttr(std::to_string(static_cast<int64_t>((uintptr_t)jump)));
 
         {
+            if (jump->getPredecessors().empty())
+            {
+                clh.BeginBlock(loc);
+            }
+
             OpBuilder::InsertionGuard guard(rewriter);
             rewriter.setInsertionPointToStart(jump);
             rewriter.create<mlir_ts::JumpLabelOp>(loc, jumpLabel);
         }
 
         rewriter.replaceOpWithNewOp<mlir_ts::JumpOp>(breakOp, jumpLabel);
+
+        clh.CutBlock();
 
         return success();
     }
@@ -605,6 +614,8 @@ struct ContinueOpLowering : public TsPattern<mlir_ts::ContinueOp>
 
     LogicalResult matchAndRewrite(mlir_ts::ContinueOp continueOp, PatternRewriter &rewriter) const final
     {
+        CodeLogicHelper clh(continueOp, rewriter);
+
         OpBuilder::InsertionGuard guard(rewriter);
         Location loc = continueOp.getLoc();
 
@@ -618,12 +629,19 @@ struct ContinueOpLowering : public TsPattern<mlir_ts::ContinueOp>
         auto jumpLabel = rewriter.getStringAttr(std::to_string(static_cast<int64_t>((uintptr_t)jump)));
 
         {
+            if (jump->getPredecessors().empty())
+            {
+                clh.BeginBlock(loc);
+            }
+
             OpBuilder::InsertionGuard guard(rewriter);
             rewriter.setInsertionPointToStart(jump);
             rewriter.create<mlir_ts::JumpLabelOp>(loc, jumpLabel);
         }
 
         rewriter.replaceOpWithNewOp<mlir_ts::JumpOp>(continueOp, jumpLabel);
+
+        clh.CutBlock();
 
         return success();
     }
@@ -794,6 +812,8 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     {
         signalPassFailure();
     }
+
+    LLVM_DEBUG(llvm::dbgs() << "\nFUNC. DUMP: \n" << function << "\n";);
 }
 
 /// Create a pass for lowering operations in the `Affine` and `Std` dialects,
