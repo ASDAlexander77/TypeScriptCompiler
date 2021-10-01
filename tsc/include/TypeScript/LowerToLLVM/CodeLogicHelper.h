@@ -220,6 +220,39 @@ class CodeLogicHelper
         return &*result;
     }
 
+    mlir::Block *FindJumpBlock(StringRef label)
+    {
+        auto *region = rewriter.getInsertionBlock()->getParent();
+        if (!region)
+        {
+            return nullptr;
+        }
+
+        auto result = std::find_if(region->begin(), region->end(), [&](auto &item) {
+            if (item.empty())
+            {
+                return false;
+            }
+
+            auto *op = &item.front();
+            // auto name = op->getName().getStringRef();
+            if (auto jumpLabelOp = dyn_cast<mlir_ts::JumpLabelOp>(op))
+            {
+                return jumpLabelOp.label() == label;
+            }
+
+            return false;
+        });
+
+        if (result == region->end())
+        {
+            llvm_unreachable("jump label op. can't be found");
+            return nullptr;
+        }
+
+        return &*result;
+    }
+
     mlir::Block *CutBlock()
     {
         auto *opBlock = rewriter.getInsertionBlock();

@@ -1456,21 +1456,6 @@ def TypeScript_BreakOp : TypeScript_Op<"Break"> {
   let arguments = (ins OptionalAttr<StrAttr>:$label);
 }
 
-def TypeScript_GotoOp : TypeScript_Op<"Goto", [NoSideEffect, Terminator]> {
-  let summary = "jump";
-
-  let arguments = (ins Variadic<AnyType>:$destOperands);
-  let successors = (successor AnySuccessor:$dest);
-
-  let builders = [
-    OpBuilder<(ins "Block *":$dest,
-                  CArg<"ValueRange", "{}">:$destOperands), [{
-      $_state.addSuccessors(dest);
-      $_state.addOperands(destOperands);
-    }]>];
-
-}
-
 def TypeScript_LabelOp : TypeScript_Op<"Label",
       [DeclareOpInterfaceMethods<RegionBranchOpInterface>, RecursiveSideEffects,
        NoRegionArguments]> {
@@ -1487,6 +1472,20 @@ def TypeScript_LabelOp : TypeScript_Op<"Label",
     /// Adds a selection merge block containing one ts.merge op.
     void addMergeBlock();
   }];  
+}
+
+def TypeScript_JumpOp : TypeScript_Op<"Jump", [NoSideEffect, Terminator]> {
+  let summary = "jump";
+
+  let arguments = (ins StrAttr:$label);
+}
+
+def TypeScript_JumpLabelOp : TypeScript_Op<"JumpLabel",
+      []> {
+  let summary = "jump label operation";
+
+  let arguments = (ins  StrAttr:$label);
+  let results = (outs );
 }
 
 def TypeScript_SwitchStateOp : TypeScript_Op<"SwitchState",

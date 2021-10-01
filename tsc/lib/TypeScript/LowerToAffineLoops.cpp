@@ -576,11 +576,20 @@ struct BreakOpLowering : public TsPattern<mlir_ts::BreakOp>
     LogicalResult matchAndRewrite(mlir_ts::BreakOp breakOp, PatternRewriter &rewriter) const final
     {
         OpBuilder::InsertionGuard guard(rewriter);
+        Location loc = breakOp.getLoc();
 
         auto jump = tsContext->jumps[breakOp];
         assert(jump);
         // rewriter.replaceOpWithNewOp<BranchOp>(breakOp, jump /*break=continuation*/);
-        rewriter.replaceOpWithNewOp<mlir_ts::GotoOp>(breakOp, jump /*break=continuation*/);
+        auto jumpLabel = rewriter.getStringAttr(std::to_string(static_cast<int64_t>((uintptr_t)jump)));
+
+        {
+            OpBuilder::InsertionGuard guard(rewriter);
+            rewriter.setInsertionPointToStart(jump);
+            rewriter.create<mlir_ts::JumpLabelOp>(loc, jumpLabel);
+        }
+
+        rewriter.replaceOpWithNewOp<mlir_ts::JumpOp>(breakOp, jumpLabel);
 
         auto *opBlock = rewriter.getInsertionBlock();
         auto opPosition = rewriter.getInsertionPoint();
@@ -597,11 +606,20 @@ struct ContinueOpLowering : public TsPattern<mlir_ts::ContinueOp>
     LogicalResult matchAndRewrite(mlir_ts::ContinueOp continueOp, PatternRewriter &rewriter) const final
     {
         OpBuilder::InsertionGuard guard(rewriter);
+        Location loc = continueOp.getLoc();
 
         auto jump = tsContext->jumps[continueOp];
         assert(jump);
         // rewriter.replaceOpWithNewOp<BranchOp>(continueOp, jump /*break=incremental-or-condition block*/);
-        rewriter.replaceOpWithNewOp<mlir_ts::GotoOp>(continueOp, jump /*break=incremental-or-condition block*/);
+        auto jumpLabel = rewriter.getStringAttr(std::to_string(static_cast<int64_t>((uintptr_t)jump)));
+
+        {
+            OpBuilder::InsertionGuard guard(rewriter);
+            rewriter.setInsertionPointToStart(jump);
+            rewriter.create<mlir_ts::JumpLabelOp>(loc, jumpLabel);
+        }
+
+        rewriter.replaceOpWithNewOp<mlir_ts::JumpOp>(continueOp, jumpLabel);
 
         auto *opBlock = rewriter.getInsertionBlock();
         auto opPosition = rewriter.getInsertionPoint();
@@ -760,7 +778,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         mlir_ts::UndefOp, mlir_ts::VariableOp, mlir_ts::ThrowOp, mlir_ts::TryOp, mlir_ts::CatchOp, mlir_ts::TrampolineOp, mlir_ts::InvokeOp,
         mlir_ts::ResultOp, mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::InterfaceSymbolRefOp, mlir_ts::PushOp, mlir_ts::PopOp,
         mlir_ts::NewInterfaceOp, mlir_ts::VTableOffsetRefOp, mlir_ts::ThisPropertyRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp,
-        mlir_ts::TypeOfOp, mlir_ts::DebuggerOp, mlir_ts::SwitchStateOp, mlir_ts::StateLabelOp, mlir_ts::GotoOp>();
+        mlir_ts::TypeOfOp, mlir_ts::DebuggerOp, mlir_ts::SwitchStateOp, mlir_ts::StateLabelOp, mlir_ts::JumpOp, mlir_ts::JumpLabelOp>();
 
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.
