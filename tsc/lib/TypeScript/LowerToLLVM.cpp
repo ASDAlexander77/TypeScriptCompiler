@@ -2542,7 +2542,6 @@ struct CatchOpLowering : public TsLlvmPattern<mlir_ts::CatchOp>
     LogicalResult matchAndRewrite(mlir_ts::CatchOp catchOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
     {
         TypeHelper th(rewriter);
-        // LLVMRTTIHelperVCWin32 rttih(catchOp, rewriter, *getTypeConverter());
 
         // this is hook to process it later
         auto catchType = catchOp.catchArg().getType().cast<mlir_ts::RefType>().getElementType();

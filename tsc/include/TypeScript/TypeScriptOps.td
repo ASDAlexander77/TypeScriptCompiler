@@ -1627,7 +1627,7 @@ def TypeScript_CompareCatchTypeOp : TypeScript_Op<"CompareCatchType"> {
   let description = [{
   }];
 
-  let arguments = (ins TypeScript_Opaque:$landingPad, TypeScript_Opaque:$throwTypeInfo);
+  let arguments = (ins TypeScript_AnyTuple:$landingPad, TypeScript_Ref:$throwTypeInfo);
   let results = (outs TypeScript_Boolean:$result);
 
   // Override the default verifier, everything is checked by traits.

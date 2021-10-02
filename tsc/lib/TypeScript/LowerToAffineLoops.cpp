@@ -852,6 +852,51 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
     }
 };
 
+struct CatchOpLowering : public TsPattern<mlir_ts::CatchOp>
+{
+    using TsPattern<mlir_ts::CatchOp>::TsPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::CatchOp catchOp, PatternRewriter &rewriter) const final
+    {
+        TypeHelper th(rewriter);
+
+        // this is hook to process it later
+        auto catchType = catchOp.catchArg().getType().cast<mlir_ts::RefType>().getElementType();
+
+        Location loc = catchOp.getLoc();
+
+        auto catchDataValue = tsContext->catchOpData[catchOp];
+        if (catchDataValue)
+        {
+            /*
+            // linux version
+            mlir::Value val;
+            if (!llvmCatchType.isa<LLVM::LLVMPointerType>())
+            {
+                auto ptrVal = rewriter.create<LLVM::BitcastOp>(loc, th.getPointerType(llvmCatchType), catchDataValue);
+                val = rewriter.create<LLVM::LoadOp>(loc, llvmCatchType, ptrVal);
+            }
+            else
+            {
+                val = rewriter.create<LLVM::BitcastOp>(loc, llvmCatchType, catchDataValue);
+            }
+
+            rewriter.create<LLVM::StoreOp>(loc, val, catchOp.catchArg());
+            */
+        }
+        else
+        {
+            // windows version
+            auto undefVal = rewriter.create<mlir_ts::UndefOp>(loc, catchType);
+            rewriter.create<mlir_ts::StoreOp>(loc, undefVal, catchOp.catchArg());
+        }
+
+        rewriter.eraseOp(catchOp);
+
+        return success();
+    }
+};
+
 struct CallOpLowering : public TsPattern<mlir_ts::CallOp>
 {
     using TsPattern<mlir_ts::CallOp>::TsPattern;
@@ -1015,7 +1060,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     patterns.insert<ParamOpLowering, ParamOptionalOpLowering, ParamDefaultValueOpLowering, PrefixUnaryOpLowering, PostfixUnaryOpLowering,
                     IfOpLowering, DoWhileOpLowering, WhileOpLowering, ForOpLowering, BreakOpLowering, ContinueOpLowering, SwitchOpLowering,
                     AccessorRefOpLowering, ThisAccessorRefOpLowering, LabelOpLowering, CallOpLowering, CallIndirectOpLowering,
-                    TryOpLowering, ThrowOpLowering>(&getContext(), &tsContext);
+                    TryOpLowering, ThrowOpLowering, CatchOpLowering>(&getContext(), &tsContext);
 
     // With the target and rewrite patterns defined, we can now attempt the
     // conversion. The conversion will signal failure if any of our `illegal`
