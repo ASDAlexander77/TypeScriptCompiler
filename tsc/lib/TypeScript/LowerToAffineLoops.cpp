@@ -869,7 +869,8 @@ struct ThrowOpLowering : public TsPattern<mlir_ts::ThrowOp>
         }
         else
         {
-            llvm_unreachable("throw alone is not implemented");
+            rewriter.replaceOpWithNewOp<mlir_ts::ThrowCallOp>(throwOp, throwOp.exception());
+            clh.CutBlock();
         }
 
         return success();
@@ -944,7 +945,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         mlir_ts::InterfaceSymbolRefOp, mlir_ts::PushOp, mlir_ts::PopOp, mlir_ts::NewInterfaceOp, mlir_ts::VTableOffsetRefOp,
         mlir_ts::ThisPropertyRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp, mlir_ts::TypeOfOp, mlir_ts::DebuggerOp,
         mlir_ts::SwitchStateOp, mlir_ts::StateLabelOp, mlir_ts::LandingPadOp, mlir_ts::CompareCatchTypeOp, mlir_ts::BeginCatchOp,
-        mlir_ts::EndCatchOp, mlir_ts::ThrowUnwindOp>();
+        mlir_ts::EndCatchOp, mlir_ts::ThrowUnwindOp, mlir_ts::ThrowCallOp>();
 
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.

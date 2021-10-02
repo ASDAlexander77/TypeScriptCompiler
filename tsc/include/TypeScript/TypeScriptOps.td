@@ -1612,6 +1612,13 @@ def TypeScript_ThrowUnwindOp : TypeScript_Op<"ThrowUnwind", [Terminator]> {
   
 }
 
+def TypeScript_ThrowCallOp : TypeScript_Op<"ThrowCall", [Terminator]> {
+  let summary = "Throw (just call) - for affine layer";
+  let arguments = (ins AnyType:$exception);
+  let results = (outs );
+  
+}
+
 def TypeScript_AddressOfOp : TypeScript_Op<"Addressof"> {
   let arguments = (ins FlatSymbolRefAttr:$global_name, OptionalAttr<I32Attr>:$offset);
   let results = (outs TypeScript_Ref:$reference);
