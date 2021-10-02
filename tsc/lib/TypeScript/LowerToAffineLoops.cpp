@@ -857,6 +857,7 @@ struct ThrowOpLowering : public TsPattern<mlir_ts::ThrowOp>
 
     LogicalResult matchAndRewrite(mlir_ts::ThrowOp throwOp, PatternRewriter &rewriter) const final
     {
+        // TODO: add it to CallOp, CallIndirectOp
         CodeLogicHelper clh(throwOp, rewriter);
 
         Location loc = throwOp.getLoc();
@@ -865,6 +866,10 @@ struct ThrowOpLowering : public TsPattern<mlir_ts::ThrowOp>
         {
             rewriter.replaceOpWithNewOp<mlir_ts::ThrowUnwindOp>(throwOp, throwOp.exception(), unwind);
             clh.CutBlock();
+        }
+        else
+        {
+            llvm_unreachable("throw alone is not implemented");
         }
 
         return success();
