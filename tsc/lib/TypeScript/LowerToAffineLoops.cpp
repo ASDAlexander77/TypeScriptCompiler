@@ -712,10 +712,12 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         MLIRTypeHelper mth(rewriter.getContext());
         CodeLogicHelper clh(tryOp, rewriter);
 
+        auto module = tryOp->getParentOfType<mlir::ModuleOp>();
+
 #ifdef WIN_EXCEPTION
-        MLIRRTTIHelperVCWin32 rttih(rewriter, tryOp->getParent<mlir::ModuleOp>());
+        MLIRRTTIHelperVCWin32 rttih(rewriter, module);
 #else
-        MLIRRTTIHelperVCLinux rttih(rewriter, tryOp->getParent<mlir::ModuleOp>());
+        MLIRRTTIHelperVCLinux rttih(rewriter, module);
 #endif
 
         auto i8PtrTy = mth.getOpaqueType();
@@ -738,8 +740,8 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(mth.getI32Type()), mlir::Value(), rewriter.getBoolAttr(false));
 
         OpBuilder::InsertionGuard guard(rewriter);
-        Block *currentBlock = rewriter.getInsertionBlock();
-        Block *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
+        mlir::Block *currentBlock = rewriter.getInsertionBlock();
+        mlir::Block *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
 
         auto *bodyRegion = &tryOp.body().front();
         auto *bodyRegionLast = &tryOp.body().back();
@@ -778,12 +780,8 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         // Body:catch vars
         rewriter.setInsertionPointToStart(bodyRegion);
         auto catch1 = rttih.hasType() ? (mlir::Value)rttih.typeInfoPtrValue(loc)
-                                      : /*catch all*/ (mlir::Value)rewriter.create<LLVM::NullOp>(loc, th.getI8PtrType());
+                                      : /*catch all*/ (mlir::Value)rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
 
-        // filter means - allow all in = catch (...)
-        // auto filter = rewriter.create<LLVM::UndefOp>(loc, th.getI8PtrPtrType());
-
-        // Body:exit -> replace ResultOp with br
         rewriter.setInsertionPointToEnd(bodyRegionLast);
 
         auto resultOp = cast<mlir_ts::ResultOp>(bodyRegionLast->getTerminator());
@@ -793,44 +791,21 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         // catches:landingpad
         rewriter.setInsertionPointToStart(catchesRegion);
 
-        auto landingPadTypeLinux = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), {th.getI8PtrType(), th.getI32Type()}, false);
-        auto landingPadOp = rewriter.create<LLVM::LandingpadOp>(loc, landingPadTypeLinux, false, ValueRange{catch1});
-
-        // catches:extract
-        auto ptrFromExcept = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), landingPadOp, clh.getStructIndexAttr(0));
-        rewriter.create<mlir_ts::StoreOp>(loc, ptrFromExcept, ptrValueRef);
-        auto i32FromExcept = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI32Type(), landingPadOp, clh.getStructIndexAttr(1));
-        auto storeOpBrPlace = rewriter.create<mlir_ts::StoreOp>(loc, i32FromExcept, i32ValueRef);
+        auto landingPadOp =
+            rewriter.create<mlir_ts::LandingPadOp>(loc, mth.getOpaqueType(), rewriter.getBoolAttr(false), ValueRange{catch1});
 
         mlir::Value cmpValue;
         if (rttih.hasType())
         {
-            // br<->extract, will be inserted later
-            // catch: compare
-            auto loadedI32Value = rewriter.create<LLVM::LoadOp>(loc, th.getI32Type(), i32ValueRef);
-
-            auto typeIdFuncName = "llvm.eh.typeid.for";
-            auto typeIdFunc = ch.getOrInsertFunction(typeIdFuncName, th.getFunctionType(th.getI32Type(), {i8PtrTy}));
-
-            auto callInfo = rewriter.create<LLVM::CallOp>(loc, typeIdFunc, ValueRange{clh.castToI8Ptr(rttih.throwInfoPtrValue(loc))});
-            auto typeIdValue = callInfo.getResult(0);
-
-            // icmp
-            cmpValue = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, loadedI32Value, typeIdValue);
-            // condbr, will be inserted later
+            cmpValue = rewriter.create<mlir_ts::CompareCatchTypeOp>(loc, mth.getOpaqueType(), landingPadOp, rttih.throwInfoPtrValue(loc));
         }
 
         // catch: begin catch
-        auto loadedI8PtrValue = rewriter.create<LLVM::LoadOp>(loc, i8PtrTy, ptrValueRef);
-
-        auto beginCatchFuncName = "__cxa_begin_catch";
-        auto beginCatchFunc = ch.getOrInsertFunction(beginCatchFuncName, th.getFunctionType(i8PtrTy, {i8PtrTy}));
-
-        auto beginCatchCallInfo = rewriter.create<LLVM::CallOp>(loc, beginCatchFunc, ValueRange{loadedI8PtrValue});
+        auto beginCatchCallInfo = rewriter.create<mlir_ts::BeginCatchOp>(loc, mth.getOpaqueType(), landingPadOp);
 
         if (catchOpPtr)
         {
-            tsLlvmContext->catchOpData[catchOpPtr] = beginCatchCallInfo->getResult(0);
+            tsContext->catchOpData[catchOpPtr] = beginCatchCallInfo->getResult(0);
         }
 
         // catch: load value
@@ -839,10 +814,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         // catches: end catch
         rewriter.setInsertionPoint(catchesRegionLast->getTerminator());
 
-        auto endCatchFuncName = "__cxa_end_catch";
-        auto endCatchFunc = ch.getOrInsertFunction(endCatchFuncName, th.getFunctionType(th.getVoidType(), ArrayRef<Type>{}));
-
-        rewriter.create<LLVM::CallOp>(loc, endCatchFunc, ValueRange{});
+        rewriter.create<mlir_ts::EndCatchOp>(loc, beginCatchCallInfo);
 
         // exit br
         rewriter.setInsertionPointToEnd(catchesRegionLast);
@@ -851,23 +823,13 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         // rewriter.replaceOpWithNewOp<BranchOp>(yieldOpCatches, continuation, ValueRange{});
         rewriter.replaceOpWithNewOp<BranchOp>(yieldOpCatches, finallyBlockRegion, ValueRange{});
 
-        // br: insert br after extract values
-        rewriter.setInsertionPointAfter(storeOpBrPlace);
-
-        Block *currentBlockBr = rewriter.getInsertionBlock();
-        Block *continuationBr = rewriter.splitBlock(currentBlockBr, rewriter.getInsertionPoint());
-
-        rewriter.setInsertionPointToEnd(currentBlockBr);
-        rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBr);
-        // end of br
-
         if (cmpValue)
         {
             // condbr
             rewriter.setInsertionPointAfterValue(cmpValue);
 
-            Block *currentBlockBrCmp = rewriter.getInsertionBlock();
-            Block *continuationBrCmp = rewriter.splitBlock(currentBlockBrCmp, rewriter.getInsertionPoint());
+            mlir::Block *currentBlockBrCmp = rewriter.getInsertionBlock();
+            mlir::Block *continuationBrCmp = rewriter.splitBlock(currentBlockBrCmp, rewriter.getInsertionPoint());
 
             rewriter.setInsertionPointAfterValue(cmpValue);
             // TODO: when catch not matching - should go into result (rethrow)
@@ -884,6 +846,26 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         rewriter.replaceOpWithNewOp<BranchOp>(yieldOpFinallyBlock, continuation, yieldOpFinallyBlock.results());
 
         rewriter.replaceOp(tryOp, continuation->getArguments());
+
+        return success();
+    }
+};
+
+struct ThrowOpLowering : public TsPattern<mlir_ts::ThrowOp>
+{
+    using TsPattern<mlir_ts::ThrowOp>::TsPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ThrowOp throwOp, PatternRewriter &rewriter) const final
+    {
+        CodeLogicHelper clh(throwOp, rewriter);
+
+        Location loc = throwOp.getLoc();
+
+        if (auto unwind = tsContext->unwind[throwOp])
+        {
+            rewriter.replaceOpWithNewOp<mlir_ts::ThrowUnwindOp>(throwOp, throwOp.exception(), unwind);
+            clh.CutBlock();
+        }
 
         return success();
     }
@@ -944,26 +926,28 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     // a partial lowering, we explicitly mark the TypeScript operations that don't want
     // to lower, `typescript.print`, as `legal`.
     target.addIllegalDialect<mlir_ts::TypeScriptDialect>();
-    target.addLegalOp<mlir_ts::AddressOfOp, mlir_ts::AddressOfConstStringOp, mlir_ts::AddressOfElementOp, mlir_ts::ArithmeticBinaryOp,
-                      mlir_ts::ArithmeticUnaryOp, mlir_ts::AssertOp, mlir_ts::CallOp, mlir_ts::CallIndirectOp, mlir_ts::CaptureOp,
-                      mlir_ts::CastOp, mlir_ts::ConstantOp, mlir_ts::EntryOp, mlir_ts::ExitOp, mlir_ts::ElementRefOp, mlir_ts::FuncOp,
-                      mlir_ts::GlobalOp, mlir_ts::GlobalResultOp, mlir_ts::HasValueOp, mlir_ts::ValueOp, mlir_ts::NullOp,
-                      mlir_ts::ParseFloatOp, mlir_ts::ParseIntOp, mlir_ts::PrintOp, mlir_ts::SizeOfOp, mlir_ts::ReturnOp,
-                      mlir_ts::ReturnValOp, mlir_ts::StoreOp, mlir_ts::SymbolRefOp, mlir_ts::LengthOfOp, mlir_ts::StringLengthOp,
-                      mlir_ts::StringConcatOp, mlir_ts::StringCompareOp, mlir_ts::LoadOp, mlir_ts::NewOp, mlir_ts::CreateTupleOp,
-                      mlir_ts::DeconstructTupleOp, mlir_ts::CreateArrayOp, mlir_ts::NewEmptyArrayOp, mlir_ts::NewArrayOp, mlir_ts::DeleteOp,
-                      mlir_ts::PropertyRefOp, mlir_ts::InsertPropertyOp, mlir_ts::ExtractPropertyOp, mlir_ts::LogicalBinaryOp,
-                      mlir_ts::UndefOp, mlir_ts::VariableOp, mlir_ts::ThrowOp, mlir_ts::TryOp, mlir_ts::CatchOp, mlir_ts::TrampolineOp,
-                      mlir_ts::InvokeOp, mlir_ts::ResultOp, mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::InterfaceSymbolRefOp, mlir_ts::PushOp,
-                      mlir_ts::PopOp, mlir_ts::NewInterfaceOp, mlir_ts::VTableOffsetRefOp, mlir_ts::ThisPropertyRefOp, mlir_ts::GetThisOp,
-                      mlir_ts::GetMethodOp, mlir_ts::TypeOfOp, mlir_ts::DebuggerOp, mlir_ts::SwitchStateOp, mlir_ts::StateLabelOp>();
+    target.addLegalOp<
+        mlir_ts::AddressOfOp, mlir_ts::AddressOfConstStringOp, mlir_ts::AddressOfElementOp, mlir_ts::ArithmeticBinaryOp,
+        mlir_ts::ArithmeticUnaryOp, mlir_ts::AssertOp, mlir_ts::CallOp, mlir_ts::CallIndirectOp, mlir_ts::CaptureOp, mlir_ts::CastOp,
+        mlir_ts::ConstantOp, mlir_ts::EntryOp, mlir_ts::ExitOp, mlir_ts::ElementRefOp, mlir_ts::FuncOp, mlir_ts::GlobalOp,
+        mlir_ts::GlobalResultOp, mlir_ts::HasValueOp, mlir_ts::ValueOp, mlir_ts::NullOp, mlir_ts::ParseFloatOp, mlir_ts::ParseIntOp,
+        mlir_ts::PrintOp, mlir_ts::SizeOfOp, mlir_ts::ReturnOp, mlir_ts::ReturnValOp, mlir_ts::StoreOp, mlir_ts::SymbolRefOp,
+        mlir_ts::LengthOfOp, mlir_ts::StringLengthOp, mlir_ts::StringConcatOp, mlir_ts::StringCompareOp, mlir_ts::LoadOp, mlir_ts::NewOp,
+        mlir_ts::CreateTupleOp, mlir_ts::DeconstructTupleOp, mlir_ts::CreateArrayOp, mlir_ts::NewEmptyArrayOp, mlir_ts::NewArrayOp,
+        mlir_ts::DeleteOp, mlir_ts::PropertyRefOp, mlir_ts::InsertPropertyOp, mlir_ts::ExtractPropertyOp, mlir_ts::LogicalBinaryOp,
+        mlir_ts::UndefOp, mlir_ts::VariableOp, mlir_ts::TrampolineOp, mlir_ts::InvokeOp, mlir_ts::ResultOp, mlir_ts::ThisVirtualSymbolRefOp,
+        mlir_ts::InterfaceSymbolRefOp, mlir_ts::PushOp, mlir_ts::PopOp, mlir_ts::NewInterfaceOp, mlir_ts::VTableOffsetRefOp,
+        mlir_ts::ThisPropertyRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp, mlir_ts::TypeOfOp, mlir_ts::DebuggerOp,
+        mlir_ts::SwitchStateOp, mlir_ts::StateLabelOp, mlir_ts::LandingPadOp, mlir_ts::CompareCatchTypeOp, mlir_ts::BeginCatchOp,
+        mlir_ts::EndCatchOp, mlir_ts::ThrowUnwindOp>();
 
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.
     OwningRewritePatternList patterns(&getContext());
     patterns.insert<ParamOpLowering, ParamOptionalOpLowering, ParamDefaultValueOpLowering, PrefixUnaryOpLowering, PostfixUnaryOpLowering,
                     IfOpLowering, DoWhileOpLowering, WhileOpLowering, ForOpLowering, BreakOpLowering, ContinueOpLowering, SwitchOpLowering,
-                    AccessorRefOpLowering, ThisAccessorRefOpLowering, LabelOpLowering, TryOpLowering>(&getContext(), &tsContext);
+                    AccessorRefOpLowering, ThisAccessorRefOpLowering, LabelOpLowering, TryOpLowering, ThrowOpLowering>(&getContext(),
+                                                                                                                       &tsContext);
 
     // With the target and rewrite patterns defined, we can now attempt the
     // conversion. The conversion will signal failure if any of our `illegal`
@@ -978,7 +962,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
 
 /// Create a pass for lowering operations in the `Affine` and `Std` dialects,
 /// for a subset of the TypeScript IR.
-std::unique_ptr<Pass> mlir_ts::createLowerToAffinePass()
+std::unique_ptr<mlir::Pass> mlir_ts::createLowerToAffinePass()
 {
     return std::make_unique<TypeScriptToAffineLoweringPass>();
 }

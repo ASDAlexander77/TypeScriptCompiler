@@ -24,6 +24,13 @@ namespace typescript
 
 class LLVMRTTIHelperVCWin32
 {
+    struct TypeNames
+    {
+        std::string typeName;
+        std::string typeInfoRef;
+        std::string catchableTypeInfoRef;
+    };
+
     Operation *op;
     PatternRewriter &rewriter;
     ModuleOp parentModule;

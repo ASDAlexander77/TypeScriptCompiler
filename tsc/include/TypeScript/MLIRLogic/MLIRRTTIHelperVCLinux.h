@@ -24,23 +24,24 @@ namespace mlir_ts = mlir::typescript;
 namespace typescript
 {
 
-enum class TypeInfo
-{
-    Value,
-    ClassTypeInfo,
-    SingleInheritance_ClassTypeInfo,
-    Pointer_TypeInfo
-};
-
-struct TypeNames
-{
-    std::string typeName;
-    TypeInfo infoType;
-    int baseIndex;
-};
-
 class MLIRRTTIHelperVCLinux
 {
+
+    enum class TypeInfo
+    {
+        Value,
+        ClassTypeInfo,
+        SingleInheritance_ClassTypeInfo,
+        Pointer_TypeInfo
+    };
+
+    struct TypeNames
+    {
+        std::string typeName;
+        TypeInfo infoType;
+        int baseIndex;
+    };
+
     mlir::OpBuilder &rewriter;
     mlir::ModuleOp &parentModule;
     MLIRTypeHelper mth;
@@ -320,6 +321,11 @@ class MLIRRTTIHelperVCLinux
         assert(tpl.isa<mlir_ts::TupleType>() || tpl.isa<mlir_ts::ConstTupleType>() || tpl.isa<mlir_ts::ConstArrayValueType>());
         tupleValue = rewriter.create<mlir_ts::InsertPropertyOp>(loc, tpl, value, tupleValue, rewriter.getI64ArrayAttr(index));
         return mlir::success();
+    }
+
+    bool hasType()
+    {
+        return types.size() > 0;
     }
 
     mlir::LogicalResult typeInfoRef(mlir::Location loc, StringRef className, TypeInfo ti, StringRef baseName = "",

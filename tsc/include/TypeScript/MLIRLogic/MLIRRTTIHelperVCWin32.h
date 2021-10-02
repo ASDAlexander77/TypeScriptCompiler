@@ -24,15 +24,16 @@ namespace mlir_ts = mlir::typescript;
 namespace typescript
 {
 
-struct TypeNames
-{
-    std::string typeName;
-    std::string typeInfoRef;
-    std::string catchableTypeInfoRef;
-};
-
 class MLIRRTTIHelperVCWin32
 {
+
+    struct TypeNames
+    {
+        std::string typeName;
+        std::string typeInfoRef;
+        std::string catchableTypeInfoRef;
+    };
+
     mlir::OpBuilder &rewriter;
     mlir::ModuleOp &parentModule;
     MLIRTypeHelper mth;
@@ -158,6 +159,46 @@ class MLIRRTTIHelperVCWin32
 
                 setClassTypeAsCatchType(classAndBases);
             })
+            .Case<mlir_ts::AnyType>([&](auto anyType) { setI8PtrAsCatchType(); })
+            .Default([&](auto type) {
+                LLVM_DEBUG(llvm::dbgs() << "...throw type: " << type << "\n";);
+                llvm_unreachable("not implemented");
+            });
+
+        return true;
+    }
+
+    bool setType(mlir::Type type)
+    {
+        if (!type || type == rewriter.getNoneType())
+        {
+            return false;
+        }
+
+        llvm::TypeSwitch<mlir::Type>(type)
+            .Case<mlir::IntegerType>([&](auto intType) {
+                if (intType.getIntOrFloatBitWidth() == 32)
+                {
+                    setI32AsCatchType();
+                }
+                else
+                {
+                    llvm_unreachable("not implemented");
+                }
+            })
+            .Case<mlir::FloatType>([&](auto floatType) {
+                if (floatType.getIntOrFloatBitWidth() == 32)
+                {
+                    setF32AsCatchType();
+                }
+                else
+                {
+                    llvm_unreachable("not implemented");
+                }
+            })
+            .Case<mlir_ts::NumberType>([&](auto numberType) { setF32AsCatchType(); })
+            .Case<mlir_ts::StringType>([&](auto stringType) { setStringTypeAsCatchType(); })
+            .Case<mlir_ts::ClassType>([&](auto classType) { setClassTypeAsCatchType(classType.getName().getValue()); })
             .Case<mlir_ts::AnyType>([&](auto anyType) { setI8PtrAsCatchType(); })
             .Default([&](auto type) {
                 LLVM_DEBUG(llvm::dbgs() << "...throw type: " << type << "\n";);
@@ -537,6 +578,11 @@ class MLIRRTTIHelperVCWin32
         rewriter.setInsertionPointAfter(_TI1NValue);
 
         return mlir::success();
+    }
+
+    bool hasType()
+    {
+        return types.size() > 0;
     }
 
     mlir::Value typeInfoPtrValue(mlir::Location loc)

@@ -1550,6 +1550,68 @@ def TypeScript_CatchOp : TypeScript_Op<"Catch",
   let verifier = ?;
 }
 
+def TypeScript_ThrowOp : TypeScript_Op<"Throw"> {
+  let arguments = (ins AnyType:$exception);
+  let results = (outs );
+
+}
+
+def TypeScript_LandingPadOp : TypeScript_Op<"LandingPad"> {
+  let summary = "Landing Pad - for affine layer";
+  let description = [{
+  }];
+
+  let arguments = (ins BoolAttr:$cleanup, Variadic<AnyType>:$catches);
+  let results = (outs TypeScript_Opaque:$result);
+
+  // Override the default verifier, everything is checked by traits.
+  let verifier = ?;
+}
+
+def TypeScript_CompareCatchTypeOp : TypeScript_Op<"CompareCatchType"> {
+  let summary = "CompareCatchType - for affine layer";
+  let description = [{
+  }];
+
+  let arguments = (ins TypeScript_Opaque:$landingPad, TypeScript_Opaque:$throwTypeInfo);
+  let results = (outs I1:$result);
+
+  // Override the default verifier, everything is checked by traits.
+  let verifier = ?;
+}
+
+def TypeScript_BeginCatchOp : TypeScript_Op<"BeginCatch"> {
+  let summary = "BeginCatch - for affine layer";
+  let description = [{
+  }];
+
+  let arguments = (ins TypeScript_Opaque:$landingPad);
+  let results = (outs TypeScript_Opaque:$exceptionInfo);
+
+  // Override the default verifier, everything is checked by traits.
+  let verifier = ?;
+}
+
+def TypeScript_EndCatchOp : TypeScript_Op<"EndCatch"> {
+  let summary = "EndCatch - for affine layer";
+  let description = [{
+  }];
+
+  let arguments = (ins TypeScript_Opaque:$exceptionInfo);
+  let results = (outs );
+
+  // Override the default verifier, everything is checked by traits.
+  let verifier = ?;
+}
+
+def TypeScript_ThrowUnwindOp : TypeScript_Op<"ThrowUnwind", [Terminator]> {
+  let summary = "Throw (unwind) - for affine layer";
+  let arguments = (ins AnyType:$exception);
+  let results = (outs );
+  let successors = (successor AnySuccessor:$unwindDest);
+  
+}
+
 def TypeScript_AddressOfOp : TypeScript_Op<"Addressof"> {
   let arguments = (ins FlatSymbolRefAttr:$global_name, OptionalAttr<I32Attr>:$offset);
   let results = (outs TypeScript_Ref:$reference);
@@ -1683,11 +1745,6 @@ def TypeScript_MemoryCopyOp : TypeScript_Op<"MemoryCopy"> {
 
 def TypeScript_LoadSaveOp : TypeScript_Op<"LoadSave", [AllTypesMatch<["dst", "src"]>]> {
   let arguments = (ins AnyType:$dst, AnyType:$src);
-  let results = (outs );
-}
-
-def TypeScript_ThrowOp : TypeScript_Op<"Throw"> {
-  let arguments = (ins AnyType:$exception);
   let results = (outs );
 }
 
