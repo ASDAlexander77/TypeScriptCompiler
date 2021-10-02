@@ -35,11 +35,18 @@ class CastLogicHelper
     LLVMCodeHelperBase ch;
     CodeLogicHelper clh;
     Location loc;
+    bool external;
 
   public:
     CastLogicHelper(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch)
-        : op(op), rewriter(rewriter), tch(tch), th(rewriter), ch(op, rewriter, &tch.typeConverter), clh(op, rewriter), loc(op->getLoc())
+        : op(op), rewriter(rewriter), tch(tch), th(rewriter), ch(op, rewriter, &tch.typeConverter), clh(op, rewriter), loc(op->getLoc()),
+          external(false)
     {
+    }
+
+    void setExternal()
+    {
+        external = true;
     }
 
     mlir::Value cast(mlir::Value in, mlir::Type resType)
@@ -531,7 +538,14 @@ class CastLogicHelper
 
         mlir::Value objTypeCasted = cast(inCasted, funcType.getInput(0));
 
-        auto results = rewriter.create<mlir_ts::CallIndirectOp>(loc, value, ValueRange(objTypeCasted));
+        if (external)
+        {
+            auto results = rewriter.create<mlir_ts::CallIndirectOp>(loc, value, ValueRange(objTypeCasted));
+            return results.getResult(0);
+        }
+
+        auto results = rewriter.create<mlir_ts::CallInternalOp>(loc, mlir_ts::StringType::get(rewriter.getContext()),
+                                                                ValueRange{value, objTypeCasted});
         return results.getResult(0);
     }
 };
