@@ -834,7 +834,8 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
             rewriter.setInsertionPointAfterValue(cmpValue);
             // TODO: when catch not matching - should go into result (rethrow)
-            rewriter.create<CondBranchOp>(loc, cmpValue, continuationBrCmp, continuation);
+            auto castToI1 = rewriter.create<mlir_ts::CastOp>(loc, rewriter.getI1Type(), cmpValue);
+            rewriter.create<CondBranchOp>(loc, castToI1, continuationBrCmp, continuation);
             // end of condbr
         }
 
