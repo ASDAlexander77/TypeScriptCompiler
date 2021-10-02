@@ -90,13 +90,17 @@ class ThrowLogic
 
                 auto unreachable = clh.FindUnreachableBlockOrCreate();
 
-                auto *continuationBlock = clh.CutBlockAndSetInsertPointToEndOfBlock();
+                auto endOfBlock = rewriter.getInsertionBlock()->getTerminator() == op;
+                auto *continuationBlock = endOfBlock ? nullptr : clh.CutBlockAndSetInsertPointToEndOfBlock();
 
                 rewriter.create<LLVM::InvokeOp>(
                     loc, TypeRange{th.getVoidType()}, mlir::FlatSymbolRefAttr::get(rewriter.getContext(), throwFuncName),
                     ValueRange{clh.castToI8Ptr(value), throwInfoPtr}, unreachable, ValueRange{}, unwind, ValueRange{});
 
-                rewriter.setInsertionPointToStart(continuationBlock);
+                if (continuationBlock)
+                {
+                    rewriter.setInsertionPointToStart(continuationBlock);
+                }
             }
             else
             {

@@ -2109,7 +2109,13 @@ struct UnreachableOpLowering : public TsLlvmPattern<mlir_ts::UnreachableOp>
         auto unreachable = clh.FindUnreachableBlockOrCreate();
 
         rewriter.replaceOpWithNewOp<mlir::BranchOp>(unreachableOp, unreachable);
-        clh.CutBlock();
+
+        // no need for cut if this is last op in block
+        auto terminator = rewriter.getInsertionBlock()->getTerminator();
+        if (terminator != unreachableOp && terminator != unreachableOp->getNextNode())
+        {
+            clh.CutBlock();
+        }
 
         return success();
     }
@@ -2123,6 +2129,7 @@ struct ThrowCallOpLowering : public TsLlvmPattern<mlir_ts::ThrowCallOp>
                                   ConversionPatternRewriter &rewriter) const final
     {
         TypeConverterHelper tch(getTypeConverter());
+
         ThrowLogic tl(throwCallOp, rewriter, tch, throwCallOp.getLoc());
         tl.logic(throwCallOp.exception(), nullptr);
 
