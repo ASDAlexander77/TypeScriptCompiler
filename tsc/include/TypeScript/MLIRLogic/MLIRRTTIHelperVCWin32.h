@@ -640,6 +640,11 @@ class MLIRRTTIHelperVCWin32
     {
         return mlir_ts::RefType::get(getCatchableArrayTypeTy(arraySize));
     }
+
+    mlir_ts::TupleType getLandingPadType()
+    {
+        return mth.getTupleType({mth.getOpaqueType(), mth.getI32Type(), mth.getOpaqueType()});
+    }
 };
 } // namespace typescript
 

@@ -793,12 +793,12 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         rewriter.setInsertionPointToStart(catchesRegion);
 
         auto landingPadOp =
-            rewriter.create<mlir_ts::LandingPadOp>(loc, mth.getOpaqueType(), rewriter.getBoolAttr(false), ValueRange{catch1});
+            rewriter.create<mlir_ts::LandingPadOp>(loc, rttih.getLandingPadType(), rewriter.getBoolAttr(false), ValueRange{catch1});
 
         mlir::Value cmpValue;
         if (rttih.hasType())
         {
-            cmpValue = rewriter.create<mlir_ts::CompareCatchTypeOp>(loc, mth.getOpaqueType(), landingPadOp, rttih.throwInfoPtrValue(loc));
+            cmpValue = rewriter.create<mlir_ts::CompareCatchTypeOp>(loc, mth.getBooleanType(), landingPadOp, rttih.throwInfoPtrValue(loc));
         }
 
         // catch: begin catch
@@ -815,7 +815,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         // catches: end catch
         rewriter.setInsertionPoint(catchesRegionLast->getTerminator());
 
-        rewriter.create<mlir_ts::EndCatchOp>(loc, beginCatchCallInfo);
+        rewriter.create<mlir_ts::EndCatchOp>(loc);
 
         // exit br
         rewriter.setInsertionPointToEnd(catchesRegionLast);

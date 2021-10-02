@@ -49,7 +49,6 @@ namespace
 struct TsLlvmContext
 {
     // invoke normal, unwind
-    DenseMap<Operation *, mlir::Block *> unwind;
     DenseMap<Operation *, mlir::Value> catchOpData;
 };
 
@@ -944,49 +943,6 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
 
         rewriter.eraseOp(funcOp);
 
-        return success();
-    }
-};
-
-struct CallOpLowering : public TsLlvmPattern<mlir_ts::CallOp>
-{
-    using TsLlvmPattern<mlir_ts::CallOp>::TsLlvmPattern;
-
-    LogicalResult matchAndRewrite(mlir_ts::CallOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
-    {
-        if (auto unwind = tsLlvmContext->unwind[op])
-        {
-            {
-                OpBuilder::InsertionGuard guard(rewriter);
-                CodeLogicHelper clh(op, rewriter);
-                auto *continuationBlock = clh.CutBlockAndSetInsertPointToEndOfBlock();
-
-                LLVM_DEBUG(llvm::dbgs() << "...call -> invoke: " << op.calleeAttr() << "\n";);
-                LLVM_DEBUG(for (auto opit : op.getOperands()) llvm::dbgs() << "...call -> invoke operands: " << opit << "\n";);
-
-                rewriter.create<mlir_ts::InvokeOp>(op->getLoc(), op.getResultTypes(), op.calleeAttr(), op.getOperands(), continuationBlock,
-                                                   ValueRange{}, unwind, ValueRange{});
-            }
-
-            rewriter.eraseOp(op);
-
-            return success();
-        }
-
-        // just replace
-        rewriter.replaceOpWithNewOp<mlir::CallOp>(op, op.getCallee(), op.getResultTypes(), op.getArgOperands());
-        return success();
-    }
-};
-
-struct CallIndirectOpLowering : public TsLlvmPattern<mlir_ts::CallIndirectOp>
-{
-    using TsLlvmPattern<mlir_ts::CallIndirectOp>::TsLlvmPattern;
-
-    LogicalResult matchAndRewrite(mlir_ts::CallIndirectOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
-    {
-        // just replace
-        rewriter.replaceOpWithNewOp<mlir::CallIndirectOp>(op, op.getResultTypes(), op.getCallee(), op.getArgOperands());
         return success();
     }
 };
@@ -2131,7 +2087,6 @@ struct MemoryCopyOpLowering : public TsLlvmPattern<mlir_ts::MemoryCopyOp>
         auto immarg = clh.createI1ConstantOf(false);
         values.push_back(immarg);
 
-        // print new line
         rewriter.create<LLVM::CallOp>(loc, copyMemFuncOp, values);
 
         // Notify the rewriter that this operation has been removed.
@@ -2141,175 +2096,112 @@ struct MemoryCopyOpLowering : public TsLlvmPattern<mlir_ts::MemoryCopyOp>
     }
 };
 
-#ifdef WIN_EXCEPTION
-struct ThrowOpLoweringVCWin32 : public TsLlvmPattern<mlir_ts::ThrowOp>
+struct UnreachableOpLowering : public TsLlvmPattern<mlir_ts::UnreachableOp>
 {
-    // add LLVM attributes to fix issue with shift >> 32
-    using TsLlvmPattern<mlir_ts::ThrowOp>::TsLlvmPattern;
+    using TsLlvmPattern<mlir_ts::UnreachableOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::ThrowOp throwOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+    LogicalResult matchAndRewrite(mlir_ts::UnreachableOp unreachableOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
     {
-        auto loc = throwOp.getLoc();
-
-        LLVMCodeHelper ch(throwOp, rewriter, getTypeConverter());
-        CodeLogicHelper clh(throwOp, rewriter);
-        TypeConverterHelper tch(getTypeConverter());
-        TypeHelper th(rewriter);
-        LLVMRTTIHelperVCWin32 rttih(throwOp, rewriter, *getTypeConverter());
-        // rttih.setRTTIForType(loc, throwOp.exception().getType());
-        rttih.setType(throwOp.exception().getType());
-
-        auto throwInfoPtrTy = rttih.getThrowInfoPtrTy();
-
-        auto i8PtrTy = th.getI8PtrType();
-
-        auto throwFuncName = "_CxxThrowException";
-        auto cxxThrowException = ch.getOrInsertFunction(throwFuncName, th.getFunctionType(th.getVoidType(), {i8PtrTy, throwInfoPtrTy}));
-
-        rewriter.eraseOp(throwOp);
-
-        // prepare first param
-        // we need temp var
-        mlir::Value value;
-        {
-            OpBuilder::InsertionGuard guard(rewriter);
-
-            auto found = ch.seekFirstNonConstantOp(throwOp->getParentOfType<LLVM::LLVMFuncOp>());
-            if (found)
-            {
-                rewriter.setInsertionPointAfter(found);
-            }
-
-            // value = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(throwOp.exception().getType()), throwOp.exception(),
-            //                                             rewriter.getBoolAttr(false));
-            value = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(throwOp.exception().getType()), mlir::Value(),
-                                                         rewriter.getBoolAttr(false));
-        }
-
-        rewriter.create<mlir_ts::StoreOp>(loc, throwOp.exception(), value);
-
-        auto throwInfoPtr = rttih.throwInfoPtrValue(loc);
+        auto loc = unreachableOp.getLoc();
+        CodeLogicHelper clh(unreachableOp, rewriter);
 
         auto unreachable = clh.FindUnreachableBlockOrCreate();
 
-        // throw exception
-        if (auto unwind = tsLlvmContext->unwind[throwOp])
-        {
-            OpBuilder::InsertionGuard guard(rewriter);
-
-            auto *opBlock = rewriter.getInsertionBlock();
-            auto opPosition = rewriter.getInsertionPoint();
-            auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
-
-            rewriter.setInsertionPointToEnd(opBlock);
-
-            rewriter.create<LLVM::InvokeOp>(
-                loc, TypeRange{th.getVoidType()}, mlir::FlatSymbolRefAttr::get(rewriter.getContext(), throwFuncName),
-                ValueRange{clh.castToI8Ptr(value), throwInfoPtr}, unreachable, ValueRange{}, unwind, ValueRange{});
-
-            rewriter.setInsertionPointToStart(continuationBlock);
-        }
-        else
-        {
-            OpBuilder::InsertionGuard guard(rewriter);
-
-            rewriter.create<LLVM::CallOp>(loc, cxxThrowException, ValueRange{clh.castToI8Ptr(value), throwInfoPtr});
-            // rewriter.create<LLVM::UnreachableOp>(loc);
-            rewriter.create<mlir::BranchOp>(loc, unreachable);
-            clh.CutBlock();
-        }
+        rewriter.replaceOpWithNewOp<mlir::BranchOp>(unreachableOp, unreachable);
+        clh.CutBlock();
 
         return success();
     }
 };
 
-using ThrowOpLowering = ThrowOpLoweringVCWin32;
-
-#else
-struct ThrowOpLoweringVCLinux : public TsLlvmPattern<mlir_ts::ThrowOp>
+struct ThrowCallOpLowering : public TsLlvmPattern<mlir_ts::ThrowCallOp>
 {
-    // add LLVM attributes to fix issue with shift >> 32
-    using TsLlvmPattern<mlir_ts::ThrowOp>::TsLlvmPattern;
+    using TsLlvmPattern<mlir_ts::ThrowCallOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::ThrowOp throwOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+    LogicalResult matchAndRewrite(mlir_ts::ThrowCallOp throwCallOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
     {
-        auto loc = throwOp.getLoc();
-
-        LLVMCodeHelper ch(throwOp, rewriter, getTypeConverter());
-        CodeLogicHelper clh(throwOp, rewriter);
         TypeConverterHelper tch(getTypeConverter());
-        TypeHelper th(rewriter);
-        LLVMRTTIHelperVCLinux rttih(throwOp, rewriter, *getTypeConverter());
-        // rttih.setRTTIForType(loc, throwOp.exception().getType());
-        rttih.setType(throwOp.exception().getType());
+        ThrowLogic tl(throwCallOp, rewriter, tch, throwCallOp.getLoc());
+        tl.logic(throwCallOp.exception(), nullptr);
 
-        auto unreachable = clh.FindUnreachableBlockOrCreate();
+        rewriter.eraseOp(throwCallOp);
 
-        auto i8PtrTy = th.getI8PtrType();
-
-        auto allocExceptFuncName = "__cxa_allocate_exception";
-
-        auto cxxAllocException = ch.getOrInsertFunction(allocExceptFuncName, th.getFunctionType(i8PtrTy, {th.getI64Type()}));
-
-        auto throwFuncName = "__cxa_throw";
-
-        auto cxxThrowException = ch.getOrInsertFunction(throwFuncName, th.getFunctionType(th.getVoidType(), {i8PtrTy, i8PtrTy, i8PtrTy}));
-
-        // prepare first param
-        // we need temp var
-        // auto value = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(throwOp.exception().getType()), throwOp.exception(),
-        //                                                  rewriter.getBoolAttr(false));
-
-        auto size = rewriter.create<mlir_ts::SizeOfOp>(loc, th.getI64Type(), throwOp.exception().getType());
-
-        auto callInfo = rewriter.create<LLVM::CallOp>(
-            loc, TypeRange{i8PtrTy}, mlir::FlatSymbolRefAttr::get(rewriter.getContext(), allocExceptFuncName), ValueRange{size});
-
-        auto value = callInfo.getResult(0);
-
-        // save value
-        auto refValue = rewriter.create<mlir_ts::CastOp>(loc, mlir_ts::RefType::get(throwOp.exception().getType()), value);
-        rewriter.create<mlir_ts::StoreOp>(loc, throwOp.exception(), refValue);
-
-        // throw exception
-        if (auto unwind = tsLlvmContext->unwind[throwOp])
-        {
-            OpBuilder::InsertionGuard guard(rewriter);
-
-            auto *opBlock = rewriter.getInsertionBlock();
-            auto opPosition = rewriter.getInsertionPoint();
-            auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
-
-            rewriter.setInsertionPointToEnd(opBlock);
-
-            auto nullValue = rewriter.create<LLVM::NullOp>(loc, i8PtrTy);
-            rewriter.create<LLVM::InvokeOp>(loc, TypeRange{th.getVoidType()},
-                                            mlir::FlatSymbolRefAttr::get(rewriter.getContext(), throwFuncName),
-                                            ValueRange{value, clh.castToI8Ptr(rttih.throwInfoPtrValue(loc)), nullValue}, unreachable,
-                                            ValueRange{}, unwind, ValueRange{});
-
-            rewriter.setInsertionPointToStart(continuationBlock);
-        }
-        else
-        {
-            auto nullValue = rewriter.create<LLVM::NullOp>(loc, i8PtrTy);
-            rewriter.create<LLVM::CallOp>(loc, cxxThrowException,
-                                          ValueRange{value, clh.castToI8Ptr(rttih.throwInfoPtrValue(loc)), nullValue});
-            // rewriter.create<LLVM::UnreachableOp>(loc);
-            rewriter.create<mlir::BranchOp>(loc, unreachable);
-            clh.CutBlock();
-        }
-
-        rewriter.eraseOp(throwOp);
         return success();
     }
 };
 
-using ThrowOpLowering = ThrowOpLoweringVCLinux;
+struct ThrowUnwindOpLowering : public TsLlvmPattern<mlir_ts::ThrowUnwindOp>
+{
+    using TsLlvmPattern<mlir_ts::ThrowUnwindOp>::TsLlvmPattern;
 
-#endif
+    LogicalResult matchAndRewrite(mlir_ts::ThrowUnwindOp throwUnwindOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        TypeConverterHelper tch(getTypeConverter());
+        ThrowLogic tl(throwUnwindOp, rewriter, tch, throwUnwindOp.getLoc());
+        tl.logic(throwUnwindOp.exception(), throwUnwindOp.unwindDest());
+
+        rewriter.eraseOp(throwUnwindOp);
+
+        return success();
+    }
+};
 
 #ifdef WIN_EXCEPTION
+
+struct LandingPadOpLowering : public TsLlvmPattern<mlir_ts::LandingPadOp>
+{
+    using TsLlvmPattern<mlir_ts::LandingPadOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::LandingPadOp landingPadOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        Location loc = landingPadOp.getLoc();
+
+        TypeHelper th(rewriter);
+
+        auto catch1 = landingPadOp.catches().front();
+
+        mlir::Type llvmLandingPadTy = getTypeConverter()->convertType(landingPadOp.getType());
+        rewriter.replaceOpWithNewOp<LLVM::LandingpadOp>(landingPadOp, llvmLandingPadTy, false, ValueRange{catch1});
+
+        return success();
+    }
+};
+
+struct BeginCatchOpLowering : public TsLlvmPattern<mlir_ts::BeginCatchOp>
+{
+    using TsLlvmPattern<mlir_ts::BeginCatchOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::BeginCatchOp beginCatchOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        rewriter.replaceOp(beginCatchOp, beginCatchOp->getOperands());
+        return success();
+    }
+};
+
+struct EndCatchOpLowering : public TsLlvmPattern<mlir_ts::EndCatchOp>
+{
+    using TsLlvmPattern<mlir_ts::EndCatchOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::EndCatchOp endCatchOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+    {
+        Location loc = endCatchOp.getLoc();
+
+        TypeHelper th(rewriter);
+        LLVMCodeHelper ch(endCatchOp, rewriter, getTypeConverter());
+
+        auto endCatchFuncName = "__cxa_end_catch";
+        auto endCatchFunc = ch.getOrInsertFunction(endCatchFuncName, th.getFunctionType(th.getVoidType(), ArrayRef<Type>{}));
+
+        rewriter.replaceOpWithNewOp<LLVM::CallOp>(endCatchOp, endCatchFunc, ValueRange{});
+
+        return success();
+    }
+};
 
 struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
 {
@@ -2344,21 +2236,21 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         auto *finallyBlockRegionLast = &tryOp.finallyBlock().back();
 
         // logic to set Invoke attribute CallOp
-        auto visitorCallOpContinue = [&](Operation *op) {
-            if (auto callOp = dyn_cast_or_null<mlir_ts::CallOp>(op))
-            {
-                tsLlvmContext->unwind[op] = catchesRegion;
-            }
-            else if (auto callIndirectOp = dyn_cast_or_null<mlir_ts::CallIndirectOp>(op))
-            {
-                tsLlvmContext->unwind[op] = catchesRegion;
-            }
-            else if (auto throwOp = dyn_cast_or_null<mlir_ts::ThrowOp>(op))
-            {
-                tsLlvmContext->unwind[op] = catchesRegion;
-            }
-        };
-        tryOp.body().walk(visitorCallOpContinue);
+        // auto visitorCallOpContinue = [&](Operation *op) {
+        //     if (auto callOp = dyn_cast_or_null<mlir_ts::CallOp>(op))
+        //     {
+        //         tsLlvmContext->unwind[op] = catchesRegion;
+        //     }
+        //     else if (auto callIndirectOp = dyn_cast_or_null<mlir_ts::CallIndirectOp>(op))
+        //     {
+        //         tsLlvmContext->unwind[op] = catchesRegion;
+        //     }
+        //     else if (auto throwOp = dyn_cast_or_null<mlir_ts::ThrowOp>(op))
+        //     {
+        //         tsLlvmContext->unwind[op] = catchesRegion;
+        //     }
+        // };
+        // tryOp.body().walk(visitorCallOpContinue);
 
         // Branch to the "body" region.
         rewriter.setInsertionPointToEnd(currentBlock);
@@ -3488,20 +3380,21 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 
     // The only remaining operation to lower from the `typescript` dialect, is the PrintOp.
     TsLlvmContext tsLlvmContext;
-    patterns.insert<CallOpLowering, CallIndirectOpLowering, CaptureOpLowering, ExitOpLowering, ReturnOpLowering, ReturnValOpLowering,
-                    AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering,
-                    AssertOpLowering, CastOpLowering, ConstantOpLowering, CreateOptionalOpLowering, UndefOptionalOpLowering,
-                    HasValueOpLowering, ValueOpLowering, SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering, EntryOpLowering,
-                    FuncOpLowering, LoadOpLowering, ElementRefOpLowering, PropertyRefOpLowering, ExtractPropertyOpLowering,
-                    LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateTupleOpLowering, DeconstructTupleOpLowering,
-                    CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, PushOpLowering, PopOpLowering, DeleteOpLowering,
-                    ParseFloatOpLowering, ParseIntOpLowering, PrintOpLowering, StoreOpLowering, SizeOfOpLowering, InsertPropertyOpLowering,
-                    LengthOfOpLowering, StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering, CharToStringOpLowering,
-                    UndefOpLowering, MemoryCopyOpLowering, LoadSaveValueLowering, ThrowOpLowering, TrampolineOpLowering, TryOpLowering,
-                    CatchOpLowering, VariableOpLowering, InvokeOpLowering, ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering,
-                    NewInterfaceOpLowering, VTableOffsetRefOpLowering, ThisPropertyRefOpLowering, LoadBoundRefOpLowering,
-                    StoreBoundRefOpLowering, CreateBoundRefOpLowering, CreateBoundFunctionOpLowering, GetThisOpLowering,
-                    GetMethodOpLowering, TypeOfOpLowering, DebuggerOpLowering, StateLabelOpLowering, SwitchStateOpLowering>(
+    patterns.insert<CaptureOpLowering, ExitOpLowering, ReturnOpLowering, ReturnValOpLowering, AddressOfOpLowering,
+                    AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering, AssertOpLowering, CastOpLowering,
+                    ConstantOpLowering, CreateOptionalOpLowering, UndefOptionalOpLowering, HasValueOpLowering, ValueOpLowering,
+                    SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering, EntryOpLowering, FuncOpLowering, LoadOpLowering,
+                    ElementRefOpLowering, PropertyRefOpLowering, ExtractPropertyOpLowering, LogicalBinaryOpLowering, NullOpLowering,
+                    NewOpLowering, CreateTupleOpLowering, DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering,
+                    NewArrayOpLowering, PushOpLowering, PopOpLowering, DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering,
+                    PrintOpLowering, StoreOpLowering, SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering,
+                    StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering,
+                    MemoryCopyOpLowering, LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, TrampolineOpLowering,
+                    TryOpLowering, CatchOpLowering, VariableOpLowering, InvokeOpLowering, ThisVirtualSymbolRefOpLowering,
+                    InterfaceSymbolRefOpLowering, NewInterfaceOpLowering, VTableOffsetRefOpLowering, ThisPropertyRefOpLowering,
+                    LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering, CreateBoundFunctionOpLowering,
+                    GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, DebuggerOpLowering, StateLabelOpLowering,
+                    SwitchStateOpLowering, UnreachableOpLowering, LandingPadOpLowering, BeginCatchOpLowering, EndCatchOpLowering>(
         typeConverter, &getContext(), &tsLlvmContext);
 
     populateTypeScriptConversionPatterns(typeConverter, m);

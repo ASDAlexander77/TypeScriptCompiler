@@ -1562,7 +1562,7 @@ def TypeScript_LandingPadOp : TypeScript_Op<"LandingPad"> {
   }];
 
   let arguments = (ins BoolAttr:$cleanup, Variadic<AnyType>:$catches);
-  let results = (outs TypeScript_Opaque:$result);
+  let results = (outs TypeScript_AnyTuple:$result);
 
   // Override the default verifier, everything is checked by traits.
   let verifier = ?;
@@ -1574,7 +1574,7 @@ def TypeScript_CompareCatchTypeOp : TypeScript_Op<"CompareCatchType"> {
   }];
 
   let arguments = (ins TypeScript_Opaque:$landingPad, TypeScript_Opaque:$throwTypeInfo);
-  let results = (outs I1:$result);
+  let results = (outs TypeScript_Boolean:$result);
 
   // Override the default verifier, everything is checked by traits.
   let verifier = ?;
@@ -1585,7 +1585,7 @@ def TypeScript_BeginCatchOp : TypeScript_Op<"BeginCatch"> {
   let description = [{
   }];
 
-  let arguments = (ins TypeScript_Opaque:$landingPad);
+  let arguments = (ins TypeScript_AnyTuple:$landingPad);
   let results = (outs TypeScript_Opaque:$exceptionInfo);
 
   // Override the default verifier, everything is checked by traits.
@@ -1597,7 +1597,7 @@ def TypeScript_EndCatchOp : TypeScript_Op<"EndCatch"> {
   let description = [{
   }];
 
-  let arguments = (ins TypeScript_Opaque:$exceptionInfo);
+  let arguments = (ins );
   let results = (outs );
 
   // Override the default verifier, everything is checked by traits.
@@ -1759,5 +1759,8 @@ def TypeScript_DebuggerOp : TypeScript_Op<"Debugger"> {
   let summary = "debugger";
 }
 
+def TypeScript_UnreachableOp : TypeScript_Op<"unreachable", [Terminator]> {
+  let summary = "unreachable";
+}
 
 #endif // TYPESCRIPT_OPS

@@ -59,6 +59,11 @@ class MLIRTypeHelper
         return mlir_ts::OpaqueType::get(context);
     }
 
+    mlir_ts::BooleanType getBooleanType()
+    {
+        return mlir_ts::BooleanType::get(context);
+    }
+
     mlir_ts::NullType getNullType()
     {
         return mlir_ts::NullType::get(context);

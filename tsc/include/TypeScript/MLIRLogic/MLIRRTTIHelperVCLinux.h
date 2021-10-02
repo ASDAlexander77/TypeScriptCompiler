@@ -404,6 +404,11 @@ class MLIRRTTIHelperVCLinux
         typeInfoRef(loc, name, ti, baseName, baseti);
         return mlir::success();
     }
+
+    mlir_ts::TupleType getLandingPadType()
+    {
+        return mth.getTupleType({mth.getOpaqueType(), mth.getI32Type()});
+    }
 };
 } // namespace typescript
 
