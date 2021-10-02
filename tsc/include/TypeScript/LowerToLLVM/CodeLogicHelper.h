@@ -242,6 +242,17 @@ class CodeLogicHelper
         auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
         return continuationBlock;
     }
+
+    mlir::Block *CutBlockAndSetInsertPointToEndOfBlock()
+    {
+        auto *opBlock = rewriter.getInsertionBlock();
+        auto opPosition = rewriter.getInsertionPoint();
+        auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
+
+        rewriter.setInsertionPointToEnd(opBlock);
+
+        return continuationBlock;
+    }
 };
 } // namespace typescript
 

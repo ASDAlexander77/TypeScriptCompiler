@@ -751,6 +751,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         auto *finallyBlockRegionLast = &tryOp.finallyBlock().back();
 
         // logic to set Invoke attribute CallOp
+        // TODO: check for nested ops for example in if block
         auto visitorCallOpContinue = [&](Operation *op) {
             if (auto callOp = dyn_cast_or_null<mlir_ts::CallOp>(op))
             {
@@ -851,6 +852,67 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
     }
 };
 
+struct CallOpLowering : public TsPattern<mlir_ts::CallOp>
+{
+    using TsPattern<mlir_ts::CallOp>::TsPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::CallOp op, PatternRewriter &rewriter) const final
+    {
+        if (auto unwind = tsContext->unwind[op])
+        {
+            {
+                OpBuilder::InsertionGuard guard(rewriter);
+                CodeLogicHelper clh(op, rewriter);
+                auto *continuationBlock = clh.CutBlockAndSetInsertPointToEndOfBlock();
+
+                LLVM_DEBUG(llvm::dbgs() << "...call -> invoke: " << op.calleeAttr() << "\n";);
+                LLVM_DEBUG(for (auto opit : op.getOperands()) llvm::dbgs() << "...call -> invoke operands: " << opit << "\n";);
+
+                rewriter.create<mlir_ts::InvokeOp>(op->getLoc(), op.getResultTypes(), op.calleeAttr(), op.getOperands(), continuationBlock,
+                                                   ValueRange{}, unwind, ValueRange{});
+            }
+
+            rewriter.eraseOp(op);
+
+            return success();
+        }
+
+        // just replace
+        rewriter.replaceOpWithNewOp<mlir::CallOp>(op, op.getCallee(), op.getResultTypes(), op.getArgOperands());
+        return success();
+    }
+};
+
+struct CallIndirectOpLowering : public TsPattern<mlir_ts::CallIndirectOp>
+{
+    using TsPattern<mlir_ts::CallIndirectOp>::TsPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::CallIndirectOp op, PatternRewriter &rewriter) const final
+    {
+        if (auto unwind = tsContext->unwind[op])
+        {
+            {
+                OpBuilder::InsertionGuard guard(rewriter);
+                CodeLogicHelper clh(op, rewriter);
+                auto *continuationBlock = clh.CutBlockAndSetInsertPointToEndOfBlock();
+
+                LLVM_DEBUG(for (auto opit : op.getOperands()) llvm::dbgs() << "...call -> invoke operands: " << opit << "\n";);
+
+                rewriter.create<mlir_ts::InvokeOp>(op->getLoc(), op.getResultTypes(), op.getOperands(), continuationBlock, ValueRange{},
+                                                   unwind, ValueRange{});
+            }
+
+            rewriter.eraseOp(op);
+
+            return success();
+        }
+
+        // just replace
+        rewriter.replaceOpWithNewOp<mlir::CallIndirectOp>(op, op.getResultTypes(), op.getCallee(), op.getArgOperands());
+        return success();
+    }
+};
+
 struct ThrowOpLowering : public TsPattern<mlir_ts::ThrowOp>
 {
     using TsPattern<mlir_ts::ThrowOp>::TsPattern;
@@ -865,13 +927,13 @@ struct ThrowOpLowering : public TsPattern<mlir_ts::ThrowOp>
         if (auto unwind = tsContext->unwind[throwOp])
         {
             rewriter.replaceOpWithNewOp<mlir_ts::ThrowUnwindOp>(throwOp, throwOp.exception(), unwind);
-            clh.CutBlock();
         }
         else
         {
             rewriter.replaceOpWithNewOp<mlir_ts::ThrowCallOp>(throwOp, throwOp.exception());
-            clh.CutBlock();
         }
+
+        clh.CutBlock();
 
         return success();
     }
@@ -932,28 +994,28 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     // a partial lowering, we explicitly mark the TypeScript operations that don't want
     // to lower, `typescript.print`, as `legal`.
     target.addIllegalDialect<mlir_ts::TypeScriptDialect>();
-    target.addLegalOp<
-        mlir_ts::AddressOfOp, mlir_ts::AddressOfConstStringOp, mlir_ts::AddressOfElementOp, mlir_ts::ArithmeticBinaryOp,
-        mlir_ts::ArithmeticUnaryOp, mlir_ts::AssertOp, mlir_ts::CallOp, mlir_ts::CallIndirectOp, mlir_ts::CaptureOp, mlir_ts::CastOp,
-        mlir_ts::ConstantOp, mlir_ts::EntryOp, mlir_ts::ExitOp, mlir_ts::ElementRefOp, mlir_ts::FuncOp, mlir_ts::GlobalOp,
-        mlir_ts::GlobalResultOp, mlir_ts::HasValueOp, mlir_ts::ValueOp, mlir_ts::NullOp, mlir_ts::ParseFloatOp, mlir_ts::ParseIntOp,
-        mlir_ts::PrintOp, mlir_ts::SizeOfOp, mlir_ts::ReturnOp, mlir_ts::ReturnValOp, mlir_ts::StoreOp, mlir_ts::SymbolRefOp,
-        mlir_ts::LengthOfOp, mlir_ts::StringLengthOp, mlir_ts::StringConcatOp, mlir_ts::StringCompareOp, mlir_ts::LoadOp, mlir_ts::NewOp,
-        mlir_ts::CreateTupleOp, mlir_ts::DeconstructTupleOp, mlir_ts::CreateArrayOp, mlir_ts::NewEmptyArrayOp, mlir_ts::NewArrayOp,
-        mlir_ts::DeleteOp, mlir_ts::PropertyRefOp, mlir_ts::InsertPropertyOp, mlir_ts::ExtractPropertyOp, mlir_ts::LogicalBinaryOp,
-        mlir_ts::UndefOp, mlir_ts::VariableOp, mlir_ts::TrampolineOp, mlir_ts::InvokeOp, mlir_ts::ResultOp, mlir_ts::ThisVirtualSymbolRefOp,
-        mlir_ts::InterfaceSymbolRefOp, mlir_ts::PushOp, mlir_ts::PopOp, mlir_ts::NewInterfaceOp, mlir_ts::VTableOffsetRefOp,
-        mlir_ts::ThisPropertyRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp, mlir_ts::TypeOfOp, mlir_ts::DebuggerOp,
-        mlir_ts::SwitchStateOp, mlir_ts::StateLabelOp, mlir_ts::LandingPadOp, mlir_ts::CompareCatchTypeOp, mlir_ts::BeginCatchOp,
-        mlir_ts::EndCatchOp, mlir_ts::ThrowUnwindOp, mlir_ts::ThrowCallOp>();
+    target.addLegalOp<mlir_ts::AddressOfOp, mlir_ts::AddressOfConstStringOp, mlir_ts::AddressOfElementOp, mlir_ts::ArithmeticBinaryOp,
+                      mlir_ts::ArithmeticUnaryOp, mlir_ts::AssertOp, mlir_ts::CaptureOp, mlir_ts::CastOp, mlir_ts::ConstantOp,
+                      mlir_ts::EntryOp, mlir_ts::ExitOp, mlir_ts::ElementRefOp, mlir_ts::FuncOp, mlir_ts::GlobalOp, mlir_ts::GlobalResultOp,
+                      mlir_ts::HasValueOp, mlir_ts::ValueOp, mlir_ts::NullOp, mlir_ts::ParseFloatOp, mlir_ts::ParseIntOp, mlir_ts::PrintOp,
+                      mlir_ts::SizeOfOp, mlir_ts::ReturnOp, mlir_ts::ReturnValOp, mlir_ts::StoreOp, mlir_ts::SymbolRefOp,
+                      mlir_ts::LengthOfOp, mlir_ts::StringLengthOp, mlir_ts::StringConcatOp, mlir_ts::StringCompareOp, mlir_ts::LoadOp,
+                      mlir_ts::NewOp, mlir_ts::CreateTupleOp, mlir_ts::DeconstructTupleOp, mlir_ts::CreateArrayOp, mlir_ts::NewEmptyArrayOp,
+                      mlir_ts::NewArrayOp, mlir_ts::DeleteOp, mlir_ts::PropertyRefOp, mlir_ts::InsertPropertyOp, mlir_ts::ExtractPropertyOp,
+                      mlir_ts::LogicalBinaryOp, mlir_ts::UndefOp, mlir_ts::VariableOp, mlir_ts::TrampolineOp, mlir_ts::InvokeOp,
+                      mlir_ts::ResultOp, mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::InterfaceSymbolRefOp, mlir_ts::PushOp, mlir_ts::PopOp,
+                      mlir_ts::NewInterfaceOp, mlir_ts::VTableOffsetRefOp, mlir_ts::ThisPropertyRefOp, mlir_ts::GetThisOp,
+                      mlir_ts::GetMethodOp, mlir_ts::TypeOfOp, mlir_ts::DebuggerOp, mlir_ts::SwitchStateOp, mlir_ts::StateLabelOp,
+                      mlir_ts::LandingPadOp, mlir_ts::CompareCatchTypeOp, mlir_ts::BeginCatchOp, mlir_ts::EndCatchOp,
+                      mlir_ts::ThrowUnwindOp, mlir_ts::ThrowCallOp>();
 
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.
     OwningRewritePatternList patterns(&getContext());
     patterns.insert<ParamOpLowering, ParamOptionalOpLowering, ParamDefaultValueOpLowering, PrefixUnaryOpLowering, PostfixUnaryOpLowering,
                     IfOpLowering, DoWhileOpLowering, WhileOpLowering, ForOpLowering, BreakOpLowering, ContinueOpLowering, SwitchOpLowering,
-                    AccessorRefOpLowering, ThisAccessorRefOpLowering, LabelOpLowering, TryOpLowering, ThrowOpLowering>(&getContext(),
-                                                                                                                       &tsContext);
+                    AccessorRefOpLowering, ThisAccessorRefOpLowering, LabelOpLowering, CallOpLowering, CallIndirectOpLowering,
+                    TryOpLowering, ThrowOpLowering>(&getContext(), &tsContext);
 
     // With the target and rewrite patterns defined, we can now attempt the
     // conversion. The conversion will signal failure if any of our `illegal`

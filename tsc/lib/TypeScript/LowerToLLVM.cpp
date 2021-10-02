@@ -958,12 +958,8 @@ struct CallOpLowering : public TsLlvmPattern<mlir_ts::CallOp>
         {
             {
                 OpBuilder::InsertionGuard guard(rewriter);
-
-                auto *opBlock = rewriter.getInsertionBlock();
-                auto opPosition = rewriter.getInsertionPoint();
-                auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
-
-                rewriter.setInsertionPointToEnd(opBlock);
+                CodeLogicHelper clh(op, rewriter);
+                auto *continuationBlock = clh.CutBlockAndSetInsertPointToEndOfBlock();
 
                 LLVM_DEBUG(llvm::dbgs() << "...call -> invoke: " << op.calleeAttr() << "\n";);
                 LLVM_DEBUG(for (auto opit : op.getOperands()) llvm::dbgs() << "...call -> invoke operands: " << opit << "\n";);
