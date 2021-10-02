@@ -796,10 +796,12 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             rewriter.create<mlir_ts::LandingPadOp>(loc, rttih.getLandingPadType(), rewriter.getBoolAttr(false), ValueRange{catch1});
 
         mlir::Value cmpValue;
+#ifndef WIN_EXCEPTION
         if (rttih.hasType())
         {
             cmpValue = rewriter.create<mlir_ts::CompareCatchTypeOp>(loc, mth.getBooleanType(), landingPadOp, rttih.throwInfoPtrValue(loc));
         }
+#endif
 
         // catch: begin catch
         auto beginCatchCallInfo = rewriter.create<mlir_ts::BeginCatchOp>(loc, mth.getOpaqueType(), landingPadOp);
@@ -869,6 +871,7 @@ struct CatchOpLowering : public TsPattern<mlir_ts::CatchOp>
         auto catchDataValue = tsContext->catchOpData[catchOp];
         if (catchDataValue)
         {
+#ifndef WIN_EXCEPTION
             /*
             // linux version
             mlir::Value val;
@@ -884,12 +887,15 @@ struct CatchOpLowering : public TsPattern<mlir_ts::CatchOp>
 
             rewriter.create<LLVM::StoreOp>(loc, val, catchOp.catchArg());
             */
-        }
-        else
-        {
+#else
             // windows version
             auto undefVal = rewriter.create<mlir_ts::UndefOp>(loc, catchType);
             rewriter.create<mlir_ts::StoreOp>(loc, undefVal, catchOp.catchArg());
+#endif
+        }
+        else
+        {
+            llvm_unreachable("missing catch data.");
         }
 
         rewriter.eraseOp(catchOp);
