@@ -961,7 +961,7 @@ struct CallInternalOpLowering : public TsLlvmPattern<mlir_ts::CallInternalOp>
         }
 
         // just replace
-        if (!op.callee().empty())
+        if (op.callee().hasValue())
         {
             rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, llvmTypes, op.calleeAttr(), op.getArgOperands());
         }

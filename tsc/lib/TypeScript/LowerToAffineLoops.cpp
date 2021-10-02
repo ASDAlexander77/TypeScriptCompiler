@@ -868,8 +868,8 @@ struct CallOpLowering : public TsPattern<mlir_ts::CallOp>
                 LLVM_DEBUG(llvm::dbgs() << "...call -> invoke: " << op.calleeAttr() << "\n";);
                 LLVM_DEBUG(for (auto opit : op.getOperands()) llvm::dbgs() << "...call -> invoke operands: " << opit << "\n";);
 
-                rewriter.create<mlir_ts::InvokeOp>(op->getLoc(), op.getResultTypes(), op.calleeAttr(), op.getOperands(), continuationBlock,
-                                                   ValueRange{}, unwind, ValueRange{});
+                rewriter.create<mlir_ts::InvokeOp>(op->getLoc(), op.getResultTypes(), op.calleeAttr(), op.getArgOperands(),
+                                                   continuationBlock, ValueRange{}, unwind, ValueRange{});
             }
 
             rewriter.eraseOp(op);
@@ -878,7 +878,7 @@ struct CallOpLowering : public TsPattern<mlir_ts::CallOp>
         }
 
         // just replace
-        rewriter.replaceOpWithNewOp<mlir_ts::CallInternalOp>(op, op.getResultTypes(), op.getCallee(), op.getArgOperands());
+        rewriter.replaceOpWithNewOp<mlir_ts::CallInternalOp>(op, op.getResultTypes(), op.calleeAttr(), op.getArgOperands());
         return success();
     }
 };

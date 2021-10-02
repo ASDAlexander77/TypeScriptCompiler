@@ -750,7 +750,7 @@ def TypeScript_CallInternalOp : TypeScript_Op<"CallInternal",
   let description = [{
   }];
 
-  let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyType>:$operands);
+  let arguments = (ins OptionalAttr<FlatSymbolRefAttr>:$callee, Variadic<AnyType>:$operands);
   let results = (outs Variadic<AnyType>);
 
   let builders = [
@@ -772,7 +772,7 @@ def TypeScript_CallInternalOp : TypeScript_Op<"CallInternal",
     }]>];
 
   let extraClassDeclaration = [{
-    StringRef getCallee() { return callee(); }
+    StringRef getCallee() { return callee().hasValue() ? callee().getValue() : ""; }
     FunctionType getCalleeType();
 
     /// Get the argument operands to the called function.
