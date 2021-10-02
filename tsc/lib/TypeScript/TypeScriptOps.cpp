@@ -603,6 +603,16 @@ void mlir_ts::CallIndirectOp::getCanonicalizationPatterns(OwningRewritePatternLi
 }
 
 //===----------------------------------------------------------------------===//
+// CallInternalOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult mlir_ts::CallInternalOp::verifySymbolUses(SymbolTableCollection &symbolTable)
+{
+    // nothing to do here
+    return success();
+}
+
+//===----------------------------------------------------------------------===//
 // IfOp
 //===----------------------------------------------------------------------===//
 

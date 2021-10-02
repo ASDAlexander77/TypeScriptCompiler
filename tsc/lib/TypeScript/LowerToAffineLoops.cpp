@@ -878,7 +878,7 @@ struct CallOpLowering : public TsPattern<mlir_ts::CallOp>
         }
 
         // just replace
-        rewriter.replaceOpWithNewOp<mlir::CallOp>(op, op.getCallee(), op.getResultTypes(), op.getArgOperands());
+        rewriter.replaceOpWithNewOp<mlir_ts::CallInternalOp>(op, op.getResultTypes(), op.getCallee(), op.getArgOperands());
         return success();
     }
 };
@@ -908,7 +908,7 @@ struct CallIndirectOpLowering : public TsPattern<mlir_ts::CallIndirectOp>
         }
 
         // just replace
-        rewriter.replaceOpWithNewOp<mlir::CallIndirectOp>(op, op.getResultTypes(), op.getCallee(), op.getArgOperands());
+        rewriter.replaceOpWithNewOp<mlir_ts::CallInternalOp>(op, op.getResultTypes(), op.getOperands());
         return success();
     }
 };
@@ -1007,7 +1007,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
                       mlir_ts::NewInterfaceOp, mlir_ts::VTableOffsetRefOp, mlir_ts::ThisPropertyRefOp, mlir_ts::GetThisOp,
                       mlir_ts::GetMethodOp, mlir_ts::TypeOfOp, mlir_ts::DebuggerOp, mlir_ts::SwitchStateOp, mlir_ts::StateLabelOp,
                       mlir_ts::LandingPadOp, mlir_ts::CompareCatchTypeOp, mlir_ts::BeginCatchOp, mlir_ts::EndCatchOp,
-                      mlir_ts::ThrowUnwindOp, mlir_ts::ThrowCallOp>();
+                      mlir_ts::ThrowUnwindOp, mlir_ts::ThrowCallOp, mlir_ts::CallInternalOp>();
 
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.
@@ -1024,8 +1024,6 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     {
         signalPassFailure();
     }
-
-    LLVM_DEBUG(llvm::dbgs() << "\nFUNC. DUMP: \n" << function << "\n";);
 }
 
 /// Create a pass for lowering operations in the `Affine` and `Std` dialects,

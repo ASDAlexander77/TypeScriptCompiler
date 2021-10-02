@@ -743,6 +743,60 @@ def TypeScript_InvokeOp : TypeScript_Op<"invoke", [
   let verifier = [{ return ::verify(*this);  }];
 }
 
+def TypeScript_CallInternalOp : TypeScript_Op<"CallInternal",
+    [CallOpInterface, MemRefsNormalizable,
+     DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+  let summary = "call internal operation";
+  let description = [{
+  }];
+
+  let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyType>:$operands);
+  let results = (outs Variadic<AnyType>);
+
+  let builders = [
+    OpBuilder<(ins "FuncOp":$callee, CArg<"ValueRange", "{}">:$operands), [{
+      $_state.addOperands(operands);
+      $_state.addAttribute("callee",$_builder.getSymbolRefAttr(callee));
+      $_state.addTypes(callee.getType().getResults());
+    }]>,
+    OpBuilder<(ins "SymbolRefAttr":$callee, "TypeRange":$results,
+      CArg<"ValueRange", "{}">:$operands), [{
+      $_state.addOperands(operands);
+      $_state.addAttribute("callee", callee);
+      $_state.addTypes(results);
+    }]>,
+    OpBuilder<(ins "StringRef":$callee, "TypeRange":$results,
+      CArg<"ValueRange", "{}">:$operands), [{
+      build($_builder, $_state, $_builder.getSymbolRefAttr(callee), results,
+            operands);
+    }]>];
+
+  let extraClassDeclaration = [{
+    StringRef getCallee() { return callee(); }
+    FunctionType getCalleeType();
+
+    /// Get the argument operands to the called function.
+    operand_range getArgOperands() 
+    {
+      return {arg_operand_begin(), arg_operand_end()};
+    }
+
+    operand_iterator arg_operand_begin() { return operand_begin(); }
+    operand_iterator arg_operand_end() { return operand_end(); }
+
+    /// Return the callee of this operation.
+    CallInterfaceCallable getCallableForCallee() 
+    {
+      return (*this)->getAttrOfType<SymbolRefAttr>("callee");
+    }
+  }];
+
+  let assemblyFormat = [{
+    $callee `(` $operands `)` attr-dict `:` functional-type($operands, results)
+  }];
+  let verifier = ?;
+}
+
 def TypeScript_CaptureOp : TypeScript_Op<"Capture", []> {
   let summary = "capture variables";
 
