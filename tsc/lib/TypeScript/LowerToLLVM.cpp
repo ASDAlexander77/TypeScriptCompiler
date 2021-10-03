@@ -2212,8 +2212,11 @@ struct CompareCatchTypeOpLowering : public TsLlvmPattern<mlir_ts::CompareCatchTy
     LogicalResult matchAndRewrite(mlir_ts::CompareCatchTypeOp compareCatchTypeOp, ArrayRef<Value> operands,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        // dummy code
-        rewriter.replaceOp(compareCatchTypeOp, beginCatchOp->getOperands());
+        CodeLogicHelper clh(compareCatchTypeOp, rewriter);
+
+        auto trueVal = clh.createI1ConstantOf(true);
+        rewriter.replaceOp(compareCatchTypeOp, ValueRange{trueVal});
+
         return success();
     }
 };

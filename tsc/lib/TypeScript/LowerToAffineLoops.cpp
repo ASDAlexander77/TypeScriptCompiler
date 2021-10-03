@@ -845,6 +845,8 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
         rewriter.replaceOp(tryOp, continuation->getArguments());
 
+        LLVM_DEBUG(llvm::dbgs() << "\nDUMP parent: " << *tryOp->getParentOp() << "\n");
+
         return success();
     }
 };

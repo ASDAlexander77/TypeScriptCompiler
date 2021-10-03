@@ -399,8 +399,8 @@ class MLIRRTTIHelperVCLinux
             tiType = mth.getOpaqueType();
         }
 
-        mlir::Value throwInfoPtr =
-            rewriter.create<mlir::ConstantOp>(loc, mth.getRefType(tiType), mlir::FlatSymbolRefAttr::get(rewriter.getContext(), typeName));
+        mlir::Value throwInfoPtr = rewriter.create<mlir_ts::ConstantOp>(loc, mth.getRefType(tiType),
+                                                                        mlir::FlatSymbolRefAttr::get(rewriter.getContext(), typeName));
         if (classType)
         {
             throwInfoPtr = rewriter.create<mlir_ts::CastOp>(loc, mth.getOpaqueType(), throwInfoPtr);
