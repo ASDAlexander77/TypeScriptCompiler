@@ -859,35 +859,12 @@ struct CatchOpLowering : public TsPattern<mlir_ts::CatchOp>
     {
         TypeHelper th(rewriter);
 
-        // this is hook to process it later
-        auto catchType = catchOp.catchArg().getType().cast<mlir_ts::RefType>().getElementType();
-
         Location loc = catchOp.getLoc();
 
         auto catchDataValue = tsContext->catchOpData[catchOp];
         if (catchDataValue)
         {
-#ifndef WIN_EXCEPTION
-            /*
-            // linux version
-            mlir::Value val;
-            if (!llvmCatchType.isa<LLVM::LLVMPointerType>())
-            {
-                auto ptrVal = rewriter.create<LLVM::BitcastOp>(loc, th.getPointerType(llvmCatchType), catchDataValue);
-                val = rewriter.create<LLVM::LoadOp>(loc, llvmCatchType, ptrVal);
-            }
-            else
-            {
-                val = rewriter.create<LLVM::BitcastOp>(loc, llvmCatchType, catchDataValue);
-            }
-
-            rewriter.create<LLVM::StoreOp>(loc, val, catchOp.catchArg());
-            */
-#else
-            // windows version
-            auto undefVal = rewriter.create<mlir_ts::UndefOp>(loc, catchType);
-            rewriter.create<mlir_ts::StoreOp>(loc, undefVal, catchOp.catchArg());
-#endif
+            rewriter.create<mlir_ts::SaveCatchVarOp>(loc, catchDataValue, catchOp.catchArg());
         }
         else
         {
@@ -1054,8 +1031,8 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
                       mlir_ts::ResultOp, mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::InterfaceSymbolRefOp, mlir_ts::PushOp, mlir_ts::PopOp,
                       mlir_ts::NewInterfaceOp, mlir_ts::VTableOffsetRefOp, mlir_ts::ThisPropertyRefOp, mlir_ts::GetThisOp,
                       mlir_ts::GetMethodOp, mlir_ts::TypeOfOp, mlir_ts::DebuggerOp, mlir_ts::SwitchStateOp, mlir_ts::StateLabelOp,
-                      mlir_ts::LandingPadOp, mlir_ts::CompareCatchTypeOp, mlir_ts::BeginCatchOp, mlir_ts::EndCatchOp,
-                      mlir_ts::ThrowUnwindOp, mlir_ts::ThrowCallOp, mlir_ts::CallInternalOp>();
+                      mlir_ts::LandingPadOp, mlir_ts::CompareCatchTypeOp, mlir_ts::BeginCatchOp, mlir_ts::SaveCatchVarOp,
+                      mlir_ts::EndCatchOp, mlir_ts::ThrowUnwindOp, mlir_ts::ThrowCallOp, mlir_ts::CallInternalOp>();
 
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.

@@ -1598,7 +1598,7 @@ def TypeScript_CatchOp : TypeScript_Op<"Catch",
   let description = [{
   }];
 
-  let arguments = (ins AnyType:$catchArg);
+  let arguments = (ins TypeScript_Ref:$catchArg);
 
   // Override the default verifier, everything is checked by traits.
   let verifier = ?;
@@ -1641,6 +1641,18 @@ def TypeScript_BeginCatchOp : TypeScript_Op<"BeginCatch"> {
 
   let arguments = (ins TypeScript_AnyTuple:$landingPad);
   let results = (outs TypeScript_Opaque:$exceptionInfo);
+
+  // Override the default verifier, everything is checked by traits.
+  let verifier = ?;
+}
+
+def TypeScript_SaveCatchVarOp : TypeScript_Op<"SaveCatchVar"> {
+  let summary = "SaveCatchVar - for affine layer";
+  let description = [{
+  }];
+
+  let arguments = (ins TypeScript_Opaque:$exceptionInfo, TypeScript_Ref:$varStore);
+  let results = (outs );
 
   // Override the default verifier, everything is checked by traits.
   let verifier = ?;

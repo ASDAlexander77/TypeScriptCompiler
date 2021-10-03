@@ -2228,7 +2228,32 @@ struct BeginCatchOpLowering : public TsLlvmPattern<mlir_ts::BeginCatchOp>
     LogicalResult matchAndRewrite(mlir_ts::BeginCatchOp beginCatchOp, ArrayRef<Value> operands,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        rewriter.replaceOp(beginCatchOp, beginCatchOp->getOperands());
+        Location loc = beginCatchOp.getLoc();
+
+        auto nullVal = rewriter.create<mlir_ts::NullOp>(loc, mlir_ts::NullType::get(rewriter.getContext()));
+        auto opaqueValue = rewriter.create<mlir_ts::CastOp>(loc, mlir_ts::OpaqueType::get(rewriter.getContext()), nullVal);
+        rewriter.replaceOp(beginCatchOp, ValueRange{opaqueValue});
+
+        return success();
+    }
+};
+
+struct SaveCatchVarOpLowering : public TsLlvmPattern<mlir_ts::SaveCatchVarOp>
+{
+    using TsLlvmPattern<mlir_ts::SaveCatchVarOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::SaveCatchVarOp saveCatchVarOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        Location loc = saveCatchVarOp.getLoc();
+
+        auto catchRefType = saveCatchVarOp.varStore().getType().cast<mlir_ts::RefType>();
+        auto catchType = catchRefType.getElementType();
+
+        // this is hook call to finish later in Win32 exception pass
+        auto catchVal = rewriter.create<mlir_ts::UndefOp>(loc, catchType);
+        rewriter.replaceOpWithNewOp<mlir_ts::StoreOp>(saveCatchVarOp, catchVal, saveCatchVarOp.varStore());
+
         return success();
     }
 };
@@ -2410,6 +2435,38 @@ struct CompareCatchTypeOpLowering : public TsLlvmPattern<mlir_ts::CompareCatchTy
         // icmp
         auto cmpValue = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, loadedI32Value, typeIdValue);
         rewriter.replaceOp(compareCatchTypeOp, ValueRange{cmpValue});
+
+        return success();
+    }
+};
+
+struct SaveCatchVarOpLowering : public TsLlvmPattern<mlir_ts::SaveCatchVarOp>
+{
+    using TsLlvmPattern<mlir_ts::SaveCatchVarOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::SaveCatchVarOp saveCatchVarOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        Location loc = saveCatchVarOp.getLoc();
+
+        TypeHelper th(rewriter);
+
+        auto catchRefType = saveCatchVarOp.varStore().getType().cast<mlir_ts::RefType>();
+        auto catchType = catchRefType.getElementType();
+        auto llvmCatchType = getTypeConverter()->convertType(catchType);
+
+        mlir::Value catchVal;
+        if (!llvmCatchType.isa<LLVM::LLVMPointerType>())
+        {
+            auto ptrVal = rewriter.create<LLVM::BitcastOp>(loc, th.getPointerType(llvmCatchType), saveCatchVarOp.exceptionInfo());
+            catchVal = rewriter.create<LLVM::LoadOp>(loc, llvmCatchType, ptrVal);
+        }
+        else
+        {
+            catchVal = rewriter.create<LLVM::BitcastOp>(loc, llvmCatchType, saveCatchVarOp.exceptionInfo());
+        }
+
+        rewriter.replaceOpWithNewOp<mlir_ts::StoreOp>(saveCatchVarOp, catchVal, saveCatchVarOp.varStore());
 
         return success();
     }
@@ -3543,8 +3600,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         InterfaceSymbolRefOpLowering, NewInterfaceOpLowering, VTableOffsetRefOpLowering, ThisPropertyRefOpLowering, LoadBoundRefOpLowering,
         StoreBoundRefOpLowering, CreateBoundRefOpLowering, CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering,
         TypeOfOpLowering, DebuggerOpLowering, StateLabelOpLowering, SwitchStateOpLowering, UnreachableOpLowering, LandingPadOpLowering,
-        CompareCatchTypeOpLowering, BeginCatchOpLowering, EndCatchOpLowering, CallInternalOpLowering>(typeConverter, &getContext(),
-                                                                                                      &tsLlvmContext);
+        CompareCatchTypeOpLowering, BeginCatchOpLowering, SaveCatchVarOpLowering, EndCatchOpLowering, CallInternalOpLowering>(
+        typeConverter, &getContext(), &tsLlvmContext);
 
     populateTypeScriptConversionPatterns(typeConverter, m);
 
