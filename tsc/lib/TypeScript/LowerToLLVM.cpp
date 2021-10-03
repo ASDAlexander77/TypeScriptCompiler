@@ -2440,6 +2440,34 @@ struct CompareCatchTypeOpLowering : public TsLlvmPattern<mlir_ts::CompareCatchTy
     }
 };
 
+struct BeginCatchOpLowering : public TsLlvmPattern<mlir_ts::BeginCatchOp>
+{
+    using TsLlvmPattern<mlir_ts::BeginCatchOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::BeginCatchOp beginCatchOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        Location loc = beginCatchOp.getLoc();
+
+        TypeHelper th(rewriter);
+        LLVMCodeHelper ch(beginCatchOp, rewriter, getTypeConverter());
+        CodeLogicHelper clh(beginCatchOp, rewriter);
+
+        auto i8PtrTy = th.getI8PtrType();
+
+        // catches:extract
+        auto loadedI8PtrValue =
+            rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), beginCatchOp.landingPad(), clh.getStructIndexAttr(0));
+
+        auto beginCatchFuncName = "__cxa_begin_catch";
+        auto beginCatchFunc = ch.getOrInsertFunction(beginCatchFuncName, th.getFunctionType(i8PtrTy, {i8PtrTy}));
+
+        rewriter.replaceOpWithNewOp<LLVM::CallOp>(beginCatchOp, beginCatchFunc, ValueRange{loadedI8PtrValue});
+
+        return success();
+    }
+};
+
 struct SaveCatchVarOpLowering : public TsLlvmPattern<mlir_ts::SaveCatchVarOp>
 {
     using TsLlvmPattern<mlir_ts::SaveCatchVarOp>::TsLlvmPattern;
@@ -2467,34 +2495,6 @@ struct SaveCatchVarOpLowering : public TsLlvmPattern<mlir_ts::SaveCatchVarOp>
         }
 
         rewriter.replaceOpWithNewOp<mlir_ts::StoreOp>(saveCatchVarOp, catchVal, saveCatchVarOp.varStore());
-
-        return success();
-    }
-};
-
-struct BeginCatchOpLowering : public TsLlvmPattern<mlir_ts::BeginCatchOp>
-{
-    using TsLlvmPattern<mlir_ts::BeginCatchOp>::TsLlvmPattern;
-
-    LogicalResult matchAndRewrite(mlir_ts::BeginCatchOp beginCatchOp, ArrayRef<Value> operands,
-                                  ConversionPatternRewriter &rewriter) const final
-    {
-        Location loc = beginCatchOp.getLoc();
-
-        TypeHelper th(rewriter);
-        LLVMCodeHelper ch(beginCatchOp, rewriter, getTypeConverter());
-        CodeLogicHelper clh(beginCatchOp, rewriter);
-
-        auto i8PtrTy = th.getI8PtrType();
-
-        // catches:extract
-        auto loadedI8PtrValue =
-            rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), beginCatchOp.landingPad(), clh.getStructIndexAttr(0));
-
-        auto beginCatchFuncName = "__cxa_begin_catch";
-        auto beginCatchFunc = ch.getOrInsertFunction(beginCatchFuncName, th.getFunctionType(i8PtrTy, {i8PtrTy}));
-
-        rewriter.replaceOpWithNewOp<LLVM::CallOp>(beginCatchOp, beginCatchFunc, ValueRange{loadedI8PtrValue});
 
         return success();
     }

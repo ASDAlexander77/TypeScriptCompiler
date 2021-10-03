@@ -126,8 +126,8 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Val
         // excluded string
         auto intPtrType = llvmtch.getIntPtrType(0);
 
-        Value leftPtrValue = builder.create<LLVM::PtrToIntOp>(loc, intPtrType, left);
-        Value rightPtrValue = builder.create<LLVM::PtrToIntOp>(loc, intPtrType, right);
+        mlir::Value leftPtrValue = builder.create<LLVM::PtrToIntOp>(loc, intPtrType, left);
+        mlir::Value rightPtrValue = builder.create<LLVM::PtrToIntOp>(loc, intPtrType, right);
 
         auto value = builder.create<StdIOpTy>(loc, v1, leftPtrValue, rightPtrValue);
         return value;
