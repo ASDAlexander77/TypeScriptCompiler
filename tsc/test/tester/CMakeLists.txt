@@ -163,6 +163,7 @@ add_test(NAME test-compile-43-nestednamespace COMMAND test-runner "${PROJECT_SOU
 add_test(NAME test-compile-44-toplevelcode COMMAND test-runner -llc -builtins "${PROJECT_SOURCE_DIR}/test/tester/tests/44toplevelcode.ts")
 add_test(NAME test-compile-45-enumtostring COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/45enumtostring.ts")
 add_test(NAME test-compile-48-instanceof COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/48instanceof.ts")
+add_test(NAME test-compile-51-exceptions COMMAND test-runner -llc "${PROJECT_SOURCE_DIR}/test/tester/tests/51exceptions.ts")
 add_test(NAME test-compile-Grammar_and_types COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/Grammar_and_types.ts")
 
 add_test(NAME test-jit-00-print COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00print.ts")
@@ -268,4 +269,7 @@ add_test(NAME test-jit-43-nestednamespace COMMAND test-runner -jit "${PROJECT_SO
 add_test(NAME test-jit-44-toplevelcode COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/44toplevelcode.ts")
 add_test(NAME test-jit-45-enumtostring COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/45enumtostring.ts")
 add_test(NAME test-jit-48-instanceof COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/48instanceof.ts")
+if (NOT(WIN32))
+add_test(NAME test-jit-51-exceptions COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/51exceptions.ts")
+endif()
 add_test(NAME test-jit-Grammar_and_types COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/Grammar_and_types.ts")
