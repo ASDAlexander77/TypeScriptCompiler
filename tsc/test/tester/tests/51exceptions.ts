@@ -150,7 +150,7 @@ namespace exceptions {
         //assert(test4(() => { }) == 10)
         //assert(test4(() => { throw "foo" }) == 20)
 
-        //test5()
+        test5()
 
         print("test exn done")
     }
