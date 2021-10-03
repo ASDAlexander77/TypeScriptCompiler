@@ -147,11 +147,9 @@ class ThrowLogic
 
             auto unreachable = clh.FindUnreachableBlockOrCreate();
 
-            auto *opBlock = rewriter.getInsertionBlock();
-            auto opPosition = rewriter.getInsertionPoint();
-            auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
+            auto endOfBlock = rewriter.getInsertionBlock()->getTerminator() == op;
 
-            rewriter.setInsertionPointToEnd(opBlock);
+            auto *continuationBlock = endOfBlock ? nullptr : clh.CutBlockAndSetInsertPointToEndOfBlock();
 
             auto nullValue = rewriter.create<LLVM::NullOp>(loc, i8PtrTy);
             rewriter.create<LLVM::InvokeOp>(loc, TypeRange{th.getVoidType()},
@@ -159,7 +157,10 @@ class ThrowLogic
                                             ValueRange{value, clh.castToI8Ptr(rttih.throwInfoPtrValue(loc)), nullValue}, unreachable,
                                             ValueRange{}, unwind, ValueRange{});
 
-            rewriter.setInsertionPointToStart(continuationBlock);
+            if (continuationBlock)
+            {
+                rewriter.setInsertionPointToStart(continuationBlock);
+            }
         }
         else
         {
