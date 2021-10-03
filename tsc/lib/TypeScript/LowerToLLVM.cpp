@@ -2205,6 +2205,19 @@ struct LandingPadOpLowering : public TsLlvmPattern<mlir_ts::LandingPadOp>
     }
 };
 
+struct CompareCatchTypeOpLowering : public TsLlvmPattern<mlir_ts::CompareCatchTypeOp>
+{
+    using TsLlvmPattern<mlir_ts::CompareCatchTypeOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::CompareCatchTypeOp compareCatchTypeOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        // dummy code
+        rewriter.replaceOp(compareCatchTypeOp, beginCatchOp->getOperands());
+        return success();
+    }
+};
+
 struct BeginCatchOpLowering : public TsLlvmPattern<mlir_ts::BeginCatchOp>
 {
     using TsLlvmPattern<mlir_ts::BeginCatchOp>::TsLlvmPattern;
@@ -2347,6 +2360,106 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
 
 #else
 
+struct LandingPadOpLowering : public TsLlvmPattern<mlir_ts::LandingPadOp>
+{
+    using TsLlvmPattern<mlir_ts::LandingPadOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::LandingPadOp landingPadOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        Location loc = landingPadOp.getLoc();
+
+        TypeHelper th(rewriter);
+
+        auto catch1 = landingPadOp.catches().front();
+
+        mlir::Type llvmLandingPadTy = getTypeConverter()->convertType(landingPadOp.getType());
+        rewriter.replaceOpWithNewOp<LLVM::LandingpadOp>(landingPadOp, llvmLandingPadTy, false, ValueRange{catch1});
+
+        return success();
+    }
+};
+
+struct CompareCatchTypeOpLowering : public TsLlvmPattern<mlir_ts::CompareCatchTypeOp>
+{
+    using TsLlvmPattern<mlir_ts::CompareCatchTypeOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::CompareCatchTypeOp compareCatchTypeOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        Location loc = compareCatchTypeOp.getLoc();
+
+        TypeHelper th(rewriter);
+        LLVMCodeHelper ch(compareCatchTypeOp, rewriter, getTypeConverter());
+        CodeLogicHelper clh(compareCatchTypeOp, rewriter);
+
+        auto i8PtrTy = th.getI8PtrType();
+
+        auto loadedI32Value =
+            rewriter.create<LLVM::ExtractValueOp>(loc, th.getI32Type(), compareCatchTypeOp.landingPad(), clh.getStructIndexAttr(1));
+
+        auto typeIdFuncName = "llvm.eh.typeid.for";
+        auto typeIdFunc = ch.getOrInsertFunction(typeIdFuncName, th.getFunctionType(th.getI32Type(), {i8PtrTy}));
+
+        auto callInfo = rewriter.create<LLVM::CallOp>(loc, typeIdFunc, ValueRange{clh.castToI8Ptr(compareCatchTypeOp.throwTypeInfo())});
+        auto typeIdValue = callInfo.getResult(0);
+
+        // icmp
+        auto cmpValue = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, loadedI32Value, typeIdValue);
+        rewriter.replaceOp(compareCatchTypeOp, ValueRange{cmpValue});
+
+        return success();
+    }
+};
+
+struct BeginCatchOpLowering : public TsLlvmPattern<mlir_ts::BeginCatchOp>
+{
+    using TsLlvmPattern<mlir_ts::BeginCatchOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::BeginCatchOp beginCatchOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        Location loc = beginCatchOp.getLoc();
+
+        TypeHelper th(rewriter);
+        LLVMCodeHelper ch(beginCatchOp, rewriter, getTypeConverter());
+        CodeLogicHelper clh(beginCatchOp, rewriter);
+
+        auto i8PtrTy = th.getI8PtrType();
+
+        // catches:extract
+        auto loadedI8PtrValue =
+            rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), beginCatchOp.landingPad(), clh.getStructIndexAttr(0));
+
+        auto beginCatchFuncName = "__cxa_begin_catch";
+        auto beginCatchFunc = ch.getOrInsertFunction(beginCatchFuncName, th.getFunctionType(i8PtrTy, {i8PtrTy}));
+
+        auto beginCatchCallInfo = rewriter.create<LLVM::CallOp>(loc, beginCatchFunc, ValueRange{loadedI8PtrValue});
+
+        return success();
+    }
+};
+
+struct EndCatchOpLowering : public TsLlvmPattern<mlir_ts::EndCatchOp>
+{
+    using TsLlvmPattern<mlir_ts::EndCatchOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::EndCatchOp endCatchOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+    {
+        Location loc = endCatchOp.getLoc();
+
+        TypeHelper th(rewriter);
+        LLVMCodeHelper ch(endCatchOp, rewriter, getTypeConverter());
+
+        auto endCatchFuncName = "__cxa_end_catch";
+        auto endCatchFunc = ch.getOrInsertFunction(endCatchFuncName, th.getFunctionType(th.getVoidType(), ArrayRef<Type>{}));
+
+        rewriter.replaceOpWithNewOp<LLVM::CallOp>(endCatchOp, endCatchFunc, ValueRange{});
+
+        return success();
+    }
+};
+
 struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
 {
     using TsLlvmPattern<mlir_ts::TryOp>::TsLlvmPattern;
@@ -2393,21 +2506,21 @@ struct TryOpLowering : public TsLlvmPattern<mlir_ts::TryOp>
         auto *finallyBlockRegionLast = &tryOp.finallyBlock().back();
 
         // logic to set Invoke attribute CallOp
-        auto visitorCallOpContinue = [&](Operation *op) {
-            if (auto callOp = dyn_cast_or_null<mlir_ts::CallOp>(op))
-            {
-                tsLlvmContext->unwind[op] = catchesRegion;
-            }
-            else if (auto callIndirectOp = dyn_cast_or_null<mlir_ts::CallIndirectOp>(op))
-            {
-                tsLlvmContext->unwind[op] = catchesRegion;
-            }
-            else if (auto throwOp = dyn_cast_or_null<mlir_ts::ThrowOp>(op))
-            {
-                tsLlvmContext->unwind[op] = catchesRegion;
-            }
-        };
-        tryOp.body().walk(visitorCallOpContinue);
+        // auto visitorCallOpContinue = [&](Operation *op) {
+        //     if (auto callOp = dyn_cast_or_null<mlir_ts::CallOp>(op))
+        //     {
+        //         tsLlvmContext->unwind[op] = catchesRegion;
+        //     }
+        //     else if (auto callIndirectOp = dyn_cast_or_null<mlir_ts::CallIndirectOp>(op))
+        //     {
+        //         tsLlvmContext->unwind[op] = catchesRegion;
+        //     }
+        //     else if (auto throwOp = dyn_cast_or_null<mlir_ts::ThrowOp>(op))
+        //     {
+        //         tsLlvmContext->unwind[op] = catchesRegion;
+        //     }
+        // };
+        // tryOp.body().walk(visitorCallOpContinue);
 
         // Branch to the "body" region.
         rewriter.setInsertionPointToEnd(currentBlock);
@@ -3427,7 +3540,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         InterfaceSymbolRefOpLowering, NewInterfaceOpLowering, VTableOffsetRefOpLowering, ThisPropertyRefOpLowering, LoadBoundRefOpLowering,
         StoreBoundRefOpLowering, CreateBoundRefOpLowering, CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering,
         TypeOfOpLowering, DebuggerOpLowering, StateLabelOpLowering, SwitchStateOpLowering, UnreachableOpLowering, LandingPadOpLowering,
-        BeginCatchOpLowering, EndCatchOpLowering, CallInternalOpLowering>(typeConverter, &getContext(), &tsLlvmContext);
+        CompareCatchTypeOpLowering, BeginCatchOpLowering, EndCatchOpLowering, CallInternalOpLowering>(typeConverter, &getContext(),
+                                                                                                      &tsLlvmContext);
 
     populateTypeScriptConversionPatterns(typeConverter, m);
 

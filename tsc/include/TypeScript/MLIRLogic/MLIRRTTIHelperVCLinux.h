@@ -97,6 +97,16 @@ class MLIRRTTIHelperVCLinux
         }
     }
 
+    void setClassTypeAsCatchType(StringRef name)
+    {
+        std::stringstream ss;
+        ss << "_ZTIP";
+        ss << name.str().size();
+        ss << name.str();
+
+        types.push_back({ss.str(), TypeInfo::ClassTypeInfo, -1});
+    }
+
     void setType(mlir::Type type, std::function<ClassInfo::TypePtr(StringRef fullClassName)> resolveClassInfo)
     {
         llvm::TypeSwitch<mlir::Type>(type)
@@ -131,6 +141,36 @@ class MLIRRTTIHelperVCLinux
 
                 setClassTypeAsCatchType(classAndBases);
             })
+            .Case<mlir_ts::AnyType>([&](auto anyType) { setI8PtrAsCatchType(); })
+            .Default([&](auto type) { llvm_unreachable("not implemented"); });
+    }
+
+    void setType(mlir::Type type)
+    {
+        llvm::TypeSwitch<mlir::Type>(type)
+            .Case<mlir::IntegerType>([&](auto intType) {
+                if (intType.getIntOrFloatBitWidth() == 32)
+                {
+                    setI32AsCatchType();
+                }
+                else
+                {
+                    llvm_unreachable("not implemented");
+                }
+            })
+            .Case<mlir::FloatType>([&](auto floatType) {
+                if (floatType.getIntOrFloatBitWidth() == 32)
+                {
+                    setF32AsCatchType();
+                }
+                else
+                {
+                    llvm_unreachable("not implemented");
+                }
+            })
+            .Case<mlir_ts::NumberType>([&](auto numberType) { setF32AsCatchType(); })
+            .Case<mlir_ts::StringType>([&](auto stringType) { setStringTypeAsCatchType(); })
+            .Case<mlir_ts::ClassType>([&](auto classType) { setClassTypeAsCatchType(classType.getName().getValue()); })
             .Case<mlir_ts::AnyType>([&](auto anyType) { setI8PtrAsCatchType(); })
             .Default([&](auto type) { llvm_unreachable("not implemented"); });
     }
@@ -326,6 +366,47 @@ class MLIRRTTIHelperVCLinux
     bool hasType()
     {
         return types.size() > 0;
+    }
+
+    mlir::Value typeInfoPtrValue(mlir::Location loc)
+    {
+        // TODO:
+        return throwInfoPtrValue(loc);
+    }
+
+    mlir::Value throwInfoPtrValue(mlir::Location loc)
+    {
+        auto typeName = types.front().typeName;
+        auto classType = types.front().infoType == TypeInfo::ClassTypeInfo;
+
+        assert(typeName.size() > 0);
+
+        LLVM_DEBUG(llvm::dbgs() << "\n Throw info name: " << typeName << "\n");
+
+        mlir::Type tiType;
+        if (classType)
+        {
+            SmallVector<mlir::Type> tiTypes;
+            tiTypes.push_back(mth.getOpaqueType());
+            tiTypes.push_back(mth.getOpaqueType());
+            tiTypes.push_back(mth.getI32Type());
+            tiTypes.push_back(mth.getOpaqueType());
+
+            tiType = mth.getTupleType(tiTypes);
+        }
+        else
+        {
+            tiType = mth.getOpaqueType();
+        }
+
+        mlir::Value throwInfoPtr =
+            rewriter.create<mlir::ConstantOp>(loc, mth.getRefType(tiType), mlir::FlatSymbolRefAttr::get(rewriter.getContext(), typeName));
+        if (classType)
+        {
+            throwInfoPtr = rewriter.create<mlir_ts::CastOp>(loc, mth.getOpaqueType(), throwInfoPtr);
+        }
+
+        return throwInfoPtr;
     }
 
     mlir::LogicalResult typeInfoRef(mlir::Location loc, StringRef className, TypeInfo ti, StringRef baseName = "",

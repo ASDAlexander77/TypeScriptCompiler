@@ -733,12 +733,6 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         };
         tryOp.catches().walk(visitorCatchContinue);
 
-        // add to variables to store exception info: i8*, i32
-        auto ptrValueRef = rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(mth.getOpaqueType()), mlir::Value(),
-                                                                rewriter.getBoolAttr(false));
-        auto i32ValueRef =
-            rewriter.create<mlir_ts::VariableOp>(loc, mlir_ts::RefType::get(mth.getI32Type()), mlir::Value(), rewriter.getBoolAttr(false));
-
         OpBuilder::InsertionGuard guard(rewriter);
         mlir::Block *currentBlock = rewriter.getInsertionBlock();
         mlir::Block *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());

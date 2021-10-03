@@ -39,14 +39,14 @@ class ThrowLogic
 
     mlir::LogicalResult logic(mlir::Value exceptionValue, mlir::Block *unwind)
     {
-#ifdef WIN32
+#ifdef WIN_EXCEPTION
         return logicWin32(exceptionValue, unwind);
 #else
         return logicUnix(exceptionValue, unwind);
 #endif
     }
 
-#ifdef WIN32
+#ifdef WIN_EXCEPTION
     mlir::LogicalResult logicWin32(mlir::Value exceptionValue, mlir::Block *unwind)
     {
         mlir::Type exceptionType = exceptionValue.getType();
