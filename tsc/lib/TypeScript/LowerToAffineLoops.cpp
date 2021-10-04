@@ -57,6 +57,62 @@ template <typename OpTy> class TsPattern : public OpRewritePattern<OpTy>
 // TypeScriptToAffine RewritePatterns
 //===----------------------------------------------------------------------===//
 
+struct EntryOpLowering : public TsPattern<mlir_ts::EntryOp>
+{
+    using TsPattern<mlir_ts::EntryOp>::TsPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::EntryOp op, PatternRewriter &rewriter) const final
+    {
+        CodeLogicHelper clh(op, rewriter);
+
+        auto location = op.getLoc();
+
+        mlir::Value allocValue;
+        mlir::Type returnType;
+        auto anyResult = op.getNumResults() > 0;
+        if (anyResult)
+        {
+            auto result = op.getResult(0);
+            returnType = result.getType();
+            allocValue = rewriter.create<mlir_ts::VariableOp>(location, returnType, clh.createI32ConstantOf(1));
+        }
+
+        // create return block
+        clh.CutBlock();
+
+        if (anyResult)
+        {
+            auto loadedValue = rewriter.create<mlir_ts::LoadOp>(op.getLoc(), returnType, allocValue);
+            rewriter.create<mlir::ReturnOp>(op.getLoc(), mlir::ValueRange{loadedValue});
+            rewriter.replaceOp(op, allocValue);
+        }
+        else
+        {
+            rewriter.create<mlir::ReturnOp>(op.getLoc(), mlir::ValueRange{});
+            rewriter.eraseOp(op);
+        }
+
+        return success();
+    }
+};
+
+struct ExitOpLowering : public TsPattern<mlir_ts::ExitOp>
+{
+    using TsPattern<mlir_ts::ExitOp>::TsPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ExitOp op, PatternRewriter &rewriter) const final
+    {
+        CodeLogicHelper clh(op, rewriter);
+
+        auto retBlock = clh.FindReturnBlock();
+
+        rewriter.create<mlir::BranchOp>(op.getLoc(), retBlock);
+
+        rewriter.eraseOp(op);
+        return success();
+    }
+};
+
 struct ParamOpLowering : public TsPattern<mlir_ts::ParamOp>
 {
     using TsPattern<mlir_ts::ParamOp>::TsPattern;
@@ -1021,11 +1077,11 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     target.addIllegalDialect<mlir_ts::TypeScriptDialect>();
     target.addLegalOp<mlir_ts::AddressOfOp, mlir_ts::AddressOfConstStringOp, mlir_ts::AddressOfElementOp, mlir_ts::ArithmeticBinaryOp,
                       mlir_ts::ArithmeticUnaryOp, mlir_ts::AssertOp, mlir_ts::CaptureOp, mlir_ts::CastOp, mlir_ts::ConstantOp,
-                      mlir_ts::EntryOp, mlir_ts::ExitOp, mlir_ts::ElementRefOp, mlir_ts::FuncOp, mlir_ts::GlobalOp, mlir_ts::GlobalResultOp,
-                      mlir_ts::HasValueOp, mlir_ts::ValueOp, mlir_ts::NullOp, mlir_ts::ParseFloatOp, mlir_ts::ParseIntOp, mlir_ts::PrintOp,
-                      mlir_ts::SizeOfOp, mlir_ts::ReturnOp, mlir_ts::ReturnValOp, mlir_ts::StoreOp, mlir_ts::SymbolRefOp,
-                      mlir_ts::LengthOfOp, mlir_ts::StringLengthOp, mlir_ts::StringConcatOp, mlir_ts::StringCompareOp, mlir_ts::LoadOp,
-                      mlir_ts::NewOp, mlir_ts::CreateTupleOp, mlir_ts::DeconstructTupleOp, mlir_ts::CreateArrayOp, mlir_ts::NewEmptyArrayOp,
+                      mlir_ts::ElementRefOp, mlir_ts::FuncOp, mlir_ts::GlobalOp, mlir_ts::GlobalResultOp, mlir_ts::HasValueOp,
+                      mlir_ts::ValueOp, mlir_ts::NullOp, mlir_ts::ParseFloatOp, mlir_ts::ParseIntOp, mlir_ts::PrintOp, mlir_ts::SizeOfOp,
+                      mlir_ts::ReturnOp, mlir_ts::ReturnValOp, mlir_ts::StoreOp, mlir_ts::SymbolRefOp, mlir_ts::LengthOfOp,
+                      mlir_ts::StringLengthOp, mlir_ts::StringConcatOp, mlir_ts::StringCompareOp, mlir_ts::LoadOp, mlir_ts::NewOp,
+                      mlir_ts::CreateTupleOp, mlir_ts::DeconstructTupleOp, mlir_ts::CreateArrayOp, mlir_ts::NewEmptyArrayOp,
                       mlir_ts::NewArrayOp, mlir_ts::DeleteOp, mlir_ts::PropertyRefOp, mlir_ts::InsertPropertyOp, mlir_ts::ExtractPropertyOp,
                       mlir_ts::LogicalBinaryOp, mlir_ts::UndefOp, mlir_ts::VariableOp, mlir_ts::TrampolineOp, mlir_ts::InvokeOp,
                       mlir_ts::ResultOp, mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::InterfaceSymbolRefOp, mlir_ts::PushOp, mlir_ts::PopOp,
@@ -1037,10 +1093,11 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.
     OwningRewritePatternList patterns(&getContext());
-    patterns.insert<ParamOpLowering, ParamOptionalOpLowering, ParamDefaultValueOpLowering, PrefixUnaryOpLowering, PostfixUnaryOpLowering,
-                    IfOpLowering, DoWhileOpLowering, WhileOpLowering, ForOpLowering, BreakOpLowering, ContinueOpLowering, SwitchOpLowering,
-                    AccessorRefOpLowering, ThisAccessorRefOpLowering, LabelOpLowering, CallOpLowering, CallIndirectOpLowering,
-                    TryOpLowering, ThrowOpLowering, CatchOpLowering>(&getContext(), &tsContext);
+    patterns.insert<EntryOpLowering, ExitOpLowering, ParamOpLowering, ParamOptionalOpLowering, ParamDefaultValueOpLowering,
+                    PrefixUnaryOpLowering, PostfixUnaryOpLowering, IfOpLowering, DoWhileOpLowering, WhileOpLowering, ForOpLowering,
+                    BreakOpLowering, ContinueOpLowering, SwitchOpLowering, AccessorRefOpLowering, ThisAccessorRefOpLowering,
+                    LabelOpLowering, CallOpLowering, CallIndirectOpLowering, TryOpLowering, ThrowOpLowering, CatchOpLowering>(&getContext(),
+                                                                                                                              &tsContext);
 
     // With the target and rewrite patterns defined, we can now attempt the
     // conversion. The conversion will signal failure if any of our `illegal`
