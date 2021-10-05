@@ -175,6 +175,11 @@ class CodeLogicHelper
             auto *op = &item.back();
             // auto name = op->getName().getStringRef();
             auto isReturn = dyn_cast<mlir_ts::ReturnInternalOp>(op) != nullptr;
+            if (op != &item.front())
+            {
+                llvm_unreachable("return must be only operator in block");
+            }
+
             return isReturn;
         });
 

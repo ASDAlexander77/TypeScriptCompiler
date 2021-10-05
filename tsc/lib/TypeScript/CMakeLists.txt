@@ -30,4 +30,5 @@ add_mlir_dialect_library(MLIRTypeScript
     LINK_LIBS PUBLIC
     tsc-new-parser-lib
     MLIRIR
+    MLIRStandard
     )
