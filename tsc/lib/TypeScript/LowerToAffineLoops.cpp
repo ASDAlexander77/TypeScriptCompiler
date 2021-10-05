@@ -35,10 +35,13 @@ namespace
 
 struct TSContext
 {
+    TSContext() = default;
+
     // name, break, continue
     mlir::DenseMap<Operation *, mlir::Block *> jumps;
     mlir::DenseMap<Operation *, mlir::Value> catchOpData;
     mlir::DenseMap<Operation *, mlir::Block *> unwind;
+    mlir::Block *returnBlock;
 };
 
 template <typename OpTy> class TsPattern : public OpRewritePattern<OpTy>
@@ -74,21 +77,25 @@ struct EntryOpLowering : public TsPattern<mlir_ts::EntryOp>
         {
             auto result = op.getResult(0);
             returnType = result.getType();
-            allocValue = rewriter.create<mlir_ts::VariableOp>(location, returnType, clh.createI32ConstantOf(1));
+            allocValue = rewriter.create<mlir_ts::VariableOp>(location, returnType, mlir::Value(), rewriter.getBoolAttr(false));
         }
 
         // create return block
-        clh.CutBlock();
+        auto *opBlock = rewriter.getInsertionBlock();
+        auto *region = opBlock->getParent();
+
+        tsContext->returnBlock = rewriter.createBlock(region);
 
         if (anyResult)
         {
-            auto loadedValue = rewriter.create<mlir_ts::LoadOp>(op.getLoc(), returnType, allocValue);
-            rewriter.create<mlir::ReturnOp>(op.getLoc(), mlir::ValueRange{loadedValue});
+            auto loadedValue =
+                rewriter.create<mlir_ts::LoadOp>(op.getLoc(), returnType.cast<mlir_ts::RefType>().getElementType(), allocValue);
+            rewriter.create<mlir_ts::ReturnInternalOp>(op.getLoc(), mlir::ValueRange{loadedValue});
             rewriter.replaceOp(op, allocValue);
         }
         else
         {
-            rewriter.create<mlir::ReturnOp>(op.getLoc(), mlir::ValueRange{});
+            rewriter.create<mlir_ts::ReturnInternalOp>(op.getLoc(), mlir::ValueRange{});
             rewriter.eraseOp(op);
         }
 
@@ -104,7 +111,9 @@ struct ExitOpLowering : public TsPattern<mlir_ts::ExitOp>
     {
         CodeLogicHelper clh(op, rewriter);
 
-        auto retBlock = clh.FindReturnBlock();
+        assert(tsContext->returnBlock);
+
+        auto retBlock = tsContext->returnBlock;
 
         rewriter.create<mlir::BranchOp>(op.getLoc(), retBlock);
 
@@ -1075,20 +1084,20 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     // a partial lowering, we explicitly mark the TypeScript operations that don't want
     // to lower, `typescript.print`, as `legal`.
     target.addIllegalDialect<mlir_ts::TypeScriptDialect>();
-    target.addLegalOp<mlir_ts::AddressOfOp, mlir_ts::AddressOfConstStringOp, mlir_ts::AddressOfElementOp, mlir_ts::ArithmeticBinaryOp,
-                      mlir_ts::ArithmeticUnaryOp, mlir_ts::AssertOp, mlir_ts::CaptureOp, mlir_ts::CastOp, mlir_ts::ConstantOp,
-                      mlir_ts::ElementRefOp, mlir_ts::FuncOp, mlir_ts::GlobalOp, mlir_ts::GlobalResultOp, mlir_ts::HasValueOp,
-                      mlir_ts::ValueOp, mlir_ts::NullOp, mlir_ts::ParseFloatOp, mlir_ts::ParseIntOp, mlir_ts::PrintOp, mlir_ts::SizeOfOp,
-                      mlir_ts::ReturnOp, mlir_ts::ReturnValOp, mlir_ts::StoreOp, mlir_ts::SymbolRefOp, mlir_ts::LengthOfOp,
-                      mlir_ts::StringLengthOp, mlir_ts::StringConcatOp, mlir_ts::StringCompareOp, mlir_ts::LoadOp, mlir_ts::NewOp,
-                      mlir_ts::CreateTupleOp, mlir_ts::DeconstructTupleOp, mlir_ts::CreateArrayOp, mlir_ts::NewEmptyArrayOp,
-                      mlir_ts::NewArrayOp, mlir_ts::DeleteOp, mlir_ts::PropertyRefOp, mlir_ts::InsertPropertyOp, mlir_ts::ExtractPropertyOp,
-                      mlir_ts::LogicalBinaryOp, mlir_ts::UndefOp, mlir_ts::VariableOp, mlir_ts::TrampolineOp, mlir_ts::InvokeOp,
-                      mlir_ts::ResultOp, mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::InterfaceSymbolRefOp, mlir_ts::PushOp, mlir_ts::PopOp,
-                      mlir_ts::NewInterfaceOp, mlir_ts::VTableOffsetRefOp, mlir_ts::ThisPropertyRefOp, mlir_ts::GetThisOp,
-                      mlir_ts::GetMethodOp, mlir_ts::TypeOfOp, mlir_ts::DebuggerOp, mlir_ts::SwitchStateOp, mlir_ts::StateLabelOp,
-                      mlir_ts::LandingPadOp, mlir_ts::CompareCatchTypeOp, mlir_ts::BeginCatchOp, mlir_ts::SaveCatchVarOp,
-                      mlir_ts::EndCatchOp, mlir_ts::ThrowUnwindOp, mlir_ts::ThrowCallOp, mlir_ts::CallInternalOp>();
+    target.addLegalOp<
+        mlir_ts::AddressOfOp, mlir_ts::AddressOfConstStringOp, mlir_ts::AddressOfElementOp, mlir_ts::ArithmeticBinaryOp,
+        mlir_ts::ArithmeticUnaryOp, mlir_ts::AssertOp, mlir_ts::CaptureOp, mlir_ts::CastOp, mlir_ts::ConstantOp, mlir_ts::ElementRefOp,
+        mlir_ts::FuncOp, mlir_ts::GlobalOp, mlir_ts::GlobalResultOp, mlir_ts::HasValueOp, mlir_ts::ValueOp, mlir_ts::NullOp,
+        mlir_ts::ParseFloatOp, mlir_ts::ParseIntOp, mlir_ts::PrintOp, mlir_ts::SizeOfOp, mlir_ts::ReturnOp, mlir_ts::ReturnValOp,
+        mlir_ts::StoreOp, mlir_ts::SymbolRefOp, mlir_ts::LengthOfOp, mlir_ts::StringLengthOp, mlir_ts::StringConcatOp,
+        mlir_ts::StringCompareOp, mlir_ts::LoadOp, mlir_ts::NewOp, mlir_ts::CreateTupleOp, mlir_ts::DeconstructTupleOp,
+        mlir_ts::CreateArrayOp, mlir_ts::NewEmptyArrayOp, mlir_ts::NewArrayOp, mlir_ts::DeleteOp, mlir_ts::PropertyRefOp,
+        mlir_ts::InsertPropertyOp, mlir_ts::ExtractPropertyOp, mlir_ts::LogicalBinaryOp, mlir_ts::UndefOp, mlir_ts::VariableOp,
+        mlir_ts::TrampolineOp, mlir_ts::InvokeOp, mlir_ts::ResultOp, mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::InterfaceSymbolRefOp,
+        mlir_ts::PushOp, mlir_ts::PopOp, mlir_ts::NewInterfaceOp, mlir_ts::VTableOffsetRefOp, mlir_ts::ThisPropertyRefOp,
+        mlir_ts::GetThisOp, mlir_ts::GetMethodOp, mlir_ts::TypeOfOp, mlir_ts::DebuggerOp, mlir_ts::SwitchStateOp, mlir_ts::StateLabelOp,
+        mlir_ts::LandingPadOp, mlir_ts::CompareCatchTypeOp, mlir_ts::BeginCatchOp, mlir_ts::SaveCatchVarOp, mlir_ts::EndCatchOp,
+        mlir_ts::ThrowUnwindOp, mlir_ts::ThrowCallOp, mlir_ts::CallInternalOp, mlir_ts::ReturnInternalOp>();
 
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.

@@ -1332,6 +1332,21 @@ def TypeScript_ExitOp : TypeScript_Op<"Exit", [NoSideEffect, ReturnLike, Termina
   );
 }
 
+def TypeScript_ReturnInternalOp : TypeScript_Op<"ReturnInternal", [NoSideEffect, HasParent<"FuncOp">,
+                                ReturnLike, Terminator]> {
+  let summary = "return 'internal' operation";
+  let description = [{
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$operands);
+
+  let builders = [
+    OpBuilder<(ins),
+    [{ build($_builder, $_state, llvm::None); }]>];
+
+  let assemblyFormat = "attr-dict ($operands^ `:` type($operands))?";
+}
+
 def TypeScript_IfOp : TypeScript_Op<"If",
       [DeclareOpInterfaceMethods<RegionBranchOpInterface>,
        SingleBlockImplicitTerminator<"typescript::ResultOp">, RecursiveSideEffects,

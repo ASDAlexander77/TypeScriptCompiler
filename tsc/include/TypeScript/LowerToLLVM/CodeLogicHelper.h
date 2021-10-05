@@ -174,7 +174,7 @@ class CodeLogicHelper
 
             auto *op = &item.back();
             // auto name = op->getName().getStringRef();
-            auto isReturn = dyn_cast<LLVM::ReturnOp>(op) != nullptr;
+            auto isReturn = dyn_cast<mlir_ts::ReturnInternalOp>(op) != nullptr;
             return isReturn;
         });
 
@@ -222,7 +222,7 @@ class CodeLogicHelper
         return &*result;
     }
 
-    void BeginBlock(mlir::Location loc)
+    mlir::Block *BeginBlock(mlir::Location loc)
     {
         auto *opBlock = rewriter.getInsertionBlock();
         auto opPosition = rewriter.getInsertionPoint();
@@ -233,6 +233,7 @@ class CodeLogicHelper
         rewriter.create<mlir::BranchOp>(loc, continuationBlock);
 
         rewriter.setInsertionPointToStart(continuationBlock);
+        return continuationBlock;
     }
 
     mlir::Block *CutBlock()

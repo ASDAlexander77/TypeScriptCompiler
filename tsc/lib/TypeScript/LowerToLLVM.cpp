@@ -773,6 +773,17 @@ struct ReturnValOpLowering : public TsLlvmPattern<mlir_ts::ReturnValOp>
     }
 };
 
+struct ReturnInternalOpLowering : public TsLlvmPattern<mlir_ts::ReturnInternalOp>
+{
+    using TsLlvmPattern<mlir_ts::ReturnInternalOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ReturnInternalOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+    {
+        rewriter.replaceOpWithNewOp<LLVM::ReturnOp>(op, ValueRange{op.operands()});
+        return success();
+    }
+};
+
 struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
 {
     using TsLlvmPattern<mlir_ts::FuncOp>::TsLlvmPattern;
@@ -3542,8 +3553,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
                     VTableOffsetRefOpLowering, ThisPropertyRefOpLowering, LoadBoundRefOpLowering, StoreBoundRefOpLowering,
                     CreateBoundRefOpLowering, CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering,
                     DebuggerOpLowering, StateLabelOpLowering, SwitchStateOpLowering, UnreachableOpLowering, LandingPadOpLowering,
-                    CompareCatchTypeOpLowering, BeginCatchOpLowering, SaveCatchVarOpLowering, EndCatchOpLowering, CallInternalOpLowering>(
-        typeConverter, &getContext(), &tsLlvmContext);
+                    CompareCatchTypeOpLowering, BeginCatchOpLowering, SaveCatchVarOpLowering, EndCatchOpLowering, CallInternalOpLowering,
+                    ReturnInternalOpLowering>(typeConverter, &getContext(), &tsLlvmContext);
 
     populateTypeScriptConversionPatterns(typeConverter, m);
 
