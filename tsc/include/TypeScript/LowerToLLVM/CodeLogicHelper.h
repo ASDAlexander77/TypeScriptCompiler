@@ -188,7 +188,7 @@ class CodeLogicHelper
                     return true;
                 }
 
-                llvm_unreachable("return must be only operator in block");
+                // llvm_unreachable("return must be only operator in block");
             }
 
             return isReturn;

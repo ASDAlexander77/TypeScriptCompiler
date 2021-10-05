@@ -384,7 +384,7 @@ class MLIRGenImpl
             auto result = mlirGen(body.as<Expression>(), genContext);
             if (result)
             {
-                return mlirGenReturnValue(loc(body), result, genContext);
+                return mlirGenReturnValue(loc(body), result, false, genContext);
             }
 
             builder.create<mlir_ts::ReturnOp>(loc(body));
@@ -2047,7 +2047,7 @@ class MLIRGenImpl
         if (auto expression = returnStatementAST->expression)
         {
             auto expressionValue = mlirGen(expression, genContext);
-            return mlirGenReturnValue(location, expressionValue, genContext);
+            return mlirGenReturnValue(location, expressionValue, false, genContext);
         }
 
         builder.create<mlir_ts::ReturnOp>(location);
@@ -2132,7 +2132,7 @@ class MLIRGenImpl
         auto yieldRetValue = getYieldReturnObject(nf, yieldExpressionAST->expression, false);
         auto yieldValue = mlirGen(yieldRetValue, genContext);
 
-        mlirGenReturnValue(location, yieldValue, genContext);
+        mlirGenReturnValue(location, yieldValue, true, genContext);
 
         std::stringstream label;
         label << "state" << state;
@@ -2244,7 +2244,8 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirGenReturnValue(mlir::Location location, mlir::Value expressionValue, const GenContext &genContext)
+    mlir::LogicalResult mlirGenReturnValue(mlir::Location location, mlir::Value expressionValue, bool yieldReturn,
+                                           const GenContext &genContext)
     {
         if (genContext.passResult)
         {
@@ -2296,7 +2297,14 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-        builder.create<mlir_ts::ReturnValOp>(location, expressionValue, retVarInfo.first);
+        if (yieldReturn)
+        {
+            builder.create<mlir_ts::YieldReturnValOp>(location, expressionValue, retVarInfo.first);
+        }
+        else
+        {
+            builder.create<mlir_ts::ReturnValOp>(location, expressionValue, retVarInfo.first);
+        }
 
         return mlir::success();
     }

@@ -1317,6 +1317,25 @@ def TypeScript_ReturnValOp : TypeScript_Op<"ReturnVal"> {
   );
 }
 
+def TypeScript_YieldReturnValOp : TypeScript_Op<"YieldReturnVal"> {
+  let description = [{
+    ```
+    return-value-op ::= `ts.yieldReturnVal` ssa-use `:` typescript-type
+    ```
+
+    #### Example:
+
+    ```mlir
+    ts.yieldReturn %0 : f32
+    ```
+  }];
+
+  let arguments = (ins
+    AnyType:$operand,
+    TypeScript_Ref:$reference
+  );
+}
+
 def TypeScript_ExitOp : TypeScript_Op<"Exit", [NoSideEffect, ReturnLike, Terminator]> {
   let description = [{
     To prepare exit data for return

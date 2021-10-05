@@ -1,4 +1,4 @@
-#define DEBUG_TYPE "affine"
+#define DEBUG_TYPE "affine2"
 
 #include "TypeScript/Config.h"
 #include "TypeScript/DataStructs.h"
@@ -26,6 +26,8 @@
 #include "llvm/Support/Debug.h"
 
 #include "scanner_enums.h"
+
+#include <mutex>
 
 using namespace mlir;
 using namespace ::typescript;
@@ -67,7 +69,7 @@ class SwitchStateOpLowering : public TsPattern<mlir_ts::SwitchStateOp>
         if (!tsContext->returnBlock)
         {
             CodeLogicHelper clh(switchStateOp, rewriter);
-            tsContext->returnBlock = clh.FindReturnBlock(true);
+            tsContext->returnBlock = clh.FindReturnBlock(false);
         }
 
         assert(tsContext->returnBlock);
@@ -141,6 +143,36 @@ class SwitchStateOpLowering : public TsPattern<mlir_ts::SwitchStateOp>
     }
 };
 
+struct YieldReturnValOpLowering : public TsPattern<mlir_ts::YieldReturnValOp>
+{
+    using TsPattern<mlir_ts::YieldReturnValOp>::TsPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::YieldReturnValOp op, PatternRewriter &rewriter) const final
+    {
+        assert(tsContext->returnBlock);
+
+        auto retBlock = tsContext->returnBlock;
+
+        rewriter.create<mlir_ts::StoreOp>(op.getLoc(), op.operand(), op.reference());
+
+        // Split block at `assert` operation.
+        auto *opBlock = rewriter.getInsertionBlock();
+        auto opPosition = rewriter.getInsertionPoint();
+        auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
+
+        rewriter.setInsertionPointToEnd(opBlock);
+
+        // save value into return
+
+        rewriter.create<mlir::BranchOp>(op.getLoc(), retBlock);
+
+        rewriter.setInsertionPointToStart(continuationBlock);
+
+        rewriter.eraseOp(op);
+        return success();
+    }
+};
+
 } // end anonymous namespace
 
 //===----------------------------------------------------------------------===//
@@ -182,6 +214,14 @@ void TypeScriptToAffineSwitchStatesLoweringPass::runOnFunction()
         }
     }
 
+    LLVM_DEBUG({
+        llvm::dbgs() << "\nBEFORE DUMP FUNC: [[[[ \n";
+        static std::mutex mutex;
+        const std::lock_guard<std::mutex> lock(mutex);
+        function.dump();
+        llvm::dbgs() << "\n]]]] BEFORE DUMP FUNC \n";
+    });
+
     // The first thing to define is the conversion target. This will define the
     // final target for this lowering.
     ConversionTarget target(getContext());
@@ -213,7 +253,7 @@ void TypeScriptToAffineSwitchStatesLoweringPass::runOnFunction()
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.
     OwningRewritePatternList patterns(&getContext());
-    patterns.insert<SwitchStateOpLowering, StateLabelOpLowering>(&getContext(), &tsContext);
+    patterns.insert<SwitchStateOpLowering, StateLabelOpLowering, YieldReturnValOpLowering>(&getContext(), &tsContext);
 
     // With the target and rewrite patterns defined, we can now attempt the
     // conversion. The conversion will signal failure if any of our `illegal`
@@ -222,6 +262,14 @@ void TypeScriptToAffineSwitchStatesLoweringPass::runOnFunction()
     {
         signalPassFailure();
     }
+
+    LLVM_DEBUG({
+        llvm::dbgs() << "\nAFTER DUMP FUNC [[[[: \n";
+        static std::mutex mutex2;
+        const std::lock_guard<std::mutex> lock2(mutex2);
+        function.dump();
+        llvm::dbgs() << "\n]]]] AFTER DUMP FUNC \n";
+    });
 }
 
 /// Create a pass for lowering operations in the `Affine` and `Std` dialects,
