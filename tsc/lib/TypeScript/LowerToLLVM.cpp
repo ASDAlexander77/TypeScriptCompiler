@@ -2821,6 +2821,12 @@ class SwitchStateOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateOp>
     {
         auto loc = switchStateOp->getLoc();
 
+        if (!tsLlvmContext->returnBlock)
+        {
+            CodeLogicHelper clh(switchStateOp, rewriter);
+            tsLlvmContext->returnBlock = clh.FindReturnBlock();
+        }
+
         assert(tsLlvmContext->returnBlock);
 
         auto defaultBlock = tsLlvmContext->returnBlock;
@@ -2896,13 +2902,20 @@ struct YieldReturnValOpLowering : public TsLlvmPattern<mlir_ts::YieldReturnValOp
 {
     using TsLlvmPattern<mlir_ts::YieldReturnValOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::YieldReturnValOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+    LogicalResult matchAndRewrite(mlir_ts::YieldReturnValOp yieldReturnValOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
     {
+        if (!tsLlvmContext->returnBlock)
+        {
+            CodeLogicHelper clh(yieldReturnValOp, rewriter);
+            tsLlvmContext->returnBlock = clh.FindReturnBlock();
+        }
+
         assert(tsLlvmContext->returnBlock);
 
         auto retBlock = tsLlvmContext->returnBlock;
 
-        rewriter.create<mlir_ts::StoreOp>(op.getLoc(), op.operand(), op.reference());
+        rewriter.create<mlir_ts::StoreOp>(yieldReturnValOp.getLoc(), yieldReturnValOp.operand(), yieldReturnValOp.reference());
 
         // Split block at `assert` operation.
         auto *opBlock = rewriter.getInsertionBlock();
@@ -2913,11 +2926,11 @@ struct YieldReturnValOpLowering : public TsLlvmPattern<mlir_ts::YieldReturnValOp
 
         // save value into return
 
-        rewriter.create<mlir::BranchOp>(op.getLoc(), retBlock);
+        rewriter.create<mlir::BranchOp>(yieldReturnValOp.getLoc(), retBlock);
 
         rewriter.setInsertionPointToStart(continuationBlock);
 
-        rewriter.eraseOp(op);
+        rewriter.eraseOp(yieldReturnValOp);
         return success();
     }
 };
