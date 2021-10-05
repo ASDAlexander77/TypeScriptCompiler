@@ -33,7 +33,7 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
-            "args": ["-emit=mlir-affine", "-debug-only=affine", "-enable_state_pass", "C:/temp/1.ts"],
+            "args": ["-emit=mlir-affine", "-debug-only=affine", "C:/temp/1.ts"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],

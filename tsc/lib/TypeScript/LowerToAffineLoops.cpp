@@ -27,6 +27,12 @@
 
 #include "scanner_enums.h"
 
+#ifndef NDEBUG
+#include <mutex>
+#endif
+
+#define ENABLE_YIELD_PASS 1
+
 using namespace mlir;
 using namespace ::typescript;
 namespace mlir_ts = mlir::typescript;
@@ -1057,7 +1063,7 @@ struct ThrowOpLowering : public TsPattern<mlir_ts::ThrowOp>
     }
 };
 
-/*
+#ifdef ENABLE_YIELD_PASS
 struct StateLabelOpLowering : public TsPattern<mlir_ts::StateLabelOp>
 {
     using TsPattern<mlir_ts::StateLabelOp>::TsPattern;
@@ -1158,7 +1164,37 @@ class SwitchStateOpLowering : public TsPattern<mlir_ts::SwitchStateOp>
         return success();
     }
 };
-*/
+
+struct YieldReturnValOpLowering : public TsPattern<mlir_ts::YieldReturnValOp>
+{
+    using TsPattern<mlir_ts::YieldReturnValOp>::TsPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::YieldReturnValOp op, PatternRewriter &rewriter) const final
+    {
+        assert(tsContext->returnBlock);
+
+        auto retBlock = tsContext->returnBlock;
+
+        rewriter.create<mlir_ts::StoreOp>(op.getLoc(), op.operand(), op.reference());
+
+        // Split block at `assert` operation.
+        auto *opBlock = rewriter.getInsertionBlock();
+        auto opPosition = rewriter.getInsertionPoint();
+        auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
+
+        rewriter.setInsertionPointToEnd(opBlock);
+
+        // save value into return
+
+        rewriter.create<mlir::BranchOp>(op.getLoc(), retBlock);
+
+        rewriter.setInsertionPointToStart(continuationBlock);
+
+        rewriter.eraseOp(op);
+        return success();
+    }
+};
+#endif
 
 } // end anonymous namespace
 
@@ -1187,6 +1223,11 @@ struct TypeScriptToAffineLoweringPass : public PassWrapper<TypeScriptToAffineLow
 
 void TypeScriptToAffineLoweringPass::runOnFunction()
 {
+#ifndef NDEBUG
+    static std::mutex mutex;
+    const std::lock_guard<std::mutex> lock(mutex);
+#endif
+
     auto function = getFunction();
 
     // We only lower the main function as we expect that all other functions have been inlined.
@@ -1227,8 +1268,12 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
                       mlir_ts::InterfaceSymbolRefOp, mlir_ts::PushOp, mlir_ts::PopOp, mlir_ts::NewInterfaceOp, mlir_ts::VTableOffsetRefOp,
                       mlir_ts::ThisPropertyRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp, mlir_ts::TypeOfOp, mlir_ts::DebuggerOp,
                       mlir_ts::LandingPadOp, mlir_ts::CompareCatchTypeOp, mlir_ts::BeginCatchOp, mlir_ts::SaveCatchVarOp,
-                      mlir_ts::EndCatchOp, mlir_ts::ThrowUnwindOp, mlir_ts::ThrowCallOp, mlir_ts::CallInternalOp, mlir_ts::ReturnInternalOp,
-                      mlir_ts::SwitchStateOp, mlir_ts::StateLabelOp, mlir_ts::YieldReturnValOp>();
+                      mlir_ts::EndCatchOp, mlir_ts::ThrowUnwindOp, mlir_ts::ThrowCallOp, mlir_ts::CallInternalOp, mlir_ts::ReturnInternalOp
+#ifndef ENABLE_YIELD_PASS
+                      ,
+                      mlir_ts::SwitchStateOp, mlir_ts::StateLabelOp, mlir_ts::YieldReturnValOp
+#endif
+                      >();
 
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.
@@ -1237,7 +1282,12 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
                     ParamDefaultValueOpLowering, PrefixUnaryOpLowering, PostfixUnaryOpLowering, IfOpLowering, DoWhileOpLowering,
                     WhileOpLowering, ForOpLowering, BreakOpLowering, ContinueOpLowering, SwitchOpLowering, AccessorRefOpLowering,
                     ThisAccessorRefOpLowering, LabelOpLowering, CallOpLowering, CallIndirectOpLowering, TryOpLowering, ThrowOpLowering,
-                    CatchOpLowering /*, SwitchStateOpLowering, StateLabelOpLowering*/>(&getContext(), &tsContext);
+                    CatchOpLowering
+#ifdef ENABLE_YIELD_PASS
+                    ,
+                    SwitchStateOpLowering, StateLabelOpLowering, YieldReturnValOpLowering
+#endif
+                    >(&getContext(), &tsContext);
 
     // With the target and rewrite patterns defined, we can now attempt the
     // conversion. The conversion will signal failure if any of our `illegal`

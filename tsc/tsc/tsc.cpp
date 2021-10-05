@@ -110,8 +110,6 @@ static cl::opt<std::string> objectFilename{"object-filename", cl::desc("Dump JIT
 cl::OptionCategory clTsCompilingOptionsCategory{"TypeScript compiling options"};
 static cl::opt<bool> disableGC("nogc", cl::desc("Disable Garbage collection"), cl::cat(clTsCompilingOptionsCategory));
 
-static cl::opt<bool> enableStatePass("enable_state_pass", cl::desc("Test Option"), cl::cat(clTsCompilingOptionsCategory));
-
 int loadMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module)
 {
     auto fileName = llvm::StringRef(inputFilename);
@@ -226,11 +224,6 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module
 
         // Partially lower the TypeScript dialect with a few cleanups afterwards.
         optPM.addPass(mlir::typescript::createLowerToAffinePass());
-        if (enableStatePass)
-        {
-            optPM.addPass(mlir::typescript::createLowerToAffineSwitchStatesPass());
-        }
-
         optPM.addPass(mlir::createCanonicalizerPass());
         optPM.addPass(mlir::typescript::createRelocateConstantPass());
         optPM.addPass(mlir::createCSEPass());

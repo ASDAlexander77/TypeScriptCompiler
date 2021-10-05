@@ -17,7 +17,6 @@ add_mlir_dialect_library(MLIRTypeScript
     NeededDialectsToLLVMIRTranslation.cpp
     MLIRGen.cpp
     LowerToAffineLoops.cpp   
-    LowerToAffineSwitchStates.cpp   
     LowerToLLVM.cpp
     RelocateConstantPass.cpp
     GCPass.cpp
