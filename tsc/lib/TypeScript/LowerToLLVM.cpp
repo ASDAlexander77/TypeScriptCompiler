@@ -48,6 +48,8 @@ namespace
 {
 struct TsLlvmContext
 {
+    TsLlvmContext() = default;
+
     mlir::Block *returnBlock;
 };
 
@@ -3201,7 +3203,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 #endif
 
     // The only remaining operation to lower from the `typescript` dialect, is the PrintOp.
-    TsLlvmContext tsLlvmContext;
+    TsLlvmContext tsLlvmContext{};
     patterns.insert<
         CaptureOpLowering, AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering,
         AssertOpLowering, CastOpLowering, ConstantOpLowering, CreateOptionalOpLowering, UndefOptionalOpLowering, HasValueOpLowering,
