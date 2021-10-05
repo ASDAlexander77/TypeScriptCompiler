@@ -31,7 +31,8 @@
 #include <mutex>
 #endif
 
-#define ENABLE_YIELD_PASS 1
+//#define ENABLE_YIELD_PASS 1
+//#define ENABLE_SECOND_STEP 1
 
 using namespace mlir;
 using namespace ::typescript;
@@ -1063,7 +1064,6 @@ struct ThrowOpLowering : public TsPattern<mlir_ts::ThrowOp>
     }
 };
 
-#ifdef ENABLE_YIELD_PASS
 struct StateLabelOpLowering : public TsPattern<mlir_ts::StateLabelOp>
 {
     using TsPattern<mlir_ts::StateLabelOp>::TsPattern;
@@ -1194,7 +1194,6 @@ struct YieldReturnValOpLowering : public TsPattern<mlir_ts::YieldReturnValOp>
         return success();
     }
 };
-#endif
 
 } // end anonymous namespace
 
@@ -1296,6 +1295,50 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     {
         signalPassFailure();
     }
+
+#ifdef ENABLE_SECOND_STEP
+    // ||||||||
+    // !!!!!!!! second stage
+    // ||||||||
+    // The first thing to define is the conversion target. This will define the
+    // final target for this lowering.
+    ConversionTarget target2(getContext());
+
+    // We define the specific operations, or dialects, that are legal targets for
+    // this lowering. In our case, we are lowering to a combination of the
+    // `Affine` and `Standard` dialects.
+    target2.addLegalDialect<StandardOpsDialect>();
+
+    // We also define the TypeScript dialect as Illegal so that the conversion will fail
+    // if any of these operations are *not* converted. Given that we actually want
+    // a partial lowering, we explicitly mark the TypeScript operations that don't want
+    // to lower, `typescript.print`, as `legal`.
+    target2.addIllegalDialect<mlir_ts::TypeScriptDialect>();
+    target2.addLegalOp<
+        mlir_ts::AddressOfOp, mlir_ts::AddressOfConstStringOp, mlir_ts::AddressOfElementOp, mlir_ts::ArithmeticBinaryOp,
+        mlir_ts::ArithmeticUnaryOp, mlir_ts::AssertOp, mlir_ts::CaptureOp, mlir_ts::CastOp, mlir_ts::ConstantOp, mlir_ts::ElementRefOp,
+        mlir_ts::FuncOp, mlir_ts::GlobalOp, mlir_ts::GlobalResultOp, mlir_ts::HasValueOp, mlir_ts::ValueOp, mlir_ts::NullOp,
+        mlir_ts::ParseFloatOp, mlir_ts::ParseIntOp, mlir_ts::PrintOp, mlir_ts::SizeOfOp, mlir_ts::StoreOp, mlir_ts::SymbolRefOp,
+        mlir_ts::LengthOfOp, mlir_ts::StringLengthOp, mlir_ts::StringConcatOp, mlir_ts::StringCompareOp, mlir_ts::LoadOp, mlir_ts::NewOp,
+        mlir_ts::CreateTupleOp, mlir_ts::DeconstructTupleOp, mlir_ts::CreateArrayOp, mlir_ts::NewEmptyArrayOp, mlir_ts::NewArrayOp,
+        mlir_ts::DeleteOp, mlir_ts::PropertyRefOp, mlir_ts::InsertPropertyOp, mlir_ts::ExtractPropertyOp, mlir_ts::LogicalBinaryOp,
+        mlir_ts::UndefOp, mlir_ts::VariableOp, mlir_ts::TrampolineOp, mlir_ts::InvokeOp, mlir_ts::ResultOp, mlir_ts::ThisVirtualSymbolRefOp,
+        mlir_ts::InterfaceSymbolRefOp, mlir_ts::PushOp, mlir_ts::PopOp, mlir_ts::NewInterfaceOp, mlir_ts::VTableOffsetRefOp,
+        mlir_ts::ThisPropertyRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp, mlir_ts::TypeOfOp, mlir_ts::DebuggerOp, mlir_ts::LandingPadOp,
+        mlir_ts::CompareCatchTypeOp, mlir_ts::BeginCatchOp, mlir_ts::SaveCatchVarOp, mlir_ts::EndCatchOp, mlir_ts::ThrowUnwindOp,
+        mlir_ts::ThrowCallOp, mlir_ts::CallInternalOp, mlir_ts::ReturnInternalOp>();
+
+    OwningRewritePatternList patterns2(&getContext());
+    patterns2.insert<SwitchStateOpLowering, StateLabelOpLowering, YieldReturnValOpLowering>(&getContext(), &tsContext);
+
+    // With the target and rewrite patterns defined, we can now attempt the
+    // conversion. The conversion will signal failure if any of our `illegal`
+    // operations were not converted successfully.
+    if (failed(applyPartialConversion(function, target2, std::move(patterns2))))
+    {
+        signalPassFailure();
+    }
+#endif
 }
 
 /// Create a pass for lowering operations in the `Affine` and `Std` dialects,

@@ -48,8 +48,7 @@ namespace
 {
 struct TsLlvmContext
 {
-    // invoke normal, unwind
-    DenseMap<Operation *, mlir::Value> catchOpData;
+    mlir::Block *returnBlock;
 };
 
 template <typename OpTy> class TsLlvmPattern : public OpConversionPattern<OpTy>
@@ -2789,6 +2788,138 @@ class DebuggerOpLowering : public TsLlvmPattern<mlir_ts::DebuggerOp>
     }
 };
 
+struct StateLabelOpLowering : public TsLlvmPattern<mlir_ts::StateLabelOp>
+{
+    using TsLlvmPattern<mlir_ts::StateLabelOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::StateLabelOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+    {
+        auto *opBlock = rewriter.getInsertionBlock();
+        auto opPosition = rewriter.getInsertionPoint();
+        auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
+
+        rewriter.setInsertionPointToEnd(opBlock);
+
+        rewriter.create<mlir::BranchOp>(op.getLoc(), continuationBlock);
+
+        rewriter.setInsertionPointToStart(continuationBlock);
+
+        rewriter.eraseOp(op);
+        return success();
+    }
+};
+
+class SwitchStateOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::SwitchStateOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::SwitchStateOp switchStateOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        auto loc = switchStateOp->getLoc();
+
+        assert(tsLlvmContext->returnBlock);
+
+        auto defaultBlock = tsLlvmContext->returnBlock;
+
+        assert(defaultBlock != nullptr);
+
+        SmallVector<APInt> caseValues;
+        SmallVector<mlir::Block *> caseDestinations;
+
+        SmallPtrSet<Operation *, 16> stateLabels;
+
+        auto index = 1;
+
+        // select all states
+        auto visitorAllStateLabels = [&](Operation *op) {
+            if (auto stateLabelOp = dyn_cast_or_null<mlir_ts::StateLabelOp>(op))
+            {
+                stateLabels.insert(op);
+            }
+        };
+
+        switchStateOp->getParentOp()->walk(visitorAllStateLabels);
+
+        {
+            mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
+            for (auto op : stateLabels)
+            {
+                auto stateLabelOp = dyn_cast_or_null<mlir_ts::StateLabelOp>(op);
+                rewriter.setInsertionPoint(stateLabelOp);
+
+                auto *opBlock = rewriter.getInsertionBlock();
+                auto opPosition = rewriter.getInsertionPoint();
+                auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
+
+                rewriter.setInsertionPointToEnd(opBlock);
+
+                rewriter.create<mlir::BranchOp>(stateLabelOp.getLoc(), continuationBlock);
+
+                rewriter.setInsertionPointToStart(continuationBlock);
+
+                rewriter.eraseOp(stateLabelOp);
+
+                // add switch
+                caseValues.push_back(APInt(32, index++));
+                caseDestinations.push_back(continuationBlock);
+            }
+        }
+
+        // make switch to be terminator
+        auto *opBlock = rewriter.getInsertionBlock();
+        auto opPosition = rewriter.getInsertionPoint();
+        auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
+
+        // insert 0 state label
+        caseValues.insert(caseValues.begin(), APInt(32, 0));
+        caseDestinations.insert(caseDestinations.begin(), continuationBlock);
+
+        // switch
+        rewriter.setInsertionPointToEnd(opBlock);
+
+        rewriter.create<mlir::SwitchOp>(loc, switchStateOp.state(), defaultBlock ? defaultBlock : continuationBlock, ValueRange{},
+                                        caseValues, caseDestinations);
+
+        rewriter.eraseOp(switchStateOp);
+
+        rewriter.setInsertionPointToStart(continuationBlock);
+
+        return success();
+    }
+};
+
+struct YieldReturnValOpLowering : public TsLlvmPattern<mlir_ts::YieldReturnValOp>
+{
+    using TsLlvmPattern<mlir_ts::YieldReturnValOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::YieldReturnValOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+    {
+        assert(tsLlvmContext->returnBlock);
+
+        auto retBlock = tsLlvmContext->returnBlock;
+
+        rewriter.create<mlir_ts::StoreOp>(op.getLoc(), op.operand(), op.reference());
+
+        // Split block at `assert` operation.
+        auto *opBlock = rewriter.getInsertionBlock();
+        auto opPosition = rewriter.getInsertionPoint();
+        auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
+
+        rewriter.setInsertionPointToEnd(opBlock);
+
+        // save value into return
+
+        rewriter.create<mlir::BranchOp>(op.getLoc(), retBlock);
+
+        rewriter.setInsertionPointToStart(continuationBlock);
+
+        rewriter.eraseOp(op);
+        return success();
+    }
+};
+
 // My fix
 struct SwitchOpLowering : public ConvertOpToLLVMPattern<SwitchOp>
 {
@@ -3071,22 +3202,22 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 
     // The only remaining operation to lower from the `typescript` dialect, is the PrintOp.
     TsLlvmContext tsLlvmContext;
-    patterns
-        .insert<CaptureOpLowering, AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering,
-                ArithmeticBinaryOpLowering, AssertOpLowering, CastOpLowering, ConstantOpLowering, CreateOptionalOpLowering,
-                UndefOptionalOpLowering, HasValueOpLowering, ValueOpLowering, SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering,
-                FuncOpLowering, LoadOpLowering, ElementRefOpLowering, PropertyRefOpLowering, ExtractPropertyOpLowering,
-                LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateTupleOpLowering, DeconstructTupleOpLowering,
-                CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, PushOpLowering, PopOpLowering, DeleteOpLowering,
-                ParseFloatOpLowering, ParseIntOpLowering, PrintOpLowering, StoreOpLowering, SizeOfOpLowering, InsertPropertyOpLowering,
-                LengthOfOpLowering, StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering, CharToStringOpLowering,
-                UndefOpLowering, MemoryCopyOpLowering, LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering,
-                TrampolineOpLowering, VariableOpLowering, InvokeOpLowering, ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering,
-                NewInterfaceOpLowering, VTableOffsetRefOpLowering, ThisPropertyRefOpLowering, LoadBoundRefOpLowering,
-                StoreBoundRefOpLowering, CreateBoundRefOpLowering, CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering,
-                TypeOfOpLowering, DebuggerOpLowering, UnreachableOpLowering, LandingPadOpLowering, CompareCatchTypeOpLowering,
-                BeginCatchOpLowering, SaveCatchVarOpLowering, EndCatchOpLowering, CallInternalOpLowering, ReturnInternalOpLowering>(
-            typeConverter, &getContext(), &tsLlvmContext);
+    patterns.insert<
+        CaptureOpLowering, AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering,
+        AssertOpLowering, CastOpLowering, ConstantOpLowering, CreateOptionalOpLowering, UndefOptionalOpLowering, HasValueOpLowering,
+        ValueOpLowering, SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering, FuncOpLowering, LoadOpLowering,
+        ElementRefOpLowering, PropertyRefOpLowering, ExtractPropertyOpLowering, LogicalBinaryOpLowering, NullOpLowering, NewOpLowering,
+        CreateTupleOpLowering, DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering,
+        PushOpLowering, PopOpLowering, DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering, PrintOpLowering, StoreOpLowering,
+        SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering, StringLengthOpLowering, StringConcatOpLowering,
+        StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering, MemoryCopyOpLowering, LoadSaveValueLowering,
+        ThrowUnwindOpLowering, ThrowCallOpLowering, TrampolineOpLowering, VariableOpLowering, InvokeOpLowering,
+        ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering, NewInterfaceOpLowering, VTableOffsetRefOpLowering,
+        ThisPropertyRefOpLowering, LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering, CreateBoundFunctionOpLowering,
+        GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, DebuggerOpLowering, UnreachableOpLowering, LandingPadOpLowering,
+        CompareCatchTypeOpLowering, BeginCatchOpLowering, SaveCatchVarOpLowering, EndCatchOpLowering, CallInternalOpLowering,
+        ReturnInternalOpLowering, SwitchStateOpLowering, StateLabelOpLowering, YieldReturnValOpLowering>(typeConverter, &getContext(),
+                                                                                                         &tsLlvmContext);
 
     populateTypeScriptConversionPatterns(typeConverter, m);
 
