@@ -243,6 +243,9 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module
             // TODO: do I need this?
             // optPM.addPass(mlir::createMemRefDataFlowOptPass());
         }
+
+        // experiment
+        optPM.addPass(mlir::typescript::createLowerToAffineSwitchStatesPass());
     }
 
     if (isLoweringToLLVM)

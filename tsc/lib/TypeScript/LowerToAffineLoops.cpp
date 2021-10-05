@@ -6,6 +6,7 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/TypeScriptFunctionPass.h"
+#include "TypeScript/TypeScriptPassContext.h"
 #ifdef WIN_EXCEPTION
 #include "TypeScript/MLIRLogic/MLIRRTTIHelperVCWin32.h"
 #else
@@ -32,29 +33,6 @@ namespace mlir_ts = mlir::typescript;
 
 namespace
 {
-
-struct TSContext
-{
-    TSContext() = default;
-
-    // name, break, continue
-    mlir::DenseMap<Operation *, mlir::Block *> jumps;
-    mlir::DenseMap<Operation *, mlir::Value> catchOpData;
-    mlir::DenseMap<Operation *, mlir::Block *> unwind;
-    mlir::Block *returnBlock;
-};
-
-template <typename OpTy> class TsPattern : public OpRewritePattern<OpTy>
-{
-  public:
-    TsPattern<OpTy>(MLIRContext *context, TSContext *tsContext, PatternBenefit benefit = 1)
-        : OpRewritePattern<OpTy>::OpRewritePattern(context, benefit), tsContext(tsContext)
-    {
-    }
-
-  protected:
-    TSContext *tsContext;
-};
 
 //===----------------------------------------------------------------------===//
 // TypeScriptToAffine RewritePatterns
@@ -962,8 +940,6 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
         rewriter.replaceOp(tryOp, continuation->getArguments());
 
-        LLVM_DEBUG(llvm::dbgs() << "\nDUMP parent: " << *tryOp->getParentOp() << "\n");
-
         return success();
     }
 };
@@ -1249,7 +1225,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         mlir_ts::InterfaceSymbolRefOp, mlir_ts::PushOp, mlir_ts::PopOp, mlir_ts::NewInterfaceOp, mlir_ts::VTableOffsetRefOp,
         mlir_ts::ThisPropertyRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp, mlir_ts::TypeOfOp, mlir_ts::DebuggerOp, mlir_ts::LandingPadOp,
         mlir_ts::CompareCatchTypeOp, mlir_ts::BeginCatchOp, mlir_ts::SaveCatchVarOp, mlir_ts::EndCatchOp, mlir_ts::ThrowUnwindOp,
-        mlir_ts::ThrowCallOp, mlir_ts::CallInternalOp, mlir_ts::ReturnInternalOp>();
+        mlir_ts::ThrowCallOp, mlir_ts::CallInternalOp, mlir_ts::ReturnInternalOp, mlir_ts::SwitchStateOp, mlir_ts::StateLabelOp>();
 
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.
@@ -1258,7 +1234,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
                     ParamDefaultValueOpLowering, PrefixUnaryOpLowering, PostfixUnaryOpLowering, IfOpLowering, DoWhileOpLowering,
                     WhileOpLowering, ForOpLowering, BreakOpLowering, ContinueOpLowering, SwitchOpLowering, AccessorRefOpLowering,
                     ThisAccessorRefOpLowering, LabelOpLowering, CallOpLowering, CallIndirectOpLowering, TryOpLowering, ThrowOpLowering,
-                    CatchOpLowering, SwitchStateOpLowering, StateLabelOpLowering>(&getContext(), &tsContext);
+                    CatchOpLowering /*, SwitchStateOpLowering, StateLabelOpLowering*/>(&getContext(), &tsContext);
 
     // With the target and rewrite patterns defined, we can now attempt the
     // conversion. The conversion will signal failure if any of our `illegal`

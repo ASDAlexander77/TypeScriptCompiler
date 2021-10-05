@@ -158,13 +158,15 @@ class CodeLogicHelper
         }
     }
 
-    mlir::Block *FindReturnBlock()
+    mlir::Block *FindReturnBlock(bool createReturnBlock = false)
     {
         auto *region = rewriter.getInsertionBlock()->getParent();
         if (!region)
         {
             return nullptr;
         }
+
+        mlir::Block *newReturnBlock = nullptr;
 
         auto result = std::find_if(region->begin(), region->end(), [&](auto &item) {
             if (item.empty())
@@ -177,11 +179,25 @@ class CodeLogicHelper
             auto isReturn = dyn_cast<mlir_ts::ReturnInternalOp>(op) != nullptr;
             if (op != &item.front())
             {
+                if (createReturnBlock)
+                {
+                    CodeLogicHelper clh(op, rewriter);
+                    auto *contBlock = clh.BeginBlock(op->getLoc());
+                    rewriter.setInsertionPoint(op);
+                    newReturnBlock = contBlock;
+                    return true;
+                }
+
                 llvm_unreachable("return must be only operator in block");
             }
 
             return isReturn;
         });
+
+        if (newReturnBlock)
+        {
+            return newReturnBlock;
+        }
 
         if (result == region->end())
         {
