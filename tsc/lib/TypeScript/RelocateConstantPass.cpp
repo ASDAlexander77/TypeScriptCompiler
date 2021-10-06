@@ -29,10 +29,23 @@ class RelocateConstantPass : public mlir::PassWrapper<RelocateConstantPass, Type
 
         SmallPtrSet<Operation *, 16> workSet;
 
+        auto skipFirstConsts = true;
         f.walk([&](mlir::Operation *op) {
             if (auto constantOp = dyn_cast_or_null<mlir_ts::ConstantOp>(op))
             {
-                workSet.insert(constantOp);
+                if (!skipFirstConsts)
+                {
+                    // if const is not child of function but nested block - ignore it
+                    if (constantOp->getParentOp() == f)
+                    {
+                        // select only those consts which are not at the beginning
+                        workSet.insert(constantOp);
+                    }
+                }
+            }
+            else
+            {
+                skipFirstConsts = false;
             }
         });
 
@@ -43,11 +56,17 @@ class RelocateConstantPass : public mlir::PassWrapper<RelocateConstantPass, Type
             ConversionPatternRewriter rewriter(f.getContext());
             rewriter.setInsertionPoint(firstNonConstOp);
 
+            LLVM_DEBUG(llvm::dbgs() << "\nInsert const at: \n" << *firstNonConstOp << "\n";);
+
             for (auto op : workSet)
             {
                 auto constantOp = cast<mlir_ts::ConstantOp>(op);
+
+                LLVM_DEBUG(llvm::dbgs() << "\nconst to insert: \n" << constantOp << "\n";);
+
                 auto newOp = rewriter.create<mlir_ts::ConstantOp>(constantOp->getLoc(), constantOp.getType(), constantOp.value());
                 constantOp->replaceAllUsesWith(newOp);
+
                 rewriter.eraseOp(constantOp);
             }
         }
@@ -55,8 +74,9 @@ class RelocateConstantPass : public mlir::PassWrapper<RelocateConstantPass, Type
 
     Operation *seekFirstNonConstantOp(mlir_ts::FuncOp funcOp)
     {
+        auto allowSkipConsts = true;
         auto found = false;
-        Operation *foundOp;
+        Operation *foundOp = nullptr;
         // find last string
         auto lastUse = [&](Operation *op) {
             if (found)
@@ -64,14 +84,36 @@ class RelocateConstantPass : public mlir::PassWrapper<RelocateConstantPass, Type
                 return;
             }
 
+            // we need only first level
+            if (op->getParentOp() != funcOp)
+            {
+                return;
+            }
+
             auto constantOp = dyn_cast_or_null<mlir_ts::ConstantOp>(op);
-            if (!constantOp)
+            if (constantOp)
+            {
+                if (allowSkipConsts)
+                {
+                    return;
+                }
+            }
+            else
             {
                 auto constOp = dyn_cast_or_null<mlir::ConstantOp>(op);
-                if (!constOp)
+                if (constOp)
                 {
+                    if (allowSkipConsts)
+                    {
+                        return;
+                    }
+                }
+                else
+                {
+                    allowSkipConsts = false;
                     found = true;
                     foundOp = op;
+                    return;
                 }
             }
         };
