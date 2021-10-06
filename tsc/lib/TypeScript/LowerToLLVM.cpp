@@ -2902,7 +2902,7 @@ struct YieldReturnValOpLowering : public TsLlvmPattern<mlir_ts::YieldReturnValOp
     {
         CodeLogicHelper clh(yieldReturnValOp, rewriter);
 
-        auto returnBlock = clh.FindReturnBlock(true);
+        auto returnBlock = clh.FindReturnBlock();
 
         assert(returnBlock);
 
