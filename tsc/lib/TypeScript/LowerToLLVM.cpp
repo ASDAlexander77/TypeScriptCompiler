@@ -2824,7 +2824,12 @@ class SwitchStateOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateOp>
         if (!tsLlvmContext->returnBlock)
         {
             CodeLogicHelper clh(switchStateOp, rewriter);
-            tsLlvmContext->returnBlock = clh.FindReturnBlock();
+            tsLlvmContext->returnBlock = clh.FindReturnBlock(true);
+
+            LLVM_DEBUG(llvm::dbgs() << "\n return block: "; tsLlvmContext->returnBlock->dump(); llvm::dbgs() << "\n";);
+
+            LLVM_DEBUG(llvm::dbgs() << "\n return block - parent: "; tsLlvmContext->returnBlock->getParentOp()->dump();
+                       llvm::dbgs() << "\n";);
         }
 
         assert(tsLlvmContext->returnBlock);
@@ -2908,7 +2913,9 @@ struct YieldReturnValOpLowering : public TsLlvmPattern<mlir_ts::YieldReturnValOp
         if (!tsLlvmContext->returnBlock)
         {
             CodeLogicHelper clh(yieldReturnValOp, rewriter);
-            tsLlvmContext->returnBlock = clh.FindReturnBlock();
+            tsLlvmContext->returnBlock = clh.FindReturnBlock(true);
+
+            LLVM_DEBUG(llvm::dbgs() << "\n return block: "; tsLlvmContext->returnBlock->dump(); llvm::dbgs() << "\n";);
         }
 
         assert(tsLlvmContext->returnBlock);
@@ -3239,12 +3246,15 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     // We want to completely lower to LLVM, so we use a `FullConversion`. This
     // ensures that only legal operations will remain after the conversion.
     auto module = getOperation();
+
+    LLVM_DEBUG(llvm::dbgs() << "\nBEFORE DUMP: \n" << module << "\n";);
+
     if (failed(applyFullConversion(module, target, std::move(patterns))))
     {
         signalPassFailure();
     }
 
-    LLVM_DEBUG(llvm::dbgs() << "\nDUMP: \n" << module << "\n";);
+    LLVM_DEBUG(llvm::dbgs() << "\nAFTER DUMP: \n" << module << "\n";);
 }
 
 /// Create a pass for lowering operations the remaining `TypeScript` operations, as

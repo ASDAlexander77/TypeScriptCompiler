@@ -177,13 +177,23 @@ class CodeLogicHelper
             auto *op = &item.back();
             // auto name = op->getName().getStringRef();
             auto isReturn = dyn_cast<mlir_ts::ReturnInternalOp>(op) != nullptr;
-            if (op != &item.front())
+            if (isReturn && op != &item.front())
             {
                 if (createReturnBlock)
                 {
                     CodeLogicHelper clh(op, rewriter);
+
+                    if (op->getOperands().size() > 0)
+                    {
+                        rewriter.setInsertionPoint(op->getOperand(0).getDefiningOp());
+                    }
+                    else
+                    {
+                        rewriter.setInsertionPoint(op);
+                    }
+
                     auto *contBlock = clh.BeginBlock(op->getLoc());
-                    rewriter.setInsertionPoint(op);
+
                     newReturnBlock = contBlock;
                     return true;
                 }
