@@ -2905,6 +2905,8 @@ struct YieldReturnValOpLowering : public TsLlvmPattern<mlir_ts::YieldReturnValOp
     LogicalResult matchAndRewrite(mlir_ts::YieldReturnValOp yieldReturnValOp, ArrayRef<Value> operands,
                                   ConversionPatternRewriter &rewriter) const final
     {
+        CodeLogicHelper clh(yieldReturnValOp, rewriter);
+
         if (!tsLlvmContext->returnBlock)
         {
             CodeLogicHelper clh(yieldReturnValOp, rewriter);
@@ -2919,18 +2921,7 @@ struct YieldReturnValOpLowering : public TsLlvmPattern<mlir_ts::YieldReturnValOp
 
         rewriter.create<mlir_ts::StoreOp>(yieldReturnValOp.getLoc(), yieldReturnValOp.operand(), yieldReturnValOp.reference());
 
-        // Split block at `assert` operation.
-        auto *opBlock = rewriter.getInsertionBlock();
-        auto opPosition = rewriter.getInsertionPoint();
-        auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
-
-        rewriter.setInsertionPointToEnd(opBlock);
-
-        // save value into return
-
-        rewriter.create<mlir::BranchOp>(yieldReturnValOp.getLoc(), retBlock);
-
-        rewriter.setInsertionPointToStart(continuationBlock);
+        clh.JumpTo(yieldReturnValOp.getLoc(), retBlock);
 
         rewriter.eraseOp(yieldReturnValOp);
         return success();

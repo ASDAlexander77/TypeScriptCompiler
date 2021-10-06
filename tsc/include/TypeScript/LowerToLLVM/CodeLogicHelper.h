@@ -267,6 +267,20 @@ class CodeLogicHelper
         return continuationBlock;
     }
 
+    mlir::Block *JumpTo(mlir::Location loc, mlir::Block *toBlock)
+    {
+        auto *opBlock = rewriter.getInsertionBlock();
+        auto opPosition = rewriter.getInsertionPoint();
+        auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
+
+        rewriter.setInsertionPointToEnd(opBlock);
+
+        rewriter.create<mlir::BranchOp>(loc, toBlock);
+
+        rewriter.setInsertionPointToStart(continuationBlock);
+        return continuationBlock;
+    }
+
     mlir::Block *CutBlock()
     {
         auto *opBlock = rewriter.getInsertionBlock();
