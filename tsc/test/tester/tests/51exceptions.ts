@@ -153,6 +153,7 @@ namespace exceptions {
         test5()
 
         print("test exn done")
+        print("done.");
     }
 }
 
