@@ -2092,8 +2092,6 @@ struct LandingPadOpLowering : public TsLlvmPattern<mlir_ts::LandingPadOp>
     {
         Location loc = landingPadOp.getLoc();
 
-        TypeHelper th(rewriter);
-
         auto catch1 = landingPadOp.catches().front();
 
         mlir::Type llvmLandingPadTy = getTypeConverter()->convertType(landingPadOp.getType());
