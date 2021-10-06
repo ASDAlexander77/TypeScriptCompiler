@@ -43,10 +43,6 @@ namespace fs = std::experimental::filesystem;
 
 //#define NEW_BAT 1
 
-#define FILTER_LIB "\"lib\\x64\""
-#define FILTER_SDK "\"um\\x64\""
-#define FILTER_UCRTSDK "\"ucrt\\x64\""
-
 #define GC_LIB "gcmt-lib"
 #define LIBS "-lpthread"
 
@@ -225,7 +221,7 @@ void createCompileBatchFile()
     batFile << "%TSCEXEPATH%\\tsc.exe --emit=llvm %2 2> %FILENAME%.il" << std::endl;
     batFile << "%EXEPATH%\\llc.exe --filetype=obj -o=%FILENAME%.o %FILENAME%.il" << std::endl;
     batFile << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% "
-               "/defaultlib:libcmt.lib libvcruntime.lib"
+               "/defaultlib:libcmt" _D_ ".lib libvcruntime" _D_ ".lib"
             << std::endl;
     batFile << "del %FILENAME%.il" << std::endl;
     batFile << "del %FILENAME%.o" << std::endl;
@@ -237,13 +233,13 @@ void createCompileBatchFile()
 void createCompileBatchFileWithRT()
 {
 #ifndef NEW_BAT
-    if (exists("compile_rt.bat"))
+    if (exists("compile_rt" _D_ ".bat"))
     {
         return;
     }
 #endif
 
-    std::ofstream batFile("compile_rt.bat");
+    std::ofstream batFile("compile_rt" _D_ ".bat");
     // batFile << "echo off" << std::endl;
     batFile << "set FILENAME=%1" << std::endl;
     batFile << "set LIBPATH=\"" << TEST_LIBPATH << "\"" << std::endl;
@@ -256,7 +252,7 @@ void createCompileBatchFileWithRT()
     batFile << "%EXEPATH%\\llc.exe --filetype=obj -o=%FILENAME%.o %FILENAME%.il" << std::endl;
     batFile
         << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% /libpath:%CLANGLIBPATH% "
-           "/defaultlib:libcmt.lib libvcruntime.lib clang_rt.builtins-x86_64.lib"
+           "/defaultlib:libcmt" _D_ ".lib libvcruntime" _D_ ".lib clang_rt.builtins-x86_64.lib"
         << std::endl;
     batFile << "del %FILENAME%.il" << std::endl;
     batFile << "del %FILENAME%.o" << std::endl;
@@ -268,13 +264,13 @@ void createCompileBatchFileWithRT()
 void createCompileBatchFileGC()
 {
 #ifndef NEW_BAT
-    if (exists("compile_gc.bat"))
+    if (exists("compile_gc" _D_ ".bat"))
     {
         return;
     }
 #endif
 
-    std::ofstream batFile("compile_gc.bat");
+    std::ofstream batFile("compile_gc" _D_ ".bat");
     batFile << "echo off" << std::endl;
     batFile << "set FILENAME=%1" << std::endl;
     batFile << "set LIBPATH=\"" << TEST_LIBPATH << "\"" << std::endl;
@@ -287,7 +283,7 @@ void createCompileBatchFileGC()
     batFile << "%EXEPATH%\\llc.exe --filetype=obj -o=%FILENAME%.o %FILENAME%.il" << std::endl;
     batFile
         << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% /libpath:%GCLIBPATH% "
-           "msvcrt.lib ucrt.lib kernel32.lib user32.lib "
+           "msvcrt" _D_ ".lib ucrt" _D_ ".lib kernel32.lib user32.lib "
         << GC_LIB << ".lib" << std::endl;
     batFile << "del %FILENAME%.il" << std::endl;
     batFile << "del %FILENAME%.o" << std::endl;
@@ -299,13 +295,13 @@ void createCompileBatchFileGC()
 void createCompileBatchFileGCWithRT()
 {
 #ifndef NEW_BAT
-    if (exists("compile_gc_rt.bat"))
+    if (exists("compile_gc_rt" _D_ ".bat"))
     {
         return;
     }
 #endif
 
-    std::ofstream batFile("compile_gc_rt.bat");
+    std::ofstream batFile("compile_gc_rt" _D_ ".bat");
     batFile << "echo off" << std::endl;
     batFile << "set FILENAME=%1" << std::endl;
     batFile << "set LIBPATH=\"" << TEST_LIBPATH << "\"" << std::endl;
@@ -318,7 +314,7 @@ void createCompileBatchFileGCWithRT()
     batFile << "%EXEPATH%\\llc.exe --filetype=obj -o=%FILENAME%.o %FILENAME%.il" << std::endl;
     batFile
         << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% /libpath:%GCLIBPATH% "
-           "msvcrt.lib ucrt.lib kernel32.lib user32.lib "
+           "msvcrt" _D_ ".lib ucrt" _D_ ".lib kernel32.lib user32.lib "
         << GC_LIB << ".lib clang_rt.builtins-x86_64.lib" << std::endl;
     batFile << "del %FILENAME%.il" << std::endl;
     batFile << "del %FILENAME%.o" << std::endl;
@@ -330,13 +326,13 @@ void createCompileBatchFileGCWithRT()
 void createJitCompileBatchFile()
 {
 #ifndef NEW_BAT
-    if (exists("compile_jit.bat"))
+    if (exists("compile_jit" _D_ ".bat"))
     {
         return;
     }
 #endif
 
-    std::ofstream batFile("compile_jit.bat");
+    std::ofstream batFile("compile_jit" _D_ ".bat");
     batFile << "echo off" << std::endl;
     batFile << "set FILENAME=%1" << std::endl;
     batFile << "set LLVMPATH=" << TEST_EXEPATH << std::endl;
@@ -348,7 +344,7 @@ void createJitCompileBatchFile()
                "-object-filename=%FILENAME%.o %2"
             << std::endl;
     batFile << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% "
-               "/defaultlib:libcmt.lib libvcruntime.lib"
+               "/defaultlib:libcmt" _D_ ".lib libvcruntime" _D_ ".lib"
             << std::endl;
     batFile << "del %FILENAME%.o" << std::endl;
     batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
@@ -359,13 +355,13 @@ void createJitCompileBatchFile()
 void createJitCompileBatchFileGC()
 {
 #ifndef NEW_BAT
-    if (exists("compile_jit_gc.bat"))
+    if (exists("compile_jit_gc" _D_ ".bat"))
     {
         return;
     }
 #endif
 
-    std::ofstream batFile("compile_jit_gc.bat");
+    std::ofstream batFile("compile_jit_gc" _D_ ".bat");
     batFile << "echo off" << std::endl;
     batFile << "set FILENAME=%1" << std::endl;
     batFile << "set LLVMPATH=" << TEST_EXEPATH << std::endl;
@@ -377,7 +373,7 @@ void createJitCompileBatchFileGC()
                "-object-filename=%FILENAME%.o %2"
             << std::endl;
     batFile << "%EXEPATH%\\lld.exe -flavor link %FILENAME%.o /libpath:%LIBPATH% /libpath:%SDKPATH% /libpath:%UCRTPATH% "
-               "/defaultlib:libcmt.lib libvcruntime.lib"
+               "/defaultlib:libcmt" _D_ ".lib libvcruntime" _D_ ".lib"
             << std::endl;
     batFile << "del %FILENAME%.o" << std::endl;
     batFile << "call %FILENAME%.exe 1> %FILENAME%.txt 2> %FILENAME%.err" << std::endl;
@@ -712,22 +708,22 @@ void testFile(const char *file)
     {
         if (noGC)
         {
-            ss << RUN_CMD << "compile_rt" << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
+            ss << RUN_CMD << "compile_rt" _D_ << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
         }
         else
         {
-            ss << RUN_CMD << "compile_gc_rt" << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
+            ss << RUN_CMD << "compile_gc_rt" _D_ << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
         }
     }
     else
     {
         if (noGC)
         {
-            ss << RUN_CMD << "compile" << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
+            ss << RUN_CMD << "compile" _D_ << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
         }
         else
         {
-            ss << RUN_CMD << "compile_gc" << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
+            ss << RUN_CMD << "compile_gc" _D_ << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
         }
     }
 
