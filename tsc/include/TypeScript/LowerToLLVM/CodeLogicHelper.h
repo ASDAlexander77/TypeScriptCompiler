@@ -168,30 +168,36 @@ class CodeLogicHelper
 
         mlir::Block *newReturnBlock = nullptr;
 
-        auto result = std::find_if(region->begin(), region->end(), [&](auto &item) {
-            if (item.empty())
+        auto result = std::find_if(region->begin(), region->end(), [&](auto &block) {
+            if (block.empty())
             {
                 return false;
             }
 
-            auto *op = &item.back();
+            auto *op = block.getTerminator();
             // auto name = op->getName().getStringRef();
             auto isReturn = dyn_cast<mlir_ts::ReturnInternalOp>(op) != nullptr;
-            if (isReturn && op != &item.front())
+            if (isReturn && op != &block.front())
             {
                 if (createReturnBlock)
                 {
-                    CodeLogicHelper clh(op, rewriter);
-
                     if (op->getOperands().size() > 0)
                     {
-                        rewriter.setInsertionPoint(op->getOperand(0).getDefiningOp());
+                        auto argOp = op->getOperand(0).getDefiningOp();
+                        if (argOp == &block.front())
+                        {
+                            // no need to create what already created
+                            return true;
+                        }
+
+                        rewriter.setInsertionPoint(argOp);
                     }
                     else
                     {
                         rewriter.setInsertionPoint(op);
                     }
 
+                    CodeLogicHelper clh(op, rewriter);
                     auto *contBlock = clh.BeginBlock(op->getLoc());
 
                     newReturnBlock = contBlock;
