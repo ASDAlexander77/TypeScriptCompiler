@@ -43,12 +43,6 @@ namespace fs = std::experimental::filesystem;
 
 //#define NEW_BAT 1
 
-//#define SEARCH_LIB 1
-//#define SEARCH_SDK 1
-//#define SEARCH_UCRTSDK 1
-#define SEARCH_LIBPATH "\"C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\""
-#define SEARCH_SDKPATH "\"C:\\Program Files (x86)\\Windows Kits\\10\\Lib\""
-#define SEARCH_UCRTPATH "\"C:\\Program Files (x86)\\Windows Kits\\10\\Lib\""
 #define FILTER_LIB "\"lib\\x64\""
 #define FILTER_SDK "\"um\\x64\""
 #define FILTER_UCRTSDK "\"ucrt\\x64\""
@@ -95,6 +89,14 @@ namespace fs = std::experimental::filesystem;
 
 #ifndef TEST_FILE
 #define TEST_FILE "C:/dev/TypeScriptCompiler/tsc/test/tester/tests/00funcs_capture.ts"
+#endif
+
+#ifdef WIN32
+#ifndef NDEBUG
+#define _D_ "d"
+#else
+#define _D_ ""
+#endif
 #endif
 
 bool isJit = true;
@@ -202,46 +204,22 @@ int runFolder(const char *folder)
     return 0;
 }
 
-#if WIN32
+#ifdef WIN32
 void createCompileBatchFile()
 {
 #ifndef NEW_BAT
-    if (exists("compile.bat"))
+    if (exists("compile" _D_ ".bat"))
     {
         return;
     }
 #endif
 
-    std::ofstream batFile("compile.bat");
+    std::ofstream batFile("compile" _D_ ".bat");
     batFile << "echo off" << std::endl;
     batFile << "set FILENAME=%1" << std::endl;
-#ifdef SEARCH_LIB
-    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_LIBPATH " libvcruntime.lib ^| find " FILTER_LIB
-               "`) DO ( SET libname=%%F )"
-            << std::endl;
-    batFile << "FOR %%A in (\"%libname%\") do ( Set LIBPATH1=\"%%~dpA\" )" << std::endl;
-    batFile << "Set LIBPATH=%LIBPATH1:~0,-3%\"" << std::endl;
-#else
     batFile << "set LIBPATH=\"" << TEST_LIBPATH << "\"" << std::endl;
-#endif
-#ifdef SEARCH_SDK
-    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_SDKPATH " kernel32.lib ^| find " FILTER_LIB
-               "`) DO ( SET libname=%%F )"
-            << std::endl;
-    batFile << "FOR %%A in (\"%libname%\") do ( Set SDKPATH1=\"%%~dpA\" )" << std::endl;
-    batFile << "Set SDKPATH=%SDKPATH1:~0,-3%\"" << std::endl;
-#else
     batFile << "set SDKPATH=\"" << TEST_SDKPATH << "\"" << std::endl;
-#endif
-#ifdef SEARCH_UCRTSDK
-    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_UCRTPATH " libucrt.lib ^| find " FILTER_UCRTLIB
-               "`) DO ( SET libname=%%F )"
-            << std::endl;
-    batFile << "FOR %%A in (\"%libname%\") do ( Set SDKPATH1=\"%%~dpA\" )" << std::endl;
-    batFile << "Set SDKPATH=%SDKPATH1:~0,-3%\"" << std::endl;
-#else
     batFile << "set UCRTPATH=\"" << TEST_UCRTPATH << "\"" << std::endl;
-#endif
     batFile << "set EXEPATH=" << TEST_EXEPATH << std::endl;
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "%TSCEXEPATH%\\tsc.exe --emit=llvm %2 2> %FILENAME%.il" << std::endl;
@@ -268,33 +246,9 @@ void createCompileBatchFileWithRT()
     std::ofstream batFile("compile_rt.bat");
     // batFile << "echo off" << std::endl;
     batFile << "set FILENAME=%1" << std::endl;
-#ifdef SEARCH_LIB
-    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_LIBPATH " libvcruntime.lib ^| find " FILTER_LIB
-               "`) DO ( SET libname=%%F )"
-            << std::endl;
-    batFile << "FOR %%A in (\"%libname%\") do ( Set LIBPATH1=\"%%~dpA\" )" << std::endl;
-    batFile << "Set LIBPATH=%LIBPATH1:~0,-3%\"" << std::endl;
-#else
     batFile << "set LIBPATH=\"" << TEST_LIBPATH << "\"" << std::endl;
-#endif
-#ifdef SEARCH_SDK
-    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_SDKPATH " kernel32.lib ^| find " FILTER_LIB
-               "`) DO ( SET libname=%%F )"
-            << std::endl;
-    batFile << "FOR %%A in (\"%libname%\") do ( Set SDKPATH1=\"%%~dpA\" )" << std::endl;
-    batFile << "Set SDKPATH=%SDKPATH1:~0,-3%\"" << std::endl;
-#else
     batFile << "set SDKPATH=\"" << TEST_SDKPATH << "\"" << std::endl;
-#endif
-#ifdef SEARCH_UCRTSDK
-    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_UCRTPATH " libucrt.lib ^| find " FILTER_UCRTLIB
-               "`) DO ( SET libname=%%F )"
-            << std::endl;
-    batFile << "FOR %%A in (\"%libname%\") do ( Set SDKPATH1=\"%%~dpA\" )" << std::endl;
-    batFile << "Set SDKPATH=%SDKPATH1:~0,-3%\"" << std::endl;
-#else
     batFile << "set UCRTPATH=\"" << TEST_UCRTPATH << "\"" << std::endl;
-#endif
     batFile << "set EXEPATH=" << TEST_EXEPATH << std::endl;
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "set CLANGLIBPATH=" << TEST_CLANGLIBPATH << std::endl;
@@ -323,33 +277,9 @@ void createCompileBatchFileGC()
     std::ofstream batFile("compile_gc.bat");
     batFile << "echo off" << std::endl;
     batFile << "set FILENAME=%1" << std::endl;
-#ifdef SEARCH_LIB
-    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_LIBPATH " libvcruntime.lib ^| find " FILTER_LIB
-               "`) DO ( SET libname=%%F )"
-            << std::endl;
-    batFile << "FOR %%A in (\"%libname%\") do ( Set LIBPATH1=\"%%~dpA\" )" << std::endl;
-    batFile << "Set LIBPATH=%LIBPATH1:~0,-3%\"" << std::endl;
-#else
     batFile << "set LIBPATH=\"" << TEST_LIBPATH << "\"" << std::endl;
-#endif
-#ifdef SEARCH_SDK
-    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_SDKPATH " kernel32.lib ^| find " FILTER_LIB
-               "`) DO ( SET libname=%%F )"
-            << std::endl;
-    batFile << "FOR %%A in (\"%libname%\") do ( Set SDKPATH1=\"%%~dpA\" )" << std::endl;
-    batFile << "Set SDKPATH=%SDKPATH1:~0,-3%\"" << std::endl;
-#else
     batFile << "set SDKPATH=\"" << TEST_SDKPATH << "\"" << std::endl;
-#endif
-#ifdef SEARCH_UCRTSDK
-    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_UCRTPATH " libucrt.lib ^| find " FILTER_UCRTLIB
-               "`) DO ( SET libname=%%F )"
-            << std::endl;
-    batFile << "FOR %%A in (\"%libname%\") do ( Set SDKPATH1=\"%%~dpA\" )" << std::endl;
-    batFile << "Set SDKPATH=%SDKPATH1:~0,-3%\"" << std::endl;
-#else
     batFile << "set UCRTPATH=\"" << TEST_UCRTPATH << "\"" << std::endl;
-#endif
     batFile << "set EXEPATH=" << TEST_EXEPATH << std::endl;
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "set GCLIBPATH=" << TEST_GCPATH << std::endl;
@@ -378,33 +308,9 @@ void createCompileBatchFileGCWithRT()
     std::ofstream batFile("compile_gc_rt.bat");
     batFile << "echo off" << std::endl;
     batFile << "set FILENAME=%1" << std::endl;
-#ifdef SEARCH_LIB
-    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_LIBPATH " libvcruntime.lib ^| find " FILTER_LIB
-               "`) DO ( SET libname=%%F )"
-            << std::endl;
-    batFile << "FOR %%A in (\"%libname%\") do ( Set LIBPATH1=\"%%~dpA\" )" << std::endl;
-    batFile << "Set LIBPATH=%LIBPATH1:~0,-3%\"" << std::endl;
-#else
     batFile << "set LIBPATH=\"" << TEST_LIBPATH << "\"" << std::endl;
-#endif
-#ifdef SEARCH_SDK
-    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_SDKPATH " kernel32.lib ^| find " FILTER_LIB
-               "`) DO ( SET libname=%%F )"
-            << std::endl;
-    batFile << "FOR %%A in (\"%libname%\") do ( Set SDKPATH1=\"%%~dpA\" )" << std::endl;
-    batFile << "Set SDKPATH=%SDKPATH1:~0,-3%\"" << std::endl;
-#else
     batFile << "set SDKPATH=\"" << TEST_SDKPATH << "\"" << std::endl;
-#endif
-#ifdef SEARCH_UCRTSDK
-    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_UCRTPATH " libucrt.lib ^| find " FILTER_UCRTLIB
-               "`) DO ( SET libname=%%F )"
-            << std::endl;
-    batFile << "FOR %%A in (\"%libname%\") do ( Set SDKPATH1=\"%%~dpA\" )" << std::endl;
-    batFile << "Set SDKPATH=%SDKPATH1:~0,-3%\"" << std::endl;
-#else
     batFile << "set UCRTPATH=\"" << TEST_UCRTPATH << "\"" << std::endl;
-#endif
     batFile << "set EXEPATH=" << TEST_EXEPATH << std::endl;
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "set GCLIBPATH=" << TEST_GCPATH << std::endl;
@@ -434,33 +340,9 @@ void createJitCompileBatchFile()
     batFile << "echo off" << std::endl;
     batFile << "set FILENAME=%1" << std::endl;
     batFile << "set LLVMPATH=" << TEST_EXEPATH << std::endl;
-#ifdef SEARCH_LIB
-    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_LIBPATH " libvcruntime.lib ^| find " FILTER_LIB
-               "`) DO ( SET libname=%%F )"
-            << std::endl;
-    batFile << "FOR %%A in (\"%libname%\") do ( Set LIBPATH1=\"%%~dpA\" )" << std::endl;
-    batFile << "Set LIBPATH=%LIBPATH1:~0,-3%\"" << std::endl;
-#else
     batFile << "set LIBPATH=\"" << TEST_LIBPATH << "\"" << std::endl;
-#endif
-#ifdef SEARCH_SDK
-    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_SDKPATH " kernel32.lib ^| find " FILTER_LIB
-               "`) DO ( SET libname=%%F )"
-            << std::endl;
-    batFile << "FOR %%A in (\"%libname%\") do ( Set SDKPATH1=\"%%~dpA\" )" << std::endl;
-    batFile << "Set SDKPATH=%SDKPATH1:~0,-3%\"" << std::endl;
-#else
     batFile << "set SDKPATH=\"" << TEST_SDKPATH << "\"" << std::endl;
-#endif
-#ifdef SEARCH_UCRTSDK
-    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_UCRTPATH " libucrt.lib ^| find " FILTER_UCRTLIB
-               "`) DO ( SET libname=%%F )"
-            << std::endl;
-    batFile << "FOR %%A in (\"%libname%\") do ( Set SDKPATH1=\"%%~dpA\" )" << std::endl;
-    batFile << "Set SDKPATH=%SDKPATH1:~0,-3%\"" << std::endl;
-#else
     batFile << "set UCRTPATH=\"" << TEST_UCRTPATH << "\"" << std::endl;
-#endif
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit -nogc --shared-libs=%TSCEXEPATH%/TypeScriptRuntime.dll -dump-object-file "
                "-object-filename=%FILENAME%.o %2"
@@ -487,33 +369,9 @@ void createJitCompileBatchFileGC()
     batFile << "echo off" << std::endl;
     batFile << "set FILENAME=%1" << std::endl;
     batFile << "set LLVMPATH=" << TEST_EXEPATH << std::endl;
-#ifdef SEARCH_LIB
-    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_LIBPATH " libvcruntime.lib ^| find " FILTER_LIB
-               "`) DO ( SET libname=%%F )"
-            << std::endl;
-    batFile << "FOR %%A in (\"%libname%\") do ( Set LIBPATH1=\"%%~dpA\" )" << std::endl;
-    batFile << "Set LIBPATH=%LIBPATH1:~0,-3%\"" << std::endl;
-#else
     batFile << "set LIBPATH=\"" << TEST_LIBPATH << "\"" << std::endl;
-#endif
-#ifdef SEARCH_SDK
-    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_SDKPATH " kernel32.lib ^| find " FILTER_LIB
-               "`) DO ( SET libname=%%F )"
-            << std::endl;
-    batFile << "FOR %%A in (\"%libname%\") do ( Set SDKPATH1=\"%%~dpA\" )" << std::endl;
-    batFile << "Set SDKPATH=%SDKPATH1:~0,-3%\"" << std::endl;
-#else
     batFile << "set SDKPATH=\"" << TEST_SDKPATH << "\"" << std::endl;
-#endif
-#ifdef SEARCH_UCRTSDK
-    batFile << "FOR /F \"tokens=* USEBACKQ\" %%F IN (`where.exe /R " SEARCH_UCRTPATH " libucrt.lib ^| find " FILTER_UCRTLIB
-               "`) DO ( SET libname=%%F )"
-            << std::endl;
-    batFile << "FOR %%A in (\"%libname%\") do ( Set SDKPATH1=\"%%~dpA\" )" << std::endl;
-    batFile << "Set SDKPATH=%SDKPATH1:~0,-3%\"" << std::endl;
-#else
     batFile << "set UCRTPATH=\"" << TEST_UCRTPATH << "\"" << std::endl;
-#endif
     batFile << "set TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "%TSCEXEPATH%\\tsc.exe --emit=jit --shared-libs=%TSCEXEPATH%/TypeScriptRuntime.dll -dump-object-file "
                "-object-filename=%FILENAME%.o %2"
