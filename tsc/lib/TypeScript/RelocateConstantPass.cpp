@@ -87,6 +87,8 @@ class RelocateConstantPass : public mlir::PassWrapper<RelocateConstantPass, Type
             // we need only first level
             if (op->getParentOp() != funcOp)
             {
+                // it is not top anymore
+                found = true;
                 return;
             }
 
