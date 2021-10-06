@@ -2796,17 +2796,12 @@ struct StateLabelOpLowering : public TsLlvmPattern<mlir_ts::StateLabelOp>
 
     LogicalResult matchAndRewrite(mlir_ts::StateLabelOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
     {
-        auto *opBlock = rewriter.getInsertionBlock();
-        auto opPosition = rewriter.getInsertionPoint();
-        auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
+        CodeLogicHelper clh(op, rewriter);
 
-        rewriter.setInsertionPointToEnd(opBlock);
-
-        rewriter.create<mlir::BranchOp>(op.getLoc(), continuationBlock);
-
-        rewriter.setInsertionPointToStart(continuationBlock);
+        clh.BeginBlock(op.getLoc());
 
         rewriter.eraseOp(op);
+
         return success();
     }
 };

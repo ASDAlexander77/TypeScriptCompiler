@@ -1070,17 +1070,12 @@ struct StateLabelOpLowering : public TsPattern<mlir_ts::StateLabelOp>
 
     LogicalResult matchAndRewrite(mlir_ts::StateLabelOp op, PatternRewriter &rewriter) const final
     {
-        auto *opBlock = rewriter.getInsertionBlock();
-        auto opPosition = rewriter.getInsertionPoint();
-        auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
+        CodeLogicHelper clh(op, rewriter);
 
-        rewriter.setInsertionPointToEnd(opBlock);
-
-        rewriter.create<mlir::BranchOp>(op.getLoc(), continuationBlock);
-
-        rewriter.setInsertionPointToStart(continuationBlock);
+        clh.BeginBlock(op.getLoc());
 
         rewriter.eraseOp(op);
+
         return success();
     }
 };
@@ -1092,6 +1087,8 @@ class SwitchStateOpLowering : public TsPattern<mlir_ts::SwitchStateOp>
 
     LogicalResult matchAndRewrite(mlir_ts::SwitchStateOp switchStateOp, PatternRewriter &rewriter) const final
     {
+        CodeLogicHelper clh(switchStateOp, rewriter);
+
         auto loc = switchStateOp->getLoc();
 
         assert(tsContext->returnBlock);
@@ -1124,15 +1121,7 @@ class SwitchStateOpLowering : public TsPattern<mlir_ts::SwitchStateOp>
                 auto stateLabelOp = dyn_cast_or_null<mlir_ts::StateLabelOp>(op);
                 rewriter.setInsertionPoint(stateLabelOp);
 
-                auto *opBlock = rewriter.getInsertionBlock();
-                auto opPosition = rewriter.getInsertionPoint();
-                auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
-
-                rewriter.setInsertionPointToEnd(opBlock);
-
-                rewriter.create<mlir::BranchOp>(stateLabelOp.getLoc(), continuationBlock);
-
-                rewriter.setInsertionPointToStart(continuationBlock);
+                auto *continuationBlock = clh.BeginBlock(loc);
 
                 rewriter.eraseOp(stateLabelOp);
 
@@ -1143,23 +1132,15 @@ class SwitchStateOpLowering : public TsPattern<mlir_ts::SwitchStateOp>
         }
 
         // make switch to be terminator
-        auto *opBlock = rewriter.getInsertionBlock();
-        auto opPosition = rewriter.getInsertionPoint();
-        auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
+        rewriter.setInsertionPointAfter(switchStateOp);
+        auto *continuationBlock = clh.CutBlockAndSetInsertPointToEndOfBlock();
 
         // insert 0 state label
         caseValues.insert(caseValues.begin(), APInt(32, 0));
         caseDestinations.insert(caseDestinations.begin(), continuationBlock);
 
-        // switch
-        rewriter.setInsertionPointToEnd(opBlock);
-
-        rewriter.create<mlir::SwitchOp>(loc, switchStateOp.state(), defaultBlock ? defaultBlock : continuationBlock, ValueRange{},
-                                        caseValues, caseDestinations);
-
-        rewriter.eraseOp(switchStateOp);
-
-        rewriter.setInsertionPointToStart(continuationBlock);
+        rewriter.replaceOpWithNewOp<mlir::SwitchOp>(switchStateOp, switchStateOp.state(), defaultBlock ? defaultBlock : continuationBlock,
+                                                    ValueRange{}, caseValues, caseDestinations);
 
         return success();
     }
@@ -1169,13 +1150,13 @@ struct YieldReturnValOpLowering : public TsPattern<mlir_ts::YieldReturnValOp>
 {
     using TsPattern<mlir_ts::YieldReturnValOp>::TsPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::YieldReturnValOp op, PatternRewriter &rewriter) const final
+    LogicalResult matchAndRewrite(mlir_ts::YieldReturnValOp yieldReturnValOp, PatternRewriter &rewriter) const final
     {
         assert(tsContext->returnBlock);
 
         auto retBlock = tsContext->returnBlock;
 
-        rewriter.create<mlir_ts::StoreOp>(op.getLoc(), op.operand(), op.reference());
+        rewriter.create<mlir_ts::StoreOp>(yieldReturnValOp.getLoc(), yieldReturnValOp.operand(), yieldReturnValOp.reference());
 
         // Split block at `assert` operation.
         auto *opBlock = rewriter.getInsertionBlock();
@@ -1186,11 +1167,11 @@ struct YieldReturnValOpLowering : public TsPattern<mlir_ts::YieldReturnValOp>
 
         // save value into return
 
-        rewriter.create<mlir::BranchOp>(op.getLoc(), retBlock);
+        rewriter.create<mlir::BranchOp>(yieldReturnValOp.getLoc(), retBlock);
 
         rewriter.setInsertionPointToStart(continuationBlock);
 
-        rewriter.eraseOp(op);
+        rewriter.eraseOp(yieldReturnValOp);
         return success();
     }
 };
