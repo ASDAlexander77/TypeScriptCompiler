@@ -2811,6 +2811,7 @@ struct StateLabelOpLowering : public TsLlvmPattern<mlir_ts::StateLabelOp>
     }
 };
 
+//#define MLIR_SWITCH 1
 class SwitchStateOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateOp>
 {
   public:
@@ -2819,11 +2820,12 @@ class SwitchStateOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateOp>
     LogicalResult matchAndRewrite(mlir_ts::SwitchStateOp switchStateOp, ArrayRef<Value> operands,
                                   ConversionPatternRewriter &rewriter) const final
     {
+        CodeLogicHelper clh(switchStateOp, rewriter);
+
         auto loc = switchStateOp->getLoc();
 
         if (!tsLlvmContext->returnBlock)
         {
-            CodeLogicHelper clh(switchStateOp, rewriter);
             tsLlvmContext->returnBlock = clh.FindReturnBlock(true);
 
             LLVM_DEBUG(llvm::dbgs() << "\n return block: "; tsLlvmContext->returnBlock->dump(); llvm::dbgs() << "\n";);
@@ -2838,7 +2840,11 @@ class SwitchStateOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateOp>
 
         assert(defaultBlock != nullptr);
 
+#ifdef MLIR_SWITCH
         SmallVector<APInt> caseValues;
+#else
+        SmallVector<int32_t> caseValues;
+#endif
         SmallVector<mlir::Block *> caseDestinations;
 
         SmallPtrSet<Operation *, 16> stateLabels;
@@ -2875,29 +2881,34 @@ class SwitchStateOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateOp>
                 rewriter.eraseOp(stateLabelOp);
 
                 // add switch
+#ifdef MLIR_SWITCH
                 caseValues.push_back(APInt(32, index++));
+#else
+                caseValues.push_back(index++);
+#endif
                 caseDestinations.push_back(continuationBlock);
             }
         }
 
         // make switch to be terminator
-        auto *opBlock = rewriter.getInsertionBlock();
-        auto opPosition = rewriter.getInsertionPoint();
-        auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
+        rewriter.setInsertionPointAfter(switchStateOp);
+        auto *continuationBlock = clh.CutBlock();
 
         // insert 0 state label
+#ifdef MLIR_SWITCH
         caseValues.insert(caseValues.begin(), APInt(32, 0));
+#else
+        caseValues.insert(caseValues.begin(), 0);
+#endif
         caseDestinations.insert(caseDestinations.begin(), continuationBlock);
 
-        // switch
-        rewriter.setInsertionPointToEnd(opBlock);
-
-        rewriter.create<mlir::SwitchOp>(loc, switchStateOp.state(), defaultBlock ? defaultBlock : continuationBlock, ValueRange{},
-                                        caseValues, caseDestinations);
-
-        rewriter.eraseOp(switchStateOp);
-
-        rewriter.setInsertionPointToStart(continuationBlock);
+#ifdef MLIR_SWITCH
+        rewriter.replaceOpWithNewOp<mlir::SwitchOp>(switchStateOp, switchStateOp.state(), defaultBlock ? defaultBlock : continuationBlock,
+                                                    ValueRange{}, caseValues, caseDestinations);
+#else
+        rewriter.replaceOpWithNewOp<LLVM::SwitchOp>(switchStateOp, switchStateOp.state(), defaultBlock ? defaultBlock : continuationBlock,
+                                                    ValueRange{}, caseValues, caseDestinations);
+#endif
 
         return success();
     }
