@@ -49,8 +49,6 @@ namespace
 struct TsLlvmContext
 {
     TsLlvmContext() = default;
-
-    mlir::Block *returnBlock;
 };
 
 template <typename OpTy> class TsLlvmPattern : public OpConversionPattern<OpTy>
@@ -2817,16 +2815,13 @@ class SwitchStateOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateOp>
 
         auto loc = switchStateOp->getLoc();
 
-        if (!tsLlvmContext->returnBlock)
-        {
-            tsLlvmContext->returnBlock = clh.FindReturnBlock(true);
+        auto returnBlock = clh.FindReturnBlock(true);
 
-            LLVM_DEBUG(llvm::dbgs() << "\n return block: "; tsLlvmContext->returnBlock->dump(); llvm::dbgs() << "\n";);
-        }
+        assert(returnBlock);
 
-        assert(tsLlvmContext->returnBlock);
+        LLVM_DEBUG(llvm::dbgs() << "\n return block: "; returnBlock->dump(); llvm::dbgs() << "\n";);
 
-        auto defaultBlock = tsLlvmContext->returnBlock;
+        auto defaultBlock = returnBlock;
 
         assert(defaultBlock != nullptr);
 
@@ -2905,17 +2900,13 @@ struct YieldReturnValOpLowering : public TsLlvmPattern<mlir_ts::YieldReturnValOp
     {
         CodeLogicHelper clh(yieldReturnValOp, rewriter);
 
-        if (!tsLlvmContext->returnBlock)
-        {
-            CodeLogicHelper clh(yieldReturnValOp, rewriter);
-            tsLlvmContext->returnBlock = clh.FindReturnBlock(true);
+        auto returnBlock = clh.FindReturnBlock(true);
 
-            LLVM_DEBUG(llvm::dbgs() << "\n return block: "; tsLlvmContext->returnBlock->dump(); llvm::dbgs() << "\n";);
-        }
+        assert(returnBlock);
 
-        assert(tsLlvmContext->returnBlock);
+        LLVM_DEBUG(llvm::dbgs() << "\n return block: "; returnBlock->dump(); llvm::dbgs() << "\n";);
 
-        auto retBlock = tsLlvmContext->returnBlock;
+        auto retBlock = returnBlock;
 
         rewriter.create<mlir_ts::StoreOp>(yieldReturnValOp.getLoc(), yieldReturnValOp.operand(), yieldReturnValOp.reference());
 
@@ -3169,6 +3160,47 @@ struct TypeScriptToLLVMLoweringPass : public PassWrapper<TypeScriptToLLVMLowerin
 
 } // end anonymous namespace
 
+static LogicalResult verifyTerminatorSuccessors(Operation *op)
+{
+    auto *parent = op->getParentRegion();
+
+    // Verify that the operands lines up with the BB arguments in the successor.
+    for (Block *succ : op->getSuccessors())
+        if (succ->getParent() != parent)
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n reference to block defined in another region: "; op->dump(); llvm::dbgs() << "\n";);
+            assert(false);
+            return op->emitError("DEBUG TEST: reference to block defined in another region");
+        }
+
+    return success();
+}
+
+static LogicalResult verifyModule(mlir::ModuleOp &module)
+{
+    for (auto &block : module.getBodyRegion())
+    {
+        for (auto &op : block.getOperations())
+        {
+            if (auto funcOp = dyn_cast<LLVM::LLVMFuncOp>(op))
+            {
+                for (auto &region : funcOp->getRegions())
+                {
+                    for (auto &regionBlock : region)
+                    {
+                        if (failed(verifyTerminatorSuccessors(regionBlock.getTerminator())))
+                        {
+                            return failure();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    return success();
+}
+
 void TypeScriptToLLVMLoweringPass::runOnOperation()
 {
     auto m = getOperation();
@@ -3239,6 +3271,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     }
 
     LLVM_DEBUG(llvm::dbgs() << "\nAFTER DUMP: \n" << module << "\n";);
+
+    LLVM_DEBUG(verifyModule(module););
 }
 
 /// Create a pass for lowering operations the remaining `TypeScript` operations, as
