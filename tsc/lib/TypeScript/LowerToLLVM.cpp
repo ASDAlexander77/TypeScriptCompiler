@@ -2705,9 +2705,9 @@ struct GetThisOpLowering : public TsLlvmPattern<mlir_ts::GetThisOp>
         auto llvmThisType = tch.convertType(getThisOp.getType());
 
         mlir::Value thisVal =
-            rewriter.create<LLVM::ExtractValueOp>(loc, llvmThisType, getThisOp.boundFunc(), clh.getStructIndexAttr(THIS_VALUE_INDEX));
+            rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), getThisOp.boundFunc(), clh.getStructIndexAttr(THIS_VALUE_INDEX));
 
-        auto thisValCasted = rewriter.create<LLVM::BitcastOp>(loc, tch.convertType(getThisOp.getType()), thisVal);
+        auto thisValCasted = rewriter.create<LLVM::BitcastOp>(loc, llvmThisType, thisVal);
 
         rewriter.replaceOp(getThisOp, {thisValCasted});
 
