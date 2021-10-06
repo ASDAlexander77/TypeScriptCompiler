@@ -2887,6 +2887,8 @@ class SwitchStateOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateOp>
                                                     ValueRange{}, caseValues, caseDestinations);
 #endif
 
+        LLVM_DEBUG(llvm::dbgs() << "\n SWITCH DUMP: \n" << *switchStateOp->getParentOp() << "\n";);
+
         return success();
     }
 };
@@ -2908,11 +2910,13 @@ struct YieldReturnValOpLowering : public TsLlvmPattern<mlir_ts::YieldReturnValOp
 
         auto retBlock = returnBlock;
 
-        rewriter.create<mlir_ts::StoreOp>(yieldReturnValOp.getLoc(), yieldReturnValOp.operand(), yieldReturnValOp.reference());
+        rewriter.replaceOpWithNewOp<mlir_ts::StoreOp>(yieldReturnValOp, yieldReturnValOp.operand(), yieldReturnValOp.reference());
 
+        rewriter.setInsertionPointAfter(yieldReturnValOp);
         clh.JumpTo(yieldReturnValOp.getLoc(), retBlock);
 
-        rewriter.eraseOp(yieldReturnValOp);
+        LLVM_DEBUG(llvm::dbgs() << "\n YIELD DUMP: \n" << *yieldReturnValOp->getParentOp() << "\n";);
+
         return success();
     }
 };
