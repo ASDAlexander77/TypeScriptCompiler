@@ -2811,7 +2811,7 @@ struct StateLabelOpLowering : public TsLlvmPattern<mlir_ts::StateLabelOp>
     }
 };
 
-//#define MLIR_SWITCH 1
+#define MLIR_SWITCH 1
 class SwitchStateOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateOp>
 {
   public:
@@ -2829,9 +2829,6 @@ class SwitchStateOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateOp>
             tsLlvmContext->returnBlock = clh.FindReturnBlock(true);
 
             LLVM_DEBUG(llvm::dbgs() << "\n return block: "; tsLlvmContext->returnBlock->dump(); llvm::dbgs() << "\n";);
-
-            LLVM_DEBUG(llvm::dbgs() << "\n return block - parent: "; tsLlvmContext->returnBlock->getParentOp()->dump();
-                       llvm::dbgs() << "\n";);
         }
 
         assert(tsLlvmContext->returnBlock);
@@ -2868,15 +2865,7 @@ class SwitchStateOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateOp>
                 auto stateLabelOp = dyn_cast_or_null<mlir_ts::StateLabelOp>(op);
                 rewriter.setInsertionPoint(stateLabelOp);
 
-                auto *opBlock = rewriter.getInsertionBlock();
-                auto opPosition = rewriter.getInsertionPoint();
-                auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
-
-                rewriter.setInsertionPointToEnd(opBlock);
-
-                rewriter.create<mlir::BranchOp>(stateLabelOp.getLoc(), continuationBlock);
-
-                rewriter.setInsertionPointToStart(continuationBlock);
+                auto *continuationBlock = clh.BeginBlock(loc);
 
                 rewriter.eraseOp(stateLabelOp);
 
@@ -2892,7 +2881,7 @@ class SwitchStateOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateOp>
 
         // make switch to be terminator
         rewriter.setInsertionPointAfter(switchStateOp);
-        auto *continuationBlock = clh.CutBlock();
+        auto *continuationBlock = clh.CutBlockAndSetInsertPointToEndOfBlock();
 
         // insert 0 state label
 #ifdef MLIR_SWITCH
