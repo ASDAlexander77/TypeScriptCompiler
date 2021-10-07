@@ -53,6 +53,10 @@ function main3() {
 
 function* foo4() {
     for (let i = 2; i < 4; i++) {
+
+        // TODO: if comment next line, it will cause bug in LLVM
+        print(i);
+
         yield i;
         yield i;
     }

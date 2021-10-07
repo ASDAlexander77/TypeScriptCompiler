@@ -25,6 +25,11 @@ class RelocateConstantPass : public mlir::PassWrapper<RelocateConstantPass, Type
   public:
     void runOnFunction() override
     {
+        relocateConst();
+    }
+
+    void relocateConst()
+    {
         auto f = getFunction();
 
         SmallPtrSet<Operation *, 16> workSet;
