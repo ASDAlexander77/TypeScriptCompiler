@@ -93,6 +93,8 @@ namespace fs = std::experimental::filesystem;
 #else
 #define _D_ ""
 #endif
+#else
+#define _D_ ""
 #endif
 
 bool isJit = true;
