@@ -303,10 +303,9 @@ struct PostfixUnaryOpLowering : public TsPattern<mlir_ts::PostfixUnaryOp>
         mlir::Value result = rewriter.create<mlir_ts::ArithmeticBinaryOp>(
             op->getLoc(), effectiveType, rewriter.getI32IntegerAttr(static_cast<int32_t>(opCode)), value, cst1);
         if (castBack)
-            3222222
-            {
-                result = rewriter.create<mlir_ts::CastOp>(value.getLoc(), op.getType(), result);
-            }
+        {
+            result = rewriter.create<mlir_ts::CastOp>(value.getLoc(), op.getType(), result);
+        }
 
         clh.saveResult(op, result);
 
