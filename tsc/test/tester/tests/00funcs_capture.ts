@@ -57,11 +57,42 @@ function main_func_in_object4(a?: number | undefined) {
     s.f();
 }
 
+namespace exceptions {
+
+    function lambda(k: number) {
+        function inner() {
+            print("inner inside", k);
+        }
+        print("inner");
+        inner()
+        print("exit inner");
+    }
+
+}
+
+
+function lambda(k: number) {
+    function inner() {
+        print("inner inside", k);
+    }
+    print("inner");
+    inner()
+    print("exit inner");
+}
+
+function main_namespace_inner() {
+    lambda(12);
+    exceptions.lambda(12);
+}
+
 function main() {
     main_func();
     main_func_in_object();
     main_func_in_object2(11);
     main_func_in_object3(11);
     main_func_in_object4(11);
+
+    main_namespace_inner();
+
     print("done.");
 }

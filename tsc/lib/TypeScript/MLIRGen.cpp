@@ -4496,6 +4496,18 @@ class MLIRGenImpl
             // -1 to exclude count params
             for (auto i = (size_t)opArgsCount; i < funcArgsCount; i++)
             {
+                if (i == 0)
+                {
+                    if (auto refType = calledFuncType.getInput(i).dyn_cast<mlir_ts::RefType>())
+                    {
+                        if (refType.getElementType().isa<mlir_ts::TupleType>())
+                        {
+                            llvm_unreachable("capture or this ref is not resolved.");
+                            return mlir::failure();
+                        }
+                    }
+                }
+
                 operands.push_back(builder.create<mlir_ts::UndefOp>(location, calledFuncType.getInput(i)));
             }
         }
@@ -5492,7 +5504,7 @@ class MLIRGenImpl
             auto funcOp = fn->getValue();
             auto funcType = funcOp.getType();
 
-            if (auto trampOp = resolveFunctionWithCapture(location, name, funcType, false, genContext))
+            if (auto trampOp = resolveFunctionWithCapture(location, funcOp.getName(), funcType, false, genContext))
             {
                 return trampOp;
             }
