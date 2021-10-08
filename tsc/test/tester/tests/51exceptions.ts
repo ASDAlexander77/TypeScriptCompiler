@@ -141,7 +141,7 @@ namespace exceptions {
         test3(callingThrowVal)
         test3(immediate)
         test3(higherorder)
-        //test3(lambda)
+        test3(lambda)
 
         glb1 = x = 0
         //nested()
