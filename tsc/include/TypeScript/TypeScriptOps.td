@@ -1863,4 +1863,8 @@ def TypeScript_UnreachableOp : TypeScript_Op<"unreachable", [Terminator]> {
   let summary = "unreachable";
 }
 
+def TypeScript_NoOp : TypeScript_Op<"noop"> {
+  let summary = "no operation";
+}
+
 #endif // TYPESCRIPT_OPS
