@@ -1170,24 +1170,22 @@ class SwitchStateOpLowering : public TsPattern<mlir_ts::SwitchStateOp>
             }
         }
 
-        // make switch to be terminator
-        rewriter.setInsertionPointAfter(switchStateOp);
-        auto *continuationBlock = clh.CutBlockAndSetInsertPointToEndOfBlock();
-
         // insert 0 state label
 #ifdef MLIR_SWITCH
         caseValues.insert(caseValues.begin(), APInt(32, 0));
 #else
         caseValues.insert(caseValues.begin(), 0);
 #endif
-        caseDestinations.insert(caseDestinations.begin(), continuationBlock);
+        caseDestinations.insert(caseDestinations.begin(), switchStateOp.defaultDest());
 
 #ifdef MLIR_SWITCH
-        rewriter.replaceOpWithNewOp<mlir::SwitchOp>(switchStateOp, switchStateOp.state(), defaultBlock ? defaultBlock : continuationBlock,
-                                                    ValueRange{}, caseValues, caseDestinations);
+        rewriter.replaceOpWithNewOp<mlir::SwitchOp>(switchStateOp, switchStateOp.state(),
+                                                    defaultBlock ? defaultBlock : switchStateOp.defaultDest(), ValueRange{}, caseValues,
+                                                    caseDestinations);
 #else
-        rewriter.replaceOpWithNewOp<LLVM::SwitchOp>(switchStateOp, switchStateOp.state(), defaultBlock ? defaultBlock : continuationBlock,
-                                                    ValueRange{}, caseValues, caseDestinations);
+        rewriter.replaceOpWithNewOp<LLVM::SwitchOp>(switchStateOp, switchStateOp.state(),
+                                                    defaultBlock ? defaultBlock : switchStateOp.defaultDest(), ValueRange{}, caseValues,
+                                                    caseDestinations);
 #endif
 
         LLVM_DEBUG(llvm::dbgs() << "\n SWITCH DUMP: \n" << *switchStateOp->getParentOp() << "\n";);
