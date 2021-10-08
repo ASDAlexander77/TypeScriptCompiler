@@ -1563,11 +1563,13 @@ def TypeScript_LabelOp : TypeScript_Op<"Label",
 }
 
 def TypeScript_SwitchStateOp : TypeScript_Op<"SwitchState",
-      []> {
+      [Terminator]> {
   let summary = "switch state operation";
 
   let arguments = (ins  I32:$state);
   let results = (outs );
+  let successors = (successor AnySuccessor:$defaultDest,
+                              VariadicSuccessor<AnySuccessor>:$cases);
 }
 
 def TypeScript_StateLabelOp : TypeScript_Op<"StateLabel",

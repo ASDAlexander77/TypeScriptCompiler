@@ -1090,9 +1090,11 @@ struct StateLabelOpLowering : public TsPattern<mlir_ts::StateLabelOp>
 
     LogicalResult matchAndRewrite(mlir_ts::StateLabelOp op, PatternRewriter &rewriter) const final
     {
+        mlir::Location loc = op.getLoc();
+
         CodeLogicHelper clh(op, rewriter);
 
-        clh.BeginBlock(op.getLoc());
+        clh.BeginBlock(loc);
 
         rewriter.eraseOp(op);
 
@@ -1201,6 +1203,8 @@ struct YieldReturnValOpLowering : public TsPattern<mlir_ts::YieldReturnValOp>
     LogicalResult matchAndRewrite(mlir_ts::YieldReturnValOp yieldReturnValOp, PatternRewriter &rewriter) const final
     {
         CodeLogicHelper clh(yieldReturnValOp, rewriter);
+
+        auto loc = yieldReturnValOp->getLoc();
 
         assert(tsContext->returnBlock);
 

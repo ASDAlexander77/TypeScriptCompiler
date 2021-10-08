@@ -66,6 +66,9 @@ struct GenContext
         {
             for (auto op : *cleanUps)
             {
+                op->dropAllDefinedValueUses();
+                op->dropAllUses();
+                op->dropAllReferences();
                 op->erase();
             }
 

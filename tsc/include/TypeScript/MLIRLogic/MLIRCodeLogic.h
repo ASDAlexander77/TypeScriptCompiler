@@ -313,7 +313,10 @@ class MLIRCustomMethods
 
     mlir::LogicalResult mlirGenSwitchState(const mlir::Location &location, ArrayRef<mlir::Value> operands, const GenContext &genContext)
     {
-        auto switchStateOp = builder.create<mlir_ts::SwitchStateOp>(location, operands.front());
+        auto switchStateOp = builder.create<mlir_ts::SwitchStateOp>(location, operands.front(), builder.getBlock(), mlir::BlockRange{});
+
+        auto *block = builder.createBlock(builder.getBlock()->getParent());
+        switchStateOp.setSuccessor(block, 0);
 
         const_cast<GenContext &>(genContext).allocateVarsOutsideOfOperation = true;
         const_cast<GenContext &>(genContext).currentOperation = switchStateOp;

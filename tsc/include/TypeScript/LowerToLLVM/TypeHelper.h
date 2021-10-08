@@ -21,7 +21,7 @@ class TypeHelper
     MLIRContext *context;
 
   public:
-    TypeHelper(PatternRewriter &rewriter) : context(rewriter.getContext())
+    TypeHelper(OpBuilder &rewriter) : context(rewriter.getContext())
     {
     }
 
