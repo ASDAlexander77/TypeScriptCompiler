@@ -147,8 +147,8 @@ namespace exceptions {
         //nested()
         //assert(glb1 == 11)
 
-        //assert(test4(() => { }) == 10)
-        //assert(test4(() => { throw "foo" }) == 20)
+        assert(test4(() => { }) == 10)
+        assert(test4(() => { throw "foo" }) == 20)
 
         test5()
 

@@ -108,9 +108,15 @@ struct ReturnOpLowering : public TsPattern<mlir_ts::ReturnOp>
 
     LogicalResult matchAndRewrite(mlir_ts::ReturnOp op, PatternRewriter &rewriter) const final
     {
+        auto loc = op.getLoc();
+
         assert(tsContext->returnBlock);
 
         auto retBlock = tsContext->returnBlock;
+        if (auto unwind = tsContext->unwind[op])
+        {
+            rewriter.create<mlir_ts::EndCatchOp>(loc);
+        }
 
         // Split block at `assert` operation.
         auto *opBlock = rewriter.getInsertionBlock();
@@ -119,7 +125,7 @@ struct ReturnOpLowering : public TsPattern<mlir_ts::ReturnOp>
 
         rewriter.setInsertionPointToEnd(opBlock);
 
-        rewriter.create<mlir::BranchOp>(op.getLoc(), retBlock);
+        rewriter.create<mlir::BranchOp>(loc, retBlock);
 
         rewriter.setInsertionPointToStart(continuationBlock);
 
@@ -134,11 +140,18 @@ struct ReturnValOpLowering : public TsPattern<mlir_ts::ReturnValOp>
 
     LogicalResult matchAndRewrite(mlir_ts::ReturnValOp op, PatternRewriter &rewriter) const final
     {
+        auto loc = op.getLoc();
+
         assert(tsContext->returnBlock);
 
         auto retBlock = tsContext->returnBlock;
 
+        // save value into return
         rewriter.create<mlir_ts::StoreOp>(op.getLoc(), op.operand(), op.reference());
+        if (auto unwind = tsContext->unwind[op])
+        {
+            rewriter.create<mlir_ts::EndCatchOp>(loc);
+        }
 
         // Split block at `assert` operation.
         auto *opBlock = rewriter.getInsertionBlock();
@@ -147,9 +160,7 @@ struct ReturnValOpLowering : public TsPattern<mlir_ts::ReturnValOp>
 
         rewriter.setInsertionPointToEnd(opBlock);
 
-        // save value into return
-
-        rewriter.create<mlir::BranchOp>(op.getLoc(), retBlock);
+        rewriter.create<mlir::BranchOp>(loc, retBlock);
 
         rewriter.setInsertionPointToStart(continuationBlock);
 
@@ -862,6 +873,18 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             }
         };
         tryOp.body().walk(visitorCallOpContinue);
+
+        auto visitorReturnOpContinue = [&](Operation *op) {
+            if (auto returnOp = dyn_cast_or_null<mlir_ts::ReturnOp>(op))
+            {
+                tsContext->unwind[op] = catchesRegion;
+            }
+            else if (auto returnValOp = dyn_cast_or_null<mlir_ts::ReturnValOp>(op))
+            {
+                tsContext->unwind[op] = catchesRegion;
+            }
+        };
+        tryOp.catches().walk(visitorReturnOpContinue);
 
         // Branch to the "body" region.
         rewriter.setInsertionPointToEnd(currentBlock);
