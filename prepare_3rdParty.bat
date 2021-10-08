@@ -9,6 +9,7 @@ set p=%cd%
 IF EXIST ".\3rdParty\llvm\%BUILD%\bin" (
   echo "No need to build LLVM (%BUILD%)"
 ) ELSE (
+  cd %p%
   echo "Downloading LLVM"
   git submodule update --init --recursive
   copy /Y .\docs\fix\AddCompilerRT.cmake .\3rdParty\llvm-project\compiler-rt\cmake\Modules\
@@ -23,6 +24,7 @@ IF EXIST ".\3rdParty\llvm\%BUILD%\bin" (
 IF EXIST ".\3rdParty\gc\%BUILD%\gc-lib.lib" (
   echo "No need to build GC (%BUILD%)"
 ) ELSE (
+  cd %p%
   echo "Downloading BDWGC"
   curl -o gc-8.0.4.tar.gz https://www.hboehm.info/gc/gc_source/gc-8.0.4.tar.gz
   echo "Opening TAR.GZ BDWGC"  

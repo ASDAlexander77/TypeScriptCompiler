@@ -51,6 +51,8 @@
 #include "llvm/CodeGen/LinkAllCodegenComponents.h"
 #endif
 
+#define ENABLE_OPT_PASSES 1
+
 using namespace typescript;
 namespace cl = llvm::cl;
 
@@ -205,7 +207,9 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module
     if (enableOpt || isLoweringToAffine)
     {
         // Inline all functions into main and then delete them.
+#ifdef ENABLE_OPT_PASSES
         pm.addPass(mlir::createInlinerPass());
+#endif
         // TODO: experiment
         pm.addPass(mlir::createCanonicalizerPass());
 
@@ -226,10 +230,12 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module
         optPM.addPass(mlir::typescript::createLowerToAffinePass());
         optPM.addPass(mlir::createCanonicalizerPass());
         // TODO: why do I need this pass?
+#ifdef ENABLE_OPT_PASSES
         optPM.addPass(mlir::typescript::createRelocateConstantPass());
         optPM.addPass(mlir::createCSEPass());
 
         pm.addPass(mlir::createSymbolDCEPass());
+#endif
 
 #ifdef ENABLE_ASYNC
         pm.addPass(mlir::createAsyncToAsyncRuntimePass());
