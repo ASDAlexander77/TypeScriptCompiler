@@ -1572,6 +1572,16 @@ def TypeScript_SwitchStateOp : TypeScript_Op<"SwitchState",
                               VariadicSuccessor<AnySuccessor>:$cases);
 }
 
+def TypeScript_SwitchStateInternalOp : TypeScript_Op<"SwitchStateInternal",
+      [Terminator]> {
+  let summary = "switch state (internal) operation";
+
+  let arguments = (ins  I32:$state);
+  let results = (outs );
+  let successors = (successor AnySuccessor:$defaultDest,
+                              VariadicSuccessor<AnySuccessor>:$cases);
+}
+
 def TypeScript_StateLabelOp : TypeScript_Op<"StateLabel",
       []> {
   let summary = "state label operation";

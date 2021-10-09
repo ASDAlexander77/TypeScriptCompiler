@@ -2829,11 +2829,7 @@ class SwitchStateOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateOp>
 
         assert(defaultBlock != nullptr);
 
-#ifdef MLIR_SWITCH
-        SmallVector<APInt> caseValues;
-#else
         SmallVector<int32_t> caseValues;
-#endif
         SmallVector<mlir::Block *> caseDestinations;
 
         SmallPtrSet<Operation *, 16> stateLabels;
@@ -2862,11 +2858,7 @@ class SwitchStateOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateOp>
                 rewriter.eraseOp(stateLabelOp);
 
                 // add switch
-#ifdef MLIR_SWITCH
-                caseValues.push_back(APInt(32, index++));
-#else
                 caseValues.push_back(index++);
-#endif
                 caseDestinations.push_back(continuationBlock);
             }
         }
@@ -2876,20 +2868,11 @@ class SwitchStateOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateOp>
         auto *continuationBlock = clh.CutBlockAndSetInsertPointToEndOfBlock();
 
         // insert 0 state label
-#ifdef MLIR_SWITCH
-        caseValues.insert(caseValues.begin(), APInt(32, 0));
-#else
         caseValues.insert(caseValues.begin(), 0);
-#endif
         caseDestinations.insert(caseDestinations.begin(), continuationBlock);
 
-#ifdef MLIR_SWITCH
-        rewriter.replaceOpWithNewOp<mlir::SwitchOp>(switchStateOp, switchStateOp.state(), defaultBlock ? defaultBlock : continuationBlock,
-                                                    ValueRange{}, caseValues, caseDestinations);
-#else
         rewriter.replaceOpWithNewOp<LLVM::SwitchOp>(switchStateOp, switchStateOp.state(), defaultBlock ? defaultBlock : continuationBlock,
                                                     ValueRange{}, caseValues, caseDestinations);
-#endif
 
         LLVM_DEBUG(llvm::dbgs() << "\n SWITCH DUMP: \n" << *switchStateOp->getParentOp() << "\n";);
 
@@ -2927,6 +2910,37 @@ struct YieldReturnValOpLowering : public TsLlvmPattern<mlir_ts::YieldReturnValOp
 
 #endif
 
+class SwitchStateInternalOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateInternalOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::SwitchStateInternalOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::SwitchStateInternalOp switchStateOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        CodeLogicHelper clh(switchStateOp, rewriter);
+
+        auto loc = switchStateOp->getLoc();
+
+        SmallVector<int32_t> caseValues;
+        SmallVector<mlir::Block *> caseDestinations;
+
+        auto index = 0;
+        for (auto case1 : switchStateOp.cases())
+        {
+            caseValues.push_back(index++);
+            caseDestinations.push_back(case1);
+        }
+
+        rewriter.replaceOpWithNewOp<LLVM::SwitchOp>(switchStateOp, switchStateOp.state(), switchStateOp.defaultDest(), ValueRange{},
+                                                    caseValues, caseDestinations);
+
+        LLVM_DEBUG(llvm::dbgs() << "\n SWITCH DUMP: \n" << *switchStateOp->getParentOp() << "\n";);
+
+        return success();
+    }
+};
+
 struct NoOpLowering : public TsLlvmPattern<mlir_ts::NoOp>
 {
     using TsLlvmPattern<mlir_ts::NoOp>::TsLlvmPattern;
@@ -2934,31 +2948,6 @@ struct NoOpLowering : public TsLlvmPattern<mlir_ts::NoOp>
     LogicalResult matchAndRewrite(mlir_ts::NoOp noOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
     {
         rewriter.eraseOp(noOp);
-        return success();
-    }
-};
-
-// My fix
-struct SwitchOpLowering : public ConvertOpToLLVMPattern<SwitchOp>
-{
-    using ConvertOpToLLVMPattern<SwitchOp>::ConvertOpToLLVMPattern;
-
-    LogicalResult matchAndRewrite(SwitchOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const override
-    {
-        /*
-        rewriter.replaceOpWithNewOp<LLVM::SwitchOp>(op, op.flag(), op.defaultDestination(), op.defaultOperands(), op.case_values(),
-                                                    op.caseDestinations(), op.caseOperands());
-        */
-
-        SmallVector<int32_t> caseValues;
-        for (auto apInt : op.case_values().getValue())
-        {
-            caseValues.push_back(static_cast<int32_t>(apInt.getZExtValue()));
-        }
-
-        rewriter.replaceOpWithNewOp<LLVM::SwitchOp>(op, op.flag(), op.defaultDestination(), ValueRange{}, caseValues,
-                                                    op.caseDestinations());
-
         return success();
     }
 };
@@ -3252,9 +3241,6 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     populateLoopToStdConversionPatterns(patterns);
     populateStdToLLVMConversionPatterns(typeConverter, patterns);
 
-    // HACK: my fix
-    patterns.add<SwitchOpLowering>(typeConverter);
-
 #ifdef ENABLE_ASYNC
     populateAsyncStructuralTypeConversionsAndLegality(typeConverter, patterns, target);
 #endif
@@ -3280,7 +3266,10 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
                     ,
                     SwitchStateOpLowering, StateLabelOpLowering, YieldReturnValOpLowering
 #endif
-                    >(typeConverter, &getContext(), &tsLlvmContext);
+                    ,
+                    SwitchStateInternalOpLowering>(typeConverter, &getContext(), &tsLlvmContext);
+
+    // patterns.insert<SwitchStateOpLowering2>(typeConverter, &getContext(), &tsLlvmContext, /*benegit*/ 2);
 
     populateTypeScriptConversionPatterns(typeConverter, m);
 

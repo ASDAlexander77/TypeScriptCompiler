@@ -261,6 +261,27 @@ class CodeLogicHelper
         return &*result;
     }
 
+    template <typename TyOp> TyOp FindOp(mlir_ts::FuncOp function)
+    {
+        for (auto &item : function.getBody().getBlocks())
+        {
+            if (item.empty())
+            {
+                continue;
+            }
+
+            for (auto &op : item)
+            {
+                if (auto tyOp = dyn_cast<TyOp>(&op))
+                {
+                    return tyOp;
+                }
+            }
+        }
+
+        return nullptr;
+    }
+
     mlir::Block *BeginBlock(mlir::Location loc)
     {
         auto *opBlock = rewriter.getInsertionBlock();

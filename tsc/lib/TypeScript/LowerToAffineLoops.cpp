@@ -1094,7 +1094,9 @@ struct StateLabelOpLowering : public TsPattern<mlir_ts::StateLabelOp>
 
         CodeLogicHelper clh(op, rewriter);
 
-        clh.BeginBlock(loc);
+        auto *continueBlock = clh.BeginBlock(loc);
+
+        tsFuncContext->stateLabels.push_back(continueBlock);
 
         rewriter.eraseOp(op);
 
@@ -1103,7 +1105,7 @@ struct StateLabelOpLowering : public TsPattern<mlir_ts::StateLabelOp>
 };
 
 #define MLIR_SWITCH 1
-class SwitchStateOpLowering : public TsPattern<mlir_ts::SwitchStateOp>
+class _SwitchStateOpLowering : public TsPattern<mlir_ts::SwitchStateOp>
 {
   public:
     using TsPattern<mlir_ts::SwitchStateOp>::TsPattern;
@@ -1187,6 +1189,73 @@ class SwitchStateOpLowering : public TsPattern<mlir_ts::SwitchStateOp>
                                                     defaultBlock ? defaultBlock : switchStateOp.defaultDest(), ValueRange{}, caseValues,
                                                     caseDestinations);
 #endif
+
+        LLVM_DEBUG(llvm::dbgs() << "\n SWITCH DUMP: \n" << *switchStateOp->getParentOp() << "\n";);
+
+        return success();
+    }
+};
+
+class SwitchStateOpLowering : public TsPattern<mlir_ts::SwitchStateOp>
+{
+  public:
+    using TsPattern<mlir_ts::SwitchStateOp>::TsPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::SwitchStateOp switchStateOp, PatternRewriter &rewriter) const final
+    {
+        CodeLogicHelper clh(switchStateOp, rewriter);
+
+        auto loc = switchStateOp->getLoc();
+
+        assert(tsContext->returnBlock);
+
+        auto retBlock = tsContext->returnBlock;
+
+        auto returnBlock = retBlock;
+
+        assert(returnBlock);
+
+        LLVM_DEBUG(llvm::dbgs() << "\n return block: "; returnBlock->dump(); llvm::dbgs() << "\n";);
+
+        auto defaultBlock = returnBlock;
+
+        assert(defaultBlock != nullptr);
+
+        SmallVector<mlir::Block *> caseDestinations;
+
+        SmallPtrSet<Operation *, 16> stateLabels;
+
+        // select all states
+        auto visitorAllStateLabels = [&](Operation *op) {
+            if (auto stateLabelOp = dyn_cast_or_null<mlir_ts::StateLabelOp>(op))
+            {
+                stateLabels.insert(op);
+            }
+        };
+
+        switchStateOp->getParentOp()->walk(visitorAllStateLabels);
+
+        {
+            mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
+            for (auto op : stateLabels)
+            {
+                auto stateLabelOp = dyn_cast_or_null<mlir_ts::StateLabelOp>(op);
+                rewriter.setInsertionPoint(stateLabelOp);
+
+                auto *continuationBlock = clh.BeginBlock(loc);
+
+                rewriter.eraseOp(stateLabelOp);
+
+                // add switch
+                caseDestinations.push_back(continuationBlock);
+            }
+        }
+
+        // insert 0 state label
+        caseDestinations.insert(caseDestinations.begin(), switchStateOp.defaultDest());
+
+        rewriter.replaceOpWithNewOp<mlir_ts::SwitchStateInternalOp>(
+            switchStateOp, switchStateOp.state(), defaultBlock ? defaultBlock : switchStateOp.defaultDest(), caseDestinations);
 
         LLVM_DEBUG(llvm::dbgs() << "\n SWITCH DUMP: \n" << *switchStateOp->getParentOp() << "\n";);
 
@@ -1283,6 +1352,25 @@ static LogicalResult verifyFunction(mlir::typescript::FuncOp &funcOp)
     return success();
 }
 
+void finishSwitchState(mlir_ts::FuncOp f, TSFunctionContext &tsFuncContext)
+{
+    // change SwitchStateOp
+    if (tsFuncContext.stateLabels.size() == 0)
+    {
+        return;
+    }
+
+    ConversionPatternRewriter rewriter(f.getContext());
+    CodeLogicHelper clh(f, rewriter);
+    auto switchStateOp = clh.FindOp<mlir_ts::SwitchStateOp>(f);
+    assert(switchStateOp);
+
+    mlir::SmallVector<mlir::Block *> stateLabels(tsFuncContext.stateLabels);
+
+    rewriter.replaceOpWithNewOp<mlir_ts::SwitchStateInternalOp>(switchStateOp, switchStateOp.state(), switchStateOp.defaultDest(),
+                                                                stateLabels);
+}
+
 void cleanupEmptyBlocksWithoutPredecessors(mlir_ts::FuncOp f)
 {
     SmallPtrSet<mlir::Block *, 16> workSet;
@@ -1351,7 +1439,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         mlir_ts::InterfaceSymbolRefOp, mlir_ts::PushOp, mlir_ts::PopOp, mlir_ts::NewInterfaceOp, mlir_ts::VTableOffsetRefOp,
         mlir_ts::ThisPropertyRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp, mlir_ts::TypeOfOp, mlir_ts::DebuggerOp, mlir_ts::LandingPadOp,
         mlir_ts::CompareCatchTypeOp, mlir_ts::BeginCatchOp, mlir_ts::SaveCatchVarOp, mlir_ts::EndCatchOp, mlir_ts::ThrowUnwindOp,
-        mlir_ts::ThrowCallOp, mlir_ts::CallInternalOp, mlir_ts::ReturnInternalOp, mlir_ts::NoOp
+        mlir_ts::ThrowCallOp, mlir_ts::CallInternalOp, mlir_ts::ReturnInternalOp, mlir_ts::NoOp, mlir_ts::SwitchStateInternalOp
 #ifndef ENABLE_SWITCH_STATE_PASS
         ,
         mlir_ts::StateLabelOp, mlir_ts::SwitchStateOp, mlir_ts::YieldReturnValOp *
@@ -1361,6 +1449,9 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.
     OwningRewritePatternList patterns(&getContext());
+
+    TSFunctionContext tsFuncContext{};
+
     patterns.insert<EntryOpLowering, ExitOpLowering, ReturnOpLowering, ReturnValOpLowering, ParamOpLowering, ParamOptionalOpLowering,
                     ParamDefaultValueOpLowering, PrefixUnaryOpLowering, PostfixUnaryOpLowering, IfOpLowering, DoWhileOpLowering,
                     WhileOpLowering, ForOpLowering, BreakOpLowering, ContinueOpLowering, SwitchOpLowering, AccessorRefOpLowering,
@@ -1370,7 +1461,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
                     ,
                     StateLabelOpLowering, SwitchStateOpLowering, YieldReturnValOpLowering
 #endif
-                    >(&getContext(), &tsContext);
+                    >(&getContext(), &tsContext, &tsFuncContext);
 
     // With the target and rewrite patterns defined, we can now attempt the
     // conversion. The conversion will signal failure if any of our `illegal`
@@ -1379,6 +1470,11 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     {
         signalPassFailure();
     }
+
+    LLVM_DEBUG(llvm::dbgs() << "\nProcessing function: \n" << function.getName() << "\n";);
+
+    // cleanup unused blocks or empty
+    // finishSwitchState(function, tsFuncContext);
 
     cleanupEmptyBlocksWithoutPredecessors(function);
 

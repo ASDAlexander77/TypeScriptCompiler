@@ -21,16 +21,24 @@ struct TSContext
     mlir::Block *returnBlock;
 };
 
+struct TSFunctionContext
+{
+    TSFunctionContext() = default;
+
+    mlir::SmallVector<mlir::Block *> stateLabels;
+};
+
 template <typename OpTy> class TsPattern : public OpRewritePattern<OpTy>
 {
   public:
-    TsPattern<OpTy>(MLIRContext *context, TSContext *tsContext, PatternBenefit benefit = 1)
-        : OpRewritePattern<OpTy>::OpRewritePattern(context, benefit), tsContext(tsContext)
+    TsPattern<OpTy>(MLIRContext *context, TSContext *tsContext, TSFunctionContext *tsFuncContext, PatternBenefit benefit = 1)
+        : OpRewritePattern<OpTy>::OpRewritePattern(context, benefit), tsContext(tsContext), tsFuncContext(tsFuncContext)
     {
     }
 
   protected:
     TSContext *tsContext;
+    TSFunctionContext *tsFuncContext;
 };
 
-}
+} // namespace
