@@ -1716,6 +1716,30 @@ def TypeScript_EndCatchOp : TypeScript_Op<"EndCatch"> {
   let verifier = ?;
 }
 
+def TypeScript_BeginCleanupOp : TypeScript_Op<"BeginCleanup"> {
+  let summary = "BeginCleanup - for affine layer";
+  let description = [{
+  }];
+
+  let arguments = (ins TypeScript_AnyTuple:$landingPad);
+  let results = (outs );
+
+  // Override the default verifier, everything is checked by traits.
+  let verifier = ?;
+}
+
+def TypeScript_EndCleanupOp : TypeScript_Op<"EndCleanup"> {
+  let summary = "EndCleanup - for affine layer";
+  let description = [{
+  }];
+
+  let arguments = (ins );
+  let results = (outs );
+
+  // Override the default verifier, everything is checked by traits.
+  let verifier = ?;
+}
+
 def TypeScript_ThrowUnwindOp : TypeScript_Op<"ThrowUnwind", [Terminator]> {
   let summary = "Throw (unwind) - for affine layer";
   let arguments = (ins AnyType:$exception);
