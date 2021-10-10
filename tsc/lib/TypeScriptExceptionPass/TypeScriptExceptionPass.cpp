@@ -31,14 +31,14 @@ struct TypeScriptExceptionPass : public FunctionPass
         auto MadeChange = false;
 
         llvm::SmallVector<LandingPadInst *> landingPadInstWorkSet;
-        llvm::SmallVector<BranchInst *> resumeInstWorkSet;
+        llvm::SmallVector<llvm::Instruction *> resumeInstWorkSet;
         llvm::SmallDenseMap<LandingPadInst *, llvm::SmallVector<CallBase *> *> calls;
         llvm::SmallDenseMap<LandingPadInst *, CatchPadInst *> landingPadNewOps;
         llvm::SmallDenseMap<LandingPadInst *, StoreInst *> landingPadStoreOps;
         llvm::SmallDenseMap<LandingPadInst *, InvokeInst *> landingPadUnwindOps;
         llvm::SmallDenseMap<LandingPadInst *, Value *> landingPadStack;
         llvm::SmallDenseMap<LandingPadInst *, bool> landingPadHasAlloca;
-        llvm::SmallDenseMap<BranchInst *, LandingPadInst *> landingPadByBranch;
+        llvm::SmallDenseMap<llvm::Instruction *, LandingPadInst *> landingPadByBranch;
 
         LLVM_DEBUG(llvm::dbgs() << "\nFunction: " << F.getName() << "\n\n";);
         LLVM_DEBUG(llvm::dbgs() << "\nDump Before: " << F << "\n\n";);
@@ -61,15 +61,13 @@ struct TypeScriptExceptionPass : public FunctionPass
 
             if (endOfCatch)
             {
-                if (auto *BI = dyn_cast<BranchInst>(&I))
-                {
-                    landingPadByBranch[BI] = currentLPI;
-                    currentCalls = nullptr;
-                    currentLPI = nullptr;
-                    resumeInstWorkSet.push_back(BI);
-                    endOfCatch = false;
-                    continue;
-                }
+                landingPadByBranch[&I] = currentLPI;
+                resumeInstWorkSet.push_back(&I);
+
+                endOfCatch = false;
+                currentCalls = nullptr;
+                currentLPI = nullptr;
+                continue;
             }
 
             // saving StoreInst to set response
@@ -202,11 +200,26 @@ struct TypeScriptExceptionPass : public FunctionPass
             MadeChange = true;
         }
 
-        for (auto *BI : resumeInstWorkSet)
+        for (auto *I : resumeInstWorkSet)
         {
-            llvm::IRBuilder<> Builder(BI);
+            auto *LPI = landingPadByBranch[I];
+            assert(LPI);
 
-            auto *LPI = landingPadByBranch[BI];
+            llvm::BasicBlock *retBlock = nullptr;
+
+            llvm::IRBuilder<> Builder(I);
+
+            auto *BI = dyn_cast<BranchInst>(I);
+            if (BI)
+            {
+                retBlock = BI->getSuccessor(0);
+            }
+            else
+            {
+                retBlock = Builder.GetInsertBlock()->splitBasicBlock(I, "end.of.exception");
+                BI = dyn_cast<BranchInst>(&retBlock->getPrevNode()->back());
+                Builder.SetInsertPoint(BI);
+            }
 
             auto hasAlloca = landingPadHasAlloca[LPI];
             if (hasAlloca)
@@ -218,11 +231,14 @@ struct TypeScriptExceptionPass : public FunctionPass
 
             assert(landingPadNewOps[LPI]);
 
-            auto CR = CatchReturnInst::Create(landingPadNewOps[LPI], BI->getSuccessor(0), BI->getParent());
+            auto CR = CatchReturnInst::Create(landingPadNewOps[LPI], retBlock, BI->getParent());
 
-            BI->replaceAllUsesWith(CR);
-
-            toRemoveResumeInstWorkSet.push_back(BI);
+            if (BI)
+            {
+                // remove BranchInst
+                BI->replaceAllUsesWith(CR);
+                toRemoveResumeInstWorkSet.push_back(BI);
+            }
 
             // LLVM_DEBUG(llvm::dbgs() << "\nTerminator after: " << *RI->getParent()->getTerminator() << "\n\n";);
             // LLVM_DEBUG(llvm::dbgs() << "\nResume - Done. Function Dump: " << F << "\n\n";);

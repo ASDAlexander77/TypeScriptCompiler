@@ -1082,8 +1082,6 @@ struct ThrowOpLowering : public TsPattern<mlir_ts::ThrowOp>
     }
 };
 
-#ifdef ENABLE_SWITCH_STATE_PASS
-
 struct StateLabelOpLowering : public TsPattern<mlir_ts::StateLabelOp>
 {
     using TsPattern<mlir_ts::StateLabelOp>::TsPattern;
@@ -1290,8 +1288,6 @@ struct YieldReturnValOpLowering : public TsPattern<mlir_ts::YieldReturnValOp>
     }
 };
 
-#endif
-
 } // end anonymous namespace
 
 //===----------------------------------------------------------------------===//
@@ -1439,12 +1435,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         mlir_ts::InterfaceSymbolRefOp, mlir_ts::PushOp, mlir_ts::PopOp, mlir_ts::NewInterfaceOp, mlir_ts::VTableOffsetRefOp,
         mlir_ts::ThisPropertyRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp, mlir_ts::TypeOfOp, mlir_ts::DebuggerOp, mlir_ts::LandingPadOp,
         mlir_ts::CompareCatchTypeOp, mlir_ts::BeginCatchOp, mlir_ts::SaveCatchVarOp, mlir_ts::EndCatchOp, mlir_ts::ThrowUnwindOp,
-        mlir_ts::ThrowCallOp, mlir_ts::CallInternalOp, mlir_ts::ReturnInternalOp, mlir_ts::NoOp, mlir_ts::SwitchStateInternalOp
-#ifndef ENABLE_SWITCH_STATE_PASS
-        ,
-        mlir_ts::StateLabelOp, mlir_ts::SwitchStateOp, mlir_ts::YieldReturnValOp *
-#endif
-        >();
+        mlir_ts::ThrowCallOp, mlir_ts::CallInternalOp, mlir_ts::ReturnInternalOp, mlir_ts::NoOp, mlir_ts::SwitchStateInternalOp>();
 
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.
@@ -1456,12 +1447,8 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
                     ParamDefaultValueOpLowering, PrefixUnaryOpLowering, PostfixUnaryOpLowering, IfOpLowering, DoWhileOpLowering,
                     WhileOpLowering, ForOpLowering, BreakOpLowering, ContinueOpLowering, SwitchOpLowering, AccessorRefOpLowering,
                     ThisAccessorRefOpLowering, LabelOpLowering, CallOpLowering, CallIndirectOpLowering, TryOpLowering, ThrowOpLowering,
-                    CatchOpLowering
-#ifdef ENABLE_SWITCH_STATE_PASS
-                    ,
-                    StateLabelOpLowering, SwitchStateOpLowering, YieldReturnValOpLowering
-#endif
-                    >(&getContext(), &tsContext, &tsFuncContext);
+                    CatchOpLowering, StateLabelOpLowering, SwitchStateOpLowering, YieldReturnValOpLowering>(&getContext(), &tsContext,
+                                                                                                            &tsFuncContext);
 
     // With the target and rewrite patterns defined, we can now attempt the
     // conversion. The conversion will signal failure if any of our `illegal`
@@ -1472,9 +1459,6 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     }
 
     LLVM_DEBUG(llvm::dbgs() << "\nProcessing function: \n" << function.getName() << "\n";);
-
-    // cleanup unused blocks or empty
-    // finishSwitchState(function, tsFuncContext);
 
     cleanupEmptyBlocksWithoutPredecessors(function);
 
