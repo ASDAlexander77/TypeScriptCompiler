@@ -46,7 +46,7 @@ struct TypeScriptExceptionPass : public FunctionPass
         llvm::SmallVector<CallBase *> *currentCalls = nullptr;
         LandingPadInst *currentLPI = nullptr;
         auto endOfCatch = false;
-        llvm::SmallVector<CallInst *> toRemoveCallInstWorkSet;
+        llvm::SmallVector<llvm::Instruction *> toRemoveCallInstWorkSet;
         for (auto &I : instructions(F))
         {
             if (auto *LPI = dyn_cast<LandingPadInst>(&I))
@@ -61,6 +61,7 @@ struct TypeScriptExceptionPass : public FunctionPass
 
             if (endOfCatch)
             {
+                // BR, or instraction without BR
                 landingPadByBranch[&I] = currentLPI;
                 resumeInstWorkSet.push_back(&I);
 
@@ -102,6 +103,24 @@ struct TypeScriptExceptionPass : public FunctionPass
                     {
                         toRemoveCallInstWorkSet.push_back(CI);
                         endOfCatch = true;
+                        continue;
+                    }
+                }
+
+                if (auto *II = dyn_cast<InvokeInst>(&I))
+                {
+                    LLVM_DEBUG(llvm::dbgs() << "\nInvoke: " << II->getCalledFunction()->getName() << "");
+
+                    if (II->getCalledFunction()->getName() == "__cxa_end_catch")
+                    {
+                        toRemoveCallInstWorkSet.push_back(&*II);
+
+                        landingPadByBranch[&I] = currentLPI;
+                        resumeInstWorkSet.push_back(&I);
+
+                        currentCalls = nullptr;
+                        currentLPI = nullptr;
+
                         continue;
                     }
                 }
@@ -214,6 +233,10 @@ struct TypeScriptExceptionPass : public FunctionPass
             {
                 retBlock = BI->getSuccessor(0);
             }
+            else if (auto *II = dyn_cast<InvokeInst>(I))
+            {
+                retBlock = II->getNormalDest();
+            }
             else
             {
                 retBlock = Builder.GetInsertBlock()->splitBasicBlock(I, "end.of.exception");
@@ -231,7 +254,7 @@ struct TypeScriptExceptionPass : public FunctionPass
 
             assert(landingPadNewOps[LPI]);
 
-            auto CR = CatchReturnInst::Create(landingPadNewOps[LPI], retBlock, BI->getParent());
+            auto CR = CatchReturnInst::Create(landingPadNewOps[LPI], retBlock, BI ? BI->getParent() : I->getParent());
 
             if (BI)
             {
