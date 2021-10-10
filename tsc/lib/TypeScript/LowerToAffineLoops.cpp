@@ -852,24 +852,15 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         auto *finallyBlockRegion = &tryOp.finallyBlock().front();
         auto *finallyBlockRegionLast = &tryOp.finallyBlock().back();
 
-        // logic to set Invoke attribute CallOp
-        // TODO: check for nested ops for example in if block
-        auto visitorCallOpContinue = [&](Operation *op) {
-            if (auto callOp = dyn_cast_or_null<mlir_ts::CallOp>(op))
-            {
-                tsContext->unwind[op] = catchesRegion;
-            }
-            else if (auto callIndirectOp = dyn_cast_or_null<mlir_ts::CallIndirectOp>(op))
-            {
-                tsContext->unwind[op] = catchesRegion;
-            }
-            else if (auto throwOp = dyn_cast_or_null<mlir_ts::ThrowOp>(op))
-            {
-                tsContext->unwind[op] = catchesRegion;
-            }
-        };
-        tryOp.body().walk(visitorCallOpContinue);
+#ifdef WIN_EXCEPTION
+        auto catchHasOps = llvm::any_of(tryOp.catches(), [](auto &block) { return &block.front() != block.getTerminator(); });
+#else
+        // in linux first landingpad should be "non-cleaner"
+        auto catchHasOps = true;
+#endif
+        auto finallyHasOps = llvm::any_of(tryOp.finallyBlock(), [](auto &block) { return &block.front() != block.getTerminator(); });
 
+        // logic to set Invoke attribute CallOp
         auto visitorReturnOpContinue = [&](Operation *op) {
             if (auto returnOp = dyn_cast_or_null<mlir_ts::ReturnOp>(op))
             {
@@ -886,20 +877,72 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         rewriter.setInsertionPointToEnd(currentBlock);
         rewriter.create<BranchOp>(loc, bodyRegion, ValueRange{});
 
+        auto beforeBodyBlock = continuation->getPrevNode();
         rewriter.inlineRegionBefore(tryOp.body(), continuation);
+        auto bodyBlock = beforeBodyBlock->getNextNode();
+        auto bodyBlockLast = continuation->getPrevNode();
 
-        rewriter.inlineRegionBefore(tryOp.catches(), continuation);
+        // in case of WIN32 we do not need catch logic if we have only finally
+        if (catchHasOps)
+        {
+            rewriter.inlineRegionBefore(tryOp.catches(), continuation);
+        }
+        else
+        {
+            while (!tryOp.catches().empty())
+            {
+                rewriter.eraseBlock(&tryOp.catches().front());
+            }
+        }
 
-        LLVM_DEBUG(llvm::dbgs() << "\n BEFORE: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
+        mlir::Block *finallyBlockForCleanup = nullptr;
+        mlir::Block *finallyBlockForCleanupLast = nullptr;
+        if (finallyHasOps)
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n BEFORE: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
 
-        rewriter.cloneRegionBefore(tryOp.finallyBlock(), continuation);
-        auto finallyBlockForCleanup = continuation->getPrevNode();
+            auto beforeFinallyBlockForCleanup = continuation->getPrevNode();
+            rewriter.cloneRegionBefore(tryOp.finallyBlock(), continuation);
+            finallyBlockForCleanup = beforeFinallyBlockForCleanup->getNextNode();
+            finallyBlockForCleanupLast = continuation->getPrevNode();
 
-        LLVM_DEBUG(llvm::dbgs() << "\n AFTER CLONE: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
+            LLVM_DEBUG(llvm::dbgs() << "\n AFTER CLONE: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
 
-        rewriter.inlineRegionBefore(tryOp.finallyBlock(), continuation);
+            rewriter.inlineRegionBefore(tryOp.finallyBlock(), continuation);
 
-        LLVM_DEBUG(llvm::dbgs() << "\n AFTER INLINE: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
+            LLVM_DEBUG(llvm::dbgs() << "\n AFTER INLINE: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
+        }
+
+        auto landingBlock = catchHasOps ? catchesRegion : finallyBlockForCleanup;
+        if (landingBlock)
+        {
+            // TODO: check for nested ops for example in if block
+            auto visitorCallOpContinue = [&](Operation *op) {
+                if (auto callOp = dyn_cast_or_null<mlir_ts::CallOp>(op))
+                {
+                    tsContext->unwind[op] = landingBlock;
+                }
+                else if (auto callIndirectOp = dyn_cast_or_null<mlir_ts::CallIndirectOp>(op))
+                {
+                    tsContext->unwind[op] = landingBlock;
+                }
+                else if (auto throwOp = dyn_cast_or_null<mlir_ts::ThrowOp>(op))
+                {
+                    tsContext->unwind[op] = landingBlock;
+                }
+            };
+            // tryOp.body().walk(visitorCallOpContinue);
+            auto it = bodyBlock;
+            do
+            {
+                it->walk(visitorCallOpContinue);
+                if (it != bodyBlockLast)
+                {
+                    it = it->getNextNode();
+                    continue;
+                }
+            } while (false);
+        }
 
         // Body:catch vars
         rewriter.setInsertionPointToStart(bodyRegion);
@@ -912,57 +955,93 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         // rewriter.replaceOpWithNewOp<BranchOp>(resultOp, continuation, ValueRange{});
         rewriter.replaceOpWithNewOp<BranchOp>(resultOp, finallyBlockRegion, ValueRange{});
 
-        // catches:landingpad
-        rewriter.setInsertionPointToStart(catchesRegion);
-
-        auto landingPadOp =
-            rewriter.create<mlir_ts::LandingPadOp>(loc, rttih.getLandingPadType(), rewriter.getBoolAttr(false), ValueRange{catch1});
-
         mlir::Value cmpValue;
-#ifndef WIN_EXCEPTION
-        if (rttih.hasType())
+        if (catchHasOps)
         {
-            cmpValue = rewriter.create<mlir_ts::CompareCatchTypeOp>(loc, mth.getBooleanType(), landingPadOp, rttih.throwInfoPtrValue(loc));
-        }
+            // catches:landingpad
+            rewriter.setInsertionPointToStart(catchesRegion);
+
+            auto landingPadOp =
+                rewriter.create<mlir_ts::LandingPadOp>(loc, rttih.getLandingPadType(), rewriter.getBoolAttr(false), ValueRange{catch1});
+
+#ifndef WIN_EXCEPTION
+            if (rttih.hasType())
+            {
+                cmpValue =
+                    rewriter.create<mlir_ts::CompareCatchTypeOp>(loc, mth.getBooleanType(), landingPadOp, rttih.throwInfoPtrValue(loc));
+            }
 #endif
 
-        // catch: begin catch
-        auto beginCatchCallInfo = rewriter.create<mlir_ts::BeginCatchOp>(loc, mth.getOpaqueType(), landingPadOp);
+            // catch: begin catch
+            auto beginCatchCallInfo = rewriter.create<mlir_ts::BeginCatchOp>(loc, mth.getOpaqueType(), landingPadOp);
 
-        if (catchOpPtr)
-        {
-            tsContext->catchOpData[catchOpPtr] = beginCatchCallInfo->getResult(0);
+            if (catchOpPtr)
+            {
+                tsContext->catchOpData[catchOpPtr] = beginCatchCallInfo->getResult(0);
+            }
+
+            // catch: load value
+            // TODO:
+
+            // catches: end catch
+            rewriter.setInsertionPoint(catchesRegionLast->getTerminator());
+
+            rewriter.create<mlir_ts::EndCatchOp>(loc);
         }
 
-        // catch: load value
-        // TODO:
+        if (finallyHasOps)
+        {
+            // cleanup begin
 
-        // catches: end catch
-        rewriter.setInsertionPoint(catchesRegionLast->getTerminator());
+            // point all throw in catch block to clean up block
+            auto visitorCallOpContinueCleanup = [&](Operation *op) {
+                if (auto callOp = dyn_cast_or_null<mlir_ts::CallOp>(op))
+                {
+                    tsContext->unwind[op] = finallyBlockForCleanup;
+                }
+                else if (auto callIndirectOp = dyn_cast_or_null<mlir_ts::CallIndirectOp>(op))
+                {
+                    tsContext->unwind[op] = finallyBlockForCleanup;
+                }
+                else if (auto throwOp = dyn_cast_or_null<mlir_ts::ThrowOp>(op))
+                {
+                    tsContext->unwind[op] = finallyBlockForCleanup;
+                }
+            };
+            tryOp.catches().walk(visitorCallOpContinueCleanup);
 
-        rewriter.create<mlir_ts::EndCatchOp>(loc);
+            // in case of try/finally, we need to insert throw in catch area
+            if (!catchHasOps)
+            {
+                // TODO:
+            }
 
-        // cleanup begin
+            rewriter.setInsertionPointToStart(finallyBlockForCleanup);
 
-        rewriter.setInsertionPointToStart(finallyBlockForCleanup);
+            auto landingPadCleanupOp =
+                rewriter.create<mlir_ts::LandingPadOp>(loc, rttih.getLandingPadType(), rewriter.getBoolAttr(true), ValueRange{});
+            auto beginCleanupCallInfo = rewriter.create<mlir_ts::BeginCleanupOp>(loc, landingPadCleanupOp);
 
-        auto landingPadCleanupOp =
-            rewriter.create<mlir_ts::LandingPadOp>(loc, rttih.getLandingPadType(), rewriter.getBoolAttr(true), ValueRange{});
-        auto beginCleanupCallInfo = rewriter.create<mlir_ts::BeginCleanupOp>(loc, landingPadCleanupOp);
+            rewriter.setInsertionPoint(finallyBlockForCleanupLast->getTerminator());
+            rewriter.create<mlir_ts::EndCleanupOp>(loc);
 
-        rewriter.setInsertionPoint(finallyBlockForCleanup->getTerminator());
-        rewriter.create<mlir_ts::EndCleanupOp>(loc);
+            auto yieldOpFinally = cast<mlir_ts::ResultOp>(finallyBlockForCleanupLast->getTerminator());
+            rewriter.replaceOpWithNewOp<mlir_ts::UnreachableOp>(yieldOpFinally);
 
-        LLVM_DEBUG(llvm::dbgs() << "\n AFTER INSERT CLEANUP: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
+            LLVM_DEBUG(llvm::dbgs() << "\n AFTER INSERT CLEANUP: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
 
-        // cleanup end
+            // cleanup end
+        }
 
-        // exit br
-        rewriter.setInsertionPointToEnd(catchesRegionLast);
+        if (catchHasOps)
+        {
+            // exit br
+            rewriter.setInsertionPointToEnd(catchesRegionLast);
 
-        auto yieldOpCatches = cast<mlir_ts::ResultOp>(catchesRegionLast->getTerminator());
-        // rewriter.replaceOpWithNewOp<BranchOp>(yieldOpCatches, continuation, ValueRange{});
-        rewriter.replaceOpWithNewOp<BranchOp>(yieldOpCatches, finallyBlockRegion, ValueRange{});
+            auto yieldOpCatches = cast<mlir_ts::ResultOp>(catchesRegionLast->getTerminator());
+            // rewriter.replaceOpWithNewOp<BranchOp>(yieldOpCatches, continuation, ValueRange{});
+            rewriter.replaceOpWithNewOp<BranchOp>(yieldOpCatches, finallyBlockRegion, ValueRange{});
+        }
 
         if (cmpValue)
         {
@@ -1357,20 +1436,20 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     // a partial lowering, we explicitly mark the TypeScript operations that don't want
     // to lower, `typescript.print`, as `legal`.
     target.addIllegalDialect<mlir_ts::TypeScriptDialect>();
-    target.addLegalOp<mlir_ts::AddressOfOp, mlir_ts::AddressOfConstStringOp, mlir_ts::AddressOfElementOp, mlir_ts::ArithmeticBinaryOp,
-                      mlir_ts::ArithmeticUnaryOp, mlir_ts::AssertOp, mlir_ts::CaptureOp, mlir_ts::CastOp, mlir_ts::ConstantOp,
-                      mlir_ts::ElementRefOp, mlir_ts::FuncOp, mlir_ts::GlobalOp, mlir_ts::GlobalResultOp, mlir_ts::HasValueOp,
-                      mlir_ts::ValueOp, mlir_ts::NullOp, mlir_ts::ParseFloatOp, mlir_ts::ParseIntOp, mlir_ts::PrintOp, mlir_ts::SizeOfOp,
-                      mlir_ts::StoreOp, mlir_ts::SymbolRefOp, mlir_ts::LengthOfOp, mlir_ts::StringLengthOp, mlir_ts::StringConcatOp,
-                      mlir_ts::StringCompareOp, mlir_ts::LoadOp, mlir_ts::NewOp, mlir_ts::CreateTupleOp, mlir_ts::DeconstructTupleOp,
-                      mlir_ts::CreateArrayOp, mlir_ts::NewEmptyArrayOp, mlir_ts::NewArrayOp, mlir_ts::DeleteOp, mlir_ts::PropertyRefOp,
-                      mlir_ts::InsertPropertyOp, mlir_ts::ExtractPropertyOp, mlir_ts::LogicalBinaryOp, mlir_ts::UndefOp,
-                      mlir_ts::VariableOp, mlir_ts::TrampolineOp, mlir_ts::InvokeOp, mlir_ts::ResultOp, mlir_ts::ThisVirtualSymbolRefOp,
-                      mlir_ts::InterfaceSymbolRefOp, mlir_ts::PushOp, mlir_ts::PopOp, mlir_ts::NewInterfaceOp, mlir_ts::VTableOffsetRefOp,
-                      mlir_ts::ThisPropertyRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp, mlir_ts::TypeOfOp, mlir_ts::DebuggerOp,
-                      mlir_ts::LandingPadOp, mlir_ts::CompareCatchTypeOp, mlir_ts::BeginCatchOp, mlir_ts::SaveCatchVarOp,
-                      mlir_ts::EndCatchOp, mlir_ts::BeginCleanupOp, mlir_ts::EndCleanupOp, mlir_ts::ThrowUnwindOp, mlir_ts::ThrowCallOp,
-                      mlir_ts::CallInternalOp, mlir_ts::ReturnInternalOp, mlir_ts::NoOp, mlir_ts::SwitchStateInternalOp>();
+    target.addLegalOp<
+        mlir_ts::AddressOfOp, mlir_ts::AddressOfConstStringOp, mlir_ts::AddressOfElementOp, mlir_ts::ArithmeticBinaryOp,
+        mlir_ts::ArithmeticUnaryOp, mlir_ts::AssertOp, mlir_ts::CaptureOp, mlir_ts::CastOp, mlir_ts::ConstantOp, mlir_ts::ElementRefOp,
+        mlir_ts::FuncOp, mlir_ts::GlobalOp, mlir_ts::GlobalResultOp, mlir_ts::HasValueOp, mlir_ts::ValueOp, mlir_ts::NullOp,
+        mlir_ts::ParseFloatOp, mlir_ts::ParseIntOp, mlir_ts::PrintOp, mlir_ts::SizeOfOp, mlir_ts::StoreOp, mlir_ts::SymbolRefOp,
+        mlir_ts::LengthOfOp, mlir_ts::StringLengthOp, mlir_ts::StringConcatOp, mlir_ts::StringCompareOp, mlir_ts::LoadOp, mlir_ts::NewOp,
+        mlir_ts::CreateTupleOp, mlir_ts::DeconstructTupleOp, mlir_ts::CreateArrayOp, mlir_ts::NewEmptyArrayOp, mlir_ts::NewArrayOp,
+        mlir_ts::DeleteOp, mlir_ts::PropertyRefOp, mlir_ts::InsertPropertyOp, mlir_ts::ExtractPropertyOp, mlir_ts::LogicalBinaryOp,
+        mlir_ts::UndefOp, mlir_ts::VariableOp, mlir_ts::TrampolineOp, mlir_ts::InvokeOp, mlir_ts::ResultOp, mlir_ts::ThisVirtualSymbolRefOp,
+        mlir_ts::InterfaceSymbolRefOp, mlir_ts::PushOp, mlir_ts::PopOp, mlir_ts::NewInterfaceOp, mlir_ts::VTableOffsetRefOp,
+        mlir_ts::ThisPropertyRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp, mlir_ts::TypeOfOp, mlir_ts::DebuggerOp, mlir_ts::LandingPadOp,
+        mlir_ts::CompareCatchTypeOp, mlir_ts::BeginCatchOp, mlir_ts::SaveCatchVarOp, mlir_ts::EndCatchOp, mlir_ts::BeginCleanupOp,
+        mlir_ts::EndCleanupOp, mlir_ts::ThrowUnwindOp, mlir_ts::ThrowCallOp, mlir_ts::CallInternalOp, mlir_ts::ReturnInternalOp,
+        mlir_ts::NoOp, mlir_ts::SwitchStateInternalOp, mlir_ts::UnreachableOp>();
 
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.
