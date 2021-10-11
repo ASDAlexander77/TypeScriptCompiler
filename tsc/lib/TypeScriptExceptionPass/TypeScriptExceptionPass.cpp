@@ -67,8 +67,10 @@ struct CatchRegion
 
 struct TypeScriptExceptionPass : public FunctionPass
 {
+    llvm::StructType *ThrowInfoType;
+
     static char ID;
-    TypeScriptExceptionPass() : FunctionPass(ID)
+    TypeScriptExceptionPass() : FunctionPass(ID), ThrowInfoType{nullptr}
     {
     }
 
@@ -176,14 +178,14 @@ struct TypeScriptExceptionPass : public FunctionPass
             llvm::IRBuilder<> Builder(LPI);
             llvm::LLVMContext &Ctx = Builder.getContext();
 
-            // split
-            BasicBlock *CurrentBB = LPI->getParent();
-            BasicBlock *ContinuationBB = CurrentBB->splitBasicBlock(LPI->getIterator(), "catch");
-
-            CurrentBB->getTerminator()->eraseFromParent();
-
             if (catchRegion.isCatch())
             {
+                // split
+                BasicBlock *CurrentBB = LPI->getParent();
+                BasicBlock *ContinuationBB = CurrentBB->splitBasicBlock(LPI->getIterator(), "catch");
+
+                CurrentBB->getTerminator()->eraseFromParent();
+
                 auto *II = catchRegion.unwindInfoOp;
                 auto *CSI = CatchSwitchInst::Create(ConstantTokenNone::get(Ctx),
                                                     II ? II->getUnwindDest() : nullptr
@@ -197,7 +199,7 @@ struct TypeScriptExceptionPass : public FunctionPass
                 if (isNullInst)
                 {
                     // catch (...) as catch value is null
-                    auto nullI8Ptr = ConstantPointerNull::get(PointerType::get(IntegerType::get(Ctx, 8), 0));
+                    auto nullI8Ptr = ConstantPointerNull::get(IntegerType::get(Ctx, 8)->getPointerTo());
                     auto iVal64 = ConstantInt::get(IntegerType::get(Ctx, 32), 64);
                     catchRegion.catchPad = CatchPadInst::Create(CSI, {nullI8Ptr, iVal64, nullI8Ptr}, "catchpad", LPI);
                 }
@@ -260,6 +262,7 @@ struct TypeScriptExceptionPass : public FunctionPass
             llvm::BasicBlock *retBlock = nullptr;
 
             llvm::IRBuilder<> Builder(I);
+            llvm::LLVMContext &Ctx = Builder.getContext();
 
             auto *BI = dyn_cast<BranchInst>(I);
             if (BI)
@@ -307,6 +310,35 @@ struct TypeScriptExceptionPass : public FunctionPass
                 // cleanup
                 assert(catchRegion.cleanupPad);
                 CleanupReturnInst::Create(catchRegion.cleanupPad, nullptr, I->getParent());
+
+                // add rethrow code
+                BasicBlock *CurrentBB = LPI->getParent();
+                BasicBlock *ContinuationBB = CurrentBB->splitBasicBlock(LPI->getIterator(), "catch");
+
+                CurrentBB->getTerminator()->eraseFromParent();
+
+                auto *II = catchRegion.unwindInfoOp;
+                auto *CSI = CatchSwitchInst::Create(ConstantTokenNone::get(Ctx),
+                                                    II ? II->getUnwindDest() : nullptr
+                                                    /*unwind to caller if null*/,
+                                                    1, "catch.dispatch", CurrentBB);
+                CSI->addHandler(ContinuationBB);
+
+                // catch (...) as catch value is null
+                auto nullI8Ptr = ConstantPointerNull::get(IntegerType::get(Ctx, 8)->getPointerTo());
+                auto iVal64 = ConstantInt::get(IntegerType::get(Ctx, 32), 64);
+                auto *CPI = CatchPadInst::Create(CSI, {nullI8Ptr, iVal64, nullI8Ptr}, "catch.after.clean", ContinuationBB);
+
+                // rethrow
+                llvm::SmallVector<OperandBundleDef> opBundle;
+                opBundle.emplace_back(OperandBundleDef("funclet", CPI));
+
+                auto nullTI = ConstantPointerNull::get(getThrowInfoType(Ctx)->getPointerTo());
+                Builder.CreateCall(getThrowFn(Ctx), {nullI8Ptr, nullTI}, opBundle);
+
+                new UnreachableInst(Ctx, ContinuationBB);
+
+                // end
             }
 
             // LLVM_DEBUG(llvm::dbgs() << "\nTerminator after: " << *RI->getParent()->getTerminator() << "\n\n";);
@@ -340,6 +372,42 @@ struct TypeScriptExceptionPass : public FunctionPass
 
         // default if char*, class etc
         return 1;
+    }
+
+    llvm::StructType *getThrowInfoType(LLVMContext &Ctx)
+    {
+        if (ThrowInfoType)
+        {
+            return ThrowInfoType;
+        }
+
+        llvm::Type *FieldTypes[] = {
+            IntegerType::get(Ctx, 32),                // Flags
+            IntegerType::get(Ctx, 8)->getPointerTo(), // CleanupFn
+            IntegerType::get(Ctx, 8)->getPointerTo(), // ForwardCompat
+            IntegerType::get(Ctx, 8)->getPointerTo()  // CatchableTypeArray
+        };
+        ThrowInfoType = llvm::StructType::create(Ctx, FieldTypes, "eh.ThrowInfo");
+        return ThrowInfoType;
+    }
+
+    llvm::FunctionCallee getThrowFn(LLVMContext &Ctx)
+    {
+        // _CxxThrowException is passed an exception object and a ThrowInfo object
+        // which describes the exception.
+        llvm::Type *Args[] = {IntegerType::get(Ctx, 8)->getPointerTo(), getThrowInfoType(Ctx)->getPointerTo()};
+        auto *FTy = llvm::FunctionType::get(Type::getVoidTy(Ctx), Args, /*isVarArg=*/false);
+        auto Throw = Function::Create(FTy, llvm::GlobalValue::LinkageTypes::InternalLinkage, "_CxxThrowException");
+        /*
+        // _CxxThrowException is stdcall on 32-bit x86 platforms.
+        if (CGM.getTarget().getTriple().getArch() == llvm::Triple::x86)
+        {
+            if (auto *Fn = dyn_cast<llvm::Function>(Throw.getCallee()))
+                Fn->setCallingConv(llvm::CallingConv::X86_StdCall);
+        }
+        */
+
+        return Throw;
     }
 };
 } // namespace
