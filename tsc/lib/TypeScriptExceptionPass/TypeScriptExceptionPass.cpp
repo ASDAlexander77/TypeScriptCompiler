@@ -32,7 +32,11 @@ struct CatchRegion
     Value *stack;
     bool hasAlloca;
     llvm::Instruction *end;
-    bool isCleanup;
+
+    bool isCleanup()
+    {
+        return landingPad ? landingPad->isCleanup() : false;
+    }
 };
 
 struct TypeScriptExceptionPass : public FunctionPass

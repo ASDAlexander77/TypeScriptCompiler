@@ -957,6 +957,17 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         auto catch1 = rttih.hasType() ? (mlir::Value)rttih.typeInfoPtrValue(loc)
                                       : /*catch all*/ (mlir::Value)rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
 
+        mlir::Value undefArrayValue;
+        if (finallyHasOps)
+        {
+            // BUG: HACK, i need to add marker type to treat it as cleanup landing pad later
+            auto arrTy = mth.getConstArrayValueType(mth.getOpaqueType(), 1);
+            undefArrayValue = rewriter.create<mlir_ts::UndefOp>(loc, arrTy);
+            auto nullVal = rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
+            undefArrayValue = rewriter.create<mlir_ts::InsertPropertyOp>(loc, undefArrayValue.getType(), nullVal, undefArrayValue,
+                                                                         clh.getStructIndexAttr(0));
+        }
+
         rewriter.setInsertionPointToEnd(bodyRegionLast);
 
         auto resultOp = cast<mlir_ts::ResultOp>(bodyRegionLast->getTerminator());
@@ -1026,8 +1037,8 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
             rewriter.setInsertionPointToStart(finallyBlockForCleanup);
 
-            auto landingPadCleanupOp =
-                rewriter.create<mlir_ts::LandingPadOp>(loc, rttih.getLandingPadType(), rewriter.getBoolAttr(true), ValueRange{});
+            auto landingPadCleanupOp = rewriter.create<mlir_ts::LandingPadOp>(loc, rttih.getLandingPadType(), rewriter.getBoolAttr(true),
+                                                                              ValueRange{undefArrayValue});
             auto beginCleanupCallInfo = rewriter.create<mlir_ts::BeginCleanupOp>(loc);
 
             rewriter.setInsertionPoint(finallyBlockForCleanupLast->getTerminator());
