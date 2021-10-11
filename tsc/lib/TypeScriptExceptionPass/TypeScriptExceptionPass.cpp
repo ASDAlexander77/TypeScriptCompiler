@@ -19,6 +19,22 @@ using namespace PatternMatch;
 
 namespace
 {
+
+struct CatchRegion
+{
+    CatchRegion() = default;
+
+    LandingPadInst *landingPad;
+    llvm::SmallVector<CallBase *> calls;
+    CatchPadInst *catchPad;
+    StoreInst *store;
+    InvokeInst *unwindInfoOp;
+    Value *stack;
+    bool hasAlloca;
+    llvm::Instruction *end;
+    bool isCleanup;
+};
+
 struct TypeScriptExceptionPass : public FunctionPass
 {
     static char ID;
@@ -30,117 +46,97 @@ struct TypeScriptExceptionPass : public FunctionPass
     {
         auto MadeChange = false;
 
-        llvm::SmallVector<LandingPadInst *> landingPadInstWorkSet;
-        llvm::SmallVector<llvm::Instruction *> resumeInstWorkSet;
-        llvm::SmallDenseMap<LandingPadInst *, llvm::SmallVector<CallBase *> *> calls;
-        llvm::SmallDenseMap<LandingPadInst *, CatchPadInst *> landingPadNewOps;
-        llvm::SmallDenseMap<LandingPadInst *, StoreInst *> landingPadStoreOps;
-        llvm::SmallDenseMap<LandingPadInst *, InvokeInst *> landingPadUnwindOps;
-        llvm::SmallDenseMap<LandingPadInst *, Value *> landingPadStack;
-        llvm::SmallDenseMap<LandingPadInst *, bool> landingPadHasAlloca;
-        llvm::SmallDenseMap<llvm::Instruction *, LandingPadInst *> landingPadByBranch;
+        llvm::SmallVector<CatchRegion> catchRegionsWorkSet;
 
         LLVM_DEBUG(llvm::dbgs() << "\nFunction: " << F.getName() << "\n\n";);
         LLVM_DEBUG(llvm::dbgs() << "\nDump Before: " << F << "\n\n";);
 
-        llvm::SmallVector<CallBase *> *currentCalls = nullptr;
-        LandingPadInst *currentLPI = nullptr;
+        CatchRegion *catchRegion = nullptr;
         auto endOfCatch = false;
-        llvm::SmallVector<llvm::Instruction *> toRemoveCallInstWorkSet;
+        llvm::SmallVector<llvm::Instruction *> toRemoveWorkSet;
         for (auto &I : instructions(F))
         {
             if (auto *LPI = dyn_cast<LandingPadInst>(&I))
             {
-                landingPadInstWorkSet.push_back(LPI);
-                currentLPI = LPI;
-                currentCalls = new llvm::SmallVector<CallBase *>();
-                calls[LPI] = currentCalls;
+                catchRegionsWorkSet.push_back(CatchRegion());
+                catchRegion = &catchRegionsWorkSet.back();
+
+                catchRegion->landingPad = LPI;
+
                 endOfCatch = false;
+                continue;
+            }
+
+            // it is outsize of catch/finally region
+            if (!catchRegion)
+            {
                 continue;
             }
 
             if (endOfCatch)
             {
                 // BR, or instraction without BR
-                landingPadByBranch[&I] = currentLPI;
-                resumeInstWorkSet.push_back(&I);
-
+                catchRegion->end = &I;
                 endOfCatch = false;
-                currentCalls = nullptr;
-                currentLPI = nullptr;
+                catchRegion = nullptr;
                 continue;
             }
 
-            // saving StoreInst to set response
-            if (currentLPI)
+            if (catchRegion->unwindInfoOp == nullptr)
             {
                 if (auto *II = dyn_cast<InvokeInst>(&I))
                 {
-                    if (!landingPadUnwindOps[currentLPI])
-                    {
-                        landingPadUnwindOps[currentLPI] = II;
-                    }
-                }
-
-                if (auto *SI = dyn_cast<StoreInst>(&I))
-                {
-                    if (!landingPadStoreOps[currentLPI])
-                    {
-                        landingPadStoreOps[currentLPI] = SI;
-                    }
-                }
-
-                if (auto *AI = dyn_cast<AllocaInst>(&I))
-                {
-                    landingPadHasAlloca[currentLPI] = true;
-                }
-
-                if (auto *CI = dyn_cast<CallInst>(&I))
-                {
-                    LLVM_DEBUG(llvm::dbgs() << "\nCall: " << CI->getCalledFunction()->getName() << "");
-
-                    if (CI->getCalledFunction()->getName() == "__cxa_end_catch")
-                    {
-                        toRemoveCallInstWorkSet.push_back(CI);
-                        endOfCatch = true;
-                        continue;
-                    }
-                }
-
-                if (auto *II = dyn_cast<InvokeInst>(&I))
-                {
-                    LLVM_DEBUG(llvm::dbgs() << "\nInvoke: " << II->getCalledFunction()->getName() << "");
-
-                    if (II->getCalledFunction()->getName() == "__cxa_end_catch")
-                    {
-                        toRemoveCallInstWorkSet.push_back(&*II);
-
-                        landingPadByBranch[&I] = currentLPI;
-                        resumeInstWorkSet.push_back(&I);
-
-                        currentCalls = nullptr;
-                        currentLPI = nullptr;
-
-                        continue;
-                    }
+                    catchRegion->unwindInfoOp = II;
                 }
             }
 
-            if (currentCalls)
+            if (auto *SI = dyn_cast<StoreInst>(&I))
             {
-                if (auto *CB = dyn_cast<CallBase>(&I))
+                assert(!catchRegion->store);
+                catchRegion->store = SI;
+            }
+
+            if (auto *AI = dyn_cast<AllocaInst>(&I))
+            {
+                catchRegion->hasAlloca = true;
+            }
+
+            if (auto *CI = dyn_cast<CallInst>(&I))
+            {
+                LLVM_DEBUG(llvm::dbgs() << "\nCall: " << CI->getCalledFunction()->getName() << "");
+
+                if (CI->getCalledFunction()->getName() == "__cxa_end_catch")
                 {
-                    currentCalls->push_back(CB);
+                    toRemoveWorkSet.push_back(&I);
+                    endOfCatch = true;
                     continue;
                 }
             }
+
+            if (auto *II = dyn_cast<InvokeInst>(&I))
+            {
+                LLVM_DEBUG(llvm::dbgs() << "\nInvoke: " << II->getCalledFunction()->getName() << "");
+
+                if (II->getCalledFunction()->getName() == "__cxa_end_catch")
+                {
+                    toRemoveWorkSet.push_back(&I);
+                    catchRegion->end = &I;
+                    continue;
+                }
+            }
+
+            if (auto *CB = dyn_cast<CallBase>(&I))
+            {
+                catchRegion->calls.push_back(CB);
+                continue;
+            }
         }
 
-        llvm::SmallVector<LandingPadInst *> toRemoveLandingPad;
-        llvm::SmallVector<BranchInst *> toRemoveResumeInstWorkSet;
-
-        for (auto *LPI : landingPadInstWorkSet)
+        // create begin of catch block
+        for (auto &catchRegion : catchRegionsWorkSet)
         {
+            auto *LPI = catchRegion.landingPad;
+
             LLVM_DEBUG(llvm::dbgs() << "\nProcessing: " << *LPI << " isKnownSentinel: " << (LPI->isKnownSentinel() ? "true" : "false")
                                     << "\n\n";);
 
@@ -154,7 +150,7 @@ struct TypeScriptExceptionPass : public FunctionPass
 
             CurrentBB->getTerminator()->eraseFromParent();
 
-            auto *II = landingPadUnwindOps[LPI];
+            auto *II = catchRegion.unwindInfoOp;
             auto *CSI = CatchSwitchInst::Create(ConstantTokenNone::get(Ctx),
                                                 II ? II->getUnwindDest() : nullptr
                                                 /*unwind to caller if null*/,
@@ -176,7 +172,7 @@ struct TypeScriptExceptionPass : public FunctionPass
                 }
                 else
                 {
-                    auto varRef = landingPadStoreOps[LPI];
+                    auto varRef = catchRegion.store;
                     assert(varRef);
                     auto iValTypeId = ConstantInt::get(IntegerType::get(Ctx, 32), getTypeNumber(varRef->getPointerOperandType()));
                     CPI = CatchPadInst::Create(CSI, {value, iValTypeId, varRef->getPointerOperand()}, "catchpad", LPI);
@@ -190,28 +186,23 @@ struct TypeScriptExceptionPass : public FunctionPass
 
             // save stack
             Value *SP = nullptr;
-            auto hasAlloca = landingPadHasAlloca[LPI];
-            if (hasAlloca)
+            if (catchRegion.hasAlloca)
             {
                 SP = Builder.CreateCall(Intrinsic::getDeclaration(F.getParent(), Intrinsic::stacksave), {});
-                landingPadStack[LPI] = SP;
+                catchRegion.stack = SP;
             }
 
-            toRemoveLandingPad.push_back(LPI);
-            landingPadNewOps[LPI] = CPI;
+            toRemoveWorkSet.push_back(&*LPI);
+            catchRegion.catchPad = CPI;
 
             // set funcset
-            llvm::SmallVector<CallBase *> *callsByLandingPad = calls[LPI];
-            if (callsByLandingPad)
+            for (auto callBase : catchRegion.calls)
             {
-                for (auto callBase : *callsByLandingPad)
-                {
-                    llvm::SmallVector<OperandBundleDef> opBundle;
-                    opBundle.emplace_back(OperandBundleDef("funclet", CPI));
-                    auto *newCallBase = CallBase::Create(callBase, opBundle, callBase);
-                    callBase->replaceAllUsesWith(newCallBase);
-                    callBase->eraseFromParent();
-                }
+                llvm::SmallVector<OperandBundleDef> opBundle;
+                opBundle.emplace_back(OperandBundleDef("funclet", CPI));
+                auto *newCallBase = CallBase::Create(callBase, opBundle, callBase);
+                callBase->replaceAllUsesWith(newCallBase);
+                callBase->eraseFromParent();
             }
 
             // LLVM_DEBUG(llvm::dbgs() << "\nLanding Pad - Done. Function Dump: " << F << "\n\n";);
@@ -219,9 +210,11 @@ struct TypeScriptExceptionPass : public FunctionPass
             MadeChange = true;
         }
 
-        for (auto *I : resumeInstWorkSet)
+        // create end of catch block
+        for (auto &catchRegion : catchRegionsWorkSet)
         {
-            auto *LPI = landingPadByBranch[I];
+            auto *I = catchRegion.end;
+            auto *LPI = catchRegion.landingPad;
             assert(LPI);
 
             llvm::BasicBlock *retBlock = nullptr;
@@ -244,23 +237,22 @@ struct TypeScriptExceptionPass : public FunctionPass
                 Builder.SetInsertPoint(BI);
             }
 
-            auto hasAlloca = landingPadHasAlloca[LPI];
-            if (hasAlloca)
+            if (catchRegion.hasAlloca)
             {
-                assert(landingPadStack[LPI]);
+                assert(catchRegion.stack);
                 // restore stack
-                Builder.CreateCall(Intrinsic::getDeclaration(F.getParent(), Intrinsic::stackrestore), {landingPadStack[LPI]});
+                Builder.CreateCall(Intrinsic::getDeclaration(F.getParent(), Intrinsic::stackrestore), {catchRegion.stack});
             }
 
-            assert(landingPadNewOps[LPI]);
+            assert(catchRegion.catchPad);
 
-            auto CR = CatchReturnInst::Create(landingPadNewOps[LPI], retBlock, BI ? BI->getParent() : I->getParent());
+            auto CR = CatchReturnInst::Create(catchRegion.catchPad, retBlock, BI ? BI->getParent() : I->getParent());
 
             if (BI)
             {
                 // remove BranchInst
                 BI->replaceAllUsesWith(CR);
-                toRemoveResumeInstWorkSet.push_back(BI);
+                toRemoveWorkSet.push_back(&*BI);
             }
 
             // LLVM_DEBUG(llvm::dbgs() << "\nTerminator after: " << *RI->getParent()->getTerminator() << "\n\n";);
@@ -270,28 +262,12 @@ struct TypeScriptExceptionPass : public FunctionPass
         }
 
         // remove
-        for (auto CI : toRemoveCallInstWorkSet)
+        for (auto CI : toRemoveWorkSet)
         {
             CI->eraseFromParent();
         }
 
-        for (auto RI : toRemoveResumeInstWorkSet)
-        {
-            RI->eraseFromParent();
-        }
-
-        for (auto LPI : toRemoveLandingPad)
-        {
-            LPI->eraseFromParent();
-        }
-
         // LLVM_DEBUG(llvm::dbgs() << "\nDone. Function Dump: " << F << "\n\n";);
-
-        // cleaups
-        for (auto p : calls)
-        {
-            delete p.second;
-        }
 
         LLVM_DEBUG(llvm::dbgs() << "\nChange: " << MadeChange << "\n\n";);
         LLVM_DEBUG(llvm::dbgs() << "\nDump After: " << F << "\n\n";);
