@@ -309,34 +309,41 @@ struct TypeScriptExceptionPass : public FunctionPass
             {
                 // cleanup
                 assert(catchRegion.cleanupPad);
-                CleanupReturnInst::Create(catchRegion.cleanupPad, nullptr, I->getParent());
 
-                // add rethrow code
-                BasicBlock *CurrentBB = LPI->getParent();
-                BasicBlock *ContinuationBB = CurrentBB->splitBasicBlock(LPI->getIterator(), "catch");
+                BasicBlock *CurrentBB = I->getParent();
+                BasicBlock *ContinuationBB = CurrentBB->splitBasicBlock(CurrentBB->getTerminator(), "catch.pad");
+                BasicBlock *CSIBlock = BasicBlock::Create(Ctx, "catch.dispatch", CurrentBB->getParent(), ContinuationBB);
 
                 CurrentBB->getTerminator()->eraseFromParent();
+                CleanupReturnInst::Create(catchRegion.cleanupPad, CSIBlock, CurrentBB);
 
+                // add rethrow code
                 auto *II = catchRegion.unwindInfoOp;
                 auto *CSI = CatchSwitchInst::Create(ConstantTokenNone::get(Ctx),
                                                     II ? II->getUnwindDest() : nullptr
                                                     /*unwind to caller if null*/,
-                                                    1, "catch.dispatch", CurrentBB);
+                                                    1, "catchswitch", CSIBlock);
+
+                LLVM_DEBUG(llvm::dbgs() << "\nDump Before second split: " << F << "\n\n";);
+
                 CSI->addHandler(ContinuationBB);
 
                 // catch (...) as catch value is null
                 auto nullI8Ptr = ConstantPointerNull::get(IntegerType::get(Ctx, 8)->getPointerTo());
                 auto iVal64 = ConstantInt::get(IntegerType::get(Ctx, 32), 64);
-                auto *CPI = CatchPadInst::Create(CSI, {nullI8Ptr, iVal64, nullI8Ptr}, "catch.after.clean", ContinuationBB);
+                auto *CPI = CatchPadInst::Create(CSI, {nullI8Ptr, iVal64, nullI8Ptr}, "catchpad", ContinuationBB);
 
                 // rethrow
                 llvm::SmallVector<OperandBundleDef> opBundle;
                 opBundle.emplace_back(OperandBundleDef("funclet", CPI));
 
                 auto nullTI = ConstantPointerNull::get(getThrowInfoType(Ctx)->getPointerTo());
-                Builder.CreateCall(getThrowFn(Ctx), {nullI8Ptr, nullTI}, opBundle);
 
-                new UnreachableInst(Ctx, ContinuationBB);
+                auto *UI = new UnreachableInst(Ctx, ContinuationBB);
+
+                Builder.SetInsertPoint(UI);
+
+                Builder.CreateCall(getThrowFn(Ctx), {nullI8Ptr, nullTI}, opBundle);
 
                 // end
             }
