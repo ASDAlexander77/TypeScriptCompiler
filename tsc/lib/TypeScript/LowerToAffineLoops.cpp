@@ -912,7 +912,15 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
             LLVM_DEBUG(llvm::dbgs() << "\n AFTER INLINE: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
         }
+        else
+        {
+            while (!tryOp.finallyBlock().empty())
+            {
+                rewriter.eraseBlock(&tryOp.finallyBlock().front());
+            }
+        }
 
+        auto exitBlock = finallyHasOps ? finallyBlockRegion : continuation;
         auto landingBlock = catchHasOps ? catchesRegion : finallyBlockForCleanup;
         if (landingBlock)
         {
@@ -953,7 +961,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
         auto resultOp = cast<mlir_ts::ResultOp>(bodyRegionLast->getTerminator());
         // rewriter.replaceOpWithNewOp<BranchOp>(resultOp, continuation, ValueRange{});
-        rewriter.replaceOpWithNewOp<BranchOp>(resultOp, finallyBlockRegion, ValueRange{});
+        rewriter.replaceOpWithNewOp<BranchOp>(resultOp, exitBlock, ValueRange{});
 
         mlir::Value cmpValue;
         if (catchHasOps)
@@ -1040,7 +1048,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
             auto yieldOpCatches = cast<mlir_ts::ResultOp>(catchesRegionLast->getTerminator());
             // rewriter.replaceOpWithNewOp<BranchOp>(yieldOpCatches, continuation, ValueRange{});
-            rewriter.replaceOpWithNewOp<BranchOp>(yieldOpCatches, finallyBlockRegion, ValueRange{});
+            rewriter.replaceOpWithNewOp<BranchOp>(yieldOpCatches, exitBlock, ValueRange{});
         }
 
         if (cmpValue)
@@ -1060,11 +1068,14 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
         // end of jumps
 
-        // finally:exit
-        rewriter.setInsertionPointToEnd(finallyBlockRegionLast);
+        if (finallyHasOps)
+        {
+            // finally:exit
+            rewriter.setInsertionPointToEnd(finallyBlockRegionLast);
 
-        auto yieldOpFinallyBlock = cast<mlir_ts::ResultOp>(finallyBlockRegionLast->getTerminator());
-        rewriter.replaceOpWithNewOp<BranchOp>(yieldOpFinallyBlock, continuation, yieldOpFinallyBlock.results());
+            auto yieldOpFinallyBlock = cast<mlir_ts::ResultOp>(finallyBlockRegionLast->getTerminator());
+            rewriter.replaceOpWithNewOp<BranchOp>(yieldOpFinallyBlock, continuation, yieldOpFinallyBlock.results());
+        }
 
         rewriter.replaceOp(tryOp, continuation->getArguments());
 
