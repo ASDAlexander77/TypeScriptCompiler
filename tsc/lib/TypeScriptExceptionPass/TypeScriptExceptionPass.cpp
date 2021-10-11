@@ -324,8 +324,6 @@ struct TypeScriptExceptionPass : public FunctionPass
                                                     /*unwind to caller if null*/,
                                                     1, "catchswitch", CSIBlock);
 
-                LLVM_DEBUG(llvm::dbgs() << "\nDump Before second split: " << F << "\n\n";);
-
                 CSI->addHandler(ContinuationBB);
 
                 // catch (...) as catch value is null
@@ -337,13 +335,15 @@ struct TypeScriptExceptionPass : public FunctionPass
                 llvm::SmallVector<OperandBundleDef> opBundle;
                 opBundle.emplace_back(OperandBundleDef("funclet", CPI));
 
-                auto nullTI = ConstantPointerNull::get(getThrowInfoType(Ctx)->getPointerTo());
+                auto throwFunc = getThrowFn(Ctx, F.getParent());
+
+                auto nullTI = ConstantPointerNull::get(cast<llvm::PointerType>(throwFunc.getFunctionType()->params()[1]));
 
                 auto *UI = new UnreachableInst(Ctx, ContinuationBB);
 
                 Builder.SetInsertPoint(UI);
 
-                Builder.CreateCall(getThrowFn(Ctx), {nullI8Ptr, nullTI}, opBundle);
+                Builder.CreateCall(throwFunc, {nullI8Ptr, nullTI}, opBundle);
 
                 // end
             }
@@ -398,8 +398,14 @@ struct TypeScriptExceptionPass : public FunctionPass
         return ThrowInfoType;
     }
 
-    llvm::FunctionCallee getThrowFn(LLVMContext &Ctx)
+    llvm::FunctionCallee getThrowFn(LLVMContext &Ctx, llvm::Module *module)
     {
+        auto globalFunc = module->getNamedValue("_CxxThrowException");
+        if (globalFunc)
+        {
+            return cast<llvm::Function>(globalFunc);
+        }
+
         // _CxxThrowException is passed an exception object and a ThrowInfo object
         // which describes the exception.
         llvm::Type *Args[] = {IntegerType::get(Ctx, 8)->getPointerTo(), getThrowInfoType(Ctx)->getPointerTo()};
