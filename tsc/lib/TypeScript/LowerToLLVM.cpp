@@ -2091,11 +2091,17 @@ struct LandingPadOpLowering : public TsLlvmPattern<mlir_ts::LandingPadOp>
                                   ConversionPatternRewriter &rewriter) const final
     {
         Location loc = landingPadOp.getLoc();
-
-        auto catch1 = landingPadOp.catches().front();
-
-        mlir::Type llvmLandingPadTy = getTypeConverter()->convertType(landingPadOp.getType());
-        rewriter.replaceOpWithNewOp<LLVM::LandingpadOp>(landingPadOp, llvmLandingPadTy, false, ValueRange{catch1});
+        if (!landingPadOp.cleanup())
+        {
+            auto catch1 = landingPadOp.catches().front();
+            mlir::Type llvmLandingPadTy = getTypeConverter()->convertType(landingPadOp.getType());
+            rewriter.replaceOpWithNewOp<LLVM::LandingpadOp>(landingPadOp, llvmLandingPadTy, false, ValueRange{catch1});
+        }
+        else
+        {
+            mlir::Type llvmLandingPadTy = getTypeConverter()->convertType(landingPadOp.getType());
+            rewriter.replaceOpWithNewOp<LLVM::LandingpadOp>(landingPadOp, llvmLandingPadTy, true, ValueRange{});
+        }
 
         return success();
     }
@@ -2169,6 +2175,48 @@ struct EndCatchOpLowering : public TsLlvmPattern<mlir_ts::EndCatchOp>
         auto endCatchFunc = ch.getOrInsertFunction(endCatchFuncName, th.getFunctionType(th.getVoidType(), ArrayRef<Type>{}));
 
         rewriter.replaceOpWithNewOp<LLVM::CallOp>(endCatchOp, endCatchFunc, ValueRange{});
+
+        return success();
+    }
+};
+
+struct BeginCleanupOpLowering : public TsLlvmPattern<mlir_ts::BeginCleanupOp>
+{
+    using TsLlvmPattern<mlir_ts::BeginCleanupOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::BeginCleanupOp beginCleanupOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        rewriter.eraseOp(beginCleanupOp);
+
+        return success();
+    }
+};
+
+struct EndCleanupOpLowering : public TsLlvmPattern<mlir_ts::EndCleanupOp>
+{
+    using TsLlvmPattern<mlir_ts::EndCleanupOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::EndCleanupOp endCleanupOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        Location loc = endCleanupOp.getLoc();
+
+        TypeHelper th(rewriter);
+        LLVMCodeHelper ch(endCleanupOp, rewriter, getTypeConverter());
+        CodeLogicHelper clh(endCleanupOp, rewriter);
+
+        auto endCatchFuncName = "__cxa_end_catch";
+        auto endCatchFunc = ch.getOrInsertFunction(endCatchFuncName, th.getFunctionType(th.getVoidType(), ArrayRef<Type>{}));
+
+        rewriter.replaceOpWithNewOp<LLVM::CallOp>(endCleanupOp, endCatchFunc, ValueRange{});
+        rewriter.setInsertionPointAfter(endCleanupOp);
+
+        rewriter.create<LLVM::ResumeOp>(loc, endCleanupOp.landingPad());
+
+        clh.CutBlock();
+
+        // add resume
 
         return success();
     }
@@ -2303,6 +2351,48 @@ struct EndCatchOpLowering : public TsLlvmPattern<mlir_ts::EndCatchOp>
         auto endCatchFunc = ch.getOrInsertFunction(endCatchFuncName, th.getFunctionType(th.getVoidType(), ArrayRef<Type>{}));
 
         rewriter.replaceOpWithNewOp<LLVM::CallOp>(endCatchOp, endCatchFunc, ValueRange{});
+
+        return success();
+    }
+};
+
+struct BeginCleanupOpLowering : public TsLlvmPattern<mlir_ts::BeginCleanupOp>
+{
+    using TsLlvmPattern<mlir_ts::BeginCleanupOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::BeginCleanupOp beginCleanupOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        rewriter.eraseOp(beginCleanupOp);
+
+        return success();
+    }
+};
+
+struct EndCleanupOpLowering : public TsLlvmPattern<mlir_ts::EndCleanupOp>
+{
+    using TsLlvmPattern<mlir_ts::EndCleanupOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::EndCleanupOp endCleanupOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        Location loc = endCleanupOp.getLoc();
+
+        TypeHelper th(rewriter);
+        LLVMCodeHelper ch(endCleanupOp, rewriter, getTypeConverter());
+        CodeLogicHelper clh(endCleanupOp, rewriter);
+
+        auto endCatchFuncName = "__cxa_end_catch";
+        auto endCatchFunc = ch.getOrInsertFunction(endCatchFuncName, th.getFunctionType(th.getVoidType(), ArrayRef<Type>{}));
+
+        rewriter.replaceOpWithNewOp<LLVM::CallOp>(endCleanupOp, endCatchFunc, ValueRange{});
+        rewriter.setInsertionPointAfter(endCleanupOp);
+
+        rewriter.create<LLVM::ResumeOp>(loc, endCleanupOp.landingPad());
+
+        clh.CutBlock();
+
+        // add resume
 
         return success();
     }
@@ -3247,27 +3337,27 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 
     // The only remaining operation to lower from the `typescript` dialect, is the PrintOp.
     TsLlvmContext tsLlvmContext{};
-    patterns.insert<CaptureOpLowering, AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering,
-                    ArithmeticBinaryOpLowering, AssertOpLowering, CastOpLowering, ConstantOpLowering, CreateOptionalOpLowering,
-                    UndefOptionalOpLowering, HasValueOpLowering, ValueOpLowering, SymbolRefOpLowering, GlobalOpLowering,
-                    GlobalResultOpLowering, FuncOpLowering, LoadOpLowering, ElementRefOpLowering, PropertyRefOpLowering,
-                    ExtractPropertyOpLowering, LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateTupleOpLowering,
-                    DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, PushOpLowering,
-                    PopOpLowering, DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering, PrintOpLowering, StoreOpLowering,
-                    SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering, StringLengthOpLowering, StringConcatOpLowering,
-                    StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering, MemoryCopyOpLowering, LoadSaveValueLowering,
-                    ThrowUnwindOpLowering, ThrowCallOpLowering, TrampolineOpLowering, VariableOpLowering, InvokeOpLowering,
-                    ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering, NewInterfaceOpLowering, VTableOffsetRefOpLowering,
-                    ThisPropertyRefOpLowering, LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering,
-                    CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, DebuggerOpLowering,
-                    UnreachableOpLowering, LandingPadOpLowering, CompareCatchTypeOpLowering, BeginCatchOpLowering, SaveCatchVarOpLowering,
-                    EndCatchOpLowering, CallInternalOpLowering, ReturnInternalOpLowering, NoOpLowering
+    patterns.insert<
+        CaptureOpLowering, AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering,
+        AssertOpLowering, CastOpLowering, ConstantOpLowering, CreateOptionalOpLowering, UndefOptionalOpLowering, HasValueOpLowering,
+        ValueOpLowering, SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering, FuncOpLowering, LoadOpLowering,
+        ElementRefOpLowering, PropertyRefOpLowering, ExtractPropertyOpLowering, LogicalBinaryOpLowering, NullOpLowering, NewOpLowering,
+        CreateTupleOpLowering, DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering,
+        PushOpLowering, PopOpLowering, DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering, PrintOpLowering, StoreOpLowering,
+        SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering, StringLengthOpLowering, StringConcatOpLowering,
+        StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering, MemoryCopyOpLowering, LoadSaveValueLowering,
+        ThrowUnwindOpLowering, ThrowCallOpLowering, TrampolineOpLowering, VariableOpLowering, InvokeOpLowering,
+        ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering, NewInterfaceOpLowering, VTableOffsetRefOpLowering,
+        ThisPropertyRefOpLowering, LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering, CreateBoundFunctionOpLowering,
+        GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, DebuggerOpLowering, UnreachableOpLowering, LandingPadOpLowering,
+        CompareCatchTypeOpLowering, BeginCatchOpLowering, SaveCatchVarOpLowering, EndCatchOpLowering, BeginCleanupOpLowering,
+        EndCleanupOpLowering, CallInternalOpLowering, ReturnInternalOpLowering, NoOpLowering
 #ifndef DISABLE_SWITCH_STATE_PASS
-                    ,
-                    SwitchStateOpLowering, StateLabelOpLowering, YieldReturnValOpLowering
+        ,
+        SwitchStateOpLowering, StateLabelOpLowering, YieldReturnValOpLowering
 #endif
-                    ,
-                    SwitchStateInternalOpLowering>(typeConverter, &getContext(), &tsLlvmContext);
+        ,
+        SwitchStateInternalOpLowering>(typeConverter, &getContext(), &tsLlvmContext);
 
     // patterns.insert<SwitchStateOpLowering2>(typeConverter, &getContext(), &tsLlvmContext, /*benegit*/ 2);
 

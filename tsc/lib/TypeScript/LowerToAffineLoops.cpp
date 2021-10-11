@@ -1010,7 +1010,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             };
             tryOp.catches().walk(visitorCallOpContinueCleanup);
 
-            // in case of try/finally, we need to insert throw in catch area
+            // in case of try/finally, we need to insert throw in catch area, in linux
             if (!catchHasOps)
             {
                 // TODO:
@@ -1020,10 +1020,10 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
             auto landingPadCleanupOp =
                 rewriter.create<mlir_ts::LandingPadOp>(loc, rttih.getLandingPadType(), rewriter.getBoolAttr(true), ValueRange{});
-            auto beginCleanupCallInfo = rewriter.create<mlir_ts::BeginCleanupOp>(loc, landingPadCleanupOp);
+            auto beginCleanupCallInfo = rewriter.create<mlir_ts::BeginCleanupOp>(loc);
 
             rewriter.setInsertionPoint(finallyBlockForCleanupLast->getTerminator());
-            rewriter.create<mlir_ts::EndCleanupOp>(loc);
+            rewriter.create<mlir_ts::EndCleanupOp>(loc, landingPadCleanupOp);
 
             auto yieldOpFinally = cast<mlir_ts::ResultOp>(finallyBlockForCleanupLast->getTerminator());
             rewriter.replaceOpWithNewOp<mlir_ts::UnreachableOp>(yieldOpFinally);

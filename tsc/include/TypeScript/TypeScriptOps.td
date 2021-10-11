@@ -1721,7 +1721,7 @@ def TypeScript_BeginCleanupOp : TypeScript_Op<"BeginCleanup"> {
   let description = [{
   }];
 
-  let arguments = (ins TypeScript_AnyTuple:$landingPad);
+  let arguments = (ins );
   let results = (outs );
 
   // Override the default verifier, everything is checked by traits.
@@ -1733,7 +1733,7 @@ def TypeScript_EndCleanupOp : TypeScript_Op<"EndCleanup"> {
   let description = [{
   }];
 
-  let arguments = (ins );
+  let arguments = (ins TypeScript_AnyTuple:$landingPad);
   let results = (outs );
 
   // Override the default verifier, everything is checked by traits.
