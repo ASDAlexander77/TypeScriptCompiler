@@ -27,15 +27,41 @@ struct CatchRegion
     LandingPadInst *landingPad;
     llvm::SmallVector<CallBase *> calls;
     CatchPadInst *catchPad;
+    CleanupPadInst *cleanupPad;
     StoreInst *store;
     InvokeInst *unwindInfoOp;
     Value *stack;
     bool hasAlloca;
+    llvm::Instruction *cxaEndCatch;
     llvm::Instruction *end;
+
+    bool isCatch()
+    {
+        return landingPad->getNumClauses() > 0 && landingPad->isCatch(0) && !landingPad->isCleanup();
+    }
 
     bool isCleanup()
     {
-        return landingPad ? landingPad->isCleanup() : false;
+        if (landingPad && landingPad->isCleanup())
+        {
+            return true;
+        }
+
+        if (landingPad->getNumClauses() == 0)
+        {
+            landingPad->setCleanup(true);
+            return true;
+        }
+
+        // BUG: HACK. using filter[] as cleanup landingpad
+        if ((landingPad->getNumClauses() > 0 && !landingPad->isCatch(0)))
+        {
+            // this is filter[], treat it as cleanup
+            landingPad->setCleanup(true);
+            return true;
+        }
+
+        return false;
     }
 };
 
@@ -112,6 +138,7 @@ struct TypeScriptExceptionPass : public FunctionPass
                 if (CI->getCalledFunction()->getName() == "__cxa_end_catch")
                 {
                     toRemoveWorkSet.push_back(&I);
+                    catchRegion->cxaEndCatch = &I;
                     endOfCatch = true;
                     continue;
                 }
@@ -124,6 +151,7 @@ struct TypeScriptExceptionPass : public FunctionPass
                 if (II->getCalledFunction()->getName() == "__cxa_end_catch")
                 {
                     toRemoveWorkSet.push_back(&I);
+                    catchRegion->cxaEndCatch = &I;
                     catchRegion->end = &I;
                     continue;
                 }
@@ -154,16 +182,15 @@ struct TypeScriptExceptionPass : public FunctionPass
 
             CurrentBB->getTerminator()->eraseFromParent();
 
-            auto *II = catchRegion.unwindInfoOp;
-            auto *CSI = CatchSwitchInst::Create(ConstantTokenNone::get(Ctx),
-                                                II ? II->getUnwindDest() : nullptr
-                                                /*unwind to caller if null*/,
-                                                1, "catch.switch", CurrentBB);
-            CSI->addHandler(ContinuationBB);
-
-            CatchPadInst *CPI = nullptr;
-            if (LPI->getNumClauses() > 0 && LPI->isCatch(0))
+            if (catchRegion.isCatch())
             {
+                auto *II = catchRegion.unwindInfoOp;
+                auto *CSI = CatchSwitchInst::Create(ConstantTokenNone::get(Ctx),
+                                                    II ? II->getUnwindDest() : nullptr
+                                                    /*unwind to caller if null*/,
+                                                    1, "catch.switch", CurrentBB);
+                CSI->addHandler(ContinuationBB);
+
                 // check what is type of catch
                 auto value = LPI->getOperand(0);
                 auto isNullInst = isa<ConstantPointerNull>(value);
@@ -172,38 +199,47 @@ struct TypeScriptExceptionPass : public FunctionPass
                     // catch (...) as catch value is null
                     auto nullI8Ptr = ConstantPointerNull::get(PointerType::get(IntegerType::get(Ctx, 8), 0));
                     auto iVal64 = ConstantInt::get(IntegerType::get(Ctx, 32), 64);
-                    CPI = CatchPadInst::Create(CSI, {nullI8Ptr, iVal64, nullI8Ptr}, "catchpad", LPI);
+                    catchRegion.catchPad = CatchPadInst::Create(CSI, {nullI8Ptr, iVal64, nullI8Ptr}, "catchpad", LPI);
                 }
                 else
                 {
                     auto varRef = catchRegion.store;
                     assert(varRef);
                     auto iValTypeId = ConstantInt::get(IntegerType::get(Ctx, 32), getTypeNumber(varRef->getPointerOperandType()));
-                    CPI = CatchPadInst::Create(CSI, {value, iValTypeId, varRef->getPointerOperand()}, "catchpad", LPI);
+                    catchRegion.catchPad = CatchPadInst::Create(CSI, {value, iValTypeId, varRef->getPointerOperand()}, "catchpad", LPI);
                     varRef->eraseFromParent();
                 }
             }
             else
             {
-                llvm_unreachable("not implemented");
+                assert(catchRegion.isCleanup());
+
+                catchRegion.cleanupPad = CleanupPadInst::Create(ConstantTokenNone::get(Ctx), None, "cleanuppad", LPI);
             }
 
             // save stack
-            Value *SP = nullptr;
             if (catchRegion.hasAlloca)
             {
-                SP = Builder.CreateCall(Intrinsic::getDeclaration(F.getParent(), Intrinsic::stacksave), {});
-                catchRegion.stack = SP;
+                catchRegion.stack = Builder.CreateCall(Intrinsic::getDeclaration(F.getParent(), Intrinsic::stacksave), {});
             }
-
-            toRemoveWorkSet.push_back(&*LPI);
-            catchRegion.catchPad = CPI;
 
             // set funcset
             for (auto callBase : catchRegion.calls)
             {
                 llvm::SmallVector<OperandBundleDef> opBundle;
-                opBundle.emplace_back(OperandBundleDef("funclet", CPI));
+                if (catchRegion.catchPad)
+                {
+                    opBundle.emplace_back(OperandBundleDef("funclet", catchRegion.catchPad));
+                }
+                else if (catchRegion.cleanupPad)
+                {
+                    opBundle.emplace_back(OperandBundleDef("funclet", catchRegion.cleanupPad));
+                }
+                else
+                {
+                    llvm_unreachable("not implemented");
+                }
+
                 auto *newCallBase = CallBase::Create(callBase, opBundle, callBase);
                 callBase->replaceAllUsesWith(newCallBase);
                 callBase->eraseFromParent();
@@ -234,12 +270,19 @@ struct TypeScriptExceptionPass : public FunctionPass
             {
                 retBlock = II->getNormalDest();
             }
+            else if (auto *RI = dyn_cast<ResumeInst>(I))
+            {
+                // nothing todo
+                toRemoveWorkSet.push_back(I);
+            }
             else
             {
                 retBlock = Builder.GetInsertBlock()->splitBasicBlock(I, "end.of.exception");
                 BI = dyn_cast<BranchInst>(&retBlock->getPrevNode()->back());
                 Builder.SetInsertPoint(BI);
             }
+
+            toRemoveWorkSet.push_back(&*LPI);
 
             if (catchRegion.hasAlloca)
             {
@@ -248,15 +291,22 @@ struct TypeScriptExceptionPass : public FunctionPass
                 Builder.CreateCall(Intrinsic::getDeclaration(F.getParent(), Intrinsic::stackrestore), {catchRegion.stack});
             }
 
-            assert(catchRegion.catchPad);
-
-            auto CR = CatchReturnInst::Create(catchRegion.catchPad, retBlock, BI ? BI->getParent() : I->getParent());
-
-            if (BI)
+            if (catchRegion.isCatch())
             {
-                // remove BranchInst
-                BI->replaceAllUsesWith(CR);
-                toRemoveWorkSet.push_back(&*BI);
+                assert(catchRegion.catchPad);
+                auto CR = CatchReturnInst::Create(catchRegion.catchPad, retBlock, BI ? BI->getParent() : I->getParent());
+                if (BI)
+                {
+                    // remove BranchInst
+                    BI->replaceAllUsesWith(CR);
+                    toRemoveWorkSet.push_back(&*BI);
+                }
+            }
+            else
+            {
+                // cleanup
+                assert(catchRegion.cleanupPad);
+                CleanupReturnInst::Create(catchRegion.cleanupPad, nullptr, I->getParent());
             }
 
             // LLVM_DEBUG(llvm::dbgs() << "\nTerminator after: " << *RI->getParent()->getTerminator() << "\n\n";);
@@ -264,6 +314,8 @@ struct TypeScriptExceptionPass : public FunctionPass
 
             MadeChange = true;
         }
+
+        LLVM_DEBUG(llvm::dbgs() << "\nDump Before deleting: " << F << "\n\n";);
 
         // remove
         for (auto CI : toRemoveWorkSet)
