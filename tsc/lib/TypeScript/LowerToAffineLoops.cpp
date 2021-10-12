@@ -830,6 +830,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
         auto i8PtrTy = mth.getOpaqueType();
 
+        // find catch var
         Operation *catchOpPtr = nullptr;
         auto visitorCatchContinue = [&](Operation *op) {
             if (auto catchOp = dyn_cast_or_null<mlir_ts::CatchOp>(op))
@@ -841,6 +842,18 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         };
         tryOp.catches().walk(visitorCatchContinue);
 
+        // set TryOp -> child TryOp
+        auto visitorTryOps = [&](Operation *op) {
+            if (auto childTryOp = dyn_cast_or_null<mlir_ts::TryOp>(op))
+            {
+                tsContext->parentTryOp[op] = tryOp.getOperation();
+            }
+        };
+        tryOp.body().walk(visitorTryOps);
+        tryOp.catches().walk(visitorTryOps);
+        tryOp.finallyBlock().walk(visitorTryOps);
+
+        // inline structure
         OpBuilder::InsertionGuard guard(rewriter);
         mlir::Block *currentBlock = rewriter.getInsertionBlock();
         mlir::Block *continuation = rewriter.splitBlock(currentBlock, rewriter.getInsertionPoint());
@@ -922,6 +935,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
         auto exitBlock = finallyHasOps ? finallyBlockRegion : continuation;
         auto landingBlock = catchHasOps ? catchesRegion : finallyBlockForCleanup;
+        tsContext->landingBlockOf[tryOp.getOperation()] = landingBlock;
         if (landingBlock)
         {
             // TODO: check for nested ops for example in if block
