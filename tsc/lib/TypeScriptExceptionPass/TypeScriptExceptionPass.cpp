@@ -111,6 +111,8 @@ struct TypeScriptExceptionPass : public FunctionPass
                 endOfCatch = true;
             }
 
+            endOfCatchIfResume = false;
+
             if (endOfCatch)
             {
                 // BR, or instraction without BR
@@ -268,6 +270,7 @@ struct TypeScriptExceptionPass : public FunctionPass
         for (auto &catchRegion : catchRegionsWorkSet)
         {
             auto *I = catchRegion.end;
+            assert(I);
             auto *LPI = catchRegion.landingPad;
             assert(LPI);
 
