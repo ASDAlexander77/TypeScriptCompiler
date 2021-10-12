@@ -175,8 +175,8 @@ struct TypeScriptExceptionPass : public FunctionPass
                 // possible end
                 if (II->getCalledFunction()->getName() == "_CxxThrowException")
                 {
+                    // do not put continue, we need to add facelet
                     catchRegion->end = &I;
-                    continue;
                 }
             }
 
@@ -263,9 +263,16 @@ struct TypeScriptExceptionPass : public FunctionPass
                     llvm_unreachable("not implemented");
                 }
 
+                auto replaceEndData = catchRegion.end == callBase;
+
                 auto *newCallBase = CallBase::Create(callBase, opBundle, callBase);
                 callBase->replaceAllUsesWith(newCallBase);
                 callBase->eraseFromParent();
+
+                if (replaceEndData)
+                {
+                    catchRegion.end = newCallBase;
+                }
             }
 
             // LLVM_DEBUG(llvm::dbgs() << "\nLanding Pad - Done. Function Dump: " << F << "\n\n";);
