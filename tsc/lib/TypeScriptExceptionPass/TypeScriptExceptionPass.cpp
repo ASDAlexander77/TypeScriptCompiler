@@ -85,6 +85,7 @@ struct TypeScriptExceptionPass : public FunctionPass
 
         CatchRegion *catchRegion = nullptr;
         auto endOfCatch = false;
+        auto endOfCatchIfResume = false;
         llvm::SmallVector<llvm::Instruction *> toRemoveWorkSet;
         for (auto &I : instructions(F))
         {
@@ -105,6 +106,11 @@ struct TypeScriptExceptionPass : public FunctionPass
                 continue;
             }
 
+            if (endOfCatchIfResume && dyn_cast<ResumeInst>(&I))
+            {
+                endOfCatch = true;
+            }
+
             if (endOfCatch)
             {
                 // BR, or instraction without BR
@@ -122,10 +128,13 @@ struct TypeScriptExceptionPass : public FunctionPass
                 }
             }
 
-            if (auto *SI = dyn_cast<StoreInst>(&I))
+            if (!catchRegion->store)
             {
-                assert(!catchRegion->store);
-                catchRegion->store = SI;
+                if (auto *SI = dyn_cast<StoreInst>(&I))
+                {
+                    assert(!catchRegion->store);
+                    catchRegion->store = SI;
+                }
             }
 
             if (auto *AI = dyn_cast<AllocaInst>(&I))
@@ -155,6 +164,9 @@ struct TypeScriptExceptionPass : public FunctionPass
                     toRemoveWorkSet.push_back(&I);
                     catchRegion->cxaEndCatch = &I;
                     catchRegion->end = &I;
+
+                    endOfCatchIfResume = true;
+
                     continue;
                 }
             }
@@ -310,11 +322,24 @@ struct TypeScriptExceptionPass : public FunctionPass
                 // cleanup
                 assert(catchRegion.cleanupPad);
 
+                BasicBlock *emptyBlockBefore = nullptr;
+                if (I->getPrevNode() == nullptr)
+                {
+                    emptyBlockBefore = Builder.GetInsertBlock();
+                }
+
                 BasicBlock *CurrentBB = I->getParent();
                 BasicBlock *ContinuationBB = CurrentBB->splitBasicBlock(CurrentBB->getTerminator(), "catch.pad");
-                BasicBlock *CSIBlock = BasicBlock::Create(Ctx, "catch.dispatch", CurrentBB->getParent(), ContinuationBB);
+                BasicBlock *CSIBlock =
+                    emptyBlockBefore ? emptyBlockBefore : BasicBlock::Create(Ctx, "catch.dispatch", CurrentBB->getParent(), ContinuationBB);
 
                 CurrentBB->getTerminator()->eraseFromParent();
+
+                if (emptyBlockBefore)
+                {
+                    CurrentBB = emptyBlockBefore->getPrevNode();
+                }
+
                 CleanupReturnInst::Create(catchRegion.cleanupPad, CSIBlock, CurrentBB);
 
                 // add rethrow code

@@ -2211,10 +2211,21 @@ struct EndCleanupOpLowering : public TsLlvmPattern<mlir_ts::EndCleanupOp>
         CodeLogicHelper clh(endCleanupOp, rewriter);
 
         auto endCatchFuncName = "__cxa_end_catch";
-        auto endCatchFunc = ch.getOrInsertFunction(endCatchFuncName, th.getFunctionType(th.getVoidType(), ArrayRef<Type>{}));
-
-        rewriter.replaceOpWithNewOp<LLVM::CallOp>(endCleanupOp, endCatchFunc, ValueRange{});
-        rewriter.setInsertionPointAfter(endCleanupOp);
+        if (!endCleanupOp.unwindDest().empty())
+        {
+            clh.Invoke(loc, [&](mlir::Block *continueBlock) {
+                rewriter.replaceOpWithNewOp<LLVM::InvokeOp>(
+                    endCleanupOp, mlir::TypeRange{}, mlir::FlatSymbolRefAttr::get(rewriter.getContext(), endCatchFuncName), ValueRange{},
+                    continueBlock, ValueRange{}, endCleanupOp.unwindDest().front(), ValueRange{});
+            });
+            rewriter.setInsertionPointAfter(endCleanupOp);
+        }
+        else
+        {
+            auto endCatchFunc = ch.getOrInsertFunction(endCatchFuncName, th.getFunctionType(th.getVoidType(), ArrayRef<Type>{}));
+            rewriter.replaceOpWithNewOp<LLVM::CallOp>(endCleanupOp, endCatchFunc, ValueRange{});
+            rewriter.setInsertionPointAfter(endCleanupOp);
+        }
 
         rewriter.create<LLVM::ResumeOp>(loc, endCleanupOp.landingPad());
 

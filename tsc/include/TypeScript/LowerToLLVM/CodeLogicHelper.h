@@ -310,6 +310,20 @@ class CodeLogicHelper
         return continuationBlock;
     }
 
+    mlir::Block *Invoke(mlir::Location loc, std::function<void(mlir::Block *)> bld)
+    {
+        auto *opBlock = rewriter.getInsertionBlock();
+        auto opPosition = rewriter.getInsertionPoint();
+        auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
+
+        rewriter.setInsertionPointToEnd(opBlock);
+
+        bld(continuationBlock);
+
+        rewriter.setInsertionPointToStart(continuationBlock);
+        return continuationBlock;
+    }
+
     mlir::Block *CutBlock()
     {
         auto *opBlock = rewriter.getInsertionBlock();
