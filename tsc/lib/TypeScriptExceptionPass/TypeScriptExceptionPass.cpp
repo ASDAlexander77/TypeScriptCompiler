@@ -318,13 +318,16 @@ struct TypeScriptExceptionPass : public FunctionPass
 
             if (catchRegion.isCatch())
             {
-                assert(catchRegion.catchPad);
-                auto CR = CatchReturnInst::Create(catchRegion.catchPad, retBlock, BI ? BI->getParent() : I->getParent());
-                if (BI)
+                if (!dyn_cast<InvokeInst>(I))
                 {
-                    // remove BranchInst
-                    BI->replaceAllUsesWith(CR);
-                    toRemoveWorkSet.push_back(&*BI);
+                    assert(catchRegion.catchPad);
+                    auto CR = CatchReturnInst::Create(catchRegion.catchPad, retBlock, BI ? BI->getParent() : I->getParent());
+                    if (BI)
+                    {
+                        // remove BranchInst
+                        BI->replaceAllUsesWith(CR);
+                        toRemoveWorkSet.push_back(&*BI);
+                    }
                 }
             }
             else
