@@ -1728,13 +1728,14 @@ def TypeScript_BeginCleanupOp : TypeScript_Op<"BeginCleanup"> {
   let verifier = ?;
 }
 
-def TypeScript_EndCleanupOp : TypeScript_Op<"EndCleanup"> {
+def TypeScript_EndCleanupOp : TypeScript_Op<"EndCleanup", [Terminator]> {
   let summary = "EndCleanup - for affine layer";
   let description = [{
   }];
 
   let arguments = (ins TypeScript_AnyTuple:$landingPad);
   let results = (outs );
+  let successors = (successor VariadicSuccessor<AnySuccessor>:$unwindDest);
 
   // Override the default verifier, everything is checked by traits.
   let verifier = ?;
@@ -1755,7 +1756,7 @@ def TypeScript_ThrowCallOp : TypeScript_Op<"ThrowCall", [Terminator]> {
   
 }
 
-def TypeScript_AddressOfOp : TypeScript_Op<"Addressof"> {
+def TypeScript_AddressOfOp : TypeScript_Op<"AddressOf"> {
   let arguments = (ins FlatSymbolRefAttr:$global_name, OptionalAttr<I32Attr>:$offset);
   let results = (outs TypeScript_Ref:$reference);
 

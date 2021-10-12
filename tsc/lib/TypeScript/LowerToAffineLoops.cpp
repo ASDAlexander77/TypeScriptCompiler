@@ -821,6 +821,8 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         CodeLogicHelper clh(tryOp, rewriter);
 
         auto module = tryOp->getParentOfType<mlir::ModuleOp>();
+        auto parentTryOp = tsContext->parentTryOp[tryOp.getOperation()];
+        mlir::Block *parentTryOpLandingPad = parentTryOp ? tsContext->landingBlockOf[parentTryOp] : nullptr;
 
 #ifdef WIN_EXCEPTION
         MLIRRTTIHelperVCWin32 rttih(rewriter, module);
@@ -1056,10 +1058,21 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             auto beginCleanupCallInfo = rewriter.create<mlir_ts::BeginCleanupOp>(loc);
 
             rewriter.setInsertionPoint(finallyBlockForCleanupLast->getTerminator());
-            rewriter.create<mlir_ts::EndCleanupOp>(loc, landingPadCleanupOp);
+            mlir::SmallVector<mlir::Block *> unwindDests;
+            if (parentTryOpLandingPad)
+            {
+                unwindDests.push_back(parentTryOpLandingPad);
+            }
+
+            /*
+            auto endCleanupOp = rewriter.create<mlir_ts::EndCleanupOp>(loc, landingPadCleanupOp, unwindDests);
 
             auto yieldOpFinally = cast<mlir_ts::ResultOp>(finallyBlockForCleanupLast->getTerminator());
             rewriter.replaceOpWithNewOp<mlir_ts::UnreachableOp>(yieldOpFinally);
+            */
+
+            auto yieldOpFinally = cast<mlir_ts::ResultOp>(finallyBlockForCleanupLast->getTerminator());
+            rewriter.replaceOpWithNewOp<mlir_ts::EndCleanupOp>(yieldOpFinally, landingPadCleanupOp, unwindDests);
 
             LLVM_DEBUG(llvm::dbgs() << "\n AFTER INSERT CLEANUP: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
 

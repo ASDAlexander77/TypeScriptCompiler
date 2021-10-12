@@ -2218,7 +2218,12 @@ struct EndCleanupOpLowering : public TsLlvmPattern<mlir_ts::EndCleanupOp>
 
         rewriter.create<LLVM::ResumeOp>(loc, endCleanupOp.landingPad());
 
-        clh.CutBlock();
+        // no need for cut if this is last op in block
+        auto terminator = rewriter.getInsertionBlock()->getTerminator();
+        if (terminator != endCleanupOp && terminator != endCleanupOp->getNextNode())
+        {
+            clh.CutBlock();
+        }
 
         // add resume
 
