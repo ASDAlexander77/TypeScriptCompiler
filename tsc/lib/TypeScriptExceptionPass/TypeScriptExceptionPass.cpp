@@ -171,6 +171,13 @@ struct TypeScriptExceptionPass : public FunctionPass
 
                     continue;
                 }
+
+                // possible end
+                if (II->getCalledFunction()->getName() == "_CxxThrowException")
+                {
+                    catchRegion->end = &I;
+                    continue;
+                }
             }
 
             if (auto *CB = dyn_cast<CallBase>(&I))
