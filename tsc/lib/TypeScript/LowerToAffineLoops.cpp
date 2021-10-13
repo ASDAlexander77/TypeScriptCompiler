@@ -1043,7 +1043,17 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                     tsContext->unwind[op] = finallyBlockForCleanup;
                 }
             };
-            tryOp.catches().walk(visitorCallOpContinueCleanup);
+            // tryOp.catches().walk(visitorCallOpContinueCleanup);
+            auto it = catchesRegion;
+            do
+            {
+                it->walk(visitorCallOpContinueCleanup);
+                if (it != catchesRegionLast)
+                {
+                    it = it->getNextNode();
+                    continue;
+                }
+            } while (false);
 
             // in case of try/finally, we need to insert throw in catch area, in linux
             if (!catchHasOps)

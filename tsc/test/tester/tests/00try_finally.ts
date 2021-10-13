@@ -69,10 +69,35 @@ function main3() {
     assert(3 == c);
 }
 
+function main4() {
+
+    let i = 0;
+
+    try {
+        try {
+            throw 1.0;
+        }
+        catch (e: number) {
+            i++;
+            print("asd1");
+            throw 2.0;
+        }
+        finally {
+            print("finally");
+        }
+    }
+    catch (e2: number) {
+        i++;
+        print("asd3");
+    }
+
+    assert(i == 2);
+}
+
 function main() {
     main1();
     main2();
-    // TODO:
-    //main3();
+    main3();
+    main4();
     print("done.");
 }
