@@ -155,6 +155,13 @@ struct TypeScriptExceptionPass : public FunctionPass
                     endOfCatch = true;
                     continue;
                 }
+
+                // possible end
+                if (CI->getCalledFunction()->getName() == "_CxxThrowException")
+                {
+                    // do not put continue, we need to add facelet
+                    catchRegion->end = &I;
+                }
             }
 
             if (auto *II = dyn_cast<InvokeInst>(&I))
