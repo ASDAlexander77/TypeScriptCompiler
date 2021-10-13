@@ -139,7 +139,7 @@ struct TypeScriptExceptionPass : public FunctionPass
                 }
             }
 
-            if (auto *AI = dyn_cast<AllocaInst>(&I))
+            if (dyn_cast<AllocaInst>(&I))
             {
                 catchRegion->hasAlloca = true;
             }
@@ -302,7 +302,7 @@ struct TypeScriptExceptionPass : public FunctionPass
             {
                 retBlock = II->getNormalDest();
             }
-            else if (auto *RI = dyn_cast<ResumeInst>(I))
+            else if (dyn_cast<ResumeInst>(I))
             {
                 // nothing todo
                 toRemoveWorkSet.push_back(I);
