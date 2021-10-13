@@ -29,6 +29,18 @@
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
         },
         {
+            "name": "(Linux) ./tsc - MLIR",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/../../__build/tsc-ninja/bin/tsc",
+            "args": ["-emit=mlir", "-debug-only=mlir", "-mlir-disable-threading", "/mnt/c/temp/1.ts"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "externalTerminal",
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+        },          
+        {
             "name": "(Windows) tsc.exe - MLIR-AFFINE",
             "type": "cppvsdbg",
             "request": "launch",
@@ -40,6 +52,18 @@
             "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
         },
+        {
+            "name": "(Linux) ./tsc - MLIR-AFFINE",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/../../__build/tsc-ninja/bin/tsc",
+            "args": ["-emit=mlir-affine", "-debug-only=affine", "-mlir-disable-threading", "/mnt/c/temp/1.ts"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "externalTerminal",
+            "visualizerFile": "${workspaceFolder}/../tsc.natvis"
+        },          
         {
             "name": "(Windows) tsc.exe - MLIR-LLVM",
             "type": "cppvsdbg",
