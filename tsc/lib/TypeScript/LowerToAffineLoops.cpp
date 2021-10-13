@@ -1451,7 +1451,11 @@ void cleanupEmptyBlocksWithoutPredecessors(mlir_ts::FuncOp f)
 
         if (regionBlock.getPredecessors().empty())
         {
-            workSet.insert(&regionBlock);
+            auto count = std::distance(regionBlock.begin(), regionBlock.end());
+            if (count <= 1)
+            {
+                workSet.insert(&regionBlock);
+            }
         }
     }
 
