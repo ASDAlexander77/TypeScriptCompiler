@@ -2,3 +2,12 @@
 2) Add optimizator to cast tuple to tuple (to eliminate multiple createTuple with Cast Tuple, which can be converted into one CreateTuple Op)
 3) replace gcroot with GC_add_roots / GC_remove_roots
 4) add GCMain() and call it from main(), in main() do all init for GC
+
+---------------
+5) in code (when finally blocked used)
+
+  %cleanuppad = cleanuppad within none []
+  %5 = call i32 @puts(i8* getelementptr inbounds ([8 x i8], [8 x i8]* @s_18175057562723240456, i64 0, i64 0)) [ "funclet"(token %cleanuppad) ], !dbg !10
+  cleanupret from %cleanuppad unwind label %catch.dispatch
+
+you need to create Invoke (so add PrintUnwind) to fix issue when code inlined and class replaced with Invoke with incorrect unwind destination

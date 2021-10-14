@@ -163,6 +163,11 @@ struct TypeScriptExceptionPass : public FunctionPass
                     // do not put continue, we need to add facelet
                     catchRegion->end = &I;
                 }
+                else
+                {
+                    llvm_unreachable("CallInst must not be used in Try/Catch/Finally block as it will cause issue with incorrect unwind "
+                                     "destination when Inliner inlines body of method");
+                }
             }
 
             if (auto *II = dyn_cast<InvokeInst>(&I))
@@ -399,9 +404,19 @@ struct TypeScriptExceptionPass : public FunctionPass
 
                 auto nullTI = ConstantPointerNull::get(cast<llvm::PointerType>(throwFunc.getFunctionType()->params()[1]));
 
-                auto *UI = new UnreachableInst(Ctx, ContinuationBB);
-
-                Builder.SetInsertPoint(UI);
+                // TODO: we need to find block with unreachable first
+                if (auto *unreachBlock = findUnreachableBlock(F))
+                {
+                    // TODO: I don't know why but we need it here
+                    unreachBlock->setName("unreachable");
+                    auto *BI = BranchInst::Create(unreachBlock, ContinuationBB);
+                    Builder.SetInsertPoint(BI);
+                }
+                else
+                {
+                    auto *UI = new UnreachableInst(Ctx, ContinuationBB);
+                    Builder.SetInsertPoint(UI);
+                }
 
                 Builder.CreateCall(throwFunc, {nullI8Ptr, nullTI}, opBundle);
 
@@ -419,7 +434,7 @@ struct TypeScriptExceptionPass : public FunctionPass
         // remove
         for (auto CI : toRemoveWorkSet)
         {
-            // we need to fix issue wit PHI node after inline works
+            // TODO: we need to fix issue wit PHI node after inline works
             if (CI->getNumUses() > 0)
             {
                 for (auto &U : CI->uses())
@@ -535,6 +550,21 @@ struct TypeScriptExceptionPass : public FunctionPass
                 any = true;
             }
         } while (any);
+    }
+
+    BasicBlock *findUnreachableBlock(Function &F)
+    {
+        SmallPtrSet<BasicBlock *, 16> workSet;
+        for (auto &regionBlock : F.getBasicBlockList())
+        {
+            auto count = std::distance(regionBlock.begin(), regionBlock.end());
+            if (count == 1 && isa<UnreachableInst>(regionBlock.begin()))
+            {
+                return &regionBlock;
+            }
+        }
+
+        return nullptr;
     }
 };
 } // namespace
