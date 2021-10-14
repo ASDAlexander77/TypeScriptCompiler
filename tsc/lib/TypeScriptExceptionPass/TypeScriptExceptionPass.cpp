@@ -81,7 +81,7 @@ struct TypeScriptExceptionPass : public FunctionPass
         llvm::SmallVector<CatchRegion> catchRegionsWorkSet;
 
         LLVM_DEBUG(llvm::dbgs() << "\nFunction: " << F.getName() << "\n\n";);
-        LLVM_DEBUG(llvm::dbgs() << "\nDump Before: " << F << "\n\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\nDump Before: ...\n" << F << "\n\n";);
 
         CatchRegion *catchRegion = nullptr;
         auto endOfCatch = false;
@@ -126,6 +126,7 @@ struct TypeScriptExceptionPass : public FunctionPass
             {
                 if (auto *II = dyn_cast<InvokeInst>(&I))
                 {
+                    LLVM_DEBUG(llvm::dbgs() << "\nset (unwindInfoOp) : " << *II << "\n";);
                     catchRegion->unwindInfoOp = II;
                 }
             }
@@ -271,6 +272,7 @@ struct TypeScriptExceptionPass : public FunctionPass
                 }
 
                 auto replaceEndData = catchRegion.end == callBase;
+                auto replaceUnwindInfoOp = catchRegion.unwindInfoOp == callBase;
 
                 auto *newCallBase = CallBase::Create(callBase, opBundle, callBase);
                 callBase->replaceAllUsesWith(newCallBase);
@@ -279,6 +281,11 @@ struct TypeScriptExceptionPass : public FunctionPass
                 if (replaceEndData)
                 {
                     catchRegion.end = newCallBase;
+                }
+
+                if (replaceUnwindInfoOp)
+                {
+                    catchRegion.unwindInfoOp = cast<InvokeInst>(newCallBase);
                 }
             }
 
@@ -371,6 +378,7 @@ struct TypeScriptExceptionPass : public FunctionPass
 
                 // add rethrow code
                 auto *II = catchRegion.unwindInfoOp;
+
                 auto *CSI = CatchSwitchInst::Create(ConstantTokenNone::get(Ctx),
                                                     II ? II->getUnwindDest() : nullptr
                                                     /*unwind to caller if null*/,
@@ -406,18 +414,38 @@ struct TypeScriptExceptionPass : public FunctionPass
             MadeChange = true;
         }
 
-        LLVM_DEBUG(llvm::dbgs() << "\nDump Before deleting: " << F << "\n\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! Dump Before deleting: ...\n" << F << "\n\n";);
 
         // remove
         for (auto CI : toRemoveWorkSet)
         {
+            // we need to fix issue wit PHI node after inline works
+            if (CI->getNumUses() > 0)
+            {
+                for (auto &U : CI->uses())
+                {
+                    if (U.getUser())
+                    {
+                        // Instruction *UserI = cast<Instruction>(U.getUser());
+                        PHINode *UserPHI = cast<PHINode>(U.getUser());
+                        if (UserPHI)
+                        {
+                            UserPHI->eraseFromParent();
+                            break;
+                        }
+                    }
+                }
+            }
+
             CI->eraseFromParent();
         }
 
+        cleanupEmptyBlocksWithoutPredecessors(F);
+
         // LLVM_DEBUG(llvm::dbgs() << "\nDone. Function Dump: " << F << "\n\n";);
 
-        LLVM_DEBUG(llvm::dbgs() << "\nChange: " << MadeChange << "\n\n";);
-        LLVM_DEBUG(llvm::dbgs() << "\nDump After: " << F << "\n\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! Change: " << MadeChange << "\n\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! Dump After: ...\n" << F << "\n\n";);
 
         return MadeChange;
     }
@@ -473,6 +501,40 @@ struct TypeScriptExceptionPass : public FunctionPass
         */
 
         return Throw;
+    }
+
+    void cleanupEmptyBlocksWithoutPredecessors(Function &F)
+    {
+        auto any = false;
+        do
+        {
+            any = false;
+            SmallPtrSet<BasicBlock *, 16> workSet;
+            for (auto &regionBlock : F.getBasicBlockList())
+            {
+
+                if (regionBlock.isEntryBlock())
+                {
+                    continue;
+                }
+
+                if (regionBlock.hasNPredecessors(0))
+                {
+                    auto count = std::distance(regionBlock.begin(), regionBlock.end());
+                    if (count == 0 || count == 1 && (isa<BranchInst>(regionBlock.begin()) || isa<UnreachableInst>(regionBlock.begin())))
+                    {
+                        LLVM_DEBUG(llvm::dbgs() << "\n!! REMOVING EMPTY BLOCK: ..." << regionBlock << "\n";);
+                        workSet.insert(&regionBlock);
+                    }
+                }
+            }
+
+            for (auto blockPtr : workSet)
+            {
+                blockPtr->eraseFromParent();
+                any = true;
+            }
+        } while (any);
     }
 };
 } // namespace
