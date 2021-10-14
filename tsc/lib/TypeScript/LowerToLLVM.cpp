@@ -2398,17 +2398,9 @@ struct EndCleanupOpLowering : public TsLlvmPattern<mlir_ts::EndCleanupOp>
     {
         Location loc = endCleanupOp.getLoc();
 
-        TypeHelper th(rewriter);
-        LLVMCodeHelper ch(endCleanupOp, rewriter, getTypeConverter());
         CodeLogicHelper clh(endCleanupOp, rewriter);
 
-        auto endCatchFuncName = "__cxa_end_catch";
-        auto endCatchFunc = ch.getOrInsertFunction(endCatchFuncName, th.getFunctionType(th.getVoidType(), ArrayRef<Type>{}));
-
-        rewriter.replaceOpWithNewOp<LLVM::CallOp>(endCleanupOp, endCatchFunc, ValueRange{});
-        rewriter.setInsertionPointAfter(endCleanupOp);
-
-        rewriter.create<LLVM::ResumeOp>(loc, endCleanupOp.landingPad());
+        rewriter.replaceOpWithNewOp<LLVM::ResumeOp>(endCleanupOp, endCleanupOp.landingPad());
 
         auto terminator = rewriter.getInsertionBlock()->getTerminator();
         if (terminator != endCleanupOp && terminator != endCleanupOp->getNextNode())

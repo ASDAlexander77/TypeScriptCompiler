@@ -867,13 +867,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         auto *finallyBlockRegion = &tryOp.finallyBlock().front();
         auto *finallyBlockRegionLast = &tryOp.finallyBlock().back();
 
-#ifdef WIN_EXCEPTION
         auto catchHasOps = llvm::any_of(tryOp.catches(), [](auto &block) { return &block.front() != block.getTerminator(); });
-#else
-        // in linux first landingpad should be "non-cleaner"
-        auto catchHasOps = true;
-        auto catchHasSameOps = llvm::any_of(tryOp.catches(), [](auto &block) { return &block.front() != block.getTerminator(); });
-#endif
         auto finallyHasOps = llvm::any_of(tryOp.finallyBlock(), [](auto &block) { return &block.front() != block.getTerminator(); });
 
         // logic to set Invoke attribute CallOp
@@ -1086,19 +1080,6 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
         if (catchHasOps)
         {
-#ifndef WIN_EXCEPTION
-            // in case of try/finally, we need to insert throw in catch area, in linux
-            if (!catchHasSameOps && finallyHasOps)
-            {
-                // add throw to trigger finally block
-                // we need to insert before EndCatch
-                rewriter.setInsertionPoint(catchesRegionLast->getTerminator()->getPrevNode());
-                auto nullVal = rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
-                auto newThrowOp = rewriter.create<mlir_ts::ThrowOp>(loc, nullVal);
-                tsContext->unwind[newThrowOp.getOperation()] = finallyBlockForCleanup;
-            }
-#endif
-
             // exit br
             rewriter.setInsertionPointToEnd(catchesRegionLast);
 

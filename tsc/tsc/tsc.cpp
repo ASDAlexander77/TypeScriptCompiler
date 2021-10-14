@@ -12,7 +12,10 @@
 #include "TypeScript/NeededDialectsToLLVMIRTranslation.h"
 #endif
 #ifdef ENABLE_EXCEPTIONS
+#include "TypeScript/LandingPadFixPass.h"
+#ifdef WIN_EXCEPTION
 #include "TypeScript/TypeScriptExceptionPass.h"
+#endif
 #endif
 
 #include "TypeScript/rt.h"
@@ -214,10 +217,6 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module
         pm.addPass(mlir::createCanonicalizerPass());
 
         // mlir::OpPassManager &optPM = pm.nest<mlir::typescript::FuncOp>();
-        // disabled as it was experiment
-        // optPM.addPass(mlir::typescript::createLoadBoundPropertiesPass());
-        // optPM.addPass(mlir::createCanonicalizerPass());
-
         // TODO: this failing test about accessors
         // optPM.addPass(mlir::createCSEPass());
     }
@@ -312,13 +311,23 @@ int initDialects(mlir::ModuleOp module)
 
 std::function<llvm::Error(llvm::Module *)> initPasses(mlir::SmallVector<const llvm::PassInfo *> &passes, bool enableOpt)
 {
-#if defined(ENABLE_EXCEPTIONS) && defined(WIN32)
-    auto pass = llvm::PassRegistry::getPassRegistry()->getPassInfo(llvm::getTypeScriptExceptionPassID());
-    assert(pass);
-    if (pass)
+#ifdef ENABLE_EXCEPTIONS
+
+    auto landingPadFixPass = llvm::PassRegistry::getPassRegistry()->getPassInfo(llvm::getLandingPadFixPassID());
+    assert(landingPadFixPass);
+    if (landingPadFixPass)
     {
-        passes.push_back(pass);
+        passes.push_back(landingPadFixPass);
     }
+
+#ifdef WIN_EXCEPTION
+    auto exceptPass = llvm::PassRegistry::getPassRegistry()->getPassInfo(llvm::getTypeScriptExceptionPassID());
+    assert(exceptPass);
+    if (exceptPass)
+    {
+        passes.push_back(exceptPass);
+    }
+#endif
 
     auto optPipeline = mlir::makeLLVMPassesTransformer(passes,
                                                        /*optLevel=*/enableOpt ? 3 : 0,
