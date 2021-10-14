@@ -1070,6 +1070,12 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
             rewriter.replaceOpWithNewOp<mlir_ts::UnreachableOp>(yieldOpFinally);
             */
 
+            if (catchHasOps)
+            {
+                rewriter.setInsertionPoint(finallyBlockForCleanupLast->getTerminator());
+                rewriter.create<mlir_ts::EndCatchOp>(loc);
+            }
+
             auto yieldOpFinally = cast<mlir_ts::ResultOp>(finallyBlockForCleanupLast->getTerminator());
             rewriter.replaceOpWithNewOp<mlir_ts::EndCleanupOp>(yieldOpFinally, landingPadCleanupOp, unwindDests);
 
