@@ -1441,32 +1441,39 @@ void finishSwitchState(mlir_ts::FuncOp f, TSFunctionContext &tsFuncContext)
 
 void cleanupEmptyBlocksWithoutPredecessors(mlir_ts::FuncOp f)
 {
-    SmallPtrSet<mlir::Block *, 16> workSet;
-    for (auto &regionBlock : f.getRegion())
+    auto any = false;
+    do
     {
-        if (regionBlock.isEntryBlock())
+        any = false;
+        SmallPtrSet<mlir::Block *, 16> workSet;
+        for (auto &regionBlock : f.getRegion())
         {
-            continue;
-        }
-
-        if (regionBlock.getPredecessors().empty())
-        {
-            auto count = std::distance(regionBlock.begin(), regionBlock.end());
-            if (count <= 1)
+            if (regionBlock.isEntryBlock())
             {
-                workSet.insert(&regionBlock);
+                continue;
+            }
+
+            if (regionBlock.getPredecessors().empty())
+            {
+                auto count = std::distance(regionBlock.begin(), regionBlock.end());
+                if (count == 0 ||
+                    count == 1 && (isa<mlir::BranchOp>(regionBlock.begin()) || isa<mlir_ts::UnreachableOp>(regionBlock.begin())))
+                {
+                    workSet.insert(&regionBlock);
+                }
             }
         }
-    }
 
-    ConversionPatternRewriter rewriter(f.getContext());
-    for (auto blockPtr : workSet)
-    {
-        blockPtr->dropAllDefinedValueUses();
-        blockPtr->dropAllUses();
-        blockPtr->dropAllReferences();
-        rewriter.eraseBlock(blockPtr);
-    }
+        ConversionPatternRewriter rewriter(f.getContext());
+        for (auto blockPtr : workSet)
+        {
+            blockPtr->dropAllDefinedValueUses();
+            blockPtr->dropAllUses();
+            blockPtr->dropAllReferences();
+            rewriter.eraseBlock(blockPtr);
+            any = true;
+        }
+    } while (any);
 }
 
 void TypeScriptToAffineLoweringPass::runOnFunction()
