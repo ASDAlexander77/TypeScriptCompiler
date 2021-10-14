@@ -165,8 +165,13 @@ struct TypeScriptExceptionPass : public FunctionPass
                 }
                 else
                 {
+                    LLVM_DEBUG(llvm::dbgs() << "\n!! WARNING Must be Invoke: " << I << "\n");
+
+                    // TODO: uncomment me
+                    /*
                     llvm_unreachable("CallInst must not be used in Try/Catch/Finally block as it will cause issue with incorrect unwind "
                                      "destination when Inliner inlines body of method");
+                    */
                 }
             }
 
@@ -260,6 +265,7 @@ struct TypeScriptExceptionPass : public FunctionPass
             }
 
             // set funcset
+            llvm::SmallVector<CallBase *> newCalls;
             for (auto callBase : catchRegion.calls)
             {
                 llvm::SmallVector<OperandBundleDef> opBundle;
@@ -279,9 +285,30 @@ struct TypeScriptExceptionPass : public FunctionPass
                 auto replaceEndData = catchRegion.end == callBase;
                 auto replaceUnwindInfoOp = catchRegion.unwindInfoOp == callBase;
 
-                auto *newCallBase = CallBase::Create(callBase, opBundle, callBase);
+                CallBase *newCallBase = nullptr;
+                /*
+                if (catchRegion.unwindInfoOp)
+                {
+                    if (isa<CallInst>(callBase))
+                    {
+                        if (auto *CI = cast<CallInst>(callBase))
+                        {
+                            newCallBase = ToInvoke(CI, catchRegion.unwindInfoOp->getUnwindDest(), opBundle);
+                        }
+                    }
+                }
+                */
+
+                // default case
+                if (!newCallBase)
+                {
+                    newCallBase = CallBase::Create(callBase, opBundle, callBase);
+                }
+
                 callBase->replaceAllUsesWith(newCallBase);
                 callBase->eraseFromParent();
+
+                newCalls.push_back(newCallBase);
 
                 if (replaceEndData)
                 {
@@ -293,6 +320,9 @@ struct TypeScriptExceptionPass : public FunctionPass
                     catchRegion.unwindInfoOp = cast<InvokeInst>(newCallBase);
                 }
             }
+
+            catchRegion.calls.clear();
+            catchRegion.calls.append(newCalls);
 
             // LLVM_DEBUG(llvm::dbgs() << "\nLanding Pad - Done. Function Dump: " << F << "\n\n";);
 
@@ -355,6 +385,26 @@ struct TypeScriptExceptionPass : public FunctionPass
                         toRemoveWorkSet.push_back(&*BI);
                     }
                 }
+
+                // convert call to Invoke with the same unwind
+                /*
+                llvm::SmallVector<OperandBundleDef> opBundle;
+                opBundle.emplace_back(OperandBundleDef("funclet", catchRegion.catchPad));
+                for (auto callBase : catchRegion.calls)
+                {
+                    LLVM_DEBUG(llvm::dbgs() << "\n!! CONVERT CALL TO INVOKE(catchpad): " << *callBase << "\n");
+
+                    if (isa<CallInst>(callBase))
+                    {
+                        if (auto *CI = cast<CallInst>(callBase))
+                        {
+                            auto newCallBase = ToInvoke(CI, retBlock, opBundle);
+                            callBase->replaceAllUsesWith(newCallBase);
+                            callBase->eraseFromParent();
+                        }
+                    }
+                }
+                */
             }
             else
             {
@@ -421,6 +471,27 @@ struct TypeScriptExceptionPass : public FunctionPass
                 Builder.CreateCall(throwFunc, {nullI8Ptr, nullTI}, opBundle);
 
                 // end
+
+                // convert call to Invoke with the same unwind
+                /*
+                if (II)
+                {
+                    for (auto callBase : catchRegion.calls)
+                    {
+                        LLVM_DEBUG(llvm::dbgs() << "\n!! CONVERT CALL TO INVOKE(cleanup): " << *callBase << "\n");
+
+                        if (isa<CallInst>(callBase))
+                        {
+                            if (auto *CI = cast<CallInst>(callBase))
+                            {
+                                auto newCallBase = ToInvoke(CI, II->getUnwindDest(), opBundle);
+                                callBase->replaceAllUsesWith(newCallBase);
+                                callBase->eraseFromParent();
+                            }
+                        }
+                    }
+                }
+                */
             }
 
             // LLVM_DEBUG(llvm::dbgs() << "\nTerminator after: " << *RI->getParent()->getTerminator() << "\n\n";);
@@ -516,6 +587,23 @@ struct TypeScriptExceptionPass : public FunctionPass
         */
 
         return Throw;
+    }
+
+    InvokeInst *ToInvoke(CallInst *CI, BasicBlock *unwind, llvm::SmallVector<OperandBundleDef> &opBundle)
+    {
+        BasicBlock *CurrentBB = CI->getParent();
+        BasicBlock *ContinuationBB = CurrentBB->splitBasicBlock(CI->getIterator(), "invoke.cont");
+
+        SmallVector<Value *> args;
+        for (auto &arg : CI->args())
+        {
+            args.push_back(CI->getArgOperand(arg.getOperandNo()));
+        }
+
+        auto newInvoke =
+            InvokeInst::Create(CI->getFunctionType(), CI->getCalledOperand(), ContinuationBB, unwind, args, opBundle, "invoke", CurrentBB);
+
+        return newInvoke;
     }
 
     void cleanupEmptyBlocksWithoutPredecessors(Function &F)
