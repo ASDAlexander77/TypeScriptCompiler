@@ -119,6 +119,18 @@ class ThrowLogic
         LLVMRTTIHelperVCLinux rttih(op, rewriter, typeConverter);
         rttih.setType(exceptionType);
 
+        if (rttih.isRethrow())
+        {
+            return logicUnixRethrow(exceptionValue, unwind);
+        }
+
+        return logicUnixThrow(rttih, exceptionValue, unwind);
+    }
+
+    mlir::LogicalResult logicUnixThrow(LLVMRTTIHelperVCLinux &rttih, mlir::Value exceptionValue, mlir::Block *unwind)
+    {
+        mlir::Type exceptionType = exceptionValue.getType();
+
         auto i8PtrTy = th.getI8PtrType();
 
         auto allocExceptFuncName = "__cxa_allocate_exception";
@@ -167,6 +179,43 @@ class ThrowLogic
             auto nullValue = rewriter.create<LLVM::NullOp>(loc, i8PtrTy);
             rewriter.create<LLVM::CallOp>(loc, cxxThrowException,
                                           ValueRange{value, clh.castToI8Ptr(rttih.throwInfoPtrValue(loc)), nullValue});
+            rewriter.create<mlir_ts::UnreachableOp>(loc);
+        }
+
+        return success();
+    }
+
+    mlir::LogicalResult logicUnixRethrow(mlir::Value exceptionValue, mlir::Block *unwind)
+    {
+        auto i8PtrTy = th.getI8PtrType();
+
+        auto rethrowFuncName = "__cxa_rethrow";
+
+        auto cxxRethrowException = ch.getOrInsertFunction(rethrowFuncName, th.getFunctionType(ArrayRef<mlir::Type>{}));
+
+        // save value
+        if (unwind)
+        {
+            OpBuilder::InsertionGuard guard(rewriter);
+
+            auto unreachable = clh.FindUnreachableBlockOrCreate();
+
+            auto endOfBlock = rewriter.getInsertionBlock()->getTerminator() == op;
+
+            auto *continuationBlock = endOfBlock ? nullptr : clh.CutBlockAndSetInsertPointToEndOfBlock();
+
+            rewriter.create<LLVM::InvokeOp>(loc, TypeRange{th.getVoidType()},
+                                            mlir::FlatSymbolRefAttr::get(rewriter.getContext(), rethrowFuncName), ValueRange{}, unreachable,
+                                            ValueRange{}, unwind, ValueRange{});
+
+            if (continuationBlock)
+            {
+                rewriter.setInsertionPointToStart(continuationBlock);
+            }
+        }
+        else
+        {
+            rewriter.create<LLVM::CallOp>(loc, cxxRethrowException, ValueRange{});
             rewriter.create<mlir_ts::UnreachableOp>(loc);
         }
 

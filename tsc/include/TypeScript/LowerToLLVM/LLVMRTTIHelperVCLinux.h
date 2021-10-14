@@ -32,13 +32,19 @@ class LLVMRTTIHelperVCLinux
     CodeLogicHelper clh;
 
     bool classType;
+    bool rethrow;
     SmallVector<std::string> types;
 
   public:
     LLVMRTTIHelperVCLinux(Operation *op, PatternRewriter &rewriter, TypeConverter &typeConverter)
         : op(op), rewriter(rewriter), parentModule(op->getParentOfType<ModuleOp>()), th(rewriter), ch(op, rewriter, &typeConverter),
-          clh(op, rewriter), classType(false)
+          clh(op, rewriter), classType(false), rethrow(false)
     {
+    }
+
+    bool isRethrow()
+    {
+        return rethrow;
     }
 
     void setF32AsCatchType()
@@ -108,6 +114,7 @@ class LLVMRTTIHelperVCLinux
             .Case<mlir_ts::StringType>([&](auto stringType) { setStringTypeAsCatchType(); })
             .Case<mlir_ts::ClassType>([&](auto classType) { setClassTypeAsCatchType(classType.getName().getValue()); })
             .Case<mlir_ts::AnyType>([&](auto anyType) { setI8PtrAsCatchType(); })
+            .Case<mlir_ts::NullType>([&](auto nullType) { rethrow = true; })
             .Default([&](auto type) { llvm_unreachable("not implemented"); });
     }
 
