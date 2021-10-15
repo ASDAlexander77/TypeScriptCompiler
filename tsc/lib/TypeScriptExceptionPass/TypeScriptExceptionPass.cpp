@@ -493,6 +493,8 @@ struct TypeScriptExceptionPass : public FunctionPass
                 */
 
                 // fix incorrect landing pad
+                // inlineing messing up with landingpad, it may create landing pad with filter and catch clauses, so we are fixing
+                // consequences
                 llvm::SmallVector<OperandBundleDef> opBundleCleanup;
                 opBundleCleanup.emplace_back(OperandBundleDef("funclet", catchRegion.cleanupPad));
                 for (auto callBase : catchRegion.calls)
