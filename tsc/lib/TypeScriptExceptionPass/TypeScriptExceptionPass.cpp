@@ -510,7 +510,7 @@ struct TypeScriptExceptionPass : public FunctionPass
             {
                 for (auto &U : CI->uses())
                 {
-                    if (U.getUser())
+                    if (U.getUser() && isa<PHINode>(U.getUser()))
                     {
                         // Instruction *UserI = cast<Instruction>(U.getUser());
                         PHINode *UserPHI = cast<PHINode>(U.getUser());

@@ -1073,11 +1073,13 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                     unwindDests.push_back(parentTryOpLandingPad);
                 }
 
+#ifndef WIN_EXCEPTION
                 if (catchHasOps)
                 {
                     rewriter.setInsertionPoint(finallyBlockForCleanupLast->getTerminator());
                     rewriter.create<mlir_ts::EndCatchOp>(loc);
                 }
+#endif
 
                 auto yieldOpFinally = cast<mlir_ts::ResultOp>(finallyBlockForCleanupLast->getTerminator());
                 rewriter.replaceOpWithNewOp<mlir_ts::EndCleanupOp>(yieldOpFinally, landingPadCleanupOp, unwindDests);
@@ -1089,6 +1091,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                                                                                   rewriter.getBoolAttr(false), ValueRange{catchAll});
                 auto beginCleanupCallInfo = rewriter.create<mlir_ts::BeginCatchOp>(loc, mth.getOpaqueType(), landingPadCleanupOp);
 
+                // We do not need EndCatch as throw will redirect execution anyway
                 // rethrow
                 rewriter.setInsertionPoint(finallyBlockForCleanupLast->getTerminator());
                 auto nullVal = rewriter.create<mlir_ts::NullOp>(loc, mth.getNullType());
