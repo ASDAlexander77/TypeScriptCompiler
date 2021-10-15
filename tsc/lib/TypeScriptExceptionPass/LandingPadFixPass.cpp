@@ -49,7 +49,14 @@ struct LandingPadFixPass : public FunctionPass
 
         for (auto &LPI : workSet)
         {
-            if (LPI->getNumClauses() == 1 && LPI->isFilter(0))
+            // auto hasFilter = LPI->getNumClauses() == 1 && LPI->isFilter(0);
+            auto hasFilter = false;
+            for (unsigned int i = 0; i < LPI->getNumClauses(); i++)
+            {
+                hasFilter |= LPI->isFilter(i);
+            }
+
+            if (hasFilter)
             {
                 Builder.SetInsertPoint(LPI);
                 auto newLandingPad = Builder.CreateLandingPad(LPI->getType(), 0);

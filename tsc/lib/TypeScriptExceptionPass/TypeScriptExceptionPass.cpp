@@ -614,6 +614,8 @@ struct TypeScriptExceptionPass : public FunctionPass
         BasicBlock *CurrentBB = CB->getParent();
         BasicBlock *ContinuationBB = CurrentBB->splitBasicBlock(CB->getIterator(), "invoke.cont");
 
+        CurrentBB->getTerminator()->eraseFromParent();
+
         SmallVector<Value *> args;
         for (auto &arg : CB->args())
         {
