@@ -31,8 +31,8 @@ struct LandingPadFixPass : public FunctionPass
     {
         auto MadeChange = false;
 
-        LLVM_DEBUG(llvm::dbgs() << "\nFunction: " << F.getName() << "\n\n";);
-        LLVM_DEBUG(llvm::dbgs() << "\nDump Before: ...\n" << F << "\n\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\nLANDFIX Function: " << F.getName());
+        LLVM_DEBUG(llvm::dbgs() << "\nLANDFIX Dump Before: ...\n" << F << "\n";);
 
         llvm::SmallVector<llvm::LandingPadInst *> workSet;
         for (auto &I : instructions(F))
@@ -61,8 +61,8 @@ struct LandingPadFixPass : public FunctionPass
             MadeChange = true;
         }
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! Change: " << MadeChange << "\n\n";);
-        LLVM_DEBUG(llvm::dbgs() << "\n!! Dump After: ...\n" << F << "\n\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! LANDFIX Change: " << MadeChange;);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! LANDFIX Dump After: ...\n" << F << "\n";);
 
         return MadeChange;
     }
