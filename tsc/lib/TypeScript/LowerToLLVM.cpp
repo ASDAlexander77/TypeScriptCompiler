@@ -782,6 +782,8 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
             newFuncOp->setAttr(namedAttr.first, namedAttr.second);
         }
 
+        SmallVector<Attribute> funcAttrs;
+
         if (funcOp.personality().hasValue() && funcOp.personality().getValue())
         {
 #if WIN_EXCEPTION
@@ -790,35 +792,41 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
             LLVMRTTIHelperVCLinux rttih(funcOp, rewriter, typeConverter);
 #endif
             rttih.setPersonality(newFuncOp);
+
+            funcAttrs.push_back(ATTR("noinline"));
         }
 
 #ifdef DISABLE_OPT
         // add LLVM attributes to fix issue with shift >> 32
-        newFuncOp->setAttr("passthrough",
-                           ArrayAttr::get(rewriter.getContext(), {
-                                                                     ATTR("noinline"),
-                                                                     // ATTR("norecurse"),
-                                                                     // ATTR("nounwind"),
-                                                                     ATTR("optnone"),
-                                                                     // ATTR("uwtable"),
-                                                                     // NAMED_ATTR("correctly-rounded-divide-sqrt-fp-math","false"),
-                                                                     // NAMED_ATTR("disable-tail-calls","false"),
-                                                                     // NAMED_ATTR("frame-pointer","none"),
-                                                                     // NAMED_ATTR("less-precise-fpmad","false"),
-                                                                     // NAMED_ATTR("min-legal-vector-width","0"),
-                                                                     // NAMED_ATTR("no-infs-fp-math","false"),
-                                                                     // NAMED_ATTR("no-jump-tables","false"),
-                                                                     // NAMED_ATTR("no-nans-fp-math","false"),
-                                                                     // NAMED_ATTR("no-signed-zeros-fp-math","false"),
-                                                                     // NAMED_ATTR("no-trapping-math","true"),
-                                                                     // NAMED_ATTR("stack-protector-buffer-size","8"),
-                                                                     // NAMED_ATTR("target-cpu","x86-64"),
-                                                                     // NAMED_ATTR("target-features","+cx8,+fxsr,+mmx,+sse,+sse2,+x87"),
-                                                                     // NAMED_ATTR("tune-cpu","generic"),
-                                                                     // NAMED_ATTR("unsafe-fp-math","false"),
-                                                                     // NAMED_ATTR("use-soft-float","false"),
-                                                                 }));
+        funcAttrs.append({
+            ATTR("noinline"),
+            // ATTR("norecurse"),
+            // ATTR("nounwind"),
+            ATTR("optnone"),
+            // ATTR("uwtable"),
+            // NAMED_ATTR("correctly-rounded-divide-sqrt-fp-math","false"),
+            // NAMED_ATTR("disable-tail-calls","false"),
+            // NAMED_ATTR("frame-pointer","none"),
+            // NAMED_ATTR("less-precise-fpmad","false"),
+            // NAMED_ATTR("min-legal-vector-width","0"),
+            // NAMED_ATTR("no-infs-fp-math","false"),
+            // NAMED_ATTR("no-jump-tables","false"),
+            // NAMED_ATTR("no-nans-fp-math","false"),
+            // NAMED_ATTR("no-signed-zeros-fp-math","false"),
+            // NAMED_ATTR("no-trapping-math","true"),
+            // NAMED_ATTR("stack-protector-buffer-size","8"),
+            // NAMED_ATTR("target-cpu","x86-64"),
+            // NAMED_ATTR("target-features","+cx8,+fxsr,+mmx,+sse,+sse2,+x87"),
+            // NAMED_ATTR("tune-cpu","generic"),
+            // NAMED_ATTR("unsafe-fp-math","false"),
+            // NAMED_ATTR("use-soft-float","false"),
+        }));
 #endif
+
+        if (funcAttrs.size() > 0)
+        {
+            newFuncOp->setAttr("passthrough", ArrayAttr::get(rewriter.getContext(), funcAttrs));
+        }
 
         rewriter.inlineRegionBefore(funcOp.getBody(), newFuncOp.getBody(), newFuncOp.end());
         if (failed(rewriter.convertRegionTypes(&newFuncOp.getBody(), typeConverter, &signatureInputsConverter)))
