@@ -3,6 +3,7 @@
 
 include "TypeScriptDialect.td"
 include "TypeScriptTypes.td"
+include "TypeScriptInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/IR/OpAsmInterface.td"
 include "mlir/Interfaces/CallInterfaces.td"

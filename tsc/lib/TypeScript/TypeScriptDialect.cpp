@@ -2,6 +2,8 @@
 #include "TypeScript/TypeScriptOps.h"
 
 #include "mlir/IR/DialectImplementation.h"
+#include "mlir/IR/OpImplementation.h"
+#include "mlir/Transforms/InliningUtils.h"
 
 #include "llvm/ADT/TypeSwitch.h"
 
@@ -22,6 +24,53 @@ LogicalResult verify(mlir_ts::CastOp op);
 #define GET_OP_CLASSES
 #include "TypeScript/TypeScriptOps.cpp.inc"
 
+//===----------------------------------------------------------------------===//
+// TypeScriptInlinerInterface
+//===----------------------------------------------------------------------===//
+
+/// This class defines the interface for handling inlining with TypeScript
+/// operations.
+struct TypeScriptInlinerInterface : public mlir::DialectInlinerInterface
+{
+    using DialectInlinerInterface::DialectInlinerInterface;
+
+    //===--------------------------------------------------------------------===//
+    // Analysis Hooks
+    //===--------------------------------------------------------------------===//
+
+    /// All call operations within toy can be inlined.
+    bool isLegalToInline(mlir::Operation *call, mlir::Operation *callable, bool wouldBeCloned) const final
+    {
+        return true;
+    }
+
+    /// All operations within toy can be inlined.
+    bool isLegalToInline(mlir::Operation *, mlir::Region *, bool, mlir::BlockAndValueMapping &) const final
+    {
+        return true;
+    }
+
+    //===--------------------------------------------------------------------===//
+    // Transformation Hooks
+    //===--------------------------------------------------------------------===//
+
+    void handleTerminator(mlir::Operation *op, mlir::ArrayRef<Value> valuesToRepl) const final
+    {
+        // nothing todo
+    }
+
+    /// Attempts to materialize a conversion for a type mismatch between a call
+    /// from this dialect, and a callable region. This method should generate an
+    /// operation that takes 'input' as the only operand, and produces a single
+    /// result of 'resultType'. If a conversion can not be generated, nullptr
+    /// should be returned.
+    mlir::Operation *materializeCallConversion(mlir::OpBuilder &builder, mlir::Value input, mlir::Type resultType,
+                                               mlir::Location conversionLoc) const final
+    {
+        return builder.create<mlir_ts::CastOp>(conversionLoc, resultType, input);
+    }
+};
+
 void mlir_ts::TypeScriptDialect::initialize()
 {
     addOperations<
@@ -32,6 +81,7 @@ void mlir_ts::TypeScriptDialect::initialize()
 #define GET_TYPEDEF_LIST
 #include "TypeScript/TypeScriptOpsTypes.cpp.inc"
         >();
+    addInterfaces<TypeScriptInlinerInterface>();
 }
 
 Type mlir_ts::TypeScriptDialect::parseType(DialectAsmParser &parser) const
