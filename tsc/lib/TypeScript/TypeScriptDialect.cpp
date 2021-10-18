@@ -3,11 +3,13 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 
+#include "mlir/Dialect/StandardOps/IR/Ops.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/Transforms/InliningUtils.h"
 
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/ADT/SmallPtrSet.h"
 
 #include "llvm/Support/Debug.h"
 
@@ -34,18 +36,33 @@ LogicalResult verify(mlir_ts::CastOp op);
 
 /// This class defines the interface for handling inlining with TypeScript
 /// operations.
+
 struct TypeScriptInlinerInterface : public mlir::DialectInlinerInterface
 {
-    using DialectInlinerInterface::DialectInlinerInterface;
+    using TCallables = llvm::SmallPtrSet<mlir::Operation *, 16>;
+    TCallables callables;
+
+    TypeScriptInlinerInterface(Dialect *dialect) : DialectInlinerInterface(dialect)
+    {
+    }
 
     //===--------------------------------------------------------------------===//
     // Analysis Hooks
     //===--------------------------------------------------------------------===//
 
-    /// All call operations within toy can be inlined.
+    /// All call operations within TypeScript(but recursive) can be inlined.
+    // TODO: find out how to prevent recursive calls in better way
     bool isLegalToInline(mlir::Operation *call, mlir::Operation *callable, bool wouldBeCloned) const final
     {
-        LLVM_DEBUG(llvm::dbgs() << "!! Legal To Inline(call): TRUE = " << *call << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "!! Legal To Inline(call): TRUE = " << *call << ", callable: " << *callable << "\n";);
+
+        if (callables.count(callable))
+        {
+            LLVM_DEBUG(llvm::dbgs() << "!! Legal To Inline(call): FALSE, CAN BE RECURSIVE CALL = " << *call << "\n";);
+            return false;
+        }
+
+        const_cast<TCallables &>(callables).insert({callable});
 
         return true;
     }
@@ -60,13 +77,18 @@ struct TypeScriptInlinerInterface : public mlir::DialectInlinerInterface
         return false;
     }
 
-    /// call operations within TypeScript can be inlined.
+    /// here if we return false for any of op, then whole funcOp will not be inlined
+    /// needed to decided if to allow inlining or not
     bool isLegalToInline(mlir::Operation *op, mlir::Region *region, bool, mlir::BlockAndValueMapping &) const final
     {
-        LLVM_DEBUG(llvm::dbgs() << "!! is Legal To Inline (op): " << (isa<mlir_ts::CallOp>(op) ? "TRUE" : "FALSE") << " " << *op << " = "
+        // auto condition = !isa<mlir_ts::ReturnValOp>(op);
+        auto condition = true;
+
+        LLVM_DEBUG(llvm::dbgs() << "!! is Legal To Inline (op): " << (condition ? "TRUE" : "FALSE") << " " << *op << " = "
                                 << "\n";);
 
-        return isa<mlir_ts::CallOp>(op);
+        // if function returns value, do not inline (somehow it is erroring now)
+        return condition;
     }
 
     //===--------------------------------------------------------------------===//
@@ -77,29 +99,46 @@ struct TypeScriptInlinerInterface : public mlir::DialectInlinerInterface
     {
         LLVM_DEBUG(llvm::dbgs() << "!! handleTerminator: " << *op << "\n";);
 
-        /*
         // we need to handle it when inlining function
         // Only "ts.returnVal" needs to be handled here.
-        if (auto returnOp = dyn_cast<mlir_ts::ReturnValOp>(op))
+        if (auto returnOp = dyn_cast<mlir_ts::ReturnInternalOp>(op))
         {
+            LLVM_DEBUG(llvm::dbgs() << "!! handleTerminator counts: Ret ops: " << returnOp.getNumOperands()
+                                    << ", values to replace: " << valuesToRepl.size() << "\n";);
             // Replace the values directly with the return operands.
-            assert(returnOp.getNumOperands() == valuesToRepl.size());
-            for (const auto &it : llvm::enumerate(returnOp.getOperands()))
+            if (returnOp.getNumOperands() == valuesToRepl.size())
             {
-                valuesToRepl[it.index()].replaceAllUsesWith(it.value());
+                for (const auto &it : llvm::enumerate(returnOp.getOperands()))
+                {
+                    valuesToRepl[it.index()].replaceAllUsesWith(it.value());
+                }
+            }
+            else
+            {
+                OpBuilder builder(op);
+                for (const auto &it : llvm::enumerate(valuesToRepl))
+                {
+                    auto undefVal = builder.create<mlir_ts::UndefOp>(op->getLoc(), it.value().getType());
+                    valuesToRepl[it.index()].replaceAllUsesWith(undefVal);
+                }
             }
         }
-        */
+    }
 
-        if (auto exitOp = dyn_cast<mlir_ts::ExitOp>(op))
+    void handleTerminator(mlir::Operation *op, mlir::Block *newDest) const final
+    {
+        LLVM_DEBUG(llvm::dbgs() << "!! handleTerminator: " << *op << "\n"
+                                << "!! Block: ";
+                   newDest->dump(); llvm::dbgs() << "\n";);
+
+        // we need to handle it when inlining function
+        // Only "ts.returnVal" needs to be handled here.
+        if (auto returnOp = dyn_cast<mlir_ts::ReturnInternalOp>(op))
         {
-            if (exitOp.reference())
-            {
-                mlir::OpBuilder builder(op);
-                auto loadedValue = builder.create<mlir_ts::LoadOp>(
-                    op->getLoc(), exitOp.reference().getType().cast<mlir_ts::RefType>().getElementType(), exitOp.reference());
-                valuesToRepl[0].replaceAllUsesWith(loadedValue);
-            }
+            // Replace the values directly with the return operands.
+            OpBuilder builder(op);
+            builder.create<mlir::BranchOp>(op->getLoc(), newDest, returnOp.getOperands());
+            op->erase();
         }
     }
 
