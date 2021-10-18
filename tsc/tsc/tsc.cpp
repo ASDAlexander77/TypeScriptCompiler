@@ -237,7 +237,8 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module
         optPM.addPass(mlir::typescript::createRelocateConstantPass());
         optPM.addPass(mlir::createCSEPass());
 
-        pm.addPass(mlir::createInlinerPass());
+        // TODO: find out why Inliner access Op with null attribute
+        // pm.addPass(mlir::createInlinerPass());
         pm.addPass(mlir::createSymbolDCEPass());
 #endif
 

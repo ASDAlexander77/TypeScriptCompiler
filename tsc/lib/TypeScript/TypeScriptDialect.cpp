@@ -39,9 +39,6 @@ LogicalResult verify(mlir_ts::CastOp op);
 
 struct TypeScriptInlinerInterface : public mlir::DialectInlinerInterface
 {
-    using TCallables = llvm::SmallPtrSet<mlir::Operation *, 16>;
-    TCallables callables;
-
     TypeScriptInlinerInterface(Dialect *dialect) : DialectInlinerInterface(dialect)
     {
     }
@@ -52,18 +49,10 @@ struct TypeScriptInlinerInterface : public mlir::DialectInlinerInterface
 
     /// All call operations within TypeScript(but recursive) can be inlined.
     // TODO: find out how to prevent recursive calls in better way
+    // TODO: something happening when inlining class methods
     bool isLegalToInline(mlir::Operation *call, mlir::Operation *callable, bool wouldBeCloned) const final
     {
-        LLVM_DEBUG(llvm::dbgs() << "!! Legal To Inline(call): TRUE = " << *call << ", callable: " << *callable << "\n";);
-
-        if (callables.count(callable))
-        {
-            LLVM_DEBUG(llvm::dbgs() << "!! Legal To Inline(call): FALSE, CAN BE RECURSIVE CALL = " << *call << "\n";);
-            return false;
-        }
-
-        const_cast<TCallables &>(callables).insert({callable});
-
+        LLVM_DEBUG(llvm::dbgs() << "!! Legal To Inline(call): TRUE = " << *call << "\n";);
         return true;
     }
 
@@ -81,13 +70,13 @@ struct TypeScriptInlinerInterface : public mlir::DialectInlinerInterface
     /// needed to decided if to allow inlining or not
     bool isLegalToInline(mlir::Operation *op, mlir::Region *region, bool, mlir::BlockAndValueMapping &) const final
     {
-        // auto condition = !isa<mlir_ts::ReturnValOp>(op);
-        auto condition = true;
+        // auto condition = true;
+        // ignore all functions until you find out how to resolve issue with recursive calls
+        auto condition = !isa<mlir_ts::CallInternalOp>(op);
 
         LLVM_DEBUG(llvm::dbgs() << "!! is Legal To Inline (op): " << (condition ? "TRUE" : "FALSE") << " " << *op << " = "
                                 << "\n";);
 
-        // if function returns value, do not inline (somehow it is erroring now)
         return condition;
     }
 
@@ -130,6 +119,18 @@ struct TypeScriptInlinerInterface : public mlir::DialectInlinerInterface
         LLVM_DEBUG(llvm::dbgs() << "!! handleTerminator: " << *op << "\n"
                                 << "!! Block: ";
                    newDest->dump(); llvm::dbgs() << "\n";);
+
+        auto voidType = mlir_ts::VoidType::get(op->getContext());
+
+        // remove all args with ts.Void
+        for (unsigned int argIndex = 0; argIndex < newDest->getNumArguments(); argIndex++)
+        {
+            if (newDest->getArgument(argIndex).getType() == voidType)
+            {
+                newDest->eraseArgument(argIndex);
+                argIndex--;
+            }
+        }
 
         // we need to handle it when inlining function
         // Only "ts.returnVal" needs to be handled here.
