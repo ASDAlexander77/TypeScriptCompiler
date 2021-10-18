@@ -1,3 +1,5 @@
+#define DEBUG_TYPE "mlir"
+
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 
@@ -6,6 +8,8 @@
 #include "mlir/Transforms/InliningUtils.h"
 
 #include "llvm/ADT/TypeSwitch.h"
+
+#include "llvm/Support/Debug.h"
 
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
@@ -41,13 +45,28 @@ struct TypeScriptInlinerInterface : public mlir::DialectInlinerInterface
     /// All call operations within toy can be inlined.
     bool isLegalToInline(mlir::Operation *call, mlir::Operation *callable, bool wouldBeCloned) const final
     {
+        LLVM_DEBUG(llvm::dbgs() << "!! Legal To Inline(call): TRUE = " << *call << "\n";);
+
         return true;
     }
 
-    /// All operations within toy can be inlined.
-    bool isLegalToInline(mlir::Operation *, mlir::Region *, bool, mlir::BlockAndValueMapping &) const final
+    bool isLegalToInline(Region *dest, Region *src, bool wouldBeCloned, BlockAndValueMapping &valueMapping) const final
     {
-        return true;
+        if (isa<mlir_ts::FuncOp>(dest->getParentOp()))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    /// call operations within TypeScript can be inlined.
+    bool isLegalToInline(mlir::Operation *op, mlir::Region *region, bool, mlir::BlockAndValueMapping &) const final
+    {
+        LLVM_DEBUG(llvm::dbgs() << "!! is Legal To Inline (op): " << (isa<mlir_ts::CallOp>(op) ? "TRUE" : "FALSE") << " " << *op << " = "
+                                << "\n";);
+
+        return isa<mlir_ts::CallOp>(op);
     }
 
     //===--------------------------------------------------------------------===//
@@ -56,7 +75,32 @@ struct TypeScriptInlinerInterface : public mlir::DialectInlinerInterface
 
     void handleTerminator(mlir::Operation *op, mlir::ArrayRef<Value> valuesToRepl) const final
     {
-        // nothing todo
+        LLVM_DEBUG(llvm::dbgs() << "!! handleTerminator: " << *op << "\n";);
+
+        /*
+        // we need to handle it when inlining function
+        // Only "ts.returnVal" needs to be handled here.
+        if (auto returnOp = dyn_cast<mlir_ts::ReturnValOp>(op))
+        {
+            // Replace the values directly with the return operands.
+            assert(returnOp.getNumOperands() == valuesToRepl.size());
+            for (const auto &it : llvm::enumerate(returnOp.getOperands()))
+            {
+                valuesToRepl[it.index()].replaceAllUsesWith(it.value());
+            }
+        }
+        */
+
+        if (auto exitOp = dyn_cast<mlir_ts::ExitOp>(op))
+        {
+            if (exitOp.reference())
+            {
+                mlir::OpBuilder builder(op);
+                auto loadedValue = builder.create<mlir_ts::LoadOp>(
+                    op->getLoc(), exitOp.reference().getType().cast<mlir_ts::RefType>().getElementType(), exitOp.reference());
+                valuesToRepl[0].replaceAllUsesWith(loadedValue);
+            }
+        }
     }
 
     /// Attempts to materialize a conversion for a type mismatch between a call

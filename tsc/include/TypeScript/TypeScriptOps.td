@@ -1349,6 +1349,7 @@ def TypeScript_ExitOp : TypeScript_Op<"Exit", [NoSideEffect, ReturnLike, Termina
   }];
 
   let arguments = (ins
+    Optional<TypeScript_Ref>:$reference
   );
 }
 

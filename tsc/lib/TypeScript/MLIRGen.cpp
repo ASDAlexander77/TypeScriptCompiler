@@ -1814,7 +1814,30 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGenFunctionExit(mlir::Location location, const GenContext &genContext)
     {
-        builder.create<mlir_ts::ExitOp>(location);
+        auto callableResult = const_cast<GenContext &>(genContext).funcOp.getCallableResults();
+        auto retType = callableResult.size() > 0 ? callableResult.front() : mlir::Type();
+        auto hasReturn = retType && !retType.isa<mlir_ts::VoidType>();
+        if (hasReturn)
+        {
+            auto retVarInfo = symbolTable.lookup(RETURN_VARIABLE_NAME);
+            if (!retVarInfo.second)
+            {
+                if (genContext.allowPartialResolve)
+                {
+                    return mlir::success();
+                }
+
+                emitError(location) << "can't find return variable";
+                return mlir::failure();
+            }
+
+            builder.create<mlir_ts::ExitOp>(location, retVarInfo.first);
+        }
+        else
+        {
+            builder.create<mlir_ts::ExitOp>(location, mlir::Value());
+        }
+
         return mlir::success();
     }
 
