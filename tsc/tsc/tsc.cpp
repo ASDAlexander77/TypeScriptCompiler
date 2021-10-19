@@ -207,33 +207,18 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module
     bool isLoweringToAffine = emitAction >= Action::DumpMLIRAffine;
     bool isLoweringToLLVM = emitAction >= Action::DumpMLIRLLVM;
 
-    if (enableOpt || isLoweringToAffine)
-    {
-        // Inline all functions into main and then delete them.
-        /*
-#ifdef ENABLE_OPT_PASSES
-        pm.addPass(mlir::createInlinerPass());
-#endif
-        */
-
-        // TODO: experiment
-        pm.addPass(mlir::createCanonicalizerPass());
-
-        mlir::OpPassManager &optPM = pm.nest<mlir::typescript::FuncOp>();
-        // TODO: this failing test about accessors
-        optPM.addPass(mlir::createCSEPass());
-    }
-
     if (isLoweringToAffine)
     {
+        pm.addPass(mlir::createCanonicalizerPass());
+
         mlir::OpPassManager &optPM = pm.nest<mlir::typescript::FuncOp>();
 
         // Partially lower the TypeScript dialect with a few cleanups afterwards.
         optPM.addPass(mlir::typescript::createLowerToAffinePass());
         optPM.addPass(mlir::createCanonicalizerPass());
+        optPM.addPass(mlir::typescript::createRelocateConstantPass());
         // TODO: why do I need this pass?
 #ifdef ENABLE_OPT_PASSES
-        optPM.addPass(mlir::typescript::createRelocateConstantPass());
         if (enableOpt)
         {
             optPM.addPass(mlir::createCSEPass());
