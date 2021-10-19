@@ -33,9 +33,10 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
     {
     }
 
-    std::string calc_hash_value(ArrayAttr &arrayAttr, const char *prefix) const
+    std::string calc_hash_value(ArrayAttr &arrayAttr, mlir::Type llvmType, const char *prefix) const
     {
         auto opHash = 0ULL;
+        opHash ^= hash_value(llvmType) + 0x9e3779b9 + (opHash << 6) + (opHash >> 2);
         for (auto item : arrayAttr)
         {
             opHash ^= hash_value(item) + 0x9e3779b9 + (opHash << 6) + (opHash >> 2);
@@ -111,7 +112,9 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
     mlir::Value getOrCreateGlobalArray(mlir::Type originalElementType, mlir::Type llvmElementType, unsigned size, ArrayAttr arrayAttr)
     {
-        auto vecVarName = calc_hash_value(arrayAttr, "a_");
+        std::stringstream ss;
+        ss << "a_" << size;
+        auto vecVarName = calc_hash_value(arrayAttr, llvmElementType, ss.str().c_str());
         return getOrCreateGlobalArray(originalElementType, vecVarName, llvmElementType, size, arrayAttr);
     }
 
@@ -379,7 +382,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
     mlir::Value getOrCreateGlobalTuple(mlir_ts::ConstTupleType originalType, LLVM::LLVMStructType llvmStructType, ArrayAttr arrayAttr)
     {
-        auto varName = calc_hash_value(arrayAttr, "tp_");
+        auto varName = calc_hash_value(arrayAttr, llvmStructType, "tp_");
         return getOrCreateGlobalTuple(originalType, llvmStructType, varName, arrayAttr);
     }
 
