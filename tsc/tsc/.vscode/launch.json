@@ -148,15 +148,13 @@
             "console": "externalTerminal"
         },
         {
-            "name": "(Windows) Out.exe current - Launch",
-            "type": "cppvsdbg",
+            "name": "(Windows-LLDB) 1.exe current - Launch",
+            "type": "lldb-vscode",
             "request": "launch",
-            "program": "C:/temp/MLIR_to_exe/out.exe",
+            "program": "C:/temp/MLIR_to_exe/1.exe",
             "args": [],
-            "stopAtEntry": true,
-            "cwd": "${workspaceFolder}",
-            "environment": [],
-            "console": "externalTerminal"
-        }        
+            "env": [],
+            "cwd": "${workspaceRoot}"
+        }
     ]
 }

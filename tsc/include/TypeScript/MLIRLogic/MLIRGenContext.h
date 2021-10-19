@@ -94,6 +94,15 @@ struct GenContext
         }
     }
 
+    void cleanUnresolved()
+    {
+        if (unresolved)
+        {
+            delete unresolved;
+            unresolved = nullptr;
+        }
+    }
+
     bool allowPartialResolve;
     bool dummyRun;
     bool allowConstEval;
@@ -109,6 +118,7 @@ struct GenContext
     PassResult *passResult;
     mlir::SmallVector<mlir::Block *> *cleanUps;
     NodeArray<Statement> generatedStatements;
+    mlir::SmallVector<std::pair<mlir::Location, std::string>> *unresolved;
     int *state;
 };
 

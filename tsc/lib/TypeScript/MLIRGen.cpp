@@ -145,6 +145,7 @@ class MLIRGenImpl
         genContextPartial.allowPartialResolve = true;
         genContextPartial.dummyRun = true;
         genContextPartial.cleanUps = new mlir::SmallVector<mlir::Block *>();
+        genContextPartial.unresolved = new mlir::SmallVector<std::pair<mlir::Location, std::string>>();
         auto notResolved = 0;
         do
         {
@@ -156,11 +157,11 @@ class MLIRGenImpl
             }
 
             postponedMessages.clear();
+            genContextPartial.unresolved->clear();
 
             // main cycles
             auto lastTimeNotResolved = notResolved;
             notResolved = 0;
-            GenContext genContext{};
             for (auto &statement : module->statements)
             {
                 if (statement->processed)
@@ -180,13 +181,23 @@ class MLIRGenImpl
 
             if (lastTimeNotResolved > 0 && lastTimeNotResolved == notResolved)
             {
-                theModule.emitError("can't resolve dependencies");
+                if (genContextPartial.unresolved->size() == 0)
+                {
+                    theModule.emitError("can't resolve dependencies");
+                }
+
+                for (auto unresolvedRef : *genContextPartial.unresolved)
+                {
+                    emitError(std::get<0>(unresolvedRef), "can't resolve reference: ") << std::get<1>(unresolvedRef);
+                }
+
                 break;
             }
 
         } while (notResolved > 0);
 
         genContextPartial.clean();
+        genContextPartial.cleanUnresolved();
 
         // clean up
         theModule.getBody()->clear();
@@ -939,7 +950,7 @@ class MLIRGenImpl
 #ifndef NDEBUG
         if (variableOp)
         {
-            LLVM_DEBUG(dbgs() << "\n +++== variable = " << effectiveName << " type: " << varType << " op: " << variableOp << "==+++\n";);
+            LLVM_DEBUG(dbgs() << "\n!! variable = " << effectiveName << " type: " << varType << " op: " << variableOp << "\n";);
         }
 #endif
 
@@ -1228,7 +1239,7 @@ class MLIRGenImpl
             {
                 type = genContext.argTypeDestFuncType.cast<mlir::FunctionType>().getInput(index);
 
-                LLVM_DEBUG(dbgs() << "\n ...param " << name << " mapped to type " << type << "\n\n");
+                LLVM_DEBUG(dbgs() << "\n!! param " << name << " mapped to type " << type << "\n\n");
             }
 
             if (!type || type == noneType)
@@ -1502,7 +1513,7 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-        LLVM_DEBUG(llvm::dbgs() << "??? discovering 'ret type' & 'captured vars' for : " << name << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! discovering 'ret type' & 'captured vars' for : " << name << "\n";);
 
         mlir::OpBuilder::InsertionGuard guard(builder);
 
@@ -1524,6 +1535,7 @@ class MLIRGenImpl
             genContextWithPassResult.allocateVarsInContextThis =
                 (functionLikeDeclarationBaseAST->transformFlags & TransformFlags::VarsInObjectContext) ==
                 TransformFlags::VarsInObjectContext;
+            genContextWithPassResult.unresolved = genContext.unresolved;
 
             if (succeeded(mlirGenFunctionBody(functionLikeDeclarationBaseAST, dummyFuncOp, funcProto, genContextWithPassResult)))
             {
@@ -1542,7 +1554,7 @@ class MLIRGenImpl
                     // TODO: do we need to convert it here? maybe send it as const object?
                     MLIRTypeHelper mth(builder.getContext());
                     funcProto->setReturnType(mth.convertConstArrayTypeToArrayType(discoveredType));
-                    LLVM_DEBUG(llvm::dbgs() << "ret type: " << funcProto->getReturnType() << ", name: " << name << "\n";);
+                    LLVM_DEBUG(llvm::dbgs() << "\n!! ret type: " << funcProto->getReturnType() << ", name: " << name << "\n";);
                 }
 
                 // if we have captured parameters, add first param to send lambda's type(class)
@@ -1554,7 +1566,7 @@ class MLIRGenImpl
 
                     funcProto->setHasCapturedVars(true);
 
-                    LLVM_DEBUG(llvm::dbgs() << "has captured vars, name: " << name << "\n";);
+                    LLVM_DEBUG(llvm::dbgs() << "\n!! has captured vars, name: " << name << "\n";);
                 }
 
                 if (passResult->extraFieldsInThisContext.size() > 0)
@@ -1777,14 +1789,14 @@ class MLIRGenImpl
         {
             getFunctionMap().insert({name, funcOp});
 
-            LLVM_DEBUG(llvm::dbgs() << "\n... reg. func: " << name << " type:" << funcOp.getType() << "\n";);
-            LLVM_DEBUG(llvm::dbgs() << "\n... reg. func: " << name
+            LLVM_DEBUG(llvm::dbgs() << "\n!! reg. func: " << name << " type:" << funcOp.getType() << "\n";);
+            LLVM_DEBUG(llvm::dbgs() << "\n!! reg. func: " << name
                                     << " num inputs:" << funcOp.getType().cast<mlir::FunctionType>().getNumInputs() << "\n";);
         }
         else
         {
-            LLVM_DEBUG(llvm::dbgs() << "\n... re-process. func: " << name << " type:" << funcOp.getType() << "\n";);
-            LLVM_DEBUG(llvm::dbgs() << "\n... re-process. func: " << name
+            LLVM_DEBUG(llvm::dbgs() << "\n!! re-process. func: " << name << " type:" << funcOp.getType() << "\n";);
+            LLVM_DEBUG(llvm::dbgs() << "\n!! re-process. func: " << name
                                     << " num inputs:" << funcOp.getType().cast<mlir::FunctionType>().getNumInputs() << "\n";);
         }
 
@@ -1960,7 +1972,7 @@ class MLIRGenImpl
                 capturedParam->setReadWriteAccess();
             }
 
-            LLVM_DEBUG(dbgs() << "\n --- captured '\".captured\"->" << name << "' [" << capturedVarValue
+            LLVM_DEBUG(dbgs() << "\n!! captured '\".captured\"->" << name << "' [" << capturedVarValue
                               << "] ref val type: " << variableRefType << "\n\n");
 
             declare(capturedParam, capturedVarValue);
@@ -2208,7 +2220,7 @@ class MLIRGenImpl
         if (genContext.passResult)
         {
             auto type = expressionValue.getType();
-            LLVM_DEBUG(dbgs() << "\n...store return type: " << type << "\n\n");
+            LLVM_DEBUG(dbgs() << "\n!! store return type: " << type << "\n\n");
 
             // if return type is not detected, take first and exit
             if (!genContext.passResult->functionReturnType)
@@ -3064,7 +3076,7 @@ class MLIRGenImpl
             }
         }
 
-        LLVM_DEBUG(llvm::dbgs() << "\nSWITCH: " << switchOp << "\n");
+        LLVM_DEBUG(llvm::dbgs() << "\n!! SWITCH: " << switchOp << "\n");
 
         return mlir::success();
     }
@@ -3529,7 +3541,7 @@ class MLIRGenImpl
 
             assert(destType);
 
-            LLVM_DEBUG(llvm::dbgs() << "\n~~~ Dest type: " << destType << "\n";);
+            LLVM_DEBUG(llvm::dbgs() << "\n!! Dest type: " << destType << "\n";);
 
             syncSavingValue(destType);
 
@@ -3555,7 +3567,7 @@ class MLIRGenImpl
         }
         else
         {
-            LLVM_DEBUG(dbgs() << "\n\n\n @@@ ... left expr.: " << leftExpressionValueBeforeCast << " ...\n";);
+            LLVM_DEBUG(dbgs() << "\n!! left expr.: " << leftExpressionValueBeforeCast << " ...\n";);
             emitError(location, "saving to constant object");
             return mlir::Value();
         }
@@ -4024,7 +4036,7 @@ class MLIRGenImpl
                 auto effectiveThisValue = thisValue;
                 if (baseClass)
                 {
-                    LLVM_DEBUG(dbgs() << "\n\n <><><> base call: func '" << funcOp.getName() << "' in context func. '"
+                    LLVM_DEBUG(dbgs() << "\n!! base call: func '" << funcOp.getName() << "' in context func. '"
                                       << const_cast<GenContext &>(genContext).funcOp.getName() << "', this type: " << thisValue.getType()
                                       << " value:" << thisValue << "\n\n";);
 
@@ -4041,10 +4053,10 @@ class MLIRGenImpl
 
                 if (!baseClass && methodInfo.isVirtual)
                 {
-                    LLVM_DEBUG(dbgs() << "Virtual call: func '" << funcOp.getName() << "' in context func. '"
+                    LLVM_DEBUG(dbgs() << "\n!! Virtual call: func '" << funcOp.getName() << "' in context func. '"
                                       << const_cast<GenContext &>(genContext).funcOp.getName() << "'\n";);
 
-                    LLVM_DEBUG(dbgs() << "Virtual call: this val: '" << effectiveThisValue << "'\n";);
+                    LLVM_DEBUG(dbgs() << "\n!! Virtual call: this val: '" << effectiveThisValue << "'\n";);
 
                     // auto inTheSameFunc = funcOp.getName() == const_cast<GenContext &>(genContext).funcOp.getName();
 
@@ -4475,10 +4487,7 @@ class MLIRGenImpl
         const_cast<GenContext &>(genContext).destFuncType = calledFuncType;
         if (mlir::failed(mlirGenCallOperands(location, calledFuncType, arguments, operands, genContext)))
         {
-            if (!genContext.allowPartialResolve)
-            {
-                emitError(location) << "Call Method: can't resolve values of all parameters";
-            }
+            emitError(location) << "Call Method: can't resolve values of all parameters";
         }
         else
         {
@@ -4543,10 +4552,8 @@ class MLIRGenImpl
         for (auto expression : arguments)
         {
             auto value = mlirGen(expression, genContext);
-            if (!value)
-            {
-                return mlir::failure();
-            }
+
+            TEST_LOGIC(value)
 
             operands.push_back(value);
         }
@@ -4560,19 +4567,19 @@ class MLIRGenImpl
         auto i = operands.size(); // we need to shift in case of 'this'
         for (auto expression : arguments)
         {
-            if (genContext.destFuncType)
+            if (genContext.destFuncType && genContext.destFuncType.getInputs().size() > i)
             {
                 const_cast<GenContext &>(genContext).argTypeDestFuncType = genContext.destFuncType.getInput(i);
             }
 
             auto value = mlirGen(expression, genContext);
-            if (!value)
-            {
-                if (!genContext.allowPartialResolve)
-                {
-                    emitError(loc(expression)) << "can't resolve function argument";
-                }
 
+            VALIDATE_LOGIC(value)
+
+            if (i >= funcType.getInputs().size())
+            {
+                emitError(loc(expression)) << "function does not have enough parameters to accept all arguments, arg #" << i
+                                           << ", func. type: " << funcType;
                 return mlir::failure();
             }
 
@@ -5094,7 +5101,7 @@ class MLIRGenImpl
                 values.push_back(mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName));
             }
 
-            LLVM_DEBUG(llvm::dbgs() << "\n... obj. func: " << fieldId << " type: " << funcType << "[" << funcType.getNumInputs() << "]\n";);
+            LLVM_DEBUG(llvm::dbgs() << "\n!! obj. func: " << fieldId << " type: " << funcType << "[" << funcType.getNumInputs() << "]\n";);
             types.push_back(type);
             fieldInfos.push_back({fieldId, type});
 
@@ -5188,7 +5195,7 @@ class MLIRGenImpl
             // fix this parameter type (taking in account that first type can be captured type)
             auto funcType = funcOp.getType();
 
-            LLVM_DEBUG(llvm::dbgs() << "Object FuncType: " << funcType << "\n";);
+            LLVM_DEBUG(llvm::dbgs() << "\n!! Object FuncType: " << funcType << "\n";);
 
             // process local vars in this context
             if (funcProto->getHasExtraFields())
@@ -5208,18 +5215,18 @@ class MLIRGenImpl
             {
                 // save first param as it is captured vars type, and remove it to fix "this" param
                 funcType = getFunctionType(funcType.getInputs().slice(1), funcType.getResults());
-                LLVM_DEBUG(llvm::dbgs() << "Object without captured FuncType: " << funcType << "\n";);
+                LLVM_DEBUG(llvm::dbgs() << "\n!! Object without captured FuncType: " << funcType << "\n";);
             }
 
             // recreate type with "this" param as "any"
             MLIRTypeHelper mth(builder.getContext());
 
             auto newFuncType = mth.getFunctionTypeWithOpaqueThis(funcType, true);
-            LLVM_DEBUG(llvm::dbgs() << "Object with this as opaque: " << newFuncType << "\n";);
+            LLVM_DEBUG(llvm::dbgs() << "\n!! Object with this as opaque: " << newFuncType << "\n";);
             if (funcProto->getHasCapturedVars())
             {
                 newFuncType = mth.getFunctionTypeAddingFirstArgType(newFuncType, capturedType);
-                LLVM_DEBUG(llvm::dbgs() << "Object with this as opaque and returned captured as first: " << newFuncType << "\n";);
+                LLVM_DEBUG(llvm::dbgs() << "\n!! Object with this as opaque and returned captured as first: " << newFuncType << "\n";);
             }
 
             // place holder
@@ -5249,6 +5256,9 @@ class MLIRGenImpl
                 }
 
                 itemValue = mlirGen(propertyAssignment->initializer, genContext);
+
+                VALIDATE(itemValue)
+
                 fieldId = getFieldIdForProperty(propertyAssignment);
             }
             else if (item == SyntaxKind::ShorthandPropertyAssignment)
@@ -5260,6 +5270,9 @@ class MLIRGenImpl
                 }
 
                 itemValue = mlirGen(shorthandPropertyAssignment->name.as<Expression>(), genContext);
+
+                VALIDATE(itemValue)
+
                 fieldId = getFieldIdForShorthandProperty(shorthandPropertyAssignment);
             }
             else if (item == SyntaxKind::MethodDeclaration)
@@ -5271,7 +5284,7 @@ class MLIRGenImpl
                 llvm_unreachable("object literal is not implemented(1)");
             }
 
-            assert(itemValue);
+            assert(genContext.allowPartialResolve || itemValue);
 
             addFieldInfo(fieldId, itemValue);
         }
@@ -5424,7 +5437,12 @@ class MLIRGenImpl
         // resolve name
         auto name = MLIRHelper::getName(identifier);
 
-        return mlirGen(location, name, genContext);
+        // info: can't validate it here, in case of "print" etc
+        auto value = mlirGen(location, name, genContext);
+
+        // VALIDATE(value)
+
+        return value;
     }
 
     mlir::Value resolveIdentifierAsVariable(mlir::Location location, StringRef name, const GenContext &genContext)
@@ -5450,7 +5468,7 @@ class MLIRGenImpl
             // auto isOuterFunctionScope = value.second->getFuncOp() != genContext.funcOp;
             if (isOuterVar && genContext.passResult)
             {
-                LLVM_DEBUG(dbgs() << "\n...capturing var: [" << value.second->getName() << "] value pair: " << value.first << " type: "
+                LLVM_DEBUG(dbgs() << "\n!! capturing var: [" << value.second->getName() << "] value pair: " << value.first << " type: "
                                   << value.second->getType() << " readwrite: " << value.second->getReadWriteAccess() << "\n\n";);
 
                 genContext.passResult->outerVariables.insert({value.second->getName(), value.second});
@@ -5463,7 +5481,7 @@ class MLIRGenImpl
                 return value.first;
             }
 
-            LLVM_DEBUG(dbgs() << "??? variable: " << name << " type: " << value.first.getType() << "\n");
+            LLVM_DEBUG(dbgs() << "\n!! variable: " << name << " type: " << value.first.getType() << "\n");
 
             // load value if memref
             auto valueType = value.first.getType().cast<mlir_ts::RefType>().getElementType();
@@ -5743,7 +5761,14 @@ class MLIRGenImpl
 
         // unresolved reference (for call for example)
         // TODO: put assert here to see which ref names are not resolved
-        return builder.create<mlir_ts::UnresolvedSymbolRefOp>(location, mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
+        auto unresolvedSymbol =
+            builder.create<mlir_ts::UnresolvedSymbolRefOp>(location, mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
+        if (genContext.unresolved)
+        {
+            genContext.unresolved->push_back(std::make_pair(location, name.str()));
+        }
+
+        return unresolvedSymbol;
     }
 
     mlir::LogicalResult mlirGen(TypeAliasDeclaration typeAliasDeclarationAST, const GenContext &genContext)
@@ -6176,7 +6201,7 @@ class MLIRGenImpl
                     newClassPtr->hasInitializers = true;
                 }
 
-                LLVM_DEBUG(dbgs() << "\n+++ class field: " << fieldId << " type: " << type << "\n\n");
+                LLVM_DEBUG(dbgs() << "\n!! class field: " << fieldId << " type: " << type << "\n\n");
 
                 if (!type || type == noneType)
                 {
@@ -6955,7 +6980,7 @@ class MLIRGenImpl
             auto typeAndInit = getTypeAndInit(propertyDeclaration, genContext);
             type = typeAndInit.first;
 
-            LLVM_DEBUG(dbgs() << "\n+++ interface field: " << fieldId << " type: " << type << "\n\n");
+            LLVM_DEBUG(dbgs() << "\n!! interface field: " << fieldId << " type: " << type << "\n\n");
 
             if (!type || type == noneType)
             {
@@ -7148,7 +7173,7 @@ class MLIRGenImpl
                 if (auto createdInterfaceVTableForClass =
                         mlirGenCreateInterfaceVTableForClass(location, classInfo, interfaceInfo, genContext))
                 {
-                    LLVM_DEBUG(llvm::dbgs() << "\n"
+                    LLVM_DEBUG(llvm::dbgs() << "\n!!"
                                             << "@ created interface:" << createdInterfaceVTableForClass << "\n";);
                     auto newInterface = builder.create<mlir_ts::NewInterfaceOp>(location, mlir::TypeRange{interfaceType}, value,
                                                                                 createdInterfaceVTableForClass);
@@ -7221,12 +7246,12 @@ class MLIRGenImpl
         }
         else if (kind == SyntaxKind::TypeReference)
         {
-            GenContext genContext;
+            GenContext genContext{};
             return getTypeByTypeReference(typeReferenceAST.as<TypeReferenceNode>(), genContext);
         }
         else if (kind == SyntaxKind::TypeQuery)
         {
-            GenContext genContext;
+            GenContext genContext{};
             return getTypeByTypeQuery(typeReferenceAST.as<TypeQueryNode>(), genContext);
         }
         else if (kind == SyntaxKind::ObjectKeyword)
@@ -7418,7 +7443,7 @@ class MLIRGenImpl
             else if (typeItem == SyntaxKind::LiteralType)
             {
                 auto literalTypeNode = typeItem.as<LiteralTypeNode>();
-                GenContext genContext;
+                GenContext genContext{};
                 auto literalValue = mlirGen(literalTypeNode->literal.as<Expression>(), genContext);
                 auto constantOp = dyn_cast_or_null<mlir_ts::ConstantOp>(literalValue.getDefiningOp());
                 attrVal = constantOp.valueAttr();
@@ -7617,7 +7642,7 @@ class MLIRGenImpl
 
     mlir::Type getLiteralType(LiteralTypeNode literalTypeNode)
     {
-        GenContext genContext;
+        GenContext genContext{};
         genContext.dummyRun = true;
         genContext.allowPartialResolve = true;
         auto value = mlirGen(literalTypeNode->literal.as<Expression>(), genContext);

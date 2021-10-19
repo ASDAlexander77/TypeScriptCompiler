@@ -48,6 +48,17 @@
         return mlir::failure();                                                                                                            \
     }
 
+#define TEST_LOGIC(value)                                                                                                                  \
+    if (!value)                                                                                                                            \
+    {                                                                                                                                      \
+        return mlir::failure();                                                                                                            \
+    }                                                                                                                                      \
+                                                                                                                                           \
+    if (auto unresolved = dyn_cast_or_null<mlir_ts::UnresolvedSymbolRefOp>(value.getDefiningOp()))                                         \
+    {                                                                                                                                      \
+        return mlir::failure();                                                                                                            \
+    }
+
 using VariablePairT = std::pair<mlir::Value, ts::VariableDeclarationDOM::TypePtr>;
 using SymbolTableScopeT = llvm::ScopedHashTableScope<StringRef, VariablePairT>;
 
