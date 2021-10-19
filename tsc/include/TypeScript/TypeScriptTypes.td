@@ -1077,6 +1077,10 @@ def TypeScript_Intersection : TypeScript_Type<"Intersection"> {
   }];
 }
 
+def TypeScript_Generic : TypeScript_Type<"Generic"> {
+    let mnemonic = "Generic";
+}
+
 def TypeScript_IsTupleType : CPred<"$_self.isa<::mlir::typescript::TupleType>()">;
 
 def TypeScript_AnyTuple : DialectType<TypeScript_Dialect, TypeScript_IsTupleType, "any tuple type">;

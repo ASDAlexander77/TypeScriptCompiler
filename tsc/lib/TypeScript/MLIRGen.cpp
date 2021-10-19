@@ -1242,7 +1242,7 @@ class MLIRGenImpl
                 LLVM_DEBUG(dbgs() << "\n!! param " << name << " mapped to type " << type << "\n\n");
             }
 
-            if (!type || type == noneType)
+            if (type == noneType)
             {
                 if (!genContext.allowPartialResolve)
                 {
@@ -1258,6 +1258,12 @@ class MLIRGenImpl
                 }
 
                 return params;
+            }
+
+            if (!type)
+            {
+                // TODO: this is begginging of generic types
+                type = getGenericType();
             }
 
             params.push_back(std::make_shared<FunctionParamDOM>(name, type, loc(arg), isOptional, initializer));
@@ -7425,6 +7431,11 @@ class MLIRGenImpl
     mlir_ts::ValueRefType getValueRefType(mlir::Type elementType)
     {
         return mlir_ts::ValueRefType::get(elementType);
+    }
+
+    mlir_ts::GenericType getGenericType()
+    {
+        return mlir_ts::GenericType::get(builder.getContext());
     }
 
     mlir::Value getUndefined(mlir::Location location)
