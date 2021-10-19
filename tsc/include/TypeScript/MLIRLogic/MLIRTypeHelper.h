@@ -504,6 +504,29 @@ class MLIRTypeHelper
 
         return false;
     }
+
+    mlir::Type findBaseType(mlir::Type typeLeft, mlir::Type typeRight)
+    {
+        if (canStoreAsWithoutLoosingInfo(typeLeft, typeRight))
+        {
+            return typeRight;
+        }
+
+        return typeLeft;
+    }
+
+    bool canStoreAsWithoutLoosingInfo(mlir::Type srcType, mlir::Type dstType)
+    {
+        if (srcType.isa<mlir::IntegerType>())
+        {
+            if (dstType.isa<mlir_ts::NumberType>())
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 };
 
 } // namespace typescript

@@ -3293,7 +3293,10 @@ class MLIRGenImpl
 
         // detect value type
         // TODO: sync types for 'when' and 'else'
-        auto resultType = evaluate(conditionalExpressionAST->whenTrue, genContext);
+        MLIRTypeHelper mth(builder.getContext());
+        auto resultWhenTrueType = evaluate(conditionalExpressionAST->whenTrue, genContext);
+        auto resultWhenFalseType = evaluate(conditionalExpressionAST->whenFalse, genContext);
+        auto resultType = mth.findBaseType(resultWhenTrueType, resultWhenFalseType);
 
         auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{resultType}, condValue, true);
 
@@ -3303,7 +3306,7 @@ class MLIRGenImpl
 
         VALIDATE(resultTrue);
 
-        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{resultTrue});
+        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{cast(location, resultType, resultTrue, genContext)});
 
         builder.setInsertionPointToStart(&ifOp.elseRegion().front());
         auto whenFalseExpression = conditionalExpressionAST->whenFalse;
@@ -3311,7 +3314,7 @@ class MLIRGenImpl
 
         VALIDATE(resultFalse);
 
-        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{resultFalse});
+        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{cast(location, resultType, resultFalse, genContext)});
 
         builder.setInsertionPointAfter(ifOp);
 
@@ -7134,6 +7137,11 @@ class MLIRGenImpl
 
     mlir::Value cast(mlir::Location location, mlir::Type type, mlir::Value value, const GenContext &genContext)
     {
+        if (type == value.getType())
+        {
+            return value;
+        }
+
         // class to string
         if (auto stringType = type.dyn_cast_or_null<mlir_ts::StringType>())
         {
