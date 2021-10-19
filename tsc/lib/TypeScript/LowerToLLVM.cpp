@@ -329,7 +329,7 @@ class SizeOfOpLowering : public TsLlvmPattern<mlir_ts::SizeOfOp>
         auto llvmStorageTypePtr = LLVM::LLVMPointerType::get(llvmStorageType);
         auto nullPtrToTypeValue = rewriter.create<LLVM::NullOp>(loc, llvmStorageTypePtr);
 
-        LLVM_DEBUG(llvm::dbgs() << "size of - storage type: [" << storageType << "] llvm storage type: [" << llvmStorageType
+        LLVM_DEBUG(llvm::dbgs() << "\n!! size of - storage type: [" << storageType << "] llvm storage type: [" << llvmStorageType
                                 << "] llvm ptr: [" << llvmStorageTypePtr << "] value: [" << nullPtrToTypeValue << "]\n";);
 
         auto cst1 = rewriter.create<LLVM::ConstantOp>(loc, th.getI64Type(), th.getIndexAttrValue(1));
@@ -950,7 +950,7 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
         auto isCaptured = false;
 #endif
 
-        LLVM_DEBUG(llvm::dbgs() << ">>> variable allocation: " << storageType << " is captured: " << isCaptured << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! variable allocation: " << storageType << " is captured: " << isCaptured << "\n";);
 
         auto allocated = isCaptured ? ch.MemoryAllocBitcast(llvmReferenceType, storageType)
                                     : rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, clh.createI32ConstantOf(1));
@@ -2500,12 +2500,12 @@ struct CaptureOpLowering : public TsLlvmPattern<mlir_ts::CaptureOp>
 
         auto captureRefType = captureOp.getType();
 
-        LLVM_DEBUG(llvm::dbgs() << "\n ...capture result type: " << captureRefType << "\n\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! ...capture result type: " << captureRefType << "\n\n";);
 
         assert(captureRefType.isa<mlir_ts::RefType>());
         auto captureStoreType = captureRefType.cast<mlir_ts::RefType>().getElementType().cast<mlir_ts::TupleType>();
 
-        LLVM_DEBUG(llvm::dbgs() << "\n ...capture store type: " << captureStoreType << "\n\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! ...capture store type: " << captureStoreType << "\n\n";);
 
         // true => we need to allocate capture in heap memory
 #ifdef ALLOC_CAPTURE_IN_HEAP
@@ -2526,7 +2526,7 @@ struct CaptureOpLowering : public TsLlvmPattern<mlir_ts::CaptureOp>
             auto fieldRef = rewriter.create<mlir_ts::PropertyRefOp>(location, thisStoreFieldTypeRef, allocTempStorage,
                                                                     th.getStructIndexAttrValue(index));
 
-            LLVM_DEBUG(llvm::dbgs() << "\n ...storing val: [" << val << "] in (" << index << ") ref: " << fieldRef << "\n\n";);
+            LLVM_DEBUG(llvm::dbgs() << "\n!! ...storing val: [" << val << "] in (" << index << ") ref: " << fieldRef << "\n\n";);
 
             // dereference value in case of sending value by ref but stored as value
             // TODO: review capture logic
@@ -2704,7 +2704,7 @@ struct LoadBoundRefOpLowering : public TsLlvmPattern<mlir_ts::LoadBoundRefOp>
             mlir::Value boundMethodValue =
                 rewriter.create<mlir_ts::CreateBoundFunctionOp>(loc, loadBoundRefOp.getType(), thisVal, loadedValue);
 
-            LLVM_DEBUG(llvm::dbgs() << "LoadOp Bound Ref: LLVM Type :" << tch.convertType(loadBoundRefOp.getType()) << "\n";);
+            LLVM_DEBUG(llvm::dbgs() << "\n!! LoadOp Bound Ref: LLVM Type :" << tch.convertType(loadBoundRefOp.getType()) << "\n";);
 
             rewriter.replaceOp(loadBoundRefOp, boundMethodValue);
         }
@@ -2788,9 +2788,10 @@ struct CreateBoundFunctionOpLowering : public TsLlvmPattern<mlir_ts::CreateBound
 
         auto llvmBoundFunctionType = tch.convertType(createBoundFunctionOp.getType());
 
-        LLVM_DEBUG(llvm::dbgs() << "CreateBoundFunction: LLVM Type :" << llvmBoundFunctionType << "\n";);
-        LLVM_DEBUG(llvm::dbgs() << "CreateBoundFunction: Func Type :" << tch.convertType(createBoundFunctionOp.func().getType()) << "\n";);
-        LLVM_DEBUG(llvm::dbgs() << "CreateBoundFunction: This Type :" << createBoundFunctionOp.thisVal().getType() << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! CreateBoundFunction: LLVM Type :" << llvmBoundFunctionType << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! CreateBoundFunction: Func Type :" << tch.convertType(createBoundFunctionOp.func().getType())
+                                << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! CreateBoundFunction: This Type :" << createBoundFunctionOp.thisVal().getType() << "\n";);
 
         auto structVal = rewriter.create<mlir_ts::UndefOp>(loc, llvmBoundFunctionType);
         auto structVal2 =
@@ -2937,7 +2938,7 @@ class SwitchStateOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateOp>
 
         assert(returnBlock);
 
-        LLVM_DEBUG(llvm::dbgs() << "\n return block: "; returnBlock->dump(); llvm::dbgs() << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! return block: "; returnBlock->dump(); llvm::dbgs() << "\n";);
 
         auto defaultBlock = returnBlock;
 
@@ -2988,7 +2989,7 @@ class SwitchStateOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateOp>
         rewriter.replaceOpWithNewOp<LLVM::SwitchOp>(switchStateOp, switchStateOp.state(), defaultBlock ? defaultBlock : continuationBlock,
                                                     ValueRange{}, caseValues, caseDestinations);
 
-        LLVM_DEBUG(llvm::dbgs() << "\n SWITCH DUMP: \n" << *switchStateOp->getParentOp() << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! SWITCH DUMP: \n" << *switchStateOp->getParentOp() << "\n";);
 
         return success();
     }
@@ -3007,7 +3008,7 @@ struct YieldReturnValOpLowering : public TsLlvmPattern<mlir_ts::YieldReturnValOp
 
         assert(returnBlock);
 
-        LLVM_DEBUG(llvm::dbgs() << "\n return block: "; returnBlock->dump(); llvm::dbgs() << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! return block: "; returnBlock->dump(); llvm::dbgs() << "\n";);
 
         auto retBlock = returnBlock;
 
@@ -3016,7 +3017,7 @@ struct YieldReturnValOpLowering : public TsLlvmPattern<mlir_ts::YieldReturnValOp
         rewriter.setInsertionPointAfter(yieldReturnValOp);
         clh.JumpTo(yieldReturnValOp.getLoc(), retBlock);
 
-        LLVM_DEBUG(llvm::dbgs() << "\n YIELD DUMP: \n" << *yieldReturnValOp->getParentOp() << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! YIELD DUMP: \n" << *yieldReturnValOp->getParentOp() << "\n";);
 
         return success();
     }
@@ -3049,7 +3050,7 @@ class SwitchStateInternalOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateI
         rewriter.replaceOpWithNewOp<LLVM::SwitchOp>(switchStateOp, switchStateOp.state(), switchStateOp.defaultDest(), ValueRange{},
                                                     caseValues, caseDestinations);
 
-        LLVM_DEBUG(llvm::dbgs() << "\n SWITCH DUMP: \n" << *switchStateOp->getParentOp() << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! SWITCH DUMP: \n" << *switchStateOp->getParentOp() << "\n";);
 
         return success();
     }
@@ -3292,7 +3293,7 @@ static LogicalResult verifyTerminatorSuccessors(Operation *op)
     for (Block *succ : op->getSuccessors())
         if (succ->getParent() != parent)
         {
-            LLVM_DEBUG(llvm::dbgs() << "\n reference to block defined in another region: "; op->dump(); llvm::dbgs() << "\n";);
+            LLVM_DEBUG(llvm::dbgs() << "\n!! reference to block defined in another region: "; op->dump(); llvm::dbgs() << "\n";);
             assert(false);
             return op->emitError("DEBUG TEST: reference to block defined in another region");
         }
@@ -3391,14 +3392,14 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     // ensures that only legal operations will remain after the conversion.
     auto module = getOperation();
 
-    LLVM_DEBUG(llvm::dbgs() << "\nBEFORE DUMP: \n" << module << "\n";);
+    LLVM_DEBUG(llvm::dbgs() << "\n!! BEFORE DUMP: \n" << module << "\n";);
 
     if (failed(applyFullConversion(module, target, std::move(patterns))))
     {
         signalPassFailure();
     }
 
-    LLVM_DEBUG(llvm::dbgs() << "\nAFTER DUMP: \n" << module << "\n";);
+    LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER DUMP: \n" << module << "\n";);
 
     LLVM_DEBUG(verifyModule(module););
 }

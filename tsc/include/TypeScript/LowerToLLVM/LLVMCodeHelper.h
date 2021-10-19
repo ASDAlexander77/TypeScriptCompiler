@@ -329,6 +329,8 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
             auto llvmType = typesRange[position];
             if (auto unitAttr = item.dyn_cast_or_null<UnitAttr>())
             {
+                LLVM_DEBUG(llvm::dbgs() << "!! Unit Attr is type of '" << llvmType << "'\n");
+
                 auto itemValue = rewriter.create<mlir_ts::UndefOp>(loc, llvmType);
                 tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemValue, rewriter.getI64ArrayAttr(position++));
             }

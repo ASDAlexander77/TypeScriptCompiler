@@ -909,18 +909,18 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
         mlir::Block *finallyBlockForCleanupLast = nullptr;
         if (finallyHasOps)
         {
-            LLVM_DEBUG(llvm::dbgs() << "\n BEFORE: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
+            LLVM_DEBUG(llvm::dbgs() << "\n!! BEFORE: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
 
             auto beforeFinallyBlockForCleanup = continuation->getPrevNode();
             rewriter.cloneRegionBefore(tryOp.finallyBlock(), continuation);
             finallyBlockForCleanup = beforeFinallyBlockForCleanup->getNextNode();
             finallyBlockForCleanupLast = continuation->getPrevNode();
 
-            LLVM_DEBUG(llvm::dbgs() << "\n AFTER CLONE: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
+            LLVM_DEBUG(llvm::dbgs() << "\n!!  AFTER CLONE: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
 
             rewriter.inlineRegionBefore(tryOp.finallyBlock(), continuation);
 
-            LLVM_DEBUG(llvm::dbgs() << "\n AFTER INLINE: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
+            LLVM_DEBUG(llvm::dbgs() << "\n!!  AFTER INLINE: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
         }
         else
         {
@@ -1101,7 +1101,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
                 tsContext->unwind[throwOp] = parentTryOpLandingPad;
             }
 
-            LLVM_DEBUG(llvm::dbgs() << "\n AFTER INSERT CLEANUP AS CATCH: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
+            LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER INSERT CLEANUP AS CATCH: TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
 #endif
 
             // cleanup end
@@ -1145,7 +1145,7 @@ struct TryOpLowering : public TsPattern<mlir_ts::TryOp>
 
         rewriter.replaceOp(tryOp, continuation->getArguments());
 
-        LLVM_DEBUG(llvm::dbgs() << "\n TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! TRY OP DUMP: \n" << *tryOp->getParentOp() << "\n";);
 
         return success();
     }
@@ -1190,8 +1190,8 @@ struct CallOpLowering : public TsPattern<mlir_ts::CallOp>
                 CodeLogicHelper clh(op, rewriter);
                 auto *continuationBlock = clh.CutBlockAndSetInsertPointToEndOfBlock();
 
-                LLVM_DEBUG(llvm::dbgs() << "...call -> invoke: " << op.calleeAttr() << "\n";);
-                LLVM_DEBUG(for (auto opit : op.getOperands()) llvm::dbgs() << "...call -> invoke operands: " << opit << "\n";);
+                LLVM_DEBUG(llvm::dbgs() << "!! ...call -> invoke: " << op.calleeAttr() << "\n";);
+                LLVM_DEBUG(for (auto opit : op.getOperands()) llvm::dbgs() << "!! ...call -> invoke operands: " << opit << "\n";);
 
                 rewriter.create<mlir_ts::InvokeOp>(op->getLoc(), op.getResultTypes(), op.calleeAttr(), op.getArgOperands(),
                                                    continuationBlock, ValueRange{}, unwind, ValueRange{});
@@ -1221,7 +1221,7 @@ struct CallIndirectOpLowering : public TsPattern<mlir_ts::CallIndirectOp>
                 CodeLogicHelper clh(op, rewriter);
                 auto *continuationBlock = clh.CutBlockAndSetInsertPointToEndOfBlock();
 
-                LLVM_DEBUG(for (auto opit : op.getOperands()) llvm::dbgs() << "...call -> invoke operands: " << opit << "\n";);
+                LLVM_DEBUG(for (auto opit : op.getOperands()) llvm::dbgs() << "!! ...call -> invoke operands: " << opit << "\n";);
 
                 rewriter.create<mlir_ts::InvokeOp>(op->getLoc(), op.getResultTypes(), op.getOperands(), continuationBlock, ValueRange{},
                                                    unwind, ValueRange{});
@@ -1303,7 +1303,7 @@ class SwitchStateOpLowering : public TsPattern<mlir_ts::SwitchStateOp>
 
         assert(returnBlock);
 
-        LLVM_DEBUG(llvm::dbgs() << "\n return block: "; returnBlock->dump(); llvm::dbgs() << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! return block: "; returnBlock->dump(); llvm::dbgs() << "\n";);
 
         auto defaultBlock = returnBlock;
 
@@ -1345,8 +1345,6 @@ class SwitchStateOpLowering : public TsPattern<mlir_ts::SwitchStateOp>
         rewriter.replaceOpWithNewOp<mlir_ts::SwitchStateInternalOp>(
             switchStateOp, switchStateOp.state(), defaultBlock ? defaultBlock : switchStateOp.defaultDest(), caseDestinations);
 
-        LLVM_DEBUG(llvm::dbgs() << "\n SWITCH DUMP: \n" << *switchStateOp->getParentOp() << "\n";);
-
         return success();
     }
 };
@@ -1365,14 +1363,10 @@ struct YieldReturnValOpLowering : public TsPattern<mlir_ts::YieldReturnValOp>
 
         auto retBlock = tsContext->returnBlock;
 
-        LLVM_DEBUG(llvm::dbgs() << "\n return block: "; retBlock->dump(); llvm::dbgs() << "\n";);
-
         rewriter.replaceOpWithNewOp<mlir_ts::StoreOp>(yieldReturnValOp, yieldReturnValOp.operand(), yieldReturnValOp.reference());
 
         rewriter.setInsertionPointAfter(yieldReturnValOp);
         clh.JumpTo(yieldReturnValOp.getLoc(), retBlock);
-
-        LLVM_DEBUG(llvm::dbgs() << "\n YIELD DUMP: \n" << *yieldReturnValOp->getParentOp() << "\n";);
 
         return success();
     }
@@ -1411,9 +1405,9 @@ static LogicalResult verifySuccessors(Operation *op)
     for (mlir::Block *succ : op->getSuccessors())
         if (succ->getParent() != parent)
         {
-            LLVM_DEBUG(llvm::dbgs() << "\n reference to block defined in another region: "; op->dump(); llvm::dbgs() << "\n";);
+            LLVM_DEBUG(llvm::dbgs() << "\n!! reference to block defined in another region: "; op->dump(); llvm::dbgs() << "\n";);
             assert(false);
-            return op->emitError("DEBUG TEST: reference to block defined in another region");
+            return op->emitError("!! DEBUG TEST: reference to block defined in another region");
         }
 
     return success();
@@ -1560,11 +1554,11 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         signalPassFailure();
     }
 
-    LLVM_DEBUG(llvm::dbgs() << "\nProcessing function: \n" << function.getName() << "\n";);
+    LLVM_DEBUG(llvm::dbgs() << "\n!! Processing function: \n" << function.getName() << "\n";);
 
     cleanupEmptyBlocksWithoutPredecessors(function);
 
-    LLVM_DEBUG(llvm::dbgs() << "\nAFTER FUNC DUMP: \n" << function << "\n";);
+    LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER FUNC DUMP: \n" << function << "\n";);
 
     LLVM_DEBUG(verifyFunction(function););
 }
