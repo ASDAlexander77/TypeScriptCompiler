@@ -159,7 +159,6 @@ function main() {
     main5();
     main6();
     main7();
-    // TODO: bug here, if you uncomment
-    //main8();
+    main8();
     print("done.");
 }
