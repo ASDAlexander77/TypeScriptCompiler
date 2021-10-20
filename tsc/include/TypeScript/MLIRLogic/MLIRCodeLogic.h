@@ -112,7 +112,7 @@ class MLIRCodeLogic
 
         if (fieldIndex < 0 || fieldIndex >= tupleType.size())
         {
-            LLVM_DEBUG(dbgs() << "@looking for field: " << fieldId << " tuple: " << tupleType << "\n");
+            LLVM_DEBUG(dbgs() << "\n!! looking for field: " << fieldId << " tuple: " << tupleType << "\n");
             return std::make_pair<>(-1, mlir::Type());
         }
 

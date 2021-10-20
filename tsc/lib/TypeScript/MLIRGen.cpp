@@ -44,6 +44,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 #include "mlir/Dialect/SCF/SCF.h"
 #include "mlir/Dialect/StandardOps/IR/Ops.h"
+#include "mlir/IR/Diagnostics.h"
 #ifdef ENABLE_ASYNC
 #include "mlir/Dialect/Async/IR/Async.h"
 #endif
@@ -134,7 +135,11 @@ class MLIRGenImpl
         mlir::SmallVector<mlir::Diagnostic *> postponedMessages;
         mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) {
             // suppress all
-            hasErrors = true;
+            if (diag.getSeverity() == mlir::DiagnosticSeverity::Error)
+            {
+                hasErrors = true;
+            }
+
             postponedMessages.push_back(new mlir::Diagnostic(std::move(diag)));
         });
 
@@ -4679,20 +4684,21 @@ class MLIRGenImpl
             // set temp vtable
             auto fullClassVTableFieldName = concat(classInfo->fullName, VTABLE_NAME);
             auto vtableAddress = resolveFullNameIdentifier(location, fullClassVTableFieldName, true, genContext);
-            if (!vtableAddress)
+            if (vtableAddress)
             {
-                assert(genContext.allowPartialResolve);
-                return mlir::failure();
+                auto anyTypeValue = cast(location, getOpaqueType(), vtableAddress, genContext);
+                auto varDecl = std::make_shared<VariableDeclarationDOM>(VTABLE_NAME, anyTypeValue.getType(), location);
+                declare(varDecl, anyTypeValue);
+
+                // save vtable value
+                auto setPropValue = nf.createBinaryExpression(propAccess, nf.createToken(SyntaxKind::EqualsToken), _vtable_name);
+
+                mlirGen(setPropValue, genContext);
             }
-
-            auto anyTypeValue = cast(location, getOpaqueType(), vtableAddress, genContext);
-            auto varDecl = std::make_shared<VariableDeclarationDOM>(VTABLE_NAME, anyTypeValue.getType(), location);
-            declare(varDecl, anyTypeValue);
-
-            // save vtable value
-            auto setPropValue = nf.createBinaryExpression(propAccess, nf.createToken(SyntaxKind::EqualsToken), _vtable_name);
-
-            mlirGen(setPropValue, genContext);
+            else
+            {
+                theModule.emitWarning("class does not have virtual table: ") << thisValue.getType();
+            }
         }
 
         if (classInfo->getHasConstructor())
