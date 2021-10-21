@@ -29,8 +29,12 @@ if (WIN32)
 endif()
 
 # Find the VC Libs
-string(REPLACE "bin/Hostx86/${CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE}/cl.exe" "lib/${CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE}" VC_LIB_DIR "${CMAKE_CXX_COMPILER}")
+string(FIND "${CMAKE_CXX_COMPILER}" "Hostx86" HAS_Hostx86)
+if ("${HAS_Hostx86}" EQUAL "-1")
 string(REPLACE "bin/Hostx64/${CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE}/cl.exe" "lib/${CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE}" VC_LIB_DIR "${CMAKE_CXX_COMPILER}")
+else()
+string(REPLACE "bin/Hostx86/${CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE}/cl.exe" "lib/${CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE}" VC_LIB_DIR "${CMAKE_CXX_COMPILER}")
+endif()
 
 message(STATUS ">>> VC_LIB_DIR >>> ${VC_LIB_DIR}")
 
@@ -111,6 +115,7 @@ add_test(NAME test-compile-00-class-discover-types COMMAND test-runner "${PROJEC
 add_test(NAME test-compile-00-class-accessor COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor.ts")
 add_test(NAME test-compile-00-class-super COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_super.ts")
 add_test(NAME test-compile-00-class-default-constructor COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_def_constr.ts")
+add_test(NAME test-compile-00-class-static-constructor COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_static_constr.ts")
 add_test(NAME test-compile-00-class-abstract COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_abstract.ts")
 add_test(NAME test-compile-00-namespace COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00ns.ts")
 add_test(NAME test-compile-00-namespace-enum COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00ns2.ts")
@@ -216,6 +221,7 @@ add_test(NAME test-jit-00-class-discover-types COMMAND test-runner -jit "${PROJE
 add_test(NAME test-jit-00-class-accessor COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_accessor.ts")
 add_test(NAME test-jit-00-class-super COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_super.ts")
 add_test(NAME test-jit-00-class-default-constructor COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_def_constr.ts")
+add_test(NAME test-jit-00-class-static-constructor COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_static_constr.ts")
 add_test(NAME test-jit-00-class-abstract COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_abstract.ts")
 add_test(NAME test-jit-00-namespace COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00ns.ts")
 add_test(NAME test-jit-00-namespace-enum COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00ns2.ts")
