@@ -1531,7 +1531,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
         mlir_ts::ThisPropertyRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp, mlir_ts::TypeOfOp, mlir_ts::DebuggerOp, mlir_ts::LandingPadOp,
         mlir_ts::CompareCatchTypeOp, mlir_ts::BeginCatchOp, mlir_ts::SaveCatchVarOp, mlir_ts::EndCatchOp, mlir_ts::BeginCleanupOp,
         mlir_ts::EndCleanupOp, mlir_ts::ThrowUnwindOp, mlir_ts::ThrowCallOp, mlir_ts::CallInternalOp, mlir_ts::ReturnInternalOp,
-        mlir_ts::NoOp, mlir_ts::SwitchStateInternalOp, mlir_ts::UnreachableOp>();
+        mlir_ts::NoOp, mlir_ts::SwitchStateInternalOp, mlir_ts::UnreachableOp, mlir_ts::GlobalConstructorOp>();
 
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.

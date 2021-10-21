@@ -9,6 +9,7 @@
 #define THIS_NAME "this"
 #define LTHIS_NAME L"this"
 #define SUPER_NAME "super"
+#define STATIC_CONSTRUCTOR_NAME "static_constructor"
 #define CONSTRUCTOR_NAME "constructor"
 #define CONSTRUCTOR_TEMPVAR_NAME ".ctor"
 #define VTABLE_NAME ".vtbl"
@@ -29,6 +30,7 @@
 #define LEXPR_TEMPVAR_NAME L".expr"
 #define TS_GC_ATTRIBUTE "ts.gc"
 #define TYPESCRIPT_GC_NAME "tsgc"
+#define GLOBAL_CONSTUCTIONS_NAME "llvm.global_ctors"
 
 #if __LP64__
 #define TRAMPOLINE_SIZE 48

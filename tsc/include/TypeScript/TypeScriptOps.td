@@ -1849,6 +1849,24 @@ def TypeScript_GlobalResultOp : TypeScript_Op<"GlobalResult", [NoSideEffect, Ret
   let verifier = ?;
 }
 
+def TypeScript_GlobalConstructorOp : TypeScript_Op<"GlobalConstructor"> {
+  let arguments = (ins FlatSymbolRefAttr:$global_name);
+  let results = (outs );
+
+  let builders = [
+    OpBuilder<(ins "FuncOp":$func, CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs),
+    [{
+      build($_builder, $_state, RefType::get(func.getType()), func.getName());
+      $_state.addAttributes(attrs);
+    }]>
+  ];
+
+  let extraClassDeclaration = [{
+    /// Return the ts.func operation that is referenced here.
+    FuncOp getFunction();
+  }];
+}
+
 def TypeScript_PushOp : TypeScript_Op<"Push"> {
   let arguments = (ins TypeScript_AnyArrayRef:$op, Variadic<AnyType>:$items);
   let results = (outs I64:$new_size);

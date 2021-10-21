@@ -704,6 +704,19 @@ class MLIRCodeLogicHelper
 
         return ifOp.results().front();
     }
+
+    void seekLast(mlir::Block *block)
+    {
+        // find last string
+        auto lastUse = [&](mlir::Operation *op) {
+            if (auto globalOp = dyn_cast_or_null<mlir_ts::GlobalOp>(op))
+            {
+                builder.setInsertionPointAfter(globalOp);
+            }
+        };
+
+        block->walk(lastUse);
+    }
 };
 
 class MLIRLogicHelper

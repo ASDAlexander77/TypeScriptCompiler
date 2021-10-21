@@ -59,6 +59,33 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         return strVarName.str();
     }
 
+    LLVM::Linkage getLinkage(mlir::Operation *op)
+    {
+        auto linkage = LLVM::Linkage::Internal;
+        if (auto linkageAttr = op->getAttrOfType<StringAttr>("Linkage"))
+        {
+            auto val = linkageAttr.getValue();
+            if (val == "External")
+            {
+                linkage = LLVM::Linkage::External;
+            }
+            else if (val == "Linkonce")
+            {
+                linkage = LLVM::Linkage::Linkonce;
+            }
+            else if (val == "LinkonceODR")
+            {
+                linkage = LLVM::Linkage::LinkonceODR;
+            }
+            else if (val == "Appending")
+            {
+                linkage = LLVM::Linkage::Appending;
+            }
+        }
+
+        return linkage;
+    }
+
     mlir::LogicalResult createGlobalVarIfNew(StringRef name, mlir::Type type, mlir::Attribute value, bool isConst, mlir::Region &initRegion,
                                              LLVM::Linkage linkage = LLVM::Linkage::Internal)
     {
@@ -84,6 +111,36 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
                 rewriter.inlineRegionBefore(initRegion, &global.initializer().back());
                 rewriter.eraseBlock(&global.initializer().back());
+            }
+
+            return success();
+        }
+
+        return failure();
+    }
+
+    mlir::LogicalResult createGlobalConstructorIfNew(StringRef name, mlir::Type type, LLVM::Linkage linkage,
+                                                     std::function<void(LLVMCodeHelper *)> buildFunc)
+    {
+        auto loc = op->getLoc();
+        auto parentModule = op->getParentOfType<ModuleOp>();
+
+        TypeHelper th(rewriter);
+
+        // Create the global at the entry of the module.
+        LLVM::GlobalOp global = parentModule.lookupSymbol<LLVM::GlobalOp>(name);
+        if (!global)
+        {
+            OpBuilder::InsertionGuard insertGuard(rewriter);
+            rewriter.setInsertionPointToStart(parentModule.getBody());
+
+            seekLast(parentModule.getBody());
+
+            global = rewriter.create<LLVM::GlobalOp>(loc, type, true, linkage, name, mlir::Attribute());
+
+            {
+                setStructWritingPoint(global);
+                buildFunc(this);
             }
 
             return success();
@@ -289,6 +346,18 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
         rewriter.setInsertionPoint(block, block->begin());
 
+        return mlir::success();
+    }
+
+    mlir::LogicalResult setStructWritingPointToStart(LLVM::GlobalOp globalOp)
+    {
+        rewriter.setInsertionPointToStart(&globalOp.getInitializerRegion().front());
+        return mlir::success();
+    }
+
+    mlir::LogicalResult setStructWritingPointToEnd(LLVM::GlobalOp globalOp)
+    {
+        rewriter.setInsertionPoint(globalOp.getInitializerRegion().back().getTerminator());
         return mlir::success();
     }
 

@@ -1323,7 +1323,15 @@ class MLIRGenImpl
         else if (signatureDeclarationBaseAST == SyntaxKind::Constructor)
         {
             // class method name
-            fullName = objectOwnerName + "." + CONSTRUCTOR_NAME;
+            auto isStatic = hasModifier(signatureDeclarationBaseAST, SyntaxKind::StaticKeyword);
+            if (isStatic)
+            {
+                fullName = objectOwnerName + "." + STATIC_CONSTRUCTOR_NAME;
+            }
+            else
+            {
+                fullName = objectOwnerName + "." + CONSTRUCTOR_NAME;
+            }
         }
 
         auto name = fullName;
@@ -6227,7 +6235,7 @@ class MLIRGenImpl
             }
             else
             {
-                // register global
+                // process static field - register global
                 auto fullClassStaticFieldName = concat(newClassPtr->fullName, memberNamePtr);
                 registerVariable(
                     location, fullClassStaticFieldName, true, VariableClass::Var,
@@ -6739,8 +6747,28 @@ class MLIRGenImpl
             funcGenContext.passResult = nullptr;
             if (isConstructor)
             {
-                // adding missing statements
-                generateConstructorStatements(classDeclarationAST, funcGenContext);
+                if (isStatic)
+                {
+                    // TODO: generate extra statements for static constructor
+                    if (!genContext.allowPartialResolve)
+                    {
+                        auto parentModule = theModule;
+
+                        MLIRCodeLogicHelper mclh(builder, location);
+
+                        builder.setInsertionPointToStart(parentModule.getBody());
+                        mclh.seekLast(parentModule.getBody());
+
+                        auto funcName = getNameOfFunction(classMember, genContext);
+
+                        builder.create<mlir_ts::GlobalConstructorOp>(location, StringRef(std::get<0>(funcName)));
+                    }
+                }
+                else
+                {
+                    // adding missing statements
+                    generateConstructorStatements(classDeclarationAST, funcGenContext);
+                }
             }
 
             auto funcOp = mlirGenFunctionLikeDeclaration(funcLikeDeclaration, funcGenContext);
@@ -7048,7 +7076,15 @@ class MLIRGenImpl
     {
         if (methodSignature == SyntaxKind::Constructor)
         {
-            methodName = std::string(CONSTRUCTOR_NAME);
+            auto isStatic = hasModifier(methodSignature, SyntaxKind::StaticKeyword);
+            if (isStatic)
+            {
+                methodName = std::string(STATIC_CONSTRUCTOR_NAME);
+            }
+            else
+            {
+                methodName = std::string(CONSTRUCTOR_NAME);
+            }
         }
         else if (methodSignature == SyntaxKind::GetAccessor)
         {

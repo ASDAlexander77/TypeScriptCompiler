@@ -1758,23 +1758,7 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
     {
         LLVMCodeHelper lch(globalOp, rewriter, getTypeConverter());
 
-        auto linkage = LLVM::Linkage::Internal;
-        if (auto linkageAttr = globalOp->getAttrOfType<StringAttr>("Linkage"))
-        {
-            auto val = linkageAttr.getValue();
-            if (val == "External")
-            {
-                linkage = LLVM::Linkage::External;
-            }
-            else if (val == "Linkonce")
-            {
-                linkage = LLVM::Linkage::Linkonce;
-            }
-            else if (val == "LinkonceODR")
-            {
-                linkage = LLVM::Linkage::LinkonceODR;
-            }
-        }
+        auto linkage = lch.getLinkage(globalOp);
 
         // TODO: include initialize block
         lch.createGlobalVarIfNew(globalOp.sym_name(), getTypeConverter()->convertType(globalOp.type()), globalOp.valueAttr(),
@@ -3056,6 +3040,73 @@ class SwitchStateInternalOpLowering : public TsLlvmPattern<mlir_ts::SwitchStateI
     }
 };
 
+struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstructorOp>
+{
+    using TsLlvmPattern<mlir_ts::GlobalConstructorOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::GlobalConstructorOp globalConstructorOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        TypeHelper th(rewriter.getContext());
+        LLVMCodeHelper lch(globalConstructorOp, rewriter, getTypeConverter());
+        CodeLogicHelper clh(globalConstructorOp, rewriter);
+
+        mlir::Location loc = globalConstructorOp->getLoc();
+
+        if (!globalConstructorOp->getParentOfType<ModuleOp>().lookupSymbol<LLVM::GlobalOp>(GLOBAL_CONSTUCTIONS_NAME))
+        {
+            SmallVector<mlir_ts::GlobalConstructorOp, 4> globalConstructs;
+            auto visitorAllGlobalConstructs = [&](Operation *op) {
+                if (auto globalConstrOp = dyn_cast_or_null<mlir_ts::GlobalConstructorOp>(op))
+                {
+                    globalConstructs.push_back(globalConstrOp);
+                }
+            };
+
+            globalConstructorOp->getParentOp()->walk(visitorAllGlobalConstructs);
+
+            auto funcType = th.getPointerType(th.getFunctionType(ArrayRef<mlir::Type>{}));
+
+            mlir::SmallVector<mlir::Type, 4> llvmTypes;
+            llvmTypes.push_back(th.getI32Type());
+            llvmTypes.push_back(funcType);
+            llvmTypes.push_back(th.getI8PtrType());
+            auto elementType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), llvmTypes, false);
+            auto arrayConstType = th.getArrayType(elementType, globalConstructs.size());
+
+            // TODO: include initialize block
+            lch.createGlobalConstructorIfNew(GLOBAL_CONSTUCTIONS_NAME, arrayConstType, LLVM::Linkage::Appending, [&](LLVMCodeHelper *ch) {
+                mlir::Value arrayInstance = rewriter.create<LLVM::UndefOp>(loc, arrayConstType);
+
+                auto index = 0;
+                for (auto globalConstr : llvm::reverse(globalConstructs))
+                {
+                    mlir::Value instanceVal = rewriter.create<LLVM::UndefOp>(loc, elementType);
+
+                    auto orderNumber = clh.createI32ConstantOf(65535);
+
+                    ch->setStructValue(loc, instanceVal, orderNumber, 0);
+
+                    auto addrVal = ch->getAddressOfGlobalVar(globalConstr.global_name(), funcType, 0);
+
+                    ch->setStructValue(loc, instanceVal, addrVal, 1);
+
+                    auto nullVal = rewriter.create<LLVM::NullOp>(loc, th.getI8PtrType());
+                    ch->setStructValue(loc, instanceVal, nullVal, 2);
+
+                    // set array value
+                    ch->setStructValue(loc, arrayInstance, instanceVal, index++);
+                }
+
+                auto retVal = rewriter.create<LLVM::ReturnOp>(loc, mlir::ValueRange{arrayInstance});
+            });
+        }
+
+        rewriter.eraseOp(globalConstructorOp);
+        return success();
+    }
+};
+
 struct NoOpLowering : public TsLlvmPattern<mlir_ts::NoOp>
 {
     using TsLlvmPattern<mlir_ts::NoOp>::TsLlvmPattern;
@@ -3376,7 +3427,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         ThisPropertyRefOpLowering, LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering, CreateBoundFunctionOpLowering,
         GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, DebuggerOpLowering, UnreachableOpLowering, LandingPadOpLowering,
         CompareCatchTypeOpLowering, BeginCatchOpLowering, SaveCatchVarOpLowering, EndCatchOpLowering, BeginCleanupOpLowering,
-        EndCleanupOpLowering, CallInternalOpLowering, ReturnInternalOpLowering, NoOpLowering
+        EndCleanupOpLowering, CallInternalOpLowering, ReturnInternalOpLowering, NoOpLowering, GlobalConstructorOpLowering
 #ifndef DISABLE_SWITCH_STATE_PASS
         ,
         SwitchStateOpLowering, StateLabelOpLowering, YieldReturnValOpLowering
