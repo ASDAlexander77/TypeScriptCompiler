@@ -6263,7 +6263,19 @@ class MLIRGenImpl
                 auto fullClassStaticFieldName = concat(newClassPtr->fullName, memberNamePtr);
                 registerVariable(
                     location, fullClassStaticFieldName, true, VariableClass::Var,
-                    [&]() { return getTypeAndInit(propertyDeclaration, genContext); }, genContext);
+                    [&]() {
+                        auto isConst = false;
+                        mlir::Type typeInit;
+                        evaluate(
+                            propertyDeclaration->initializer, [&](mlir::Value val) { isConst = isConstValue(val); }, genContext);
+                        if (isConst)
+                        {
+                            return getTypeAndInit(propertyDeclaration, genContext);
+                        }
+
+                        return std::make_pair(typeInit, mlir::Value());
+                    },
+                    genContext);
 
                 if (declareClass)
                 {
