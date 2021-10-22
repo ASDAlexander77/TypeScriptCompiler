@@ -37,6 +37,7 @@
 #include "scanner_enums.h"
 
 #define DISABLE_SWITCH_STATE_PASS 1
+#define ENABLE_MLIR_INIT
 
 using namespace mlir;
 using namespace ::typescript;
@@ -3053,7 +3054,8 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
 
         mlir::Location loc = globalConstructorOp->getLoc();
 
-        if (!globalConstructorOp->getParentOfType<ModuleOp>().lookupSymbol<LLVM::GlobalOp>(GLOBAL_CONSTUCTIONS_NAME))
+        auto parentModule = globalConstructorOp->getParentOfType<ModuleOp>();
+        if (!parentModule.lookupSymbol<LLVM::GlobalOp>(GLOBAL_CONSTUCTIONS_NAME))
         {
             SmallVector<mlir_ts::GlobalConstructorOp, 4> globalConstructs;
             auto visitorAllGlobalConstructs = [&](Operation *op) {
@@ -3072,12 +3074,19 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
             llvmTypes.push_back(funcType);
             llvmTypes.push_back(th.getI8PtrType());
             auto elementType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), llvmTypes, false);
-            auto arrayConstType = th.getArrayType(elementType, globalConstructs.size());
+
+#ifndef ENABLE_MLIR_INIT
+            auto size = globalConstructs.size();
+#else
+            auto size = 1;
+#endif
+            auto arrayConstType = th.getArrayType(elementType, size);
 
             // TODO: include initialize block
             lch.createGlobalConstructorIfNew(GLOBAL_CONSTUCTIONS_NAME, arrayConstType, LLVM::Linkage::Appending, [&](LLVMCodeHelper *ch) {
                 mlir::Value arrayInstance = rewriter.create<LLVM::UndefOp>(loc, arrayConstType);
 
+#ifndef ENABLE_MLIR_INIT
                 auto index = 0;
                 for (auto globalConstr : llvm::reverse(globalConstructs))
                 {
@@ -3097,9 +3106,46 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
                     // set array value
                     ch->setStructValue(loc, arrayInstance, instanceVal, index++);
                 }
+#else                
+                    mlir::Value instanceVal = rewriter.create<LLVM::UndefOp>(loc, elementType);
+
+                    auto orderNumber = clh.createI32ConstantOf(65535);
+
+                    ch->setStructValue(loc, instanceVal, orderNumber, 0);
+
+                    auto addrVal = ch->getAddressOfGlobalVar("__mlir_gctors", funcType, 0);
+
+                    ch->setStructValue(loc, instanceVal, addrVal, 1);
+
+                    auto nullVal = rewriter.create<LLVM::NullOp>(loc, th.getI8PtrType());
+                    ch->setStructValue(loc, instanceVal, nullVal, 2);
+
+                    // set array value
+                    ch->setStructValue(loc, arrayInstance, instanceVal, 0);
+#endif
 
                 auto retVal = rewriter.create<LLVM::ReturnOp>(loc, mlir::ValueRange{arrayInstance});
             });
+
+#ifdef ENABLE_MLIR_INIT
+            {
+                OpBuilder::InsertionGuard insertGuard(rewriter);
+
+                // create __mlir_runner_init for JIT
+                rewriter.setInsertionPointToEnd(parentModule.getBody());
+                auto llvmFnType = LLVM::LLVMFunctionType::get(th.getVoidType(), {}, /*isVarArg=*/false);
+                auto initFunc = rewriter.create<LLVM::LLVMFuncOp>(loc, "__mlir_gctors", llvmFnType);
+                auto &entryBlock = *initFunc.addEntryBlock();
+                rewriter.setInsertionPointToEnd(&entryBlock);
+
+                for (auto gctor : globalConstructs)
+                {
+                    rewriter.create<mlir::CallOp>(loc, gctor.global_name(), TypeRange{});
+                }
+
+                rewriter.create<mlir::ReturnOp>(loc);
+            }
+#endif
         }
 
         rewriter.eraseOp(globalConstructorOp);
