@@ -3138,7 +3138,7 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
                 auto &entryBlock = *initFunc.addEntryBlock();
                 rewriter.setInsertionPointToEnd(&entryBlock);
 
-                for (auto gctor : globalConstructs)
+                for (auto gctor : llvm::reverse(globalConstructs))
                 {
                     rewriter.create<mlir::CallOp>(loc, gctor.global_name(), TypeRange{});
                 }

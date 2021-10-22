@@ -6747,28 +6747,22 @@ class MLIRGenImpl
             funcGenContext.passResult = nullptr;
             if (isConstructor)
             {
-                if (isStatic)
+                if (isStatic && !genContext.allowPartialResolve)
                 {
-                    // TODO: generate extra statements for static constructor
-                    if (!genContext.allowPartialResolve)
-                    {
-                        auto parentModule = theModule;
+                    auto parentModule = theModule;
 
-                        MLIRCodeLogicHelper mclh(builder, location);
+                    MLIRCodeLogicHelper mclh(builder, location);
 
-                        builder.setInsertionPointToStart(parentModule.getBody());
-                        mclh.seekLast(parentModule.getBody());
+                    builder.setInsertionPointToStart(parentModule.getBody());
+                    mclh.seekLast(parentModule.getBody());
 
-                        auto funcName = getNameOfFunction(classMember, genContext);
+                    auto funcName = getNameOfFunction(classMember, genContext);
 
-                        builder.create<mlir_ts::GlobalConstructorOp>(location, StringRef(std::get<0>(funcName)));
-                    }
+                    builder.create<mlir_ts::GlobalConstructorOp>(location, StringRef(std::get<0>(funcName)));
                 }
-                else
-                {
-                    // adding missing statements
-                    generateConstructorStatements(classDeclarationAST, funcGenContext);
-                }
+
+                // adding missing statements
+                generateConstructorStatements(classDeclarationAST, isStatic, funcGenContext);
             }
 
             auto funcOp = mlirGenFunctionLikeDeclaration(funcLikeDeclaration, funcGenContext);
@@ -6790,7 +6784,8 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult generateConstructorStatements(ClassLikeDeclaration classDeclarationAST, const GenContext &genContext)
+    mlir::LogicalResult generateConstructorStatements(ClassLikeDeclaration classDeclarationAST, bool staticConstructor,
+                                                      const GenContext &genContext)
     {
         NodeFactory nf(NodeFactoryFlags::None);
 
@@ -6799,7 +6794,7 @@ class MLIRGenImpl
             auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
             if (classMember == SyntaxKind::PropertyDeclaration)
             {
-                if (isStatic)
+                if (isStatic != staticConstructor)
                 {
                     continue;
                 }
@@ -6831,7 +6826,7 @@ class MLIRGenImpl
 
             if (classMember == SyntaxKind::Constructor)
             {
-                if (isStatic)
+                if (isStatic != staticConstructor)
                 {
                     continue;
                 }

@@ -498,13 +498,12 @@ int runJit(mlir::ModuleOp module)
         return 0;
     }
 
-    auto gctorFPtr = engine->lookup("__mlir_gctors");
-    if (gctorFPtr)
+    if (module.lookupSymbol("__mlir_gctors"))
     {
-        auto gtorsResult = engine->invokePacked("__mlir_gctors");
-        if (gtorsResult)
+        auto gctorsResult = engine->invokePacked("__mlir_gctors");
+        if (gctorsResult)
         {
-            llvm::errs() << "JIT calling global constructors failed\n";
+            llvm::errs() << "JIT calling global constructors failed, error: " << gctorsResult << "\n";
             return -1;
         }
     }
@@ -517,7 +516,7 @@ int runJit(mlir::ModuleOp module)
 
     if (invocationResult)
     {
-        llvm::errs() << "JIT invocation failed\n";
+        llvm::errs() << "JIT invocation failed, error: " << invocationResult << "\n";
         return -1;
     }
 
