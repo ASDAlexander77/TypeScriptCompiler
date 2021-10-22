@@ -790,6 +790,29 @@ class MLIRGenImpl
         return thisVarValueRef;
     }
 
+    bool isConstValue(mlir::Value init)
+    {
+        /*
+        if (!init)
+        {
+            return false;
+        }
+
+        if (init.getType().isa<mlir_ts::ConstArrayType>() || init.getType().isa<mlir_ts::ConstTupleType>())
+        {
+            return true;
+        }
+
+        auto defOp = init.getDefiningOp();
+        if (isa<mlir_ts::ConstantOp>(defOp) || isa<mlir_ts::UndefOp>(defOp) || isa<mlir_ts::NullOp>(defOp))
+        {
+            return true;
+        }
+        */
+
+        return true;
+    }
+
     bool registerVariable(mlir::Location location, StringRef name, bool isFullName, VariableClass varClass,
                           std::function<std::pair<mlir::Type, mlir::Value>()> func, const GenContext &genContext)
     {
@@ -919,7 +942,9 @@ class MLIRGenImpl
                     globalOp.typeAttr(mlir::TypeAttr::get(type));
 
                     // add return
-                    if (init)
+                    // TODO: allow only ConstantOp or Undef or Null
+                    auto isConst = isConstValue(init);
+                    if (init && isConst)
                     {
                         builder.create<mlir_ts::GlobalResultOp>(location, mlir::ValueRange{init});
                     }
@@ -6805,6 +6830,17 @@ class MLIRGenImpl
                     continue;
                 }
 
+                if (staticConstructor)
+                {
+                    auto isConst = false;
+                    evaluate(
+                        propertyDeclaration->initializer, [&](mlir::Value val) { isConst = isConstValue(val); }, genContext);
+                    if (isConst)
+                    {
+                        continue;
+                    }
+                }
+
                 auto memberName = MLIRHelper::getName(propertyDeclaration->name);
                 if (memberName.empty())
                 {
@@ -7126,6 +7162,16 @@ class MLIRGenImpl
     mlir::Type evaluate(Expression expr, const GenContext &genContext)
     {
         // we need to add temporary block
+        mlir::Type result;
+        evaluate(
+            expr, [&](mlir::Value val) { result = val.getType(); }, genContext);
+
+        return result;
+    }
+
+    void evaluate(Expression expr, std::function<void(mlir::Value)> func, const GenContext &genContext)
+    {
+        // we need to add temporary block
         auto tempFuncType = getFunctionType(llvm::None, llvm::None);
         auto tempFuncOp = mlir::FuncOp::create(loc(expr), ".tempfunc", tempFuncType);
         auto &entryBlock = *tempFuncOp.addEntryBlock();
@@ -7133,21 +7179,18 @@ class MLIRGenImpl
         auto insertPoint = builder.saveInsertionPoint();
         builder.setInsertionPointToStart(&entryBlock);
 
-        mlir::Type result;
         GenContext evalGenContext(genContext);
         evalGenContext.allowPartialResolve = true;
         auto initValue = mlirGen(expr, evalGenContext);
         if (initValue)
         {
-            result = initValue.getType();
+            func(initValue);
         }
 
         // remove temp block
         builder.restoreInsertionPoint(insertPoint);
         entryBlock.erase();
         tempFuncOp.erase();
-
-        return result;
     }
 
     mlir::Type evaluateProperty(mlir::Value exprValue, std::string propertyName, const GenContext &genContext)
