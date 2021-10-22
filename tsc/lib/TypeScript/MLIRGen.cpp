@@ -792,7 +792,6 @@ class MLIRGenImpl
 
     bool isConstValue(mlir::Value init)
     {
-        /*
         if (!init)
         {
             return false;
@@ -808,9 +807,10 @@ class MLIRGenImpl
         {
             return true;
         }
-        */
 
-        return true;
+        LLVM_DEBUG(llvm::dbgs() << "\n!! is it const? : " << init << "\n";);
+
+        return false;
     }
 
     bool registerVariable(mlir::Location location, StringRef name, bool isFullName, VariableClass varClass,
@@ -943,8 +943,7 @@ class MLIRGenImpl
 
                     // add return
                     // TODO: allow only ConstantOp or Undef or Null
-                    auto isConst = isConstValue(init);
-                    if (init && isConst)
+                    if (init)
                     {
                         builder.create<mlir_ts::GlobalResultOp>(location, mlir::ValueRange{init});
                     }
