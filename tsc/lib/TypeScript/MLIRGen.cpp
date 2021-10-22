@@ -1123,6 +1123,19 @@ class MLIRGenImpl
         return true;
     }
 
+    template <typename ItemTy>
+    std::pair<mlir::Type, mlir::Value> getTypeOnly(ItemTy item, mlir::Type defaultType, const GenContext &genContext)
+    {
+        // type
+        mlir::Type type = defaultType;
+        if (item->type)
+        {
+            type = getType(item->type);
+        }
+
+        return std::make_pair(type, mlir::Value());
+    }
+
     template <typename ItemTy> std::pair<mlir::Type, mlir::Value> getTypeAndInit(ItemTy item, const GenContext &genContext)
     {
         // type
@@ -6267,13 +6280,18 @@ class MLIRGenImpl
                         auto isConst = false;
                         mlir::Type typeInit;
                         evaluate(
-                            propertyDeclaration->initializer, [&](mlir::Value val) { isConst = isConstValue(val); }, genContext);
+                            propertyDeclaration->initializer,
+                            [&](mlir::Value val) {
+                                typeInit = val.getType();
+                                isConst = isConstValue(val);
+                            },
+                            genContext);
                         if (isConst)
                         {
                             return getTypeAndInit(propertyDeclaration, genContext);
                         }
 
-                        return std::make_pair(typeInit, mlir::Value());
+                        return getTypeOnly(propertyDeclaration, typeInit, genContext);
                     },
                     genContext);
 
@@ -7182,24 +7200,29 @@ class MLIRGenImpl
 
     void evaluate(Expression expr, std::function<void(mlir::Value)> func, const GenContext &genContext)
     {
+        if (!expr)
+        {
+            return;
+        }
+
         // we need to add temporary block
         auto tempFuncType = getFunctionType(llvm::None, llvm::None);
         auto tempFuncOp = mlir::FuncOp::create(loc(expr), ".tempfunc", tempFuncType);
         auto &entryBlock = *tempFuncOp.addEntryBlock();
 
-        auto insertPoint = builder.saveInsertionPoint();
-        builder.setInsertionPointToStart(&entryBlock);
-
-        GenContext evalGenContext(genContext);
-        evalGenContext.allowPartialResolve = true;
-        auto initValue = mlirGen(expr, evalGenContext);
-        if (initValue)
         {
-            func(initValue);
+            mlir::OpBuilder::InsertionGuard insertGuard(builder);
+            builder.setInsertionPointToStart(&entryBlock);
+
+            GenContext evalGenContext(genContext);
+            evalGenContext.allowPartialResolve = true;
+            auto initValue = mlirGen(expr, evalGenContext);
+            if (initValue)
+            {
+                func(initValue);
+            }
         }
 
-        // remove temp block
-        builder.restoreInsertionPoint(insertPoint);
         entryBlock.erase();
         tempFuncOp.erase();
     }
@@ -7938,6 +7961,11 @@ class MLIRGenImpl
     /// Helper conversion for a TypeScript AST location to an MLIR location.
     mlir::Location loc(TextRange loc)
     {
+        if (!loc)
+        {
+            return mlir::FileLineColLoc::get(builder.getContext(), builder.getIdentifier(fileName), 1, 1);
+        }
+
         // return builder.getFileLineColLoc(builder.getIdentifier(fileName), loc->pos, loc->_end);
         auto posLineChar = parser.getLineAndCharacterOfPosition(sourceFile, loc->pos.textPos != -1 ? loc->pos.textPos : loc->pos.pos);
         return mlir::FileLineColLoc::get(builder.getContext(), builder.getIdentifier(fileName), posLineChar.line + 1,
