@@ -1284,29 +1284,28 @@ class MLIRGenImpl
                 LLVM_DEBUG(dbgs() << "\n!! param " << name << " mapped to type " << type << "\n\n");
             }
 
-            if (type == noneType)
+            if (!type || type == noneType)
             {
-                if (!genContext.allowPartialResolve)
+                if (!typeParameter && !initializer)
                 {
-                    if (!typeParameter && !initializer)
-                    {
-                        auto funcName = MLIRHelper::getName(parametersContextAST->name);
-                        emitError(loc(arg)) << "type of parameter '" << name
-                                            << "' is not provided, parameter must have type or initializer, function: " << funcName;
-                        return params;
-                    }
-
-                    emitError(loc(typeParameter)) << "can't resolve type for parameter '" << name << "'";
+                    auto funcName = MLIRHelper::getName(parametersContextAST->name);
+                    emitError(loc(arg)) << "type of parameter '" << name
+                                        << "' is not provided, parameter must have type or initializer, function: " << funcName;
+                    return params;
                 }
+
+                emitError(loc(typeParameter)) << "can't resolve type for parameter '" << name << "'";
 
                 return params;
             }
 
+            /*
             if (!type)
             {
                 // TODO: this is begginging of generic types
                 type = getGenericType();
             }
+            */
 
             params.push_back(std::make_shared<FunctionParamDOM>(name, type, loc(arg), isOptional, initializer));
 
