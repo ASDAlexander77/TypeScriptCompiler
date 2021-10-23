@@ -6114,9 +6114,11 @@ class MLIRGenImpl
         mlirGenCustomRTTI(location, classDeclarationAST, newClassPtr, declareClass, genContext);
 #endif
 
+        // non-static first
         for (auto &classMember : classDeclarationAST->members)
         {
-            if (mlir::failed(mlirGenClassFieldMember(classDeclarationAST, newClassPtr, classMember, fieldInfos, declareClass, genContext)))
+            if (mlir::failed(
+                    mlirGenClassFieldMember(classDeclarationAST, newClassPtr, classMember, fieldInfos, declareClass, false, genContext)))
             {
                 return mlir::failure();
             }
@@ -6133,6 +6135,17 @@ class MLIRGenImpl
 
             auto classFullNameSymbol = mlir::FlatSymbolRefAttr::get(builder.getContext(), newClassPtr->fullName);
             newClassPtr->classType = getClassType(classFullNameSymbol, getClassStorageType(classFullNameSymbol, fieldInfos));
+        }
+
+        // static second
+        // TODO: if I use static method in static field initialization, test if I need process static fields after static methods
+        for (auto &classMember : classDeclarationAST->members)
+        {
+            if (mlir::failed(
+                    mlirGenClassFieldMember(classDeclarationAST, newClassPtr, classMember, fieldInfos, declareClass, true, genContext)))
+            {
+                return mlir::failure();
+            }
         }
 
         return mlir::success();
@@ -6196,8 +6209,14 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGenClassFieldMember(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr,
                                                 ClassElement classMember, SmallVector<mlir_ts::FieldInfo> &fieldInfos, bool declareClass,
-                                                const GenContext &genContext)
+                                                bool staticOnly, const GenContext &genContext)
     {
+        auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
+        if (staticOnly != isStatic)
+        {
+            return mlir::success();
+        }
+
         auto location = loc(classMember);
 
         MLIRCodeLogic mcl(builder);
@@ -6230,7 +6249,6 @@ class MLIRGenImpl
             newClassPtr->hasVirtualTable = true;
         }
 
-        auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
         if (!isStatic && !declareClass)
         {
             return mlir::success();
