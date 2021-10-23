@@ -517,7 +517,7 @@ class MLIRTypeHelper
 
     bool canStoreAsWithoutLoosingInfo(mlir::Type srcType, mlir::Type dstType)
     {
-        if (srcType.isa<mlir::IntegerType>())
+        if (srcType && srcType.isa<mlir::IntegerType>())
         {
             if (dstType.isa<mlir_ts::NumberType>())
             {

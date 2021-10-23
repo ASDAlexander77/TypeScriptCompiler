@@ -3350,7 +3350,17 @@ class MLIRGenImpl
         // TODO: sync types for 'when' and 'else'
         MLIRTypeHelper mth(builder.getContext());
         auto resultWhenTrueType = evaluate(conditionalExpressionAST->whenTrue, genContext);
+        if (!resultWhenTrueType && genContext.allowPartialResolve)
+        {
+            return mlir::Value();
+        }
+
         auto resultWhenFalseType = evaluate(conditionalExpressionAST->whenFalse, genContext);
+        if (!resultWhenFalseType && genContext.allowPartialResolve)
+        {
+            return mlir::Value();
+        }
+
         auto resultType = mth.findBaseType(resultWhenTrueType, resultWhenFalseType);
 
         auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{resultType}, condValue, true);
