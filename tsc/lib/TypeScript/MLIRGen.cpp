@@ -6576,6 +6576,9 @@ class MLIRGenImpl
                     return foundField;
                 }
 
+                emitError(location) << "field '" << id << "' can't be found for interface '" << newInterfacePtr->fullName << "' in class '"
+                                    << newClassPtr->fullName << "'";
+
                 return emptyFieldInfo;
             },
             [&](std::string name, mlir::FunctionType funcType) -> MethodInfo & {

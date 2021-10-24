@@ -450,6 +450,8 @@ struct ClassInfo
             }
         }
 
+        LLVM_DEBUG(llvm::dbgs() << "\n!! can't resolve field: " << id << " in class type: " << storageClass << "\n";);
+
         return mlir_ts::FieldInfo();
     }
 
