@@ -84,14 +84,14 @@ class MLIRGenImpl
 {
   public:
     MLIRGenImpl(const mlir::MLIRContext &context, CompileOptions compileOptions)
-        : hasErrors(false), builder(&const_cast<mlir::MLIRContext &>(context)), compileOptions(compileOptions)
+        : hasErrorMessages(false), builder(&const_cast<mlir::MLIRContext &>(context)), compileOptions(compileOptions)
     {
         fileName = "<unknown>";
         rootNamespace = currentNamespace = std::make_shared<NamespaceInfo>();
     }
 
     MLIRGenImpl(const mlir::MLIRContext &context, const llvm::StringRef &fileNameParam, CompileOptions compileOptions)
-        : hasErrors(false), builder(&const_cast<mlir::MLIRContext &>(context)), compileOptions(compileOptions)
+        : hasErrorMessages(false), builder(&const_cast<mlir::MLIRContext &>(context)), compileOptions(compileOptions)
     {
         fileName = fileNameParam;
         rootNamespace = currentNamespace = std::make_shared<NamespaceInfo>();
@@ -137,7 +137,7 @@ class MLIRGenImpl
             // suppress all
             if (diag.getSeverity() == mlir::DiagnosticSeverity::Error)
             {
-                hasErrors = true;
+                hasErrorMessages = true;
             }
 
             postponedMessages.push_back(new mlir::Diagnostic(std::move(diag)));
@@ -155,7 +155,7 @@ class MLIRGenImpl
         do
         {
             // clear previous errors
-            hasErrors = false;
+            hasErrorMessages = false;
             for (auto diag : postponedMessages)
             {
                 delete diag;
@@ -213,18 +213,27 @@ class MLIRGenImpl
             statement->processed = false;
         }
 
-        if (hasErrors)
+        if (hasErrorMessages)
         {
             // print errors
             for (auto diag : postponedMessages)
             {
-                publishDiagnostic(*diag);
+                // we show messages when they metter
+                if (notResolved)
+                {
+                    publishDiagnostic(*diag);
+                }
+
                 delete diag;
             }
 
             postponedMessages.clear();
 
-            return mlir::failure();
+            // we return error when we can't generate code
+            if (notResolved)
+            {
+                return mlir::failure();
+            }
         }
 
         return mlir::success();
@@ -232,7 +241,7 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirCodeGenModule(SourceFile module)
     {
-        hasErrors = false;
+        hasErrorMessages = false;
 
         llvm::ScopedHashTableScope<StringRef, VariableDeclarationDOM::TypePtr> fullNameGlobalsMapScope(fullNameGlobalsMap);
 
@@ -246,7 +255,7 @@ class MLIRGenImpl
             }
         }
 
-        if (hasErrors)
+        if (hasErrorMessages)
         {
             return mlir::failure();
         }
@@ -289,7 +298,7 @@ class MLIRGenImpl
             printMsg(llvm::outs(), diag, "warning: ");
             break;
         case mlir::DiagnosticSeverity::Error:
-            hasErrors = true;
+            hasErrorMessages = true;
             printMsg(llvm::errs(), diag, "error: ");
             break;
         case mlir::DiagnosticSeverity::Remark:
@@ -302,7 +311,7 @@ class MLIRGenImpl
     {
         mlir::ScopedDiagnosticHandler diagHandler(builder.getContext(), [&](mlir::Diagnostic &diag) { publishDiagnostic(diag); });
 
-        if (failed(mlirCodeGenModule(module)) || hasErrors)
+        if (failed(mlirCodeGenModule(module)) || hasErrorMessages)
         {
             return mlir::failure();
         }
@@ -2274,6 +2283,11 @@ class MLIRGenImpl
         // record return type if not provided
         if (genContext.passResult)
         {
+            if (!expressionValue)
+            {
+                return mlir::failure();
+            }
+
             auto type = expressionValue.getType();
             LLVM_DEBUG(dbgs() << "\n!! store return type: " << type << "\n\n");
 
@@ -2342,18 +2356,6 @@ class MLIRGenImpl
             genContext.passResult->functionReturnTypeShouldBeProvided = true;
         }
 
-        // empty return
-        if (!expressionValue)
-        {
-            if (genContext.allowPartialResolve)
-            {
-                // do not remove it, needed to process recursive functions
-                return mlir::success();
-            }
-
-            return mlir::failure();
-        }
-
         auto funcOp = const_cast<GenContext &>(genContext).funcOp;
         if (funcOp)
         {
@@ -2361,7 +2363,16 @@ class MLIRGenImpl
             if (countResults > 0)
             {
                 auto returnType = funcOp.getCallableResults().front();
-                if (returnType != expressionValue.getType())
+
+                if (!expressionValue)
+                {
+                    if (!genContext.allowPartialResolve)
+                    {
+                        emitError(location) << "'return' must have value";
+                        return mlir::failure();
+                    }
+                }
+                else if (returnType != expressionValue.getType())
                 {
                     auto castValue = cast(location, returnType, expressionValue, genContext);
                     expressionValue = castValue;
@@ -2370,9 +2381,13 @@ class MLIRGenImpl
         }
 
         // record return type if not provided
-        if (genContext.passResult)
+        processReturnType(expressionValue, genContext);
+
+        if (!expressionValue)
         {
-            processReturnType(expressionValue, genContext);
+            emitError(location) << "'return' must have value";
+            builder.create<mlir_ts::ReturnOp>(location);
+            return mlir::success();
         }
 
         auto retVarInfo = symbolTable.lookup(RETURN_VARIABLE_NAME);
@@ -4149,9 +4164,30 @@ class MLIRGenImpl
             auto accessorInfo = classInfo->accessors[accessorIndex];
             auto getFuncOp = accessorInfo.get;
             auto setFuncOp = accessorInfo.set;
-            auto effectiveFuncType =
-                getFuncOp ? getFuncOp.getType().dyn_cast_or_null<mlir::FunctionType>().getResult(0)
-                          : setFuncOp.getType().dyn_cast_or_null<mlir::FunctionType>().getInput(accessorInfo.isStatic ? 0 : 1);
+            mlir::Type effectiveFuncType;
+            if (getFuncOp)
+            {
+                auto funcType = getFuncOp.getType().dyn_cast<mlir::FunctionType>();
+                if (funcType.getNumResults() > 0)
+                {
+                    effectiveFuncType = funcType.getResult(0);
+                }
+            }
+
+            if (!effectiveFuncType && setFuncOp)
+            {
+                effectiveFuncType = setFuncOp.getType().dyn_cast<mlir::FunctionType>().getInput(accessorInfo.isStatic ? 0 : 1);
+            }
+
+            if (!effectiveFuncType)
+            {
+                if (!genContext.allowPartialResolve)
+                {
+                    emitError(location) << "can't resolve type of property";
+                }
+
+                return mlir::Value();
+            }
 
             if (accessorInfo.isStatic)
             {
@@ -8005,7 +8041,7 @@ class MLIRGenImpl
         return loc(loc_);
     }
 
-    bool hasErrors;
+    bool hasErrorMessages;
 
     /// The builder is a helper class to create IR inside a function. The builder
     /// is stateful, in particular it keeps an "insertion point": this is where
