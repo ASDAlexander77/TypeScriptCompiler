@@ -6,12 +6,12 @@
 
 #include "llvm/ADT/ScopedHashTable.h"
 
-#define VALIDATE(value)                                                                                                                    \
+#define VALIDATE(value, loc)                                                                                                               \
     if (!value)                                                                                                                            \
     {                                                                                                                                      \
         if (!genContext.allowPartialResolve)                                                                                               \
         {                                                                                                                                  \
-            emitError(value.getDefiningOp()->getLoc(), "expression has no result");                                                        \
+            emitError(loc, "expression has no result");                                                                                    \
         }                                                                                                                                  \
                                                                                                                                            \
         return mlir::Value();                                                                                                              \
@@ -27,12 +27,12 @@
         return mlir::Value();                                                                                                              \
     }
 
-#define VALIDATE_LOGIC(value)                                                                                                              \
+#define VALIDATE_LOGIC(value, loc)                                                                                                         \
     if (!value)                                                                                                                            \
     {                                                                                                                                      \
         if (!genContext.allowPartialResolve)                                                                                               \
         {                                                                                                                                  \
-            emitError(value.getDefiningOp()->getLoc(), "expression has no result");                                                        \
+            emitError(loc, "expression has no result");                                                                                    \
         }                                                                                                                                  \
                                                                                                                                            \
         return mlir::failure();                                                                                                            \

@@ -157,7 +157,7 @@ class MLIRCustomMethods
         // validate params
         for (auto &oper : operands)
         {
-            VALIDATE(oper)
+            VALIDATE(oper, location)
         }
 
         mlir::Value result;

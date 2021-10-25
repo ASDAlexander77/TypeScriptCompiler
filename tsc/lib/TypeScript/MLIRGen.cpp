@@ -2529,7 +2529,7 @@ class MLIRGenImpl
         // condition
         auto condValue = mlirGen(ifStatementAST->expression, genContext);
 
-        VALIDATE_LOGIC(condValue)
+        VALIDATE_LOGIC(condValue, location)
 
         if (condValue.getType() != getBooleanType())
         {
@@ -2611,7 +2611,7 @@ class MLIRGenImpl
         builder.setInsertionPointToStart(&whileOp.cond().front());
         auto conditionValue = mlirGen(whileStatementAST->expression, genContext);
 
-        VALIDATE_LOGIC(conditionValue)
+        VALIDATE_LOGIC(conditionValue, location)
 
         builder.create<mlir_ts::ConditionOp>(location, conditionValue, mlir::ValueRange{});
 
@@ -3295,7 +3295,7 @@ class MLIRGenImpl
         auto expression = prefixUnaryExpressionAST->operand;
         auto expressionValue = mlirGen(expression, genContext);
 
-        VALIDATE(expressionValue)
+        VALIDATE(expressionValue, location)
 
         auto boolValue = expressionValue;
 
@@ -3333,7 +3333,7 @@ class MLIRGenImpl
         auto expression = postfixUnaryExpressionAST->operand;
         auto expressionValue = mlirGen(expression, genContext);
 
-        VALIDATE(expressionValue)
+        VALIDATE(expressionValue, location)
 
         switch (opCode)
         {
@@ -3354,7 +3354,7 @@ class MLIRGenImpl
         auto condExpression = conditionalExpressionAST->condition;
         auto condValue = mlirGen(condExpression, genContext);
 
-        VALIDATE(condValue);
+        VALIDATE(condValue, location);
 
         if (condValue.getType() != getBooleanType())
         {
@@ -3390,7 +3390,7 @@ class MLIRGenImpl
         auto whenTrueExpression = conditionalExpressionAST->whenTrue;
         auto resultTrue = mlirGen(whenTrueExpression, genContext);
 
-        VALIDATE(resultTrue);
+        VALIDATE(resultTrue, location);
 
         builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{cast(location, resultType, resultTrue, genContext)});
 
@@ -3398,7 +3398,7 @@ class MLIRGenImpl
         auto whenFalseExpression = conditionalExpressionAST->whenFalse;
         auto resultFalse = mlirGen(whenFalseExpression, genContext);
 
-        VALIDATE(resultFalse);
+        VALIDATE(resultFalse, location);
 
         builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{cast(location, resultType, resultFalse, genContext)});
 
@@ -3417,7 +3417,7 @@ class MLIRGenImpl
         // condition
         auto leftExpressionValue = mlirGen(leftExpression, genContext);
 
-        VALIDATE(leftExpressionValue)
+        VALIDATE(leftExpressionValue, location)
 
         auto resultType = leftExpressionValue.getType();
 
@@ -3430,7 +3430,7 @@ class MLIRGenImpl
 
         if (andOp)
         {
-            VALIDATE(resultTrue)
+            VALIDATE(resultTrue, location)
         }
 
         builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{resultTrue});
@@ -3440,7 +3440,7 @@ class MLIRGenImpl
 
         if (!andOp)
         {
-            VALIDATE(resultFalse)
+            VALIDATE(resultFalse, location)
         }
 
         // sync right part
@@ -3678,7 +3678,7 @@ class MLIRGenImpl
 
         auto leftExpressionValue = mlirGen(leftExpression, genContext);
 
-        VALIDATE(leftExpressionValue)
+        VALIDATE(leftExpressionValue, location)
 
         if (auto funcType = leftExpressionValue.getType().dyn_cast_or_null<mlir::FunctionType>())
         {
@@ -3687,7 +3687,7 @@ class MLIRGenImpl
 
         auto rightExpressionValue = mlirGen(rightExpression, genContext);
 
-        VALIDATE(rightExpressionValue)
+        VALIDATE(rightExpressionValue, location)
 
         // clear state
         const_cast<GenContext &>(genContext).argTypeDestFuncType = nullptr;
@@ -3700,7 +3700,7 @@ class MLIRGenImpl
     {
         auto rightExpressionValue = mlirGen(rightExpression, genContext);
 
-        VALIDATE(rightExpressionValue)
+        VALIDATE(rightExpressionValue, location)
 
         mlir::Type elementType;
         TypeSwitch<mlir::Type>(rightExpressionValue.getType())
@@ -3713,7 +3713,7 @@ class MLIRGenImpl
         {
             auto leftExpressionValue = mlirGen(leftItem, genContext);
 
-            VALIDATE(leftExpressionValue)
+            VALIDATE(leftExpressionValue, location)
 
             // TODO: unify array access like Property access
             auto indexValue = builder.create<mlir_ts::ConstantOp>(location, builder.getI32Type(), builder.getI32IntegerAttr(index++));
@@ -3763,8 +3763,8 @@ class MLIRGenImpl
         auto leftExpressionValue = mlirGen(leftExpression, genContext);
         auto rightExpressionValue = mlirGen(rightExpression, genContext);
 
-        VALIDATE(rightExpressionValue)
-        VALIDATE(leftExpressionValue)
+        VALIDATE(rightExpressionValue, location)
+        VALIDATE(leftExpressionValue, location)
 
         // check if const expr.
         if (genContext.allowConstEval)
@@ -3981,7 +3981,7 @@ class MLIRGenImpl
         auto expression = qualifiedName->left;
         auto expressionValue = mlirGenModuleReference(expression, genContext);
 
-        VALIDATE(expressionValue)
+        VALIDATE(expressionValue, location)
 
         auto name = MLIRHelper::getName(qualifiedName->right);
 
@@ -3995,7 +3995,7 @@ class MLIRGenImpl
         auto expression = propertyAccessExpression->expression.as<Expression>();
         auto expressionValue = mlirGen(expression, genContext);
 
-        VALIDATE(expressionValue)
+        VALIDATE(expressionValue, location)
 
         auto name = MLIRHelper::getName(propertyAccessExpression->name);
 
@@ -4607,7 +4607,7 @@ class MLIRGenImpl
         {
             for (auto &oper : operands)
             {
-                VALIDATE(oper)
+                VALIDATE(oper, location)
             }
 
             // default call by name
@@ -4688,7 +4688,7 @@ class MLIRGenImpl
 
             auto value = mlirGen(expression, genContext);
 
-            VALIDATE_LOGIC(value)
+            VALIDATE_LOGIC(value, loc(expression))
 
             if (i >= funcType.getInputs().size())
             {
@@ -4925,7 +4925,7 @@ class MLIRGenImpl
             auto expression = span->expression;
             auto exprValue = mlirGen(expression, genContext);
 
-            VALIDATE(exprValue)
+            VALIDATE(exprValue, location)
 
             if (exprValue.getType() != stringType)
             {
@@ -4971,7 +4971,7 @@ class MLIRGenImpl
             auto expression = span->expression;
             auto exprValue = mlirGen(expression, genContext);
 
-            VALIDATE(exprValue)
+            VALIDATE(exprValue, location)
 
             vals.push_back(exprValue);
 
@@ -5372,7 +5372,7 @@ class MLIRGenImpl
 
                 itemValue = mlirGen(propertyAssignment->initializer, genContext);
 
-                VALIDATE(itemValue)
+                VALIDATE(itemValue, loc(propertyAssignment->initializer))
 
                 fieldId = getFieldIdForProperty(propertyAssignment);
             }
@@ -5386,7 +5386,7 @@ class MLIRGenImpl
 
                 itemValue = mlirGen(shorthandPropertyAssignment->name.as<Expression>(), genContext);
 
-                VALIDATE(itemValue)
+                VALIDATE(itemValue, loc(shorthandPropertyAssignment->name))
 
                 fieldId = getFieldIdForShorthandProperty(shorthandPropertyAssignment);
             }
@@ -5536,7 +5536,7 @@ class MLIRGenImpl
             auto location = fieldToSet.second.getLoc();
             auto getField = mlirGenPropertyAccessExpression(location, tupleVar, fieldToSet.first, genContext);
 
-            VALIDATE(fieldToSet.second)
+            VALIDATE(fieldToSet.second, location)
 
             auto savedValue = mlirGenSaveLogicOneItem(location, getField, fieldToSet.second, genContext);
         }
