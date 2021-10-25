@@ -4,6 +4,7 @@
 #ifdef GC_ENABLE
 #define ADD_GC_ATTRIBUTE true
 #endif
+#define MODULE_AS_NAMESPACE true
 
 #define DEBUG_TYPE "mlir"
 
@@ -356,6 +357,9 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGen(ModuleDeclaration moduleDeclarationAST, const GenContext &genContext)
     {
+#ifdef MODULE_AS_NAMESPACE
+        return mlirGenNamespace(moduleDeclarationAST, genContext);
+#else
         auto isNamespace = (moduleDeclarationAST->flags & NodeFlags::Namespace) == NodeFlags::Namespace;
         auto isNestedNamespace = (moduleDeclarationAST->flags & NodeFlags::NestedNamespace) == NodeFlags::NestedNamespace;
         if (isNamespace || isNestedNamespace)
@@ -384,6 +388,7 @@ class MLIRGenImpl
         builder.setInsertionPointAfter(moduleOp);
 
         return result;
+#endif
     }
 
     mlir::LogicalResult mlirGenBody(Node body, const GenContext &genContext)
