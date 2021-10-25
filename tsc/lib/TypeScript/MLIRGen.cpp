@@ -6904,9 +6904,13 @@ class MLIRGenImpl
 
             funcLikeDeclaration->processed = true;
 
-            if (declareClass)
+            if (newClassPtr->getMethodIndex(methodName) < 0)
             {
                 methodInfos.push_back({methodName, funcOp, isStatic, isAbstract || isVirtual, -1});
+            }
+
+            if (propertyName.size() > 0)
+            {
                 addAccessor(newClassPtr, classMember, propertyName, funcOp, isStatic, isAbstract || isVirtual);
             }
         }
