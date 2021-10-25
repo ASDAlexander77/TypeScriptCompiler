@@ -3365,18 +3365,24 @@ class MLIRGenImpl
         // TODO: sync types for 'when' and 'else'
         MLIRTypeHelper mth(builder.getContext());
         auto resultWhenTrueType = evaluate(conditionalExpressionAST->whenTrue, genContext);
-        if (!resultWhenTrueType && genContext.allowPartialResolve)
-        {
-            return mlir::Value();
-        }
-
         auto resultWhenFalseType = evaluate(conditionalExpressionAST->whenFalse, genContext);
-        if (!resultWhenFalseType && genContext.allowPartialResolve)
-        {
-            return mlir::Value();
-        }
-
         auto resultType = mth.findBaseType(resultWhenTrueType, resultWhenFalseType);
+
+        if (genContext.allowPartialResolve)
+        {
+            if (!resultType)
+            {
+                return mlir::Value();
+            }
+
+            if (!resultWhenTrueType || !resultWhenFalseType)
+            {
+                // return undef value
+            }
+
+            auto udef = builder.create<mlir_ts::UndefOp>(location, mlir::TypeRange{resultType});
+            return udef;
+        }
 
         auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{resultType}, condValue, true);
 
@@ -4090,6 +4096,8 @@ class MLIRGenImpl
     {
         assert(classInfo);
 
+        LLVM_DEBUG(llvm::dbgs() << "\n!! looking for member: " << name << " in class '" << classInfo->fullName << "'\n";);
+
         MLIRCodeLogic mcl(builder);
         auto staticFieldIndex = classInfo->getStaticFieldIndex(mcl.TupleFieldName(name));
         if (staticFieldIndex >= 0)
@@ -4104,6 +4112,8 @@ class MLIRGenImpl
         auto methodIndex = classInfo->getMethodIndex(name);
         if (methodIndex >= 0)
         {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! found method index: " << methodIndex << "\n";);
+
             auto methodInfo = classInfo->methods[methodIndex];
             auto funcOp = methodInfo.funcOp;
             auto effectiveFuncType = funcOp.getType();

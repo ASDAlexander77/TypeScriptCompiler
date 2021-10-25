@@ -507,6 +507,21 @@ class MLIRTypeHelper
 
     mlir::Type findBaseType(mlir::Type typeLeft, mlir::Type typeRight)
     {
+        if (!typeLeft && !typeRight)
+        {
+            return mlir::Type();
+        }
+
+        if (typeLeft && !typeRight)
+        {
+            return typeLeft;
+        }
+
+        if (typeRight && !typeLeft)
+        {
+            return typeRight;
+        }
+
         if (canStoreAsWithoutLoosingInfo(typeLeft, typeRight))
         {
             return typeRight;

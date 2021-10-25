@@ -17,7 +17,7 @@
         return mlir::Value();                                                                                                              \
     }                                                                                                                                      \
                                                                                                                                            \
-    if (auto unresolved = dyn_cast_or_null<mlir_ts::UnresolvedSymbolRefOp>(value.getDefiningOp()))                                         \
+    if (auto unresolved = dyn_cast<mlir_ts::UnresolvedSymbolRefOp>(value.getDefiningOp()))                                                 \
     {                                                                                                                                      \
         if (!genContext.allowPartialResolve)                                                                                               \
         {                                                                                                                                  \
@@ -38,7 +38,7 @@
         return mlir::failure();                                                                                                            \
     }                                                                                                                                      \
                                                                                                                                            \
-    if (auto unresolved = dyn_cast_or_null<mlir_ts::UnresolvedSymbolRefOp>(value.getDefiningOp()))                                         \
+    if (auto unresolved = dyn_cast<mlir_ts::UnresolvedSymbolRefOp>(value.getDefiningOp()))                                                 \
     {                                                                                                                                      \
         if (!genContext.allowPartialResolve)                                                                                               \
         {                                                                                                                                  \
@@ -54,10 +54,12 @@
         return mlir::failure();                                                                                                            \
     }                                                                                                                                      \
                                                                                                                                            \
-    if (auto unresolved = dyn_cast_or_null<mlir_ts::UnresolvedSymbolRefOp>(value.getDefiningOp()))                                         \
+    if (auto unresolved = dyn_cast<mlir_ts::UnresolvedSymbolRefOp>(value.getDefiningOp()))                                                 \
     {                                                                                                                                      \
         return mlir::failure();                                                                                                            \
     }
+
+#define IS_VALID(value) (!genContext.allowPartialResolve && !value && !isa<mlir_ts::UnresolvedSymbolRefOp>(value.getDefiningOp()))
 
 using VariablePairT = std::pair<mlir::Value, ts::VariableDeclarationDOM::TypePtr>;
 using SymbolTableScopeT = llvm::ScopedHashTableScope<StringRef, VariablePairT>;
