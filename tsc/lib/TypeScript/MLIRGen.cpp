@@ -6615,48 +6615,39 @@ class MLIRGenImpl
             [&](mlir::Attribute id, mlir::Type fieldType) -> mlir_ts::FieldInfo {
                 auto found = false;
                 auto foundField = newClassPtr->findField(id, found);
-                if (found)
+                if (!found || fieldType != foundField.type)
                 {
-                    if (fieldType != foundField.type)
-                    {
-                        emitError(location) << "field type not matching for '" << id << "' for interface '" << newInterfacePtr->fullName
-                                            << "' in class '" << newClassPtr->fullName << "'";
+                    emitError(location) << "field type not matching for '" << id << "' for interface '" << newInterfacePtr->fullName
+                                        << "' in class '" << newClassPtr->fullName << "'";
 
-                        return emptyFieldInfo;
-                    }
-
-                    return foundField;
+                    return emptyFieldInfo;
                 }
 
-                emitError(location) << "field '" << id << "' can't be found for interface '" << newInterfacePtr->fullName << "' in class '"
-                                    << newClassPtr->fullName << "'";
-
-                return emptyFieldInfo;
+                return foundField;
             },
             [&](std::string name, mlir::FunctionType funcType) -> MethodInfo & {
                 auto found = false;
                 auto foundMethodPtr = newClassPtr->findMethod(name, found);
-                if (found)
+                if (!found)
                 {
-                    auto foundMethodFunctionType = foundMethodPtr->funcOp.getType().cast<mlir::FunctionType>();
-
-                    auto result = mth.TestFunctionTypesMatch(funcType, foundMethodFunctionType, 1);
-                    if (result.result != MatchResultType::Match)
-                    {
-                        emitError(location) << "method signature not matching for '" << name << "'{" << funcType << "} for interface '"
-                                            << newInterfacePtr->fullName << "' in class '" << newClassPtr->fullName << "'"
-                                            << " found method: " << foundMethodFunctionType;
-
-                        return emptyMethod;
-                    }
-
-                    return *foundMethodPtr;
+                    emitError(location) << "can't find method '" << name << "' for interface '" << newInterfacePtr->fullName
+                                        << "' in class '" << newClassPtr->fullName << "'";
+                    return emptyMethod;
                 }
 
-                emitError(location) << "can't find method '" << name << "' for interface '" << newInterfacePtr->fullName << "' in class '"
-                                    << newClassPtr->fullName << "'";
+                auto foundMethodFunctionType = foundMethodPtr->funcOp.getType().cast<mlir::FunctionType>();
 
-                return emptyMethod;
+                auto result = mth.TestFunctionTypesMatch(funcType, foundMethodFunctionType, 1);
+                if (result.result != MatchResultType::Match)
+                {
+                    emitError(location) << "method signature not matching for '" << name << "'{" << funcType << "} for interface '"
+                                        << newInterfacePtr->fullName << "' in class '" << newClassPtr->fullName << "'"
+                                        << " found method: " << foundMethodFunctionType;
+
+                    return emptyMethod;
+                }
+
+                return *foundMethodPtr;
             });
 
         if (mlir::failed(result))
