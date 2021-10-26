@@ -59,6 +59,11 @@ class MLIRTypeHelper
         return mlir_ts::OpaqueType::get(context);
     }
 
+    mlir_ts::OpaqueType getInterfaceVTableType(mlir_ts::InterfaceType ifaceType)
+    {
+        return mlir_ts::OpaqueType::get(context);
+    }
+
     mlir_ts::BooleanType getBooleanType()
     {
         return mlir_ts::BooleanType::get(context);

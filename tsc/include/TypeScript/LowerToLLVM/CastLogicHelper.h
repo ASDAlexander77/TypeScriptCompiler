@@ -223,19 +223,29 @@ class CastLogicHelper
             }
         }
 
-        if (auto tupleTypeIn = inType.dyn_cast_or_null<mlir_ts::ConstTupleType>())
+        if (auto stringTypeRes = resType.dyn_cast_or_null<mlir_ts::StringType>())
         {
-            if (auto stringTypeRes = resType.dyn_cast_or_null<mlir_ts::StringType>())
+            if (auto tupleTypeIn = inType.dyn_cast_or_null<mlir_ts::ConstTupleType>())
             {
                 return castObjectToString<mlir_ts::ConstTupleType>(in, tupleTypeIn);
             }
-        }
 
-        if (auto tupleTypeIn = inType.dyn_cast_or_null<mlir_ts::TupleType>())
-        {
-            if (auto stringTypeRes = resType.dyn_cast_or_null<mlir_ts::StringType>())
+            if (auto tupleTypeIn = inType.dyn_cast_or_null<mlir_ts::TupleType>())
             {
                 return castObjectToString<mlir_ts::TupleType>(in, tupleTypeIn);
+            }
+        }
+
+        if (auto interfaceTypeRes = resType.dyn_cast_or_null<mlir_ts::InterfaceType>())
+        {
+            if (auto tupleTypeIn = inType.dyn_cast_or_null<mlir_ts::ConstTupleType>())
+            {
+                llvm_unreachable("not implemented, must be process at MLIR pass");
+            }
+
+            if (auto tupleTypeIn = inType.dyn_cast_or_null<mlir_ts::TupleType>())
+            {
+                llvm_unreachable("not implemented, must be process at MLIR pass");
             }
         }
 

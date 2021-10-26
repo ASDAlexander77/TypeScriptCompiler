@@ -6556,9 +6556,46 @@ class MLIRGenImpl
         return mlir::Value();
     }
 
+    mlir::Value mlirGenCreateInterfaceVTableForObject(mlir::Location location, mlir::Type objectType,
+                                                      InterfaceInfo::TypePtr newInterfacePtr, const GenContext &genContext)
+    {
+        auto fullObjectInterfaceVTableFieldName = interfaceVTableNameForObject(objectType, newInterfacePtr);
+        auto existValue = resolveFullNameIdentifier(location, fullObjectInterfaceVTableFieldName, true, genContext);
+        if (existValue)
+        {
+            return existValue;
+        }
+
+        if (mlir::succeeded(mlirGenObjectVirtualTableDefinitionForInterface(location, objectType, newInterfacePtr, genContext)))
+        {
+            return resolveFullNameIdentifier(location, fullObjectInterfaceVTableFieldName, true, genContext);
+        }
+
+        return mlir::Value();
+    }
+
     StringRef interfaceVTableNameForClass(ClassInfo::TypePtr newClassPtr, InterfaceInfo::TypePtr newInterfacePtr)
     {
         return concat(newClassPtr->fullName, newInterfacePtr->fullName, VTABLE_NAME);
+    }
+
+    StringRef interfaceVTableNameForObject(mlir::Type objectType, InterfaceInfo::TypePtr newInterfacePtr)
+    {
+        std::stringstream ss;
+        ss << hash_value(objectType);
+
+        return concat(newInterfacePtr->fullName, ss.str().c_str(), VTABLE_NAME);
+    }
+
+    mlir::LogicalResult mlirGenObjectVirtualTableDefinitionForInterface(mlir::Location location, mlir::Type objectType,
+                                                                        InterfaceInfo::TypePtr newInterfacePtr,
+                                                                        const GenContext &genContext)
+    {
+        MLIRTypeHelper mth(builder.getContext());
+        MLIRCodeLogic mcl(builder);
+
+        // TODO:
+        llvm_unreachable("not implemented");
     }
 
     mlir::LogicalResult mlirGenClassVirtualTableDefinitionForInterface(mlir::Location location, ClassInfo::TypePtr newClassPtr,
@@ -7371,8 +7408,10 @@ class MLIRGenImpl
                 {
                     auto interfaceVirtTableIndex = classInfo->implements[implementIndex].virtualIndex;
 
-                    auto interfaceVTablePtr =
-                        builder.create<mlir_ts::VTableOffsetRefOp>(location, getOpaqueType(), vtableAccess, interfaceVirtTableIndex);
+                    MLIRTypeHelper mth(builder.getContext());
+
+                    auto interfaceVTablePtr = builder.create<mlir_ts::VTableOffsetRefOp>(
+                        location, mth.getInterfaceVTableType(interfaceType), vtableAccess, interfaceVirtTableIndex);
 
                     auto newInterface =
                         builder.create<mlir_ts::NewInterfaceOp>(location, mlir::TypeRange{interfaceType}, value, interfaceVTablePtr);
@@ -7399,7 +7438,40 @@ class MLIRGenImpl
             }
         }
 
+        if (auto interfaceType = type.dyn_cast_or_null<mlir_ts::InterfaceType>())
+        {
+            if (auto constTupleType = value.getType().dyn_cast_or_null<mlir_ts::ConstTupleType>())
+            {
+                return castTupleToInterface(location, value, constTupleType, interfaceType, genContext);
+            }
+
+            if (auto tupleType = value.getType().dyn_cast_or_null<mlir_ts::TupleType>())
+            {
+                return castTupleToInterface(location, value, tupleType, interfaceType, genContext);
+            }
+        }
+
         return builder.create<mlir_ts::CastOp>(location, type, value);
+    }
+
+    mlir::Value castTupleToInterface(mlir::Location location, mlir::Value in, mlir::Type tupleTypeIn, mlir_ts::InterfaceType interfaceType,
+                                     const GenContext &genContext)
+    {
+        MLIRTypeHelper mth(builder.getContext());
+
+        // TODO: finish it
+        // convert Tuple to Object
+        auto objType = mlir_ts::ObjectType::get(tupleTypeIn);
+        auto inCasted = builder.create<mlir_ts::CastOp>(location, objType, in);
+
+        auto interfaceTypePtr = getInterfaceByFullName(interfaceType.getName().getValue());
+        auto interfaceVTableValue = mlirGenCreateInterfaceVTableForObject(location, objType, interfaceTypePtr, genContext);
+
+        // TODO: finish it, for now it is Undef
+        auto interfaceVTablePtr = builder.create<mlir_ts::UndefOp>(location, mth.getInterfaceVTableType(interfaceType));
+
+        auto newInterface = builder.create<mlir_ts::NewInterfaceOp>(location, mlir::TypeRange{interfaceType}, inCasted, interfaceVTablePtr);
+        return newInterface;
     }
 
     mlir::Type getType(Node typeReferenceAST)
