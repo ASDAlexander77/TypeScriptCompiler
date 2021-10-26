@@ -56,8 +56,8 @@ template <typename BinOpTy, typename StdIOpTy, typename StdFOpTy> void BinOp(Bin
     }
     else if (leftType.template dyn_cast_or_null<mlir_ts::NumberType>())
     {
-        auto castLeft = builder.create<mlir_ts::CastOp>(loc, builder.getF32Type(), left);
-        auto castRight = builder.create<mlir_ts::CastOp>(loc, builder.getF32Type(), right);
+        auto castLeft = builder.create<mlir_ts::CastOp>(loc, leftType, left);
+        auto castRight = builder.create<mlir_ts::CastOp>(loc, leftType, right);
         builder.replaceOpWithNewOp<StdFOpTy>(binOp, castLeft, castRight);
     }
     else
@@ -94,8 +94,8 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Val
     }
     else if (leftType.dyn_cast_or_null<mlir_ts::NumberType>())
     {
-        auto castLeft = builder.create<mlir_ts::CastOp>(loc, builder.getF32Type(), left);
-        auto castRight = builder.create<mlir_ts::CastOp>(loc, builder.getF32Type(), right);
+        auto castLeft = builder.create<mlir_ts::CastOp>(loc, leftType, left);
+        auto castRight = builder.create<mlir_ts::CastOp>(loc, leftType, right);
         auto value = builder.create<StdFOpTy>(loc, v2, castLeft, castRight);
         return value;
     }

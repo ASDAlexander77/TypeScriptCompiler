@@ -3853,14 +3853,14 @@ class MLIRGenImpl
         case SyntaxKind::PercentToken:
         case SyntaxKind::AsteriskAsteriskToken:
 
-            if (leftExpressionValue.getType() != builder.getF32Type())
+            if (leftExpressionValue.getType() != getNumberType())
             {
-                leftExpressionValue = cast(loc(leftExpression), builder.getF32Type(), leftExpressionValue, genContext);
+                leftExpressionValue = cast(loc(leftExpression), getNumberType(), leftExpressionValue, genContext);
             }
 
-            if (rightExpressionValue.getType() != builder.getF32Type())
+            if (rightExpressionValue.getType() != getNumberType())
             {
-                rightExpressionValue = cast(loc(rightExpression), builder.getF32Type(), rightExpressionValue, genContext);
+                rightExpressionValue = cast(loc(rightExpression), getNumberType(), rightExpressionValue, genContext);
             }
 
             break;
@@ -3878,18 +3878,17 @@ class MLIRGenImpl
             if (leftExpressionValue.getType() != rightExpressionValue.getType())
             {
                 // cast to base type
-                auto hasF32 =
-                    leftExpressionValue.getType() == builder.getF32Type() || rightExpressionValue.getType() == builder.getF32Type();
+                auto hasF32 = leftExpressionValue.getType() == getNumberType() || rightExpressionValue.getType() == getNumberType();
                 if (hasF32)
                 {
-                    if (leftExpressionValue.getType() != builder.getF32Type())
+                    if (leftExpressionValue.getType() != getNumberType())
                     {
-                        leftExpressionValue = cast(loc(leftExpression), builder.getF32Type(), leftExpressionValue, genContext);
+                        leftExpressionValue = cast(loc(leftExpression), getNumberType(), leftExpressionValue, genContext);
                     }
 
-                    if (rightExpressionValue.getType() != builder.getF32Type())
+                    if (rightExpressionValue.getType() != getNumberType())
                     {
-                        rightExpressionValue = cast(loc(rightExpression), builder.getF32Type(), rightExpressionValue, genContext);
+                        rightExpressionValue = cast(loc(rightExpression), getNumberType(), rightExpressionValue, genContext);
                     }
                 }
                 else
@@ -5053,7 +5052,7 @@ class MLIRGenImpl
             }
         }
 
-        return builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), builder.getF32Type(),
+        return builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), getNumberType(),
                                                    builder.getF32FloatAttr(to_float(numericLiteral->text)));
     }
 
@@ -6556,7 +6555,7 @@ class MLIRGenImpl
         return mlir::Value();
     }
 
-    mlir::Value mlirGenCreateInterfaceVTableForObject(mlir::Location location, mlir::Type objectType,
+    mlir::Value mlirGenCreateInterfaceVTableForObject(mlir::Location location, mlir_ts::ObjectType objectType,
                                                       InterfaceInfo::TypePtr newInterfacePtr, const GenContext &genContext)
     {
         auto fullObjectInterfaceVTableFieldName = interfaceVTableNameForObject(objectType, newInterfacePtr);
@@ -6579,7 +6578,7 @@ class MLIRGenImpl
         return concat(newClassPtr->fullName, newInterfacePtr->fullName, VTABLE_NAME);
     }
 
-    StringRef interfaceVTableNameForObject(mlir::Type objectType, InterfaceInfo::TypePtr newInterfacePtr)
+    StringRef interfaceVTableNameForObject(mlir_ts::ObjectType objectType, InterfaceInfo::TypePtr newInterfacePtr)
     {
         std::stringstream ss;
         ss << hash_value(objectType);
@@ -6587,15 +6586,99 @@ class MLIRGenImpl
         return concat(newInterfacePtr->fullName, ss.str().c_str(), VTABLE_NAME);
     }
 
-    mlir::LogicalResult mlirGenObjectVirtualTableDefinitionForInterface(mlir::Location location, mlir::Type objectType,
+    mlir::LogicalResult mlirGenObjectVirtualTableDefinitionForInterface(mlir::Location location, mlir_ts::ObjectType objectType,
                                                                         InterfaceInfo::TypePtr newInterfacePtr,
                                                                         const GenContext &genContext)
     {
         MLIRTypeHelper mth(builder.getContext());
         MLIRCodeLogic mcl(builder);
 
-        // TODO:
-        llvm_unreachable("not implemented");
+        MethodInfo emptyMethod;
+        mlir_ts::FieldInfo emptyFieldInfo;
+
+        auto storeType = objectType.getStorageType();
+        auto tupleStorageType = mth.convertConstTupleTypeToTupleType(storeType).cast<mlir_ts::TupleType>();
+
+        llvm::SmallVector<VirtualMethodOrFieldInfo> virtualTable;
+        auto result = newInterfacePtr->getVirtualTable(
+            virtualTable,
+            [&](mlir::Attribute id, mlir::Type fieldType) -> mlir_ts::FieldInfo {
+                auto foundIndex = tupleStorageType.getIndex(id);
+                if (foundIndex >= 0)
+                {
+                    auto foundField = tupleStorageType.getFieldInfo(foundIndex);
+                    if (fieldType != foundField.type)
+                    {
+                        emitError(location) << "field type: '" << fieldType << "' not matching for '" << id << "' for interface '"
+                                            << newInterfacePtr->fullName << "' type: '" << foundField.type << "' in object '"
+                                            << tupleStorageType << "'";
+
+                        return emptyFieldInfo;
+                    }
+
+                    return foundField;
+                }
+
+                emitError(location) << "field can't be found '" << id << "' for interface '" << newInterfacePtr->fullName << "' in object '"
+                                    << tupleStorageType << "'";
+
+                return emptyFieldInfo;
+            },
+            [&](std::string name, mlir::FunctionType funcType) -> MethodInfo & { llvm_unreachable("not implemented yet"); });
+
+        if (mlir::failed(result))
+        {
+            return result;
+        }
+
+        // register global
+        auto fullClassInterfaceVTableFieldName = interfaceVTableNameForObject(objectType, newInterfacePtr);
+        registerVariable(
+            location, fullClassInterfaceVTableFieldName, true, VariableClass::Var,
+            [&]() {
+                // build vtable from names of methods
+
+                MLIRCodeLogic mcl(builder);
+
+                auto virtTuple = getVirtualTableType(virtualTable);
+
+                mlir::Value vtableValue = builder.create<mlir_ts::UndefOp>(location, virtTuple);
+                auto fieldIndex = 0;
+                for (auto methodOrField : virtualTable)
+                {
+                    if (methodOrField.isField)
+                    {
+                        auto nullObj = builder.create<mlir_ts::NullOp>(location, getNullType());
+                        auto objectNull = cast(location, objectType, nullObj, genContext);
+                        auto fieldValue = mlirGenPropertyAccessExpression(location, objectNull, methodOrField.fieldInfo.id, genContext);
+                        auto fieldRef = mcl.GetReferenceOfLoadOp(fieldValue);
+
+                        // insert &(null)->field
+                        vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
+                            location, virtTuple, fieldRef, vtableValue, builder.getArrayAttr(mth.getStructIndexAttrValue(fieldIndex)));
+                    }
+                    else
+                    {
+                        llvm_unreachable("not implemented yet");
+                        /*
+                        auto methodConstName = builder.create<mlir_ts::SymbolRefOp>(
+                            location, methodOrField.methodInfo.funcOp.getType(),
+                            mlir::FlatSymbolRefAttr::get(builder.getContext(), methodOrField.methodInfo.funcOp.sym_name()));
+
+                        vtableValue =
+                            builder.create<mlir_ts::InsertPropertyOp>(location, virtTuple, methodConstName, vtableValue,
+                                                                      builder.getArrayAttr(mth.getStructIndexAttrValue(fieldIndex)));
+                        */
+                    }
+
+                    fieldIndex++;
+                }
+
+                return std::pair<mlir::Type, mlir::Value>{virtTuple, vtableValue};
+            },
+            genContext);
+
+        return mlir::success();
     }
 
     mlir::LogicalResult mlirGenClassVirtualTableDefinitionForInterface(mlir::Location location, ClassInfo::TypePtr newClassPtr,

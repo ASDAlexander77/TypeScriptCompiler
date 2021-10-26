@@ -1430,12 +1430,13 @@ struct DeleteOpLowering : public TsLlvmPattern<mlir_ts::DeleteOp>
     }
 };
 
-void NegativeOpValue(mlir_ts::ArithmeticUnaryOp &unaryOp, mlir::PatternRewriter &builder)
+void NegativeOpValue(mlir_ts::ArithmeticUnaryOp &unaryOp, mlir::PatternRewriter &builder, TypeConverter *typeConverter)
 {
     CodeLogicHelper clh(unaryOp, builder);
+    TypeConverterHelper tch(typeConverter);
 
     auto oper = unaryOp.operand1();
-    auto type = oper.getType();
+    auto type = tch.convertType(oper.getType());
     if (type.isIntOrIndex())
     {
         builder.replaceOpWithNewOp<SubIOp>(unaryOp, type, clh.createIConstantOf(type.getIntOrFloatBitWidth(), 0), oper);
@@ -1499,7 +1500,7 @@ struct ArithmeticUnaryOpLowering : public TsLlvmPattern<mlir_ts::ArithmeticUnary
             rewriter.replaceOp(arithmeticUnaryOp, arithmeticUnaryOp.operand1());
             return success();
         case SyntaxKind::MinusToken:
-            NegativeOpValue(arithmeticUnaryOp, rewriter);
+            NegativeOpValue(arithmeticUnaryOp, rewriter, getTypeConverter());
             return success();
         case SyntaxKind::TildeToken:
             NegativeOpBin(arithmeticUnaryOp, rewriter, getTypeConverter());

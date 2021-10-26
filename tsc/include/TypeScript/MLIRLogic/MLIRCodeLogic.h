@@ -277,7 +277,7 @@ class MLIRCustomMethods
             op = builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()), op);
         }
 
-        auto parseFloatOp = builder.create<mlir_ts::ParseFloatOp>(location, builder.getF32Type(), op);
+        auto parseFloatOp = builder.create<mlir_ts::ParseFloatOp>(location, mlir_ts::NumberType::get(builder.getContext()), op);
 
         return parseFloatOp;
     }
