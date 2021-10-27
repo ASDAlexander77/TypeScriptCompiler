@@ -129,7 +129,7 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
-            "args": ["-emit=jit", "-dump-object-file", "-object-filename=out.o", "C:/temp/1.ts"],
+            "args": ["-emit=jit", "-nogc", "-dump-object-file", "-object-filename=out.o", "C:/temp/1.ts"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],

@@ -6609,9 +6609,9 @@ class MLIRGenImpl
                     auto foundField = tupleStorageType.getFieldInfo(foundIndex);
                     if (fieldType != foundField.type)
                     {
-                        emitError(location) << "field type: '" << fieldType << "' not matching for '" << id << "' for interface '"
-                                            << newInterfacePtr->fullName << "' type: '" << foundField.type << "' in object '"
-                                            << tupleStorageType << "'";
+                        emitError(location) << "field '" << id << "' not matching type: '" << fieldType << "' and '" << foundField.type
+                                            << "' in interface '" << newInterfacePtr->fullName << "' for object '" << tupleStorageType
+                                            << "'";
 
                         return emptyFieldInfo;
                     }
@@ -7538,14 +7538,19 @@ class MLIRGenImpl
         auto objType = mlir_ts::ObjectType::get(tupleTypeIn);
         auto inCasted = builder.create<mlir_ts::CastOp>(location, objType, in);
 
-        auto interfaceTypePtr = getInterfaceByFullName(interfaceType.getName().getValue());
-        auto interfaceVTableValue = mlirGenCreateInterfaceVTableForObject(location, objType, interfaceTypePtr, genContext);
+        auto interfaceInfo = getInterfaceByFullName(interfaceType.getName().getValue());
+        if (auto createdInterfaceVTableForObject = mlirGenCreateInterfaceVTableForObject(location, objType, interfaceInfo, genContext))
+        {
 
-        // TODO: finish it, for now it is Undef
-        auto interfaceVTablePtr = builder.create<mlir_ts::UndefOp>(location, mth.getInterfaceVTableType(interfaceType));
+            LLVM_DEBUG(llvm::dbgs() << "\n!!"
+                                    << "@ created interface:" << createdInterfaceVTableForObject << "\n";);
+            auto newInterface = builder.create<mlir_ts::NewInterfaceOp>(location, mlir::TypeRange{interfaceType}, inCasted,
+                                                                        createdInterfaceVTableForObject);
 
-        auto newInterface = builder.create<mlir_ts::NewInterfaceOp>(location, mlir::TypeRange{interfaceType}, inCasted, interfaceVTablePtr);
-        return newInterface;
+            return newInterface;
+        }
+
+        return mlir::Value();
     }
 
     mlir::Type getType(Node typeReferenceAST)
