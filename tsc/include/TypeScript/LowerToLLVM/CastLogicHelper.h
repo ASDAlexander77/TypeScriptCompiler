@@ -199,6 +199,14 @@ class CastLogicHelper
             }
         }
 
+        if (auto resRefType = resType.dyn_cast_or_null<mlir_ts::RefType>())
+        {
+            if (auto inBoundRef = inType.dyn_cast_or_null<mlir_ts::BoundRefType>())
+            {
+                return castBoundRefToRef(in, inBoundRef, resRefType);
+            }
+        }
+
         if (auto tupleTypeIn = inType.dyn_cast_or_null<mlir_ts::TupleType>())
         {
             if (auto tupleTypeRes = resType.dyn_cast_or_null<mlir_ts::TupleType>())
@@ -557,6 +565,21 @@ class CastLogicHelper
         auto results = rewriter.create<mlir_ts::CallInternalOp>(loc, mlir_ts::StringType::get(rewriter.getContext()),
                                                                 ValueRange{value, objTypeCasted});
         return results.getResult(0);
+    }
+
+    mlir::Value castBoundRefToRef(mlir::Value in, mlir_ts::BoundRefType boundRefTypeIn, mlir_ts::RefType refTypeOut)
+    {
+        auto llvmType = tch.convertType(boundRefTypeIn.getElementType());
+        auto expectingLlvmType = tch.convertType(refTypeOut);
+        auto llvmRefType = LLVM::LLVMPointerType::get(llvmType);
+
+        mlir::Value valueRefVal = rewriter.create<LLVM::ExtractValueOp>(loc, llvmRefType, in, clh.getStructIndexAttr(DATA_VALUE_INDEX));
+        if (expectingLlvmType != llvmRefType)
+        {
+            valueRefVal = rewriter.create<LLVM::BitcastOp>(loc, expectingLlvmType, valueRefVal);
+        }
+
+        return valueRefVal;
     }
 };
 

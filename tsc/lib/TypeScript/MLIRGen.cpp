@@ -6660,7 +6660,14 @@ class MLIRGenImpl
                         LLVM_DEBUG(llvm::dbgs() << "\n!! vtable field: " << methodOrField.fieldInfo.id
                                                 << " type: " << methodOrField.fieldInfo.type << " provided data: " << fieldRef << "\n";);
 
-                        assert(fieldRef.getType().cast<mlir_ts::RefType>().getElementType() == methodOrField.fieldInfo.type);
+                        if (fieldRef.getType().isa<mlir_ts::BoundRefType>())
+                        {
+                            fieldRef = cast(location, mlir_ts::RefType::get(methodOrField.fieldInfo.type), fieldRef, genContext);
+                        }
+                        else
+                        {
+                            assert(fieldRef.getType().cast<mlir_ts::RefType>().getElementType() == methodOrField.fieldInfo.type);
+                        }
 
                         // insert &(null)->field
                         vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
@@ -6669,7 +6676,8 @@ class MLIRGenImpl
                     else
                     {
                         llvm_unreachable("not implemented yet");
-                        /*
+                        /*#
+                        ]]]]]]]]]
                         auto methodConstName = builder.create<mlir_ts::SymbolRefOp>(
                             location, methodOrField.methodInfo.funcOp.getType(),
                             mlir::FlatSymbolRefAttr::get(builder.getContext(), methodOrField.methodInfo.funcOp.sym_name()));
