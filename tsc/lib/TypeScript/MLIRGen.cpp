@@ -6607,7 +6607,11 @@ class MLIRGenImpl
                 if (foundIndex >= 0)
                 {
                     auto foundField = tupleStorageType.getFieldInfo(foundIndex);
-                    if (fieldType != foundField.type)
+                    auto test =
+                        foundField.type.isa<mlir::FunctionType>() && fieldType.isa<mlir::FunctionType>()
+                            ? mth.TestFunctionTypesMatchWithObjectMethods(foundField.type, fieldType).result == MatchResultType::Match
+                            : fieldType == foundField.type;
+                    if (!test)
                     {
                         emitError(location) << "field '" << id << "' not matching type: '" << fieldType << "' and '" << foundField.type
                                             << "' in interface '" << newInterfacePtr->fullName << "' for object '" << tupleStorageType
@@ -6652,6 +6656,11 @@ class MLIRGenImpl
                         auto objectNull = cast(location, objectType, nullObj, genContext);
                         auto fieldValue = mlirGenPropertyAccessExpression(location, objectNull, methodOrField.fieldInfo.id, genContext);
                         auto fieldRef = mcl.GetReferenceOfLoadOp(fieldValue);
+
+                        LLVM_DEBUG(llvm::dbgs() << "\n!! vtable field: " << methodOrField.fieldInfo.id
+                                                << " type: " << methodOrField.fieldInfo.type << " provided data: " << fieldRef << "\n";);
+
+                        assert(fieldRef.getType().cast<mlir_ts::RefType>().getElementType() == methodOrField.fieldInfo.type);
 
                         // insert &(null)->field
                         vtableValue = builder.create<mlir_ts::InsertPropertyOp>(

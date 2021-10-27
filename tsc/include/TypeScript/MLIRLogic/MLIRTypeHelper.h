@@ -297,6 +297,13 @@ class MLIRTypeHelper
         return {MatchResultType::Match, 0};
     }
 
+    MatchResult TestFunctionTypesMatchWithObjectMethods(mlir::Type inFuncType, mlir::Type resFuncType, unsigned startParamIn = 0,
+                                                        unsigned startParamRes = 0)
+    {
+        return TestFunctionTypesMatchWithObjectMethods(inFuncType.cast<mlir::FunctionType>(), resFuncType.cast<mlir::FunctionType>(),
+                                                       startParamIn, startParamRes);
+    }
+
     MatchResult TestFunctionTypesMatchWithObjectMethods(mlir::FunctionType inFuncType, mlir::FunctionType resFuncType,
                                                         unsigned startParamIn = 0, unsigned startParamRes = 0)
     {
