@@ -4343,7 +4343,14 @@ class MLIRGenImpl
             auto propField = builder.create<mlir_ts::ThisPropertyRefOp>(location, fieldRefType, interfaceSymbolRefOp.getResult(1),
                                                                         interfaceSymbolRefOp.getResult(0));
 
-            auto value = builder.create<mlir_ts::LoadOp>(location, fieldRefType.getElementType(), propField);
+            mlir::Value value = builder.create<mlir_ts::LoadOp>(location, fieldRefType.getElementType(), propField);
+
+            // if it is FuncType, we need to create BoundRef again
+            if (auto funcType = fieldInfo.type.dyn_cast<mlir::FunctionType>())
+            {
+                value = builder.create<mlir_ts::CreateBoundFunctionOp>(location, getBoundFunctionType(funcType),
+                                                                       interfaceSymbolRefOp.thisRef(), value);
+            }
 
             return value;
         }
@@ -7295,6 +7302,13 @@ class MLIRGenImpl
 
             auto typeAndInit = getTypeAndInit(propertyDeclaration, genContext);
             type = typeAndInit.first;
+
+            // fix type for fields with FuncType
+            if (auto funcType = type.dyn_cast<mlir::FunctionType>())
+            {
+                MLIRTypeHelper mth(builder.getContext());
+                type = mth.getFunctionTypeAddingFirstArgType(funcType, getOpaqueType());
+            }
 
             LLVM_DEBUG(dbgs() << "\n!! interface field: " << fieldId << " type: " << type << "\n\n");
 
