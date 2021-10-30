@@ -7543,6 +7543,7 @@ class MLIRGenImpl
             }
         }
 
+        // tuple to interface
         if (auto interfaceType = type.dyn_cast_or_null<mlir_ts::InterfaceType>())
         {
             if (auto constTupleType = value.getType().dyn_cast_or_null<mlir_ts::ConstTupleType>())
@@ -7567,7 +7568,10 @@ class MLIRGenImpl
         // TODO: finish it
         // convert Tuple to Object
         auto objType = mlir_ts::ObjectType::get(tupleTypeIn);
-        auto inCasted = builder.create<mlir_ts::CastOp>(location, objType, in);
+
+        auto valueAddr = builder.create<mlir_ts::NewOp>(location, mlir_ts::ValueRefType::get(tupleTypeIn), builder.getBoolAttr(false));
+        builder.create<mlir_ts::StoreOp>(location, in, valueAddr);
+        auto inCasted = builder.create<mlir_ts::CastOp>(location, objType, valueAddr);
 
         auto interfaceInfo = getInterfaceByFullName(interfaceType.getName().getValue());
         if (auto createdInterfaceVTableForObject = mlirGenCreateInterfaceVTableForObject(location, objType, interfaceInfo, genContext))

@@ -949,7 +949,7 @@ def TypeScript_StoreOp : TypeScript_Op<"Store", []> {
     The `store` operation stores the value into the reference storage.
   }];
 
-  let arguments = (ins AnyType:$value, Arg<TypeScript_RefOrBoundRef, "the reference to store to", [MemWrite]>:$reference);
+  let arguments = (ins AnyType:$value, Arg<TypeScript_RefOrBoundRefOrValueRef, "the reference to store to", [MemWrite]>:$reference);
   let assemblyFormat = "$value `,` $reference attr-dict `:` type($value) `->` type($reference)";
 }
 
@@ -959,7 +959,7 @@ def TypeScript_LoadOp : TypeScript_Op<"Load", []> {
     The `load` operation loads the value from the reference value.
   }];
 
-  let arguments = (ins Arg<TypeScript_RefOrBoundRef, "the reference to load from", [MemRead]>:$reference);
+  let arguments = (ins Arg<TypeScript_RefOrBoundRefOrValueRef, "the reference to load from", [MemRead]>:$reference);
   let results = (outs AnyType:$result);
   let assemblyFormat = "`(` $reference `)` attr-dict `:` type($reference) `->` type($result)";
 

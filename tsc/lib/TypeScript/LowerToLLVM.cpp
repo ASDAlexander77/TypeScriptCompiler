@@ -1644,7 +1644,8 @@ struct LoadOpLowering : public TsLlvmPattern<mlir_ts::LoadOp>
         TypeConverterHelper tch(getTypeConverter());
         CodeLogicHelper clh(loadOp, rewriter);
 
-        if (auto refType = loadOp.reference().getType().dyn_cast_or_null<mlir_ts::RefType>())
+        auto type = loadOp.reference().getType();
+        if (auto refType = type.dyn_cast_or_null<mlir_ts::RefType>())
         {
             auto elementType = refType.getElementType();
             auto elementTypeConverted = tch.convertType(elementType);
@@ -1653,7 +1654,16 @@ struct LoadOpLowering : public TsLlvmPattern<mlir_ts::LoadOp>
             return success();
         }
 
-        if (auto boundRefType = loadOp.reference().getType().dyn_cast_or_null<mlir_ts::BoundRefType>())
+        if (auto valueRefType = type.dyn_cast_or_null<mlir_ts::ValueRefType>())
+        {
+            auto elementType = valueRefType.getElementType();
+            auto elementTypeConverted = tch.convertType(elementType);
+
+            rewriter.replaceOpWithNewOp<LLVM::LoadOp>(loadOp, elementTypeConverted, loadOp.reference());
+            return success();
+        }
+
+        if (auto boundRefType = type.dyn_cast_or_null<mlir_ts::BoundRefType>())
         {
             rewriter.replaceOpWithNewOp<mlir_ts::LoadBoundRefOp>(loadOp, loadOp.getType(), loadOp.reference());
             return success();

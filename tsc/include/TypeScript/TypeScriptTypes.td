@@ -1129,4 +1129,8 @@ def TypeScript_RefOrBoundRef : AnyTypeOf<[
     TypeScript_Ref, TypeScript_BoundRef
   ]>;
 
+def TypeScript_RefOrBoundRefOrValueRef : AnyTypeOf<[
+    TypeScript_Ref, TypeScript_BoundRef, TypeScript_ValueRef
+  ]>;
+
 #endif // TYPESCRIPT_TYPEDEFS
