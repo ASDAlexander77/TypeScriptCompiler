@@ -1745,6 +1745,8 @@ struct PropertyRefOpLowering : public TsLlvmPattern<mlir_ts::PropertyRefOp>
     LogicalResult matchAndRewrite(mlir_ts::PropertyRefOp propertyRefOp, ArrayRef<Value> operands,
                                   ConversionPatternRewriter &rewriter) const final
     {
+        assert(propertyRefOp.position() != -1);
+
         LLVMCodeHelper ch(propertyRefOp, rewriter, getTypeConverter());
 
         auto addr = ch.GetAddressOfStructElement(propertyRefOp.getType(), propertyRefOp.objectRef(), propertyRefOp.position());
@@ -2580,6 +2582,8 @@ struct ThisVirtualSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::ThisVirtua
     LogicalResult matchAndRewrite(mlir_ts::ThisVirtualSymbolRefOp thisVirtualSymbolRefOp, ArrayRef<Value> operands,
                                   ConversionPatternRewriter &rewriter) const final
     {
+        assert(thisVirtualSymbolRefOp.index() != -1);
+
         Location loc = thisVirtualSymbolRefOp.getLoc();
 
         TypeHelper th(rewriter);
@@ -2601,6 +2605,8 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
     LogicalResult matchAndRewrite(mlir_ts::InterfaceSymbolRefOp interfaceSymbolRefOp, ArrayRef<Value> operands,
                                   ConversionPatternRewriter &rewriter) const final
     {
+        assert(interfaceSymbolRefOp.index() != -1);
+
         Location loc = interfaceSymbolRefOp.getLoc();
 
         TypeHelper th(rewriter);
