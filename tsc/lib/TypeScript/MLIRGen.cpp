@@ -4159,6 +4159,8 @@ class MLIRGenImpl
 
                     auto vtableAccess = mlirGenPropertyAccessExpression(location, effectiveThisValue, VTABLE_NAME, genContext);
 
+                    assert(genContext.allowPartialResolve || methodInfo.virtualIndex >= 0);
+
                     auto thisVirtualSymbOp = builder.create<mlir_ts::ThisVirtualSymbolRefOp>(
                         location, effectiveFuncType, effectiveThisValue, vtableAccess, builder.getI32IntegerAttr(methodInfo.virtualIndex),
                         mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
@@ -7517,6 +7519,8 @@ class MLIRGenImpl
                 if (implementIndex >= 0)
                 {
                     auto interfaceVirtTableIndex = classInfo->implements[implementIndex].virtualIndex;
+
+                    assert(genContext.allowPartialResolve || interfaceVirtTableIndex >= 0);
 
                     MLIRTypeHelper mth(builder.getContext());
 
