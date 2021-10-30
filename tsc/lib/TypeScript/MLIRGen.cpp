@@ -4334,6 +4334,8 @@ class MLIRGenImpl
         {
             auto fieldInfo = interfaceInfo->fields[fieldIndex];
 
+            assert(fieldInfo.interfacePosIndex >= 0);
+
             auto fieldRefType = mlir_ts::RefType::get(fieldInfo.type);
 
             auto interfaceSymbolRefOp = builder.create<mlir_ts::InterfaceSymbolRefOp>(
@@ -4363,6 +4365,9 @@ class MLIRGenImpl
             if (methodIndex >= 0)
             {
                 auto methodInfo = interfaceInfo->methods[methodIndex];
+
+                assert(methodInfo.interfacePosIndex >= 0);
+
                 auto effectiveFuncType = methodInfo.funcType;
 
                 auto interfaceSymbolRefOp = builder.create<mlir_ts::InterfaceSymbolRefOp>(
