@@ -7,10 +7,15 @@ interface Something {
     toString: () => string;
 }
 
+function testIFace(iface: Something) {
+    print(iface.toString());
+}
+
+
 function main() {
     const something = {
         r: 11.0, g: 12.0, b: 13.0, toString() {
-            if (this.b == 13.0) glb1 = 1;
+            if (this.b == 13.0) glb1++;
             return "Hello " + this.b;
         }
     };
@@ -18,7 +23,9 @@ function main() {
     const iface = <Something>something;
     print(iface.toString());
 
-    assert(glb1 == 1);
+    testIFace(something);
+
+    assert(glb1 == 2);
 
     print("done.");
 }

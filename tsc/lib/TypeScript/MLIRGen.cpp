@@ -7322,7 +7322,7 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
-            fieldInfos.push_back({fieldId, type, -1});
+            fieldInfos.push_back({fieldId, type, newInterfacePtr->getNextVTableMemberIndex()});
         }
 
         if (interfaceMember == SyntaxKind::MethodSignature)
@@ -7356,7 +7356,7 @@ class MLIRGenImpl
 
             if (declareInterface)
             {
-                methodInfos.push_back({methodName, funcType, (int)methodInfos.size()});
+                methodInfos.push_back({methodName, funcType, newInterfacePtr->getNextVTableMemberIndex()});
             }
         }
 

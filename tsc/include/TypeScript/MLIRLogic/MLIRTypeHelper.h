@@ -339,7 +339,12 @@ class MLIRTypeHelper
 
         for (unsigned i = startParamIn, e = inFuncType.getInputs().size(); i != e; ++i)
         {
-            if (resFuncType.getNumInputs() >= (i + startParamRes) || inFuncType.getInput(i) != resFuncType.getInput(i + startParamRes))
+            if (i + startParamRes >= resFuncType.getNumInputs())
+            {
+                return {MatchResultType::NotMatchArg, i};
+            }
+
+            if (inFuncType.getInput(i) != resFuncType.getInput(i + startParamRes))
             {
                 /*
                 if (i == 0 && (inFuncType.getInput(i).isa<mlir_ts::OpaqueType>() || resFuncType.getInput(i).isa<mlir_ts::OpaqueType>()))

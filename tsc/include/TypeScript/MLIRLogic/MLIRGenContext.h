@@ -225,7 +225,6 @@ struct InterfaceInfo
                 return mlir::failure();
             }
 
-            method.interfacePosIndex = vtable.size();
             vtable.push_back({classMethodInfo});
         }
 
@@ -237,7 +236,6 @@ struct InterfaceInfo
                 return mlir::failure();
             }
 
-            field.interfacePosIndex = vtable.size();
             vtable.push_back({fieldInfo});
         }
 
@@ -256,6 +254,11 @@ struct InterfaceInfo
         auto dist = std::distance(
             fields.begin(), std::find_if(fields.begin(), fields.end(), [&](InterfaceFieldInfo fieldInfo) { return id == fieldInfo.id; }));
         return (signed)dist >= (signed)fields.size() ? -1 : dist;
+    }
+
+    int getNextVTableMemberIndex()
+    {
+        return fields.size() + methods.size();
     }
 };
 
