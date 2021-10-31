@@ -152,6 +152,16 @@ class CastLogicHelper
 
         if (auto optType = inType.dyn_cast_or_null<mlir_ts::OptionalType>())
         {
+            if (optType.getElementType().isa<mlir_ts::UndefPlaceHolderType>())
+            {
+                if (auto ifaceType = resType.dyn_cast_or_null<mlir_ts::InterfaceType>())
+                {
+                    // create null interface
+                    auto nullVal = rewriter.create<mlir_ts::NullOp>(loc, mlir_ts::NullType::get(ifaceType.getContext()));
+                    return rewriter.create<mlir_ts::NewInterfaceOp>(loc, ifaceType, nullVal, nullVal);
+                }
+            }
+
             auto val = rewriter.create<mlir_ts::ValueOp>(loc, optType.getElementType(), in);
             return cast(val, tch.convertType(val.getType()), resType, resLLVMType);
         }
