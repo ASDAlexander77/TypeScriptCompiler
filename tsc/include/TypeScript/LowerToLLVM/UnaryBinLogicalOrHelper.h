@@ -132,6 +132,27 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Val
         auto value = builder.create<StdIOpTy>(loc, v1, leftPtrValue, rightPtrValue);
         return value;
     }
+    else if (leftType.dyn_cast_or_null<mlir_ts::InterfaceType>())
+    {
+        // TODO, extract interface VTable to compare
+        auto leftVtableValue =
+            left.getDefiningOp<mlir_ts::NullOp>()
+                ? left
+                : builder.create<mlir_ts::ExtractInterfaceVTableOp>(loc, mlir_ts::OpaqueType::get(leftType.getContext()), left);
+        auto rightVtableValue =
+            right.getDefiningOp<mlir_ts::NullOp>()
+                ? right
+                : builder.create<mlir_ts::ExtractInterfaceVTableOp>(loc, mlir_ts::OpaqueType::get(rightType.getContext()), right);
+
+        // excluded string
+        auto intPtrType = llvmtch.getIntPtrType(0);
+
+        mlir::Value leftPtrValue = builder.create<LLVM::PtrToIntOp>(loc, intPtrType, leftVtableValue);
+        mlir::Value rightPtrValue = builder.create<LLVM::PtrToIntOp>(loc, intPtrType, rightVtableValue);
+
+        auto value = builder.create<StdIOpTy>(loc, v1, leftPtrValue, rightPtrValue);
+        return value;
+    }
     else
     {
         emitError(loc, "Not implemented operator for type 1: '") << leftType << "'";

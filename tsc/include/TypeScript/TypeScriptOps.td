@@ -187,7 +187,7 @@ def InterfaceSymbolRefOp : TypeScript_Op<"InterfaceSymbolRef",
     [NoSideEffect,DeclareOpInterfaceMethods<OpAsmOpInterface>]> {
   let summary = "symbol reference as to interface member";
 
-  let arguments = (ins AnyType:$interfaceVal, I32Attr:$index, StrAttr:$identifier);
+  let arguments = (ins TypeScript_Interface:$interfaceVal, I32Attr:$index, StrAttr:$identifier);
   let results = (outs TypeScript_AnyRefOrFuncType:$funcOrFieldReference, TypeScript_AnyRefLike:$thisRef);
 
   let builders = [
@@ -520,6 +520,16 @@ def TypeScript_NewInterfaceOp : TypeScript_Op<"NewInterface"> {
   let results = (outs TypeScript_Interface:$instance);
 
   let assemblyFormat = "`(` $thisVal `,` $interfaceVTable `)` attr-dict `:` type($thisVal) `,` type($interfaceVTable) `->` type($instance)";
+}
+
+def ExtractInterfaceVTableOp : TypeScript_Op<"ExtractInterfaceVTable", 
+    [NoSideEffect]> {
+  let summary = "extract interface vtable";
+
+  let arguments = (ins TypeScript_Interface:$interfaceVal);
+  let results = (outs TypeScript_Opaque:$vtableVal);
+
+  let assemblyFormat = "`(` $interfaceVal `)` attr-dict `:` type($interfaceVal) `->` type($vtableVal)";
 }
 
 def TypeScript_CreateTupleOp : TypeScript_Op<"CreateTuple"> {
