@@ -608,19 +608,27 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
 
     template <typename T, typename TOp> void getOrCreateGlobalTuple(TOp constantOp, T type, ConversionPatternRewriter &rewriter) const
     {
+        auto location = constantOp->getLoc();
+
         LLVMCodeHelper ch(constantOp, rewriter, getTypeConverter());
         TypeConverterHelper tch(getTypeConverter());
 
         auto arrayAttr = constantOp.value().template dyn_cast_or_null<ArrayAttr>();
 
         auto convertedTupleType = tch.convertType(type);
+        /*
         auto tupleConstPtr = ch.getOrCreateGlobalTuple(type.template cast<mlir_ts::ConstTupleType>(),
                                                        convertedTupleType.template cast<LLVM::LLVMStructType>(), arrayAttr);
 
         // optimize it and replace it with copy memory. (use canon. pass) check  "EraseRedundantAssertions"
         auto loadedValue = rewriter.create<LLVM::LoadOp>(constantOp->getLoc(), tupleConstPtr);
+        */
 
-        rewriter.replaceOp(constantOp, ValueRange{loadedValue});
+        auto tupleVal = ch.getTupleFromArrayAttr(location, type.dyn_cast_or_null<mlir_ts::ConstTupleType>(),
+                                                 convertedTupleType.cast<LLVM::LLVMStructType>(), arrayAttr);
+
+        // rewriter.replaceOp(constantOp, ValueRange{loadedValue});
+        rewriter.replaceOp(constantOp, ValueRange{tupleVal});
     }
 
     LogicalResult matchAndRewrite(mlir_ts::ConstantOp constantOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
