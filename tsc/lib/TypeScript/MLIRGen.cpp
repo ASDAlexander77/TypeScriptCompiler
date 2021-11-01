@@ -5211,11 +5211,10 @@ class MLIRGenImpl
     {
         MLIRCodeLogic mcl(builder);
         // first value
-        SmallVector<mlir::Type> types;
         SmallVector<mlir_ts::FieldInfo> fieldInfos;
         SmallVector<mlir::Attribute> values;
-        SmallVector<std::reference_wrapper<mlir_ts::FieldInfo>> methodInfos;
-        SmallVector<std::pair<std::string, std::reference_wrapper<mlir_ts::FieldInfo>>> methodInfosWithCaptures;
+        SmallVector<size_t> methodInfos;
+        SmallVector<std::pair<std::string, size_t>> methodInfosWithCaptures;
         SmallVector<std::pair<mlir::Attribute, mlir::Value>> fieldsToSet;
 
         auto location = loc(objectLiteral);
@@ -5234,23 +5233,20 @@ class MLIRGenImpl
                 values.push_back(mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName));
             }
 
-            LLVM_DEBUG(llvm::dbgs() << "\n!! obj. func: " << fieldId << " type: " << funcType << "[" << funcType.getNumInputs() << "]\n";);
-            types.push_back(type);
             fieldInfos.push_back({fieldId, type});
 
             if (hasCaptures)
             {
-                methodInfosWithCaptures.push_back({funcName, fieldInfos[fieldInfos.size() - 1]});
+                methodInfosWithCaptures.push_back({funcName, fieldInfos.size() - 1});
             }
             else
             {
-                methodInfos.push_back(fieldInfos[fieldInfos.size() - 1]);
+                methodInfos.push_back(fieldInfos.size() - 1);
             }
         };
 
         auto addFieldInfoToArrays = [&](mlir::Attribute fieldId, mlir::Type type) {
             values.push_back(builder.getUnitAttr());
-            types.push_back(type);
             fieldInfos.push_back({fieldId, type});
         };
 
@@ -5280,7 +5276,6 @@ class MLIRGenImpl
             }
 
             values.push_back(value);
-            types.push_back(type);
             fieldInfos.push_back({fieldId, type});
         };
 
@@ -5495,32 +5490,39 @@ class MLIRGenImpl
         }
 
         // fix all method types again
-        for (auto &fieldRef : methodInfos)
+        for (auto &methodRef : methodInfos)
         {
-            auto &fieldInfo = fieldRef.get();
-            if (auto funcType = fieldInfo.type.dyn_cast_or_null<mlir::FunctionType>())
+            auto &methodInfo = fieldInfos[methodRef];
+            if (auto funcType = methodInfo.type.dyn_cast_or_null<mlir::FunctionType>())
             {
                 MLIRTypeHelper mth(builder.getContext());
-                fieldInfo.type = mth.getFunctionTypeReplaceOpaqueWithThisType(funcType, objThis);
+
+                LLVM_DEBUG(llvm::dbgs() << "\n!! fixing Opaque type for field: " << methodInfo.id << " type before: " << methodInfo.type
+                                        << "\n";);
+
+                methodInfo.type = mth.getFunctionTypeReplaceOpaqueWithThisType(funcType, objThis);
+
+                LLVM_DEBUG(llvm::dbgs() << "\n!! fixing Opaque type for field: " << methodInfo.id << " type after: " << methodInfo.type
+                                        << "\n";);
             }
         }
 
         // fix all method types again and load captured functions
-        for (auto &fieldRefWithName : methodInfosWithCaptures)
+        for (auto &methodRefWithName : methodInfosWithCaptures)
         {
-            auto funcName = std::get<0>(fieldRefWithName);
-            auto fieldRef = std::get<1>(fieldRefWithName);
-            auto &fieldInfo = fieldRef.get();
-            if (auto funcType = fieldInfo.type.dyn_cast_or_null<mlir::FunctionType>())
+            auto funcName = std::get<0>(methodRefWithName);
+            auto methodRef = std::get<1>(methodRefWithName);
+            auto &methodInfo = fieldInfos[methodRef];
+            if (auto funcType = methodInfo.type.dyn_cast_or_null<mlir::FunctionType>())
             {
                 MLIRTypeHelper mth(builder.getContext());
-                fieldInfo.type = mth.getFunctionTypeReplaceOpaqueWithThisType(funcType, objThis);
+                methodInfo.type = mth.getFunctionTypeReplaceOpaqueWithThisType(funcType, objThis);
 
                 // TODO: investigate if you can allocate trampolines in heap "change false -> true"
                 if (auto trampOp =
-                        resolveFunctionWithCapture(location, funcName, fieldInfo.type.cast<mlir::FunctionType>(), false, genContext))
+                        resolveFunctionWithCapture(location, funcName, methodInfo.type.cast<mlir::FunctionType>(), false, genContext))
                 {
-                    fieldsToSet.push_back({fieldInfo.id, trampOp});
+                    fieldsToSet.push_back({methodInfo.id, trampOp});
                 }
                 else
                 {
@@ -5530,6 +5532,10 @@ class MLIRGenImpl
         }
 
         auto constTupleTypeWithReplacedThis = getConstTupleType(fieldInfos);
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! Object type before fix: " << constTupleType << "\n";);
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! Object type after fix: " << constTupleTypeWithReplacedThis << "\n";);
 
         auto arrayAttr = mlir::ArrayAttr::get(builder.getContext(), values);
         auto constantVal = builder.create<mlir_ts::ConstantOp>(loc(objectLiteral), constTupleTypeWithReplacedThis, arrayAttr);
