@@ -5497,13 +5497,7 @@ class MLIRGenImpl
             {
                 MLIRTypeHelper mth(builder.getContext());
 
-                LLVM_DEBUG(llvm::dbgs() << "\n!! fixing Opaque type for field: " << methodInfo.id << " type before: " << methodInfo.type
-                                        << "\n";);
-
                 methodInfo.type = mth.getFunctionTypeReplaceOpaqueWithThisType(funcType, objThis);
-
-                LLVM_DEBUG(llvm::dbgs() << "\n!! fixing Opaque type for field: " << methodInfo.id << " type after: " << methodInfo.type
-                                        << "\n";);
             }
         }
 
@@ -5532,10 +5526,6 @@ class MLIRGenImpl
         }
 
         auto constTupleTypeWithReplacedThis = getConstTupleType(fieldInfos);
-
-        LLVM_DEBUG(llvm::dbgs() << "\n!! Object type before fix: " << constTupleType << "\n";);
-
-        LLVM_DEBUG(llvm::dbgs() << "\n!! Object type after fix: " << constTupleTypeWithReplacedThis << "\n";);
 
         auto arrayAttr = mlir::ArrayAttr::get(builder.getContext(), values);
         auto constantVal = builder.create<mlir_ts::ConstantOp>(loc(objectLiteral), constTupleTypeWithReplacedThis, arrayAttr);
