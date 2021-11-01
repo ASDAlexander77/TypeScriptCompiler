@@ -23,29 +23,8 @@ def ConstantOp : TypeScript_Op<"Constant",
     [ConstantLike, NoSideEffect]> {
   let summary = "constant";
   let description = [{
-    Syntax:
-
-    ```
-    operation ::= ssa-id `=` `ts.constant` attribute-value `:` type
-    ```
-
     The `constant` operation produces an SSA value equal to some constant
     specified by an attribute.
-
-    Example:
-
-    ```mlir
-    // Integer constant
-    %1 = constant 42 : i32
-
-    // Reference to function @myfn.
-    %3 = constant @myfn : (tensor<16xf32>, f32) -> tensor<16xf32>
-
-    // Equivalent generic forms
-    %1 = "ts.constant"() {value = 42 : i32} : () -> i32
-    %3 = "ts.constant"() {value = @myfn}
-       : () -> ((tensor<16xf32>, f32) -> tensor<16xf32>)
-    ```
   }];
 
   let arguments = (ins AnyAttr:$value);
@@ -682,16 +661,6 @@ def TypeScript_CallIndirectOp : TypeScript_Op<"CallIndirect", [
     function type. Functions are first class types in MLIR, and may be passed as
     arguments and merged together with block arguments. The operands and result
     types of the call must match the specified function type.
-
-    Function values can be created with the
-    [`constant` operation](#stdconstant-constantop).
-
-    Example:
-
-    ```mlir
-    %31 = call_indirect %15(%0, %1)
-            : (tensor<16xf32>, tensor<16xf32>) -> tensor<16xf32>
-    ```
   }];
 
   let arguments = (ins FunctionType:$callee, Variadic<AnyType>:$operands);
