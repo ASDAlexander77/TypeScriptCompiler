@@ -144,7 +144,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         return failure();
     }
 
-    mlir::LogicalResult createFunctionFromRegion(mlir::Location location, StringRef name, mlir::Region &initRegion)
+    mlir::FuncOp createFunctionFromRegion(mlir::Location location, StringRef name, mlir::Region &initRegion, StringRef saveToGlobalName)
     {
         TypeHelper th(rewriter);
 
@@ -167,6 +167,17 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
             LLVM_DEBUG(llvm::dbgs() << "\n!! new func terminator: " << *lastBlock->getTerminator() << "\n";);
 
             rewriter.setInsertionPoint(lastBlock->getTerminator());
+
+            if (!saveToGlobalName.empty())
+            {
+                auto value = lastBlock->getTerminator()->getOperand(0);
+                auto resultType = value.getType();
+                auto addrToSave = rewriter.create<mlir_ts::AddressOfOp>(
+                    location, mlir_ts::RefType::get(resultType), mlir::FlatSymbolRefAttr::get(rewriter.getContext(), saveToGlobalName),
+                    ::mlir::IntegerAttr());
+                rewriter.create<mlir_ts::StoreOp>(location, value, addrToSave);
+            }
+
             rewriter.replaceOpWithNewOp<mlir::ReturnOp>(lastBlock->getTerminator());
 
             rewriter.eraseBlock(&newFuncOp.getBody().back());
@@ -174,7 +185,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
             LLVM_DEBUG(llvm::dbgs() << "\n!! new func: " << newFuncOp << "\n";);
         }
 
-        return success();
+        return newFuncOp;
     }
 
     mlir::LogicalResult createGlobalConstructorIfNew(StringRef name, mlir::Type type, LLVM::Linkage linkage,

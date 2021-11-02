@@ -1801,7 +1801,7 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
                                           globalOp.constant(), linkage);
 
             auto name = MLIRHelper::getAnonymousName(loc);
-            lch.createFunctionFromRegion(loc, name, globalOp.getInitializerRegion());
+            lch.createFunctionFromRegion(loc, name, globalOp.getInitializerRegion(), globalOp.sym_name());
             rewriter.create<mlir_ts::GlobalConstructorOp>(loc, name);
         }
         else
