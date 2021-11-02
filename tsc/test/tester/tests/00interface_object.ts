@@ -11,6 +11,14 @@ function testIFace(iface: Something) {
     print(iface.toString());
 }
 
+interface Surface {
+    n: number;
+}
+
+// global const object
+let shiny: Surface = {
+    n: 10.0
+}
 
 function main() {
     const something = {
@@ -26,6 +34,8 @@ function main() {
     testIFace(something);
 
     assert(glb1 == 2);
+
+    assert(shiny.n == 10.0);
 
     print("done.");
 }

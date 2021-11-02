@@ -172,10 +172,13 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
             {
                 auto value = lastBlock->getTerminator()->getOperand(0);
                 auto resultType = value.getType();
+
+                LLVM_DEBUG(llvm::dbgs() << "\n!! value type: " << resultType << "\n";);
+
                 auto addrToSave = rewriter.create<mlir_ts::AddressOfOp>(
                     location, mlir_ts::RefType::get(resultType), mlir::FlatSymbolRefAttr::get(rewriter.getContext(), saveToGlobalName),
                     ::mlir::IntegerAttr());
-                rewriter.create<mlir_ts::StoreOp>(location, value, addrToSave);
+                rewriter.create<LLVM::StoreOp>(location, value, addrToSave);
             }
 
             rewriter.replaceOpWithNewOp<mlir::ReturnOp>(lastBlock->getTerminator());
