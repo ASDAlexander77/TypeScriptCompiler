@@ -606,7 +606,7 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
         rewriter.replaceOp(constantOp, arrayFirstElementAddrCst);
     }
 
-    template <typename T, typename TOp> void getOrCreateGlobalTuple(TOp constantOp, T type, ConversionPatternRewriter &rewriter) const
+    template <typename TOp> void getOrCreateGlobalTuple(TOp constantOp, mlir::Type type, ConversionPatternRewriter &rewriter) const
     {
         auto location = constantOp->getLoc();
 
