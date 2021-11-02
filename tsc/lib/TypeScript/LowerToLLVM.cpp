@@ -1778,13 +1778,38 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
 
     LogicalResult matchAndRewrite(mlir_ts::GlobalOp globalOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
     {
+        auto loc = globalOp->getLoc();
+
         LLVMCodeHelper lch(globalOp, rewriter, getTypeConverter());
+
+        auto createAsGlobalConstructor = false;
+        auto visitorAllOps = [&](Operation *op) {
+            if (isa<mlir_ts::NewOp>(op) || isa<mlir_ts::NewInterfaceOp>(op) || isa<mlir_ts::NewArrayOp>(op))
+            {
+                createAsGlobalConstructor = true;
+            }
+        };
+
+        globalOp.getInitializerRegion().walk(visitorAllOps);
 
         auto linkage = lch.getLinkage(globalOp);
 
-        // TODO: include initialize block
-        lch.createGlobalVarIfNew(globalOp.sym_name(), getTypeConverter()->convertType(globalOp.type()), globalOp.valueAttr(),
-                                 globalOp.constant(), globalOp.getInitializerRegion(), linkage);
+        if (createAsGlobalConstructor)
+        {
+            // TODO: create function and call GlobalConstructor
+            lch.createUndefGlobalVarIfNew(globalOp.sym_name(), getTypeConverter()->convertType(globalOp.type()), globalOp.valueAttr(),
+                                          globalOp.constant(), linkage);
+
+            auto name = MLIRHelper::getAnonymousName(loc);
+            lch.createFunctionFromRegion(loc, name, globalOp.getInitializerRegion());
+            rewriter.create<mlir_ts::GlobalConstructorOp>(loc, name);
+        }
+        else
+        {
+            lch.createGlobalVarIfNew(globalOp.sym_name(), getTypeConverter()->convertType(globalOp.type()), globalOp.valueAttr(),
+                                     globalOp.constant(), globalOp.getInitializerRegion(), linkage);
+        }
+
         rewriter.eraseOp(globalOp);
         return success();
     }

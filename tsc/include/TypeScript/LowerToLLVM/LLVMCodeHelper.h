@@ -86,6 +86,31 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         return linkage;
     }
 
+    mlir::LogicalResult createUndefGlobalVarIfNew(StringRef name, mlir::Type type, mlir::Attribute value, bool isConst,
+                                                  LLVM::Linkage linkage = LLVM::Linkage::Internal)
+    {
+        auto loc = op->getLoc();
+        auto parentModule = op->getParentOfType<ModuleOp>();
+
+        TypeHelper th(rewriter);
+
+        // Create the global at the entry of the module.
+        LLVM::GlobalOp global;
+        if (!(global = parentModule.lookupSymbol<LLVM::GlobalOp>(name)))
+        {
+            OpBuilder::InsertionGuard insertGuard(rewriter);
+            rewriter.setInsertionPointToStart(parentModule.getBody());
+
+            seekLast(parentModule.getBody());
+
+            global = rewriter.create<LLVM::GlobalOp>(loc, type, isConst, linkage, name, value);
+
+            return success();
+        }
+
+        return failure();
+    }
+
     mlir::LogicalResult createGlobalVarIfNew(StringRef name, mlir::Type type, mlir::Attribute value, bool isConst, mlir::Region &initRegion,
                                              LLVM::Linkage linkage = LLVM::Linkage::Internal)
     {
@@ -117,6 +142,39 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         }
 
         return failure();
+    }
+
+    mlir::LogicalResult createFunctionFromRegion(mlir::Location location, StringRef name, mlir::Region &initRegion)
+    {
+        TypeHelper th(rewriter);
+
+        // TODO: finish it
+        auto newFuncOp = rewriter.create<mlir::FuncOp>(location, name, mlir::FunctionType::get(rewriter.getContext(), {}, {}));
+        if (!initRegion.empty())
+        {
+            OpBuilder::InsertionGuard insertGuard(rewriter);
+
+            mlir::Block *block = rewriter.createBlock(&newFuncOp.getBody());
+            rewriter.setInsertionPoint(block, block->begin());
+
+            rewriter.inlineRegionBefore(initRegion, &newFuncOp.getBody().back());
+
+            // last inserted block
+            auto lastBlock = newFuncOp.getBody().back().getPrevNode();
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! new func last block: "; lastBlock->dump(); llvm::dbgs() << "\n";);
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! new func terminator: " << *lastBlock->getTerminator() << "\n";);
+
+            rewriter.setInsertionPoint(lastBlock->getTerminator());
+            rewriter.replaceOpWithNewOp<mlir::ReturnOp>(lastBlock->getTerminator());
+
+            rewriter.eraseBlock(&newFuncOp.getBody().back());
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! new func: " << newFuncOp << "\n";);
+        }
+
+        return success();
     }
 
     mlir::LogicalResult createGlobalConstructorIfNew(StringRef name, mlir::Type type, LLVM::Linkage linkage,
