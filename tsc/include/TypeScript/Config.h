@@ -20,6 +20,8 @@
 #endif
 #endif
 
+#define NUMBER_F64 1
+
 #ifdef WIN32
 #define WIN_EXCEPTION 1
 #else
