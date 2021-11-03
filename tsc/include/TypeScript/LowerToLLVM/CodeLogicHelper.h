@@ -45,7 +45,11 @@ class CodeLogicHelper
 
     mlir::Value createFConstantOf(unsigned width, double value)
     {
+#ifdef NUMBER_F64
+        auto ftype = rewriter.getF64Type();
+#else
         auto ftype = rewriter.getF32Type();
+#endif
         if (width == 16)
         {
             ftype = rewriter.getF16Type();
@@ -86,6 +90,11 @@ class CodeLogicHelper
     mlir::Value createF32ConstantOf(float value)
     {
         return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getF32Type(), rewriter.getIntegerAttr(rewriter.getF32Type(), value));
+    }
+
+    mlir::Value createF64ConstantOf(float value)
+    {
+        return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getF64Type(), rewriter.getIntegerAttr(rewriter.getF64Type(), value));
     }
 
     mlir::Value createIndexConstantOf(unsigned value)

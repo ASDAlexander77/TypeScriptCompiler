@@ -16,6 +16,15 @@ constexpr const auto *catchableTypeInfoArrayRef = "_CTA1N";
 constexpr const auto *throwInfoRef = "_TI1N";
 } // namespace F32Type
 
+namespace F64Type
+{
+constexpr const auto *typeName = ".N";
+constexpr const auto *typeInfoRef = "??_R0N@8";
+constexpr const auto *catchableTypeInfoRef = "_CT??_R0N@88";
+constexpr const auto *catchableTypeInfoArrayRef = "_CTA1N";
+constexpr const auto *throwInfoRef = "_TI1N";
+} // namespace F64Type
+
 namespace I32Type
 {
 constexpr const auto *typeName = ".H";

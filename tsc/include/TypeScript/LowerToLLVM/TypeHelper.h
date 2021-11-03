@@ -54,6 +54,11 @@ class TypeHelper
         return FloatType::getF32(context);
     }
 
+    mlir::Type getF64Type()
+    {
+        return FloatType::getF64(context);
+    }
+
     mlir::IntegerAttr getStructIndexAttrValue(int32_t value)
     {
         return IntegerAttr::get(getI32Type(), APInt(32, value));

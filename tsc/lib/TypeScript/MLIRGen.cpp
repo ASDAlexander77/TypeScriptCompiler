@@ -3878,8 +3878,8 @@ class MLIRGenImpl
             if (leftExpressionValue.getType() != rightExpressionValue.getType())
             {
                 // cast to base type
-                auto hasF32 = leftExpressionValue.getType() == getNumberType() || rightExpressionValue.getType() == getNumberType();
-                if (hasF32)
+                auto hasNumber = leftExpressionValue.getType() == getNumberType() || rightExpressionValue.getType() == getNumberType();
+                if (hasNumber)
                 {
                     if (leftExpressionValue.getType() != getNumberType())
                     {
@@ -5066,9 +5066,13 @@ class MLIRGenImpl
                                                            builder.getI64IntegerAttr(to_bignumber(numericLiteral->text)));
             }
         }
-
+#ifdef NUMBER_F64
+        return builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), getNumberType(),
+                                                   builder.getF64FloatAttr(to_float(numericLiteral->text)));
+#else
         return builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), getNumberType(),
                                                    builder.getF32FloatAttr(to_float(numericLiteral->text)));
+#endif                                                   
     }
 
     mlir::Value mlirGen(BigIntLiteral bigIntLiteral, const GenContext &genContext)

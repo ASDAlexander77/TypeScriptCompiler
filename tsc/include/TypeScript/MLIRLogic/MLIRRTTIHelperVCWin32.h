@@ -59,6 +59,14 @@ class MLIRRTTIHelperVCWin32
         throwInfoRef = F32Type::throwInfoRef;
     }
 
+    void setF64AsCatchType()
+    {
+        types.push_back({F64Type::typeName, F64Type::typeInfoRef, F64Type::catchableTypeInfoRef});
+
+        catchableTypeInfoArrayRef = F64Type::catchableTypeInfoArrayRef;
+        throwInfoRef = F64Type::throwInfoRef;
+    }
+
     void setI32AsCatchType()
     {
         types.push_back({I32Type::typeName, I32Type::typeInfoRef, I32Type::catchableTypeInfoRef});
@@ -139,16 +147,27 @@ class MLIRRTTIHelperVCWin32
                 }
             })
             .Case<mlir::FloatType>([&](auto floatType) {
-                if (floatType.getIntOrFloatBitWidth() == 32)
+                auto width = floatType.getIntOrFloatBitWidth();
+                if (width == 32)
                 {
                     setF32AsCatchType();
+                }
+                else if (width == 64)
+                {
+                    setF64AsCatchType();
                 }
                 else
                 {
                     llvm_unreachable("not implemented");
                 }
             })
-            .Case<mlir_ts::NumberType>([&](auto numberType) { setF32AsCatchType(); })
+            .Case<mlir_ts::NumberType>([&](auto numberType) {
+#ifdef NUMBER_F64
+                setF64AsCatchType();
+#else
+                setF32AsCatchType();
+#endif
+            })
             .Case<mlir_ts::StringType>([&](auto stringType) { setStringTypeAsCatchType(); })
             .Case<mlir_ts::ClassType>([&](auto classType) {
                 // we need all bases as well
@@ -196,7 +215,13 @@ class MLIRRTTIHelperVCWin32
                     llvm_unreachable("not implemented");
                 }
             })
-            .Case<mlir_ts::NumberType>([&](auto numberType) { setF32AsCatchType(); })
+            .Case<mlir_ts::NumberType>([&](auto numberType) {
+#ifdef NUMBER_F64
+                setF64AsCatchType();
+#else
+                setF32AsCatchType();
+#endif
+            })
             .Case<mlir_ts::StringType>([&](auto stringType) { setStringTypeAsCatchType(); })
             .Case<mlir_ts::ClassType>([&](auto classType) { setClassTypeAsCatchType(classType.getName().getValue()); })
             .Case<mlir_ts::AnyType>([&](auto anyType) { setI8PtrAsCatchType(); })

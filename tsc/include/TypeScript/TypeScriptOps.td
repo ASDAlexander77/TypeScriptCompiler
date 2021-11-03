@@ -454,7 +454,7 @@ def TypeScript_ParseFloatOp : TypeScript_Op<"parseFloat"> {
   }];
 
   let arguments = (ins AnyType:$arg);
-  let results = (outs F32:$res);
+  let results = (outs TypeScript_Number:$res);
 }
 
 def TypeScript_TypeOfOp : TypeScript_Op<"TypeOf"> {

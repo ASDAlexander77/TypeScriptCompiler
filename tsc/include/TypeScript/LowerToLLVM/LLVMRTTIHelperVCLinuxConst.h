@@ -8,6 +8,11 @@ namespace F32Type
 constexpr const auto *typeName = "_ZTId";
 } // namespace F32Type
 
+namespace F64Type
+{
+constexpr const auto *typeName = "_ZTId";
+} // namespace F64Type
+
 namespace I32Type
 {
 constexpr const auto *typeName = "_ZTIi";

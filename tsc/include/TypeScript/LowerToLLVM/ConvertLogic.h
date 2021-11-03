@@ -125,7 +125,11 @@ class ConvertLogic
 
     mlir::Value sprintfOfF32orF64(mlir::Value value)
     {
+#ifdef NUMBER_F64
+        auto doubleValue = value;
+#else
         auto doubleValue = rewriter.create<LLVM::FPExtOp>(loc, rewriter.getF64Type(), value);
+#endif
         return sprintf(50, "%g", doubleValue);
     }
 

@@ -305,9 +305,12 @@ class ParseFloatOpLowering : public TsLlvmPattern<mlir_ts::ParseFloatOp>
         auto i8PtrTy = th.getI8PtrType();
         auto parseFloatFuncOp = ch.getOrInsertFunction("atof", th.getFunctionType(rewriter.getF64Type(), {i8PtrTy}));
 
+#ifdef NUMBER_F64
+        auto funcCall = rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, parseFloatFuncOp, operands);
+#else
         auto funcCall = rewriter.create<LLVM::CallOp>(loc, parseFloatFuncOp, operands);
-
         rewriter.replaceOpWithNewOp<LLVM::FPTruncOp>(op, rewriter.getF32Type(), funcCall.getResult(0));
+#endif
 
         return success();
     }
@@ -3260,7 +3263,13 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
     converter.addConversion(
         [&](mlir_ts::ByteType type) { return IntegerType::get(m.getContext(), 8 /*, mlir::IntegerType::SignednessSemantics::Unsigned*/); });
 
-    converter.addConversion([&](mlir_ts::NumberType type) { return Float32Type::get(m.getContext()); });
+    converter.addConversion([&](mlir_ts::NumberType type) {
+#ifdef NUMBER_F64
+        return Float64Type::get(m.getContext());
+#else
+        return Float32Type::get(m.getContext());
+#endif
+    });
 
     converter.addConversion([&](mlir_ts::BigIntType type) {
         return IntegerType::get(m.getContext(), 64 /*, mlir::IntegerType::SignednessSemantics::Signed*/);
