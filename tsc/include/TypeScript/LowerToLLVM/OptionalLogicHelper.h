@@ -158,17 +158,29 @@ class OptionalLogicHelper
                 return undefFlagCmpResult;
             };
 
+            auto processUndefVale = [&](OpBuilder &builder, Location loc, mlir::Type t1, mlir::Value val1, mlir::Type t2,
+                                        mlir::Value val2) {
+                if (t2.isa<mlir_ts::InterfaceType>() || t2.isa<mlir_ts::ClassType>())
+                {
+                    auto casted = rewriter.create<mlir_ts::CastOp>(loc, t2, val1);
+                    return LogicOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, opCmpCode, val2, casted, rewriter, typeConverter);
+                }
+                else
+                {
+                    // result is false already
+                    return whenOneValueIsUndef(rewriter, loc);
+                }
+            };
+
             // when 1 of them is optional
             if (leftOptType && leftOptType.getElementType().isa<mlir_ts::UndefPlaceHolderType>())
             {
-                // result is false already
-                return whenOneValueIsUndef(rewriter, loc);
+                return processUndefVale(rewriter, loc, leftType, left, rightType, right);
             }
 
             if (rightOptType && rightOptType.getElementType().isa<mlir_ts::UndefPlaceHolderType>())
             {
-                // result is false already
-                return whenOneValueIsUndef(rewriter, loc);
+                return processUndefVale(rewriter, loc, rightType, right, leftType, left);
             }
 
             if (leftOptType)

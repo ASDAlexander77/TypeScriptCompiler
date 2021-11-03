@@ -27,11 +27,29 @@ function f(s?: string) {
     );
 }
 
+interface IFace {
+}
+
+class C1 {
+}
+
+function class_iface() {
+    const i: IFace = undefined;
+    assert(i === undefined);
+    assert(!(i !== undefined));
+
+    const c: C1 = undefined;
+    assert(c === undefined);
+    assert(!(c !== undefined));
+}
+
 function main() {
     f();
     t_undef();
     f("asd");
     t_val("asd");
+
+    class_iface();
 
     print("done.");
 }
