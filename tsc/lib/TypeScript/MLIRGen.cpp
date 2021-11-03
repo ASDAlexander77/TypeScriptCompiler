@@ -6302,7 +6302,14 @@ class MLIRGenImpl
         auto isConstructor = classMember == SyntaxKind::Constructor;
         if (isConstructor)
         {
-            newClassPtr->hasConstructor = true;
+            if (isStatic)
+            {
+                newClassPtr->hasStaticConstructor = true;
+            }
+            else
+            {
+                newClassPtr->hasConstructor = true;
+            }
         }
 
         auto isAbstract = hasModifier(classMember, SyntaxKind::AbstractKeyword);
