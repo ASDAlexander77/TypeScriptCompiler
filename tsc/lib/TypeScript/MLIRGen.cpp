@@ -4815,7 +4815,8 @@ class MLIRGenImpl
             }
             else
             {
-                theModule.emitWarning("class does not have virtual table: ") << thisValue.getType();
+                // TODO: check if you are not creating usless code when VTABLE is not in static class
+                // theModule.emitWarning("class does not have virtual table: ") << thisValue.getType();
             }
         }
 
