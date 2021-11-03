@@ -21,7 +21,18 @@ class Color2 {
     }
 }
 
+class Color3 {
+    constructor(public r: number,
+        public g: number,
+        public b: number) {
+    }
+
+    static white = 1 + 1;
+}
+
+
 function main() {
     assert(glb1 == 2);
+    assert(Color3.white == 2);
     print("done.");
 }

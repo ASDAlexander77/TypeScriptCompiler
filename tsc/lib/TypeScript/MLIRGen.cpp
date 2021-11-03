@@ -4813,10 +4813,10 @@ class MLIRGenImpl
 
                 mlirGen(setPropValue, genContext);
             }
-            else
+            else if (classInfo->hasConstructor)
             {
                 // TODO: check if you are not creating usless code when VTABLE is not in static class
-                // theModule.emitWarning("class does not have virtual table: ") << thisValue.getType();
+                theModule.emitWarning("class does not have virtual table but has constructor. Class: ") << classInfo->fullName;
             }
         }
 
@@ -6074,6 +6074,7 @@ class MLIRGenImpl
         }
 
         mlirGenClassDefaultConstructor(classDeclarationAST, newClassPtr, genContext);
+        mlirGenClassDefaultStaticConstructor(classDeclarationAST, newClassPtr, genContext);
 
 #ifdef ENABLE_RTTI
         mlirGenClassInstanceOfMethod(classDeclarationAST, newClassPtr, genContext);
@@ -6379,6 +6380,8 @@ class MLIRGenImpl
                             return getTypeAndInit(propertyDeclaration, genContext);
                         }
 
+                        newClassPtr->hasStaticInitializers = true;
+
                         return getTypeOnly(propertyDeclaration, typeInit, genContext);
                     },
                     genContext);
@@ -6452,6 +6455,29 @@ class MLIRGenImpl
 
             auto body = nf.createBlock(statements, /*multiLine*/ false);
             auto generatedConstructor = nf.createConstructorDeclaration(undefined, undefined, undefined, body);
+            classDeclarationAST->members.push_back(generatedConstructor);
+        }
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult mlirGenClassDefaultStaticConstructor(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr,
+                                                             const GenContext &genContext)
+    {
+        // if we do not have constructor but have initializers we need to create empty dummy constructor
+        if (newClassPtr->hasStaticInitializers && !newClassPtr->hasStaticConstructor)
+        {
+            // create constructor
+            newClassPtr->hasStaticConstructor = true;
+
+            NodeFactory nf(NodeFactoryFlags::None);
+
+            NodeArray<Statement> statements;
+
+            auto body = nf.createBlock(statements, /*multiLine*/ false);
+            ModifiersArray modifiers;
+            modifiers.push_back(nf.createToken(SyntaxKind::StaticKeyword));
+            auto generatedConstructor = nf.createConstructorDeclaration(undefined, modifiers, undefined, body);
             classDeclarationAST->members.push_back(generatedConstructor);
         }
 

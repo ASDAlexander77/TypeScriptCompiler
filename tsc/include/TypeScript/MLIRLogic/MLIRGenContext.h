@@ -292,11 +292,15 @@ struct ClassInfo
 
     bool hasConstructor;
     bool hasInitializers;
+    bool hasStaticConstructor;
+    bool hasStaticInitializers;
     bool hasVirtualTable;
     bool isAbstract;
     bool hasRTTI;
 
-    ClassInfo() : hasConstructor(false), hasInitializers(false), hasVirtualTable(false), isAbstract(false), hasRTTI(false)
+    ClassInfo()
+        : hasConstructor(false), hasInitializers(false), hasStaticConstructor(false), hasStaticInitializers(false), hasVirtualTable(false),
+          isAbstract(false), hasRTTI(false)
     {
     }
 
