@@ -111,7 +111,7 @@ class LLVMRTTIHelperVCLinux
                 {
                     setF32AsCatchType();
                 }
-                elseif(width == 64)
+                else if (width == 64)
                 {
                     setF64AsCatchType();
                 }

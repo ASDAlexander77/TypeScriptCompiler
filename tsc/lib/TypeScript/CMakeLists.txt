@@ -18,7 +18,7 @@ add_mlir_dialect_library(MLIRTypeScript
     MLIRGen.cpp
     LowerToAffineLoops.cpp   
     LowerToLLVM.cpp
-    RelocateConstantPass.cpp
+    RelocateConstantAndAllocsPass.cpp
     GCPass.cpp
     
     ADDITIONAL_HEADER_DIRS
