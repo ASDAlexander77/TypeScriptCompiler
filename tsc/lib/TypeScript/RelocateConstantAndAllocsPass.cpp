@@ -25,6 +25,7 @@ class RelocateConstantAndAllocsPass : public mlir::PassWrapper<RelocateConstantA
   public:
     void runOnFunction() override
     {
+        // TODO: get rid of using it
         auto f = getFunction();
 
         SmallPtrSet<Operation *, 16> workSetConst;
