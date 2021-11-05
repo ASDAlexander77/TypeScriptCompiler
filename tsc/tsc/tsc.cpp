@@ -216,7 +216,7 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module
         // Partially lower the TypeScript dialect with a few cleanups afterwards.
         optPM.addPass(mlir::typescript::createLowerToAffinePass());
         optPM.addPass(mlir::createCanonicalizerPass());
-        optPM.addPass(mlir::typescript::createRelocateConstantAndAllocsPass());
+        optPM.addPass(mlir::typescript::createRelocateConstantPass());
         // TODO: why do I need this pass?
 #ifdef ENABLE_OPT_PASSES
         if (enableOpt)

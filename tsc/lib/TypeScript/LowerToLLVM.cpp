@@ -968,8 +968,21 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! variable allocation: " << storageType << " is captured: " << isCaptured << "\n";);
 
-        auto allocated = isCaptured ? ch.MemoryAllocBitcast(llvmReferenceType, storageType)
-                                    : rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, clh.createI32ConstantOf(1));
+        mlir::Value allocated;
+        if (!isCaptured)
+        {
+            // put all allocs at 'func' top
+            auto parentFuncOp = varOp->getParentOfType<LLVM::LLVMFuncOp>();
+            assert(parentFuncOp);
+            mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
+            rewriter.setInsertionPoint(&parentFuncOp.getBody().front().front());
+            allocated = rewriter.create<LLVM::AllocaOp>(location, llvmReferenceType, clh.createI32ConstantOf(1));
+        }
+        else
+        {
+
+            allocated = ch.MemoryAllocBitcast(llvmReferenceType, storageType);
+        }
 
 #ifdef GC_ENABLE
         // register root which is in stack, if you call Malloc - it is not in stack anymore

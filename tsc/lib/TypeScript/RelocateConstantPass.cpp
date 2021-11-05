@@ -20,7 +20,7 @@ namespace mlir_ts = mlir::typescript;
 namespace
 {
 
-class RelocateConstantAndAllocsPass : public mlir::PassWrapper<RelocateConstantAndAllocsPass, TypeScriptFunctionPass>
+class RelocateConstantPass : public mlir::PassWrapper<RelocateConstantPass, TypeScriptFunctionPass>
 {
   public:
     void runOnFunction() override
@@ -30,17 +30,9 @@ class RelocateConstantAndAllocsPass : public mlir::PassWrapper<RelocateConstantA
 
         SmallPtrSet<Operation *, 16> workSetConst;
         getOps<mlir_ts::ConstantOp>(f, workSetConst);
-        auto lastConstOp = relocateConst(f, workSetConst);
+        /*auto lastConstOp =*/relocateConst(f, workSetConst);
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER CONST RELOC FUNC DUMP: \n" << *getFunction() << "\n";);
-
-#ifndef ALLOC_AT_TOP
-        SmallPtrSet<Operation *, 16> workSetVars;
-        getOps<mlir_ts::VariableOp>(f, workSetVars, lastConstOp);
-        relocateAllocs(f, workSetVars);
-
-        LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER VARS RELOC FUNC DUMP: \n" << *getFunction() << "\n";);
-#endif
     }
 
     Operation *seekFirstNonConstOp(mlir_ts::FuncOp &f)
@@ -82,66 +74,6 @@ class RelocateConstantAndAllocsPass : public mlir::PassWrapper<RelocateConstantA
         }
 
         return firstNonConstOp;
-    }
-
-    Operation *seekFirstNonConstAndNonAllocOp(mlir_ts::FuncOp &f)
-    {
-        // find fist non-constant op
-        return seekFirstNonOp(f, [](Operation *op) {
-            if (auto constantOp = dyn_cast_or_null<mlir_ts::ConstantOp>(op))
-                return true;
-            if (auto constOp = dyn_cast_or_null<mlir::ConstantOp>(op))
-                return true;
-            if (auto vartOp = dyn_cast_or_null<mlir_ts::VariableOp>(op))
-                return true;
-            return false;
-        });
-    }
-
-    void relocateAllocs(mlir_ts::FuncOp &f, SmallPtrSet<Operation *, 16> &workSet)
-    {
-        // find fist non-constant op
-        auto firstNonConstAndNonAllocOp = seekFirstNonConstAndNonAllocOp(f);
-        if (firstNonConstAndNonAllocOp)
-        {
-            ConversionPatternRewriter rewriter(f.getContext());
-            rewriter.setInsertionPoint(firstNonConstAndNonAllocOp);
-
-            LLVM_DEBUG(llvm::dbgs() << "\nInsert variable at: \n" << *firstNonConstAndNonAllocOp << "\n";);
-
-            for (auto op : workSet)
-            {
-                auto varOp = cast<mlir_ts::VariableOp>(op);
-
-                LLVM_DEBUG(llvm::dbgs() << "\nvariable to insert: \n" << varOp << "\n";);
-
-                if (varOp.initializer())
-                {
-                    // split save and alloc
-                    auto newVar =
-                        rewriter.create<mlir_ts::VariableOp>(varOp->getLoc(), varOp.getType(), mlir::Value(), varOp.capturedAttr());
-                    varOp->replaceAllUsesWith(newVar);
-
-                    {
-                        OpBuilder::InsertionGuard guard(rewriter);
-                        rewriter.setInsertionPoint(op);
-                        // varOp.initializer()
-                        rewriter.create<mlir_ts::StoreOp>(varOp->getLoc(), varOp.initializer(), newVar);
-                    }
-
-                    varOp->erase();
-                }
-                else
-                {
-                    // just relocate
-                    auto newVar =
-                        rewriter.create<mlir_ts::VariableOp>(varOp->getLoc(), varOp.getType(), varOp.initializer(), varOp.capturedAttr());
-                    varOp->replaceAllUsesWith(newVar);
-
-                    varOp->erase();
-                }
-            }
-        }
     }
 
     template <typename T> void getOps(mlir_ts::FuncOp &f, SmallPtrSet<Operation *, 16> &workSet, Operation *startFrom = nullptr)
@@ -226,7 +158,7 @@ class RelocateConstantAndAllocsPass : public mlir::PassWrapper<RelocateConstantA
 } // end anonymous namespace
 
 /// Create pass.
-std::unique_ptr<mlir::Pass> mlir_ts::createRelocateConstantAndAllocsPass()
+std::unique_ptr<mlir::Pass> mlir_ts::createRelocateConstantPass()
 {
-    return std::make_unique<RelocateConstantAndAllocsPass>();
+    return std::make_unique<RelocateConstantPass>();
 }
