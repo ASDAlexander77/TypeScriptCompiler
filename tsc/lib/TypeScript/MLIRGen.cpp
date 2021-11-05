@@ -272,17 +272,6 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-        // relocate ConstantOps, VariableOps
-
-        for (auto &op : theModule)
-        {
-            if (auto funcOp = dyn_cast_or_null<mlir_ts::FuncOp>(&op))
-            {
-                // relocate
-                relocateConsts(funcOp);
-            }
-        }
-
         return mlir::success();
     }
 
