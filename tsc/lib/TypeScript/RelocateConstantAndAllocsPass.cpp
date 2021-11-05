@@ -25,37 +25,35 @@ class RelocateConstantAndAllocsPass : public mlir::PassWrapper<RelocateConstantA
   public:
     void runOnFunction() override
     {
-        relocateConst();
-    }
-
-    void relocateConst()
-    {
         auto f = getFunction();
 
-        SmallPtrSet<Operation *, 16> workSet;
+        SmallPtrSet<Operation *, 16> workSetConst;
+        // SmallPtrSet<Operation *, 16> workSetVars;
 
-        auto skipFirstConsts = true;
-        f.walk([&](mlir::Operation *op) {
+        getOps<mlir_ts::ConstantOp>(f, workSetConst);
+        // getOps<mlir_ts::VariableOp>(f, workSetVars);
+
+        relocateConst(f, workSetConst);
+        // relocateAllocs(f, workSetVars);
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER FUNC DUMP: \n" << *getFunction() << "\n";);
+    }
+
+    Operation *seekFirstNonConstOp(mlir_ts::FuncOp &f)
+    {
+        return seekFirstNonOp(f, [](Operation *op) {
             if (auto constantOp = dyn_cast_or_null<mlir_ts::ConstantOp>(op))
-            {
-                if (!skipFirstConsts)
-                {
-                    // if const is not child of function but nested block - ignore it
-                    if (constantOp->getParentOp() == f)
-                    {
-                        // select only those consts which are not at the beginning
-                        workSet.insert(constantOp);
-                    }
-                }
-            }
-            else
-            {
-                skipFirstConsts = false;
-            }
+                return true;
+            if (auto constOp = dyn_cast_or_null<mlir::ConstantOp>(op))
+                return true;
+            return false;
         });
+    }
 
+    void relocateConst(mlir_ts::FuncOp &f, SmallPtrSet<Operation *, 16> &workSet)
+    {
         // find fist non-constant op
-        auto firstNonConstOp = seekFirstNonConstantOp(f);
+        auto firstNonConstOp = seekFirstNonConstOp(f);
         if (firstNonConstOp)
         {
             ConversionPatternRewriter rewriter(f.getContext());
@@ -77,34 +75,24 @@ class RelocateConstantAndAllocsPass : public mlir::PassWrapper<RelocateConstantA
         }
     }
 
-    void relocateAllocs()
+    Operation *seekFirstNonConstAndNonAllocOp(mlir_ts::FuncOp &f)
     {
-        auto f = getFunction();
-
-        SmallPtrSet<Operation *, 16> workSet;
-
-        auto skipFirstConstsOrVariables = true;
-        f.walk([&](mlir::Operation *op) {
-            if (auto variableOp = dyn_cast_or_null<mlir_ts::VariableOp>(op))
-            {
-                if (!skipFirstConstsOrVariables)
-                {
-                    // if const is not child of function but nested block - ignore it
-                    if (variableOp->getParentOp() == f)
-                    {
-                        // select only those consts which are not at the beginning
-                        workSet.insert(variableOp);
-                    }
-                }
-            }
-            else
-            {
-                skipFirstConstsOrVariables = false;
-            }
-        });
-
         // find fist non-constant op
-        auto firstNonConstAndNonAllocOp = seekFirstNonConstantAndNonAllocOp(f);
+        return seekFirstNonOp(f, [](Operation *op) {
+            if (auto constantOp = dyn_cast_or_null<mlir_ts::ConstantOp>(op))
+                return true;
+            if (auto constOp = dyn_cast_or_null<mlir::ConstantOp>(op))
+                return true;
+            if (auto vartOp = dyn_cast_or_null<mlir_ts::VariableOp>(op))
+                return true;
+            return false;
+        });
+    }
+
+    void relocateAllocs(mlir_ts::FuncOp &f, SmallPtrSet<Operation *, 16> &workSet)
+    {
+        // find fist non-constant op
+        auto firstNonConstAndNonAllocOp = seekFirstNonConstAndNonAllocOp(f);
         if (firstNonConstAndNonAllocOp)
         {
             ConversionPatternRewriter rewriter(f.getContext());
@@ -118,16 +106,56 @@ class RelocateConstantAndAllocsPass : public mlir::PassWrapper<RelocateConstantA
 
                 LLVM_DEBUG(llvm::dbgs() << "\nvariable to insert: \n" << varOp << "\n";);
 
-                auto newVar =
-                    rewriter.create<mlir_ts::VariableOp>(varOp->getLoc(), varOp.getType(), varOp.initializer(), varOp.capturedAttr());
-                varOp->replaceAllUsesWith(newVar);
+                if (varOp.initializer())
+                {
+                    // split save and alloc
+                    auto newVar =
+                        rewriter.create<mlir_ts::VariableOp>(varOp->getLoc(), varOp.getType(), mlir::Value(), varOp.capturedAttr());
+                    varOp->replaceAllUsesWith(newVar);
 
-                rewriter.eraseOp(varOp);
+                    OpBuilder::InsertionGuard guard(rewriter);
+                    rewriter.setInsertionPoint(op);
+                    // varOp.initializer()
+                    rewriter.create<mlir_ts::StoreOp>(varOp->getLoc(), varOp.initializer(), newVar);
+                    rewriter.eraseOp(varOp);
+                }
+                else
+                {
+                    // just relocate
+                    auto newVar =
+                        rewriter.create<mlir_ts::VariableOp>(varOp->getLoc(), varOp.getType(), varOp.initializer(), varOp.capturedAttr());
+                    varOp->replaceAllUsesWith(newVar);
+
+                    rewriter.eraseOp(varOp);
+                }
             }
         }
     }
 
-    Operation *seekFirstNonConstantOp(mlir_ts::FuncOp funcOp)
+    template <typename T> void getOps(mlir_ts::FuncOp &f, SmallPtrSet<Operation *, 16> &workSet)
+    {
+        auto skipFirstConsts = true;
+        f.walk([&](mlir::Operation *op) {
+            if (auto constantOp = dyn_cast_or_null<T>(op))
+            {
+                if (!skipFirstConsts)
+                {
+                    // if const is not child of function but nested block - ignore it
+                    if (constantOp->getParentOp() == f)
+                    {
+                        // select only those consts which are not at the beginning
+                        workSet.insert(constantOp);
+                    }
+                }
+            }
+            else
+            {
+                skipFirstConsts = false;
+            }
+        });
+    }
+
+    Operation *seekFirstNonOp(mlir_ts::FuncOp funcOp, std::function<bool(Operation *)> filter)
     {
         auto allowSkipConsts = true;
         auto found = false;
@@ -147,8 +175,7 @@ class RelocateConstantAndAllocsPass : public mlir::PassWrapper<RelocateConstantA
                 return;
             }
 
-            auto constantOp = dyn_cast_or_null<mlir_ts::ConstantOp>(op);
-            if (constantOp)
+            if (filter(op))
             {
                 if (allowSkipConsts)
                 {
@@ -159,56 +186,6 @@ class RelocateConstantAndAllocsPass : public mlir::PassWrapper<RelocateConstantA
             if (allowSkipConsts)
             {
                 allowSkipConsts = false;
-                found = true;
-                foundOp = op;
-                return;
-            }
-        };
-
-        funcOp.walk(lastUse);
-
-        return foundOp;
-    }
-
-    Operation *seekFirstNonConstantAndNonAllocOp(mlir_ts::FuncOp funcOp)
-    {
-        auto allowSkipConstsAndAllocs = true;
-        auto found = false;
-        Operation *foundOp = nullptr;
-        // find last string
-        auto lastUse = [&](Operation *op) {
-            if (found)
-            {
-                return;
-            }
-
-            // we need only first level
-            if (op->getParentOp() != funcOp)
-            {
-                // it is not top anymore
-                found = true;
-                return;
-            }
-
-            auto constantOp = dyn_cast_or_null<mlir_ts::ConstantOp>(op);
-            if (constantOp)
-            {
-                if (allowSkipConstsAndAllocs)
-                {
-                    return;
-                }
-            }
-            else if (auto varOp = dyn_cast_or_null<mlir_ts::VariableOp>(op))
-            {
-                if (allowSkipConstsAndAllocs)
-                {
-                    return;
-                }
-            }
-
-            if (allowSkipConstsAndAllocs)
-            {
-                allowSkipConstsAndAllocs = false;
                 found = true;
                 foundOp = op;
                 return;
