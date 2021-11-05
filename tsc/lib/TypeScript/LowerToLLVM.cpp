@@ -252,9 +252,13 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
 
         if (values.size() > 1)
         {
+            auto stack = rewriter.create<LLVM::StackSaveOp>(loc, th.getI8PtrType());
+
             mlir::Value result = rewriter.create<mlir_ts::StringConcatOp>(loc, strType, values, rewriter.getBoolAttr(true));
 
             rewriter.create<LLVM::CallOp>(loc, putsFuncOp, result);
+
+            rewriter.create<LLVM::StackRestoreOp>(loc, stack);
         }
         else
         {
