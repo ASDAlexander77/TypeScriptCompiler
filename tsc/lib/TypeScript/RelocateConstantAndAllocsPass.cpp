@@ -28,15 +28,16 @@ class RelocateConstantAndAllocsPass : public mlir::PassWrapper<RelocateConstantA
         auto f = getFunction();
 
         SmallPtrSet<Operation *, 16> workSetConst;
-        // SmallPtrSet<Operation *, 16> workSetVars;
-
         getOps<mlir_ts::ConstantOp>(f, workSetConst);
-        // getOps<mlir_ts::VariableOp>(f, workSetVars);
+        auto lastConstOp = relocateConst(f, workSetConst);
 
-        relocateConst(f, workSetConst);
-        // relocateAllocs(f, workSetVars);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER CONST RELOC FUNC DUMP: \n" << *getFunction() << "\n";);
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER FUNC DUMP: \n" << *getFunction() << "\n";);
+        SmallPtrSet<Operation *, 16> workSetVars;
+        getOps<mlir_ts::VariableOp>(f, workSetVars, lastConstOp);
+        relocateAllocs(f, workSetVars);
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER VARS RELOC FUNC DUMP: \n" << *getFunction() << "\n";);
     }
 
     Operation *seekFirstNonConstOp(mlir_ts::FuncOp &f)
@@ -50,8 +51,9 @@ class RelocateConstantAndAllocsPass : public mlir::PassWrapper<RelocateConstantA
         });
     }
 
-    void relocateConst(mlir_ts::FuncOp &f, SmallPtrSet<Operation *, 16> &workSet)
+    Operation *relocateConst(mlir_ts::FuncOp &f, SmallPtrSet<Operation *, 16> &workSet)
     {
+        Operation *lastOp = nullptr;
         // find fist non-constant op
         auto firstNonConstOp = seekFirstNonConstOp(f);
         if (firstNonConstOp)
@@ -70,9 +72,13 @@ class RelocateConstantAndAllocsPass : public mlir::PassWrapper<RelocateConstantA
                 auto newOp = rewriter.create<mlir_ts::ConstantOp>(constantOp->getLoc(), constantOp.getType(), constantOp.value());
                 constantOp->replaceAllUsesWith(newOp);
 
-                rewriter.eraseOp(constantOp);
+                constantOp->erase();
+
+                lastOp = newOp;
             }
         }
+
+        return firstNonConstOp;
     }
 
     Operation *seekFirstNonConstAndNonAllocOp(mlir_ts::FuncOp &f)
@@ -113,11 +119,14 @@ class RelocateConstantAndAllocsPass : public mlir::PassWrapper<RelocateConstantA
                         rewriter.create<mlir_ts::VariableOp>(varOp->getLoc(), varOp.getType(), mlir::Value(), varOp.capturedAttr());
                     varOp->replaceAllUsesWith(newVar);
 
-                    OpBuilder::InsertionGuard guard(rewriter);
-                    rewriter.setInsertionPoint(op);
-                    // varOp.initializer()
-                    rewriter.create<mlir_ts::StoreOp>(varOp->getLoc(), varOp.initializer(), newVar);
-                    rewriter.eraseOp(varOp);
+                    {
+                        OpBuilder::InsertionGuard guard(rewriter);
+                        rewriter.setInsertionPoint(op);
+                        // varOp.initializer()
+                        rewriter.create<mlir_ts::StoreOp>(varOp->getLoc(), varOp.initializer(), newVar);
+                    }
+
+                    varOp->erase();
                 }
                 else
                 {
@@ -126,31 +135,45 @@ class RelocateConstantAndAllocsPass : public mlir::PassWrapper<RelocateConstantA
                         rewriter.create<mlir_ts::VariableOp>(varOp->getLoc(), varOp.getType(), varOp.initializer(), varOp.capturedAttr());
                     varOp->replaceAllUsesWith(newVar);
 
-                    rewriter.eraseOp(varOp);
+                    varOp->erase();
                 }
             }
         }
     }
 
-    template <typename T> void getOps(mlir_ts::FuncOp &f, SmallPtrSet<Operation *, 16> &workSet)
+    template <typename T> void getOps(mlir_ts::FuncOp &f, SmallPtrSet<Operation *, 16> &workSet, Operation *startFrom = nullptr)
     {
-        auto skipFirstConsts = true;
+        auto startFromStage = startFrom != nullptr;
+        auto skipFirstOps = true;
         f.walk([&](mlir::Operation *op) {
-            if (auto constantOp = dyn_cast_or_null<T>(op))
+            if (startFrom != nullptr)
             {
-                if (!skipFirstConsts)
+                if (startFromStage)
                 {
-                    // if const is not child of function but nested block - ignore it
-                    if (constantOp->getParentOp() == f)
+                    if (op != startFrom)
+                    {
+                        return;
+                    }
+
+                    startFromStage = false;
+                }
+            }
+
+            if (auto typedOp = dyn_cast_or_null<T>(op))
+            {
+                if (!skipFirstOps)
+                {
+                    // if op is not child of function but nested block - ignore it
+                    if (typedOp->getParentOp() == f)
                     {
                         // select only those consts which are not at the beginning
-                        workSet.insert(constantOp);
+                        workSet.insert(typedOp);
                     }
                 }
             }
             else
             {
-                skipFirstConsts = false;
+                skipFirstOps = false;
             }
         });
     }
