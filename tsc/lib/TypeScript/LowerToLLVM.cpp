@@ -1,6 +1,6 @@
 //#define ALLOC_ALL_VARS_IN_HEAP 1
-//#define ALLOC_CAPTURED_VARS_IN_HEAP 1
-//#define ALLOC_CAPTURE_IN_HEAP 1
+#define ALLOC_CAPTURED_VARS_IN_HEAP 1
+#define ALLOC_CAPTURE_IN_HEAP 1
 // TODO: if I uncomment it, it will create errors in capture vars. calls. find out why? (wrong size of buffers?)
 //#define ALLOC_TRAMPOLINE_IN_HEAP 1
 #define DEBUG_TYPE "llvm"
