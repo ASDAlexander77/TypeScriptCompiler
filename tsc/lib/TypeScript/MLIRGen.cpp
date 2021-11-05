@@ -266,6 +266,8 @@ class MLIRGenImpl
         // have on the TypeScript operations.
         if (failed(mlir::verify(theModule)))
         {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! broken module: \n" << theModule << "\n";);
+
             theModule.emitError("module verification error");
             return mlir::failure();
         }
@@ -886,10 +888,21 @@ class MLIRGenImpl
                 // scope to restore inserting point
                 {
                     mlir::OpBuilder::InsertionGuard insertGuard(builder);
+#ifdef ALLOC_AT_TOP
+                    if (!genContext.allocateVarsInContextThis)
+                    {
+                        builder.setInsertionPoint(&const_cast<GenContext &>(genContext).funcOp.getBody().front().front());
+                    }
+                    else if (genContext.allocateVarsOutsideOfOperation)
+                    {
+                        builder.setInsertionPoint(genContext.currentOperation);
+                    }
+#else
                     if (genContext.allocateVarsOutsideOfOperation)
                     {
                         builder.setInsertionPoint(genContext.currentOperation);
                     }
+#endif
 
                     if (genContext.allocateVarsInContextThis)
                     {
@@ -899,18 +912,31 @@ class MLIRGenImpl
                     if (!variableOp)
                     {
                         // default case
+#ifdef ALLOC_AT_TOP
+                        variableOp = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(actualType), mlir::Value(),
+                                                                         builder.getBoolAttr(false));
+#else
                         variableOp = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(actualType),
                                                                          genContext.allocateVarsOutsideOfOperation ? mlir::Value() : init,
                                                                          builder.getBoolAttr(false));
+#endif
                     }
                 }
             }
 
+#ifdef ALLOC_AT_TOP
             // init must be in its normal place
-            if ((genContext.allocateVarsInContextThis || genContext.allocateVarsOutsideOfOperation) && variableOp && init)
+            if (variableOp && init && !isConst)
             {
                 builder.create<mlir_ts::StoreOp>(location, init, variableOp);
             }
+#else
+            // init must be in its normal place
+            if ((genContext.allocateVarsInContextThis || genContext.allocateVarsOutsideOfOperation) && variableOp && init && !isConst)
+            {
+                builder.create<mlir_ts::StoreOp>(location, init, variableOp);
+            }
+#endif
         }
         else
         {
@@ -5072,7 +5098,7 @@ class MLIRGenImpl
 #else
         return builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), getNumberType(),
                                                    builder.getF32FloatAttr(to_float(numericLiteral->text)));
-#endif                                                   
+#endif
     }
 
     mlir::Value mlirGen(BigIntLiteral bigIntLiteral, const GenContext &genContext)

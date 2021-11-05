@@ -28,4 +28,6 @@
 #define LINUX_EXCEPTION 1
 #endif
 
+#define ALLOC_AT_TOP 1
+
 #endif // CONFIG_H_

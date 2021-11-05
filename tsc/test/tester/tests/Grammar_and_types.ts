@@ -1,5 +1,4 @@
-function main()
-{
+function main() {
     print("Basics");
 
     // Basics
@@ -27,16 +26,16 @@ function main()
 
     let myArray = [1];
     if (!myArray[0]) myFunction();
-    
+
     let a = 0;
     a + 2;  // Evaluates to NaN
 
     print("n * 32");
-   
+
     // TODO: null access
     //let n : string = null;
     //print(n * 32); // Will log 0 to the console
-    
+
     // Variable scope
     print("Variable scope");
     let x = 0;
@@ -53,30 +52,30 @@ function main()
      */
     print(x === undefined); // false
     x = 3;
-    
+
     /**
      * Example 2
      */
     // will return a value of undefined
     let mylet = 'my value';
-    
-    (function() {
+
+    (function () {
         let mylet = 'local value';
         print(mylet);
-    })();    
+    })();
 
     // Function hoisting
     print("Function hoisting");
     foo(); // "bar"
 
     function foo() {
-      print('bar');
+        print('bar');
     }
-    
-    /* Function expression */   
-    let baz = function() {
-      print('bar2');
-    };    
+
+    /* Function expression */
+    let baz = function () {
+        print('bar2');
+    };
 
     baz();
 
@@ -85,12 +84,12 @@ function main()
 
     const PI = 3.14;
 
-    let MY_OBJECT = {'key': 'value'};
+    let MY_OBJECT = { 'key': 'value' };
     MY_OBJECT.key = 'otherValue';
-    
-    const MY_ARRAY = ['HTML','CSS'];
+
+    const MY_ARRAY = ['HTML', 'CSS'];
     // TODO: //MY_ARRAY.push('JAVASCRIPT');
-    print(MY_ARRAY); //logs ['HTML','CSS','JAVASCRIPT'];    
+    print(MY_ARRAY[0], MY_ARRAY[1]); //logs ['HTML','CSS','JAVASCRIPT'];    
 
     // Data type conversion
     print("Data type conversion");
@@ -104,7 +103,7 @@ function main()
 
     const x_ = 'The answer is ' + 42 // "The answer is 42"
     const y_ = 42 + ' is the answer' // "42 is the answer"
-    
+
     '37' - 7 // 30
     '37' + 7 // "377"    
 
@@ -115,7 +114,7 @@ function main()
     parseInt('101')
 
     '1.1' + '1.1' // '1.11.1'
-    (+'1.1') + (+'1.1') // 2.2
+        (+'1.1') + (+'1.1') // 2.2
 
     // Literals
     print("Literals");
@@ -126,9 +125,9 @@ function main()
     let coffees = ['French Roast', 'Colombian', 'Kona'];
     let fish = ['Lion', , 'Angel'];
 
-    let myList1 = ['home', , 'school', ];
-    let myList2 = [ ,'home', , 'school'];
-    let myList3 = ['home', , 'school', , ];
+    let myList1 = ['home', , 'school',];
+    let myList2 = [, 'home', , 'school'];
+    let myList3 = ['home', , 'school', ,];
 
     // Boolean literals
     print("Boolean literals");
@@ -157,21 +156,21 @@ function main()
 
     const sales = 'Toyota';
 
-    function carTypes(name:string) {
-      if (name === 'Honda') {
-        return name;
-      } else {
-        return "Sorry, we don't sell " + name + ".";
-      }
+    function carTypes(name: string) {
+        if (name === 'Honda') {
+            return name;
+        } else {
+            return "Sorry, we don't sell " + name + ".";
+        }
     }
-    
+
     let car = { myCar: 'Saturn', getCar: /* TODO: // carTypes('Honda') */ 'Honda', special: sales };
-    
+
     print(car.myCar);   // Saturn
     print(car.getCar);  // Honda
     print(car.special); // Toyota    
 
-    let car2 = { manyCars: {a: 'Saab', b: 'Jeep'}, 7: 'Mazda' };
+    let car2 = { manyCars: { a: 'Saab', b: 'Jeep' }, 7: 'Mazda' };
 
     print(car2.manyCars.b); // Jeep
     print(car2[7]); // Mazda    
@@ -179,7 +178,7 @@ function main()
     let unusualPropertyNames = {
         '': 'An empty string',
         '!': 'Bang!'
-    }    
+    }
 
     print(unusualPropertyNames['']);  // An empty string
     print(unusualPropertyNames['!']); // Bang!    
@@ -214,9 +213,9 @@ function main()
     `Hello ${name}, how are you ${time}?`;
 
     print("String interpolation - tag");
-    let myTag = (str:string[], name:string, age:number) => `${str[0]}${name}${str[1]}${age}${str[2]}`;
+    let myTag = (str: string[], name: string, age: number) => `${str[0]}${name}${str[1]}${age}${str[2]}`;
     let [name, age] = ['Mika', 28];
-    myTag`Participant "${ name }" is ${ age } years old.`;
+    myTag`Participant "${name}" is ${age} years old.`;
     // Participant "Mika" is 28 years old.    
 
     print("Using special characters in strings");
@@ -229,7 +228,7 @@ function main()
 
     let quote = "He read \"The Cremation of Sam McGee\" by R.W. Service.";
     print(quote);
-    
+
     let home = 'c:\\temp';
 
     let str = 'this string \
@@ -239,20 +238,20 @@ function main()
     print(str);   // this string is broken across multiple lines.
 
     let poem =
-    'Roses are red,\n\
+        'Roses are red,\n\
     Violets are blue.\n\
     Sugar is sweet,\n\
-    and so is foo.'    
+    and so is foo.'
 
     let poem2015 =
-    `Roses are red,
+        `Roses are red,
     Violets are blue.
     Sugar is sweet,
-    and so is foo.`     
+    and so is foo.`
 
     print("done.");
 }
 
-function doThis() {}
-function doThat() {}
-function myFunction() {}
+function doThis() { }
+function doThat() { }
+function myFunction() { }

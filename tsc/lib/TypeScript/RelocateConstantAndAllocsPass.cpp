@@ -34,11 +34,13 @@ class RelocateConstantAndAllocsPass : public mlir::PassWrapper<RelocateConstantA
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER CONST RELOC FUNC DUMP: \n" << *getFunction() << "\n";);
 
+#ifndef ALLOC_AT_TOP
         SmallPtrSet<Operation *, 16> workSetVars;
         getOps<mlir_ts::VariableOp>(f, workSetVars, lastConstOp);
         relocateAllocs(f, workSetVars);
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! AFTER VARS RELOC FUNC DUMP: \n" << *getFunction() << "\n";);
+#endif
     }
 
     Operation *seekFirstNonConstOp(mlir_ts::FuncOp &f)
