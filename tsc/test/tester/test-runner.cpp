@@ -43,8 +43,9 @@ namespace fs = std::experimental::filesystem;
 
 //#define NEW_BAT 1
 
-#define GC_LIB "gcmt-lib"
-#define LIBS "-lpthread"
+#define GC_LIB "-lgcmt-lib"
+#define LIBS "-lm -frtti -fexceptions -lstdc++ -lpthread"
+#define RT_LIB "-lclang_rt.builtins-x86_64"
 
 //#define LINUX_ASYNC_ENABLED 1
 
@@ -438,7 +439,7 @@ void createCompileBatchFile()
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "$TSCEXEPATH/tsc --emit=llvm -nogc $2 2>$FILENAME.il" << std::endl;
     batFile << "/usr/bin/llc-12 -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
-    batFile << "gcc -o $FILENAME $FILENAME.o -frtti -fexceptions -lstdc++" << std::endl;
+    batFile << "gcc -o $FILENAME $FILENAME.o -lm -frtti -fexceptions -lstdc++" << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile << "rm $FILENAME.o" << std::endl;
     batFile << "rm $FILENAME" << std::endl;
@@ -460,7 +461,7 @@ void createCompileBatchFileWithRT()
     batFile << "GCLIBPATH=" << TEST_GCPATH << std::endl;
     batFile << "$TSCEXEPATH/tsc --emit=llvm -nogc $2 2>$FILENAME.il" << std::endl;
     batFile << "/usr/bin/llc-12 -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
-    batFile << "gcc -o $FILENAME $FILENAME.o" << std::endl;
+    batFile << "gcc -o $FILENAME $FILENAME.o -lm -frtti -fexceptions -lstdc++" << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile << "rm $FILENAME.o" << std::endl;
     batFile << "rm $FILENAME" << std::endl;
@@ -482,7 +483,7 @@ void createCompileBatchFileGC()
     batFile << "GCLIBPATH=" << TEST_GCPATH << std::endl;
     batFile << "$TSCEXEPATH/tsc --emit=llvm $2 2>$FILENAME.il" << std::endl;
     batFile << "/usr/bin/llc-12 -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
-    batFile << "gcc -o $FILENAME -L$GCLIBPATH $FILENAME.o -frtti -fexceptions -lstdc++ -l" << GC_LIB << " " << LIBS << std::endl;
+    batFile << "gcc -o $FILENAME -L$GCLIBPATH $FILENAME.o " << GC_LIB << " " << LIBS << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile << "rm $FILENAME.o" << std::endl;
     batFile << "rm $FILENAME" << std::endl;
@@ -505,8 +506,7 @@ void createCompileBatchFileGCWithRT()
     batFile << "CLANGLIBPATH=" << TEST_CLANGLIBPATH << std::endl;
     batFile << "$TSCEXEPATH/tsc --emit=llvm $2 2>$FILENAME.il" << std::endl;
     batFile << "/usr/bin/llc-12 -relocation-model=pic --filetype=obj -o=$FILENAME.o $FILENAME.il" << std::endl;
-    batFile << "gcc -o $FILENAME -L$GCLIBPATH -L$CLANGLIBPATH $FILENAME.o -l" << GC_LIB << " " << LIBS << " -lclang_rt.builtins-x86_64"
-            << std::endl;
+    batFile << "gcc -o $FILENAME -L$GCLIBPATH -L$CLANGLIBPATH $FILENAME.o " << GC_LIB << " " << LIBS << " " << RT_LIB << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile << "rm $FILENAME.o" << std::endl;
     batFile << "rm $FILENAME" << std::endl;
@@ -554,7 +554,7 @@ void createJitCompileBatchFileGC()
     batFile
         << "$TSCEXEPATH/tsc --emit=jit --shared-libs=../../lib/libTypeScriptRuntime.so -dump-object-file -object-filename=$FILENAME.o $2"
         << std::endl;
-    batFile << "gcc -o $FILENAME -L$GCLIBPATH $FILENAME.o -l" << GC_LIB << " " << LIBS << std::endl;
+    batFile << "gcc -o $FILENAME -L$GCLIBPATH $FILENAME.o " << GC_LIB << " " << LIBS << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile << "rm $FILENAME.o" << std::endl;
     batFile << "rm $FILENAME" << std::endl;
