@@ -5838,6 +5838,11 @@ class MLIRGenImpl
             return getUndefined(location);
         }
 
+        if (name == INFINITY_NAME)
+        {
+            return getInfinity(location);
+        }
+
         auto value = resolveIdentifierAsVariable(location, name, genContext);
         if (value)
         {
@@ -7871,6 +7876,19 @@ class MLIRGenImpl
     mlir::Value getUndefined(mlir::Location location)
     {
         return builder.create<mlir_ts::UndefOp>(location, getOptionalType(getUndefPlaceHolderType()));
+    }
+
+    mlir::Value getInfinity(mlir::Location location)
+    {
+#ifdef NUMBER_F64
+        double infVal;
+        *(int64_t *)&infVal = 0x7FF0000000000000;
+        return builder.create<mlir_ts::ConstantOp>(location, getNumberType(), builder.getF64FloatAttr(infVal));
+#else
+        float infVal;
+        *(int32_t *)&infVal = 0x7FF00000;
+        return builder.create<mlir_ts::ConstantOp>(location, getNumberType(), builder.getF32FloatAttr(infVal));
+#endif
     }
 
     void getTupleFieldInfo(TupleTypeNode tupleType, mlir::SmallVector<mlir_ts::FieldInfo> &types)
