@@ -275,6 +275,18 @@ class CastLogicHelper
             }
         }
 
+        if (auto ifaceType = inType.dyn_cast_or_null<mlir_ts::InterfaceType>())
+        {
+            if (auto boolType = resType.dyn_cast_or_null<mlir_ts::BooleanType>())
+            {
+                auto ptrValue =
+                    rewriter.create<mlir_ts::ExtractInterfaceVTableOp>(loc, mlir_ts::OpaqueType::get(rewriter.getContext()), in);
+                auto inLLVMType = tch.convertType(ptrValue.getType());
+                auto llvmBoolType = tch.convertType(boolType);
+                return castLLVMTypes(ptrValue, inLLVMType, boolType, llvmBoolType);
+            }
+        }
+
         return mlir::Value();
     }
 
