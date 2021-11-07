@@ -228,7 +228,7 @@ class RayTracer {
     }
 
     private getNaturalColor(thing: Thing, pos: Vector, norm: Vector, rd: Vector, scene: Scene) {
-        let addLight = (col: Color, light: Light) => {
+        const addLight = (col: Color, light: Light) => {
             let ldis = Vector.minus(light.pos, pos);
             let livec = Vector.norm(ldis);
             let neatIsect = this.testRay({ start: pos, dir: livec }, scene);
@@ -256,9 +256,9 @@ class RayTracer {
     }
 
     render(scene: Scene, screenWidth: number, screenHeight: number) {
-        let getPoint = (x: number, y: number, camera: Camera) => {
-            let recenterX = (x: number) => (x - (screenWidth / 2.0)) / 2.0 / screenWidth;
-            let recenterY = (y: number) => - (y - (screenHeight / 2.0)) / 2.0 / screenHeight;
+        const getPoint = (x: number, y: number, camera: Camera) => {
+            const recenterX = (x: number) => (x - (screenWidth / 2.0)) / 2.0 / screenWidth;
+            const recenterY = (y: number) => - (y - (screenHeight / 2.0)) / 2.0 / screenHeight;
             return Vector.norm(Vector.plus(camera.forward, Vector.plus(Vector.times(recenterX(x), camera.right), Vector.times(recenterY(y), camera.up))));
         }
 
