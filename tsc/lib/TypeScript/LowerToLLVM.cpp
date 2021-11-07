@@ -3611,6 +3611,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     // the LLVM dialect.
     LLVMConversionTarget target(getContext());
     target.addLegalOp<ModuleOp>();
+    target.addLegalOp<mlir_ts::GlobalConstructorOp>();
 
     // During this lowering, we will also be lowering the MemRef types, that are
     // currently being operated on, to a representation in LLVM. To perform this
@@ -3653,7 +3654,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
                     CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, DebuggerOpLowering,
                     UnreachableOpLowering, LandingPadOpLowering, CompareCatchTypeOpLowering, BeginCatchOpLowering, SaveCatchVarOpLowering,
                     EndCatchOpLowering, BeginCleanupOpLowering, EndCleanupOpLowering, CallInternalOpLowering, ReturnInternalOpLowering,
-                    NoOpLowering, GlobalConstructorOpLowering, ExtractInterfaceVTableOpLowering
+                    NoOpLowering, /*GlobalConstructorOpLowering,*/ ExtractInterfaceVTableOpLowering
 #ifndef DISABLE_SWITCH_STATE_PASS
                     ,
                     SwitchStateOpLowering, StateLabelOpLowering, YieldReturnValOpLowering
@@ -3672,6 +3673,18 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     LLVM_DEBUG(llvm::dbgs() << "\n!! BEFORE DUMP: \n" << module << "\n";);
 
     if (failed(applyFullConversion(module, target, std::move(patterns))))
+    {
+        signalPassFailure();
+    }
+
+    LLVMConversionTarget target2(getContext());
+    target2.addLegalOp<ModuleOp>();
+
+    OwningRewritePatternList patterns2(&getContext());
+    populateStdToLLVMConversionPatterns(typeConverter, patterns2);
+    patterns2.insert<GlobalConstructorOpLowering>(typeConverter, &getContext(), &tsLlvmContext);
+
+    if (failed(applyFullConversion(module, target2, std::move(patterns2))))
     {
         signalPassFailure();
     }
