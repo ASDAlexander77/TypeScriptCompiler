@@ -3499,6 +3499,53 @@ static LogicalResult verifyTerminatorSuccessors(Operation *op)
     return success();
 }
 
+static LogicalResult verifyAlloca(mlir::Block *block)
+{
+    auto beginAlloca = true;
+    auto failed = false;
+    auto withingStackSaveRestore = false;
+    auto visitorAllOps = [&](Operation *op) {
+        if (failed)
+        {
+            return;
+        }
+
+        if (isa<LLVM::AllocaOp>(op))
+        {
+            if (beginAlloca)
+            {
+                return;
+            }
+
+            if (!withingStackSaveRestore)
+            {
+                failed = true;
+            }
+        }
+
+        if (isa<LLVM::StackSaveOp>(op))
+        {
+            withingStackSaveRestore = true;
+        }
+
+        if (isa<LLVM::StackRestoreOp>(op))
+        {
+            withingStackSaveRestore = false;
+        }
+
+        beginAlloca = false;
+    };
+
+    block->walk(visitorAllOps);
+
+    if (failed)
+    {
+        return failure();
+    }
+
+    return success();
+}
+
 static LogicalResult verifyModule(mlir::ModuleOp &module)
 {
     for (auto &block : module.getBodyRegion())
@@ -3513,6 +3560,13 @@ static LogicalResult verifyModule(mlir::ModuleOp &module)
                     {
                         if (failed(verifyTerminatorSuccessors(regionBlock.getTerminator())))
                         {
+                            assert(false);
+                            return failure();
+                        }
+
+                        if (failed(verifyAlloca(&regionBlock)))
+                        {
+                            assert(false);
                             return failure();
                         }
                     }
