@@ -3248,10 +3248,10 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
 
                 for (auto gctor : llvm::reverse(globalConstructs))
                 {
-                    rewriter.create<mlir::CallOp>(loc, gctor.global_name(), TypeRange{});
+                    rewriter.create<LLVM::CallOp>(loc, TypeRange{}, gctor.global_nameAttr(), ValueRange{});
                 }
 
-                rewriter.create<mlir::ReturnOp>(loc);
+                rewriter.create<LLVM::ReturnOp>(loc, ValueRange{});
             }
 #endif
         }
@@ -3681,7 +3681,6 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     target2.addLegalOp<ModuleOp>();
 
     OwningRewritePatternList patterns2(&getContext());
-    populateStdToLLVMConversionPatterns(typeConverter, patterns2);
     patterns2.insert<GlobalConstructorOpLowering>(typeConverter, &getContext(), &tsLlvmContext);
 
     if (failed(applyFullConversion(module, target2, std::move(patterns2))))
