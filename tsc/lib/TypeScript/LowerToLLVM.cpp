@@ -2514,6 +2514,15 @@ struct TrampolineOpLowering : public TsLlvmPattern<mlir_ts::TrampolineOp>
         }
         else
         {
+            // we can't reallocate alloc for trampolines
+            /*
+            // put all allocs at 'func' top
+            auto parentFuncOp = trampolineOp->getParentOfType<LLVM::LLVMFuncOp>();
+            assert(parentFuncOp);
+            mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
+            rewriter.setInsertionPoint(&parentFuncOp.getBody().front().front());
+            */
+
             auto trampoline = rewriter.create<LLVM::AllocaOp>(location, bufferType, clh.createI32ConstantOf(1));
             auto const0 = clh.createI32ConstantOf(0);
             trampolinePtr = rewriter.create<LLVM::GEPOp>(location, i8PtrTy, ValueRange{trampoline, const0, const0});
@@ -3510,6 +3519,12 @@ static LogicalResult verifyAlloca(mlir::Block *block)
             return;
         }
 
+        if (isa<LLVM::ConstantOp>(op) || isa<LLVM::GEPOp>(op))
+        {
+            // ignore it
+            return;
+        }
+
         if (isa<LLVM::AllocaOp>(op))
         {
             if (beginAlloca)
@@ -3520,6 +3535,11 @@ static LogicalResult verifyAlloca(mlir::Block *block)
             if (!withingStackSaveRestore)
             {
                 failed = true;
+                LLVM_DEBUG(llvm::dbgs() << "\n!! operator change stack without restoring it: "; op->dump(); llvm::dbgs() << "\n";);
+                LLVM_DEBUG(llvm::dbgs() << "\n!! in func: \n"; op->getParentOfType<LLVM::LLVMFuncOp>()->dump(); llvm::dbgs() << "\n";);
+                assert(false);
+                op->emitError("DEBUG TEST: operator change stack without restoring it");
+                return;
             }
         }
 
