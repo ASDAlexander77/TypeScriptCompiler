@@ -4817,8 +4817,9 @@ class MLIRGenImpl
             }
             else if (classInfo->hasConstructor)
             {
-                // TODO: check if you are not creating usless code when VTABLE is not in static class
-                theModule.emitWarning("class does not have virtual table but has constructor. Class: ") << classInfo->fullName;
+                // TODO: check if you are not creating uswless code when VTABLE is not in static class
+                theModule.emitError("class does not have virtual table but has constructor. Class: ") << classInfo->fullName;
+                return mlir::failure();
             }
         }
 
