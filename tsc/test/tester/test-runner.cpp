@@ -43,7 +43,11 @@ namespace fs = std::experimental::filesystem;
 
 //#define NEW_BAT 1
 
+#if WIN32
+#define GC_LIB "gcmt-lib"
+#else
 #define GC_LIB "-lgcmt-lib"
+#end
 #define LIBS "-lm -frtti -fexceptions -lstdc++ -lpthread"
 #define RT_LIB "-lclang_rt.builtins-x86_64"
 
