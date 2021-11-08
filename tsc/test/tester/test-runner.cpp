@@ -47,7 +47,7 @@ namespace fs = std::experimental::filesystem;
 #define GC_LIB "gcmt-lib"
 #else
 #define GC_LIB "-lgcmt-lib"
-#end
+#endif
 #define LIBS "-lm -frtti -fexceptions -lstdc++ -lpthread"
 #define RT_LIB "-lclang_rt.builtins-x86_64"
 

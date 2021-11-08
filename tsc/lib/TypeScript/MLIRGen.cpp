@@ -6078,12 +6078,6 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-        // clear all flags
-        for (auto &classMember : classDeclarationAST->members)
-        {
-            classMember->processed = false;
-        }
-
         mlirGenClassDefaultConstructor(classDeclarationAST, newClassPtr, genContext);
         mlirGenClassDefaultStaticConstructor(classDeclarationAST, newClassPtr, genContext);
 
@@ -6091,30 +6085,10 @@ class MLIRGenImpl
         mlirGenClassInstanceOfMethod(classDeclarationAST, newClassPtr, genContext);
 #endif
 
-        // add methods when we have classType
-        auto notResolved = 0;
-        do
+        if (mlir::failed(mlirGenClassMembers(location, classDeclarationAST, newClassPtr, declareClass, false, genContext)))
         {
-            auto lastTimeNotResolved = notResolved;
-            notResolved = 0;
-
-            for (auto &classMember : classDeclarationAST->members)
-            {
-                if (mlir::failed(mlirGenClassMethodMember(classDeclarationAST, newClassPtr, classMember, declareClass, genContext)))
-                {
-                    notResolved++;
-                }
-            }
-
-            // repeat if not all resolved
-            if (lastTimeNotResolved > 0 && lastTimeNotResolved == notResolved)
-            {
-                // class can depend on other class declarations
-                // theModule.emitError("can't resolve dependencies in class: ") << newClassPtr->name;
-                return mlir::failure();
-            }
-
-        } while (notResolved > 0);
+            return mlir::failure();
+        }
 
         // generate vtable for interfaces in base class
         if (mlir::failed(mlirGenClassBaseInterfaces(location, newClassPtr, declareClass, genContext)))
@@ -6133,6 +6107,18 @@ class MLIRGenImpl
         }
 
         mlirGenClassVirtualTableDefinition(location, newClassPtr, genContext);
+
+        // static fields. must be generated after all non-static methods
+        if (mlir::failed(mlirGenClassStaticFields(location, classDeclarationAST, newClassPtr, declareClass, genContext)))
+        {
+            return mlir::failure();
+        }
+
+        // static classes needed to be defined after all methods/fields/vtables generated
+        if (mlir::failed(mlirGenClassMembers(location, classDeclarationAST, newClassPtr, declareClass, true, genContext)))
+        {
+            return mlir::failure();
+        }
 
         return mlir::success();
     }
@@ -6219,6 +6205,24 @@ class MLIRGenImpl
             newClassPtr->classType = getClassType(classFullNameSymbol, getClassStorageType(classFullNameSymbol, fieldInfos));
         }
 
+        /*
+        if (mlir::failed(
+                mlirGenClassStaticFields(location, classDeclarationAST, newClassPtr, declareClass, genContext)))
+        {
+            return mlir::failure();
+        }
+        */
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult mlirGenClassStaticFields(mlir::Location location, ClassLikeDeclaration classDeclarationAST,
+                                                 ClassInfo::TypePtr newClassPtr, bool declareClass, const GenContext &genContext)
+    {
+        // dummy class, not used, needed to sync code
+        // TODO: refactor it
+        SmallVector<mlir_ts::FieldInfo> fieldInfos;
+
         // static second
         // TODO: if I use static method in static field initialization, test if I need process static fields after static methods
         for (auto &classMember : classDeclarationAST->members)
@@ -6229,6 +6233,56 @@ class MLIRGenImpl
                 return mlir::failure();
             }
         }
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult mlirGenClassMembers(mlir::Location location, ClassLikeDeclaration classDeclarationAST,
+                                            ClassInfo::TypePtr newClassPtr, bool declareClass, bool staticOnly,
+                                            const GenContext &genContext)
+    {
+        // clear all flags
+        for (auto &classMember : classDeclarationAST->members)
+        {
+            auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
+            if (isStatic != staticOnly)
+            {
+                continue;
+            }
+
+            classMember->processed = false;
+        }
+
+        // add methods when we have classType
+        auto notResolved = 0;
+        do
+        {
+            auto lastTimeNotResolved = notResolved;
+            notResolved = 0;
+
+            for (auto &classMember : classDeclarationAST->members)
+            {
+                auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
+                if (isStatic != staticOnly)
+                {
+                    continue;
+                }
+
+                if (mlir::failed(mlirGenClassMethodMember(classDeclarationAST, newClassPtr, classMember, declareClass, genContext)))
+                {
+                    notResolved++;
+                }
+            }
+
+            // repeat if not all resolved
+            if (lastTimeNotResolved > 0 && lastTimeNotResolved == notResolved)
+            {
+                // class can depend on other class declarations
+                // theModule.emitError("can't resolve dependencies in class: ") << newClassPtr->name;
+                return mlir::failure();
+            }
+
+        } while (notResolved > 0);
 
         return mlir::success();
     }
