@@ -4798,6 +4798,32 @@ class MLIRGenImpl
         // set virtual table
         if (setVTable && classInfo->getHasVirtualTable())
         {
+            auto vtableVal = mlirGenPropertyAccessExpression(location, effectiveThisValue, VTABLE_NAME, genContext);
+            MLIRCodeLogic mcl(builder);
+            auto vtableRefVal = mcl.GetReferenceOfLoadOp(vtableVal);
+
+            // vtable symbol reference
+            auto fullClassVTableFieldName = concat(classInfo->fullName, VTABLE_NAME);
+            auto vtableAddress = resolveFullNameIdentifier(location, fullClassVTableFieldName, true, genContext);
+
+            mlir::Value vtableValue;
+            if (vtableAddress)
+            {
+                auto castedValue = cast(location, getOpaqueType(), vtableAddress, genContext);
+                vtableValue = castedValue;
+            }
+            else
+            {
+                // we will resolve type later
+                auto classVTableRefOp =
+                    builder.create<mlir_ts::AddressOfOp>(location, getOpaqueType(), fullClassVTableFieldName, ::mlir::IntegerAttr());
+
+                vtableValue = classVTableRefOp;
+            }
+
+            builder.create<mlir_ts::StoreOp>(location, vtableValue, vtableRefVal);
+
+            /*
             auto _vtable_name = nf.createIdentifier(S(VTABLE_NAME));
             auto propAccess = nf.createPropertyAccessExpression(thisToken, _vtable_name);
 
@@ -4817,10 +4843,11 @@ class MLIRGenImpl
             }
             else if (classInfo->hasConstructor)
             {
-                // TODO: check if you are not creating uswless code when VTABLE is not in static class
+                // TODO: check if you are not creating useless code when VTABLE is not in static class
                 theModule.emitError("class does not have virtual table but has constructor. Class: ") << classInfo->fullName;
                 return mlir::failure();
             }
+            */
         }
 
         if (classInfo->getHasConstructor())
@@ -6086,7 +6113,7 @@ class MLIRGenImpl
         mlirGenClassInstanceOfMethod(classDeclarationAST, newClassPtr, genContext);
 #endif
 
-        if (mlir::failed(mlirGenClassMembers(location, classDeclarationAST, newClassPtr, declareClass, false, genContext)))
+        if (mlir::failed(mlirGenClassMembers(location, classDeclarationAST, newClassPtr, declareClass, genContext)))
         {
             return mlir::failure();
         }
@@ -6109,6 +6136,7 @@ class MLIRGenImpl
 
         mlirGenClassVirtualTableDefinition(location, newClassPtr, genContext);
 
+        /*
         // static fields. must be generated after all non-static methods
         if (mlir::failed(mlirGenClassStaticFields(location, classDeclarationAST, newClassPtr, declareClass, genContext)))
         {
@@ -6120,6 +6148,7 @@ class MLIRGenImpl
         {
             return mlir::failure();
         }
+        */
 
         return mlir::success();
     }
@@ -6206,13 +6235,10 @@ class MLIRGenImpl
             newClassPtr->classType = getClassType(classFullNameSymbol, getClassStorageType(classFullNameSymbol, fieldInfos));
         }
 
-        /*
-        if (mlir::failed(
-                mlirGenClassStaticFields(location, classDeclarationAST, newClassPtr, declareClass, genContext)))
+        if (mlir::failed(mlirGenClassStaticFields(location, classDeclarationAST, newClassPtr, declareClass, genContext)))
         {
             return mlir::failure();
         }
-        */
 
         return mlir::success();
     }
@@ -6239,18 +6265,11 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult mlirGenClassMembers(mlir::Location location, ClassLikeDeclaration classDeclarationAST,
-                                            ClassInfo::TypePtr newClassPtr, bool declareClass, bool staticOnly,
-                                            const GenContext &genContext)
+                                            ClassInfo::TypePtr newClassPtr, bool declareClass, const GenContext &genContext)
     {
         // clear all flags
         for (auto &classMember : classDeclarationAST->members)
         {
-            auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
-            if (isStatic != staticOnly)
-            {
-                continue;
-            }
-
             classMember->processed = false;
         }
 
@@ -6263,12 +6282,6 @@ class MLIRGenImpl
 
             for (auto &classMember : classDeclarationAST->members)
             {
-                auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
-                if (isStatic != staticOnly)
-                {
-                    continue;
-                }
-
                 if (mlir::failed(mlirGenClassMethodMember(classDeclarationAST, newClassPtr, classMember, declareClass, genContext)))
                 {
                     notResolved++;

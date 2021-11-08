@@ -1739,7 +1739,7 @@ def TypeScript_ThrowCallOp : TypeScript_Op<"ThrowCall", [Terminator]> {
 
 def TypeScript_AddressOfOp : TypeScript_Op<"AddressOf"> {
   let arguments = (ins FlatSymbolRefAttr:$global_name, OptionalAttr<I32Attr>:$offset);
-  let results = (outs TypeScript_Ref:$reference);
+  let results = (outs TypeScript_RefOrOpaque:$reference);
 
   let builders = [
     OpBuilder<(ins "GlobalOp":$global,

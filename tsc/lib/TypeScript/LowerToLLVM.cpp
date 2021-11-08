@@ -1857,9 +1857,30 @@ struct AddressOfOpLowering : public TsLlvmPattern<mlir_ts::AddressOfOp>
         LLVMCodeHelper lch(addressOfOp, rewriter, getTypeConverter());
         TypeConverterHelper tch(getTypeConverter());
 
-        auto value = lch.getAddressOfGlobalVar(addressOfOp.global_name(), tch.convertType(addressOfOp.getType()),
-                                               addressOfOp.offset() ? addressOfOp.offset().getValue() : 0);
-        rewriter.replaceOp(addressOfOp, value);
+        auto actualType = addressOfOp.getType();
+        if (actualType.isa<mlir_ts::OpaqueType>())
+        {
+            // load type from symbol
+            auto module = addressOfOp->getParentOfType<mlir::ModuleOp>();
+            assert(module);
+            auto globalOp = module.lookupSymbol<LLVM::GlobalOp>(addressOfOp.global_name());
+            LLVM_DEBUG(llvm::dbgs() << "\n!! found symbol: " << globalOp << "\n";);
+            actualType = mlir_ts::RefType::get(globalOp.getType());
+
+            auto value = lch.getAddressOfGlobalVar(addressOfOp.global_name(), tch.convertType(actualType),
+                                                   addressOfOp.offset() ? addressOfOp.offset().getValue() : 0);
+
+            mlir::Value castedValue =
+                rewriter.create<LLVM::BitcastOp>(addressOfOp->getLoc(), tch.convertType(addressOfOp.getType()), value);
+
+            rewriter.replaceOp(addressOfOp, castedValue);
+        }
+        else
+        {
+            auto value = lch.getAddressOfGlobalVar(addressOfOp.global_name(), tch.convertType(actualType),
+                                                   addressOfOp.offset() ? addressOfOp.offset().getValue() : 0);
+            rewriter.replaceOp(addressOfOp, value);
+        }
         return success();
     }
 };
