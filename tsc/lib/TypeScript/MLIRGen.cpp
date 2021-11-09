@@ -2043,8 +2043,8 @@ class MLIRGenImpl
                 capturedParam->setReadWriteAccess();
             }
 
-            LLVM_DEBUG(dbgs() << "\n!! captured '\".captured\"->" << name << "' [" << capturedVarValue
-                              << "] ref val type: " << variableRefType << "\n\n");
+            LLVM_DEBUG(dbgs() << "\n!! captured '\".captured\"->" << name << "' [ " << capturedVarValue << " ] ref val type: [ "
+                              << variableRefType << " ]\n\n");
 
             declare(capturedParam, capturedVarValue);
         }
@@ -5253,6 +5253,8 @@ class MLIRGenImpl
     mlir::Value mlirGen(ts::ObjectLiteralExpression objectLiteral, const GenContext &genContext)
     {
         MLIRCodeLogic mcl(builder);
+        MLIRTypeHelper mth(builder.getContext());
+
         // first value
         SmallVector<mlir_ts::FieldInfo> fieldInfos;
         SmallVector<mlir::Attribute> values;
@@ -5299,7 +5301,7 @@ class MLIRGenImpl
             if (auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(itemValue.getDefiningOp()))
             {
                 value = constOp.valueAttr();
-                type = constOp.getType();
+                type = mth.convertConstArrayTypeToArrayType(constOp.getType());
             }
             else if (auto symRefOp = dyn_cast_or_null<mlir_ts::SymbolRefOp>(itemValue.getDefiningOp()))
             {
@@ -5351,7 +5353,6 @@ class MLIRGenImpl
 
             auto funcGenContext = GenContext(genContext);
             funcGenContext.thisType = getObjectType(getConstTupleType(fieldInfos));
-            // funcGenContext.thisType = mlir_ts::RefType::get(getConstTupleType(fieldInfos));
             funcGenContext.passResult = nullptr;
 
             auto funcOpWithFuncProto = mlirGenFunctionPrototype(funcLikeDecl, funcGenContext);
@@ -5367,6 +5368,8 @@ class MLIRGenImpl
             auto funcType = funcOp.getType();
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! Object FuncType: " << funcType << "\n";);
+            LLVM_DEBUG(llvm::dbgs() << "\n!! Object FuncType - This: " << funcGenContext.thisType << "\n";);
+            LLVM_DEBUG(llvm::dbgs() << "\n!! Object FuncType - RetType: " << funcType.getResult(0) << "\n";);
 
             // process local vars in this context
             if (funcProto->getHasExtraFields())
@@ -5390,8 +5393,6 @@ class MLIRGenImpl
             }
 
             // recreate type with "this" param as "any"
-            MLIRTypeHelper mth(builder.getContext());
-
             auto newFuncType = mth.getFunctionTypeWithOpaqueThis(funcType, true);
             LLVM_DEBUG(llvm::dbgs() << "\n!! Object with this as opaque: " << newFuncType << "\n";);
             if (funcProto->getHasCapturedVars())
@@ -5577,7 +5578,6 @@ class MLIRGenImpl
             return constantVal;
         }
 
-        MLIRTypeHelper mth(builder.getContext());
         auto tupleType = mth.convertConstTupleTypeToTupleType(constantVal.getType());
         return mlirGenCreateTuple(constantVal.getLoc(), tupleType, constantVal, fieldsToSet, genContext);
     }
@@ -5698,6 +5698,11 @@ class MLIRGenImpl
                     capturedValues.push_back(varValue);
                 }
             }
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! func with capture: first type: [ " << funcType.getInput(0) << " ], func name: " << name
+                                    << "\n");
+
+            LLVM_DEBUG(for (auto &val : capturedValues) llvm::dbgs() << "\n!! captured val: " << val << "\n";);
 
             // add attributes to track which one sent by ref.
             auto captured = builder.create<mlir_ts::CaptureOp>(location, funcType.getInput(0), capturedValues);

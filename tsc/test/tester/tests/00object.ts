@@ -46,5 +46,13 @@ function main() {
     object7 = { name: "foo" + 1 };
     print(object7.name);
 
+    const deck = {
+        val: [1, 2, 3],
+    };
+
+    print(deck.val[1]);
+
+    assert(deck.val[1] == 2);
+
     print("done.");
 }

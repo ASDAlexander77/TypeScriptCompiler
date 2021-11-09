@@ -2624,6 +2624,8 @@ struct CaptureOpLowering : public TsLlvmPattern<mlir_ts::CaptureOp>
                 }
             }
 
+            assert(val.getType() == fieldRef.getType().cast<mlir_ts::RefType>().getElementType());
+
             rewriter.create<mlir_ts::StoreOp>(location, val, fieldRef);
 
             index++;
