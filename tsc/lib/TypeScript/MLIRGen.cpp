@@ -4436,6 +4436,14 @@ class MLIRGenImpl
             llvm_unreachable("not implemented (ElementAccessExpression)");
         }
 
+        auto indexType = argumentExpression.getType();
+        auto isAllowableType = indexType.isIntOrIndex() && indexType.getIntOrFloatBitWidth() == 32;
+        if (!isAllowableType)
+        {
+            MLIRTypeHelper mth(builder.getContext());
+            argumentExpression = cast(location, mth.getStructIndexType(), argumentExpression, genContext);
+        }
+
         auto elemRef = builder.create<mlir_ts::ElementRefOp>(location, mlir_ts::RefType::get(elementType), expression, argumentExpression);
         return builder.create<mlir_ts::LoadOp>(location, elementType, elemRef);
     }

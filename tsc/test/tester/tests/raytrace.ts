@@ -119,7 +119,7 @@ class Sphere implements Thing {
     intersect(ray: Ray): Intersection {
         let eo = Vector.minus(this.center, ray.start);
         let v = Vector.dot(eo, ray.dir);
-        let dist = 0;
+        let dist = 0.0;
         if (v >= 0) {
             let disc = this.radius2 - (Vector.dot(eo, eo) - v * v);
             if (disc >= 0) {

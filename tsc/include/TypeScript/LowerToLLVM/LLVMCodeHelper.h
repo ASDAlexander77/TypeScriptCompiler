@@ -490,6 +490,20 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
             else if (auto constArrayType = type.dyn_cast_or_null<mlir_ts::ConstArrayType>())
             {
                 llvm_unreachable("not used.");
+                /*
+                auto subArrayAttr = item.dyn_cast_or_null<ArrayAttr>();
+
+                MLIRTypeHelper mth(rewriter.getContext());
+                auto arrayType = mth.convertConstArrayTypeToArrayType(constArrayType);
+
+                LLVM_DEBUG(llvm::dbgs() << "\n!! llvmType: " << llvmType << "\n";);
+
+                OpBuilder::InsertionGuard guard(rewriter);
+
+                auto itemVal =
+                    getReadOnlyRTArray(loc, arrayType.cast<mlir_ts::ArrayType>(), llvmType.cast<LLVM::LLVMStructType>(), subArrayAttr);
+                tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, itemVal, rewriter.getI64ArrayAttr(position++));
+                */
             }
             else if (auto arrayType = type.dyn_cast_or_null<mlir_ts::ArrayType>())
             {
