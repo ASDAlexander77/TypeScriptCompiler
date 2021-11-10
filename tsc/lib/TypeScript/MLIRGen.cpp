@@ -1489,7 +1489,8 @@ class MLIRGenImpl
         auto fullName = funcProto->getName();
 
         // discover type & args
-        if (!funcType)
+        // !genContext.allowPartialResolve -> in actual process we need actual data
+        if (!funcType || genContext.rediscover)
         {
             if (mlir::succeeded(
                     discoverFunctionReturnTypeAndCapturedVars(functionLikeDeclarationBaseAST, fullName, argTypes, funcProto, genContext)))
@@ -5409,6 +5410,7 @@ class MLIRGenImpl
             auto funcGenContext = GenContext(genContext);
             funcGenContext.thisType = objThis;
             funcGenContext.passResult = nullptr;
+            funcGenContext.rediscover = true;
 
             mlir::OpBuilder::InsertionGuard guard(builder);
             auto funcOp = mlirGenFunctionLikeDeclaration(funcLikeDecl, funcGenContext);
