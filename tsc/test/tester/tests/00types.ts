@@ -12,29 +12,23 @@ class X {
     }
 }
 
-// TODO: not implemented
-/*
-interface X {
+interface I {
     a: (p: this) => this;
 }
-
-function main()
-{
-    let x: X = {
-        a(p: X) {
-            return p;
-        }
-    }
-
-    let y = x.a(x);
-}
-*/
 
 function main() {
     assert(s("sss"));
 
     let x = new X();
     assert(x.a(x).v == 10);
+
+    let x2: I = {
+        a(p: I) {
+            return p;
+        }
+    }
+
+    let y = x2.a(x2);
 
     print("done.")
 }

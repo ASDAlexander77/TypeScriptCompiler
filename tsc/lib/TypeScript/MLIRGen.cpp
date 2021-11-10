@@ -7329,10 +7329,13 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-        if (mlir::failed(mlirGenInterfaceType(interfaceDeclarationAST, newInterfacePtr, declareInterface, genContext)))
+        auto ifaceGenContext = GenContext(genContext);
+        if (mlir::failed(mlirGenInterfaceType(interfaceDeclarationAST, newInterfacePtr, declareInterface, ifaceGenContext)))
         {
             return mlir::failure();
         }
+
+        ifaceGenContext.thisType = newInterfacePtr->interfaceType;
 
         // clear all flags
         for (auto &interfaceMember : interfaceDeclarationAST->members)
@@ -7350,7 +7353,7 @@ class MLIRGenImpl
             for (auto &interfaceMember : interfaceDeclarationAST->members)
             {
                 if (mlir::failed(mlirGenInterfaceMethodMember(interfaceDeclarationAST, newInterfacePtr, interfaceMember, declareInterface,
-                                                              genContext)))
+                                                              ifaceGenContext)))
                 {
                     notResolved++;
                 }
