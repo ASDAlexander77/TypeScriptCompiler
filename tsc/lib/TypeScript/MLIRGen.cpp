@@ -7814,6 +7814,16 @@ class MLIRGenImpl
         {
             return getUndefinedType();
         }
+        else if (kind == SyntaxKind::TypePredicate)
+        {
+            // in runtime it is boolean (it is needed to track types)
+            return getBooleanType();
+        }
+        else if (kind == SyntaxKind::ThisType)
+        {
+            // in runtime it is boolean (it is needed to track types)
+            return getOpaqueType();
+        }
 
         llvm_unreachable("not implemented type declaration");
         // return getAnyType();
