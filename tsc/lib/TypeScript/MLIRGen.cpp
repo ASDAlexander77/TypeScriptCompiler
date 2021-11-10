@@ -1146,7 +1146,7 @@ class MLIRGenImpl
         mlir::Type type = defaultType;
         if (item->type)
         {
-            type = getType(item->type);
+            type = getType(item->type, genContext);
         }
 
         return std::make_pair(type, mlir::Value());
@@ -1158,7 +1158,7 @@ class MLIRGenImpl
         mlir::Type type;
         if (item->type)
         {
-            type = getType(item->type);
+            type = getType(item->type, genContext);
         }
 
         // init
@@ -1274,7 +1274,7 @@ class MLIRGenImpl
             auto typeParameter = arg->type;
             if (typeParameter)
             {
-                type = getType(typeParameter);
+                type = getType(typeParameter, genContext);
             }
 
             // process init value
@@ -1454,7 +1454,7 @@ class MLIRGenImpl
         }
         else if (auto typeParameter = signatureDeclarationBaseAST->type)
         {
-            auto returnType = getType(typeParameter);
+            auto returnType = getType(typeParameter, genContext);
             funcProto->setReturnType(returnType);
 
             funcType = getFunctionType(argTypes, returnType);
@@ -1498,7 +1498,7 @@ class MLIRGenImpl
                 // rewrite ret type with actual value
                 if (auto typeParameter = functionLikeDeclarationBaseAST->type)
                 {
-                    auto returnType = getType(typeParameter);
+                    auto returnType = getType(typeParameter, genContext);
                     funcProto->setReturnType(returnType);
                 }
                 else if (genContext.argTypeDestFuncType && genContext.argTypeDestFuncType.cast<mlir::FunctionType>().getNumResults() > 0)
@@ -2129,7 +2129,7 @@ class MLIRGenImpl
     {
         auto location = loc(typeAssertionAST);
 
-        auto typeInfo = getType(typeAssertionAST->type);
+        auto typeInfo = getType(typeAssertionAST->type, genContext);
         auto exprValue = mlirGen(typeAssertionAST->expression, genContext);
 
         auto castedValue = cast(location, typeInfo, exprValue, genContext);
@@ -2140,7 +2140,7 @@ class MLIRGenImpl
     {
         auto location = loc(asExpressionAST);
 
-        auto typeInfo = getType(asExpressionAST->type);
+        auto typeInfo = getType(asExpressionAST->type, genContext);
         auto exprValue = mlirGen(asExpressionAST->expression, genContext);
 
         auto castedValue = cast(location, typeInfo, exprValue, genContext);
@@ -5959,7 +5959,7 @@ class MLIRGenImpl
         auto name = MLIRHelper::getName(typeAliasDeclarationAST->name);
         if (!name.empty())
         {
-            auto type = getType(typeAliasDeclarationAST->type);
+            auto type = getType(typeAliasDeclarationAST->type, genContext);
             getTypeAliasMap().insert({name, type});
             return mlir::success();
         }
@@ -7724,7 +7724,7 @@ class MLIRGenImpl
         return mlir::Value();
     }
 
-    mlir::Type getType(Node typeReferenceAST)
+    mlir::Type getType(Node typeReferenceAST, const GenContext &genContext)
     {
         auto kind = (SyntaxKind)typeReferenceAST;
         if (kind == SyntaxKind::BooleanKeyword)
@@ -7749,31 +7749,31 @@ class MLIRGenImpl
         }
         else if (kind == SyntaxKind::FunctionType)
         {
-            return getFunctionType(typeReferenceAST.as<FunctionTypeNode>());
+            return getFunctionType(typeReferenceAST.as<FunctionTypeNode>(), genContext);
         }
         else if (kind == SyntaxKind::TupleType)
         {
-            return getTupleType(typeReferenceAST.as<TupleTypeNode>());
+            return getTupleType(typeReferenceAST.as<TupleTypeNode>(), genContext);
         }
         else if (kind == SyntaxKind::TypeLiteral)
         {
-            return getTupleType(typeReferenceAST.as<TypeLiteralNode>());
+            return getTupleType(typeReferenceAST.as<TypeLiteralNode>(), genContext);
         }
         else if (kind == SyntaxKind::ArrayType)
         {
-            return getArrayType(typeReferenceAST.as<ArrayTypeNode>());
+            return getArrayType(typeReferenceAST.as<ArrayTypeNode>(), genContext);
         }
         else if (kind == SyntaxKind::UnionType)
         {
-            return getUnionType(typeReferenceAST.as<UnionTypeNode>());
+            return getUnionType(typeReferenceAST.as<UnionTypeNode>(), genContext);
         }
         else if (kind == SyntaxKind::IntersectionType)
         {
-            return getIntersectionType(typeReferenceAST.as<IntersectionTypeNode>());
+            return getIntersectionType(typeReferenceAST.as<IntersectionTypeNode>(), genContext);
         }
         else if (kind == SyntaxKind::ParenthesizedType)
         {
-            return getParenthesizedType(typeReferenceAST.as<ParenthesizedTypeNode>());
+            return getParenthesizedType(typeReferenceAST.as<ParenthesizedTypeNode>(), genContext);
         }
         else if (kind == SyntaxKind::LiteralType)
         {
@@ -7821,8 +7821,9 @@ class MLIRGenImpl
         }
         else if (kind == SyntaxKind::ThisType)
         {
+            assert(genContext.thisType);
             // in runtime it is boolean (it is needed to track types)
-            return getOpaqueType();
+            return genContext.thisType;
         }
 
         llvm_unreachable("not implemented type declaration");
@@ -7936,9 +7937,9 @@ class MLIRGenImpl
         return mlir_ts::InterfaceType::get(name);
     }
 
-    mlir_ts::ConstArrayType getConstArrayType(ArrayTypeNode arrayTypeAST, unsigned size)
+    mlir_ts::ConstArrayType getConstArrayType(ArrayTypeNode arrayTypeAST, unsigned size, const GenContext &genContext)
     {
-        auto type = getType(arrayTypeAST->elementType);
+        auto type = getType(arrayTypeAST->elementType, genContext);
         return getConstArrayType(type, size);
     }
 
@@ -7948,9 +7949,9 @@ class MLIRGenImpl
         return mlir_ts::ConstArrayType::get(elementType, size);
     }
 
-    mlir_ts::ArrayType getArrayType(ArrayTypeNode arrayTypeAST)
+    mlir_ts::ArrayType getArrayType(ArrayTypeNode arrayTypeAST, const GenContext &genContext)
     {
-        auto type = getType(arrayTypeAST->elementType);
+        auto type = getType(arrayTypeAST->elementType, genContext);
         return getArrayType(type);
     }
 
@@ -7987,7 +7988,7 @@ class MLIRGenImpl
 #endif
     }
 
-    void getTupleFieldInfo(TupleTypeNode tupleType, mlir::SmallVector<mlir_ts::FieldInfo> &types)
+    void getTupleFieldInfo(TupleTypeNode tupleType, mlir::SmallVector<mlir_ts::FieldInfo> &types, const GenContext &genContext)
     {
         MLIRCodeLogic mcl(builder);
         mlir::Attribute attrVal;
@@ -7998,7 +7999,7 @@ class MLIRGenImpl
                 auto namedTupleMember = typeItem.as<NamedTupleMember>();
                 auto namePtr = MLIRHelper::getName(namedTupleMember->name, stringAllocator);
 
-                auto type = getType(namedTupleMember->type);
+                auto type = getType(namedTupleMember->type, genContext);
 
                 assert(type);
                 types.push_back({mcl.TupleFieldName(namePtr), type});
@@ -8006,7 +8007,6 @@ class MLIRGenImpl
             else if (typeItem == SyntaxKind::LiteralType)
             {
                 auto literalTypeNode = typeItem.as<LiteralTypeNode>();
-                GenContext genContext{};
                 auto literalValue = mlirGen(literalTypeNode->literal.as<Expression>(), genContext);
                 auto constantOp = dyn_cast_or_null<mlir_ts::ConstantOp>(literalValue.getDefiningOp());
                 attrVal = constantOp.valueAttr();
@@ -8014,7 +8014,7 @@ class MLIRGenImpl
             }
             else
             {
-                auto type = getType(typeItem);
+                auto type = getType(typeItem, genContext);
 
                 assert(type);
                 types.push_back({attrVal, type});
@@ -8024,7 +8024,7 @@ class MLIRGenImpl
         }
     }
 
-    void getTupleFieldInfo(TypeLiteralNode typeLiteral, mlir::SmallVector<mlir_ts::FieldInfo> &types)
+    void getTupleFieldInfo(TypeLiteralNode typeLiteral, mlir::SmallVector<mlir_ts::FieldInfo> &types, const GenContext &genContext)
     {
         MLIRCodeLogic mcl(builder);
         for (auto typeItem : typeLiteral->members)
@@ -8034,7 +8034,7 @@ class MLIRGenImpl
                 auto propertySignature = typeItem.as<PropertySignature>();
                 auto namePtr = MLIRHelper::getName(propertySignature->name, stringAllocator);
 
-                auto originalType = getType(propertySignature->type);
+                auto originalType = getType(propertySignature->type, genContext);
                 auto type = mcl.getEffectiveFunctionTypeForTupleField(originalType);
 
                 assert(type);
@@ -8042,7 +8042,7 @@ class MLIRGenImpl
             }
             else
             {
-                auto type = getType(typeItem);
+                auto type = getType(typeItem, genContext);
 
                 assert(type);
                 types.push_back({mlir::Attribute(), type});
@@ -8050,10 +8050,10 @@ class MLIRGenImpl
         }
     }
 
-    mlir_ts::ConstTupleType getConstTupleType(TupleTypeNode tupleType)
+    mlir_ts::ConstTupleType getConstTupleType(TupleTypeNode tupleType, const GenContext &genContext)
     {
         mlir::SmallVector<mlir_ts::FieldInfo> types;
-        getTupleFieldInfo(tupleType, types);
+        getTupleFieldInfo(tupleType, types, genContext);
         return getConstTupleType(types);
     }
 
@@ -8062,17 +8062,17 @@ class MLIRGenImpl
         return mlir_ts::ConstTupleType::get(builder.getContext(), fieldInfos);
     }
 
-    mlir_ts::TupleType getTupleType(TupleTypeNode tupleType)
+    mlir_ts::TupleType getTupleType(TupleTypeNode tupleType, const GenContext &genContext)
     {
         mlir::SmallVector<mlir_ts::FieldInfo> types;
-        getTupleFieldInfo(tupleType, types);
+        getTupleFieldInfo(tupleType, types, genContext);
         return getTupleType(types);
     }
 
-    mlir_ts::TupleType getTupleType(TypeLiteralNode typeLiteral)
+    mlir_ts::TupleType getTupleType(TypeLiteralNode typeLiteral, const GenContext &genContext)
     {
         mlir::SmallVector<mlir_ts::FieldInfo> types;
-        getTupleFieldInfo(typeLiteral, types);
+        getTupleFieldInfo(typeLiteral, types, genContext);
         return getTupleType(types);
     }
 
@@ -8101,13 +8101,13 @@ class MLIRGenImpl
         return builder.getFunctionType(inputs, results);
     }
 
-    mlir::Type getFunctionType(FunctionTypeNode functionType)
+    mlir::Type getFunctionType(FunctionTypeNode functionType, const GenContext &genContext)
     {
-        auto resultType = getType(functionType->type);
+        auto resultType = getType(functionType->type, genContext);
         SmallVector<mlir::Type> argTypes;
         for (auto paramItem : functionType->parameters)
         {
-            auto type = getType(paramItem->type);
+            auto type = getType(paramItem->type, genContext);
             if (paramItem->questionToken)
             {
                 type = getOptionalType(type);
@@ -8124,7 +8124,7 @@ class MLIRGenImpl
         //#endif
     }
 
-    mlir::Type getUnionType(UnionTypeNode unionTypeNode)
+    mlir::Type getUnionType(UnionTypeNode unionTypeNode, const GenContext &genContext)
     {
         bool isUndefined = false;
         bool isNullable = false;
@@ -8132,7 +8132,7 @@ class MLIRGenImpl
         mlir::Type currentType;
         for (auto typeItem : unionTypeNode->types)
         {
-            auto type = getType(typeItem);
+            auto type = getType(typeItem, genContext);
             if (!type)
             {
                 llvm_unreachable("wrong type");
@@ -8176,12 +8176,12 @@ class MLIRGenImpl
         return mlir_ts::UnionType::get(builder.getContext(), types);
     }
 
-    mlir_ts::IntersectionType getIntersectionType(IntersectionTypeNode intersectionTypeNode)
+    mlir_ts::IntersectionType getIntersectionType(IntersectionTypeNode intersectionTypeNode, const GenContext &genContext)
     {
         mlir::SmallVector<mlir::Type> types;
         for (auto typeItem : intersectionTypeNode->types)
         {
-            auto type = getType(typeItem);
+            auto type = getType(typeItem, genContext);
             if (!type)
             {
                 llvm_unreachable("wrong type");
@@ -8198,9 +8198,9 @@ class MLIRGenImpl
         return mlir_ts::IntersectionType::get(builder.getContext(), types);
     }
 
-    mlir::Type getParenthesizedType(ParenthesizedTypeNode parenthesizedTypeNode)
+    mlir::Type getParenthesizedType(ParenthesizedTypeNode parenthesizedTypeNode, const GenContext &genContext)
     {
-        return getType(parenthesizedTypeNode->type);
+        return getType(parenthesizedTypeNode->type, genContext);
     }
 
     mlir::Type getLiteralType(LiteralTypeNode literalTypeNode)
