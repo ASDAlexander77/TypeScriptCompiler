@@ -83,6 +83,8 @@ struct GenContext
         }
 
         cleanState();
+
+        cleanFuncOp();
     }
 
     void cleanState()
@@ -100,6 +102,17 @@ struct GenContext
         {
             delete unresolved;
             unresolved = nullptr;
+        }
+    }
+
+    void cleanFuncOp()
+    {
+        if (funcOp)
+        {
+            funcOp->dropAllDefinedValueUses();
+            funcOp->dropAllUses();
+            funcOp->dropAllReferences();
+            funcOp->erase();
         }
     }
 

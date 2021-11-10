@@ -1635,7 +1635,6 @@ class MLIRGenImpl
                     MLIRCodeLogic mcl(builder);
                     argTypes.insert(argTypes.begin(), mcl.CaptureType(passResult->outerVariables));
                     getCaptureVarsMap().insert({name, passResult->outerVariables});
-
                     funcProto->setHasCapturedVars(true);
 
                     LLVM_DEBUG(llvm::dbgs() << "\n!! has captured vars, name: " << name << "\n";);
