@@ -7580,7 +7580,11 @@ class MLIRGenImpl
             }
         }
 
+        entryBlock.dropAllDefinedValueUses();
+        entryBlock.dropAllUses();
+        entryBlock.dropAllReferences();
         entryBlock.erase();
+
         tempFuncOp.erase();
     }
 
