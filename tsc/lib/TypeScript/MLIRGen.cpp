@@ -5600,15 +5600,19 @@ class MLIRGenImpl
             }
         }
 
-        // add all captured
-        SmallVector<mlir::Value> accumulatedCapturedValues;
-        if (mlir::failed(mlirGenResolveCapturedVars(location, accumulatedCaptureVars, accumulatedCapturedValues, genContext)))
+        if (accumulatedCaptureVars.size() > 0)
         {
-            return mlir::Value();
-        }
+            // add all captured
+            SmallVector<mlir::Value> accumulatedCapturedValues;
+            if (mlir::failed(mlirGenResolveCapturedVars(location, accumulatedCaptureVars, accumulatedCapturedValues, genContext)))
+            {
+                return mlir::Value();
+            }
 
-        auto capturedValue = mlirGenCreateCapture(location, mcl.CaptureType(accumulatedCaptureVars), accumulatedCapturedValues, genContext);
-        addFieldInfo(mcl.TupleFieldName(CAPTURED_NAME), capturedValue);
+            auto capturedValue =
+                mlirGenCreateCapture(location, mcl.CaptureType(accumulatedCaptureVars), accumulatedCapturedValues, genContext);
+            addFieldInfo(mcl.TupleFieldName(CAPTURED_NAME), capturedValue);
+        }
 #endif
 
         // final type
