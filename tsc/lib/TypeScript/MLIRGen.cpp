@@ -5,6 +5,7 @@
 #define ADD_GC_ATTRIBUTE true
 #endif
 #define MODULE_AS_NAMESPACE true
+#define REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION true
 
 #define DEBUG_TYPE "mlir"
 
@@ -1537,6 +1538,8 @@ class MLIRGenImpl
             // important set when it is discovered and in process second type
             funcProto->setHasCapturedVars(true);
 
+#ifndef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
+
             SmallVector<mlir::NamedAttribute> attrs;
             SmallVector<mlir::DictionaryAttr> argAttrs;
 
@@ -1560,6 +1563,9 @@ class MLIRGenImpl
             }
 
             funcOp = mlir_ts::FuncOp::create(location, fullName, funcType, attrs, argAttrs);
+#else
+            funcOp = mlir_ts::FuncOp::create(location, fullName, funcType);
+#endif
         }
         else
         {
@@ -5279,7 +5285,6 @@ class MLIRGenImpl
             }
 
             fieldInfos.push_back({fieldId, type});
-
             if (hasCaptures)
             {
                 methodInfosWithCaptures.push_back({funcName, fieldInfos.size() - 1});
@@ -5369,7 +5374,6 @@ class MLIRGenImpl
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! Object FuncType: " << funcType << "\n";);
             LLVM_DEBUG(llvm::dbgs() << "\n!! Object FuncType - This: " << funcGenContext.thisType << "\n";);
-            LLVM_DEBUG(llvm::dbgs() << "\n!! Object FuncType - RetType: " << funcType.getResult(0) << "\n";);
 
             // process local vars in this context
             if (funcProto->getHasExtraFields())
@@ -5546,20 +5550,24 @@ class MLIRGenImpl
             }
         }
 
+#ifdef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
+        llvm::StringMap<ts::VariableDeclarationDOM::TypePtr> accumulatedCaptureVars;
+#endif
         // fix all method types again and load captured functions
         for (auto &methodRefWithName : methodInfosWithCaptures)
         {
             auto funcName = std::get<0>(methodRefWithName);
             auto methodRef = std::get<1>(methodRefWithName);
             auto &methodInfo = fieldInfos[methodRef];
+
+#ifndef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
             if (auto funcType = methodInfo.type.dyn_cast_or_null<mlir::FunctionType>())
             {
                 MLIRTypeHelper mth(builder.getContext());
                 methodInfo.type = mth.getFunctionTypeReplaceOpaqueWithThisType(funcType, objThis);
 
                 // TODO: investigate if you can allocate trampolines in heap "change false -> true"
-                if (auto trampOp =
-                        resolveFunctionWithCapture(location, funcName, methodInfo.type.cast<mlir::FunctionType>(), false, genContext))
+                if (auto trampOp = resolveFunctionWithCapture(location, funcName, funcType, false, genContext))
                 {
                     fieldsToSet.push_back({methodInfo.id, trampOp});
                 }
@@ -5568,7 +5576,45 @@ class MLIRGenImpl
                     assert(false);
                 }
             }
+#else
+            if (auto funcType = methodInfo.type.dyn_cast_or_null<mlir::FunctionType>())
+            {
+                MLIRTypeHelper mth(builder.getContext());
+                methodInfo.type = mth.getFunctionTypeReplaceOpaqueWithThisType(funcType, objThis);
+
+                auto captureVars = getCaptureVarsMap().find(funcName);
+                if (captureVars != getCaptureVarsMap().end())
+                {
+                    // mlirGenResolveCapturedVars
+                    for (auto &captureVar : captureVars->getValue())
+                    {
+                        if (accumulatedCaptureVars.count(captureVar.getKey()) > 0)
+                        {
+                            assert(accumulatedCaptureVars[captureVar.getKey()] == captureVar.getValue());
+                        }
+
+                        accumulatedCaptureVars[captureVar.getKey()] = captureVar.getValue();
+                    }
+                }
+                else
+                {
+                    assert(false);
+                }
+            }
+#endif
         }
+
+#ifdef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
+        // add all captured
+        SmallVector<mlir::Value> accumulatedCapturedValues;
+        if (mlir::failed(mlirGenResolveCapturedVars(location, accumulatedCaptureVars, accumulatedCapturedValues, genContext)))
+        {
+            return mlir::Value();
+        }
+
+        auto capturedValue = mlirGenCreateCapture(location, mcl.CaptureType(accumulatedCaptureVars), accumulatedCapturedValues, genContext);
+        addFieldInfo(mcl.TupleFieldName(CAPTURED_NAME), capturedValue);
+#endif
 
         auto constTupleTypeWithReplacedThis = getConstTupleType(fieldInfos);
 
@@ -5664,6 +5710,46 @@ class MLIRGenImpl
         return mlir::Value();
     }
 
+    mlir::LogicalResult mlirGenResolveCapturedVars(mlir::Location location,
+                                                   llvm::StringMap<ts::VariableDeclarationDOM::TypePtr> captureVars,
+                                                   SmallVector<mlir::Value> &capturedValues, const GenContext &genContext)
+    {
+        MLIRCodeLogic mcl(builder);
+        for (auto &item : captureVars)
+        {
+            auto varValue = mlirGen(location, item.first(), genContext);
+
+            // review capturing by ref.  it should match storage type
+            auto refValue = mcl.GetReferenceOfLoadOp(varValue);
+            if (refValue)
+            {
+                capturedValues.push_back(refValue);
+                // set var as captures
+                if (auto varOp = refValue.getDefiningOp<mlir_ts::VariableOp>())
+                {
+                    varOp.capturedAttr(builder.getBoolAttr(true));
+                }
+            }
+            else
+            {
+                // this is not ref, this is const value
+                capturedValues.push_back(varValue);
+            }
+        }
+
+        return mlir::success();
+    }
+
+    mlir::Value mlirGenCreateCapture(mlir::Location location, mlir::Type capturedType, SmallVector<mlir::Value> capturedValues,
+                                     const GenContext &genContext)
+    {
+        LLVM_DEBUG(for (auto &val : capturedValues) llvm::dbgs() << "\n!! captured val: " << val << "\n";);
+
+        // add attributes to track which one sent by ref.
+        auto captured = builder.create<mlir_ts::CaptureOp>(location, capturedType, capturedValues);
+        return captured;
+    }
+
     mlir::Value resolveFunctionWithCapture(mlir::Location location, StringRef name, mlir::FunctionType funcType, bool allocTrampolineInHeap,
                                            const GenContext &genContext)
     {
@@ -5672,6 +5758,42 @@ class MLIRGenImpl
         if (captureVars != getCaptureVarsMap().end())
         {
             auto newFuncType = getFunctionType(funcType.getInputs().slice(1), funcType.getResults());
+
+            auto funcSymbolOp =
+                builder.create<mlir_ts::SymbolRefOp>(location, funcType, mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! func with capture: first type: [ " << funcType.getInput(0) << " ], func name: " << name
+                                    << "\n");
+
+            SmallVector<mlir::Value> capturedValues;
+            if (mlir::failed(mlirGenResolveCapturedVars(location, captureVars->getValue(), capturedValues, genContext)))
+            {
+                return mlir::Value();
+            }
+
+            auto captured = mlirGenCreateCapture(location, funcType.getInput(0), capturedValues, genContext);
+#ifndef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
+            return builder.create<mlir_ts::TrampolineOp>(location, newFuncType, funcSymbolOp, captured,
+                                                         builder.getBoolAttr(allocTrampolineInHeap));
+#else
+            auto opaqueTypeValue = cast(location, getOpaqueType(), captured, genContext);
+            return builder.create<mlir_ts::CreateBoundFunctionOp>(location, getBoundFunctionType(funcType), opaqueTypeValue, funcSymbolOp);
+#endif
+        }
+
+        return mlir::Value();
+    }
+
+#ifdef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
+
+    mlir::Value resolveFunctionWithCapture(mlir::Location location, StringRef name, mlir_ts::BoundFunctionType boundFuncType,
+                                           bool allocTrampolineInHeap, const GenContext &genContext)
+    {
+        // check if required capture of vars
+        auto captureVars = getCaptureVarsMap().find(name);
+        if (captureVars != getCaptureVarsMap().end())
+        {
+            auto funcType = getFunctionType(boundFuncType.getInputs(), boundFuncType.getResults());
 
             auto funcSymbolOp =
                 builder.create<mlir_ts::SymbolRefOp>(location, funcType, mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
@@ -5700,19 +5822,21 @@ class MLIRGenImpl
                 }
             }
 
-            LLVM_DEBUG(llvm::dbgs() << "\n!! func with capture: first type: [ " << funcType.getInput(0) << " ], func name: " << name
+            LLVM_DEBUG(llvm::dbgs() << "\n!! func with capture: first type: [ " << boundFuncType.getInput(0) << " ], func name: " << name
                                     << "\n");
 
             LLVM_DEBUG(for (auto &val : capturedValues) llvm::dbgs() << "\n!! captured val: " << val << "\n";);
 
             // add attributes to track which one sent by ref.
-            auto captured = builder.create<mlir_ts::CaptureOp>(location, funcType.getInput(0), capturedValues);
-            return builder.create<mlir_ts::TrampolineOp>(location, newFuncType, funcSymbolOp, captured,
-                                                         builder.getBoolAttr(allocTrampolineInHeap));
+            auto captured = builder.create<mlir_ts::CaptureOp>(location, boundFuncType.getInput(0), capturedValues);
+            auto opaqueTypeValue = cast(location, getOpaqueType(), captured, genContext);
+            return builder.create<mlir_ts::CreateBoundFunctionOp>(location, boundFuncType, opaqueTypeValue, funcSymbolOp);
         }
 
         return mlir::Value();
     }
+
+#endif
 
     mlir::Value resolveFunctionNameInNamespace(mlir::Location location, StringRef name, const GenContext &genContext)
     {
@@ -8120,11 +8244,7 @@ class MLIRGenImpl
         }
 
         auto funcType = mlir::FunctionType::get(builder.getContext(), argTypes, resultType);
-        //#ifndef USE_BOUND_FUNCTION_FOR_OBJECTS
         return funcType;
-        //#else
-        //        return getBoundFunctionType(funcType);
-        //#endif
     }
 
     mlir::Type getUnionType(UnionTypeNode unionTypeNode, const GenContext &genContext)

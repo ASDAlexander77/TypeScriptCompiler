@@ -233,6 +233,22 @@ class MLIRTypeHelper
         return mlir::FunctionType::get(context, funcArgTypes, funcType.getResults());
     }
 
+    mlir_ts::BoundFunctionType getBoundFunctionTypeReplaceOpaqueWithThisType(mlir_ts::BoundFunctionType funcType,
+                                                                             mlir::Type opaqueReplacementType)
+    {
+        mlir::SmallVector<mlir::Type> funcArgTypes(funcType.getInputs().begin(), funcType.getInputs().end());
+        for (auto &type : funcArgTypes)
+        {
+            if (type.isa<mlir_ts::OpaqueType>())
+            {
+                type = opaqueReplacementType;
+                break;
+            }
+        }
+
+        return mlir_ts::BoundFunctionType::get(context, funcArgTypes, funcType.getResults());
+    }
+
     MatchResult TestFunctionTypesMatch(mlir::FunctionType inFuncType, mlir::FunctionType resFuncType, unsigned startParam = 0)
     {
         // TODO: make 1 common function
