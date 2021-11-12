@@ -1639,7 +1639,15 @@ class MLIRGenImpl
                 if (passResult->outerVariables.size() > 0)
                 {
                     MLIRCodeLogic mcl(builder);
-                    argTypes.insert(argTypes.begin(), mcl.CaptureType(passResult->outerVariables));
+#ifdef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
+                    auto isObjectType = genContext.thisType != nullptr && genContext.thisType.isa<mlir_ts::ObjectType>();
+                    if (!isObjectType)
+                    {
+#endif
+                        argTypes.insert(argTypes.begin(), mcl.CaptureType(passResult->outerVariables));
+#ifdef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
+                    }
+#endif
                     getCaptureVarsMap().insert({name, passResult->outerVariables});
                     funcProto->setHasCapturedVars(true);
 
@@ -1938,8 +1946,15 @@ class MLIRGenImpl
             return mlir::success();
         }
 
+#ifdef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
+        auto isObjectType = genContext.thisType != nullptr && genContext.thisType.isa<mlir_ts::ObjectType>();
+        if (isObjectType)
+        {
+            return mlir::success();
+        }
+#endif
+
         firstIndex++;
-        auto capturedVars = *genContext.capturedVars;
 
         auto capturedParam = arguments[firstIndex];
         auto capturedRefType = capturedParam.getType();
@@ -1950,6 +1965,39 @@ class MLIRGenImpl
 
         return mlir::success();
     }
+
+#ifdef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
+    mlir::LogicalResult mlirGenFunctionCapturedParamIfObject(mlir::Location loc, int &firstIndex, FunctionPrototypeDOM::TypePtr funcProto,
+                                                             mlir::Block::BlockArgListType arguments, const GenContext &genContext)
+    {
+        if (genContext.capturedVars == nullptr)
+        {
+            return mlir::success();
+        }
+
+        auto isObjectType = genContext.thisType != nullptr && genContext.thisType.isa<mlir_ts::ObjectType>();
+        if (isObjectType)
+        {
+            MLIRTypeHelper mth(builder.getContext());
+
+            auto thisVal = resolveIdentifier(loc, THIS_NAME, genContext);
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! this value: " << thisVal << "\n";);
+
+            mlir::Value propValue = mlirGenPropertyAccessExpression(loc, thisVal, mth.TupleFieldName(CAPTURED_NAME), genContext);
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! this->.captured value: " << propValue << "\n";);
+
+            assert(propValue);
+
+            // captured is in this->".captured"
+            auto capturedParamVar = std::make_shared<VariableDeclarationDOM>(CAPTURED_NAME, propValue.getType(), loc);
+            declare(capturedParamVar, propValue);
+        }
+
+        return mlir::success();
+    }
+#endif
 
     mlir::LogicalResult mlirGenFunctionParams(int firstIndex, FunctionPrototypeDOM::TypePtr funcProto,
                                               mlir::Block::BlockArgListType arguments, const GenContext &genContext)
@@ -2106,6 +2154,13 @@ class MLIRGenImpl
         {
             return mlir::failure();
         }
+
+#ifdef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
+        if (failed(mlirGenFunctionCapturedParamIfObject(location, firstIndex, funcProto, arguments, genContext)))
+        {
+            return mlir::failure();
+        }
+#endif
 
         if (failed(mlirGenFunctionCaptures(funcProto, genContext)))
         {
@@ -5277,7 +5332,11 @@ class MLIRGenImpl
             auto hasCaptures = captureVars != getCaptureVarsMap().end();
             if (hasCaptures)
             {
+#ifdef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
+                values.push_back(mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName));
+#else
                 values.push_back(builder.getUnitAttr());
+#endif
             }
             else
             {
@@ -5378,6 +5437,8 @@ class MLIRGenImpl
             // process local vars in this context
             if (funcProto->getHasExtraFields())
             {
+                // TODO: review this code
+                assert(false);
                 auto localVars = getLocalVarsInThisContextMap().find(funcName);
                 if (localVars != getLocalVarsInThisContextMap().end())
                 {
@@ -5388,6 +5449,7 @@ class MLIRGenImpl
                 }
             }
 
+#ifndef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
             auto capturedType = funcType.getInput(0);
             if (funcProto->getHasCapturedVars())
             {
@@ -5395,15 +5457,18 @@ class MLIRGenImpl
                 funcType = getFunctionType(funcType.getInputs().slice(1), funcType.getResults());
                 LLVM_DEBUG(llvm::dbgs() << "\n!! Object without captured FuncType: " << funcType << "\n";);
             }
+#endif
 
             // recreate type with "this" param as "any"
             auto newFuncType = mth.getFunctionTypeWithOpaqueThis(funcType, true);
             LLVM_DEBUG(llvm::dbgs() << "\n!! Object with this as opaque: " << newFuncType << "\n";);
+#ifndef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
             if (funcProto->getHasCapturedVars())
             {
                 newFuncType = mth.getFunctionTypeAddingFirstArgType(newFuncType, capturedType);
                 LLVM_DEBUG(llvm::dbgs() << "\n!! Object with this as opaque and returned captured as first: " << newFuncType << "\n";);
             }
+#endif
 
             // place holder
             addFuncFieldInfo(fieldId, funcName, newFuncType);

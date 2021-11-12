@@ -4,6 +4,7 @@
 #define IDENTIFIER_ATTR_NAME "identifier"
 #define RETURN_VARIABLE_NAME ".return"
 #define CAPTURED_NAME ".captured"
+#define LCAPTURED_NAME L".captured"
 #define LABEL_ATTR_NAME "label"
 #define UNDEFINED_NAME "undefined"
 #define INFINITY_NAME "Infinity"
