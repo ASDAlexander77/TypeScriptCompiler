@@ -5502,6 +5502,50 @@ class MLIRGenImpl
             }
         }
 
+        // create accum. captures
+#ifdef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
+        llvm::StringMap<ts::VariableDeclarationDOM::TypePtr> accumulatedCaptureVars;
+
+        for (auto &methodRefWithName : methodInfosWithCaptures)
+        {
+            auto funcName = std::get<0>(methodRefWithName);
+            auto methodRef = std::get<1>(methodRefWithName);
+            auto &methodInfo = fieldInfos[methodRef];
+
+            if (auto funcType = methodInfo.type.dyn_cast_or_null<mlir::FunctionType>())
+            {
+                auto captureVars = getCaptureVarsMap().find(funcName);
+                if (captureVars != getCaptureVarsMap().end())
+                {
+                    // mlirGenResolveCapturedVars
+                    for (auto &captureVar : captureVars->getValue())
+                    {
+                        if (accumulatedCaptureVars.count(captureVar.getKey()) > 0)
+                        {
+                            assert(accumulatedCaptureVars[captureVar.getKey()] == captureVar.getValue());
+                        }
+
+                        accumulatedCaptureVars[captureVar.getKey()] = captureVar.getValue();
+                    }
+                }
+                else
+                {
+                    assert(false);
+                }
+            }
+        }
+
+        // add all captured
+        SmallVector<mlir::Value> accumulatedCapturedValues;
+        if (mlir::failed(mlirGenResolveCapturedVars(location, accumulatedCaptureVars, accumulatedCapturedValues, genContext)))
+        {
+            return mlir::Value();
+        }
+
+        auto capturedValue = mlirGenCreateCapture(location, mcl.CaptureType(accumulatedCaptureVars), accumulatedCapturedValues, genContext);
+        addFieldInfo(mcl.TupleFieldName(CAPTURED_NAME), capturedValue);
+#endif
+
         // final type
         auto constTupleType = getConstTupleType(fieldInfos);
         auto objThis = getObjectType(constTupleType);
@@ -5550,9 +5594,6 @@ class MLIRGenImpl
             }
         }
 
-#ifdef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
-        llvm::StringMap<ts::VariableDeclarationDOM::TypePtr> accumulatedCaptureVars;
-#endif
         // fix all method types again and load captured functions
         for (auto &methodRefWithName : methodInfosWithCaptures)
         {
@@ -5560,12 +5601,12 @@ class MLIRGenImpl
             auto methodRef = std::get<1>(methodRefWithName);
             auto &methodInfo = fieldInfos[methodRef];
 
-#ifndef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
             if (auto funcType = methodInfo.type.dyn_cast_or_null<mlir::FunctionType>())
             {
                 MLIRTypeHelper mth(builder.getContext());
                 methodInfo.type = mth.getFunctionTypeReplaceOpaqueWithThisType(funcType, objThis);
 
+#ifndef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
                 // TODO: investigate if you can allocate trampolines in heap "change false -> true"
                 if (auto trampOp = resolveFunctionWithCapture(location, funcName, funcType, false, genContext))
                 {
@@ -5575,46 +5616,9 @@ class MLIRGenImpl
                 {
                     assert(false);
                 }
-            }
-#else
-            if (auto funcType = methodInfo.type.dyn_cast_or_null<mlir::FunctionType>())
-            {
-                MLIRTypeHelper mth(builder.getContext());
-                methodInfo.type = mth.getFunctionTypeReplaceOpaqueWithThisType(funcType, objThis);
-
-                auto captureVars = getCaptureVarsMap().find(funcName);
-                if (captureVars != getCaptureVarsMap().end())
-                {
-                    // mlirGenResolveCapturedVars
-                    for (auto &captureVar : captureVars->getValue())
-                    {
-                        if (accumulatedCaptureVars.count(captureVar.getKey()) > 0)
-                        {
-                            assert(accumulatedCaptureVars[captureVar.getKey()] == captureVar.getValue());
-                        }
-
-                        accumulatedCaptureVars[captureVar.getKey()] = captureVar.getValue();
-                    }
-                }
-                else
-                {
-                    assert(false);
-                }
-            }
 #endif
+            }
         }
-
-#ifdef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
-        // add all captured
-        SmallVector<mlir::Value> accumulatedCapturedValues;
-        if (mlir::failed(mlirGenResolveCapturedVars(location, accumulatedCaptureVars, accumulatedCapturedValues, genContext)))
-        {
-            return mlir::Value();
-        }
-
-        auto capturedValue = mlirGenCreateCapture(location, mcl.CaptureType(accumulatedCaptureVars), accumulatedCapturedValues, genContext);
-        addFieldInfo(mcl.TupleFieldName(CAPTURED_NAME), capturedValue);
-#endif
 
         auto constTupleTypeWithReplacedThis = getConstTupleType(fieldInfos);
 
