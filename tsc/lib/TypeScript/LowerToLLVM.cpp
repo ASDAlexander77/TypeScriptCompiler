@@ -3410,6 +3410,32 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         return LLVM::LLVMStructType::getLiteral(type.getContext(), llvmStructType, false);
     });
 
+    converter.addConversion([&](mlir_ts::HybridFunctionType type) {
+        SmallVector<mlir::Type> convertedInputs;
+        for (auto subType : type.getInputs())
+        {
+            convertedInputs.push_back(converter.convertType(subType));
+        }
+
+        SmallVector<mlir::Type> convertedResults;
+        for (auto subType : type.getResults())
+        {
+            convertedResults.push_back(converter.convertType(subType));
+        }
+
+        auto funcType = mlir::FunctionType::get(type.getContext(), convertedInputs, convertedResults);
+
+        LLVMTypeConverter::SignatureConversion result(convertedInputs.size());
+        auto llvmFuncType = converter.convertFunctionSignature(funcType, false, result);
+        auto llvmPtrType = LLVM::LLVMPointerType::get(llvmFuncType);
+        // return llvmPtrType;
+
+        SmallVector<mlir::Type> llvmStructType;
+        llvmStructType.push_back(llvmPtrType);
+        llvmStructType.push_back(LLVM::LLVMPointerType::get(IntegerType::get(m.getContext(), 8)));
+        return LLVM::LLVMStructType::getLiteral(type.getContext(), llvmStructType, false);
+    });
+
     converter.addConversion([&](mlir_ts::ObjectType type) {
         if (type.getStorageType() == mlir_ts::AnyType::get(type.getContext()))
         {
