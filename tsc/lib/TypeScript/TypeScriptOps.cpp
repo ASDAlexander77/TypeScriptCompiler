@@ -516,22 +516,34 @@ FunctionType mlir_ts::CallOp::getCalleeType()
 
 LogicalResult mlir_ts::CallIndirectOp::verifySymbolUses(SymbolTableCollection &symbolTable)
 {
-    // Verify that the operand and result types match the callee.
-    auto fnType = getCallee().getType().cast<mlir::FunctionType>();
+    mlir::ArrayRef<mlir::Type> input;
+    mlir::ArrayRef<mlir::Type> results;
 
-    auto optionalFromValue = (int)fnType.getNumInputs() - (int)getNumOperands();
-    for (unsigned i = 0, e = optionalFromValue == -1 ? fnType.getNumInputs() : getOperands().size(); i != e; ++i)
+    // Verify that the operand and result types match the callee.
+    if (auto funcType = getCallee().getType().dyn_cast<mlir::FunctionType>())
     {
-        if (getOperand(i + 1).getType() != fnType.getInput(i))
+        input = funcType.getInputs();
+        results = funcType.getResults();
+    }
+    else if (auto hybridFuncType = getCallee().getType().dyn_cast<mlir_ts::HybridFunctionType>())
+    {
+        input = hybridFuncType.getInputs();
+        results = hybridFuncType.getResults();
+    }
+
+    auto optionalFromValue = (int)input.size() - (int)getNumOperands();
+    for (unsigned i = 0, e = optionalFromValue == -1 ? (int)input.size() : getOperands().size(); i != e; ++i)
+    {
+        if (getOperand(i + 1).getType() != input[i])
         {
             return emitOpError("operand type mismatch: expected operand type ")
-                   << fnType.getInput(i) << ", but provided " << getOperand(i + 1).getType() << " for operand number " << i;
+                   << input[i] << ", but provided " << getOperand(i + 1).getType() << " for operand number " << i;
         }
     }
 
-    for (unsigned i = 0, e = fnType.getNumResults(); i != e; ++i)
+    for (unsigned i = 0, e = results.size(); i != e; ++i)
     {
-        if (getResult(i).getType() != fnType.getResult(i))
+        if (getResult(i).getType() != results[i])
         {
             return emitOpError("result type mismatch");
         }

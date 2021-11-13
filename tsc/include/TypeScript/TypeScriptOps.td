@@ -115,7 +115,7 @@ def ThisVirtualSymbolRefOp : TypeScript_Op<"ThisVirtualSymbolRef",
   let summary = "symbol reference as to virtual this member";
 
   let arguments = (ins TypeScript_AnyRefLike:$thisVal, TypeScript_AnyRefLike:$vtable, I32Attr:$index, FlatSymbolRefAttr:$identifier);
-  let results = (outs TypeScript_AnyRefOrFuncType:$value);
+  let results = (outs TypeScript_AnyRefOrCallable:$value);
 
   let builders = [
     OpBuilder<(ins "Value":$thisVal, "Value":$vtable, "IntegerAttr":$index, "FlatSymbolRefAttr":$identifier),
@@ -167,7 +167,7 @@ def InterfaceSymbolRefOp : TypeScript_Op<"InterfaceSymbolRef",
   let summary = "symbol reference as to interface member";
 
   let arguments = (ins TypeScript_Interface:$interfaceVal, I32Attr:$index, StrAttr:$identifier);
-  let results = (outs TypeScript_AnyRefOrFuncType:$funcOrFieldReference, TypeScript_AnyRefLike:$thisRef);
+  let results = (outs TypeScript_AnyRefOrCallable:$funcOrFieldReference, TypeScript_AnyRefLike:$thisRef);
 
   let builders = [
     OpBuilder<(ins "Value":$interfaceVal, "IntegerAttr":$index, "StringAttr":$identifier),
@@ -650,10 +650,10 @@ def TypeScript_CallIndirectOp : TypeScript_Op<"CallIndirect", [
       DeclareOpInterfaceMethods<SymbolUserOpInterface>,
       TypesMatchWith<"callee input types match argument types",
                      "callee", "operands",
-                     "$_self.cast<FunctionType>().getInputs()">,
+                     "($_self.isa<HybridFunctionType>() ? $_self.cast<HybridFunctionType>().getInputs() : $_self.cast<FunctionType>().getInputs())">,
       TypesMatchWith<"callee result types match result types",
                      "callee", "results",
-                     "$_self.cast<FunctionType>().getResults()">
+                     "($_self.isa<HybridFunctionType>() ? $_self.cast<HybridFunctionType>().getResults() : $_self.cast<FunctionType>().getResults())">
     ]> {
   let summary = "indirect call operation";
   let description = [{
@@ -663,14 +663,25 @@ def TypeScript_CallIndirectOp : TypeScript_Op<"CallIndirect", [
     types of the call must match the specified function type.
   }];
 
-  let arguments = (ins FunctionType:$callee, Variadic<AnyType>:$operands);
+  let arguments = (ins TypeScript_Callable:$callee, Variadic<AnyType>:$operands);
   let results = (outs Variadic<AnyType>:$results);
 
   let builders = [
     OpBuilder<(ins "Value":$callee, CArg<"ValueRange", "{}">:$operands), [{
       $_state.operands.push_back(callee);
       $_state.addOperands(operands);
-      $_state.addTypes(callee.getType().cast<FunctionType>().getResults());
+      if (auto funcType = callee.getType().dyn_cast<FunctionType>())
+      {
+        $_state.addTypes(funcType.getResults());
+      }
+      else if (auto hybridFuncType = callee.getType().dyn_cast<mlir::typescript::HybridFunctionType>())
+      {
+        $_state.addTypes(hybridFuncType.getResults());
+      }
+      else
+      {
+          llvm_unreachable("not implemented");
+      }
     }]>];
 
   let extraClassDeclaration = [{

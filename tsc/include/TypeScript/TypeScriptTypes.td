@@ -1194,10 +1194,6 @@ def TypeScript_AnyStructLike : AnyTypeOf<[
     TypeScript_ConstTuple, TypeScript_Tuple, TypeScript_ConstArrayValue, TypeScript_Class, TypeScript_ClassStorage
   ]>;
 
-def TypeScript_AnyRefOrFuncType : AnyTypeOf<[
-    TypeScript_Ref, FunctionType, TypeScript_BoundFunction
-  ]>;
-
 def TypeScript_RefOrBoundRef : AnyTypeOf<[
     TypeScript_Ref, TypeScript_BoundRef
   ]>;
@@ -1209,5 +1205,14 @@ def TypeScript_RefOrOpaque : AnyTypeOf<[
 def TypeScript_RefOrBoundRefOrValueRef : AnyTypeOf<[
     TypeScript_Ref, TypeScript_BoundRef, TypeScript_ValueRef
   ]>;
+
+def TypeScript_Callable : AnyTypeOf<[
+    FunctionType, TypeScript_BoundFunction, TypeScript_HybridFunction
+  ]>;
+
+def TypeScript_AnyRefOrCallable : AnyTypeOf<[
+    TypeScript_Ref, TypeScript_Callable
+  ]>;
+
 
 #endif // TYPESCRIPT_TYPEDEFS

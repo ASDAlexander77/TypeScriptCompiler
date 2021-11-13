@@ -4621,7 +4621,7 @@ class MLIRGenImpl
         return mlir::Value();
     }
 
-    mlir::Value getThisParam(mlir::Location location, mlir::FunctionType calledFuncType, mlir::Value funcRefValue)
+    mlir::Value getThisParam(mlir::Location location, mlir::Value funcRefValue)
     {
         if (auto thisSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::ThisSymbolRefOp>())
         {
@@ -4639,52 +4639,22 @@ class MLIRGenImpl
             return interfaceSymbolRefOp.getResult(1);
         }
 
-        // 0 index is for method ptr
-        /*
-        unsigned thisIndex = 0;
-        auto isFirstArgThis = calledFuncType.getNumInputs() > thisIndex && calledFuncType.getInput(thisIndex).isa<mlir_ts::ObjectType>();
-        if (isFirstArgThis)
-        {
-            if (auto loadOp = funcRefValue.getDefiningOp<mlir_ts::LoadOp>())
-            {
-                // if we have 'this' and method comes from PropertyRef, you need to add this to params
-                if (auto propRef = loadOp.reference().getDefiningOp<mlir_ts::PropertyRefOp>())
-                {
-                    auto castThis = builder.create<mlir_ts::CastOp>(location, calledFuncType.getInput(thisIndex), propRef.objectRef());
-                    return castThis;
-                }
-            }
-            else if (auto extractPropertyOp = funcRefValue.getDefiningOp<mlir_ts::ExtractPropertyOp>())
-            {
-                // allocate in stack
-                auto valueAddr = builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(extractPropertyOp.object().getType()),
-                                                                     extractPropertyOp.object());
-
-                auto castThis = builder.create<mlir_ts::CastOp>(location, calledFuncType.getInput(thisIndex), valueAddr);
-                return castThis;
-            }
-
-            // add undef
-            auto undefThis = builder.create<mlir_ts::UndefOp>(location, calledFuncType.getInput(thisIndex));
-            return undefThis;
-        }
-        */
-
         // no this
         return mlir::Value();
     }
 
-    mlir::Value mlirGenCallFunction(mlir::Location location, mlir::FunctionType calledFuncType, mlir::Value funcRefValue,
-                                    NodeArray<TypeNode> typeArguments, NodeArray<Expression> arguments, bool &hasReturn,
-                                    const GenContext &genContext)
+    template <typename T = mlir::FunctionType>
+    mlir::Value mlirGenCallFunction(mlir::Location location, T calledFuncType, mlir::Value funcRefValue, NodeArray<TypeNode> typeArguments,
+                                    NodeArray<Expression> arguments, bool &hasReturn, const GenContext &genContext)
     {
-        auto thisValue = getThisParam(location, calledFuncType, funcRefValue);
+        auto thisValue = getThisParam(location, funcRefValue);
         return mlirGenCallFunction(location, calledFuncType, funcRefValue, thisValue, typeArguments, arguments, hasReturn, genContext);
     }
 
-    mlir::Value mlirGenCallFunction(mlir::Location location, mlir::FunctionType calledFuncType, mlir::Value funcRefValue,
-                                    mlir::Value thisValue, NodeArray<TypeNode> typeArguments, NodeArray<Expression> arguments,
-                                    bool &hasReturn, const GenContext &genContext)
+    template <typename T = mlir::FunctionType>
+    mlir::Value mlirGenCallFunction(mlir::Location location, T calledFuncType, mlir::Value funcRefValue, mlir::Value thisValue,
+                                    NodeArray<TypeNode> typeArguments, NodeArray<Expression> arguments, bool &hasReturn,
+                                    const GenContext &genContext)
     {
         hasReturn = false;
         mlir::Value value;
@@ -4695,8 +4665,7 @@ class MLIRGenImpl
             operands.push_back(thisValue);
         }
 
-        const_cast<GenContext &>(genContext).destFuncType = calledFuncType;
-        if (mlir::failed(mlirGenCallOperands(location, calledFuncType, arguments, operands, genContext)))
+        if (mlir::failed(mlirGenCallOperands(location, calledFuncType.getInputs(), arguments, operands, genContext)))
         {
             emitError(location) << "Call Method: can't resolve values of all parameters";
         }
@@ -4710,26 +4679,24 @@ class MLIRGenImpl
             // default call by name
             auto callIndirectOp = builder.create<mlir_ts::CallIndirectOp>(location, funcRefValue, operands);
 
-            if (calledFuncType.getNumResults() > 0)
+            if (calledFuncType.getResults().size() > 0)
             {
                 value = callIndirectOp.getResult(0);
                 hasReturn = true;
             }
         }
 
-        const_cast<GenContext &>(genContext).destFuncType = nullptr;
-
         return value;
     }
 
-    mlir::LogicalResult mlirGenCallOperands(mlir::Location location, mlir::FunctionType calledFuncType,
+    mlir::LogicalResult mlirGenCallOperands(mlir::Location location, mlir::ArrayRef<mlir::Type> argFuncTypes,
                                             NodeArray<Expression> argumentsContext, SmallVector<mlir::Value, 4> &operands,
                                             const GenContext &genContext)
     {
         auto opArgsCount = std::distance(argumentsContext.begin(), argumentsContext.end()) + operands.size();
-        auto funcArgsCount = calledFuncType.getNumInputs();
+        auto funcArgsCount = argFuncTypes.size();
 
-        if (mlir::failed(mlirGen(argumentsContext, operands, calledFuncType, genContext)))
+        if (mlir::failed(mlirGen(argumentsContext, operands, argFuncTypes, genContext)))
         {
             return mlir::failure();
         }
@@ -4741,7 +4708,7 @@ class MLIRGenImpl
             {
                 if (i == 0)
                 {
-                    if (auto refType = calledFuncType.getInput(i).dyn_cast<mlir_ts::RefType>())
+                    if (auto refType = argFuncTypes[i].dyn_cast<mlir_ts::RefType>())
                     {
                         if (refType.getElementType().isa<mlir_ts::TupleType>())
                         {
@@ -4751,7 +4718,7 @@ class MLIRGenImpl
                     }
                 }
 
-                operands.push_back(builder.create<mlir_ts::UndefOp>(location, calledFuncType.getInput(i)));
+                operands.push_back(builder.create<mlir_ts::UndefOp>(location, argFuncTypes[i]));
             }
         }
 
@@ -4772,39 +4739,34 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirGen(NodeArray<Expression> arguments, SmallVector<mlir::Value, 4> &operands, mlir::FunctionType funcType,
-                                const GenContext &genContext)
+    mlir::LogicalResult mlirGen(NodeArray<Expression> arguments, SmallVector<mlir::Value, 4> &operands,
+                                mlir::ArrayRef<mlir::Type> argFuncTypes, const GenContext &genContext)
     {
         auto i = operands.size(); // we need to shift in case of 'this'
         for (auto expression : arguments)
         {
-            if (genContext.destFuncType && genContext.destFuncType.getInputs().size() > i)
-            {
-                const_cast<GenContext &>(genContext).argTypeDestFuncType = genContext.destFuncType.getInput(i);
-            }
+            auto argTypeGenContext = GenContext(genContext);
+            argTypeGenContext.argTypeDestFuncType = argFuncTypes[i];
 
-            auto value = mlirGen(expression, genContext);
+            auto value = mlirGen(expression, argTypeGenContext);
 
             VALIDATE_LOGIC(value, loc(expression))
 
-            if (i >= funcType.getInputs().size())
+            if (i >= argFuncTypes.size())
             {
-                emitError(loc(expression)) << "function does not have enough parameters to accept all arguments, arg #" << i
-                                           << ", func. type: " << funcType;
+                emitError(loc(expression)) << "function does not have enough parameters to accept all arguments, arg #" << i;
                 return mlir::failure();
             }
 
-            if (value.getType() != funcType.getInput(i))
+            if (value.getType() != argFuncTypes[i])
             {
-                auto castValue = cast(loc(expression), funcType.getInput(i), value, genContext);
+                auto castValue = cast(loc(expression), argFuncTypes[i], value, genContext);
                 operands.push_back(castValue);
             }
             else
             {
                 operands.push_back(value);
             }
-
-            const_cast<GenContext &>(genContext).argTypeDestFuncType = nullptr;
 
             i++;
         }
