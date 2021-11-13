@@ -1692,7 +1692,9 @@ class MLIRGenImpl
             builder.restoreInsertionPoint(functionBeginPoint);
 
             // provide name for it
-            funcOp = mlirGenFunctionLikeDeclaration(functionExpressionAST, genContext);
+            auto funcGenContext = GenContext(genContext);
+            funcGenContext.thisType = nullptr;
+            funcOp = mlirGenFunctionLikeDeclaration(functionExpressionAST, funcGenContext);
             if (!funcOp)
             {
                 return mlir::Value();
@@ -1714,7 +1716,9 @@ class MLIRGenImpl
             builder.restoreInsertionPoint(functionBeginPoint);
 
             // provide name for it
-            funcOp = mlirGenFunctionLikeDeclaration(arrowFunctionAST, genContext);
+            auto allowFuncGenContext = GenContext(genContext);
+            allowFuncGenContext.thisType = nullptr;
+            funcOp = mlirGenFunctionLikeDeclaration(arrowFunctionAST, allowFuncGenContext);
             if (!funcOp)
             {
                 return mlir::Value();
