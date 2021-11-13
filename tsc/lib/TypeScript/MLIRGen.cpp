@@ -5441,8 +5441,7 @@ class MLIRGenImpl
             // process local vars in this context
             if (funcProto->getHasExtraFields())
             {
-                // TODO: review this code
-                assert(false);
+                // note: this code needed to store local variables for generators
                 auto localVars = getLocalVarsInThisContextMap().find(funcName);
                 if (localVars != getLocalVarsInThisContextMap().end())
                 {

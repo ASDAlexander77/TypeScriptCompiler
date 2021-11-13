@@ -88,6 +88,12 @@ class TypeOfOpHelper
             return typeOfValue;
         }
 
+        if (type.isa<mlir_ts::BoundFunctionType>())
+        {
+            auto typeOfValue = strValue(loc, "function");
+            return typeOfValue;
+        }
+
         if (type.isa<mlir_ts::ClassType>())
         {
             auto typeOfValue = strValue(loc, "class");
