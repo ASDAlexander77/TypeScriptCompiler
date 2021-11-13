@@ -860,6 +860,79 @@ def TypeScript_BoundRef : TypeScript_Type<"BoundRef"> {
   let skipDefaultBuilders = 1;
 }
 
+def TypeScript_HybridFunction : TypeScript_Type<"HybridFunction"> {
+  let mnemonic = "this_func";
+
+  let summary = "Map from a list of inputs to a list of results with 'this' reference";
+  let description = [{
+  }];
+  let parameters = (ins ArrayRefParameter<"Type", "type">:$inputs, ArrayRefParameter<"Type", "type">:$results);
+
+  // We define the printer inline.
+  let printer = [{ 
+      $_printer << "func<("; 
+      for (size_t i=0, e = getImpl()->inputs.size(); i < e; i++) {
+        const auto& input = getImpl()->inputs[i];
+        $_printer << input;
+        if (i < getImpl()->inputs.size() - 1)
+          $_printer << ",";
+      }      
+      $_printer << ") -> (";
+      for (size_t i=0, e = getImpl()->results.size(); i < e; i++) {
+        const auto& result = getImpl()->results[i];
+        $_printer << result;
+        if (i < getImpl()->results.size() - 1)
+          $_printer << ",";
+      }      
+      $_printer << ")>";
+  }];
+
+  // Parses the above format
+  let parser = [{
+    Type elementType;
+    SmallVector<Type> inputs;
+    SmallVector<Type> results;
+    if ($_parser.parseLess()) return Type();
+    if ($_parser.parseLParen()) return Type();
+    while (!mlir::succeeded($_parser.parseOptionalRParen())) 
+    {
+        if ($_parser.parseType(elementType)) return Type();
+        inputs.push_back(elementType);
+        if ($_parser.parseOptionalComma()) break;
+    }
+    if ($_parser.parseArrow()) return Type();
+    while (!mlir::succeeded($_parser.parseOptionalRParen())) 
+    {
+        if ($_parser.parseType(elementType)) return Type();
+        results.push_back(elementType);
+        if ($_parser.parseOptionalComma()) break;
+    }    
+    if ($_parser.parseGreater()) return Type();
+    return get(context, inputs, results);
+  }]; 
+
+  let builders = [
+     TypeBuilder<(ins CArg<"ArrayRef<Type>", "{}">:$inputs, CArg<"ArrayRef<Type>", "{}">:$results), [{
+       return Base::get($_ctxt, inputs, results);
+     }]>,
+     TypeBuilder<(ins "FunctionType":$funcType), [{
+       return Base::get(funcType.getContext(), funcType.getInputs(), funcType.getResults());
+     }]>
+  ];
+  
+  let skipDefaultBuilders = 1;
+  //let genStorageClass = 0;
+  let extraClassDeclaration = [{
+    /// Input types.
+    unsigned getNumInputs() const;
+    Type getInput(unsigned i) const { return getInputs()[i]; }
+
+    /// Result types.
+    unsigned getNumResults() const;
+    Type getResult(unsigned i) const { return getResults()[i]; }
+  }];
+}
+
 def TypeScript_BoundFunction : TypeScript_Type<"BoundFunction"> {
   let mnemonic = "this_func";
 

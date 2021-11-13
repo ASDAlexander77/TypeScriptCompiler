@@ -4575,6 +4575,10 @@ class MLIRGenImpl
                 value = mlirGenCallFunction(location, calledFuncType, funcRefValue, callExpression->typeArguments,
                                             callExpression->arguments, testResult, genContext);
             })
+            .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) {
+                value = mlirGenCallFunction(location, calledFuncType, funcRefValue, callExpression->typeArguments,
+                                            callExpression->arguments, testResult, genContext);
+            })
             .Case<mlir_ts::BoundFunctionType>([&](auto calledBoundFuncType) {
                 auto calledFuncType = getFunctionType(calledBoundFuncType.getInputs(), calledBoundFuncType.getResults());
                 auto thisValue = builder.create<mlir_ts::GetThisOp>(location, calledFuncType.getInput(0), funcRefValue);
@@ -8304,7 +8308,7 @@ class MLIRGenImpl
         return builder.getFunctionType(inputs, results);
     }
 
-    mlir::Type getFunctionType(FunctionTypeNode functionType, const GenContext &genContext)
+    mlir_ts::HybridFunctionType getFunctionType(FunctionTypeNode functionType, const GenContext &genContext)
     {
         auto resultType = getType(functionType->type, genContext);
         SmallVector<mlir::Type> argTypes;
@@ -8319,7 +8323,7 @@ class MLIRGenImpl
             argTypes.push_back(type);
         }
 
-        auto funcType = mlir::FunctionType::get(builder.getContext(), argTypes, resultType);
+        auto funcType = mlir_ts::HybridFunctionType::get(builder.getContext(), argTypes, resultType);
         return funcType;
     }
 
