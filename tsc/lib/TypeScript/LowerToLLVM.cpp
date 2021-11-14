@@ -904,9 +904,20 @@ struct CallInternalOpLowering : public TsLlvmPattern<mlir_ts::CallInternalOp>
                     auto thisVal = rewriter.create<mlir_ts::GetThisOp>(loc, thisType, op.getOperand(0));
                     auto thisAsBoolVal = rewriter.create<mlir_ts::CastOp>(loc, mlir_ts::BooleanType::get(rewriter.getContext()), thisVal);
 
+                    SmallVector<mlir::Type, 4> results;
+                    for (auto &resultType : hybridFuncType.getResults())
+                    {
+                        if (resultType.isa<mlir_ts::VoidType>())
+                        {
+                            continue;
+                        }
+
+                        results.push_back(resultType);
+                    }
+
                     // no value yet.
                     clh.conditionalBlocksLowering(
-                        hybridFuncType.getResults(), thisAsBoolVal,
+                        results, thisAsBoolVal,
                         [&](OpBuilder &builder, Location loc) {
                             mlir::SmallVector<mlir::Type> inputs;
                             inputs.push_back(thisType);

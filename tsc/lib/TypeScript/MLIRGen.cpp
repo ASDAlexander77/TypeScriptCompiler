@@ -1502,9 +1502,30 @@ class MLIRGenImpl
                     auto returnType = getType(typeParameter, genContext);
                     funcProto->setReturnType(returnType);
                 }
-                else if (genContext.argTypeDestFuncType && genContext.argTypeDestFuncType.cast<mlir::FunctionType>().getNumResults() > 0)
+                else if (genContext.argTypeDestFuncType)
                 {
-                    funcProto->setReturnType(genContext.argTypeDestFuncType.cast<mlir::FunctionType>().getResult(0));
+                    auto &argTypeDestFuncType = genContext.argTypeDestFuncType;
+                    if (auto funcType = argTypeDestFuncType.dyn_cast<mlir::FunctionType>())
+                    {
+                        if (funcType.getNumResults() > 0)
+                        {
+                            funcProto->setReturnType(funcType.getResult(0));
+                        }
+                    }
+                    else if (auto hybridFuncType = argTypeDestFuncType.dyn_cast<mlir_ts::HybridFunctionType>())
+                    {
+                        if (hybridFuncType.getResults().size() > 0)
+                        {
+                            funcProto->setReturnType(hybridFuncType.getResult(0));
+                        }
+                    }
+                    else if (auto boundFuncType = argTypeDestFuncType.dyn_cast<mlir_ts::BoundFunctionType>())
+                    {
+                        if (boundFuncType.getResults().size() > 0)
+                        {
+                            funcProto->setReturnType(boundFuncType.getResult(0));
+                        }
+                    }
                 }
 
                 // create funcType
