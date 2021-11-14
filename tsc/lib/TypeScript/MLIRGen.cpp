@@ -1296,7 +1296,14 @@ class MLIRGenImpl
 
             if ((!type || type == noneType) && genContext.argTypeDestFuncType)
             {
-                type = genContext.argTypeDestFuncType.cast<mlir::FunctionType>().getInput(index);
+                if (auto funcType = genContext.argTypeDestFuncType.dyn_cast<mlir::FunctionType>())
+                {
+                    type = funcType.getInput(index);
+                }
+                else if (auto hybridFuncType = genContext.argTypeDestFuncType.dyn_cast<mlir_ts::HybridFunctionType>())
+                {
+                    type = hybridFuncType.getInput(index);
+                }
 
                 LLVM_DEBUG(dbgs() << "\n!! param " << name << " mapped to type " << type << "\n\n");
             }
@@ -3773,17 +3780,19 @@ class MLIRGenImpl
 
         VALIDATE(leftExpressionValue, location)
 
-        if (auto funcType = leftExpressionValue.getType().dyn_cast_or_null<mlir::FunctionType>())
+        auto rightExprGenContext = GenContext(genContext);
+        if (auto hybridFuncType = leftExpressionValue.getType().dyn_cast<mlir_ts::HybridFunctionType>())
         {
-            const_cast<GenContext &>(genContext).argTypeDestFuncType = funcType;
+            rightExprGenContext.argTypeDestFuncType = hybridFuncType;
+        }
+        else if (auto funcType = leftExpressionValue.getType().dyn_cast<mlir::FunctionType>())
+        {
+            rightExprGenContext.argTypeDestFuncType = funcType;
         }
 
-        auto rightExpressionValue = mlirGen(rightExpression, genContext);
+        auto rightExpressionValue = mlirGen(rightExpression, rightExprGenContext);
 
         VALIDATE(rightExpressionValue, location)
-
-        // clear state
-        const_cast<GenContext &>(genContext).argTypeDestFuncType = nullptr;
 
         return mlirGenSaveLogicOneItem(location, leftExpressionValue, rightExpressionValue, genContext);
     }
