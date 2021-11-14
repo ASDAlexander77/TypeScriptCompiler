@@ -155,6 +155,42 @@ class CodeLogicHelper
         return resultBlock->getArguments().front();
     }
 
+    mlir::Value conditionalBlocksLowering(TypeRange types, mlir::Value condition,
+                                          mlir::function_ref<ValueRange(OpBuilder &, Location)> thenBuilder,
+                                          mlir::function_ref<ValueRange(OpBuilder &, Location)> elseBuilder)
+    {
+        // Split block
+        auto *opBlock = rewriter.getInsertionBlock();
+        auto opPosition = rewriter.getInsertionPoint();
+        auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
+
+        // then block
+        auto *thenBlock = rewriter.createBlock(continuationBlock);
+        auto thenValues = thenBuilder(rewriter, loc);
+
+        // else block
+        auto *elseBlock = rewriter.createBlock(continuationBlock);
+        auto elseValues = elseBuilder(rewriter, loc);
+
+        // result block
+        auto *resultBlock = rewriter.createBlock(continuationBlock, types);
+        rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
+
+        rewriter.setInsertionPointToEnd(thenBlock);
+        rewriter.create<LLVM::BrOp>(loc, thenValues, resultBlock);
+
+        rewriter.setInsertionPointToEnd(elseBlock);
+        rewriter.create<LLVM::BrOp>(loc, elseValues, resultBlock);
+
+        // Generate assertion test.
+        rewriter.setInsertionPointToEnd(opBlock);
+        rewriter.create<LLVM::CondBrOp>(loc, condition, thenBlock, elseBlock);
+
+        rewriter.setInsertionPointToStart(continuationBlock);
+
+        return resultBlock->getArguments().front();
+    }
+
     template <typename OpTy> void saveResult(OpTy &op, mlir::Value result)
     {
         auto defOp = op.operand1().getDefiningOp();

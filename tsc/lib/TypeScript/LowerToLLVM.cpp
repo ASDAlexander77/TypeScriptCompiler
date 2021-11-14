@@ -875,6 +875,8 @@ struct CallInternalOpLowering : public TsLlvmPattern<mlir_ts::CallInternalOp>
 
     LogicalResult matchAndRewrite(mlir_ts::CallInternalOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
     {
+        auto loc = op->getLoc();
+
         TypeConverterHelper tch(getTypeConverter());
         SmallVector<mlir::Type> llvmTypes;
         for (auto type : op.getResultTypes())
@@ -893,13 +895,50 @@ struct CallInternalOpLowering : public TsLlvmPattern<mlir_ts::CallInternalOp>
             LLVM_DEBUG(llvm::dbgs() << "\n!! CallInternalOp - arg #0:" << op.getOperand(0) << "\n");
             if (auto hybridFuncType = op.getOperand(0).getType().dyn_cast<mlir_ts::HybridFunctionType>())
             {
-                auto funcType = mlir::FunctionType::get(rewriter.getContext(), hybridFuncType.getInputs(), hybridFuncType.getResults());
-                auto methodPtr = rewriter.create<mlir_ts::GetMethodOp>(op->getLoc(), funcType, op.getOperand(0));
+                mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
+                {
+                    CodeLogicHelper clh(loc, rewriter);
 
-                mlir::SmallVector<mlir::Value> ops;
-                ops.push_back(methodPtr);
-                ops.append(op.getOperands().begin() + 1, op.getOperands().end());
-                rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, llvmTypes, ops);
+                    // test 'this'
+                    auto thisType = mlir_ts::OpaqueType::get(rewriter.getContext());
+                    auto thisVal = rewriter.create<mlir_ts::GetThisOp>(loc, thisType, op.getOperand(0));
+                    auto thisAsBoolVal = rewriter.create<mlir_ts::CastOp>(loc, mlir_ts::BooleanType::get(rewriter.getContext()), thisVal);
+
+                    // no value yet.
+                    clh.conditionalBlocksLowering(
+                        hybridFuncType.getResults(), thisAsBoolVal,
+                        [&](OpBuilder &builder, Location loc) {
+                            mlir::SmallVector<mlir::Type> inputs;
+                            inputs.push_back(thisType);
+                            inputs.append(hybridFuncType.getInputs().begin(), hybridFuncType.getInputs().end());
+
+                            // with this
+                            auto funcType = mlir::FunctionType::get(rewriter.getContext(), inputs, hybridFuncType.getResults());
+                            auto methodPtr = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, op.getOperand(0));
+
+                            mlir::SmallVector<mlir::Value> ops;
+                            ops.push_back(methodPtr);
+                            ops.push_back(thisVal);
+                            ops.append(op.getOperands().begin() + 1, op.getOperands().end());
+                            auto callRes = rewriter.create<LLVM::CallOp>(loc, llvmTypes, ops);
+                            return callRes.getResults();
+                        },
+                        [&](OpBuilder &builder, Location loc) {
+                            // no this
+                            auto funcType =
+                                mlir::FunctionType::get(rewriter.getContext(), hybridFuncType.getInputs(), hybridFuncType.getResults());
+                            auto methodPtr = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, op.getOperand(0));
+
+                            mlir::SmallVector<mlir::Value> ops;
+                            ops.push_back(methodPtr);
+                            ops.append(op.getOperands().begin() + 1, op.getOperands().end());
+                            auto callRes = rewriter.create<LLVM::CallOp>(loc, llvmTypes, ops);
+                            return callRes.getResults();
+                        });
+                }
+
+                rewriter.eraseOp(op);
+
                 return success();
             }
 

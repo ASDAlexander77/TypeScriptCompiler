@@ -114,7 +114,6 @@ struct ReturnOpLowering : public TsPattern<mlir_ts::ReturnOp>
             rewriter.create<mlir_ts::EndCatchOp>(loc);
         }
 
-        // Split block at `assert` operation.
         auto *opBlock = rewriter.getInsertionBlock();
         auto opPosition = rewriter.getInsertionPoint();
         auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
