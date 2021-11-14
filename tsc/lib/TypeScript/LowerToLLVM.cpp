@@ -949,7 +949,14 @@ struct CallInternalOpLowering : public TsLlvmPattern<mlir_ts::CallInternalOp>
                         });
                 }
 
-                rewriter.replaceOp(op, returns);
+                if (returns.size() > 0)
+                {
+                    rewriter.replaceOp(op, returns);
+                }
+                else
+                {
+                    rewriter.eraseOp(op);
+                }
 
                 return success();
             }
