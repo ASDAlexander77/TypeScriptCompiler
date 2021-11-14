@@ -7624,7 +7624,13 @@ class MLIRGenImpl
             type = typeAndInit.first;
 
             // fix type for fields with FuncType
-            if (auto funcType = type.dyn_cast<mlir::FunctionType>())
+            if (auto hybridFuncType = type.dyn_cast<mlir_ts::HybridFunctionType>())
+            {
+                MLIRTypeHelper mth(builder.getContext());
+                auto funcType = getFunctionType(hybridFuncType.getInputs(), hybridFuncType.getResults());
+                type = mth.getFunctionTypeAddingFirstArgType(funcType, getOpaqueType());
+            }
+            else if (auto funcType = type.dyn_cast<mlir::FunctionType>())
             {
                 MLIRTypeHelper mth(builder.getContext());
                 type = mth.getFunctionTypeAddingFirstArgType(funcType, getOpaqueType());
