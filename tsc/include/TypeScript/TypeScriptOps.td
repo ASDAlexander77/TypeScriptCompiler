@@ -1101,7 +1101,7 @@ def TypeScript_CreateBoundFunctionOp : TypeScript_Op<"CreateBoundFunction"> {
   );
 
   let results = (outs
-    TypeScript_BoundFunction:$result
+    TypeScript_BoundFunctionLike:$result
   );
 
   let assemblyFormat = "$thisVal `:``:` $func `:` type($thisVal) `,` type($func) attr-dict `->` type($result)";
@@ -1115,7 +1115,7 @@ def TypeScript_GetThisOp : TypeScript_Op<"GetThis"> {
   }];
 
   let arguments = (ins
-    TypeScript_BoundFunction:$boundFunc
+    TypeScript_BoundFunctionLike:$boundFunc
   );
 
   let results = (outs
@@ -1133,7 +1133,7 @@ def TypeScript_GetMethodOp : TypeScript_Op<"GetMethod"> {
   }];
 
   let arguments = (ins
-    TypeScript_BoundFunction:$boundFunc
+    TypeScript_BoundFunctionLike:$boundFunc
   );
 
   let results = (outs

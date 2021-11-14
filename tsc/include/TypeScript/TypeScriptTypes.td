@@ -1214,5 +1214,8 @@ def TypeScript_AnyRefOrCallable : AnyTypeOf<[
     TypeScript_Ref, TypeScript_Callable
   ]>;
 
+def TypeScript_BoundFunctionLike : AnyTypeOf<[
+    TypeScript_BoundFunction, TypeScript_HybridFunction
+  ]>;
 
 #endif // TYPESCRIPT_TYPEDEFS

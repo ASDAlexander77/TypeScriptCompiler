@@ -889,6 +889,20 @@ struct CallInternalOpLowering : public TsLlvmPattern<mlir_ts::CallInternalOp>
         }
         else
         {
+            // special case for HybridFunctionType
+            LLVM_DEBUG(llvm::dbgs() << "\n!! CallInternalOp - arg #0:" << op.getOperand(0) << "\n");
+            if (auto hybridFuncType = op.getOperand(0).getType().dyn_cast<mlir_ts::HybridFunctionType>())
+            {
+                auto funcType = mlir::FunctionType::get(rewriter.getContext(), hybridFuncType.getInputs(), hybridFuncType.getResults());
+                auto methodPtr = rewriter.create<mlir_ts::GetMethodOp>(op->getLoc(), funcType, op.getOperand(0));
+
+                mlir::SmallVector<mlir::Value> ops;
+                ops.push_back(methodPtr);
+                ops.append(op.getOperands().begin() + 1, op.getOperands().end());
+                rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, llvmTypes, ops);
+                return success();
+            }
+
             rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, llvmTypes, op.getOperands());
         }
 
@@ -2900,7 +2914,8 @@ struct CreateBoundFunctionOpLowering : public TsLlvmPattern<mlir_ts::CreateBound
         TypeConverterHelper tch(getTypeConverter());
 
         assert(createBoundFunctionOp.getType());
-        assert(createBoundFunctionOp.getType().isa<mlir_ts::BoundFunctionType>());
+        assert(createBoundFunctionOp.getType().isa<mlir_ts::BoundFunctionType>() ||
+               createBoundFunctionOp.getType().isa<mlir_ts::HybridFunctionType>());
 
         auto llvmBoundFunctionType = tch.convertType(createBoundFunctionOp.getType());
 
@@ -2960,8 +2975,20 @@ struct GetMethodOpLowering : public TsLlvmPattern<mlir_ts::GetMethodOp>
         CodeLogicHelper clh(getMethodOp, rewriter);
         CastLogicHelper castLogic(getMethodOp, rewriter, tch);
 
-        auto boundType = getMethodOp.boundFunc().getType().cast<mlir_ts::BoundFunctionType>();
-        auto funcType = rewriter.getFunctionType(boundType.getInputs(), boundType.getResults());
+        mlir::FunctionType funcType;
+        if (auto boundType = getMethodOp.boundFunc().getType().dyn_cast<mlir_ts::BoundFunctionType>())
+        {
+            funcType = rewriter.getFunctionType(boundType.getInputs(), boundType.getResults());
+        }
+        else if (auto hybridType = getMethodOp.boundFunc().getType().dyn_cast<mlir_ts::HybridFunctionType>())
+        {
+            funcType = rewriter.getFunctionType(hybridType.getInputs(), hybridType.getResults());
+        }
+        else
+        {
+            llvm_unreachable("not implemented");
+        }
+
         auto llvmMethodType = tch.convertType(funcType);
 
         mlir::Value methodVal =

@@ -209,6 +209,18 @@ class CastLogicHelper
             }
         }
 
+        if (auto resHybridFunc = resType.dyn_cast_or_null<mlir_ts::HybridFunctionType>())
+        {
+            if (auto inFuncType = inType.dyn_cast_or_null<mlir::FunctionType>())
+            {
+                // BoundFunction is the same as HybridFunction
+                // null this
+                auto thisNullVal = rewriter.create<mlir_ts::NullOp>(loc, mlir_ts::NullType::get(rewriter.getContext()));
+                auto boundFuncVal = rewriter.create<mlir_ts::CreateBoundFunctionOp>(loc, resHybridFunc, thisNullVal, in);
+                return boundFuncVal;
+            }
+        }
+
         if (auto resRefType = resType.dyn_cast_or_null<mlir_ts::RefType>())
         {
             if (auto inBoundRef = inType.dyn_cast_or_null<mlir_ts::BoundRefType>())
