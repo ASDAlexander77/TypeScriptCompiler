@@ -895,6 +895,7 @@ struct CallInternalOpLowering : public TsLlvmPattern<mlir_ts::CallInternalOp>
             LLVM_DEBUG(llvm::dbgs() << "\n!! CallInternalOp - arg #0:" << op.getOperand(0) << "\n");
             if (auto hybridFuncType = op.getOperand(0).getType().dyn_cast<mlir_ts::HybridFunctionType>())
             {
+                mlir::ValueRange returns;
                 mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
                 {
                     CodeLogicHelper clh(loc, rewriter);
@@ -916,7 +917,7 @@ struct CallInternalOpLowering : public TsLlvmPattern<mlir_ts::CallInternalOp>
                     }
 
                     // no value yet.
-                    clh.conditionalBlocksLowering(
+                    returns = clh.conditionalBlocksLowering(
                         results, thisAsBoolVal,
                         [&](OpBuilder &builder, Location loc) {
                             mlir::SmallVector<mlir::Type> inputs;
@@ -948,7 +949,7 @@ struct CallInternalOpLowering : public TsLlvmPattern<mlir_ts::CallInternalOp>
                         });
                 }
 
-                rewriter.eraseOp(op);
+                rewriter.replaceOp(op, returns);
 
                 return success();
             }
