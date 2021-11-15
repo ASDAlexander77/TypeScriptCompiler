@@ -896,8 +896,7 @@ struct CallInternalOpLowering : public TsLlvmPattern<mlir_ts::CallInternalOp>
             if (auto hybridFuncType = op.getOperand(0).getType().dyn_cast<mlir_ts::HybridFunctionType>())
             {
                 rewriter.replaceOpWithNewOp<mlir_ts::CallHybridInternalOp>(
-                    op, hybridFuncType.getResults(), op.getOperand(0),
-                    OperandRange({op.getOperands().begin() + 1, op.getOperands().end()}));
+                    op, hybridFuncType.getResults(), op.getOperand(0), OperandRange(op.getOperands().begin() + 1, op.getOperands().end()));
                 return success();
             }
 
@@ -1004,7 +1003,7 @@ struct InvokeOpLowering : public TsLlvmPattern<mlir_ts::InvokeOp>
         if (auto hybridFuncType = op.getOperand(0).getType().dyn_cast<mlir_ts::HybridFunctionType>())
         {
             rewriter.replaceOpWithNewOp<mlir_ts::InvokeHybridOp>(
-                op, hybridFuncType.getResults(), op.getOperand(0), OperandRange({op.getOperands().begin() + 1, op.getOperands().end()}),
+                op, hybridFuncType.getResults(), op.getOperand(0), OperandRange(op.getOperands().begin() + 1, op.getOperands().end()),
                 op.normalDestOperands(), op.unwindDestOperands(), op.normalDest(), op.unwindDest());
             return success();
         }
