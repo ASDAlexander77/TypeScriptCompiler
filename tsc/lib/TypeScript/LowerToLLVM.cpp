@@ -998,14 +998,17 @@ struct InvokeOpLowering : public TsLlvmPattern<mlir_ts::InvokeOp>
 
     LogicalResult matchAndRewrite(mlir_ts::InvokeOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
     {
-        // special case for HybridFunctionType
-        LLVM_DEBUG(llvm::dbgs() << "\n!! InvokeOp - arg #0:" << op.getOperand(0) << "\n");
-        if (auto hybridFuncType = op.getOperand(0).getType().dyn_cast<mlir_ts::HybridFunctionType>())
+        if (!op.callee().hasValue())
         {
-            rewriter.replaceOpWithNewOp<mlir_ts::InvokeHybridOp>(
-                op, hybridFuncType.getResults(), op.getOperand(0), OperandRange(op.getOperands().begin() + 1, op.getOperands().end()),
-                op.normalDestOperands(), op.unwindDestOperands(), op.normalDest(), op.unwindDest());
-            return success();
+            // special case for HybridFunctionType
+            LLVM_DEBUG(llvm::dbgs() << "\n!! InvokeOp - arg #0:" << op.getOperand(0) << "\n");
+            if (auto hybridFuncType = op.getOperand(0).getType().dyn_cast<mlir_ts::HybridFunctionType>())
+            {
+                rewriter.replaceOpWithNewOp<mlir_ts::InvokeHybridOp>(
+                    op, hybridFuncType.getResults(), op.getOperand(0), OperandRange(op.getOperands().begin() + 1, op.getOperands().end()),
+                    op.normalDestOperands(), op.unwindDestOperands(), op.normalDest(), op.unwindDest());
+                return success();
+            }
         }
 
         TypeConverterHelper tch(getTypeConverter());
