@@ -5115,17 +5115,30 @@ class MLIRGenImpl
 
         auto callee = mlirGen(taggedTemplateExpressionAST->tag, genContext);
 
+        ArrayRef<mlir::Type> inputs;
+
         // cast all params if needed
-        auto funcType = callee.getType().cast<mlir::FunctionType>();
+        if (auto hybridFuncType = callee.getType().cast<mlir_ts::HybridFunctionType>())
+        {
+            inputs = hybridFuncType.getInputs();
+        }
+        else if (auto funcType = callee.getType().cast<mlir::FunctionType>())
+        {
+            inputs = funcType.getInputs();
+        }
+        else
+        {
+            llvm_unreachable("not implemented");
+        }
 
         SmallVector<mlir::Value, 4> operands;
 
         auto i = 0;
         for (auto value : vals)
         {
-            if (value.getType() != funcType.getInput(i))
+            if (value.getType() != inputs[i])
             {
-                auto castValue = cast(value.getLoc(), funcType.getInput(i), value, genContext);
+                auto castValue = cast(value.getLoc(), inputs[i], value, genContext);
                 operands.push_back(castValue);
             }
             else
