@@ -878,6 +878,13 @@ class MLIRGenImpl
                 MLIRTypeHelper mth(builder.getContext());
 
                 auto actualType = mth.convertConstArrayTypeToArrayType(type);
+
+                // this is 'let', if 'let' is func, it should be HybridFunction
+                if (auto funcType = actualType.dyn_cast<mlir::FunctionType>())
+                {
+                    actualType = mlir_ts::HybridFunctionType::get(builder.getContext(), funcType);
+                }
+
                 if (init && actualType != type)
                 {
                     auto castValue = cast(location, actualType, init, genContext);
