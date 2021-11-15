@@ -251,6 +251,16 @@ class CastLogicHelper
                 // create null interface
                 return rewriter.create<mlir_ts::NewInterfaceOp>(loc, ifaceType, in, in);
             }
+
+            if (auto resHybridFunc = resType.dyn_cast_or_null<mlir_ts::HybridFunctionType>())
+            {
+                // null this
+                auto thisNullVal = rewriter.create<mlir_ts::NullOp>(loc, mlir_ts::NullType::get(rewriter.getContext()));
+                auto funcType = mlir::FunctionType::get(rewriter.getContext(), resHybridFunc.getInputs(), resHybridFunc.getResults());
+                auto castFuncNullVal = cast(in, funcType);
+                auto boundFuncVal = rewriter.create<mlir_ts::CreateBoundFunctionOp>(loc, resHybridFunc, thisNullVal, castFuncNullVal);
+                return boundFuncVal;
+            }
         }
 
         if (auto stringTypeRes = resType.dyn_cast_or_null<mlir_ts::StringType>())
