@@ -1,7 +1,7 @@
 let s2: string;
 let xyz = 12;
 
-function pause(ms: number): void {}
+function pause(ms: number): void { }
 
 namespace control {
     export function runInBackground(a: () => void): void {
@@ -12,7 +12,7 @@ namespace control {
 function main() {
     print("test top level code");
     let xsum = 0;
-    let forclean = () => {};
+    let forclean = () => { };
     for (let i = 0; i < 11; ++i) {
         xsum = xsum + i;
         // TODO: this code breaks execution, i think because of variable i in stack which is cleared after exiting
@@ -22,6 +22,7 @@ function main() {
     }
     forclean();
     forclean = null;
+    assert(!forclean);
     assert(xsum == 55, "mainfor");
 
     control.runInBackground(() => {
