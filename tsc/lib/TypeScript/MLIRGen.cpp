@@ -1720,6 +1720,7 @@ class MLIRGenImpl
 
     mlir::Value mlirGen(FunctionExpression functionExpressionAST, const GenContext &genContext)
     {
+        auto location = loc(functionExpressionAST);
         mlir_ts::FuncOp funcOp;
 
         {
@@ -1734,6 +1735,11 @@ class MLIRGenImpl
             {
                 return mlir::Value();
             }
+        }
+
+        if (auto trampOp = resolveFunctionWithCapture(location, funcOp.getName(), funcOp.getType(), false, genContext))
+        {
+            return trampOp;
         }
 
         auto funcSymbolRef = builder.create<mlir_ts::SymbolRefOp>(loc(functionExpressionAST), funcOp.getType(),

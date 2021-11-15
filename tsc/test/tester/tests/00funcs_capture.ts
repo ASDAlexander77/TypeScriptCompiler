@@ -9,6 +9,17 @@ function main_func() {
     f();
 }
 
+function main_func2() {
+    let a = 10;
+
+    let m = function () {
+        assert(a == 10);
+        print(a);
+    }
+
+    m();
+}
+
 function main_func_in_object() {
     let a = 10;
 
@@ -87,6 +98,7 @@ function main_namespace_inner() {
 
 function main() {
     main_func();
+    main_func2();
     main_func_in_object();
     main_func_in_object2(11);
     main_func_in_object3(11);
