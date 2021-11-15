@@ -895,73 +895,98 @@ struct CallInternalOpLowering : public TsLlvmPattern<mlir_ts::CallInternalOp>
             LLVM_DEBUG(llvm::dbgs() << "\n!! CallInternalOp - arg #0:" << op.getOperand(0) << "\n");
             if (auto hybridFuncType = op.getOperand(0).getType().dyn_cast<mlir_ts::HybridFunctionType>())
             {
-                mlir::ValueRange returns;
-                mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
-                {
-                    CodeLogicHelper clh(loc, rewriter);
-
-                    // test 'this'
-                    auto thisType = mlir_ts::OpaqueType::get(rewriter.getContext());
-                    auto thisVal = rewriter.create<mlir_ts::GetThisOp>(loc, thisType, op.getOperand(0));
-                    auto thisAsBoolVal = rewriter.create<mlir_ts::CastOp>(loc, mlir_ts::BooleanType::get(rewriter.getContext()), thisVal);
-
-                    SmallVector<mlir::Type, 4> results;
-                    for (auto &resultType : hybridFuncType.getResults())
-                    {
-                        if (resultType.isa<mlir_ts::VoidType>())
-                        {
-                            continue;
-                        }
-
-                        results.push_back(resultType);
-                    }
-
-                    // no value yet.
-                    returns = clh.conditionalBlocksLowering(
-                        results, thisAsBoolVal,
-                        [&](OpBuilder &builder, Location loc) {
-                            mlir::SmallVector<mlir::Type> inputs;
-                            inputs.push_back(thisType);
-                            inputs.append(hybridFuncType.getInputs().begin(), hybridFuncType.getInputs().end());
-
-                            // with this
-                            auto funcType = mlir::FunctionType::get(rewriter.getContext(), inputs, hybridFuncType.getResults());
-                            auto methodPtr = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, op.getOperand(0));
-
-                            mlir::SmallVector<mlir::Value> ops;
-                            ops.push_back(methodPtr);
-                            ops.push_back(thisVal);
-                            ops.append(op.getOperands().begin() + 1, op.getOperands().end());
-                            auto callRes = rewriter.create<LLVM::CallOp>(loc, llvmTypes, ops);
-                            return callRes.getResults();
-                        },
-                        [&](OpBuilder &builder, Location loc) {
-                            // no this
-                            auto funcType =
-                                mlir::FunctionType::get(rewriter.getContext(), hybridFuncType.getInputs(), hybridFuncType.getResults());
-                            auto methodPtr = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, op.getOperand(0));
-
-                            mlir::SmallVector<mlir::Value> ops;
-                            ops.push_back(methodPtr);
-                            ops.append(op.getOperands().begin() + 1, op.getOperands().end());
-                            auto callRes = rewriter.create<LLVM::CallOp>(loc, llvmTypes, ops);
-                            return callRes.getResults();
-                        });
-                }
-
-                if (returns.size() > 0)
-                {
-                    rewriter.replaceOp(op, returns);
-                }
-                else
-                {
-                    rewriter.eraseOp(op);
-                }
-
+                rewriter.replaceOpWithNewOp<mlir_ts::CallHybridInternalOp>(
+                    op, hybridFuncType.getResults(), op.getOperand(0),
+                    OperandRange({op.getOperands().begin() + 1, op.getOperands().end()}));
                 return success();
             }
 
             rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, llvmTypes, op.getOperands());
+        }
+
+        return success();
+    }
+};
+
+struct CallHybridInternalOpLowering : public TsLlvmPattern<mlir_ts::CallHybridInternalOp>
+{
+    using TsLlvmPattern<mlir_ts::CallHybridInternalOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::CallHybridInternalOp op, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        auto loc = op->getLoc();
+
+        TypeConverterHelper tch(getTypeConverter());
+
+        auto hybridFuncType = op.callee().getType().cast<mlir_ts::HybridFunctionType>();
+
+        SmallVector<mlir::Type> llvmTypes;
+        for (auto type : op.getResultTypes())
+        {
+            llvmTypes.push_back(tch.convertType(type));
+        }
+
+        mlir::ValueRange returns;
+        mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
+        {
+            CodeLogicHelper clh(loc, rewriter);
+
+            // test 'this'
+            auto thisType = mlir_ts::OpaqueType::get(rewriter.getContext());
+            auto thisVal = rewriter.create<mlir_ts::GetThisOp>(loc, thisType, op.getOperand(0));
+            auto thisAsBoolVal = rewriter.create<mlir_ts::CastOp>(loc, mlir_ts::BooleanType::get(rewriter.getContext()), thisVal);
+
+            SmallVector<mlir::Type, 4> results;
+            for (auto &resultType : hybridFuncType.getResults())
+            {
+                if (resultType.isa<mlir_ts::VoidType>())
+                {
+                    continue;
+                }
+
+                results.push_back(resultType);
+            }
+
+            // no value yet.
+            returns = clh.conditionalBlocksLowering(
+                results, thisAsBoolVal,
+                [&](OpBuilder &builder, Location loc) {
+                    mlir::SmallVector<mlir::Type> inputs;
+                    inputs.push_back(thisType);
+                    inputs.append(hybridFuncType.getInputs().begin(), hybridFuncType.getInputs().end());
+
+                    // with this
+                    auto funcType = mlir::FunctionType::get(rewriter.getContext(), inputs, hybridFuncType.getResults());
+                    auto methodPtr = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, op.getOperand(0));
+
+                    mlir::SmallVector<mlir::Value> ops;
+                    ops.push_back(methodPtr);
+                    ops.push_back(thisVal);
+                    ops.append(op.getOperands().begin() + 1, op.getOperands().end());
+                    auto callRes = rewriter.create<LLVM::CallOp>(loc, llvmTypes, ops);
+                    return callRes.getResults();
+                },
+                [&](OpBuilder &builder, Location loc) {
+                    // no this
+                    auto funcType = mlir::FunctionType::get(rewriter.getContext(), hybridFuncType.getInputs(), hybridFuncType.getResults());
+                    auto methodPtr = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, op.getOperand(0));
+
+                    mlir::SmallVector<mlir::Value> ops;
+                    ops.push_back(methodPtr);
+                    ops.append(op.getOperands().begin() + 1, op.getOperands().end());
+                    auto callRes = rewriter.create<LLVM::CallOp>(loc, llvmTypes, ops);
+                    return callRes.getResults();
+                });
+        }
+
+        if (returns.size() > 0)
+        {
+            rewriter.replaceOp(op, returns);
+        }
+        else
+        {
+            rewriter.eraseOp(op);
         }
 
         return success();
@@ -974,6 +999,16 @@ struct InvokeOpLowering : public TsLlvmPattern<mlir_ts::InvokeOp>
 
     LogicalResult matchAndRewrite(mlir_ts::InvokeOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
     {
+        // special case for HybridFunctionType
+        LLVM_DEBUG(llvm::dbgs() << "\n!! InvokeOp - arg #0:" << op.getOperand(0) << "\n");
+        if (auto hybridFuncType = op.getOperand(0).getType().dyn_cast<mlir_ts::HybridFunctionType>())
+        {
+            rewriter.replaceOpWithNewOp<mlir_ts::InvokeHybridOp>(
+                op, hybridFuncType.getResults(), op.getOperand(0), OperandRange({op.getOperands().begin() + 1, op.getOperands().end()}),
+                op.normalDestOperands(), op.unwindDestOperands(), op.normalDest(), op.unwindDest());
+            return success();
+        }
+
         TypeConverterHelper tch(getTypeConverter());
         SmallVector<mlir::Type> llvmTypes;
         for (auto type : op.getResultTypes())
@@ -984,6 +1019,106 @@ struct InvokeOpLowering : public TsLlvmPattern<mlir_ts::InvokeOp>
         // just replace
         rewriter.replaceOpWithNewOp<LLVM::InvokeOp>(op, llvmTypes, op.calleeAttr(), op.getOperands(), op.normalDest(),
                                                     op.normalDestOperands(), op.unwindDest(), op.unwindDestOperands());
+        return success();
+    }
+};
+
+struct InvokeHybridOpLowering : public TsLlvmPattern<mlir_ts::InvokeHybridOp>
+{
+    using TsLlvmPattern<mlir_ts::InvokeHybridOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::InvokeHybridOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+    {
+        auto loc = op->getLoc();
+
+        TypeConverterHelper tch(getTypeConverter());
+
+        auto hybridFuncType = op.callee().getType().cast<mlir_ts::HybridFunctionType>();
+
+        SmallVector<mlir::Type> llvmTypes;
+        for (auto type : op.getResultTypes())
+        {
+            llvmTypes.push_back(tch.convertType(type));
+        }
+
+        mlir::ValueRange returns;
+        mlir::OpBuilder::InsertionGuard insertGuard(rewriter);
+        {
+            CodeLogicHelper clh(loc, rewriter);
+
+            // test 'this'
+            auto thisType = mlir_ts::OpaqueType::get(rewriter.getContext());
+            auto thisVal = rewriter.create<mlir_ts::GetThisOp>(loc, thisType, op.getOperand(0));
+            auto thisAsBoolVal = rewriter.create<mlir_ts::CastOp>(loc, mlir_ts::BooleanType::get(rewriter.getContext()), thisVal);
+
+            SmallVector<mlir::Type, 4> results;
+            for (auto &resultType : hybridFuncType.getResults())
+            {
+                if (resultType.isa<mlir_ts::VoidType>())
+                {
+                    continue;
+                }
+
+                results.push_back(resultType);
+            }
+
+            // no value yet.
+            returns = clh.conditionalBlocksLowering(
+                results, thisAsBoolVal,
+                [&](OpBuilder &builder, Location loc) {
+                    mlir::SmallVector<mlir::Type> inputs;
+                    inputs.push_back(thisType);
+                    inputs.append(hybridFuncType.getInputs().begin(), hybridFuncType.getInputs().end());
+
+                    // with this
+                    auto funcType = mlir::FunctionType::get(rewriter.getContext(), inputs, hybridFuncType.getResults());
+                    auto methodPtr = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, op.getOperand(0));
+
+                    mlir::SmallVector<mlir::Value> ops;
+                    ops.push_back(methodPtr);
+                    ops.push_back(thisVal);
+                    ops.append(op.getOperands().begin() + 1, op.getOperands().end());
+
+                    auto *continuationBlock = clh.CutBlockAndSetInsertPointToEndOfBlock();
+
+                    auto callRes = rewriter.create<LLVM::InvokeOp>(loc, llvmTypes, ops, continuationBlock, op.normalDestOperands(),
+                                                                   op.unwindDest(), op.unwindDestOperands());
+
+                    rewriter.setInsertionPointToStart(continuationBlock);
+
+                    return callRes.getResults();
+                },
+                [&](OpBuilder &builder, Location loc) {
+                    // no this
+                    auto funcType = mlir::FunctionType::get(rewriter.getContext(), hybridFuncType.getInputs(), hybridFuncType.getResults());
+                    auto methodPtr = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, op.getOperand(0));
+
+                    mlir::SmallVector<mlir::Value> ops;
+                    ops.push_back(methodPtr);
+                    ops.append(op.getOperands().begin() + 1, op.getOperands().end());
+
+                    auto *continuationBlock = clh.CutBlockAndSetInsertPointToEndOfBlock();
+
+                    auto callRes = rewriter.create<LLVM::InvokeOp>(loc, llvmTypes, ops, continuationBlock, op.normalDestOperands(),
+                                                                   op.unwindDest(), op.unwindDestOperands());
+
+                    rewriter.setInsertionPointToStart(continuationBlock);
+
+                    return callRes.getResults();
+                });
+
+            rewriter.create<LLVM::BrOp>(loc, ValueRange{}, op.normalDest());
+        }
+
+        if (returns.size() > 0)
+        {
+            rewriter.replaceOp(op, returns);
+        }
+        else
+        {
+            rewriter.eraseOp(op);
+        }
+
         return success();
     }
 };
@@ -3773,28 +3908,28 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 
     // The only remaining operation to lower from the `typescript` dialect, is the PrintOp.
     TsLlvmContext tsLlvmContext{};
-    patterns.insert<CaptureOpLowering, AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering,
-                    ArithmeticBinaryOpLowering, AssertOpLowering, CastOpLowering, ConstantOpLowering, CreateOptionalOpLowering,
-                    UndefOptionalOpLowering, HasValueOpLowering, ValueOpLowering, SymbolRefOpLowering, GlobalOpLowering,
-                    GlobalResultOpLowering, FuncOpLowering, LoadOpLowering, ElementRefOpLowering, PropertyRefOpLowering,
-                    ExtractPropertyOpLowering, LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateTupleOpLowering,
-                    DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, PushOpLowering,
-                    PopOpLowering, DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering, PrintOpLowering, StoreOpLowering,
-                    SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering, StringLengthOpLowering, StringConcatOpLowering,
-                    StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering, MemoryCopyOpLowering, LoadSaveValueLowering,
-                    ThrowUnwindOpLowering, ThrowCallOpLowering, TrampolineOpLowering, VariableOpLowering, InvokeOpLowering,
-                    ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering, NewInterfaceOpLowering, VTableOffsetRefOpLowering,
-                    ThisPropertyRefOpLowering, LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering,
-                    CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, DebuggerOpLowering,
-                    UnreachableOpLowering, LandingPadOpLowering, CompareCatchTypeOpLowering, BeginCatchOpLowering, SaveCatchVarOpLowering,
-                    EndCatchOpLowering, BeginCleanupOpLowering, EndCleanupOpLowering, CallInternalOpLowering, ReturnInternalOpLowering,
-                    NoOpLowering, /*GlobalConstructorOpLowering,*/ ExtractInterfaceVTableOpLowering
+    patterns.insert<
+        CaptureOpLowering, AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering,
+        AssertOpLowering, CastOpLowering, ConstantOpLowering, CreateOptionalOpLowering, UndefOptionalOpLowering, HasValueOpLowering,
+        ValueOpLowering, SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering, FuncOpLowering, LoadOpLowering,
+        ElementRefOpLowering, PropertyRefOpLowering, ExtractPropertyOpLowering, LogicalBinaryOpLowering, NullOpLowering, NewOpLowering,
+        CreateTupleOpLowering, DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering,
+        PushOpLowering, PopOpLowering, DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering, PrintOpLowering, StoreOpLowering,
+        SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering, StringLengthOpLowering, StringConcatOpLowering,
+        StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering, MemoryCopyOpLowering, LoadSaveValueLowering,
+        ThrowUnwindOpLowering, ThrowCallOpLowering, TrampolineOpLowering, VariableOpLowering, InvokeOpLowering, InvokeHybridOpLowering,
+        ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering, NewInterfaceOpLowering, VTableOffsetRefOpLowering,
+        ThisPropertyRefOpLowering, LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering, CreateBoundFunctionOpLowering,
+        GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, DebuggerOpLowering, UnreachableOpLowering, LandingPadOpLowering,
+        CompareCatchTypeOpLowering, BeginCatchOpLowering, SaveCatchVarOpLowering, EndCatchOpLowering, BeginCleanupOpLowering,
+        EndCleanupOpLowering, CallInternalOpLowering, CallHybridInternalOpLowering, ReturnInternalOpLowering, NoOpLowering,
+        /*GlobalConstructorOpLowering,*/ ExtractInterfaceVTableOpLowering
 #ifndef DISABLE_SWITCH_STATE_PASS
-                    ,
-                    SwitchStateOpLowering, StateLabelOpLowering, YieldReturnValOpLowering
+        ,
+        SwitchStateOpLowering, StateLabelOpLowering, YieldReturnValOpLowering
 #endif
-                    ,
-                    SwitchStateInternalOpLowering>(typeConverter, &getContext(), &tsLlvmContext);
+        ,
+        SwitchStateInternalOpLowering>(typeConverter, &getContext(), &tsLlvmContext);
 
     // patterns.insert<SwitchStateOpLowering2>(typeConverter, &getContext(), &tsLlvmContext, /*benegit*/ 2);
 

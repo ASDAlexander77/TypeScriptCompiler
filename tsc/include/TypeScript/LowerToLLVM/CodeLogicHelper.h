@@ -165,23 +165,23 @@ class CodeLogicHelper
 
         // then block
         auto *thenBlock = rewriter.createBlock(continuationBlock);
-        /*auto thenValues = */ thenBuilder(rewriter, loc);
 
         // else block
         auto *elseBlock = rewriter.createBlock(continuationBlock);
-        /*auto elseValues = */ elseBuilder(rewriter, loc);
 
         // result block
         auto *resultBlock = rewriter.createBlock(continuationBlock, TypeRange{});
         rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
 
-        rewriter.setInsertionPointToEnd(thenBlock);
+        rewriter.setInsertionPointToStart(thenBlock);
+        /*auto thenValues = */ thenBuilder(rewriter, loc);
         rewriter.create<LLVM::BrOp>(loc, ValueRange{}, resultBlock);
 
-        rewriter.setInsertionPointToEnd(elseBlock);
+        rewriter.setInsertionPointToStart(elseBlock);
+        /*auto elseValues = */ elseBuilder(rewriter, loc);
         rewriter.create<LLVM::BrOp>(loc, ValueRange{}, resultBlock);
 
-        // Generate assertion test.
+        // Generate condition test.
         rewriter.setInsertionPointToEnd(opBlock);
         rewriter.create<LLVM::CondBrOp>(loc, condition, thenBlock, elseBlock);
 
@@ -207,23 +207,23 @@ class CodeLogicHelper
 
         // then block
         auto *thenBlock = rewriter.createBlock(continuationBlock);
-        auto thenValues = thenBuilder(rewriter, loc);
 
         // else block
         auto *elseBlock = rewriter.createBlock(continuationBlock);
-        auto elseValues = elseBuilder(rewriter, loc);
 
         // result block
         auto *resultBlock = rewriter.createBlock(continuationBlock, types);
         rewriter.create<LLVM::BrOp>(loc, ValueRange{}, continuationBlock);
 
-        rewriter.setInsertionPointToEnd(thenBlock);
+        rewriter.setInsertionPointToStart(thenBlock);
+        auto thenValues = thenBuilder(rewriter, loc);
         rewriter.create<LLVM::BrOp>(loc, thenValues, resultBlock);
 
-        rewriter.setInsertionPointToEnd(elseBlock);
+        rewriter.setInsertionPointToStart(elseBlock);
+        auto elseValues = elseBuilder(rewriter, loc);
         rewriter.create<LLVM::BrOp>(loc, elseValues, resultBlock);
 
-        // Generate assertion test.
+        // Generate condition test.
         rewriter.setInsertionPointToEnd(opBlock);
         rewriter.create<LLVM::CondBrOp>(loc, condition, thenBlock, elseBlock);
 

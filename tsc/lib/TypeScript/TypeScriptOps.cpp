@@ -434,6 +434,16 @@ Optional<MutableOperandRange> mlir_ts::InvokeOp::getMutableSuccessorOperands(uns
 }
 
 //===----------------------------------------------------------------------===//
+// InvokeHybridOp
+//===----------------------------------------------------------------------===//
+
+Optional<MutableOperandRange> mlir_ts::InvokeHybridOp::getMutableSuccessorOperands(unsigned index)
+{
+    assert(index < getNumSuccessors() && "invalid successor index");
+    return index == 0 ? normalDestOperandsMutable() : unwindDestOperandsMutable();
+}
+
+//===----------------------------------------------------------------------===//
 // AssertOp
 //===----------------------------------------------------------------------===//
 
@@ -619,6 +629,16 @@ void mlir_ts::CallIndirectOp::getCanonicalizationPatterns(OwningRewritePatternLi
 //===----------------------------------------------------------------------===//
 
 LogicalResult mlir_ts::CallInternalOp::verifySymbolUses(SymbolTableCollection &symbolTable)
+{
+    // nothing to do here
+    return success();
+}
+
+//===----------------------------------------------------------------------===//
+// CallHybridInternalOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult mlir_ts::CallHybridInternalOp::verifySymbolUses(SymbolTableCollection &symbolTable)
 {
     // nothing to do here
     return success();

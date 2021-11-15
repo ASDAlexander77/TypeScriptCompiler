@@ -705,7 +705,7 @@ def TypeScript_CallIndirectOp : TypeScript_Op<"CallIndirect", [
   let assemblyFormat = "$callee `(` $operands `)` attr-dict `:` type($callee)";
 }
 
-def TypeScript_InvokeOp : TypeScript_Op<"invoke", [
+def TypeScript_InvokeOp : TypeScript_Op<"Invoke", [
                       AttrSizedOperandSegments,
                       DeclareOpInterfaceMethods<BranchOpInterface>,
                       Terminator]> {
@@ -732,6 +732,21 @@ def TypeScript_InvokeOp : TypeScript_Op<"invoke", [
             unwindOps, normal, unwind);
     }]>];
   let verifier = [{ return ::verify(*this);  }];
+}
+
+def TypeScript_InvokeHybridOp : TypeScript_Op<"InvokeHybrid", [
+                      AttrSizedOperandSegments,
+                      DeclareOpInterfaceMethods<BranchOpInterface>,
+                      Terminator]> {
+  let arguments = (ins TypeScript_HybridFunction:$callee,
+                   Variadic<AnyType>:$operands,
+                   Variadic<AnyType>:$normalDestOperands,
+                   Variadic<AnyType>:$unwindDestOperands);
+  let results = (outs Variadic<AnyType>);
+  let successors = (successor AnySuccessor:$normalDest,
+                              AnySuccessor:$unwindDest);
+
+  let verifier = ?;
 }
 
 def TypeScript_CallInternalOp : TypeScript_Op<"CallInternal",
@@ -784,6 +799,42 @@ def TypeScript_CallInternalOp : TypeScript_Op<"CallInternal",
 
   let assemblyFormat = [{
     $callee `(` $operands `)` attr-dict `:` functional-type($operands, results)
+  }];
+  let verifier = ?;
+}
+
+def TypeScript_CallHybridInternalOp : TypeScript_Op<"CallHybridInternal",
+    [CallOpInterface, MemRefsNormalizable,
+     DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+  let summary = "call (hybrid) internal operation";
+  let description = [{
+  }];
+
+  let arguments = (ins TypeScript_HybridFunction:$callee, Variadic<AnyType>:$operands);
+  let results = (outs Variadic<AnyType>);
+
+  let extraClassDeclaration = [{
+    StringRef getCallee() { return ""; }
+    FunctionType getCalleeType();
+
+    /// Get the argument operands to the called function.
+    operand_range getArgOperands() 
+    {
+      return {arg_operand_begin(), arg_operand_end()};
+    }
+
+    operand_iterator arg_operand_begin() { return operand_begin(); }
+    operand_iterator arg_operand_end() { return operand_end(); }
+
+    /// Return the callee of this operation.
+    CallInterfaceCallable getCallableForCallee() 
+    {
+      return (*this)->getAttrOfType<SymbolRefAttr>("callee");
+    }
+  }];
+
+  let assemblyFormat = [{
+    $callee `(` $operands `)` attr-dict `:` type($callee) `+` functional-type($operands, results)
   }];
   let verifier = ?;
 }
