@@ -264,14 +264,15 @@ class CodeLogicHelper
 
             auto *op = block.getTerminator();
             // auto name = op->getName().getStringRef();
-            auto isReturn = dyn_cast<mlir_ts::ReturnInternalOp>(op) != nullptr;
+            auto returnInternalOp = dyn_cast<mlir_ts::ReturnInternalOp>(op);
+            auto isReturn = !!returnInternalOp;
             if (isReturn && op != &block.front())
             {
                 if (createReturnBlock)
                 {
-                    if (op->getOperands().size() > 0)
+                    if (returnInternalOp.operands().size() > 0)
                     {
-                        auto argOp = op->getOperand(0).getDefiningOp();
+                        auto argOp = returnInternalOp.operands().front().getDefiningOp();
                         if (argOp == &block.front())
                         {
                             // no need to create what already created

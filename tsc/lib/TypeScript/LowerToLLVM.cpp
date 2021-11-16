@@ -229,7 +229,7 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
 
         SmallVector<mlir::Value> values;
         mlir::Value spaceString;
-        for (auto item : operands)
+        for (auto item : op.inputs())
         {
             auto result = castLogic.cast(item, strType);
             if (!result)
@@ -287,7 +287,7 @@ class ParseIntOpLowering : public TsLlvmPattern<mlir_ts::ParseIntOp>
         auto i8PtrTy = th.getI8PtrType();
         auto parseIntFuncOp = ch.getOrInsertFunction("atoi", th.getFunctionType(rewriter.getI32Type(), {i8PtrTy}));
 
-        rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, parseIntFuncOp, operands);
+        rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, parseIntFuncOp, ValueRange{op.arg()});
 
         return success();
     }
@@ -310,7 +310,7 @@ class ParseFloatOpLowering : public TsLlvmPattern<mlir_ts::ParseFloatOp>
         auto parseFloatFuncOp = ch.getOrInsertFunction("atof", th.getFunctionType(rewriter.getF64Type(), {i8PtrTy}));
 
 #ifdef NUMBER_F64
-        auto funcCall = rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, parseFloatFuncOp, operands);
+        auto funcCall = rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, parseFloatFuncOp, ValueRange{op.arg()});
 #else
         auto funcCall = rewriter.create<LLVM::CallOp>(loc, parseFloatFuncOp, operands);
         rewriter.replaceOpWithNewOp<LLVM::FPTruncOp>(op, rewriter.getF32Type(), funcCall.getResult(0));
