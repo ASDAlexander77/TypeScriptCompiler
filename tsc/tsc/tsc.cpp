@@ -217,7 +217,7 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module
         optPM.addPass(mlir::typescript::createLowerToAffinePass());
         optPM.addPass(mlir::createCanonicalizerPass());
         optPM.addPass(mlir::typescript::createRelocateConstantPass());
-        // TODO: why do I need this pass?
+        //  TODO: why do I need this pass?
 #ifdef ENABLE_OPT_PASSES
         if (enableOpt)
         {

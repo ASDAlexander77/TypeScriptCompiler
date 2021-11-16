@@ -124,7 +124,7 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
             }
         };
 
-        for (auto item : op->getOperands())
+        for (auto item : op.inputs())
         {
             auto type = item.getType();
 
@@ -179,7 +179,7 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
             }
         };
 
-        for (auto item : op->getOperands())
+        for (auto item : op.inputs())
         {
             fval(item.getType(), item);
         }
@@ -229,7 +229,7 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
 
         SmallVector<mlir::Value> values;
         mlir::Value spaceString;
-        for (auto item : op->getOperands())
+        for (auto item : operands)
         {
             auto result = castLogic.cast(item, strType);
             if (!result)
@@ -287,7 +287,7 @@ class ParseIntOpLowering : public TsLlvmPattern<mlir_ts::ParseIntOp>
         auto i8PtrTy = th.getI8PtrType();
         auto parseIntFuncOp = ch.getOrInsertFunction("atoi", th.getFunctionType(rewriter.getI32Type(), {i8PtrTy}));
 
-        rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, parseIntFuncOp, op->getOperands());
+        rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, parseIntFuncOp, operands);
 
         return success();
     }
@@ -413,37 +413,37 @@ class StringConcatOpLowering : public TsLlvmPattern<mlir_ts::StringConcatOp>
 
         mlir::Value size = clh.createI64ConstantOf(1);
         // calc size
-        for (auto op : op.ops())
+        for (auto oper : op.ops())
         {
-            auto size1 = rewriter.create<LLVM::CallOp>(loc, strlenFuncOp, op);
+            auto size1 = rewriter.create<LLVM::CallOp>(loc, strlenFuncOp, oper);
             size = rewriter.create<LLVM::AddOp>(loc, rewriter.getI64Type(), ValueRange{size, size1.getResult(0)});
         }
 
         auto allocInStack = op.allocInStack().hasValue() && op.allocInStack().getValue();
 
         mlir::Value newStringValue =
-            allocInStack ? rewriter.create<LLVM::AllocaOp>(op->getLoc(), i8PtrTy, size, true) : ch.MemoryAllocBitcast(i8PtrTy, size);
+            allocInStack ? rewriter.create<LLVM::AllocaOp>(loc, i8PtrTy, size, true) : ch.MemoryAllocBitcast(i8PtrTy, size);
 
         // copy
         auto concat = false;
         auto result = newStringValue;
-        for (auto op : op.ops())
+        for (auto oper : op.ops())
         {
             if (concat)
             {
-                auto callResult = rewriter.create<LLVM::CallOp>(loc, strcatFuncOp, ValueRange{result, op});
+                auto callResult = rewriter.create<LLVM::CallOp>(loc, strcatFuncOp, ValueRange{result, oper});
                 result = callResult.getResult(0);
             }
             else
             {
-                auto callResult = rewriter.create<LLVM::CallOp>(loc, strcpyFuncOp, ValueRange{result, op});
+                auto callResult = rewriter.create<LLVM::CallOp>(loc, strcpyFuncOp, ValueRange{result, oper});
                 result = callResult.getResult(0);
             }
 
             concat = true;
         }
 
-        rewriter.replaceOp(op, ValueRange{result});
+        rewriter.replaceOp(op, ValueRange{newStringValue});
 
         return success();
     }

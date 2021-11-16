@@ -1,0 +1,1 @@
+1) if Pass is failing with accessing bad address - check if you are using op.getOperands(). It seems temp. object, recommended to use "operands" as pattern param
