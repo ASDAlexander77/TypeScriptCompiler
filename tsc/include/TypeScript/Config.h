@@ -28,4 +28,6 @@
 #define LINUX_EXCEPTION 1
 #endif
 
+#define REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION true
+
 #endif // CONFIG_H_

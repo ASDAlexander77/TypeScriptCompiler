@@ -5,7 +5,6 @@
 #define ADD_GC_ATTRIBUTE true
 #endif
 #define MODULE_AS_NAMESPACE true
-#define REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION true
 
 #define DEBUG_TYPE "mlir"
 

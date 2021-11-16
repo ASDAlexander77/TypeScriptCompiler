@@ -1,5 +1,6 @@
 #define DEBUG_TYPE "mlir"
 
+#include "TypeScript/Config.h"
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/Defines.h"
 #include "TypeScript/TypeScriptDialect.h"
@@ -588,6 +589,8 @@ struct SimplifyIndirectCallWithKnownCallee : public OpRewritePattern<mlir_ts::Ca
             return success();
         }
 
+        // supporting trumpoline
+#ifndef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
         if (auto trampolineOp = indirectCall.getCallee().getDefiningOp<mlir_ts::TrampolineOp>())
         {
             if (auto symbolRefOp = trampolineOp.callee().getDefiningOp<mlir_ts::SymbolRefOp>())
@@ -611,6 +614,64 @@ struct SimplifyIndirectCallWithKnownCallee : public OpRewritePattern<mlir_ts::Ca
                 }
 
                 return success();
+            }
+        }
+#endif
+
+        if (auto getMethodOp = indirectCall.getCallee().getDefiningOp<mlir_ts::GetMethodOp>())
+        {
+            if (auto createBoundFunctionOp = getMethodOp.boundFunc().getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
+            {
+                if (auto symbolRefOp = createBoundFunctionOp.func().getDefiningOp<mlir_ts::SymbolRefOp>())
+                {
+                    auto getThisVal = indirectCall.getArgOperands().front().getDefiningOp<mlir_ts::GetThisOp>();
+
+                    auto thisVal = createBoundFunctionOp.thisVal();
+                    if (auto castOp = thisVal.getDefiningOp<mlir_ts::CastOp>())
+                    {
+                        thisVal = castOp.in();
+                    }
+
+                    auto hasThis = !isa<mlir_ts::NullOp>(thisVal.getDefiningOp());
+
+                    // Replace with a direct call.
+                    SmallVector<mlir::Value> args;
+                    if (hasThis)
+                    {
+                        args.push_back(thisVal);
+                    }
+
+                    args.append(indirectCall.getArgOperands().begin() + (hasThis ? 1 : 0), indirectCall.getArgOperands().end());
+                    rewriter.replaceOpWithNewOp<mlir_ts::CallOp>(indirectCall, symbolRefOp.identifierAttr(), indirectCall.getResultTypes(),
+                                                                 args);
+
+                    LLVM_DEBUG(for (auto &arg : args) { llvm::dbgs() << "\n\n SimplifyIndirectCallWithKnownCallee arg: " << arg << "\n"; });
+
+                    LLVM_DEBUG(llvm::dbgs() << "\nSimplifyIndirectCallWithKnownCallee: args: " << args.size() << "\n";);
+                    LLVM_DEBUG(
+                        for (auto &use
+                             : createBoundFunctionOp->getUses()) { llvm::dbgs() << "\n use number:" << use.getOperandNumber() << "\n"; });
+
+                    if (getMethodOp.use_empty())
+                    {
+                        rewriter.eraseOp(getMethodOp);
+                    }
+
+                    if (getThisVal)
+                    {
+                        if (getThisVal.use_empty())
+                        {
+                            rewriter.eraseOp(getThisVal);
+                        }
+                    }
+
+                    if (createBoundFunctionOp.use_empty())
+                    {
+                        rewriter.eraseOp(createBoundFunctionOp);
+                    }
+
+                    return success();
+                }
             }
         }
 
