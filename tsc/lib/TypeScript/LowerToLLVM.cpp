@@ -229,8 +229,10 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
 
         SmallVector<mlir::Value> values;
         mlir::Value spaceString;
-        for (auto item : op.inputs())
+        // TODO: if uncomment - will cause bag in specific for test 01print
+        for (auto item : /*operands*/ op.inputs())
         {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! print op: " << item << "\n";);
             auto result = castLogic.cast(item, strType);
             if (!result)
             {
