@@ -1371,6 +1371,20 @@ struct YieldReturnValOpLowering : public TsPattern<mlir_ts::YieldReturnValOp>
     }
 };
 
+struct TypeOfOpLowering : public TsPattern<mlir_ts::TypeOfOp>
+{
+    using TsPattern<mlir_ts::TypeOfOp>::TsPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::TypeOfOp typeOfOp, PatternRewriter &rewriter) const final
+    {
+        TypeOfOpHelper toh(typeOfOp, rewriter);
+        auto typeOfValue = toh.typeOfLogic(typeOfOp->getLoc(), typeOfOp.value(), typeOfOp.value().getType());
+
+        rewriter.replaceOp(typeOfOp, ValueRange{typeOfValue});
+        return success();
+    }
+};
+
 } // end anonymous namespace
 
 //===----------------------------------------------------------------------===//
@@ -1531,7 +1545,7 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
                       mlir_ts::LandingPadOp, mlir_ts::CompareCatchTypeOp, mlir_ts::BeginCatchOp, mlir_ts::SaveCatchVarOp,
                       mlir_ts::EndCatchOp, mlir_ts::BeginCleanupOp, mlir_ts::EndCleanupOp, mlir_ts::ThrowUnwindOp, mlir_ts::ThrowCallOp,
                       mlir_ts::CallInternalOp, mlir_ts::ReturnInternalOp, mlir_ts::NoOp, mlir_ts::SwitchStateInternalOp,
-                      mlir_ts::UnreachableOp, mlir_ts::GlobalConstructorOp, mlir_ts::CreateBoundFunctionOp>();
+                      mlir_ts::UnreachableOp, mlir_ts::GlobalConstructorOp, mlir_ts::CreateBoundFunctionOp, mlir_ts::TypeOfAnyOp>();
 
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.
@@ -1543,8 +1557,8 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
                     ParamDefaultValueOpLowering, PrefixUnaryOpLowering, PostfixUnaryOpLowering, IfOpLowering, DoWhileOpLowering,
                     WhileOpLowering, ForOpLowering, BreakOpLowering, ContinueOpLowering, SwitchOpLowering, AccessorRefOpLowering,
                     ThisAccessorRefOpLowering, LabelOpLowering, CallOpLowering, CallIndirectOpLowering, TryOpLowering, ThrowOpLowering,
-                    CatchOpLowering, StateLabelOpLowering, SwitchStateOpLowering, YieldReturnValOpLowering>(&getContext(), &tsContext,
-                                                                                                            &tsFuncContext);
+                    CatchOpLowering, StateLabelOpLowering, SwitchStateOpLowering, YieldReturnValOpLowering, TypeOfOpLowering>(
+        &getContext(), &tsContext, &tsFuncContext);
 
     // With the target and rewrite patterns defined, we can now attempt the
     // conversion. The conversion will signal failure if any of our `illegal`

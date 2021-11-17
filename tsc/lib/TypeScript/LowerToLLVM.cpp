@@ -1370,23 +1370,20 @@ struct DeconstructTupleOpLowering : public TsLlvmPattern<mlir_ts::DeconstructTup
     {
         Adaptor transformed(operands);
 
-        LLVMCodeHelper ch(deconstructTupleOp, rewriter, getTypeConverter());
         CodeLogicHelper clh(deconstructTupleOp, rewriter);
-        TypeConverterHelper tch(getTypeConverter());
-        TypeHelper th(rewriter);
 
         auto loc = deconstructTupleOp.getLoc();
-        auto tupleType = deconstructTupleOp.instance().getType().cast<mlir_ts::TupleType>();
         auto tupleVar = transformed.instance();
+        auto tupleType = tupleVar.getType().cast<LLVM::LLVMStructType>();
 
         // values
         SmallVector<mlir::Value> results;
 
         // set values here
         auto index = 0;
-        for (auto &item : tupleType.getFields())
+        for (auto &item : tupleType.getBody())
         {
-            auto llvmValueType = tch.convertType(item.type);
+            auto llvmValueType = item;
             auto value = rewriter.create<LLVM::ExtractValueOp>(loc, llvmValueType, tupleVar, clh.getStructIndexAttr(index));
 
             results.push_back(value);
@@ -3370,22 +3367,25 @@ struct GetMethodOpLowering : public TsLlvmPattern<mlir_ts::GetMethodOp>
     }
 };
 
-struct TypeOfOpLowering : public TsLlvmPattern<mlir_ts::TypeOfOp>
+struct TypeOfAnyOpLowering : public TsLlvmPattern<mlir_ts::TypeOfAnyOp>
 {
-    using TsLlvmPattern<mlir_ts::TypeOfOp>::TsLlvmPattern;
+    using TsLlvmPattern<mlir_ts::TypeOfAnyOp>::TsLlvmPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::TypeOfOp typeOfOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+    LogicalResult matchAndRewrite(mlir_ts::TypeOfAnyOp typeOfAnyOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
     {
         Adaptor transformed(operands);
 
-        Location loc = typeOfOp.getLoc();
+        Location loc = typeOfAnyOp.getLoc();
 
         TypeConverterHelper tch(getTypeConverter());
 
-        TypeOfOpHelper toh(typeOfOp, rewriter, tch);
-        auto typeOfValue = toh.typeOfLogic(loc, transformed.value());
+        LLVM_DEBUG(llvm::dbgs() << "\n!! TypeOf: " << typeOfAnyOp.value() << "\n";);
 
-        rewriter.replaceOp(typeOfOp, ValueRange{typeOfValue});
+        AnyLogic al(typeOfAnyOp, rewriter, tch, loc);
+        auto typeOfValue = al.typeOfFromAny(transformed.value());
+
+        rewriter.replaceOp(typeOfAnyOp, ValueRange{typeOfValue});
         return success();
     }
 };
@@ -4118,7 +4118,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         ThrowUnwindOpLowering, ThrowCallOpLowering, TrampolineOpLowering, VariableOpLowering, InvokeOpLowering, InvokeHybridOpLowering,
         ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering, NewInterfaceOpLowering, VTableOffsetRefOpLowering,
         ThisPropertyRefOpLowering, LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering, CreateBoundFunctionOpLowering,
-        GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering, DebuggerOpLowering, UnreachableOpLowering, LandingPadOpLowering,
+        GetThisOpLowering, GetMethodOpLowering, TypeOfAnyOpLowering, DebuggerOpLowering, UnreachableOpLowering, LandingPadOpLowering,
         CompareCatchTypeOpLowering, BeginCatchOpLowering, SaveCatchVarOpLowering, EndCatchOpLowering, BeginCleanupOpLowering,
         EndCleanupOpLowering, CallInternalOpLowering, CallHybridInternalOpLowering, ReturnInternalOpLowering, NoOpLowering,
         /*GlobalConstructorOpLowering,*/ ExtractInterfaceVTableOpLowering

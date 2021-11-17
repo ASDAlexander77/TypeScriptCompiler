@@ -467,6 +467,16 @@ def TypeScript_TypeOfOp : TypeScript_Op<"TypeOf"> {
   let results = (outs TypeScript_String:$typeOf);
 }
 
+def TypeScript_TypeOfAnyOp : TypeScript_Op<"TypeOfAny"> {
+  let summary = "name of type from any";
+  let description = [{
+    name of type from any
+  }];
+
+  let arguments = (ins AnyType:$value);
+  let results = (outs TypeScript_String:$typeOf);
+}
+
 def TypeScript_SizeOfOp : TypeScript_Op<"SizeOf"> {
   let summary = "size of type";
   let description = [{

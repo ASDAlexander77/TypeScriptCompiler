@@ -20,10 +20,9 @@ class TypeOfOpHelper
 {
     Operation *op;
     PatternRewriter &rewriter;
-    TypeConverterHelper &tch;
 
   public:
-    TypeOfOpHelper(Operation *op, PatternRewriter &rewriter, TypeConverterHelper &tch) : op(op), rewriter(rewriter), tch(tch)
+    TypeOfOpHelper(Operation *op, PatternRewriter &rewriter) : op(op), rewriter(rewriter)
     {
     }
 
@@ -156,15 +155,16 @@ class TypeOfOpHelper
         llvm_unreachable("not implemented");
     }
 
-    mlir::Value typeOfLogic(mlir::Location loc, mlir::Value value)
+    mlir::Value typeOfLogic(mlir::Location loc, mlir::Value value, mlir::Type origType)
     {
-        if (value.getType().isa<mlir_ts::AnyType>())
+        if (origType.isa<mlir_ts::AnyType>())
         {
-            AnyLogic al(op, rewriter, tch, loc);
-            return al.typeOfFromAny(value);
+            // AnyLogic al(op, rewriter, tch, loc);
+            // return al.typeOfFromAny(value);
+            return rewriter.create<mlir_ts::TypeOfAnyOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), value);
         }
 
-        return typeOfLogic(loc, value.getType());
+        return typeOfLogic(loc, origType);
     }
 };
 } // namespace typescript
