@@ -237,7 +237,7 @@ struct PrefixUnaryOpLowering : public TsPattern<mlir_ts::PrefixUnaryOp>
     LogicalResult matchAndRewrite(mlir_ts::PrefixUnaryOp op, PatternRewriter &rewriter) const final
     {
         CodeLogicHelper clh(op, rewriter);
-        auto cst1 = rewriter.create<mlir_ts::ConstantOp>(op->getLoc(), rewriter.getI32IntegerAttr(1));
+        mlir::Value cst1 = rewriter.create<mlir_ts::ConstantOp>(op->getLoc(), rewriter.getI32IntegerAttr(1));
 
         SyntaxKind opCode = SyntaxKind::Unknown;
         switch ((SyntaxKind)op.opCode())
@@ -258,6 +258,11 @@ struct PrefixUnaryOpLowering : public TsPattern<mlir_ts::PrefixUnaryOp>
             castBack = true;
             effectiveType = optType.getElementType();
             value = rewriter.create<mlir_ts::CastOp>(value.getLoc(), effectiveType, value);
+        }
+
+        if (value.getType() != cst1.getType())
+        {
+            cst1 = rewriter.create<mlir_ts::CastOp>(value.getLoc(), value.getType(), cst1);
         }
 
         mlir::Value result = rewriter.create<mlir_ts::ArithmeticBinaryOp>(
@@ -283,7 +288,7 @@ struct PostfixUnaryOpLowering : public TsPattern<mlir_ts::PostfixUnaryOp>
     LogicalResult matchAndRewrite(mlir_ts::PostfixUnaryOp op, PatternRewriter &rewriter) const final
     {
         CodeLogicHelper clh(op, rewriter);
-        auto cst1 = rewriter.create<mlir_ts::ConstantOp>(op->getLoc(), rewriter.getI32IntegerAttr(1));
+        mlir::Value cst1 = rewriter.create<mlir_ts::ConstantOp>(op->getLoc(), rewriter.getI32IntegerAttr(1));
 
         SyntaxKind opCode = SyntaxKind::Unknown;
         switch ((SyntaxKind)op.opCode())
@@ -304,6 +309,11 @@ struct PostfixUnaryOpLowering : public TsPattern<mlir_ts::PostfixUnaryOp>
             castBack = true;
             effectiveType = optType.getElementType();
             value = rewriter.create<mlir_ts::CastOp>(value.getLoc(), effectiveType, value);
+        }
+
+        if (value.getType() != cst1.getType())
+        {
+            cst1 = rewriter.create<mlir_ts::CastOp>(value.getLoc(), value.getType(), cst1);
         }
 
         mlir::Value result = rewriter.create<mlir_ts::ArithmeticBinaryOp>(
