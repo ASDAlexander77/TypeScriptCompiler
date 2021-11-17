@@ -1377,7 +1377,7 @@ struct TypeOfOpLowering : public TsPattern<mlir_ts::TypeOfOp>
 
     LogicalResult matchAndRewrite(mlir_ts::TypeOfOp typeOfOp, PatternRewriter &rewriter) const final
     {
-        TypeOfOpHelper toh(typeOfOp, rewriter);
+        TypeOfOpHelper toh(rewriter);
         auto typeOfValue = toh.typeOfLogic(typeOfOp->getLoc(), typeOfOp.value(), typeOfOp.value().getType());
 
         rewriter.replaceOp(typeOfOp, ValueRange{typeOfValue});
@@ -1541,11 +1541,11 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
                       mlir_ts::InsertPropertyOp, mlir_ts::ExtractPropertyOp, mlir_ts::LogicalBinaryOp, mlir_ts::UndefOp,
                       mlir_ts::VariableOp, mlir_ts::TrampolineOp, mlir_ts::InvokeOp, mlir_ts::ResultOp, mlir_ts::ThisVirtualSymbolRefOp,
                       mlir_ts::InterfaceSymbolRefOp, mlir_ts::PushOp, mlir_ts::PopOp, mlir_ts::NewInterfaceOp, mlir_ts::VTableOffsetRefOp,
-                      mlir_ts::ThisPropertyRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp, mlir_ts::TypeOfOp, mlir_ts::DebuggerOp,
-                      mlir_ts::LandingPadOp, mlir_ts::CompareCatchTypeOp, mlir_ts::BeginCatchOp, mlir_ts::SaveCatchVarOp,
-                      mlir_ts::EndCatchOp, mlir_ts::BeginCleanupOp, mlir_ts::EndCleanupOp, mlir_ts::ThrowUnwindOp, mlir_ts::ThrowCallOp,
-                      mlir_ts::CallInternalOp, mlir_ts::ReturnInternalOp, mlir_ts::NoOp, mlir_ts::SwitchStateInternalOp,
-                      mlir_ts::UnreachableOp, mlir_ts::GlobalConstructorOp, mlir_ts::CreateBoundFunctionOp, mlir_ts::TypeOfAnyOp>();
+                      mlir_ts::ThisPropertyRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp, mlir_ts::DebuggerOp, mlir_ts::LandingPadOp,
+                      mlir_ts::CompareCatchTypeOp, mlir_ts::BeginCatchOp, mlir_ts::SaveCatchVarOp, mlir_ts::EndCatchOp,
+                      mlir_ts::BeginCleanupOp, mlir_ts::EndCleanupOp, mlir_ts::ThrowUnwindOp, mlir_ts::ThrowCallOp, mlir_ts::CallInternalOp,
+                      mlir_ts::ReturnInternalOp, mlir_ts::NoOp, mlir_ts::SwitchStateInternalOp, mlir_ts::UnreachableOp,
+                      mlir_ts::GlobalConstructorOp, mlir_ts::CreateBoundFunctionOp, mlir_ts::TypeOfAnyOp>();
 
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.

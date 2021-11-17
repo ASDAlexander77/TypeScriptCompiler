@@ -18,11 +18,10 @@ namespace typescript
 
 class TypeOfOpHelper
 {
-    Operation *op;
     PatternRewriter &rewriter;
 
   public:
-    TypeOfOpHelper(Operation *op, PatternRewriter &rewriter) : op(op), rewriter(rewriter)
+    TypeOfOpHelper(PatternRewriter &rewriter) : rewriter(rewriter)
     {
     }
 

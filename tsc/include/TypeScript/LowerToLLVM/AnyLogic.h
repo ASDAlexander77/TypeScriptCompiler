@@ -12,6 +12,7 @@
 #include "TypeScript/LowerToLLVM/LLVMTypeConverterHelper.h"
 #include "TypeScript/LowerToLLVM/CodeLogicHelper.h"
 #include "TypeScript/LowerToLLVM/LLVMCodeHelperBase.h"
+#include "TypeScript/LowerToLLVM/TypeOfOpHelper.h"
 
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;
@@ -59,7 +60,9 @@ class AnyLogic
         auto size = rewriter.create<mlir_ts::SizeOfOp>(loc, sizeType, llvmStorageType);
 
         // get typeof value
-        auto typeOfValue = rewriter.create<mlir_ts::TypeOfOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
+        // auto typeOfValue = rewriter.create<mlir_ts::TypeOfOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
+        TypeOfOpHelper toh(rewriter);
+        auto typeOfValue = toh.typeOfLogic(loc, in, in.getType());
 
         auto zero = clh.createI32ConstantOf(0);
         auto one = clh.createI32ConstantOf(1);
