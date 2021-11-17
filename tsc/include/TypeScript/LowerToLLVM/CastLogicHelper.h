@@ -109,7 +109,7 @@ class CastLogicHelper
         auto isResAny = resType.isa<mlir_ts::AnyType>();
         if (isResAny)
         {
-            return castToAny(in, inLLVMType);
+            return castToAny(in, inType, inLLVMType);
         }
 
         auto isInAny = inType.isa<mlir_ts::AnyType>();
@@ -556,10 +556,10 @@ class CastLogicHelper
         return structValue3;
     }
 
-    mlir::Value castToAny(mlir::Value in, mlir::Type inLLVMType)
+    mlir::Value castToAny(mlir::Value in, mlir::Type inType, mlir::Type inLLVMType)
     {
         AnyLogic al(op, rewriter, tch, loc);
-        return al.castToAny(in, inLLVMType);
+        return al.castToAny(in, inType, inLLVMType);
     }
 
     mlir::Value castFromAny(mlir::Value in, mlir::Type resLLVMType)
