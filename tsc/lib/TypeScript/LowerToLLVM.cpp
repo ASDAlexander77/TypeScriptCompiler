@@ -212,7 +212,7 @@ class AssertOpLowering : public TsLlvmPattern<mlir_ts::AssertOp>
 
         TypeConverterHelper tch(getTypeConverter());
         AssertLogic al(op, rewriter, tch, op->getLoc());
-        return al.logic(transformed.arg(), transformed.msg().getValue().str());
+        return al.logic(transformed.arg(), op.msg().str());
     }
 };
 class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
@@ -725,10 +725,8 @@ struct SymbolRefOpLowering : public TsLlvmPattern<mlir_ts::SymbolRefOp>
     LogicalResult matchAndRewrite(mlir_ts::SymbolRefOp symbolRefOp, ArrayRef<Value> operands,
                                   ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands);
-
         TypeConverterHelper tch(getTypeConverter());
-        rewriter.replaceOpWithNewOp<mlir::ConstantOp>(symbolRefOp, tch.convertType(symbolRefOp.getType()), transformed.identifier());
+        rewriter.replaceOpWithNewOp<mlir::ConstantOp>(symbolRefOp, tch.convertType(symbolRefOp.getType()), symbolRefOp.identifierAttr());
         return success();
     }
 };
@@ -3932,6 +3930,9 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
     });
 
     converter.addSourceMaterialization([&](OpBuilder &builder, Type resultType, ValueRange inputs, Location loc) {
+        LLVM_DEBUG(llvm::dbgs() << "\n!! SourceMaterialization: loc:[ " << loc << " ] result: [ " << resultType << " ]\n");
+        LLVM_DEBUG(for (auto value : inputs) llvm::dbgs() << "\n!! SourceMaterialization value: [ " << value << " ]\n";);
+
         if (inputs.size() == 1)
         {
             return builder.create<mlir_ts::CastOp>(loc, resultType, inputs).getResult();

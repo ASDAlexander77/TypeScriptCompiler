@@ -103,7 +103,7 @@ class CastLogicHelper
 
         if (auto arrType = resType.dyn_cast_or_null<mlir_ts::ArrayType>())
         {
-            return castToArrayType(in, resType);
+            return castToArrayType(in, inType, resType);
         }
 
         auto isResAny = resType.isa<mlir_ts::AnyType>();
@@ -471,11 +471,10 @@ class CastLogicHelper
         return cl.f32OrF64ToString(in);
     }
 
-    mlir::Value castToArrayType(mlir::Value in, mlir::Type arrayType)
+    mlir::Value castToArrayType(mlir::Value in, mlir::Type type, mlir::Type arrayType)
     {
         mlir::Type srcElementType;
         mlir::Type llvmSrcElementType;
-        auto type = in.getType();
         auto size = 0;
         if (auto constArrayType = type.dyn_cast_or_null<mlir_ts::ConstArrayType>())
         {
@@ -503,7 +502,7 @@ class CastLogicHelper
             else
             {
                 LLVM_DEBUG(llvm::dbgs() << "[castToArrayType(2)] from value: " << in << " type: " << in.getType()
-                                        << " to type: " << arrayType << "\n";);
+                                        << " to type: " << elementType << "\n";);
                 llvm_unreachable("not implemented");
             }
         }
