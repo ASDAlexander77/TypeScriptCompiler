@@ -574,7 +574,8 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         return rewriter.create<LLVM::GEPOp>(loc, pointerType, globalPtr, ArrayRef<mlir::Value>({cst0}));
     }
 
-    mlir::Value GetAddressOfArrayElement(mlir::Type elementRefType, mlir::Value arrayOrStringOrTuple, mlir::Value index)
+    mlir::Value GetAddressOfArrayElement(mlir::Type elementRefType, mlir::Type arrayOrStringOrTupleType, mlir::Value arrayOrStringOrTuple,
+                                         mlir::Value index)
     {
         TypeHelper th(rewriter);
         TypeConverterHelper tch(typeConverter);
@@ -587,7 +588,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         auto ptrType = tch.convertType(elementRefType);
 
         auto dataPtr = arrayOrStringOrTuple;
-        if (auto arrayType = arrayOrStringOrTuple.getType().isa<mlir_ts::ArrayType>())
+        if (auto arrayType = arrayOrStringOrTupleType.isa<mlir_ts::ArrayType>())
         {
             // extract pointer from struct
             dataPtr = rewriter.create<LLVM::ExtractValueOp>(loc, ptrType, arrayOrStringOrTuple,

@@ -8,8 +8,9 @@
 #include "TypeScript/TypeScriptOps.h"
 
 #include "mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h"
+#include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "mlir/Target/LLVMIR/TypeTranslation.h"
+#include "mlir/Target/LLVMIR/TypeToLLVM.h"
 
 using namespace mlir;
 namespace mlir_ts = mlir::typescript;

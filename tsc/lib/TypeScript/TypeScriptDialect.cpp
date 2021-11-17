@@ -19,6 +19,7 @@ namespace mlir_ts = mlir::typescript;
 //===----------------------------------------------------------------------===//
 // TypeScript dialect.
 //===----------------------------------------------------------------------===//
+#include "TypeScript/TypeScriptOpsDialect.cpp.inc"
 
 LogicalResult verify(mlir_ts::FuncOp op);
 LogicalResult verify(mlir_ts::InvokeOp op);

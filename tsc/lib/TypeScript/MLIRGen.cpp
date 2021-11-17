@@ -2770,7 +2770,9 @@ class MLIRGenImpl
         if (hasAwait)
         {
             auto groupType = mlir::async::GroupType::get(builder.getContext());
-            auto asyncGroupOp = builder.create<mlir::async::CreateGroupOp>(location, groupType);
+            // TODO: block size, for now 8, review it
+            auto blockSize = builder.create<mlir_ts::ConstantOp>(location, builder.getI64IntegerAttr(8));
+            auto asyncGroupOp = builder.create<mlir::async::CreateGroupOp>(location, groupType, blockSize);
             asyncGroupResult = asyncGroupOp.result();
             // operands.push_back(asyncGroupOp);
             // types.push_back(groupType);

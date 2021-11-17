@@ -263,7 +263,7 @@ struct AsyncValue : public RefCounted
 // tokens or values added to the group).
 struct AsyncGroup : public RefCounted
 {
-    AsyncGroup(AsyncRuntime *runtime) : RefCounted(runtime), pendingTokens(0), numErrors(0), rank(0)
+    AsyncGroup(AsyncRuntime *runtime, int64_t size) : RefCounted(runtime), pendingTokens(size), numErrors(0), rank(0)
     {
     }
 
@@ -306,9 +306,9 @@ extern "C" AsyncValue *mlirAsyncRuntimeCreateValue(int32_t size)
 }
 
 // Create a new `async.group` in empty state.
-extern "C" AsyncGroup *mlirAsyncRuntimeCreateGroup()
+extern "C" AsyncGroup *mlirAsyncRuntimeCreateGroup(int64_t size)
 {
-    AsyncGroup *group = new AsyncGroup(getDefaultAsyncRuntime());
+    AsyncGroup *group = new AsyncGroup(getDefaultAsyncRuntime(), size);
     return group;
 }
 
@@ -319,12 +319,15 @@ extern "C" int64_t mlirAsyncRuntimeAddTokenToGroup(AsyncToken *token, AsyncGroup
 
     // Get the rank of the token inside the group before we drop the reference.
     int rank = group->rank.fetch_add(1);
-    group->pendingTokens.fetch_add(1);
 
     auto onTokenReady = [group, token]() {
         // Increment the number of errors in the group.
         if (State(token->state).isError())
             group->numErrors.fetch_add(1);
+
+        // If pending tokens go below zero it means that more tokens than the group
+        // size were added to this group.
+        assert(group->pendingTokens > 0 && "wrong group size");
 
         // Run all group awaiters if it was the last token in the group.
         if (group->pendingTokens.fetch_sub(1) == 1)
@@ -524,9 +527,12 @@ extern "C" void mlirAsyncRuntimePrintCurrentThreadId()
     std::cout << "Current thread id: " << thisId << std::endl;
 }
 
+//===----------------------------------------------------------------------===//
+// MLIR Runner (JitRunner) dynamic library integration.
+//===----------------------------------------------------------------------===//
+
 } // namespace runtime
 } // namespace mlir
-
 
 void init_asyncruntime(llvm::StringMap<void *> &exportSymbols)
 {

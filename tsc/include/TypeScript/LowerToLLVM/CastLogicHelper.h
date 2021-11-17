@@ -49,17 +49,16 @@ class CastLogicHelper
         external = true;
     }
 
-    mlir::Value cast(mlir::Value in, mlir::Type resType)
+    mlir::Value cast(mlir::Value in, mlir::Type inType, mlir::Type resType)
     {
-        auto inType = in.getType();
         auto inLLVMType = tch.convertType(inType);
         auto resLLVMType = tch.convertType(resType);
-        return cast(in, inLLVMType, resType, resLLVMType);
+        return cast(in, inType, inLLVMType, resType, resLLVMType);
     }
 
-    mlir::Value cast(mlir::Value in, mlir::Type inLLVMType, mlir::Type resType, mlir::Type resLLVMType)
+    mlir::Value cast(mlir::Value in, mlir::Type inType, mlir::Type inLLVMType, mlir::Type resType, mlir::Type resLLVMType)
     {
-        auto val = castTypeScriptTypes(in, inLLVMType, resType, resLLVMType);
+        auto val = castTypeScriptTypes(in, inType, inLLVMType, resType, resLLVMType);
         if (val)
         {
             return val;
@@ -68,9 +67,8 @@ class CastLogicHelper
         return castLLVMTypes(in, inLLVMType, resType, resLLVMType);
     }
 
-    mlir::Value castTypeScriptTypes(mlir::Value in, mlir::Type inLLVMType, mlir::Type resType, mlir::Type resLLVMType)
+    mlir::Value castTypeScriptTypes(mlir::Value in, mlir::Type inType, mlir::Type inLLVMType, mlir::Type resType, mlir::Type resLLVMType)
     {
-        auto inType = in.getType();
         if (inType == resType)
         {
             return in;
@@ -163,7 +161,7 @@ class CastLogicHelper
             }
 
             auto val = rewriter.create<mlir_ts::ValueOp>(loc, optType.getElementType(), in);
-            return cast(val, tch.convertType(val.getType()), resType, resLLVMType);
+            return cast(val, val.getType(), tch.convertType(val.getType()), resType, resLLVMType);
         }
 
         // array to ref of element
@@ -257,7 +255,7 @@ class CastLogicHelper
                 // null this
                 auto thisNullVal = rewriter.create<mlir_ts::NullOp>(loc, mlir_ts::NullType::get(rewriter.getContext()));
                 auto funcType = mlir::FunctionType::get(rewriter.getContext(), resHybridFunc.getInputs(), resHybridFunc.getResults());
-                auto castFuncNullVal = cast(in, funcType);
+                auto castFuncNullVal = cast(in, inType, funcType);
                 auto boundFuncVal = rewriter.create<mlir_ts::CreateBoundFunctionOp>(loc, resHybridFunc, thisNullVal, castFuncNullVal);
                 return boundFuncVal;
             }
@@ -267,12 +265,12 @@ class CastLogicHelper
         {
             if (auto tupleTypeIn = inType.dyn_cast_or_null<mlir_ts::ConstTupleType>())
             {
-                return castObjectToString<mlir_ts::ConstTupleType>(in, tupleTypeIn);
+                return castObjectToString<mlir_ts::ConstTupleType>(in, inType, tupleTypeIn);
             }
 
             if (auto tupleTypeIn = inType.dyn_cast_or_null<mlir_ts::TupleType>())
             {
-                return castObjectToString<mlir_ts::TupleType>(in, tupleTypeIn);
+                return castObjectToString<mlir_ts::TupleType>(in, inType, tupleTypeIn);
             }
         }
 
@@ -584,7 +582,7 @@ class CastLogicHelper
         return clh.castToI8Ptr(valueAddr);
     }
 
-    template <typename TupleTy> mlir::Value castObjectToString(mlir::Value in, TupleTy tupleTypeIn)
+    template <typename TupleTy> mlir::Value castObjectToString(mlir::Value in, mlir::Type inType, TupleTy tupleTypeIn)
     {
         // calling method from object
         MLIRTypeHelper mth(rewriter.getContext());
@@ -598,7 +596,7 @@ class CastLogicHelper
 
         ::mlir::typescript::FieldInfo fieldInfo = tupleTypeIn.getFieldInfo(fieldIndex);
 
-        auto inCasted = cast(in, mlir_ts::ObjectType::get(tupleTypeIn));
+        auto inCasted = cast(in, inType, mlir_ts::ObjectType::get(tupleTypeIn));
 
         auto propField = rewriter.create<mlir_ts::PropertyRefOp>(loc, mlir_ts::RefType::get(fieldInfo.type), inCasted,
                                                                  rewriter.getI32IntegerAttr(fieldIndex));
@@ -607,7 +605,7 @@ class CastLogicHelper
 
         auto funcType = fieldInfo.type.cast<mlir::FunctionType>();
 
-        mlir::Value objTypeCasted = cast(inCasted, funcType.getInput(0));
+        mlir::Value objTypeCasted = cast(inCasted, inCasted.getType(), funcType.getInput(0));
 
         if (external)
         {
@@ -640,7 +638,7 @@ template <typename T>
 mlir::Value castLogic(mlir::Value size, mlir::Type sizeType, mlir::Operation *op, PatternRewriter &rewriter, TypeConverterHelper tch)
 {
     CastLogicHelper castLogic(op, rewriter, tch);
-    return castLogic.cast(size, sizeType);
+    return castLogic.cast(size, size.getType(), sizeType);
 }
 
 } // namespace typescript

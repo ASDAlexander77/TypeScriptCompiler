@@ -20,9 +20,9 @@ namespace typescript
 template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
 mlir::Value OptionalTypeLogicalOp(Operation *binOp, SyntaxKind opCmpCode, PatternRewriter &builder, LLVMTypeConverter &typeConverter);
 
-template <typename UnaryOpTy, typename StdIOpTy, typename StdFOpTy> void UnaryOp(UnaryOpTy &unaryOp, PatternRewriter &builder)
+template <typename UnaryOpTy, typename StdIOpTy, typename StdFOpTy>
+void UnaryOp(UnaryOpTy &unaryOp, mlir::Value oper, PatternRewriter &builder)
 {
-    auto oper = unaryOp.operand1();
     auto type = oper.getType();
     if (type.isIntOrIndex())
     {
@@ -39,12 +39,11 @@ template <typename UnaryOpTy, typename StdIOpTy, typename StdFOpTy> void UnaryOp
     }
 }
 
-template <typename BinOpTy, typename StdIOpTy, typename StdFOpTy> void BinOp(BinOpTy &binOp, PatternRewriter &builder)
+template <typename BinOpTy, typename StdIOpTy, typename StdFOpTy>
+void BinOp(BinOpTy &binOp, mlir::Value left, mlir::Value right, PatternRewriter &builder)
 {
     auto loc = binOp->getLoc();
 
-    auto left = binOp->getOperand(0);
-    auto right = binOp->getOperand(1);
     auto leftType = left.getType();
     if (leftType.isIntOrIndex())
     {
