@@ -67,15 +67,12 @@ void BinOp(BinOpTy &binOp, mlir::Value left, mlir::Value right, PatternRewriter 
 }
 
 template <typename StdIOpTy, typename V1, V1 v1, typename StdFOpTy, typename V2, V2 v2>
-mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Value right, PatternRewriter &builder,
-                    LLVMTypeConverter &typeConverter)
+mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Type leftType, mlir::Value right, mlir::Type rightType,
+                    PatternRewriter &builder, LLVMTypeConverter &typeConverter)
 {
     auto loc = binOp->getLoc();
 
     LLVMTypeConverterHelper llvmtch(typeConverter);
-
-    auto leftType = left.getType();
-    auto rightType = right.getType();
 
     if (leftType.isa<mlir_ts::OptionalType>() || rightType.isa<mlir_ts::OptionalType>())
     {

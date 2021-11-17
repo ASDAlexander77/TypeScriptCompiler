@@ -1897,11 +1897,11 @@ struct LogicalBinaryOpLowering : public TsLlvmPattern<mlir_ts::LogicalBinaryOp>
     using TsLlvmPattern<mlir_ts::LogicalBinaryOp>::TsLlvmPattern;
 
     template <CmpIPredicate v1, CmpFPredicate v2>
-    mlir::Value logicOp(mlir_ts::LogicalBinaryOp logicalBinaryOp, SyntaxKind op, mlir::Value left, mlir::Value right,
-                        PatternRewriter &builder) const
+    mlir::Value logicOp(mlir_ts::LogicalBinaryOp logicalBinaryOp, SyntaxKind op, mlir::Value left, mlir::Type leftTypeOrig,
+                        mlir::Value right, mlir::Type rightTypeOrig, PatternRewriter &builder) const
     {
-        return LogicOp<CmpIOp, CmpIPredicate, v1, CmpFOp, CmpFPredicate, v2>(logicalBinaryOp, op, left, right, builder,
-                                                                             *(LLVMTypeConverter *)getTypeConverter());
+        return LogicOp<CmpIOp, CmpIPredicate, v1, CmpFOp, CmpFPredicate, v2>(logicalBinaryOp, op, left, leftTypeOrig, right, rightTypeOrig,
+                                                                             builder, *(LLVMTypeConverter *)getTypeConverter());
     }
 
     LogicalResult matchAndRewrite(mlir_ts::LogicalBinaryOp logicalBinaryOp, ArrayRef<Value> operands,
@@ -1911,35 +1911,34 @@ struct LogicalBinaryOpLowering : public TsLlvmPattern<mlir_ts::LogicalBinaryOp>
 
         auto op = (SyntaxKind)logicalBinaryOp.opCode();
 
+        auto op1 = transformed.operand1();
+        auto op2 = transformed.operand2();
+        auto opType1 = logicalBinaryOp.operand1().getType();
+        auto opType2 = logicalBinaryOp.operand2().getType();
+
         // int and float
         mlir::Value value;
         switch (op)
         {
         case SyntaxKind::EqualsEqualsToken:
         case SyntaxKind::EqualsEqualsEqualsToken:
-            value = logicOp<CmpIPredicate::eq, CmpFPredicate::OEQ>(logicalBinaryOp, op, transformed.operand1(), transformed.operand2(),
-                                                                   rewriter);
+            value = logicOp<CmpIPredicate::eq, CmpFPredicate::OEQ>(logicalBinaryOp, op, op1, opType1, op2, opType2, rewriter);
             break;
         case SyntaxKind::ExclamationEqualsToken:
         case SyntaxKind::ExclamationEqualsEqualsToken:
-            value = logicOp<CmpIPredicate::ne, CmpFPredicate::ONE>(logicalBinaryOp, op, transformed.operand1(), transformed.operand2(),
-                                                                   rewriter);
+            value = logicOp<CmpIPredicate::ne, CmpFPredicate::ONE>(logicalBinaryOp, op, op1, opType1, op2, opType2, rewriter);
             break;
         case SyntaxKind::GreaterThanToken:
-            value = logicOp<CmpIPredicate::sgt, CmpFPredicate::OGT>(logicalBinaryOp, op, transformed.operand1(), transformed.operand2(),
-                                                                    rewriter);
+            value = logicOp<CmpIPredicate::sgt, CmpFPredicate::OGT>(logicalBinaryOp, op, op1, opType1, op2, opType2, rewriter);
             break;
         case SyntaxKind::GreaterThanEqualsToken:
-            value = logicOp<CmpIPredicate::sge, CmpFPredicate::OGE>(logicalBinaryOp, op, transformed.operand1(), transformed.operand2(),
-                                                                    rewriter);
+            value = logicOp<CmpIPredicate::sge, CmpFPredicate::OGE>(logicalBinaryOp, op, op1, opType1, op2, opType2, rewriter);
             break;
         case SyntaxKind::LessThanToken:
-            value = logicOp<CmpIPredicate::slt, CmpFPredicate::OLT>(logicalBinaryOp, op, transformed.operand1(), transformed.operand2(),
-                                                                    rewriter);
+            value = logicOp<CmpIPredicate::slt, CmpFPredicate::OLT>(logicalBinaryOp, op, op1, opType1, op2, opType2, rewriter);
             break;
         case SyntaxKind::LessThanEqualsToken:
-            value = logicOp<CmpIPredicate::sle, CmpFPredicate::OLE>(logicalBinaryOp, op, transformed.operand1(), transformed.operand2(),
-                                                                    rewriter);
+            value = logicOp<CmpIPredicate::sle, CmpFPredicate::OLE>(logicalBinaryOp, op, op1, opType1, op2, opType2, rewriter);
             break;
         default:
             llvm_unreachable("not implemented");

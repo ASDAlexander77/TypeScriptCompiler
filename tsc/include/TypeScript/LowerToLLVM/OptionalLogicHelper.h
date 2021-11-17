@@ -118,7 +118,8 @@ class OptionalLogicHelper
                     auto rightSubType = rightOptType.getElementType();
                     left = rewriter.create<mlir_ts::ValueOp>(loc, leftSubType, left);
                     right = rewriter.create<mlir_ts::ValueOp>(loc, rightSubType, right);
-                    return LogicOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, opCmpCode, left, right, rewriter, typeConverter);
+                    return LogicOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, opCmpCode, left, leftSubType, right, rightSubType, rewriter,
+                                                                       typeConverter);
                 },
                 whenBothHasNoValues);
 
@@ -163,7 +164,8 @@ class OptionalLogicHelper
                 if (t2.isa<mlir_ts::InterfaceType>() || t2.isa<mlir_ts::ClassType>())
                 {
                     auto casted = rewriter.create<mlir_ts::CastOp>(loc, t2, val1);
-                    return LogicOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, opCmpCode, val2, casted, rewriter, typeConverter);
+                    return LogicOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, opCmpCode, val2, val2.getType(), casted, casted.getType(),
+                                                                       rewriter, typeConverter);
                 }
                 else
                 {
@@ -195,7 +197,8 @@ class OptionalLogicHelper
                 right = rewriter.create<mlir_ts::ValueOp>(loc, rightSubType, right);
             }
 
-            return LogicOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, opCmpCode, left, right, rewriter, typeConverter);
+            return LogicOp<StdIOpTy, V1, v1, StdFOpTy, V2, v2>(binOp, opCmpCode, left, left.getType(), right, right.getType(), rewriter,
+                                                               typeConverter);
         }
     }
 };
