@@ -132,11 +132,11 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
     {
         // TODO, extract interface VTable to compare
         auto leftVtableValue =
-            left.getDefiningOp<mlir_ts::NullOp>()
+            left.getDefiningOp<mlir_ts::NullOp>() || left.getDefiningOp<LLVM::NullOp>()
                 ? left
                 : builder.create<mlir_ts::ExtractInterfaceVTableOp>(loc, mlir_ts::OpaqueType::get(leftType.getContext()), left);
         auto rightVtableValue =
-            right.getDefiningOp<mlir_ts::NullOp>()
+            right.getDefiningOp<mlir_ts::NullOp>() || right.getDefiningOp<LLVM::NullOp>()
                 ? right
                 : builder.create<mlir_ts::ExtractInterfaceVTableOp>(loc, mlir_ts::OpaqueType::get(rightType.getContext()), right);
 
