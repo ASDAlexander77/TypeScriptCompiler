@@ -1,8 +1,3 @@
-//#define ALLOC_ALL_VARS_IN_HEAP 1
-#define ALLOC_CAPTURED_VARS_IN_HEAP 1
-#define ALLOC_CAPTURE_IN_HEAP 1
-// TODO: if I uncomment it, it will create errors in capture vars. calls. find out why? (wrong size of buffers?)
-//#define ALLOC_TRAMPOLINE_IN_HEAP 1
 #define DEBUG_TYPE "llvm"
 
 #include "TypeScript/Config.h"
@@ -1294,7 +1289,7 @@ struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
 
         auto location = varOp.getLoc();
 
-        auto referenceType = varOp.reference().getType().dyn_cast_or_null<mlir_ts::RefType>();
+        auto referenceType = varOp.reference().getType().cast<mlir_ts::RefType>();
         auto storageType = referenceType.getElementType();
         auto llvmReferenceType = tch.convertType(referenceType);
 
