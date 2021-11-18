@@ -3374,21 +3374,31 @@ struct GetMethodOpLowering : public TsLlvmPattern<mlir_ts::GetMethodOp>
         CodeLogicHelper clh(getMethodOp, rewriter);
         CastLogicHelper castLogic(getMethodOp, rewriter, tch);
 
+        auto origType = getMethodOp.boundFunc().getType();
+
         mlir::FunctionType funcType;
-        if (auto boundType = getMethodOp.boundFunc().getType().dyn_cast<mlir_ts::BoundFunctionType>())
+        mlir::Type llvmMethodType;
+        if (auto boundType = origType.dyn_cast<mlir_ts::BoundFunctionType>())
         {
             funcType = rewriter.getFunctionType(boundType.getInputs(), boundType.getResults());
+            llvmMethodType = tch.convertType(funcType);
         }
-        else if (auto hybridType = getMethodOp.boundFunc().getType().dyn_cast<mlir_ts::HybridFunctionType>())
+        else if (auto hybridType = origType.dyn_cast<mlir_ts::HybridFunctionType>())
         {
             funcType = rewriter.getFunctionType(hybridType.getInputs(), hybridType.getResults());
+            llvmMethodType = tch.convertType(funcType);
+        }
+        else if (auto structType = origType.dyn_cast<LLVM::LLVMStructType>())
+        {
+            auto ptrType = structType.getBody().front().cast<LLVM::LLVMPointerType>();
+            assert(ptrType.getElementType().isa<LLVM::LLVMFunctionType>());
+            llvmMethodType = ptrType;
         }
         else
         {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! GetMethodOp: " << getMethodOp << " result type: " << getMethodOp.getType() << "\n");
             llvm_unreachable("not implemented");
         }
-
-        auto llvmMethodType = tch.convertType(funcType);
 
         mlir::Value methodVal =
             rewriter.create<LLVM::ExtractValueOp>(loc, llvmMethodType, transformed.boundFunc(), clh.getStructIndexAttr(DATA_VALUE_INDEX));
