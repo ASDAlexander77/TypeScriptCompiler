@@ -2923,77 +2923,6 @@ struct TrampolineOpLowering : public TsLlvmPattern<mlir_ts::TrampolineOp>
     }
 };
 
-struct CaptureOpLowering : public TsLlvmPattern<mlir_ts::CaptureOp>
-{
-    using TsLlvmPattern<mlir_ts::CaptureOp>::TsLlvmPattern;
-
-    LogicalResult matchAndRewrite(mlir_ts::CaptureOp captureOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
-    {
-        Adaptor transformed(operands);
-
-        auto location = captureOp->getLoc();
-
-        TypeHelper th(rewriter);
-
-        auto captureRefType = captureOp.getType();
-
-        LLVM_DEBUG(llvm::dbgs() << "\n!! ...capture result type: " << captureRefType << "\n\n";);
-
-        assert(captureRefType.isa<mlir_ts::RefType>());
-        auto captureStoreType = captureRefType.cast<mlir_ts::RefType>().getElementType().cast<mlir_ts::TupleType>();
-
-        LLVM_DEBUG(llvm::dbgs() << "\n!! ...capture store type: " << captureStoreType << "\n\n";);
-
-        // true => we need to allocate capture in heap memory
-#ifdef ALLOC_CAPTURE_IN_HEAP
-        auto inHeapMemory = true;
-#else
-        auto inHeapMemory = false;
-#endif
-        mlir::Value allocTempStorage =
-            rewriter.create<mlir_ts::VariableOp>(location, captureRefType, mlir::Value(), rewriter.getBoolAttr(inHeapMemory));
-
-        auto index = 0;
-        for (auto valPair : llvm::zip(transformed.captured(), captureOp.captured()))
-        {
-            // TODO: Hack to detect which sent by ref
-            auto val = std::get<0>(valPair);
-            auto valOrig = std::get<1>(valPair);
-
-            auto thisStoreFieldType = captureStoreType.getType(index);
-            auto thisStoreFieldTypeRef = mlir_ts::RefType::get(thisStoreFieldType);
-            auto fieldRef = rewriter.create<mlir_ts::PropertyRefOp>(location, thisStoreFieldTypeRef, allocTempStorage,
-                                                                    th.getStructIndexAttrValue(index));
-
-            LLVM_DEBUG(llvm::dbgs() << "\n!! ...storing val: [" << val << "] in (" << index << ") ref: " << fieldRef << "\n\n";);
-
-            // dereference value in case of sending value by ref but stored as value
-            // TODO: review capture logic
-            if (auto valRefType = valOrig.getType().dyn_cast_or_null<mlir_ts::RefType>())
-            {
-                if (!thisStoreFieldType.isa<mlir_ts::RefType>() && thisStoreFieldType == valRefType.getElementType())
-                {
-                    // load value to dereference
-                    val = rewriter.create<mlir_ts::LoadOp>(location, valRefType.getElementType(), val);
-                }
-            }
-
-            assert(valOrig.getType() == fieldRef.getType().cast<mlir_ts::RefType>().getElementType());
-
-            rewriter.create<mlir_ts::StoreOp>(location, val, fieldRef);
-
-            index++;
-        }
-
-        // mlir::Value newFunc = rewriter.create<mlir_ts::TrampolineOp>(location, captureOp.getType(), captureOp.callee(),
-        // allocTempStorage); rewriter.replaceOp(captureOp, newFunc);
-
-        rewriter.replaceOp(captureOp, allocTempStorage);
-
-        return success();
-    }
-};
-
 struct VTableOffsetRefOpLowering : public TsLlvmPattern<mlir_ts::VTableOffsetRefOp>
 {
     using TsLlvmPattern<mlir_ts::VTableOffsetRefOp>::TsLlvmPattern;
@@ -4110,20 +4039,20 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     // The only remaining operation to lower from the `typescript` dialect, is the PrintOp.
     TsLlvmContext tsLlvmContext{};
     patterns.insert<
-        CaptureOpLowering, AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering,
-        AssertOpLowering, CastOpLowering, ConstantOpLowering, CreateOptionalOpLowering, UndefOptionalOpLowering, HasValueOpLowering,
-        ValueOpLowering, SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering, FuncOpLowering, LoadOpLowering,
-        ElementRefOpLowering, PropertyRefOpLowering, ExtractPropertyOpLowering, LogicalBinaryOpLowering, NullOpLowering, NewOpLowering,
-        CreateTupleOpLowering, DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering,
-        PushOpLowering, PopOpLowering, DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering, PrintOpLowering, StoreOpLowering,
-        SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering, StringLengthOpLowering, StringConcatOpLowering,
-        StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering, MemoryCopyOpLowering, LoadSaveValueLowering,
-        ThrowUnwindOpLowering, ThrowCallOpLowering, TrampolineOpLowering, VariableOpLowering, InvokeOpLowering, InvokeHybridOpLowering,
-        ThisVirtualSymbolRefOpLowering, InterfaceSymbolRefOpLowering, NewInterfaceOpLowering, VTableOffsetRefOpLowering,
-        ThisPropertyRefOpLowering, LoadBoundRefOpLowering, StoreBoundRefOpLowering, CreateBoundRefOpLowering, CreateBoundFunctionOpLowering,
-        GetThisOpLowering, GetMethodOpLowering, TypeOfAnyOpLowering, DebuggerOpLowering, UnreachableOpLowering, LandingPadOpLowering,
-        CompareCatchTypeOpLowering, BeginCatchOpLowering, SaveCatchVarOpLowering, EndCatchOpLowering, BeginCleanupOpLowering,
-        EndCleanupOpLowering, CallInternalOpLowering, CallHybridInternalOpLowering, ReturnInternalOpLowering, NoOpLowering,
+        AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering, AssertOpLowering,
+        CastOpLowering, ConstantOpLowering, CreateOptionalOpLowering, UndefOptionalOpLowering, HasValueOpLowering, ValueOpLowering,
+        SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering, FuncOpLowering, LoadOpLowering, ElementRefOpLowering,
+        PropertyRefOpLowering, ExtractPropertyOpLowering, LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateTupleOpLowering,
+        DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, PushOpLowering, PopOpLowering,
+        DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering, PrintOpLowering, StoreOpLowering, SizeOfOpLowering,
+        InsertPropertyOpLowering, LengthOfOpLowering, StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering,
+        CharToStringOpLowering, UndefOpLowering, MemoryCopyOpLowering, LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering,
+        TrampolineOpLowering, VariableOpLowering, InvokeOpLowering, InvokeHybridOpLowering, ThisVirtualSymbolRefOpLowering,
+        InterfaceSymbolRefOpLowering, NewInterfaceOpLowering, VTableOffsetRefOpLowering, ThisPropertyRefOpLowering, LoadBoundRefOpLowering,
+        StoreBoundRefOpLowering, CreateBoundRefOpLowering, CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering,
+        TypeOfAnyOpLowering, DebuggerOpLowering, UnreachableOpLowering, LandingPadOpLowering, CompareCatchTypeOpLowering,
+        BeginCatchOpLowering, SaveCatchVarOpLowering, EndCatchOpLowering, BeginCleanupOpLowering, EndCleanupOpLowering,
+        CallInternalOpLowering, CallHybridInternalOpLowering, ReturnInternalOpLowering, NoOpLowering,
         /*GlobalConstructorOpLowering,*/ ExtractInterfaceVTableOpLowering
 #ifndef DISABLE_SWITCH_STATE_PASS
         ,

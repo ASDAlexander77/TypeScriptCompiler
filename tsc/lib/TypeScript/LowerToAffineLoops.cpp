@@ -1395,6 +1395,71 @@ struct TypeOfOpLowering : public TsPattern<mlir_ts::TypeOfOp>
     }
 };
 
+struct CaptureOpLowering : public TsPattern<mlir_ts::CaptureOp>
+{
+    using TsPattern<mlir_ts::CaptureOp>::TsPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::CaptureOp captureOp, PatternRewriter &rewriter) const final
+    {
+        auto location = captureOp->getLoc();
+
+        TypeHelper th(rewriter);
+
+        auto captureRefType = captureOp.getType();
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! ...capture result type: " << captureRefType << "\n\n";);
+
+        assert(captureRefType.isa<mlir_ts::RefType>());
+        auto captureStoreType = captureRefType.cast<mlir_ts::RefType>().getElementType().cast<mlir_ts::TupleType>();
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! ...capture store type: " << captureStoreType << "\n\n";);
+
+        // true => we need to allocate capture in heap memory
+#ifdef ALLOC_CAPTURE_IN_HEAP
+        auto inHeapMemory = true;
+#else
+        auto inHeapMemory = false;
+#endif
+        mlir::Value allocTempStorage =
+            rewriter.create<mlir_ts::VariableOp>(location, captureRefType, mlir::Value(), rewriter.getBoolAttr(inHeapMemory));
+
+        auto index = 0;
+        for (auto val : captureOp.captured())
+        {
+            auto thisStoreFieldType = captureStoreType.getType(index);
+            auto thisStoreFieldTypeRef = mlir_ts::RefType::get(thisStoreFieldType);
+            auto fieldRef = rewriter.create<mlir_ts::PropertyRefOp>(location, thisStoreFieldTypeRef, allocTempStorage,
+                                                                    th.getStructIndexAttrValue(index));
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! ...storing val: [" << val << "] in (" << index << ") ref: " << fieldRef << "\n\n";);
+
+            // dereference value in case of sending value by ref but stored as value
+            // TODO: review capture logic
+            if (auto valRefType = val.getType().dyn_cast_or_null<mlir_ts::RefType>())
+            {
+                if (!thisStoreFieldType.isa<mlir_ts::RefType>() && thisStoreFieldType == valRefType.getElementType())
+                {
+                    // load value to dereference
+                    val = rewriter.create<mlir_ts::LoadOp>(location, valRefType.getElementType(), val);
+                }
+            }
+
+            assert(val.getType() == fieldRef.getType().cast<mlir_ts::RefType>().getElementType());
+
+            rewriter.create<mlir_ts::StoreOp>(location, val, fieldRef);
+
+            index++;
+        }
+
+        // mlir::Value newFunc = rewriter.create<mlir_ts::TrampolineOp>(location, captureOp.getType(), captureOp.callee(),
+        // allocTempStorage); rewriter.replaceOp(captureOp, newFunc);
+
+        rewriter.replaceOp(captureOp, allocTempStorage);
+
+        return success();
+    }
+};
+
 } // end anonymous namespace
 
 //===----------------------------------------------------------------------===//
@@ -1541,21 +1606,21 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     // a partial lowering, we explicitly mark the TypeScript operations that don't want
     // to lower, `typescript.print`, as `legal`.
     target.addIllegalDialect<mlir_ts::TypeScriptDialect>();
-    target.addLegalOp<mlir_ts::AddressOfOp, mlir_ts::AddressOfConstStringOp, mlir_ts::AddressOfElementOp, mlir_ts::ArithmeticBinaryOp,
-                      mlir_ts::ArithmeticUnaryOp, mlir_ts::AssertOp, mlir_ts::CaptureOp, mlir_ts::CastOp, mlir_ts::ConstantOp,
-                      mlir_ts::ElementRefOp, mlir_ts::FuncOp, mlir_ts::GlobalOp, mlir_ts::GlobalResultOp, mlir_ts::HasValueOp,
-                      mlir_ts::ValueOp, mlir_ts::NullOp, mlir_ts::ParseFloatOp, mlir_ts::ParseIntOp, mlir_ts::PrintOp, mlir_ts::SizeOfOp,
-                      mlir_ts::StoreOp, mlir_ts::SymbolRefOp, mlir_ts::LengthOfOp, mlir_ts::StringLengthOp, mlir_ts::StringConcatOp,
-                      mlir_ts::StringCompareOp, mlir_ts::LoadOp, mlir_ts::NewOp, mlir_ts::CreateTupleOp, mlir_ts::DeconstructTupleOp,
-                      mlir_ts::CreateArrayOp, mlir_ts::NewEmptyArrayOp, mlir_ts::NewArrayOp, mlir_ts::DeleteOp, mlir_ts::PropertyRefOp,
-                      mlir_ts::InsertPropertyOp, mlir_ts::ExtractPropertyOp, mlir_ts::LogicalBinaryOp, mlir_ts::UndefOp,
-                      mlir_ts::VariableOp, mlir_ts::TrampolineOp, mlir_ts::InvokeOp, mlir_ts::ResultOp, mlir_ts::ThisVirtualSymbolRefOp,
-                      mlir_ts::InterfaceSymbolRefOp, mlir_ts::PushOp, mlir_ts::PopOp, mlir_ts::NewInterfaceOp, mlir_ts::VTableOffsetRefOp,
-                      mlir_ts::ThisPropertyRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp, mlir_ts::DebuggerOp, mlir_ts::LandingPadOp,
-                      mlir_ts::CompareCatchTypeOp, mlir_ts::BeginCatchOp, mlir_ts::SaveCatchVarOp, mlir_ts::EndCatchOp,
-                      mlir_ts::BeginCleanupOp, mlir_ts::EndCleanupOp, mlir_ts::ThrowUnwindOp, mlir_ts::ThrowCallOp, mlir_ts::CallInternalOp,
-                      mlir_ts::ReturnInternalOp, mlir_ts::NoOp, mlir_ts::SwitchStateInternalOp, mlir_ts::UnreachableOp,
-                      mlir_ts::GlobalConstructorOp, mlir_ts::CreateBoundFunctionOp, mlir_ts::TypeOfAnyOp>();
+    target
+        .addLegalOp<mlir_ts::AddressOfOp, mlir_ts::AddressOfConstStringOp, mlir_ts::AddressOfElementOp, mlir_ts::ArithmeticBinaryOp,
+                    mlir_ts::ArithmeticUnaryOp, mlir_ts::AssertOp, mlir_ts::CastOp, mlir_ts::ConstantOp, mlir_ts::ElementRefOp,
+                    mlir_ts::FuncOp, mlir_ts::GlobalOp, mlir_ts::GlobalResultOp, mlir_ts::HasValueOp, mlir_ts::ValueOp, mlir_ts::NullOp,
+                    mlir_ts::ParseFloatOp, mlir_ts::ParseIntOp, mlir_ts::PrintOp, mlir_ts::SizeOfOp, mlir_ts::StoreOp, mlir_ts::SymbolRefOp,
+                    mlir_ts::LengthOfOp, mlir_ts::StringLengthOp, mlir_ts::StringConcatOp, mlir_ts::StringCompareOp, mlir_ts::LoadOp,
+                    mlir_ts::NewOp, mlir_ts::CreateTupleOp, mlir_ts::DeconstructTupleOp, mlir_ts::CreateArrayOp, mlir_ts::NewEmptyArrayOp,
+                    mlir_ts::NewArrayOp, mlir_ts::DeleteOp, mlir_ts::PropertyRefOp, mlir_ts::InsertPropertyOp, mlir_ts::ExtractPropertyOp,
+                    mlir_ts::LogicalBinaryOp, mlir_ts::UndefOp, mlir_ts::VariableOp, mlir_ts::TrampolineOp, mlir_ts::InvokeOp,
+                    mlir_ts::ResultOp, mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::InterfaceSymbolRefOp, mlir_ts::PushOp, mlir_ts::PopOp,
+                    mlir_ts::NewInterfaceOp, mlir_ts::VTableOffsetRefOp, mlir_ts::ThisPropertyRefOp, mlir_ts::GetThisOp,
+                    mlir_ts::GetMethodOp, mlir_ts::DebuggerOp, mlir_ts::LandingPadOp, mlir_ts::CompareCatchTypeOp, mlir_ts::BeginCatchOp,
+                    mlir_ts::SaveCatchVarOp, mlir_ts::EndCatchOp, mlir_ts::BeginCleanupOp, mlir_ts::EndCleanupOp, mlir_ts::ThrowUnwindOp,
+                    mlir_ts::ThrowCallOp, mlir_ts::CallInternalOp, mlir_ts::ReturnInternalOp, mlir_ts::NoOp, mlir_ts::SwitchStateInternalOp,
+                    mlir_ts::UnreachableOp, mlir_ts::GlobalConstructorOp, mlir_ts::CreateBoundFunctionOp, mlir_ts::TypeOfAnyOp>();
 
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.
@@ -1567,8 +1632,8 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
                     ParamDefaultValueOpLowering, PrefixUnaryOpLowering, PostfixUnaryOpLowering, IfOpLowering, DoWhileOpLowering,
                     WhileOpLowering, ForOpLowering, BreakOpLowering, ContinueOpLowering, SwitchOpLowering, AccessorRefOpLowering,
                     ThisAccessorRefOpLowering, LabelOpLowering, CallOpLowering, CallIndirectOpLowering, TryOpLowering, ThrowOpLowering,
-                    CatchOpLowering, StateLabelOpLowering, SwitchStateOpLowering, YieldReturnValOpLowering, TypeOfOpLowering>(
-        &getContext(), &tsContext, &tsFuncContext);
+                    CatchOpLowering, StateLabelOpLowering, SwitchStateOpLowering, YieldReturnValOpLowering, TypeOfOpLowering,
+                    CaptureOpLowering>(&getContext(), &tsContext, &tsFuncContext);
 
     // With the target and rewrite patterns defined, we can now attempt the
     // conversion. The conversion will signal failure if any of our `illegal`
