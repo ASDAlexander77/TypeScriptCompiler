@@ -1337,6 +1337,16 @@ def TypeScript_UnboxOp : TypeScript_Op<"Unbox", [NoSideEffect]> {
   let assemblyFormat = "$in attr-dict `:` type($in) `to` type($res)";
 }
 
+def TypeScript_DialectCastOp : TypeScript_Op<"DialectCast", [DeclareOpInterfaceMethods<CastOpInterface>, NoSideEffect]> {
+  let description = [{
+    Example:
+      ts.dialect_cast %v : ts.number to f64
+  }];
+  let arguments = (ins AnyType:$in);
+  let results = (outs AnyType:$res);
+  let assemblyFormat = "$in attr-dict `:` type($in) `to` type($res)";
+}
+
 def TypeScript_EntryOp : TypeScript_Op<"Entry"> {
   let description = [{
     To prepare data for return value

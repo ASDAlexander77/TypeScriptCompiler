@@ -374,6 +374,25 @@ bool mlir_ts::CastOp::areCastCompatible(TypeRange inputs, TypeRange outputs)
 }
 
 //===----------------------------------------------------------------------===//
+// DialectCastOp
+//===----------------------------------------------------------------------===//
+
+/// Returns true if the given set of input and result types are compatible with
+/// this cast operation. This is required by the `CastOpInterface` to verify
+/// this operation and provide other additional utilities.
+bool mlir_ts::DialectCastOp::areCastCompatible(TypeRange inputs, TypeRange outputs)
+{
+    if (inputs.size() != 1 || outputs.size() != 1)
+    {
+        // not supporting N->N cast
+        return false;
+    }
+
+    // for now all are true
+    return true;
+}
+
+//===----------------------------------------------------------------------===//
 // FuncOp
 //===----------------------------------------------------------------------===//
 

@@ -339,14 +339,20 @@ class CastLogicHelper
         return type.isIntOrFloat() && !isIntOrBool(type);
     }
 
-    mlir::Value castLLVMTypes(mlir::Value in, mlir::Type inLLVMType, mlir::Type resType, mlir::Type resLLVMType)
+    mlir::Value dialectCast(mlir::Value in, mlir::Type inType, mlir::Type resType)
+    {
+        auto inLLVMType = tch.convertType(inType);
+        auto resLLVMType = tch.convertType(resType);
+        return castLLVMTypesLogic(in, inLLVMType, resLLVMType);
+    }
+
+    mlir::Value castLLVMTypesLogic(mlir::Value in, mlir::Type inLLVMType, mlir::Type resLLVMType)
     {
         if (inLLVMType == resLLVMType)
         {
             return in;
         }
 
-        auto inType = in.getType();
         if (isInt(inLLVMType) && isFloat(resLLVMType))
         {
             return rewriter.create<SIToFPOp>(loc, resLLVMType, in);
@@ -409,6 +415,25 @@ class CastLogicHelper
             return rewriter.create<LLVM::BitcastOp>(loc, resLLVMType, in);
         }
 
+        return mlir::Value();
+    }
+
+    mlir::Value castLLVMTypes(mlir::Value in, mlir::Type inLLVMType, mlir::Type resType, mlir::Type resLLVMType)
+    {
+        if (inLLVMType == resLLVMType)
+        {
+            return in;
+        }
+
+        auto res = castLLVMTypesLogic(in, inLLVMType, resLLVMType);
+        if (res)
+        {
+            return res;
+        }
+
+        auto inType = in.getType();
+
+        // review usage of ts.Type here
         // struct to struct. TODO: add validation
         if (inLLVMType.isa<LLVM::LLVMStructType>() && resLLVMType.isa<LLVM::LLVMStructType>())
         {

@@ -1157,6 +1157,34 @@ struct InvokeHybridOpLowering : public TsLlvmPattern<mlir_ts::InvokeHybridOp>
     }
 };
 
+struct DialectCastOpLowering : public TsLlvmPattern<mlir_ts::DialectCastOp>
+{
+    using TsLlvmPattern<mlir_ts::DialectCastOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::DialectCastOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+    {
+        auto loc = op->getLoc();
+
+        Adaptor transformed(operands);
+
+        TypeConverterHelper tch(getTypeConverter());
+
+        auto in = transformed.in();
+        auto resType = op.res().getType();
+
+        CastLogicHelper castLogic(op, rewriter, tch);
+        auto result = castLogic.dialectCast(in, in.getType(), resType);
+        if (!result)
+        {
+            return failure();
+        }
+
+        rewriter.replaceOp(op, result);
+
+        return success();
+    }
+};
+
 struct CastOpLowering : public TsLlvmPattern<mlir_ts::CastOp>
 {
     using TsLlvmPattern<mlir_ts::CastOp>::TsLlvmPattern;
@@ -2300,7 +2328,10 @@ struct CreateOptionalOpLowering : public TsLlvmPattern<mlir_ts::CreateOptionalOp
         auto llvmBoxedType = tch.convertType(boxedType);
         auto llvmOptType = tch.convertType(createOptionalOp.res().getType());
 
-        auto valueOrig = createOptionalOp.in();
+        auto valueOrigType = createOptionalOp.in().getType();
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! CreateOptional : " << createOptionalOp.in() << "\n";);
+
         auto value = transformed.in();
         auto valueLLVMType = value.getType();
 
@@ -2308,9 +2339,12 @@ struct CreateOptionalOpLowering : public TsLlvmPattern<mlir_ts::CreateOptionalOp
 
         if (valueLLVMType != llvmBoxedType)
         {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! CreateOptional value types : " << valueLLVMType << " optional type: " << llvmBoxedType
+                                    << "\n";);
+
             // cast value to box
             CastLogicHelper castLogic(createOptionalOp, rewriter, tch);
-            value = castLogic.cast(value, valueOrig.getType(), valueLLVMType, boxedType, llvmBoxedType);
+            value = castLogic.cast(value, valueOrigType, valueLLVMType, boxedType, llvmBoxedType);
             if (!value)
             {
                 return failure();
@@ -3936,7 +3970,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
 
         if (inputs.size() == 1)
         {
-            return builder.create<mlir_ts::CastOp>(loc, resultType, inputs).getResult();
+            return builder.create<mlir_ts::DialectCastOp>(loc, resultType, inputs).getResult();
         }
 
         assert("default cast");
@@ -4125,7 +4159,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         TypeOfAnyOpLowering, DebuggerOpLowering, UnreachableOpLowering, LandingPadOpLowering, CompareCatchTypeOpLowering,
         BeginCatchOpLowering, SaveCatchVarOpLowering, EndCatchOpLowering, BeginCleanupOpLowering, EndCleanupOpLowering,
         CallInternalOpLowering, CallHybridInternalOpLowering, ReturnInternalOpLowering, NoOpLowering,
-        /*GlobalConstructorOpLowering,*/ ExtractInterfaceVTableOpLowering, BoxOpLowering, UnboxOpLowering
+        /*GlobalConstructorOpLowering,*/ ExtractInterfaceVTableOpLowering, BoxOpLowering, UnboxOpLowering, DialectCastOpLowering
 #ifndef DISABLE_SWITCH_STATE_PASS
         ,
         SwitchStateOpLowering, StateLabelOpLowering, YieldReturnValOpLowering
