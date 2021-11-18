@@ -10,6 +10,8 @@ include "mlir/Interfaces/CallInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/LoopLikeInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
+include "mlir/Interfaces/CastInterfaces.td"
+
 
 //===----------------------------------------------------------------------===//
 // TypeScript op definitions
@@ -1301,7 +1303,7 @@ def TypeScript_LogicalBinaryOp : TypeScript_Op<"LogicalBinary"> {
   let assemblyFormat = "$operand1 `(` $opCode `)` $operand2 attr-dict `:` type($operand1) `,` type($operand2) `->` type($result)";
 }
 
-def TypeScript_CastOp : TypeScript_Op<"Cast", [RecursiveSideEffects]> {
+def TypeScript_CastOp : TypeScript_Op<"Cast", [DeclareOpInterfaceMethods<CastOpInterface>, NoSideEffect]> {
   let description = [{
     Example:
       ts.cast %v : i32 to f16
@@ -1312,6 +1314,27 @@ def TypeScript_CastOp : TypeScript_Op<"Cast", [RecursiveSideEffects]> {
 
   let hasCanonicalizer = 1;
   let verifier = [{ return ::verify(*this); }];
+}
+
+def TypeScript_BoxOp : TypeScript_Op<"Box", [NoSideEffect]> {
+  let description = [{
+    Example:
+      %ti = ts.typeof %1
+      ts.box %v, %ti : i32 to ts.any
+  }];
+  let arguments = (ins AnyType:$in, TypeScript_String:$typeInfo);
+  let results = (outs TypeScript_Any:$res);
+  let assemblyFormat = "$in `,` $typeInfo attr-dict `:` type($in) `,` type($typeInfo) `to` type($res)";
+}
+
+def TypeScript_UnboxOp : TypeScript_Op<"Unbox", [NoSideEffect]> {
+  let description = [{
+    Example:
+      ts.unbox %v : ts.any to i32
+  }];
+  let arguments = (ins TypeScript_Any:$in);
+  let results = (outs AnyType:$res);
+  let assemblyFormat = "$in attr-dict `:` type($in) `to` type($res)";
 }
 
 def TypeScript_EntryOp : TypeScript_Op<"Entry"> {

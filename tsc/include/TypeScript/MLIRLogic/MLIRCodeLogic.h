@@ -293,9 +293,17 @@ class MLIRCustomMethods
     mlir::Value mlirGenArrayPush(const mlir::Location &location, ArrayRef<mlir::Value> operands)
     {
         MLIRCodeLogic mcl(builder);
+
+        auto arrayElement = operands.front().getType().cast<mlir_ts::ArrayType>().getElementType();
+        auto value = operands.slice(1).front();
+        if (value.getType() != arrayElement)
+        {
+            value = builder.create<mlir_ts::CastOp>(location, arrayElement, value);
+        }
+
         auto thisValue = mcl.GetReferenceOfLoadOp(operands.front());
         assert(thisValue);
-        auto sizeOfValue = builder.create<mlir_ts::PushOp>(location, builder.getI64Type(), thisValue, operands.slice(1));
+        auto sizeOfValue = builder.create<mlir_ts::PushOp>(location, builder.getI64Type(), thisValue, mlir::ValueRange{value});
 
         return sizeOfValue;
     }

@@ -49,6 +49,15 @@ class AnyLogic
 
     mlir::Value castToAny(mlir::Value in, mlir::Type inType, mlir::Type inLLVMType)
     {
+        // get typeof value
+        // auto typeOfValue = rewriter.create<mlir_ts::TypeOfOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
+        TypeOfOpHelper toh(rewriter);
+        auto typeOfValue = toh.typeOfLogic(loc, in, inType);
+        return castToAny(in, typeOfValue, inLLVMType);
+    }
+
+    mlir::Value castToAny(mlir::Value in, mlir::Value typeOfValue, mlir::Type inLLVMType)
+    {
         // TODO: add type id to track data type
         auto llvmStorageType = inLLVMType;
         auto dataWithSizeType = getStorageType(llvmStorageType);
@@ -58,11 +67,6 @@ class AnyLogic
 
         // set value size
         auto size = rewriter.create<mlir_ts::SizeOfOp>(loc, sizeType, llvmStorageType);
-
-        // get typeof value
-        // auto typeOfValue = rewriter.create<mlir_ts::TypeOfOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
-        TypeOfOpHelper toh(rewriter);
-        auto typeOfValue = toh.typeOfLogic(loc, in, inType);
 
         auto zero = clh.createI32ConstantOf(0);
         auto one = clh.createI32ConstantOf(1);

@@ -280,6 +280,22 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
 
         auto loc = castOp->getLoc();
 
+        if (res.getType().isa<mlir_ts::AnyType>())
+        {
+            // TODO: boxing, finish it, need to send TypeOf
+            auto typeOfValue = rewriter.create<mlir_ts::TypeOfOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
+            auto boxedValue = rewriter.create<mlir_ts::BoxOp>(loc, mlir_ts::AnyType::get(rewriter.getContext()), in, typeOfValue);
+            rewriter.replaceOp(castOp, ValueRange{boxedValue});
+            return success();
+        }
+
+        if (in.getType().isa<mlir_ts::AnyType>())
+        {
+            auto unboxedValue = rewriter.create<mlir_ts::UnboxOp>(loc, res.getType(), in);
+            rewriter.replaceOp(castOp, ValueRange{unboxedValue});
+            return success();
+        }
+
         // null -> interface cast
         auto anyType = in.getType().dyn_cast_or_null<mlir_ts::AnyType>();
         auto interfaceType = res.getType().dyn_cast_or_null<mlir_ts::InterfaceType>();
@@ -340,6 +356,21 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
 void mlir_ts::CastOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
 {
     results.insert<NormalizeCast>(context);
+}
+
+/// Returns true if the given set of input and result types are compatible with
+/// this cast operation. This is required by the `CastOpInterface` to verify
+/// this operation and provide other additional utilities.
+bool mlir_ts::CastOp::areCastCompatible(TypeRange inputs, TypeRange outputs)
+{
+    if (inputs.size() != 1 || outputs.size() != 1)
+    {
+        // not supporting N->N cast
+        return false;
+    }
+
+    // for now all are true
+    return true;
 }
 
 //===----------------------------------------------------------------------===//

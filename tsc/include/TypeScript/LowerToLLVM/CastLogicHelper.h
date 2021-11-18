@@ -558,14 +558,19 @@ class CastLogicHelper
 
     mlir::Value castToAny(mlir::Value in, mlir::Type inType, mlir::Type inLLVMType)
     {
-        AnyLogic al(op, rewriter, tch, loc);
-        return al.castToAny(in, inType, inLLVMType);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! cast to any: " << in << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! PARENT cast to any: " << *in.getDefiningOp()->getParentOp() << "\n";);
+
+        llvm_unreachable("use box op instead");
+        // AnyLogic al(op, rewriter, tch, loc);
+        // return al.castToAny(in, inType, inLLVMType);
     }
 
     mlir::Value castFromAny(mlir::Value in, mlir::Type resLLVMType)
     {
-        AnyLogic al(op, rewriter, tch, loc);
-        return al.castFromAny(in, resLLVMType);
+        llvm_unreachable("use unbox op instead");
+        // AnyLogic al(op, rewriter, tch, loc);
+        // return al.castFromAny(in, resLLVMType);
     }
 
     mlir::Value castToOpaqueType(mlir::Value in, mlir::Type inLLVMType)

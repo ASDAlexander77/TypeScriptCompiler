@@ -1163,9 +1163,30 @@ struct CastOpLowering : public TsLlvmPattern<mlir_ts::CastOp>
 
     LogicalResult matchAndRewrite(mlir_ts::CastOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
     {
+        auto loc = op->getLoc();
+
         Adaptor transformed(operands);
 
-        auto loc = op->getLoc();
+        // TODO: review usage of CastOp from LLVM level
+        if (op.getType().isa<mlir_ts::AnyType>())
+        {
+            // TODO: boxing, finish it, need to send TypeOf
+            TypeOfOpHelper toh(rewriter);
+            auto typeOfValue = toh.typeOfLogic(loc, op.in().getType());
+            // auto typeOfValue = rewriter.create<mlir_ts::TypeOfOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
+            auto boxedValue =
+                rewriter.create<mlir_ts::BoxOp>(loc, mlir_ts::AnyType::get(rewriter.getContext()), transformed.in(), typeOfValue);
+            rewriter.replaceOp(op, ValueRange{boxedValue});
+            return success();
+        }
+
+        if (op.in().getType().isa<mlir_ts::AnyType>())
+        {
+            auto unboxedValue = rewriter.create<mlir_ts::UnboxOp>(loc, op.getType(), transformed.in());
+            rewriter.replaceOp(op, ValueRange{unboxedValue});
+            return success();
+        }
+        // end of hack
 
         TypeConverterHelper tch(getTypeConverter());
 
@@ -1185,6 +1206,52 @@ struct CastOpLowering : public TsLlvmPattern<mlir_ts::CastOp>
     }
 };
 
+struct BoxOpLowering : public TsLlvmPattern<mlir_ts::BoxOp>
+{
+    using TsLlvmPattern<mlir_ts::BoxOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::BoxOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+    {
+        Adaptor transformed(operands);
+
+        auto loc = op->getLoc();
+
+        TypeConverterHelper tch(getTypeConverter());
+
+        auto in = transformed.in();
+
+        AnyLogic al(op, rewriter, tch, loc);
+        auto result = al.castToAny(in, transformed.typeInfo(), in.getType());
+
+        rewriter.replaceOp(op, result);
+
+        return success();
+    }
+};
+
+struct UnboxOpLowering : public TsLlvmPattern<mlir_ts::UnboxOp>
+{
+    using TsLlvmPattern<mlir_ts::UnboxOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::UnboxOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+    {
+        Adaptor transformed(operands);
+
+        auto loc = op->getLoc();
+
+        TypeConverterHelper tch(getTypeConverter());
+
+        auto in = transformed.in();
+        auto resType = op.res().getType();
+
+        AnyLogic al(op, rewriter, tch, loc);
+        auto result = al.castFromAny(in, tch.convertType(resType));
+
+        rewriter.replaceOp(op, result);
+
+        return success();
+    }
+};
 struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
 {
     using TsLlvmPattern<mlir_ts::VariableOp>::TsLlvmPattern;
@@ -1610,8 +1677,11 @@ struct PushOpLowering : public TsLlvmPattern<mlir_ts::PushOp>
         mlir::Value index = countAsIndexType;
         auto next = false;
         mlir::Value value1;
-        for (auto item : transformed.items())
+        for (auto itemPair : llvm::zip(transformed.items(), pushOp.items()))
         {
+            auto item = std::get<0>(itemPair);
+            auto itemOrig = std::get<1>(itemPair);
+
             if (next)
             {
                 if (!value1)
@@ -1626,9 +1696,11 @@ struct PushOpLowering : public TsLlvmPattern<mlir_ts::PushOp>
             auto offset = rewriter.create<LLVM::GEPOp>(loc, llvmPtrElementType, allocated, ValueRange{index});
 
             auto effectiveItem = item;
-            if (elementType != item.getType())
+            if (elementType != itemOrig.getType())
             {
-                effectiveItem = rewriter.create<mlir_ts::CastOp>(loc, elementType, item);
+                LLVM_DEBUG(llvm::dbgs() << "\n!! push cast: store type: " << elementType << " value type: " << item.getType() << "\n";);
+                llvm_unreachable("cast must happen earlier");
+                // effectiveItem = rewriter.create<mlir_ts::CastOp>(loc, elementType, item);
             }
 
             auto save = rewriter.create<LLVM::StoreOp>(loc, effectiveItem, offset);
@@ -4053,7 +4125,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         TypeOfAnyOpLowering, DebuggerOpLowering, UnreachableOpLowering, LandingPadOpLowering, CompareCatchTypeOpLowering,
         BeginCatchOpLowering, SaveCatchVarOpLowering, EndCatchOpLowering, BeginCleanupOpLowering, EndCleanupOpLowering,
         CallInternalOpLowering, CallHybridInternalOpLowering, ReturnInternalOpLowering, NoOpLowering,
-        /*GlobalConstructorOpLowering,*/ ExtractInterfaceVTableOpLowering
+        /*GlobalConstructorOpLowering,*/ ExtractInterfaceVTableOpLowering, BoxOpLowering, UnboxOpLowering
 #ifndef DISABLE_SWITCH_STATE_PASS
         ,
         SwitchStateOpLowering, StateLabelOpLowering, YieldReturnValOpLowering
