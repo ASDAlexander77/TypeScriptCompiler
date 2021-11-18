@@ -16,6 +16,7 @@
 #include "mlir/Conversion/SCFToStandard/SCFToStandard.h"
 #include "mlir/Conversion/StandardToLLVM/ConvertStandardToLLVM.h"
 #include "mlir/Conversion/StandardToLLVM/ConvertStandardToLLVMPass.h"
+#include "mlir/Conversion/MathToLLVM/MathToLLVM.h"
 #include "mlir/Conversion/LLVMCommon/ConversionTarget.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
@@ -3956,6 +3957,7 @@ struct TypeScriptToLLVMLoweringPass : public PassWrapper<TypeScriptToLLVMLowerin
     void getDependentDialects(DialectRegistry &registry) const override
     {
         registry.insert<LLVM::LLVMDialect>();
+        registry.insert<mlir::math::MathDialect>();
     }
 
     void runOnOperation() final;
@@ -4099,6 +4101,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     populateAffineToStdConversionPatterns(patterns);
     populateLoopToStdConversionPatterns(patterns);
     populateStdToLLVMConversionPatterns(typeConverter, patterns);
+    populateMathToLLVMConversionPatterns(typeConverter, patterns);
 
 #ifdef ENABLE_ASYNC
     populateAsyncStructuralTypeConversionsAndLegality(typeConverter, patterns, target);
