@@ -1026,7 +1026,7 @@ struct InvokeOpLowering : public TsLlvmPattern<mlir_ts::InvokeOp>
 
     LogicalResult matchAndRewrite(mlir_ts::InvokeOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands, nullptr);
+        Adaptor transformed(operands, op->getAttrDictionary());
 
         if (!op.callee().hasValue())
         {
@@ -1049,7 +1049,7 @@ struct InvokeOpLowering : public TsLlvmPattern<mlir_ts::InvokeOp>
         }
 
         // just replace
-        rewriter.replaceOpWithNewOp<LLVM::InvokeOp>(op, llvmTypes, transformed.callee(), transformed.operands(), op.normalDest(),
+        rewriter.replaceOpWithNewOp<LLVM::InvokeOp>(op, llvmTypes, op.calleeAttr(), transformed.operands(), op.normalDest(),
                                                     transformed.normalDestOperands(), op.unwindDest(), transformed.unwindDestOperands());
         return success();
     }
@@ -1061,7 +1061,7 @@ struct InvokeHybridOpLowering : public TsLlvmPattern<mlir_ts::InvokeHybridOp>
 
     LogicalResult matchAndRewrite(mlir_ts::InvokeHybridOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
     {
-        Adaptor transformed(operands, nullptr);
+        Adaptor transformed(operands, op->getAttrDictionary());
 
         auto loc = op->getLoc();
 
@@ -2564,7 +2564,7 @@ struct ThrowCallOpLowering : public TsLlvmPattern<mlir_ts::ThrowCallOp>
         TypeConverterHelper tch(getTypeConverter());
 
         ThrowLogic tl(throwCallOp, rewriter, tch, throwCallOp.getLoc());
-        tl.logic(transformed.exception(), nullptr);
+        tl.logic(transformed.exception(), throwCallOp.exception().getType(), nullptr);
 
         rewriter.eraseOp(throwCallOp);
 
@@ -2583,7 +2583,7 @@ struct ThrowUnwindOpLowering : public TsLlvmPattern<mlir_ts::ThrowUnwindOp>
 
         TypeConverterHelper tch(getTypeConverter());
         ThrowLogic tl(throwUnwindOp, rewriter, tch, throwUnwindOp.getLoc());
-        tl.logic(transformed.exception(), throwUnwindOp.unwindDest());
+        tl.logic(transformed.exception(), throwUnwindOp.exception().getType(), throwUnwindOp.unwindDest());
 
         rewriter.eraseOp(throwUnwindOp);
 

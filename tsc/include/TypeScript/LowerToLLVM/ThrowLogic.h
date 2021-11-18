@@ -37,19 +37,19 @@ class ThrowLogic
     {
     }
 
-    mlir::LogicalResult logic(mlir::Value exceptionValue, mlir::Block *unwind)
+    mlir::LogicalResult logic(mlir::Value exceptionValue, mlir::Type origType, mlir::Block *unwind)
     {
 #ifdef WIN_EXCEPTION
-        return logicWin32(exceptionValue, unwind);
+        return logicWin32(exceptionValue, origType, unwind);
 #else
-        return logicUnix(exceptionValue, unwind);
+        return logicUnix(exceptionValue, origType, unwind);
 #endif
     }
 
 #ifdef WIN_EXCEPTION
-    mlir::LogicalResult logicWin32(mlir::Value exceptionValue, mlir::Block *unwind)
+    mlir::LogicalResult logicWin32(mlir::Value exceptionValue, mlir::Type origType, mlir::Block *unwind)
     {
-        mlir::Type exceptionType = exceptionValue.getType();
+        mlir::Type exceptionType = origType;
 
         LLVMRTTIHelperVCWin32 rttih(op, rewriter, typeConverter);
         rttih.setType(exceptionType);
@@ -112,9 +112,9 @@ class ThrowLogic
         return success();
     }
 #else
-    mlir::LogicalResult logicUnix(mlir::Value exceptionValue, mlir::Block *unwind)
+    mlir::LogicalResult logicUnix(mlir::Value exceptionValue, mlir::Type origType, mlir::Block *unwind)
     {
-        mlir::Type exceptionType = exceptionValue.getType();
+        mlir::Type exceptionType = origType;
 
         LLVMRTTIHelperVCLinux rttih(op, rewriter, typeConverter);
         rttih.setType(exceptionType);
@@ -127,9 +127,9 @@ class ThrowLogic
         return logicUnixThrow(rttih, exceptionValue, unwind);
     }
 
-    mlir::LogicalResult logicUnixThrow(LLVMRTTIHelperVCLinux &rttih, mlir::Value exceptionValue, mlir::Block *unwind)
+    mlir::LogicalResult logicUnixThrow(LLVMRTTIHelperVCLinux &rttih, mlir::Value exceptionValue, mlir::Type origType, mlir::Block *unwind)
     {
-        mlir::Type exceptionType = exceptionValue.getType();
+        mlir::Type exceptionType = origType;
 
         auto i8PtrTy = th.getI8PtrType();
 
