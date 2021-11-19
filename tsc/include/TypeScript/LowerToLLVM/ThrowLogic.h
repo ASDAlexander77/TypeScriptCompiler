@@ -124,7 +124,7 @@ class ThrowLogic
             return logicUnixRethrow(exceptionValue, unwind);
         }
 
-        return logicUnixThrow(rttih, exceptionValue, unwind);
+        return logicUnixThrow(rttih, exceptionValue, origType, unwind);
     }
 
     mlir::LogicalResult logicUnixThrow(LLVMRTTIHelperVCLinux &rttih, mlir::Value exceptionValue, mlir::Type origType, mlir::Block *unwind)
