@@ -228,25 +228,18 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
 
         auto loc = op->getLoc();
 
+        auto i8PtrType = th.getI8PtrType();
+
         // Get a symbol reference to the printf function, inserting it if necessary.
-        auto putsFuncOp = ch.getOrInsertFunction("puts", th.getFunctionType(rewriter.getI32Type(), th.getI8PtrType(), false));
+        auto putsFuncOp = ch.getOrInsertFunction("puts", th.getFunctionType(rewriter.getI32Type(), i8PtrType, false));
 
         auto strType = mlir_ts::StringType::get(rewriter.getContext());
 
         SmallVector<mlir::Value> values;
         mlir::Value spaceString;
-        for (auto itemPair : llvm::zip(transformed.inputs(), op.inputs()))
+        for (auto item : transformed.inputs())
         {
-            auto item = std::get<0>(itemPair);
-            auto itemOrig = std::get<1>(itemPair);
-
-            LLVM_DEBUG(llvm::dbgs() << "\n!! print op: [ " << item << " ] orig type: [ " << itemOrig.getType() << " ]\n";);
-            auto result = castLogic.cast(item, itemOrig.getType(), strType);
-            if (!result)
-            {
-                return failure();
-            }
-
+            assert(item.getType() == i8PtrType);
             if (values.size() > 0)
             {
                 if (!spaceString)
@@ -257,12 +250,12 @@ class PrintOpLowering : public TsLlvmPattern<mlir_ts::PrintOp>
                 values.push_back(spaceString);
             }
 
-            values.push_back(result);
+            values.push_back(item);
         }
 
         if (values.size() > 1)
         {
-            auto stack = rewriter.create<LLVM::StackSaveOp>(loc, th.getI8PtrType());
+            auto stack = rewriter.create<LLVM::StackSaveOp>(loc, i8PtrType);
 
             mlir::Value result = rewriter.create<mlir_ts::StringConcatOp>(loc, strType, values, rewriter.getBoolAttr(true));
 
@@ -349,7 +342,7 @@ class SizeOfOpLowering : public TsLlvmPattern<mlir_ts::SizeOfOp>
         auto loc = op->getLoc();
 
         auto storageType = op.type();
-        auto llvmStorageType = tch.convertType(op.type());
+        auto llvmStorageType = tch.convertType(storageType);
         auto llvmStorageTypePtr = LLVM::LLVMPointerType::get(llvmStorageType);
         auto nullPtrToTypeValue = rewriter.create<LLVM::NullOp>(loc, llvmStorageTypePtr);
 

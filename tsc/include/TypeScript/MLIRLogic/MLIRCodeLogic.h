@@ -231,7 +231,21 @@ class MLIRCustomMethods
   private:
     mlir::LogicalResult mlirGenPrint(const mlir::Location &location, ArrayRef<mlir::Value> operands)
     {
-        auto printOp = builder.create<mlir_ts::PrintOp>(location, operands);
+        SmallVector<mlir::Value> vals;
+        for (auto &oper : operands)
+        {
+            if (!oper.getType().isa<mlir_ts::StringType>())
+            {
+                auto strCast = builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()), oper);
+                vals.push_back(strCast);
+            }
+            else
+            {
+                vals.push_back(oper);
+            }
+        }
+
+        auto printOp = builder.create<mlir_ts::PrintOp>(location, vals);
 
         return mlir::success();
     }

@@ -400,7 +400,7 @@ def TypeScript_PrintOp : TypeScript_Op<"Print"> {
     The "print" builtin operation prints a given input string, and produces no results.
   }];
 
-  let arguments = (ins Variadic<AnyType>:$inputs);
+  let arguments = (ins Variadic<TypeScript_String>:$inputs);
 
   let assemblyFormat = "`(` $inputs `)` attr-dict `:` type($inputs) ";  
 }
