@@ -290,7 +290,7 @@ jobs:
       - name: Create Tar.GZ of Linux Asset
         working-directory: ${{github.workspace}}/__build
         shell: sh
-        run: tar -czvf ../tsc.tar.gz ./tsc-ninja-release/bin/tsc ./tsc-ninja-release/lib/libTypeScriptRuntime.so ./tsc-ninja-release/lib/libTypeScriptRuntime.so.13git ./gc-ninja-release/libgc-lib.a 
+        run: tar -czvf ../tsc.tar.gz ./tsc-ninja-release/bin/tsc ./tsc-ninja-release/lib/libTypeScriptRuntime.so ./tsc-ninja-release/lib/libTypeScriptRuntime.so.13 ./gc-ninja-release/libgc-lib.a 
 
       - name: Archive Tar.GZ of Linux Asset
         uses: actions/upload-artifact@v2
