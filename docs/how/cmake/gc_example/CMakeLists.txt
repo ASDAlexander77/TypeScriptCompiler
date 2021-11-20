@@ -27,17 +27,53 @@ if (NOT LLC_APP)
 	message(FATAL_ERROR "Can't find llc.exe")
 endif()
 
-add_custom_command(
-  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/main.${CMAKE_CXX_OUTPUT_EXTENSION}
-  COMMAND "${TSC_APP}" --emit=llvm "${CMAKE_CURRENT_SOURCE_DIR}/src/main.ts" 2>"${CMAKE_CURRENT_BINARY_DIR}/main.ll"
-  COMMAND "${LLC_APP}" --filetype=obj "-o=${CMAKE_CURRENT_BINARY_DIR}/main.${CMAKE_CXX_OUTPUT_EXTENSION}" "${CMAKE_CURRENT_BINARY_DIR}/main.ll"
-  COMMENT Added custom file
-)
+macro(add_tsc_files subpath)
+	set (baseDir ${CMAKE_CURRENT_SOURCE_DIR})
+	set (outputDir ${CMAKE_CURRENT_BINARY_DIR})
+	set (fileSelectPath "${baseDir}/${subpath}")
+	set (TSExt "ts")
+	set (LLExt "ll")
+
+	file(GLOB TSC_SRC "${fileSelectPath}/*.${TSExt}")
+
+	if ("${CMAKE_BUILD_TYPE}" EQUAL "Release")
+		set (TS_FLAGS "-opt")
+		set (LLC_FLAGS "")
+	else()
+		set (TS_FLAGS "")
+		set (LLC_FLAGS "-O0 --experimental-debug-variable-locations --debug-entry-values --debugger-tune=lldb --xcoff-traceback-table --debugify-level=location+variables")
+	endif()
+
+	set (TS_FILES)
+	foreach(F IN LISTS TSC_SRC)
+	    get_filename_component(FileName "${F}" NAME_WE BASE_DIR "${baseDir}")
+            set (source_file ${baseDir}/${subpath}/${FileName}.${TSExt})
+            set (ll_file ${outputDir}/${subpath}/${FileName}.${LLExt})
+            set (obj_file ${outputDir}/${subpath}/${FileName}${CMAKE_CXX_OUTPUT_EXTENSION})
+
+	    add_custom_command(
+		OUTPUT "${obj_file}"
+		COMMAND "${TSC_APP}" --emit=llvm ${TS_FLAGS} "${source_file}" 2>"${ll_file}"
+  		COMMAND "${LLC_APP}" --filetype=obj ${LLC_FLAGS} -o="${obj_file}" "${ll_file}"
+  		COMMENT Added TS file
+	   )
+
+	   list(APPEND TS_FILES ${obj_file})    
+	endforeach()		  
+
+  	set_source_files_properties(${TS_FILES} PROPERTIES GENERATED TRUE)
+
+	set (TS_SRC PARENT_SCOPE)
+	set (TS_SRC "${TS_FILES}")
+
+endmacro()
+
+add_tsc_files("src")
 
 add_executable(
     ${PROJECT_NAME} 
     dummy.cpp
-    ${CMAKE_CURRENT_BINARY_DIR}/main.${CMAKE_CXX_OUTPUT_EXTENSION}
+    ${TS_SRC}
 )
 
 target_link_directories(
