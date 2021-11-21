@@ -3094,7 +3094,9 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
 
         if (auto boundFunc = interfaceSymbolRefOp.getType().dyn_cast<mlir_ts::BoundFunctionType>())
         {
-            auto boundFuncVal = rewriter.create<mlir_ts::CreateBoundFunctionOp>(loc, boundFunc, thisVal, methodOrFieldPtr);
+            auto methodTypedPtr = rewriter.create<mlir_ts::CastOp>(
+                loc, mlir::FunctionType::get(rewriter.getContext(), boundFunc.getInputs(), boundFunc.getResults()), methodOrFieldPtr);
+            auto boundFuncVal = rewriter.create<mlir_ts::CreateBoundFunctionOp>(loc, boundFunc, thisVal, methodTypedPtr);
             rewriter.replaceOp(interfaceSymbolRefOp, ValueRange{boundFuncVal});
         }
         else

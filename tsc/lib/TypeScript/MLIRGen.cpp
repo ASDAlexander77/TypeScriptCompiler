@@ -4451,8 +4451,6 @@ class MLIRGenImpl
 
             auto fieldRefType = mlir_ts::RefType::get(fieldInfo.type);
 
-            // TODO: review it, InterfaceSymbolRefOp already returning BoundRef(or BoundFunction), do we need ThisPropertyRefOp ? what does
-            // it do?
             auto interfaceSymbolRefValue = builder.create<mlir_ts::InterfaceSymbolRefOp>(
                 location, fieldRefType, interfaceValue, builder.getI32IntegerAttr(fieldInfo.interfacePosIndex), builder.getStringAttr(""));
 
@@ -4480,11 +4478,12 @@ class MLIRGenImpl
 
                 assert(methodInfo.interfacePosIndex >= 0);
 
-                auto effectiveFuncType = methodInfo.funcType;
+                auto effectiveFuncType = getBoundFunctionType(methodInfo.funcType);
 
                 auto interfaceSymbolRefValue = builder.create<mlir_ts::InterfaceSymbolRefOp>(
                     location, effectiveFuncType, interfaceValue, builder.getI32IntegerAttr(methodInfo.interfacePosIndex),
                     builder.getStringAttr(methodInfo.name));
+
                 return interfaceSymbolRefValue;
             }
         }
