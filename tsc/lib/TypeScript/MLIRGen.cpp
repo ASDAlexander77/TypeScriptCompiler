@@ -4462,7 +4462,7 @@ class MLIRGenImpl
             // if it is FuncType, we need to create BoundMethod again
             if (auto funcType = fieldInfo.type.dyn_cast<mlir::FunctionType>())
             {
-                auto thisVal = builder.create<mlir_ts::GetThisOp>(location, getOpaqueType(), interfaceValue);
+                auto thisVal = builder.create<mlir_ts::ExtractInterfaceThisOp>(location, getOpaqueType(), interfaceValue);
                 value = builder.create<mlir_ts::CreateBoundFunctionOp>(location, getBoundFunctionType(funcType), thisVal, value);
             }
 

@@ -3143,6 +3143,33 @@ struct NewInterfaceOpLowering : public TsLlvmPattern<mlir_ts::NewInterfaceOp>
     }
 };
 
+struct ExtractInterfaceThisOpLowering : public TsLlvmPattern<mlir_ts::ExtractInterfaceThisOp>
+{
+    using TsLlvmPattern<mlir_ts::ExtractInterfaceThisOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ExtractInterfaceThisOp extractInterfaceThisOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        Adaptor transformed(operands);
+
+        // TODO: hack, if NullOp, return null
+
+        Location loc = extractInterfaceThisOp.getLoc();
+
+        TypeHelper th(rewriter);
+        CodeLogicHelper clh(extractInterfaceThisOp, rewriter);
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! ExtractInterfaceThis from: " << extractInterfaceThisOp.interfaceVal() << "\n");
+
+        auto vtable = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), transformed.interfaceVal(),
+                                                            clh.getStructIndexAttr(THIS_VALUE_INDEX));
+
+        rewriter.replaceOp(extractInterfaceThisOp, ValueRange{vtable});
+
+        return success();
+    }
+};
+
 struct ExtractInterfaceVTableOpLowering : public TsLlvmPattern<mlir_ts::ExtractInterfaceVTableOp>
 {
     using TsLlvmPattern<mlir_ts::ExtractInterfaceVTableOp>::TsLlvmPattern;
@@ -4148,7 +4175,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
                     GetMethodOpLowering, TypeOfAnyOpLowering, DebuggerOpLowering, UnreachableOpLowering, LandingPadOpLowering,
                     CompareCatchTypeOpLowering, BeginCatchOpLowering, SaveCatchVarOpLowering, EndCatchOpLowering, BeginCleanupOpLowering,
                     EndCleanupOpLowering, CallInternalOpLowering, CallHybridInternalOpLowering, ReturnInternalOpLowering, NoOpLowering,
-                    /*GlobalConstructorOpLowering,*/ ExtractInterfaceVTableOpLowering, BoxOpLowering, UnboxOpLowering, DialectCastOpLowering
+                    /*GlobalConstructorOpLowering,*/ ExtractInterfaceThisOpLowering, ExtractInterfaceVTableOpLowering, BoxOpLowering,
+                    UnboxOpLowering, DialectCastOpLowering
 #ifndef DISABLE_SWITCH_STATE_PASS
                     ,
                     SwitchStateOpLowering, StateLabelOpLowering, YieldReturnValOpLowering

@@ -513,6 +513,16 @@ def TypeScript_NewInterfaceOp : TypeScript_Op<"NewInterface"> {
   let assemblyFormat = "`(` $thisVal `,` $interfaceVTable `)` attr-dict `:` type($thisVal) `,` type($interfaceVTable) `->` type($instance)";
 }
 
+def ExtractInterfaceThisOp : TypeScript_Op<"ExtractInterfaceThis", 
+    [NoSideEffect]> {
+  let summary = "extract interface this  ref.";
+
+  let arguments = (ins TypeScript_Interface:$interfaceVal);
+  let results = (outs TypeScript_Opaque:$thisVal);
+
+  let assemblyFormat = "`(` $interfaceVal `)` attr-dict `:` type($interfaceVal) `->` type($thisVal)";
+}
+
 def ExtractInterfaceVTableOp : TypeScript_Op<"ExtractInterfaceVTable", 
     [NoSideEffect]> {
   let summary = "extract interface vtable";
