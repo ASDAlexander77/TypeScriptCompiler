@@ -3751,21 +3751,21 @@ class MLIRGenImpl
             // TODO: when saving const array into variable we need to allocate space and copy array as we need to have writable array
             builder.create<mlir_ts::StoreOp>(location, savingValue, loadOp.reference());
         }
-        else if (auto accessorRefOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::AccessorRefOp>())
+        else if (auto accessorOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::AccessorOp>())
         {
-            syncSavingValue(accessorRefOp.getType());
+            syncSavingValue(accessorOp.getType());
 
-            auto callRes = builder.create<mlir_ts::CallOp>(location, accessorRefOp.setAccessor().getValue(), mlir::TypeRange{getVoidType()},
+            auto callRes = builder.create<mlir_ts::CallOp>(location, accessorOp.setAccessor().getValue(), mlir::TypeRange{getVoidType()},
                                                            mlir::ValueRange{savingValue});
             savingValue = callRes.getResult(0);
         }
-        else if (auto thisAccessorRefOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ThisAccessorRefOp>())
+        else if (auto thisAccessorOp = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::ThisAccessorOp>())
         {
-            syncSavingValue(thisAccessorRefOp.getType());
+            syncSavingValue(thisAccessorOp.getType());
 
             auto callRes =
-                builder.create<mlir_ts::CallOp>(location, thisAccessorRefOp.setAccessor().getValue(), mlir::TypeRange{getVoidType()},
-                                                mlir::ValueRange{thisAccessorRefOp.thisVal(), savingValue});
+                builder.create<mlir_ts::CallOp>(location, thisAccessorOp.setAccessor().getValue(), mlir::TypeRange{getVoidType()},
+                                                mlir::ValueRange{thisAccessorOp.thisVal(), savingValue});
             savingValue = callRes.getResult(0);
         }
         else
@@ -4318,19 +4318,19 @@ class MLIRGenImpl
 
             if (accessorInfo.isStatic)
             {
-                auto symbOp = builder.create<mlir_ts::AccessorRefOp>(
+                auto accessorOp = builder.create<mlir_ts::AccessorOp>(
                     location, effectiveFuncType,
                     getFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), getFuncOp.getName()) : mlir::FlatSymbolRefAttr{},
                     setFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), setFuncOp.getName()) : mlir::FlatSymbolRefAttr{});
-                return symbOp;
+                return accessorOp;
             }
             else
             {
-                auto thisSymbOp = builder.create<mlir_ts::ThisAccessorRefOp>(
+                auto thisAccessorOp = builder.create<mlir_ts::ThisAccessorOp>(
                     location, effectiveFuncType, thisValue,
                     getFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), getFuncOp.getName()) : mlir::FlatSymbolRefAttr{},
                     setFuncOp ? mlir::FlatSymbolRefAttr::get(builder.getContext(), setFuncOp.getName()) : mlir::FlatSymbolRefAttr{});
-                return thisSymbOp;
+                return thisAccessorOp;
             }
         }
 

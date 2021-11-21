@@ -785,34 +785,34 @@ struct SwitchOpLowering : public TsPattern<mlir_ts::SwitchOp>
     }
 };
 
-struct AccessorRefOpLowering : public TsPattern<mlir_ts::AccessorRefOp>
+struct AccessorOpLowering : public TsPattern<mlir_ts::AccessorOp>
 {
-    using TsPattern<mlir_ts::AccessorRefOp>::TsPattern;
+    using TsPattern<mlir_ts::AccessorOp>::TsPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::AccessorRefOp accessorRefOp, PatternRewriter &rewriter) const final
+    LogicalResult matchAndRewrite(mlir_ts::AccessorOp accessorOp, PatternRewriter &rewriter) const final
     {
-        Location loc = accessorRefOp.getLoc();
+        Location loc = accessorOp.getLoc();
 
         auto callRes =
-            rewriter.create<mlir_ts::CallOp>(loc, accessorRefOp.getAccessor().getValue(), TypeRange{accessorRefOp.getType()}, ValueRange{});
+            rewriter.create<mlir_ts::CallOp>(loc, accessorOp.getAccessor().getValue(), TypeRange{accessorOp.getType()}, ValueRange{});
 
-        rewriter.replaceOp(accessorRefOp, callRes.getResult(0));
+        rewriter.replaceOp(accessorOp, callRes.getResult(0));
         return success();
     }
 };
 
-struct ThisAccessorRefOpLowering : public TsPattern<mlir_ts::ThisAccessorRefOp>
+struct ThisAccessorOpLowering : public TsPattern<mlir_ts::ThisAccessorOp>
 {
-    using TsPattern<mlir_ts::ThisAccessorRefOp>::TsPattern;
+    using TsPattern<mlir_ts::ThisAccessorOp>::TsPattern;
 
-    LogicalResult matchAndRewrite(mlir_ts::ThisAccessorRefOp thisAccessorRefOp, PatternRewriter &rewriter) const final
+    LogicalResult matchAndRewrite(mlir_ts::ThisAccessorOp thisAccessorOp, PatternRewriter &rewriter) const final
     {
-        Location loc = thisAccessorRefOp.getLoc();
+        Location loc = thisAccessorOp.getLoc();
 
-        auto callRes = rewriter.create<mlir_ts::CallOp>(loc, thisAccessorRefOp.getAccessor().getValue(),
-                                                        TypeRange{thisAccessorRefOp.getType()}, ValueRange{thisAccessorRefOp.thisVal()});
+        auto callRes = rewriter.create<mlir_ts::CallOp>(loc, thisAccessorOp.getAccessor().getValue(), TypeRange{thisAccessorOp.getType()},
+                                                        ValueRange{thisAccessorOp.thisVal()});
 
-        rewriter.replaceOp(thisAccessorRefOp, callRes.getResult(0));
+        rewriter.replaceOp(thisAccessorOp, callRes.getResult(0));
 
         return success();
     }
@@ -1630,8 +1630,8 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
 
     patterns.insert<EntryOpLowering, ExitOpLowering, ReturnOpLowering, ReturnValOpLowering, ParamOpLowering, ParamOptionalOpLowering,
                     ParamDefaultValueOpLowering, PrefixUnaryOpLowering, PostfixUnaryOpLowering, IfOpLowering, DoWhileOpLowering,
-                    WhileOpLowering, ForOpLowering, BreakOpLowering, ContinueOpLowering, SwitchOpLowering, AccessorRefOpLowering,
-                    ThisAccessorRefOpLowering, LabelOpLowering, CallOpLowering, CallIndirectOpLowering, TryOpLowering, ThrowOpLowering,
+                    WhileOpLowering, ForOpLowering, BreakOpLowering, ContinueOpLowering, SwitchOpLowering, AccessorOpLowering,
+                    ThisAccessorOpLowering, LabelOpLowering, CallOpLowering, CallIndirectOpLowering, TryOpLowering, ThrowOpLowering,
                     CatchOpLowering, StateLabelOpLowering, SwitchStateOpLowering, YieldReturnValOpLowering, TypeOfOpLowering,
                     CaptureOpLowering>(&getContext(), &tsContext, &tsFuncContext);
 

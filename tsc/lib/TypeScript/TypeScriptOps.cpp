@@ -146,18 +146,18 @@ void mlir_ts::ThisVirtualSymbolRefOp::getCanonicalizationPatterns(OwningRewriteP
 // AccessorRefOp
 //===----------------------------------------------------------------------===//
 
-void mlir_ts::AccessorRefOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
+void mlir_ts::AccessorOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
 {
-    results.insert<RemoveUnused<mlir_ts::AccessorRefOp>>(context);
+    results.insert<RemoveUnused<mlir_ts::AccessorOp>>(context);
 }
 
 //===----------------------------------------------------------------------===//
 // ThisAccessorRefOp
 //===----------------------------------------------------------------------===//
 
-void mlir_ts::ThisAccessorRefOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
+void mlir_ts::ThisAccessorOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
 {
-    results.insert<RemoveUnused<mlir_ts::AccessorRefOp>>(context);
+    results.insert<RemoveUnused<mlir_ts::ThisAccessorOp>>(context);
 }
 
 //===----------------------------------------------------------------------===//

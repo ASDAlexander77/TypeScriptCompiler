@@ -86,7 +86,7 @@ def ThisSymbolRefOp : TypeScript_Op<"ThisSymbolRef",
   let summary = "symbol reference as to this member";
 
   let arguments = (ins TypeScript_AnyRefLike:$thisVal, FlatSymbolRefAttr:$identifier);
-  let results = (outs TypeScript_AnyRefOrCallable:$value);
+  let results = (outs TypeScript_AnyRefOrCallableOrNone:$value);
 
   let extraClassDeclaration = [{
     Attribute getValue() { return (*this)->getAttr("identifier"); }
@@ -132,12 +132,12 @@ def ThisVirtualSymbolRefOp : TypeScript_Op<"ThisVirtualSymbolRef",
   let assemblyFormat = "`(` $thisVal `,` $vtable `[` $index `]` `)` attr-dict `:`  `:` type($thisVal) `,` type($vtable) `->` type($value)";
 }
 
-def AccessorRefOp : TypeScript_Op<"AccessorRef", 
+def AccessorOp : TypeScript_Op<"Accessor", 
     [NoSideEffect]> {
   let summary = "symbol reference as to static accessor";
 
   let arguments = (ins OptionalAttr<FlatSymbolRefAttr>:$getAccessor, OptionalAttr<FlatSymbolRefAttr>:$setAccessor);
-  let results = (outs TypeScript_RefOrValueRef:$value);
+  let results = (outs AnyType:$value);
 
   let builders = [
     OpBuilder<(ins "FlatSymbolRefAttr":$getAccessor, "FlatSymbolRefAttr":$setAccessor),
@@ -148,12 +148,12 @@ def AccessorRefOp : TypeScript_Op<"AccessorRef",
   let assemblyFormat = "attr-dict `:` type($value)";
 }
 
-def ThisAccessorRefOp : TypeScript_Op<"ThisAccessorRef", 
+def ThisAccessorOp : TypeScript_Op<"ThisAccessor", 
     [NoSideEffect]> {
-  let summary = "symbol reference as to accessor";
+  let summary = "accessor of class";
 
   let arguments = (ins AnyType:$thisVal, OptionalAttr<FlatSymbolRefAttr>:$getAccessor, OptionalAttr<FlatSymbolRefAttr>:$setAccessor);
-  let results = (outs TypeScript_RefOrBoundRefOrValueRef:$value);
+  let results = (outs AnyType:$value);
 
   let builders = [
     OpBuilder<(ins "Value":$thisVal, "FlatSymbolRefAttr":$getAccessor, "FlatSymbolRefAttr":$setAccessor),

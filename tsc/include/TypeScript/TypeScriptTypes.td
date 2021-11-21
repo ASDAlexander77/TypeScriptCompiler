@@ -1218,6 +1218,10 @@ def TypeScript_AnyRefOrCallable : AnyTypeOf<[
     TypeScript_RefOrValueRef, TypeScript_Callable
   ]>;
 
+def TypeScript_AnyRefOrCallableOrNone : AnyTypeOf<[
+    TypeScript_RefOrValueRef, TypeScript_Callable, NoneType
+  ]>;  
+
 def TypeScript_BoundFunctionLike : AnyTypeOf<[
     TypeScript_BoundFunction, TypeScript_HybridFunction
   ]>;
