@@ -635,9 +635,13 @@ struct SimplifyIndirectCallWithKnownCallee : public OpRewritePattern<mlir_ts::Ca
 
         if (auto thisSymbolRefOp = indirectCall.getCallee().getDefiningOp<mlir_ts::ThisSymbolRefOp>())
         {
+            SmallVector<mlir::Value> args;
+            args.push_back(thisSymbolRefOp.thisVal());
+            args.append(indirectCall.getArgOperands().begin(), indirectCall.getArgOperands().end());
+
             // Replace with a direct call.
             rewriter.replaceOpWithNewOp<mlir_ts::CallOp>(indirectCall, thisSymbolRefOp.identifierAttr(), indirectCall.getResultTypes(),
-                                                         indirectCall.getArgOperands());
+                                                         args);
             return success();
         }
 
@@ -724,6 +728,42 @@ struct SimplifyIndirectCallWithKnownCallee : public OpRewritePattern<mlir_ts::Ca
 
                     return success();
                 }
+            }
+            else if (auto thisSymbolRef = getMethodOp.boundFunc().getDefiningOp<mlir_ts::ThisSymbolRefOp>())
+            {
+                auto getThisVal = indirectCall.getArgOperands().front().getDefiningOp<mlir_ts::GetThisOp>();
+
+                auto thisVal = thisSymbolRef.thisVal();
+
+                // Replace with a direct call.
+                SmallVector<mlir::Value> args;
+                args.push_back(thisVal);
+                args.append(indirectCall.getArgOperands().begin(), indirectCall.getArgOperands().end());
+                rewriter.replaceOpWithNewOp<mlir_ts::CallOp>(indirectCall, thisSymbolRef.identifierAttr(), indirectCall.getResultTypes(),
+                                                             args);
+
+                LLVM_DEBUG(for (auto &arg : args) { llvm::dbgs() << "\n\n SimplifyIndirectCallWithKnownCallee arg: " << arg << "\n"; });
+
+                LLVM_DEBUG(llvm::dbgs() << "\nSimplifyIndirectCallWithKnownCallee: args: " << args.size() << "\n";);
+                LLVM_DEBUG(for (auto &use
+                                : thisSymbolRef->getUses()) { llvm::dbgs() << "\n use number:" << use.getOperandNumber() << "\n"; });
+
+                if (getMethodOp.use_empty())
+                {
+                    rewriter.eraseOp(getMethodOp);
+                }
+
+                if (getThisVal.use_empty())
+                {
+                    rewriter.eraseOp(getThisVal);
+                }
+
+                if (thisSymbolRef.use_empty())
+                {
+                    rewriter.eraseOp(thisSymbolRef);
+                }
+
+                return success();
             }
         }
 

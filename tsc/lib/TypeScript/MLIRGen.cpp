@@ -4280,8 +4280,9 @@ class MLIRGenImpl
                     return thisVirtualSymbOp;
                 }
 
-                auto thisSymbOp = builder.create<mlir_ts::ThisSymbolRefOp>(
-                    location, effectiveFuncType, effectiveThisValue, mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
+                auto thisSymbOp =
+                    builder.create<mlir_ts::ThisSymbolRefOp>(location, getBoundFunctionType(effectiveFuncType), effectiveThisValue,
+                                                             mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
                 return thisSymbOp;
             }
         }
@@ -4592,8 +4593,8 @@ class MLIRGenImpl
             SmallVector<mlir::Value, 4> operands;
             if (auto thisSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::ThisSymbolRefOp>())
             {
-                llvm_unreachable("must be replaced with BoundFunction");
-                // operands.push_back(thisSymbolRefOp.thisVal());
+                // do not remove it, it is needed for custom methods to be called correctly
+                operands.push_back(thisSymbolRefOp.thisVal());
             }
             else if (auto thisVirtualSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::ThisVirtualSymbolRefOp>())
             {
@@ -4667,38 +4668,11 @@ class MLIRGenImpl
         return mlir::Value();
     }
 
-    // TODO: depricated, remove it
-    mlir::Value getThisParam(mlir::Location location, mlir::Value funcRefValue)
-    {
-        // TODO: remove the following code, and use BoundFunction instead, otherwise reference to those methods will not work
-        if (auto thisSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::ThisSymbolRefOp>())
-        {
-            return thisSymbolRefOp.thisVal();
-        }
-
-        if (auto thisVirtualSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::ThisVirtualSymbolRefOp>())
-        {
-            // return thisVirtualSymbolRefOp.thisVal();
-            llvm_unreachable("must be removed");
-        }
-
-        if (auto interfaceSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::InterfaceSymbolRefOp>())
-        {
-            // operands.push_back(interfaceSymbolRefOp.thisRef());
-            llvm_unreachable("must be removed");
-            // return interfaceSymbolRefOp.getResult(1);
-        }
-
-        // no this
-        return mlir::Value();
-    }
-
     template <typename T = mlir::FunctionType>
     mlir::Value mlirGenCallFunction(mlir::Location location, T calledFuncType, mlir::Value funcRefValue, NodeArray<TypeNode> typeArguments,
                                     NodeArray<Expression> arguments, bool &hasReturn, const GenContext &genContext)
     {
-        auto thisValue = getThisParam(location, funcRefValue);
-        return mlirGenCallFunction(location, calledFuncType, funcRefValue, thisValue, typeArguments, arguments, hasReturn, genContext);
+        return mlirGenCallFunction(location, calledFuncType, funcRefValue, mlir::Value(), typeArguments, arguments, hasReturn, genContext);
     }
 
     template <typename T = mlir::FunctionType>
