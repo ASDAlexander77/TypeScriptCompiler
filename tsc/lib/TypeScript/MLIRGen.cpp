@@ -4264,7 +4264,8 @@ class MLIRGenImpl
                     LLVM_DEBUG(dbgs() << "\n!! Virtual call: func '" << funcOp.getName() << "' in context func. '"
                                       << const_cast<GenContext &>(genContext).funcOp.getName() << "'\n";);
 
-                    LLVM_DEBUG(dbgs() << "\n!! Virtual call: this val: '" << effectiveThisValue << "'\n";);
+                    LLVM_DEBUG(dbgs() << "\n!! Virtual call - this val: [ " << effectiveThisValue << " ] func type: [ " << effectiveFuncType
+                                      << " ]\n";);
 
                     // auto inTheSameFunc = funcOp.getName() == const_cast<GenContext &>(genContext).funcOp.getName();
 
@@ -4273,7 +4274,8 @@ class MLIRGenImpl
                     assert(genContext.allowPartialResolve || methodInfo.virtualIndex >= 0);
 
                     auto thisVirtualSymbOp = builder.create<mlir_ts::ThisVirtualSymbolRefOp>(
-                        location, effectiveFuncType, effectiveThisValue, vtableAccess, builder.getI32IntegerAttr(methodInfo.virtualIndex),
+                        location, getBoundFunctionType(effectiveFuncType), effectiveThisValue, vtableAccess,
+                        builder.getI32IntegerAttr(methodInfo.virtualIndex),
                         mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
                     return thisVirtualSymbOp;
                 }
@@ -4590,11 +4592,13 @@ class MLIRGenImpl
             SmallVector<mlir::Value, 4> operands;
             if (auto thisSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::ThisSymbolRefOp>())
             {
-                operands.push_back(thisSymbolRefOp.thisVal());
+                llvm_unreachable("must be replaced with BoundFunction");
+                // operands.push_back(thisSymbolRefOp.thisVal());
             }
             else if (auto thisVirtualSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::ThisVirtualSymbolRefOp>())
             {
-                operands.push_back(thisVirtualSymbolRefOp.thisVal());
+                llvm_unreachable("must be replaced with BoundFunction");
+                // operands.push_back(thisVirtualSymbolRefOp.thisVal());
             }
 
             if (mlir::failed(mlirGen(argumentsContext, operands, genContext)))
@@ -4663,6 +4667,7 @@ class MLIRGenImpl
         return mlir::Value();
     }
 
+    // TODO: depricated, remove it
     mlir::Value getThisParam(mlir::Location location, mlir::Value funcRefValue)
     {
         // TODO: remove the following code, and use BoundFunction instead, otherwise reference to those methods will not work
@@ -4673,7 +4678,8 @@ class MLIRGenImpl
 
         if (auto thisVirtualSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::ThisVirtualSymbolRefOp>())
         {
-            return thisVirtualSymbolRefOp.thisVal();
+            // return thisVirtualSymbolRefOp.thisVal();
+            llvm_unreachable("must be removed");
         }
 
         if (auto interfaceSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::InterfaceSymbolRefOp>())

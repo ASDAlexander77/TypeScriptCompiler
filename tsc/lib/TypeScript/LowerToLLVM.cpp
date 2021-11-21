@@ -3060,9 +3060,20 @@ struct ThisVirtualSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::ThisVirtua
 
         auto methodPtr =
             rewriter.create<mlir_ts::VTableOffsetRefOp>(loc, th.getI8PtrType(), transformed.vtable(), thisVirtualSymbolRefOp.index());
-        auto methodTyped = rewriter.create<mlir_ts::CastOp>(loc, thisVirtualSymbolRefOp.getType(), methodPtr);
+        // auto methodTyped = rewriter.create<mlir_ts::CastOp>(loc, thisVirtualSymbolRefOp.getType(), methodPtr);
 
-        rewriter.replaceOp(thisVirtualSymbolRefOp, ValueRange{methodTyped});
+        if (auto boundFunc = thisVirtualSymbolRefOp.getType().dyn_cast<mlir_ts::BoundFunctionType>())
+        {
+            auto thisOpaque = rewriter.create<mlir_ts::CastOp>(loc, mlir_ts::OpaqueType::get(rewriter.getContext()), transformed.thisVal());
+            auto methodTyped = rewriter.create<mlir_ts::CastOp>(
+                loc, mlir::FunctionType::get(rewriter.getContext(), boundFunc.getInputs(), boundFunc.getResults()), methodPtr);
+            auto boundFuncVal = rewriter.create<mlir_ts::CreateBoundFunctionOp>(loc, boundFunc, thisOpaque, methodTyped);
+            rewriter.replaceOp(thisVirtualSymbolRefOp, ValueRange{boundFuncVal});
+        }
+        else
+        {
+            llvm_unreachable("not implemented");
+        }
 
         return success();
     }
@@ -3094,9 +3105,10 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
 
         if (auto boundFunc = interfaceSymbolRefOp.getType().dyn_cast<mlir_ts::BoundFunctionType>())
         {
+            auto thisOpaque = rewriter.create<mlir_ts::CastOp>(loc, mlir_ts::OpaqueType::get(rewriter.getContext()), thisVal);
             auto methodTypedPtr = rewriter.create<mlir_ts::CastOp>(
                 loc, mlir::FunctionType::get(rewriter.getContext(), boundFunc.getInputs(), boundFunc.getResults()), methodOrFieldPtr);
-            auto boundFuncVal = rewriter.create<mlir_ts::CreateBoundFunctionOp>(loc, boundFunc, thisVal, methodTypedPtr);
+            auto boundFuncVal = rewriter.create<mlir_ts::CreateBoundFunctionOp>(loc, boundFunc, thisOpaque, methodTypedPtr);
             rewriter.replaceOp(interfaceSymbolRefOp, ValueRange{boundFuncVal});
         }
         else
