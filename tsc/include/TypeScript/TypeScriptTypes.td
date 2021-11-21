@@ -1202,6 +1202,10 @@ def TypeScript_RefOrOpaque : AnyTypeOf<[
     TypeScript_Ref, TypeScript_Opaque
   ]>;
 
+def TypeScript_RefOrValueRef : AnyTypeOf<[
+    TypeScript_Ref, TypeScript_ValueRef
+  ]>;
+
 def TypeScript_RefOrBoundRefOrValueRef : AnyTypeOf<[
     TypeScript_Ref, TypeScript_BoundRef, TypeScript_ValueRef
   ]>;
@@ -1211,7 +1215,7 @@ def TypeScript_Callable : AnyTypeOf<[
   ]>;
 
 def TypeScript_AnyRefOrCallable : AnyTypeOf<[
-    TypeScript_Ref, TypeScript_Callable
+    TypeScript_RefOrValueRef, TypeScript_Callable
   ]>;
 
 def TypeScript_BoundFunctionLike : AnyTypeOf<[

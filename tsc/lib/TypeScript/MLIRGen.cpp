@@ -4451,20 +4451,19 @@ class MLIRGenImpl
 
             auto fieldRefType = mlir_ts::RefType::get(fieldInfo.type);
 
-            auto interfaceSymbolRefOp = builder.create<mlir_ts::InterfaceSymbolRefOp>(
-                location, fieldRefType, getOpaqueType(), interfaceValue, builder.getI32IntegerAttr(fieldInfo.interfacePosIndex),
-                builder.getStringAttr(""));
+            // TODO: review it, InterfaceSymbolRefOp already returning BoundRef(or BoundFunction), do we need ThisPropertyRefOp ? what does
+            // it do?
+            auto interfaceSymbolRefValue = builder.create<mlir_ts::InterfaceSymbolRefOp>(
+                location, fieldRefType, interfaceValue, builder.getI32IntegerAttr(fieldInfo.interfacePosIndex), builder.getStringAttr(""));
 
-            auto propField = builder.create<mlir_ts::ThisPropertyRefOp>(location, fieldRefType, interfaceSymbolRefOp.getResult(1),
-                                                                        interfaceSymbolRefOp.getResult(0));
+            mlir::Value value =
+                builder.create<mlir_ts::LoadOp>(location, fieldRefType.getElementType(), interfaceSymbolRefValue.getResult());
 
-            mlir::Value value = builder.create<mlir_ts::LoadOp>(location, fieldRefType.getElementType(), propField);
-
-            // if it is FuncType, we need to create BoundRef again
+            // if it is FuncType, we need to create BoundMethod again
             if (auto funcType = fieldInfo.type.dyn_cast<mlir::FunctionType>())
             {
-                value = builder.create<mlir_ts::CreateBoundFunctionOp>(location, getBoundFunctionType(funcType),
-                                                                       interfaceSymbolRefOp.thisRef(), value);
+                auto thisVal = builder.create<mlir_ts::GetThisOp>(location, getOpaqueType(), interfaceValue);
+                value = builder.create<mlir_ts::CreateBoundFunctionOp>(location, getBoundFunctionType(funcType), thisVal, value);
             }
 
             return value;
@@ -4483,10 +4482,10 @@ class MLIRGenImpl
 
                 auto effectiveFuncType = methodInfo.funcType;
 
-                auto interfaceSymbolRefOp = builder.create<mlir_ts::InterfaceSymbolRefOp>(
-                    location, effectiveFuncType, getOpaqueType(), interfaceValue, builder.getI32IntegerAttr(methodInfo.interfacePosIndex),
+                auto interfaceSymbolRefValue = builder.create<mlir_ts::InterfaceSymbolRefOp>(
+                    location, effectiveFuncType, interfaceValue, builder.getI32IntegerAttr(methodInfo.interfacePosIndex),
                     builder.getStringAttr(methodInfo.name));
-                return interfaceSymbolRefOp.getResult(0);
+                return interfaceSymbolRefValue;
             }
         }
 
@@ -4667,6 +4666,7 @@ class MLIRGenImpl
 
     mlir::Value getThisParam(mlir::Location location, mlir::Value funcRefValue)
     {
+        // TODO: remove the following code, and use BoundFunction instead, otherwise reference to those methods will not work
         if (auto thisSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::ThisSymbolRefOp>())
         {
             return thisSymbolRefOp.thisVal();
@@ -4680,7 +4680,8 @@ class MLIRGenImpl
         if (auto interfaceSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::InterfaceSymbolRefOp>())
         {
             // operands.push_back(interfaceSymbolRefOp.thisRef());
-            return interfaceSymbolRefOp.getResult(1);
+            llvm_unreachable("must be removed");
+            // return interfaceSymbolRefOp.getResult(1);
         }
 
         // no this

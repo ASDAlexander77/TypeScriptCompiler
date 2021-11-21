@@ -3082,6 +3082,7 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
         Location loc = interfaceSymbolRefOp.getLoc();
 
         TypeHelper th(rewriter);
+        TypeConverterHelper tch(getTypeConverter());
         CodeLogicHelper clh(interfaceSymbolRefOp, rewriter);
 
         auto vtable = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), transformed.interfaceVal(),
@@ -3089,10 +3090,25 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
         auto thisVal = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), transformed.interfaceVal(),
                                                              clh.getStructIndexAttr(THIS_VALUE_INDEX));
 
-        auto methodPtr = rewriter.create<mlir_ts::VTableOffsetRefOp>(loc, th.getI8PtrType(), vtable, interfaceSymbolRefOp.index());
-        auto methodTyped = rewriter.create<mlir_ts::CastOp>(loc, interfaceSymbolRefOp.getResult(0).getType(), methodPtr);
+        auto methodOrFieldPtr = rewriter.create<mlir_ts::VTableOffsetRefOp>(loc, th.getI8PtrType(), vtable, interfaceSymbolRefOp.index());
 
-        rewriter.replaceOp(interfaceSymbolRefOp, ValueRange{methodTyped, thisVal});
+        if (auto boundFunc = interfaceSymbolRefOp.getType().dyn_cast<mlir_ts::BoundFunctionType>())
+        {
+            auto boundFuncVal = rewriter.create<mlir_ts::CreateBoundFunctionOp>(loc, boundFunc, thisVal, methodOrFieldPtr);
+            rewriter.replaceOp(interfaceSymbolRefOp, ValueRange{boundFuncVal});
+        }
+        else
+        {
+            // BoundRef
+            auto p1 = rewriter.create<LLVM::PtrToIntOp>(loc, th.getIndexType(), thisVal);
+            auto p2 = rewriter.create<LLVM::PtrToIntOp>(loc, th.getIndexType(), methodOrFieldPtr);
+            auto padded = rewriter.create<LLVM::AddOp>(loc, th.getIndexType(), p1, p2);
+            auto typedPtr = rewriter.create<LLVM::IntToPtrOp>(loc, tch.convertType(interfaceSymbolRefOp.getType()), padded);
+
+            // no need to BoundRef
+            // auto boundRefVal = rewriter.create<mlir_ts::CreateBoundRefOp>(loc, thisVal, typedPtr);
+            rewriter.replaceOp(interfaceSymbolRefOp, ValueRange{typedPtr});
+        }
 
         return success();
     }
@@ -3149,31 +3165,6 @@ struct ExtractInterfaceVTableOpLowering : public TsLlvmPattern<mlir_ts::ExtractI
                                                             clh.getStructIndexAttr(DATA_VALUE_INDEX));
 
         rewriter.replaceOp(extractInterfaceVTableOp, ValueRange{vtable});
-
-        return success();
-    }
-};
-
-struct ThisPropertyRefOpLowering : public TsLlvmPattern<mlir_ts::ThisPropertyRefOp>
-{
-    using TsLlvmPattern<mlir_ts::ThisPropertyRefOp>::TsLlvmPattern;
-
-    LogicalResult matchAndRewrite(mlir_ts::ThisPropertyRefOp thisPropertyRefOp, ArrayRef<Value> operands,
-                                  ConversionPatternRewriter &rewriter) const final
-    {
-        Adaptor transformed(operands);
-
-        Location loc = thisPropertyRefOp.getLoc();
-
-        TypeHelper th(rewriter);
-        TypeConverterHelper tch(getTypeConverter());
-
-        auto p1 = rewriter.create<LLVM::PtrToIntOp>(loc, th.getIndexType(), transformed.objectRef());
-        auto p2 = rewriter.create<LLVM::PtrToIntOp>(loc, th.getIndexType(), transformed.offset());
-        auto padded = rewriter.create<LLVM::AddOp>(loc, th.getIndexType(), p1, p2);
-        auto typedPtr = rewriter.create<LLVM::IntToPtrOp>(loc, tch.convertType(thisPropertyRefOp.getType()), padded);
-
-        rewriter.replaceOp(thisPropertyRefOp, ValueRange{typedPtr});
 
         return success();
     }
@@ -4142,28 +4133,28 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 
     // The only remaining operation to lower from the `typescript` dialect, is the PrintOp.
     TsLlvmContext tsLlvmContext{};
-    patterns.insert<
-        AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering, AssertOpLowering,
-        CastOpLowering, ConstantOpLowering, CreateOptionalOpLowering, UndefOptionalOpLowering, HasValueOpLowering, ValueOpLowering,
-        SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering, FuncOpLowering, LoadOpLowering, ElementRefOpLowering,
-        PropertyRefOpLowering, ExtractPropertyOpLowering, LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateTupleOpLowering,
-        DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, PushOpLowering, PopOpLowering,
-        DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering, PrintOpLowering, StoreOpLowering, SizeOfOpLowering,
-        InsertPropertyOpLowering, LengthOfOpLowering, StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering,
-        CharToStringOpLowering, UndefOpLowering, MemoryCopyOpLowering, LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering,
-        TrampolineOpLowering, VariableOpLowering, InvokeOpLowering, InvokeHybridOpLowering, ThisVirtualSymbolRefOpLowering,
-        InterfaceSymbolRefOpLowering, NewInterfaceOpLowering, VTableOffsetRefOpLowering, ThisPropertyRefOpLowering, LoadBoundRefOpLowering,
-        StoreBoundRefOpLowering, CreateBoundRefOpLowering, CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering,
-        TypeOfAnyOpLowering, DebuggerOpLowering, UnreachableOpLowering, LandingPadOpLowering, CompareCatchTypeOpLowering,
-        BeginCatchOpLowering, SaveCatchVarOpLowering, EndCatchOpLowering, BeginCleanupOpLowering, EndCleanupOpLowering,
-        CallInternalOpLowering, CallHybridInternalOpLowering, ReturnInternalOpLowering, NoOpLowering,
-        /*GlobalConstructorOpLowering,*/ ExtractInterfaceVTableOpLowering, BoxOpLowering, UnboxOpLowering, DialectCastOpLowering
+    patterns.insert<AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering,
+                    AssertOpLowering, CastOpLowering, ConstantOpLowering, CreateOptionalOpLowering, UndefOptionalOpLowering,
+                    HasValueOpLowering, ValueOpLowering, SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering, FuncOpLowering,
+                    LoadOpLowering, ElementRefOpLowering, PropertyRefOpLowering, ExtractPropertyOpLowering, LogicalBinaryOpLowering,
+                    NullOpLowering, NewOpLowering, CreateTupleOpLowering, DeconstructTupleOpLowering, CreateArrayOpLowering,
+                    NewEmptyArrayOpLowering, NewArrayOpLowering, PushOpLowering, PopOpLowering, DeleteOpLowering, ParseFloatOpLowering,
+                    ParseIntOpLowering, PrintOpLowering, StoreOpLowering, SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering,
+                    StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering,
+                    MemoryCopyOpLowering, LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, TrampolineOpLowering,
+                    VariableOpLowering, InvokeOpLowering, InvokeHybridOpLowering, ThisVirtualSymbolRefOpLowering,
+                    InterfaceSymbolRefOpLowering, NewInterfaceOpLowering, VTableOffsetRefOpLowering, LoadBoundRefOpLowering,
+                    StoreBoundRefOpLowering, CreateBoundRefOpLowering, CreateBoundFunctionOpLowering, GetThisOpLowering,
+                    GetMethodOpLowering, TypeOfAnyOpLowering, DebuggerOpLowering, UnreachableOpLowering, LandingPadOpLowering,
+                    CompareCatchTypeOpLowering, BeginCatchOpLowering, SaveCatchVarOpLowering, EndCatchOpLowering, BeginCleanupOpLowering,
+                    EndCleanupOpLowering, CallInternalOpLowering, CallHybridInternalOpLowering, ReturnInternalOpLowering, NoOpLowering,
+                    /*GlobalConstructorOpLowering,*/ ExtractInterfaceVTableOpLowering, BoxOpLowering, UnboxOpLowering, DialectCastOpLowering
 #ifndef DISABLE_SWITCH_STATE_PASS
-        ,
-        SwitchStateOpLowering, StateLabelOpLowering, YieldReturnValOpLowering
+                    ,
+                    SwitchStateOpLowering, StateLabelOpLowering, YieldReturnValOpLowering
 #endif
-        ,
-        SwitchStateInternalOpLowering>(typeConverter, &getContext(), &tsLlvmContext);
+                    ,
+                    SwitchStateInternalOpLowering>(typeConverter, &getContext(), &tsLlvmContext);
 
     // patterns.insert<SwitchStateOpLowering2>(typeConverter, &getContext(), &tsLlvmContext, /*benegit*/ 2);
 

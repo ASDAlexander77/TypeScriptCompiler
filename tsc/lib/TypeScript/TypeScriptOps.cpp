@@ -169,6 +169,7 @@ void mlir_ts::InterfaceSymbolRefOp::getCanonicalizationPatterns(OwningRewritePat
     results.insert<RemoveUnused<mlir_ts::InterfaceSymbolRefOp>>(context);
 }
 
+/*
 void mlir_ts::InterfaceSymbolRefOp::getAsmResultNames(llvm::function_ref<void(Value, StringRef)> setNameFn)
 {
     SmallString<4> buffer;
@@ -180,6 +181,7 @@ void mlir_ts::InterfaceSymbolRefOp::getAsmResultNames(llvm::function_ref<void(Va
     os2 << "this";
     setNameFn(getResult(1), os2.str());
 }
+*/
 
 //===----------------------------------------------------------------------===//
 // TypeRefOp

@@ -14,7 +14,11 @@ cmake_policy(SET CMP0054 NEW)
 
 set (TSCPATH "C:\\dev\\TypeScriptCompiler\\__build\\tsc\\bin")
 set (LLVMPATH "C:\\dev\\TypeScriptCompiler\\3rdParty\\llvm\\release\\bin")
-set (GCLIBPATH "C:\\dev\\TypeScriptCompiler\\3rdParty\\gc\\Release")
+if ("${CMAKE_BUILD_TYPE}" EQUAL "Release")
+	set (GCLIBPATH "C:\\dev\\TypeScriptCompiler\\3rdParty\\gc\\Release")
+else()
+	set (GCLIBPATH "C:\\dev\\TypeScriptCompiler\\3rdParty\\gc\\Debug")
+endif()
 
 find_program(TSC_APP tsc.exe HINTS "${TSCPATH}" DOC "path to tsc")
 find_program(LLC_APP llc.exe HINTS "${LLVMPATH}" DOC "path to llc")

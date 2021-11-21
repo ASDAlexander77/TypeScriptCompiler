@@ -86,7 +86,7 @@ def ThisSymbolRefOp : TypeScript_Op<"ThisSymbolRef",
   let summary = "symbol reference as to this member";
 
   let arguments = (ins TypeScript_AnyRefLike:$thisVal, FlatSymbolRefAttr:$identifier);
-  let results = (outs AnyType:$value);
+  let results = (outs TypeScript_AnyRefOrCallable:$value);
 
   let extraClassDeclaration = [{
     Attribute getValue() { return (*this)->getAttr("identifier"); }
@@ -137,7 +137,7 @@ def AccessorRefOp : TypeScript_Op<"AccessorRef",
   let summary = "symbol reference as to static accessor";
 
   let arguments = (ins OptionalAttr<FlatSymbolRefAttr>:$getAccessor, OptionalAttr<FlatSymbolRefAttr>:$setAccessor);
-  let results = (outs AnyType:$value);
+  let results = (outs TypeScript_RefOrValueRef:$value);
 
   let builders = [
     OpBuilder<(ins "FlatSymbolRefAttr":$getAccessor, "FlatSymbolRefAttr":$setAccessor),
@@ -153,7 +153,7 @@ def ThisAccessorRefOp : TypeScript_Op<"ThisAccessorRef",
   let summary = "symbol reference as to accessor";
 
   let arguments = (ins AnyType:$thisVal, OptionalAttr<FlatSymbolRefAttr>:$getAccessor, OptionalAttr<FlatSymbolRefAttr>:$setAccessor);
-  let results = (outs AnyType:$value);
+  let results = (outs TypeScript_RefOrBoundRefOrValueRef:$value);
 
   let builders = [
     OpBuilder<(ins "Value":$thisVal, "FlatSymbolRefAttr":$getAccessor, "FlatSymbolRefAttr":$setAccessor),
@@ -165,11 +165,11 @@ def ThisAccessorRefOp : TypeScript_Op<"ThisAccessorRef",
 }
 
 def InterfaceSymbolRefOp : TypeScript_Op<"InterfaceSymbolRef", 
-    [NoSideEffect,DeclareOpInterfaceMethods<OpAsmOpInterface>]> {
+    [NoSideEffect]> {
   let summary = "symbol reference as to interface member";
 
   let arguments = (ins TypeScript_Interface:$interfaceVal, I32Attr:$index, StrAttr:$identifier);
-  let results = (outs TypeScript_AnyRefOrCallable:$funcOrFieldReference, TypeScript_AnyRefLike:$thisRef);
+  let results = (outs TypeScript_AnyRefOrCallable:$funcOrFieldReference);
 
   let builders = [
     OpBuilder<(ins "Value":$interfaceVal, "IntegerAttr":$index, "StringAttr":$identifier),
@@ -181,7 +181,7 @@ def InterfaceSymbolRefOp : TypeScript_Op<"InterfaceSymbolRef",
 
   let hasCanonicalizer = 1;
 
-  let assemblyFormat = "`(` $interfaceVal `)` `[` $index `]` attr-dict `:` type($interfaceVal) `->` type($funcOrFieldReference) `,` type($thisRef)";
+  let assemblyFormat = "`(` $interfaceVal `)` `[` $index `]` attr-dict `:` type($interfaceVal) `->` type($funcOrFieldReference)";
 }
 
 def TypeRefOp : TypeScript_Op<"TypeRef", 
@@ -1092,25 +1092,6 @@ def TypeScript_PropertyRefOp : TypeScript_Op<"PropertyRef"> {
   );
 
   let assemblyFormat = "$objectRef `<` $position `>` attr-dict `:` type($objectRef) `->` type($result)";
-}
-
-def TypeScript_ThisPropertyRefOp : TypeScript_Op<"ThisPropertyRef"> {
-  let description = [{
-    ```mlir
-    %2 = ts.this_property_ref %1, %2 : !ts.ref<f32>
-    ```
-  }];
-
-  let arguments = (ins
-    TypeScript_AnyRefLike:$objectRef,
-    TypeScript_Ref:$offset
-  );
-
-  let results = (outs
-    TypeScript_Ref:$result
-  );
-
-  let assemblyFormat = "$objectRef `+` $offset attr-dict `:` type($objectRef) `+` type($offset) `->` type($result)";
 }
 
 def TypeScript_StoreBoundRefOp : TypeScript_Op<"StoreBoundRef", []> {
