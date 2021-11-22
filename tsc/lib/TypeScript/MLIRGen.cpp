@@ -3148,8 +3148,14 @@ class MLIRGenImpl
 
             auto caseValue = mlirGen(caseBlock.as<CaseClause>()->expression, genContext);
 
+            auto switchValueEffective = switchValue;
+            if (switchValue.getType() != caseValue.getType())
+            {
+                switchValueEffective = cast(location, caseValue.getType(), switchValue, genContext);
+            }
+
             auto condition = builder.create<mlir_ts::LogicalBinaryOp>(
-                location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsToken), switchValue, caseValue);
+                location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsToken), switchValueEffective, caseValue);
 
             auto conditionI1 = cast(location, builder.getI1Type(), condition, genContext);
 
