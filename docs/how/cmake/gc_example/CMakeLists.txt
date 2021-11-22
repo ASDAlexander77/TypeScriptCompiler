@@ -14,7 +14,7 @@ cmake_policy(SET CMP0054 NEW)
 
 set (TSCPATH "C:\\dev\\TypeScriptCompiler\\__build\\tsc\\bin")
 set (LLVMPATH "C:\\dev\\TypeScriptCompiler\\3rdParty\\llvm\\release\\bin")
-if ("${CMAKE_BUILD_TYPE}" EQUAL "Release")
+if (CMAKE_BUILD_TYPE STREQUAL "Release")
 	set (GCLIBPATH "C:\\dev\\TypeScriptCompiler\\3rdParty\\gc\\Release")
 else()
 	set (GCLIBPATH "C:\\dev\\TypeScriptCompiler\\3rdParty\\gc\\Debug")
@@ -40,7 +40,7 @@ macro(add_tsc_files subpath)
 
 	file(GLOB TSC_SRC "${fileSelectPath}/*.${TSExt}")
 
-	if ("${CMAKE_BUILD_TYPE}" EQUAL "Release")
+	if (CMAKE_BUILD_TYPE STREQUAL "Release")
 		set (TS_FLAGS "-opt")
 		set (LLC_FLAGS "")
 	else()
@@ -51,6 +51,14 @@ macro(add_tsc_files subpath)
 	set (TS_FILES)
 	foreach(F IN LISTS TSC_SRC)
 	    get_filename_component(FileName "${F}" NAME_WE BASE_DIR "${baseDir}")
+	    get_filename_component(Ext "${F}" EXT BASE_DIR "${baseDir}")
+	    string(TOUPPER ${Ext} ExtUpperCase)
+	    string(FIND ${ExtUpperCase} ".D.TS" ExtFound)
+	    if (${ExtFound} GREATER -1)
+		message (STATUS "... skipping ${F}")
+		continue()
+	    endif()
+
             set (source_file ${baseDir}/${subpath}/${FileName}.${TSExt})
             set (ll_file ${outputDir}/${subpath}/${FileName}.${LLExt})
             set (obj_file ${outputDir}/${subpath}/${FileName}${CMAKE_CXX_OUTPUT_EXTENSION})
@@ -77,6 +85,7 @@ add_tsc_files("src")
 add_executable(
     ${PROJECT_NAME} 
     dummy.cpp
+    native/window.win32.cpp
     ${TS_SRC}
 )
 
@@ -86,9 +95,11 @@ target_link_directories(
     ${GCLIBPATH}
 )
 
+set (LIBS "gcmt-lib")
+
 target_link_libraries(
     ${PROJECT_NAME} 
-    gcmt-lib
+    ${LIBS}
 )
 
 
