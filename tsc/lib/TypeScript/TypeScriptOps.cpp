@@ -738,7 +738,7 @@ struct SimplifyIndirectCallWithKnownCallee : public OpRewritePattern<mlir_ts::Ca
                 // Replace with a direct call.
                 SmallVector<mlir::Value> args;
                 args.push_back(thisVal);
-                args.append(indirectCall.getArgOperands().begin(), indirectCall.getArgOperands().end());
+                args.append(indirectCall.getArgOperands().begin() + 1, indirectCall.getArgOperands().end());
                 rewriter.replaceOpWithNewOp<mlir_ts::CallOp>(indirectCall, thisSymbolRef.identifierAttr(), indirectCall.getResultTypes(),
                                                              args);
 

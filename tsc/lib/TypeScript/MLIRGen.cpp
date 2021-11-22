@@ -4596,11 +4596,6 @@ class MLIRGenImpl
                 // do not remove it, it is needed for custom methods to be called correctly
                 operands.push_back(thisSymbolRefOp.thisVal());
             }
-            else if (auto thisVirtualSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::ThisVirtualSymbolRefOp>())
-            {
-                llvm_unreachable("must be replaced with BoundFunction");
-                // operands.push_back(thisVirtualSymbolRefOp.thisVal());
-            }
 
             if (mlir::failed(mlirGen(argumentsContext, operands, genContext)))
             {
