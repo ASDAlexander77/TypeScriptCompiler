@@ -81,12 +81,20 @@ macro(add_tsc_files subpath)
 
 endmacro()
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    add_definitions(-DWIN32_LEAN_AND_MEAN -DWIN32 -D_CRT_NON_CONFORMING_SWPRINTFS -D_CRT_SECURE_NO_WARNINGS -D_CRT_SECURE_NO_DEPRECATE -D_CONSOLE)
+    if (CMAKE_BUILD_TYPE STREQUAL "Debug")
+    	add_definitions(-D_DEBUG)
+    endif()
+endif()
+
 add_tsc_files("src")
 
 add_executable(
     ${PROJECT_NAME} 
     dummy.cpp
     ${TS_SRC}
+    native/window.win32.cpp
 )
 
 target_link_directories(
