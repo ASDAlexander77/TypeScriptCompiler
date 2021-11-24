@@ -6,7 +6,7 @@ if not "%1"=="" (
 
 set p=%cd%
 
-IF EXIST ".\3rdParty\llvm\%BUILD%\bin_" (
+IF EXIST ".\3rdParty\llvm\%BUILD%\bin" (
   echo "No need to build LLVM (%BUILD%)"
 ) ELSE (
   cd %p%
