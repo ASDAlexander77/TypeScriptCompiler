@@ -7,10 +7,10 @@ namespace InstanceOf {
         }
     }
 
-    class Bar extends Foo {}
-    class Baz extends Foo {}
-    class Bar2 extends Bar {}
-    class Bar3 extends Bar {}
+    class Bar extends Foo { }
+    class Baz extends Foo { }
+    class Bar2 extends Bar { }
+    class Bar3 extends Bar { }
 
     function testNot(v: any) {
         //assert(!(v instanceof Foo), "tn");
@@ -38,9 +38,10 @@ namespace InstanceOf {
         testNot("ell")
         testNot("ell" + "world")
         testNot({});
-	*/
+    */
         new Foo().bar();
         new Bar3().bar();
+
 
         // This crashes (correctly)
         // let f:Foo = {} as any
