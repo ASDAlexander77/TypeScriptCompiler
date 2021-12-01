@@ -75,6 +75,11 @@ struct TypeScriptInlinerInterface : public mlir::DialectInlinerInterface
         // ignore all functions until you find out how to resolve issue with recursive calls
         auto condition = !isa<mlir_ts::CallInternalOp>(op);
 
+        // do not inline if func body has TryOp
+        condition &= !isa<mlir_ts::TryOp>(op);
+        condition &= !isa<mlir_ts::CatchOp>(op);
+        condition &= !isa<mlir_ts::ThrowOp>(op);
+
         LLVM_DEBUG(llvm::dbgs() << "!! is Legal To Inline (op): " << (condition ? "TRUE" : "FALSE") << " " << *op << " = "
                                 << "\n";);
 
