@@ -59,9 +59,12 @@ struct TypeScriptInlinerInterface : public mlir::DialectInlinerInterface
 
     bool isLegalToInline(Region *dest, Region *src, bool wouldBeCloned, BlockAndValueMapping &valueMapping) const final
     {
-        if (isa<mlir_ts::FuncOp>(dest->getParentOp()))
+        if (auto funcOp = dyn_cast<mlir_ts::FuncOp>(dest->getParentOp()))
         {
-            return true;
+            auto condition = !(funcOp.personality().hasValue() && funcOp.personality().getValue());
+            LLVM_DEBUG(llvm::dbgs() << "!! is Legal To Inline (region): " << (condition ? "TRUE" : "FALSE") << " " << funcOp << " = "
+                                    << "\n";);
+            return condition;
         }
 
         return false;
@@ -79,6 +82,9 @@ struct TypeScriptInlinerInterface : public mlir::DialectInlinerInterface
         condition &= !isa<mlir_ts::TryOp>(op);
         condition &= !isa<mlir_ts::CatchOp>(op);
         condition &= !isa<mlir_ts::ThrowOp>(op);
+        condition &= !isa<mlir_ts::LandingPadOp>(op);
+        condition &= !isa<mlir_ts::BeginCatchOp>(op);
+        condition &= !isa<mlir_ts::EndCatchOp>(op);
 
         LLVM_DEBUG(llvm::dbgs() << "!! is Legal To Inline (op): " << (condition ? "TRUE" : "FALSE") << " " << *op << " = "
                                 << "\n";);

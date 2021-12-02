@@ -93,7 +93,7 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
-            "args": ["-emit=llvm", "-debug-only=pass", "C:/temp/1.ts"],
+            "args": ["-emit=llvm", "-debug-only=pass", "-opt", "C:/temp/1.ts"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],

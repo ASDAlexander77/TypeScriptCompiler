@@ -235,7 +235,7 @@ struct TypeScriptExceptionPass : public FunctionPass
                 // check what is type of catch
                 auto value = LPI->getOperand(0);
                 auto isNullInst = isa<ConstantPointerNull>(value);
-                if (isNullInst)
+                if (isNullInst || !catchRegion.store)
                 {
                     // catch (...) as catch value is null
                     auto nullI8Ptr = ConstantPointerNull::get(IntegerType::get(Ctx, 8)->getPointerTo());
