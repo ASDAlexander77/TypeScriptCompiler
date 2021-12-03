@@ -2673,21 +2673,15 @@ struct SaveCatchVarOpLowering : public TsLlvmPattern<mlir_ts::SaveCatchVarOp>
         TypeHelper th(rewriter);
         LLVMCodeHelper ch(saveCatchVarOp, rewriter, getTypeConverter());
 
-        auto catchRefType = saveCatchVarOp.varStore().getType().cast<mlir_ts::RefType>();
-        auto catchType = catchRefType.getElementType();
-
-        // this is hook call to finish later in Win32 exception pass
-        // auto catchVal = rewriter.create<mlir_ts::UndefOp>(loc, catchType);
-        // rewriter.replaceOpWithNewOp<mlir_ts::StoreOp>(saveCatchVarOp, catchVal, transformed.varStore());
+        auto ptr = rewriter.create<mlir_ts::CastOp>(loc, th.getI8PtrType(), transformed.varStore());
 
         auto saveCatchFuncName = "ts.internal.save_catch_var";
         auto saveCatchFunc = ch.getOrInsertFunction(
             saveCatchFuncName,
-            th.getFunctionType(th.getVoidType(), ArrayRef<Type>{getTypeConverter()->convertType(saveCatchVarOp.exceptionInfo().getType()),
-                                                                transformed.varStore().getType()}));
+            th.getFunctionType(th.getVoidType(),
+                               ArrayRef<Type>{getTypeConverter()->convertType(saveCatchVarOp.exceptionInfo().getType()), ptr.getType()}));
 
-        rewriter.replaceOpWithNewOp<LLVM::CallOp>(saveCatchVarOp, saveCatchFunc,
-                                                  ValueRange{saveCatchVarOp.exceptionInfo(), transformed.varStore()});
+        rewriter.replaceOpWithNewOp<LLVM::CallOp>(saveCatchVarOp, saveCatchFunc, ValueRange{saveCatchVarOp.exceptionInfo(), ptr});
 
         return success();
     }

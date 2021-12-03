@@ -257,7 +257,7 @@ struct TypeScriptExceptionPass : public FunctionPass
                 }
                 else
                 {
-                    auto varRef = catchRegion.saveCatch->getOperand(1);
+                    auto varRef = catchRegion.saveCatch->getOperand(1)->stripPointerCasts();
                     assert(varRef);
                     auto iValTypeId = ConstantInt::get(IntegerType::get(Ctx, 32), getTypeNumber(varRef->getType()));
                     catchRegion.catchPad = CatchPadInst::Create(CSI, {value, iValTypeId, varRef}, "catchpad", LPI);
