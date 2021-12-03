@@ -28,11 +28,11 @@ struct CatchRegion
     llvm::SmallVector<CallBase *> calls;
     CatchPadInst *catchPad;
     CleanupPadInst *cleanupPad;
-    StoreInst *store;
-    StoreInst *storeToCheckStoreType;
     InvokeInst *unwindInfoOp;
     Value *stack;
     bool hasAlloca;
+    llvm::Instruction *cxaBeginCatch;
+    llvm::Instruction *saveCatch;
     llvm::Instruction *cxaEndCatch;
     llvm::Instruction *end;
 
@@ -85,6 +85,7 @@ struct TypeScriptExceptionPass : public FunctionPass
         LLVM_DEBUG(llvm::dbgs() << "\n!! Dump Before: ...\n" << F << "\n";);
 
         CatchRegion *catchRegion = nullptr;
+        auto beginOfCatch = false;
         auto endOfCatch = false;
         auto endOfCatchIfResume = false;
         llvm::SmallVector<llvm::Instruction *> toRemoveWorkSet;
@@ -97,6 +98,7 @@ struct TypeScriptExceptionPass : public FunctionPass
 
                 catchRegion->landingPad = LPI;
 
+                beginOfCatch = false;
                 endOfCatch = false;
                 continue;
             }
@@ -132,23 +134,6 @@ struct TypeScriptExceptionPass : public FunctionPass
                 }
             }
 
-            if (!catchRegion->store)
-            {
-                if (auto *SI = dyn_cast<StoreInst>(&I))
-                {
-                    // TODO: take StoreInst if arg is Undef
-                    // TODO: but now you need to find out type which you need to save
-                    if (auto *UV = dyn_cast<UndefValue>(SI->getValueOperand()))
-                    {
-                        assert(!catchRegion->store);
-                        catchRegion->store = SI;
-                    }
-
-                    assert(!catchRegion->storeToCheckStoreType);
-                    catchRegion->storeToCheckStoreType = SI;
-                }
-            }
-
             if (dyn_cast<AllocaInst>(&I))
             {
                 catchRegion->hasAlloca = true;
@@ -157,6 +142,25 @@ struct TypeScriptExceptionPass : public FunctionPass
             if (auto *CI = dyn_cast<CallInst>(&I))
             {
                 LLVM_DEBUG(llvm::dbgs() << "\n!! Call: " << CI->getCalledFunction()->getName() << "");
+
+                if (CI->getCalledFunction()->getName() == "__cxa_begin_catch")
+                {
+                    LLVM_DEBUG(llvm::dbgs() << "\n!! __cxa_begin_catch : " << *CI << "\n";);
+                    LLVM_DEBUG(llvm::dbgs() << "\n!! __cxa_begin_catch op 0 : " << *CI->getOperand(0) << "\n";);
+
+                    toRemoveWorkSet.push_back(&I);
+                    auto extractOp = cast<llvm::ExtractValueInst>(CI->getOperand(0));
+                    toRemoveWorkSet.push_back(extractOp);
+                    catchRegion->cxaBeginCatch = &I;
+                    beginOfCatch = true;
+                    continue;
+                }
+
+                if (CI->getCalledFunction()->getName() == "ts.internal.save_catch_var")
+                {
+                    catchRegion->saveCatch = &I;
+                    continue;
+                }
 
                 if (CI->getCalledFunction()->getName() == "__cxa_end_catch")
                 {
@@ -244,7 +248,7 @@ struct TypeScriptExceptionPass : public FunctionPass
                 // check what is type of catch
                 auto value = LPI->getOperand(0);
                 auto isNullInst = isa<ConstantPointerNull>(value);
-                if (isNullInst || !catchRegion.store)
+                if (isNullInst || !catchRegion.saveCatch)
                 {
                     // catch (...) as catch value is null
                     auto nullI8Ptr = ConstantPointerNull::get(IntegerType::get(Ctx, 8)->getPointerTo());
@@ -253,12 +257,11 @@ struct TypeScriptExceptionPass : public FunctionPass
                 }
                 else
                 {
-                    auto varRef = catchRegion.store;
+                    auto varRef = catchRegion.saveCatch->getOperand(1);
                     assert(varRef);
-                    auto iValTypeId = ConstantInt::get(IntegerType::get(Ctx, 32),
-                                                       getTypeNumber(catchRegion.storeToCheckStoreType->getPointerOperandType()));
-                    catchRegion.catchPad = CatchPadInst::Create(CSI, {value, iValTypeId, varRef->getPointerOperand()}, "catchpad", LPI);
-                    varRef->eraseFromParent();
+                    auto iValTypeId = ConstantInt::get(IntegerType::get(Ctx, 32), getTypeNumber(varRef->getType()));
+                    catchRegion.catchPad = CatchPadInst::Create(CSI, {value, iValTypeId, varRef}, "catchpad", LPI);
+                    catchRegion.saveCatch->eraseFromParent();
                 }
             }
             else
