@@ -778,10 +778,10 @@ void mlir_ts::CallIndirectOp::getCanonicalizationPatterns(OwningRewritePatternLi
 }
 
 //===----------------------------------------------------------------------===//
-// CallInternalOp
+// SymbolCallInternalOp
 //===----------------------------------------------------------------------===//
 
-LogicalResult mlir_ts::CallInternalOp::verifySymbolUses(SymbolTableCollection &symbolTable)
+LogicalResult mlir_ts::SymbolCallInternalOp::verifySymbolUses(SymbolTableCollection &symbolTable)
 {
     // nothing to do here
     return success();

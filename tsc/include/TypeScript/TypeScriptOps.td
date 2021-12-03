@@ -771,14 +771,13 @@ def TypeScript_InvokeHybridOp : TypeScript_Op<"InvokeHybrid", [
   let verifier = ?;
 }
 
-def TypeScript_CallInternalOp : TypeScript_Op<"CallInternal",
-    [CallOpInterface, MemRefsNormalizable,
-     DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
-  let summary = "call internal operation";
+def TypeScript_SymbolCallInternalOp : TypeScript_Op<"SymbolCallInternal",
+    [CallOpInterface, DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+  let summary = "symbol call internal operation";
   let description = [{
   }];
 
-  let arguments = (ins OptionalAttr<FlatSymbolRefAttr>:$callee, Variadic<AnyType>:$operands);
+  let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyType>:$operands);
   let results = (outs Variadic<AnyType>);
 
   let builders = [
@@ -800,7 +799,7 @@ def TypeScript_CallInternalOp : TypeScript_Op<"CallInternal",
     }]>];
 
   let extraClassDeclaration = [{
-    StringRef getCallee() { return callee().hasValue() ? callee().getValue() : ""; }
+    StringRef getCallee() { return callee(); }
     FunctionType getCalleeType();
 
     /// Get the argument operands to the called function.
@@ -821,6 +820,44 @@ def TypeScript_CallInternalOp : TypeScript_Op<"CallInternal",
 
   let assemblyFormat = [{
     $callee `(` $operands `)` attr-dict `:` functional-type($operands, results)
+  }];
+  let verifier = ?;
+}
+
+def TypeScript_CallInternalOp : TypeScript_Op<"CallInternal",
+    [CallOpInterface]> {
+  let summary = "call internal operation";
+  let description = [{
+  }];
+
+  let arguments = (ins Variadic<AnyType>:$operands);
+  let results = (outs Variadic<AnyType>);
+  
+  let builders = [
+    OpBuilder<(ins "Value":$callee, CArg<"ValueRange", "{}">:$operands), [{
+      $_state.operands.push_back(callee);
+      $_state.addOperands(operands);
+      $_state.addTypes(callee.getType().cast<FunctionType>().getResults());
+    }]>];
+
+  let extraClassDeclaration = [{
+    Value getCallee() { return getOperand(0); }
+
+    /// Get the argument operands to the called function.
+    operand_range getArgOperands() 
+    {
+      return {arg_operand_begin(), arg_operand_end()};
+    }
+
+    operand_iterator arg_operand_begin() { return operand_begin(); }
+    operand_iterator arg_operand_end() { return operand_end(); }
+
+    /// Return the callee of this operation.
+    CallInterfaceCallable getCallableForCallee() { return getCallee(); }
+  }];
+
+  let assemblyFormat = [{
+      `(` $operands `)` attr-dict `:` functional-type($operands, results)
   }];
   let verifier = ?;
 }

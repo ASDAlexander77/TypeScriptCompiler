@@ -881,6 +881,32 @@ struct FuncOpLowering : public TsLlvmPattern<mlir_ts::FuncOp>
     }
 };
 
+struct SymbolCallInternalOpLowering : public TsLlvmPattern<mlir_ts::SymbolCallInternalOp>
+{
+    using TsLlvmPattern<mlir_ts::SymbolCallInternalOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::SymbolCallInternalOp op, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        Adaptor transformed(operands);
+
+        auto loc = op->getLoc();
+
+        TypeConverterHelper tch(getTypeConverter());
+        SmallVector<mlir::Type> llvmTypes;
+        for (auto type : op.getResultTypes())
+        {
+            llvmTypes.push_back(tch.convertType(type));
+        }
+
+        // just replace
+        rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, llvmTypes, ::mlir::FlatSymbolRefAttr::get(rewriter.getContext(), op.callee()),
+                                                  transformed.operands());
+
+        return success();
+    }
+};
+
 struct CallInternalOpLowering : public TsLlvmPattern<mlir_ts::CallInternalOp>
 {
     using TsLlvmPattern<mlir_ts::CallInternalOp>::TsLlvmPattern;
@@ -898,24 +924,16 @@ struct CallInternalOpLowering : public TsLlvmPattern<mlir_ts::CallInternalOp>
             llvmTypes.push_back(tch.convertType(type));
         }
 
-        // just replace
-        if (op.callee().hasValue())
+        // special case for HybridFunctionType
+        LLVM_DEBUG(llvm::dbgs() << "\n!! CallInternalOp - arg #0:" << op.getOperand(0) << "\n");
+        if (auto hybridFuncType = op.getOperand(0).getType().dyn_cast<mlir_ts::HybridFunctionType>())
         {
-            rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, llvmTypes, op.calleeAttr(), transformed.operands());
+            rewriter.replaceOpWithNewOp<mlir_ts::CallHybridInternalOp>(op, hybridFuncType.getResults(), op.getOperand(0),
+                                                                       OperandRange(op.getOperands().begin() + 1, op.getOperands().end()));
+            return success();
         }
-        else
-        {
-            // special case for HybridFunctionType
-            LLVM_DEBUG(llvm::dbgs() << "\n!! CallInternalOp - arg #0:" << op.getOperand(0) << "\n");
-            if (auto hybridFuncType = op.getOperand(0).getType().dyn_cast<mlir_ts::HybridFunctionType>())
-            {
-                rewriter.replaceOpWithNewOp<mlir_ts::CallHybridInternalOp>(
-                    op, hybridFuncType.getResults(), op.getOperand(0), OperandRange(op.getOperands().begin() + 1, op.getOperands().end()));
-                return success();
-            }
 
-            rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, llvmTypes, transformed.getOperands());
-        }
+        rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, llvmTypes, transformed.getOperands());
 
         return success();
     }
@@ -4191,29 +4209,29 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 
     // The only remaining operation to lower from the `typescript` dialect, is the PrintOp.
     TsLlvmContext tsLlvmContext{};
-    patterns.insert<AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering,
-                    AssertOpLowering, CastOpLowering, ConstantOpLowering, CreateOptionalOpLowering, UndefOptionalOpLowering,
-                    HasValueOpLowering, ValueOpLowering, SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering, FuncOpLowering,
-                    LoadOpLowering, ElementRefOpLowering, PropertyRefOpLowering, ExtractPropertyOpLowering, LogicalBinaryOpLowering,
-                    NullOpLowering, NewOpLowering, CreateTupleOpLowering, DeconstructTupleOpLowering, CreateArrayOpLowering,
-                    NewEmptyArrayOpLowering, NewArrayOpLowering, PushOpLowering, PopOpLowering, DeleteOpLowering, ParseFloatOpLowering,
-                    ParseIntOpLowering, PrintOpLowering, StoreOpLowering, SizeOfOpLowering, InsertPropertyOpLowering, LengthOfOpLowering,
-                    StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering, CharToStringOpLowering, UndefOpLowering,
-                    MemoryCopyOpLowering, LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering, TrampolineOpLowering,
-                    VariableOpLowering, InvokeOpLowering, InvokeHybridOpLowering, ThisVirtualSymbolRefOpLowering,
-                    InterfaceSymbolRefOpLowering, NewInterfaceOpLowering, VTableOffsetRefOpLowering, LoadBoundRefOpLowering,
-                    StoreBoundRefOpLowering, CreateBoundRefOpLowering, CreateBoundFunctionOpLowering, GetThisOpLowering,
-                    GetMethodOpLowering, TypeOfAnyOpLowering, DebuggerOpLowering, UnreachableOpLowering, LandingPadOpLowering,
-                    CompareCatchTypeOpLowering, BeginCatchOpLowering, SaveCatchVarOpLowering, EndCatchOpLowering, BeginCleanupOpLowering,
-                    EndCleanupOpLowering, CallInternalOpLowering, CallHybridInternalOpLowering, ReturnInternalOpLowering, NoOpLowering,
-                    /*GlobalConstructorOpLowering,*/ ExtractInterfaceThisOpLowering, ExtractInterfaceVTableOpLowering, BoxOpLowering,
-                    UnboxOpLowering, DialectCastOpLowering
+    patterns.insert<
+        AddressOfOpLowering, AddressOfConstStringOpLowering, ArithmeticUnaryOpLowering, ArithmeticBinaryOpLowering, AssertOpLowering,
+        CastOpLowering, ConstantOpLowering, CreateOptionalOpLowering, UndefOptionalOpLowering, HasValueOpLowering, ValueOpLowering,
+        SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering, FuncOpLowering, LoadOpLowering, ElementRefOpLowering,
+        PropertyRefOpLowering, ExtractPropertyOpLowering, LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateTupleOpLowering,
+        DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, PushOpLowering, PopOpLowering,
+        DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering, PrintOpLowering, StoreOpLowering, SizeOfOpLowering,
+        InsertPropertyOpLowering, LengthOfOpLowering, StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering,
+        CharToStringOpLowering, UndefOpLowering, MemoryCopyOpLowering, LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering,
+        TrampolineOpLowering, VariableOpLowering, InvokeOpLowering, InvokeHybridOpLowering, ThisVirtualSymbolRefOpLowering,
+        InterfaceSymbolRefOpLowering, NewInterfaceOpLowering, VTableOffsetRefOpLowering, LoadBoundRefOpLowering, StoreBoundRefOpLowering,
+        CreateBoundRefOpLowering, CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering, TypeOfAnyOpLowering,
+        DebuggerOpLowering, UnreachableOpLowering, LandingPadOpLowering, CompareCatchTypeOpLowering, BeginCatchOpLowering,
+        SaveCatchVarOpLowering, EndCatchOpLowering, BeginCleanupOpLowering, EndCleanupOpLowering, SymbolCallInternalOpLowering,
+        CallInternalOpLowering, CallHybridInternalOpLowering, ReturnInternalOpLowering, NoOpLowering,
+        /*GlobalConstructorOpLowering,*/ ExtractInterfaceThisOpLowering, ExtractInterfaceVTableOpLowering, BoxOpLowering, UnboxOpLowering,
+        DialectCastOpLowering
 #ifndef DISABLE_SWITCH_STATE_PASS
-                    ,
-                    SwitchStateOpLowering, StateLabelOpLowering, YieldReturnValOpLowering
+        ,
+        SwitchStateOpLowering, StateLabelOpLowering, YieldReturnValOpLowering
 #endif
-                    ,
-                    SwitchStateInternalOpLowering>(typeConverter, &getContext(), &tsLlvmContext);
+        ,
+        SwitchStateInternalOpLowering>(typeConverter, &getContext(), &tsLlvmContext);
 
     // patterns.insert<SwitchStateOpLowering2>(typeConverter, &getContext(), &tsLlvmContext, /*benegit*/ 2);
 

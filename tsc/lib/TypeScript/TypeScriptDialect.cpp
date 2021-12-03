@@ -76,7 +76,7 @@ struct TypeScriptInlinerInterface : public mlir::DialectInlinerInterface
     {
         // auto condition = true;
         // ignore all functions until you find out how to resolve issue with recursive calls
-        auto condition = !isa<mlir_ts::CallInternalOp>(op);
+        auto condition = !isa<mlir_ts::SymbolCallInternalOp>(op);
 
         // do not inline if func body has TryOp
         condition &= !isa<mlir_ts::TryOp>(op);
