@@ -96,14 +96,17 @@ static cl::opt<enum Action> emitAction("emit", cl::desc("Select the kind of outp
                                        cl::values(clEnumValN(DumpLLVMIR, "llvm", "output the LLVM IR dump")),
                                        cl::values(clEnumValN(RunJIT, "jit", "JIT the code and run it by invoking the main function")));
 
-static cl::opt<bool> enableOpt("opt", cl::desc("Enable optimizations"));
+static cl::opt<bool> enableOpt{"opt", cl::desc("Enable optimizations"), cl::init(false)};
+
+static cl::opt<int> optLevel{"opt_level", cl::desc("Optimization level"), cl::ZeroOrMore, cl::value_desc("0-3"), cl::init(3)};
+static cl::opt<int> sizeLevel{"size_level", cl::desc("Optimization size level"), cl::ZeroOrMore, cl::value_desc("value"), cl::init(0)};
 
 // dump obj
 cl::OptionCategory clOptionsCategory{"linking options"};
 cl::list<std::string> clSharedLibs{"shared-libs", cl::desc("Libraries to link dynamically"), cl::ZeroOrMore, cl::MiscFlags::CommaSeparated,
                                    cl::cat(clOptionsCategory)};
 
-static cl::opt<std::string> mainFuncName{"e", cl::desc("The function to be called"), cl::value_desc("<function name>"), cl::init("main")};
+static cl::opt<std::string> mainFuncName{"e", cl::desc("The function to be called"), cl::value_desc("function name"), cl::init("main")};
 
 static cl::opt<bool> dumpObjectFile{"dump-object-file", cl::desc("Dump JITted-compiled object to file specified with "
                                                                  "-object-filename (<input file>.o by default).")};
@@ -217,14 +220,13 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module
         optPM.addPass(mlir::typescript::createLowerToAffinePass());
         optPM.addPass(mlir::createCanonicalizerPass());
         optPM.addPass(mlir::typescript::createRelocateConstantPass());
-        //  TODO: why do I need this pass?
 #ifdef ENABLE_OPT_PASSES
         if (enableOpt)
         {
             optPM.addPass(mlir::createCSEPass());
-
-            // TODO: find out why Inliner access Op with null attribute
+            pm.addPass(mlir::createStripDebugInfoPass());
             pm.addPass(mlir::createInlinerPass());
+            pm.addPass(mlir::createSCCPPass());
             pm.addPass(mlir::createSymbolDCEPass());
         }
 #endif
@@ -233,15 +235,6 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module
         pm.addPass(mlir::createAsyncToAsyncRuntimePass());
         pm.addPass(mlir::createAsyncRuntimeRefCountingPass());
 #endif
-
-        // Add optimizations if enabled.
-        if (enableOpt)
-        {
-            // TODO: do I need this?
-            // optPM.addPass(mlir::createLoopFusionPass());
-            // TODO: do I need this?
-            // optPM.addPass(mlir::createMemRefDataFlowOptPass());
-        }
     }
 
     if (isLoweringToLLVM)
@@ -302,7 +295,8 @@ int initDialects(mlir::ModuleOp module)
     return 0;
 }
 
-std::function<llvm::Error(llvm::Module *)> initPasses(mlir::SmallVector<const llvm::PassInfo *> &passes, bool enableOpt)
+std::function<llvm::Error(llvm::Module *)> initPasses(mlir::SmallVector<const llvm::PassInfo *> &passes, bool enableOpt, int optLevel,
+                                                      int sizeLevel)
 {
 #ifdef ENABLE_EXCEPTIONS
 
@@ -323,12 +317,12 @@ std::function<llvm::Error(llvm::Module *)> initPasses(mlir::SmallVector<const ll
 #endif
 
     auto optPipeline = mlir::makeLLVMPassesTransformer(passes,
-                                                       /*optLevel=*/enableOpt ? 3 : 0,
+                                                       /*optLevel=*/enableOpt ? optLevel : 0,
                                                        /*targetMachine=*/nullptr);
 #else
     // An optimization pipeline to use within the execution engine.
     auto optPipeline = mlir::makeOptimizingTransformer(
-        /*optLevel=*/enableOpt ? 3 : 0, /*sizeLevel=*/0,
+        /*optLevel=*/enableOpt ? optLevel : 0, /*sizeLevel=*/sizeLevel,
         /*targetMachine=*/nullptr);
 #endif
 
@@ -357,7 +351,7 @@ int dumpLLVMIR(mlir::ModuleOp module)
 
     /// Optionally run an optimization pipeline over the llvm module.
     mlir::SmallVector<const llvm::PassInfo *> passes;
-    auto optPipeline = initPasses(passes, enableOpt);
+    auto optPipeline = initPasses(passes, enableOpt, optLevel, sizeLevel);
     if (auto err = optPipeline(llvmModule.get()))
     {
         llvm::errs() << "Failed to optimize LLVM IR " << err << "\n";
@@ -377,7 +371,7 @@ int runJit(mlir::ModuleOp module)
     llvm::InitializeNativeTargetAsmPrinter();
 
     mlir::SmallVector<const llvm::PassInfo *> passes;
-    auto optPipeline = initPasses(passes, enableOpt);
+    auto optPipeline = initPasses(passes, enableOpt, optLevel, sizeLevel);
 
     // If shared library implements custom mlir-runner library init and destroy
     // functions, we'll use them to register the library with the execution
@@ -476,12 +470,12 @@ int runJit(mlir::ModuleOp module)
     if (noGC)
     {
 #ifdef WIN32
-        llvm::errs() << "JIT initialization failed. Missing GC library. Did you forget to provide it via "
-                        "'--shared-libs=TypeScriptRuntime.dll'? or you can switch it off by using '-nogc'\n";
+#define LIB_EXT "dll"
 #else
-        llvm::errs() << "JIT initialization failed. Missing GC library. Did you forget to provide it via "
-                        "'--shared-libs=libTypeScriptRuntime.so'? or you can switch it off by using '-nogc'\n";
+#define LIB_EXT "so"
 #endif
+        llvm::errs() << "JIT initialization failed. Missing GC library. Did you forget to provide it via "
+                        "'--shared-libs=TypeScriptRuntime." LIB_EXT "'? or you can switch it off by using '-nogc'\n";
         return -1;
     }
 

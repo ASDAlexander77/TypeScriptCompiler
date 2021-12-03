@@ -29,6 +29,7 @@ struct CatchRegion
     CatchPadInst *catchPad;
     CleanupPadInst *cleanupPad;
     StoreInst *store;
+    StoreInst *storeToCheckStoreType;
     InvokeInst *unwindInfoOp;
     Value *stack;
     bool hasAlloca;
@@ -135,8 +136,16 @@ struct TypeScriptExceptionPass : public FunctionPass
             {
                 if (auto *SI = dyn_cast<StoreInst>(&I))
                 {
-                    assert(!catchRegion->store);
-                    catchRegion->store = SI;
+                    // TODO: take StoreInst if arg is Undef
+                    // TODO: but now you need to find out type which you need to save
+                    if (auto *UV = dyn_cast<UndefValue>(SI->getValueOperand()))
+                    {
+                        assert(!catchRegion->store);
+                        catchRegion->store = SI;
+                    }
+
+                    assert(!catchRegion->storeToCheckStoreType);
+                    catchRegion->storeToCheckStoreType = SI;
                 }
             }
 
@@ -246,7 +255,8 @@ struct TypeScriptExceptionPass : public FunctionPass
                 {
                     auto varRef = catchRegion.store;
                     assert(varRef);
-                    auto iValTypeId = ConstantInt::get(IntegerType::get(Ctx, 32), getTypeNumber(varRef->getPointerOperandType()));
+                    auto iValTypeId = ConstantInt::get(IntegerType::get(Ctx, 32),
+                                                       getTypeNumber(catchRegion.storeToCheckStoreType->getPointerOperandType()));
                     catchRegion.catchPad = CatchPadInst::Create(CSI, {value, iValTypeId, varRef->getPointerOperand()}, "catchpad", LPI);
                     varRef->eraseFromParent();
                 }
