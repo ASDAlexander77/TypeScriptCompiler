@@ -1286,6 +1286,46 @@ struct UnboxOpLowering : public TsLlvmPattern<mlir_ts::UnboxOp>
         return success();
     }
 };
+
+struct CreateUnionInstanceOpLowering : public TsLlvmPattern<mlir_ts::CreateUnionInstanceOp>
+{
+    using TsLlvmPattern<mlir_ts::CreateUnionInstanceOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::CreateUnionInstanceOp op, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        Adaptor transformed(operands);
+
+        auto loc = op->getLoc();
+
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+        CodeLogicHelper clh(op, rewriter);
+
+        auto in = transformed.in();
+
+        auto i8PtrTy = th.getI8PtrType();
+        auto valueType = transformed.in().getType();
+        auto resType = tch.convertType(op.getType());
+
+        mlir::SmallVector<mlir::Type> types;
+        types.push_back(i8PtrTy);
+        types.push_back(valueType);
+        auto unionPartialType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), types, false);
+
+        auto udefVal = rewriter.create<LLVM::UndefOp>(loc, unionPartialType);
+        auto val0 = rewriter.create<LLVM::InsertValueOp>(loc, udefVal, op.typeInfo(), clh.getStructIndexAttr(0));
+        auto val1 = rewriter.create<LLVM::InsertValueOp>(loc, val0, op.in(), clh.getStructIndexAttr(1));
+
+        CastLogicHelper castLogic(op, rewriter, tch);
+        auto casted = castLogic.castLLVMTypes(val1, unionPartialType, op.getType(), resType);
+
+        rewriter.replaceOp(op, ValueRange{casted});
+
+        return success();
+    }
+};
+
 struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
 {
     using TsLlvmPattern<mlir_ts::VariableOp>::TsLlvmPattern;
@@ -4000,6 +4040,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
     });
 
     converter.addConversion([&](mlir_ts::UnionType type) {
+        TypeHelper th(m.getContext());
         LLVMTypeConverterHelper ltch(converter);
 
         auto currentSize = 0;
@@ -4015,6 +4056,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         }
 
         SmallVector<mlir::Type> convertedTypes;
+        convertedTypes.push_back(th.getI8PtrType());
         convertedTypes.push_back(selectedType);
         return LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, false);
     });
@@ -4225,7 +4267,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         SaveCatchVarOpLowering, EndCatchOpLowering, BeginCleanupOpLowering, EndCleanupOpLowering, SymbolCallInternalOpLowering,
         CallInternalOpLowering, CallHybridInternalOpLowering, ReturnInternalOpLowering, NoOpLowering,
         /*GlobalConstructorOpLowering,*/ ExtractInterfaceThisOpLowering, ExtractInterfaceVTableOpLowering, BoxOpLowering, UnboxOpLowering,
-        DialectCastOpLowering
+        DialectCastOpLowering, CreateUnionInstanceOpLowering
 #ifndef DISABLE_SWITCH_STATE_PASS
         ,
         SwitchStateOpLowering, StateLabelOpLowering, YieldReturnValOpLowering
