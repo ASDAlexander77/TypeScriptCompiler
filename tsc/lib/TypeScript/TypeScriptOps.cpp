@@ -282,6 +282,7 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
 
         auto loc = castOp->getLoc();
 
+        // any support
         if (res.getType().isa<mlir_ts::AnyType>())
         {
             // TODO: boxing, finish it, need to send TypeOf
@@ -295,6 +296,16 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
         {
             auto unboxedValue = rewriter.create<mlir_ts::UnboxOp>(loc, res.getType(), in);
             rewriter.replaceOp(castOp, ValueRange{unboxedValue});
+            return success();
+        }
+
+        // union support
+        if (res.getType().isa<mlir_ts::UnionType>())
+        {
+            // TODO: boxing, finish it, need to send TypeOf
+            auto typeOfValue = rewriter.create<mlir_ts::TypeOfOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
+            auto unionValue = rewriter.create<mlir_ts::CreateUnionInstanceOp>(loc, res.getType(), in, typeOfValue);
+            rewriter.replaceOp(castOp, ValueRange{unionValue});
             return success();
         }
 

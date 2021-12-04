@@ -1365,6 +1365,17 @@ def TypeScript_UnboxOp : TypeScript_Op<"Unbox", [NoSideEffect]> {
   let assemblyFormat = "$in attr-dict `:` type($in) `to` type($res)";
 }
 
+def TypeScript_CreateUnionInstanceOp : TypeScript_Op<"CreateUnionInstance", [NoSideEffect]> {
+  let description = [{
+    Example:
+      %ti = ts.typeof %1
+      ts.create_union %v, %ti : i32 to ts.union
+  }];
+  let arguments = (ins AnyType:$in, TypeScript_String:$typeInfo);
+  let results = (outs TypeScript_Union:$res);
+  let assemblyFormat = "$in `,` $typeInfo attr-dict `:` type($in) `,` type($typeInfo) `to` type($res)";
+}
+
 def TypeScript_DialectCastOp : TypeScript_Op<"DialectCast", [DeclareOpInterfaceMethods<CastOpInterface>, NoSideEffect]> {
   let description = [{
     Example:
