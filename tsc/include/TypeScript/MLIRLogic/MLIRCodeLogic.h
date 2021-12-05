@@ -180,6 +180,10 @@ class MLIRCustomMethods
         {
             result = mlirGenParseFloat(location, operands);
         }
+        else if (functionName == "isNaN")
+        {
+            result = mlirGenIsNaN(location, operands);
+        }
         else if (functionName == "sizeof")
         {
             result = mlirGenSizeOf(location, operands);
@@ -272,13 +276,26 @@ class MLIRCustomMethods
 
     mlir::Value mlirGenParseInt(const mlir::Location &location, ArrayRef<mlir::Value> operands)
     {
+        auto hasTwoOps = operands.size() == 2;
         auto op = operands.front();
+        mlir::Value op2;
+
         if (!op.getType().isa<mlir_ts::StringType>())
         {
             op = builder.create<mlir_ts::CastOp>(location, mlir_ts::StringType::get(builder.getContext()), op);
         }
 
-        auto parseIntOp = builder.create<mlir_ts::ParseIntOp>(location, builder.getI32Type(), op);
+        if (hasTwoOps)
+        {
+            op2 = operands[1];
+            if (!op2.getType().isa<mlir::IntegerType>())
+            {
+                op2 = builder.create<mlir_ts::CastOp>(location, mlir::IntegerType::get(builder.getContext(), 32), op2);
+            }
+        }
+
+        auto parseIntOp = hasTwoOps ? builder.create<mlir_ts::ParseIntOp>(location, builder.getI32Type(), op, op2)
+                                    : builder.create<mlir_ts::ParseIntOp>(location, builder.getI32Type(), op);
 
         return parseIntOp;
     }
@@ -294,6 +311,19 @@ class MLIRCustomMethods
         auto parseFloatOp = builder.create<mlir_ts::ParseFloatOp>(location, mlir_ts::NumberType::get(builder.getContext()), op);
 
         return parseFloatOp;
+    }
+
+    mlir::Value mlirGenIsNaN(const mlir::Location &location, ArrayRef<mlir::Value> operands)
+    {
+        auto op = operands.front();
+        if (!op.getType().isa<mlir_ts::NumberType>())
+        {
+            op = builder.create<mlir_ts::CastOp>(location, mlir_ts::NumberType::get(builder.getContext()), op);
+        }
+
+        auto isNaNOp = builder.create<mlir_ts::IsNaNOp>(location, mlir_ts::BooleanType::get(builder.getContext()), op);
+
+        return isNaNOp;
     }
 
     mlir::Value mlirGenSizeOf(const mlir::Location &location, ArrayRef<mlir::Value> operands)

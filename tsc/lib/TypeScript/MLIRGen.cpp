@@ -6089,6 +6089,11 @@ class MLIRGenImpl
             return getInfinity(location);
         }
 
+        if (name == NAN_NAME)
+        {
+            return getNaN(location);
+        }
+
         auto value = resolveIdentifierAsVariable(location, name, genContext);
         if (value)
         {
@@ -8198,6 +8203,19 @@ class MLIRGenImpl
         float infVal;
         *(int32_t *)&infVal = 0x7FF00000;
         return builder.create<mlir_ts::ConstantOp>(location, getNumberType(), builder.getF32FloatAttr(infVal));
+#endif
+    }
+
+    mlir::Value getNaN(mlir::Location location)
+    {
+#ifdef NUMBER_F64
+        double nanVal;
+        *(int64_t *)&nanVal = 0x7FF0000000000001;
+        return builder.create<mlir_ts::ConstantOp>(location, getNumberType(), builder.getF64FloatAttr(nanVal));
+#else
+        float infVal;
+        *(int32_t *)&nanVal = 0x7FF00001;
+        return builder.create<mlir_ts::ConstantOp>(location, getNumberType(), builder.getF32FloatAttr(nanVal));
 #endif
     }
 

@@ -290,9 +290,19 @@ class ParseIntOpLowering : public TsLlvmPattern<mlir_ts::ParseIntOp>
 
         // Insert the `atoi` declaration if necessary.
         auto i8PtrTy = th.getI8PtrType();
-        auto parseIntFuncOp = ch.getOrInsertFunction("atoi", th.getFunctionType(rewriter.getI32Type(), {i8PtrTy}));
-
-        rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, parseIntFuncOp, ValueRange{transformed.arg()});
+        LLVM::LLVMFuncOp parseIntFuncOp;
+        if (transformed.base())
+        {
+            parseIntFuncOp = ch.getOrInsertFunction(
+                "strtol", th.getFunctionType(rewriter.getI32Type(), {i8PtrTy, th.getI8PtrPtrType(), rewriter.getI32Type()}));
+            auto nullOp = rewriter.create<LLVM::NullOp>(op->getLoc(), th.getI8PtrPtrType());
+            rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, parseIntFuncOp, ValueRange{transformed.arg(), nullOp, transformed.base()});
+        }
+        else
+        {
+            parseIntFuncOp = ch.getOrInsertFunction("atoi", th.getFunctionType(rewriter.getI32Type(), {i8PtrTy}));
+            rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, parseIntFuncOp, ValueRange{transformed.arg()});
+        }
 
         return success();
     }
@@ -323,6 +333,27 @@ class ParseFloatOpLowering : public TsLlvmPattern<mlir_ts::ParseFloatOp>
         rewriter.replaceOpWithNewOp<LLVM::FPTruncOp>(op, rewriter.getF32Type(), funcCall.getResult(0));
 #endif
 
+        return success();
+    }
+};
+
+class IsNaNOpLowering : public TsLlvmPattern<mlir_ts::IsNaNOp>
+{
+  public:
+    using TsLlvmPattern<mlir_ts::IsNaNOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::IsNaNOp op, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+    {
+        auto loc = op->getLoc();
+
+        Adaptor transformed(operands);
+
+        TypeHelper th(rewriter.getContext());
+
+        // icmp
+        auto cmpValue =
+            rewriter.create<LLVM::FCmpOp>(loc, th.getLLVMBoolType(), LLVM::FCmpPredicate::one, transformed.arg(), transformed.arg());
+        rewriter.replaceOp(op, ValueRange{cmpValue});
         return success();
     }
 };
@@ -4257,7 +4288,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         SymbolRefOpLowering, GlobalOpLowering, GlobalResultOpLowering, FuncOpLowering, LoadOpLowering, ElementRefOpLowering,
         PropertyRefOpLowering, ExtractPropertyOpLowering, LogicalBinaryOpLowering, NullOpLowering, NewOpLowering, CreateTupleOpLowering,
         DeconstructTupleOpLowering, CreateArrayOpLowering, NewEmptyArrayOpLowering, NewArrayOpLowering, PushOpLowering, PopOpLowering,
-        DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering, PrintOpLowering, StoreOpLowering, SizeOfOpLowering,
+        DeleteOpLowering, ParseFloatOpLowering, ParseIntOpLowering, IsNaNOpLowering, PrintOpLowering, StoreOpLowering, SizeOfOpLowering,
         InsertPropertyOpLowering, LengthOfOpLowering, StringLengthOpLowering, StringConcatOpLowering, StringCompareOpLowering,
         CharToStringOpLowering, UndefOpLowering, MemoryCopyOpLowering, LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering,
         TrampolineOpLowering, VariableOpLowering, InvokeOpLowering, InvokeHybridOpLowering, ThisVirtualSymbolRefOpLowering,

@@ -435,11 +435,11 @@ def TypeScript_ParseIntOp : TypeScript_Op<"parseInt"> {
     Example:
 
     ```mlir
-    %0 = parseInt %b
+    %0 = parseInt %b, %base
     ```
   }];
 
-  let arguments = (ins AnyType:$arg);
+  let arguments = (ins AnyType:$arg, Optional<I32>:$base);
   let results = (outs I32:$res);
 }
 
@@ -457,6 +457,22 @@ def TypeScript_ParseFloatOp : TypeScript_Op<"parseFloat"> {
 
   let arguments = (ins AnyType:$arg);
   let results = (outs TypeScript_Number:$res);
+}
+
+def TypeScript_IsNaNOp : TypeScript_Op<"isNaN"> {
+  let summary = "isNaN float operation";
+  let description = [{
+    isNaN float operation
+
+    Example:
+
+    ```mlir
+    %0 = isNaN %b
+    ```
+  }];
+
+  let arguments = (ins AnyType:$arg);
+  let results = (outs TypeScript_Boolean:$res);
 }
 
 def TypeScript_TypeOfOp : TypeScript_Op<"TypeOf"> {

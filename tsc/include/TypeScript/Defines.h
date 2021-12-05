@@ -8,6 +8,7 @@
 #define LABEL_ATTR_NAME "label"
 #define UNDEFINED_NAME "undefined"
 #define INFINITY_NAME "Infinity"
+#define NAN_NAME "NaN"
 #define THIS_NAME "this"
 #define LTHIS_NAME L"this"
 #define SUPER_NAME "super"
