@@ -243,10 +243,12 @@ void mlir_ts::UndefOp::getCanonicalizationPatterns(OwningRewritePatternList &res
 
 LogicalResult verify(mlir_ts::CastOp op)
 {
-    // funcType -> funcType
-    auto inFuncType = op.in().getType().dyn_cast_or_null<mlir::FunctionType>();
-    auto resFuncType = op.res().getType().dyn_cast_or_null<mlir::FunctionType>();
+    auto inType = op.in().getType();
+    auto resType = op.res().getType();
 
+    // funcType -> funcType
+    auto inFuncType = inType.dyn_cast_or_null<mlir::FunctionType>();
+    auto resFuncType = resType.dyn_cast_or_null<mlir::FunctionType>();
     if (inFuncType && resFuncType)
     {
         ::typescript::MLIRTypeHelper mth(op.getContext());
@@ -257,6 +259,55 @@ LogicalResult verify(mlir_ts::CastOp op)
                                                        << "[" << resFuncType.getNumInputs() << "]";
             return failure();
         }
+
+        return success();
+    }
+
+    // check if we can cast type to union type
+    auto inUnionType = inType.dyn_cast_or_null<mlir_ts::UnionType>();
+    auto resUnionType = resType.dyn_cast_or_null<mlir_ts::UnionType>();
+    if (inUnionType || resUnionType)
+    {
+        auto cmpTypes = [](mlir::Type t1, mlir::Type t2) { return t1 == t2; };
+
+        if (inUnionType && !resUnionType)
+        {
+            auto pred = [&](auto &item) { return cmpTypes(item, resType); };
+            auto types = inUnionType.getTypes();
+            if (std::find_if(types.begin(), types.end(), pred) == types.end())
+            {
+                return op.emitOpError("type [") << inUnionType << "] does not have [" << resType << "] type";
+            }
+
+            return success();
+        }
+
+        if (!inUnionType && resUnionType)
+        {
+            auto pred = [&](auto &item) { return cmpTypes(inType, item); };
+            auto types = resUnionType.getTypes();
+            if (std::find_if(types.begin(), types.end(), pred) == types.end())
+            {
+                return op.emitOpError("type [") << inType << "] can't be store in [" << resUnionType << "]";
+            }
+
+            return success();
+        }
+
+        auto resUnionTypes = resUnionType.getTypes();
+
+        auto predForInUnion = [&](auto &inUnionItem) {
+            auto pred = [&](auto &resUnionItem) { return cmpTypes(inUnionItem, resUnionItem); };
+            return std::find_if(resUnionTypes.begin(), resUnionTypes.end(), pred) != resUnionTypes.end();
+        };
+
+        auto inUnionTypes = inUnionType.getTypes();
+        if (std::find_if(inUnionTypes.begin(), inUnionTypes.end(), predForInUnion) == inUnionTypes.end())
+        {
+            return op.emitOpError("type [") << inUnionType << "] can't be store in [" << resUnionType << ']';
+        }
+
+        return success();
     }
 
     return success();
