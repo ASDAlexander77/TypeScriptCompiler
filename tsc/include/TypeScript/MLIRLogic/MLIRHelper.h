@@ -56,6 +56,8 @@ class MLIRHelper
             return getName(name.as<ts::PrivateIdentifier>());
         }
 
+        assert(nameValue.size() > 0);
+
         return nameValue;
     }
 

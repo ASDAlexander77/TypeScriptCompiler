@@ -2544,7 +2544,14 @@ class MLIRGenImpl
                 auto processTypeOf = [&](Expression typeOfVal, Expression constVal) {
                     if (auto typeOfOp = typeOfVal.as<TypeOfExpression>())
                     {
-                        if (!typeOfOp->expression.is<Identifier>())
+                        // strip parentesizes
+                        auto expr = typeOfOp->expression;
+                        while (expr.is<ParenthesizedExpression>())
+                        {
+                            expr = expr.as<ParenthesizedExpression>()->expression;
+                        }
+
+                        if (!expr.is<Identifier>())
                         {
                             return mlir::failure();
                         }
@@ -2575,9 +2582,9 @@ class MLIRGenImpl
                             {
                                 // init
                                 NodeArray<VariableDeclaration> declarations;
-                                auto _safe_casted = typeOfOp->expression;
-                                declarations.push_back(nf.createVariableDeclaration(
-                                    _safe_casted, undefined, undefined, nf.createTypeAssertion(typeToken, typeOfOp->expression)));
+                                auto _safe_casted = expr;
+                                declarations.push_back(nf.createVariableDeclaration(_safe_casted, undefined, undefined,
+                                                                                    nf.createTypeAssertion(typeToken, expr)));
 
                                 auto varDeclList = nf.createVariableDeclarationList(declarations, NodeFlags::Const);
 
