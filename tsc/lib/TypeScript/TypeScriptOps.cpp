@@ -309,6 +309,13 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
             return success();
         }
 
+        if (in.getType().isa<mlir_ts::UnionType>())
+        {
+            auto value = rewriter.create<mlir_ts::GetValueFromUnionOp>(loc, res.getType(), in);
+            rewriter.replaceOp(castOp, ValueRange{value});
+            return success();
+        }
+
         // null -> interface cast
         auto anyType = in.getType().dyn_cast_or_null<mlir_ts::AnyType>();
         auto interfaceType = res.getType().dyn_cast_or_null<mlir_ts::InterfaceType>();

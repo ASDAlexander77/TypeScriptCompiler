@@ -1357,6 +1357,64 @@ struct CreateUnionInstanceOpLowering : public TsLlvmPattern<mlir_ts::CreateUnion
     }
 };
 
+struct GetValueFromUnionOpLowering : public TsLlvmPattern<mlir_ts::GetValueFromUnionOp>
+{
+    using TsLlvmPattern<mlir_ts::GetValueFromUnionOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::GetValueFromUnionOp op, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        Adaptor transformed(operands);
+
+        auto loc = op->getLoc();
+
+        TypeHelper th(rewriter);
+        TypeConverterHelper tch(getTypeConverter());
+        CodeLogicHelper clh(op, rewriter);
+
+        auto in = transformed.in();
+
+        auto i8PtrTy = th.getI8PtrType();
+        auto valueType = tch.convertType(op.getType());
+
+        mlir::SmallVector<mlir::Type> types;
+        types.push_back(i8PtrTy);
+        types.push_back(valueType);
+        auto unionPartialType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), types, false);
+
+        CastLogicHelper castLogic(op, rewriter, tch);
+        auto casted = castLogic.castLLVMTypes(transformed.in(), transformed.in().getType(), unionPartialType, unionPartialType);
+
+        auto val0 = rewriter.create<LLVM::ExtractValueOp>(loc, valueType, casted, clh.getStructIndexAttr(1));
+
+        rewriter.replaceOp(op, ValueRange{val0});
+
+        return success();
+    }
+};
+
+struct GetTypeInfoFromUnionOpLowering : public TsLlvmPattern<mlir_ts::GetTypeInfoFromUnionOp>
+{
+    using TsLlvmPattern<mlir_ts::GetTypeInfoFromUnionOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::GetTypeInfoFromUnionOp op, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        Adaptor transformed(operands);
+
+        TypeConverterHelper tch(getTypeConverter());
+        CodeLogicHelper clh(op, rewriter);
+
+        auto loc = op->getLoc();
+
+        auto val0 = rewriter.create<LLVM::ExtractValueOp>(loc, tch.convertType(op.getType()), transformed.in(), clh.getStructIndexAttr(0));
+
+        rewriter.replaceOp(op, ValueRange{val0});
+
+        return success();
+    }
+};
+
 struct VariableOpLowering : public TsLlvmPattern<mlir_ts::VariableOp>
 {
     using TsLlvmPattern<mlir_ts::VariableOp>::TsLlvmPattern;
@@ -4298,7 +4356,7 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         SaveCatchVarOpLowering, EndCatchOpLowering, BeginCleanupOpLowering, EndCleanupOpLowering, SymbolCallInternalOpLowering,
         CallInternalOpLowering, CallHybridInternalOpLowering, ReturnInternalOpLowering, NoOpLowering,
         /*GlobalConstructorOpLowering,*/ ExtractInterfaceThisOpLowering, ExtractInterfaceVTableOpLowering, BoxOpLowering, UnboxOpLowering,
-        DialectCastOpLowering, CreateUnionInstanceOpLowering
+        DialectCastOpLowering, CreateUnionInstanceOpLowering, GetValueFromUnionOpLowering, GetTypeInfoFromUnionOpLowering
 #ifndef DISABLE_SWITCH_STATE_PASS
         ,
         SwitchStateOpLowering, StateLabelOpLowering, YieldReturnValOpLowering

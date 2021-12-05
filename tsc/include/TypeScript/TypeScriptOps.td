@@ -1392,6 +1392,26 @@ def TypeScript_CreateUnionInstanceOp : TypeScript_Op<"CreateUnionInstance", [NoS
   let assemblyFormat = "$in `,` $typeInfo attr-dict `:` type($in) `,` type($typeInfo) `to` type($res)";
 }
 
+def TypeScript_GetValueFromUnionOp : TypeScript_Op<"GetValueFromUnionOp", [NoSideEffect]> {
+  let description = [{
+    Example:
+      %1 = ts.getvalue_from_union %v : ts.union to i32
+  }];
+  let arguments = (ins TypeScript_Union:$in);
+  let results = (outs AnyType:$res);
+  let assemblyFormat = "$in attr-dict `:` type($in) `to` type($res)";
+}
+
+def TypeScript_GetTypeInfoFromUnionOp : TypeScript_Op<"GetTypeInfoFromUnionOp", [NoSideEffect]> {
+  let description = [{
+    Example:
+      %1 = ts.gettype_from_union %v : ts.union to i32
+  }];
+  let arguments = (ins TypeScript_Union:$in);
+  let results = (outs TypeScript_String:$res);
+  let assemblyFormat = "$in attr-dict `:` type($in) `to` type($res)";
+}
+
 def TypeScript_DialectCastOp : TypeScript_Op<"DialectCast", [DeclareOpInterfaceMethods<CastOpInterface>, NoSideEffect]> {
   let description = [{
     Example:
