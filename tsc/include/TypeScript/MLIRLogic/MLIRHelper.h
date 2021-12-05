@@ -27,6 +27,7 @@ class MLIRHelper
         if (identifier)
         {
             nameValue = convertWideToUTF8(identifier->escapedText);
+            assert(nameValue.size() > 0);
         }
 
         return nameValue;
@@ -38,6 +39,7 @@ class MLIRHelper
         if (identifier)
         {
             nameValue = convertWideToUTF8(identifier->escapedText);
+            assert(nameValue.size() > 0);
         }
 
         return nameValue;
@@ -55,8 +57,6 @@ class MLIRHelper
         {
             return getName(name.as<ts::PrivateIdentifier>());
         }
-
-        assert(nameValue.size() > 0);
 
         return nameValue;
     }
