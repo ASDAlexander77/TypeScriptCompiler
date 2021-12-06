@@ -1,0 +1,9 @@
+it seems,  Union may contains Types in different order.  so if we pick MaxSized element of Union1 and Union2 and it seems the same type, then cast is not performed. but if types are different cast will be replaced with MemoryCopy
+
+Union from version 1
+!! variable = b type: !ts.union<!ts.boolean,!ts.number,!ts.string> op: %1 = ts.Variable() {false} :  -> !ts.ref<!ts.union<!ts.boolean,!ts.number,!ts.string>>
+
+Union from version 2
+!! variable = b type: !ts.union<!ts.string,!ts.number,!ts.boolean> op: %1 = ts.Variable() {false} :  -> !ts.ref<!ts.union<!ts.string,!ts.number,!ts.boolean>>
+
+PS Seems MemoryCopy is buggy

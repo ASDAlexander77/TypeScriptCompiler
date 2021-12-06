@@ -316,6 +316,20 @@ class CastLogicHelper
             }
         }
 
+        if (auto inUnionType = inType.dyn_cast_or_null<mlir_ts::UnionType>())
+        {
+            if (auto resUnionType = resType.dyn_cast_or_null<mlir_ts::UnionType>())
+            {
+                LLVMTypeConverterHelper ltch((LLVMTypeConverter &)tch.typeConverter);
+                auto maxStoreType = ltch.findMaxSizeType(inUnionType);
+                auto value = rewriter.create<mlir_ts::GetValueFromUnionOp>(loc, maxStoreType, in);
+                auto typeOfValue =
+                    rewriter.create<mlir_ts::GetTypeInfoFromUnionOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
+                auto unionValue = rewriter.create<mlir_ts::CreateUnionInstanceOp>(loc, resType, value, typeOfValue);
+                return unionValue;
+            }
+        }
+
         return mlir::Value();
     }
 

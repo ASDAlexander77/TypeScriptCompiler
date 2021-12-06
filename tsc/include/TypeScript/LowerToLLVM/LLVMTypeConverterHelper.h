@@ -44,6 +44,23 @@ class LLVMTypeConverterHelper
         auto type = typeToLLVMIRTranslator.translateType(llvmType);
         return typeConverter.getDataLayout().getTypeAllocSize(type);
     }
+
+    mlir::Type findMaxSizeType(mlir_ts::UnionType type)
+    {
+        auto currentSize = 0;
+        mlir::Type selectedType;
+        for (auto subType : type)
+        {
+            auto converted = typeConverter.convertType(subType);
+            auto typeSize = getTypeSize(converted);
+            if (typeSize > currentSize)
+            {
+                selectedType = converted;
+            }
+        }
+
+        return selectedType;
+    }
 };
 } // namespace typescript
 

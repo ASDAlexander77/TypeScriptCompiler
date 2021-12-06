@@ -374,7 +374,7 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
         {
             auto maxStoreType = ? ? ? ;
             auto value = rewriter.create<mlir_ts::GetValueFromUnionOp>(loc, maxStoreType, in);
-            auto typeOfValue = rewriter.create<mlir_ts::TypeOfOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
+            auto typeOfValue = rewriter.create<mlir_ts::GetTypeInfoFromUnionOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
             auto unionValue = rewriter.create<mlir_ts::CreateUnionInstanceOp>(loc, res.getType(), value, typeOfValue);
             rewriter.replaceOp(castOp, ValueRange{unionValue});
             return success();

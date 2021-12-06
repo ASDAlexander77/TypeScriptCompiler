@@ -4132,17 +4132,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         TypeHelper th(m.getContext());
         LLVMTypeConverterHelper ltch(converter);
 
-        auto currentSize = 0;
-        mlir::Type selectedType;
-        for (auto subType : type)
-        {
-            auto converted = converter.convertType(subType);
-            auto typeSize = ltch.getTypeSize(converted);
-            if (typeSize > currentSize)
-            {
-                selectedType = converted;
-            }
-        }
+        mlir::Type selectedType = ltch.findMaxSizeType(type);
 
         SmallVector<mlir::Type> convertedTypes;
         convertedTypes.push_back(th.getI8PtrType());
