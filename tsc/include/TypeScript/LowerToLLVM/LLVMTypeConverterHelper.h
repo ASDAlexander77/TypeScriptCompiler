@@ -45,18 +45,25 @@ class LLVMTypeConverterHelper
         return typeConverter.getDataLayout().getTypeAllocSize(type);
     }
 
-    mlir::Type findMaxSizeType(mlir_ts::UnionType type)
+    mlir::Type findMaxSizeType(mlir_ts::UnionType unionType)
     {
         auto currentSize = 0;
         mlir::Type selectedType;
-        for (auto subType : type)
+        for (auto subType : unionType.getTypes())
         {
             auto converted = typeConverter.convertType(subType);
             auto typeSize = getTypeSize(converted);
             if (typeSize > currentSize)
             {
                 selectedType = converted;
+                currentSize = typeSize;
             }
+        }
+
+        if (selectedType.isa<LLVM::LLVMPointerType>())
+        {
+            auto *context = &typeConverter.getContext();
+            return LLVM::LLVMPointerType::get(mlir::IntegerType::get(context, 8));
         }
 
         return selectedType;

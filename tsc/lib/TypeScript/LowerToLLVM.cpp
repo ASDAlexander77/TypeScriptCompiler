@@ -4134,6 +4134,8 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
 
         mlir::Type selectedType = ltch.findMaxSizeType(type);
 
+        LLVM_DEBUG(llvm::dbgs() << "\n!! max size type in union: " << selectedType << " size: " << ltch.getTypeSize(selectedType) << " union type: " << type << "\n";);
+
         SmallVector<mlir::Type> convertedTypes;
         convertedTypes.push_back(th.getI8PtrType());
         convertedTypes.push_back(selectedType);
