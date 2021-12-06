@@ -278,12 +278,12 @@ class CastLogicHelper
         {
             if (auto tupleTypeIn = inType.dyn_cast_or_null<mlir_ts::ConstTupleType>())
             {
-                llvm_unreachable("not implemented, must be process at MLIR pass");
+                llvm_unreachable("not implemented, must be processed at MLIR pass");
             }
 
             if (auto tupleTypeIn = inType.dyn_cast_or_null<mlir_ts::TupleType>())
             {
-                llvm_unreachable("not implemented, must be process at MLIR pass");
+                llvm_unreachable("not implemented, must be processed at MLIR pass");
             }
         }
 

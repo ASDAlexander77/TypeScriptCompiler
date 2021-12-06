@@ -1,0 +1,7 @@
+somehow if we run 
+
+tsc.exe --emit=mlir-llvm c:\temp\1.ts
+
+many times it can generate random code.
+
+PS. as u can see here we do not have OPTIMIZATION here

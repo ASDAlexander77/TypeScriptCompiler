@@ -351,7 +351,9 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
         }
 
         // union support
-        if (res.getType().isa<mlir_ts::UnionType>())
+        auto isInUnionType = in.getType().isa<mlir_ts::UnionType>();
+        auto isResUnionType = res.getType().isa<mlir_ts::UnionType>();
+        if (isResUnionType && !isInUnionType)
         {
             // TODO: boxing, finish it, need to send TypeOf
             auto typeOfValue = rewriter.create<mlir_ts::TypeOfOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
@@ -360,12 +362,24 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
             return success();
         }
 
-        if (in.getType().isa<mlir_ts::UnionType>())
+        if (isInUnionType && !isResUnionType)
         {
             auto value = rewriter.create<mlir_ts::GetValueFromUnionOp>(loc, res.getType(), in);
             rewriter.replaceOp(castOp, ValueRange{value});
             return success();
         }
+
+        /*
+        if (isInUnionType && isResUnionType)
+        {
+            auto maxStoreType = ? ? ? ;
+            auto value = rewriter.create<mlir_ts::GetValueFromUnionOp>(loc, maxStoreType, in);
+            auto typeOfValue = rewriter.create<mlir_ts::TypeOfOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
+            auto unionValue = rewriter.create<mlir_ts::CreateUnionInstanceOp>(loc, res.getType(), value, typeOfValue);
+            rewriter.replaceOp(castOp, ValueRange{unionValue});
+            return success();
+        }
+        */
 
         // null -> interface cast
         auto anyType = in.getType().dyn_cast_or_null<mlir_ts::AnyType>();
