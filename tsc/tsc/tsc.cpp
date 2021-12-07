@@ -233,13 +233,11 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module
 
 #ifdef ENABLE_ASYNC
         pm.addPass(mlir::createAsyncToAsyncRuntimePass());
+        pm.addPass(mlir::createCanonicalizerPass());
+        pm.addPass(mlir::createAsyncRuntimeRefCountingPass());
         if (enableOpt)
         {
             pm.addPass(mlir::createAsyncRuntimeRefCountingOptPass());
-        }
-        else
-        {
-            pm.addPass(mlir::createAsyncRuntimeRefCountingPass());
         }
 #endif
     }

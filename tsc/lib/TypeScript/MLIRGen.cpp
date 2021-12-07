@@ -2778,6 +2778,7 @@ class MLIRGenImpl
         {
             auto groupType = mlir::async::GroupType::get(builder.getContext());
             // TODO: block size, for now 8, review it
+            llvm_unreachable("CreateGroupOp should have as big number as async task in it, so if for/of has 4 elements it should be equal");
             auto blockSize = builder.create<mlir_ts::ConstantOp>(location, builder.getIndexAttr(8));
             auto asyncGroupOp = builder.create<mlir::async::CreateGroupOp>(location, groupType, blockSize);
             asyncGroupResult = asyncGroupOp.result();
@@ -2851,6 +2852,17 @@ class MLIRGenImpl
 
         if (hasAwait)
         {
+            // Not helping
+            /*
+            // async await all, see convert-to-llvm.mlir
+            auto asyncExecAwaitAllOp =
+                builder.create<mlir::async::ExecuteOp>(location, mlir::TypeRange{}, mlir::ValueRange{}, mlir::ValueRange{},
+                                                       [&](mlir::OpBuilder &builder, mlir::Location location, mlir::ValueRange values) {
+                                                           builder.create<mlir::async::AwaitAllOp>(location, asyncGroupResult);
+                                                           builder.create<mlir::async::YieldOp>(location, mlir::ValueRange{});
+                                                       });
+            */
+
             // Wait for the completion of all subtasks.
             builder.create<mlir::async::AwaitAllOp>(location, asyncGroupResult);
         }
@@ -4080,7 +4092,8 @@ class MLIRGenImpl
             // TODO: finish it for field access, review CodeLogicHelper.saveResult
             if (auto loadOp = dyn_cast<mlir_ts::LoadOp>(leftExpressionValueBeforeCast.getDefiningOp()))
             {
-                // TODO: when saving const array into variable we need to allocate space and copy array as we need to have writable array
+                // TODO: when saving const array into variable we need to allocate space and copy array as we need to have writable
+                // array
                 builder.create<mlir_ts::StoreOp>(location, result, loadOp.reference());
             }
             else
