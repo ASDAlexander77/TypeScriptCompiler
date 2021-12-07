@@ -3256,6 +3256,8 @@ class MLIRGenImpl
 
         auto switchValue = mlirGen(switchStatementAST->expression, genContext);
 
+        VALIDATE_LOGIC(switchValue, location)
+
         auto switchOp = builder.create<mlir_ts::SwitchOp>(location, switchValue);
 
         GenContext switchGenContext(genContext);
@@ -4201,6 +4203,13 @@ class MLIRGenImpl
             })
             .Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
                 value = InterfaceMembers(location, objectValue, interfaceType.getName().getValue(), cl.getAttribute(), genContext);
+            })
+            .Case<mlir_ts::UnionType>([&](auto unionType) {
+                // all union types must have the same property
+                // 1) cast to first type
+                auto frontType = unionType.getTypes().front();
+                auto casted = cast(location, frontType, objectValue, genContext);
+                value = mlirGenPropertyAccessExpression(location, casted, name, genContext);
             })
             .Default([](auto type) {});
 

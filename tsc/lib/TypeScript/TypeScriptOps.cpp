@@ -288,7 +288,7 @@ LogicalResult verify(mlir_ts::CastOp op)
             auto types = resUnionType.getTypes();
             if (std::find_if(types.begin(), types.end(), pred) == types.end())
             {
-                return op.emitOpError("type [") << inType << "] can't be store in [" << resUnionType << "]";
+                return op.emitOpError("type [") << inType << "] can't be stored in [" << resUnionType << "]";
             }
 
             return success();
@@ -304,7 +304,7 @@ LogicalResult verify(mlir_ts::CastOp op)
         auto inUnionTypes = inUnionType.getTypes();
         if (std::find_if(inUnionTypes.begin(), inUnionTypes.end(), predForInUnion) == inUnionTypes.end())
         {
-            return op.emitOpError("type [") << inUnionType << "] can't be store in [" << resUnionType << ']';
+            return op.emitOpError("type [") << inUnionType << "] can't be stored in [" << resUnionType << ']';
         }
 
         return success();
