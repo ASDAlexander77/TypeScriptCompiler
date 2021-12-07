@@ -320,6 +320,9 @@ extern "C" int64_t mlirAsyncRuntimeAddTokenToGroup(AsyncToken *token, AsyncGroup
     // Get the rank of the token inside the group before we drop the reference.
     int rank = group->rank.fetch_add(1);
 
+    // HACK: ASD: to support dynamic size
+    group->pendingTokens.fetch_add(1);
+
     auto onTokenReady = [group, token]() {
         // Increment the number of errors in the group.
         if (State(token->state).isError())
@@ -455,6 +458,7 @@ extern "C" void mlirAsyncRuntimeAwaitValue(AsyncValue *value)
 extern "C" void mlirAsyncRuntimeAwaitAllInGroup(AsyncGroup *group)
 {
     std::unique_lock<std::mutex> lock(group->mu);
+
     if (group->pendingTokens != 0)
         group->cv.wait(lock, [group] { return group->pendingTokens == 0; });
 }

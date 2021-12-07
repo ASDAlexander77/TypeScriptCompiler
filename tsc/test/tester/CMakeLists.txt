@@ -253,9 +253,8 @@ add_test(NAME test-jit-00-generator-3 COMMAND test-runner -jit "${PROJECT_SOURCE
 add_test(NAME test-jit-00-generator-4 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00generator4.ts")
 add_test(NAME test-jit-00-safe-cast COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00safe_cast.ts")
 add_test(NAME test-jit-00-optional COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00optional.ts")
-# waiting until find out how to fix issue with multiple shared libs on linux
 add_test(NAME test-jit-00-async-await COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00async_await.ts")
-#add_test(NAME test-jit-00-for-await COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_await.ts")
+add_test(NAME test-jit-00-for-await COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00for_await.ts")
 if (NOT(WIN32))
 add_test(NAME test-jit-00-try-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00try_catch.ts")
 add_test(NAME test-jit-01-try-catch COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01try_catch.ts")

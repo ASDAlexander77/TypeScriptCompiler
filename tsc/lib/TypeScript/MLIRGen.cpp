@@ -2777,9 +2777,7 @@ class MLIRGenImpl
         if (hasAwait)
         {
             auto groupType = mlir::async::GroupType::get(builder.getContext());
-            // TODO: block size, for now 8, review it
-            llvm_unreachable("CreateGroupOp should have as big number as async task in it, so if for/of has 4 elements it should be equal");
-            auto blockSize = builder.create<mlir_ts::ConstantOp>(location, builder.getIndexAttr(8));
+            auto blockSize = builder.create<mlir_ts::ConstantOp>(location, builder.getIndexAttr(0));
             auto asyncGroupOp = builder.create<mlir::async::CreateGroupOp>(location, groupType, blockSize);
             asyncGroupResult = asyncGroupOp.result();
             // operands.push_back(asyncGroupOp);
