@@ -13,7 +13,7 @@ class Testrec {
     str2: string;
 }
 
-function pause(ms: number): void {}
+function pause(ms: number): void { }
 
 namespace control {
     export function runInBackground(a: () => void): void {
@@ -133,8 +133,7 @@ function testLoopScope() {
     for (let i = 0; i < 3; ++i) {
         let val: number;
         // TODO:
-        //assert(val === undefined, "loopscope");
-        assert(val !== undefined, "loopscope");
+        //assert(val !== undefined, "loopscope");
         val = i;
     }
 }
