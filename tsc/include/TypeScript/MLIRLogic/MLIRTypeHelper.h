@@ -459,7 +459,7 @@ class MLIRTypeHelper
 
         if (!llvm::all_of(llvm::zip(type.getFields(), matchType.getFields()),
                           [&](std::tuple<const ::mlir::typescript::FieldInfo &, const ::mlir::typescript::FieldInfo &> pair) {
-                              return std::get<0>(pair).type == std::get<1>(pair).type || testType(std::get<0>(pair).type);
+                              return isSizeEqual(std::get<0>(pair).type, std::get<1>(pair).type) || testType(std::get<0>(pair).type);
                           }))
         {
             return false;
@@ -468,24 +468,29 @@ class MLIRTypeHelper
         return true;
     }
 
-    bool isCastableTypes(mlir::Type type, mlir::Type matchType)
+    bool isCastableTypes(mlir::Type srcType, mlir::Type destType)
     {
-        if (auto constTuple = type.dyn_cast_or_null<mlir_ts::ConstTupleType>())
+        if (canCast(srcType, destType))
         {
-            if (auto matchConstTuple = matchType.dyn_cast_or_null<mlir_ts::ConstTupleType>())
+            return true;
+        }
+
+        if (auto constTuple = srcType.dyn_cast_or_null<mlir_ts::ConstTupleType>())
+        {
+            if (auto matchConstTuple = destType.dyn_cast_or_null<mlir_ts::ConstTupleType>())
             {
                 return isCastableTypesLogic(constTuple, matchConstTuple);
             }
 
-            if (auto matchTuple = matchType.dyn_cast_or_null<mlir_ts::TupleType>())
+            if (auto matchTuple = destType.dyn_cast_or_null<mlir_ts::TupleType>())
             {
                 return isCastableTypesLogic(constTuple, matchTuple);
             }
         }
 
-        if (auto tuple = type.dyn_cast_or_null<mlir_ts::TupleType>())
+        if (auto tuple = srcType.dyn_cast_or_null<mlir_ts::TupleType>())
         {
-            if (auto matchTuple = matchType.dyn_cast_or_null<mlir_ts::TupleType>())
+            if (auto matchTuple = destType.dyn_cast_or_null<mlir_ts::TupleType>())
             {
                 return isCastableTypesLogic(tuple, matchTuple);
             }
@@ -555,7 +560,7 @@ class MLIRTypeHelper
             return typeRight;
         }
 
-        if (canStoreAsWithoutLoosingInfo(typeLeft, typeRight))
+        if (canCast(typeLeft, typeRight))
         {
             return typeRight;
         }
@@ -563,15 +568,42 @@ class MLIRTypeHelper
         return typeLeft;
     }
 
-    bool canStoreAsWithoutLoosingInfo(mlir::Type srcType, mlir::Type dstType)
+    bool canCast(mlir::Type srcType, mlir::Type dstType)
     {
-        if (srcType && srcType.isa<mlir::IntegerType>())
+        if (!srcType || !dstType)
+        {
+            return false;
+        }
+
+        if (srcType == dstType)
+        {
+            return true;
+        }
+
+        if (srcType.isa<mlir::IntegerType>())
         {
             if (dstType.isa<mlir_ts::NumberType>())
             {
                 return true;
             }
         }
+
+        return false;
+    }
+
+    bool isSizeEqual(mlir::Type srcType, mlir::Type dstType)
+    {
+        if (!srcType || !dstType)
+        {
+            return false;
+        }
+
+        if (srcType == dstType)
+        {
+            return true;
+        }
+
+        // TODO: finish ti
 
         return false;
     }

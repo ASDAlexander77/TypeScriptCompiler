@@ -316,6 +316,8 @@ class CastLogicHelper
             }
         }
 
+        /*
+        // TODO: we do not need as struct can cast to struct
         if (auto inUnionType = inType.dyn_cast_or_null<mlir_ts::UnionType>())
         {
             if (auto resUnionType = resType.dyn_cast_or_null<mlir_ts::UnionType>())
@@ -329,6 +331,7 @@ class CastLogicHelper
                 return unionValue;
             }
         }
+        */
 
         return mlir::Value();
     }

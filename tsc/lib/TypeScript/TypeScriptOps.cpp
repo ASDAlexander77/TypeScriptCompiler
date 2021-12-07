@@ -268,7 +268,8 @@ LogicalResult verify(mlir_ts::CastOp op)
     auto resUnionType = resType.dyn_cast_or_null<mlir_ts::UnionType>();
     if (inUnionType || resUnionType)
     {
-        auto cmpTypes = [](mlir::Type t1, mlir::Type t2) { return t1 == t2; };
+        ::typescript::MLIRTypeHelper mth(op.getContext());
+        auto cmpTypes = [&](mlir::Type t1, mlir::Type t2) { return mth.isCastableTypes(t1, t2); };
 
         if (inUnionType && !resUnionType)
         {
