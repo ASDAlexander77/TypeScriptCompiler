@@ -4134,7 +4134,8 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
 
         mlir::Type selectedType = ltch.findMaxSizeType(type);
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! max size type in union: " << selectedType << " size: " << ltch.getTypeSize(selectedType) << " union type: " << type << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! max size type in union: " << selectedType << " size: " << ltch.getTypeSize(selectedType)
+                                << " union type: " << type << "\n";);
 
         SmallVector<mlir::Type> convertedTypes;
         convertedTypes.push_back(th.getI8PtrType());
@@ -4304,6 +4305,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
     LLVMConversionTarget target(getContext());
     target.addLegalOp<ModuleOp>();
     target.addLegalOp<mlir_ts::GlobalConstructorOp>();
+
+    target.addIllegalOp<UnrealizedConversionCastOp>();
 
     // During this lowering, we will also be lowering the MemRef types, that are
     // currently being operated on, to a representation in LLVM. To perform this
