@@ -1332,6 +1332,9 @@ struct CreateUnionInstanceOpLowering : public TsLlvmPattern<mlir_ts::CreateUnion
         TypeHelper th(rewriter);
         TypeConverterHelper tch(getTypeConverter());
         CodeLogicHelper clh(op, rewriter);
+        MLIRTypeHelper mth(rewriter.getContext());
+
+        CastLogicHelper castLogic(op, rewriter, tch);
 
         auto in = transformed.in();
 
@@ -1343,15 +1346,24 @@ struct CreateUnionInstanceOpLowering : public TsLlvmPattern<mlir_ts::CreateUnion
         types.push_back(i8PtrTy);
         types.push_back(valueType);
         auto unionPartialType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), types, false);
+        if (!mth.isUnionTypeNeedsTag(op.getType().cast<mlir_ts::UnionType>()))
+        {
+            // this is union of tuples, no need to add Tag to it
+            // create tagged union
+            auto casted = castLogic.castLLVMTypes(in, in.getType(), op.getType(), resType);
+            rewriter.replaceOp(op, ValueRange{casted});
+        }
+        else
+        {
+            // create tagged union
+            auto udefVal = rewriter.create<LLVM::UndefOp>(loc, unionPartialType);
+            auto val0 = rewriter.create<LLVM::InsertValueOp>(loc, udefVal, transformed.typeInfo(), clh.getStructIndexAttr(0));
+            auto val1 = rewriter.create<LLVM::InsertValueOp>(loc, val0, in, clh.getStructIndexAttr(1));
 
-        auto udefVal = rewriter.create<LLVM::UndefOp>(loc, unionPartialType);
-        auto val0 = rewriter.create<LLVM::InsertValueOp>(loc, udefVal, op.typeInfo(), clh.getStructIndexAttr(0));
-        auto val1 = rewriter.create<LLVM::InsertValueOp>(loc, val0, op.in(), clh.getStructIndexAttr(1));
+            auto casted = castLogic.castLLVMTypes(val1, unionPartialType, op.getType(), resType);
 
-        CastLogicHelper castLogic(op, rewriter, tch);
-        auto casted = castLogic.castLLVMTypes(val1, unionPartialType, op.getType(), resType);
-
-        rewriter.replaceOp(op, ValueRange{casted});
+            rewriter.replaceOp(op, ValueRange{casted});
+        }
 
         return success();
     }
@@ -4131,14 +4143,20 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
     converter.addConversion([&](mlir_ts::UnionType type) {
         TypeHelper th(m.getContext());
         LLVMTypeConverterHelper ltch(converter);
+        MLIRTypeHelper mth(m.getContext());
 
         mlir::Type selectedType = ltch.findMaxSizeType(type);
+        bool needTag = mth.isUnionTypeNeedsTag(type);
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! max size type in union: " << selectedType << " size: " << ltch.getTypeSize(selectedType)
-                                << " union type: " << type << "\n";);
+                                << " Tag: " << needTag << " union type: " << type << "\n";);
 
         SmallVector<mlir::Type> convertedTypes;
-        convertedTypes.push_back(th.getI8PtrType());
+        if (needTag)
+        {
+            convertedTypes.push_back(th.getI8PtrType());
+        }
+
         convertedTypes.push_back(selectedType);
         return LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, false);
     });

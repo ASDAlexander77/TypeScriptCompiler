@@ -134,6 +134,18 @@ class TypeOfOpHelper
             return typeOfValue;
         }
 
+        if (type.isa<mlir_ts::ConstTupleType>())
+        {
+            auto typeOfValue = strValue(loc, "tuple");
+            return typeOfValue;
+        }
+
+        if (type.isa<mlir_ts::TupleType>())
+        {
+            auto typeOfValue = strValue(loc, "tuple");
+            return typeOfValue;
+        }
+
         if (auto subType = type.dyn_cast_or_null<mlir_ts::RefType>())
         {
             return typeOfLogic(loc, subType.getElementType());

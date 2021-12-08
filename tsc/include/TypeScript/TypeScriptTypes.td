@@ -1042,7 +1042,7 @@ def TypeScript_Union : TypeScript_Type<"Union"> {
     {
       $_printer << typeItem;
       if (i++ < getImpl()->types.size() - 1)
-          $_printer << ",";    
+          $_printer << ",";              
     }
     $_printer << ">";
   }];

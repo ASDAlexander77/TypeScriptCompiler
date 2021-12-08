@@ -607,6 +607,17 @@ class MLIRTypeHelper
 
         return false;
     }
+
+    bool isUnionTypeNeedsTag(mlir_ts::UnionType unionType)
+    {
+        bool isAllTuple = true;
+        for (auto type : unionType.getTypes())
+        {
+            isAllTuple |= !type.isa<mlir_ts::TupleType>() && !type.isa<mlir_ts::ConstTupleType>();
+        }
+
+        return !isAllTuple;
+    }
 };
 
 } // namespace typescript
