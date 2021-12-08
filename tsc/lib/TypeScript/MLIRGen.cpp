@@ -2526,6 +2526,93 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    mlir::LogicalResult checkSafeCastTypeOf(Expression typeOfVal, Expression constVal, const GenContext &genContext)
+    {
+        if (auto typeOfOp = typeOfVal.as<TypeOfExpression>())
+        {
+            // strip parenthesizes
+            auto expr = typeOfOp->expression;
+            while (expr.is<ParenthesizedExpression>())
+            {
+                expr = expr.as<ParenthesizedExpression>()->expression;
+            }
+
+            if (!expr.is<Identifier>())
+            {
+                return mlir::failure();
+            }
+
+            if (auto stringLiteral = constVal.as<ts::StringLiteral>())
+            {
+                // create 'expression' = <string>'expression;
+                NodeFactory nf(NodeFactoryFlags::None);
+
+                auto text = stringLiteral->text;
+                Node typeToken;
+                if (text == S("string"))
+                {
+                    typeToken = nf.createToken(SyntaxKind::StringKeyword);
+                }
+                else if (text == S("number"))
+                {
+                    typeToken = nf.createToken(SyntaxKind::NumberKeyword);
+                }
+                else if (text == S("boolean"))
+                {
+                    typeToken = nf.createToken(SyntaxKind::BooleanKeyword);
+                }
+
+                if (typeToken)
+                {
+                    // init
+                    NodeArray<VariableDeclaration> declarations;
+                    auto _safe_casted = expr;
+                    declarations.push_back(
+                        nf.createVariableDeclaration(_safe_casted, undefined, undefined, nf.createTypeAssertion(typeToken, expr)));
+
+                    auto varDeclList = nf.createVariableDeclarationList(declarations, NodeFlags::Const);
+
+                    auto expr_statement = nf.createVariableStatement(undefined, varDeclList);
+
+                    const_cast<GenContext &>(genContext).generatedStatements.push_back(expr_statement.as<Statement>());
+                }
+
+                return mlir::success();
+            }
+        }
+
+        return mlir::failure();
+    }
+
+    mlir::LogicalResult checkSafeCastPropertyAccess(Expression exprVal, Expression constVal, const GenContext &genContext)
+    {
+        auto expr = exprVal;
+        while (expr.is<ParenthesizedExpression>())
+        {
+            expr = expr.as<ParenthesizedExpression>()->expression;
+        }
+
+        if (expr.is<PropertyAccessExpression>())
+        {
+            auto propertyAccessExpressionOp = expr.as<PropertyAccessExpression>();
+            // TODO:
+            auto typeOfObject = evaluate(propertyAccessExpressionOp->expression, genContext);
+            if (auto unionType = typeOfObject.dyn_cast<mlir_ts::UnionType>())
+            {
+                auto isConst = false;
+                evaluate(
+                    constVal, [&](mlir::Value val) { isConst = isConstValue(val); }, genContext);
+                if (isConst)
+                {
+                    // TODO: we need Literal Types
+                    // TODO:
+                }
+            }
+        }
+
+        return mlir::failure();
+    }
+
     mlir::LogicalResult checkSafeCast(Expression expr, const GenContext &genContext)
     {
         if (expr != SyntaxKind::BinaryExpression)
@@ -2541,69 +2628,15 @@ class MLIRGenImpl
                 auto left = binExpr->left;
                 auto right = binExpr->right;
 
-                auto processTypeOf = [&](Expression typeOfVal, Expression constVal) {
-                    if (auto typeOfOp = typeOfVal.as<TypeOfExpression>())
+                if (mlir::failed(checkSafeCastTypeOf(left, right, genContext)))
+                {
+                    if (mlir::failed(checkSafeCastTypeOf(right, left, genContext)))
                     {
-                        // strip parentesizes
-                        auto expr = typeOfOp->expression;
-                        while (expr.is<ParenthesizedExpression>())
+                        if (mlir::failed(checkSafeCastPropertyAccess(left, right, genContext)))
                         {
-                            expr = expr.as<ParenthesizedExpression>()->expression;
-                        }
-
-                        if (!expr.is<Identifier>())
-                        {
-                            return mlir::failure();
-                        }
-
-                        if (auto stringLiteral = constVal.as<ts::StringLiteral>())
-                        {
-                            // create 'expression' = <string>'expression;
-                            NodeFactory nf(NodeFactoryFlags::None);
-
-                            auto text = stringLiteral->text;
-                            Node typeToken;
-                            if (text == S("string"))
-                            {
-                                typeToken = nf.createToken(SyntaxKind::StringKeyword);
-                            }
-
-                            if (text == S("number"))
-                            {
-                                typeToken = nf.createToken(SyntaxKind::NumberKeyword);
-                            }
-
-                            if (text == S("boolean"))
-                            {
-                                typeToken = nf.createToken(SyntaxKind::BooleanKeyword);
-                            }
-
-                            if (typeToken)
-                            {
-                                // init
-                                NodeArray<VariableDeclaration> declarations;
-                                auto _safe_casted = expr;
-                                declarations.push_back(nf.createVariableDeclaration(_safe_casted, undefined, undefined,
-                                                                                    nf.createTypeAssertion(typeToken, expr)));
-
-                                auto varDeclList = nf.createVariableDeclarationList(declarations, NodeFlags::Const);
-
-                                auto expr_statement = nf.createVariableStatement(undefined, varDeclList);
-
-                                const_cast<GenContext &>(genContext).generatedStatements.push_back(expr_statement.as<Statement>());
-                            }
-
-                            return mlir::success();
+                            return checkSafeCastPropertyAccess(right, left, genContext);
                         }
                     }
-
-                    return mlir::failure();
-                };
-
-                if (mlir::failed(processTypeOf(left, right)))
-                {
-                    processTypeOf(right, left);
-                    return mlir::success();
                 }
 
                 return mlir::success();
