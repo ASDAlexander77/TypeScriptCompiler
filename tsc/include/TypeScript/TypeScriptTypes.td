@@ -233,6 +233,49 @@ def TypeScript_Enum : TypeScript_Type<"Enum"> {
   let skipDefaultBuilders = 1;  
 }
 
+def TypeScript_LiteralType : TypeScript_Type<"Literal"> {
+  let mnemonic = "literal";
+
+  let description = [{
+    Syntax:
+
+    ```
+    enum-type ::= `literal<` value `,` type `>`
+    ```
+
+    Examples:
+
+    ```mlir
+    literal<1.0, f32>
+    literal<1.0, i32>
+    ```
+  }];
+  let parameters = (ins "Attribute":$value, "Type":$elementType);
+
+  // We define the printer inline.
+  let printer = [{ $_printer << "literal<" << getImpl()->value << "," << getImpl()->elementType << ">"; }];  
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "Attribute":$value, "Type":$elementType), [{
+      return Base::get(elementType.getContext(), value, elementType);
+    }]>
+  ];
+
+  // Parses the above format
+  let parser = [{
+    Type elementType;
+    if ($_parser.parseLess()) return Type();
+    Attribute value;
+    if ($_parser.parseAttribute(value)) return Type();
+    if ($_parser.parseComma()) return Type();
+    if ($_parser.parseType(elementType)) return Type();
+    if ($_parser.parseGreater()) return Type();
+    return get(value, elementType);
+  }];  
+
+  let skipDefaultBuilders = 1;  
+}
+
 def TypeScript_ConstArrayValue : TypeScript_Type<"ConstArrayValue"> {
   let mnemonic = "const_array_value";
 

@@ -1,4 +1,4 @@
-type int = 1;
+type int = TypeOf<1>;
 
 function makeRangeIterator1(start: int, end: int, step: int) {
     const rangeIterator = {

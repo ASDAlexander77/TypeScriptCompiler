@@ -26,7 +26,7 @@ function test3() {
     print(car2[7]); // Mazda
 }
 
-type int = 1;
+type int = TypeOf<1>;
 
 function tuple_cast() {
     let result: [value: int, done: boolean];

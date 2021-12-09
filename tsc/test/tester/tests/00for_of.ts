@@ -1,4 +1,4 @@
-type int = 1;
+type int = TypeOf<1>;
 
 function f(a: [int, string][]) {
     for (const [k, v] of a) {

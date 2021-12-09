@@ -1,4 +1,4 @@
-type Type1 = 1;
+type Type1 = TypeOf<1>;
 
 function test_int() {
     let i = new Type1();

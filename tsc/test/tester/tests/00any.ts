@@ -1,5 +1,5 @@
-type int = 1;
-type const_string = "";
+type int = TypeOf<1>;
+type const_string = TypeOf<"">;
 
 function main() {
     const a = 1;

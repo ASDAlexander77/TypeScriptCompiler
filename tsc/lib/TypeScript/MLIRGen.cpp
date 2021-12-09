@@ -8141,6 +8141,24 @@ class MLIRGenImpl
 
     mlir::Type getTypeByTypeReference(TypeReferenceNode typeReferenceAST, const GenContext &genContext)
     {
+        // check utility types
+        if (typeReferenceAST->typeArguments->size() > 0)
+        {
+            // can be utility type
+            auto name = MLIRHelper::getName(typeReferenceAST->typeName);
+            if (name == "TypeOf")
+            {
+                // calculate base type of literal type
+                auto type = getType(typeReferenceAST->typeArguments->front(), genContext);
+                if (auto literalType = type.dyn_cast<mlir_ts::LiteralType>())
+                {
+                    type = literalType.getElementType();
+                }
+
+                return type;
+            }
+        }
+
         return getTypeByTypeName(typeReferenceAST->typeName, genContext);
     }
 
@@ -8497,7 +8515,12 @@ class MLIRGenImpl
         genContext.allowPartialResolve = true;
         auto value = mlirGen(literalTypeNode->literal.as<Expression>(), genContext);
         auto type = value.getType();
-        return type;
+        // return type;
+
+        auto valueAttr = value.getDefiningOp<mlir_ts::ConstantOp>().valueAttr();
+        auto literalType = mlir_ts::LiteralType::get(valueAttr, type);
+
+        return literalType;
     }
 
     mlir_ts::OptionalType getOptionalType(mlir::Type type)

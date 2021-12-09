@@ -1,4 +1,4 @@
-type str = "";
+type str = TypeOf<"">;
 
 class Cls1 {
     foo(): number {

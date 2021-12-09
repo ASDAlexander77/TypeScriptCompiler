@@ -13,7 +13,7 @@ function f() {
 }
 
 namespace nn1 {
-    type Type1 = 1;
+    type Type1 = TypeOf<1>;
 }
 
 function f1(p: nn1.Type1) {}

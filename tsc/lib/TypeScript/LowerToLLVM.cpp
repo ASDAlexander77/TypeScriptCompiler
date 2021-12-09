@@ -4171,6 +4171,8 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         return LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, false);
     });
 
+    converter.addConversion([&](mlir_ts::LiteralType type) { return converter.convertType(type.getElementType()); });
+
     converter.addSourceMaterialization([&](OpBuilder &builder, Type resultType, ValueRange inputs, Location loc) {
         LLVM_DEBUG(llvm::dbgs() << "\n!! SourceMaterialization: loc:[ " << loc << " ] result: [ " << resultType << " ]\n");
         LLVM_DEBUG(for (auto value : inputs) llvm::dbgs() << "\n!! SourceMaterialization value: [ " << value << " ]\n";);

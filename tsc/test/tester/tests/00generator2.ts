@@ -1,7 +1,7 @@
 // TODO: review it if you can fix (seems some param values are not captured)
 // ALLOC_ALL_VARS_IN_HEAP and ALLOC_TRAMPOLINE_IN_HEAP must be defined to run it correctly
 
-type int = 1;
+type int = TypeOf<1>;
 
 function makeRangeIterator(start = 0, end = 10000, step = 1) {
     print("makeRangeIterator.");

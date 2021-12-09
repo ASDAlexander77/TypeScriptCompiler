@@ -17,7 +17,7 @@ function testUnionIndexer(): void {
     assert(arr[index] === arr[2]);
 }
 
-type a = 1;
+type a = TypeOf<1>;
 type i = a & a;
 type j = a | a;
 

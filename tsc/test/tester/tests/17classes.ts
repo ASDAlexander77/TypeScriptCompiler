@@ -1,4 +1,4 @@
-type int = 1;
+type int = TypeOf<1>;
 class XFoo {
     pin: int;
     buf: number[];
