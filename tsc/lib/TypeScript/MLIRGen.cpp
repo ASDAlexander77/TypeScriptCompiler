@@ -2642,6 +2642,7 @@ class MLIRGenImpl
                                             NodeFactory nf(NodeFactoryFlags::None);
                                             auto typeRef = nf.createTypeReferenceNode(nf.createIdentifier(typeAliasName));
                                             addSafeCastStatement(objAccessExpression, typeRef, genContext);
+                                            break;
                                         }
                                     }
                                 }
@@ -3983,6 +3984,19 @@ class MLIRGenImpl
 
         auto leftExpressionValueBeforeCast = leftExpressionValue;
         auto rightExpressionValueBeforeCast = rightExpressionValue;
+
+        // type preprocess
+        // TODO: temporary hack
+        if (auto leftType = leftExpressionValue.getType().dyn_cast<mlir_ts::LiteralType>())
+        {
+            leftExpressionValue = cast(loc(leftExpression), leftType.getElementType(), leftExpressionValue, genContext);
+        }
+
+        if (auto rightType = rightExpressionValue.getType().dyn_cast<mlir_ts::LiteralType>())
+        {
+            rightExpressionValue = cast(loc(rightExpression), rightType.getElementType(), rightExpressionValue, genContext);
+        }
+        // end of hack
 
         if (leftExpressionValue.getType() != rightExpressionValue.getType())
         {

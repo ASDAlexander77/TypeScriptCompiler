@@ -631,6 +631,11 @@ class MLIRTypeHelper
             return true;
         }
 
+        if (srcType == getBaseType(dstType))
+        {
+            return true;
+        }
+
         // TODO: finish ti
 
         return false;
