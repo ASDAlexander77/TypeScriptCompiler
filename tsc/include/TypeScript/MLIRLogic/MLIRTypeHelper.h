@@ -496,6 +496,17 @@ class MLIRTypeHelper
             }
         }
 
+        if (auto unionType = destType.dyn_cast_or_null<mlir_ts::UnionType>())
+        {
+            // calculate store size
+            auto pred = [&](auto &item) { return isCastableTypes(item, srcType); };
+            auto types = unionType.getTypes();
+            if (std::find_if(types.begin(), types.end(), pred) == types.end())
+            {
+                return false;
+            }
+        }
+
         return false;
     }
 
@@ -588,6 +599,22 @@ class MLIRTypeHelper
             }
         }
 
+        if (auto literalType = srcType.dyn_cast<mlir_ts::LiteralType>())
+        {
+            if (literalType.getElementType() == dstType)
+            {
+                return true;
+            }
+        }
+
+        if (auto literalType = dstType.dyn_cast<mlir_ts::LiteralType>())
+        {
+            if (literalType.getElementType() == srcType)
+            {
+                return true;
+            }
+        }
+
         return false;
     }
 
@@ -608,12 +635,44 @@ class MLIRTypeHelper
         return false;
     }
 
+    mlir::Type getBaseType(mlir::Type type)
+    {
+        if (auto literalType = type.dyn_cast_or_null<mlir_ts::LiteralType>())
+        {
+            return literalType.getElementType();
+        }
+
+        if (auto enumType = type.dyn_cast_or_null<mlir_ts::EnumType>())
+        {
+            return enumType.getElementType();
+        }
+
+        return type;
+    }
+
     bool isUnionTypeNeedsTag(mlir_ts::UnionType unionType)
     {
         bool anyNonTuple = false;
+        mlir::Type baseType;
+        bool allBaseTypes = true;
         for (auto type : unionType.getTypes())
         {
             anyNonTuple |= !type.isa<mlir_ts::TupleType>() || !type.isa<mlir_ts::ConstTupleType>();
+            auto baseTypeOfCurrent = getBaseType(type);
+            if (!baseType)
+            {
+                baseType = baseTypeOfCurrent;
+                allBaseTypes = true;
+            }
+            else if (baseType != baseTypeOfCurrent)
+            {
+                allBaseTypes = false;
+            }
+        }
+
+        if (allBaseTypes)
+        {
+            return false;
         }
 
         return anyNonTuple;
