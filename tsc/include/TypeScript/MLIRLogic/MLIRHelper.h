@@ -18,6 +18,13 @@ static std::string convertWideToUTF8(const std::wstring &ws)
     return s;
 }
 
+static std::wstring ConvertUTF8toWide(const std::string &s)
+{
+    std::wstring ws;
+    llvm::ConvertUTF8toWide(s, ws);
+    return ws;
+}
+
 class MLIRHelper
 {
   public:
@@ -69,9 +76,14 @@ class MLIRHelper
 
     static std::string getAnonymousName(mlir::Location loc)
     {
+        return getAnonymousName(loc, "__uf");
+    }
+
+    static std::string getAnonymousName(mlir::Location loc, const char *prefix)
+    {
         // auto calculate name
         std::stringstream ssName;
-        ssName << "__uf" << hash_value(loc);
+        ssName << prefix << hash_value(loc);
         return ssName.str();
     }
 

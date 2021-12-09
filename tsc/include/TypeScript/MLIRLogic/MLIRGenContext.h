@@ -131,6 +131,7 @@ struct GenContext
     PassResult *passResult;
     mlir::SmallVector<mlir::Block *> *cleanUps;
     NodeArray<Statement> generatedStatements;
+    llvm::StringMap<mlir::Type> typeAliasMap;
     mlir::SmallVector<std::pair<mlir::Location, std::string>> *unresolved;
     int *state;
 };

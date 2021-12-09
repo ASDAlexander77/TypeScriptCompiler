@@ -1269,8 +1269,6 @@ class MLIRGenImpl
             params.push_back(std::make_shared<FunctionParamDOM>(THIS_NAME, getOpaqueType(), loc(parametersContextAST)));
         }
 
-        auto noneType = mlir::NoneType::get(builder.getContext());
-
         auto formalParams = parametersContextAST->parameters;
         auto index = 0;
         for (auto arg : formalParams)
@@ -1293,14 +1291,14 @@ class MLIRGenImpl
                 {
                     // TODO: set type if not provided
                     isOptional = true;
-                    if (!type || type == noneType)
+                    if (isNoneType(type))
                     {
                         type = evalType;
                     }
                 }
             }
 
-            if ((!type || type == noneType) && genContext.argTypeDestFuncType)
+            if (isNoneType(type) && genContext.argTypeDestFuncType)
             {
                 if (auto funcType = genContext.argTypeDestFuncType.dyn_cast<mlir::FunctionType>())
                 {
@@ -1314,7 +1312,7 @@ class MLIRGenImpl
                 LLVM_DEBUG(dbgs() << "\n!! param " << name << " mapped to type " << type << "\n\n");
             }
 
-            if (!type || type == noneType)
+            if (isNoneType(type))
             {
                 if (!typeParameter && !initializer)
                 {
@@ -2604,7 +2602,8 @@ class MLIRGenImpl
         {
             auto propertyAccessExpressionOp = expr.as<PropertyAccessExpression>();
             // TODO:
-            auto typeOfObject = evaluate(propertyAccessExpressionOp->expression, genContext);
+            auto objAccessExpression = propertyAccessExpressionOp->expression;
+            auto typeOfObject = evaluate(objAccessExpression, genContext);
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! SafeCastCheck: " << typeOfObject << "");
 
@@ -2633,11 +2632,16 @@ class MLIRGenImpl
                                     auto fieldType = tupleType.getType(fieldIndex);
                                     if (auto literalType = fieldType.dyn_cast<mlir_ts::LiteralType>())
                                     {
-                                        if (literalType.getValue() = valueAttr)
+                                        if (literalType.getValue() == valueAttr)
                                         {
-                                            // enable safe cast
-                                            // found
-                                            assert(false);
+                                            // enable safe cast found
+                                            auto typeAliasNameUTF8 = MLIRHelper::getAnonymousName(loc_check(exprVal), "ta_");
+                                            auto typeAliasName = ConvertUTF8toWide(typeAliasNameUTF8);
+                                            const_cast<GenContext &>(genContext).typeAliasMap.insert({typeAliasNameUTF8, tupleType});
+
+                                            NodeFactory nf(NodeFactoryFlags::None);
+                                            auto typeRef = nf.createTypeReferenceNode(nf.createIdentifier(typeAliasName));
+                                            addSafeCastStatement(objAccessExpression, typeRef, genContext);
                                         }
                                     }
                                 }
@@ -6088,6 +6092,12 @@ class MLIRGenImpl
             return builder.create<mlir_ts::TypeRefOp>(location, typeAliasInfo);
         }
 
+        if (genContext.typeAliasMap.count(name))
+        {
+            auto typeAliasInfo = genContext.typeAliasMap.lookup(name);
+            return builder.create<mlir_ts::TypeRefOp>(location, typeAliasInfo);
+        }
+
         if (getNamespaceMap().count(name))
         {
             auto namespaceInfo = getNamespaceMap().lookup(name);
@@ -6719,7 +6729,6 @@ class MLIRGenImpl
             return mlir::success();
         }
 
-        auto noneType = mlir::NoneType::get(builder.getContext());
         if (classMember == SyntaxKind::PropertyDeclaration)
         {
             // property declaration
@@ -6746,7 +6755,7 @@ class MLIRGenImpl
 
                 LLVM_DEBUG(dbgs() << "\n!! class field: " << fieldId << " type: " << type << "\n\n");
 
-                if (!type || type == noneType)
+                if (isNoneType(type))
                 {
                     return mlir::failure();
                 }
@@ -6815,7 +6824,7 @@ class MLIRGenImpl
                 type = typeAndInit.first;
 
                 LLVM_DEBUG(dbgs() << "\n+++ class auto-gen field: " << fieldId << " type: " << type << "\n\n");
-                if (!type || type == noneType)
+                if (isNoneType(type))
                 {
                     return mlir::failure();
                 }
@@ -7710,7 +7719,6 @@ class MLIRGenImpl
         StringRef memberNamePtr;
 
         MLIRCodeLogic mcl(builder);
-        auto noneType = mlir::NoneType::get(builder.getContext());
 
         if (declareInterface && interfaceMember == SyntaxKind::PropertySignature)
         {
@@ -7745,7 +7753,7 @@ class MLIRGenImpl
 
             LLVM_DEBUG(dbgs() << "\n!! interface field: " << fieldId << " type: " << type << "\n\n");
 
-            if (!type || type == noneType)
+            if (isNoneType(type))
             {
                 return mlir::failure();
             }
@@ -8084,12 +8092,10 @@ class MLIRGenImpl
         }
         else if (kind == SyntaxKind::TypeReference)
         {
-            GenContext genContext{};
             return getTypeByTypeReference(typeReferenceAST.as<TypeReferenceNode>(), genContext);
         }
         else if (kind == SyntaxKind::TypeQuery)
         {
-            GenContext genContext{};
             return getTypeByTypeQuery(typeReferenceAST.as<TypeQueryNode>(), genContext);
         }
         else if (kind == SyntaxKind::ObjectKeyword)
@@ -8225,6 +8231,16 @@ class MLIRGenImpl
     mlir_ts::CharType getCharType()
     {
         return mlir_ts::CharType::get(builder.getContext());
+    }
+
+    bool isNoneType(mlir::Type type)
+    {
+        return !type || type == mlir::NoneType::get(builder.getContext());
+    }
+
+    bool isNotNoneType(mlir::Type type)
+    {
+        return !isNoneType(type);
     }
 
     mlir_ts::EnumType getEnumType()
