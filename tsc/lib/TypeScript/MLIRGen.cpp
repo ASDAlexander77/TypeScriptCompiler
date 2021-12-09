@@ -2526,6 +2526,24 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    mlir::LogicalResult addSafeCastStatement(Expression expr, Node typeToken, const GenContext &genContext)
+    {
+        NodeFactory nf(NodeFactoryFlags::None);
+
+        // init
+        NodeArray<VariableDeclaration> declarations;
+        auto _safe_casted = expr;
+        declarations.push_back(nf.createVariableDeclaration(_safe_casted, undefined, undefined, nf.createTypeAssertion(typeToken, expr)));
+
+        auto varDeclList = nf.createVariableDeclarationList(declarations, NodeFlags::Const);
+
+        auto expr_statement = nf.createVariableStatement(undefined, varDeclList);
+
+        const_cast<GenContext &>(genContext).generatedStatements.push_back(expr_statement.as<Statement>());
+
+        return mlir::success();
+    }
+
     mlir::LogicalResult checkSafeCastTypeOf(Expression typeOfVal, Expression constVal, const GenContext &genContext)
     {
         if (auto typeOfOp = typeOfVal.as<TypeOfExpression>())
@@ -2564,17 +2582,7 @@ class MLIRGenImpl
 
                 if (typeToken)
                 {
-                    // init
-                    NodeArray<VariableDeclaration> declarations;
-                    auto _safe_casted = expr;
-                    declarations.push_back(
-                        nf.createVariableDeclaration(_safe_casted, undefined, undefined, nf.createTypeAssertion(typeToken, expr)));
-
-                    auto varDeclList = nf.createVariableDeclarationList(declarations, NodeFlags::Const);
-
-                    auto expr_statement = nf.createVariableStatement(undefined, varDeclList);
-
-                    const_cast<GenContext &>(genContext).generatedStatements.push_back(expr_statement.as<Statement>());
+                    addSafeCastStatement(expr, typeToken, genContext);
                 }
 
                 return mlir::success();
@@ -2597,16 +2605,46 @@ class MLIRGenImpl
             auto propertyAccessExpressionOp = expr.as<PropertyAccessExpression>();
             // TODO:
             auto typeOfObject = evaluate(propertyAccessExpressionOp->expression, genContext);
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! SafeCastCheck: " << typeOfObject << "");
+
             if (auto unionType = typeOfObject.dyn_cast<mlir_ts::UnionType>())
             {
                 auto isConst = false;
+                mlir::Attribute value;
                 evaluate(
-                    constVal, [&](mlir::Value val) { isConst = isConstValue(val); }, genContext);
-                if (isConst)
-                {
-                    // TODO: we need Literal Types
-                    // TODO:
-                }
+                    constVal,
+                    [&](mlir::Value val) {
+                        isConst = isConstValue(val);
+                        if (isConst)
+                        {
+                            auto constantOp = val.getDefiningOp<mlir_ts::ConstantOp>();
+                            assert(constantOp);
+                            auto valueAttr = constantOp.valueAttr();
+
+                            MLIRCodeLogic mcl(builder);
+                            auto fieldNameAttr = mcl.TupleFieldName(MLIRHelper::getName(propertyAccessExpressionOp->name));
+
+                            for (auto unionSubType : unionType.getTypes())
+                            {
+                                if (auto tupleType = unionSubType.dyn_cast<mlir_ts::TupleType>())
+                                {
+                                    auto fieldIndex = tupleType.getIndex(fieldNameAttr);
+                                    auto fieldType = tupleType.getType(fieldIndex);
+                                    if (auto literalType = fieldType.dyn_cast<mlir_ts::LiteralType>())
+                                    {
+                                        if (literalType.getValue() = valueAttr)
+                                        {
+                                            // enable safe cast
+                                            // found
+                                            assert(false);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    genContext);
             }
         }
 
@@ -2647,21 +2685,8 @@ class MLIRGenImpl
                 auto instanceOf = binExpr;
                 if (instanceOf->left.is<Identifier>())
                 {
-                    // create 'expression' = <string>'expression;
                     NodeFactory nf(NodeFactoryFlags::None);
-
-                    // init
-                    NodeArray<VariableDeclaration> declarations;
-                    auto _safe_casted = instanceOf->left;
-                    declarations.push_back(nf.createVariableDeclaration(
-                        _safe_casted, undefined, undefined,
-                        nf.createTypeAssertion(nf.createTypeReferenceNode(instanceOf->right), instanceOf->left)));
-
-                    auto varDeclList = nf.createVariableDeclarationList(declarations, NodeFlags::Const);
-
-                    auto expr_statement = nf.createVariableStatement(undefined, varDeclList);
-
-                    const_cast<GenContext &>(genContext).generatedStatements.push_back(expr_statement.as<Statement>());
+                    addSafeCastStatement(instanceOf->left, nf.createTypeReferenceNode(instanceOf->right), genContext);
                     return mlir::success();
                 }
             }

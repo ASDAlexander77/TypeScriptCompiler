@@ -607,6 +607,7 @@ class MLIRTypeHelper
             }
         }
 
+        // wide range type can't be stored into literal
         if (auto literalType = dstType.dyn_cast<mlir_ts::LiteralType>())
         {
             if (literalType.getElementType() == srcType)
