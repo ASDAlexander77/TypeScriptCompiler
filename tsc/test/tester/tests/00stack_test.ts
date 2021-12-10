@@ -8,7 +8,6 @@ function cycle() {
     print("end.");
 }
 
-// TODO: Bug here
 function cycle_with_func() {
     print("start...2");
 
@@ -27,6 +26,6 @@ function cycle_with_func() {
 
 function main() {
     cycle();
-    //cycle_with_func();
+    cycle_with_func();
     print("done.");
 }

@@ -1576,26 +1576,9 @@ void cleanupEmptyBlocksWithoutPredecessors(mlir_ts::FuncOp f)
     } while (any);
 }
 
-void TypeScriptToAffineLoweringPass::runOnFunction()
+void AddTsAffinePatterns(MLIRContext &context, ConversionTarget &target, RewritePatternSet &patterns, TSContext &tsContext,
+                         TSFunctionContext &tsFuncContext)
 {
-    auto function = getFunction();
-
-    // We only lower the main function as we expect that all other functions have been inlined.
-    if (function.getName() == "main")
-    {
-        auto voidType = mlir_ts::VoidType::get(function.getContext());
-        // Verify that the given main has no inputs and results.
-        if (function.getNumArguments() || llvm::any_of(function.getType().getResults(), [&](mlir::Type type) { return type != voidType; }))
-        {
-            function.emitError("expected 'main' to have 0 inputs and 0 results");
-            return signalPassFailure();
-        }
-    }
-
-    // The first thing to define is the conversion target. This will define the
-    // final target for this lowering.
-    ConversionTarget target(getContext());
-
     // We define the specific operations, or dialects, that are legal targets for
     // this lowering. In our case, we are lowering to a combination of the
     // `Affine` and `Standard` dialects.
@@ -1625,16 +1608,38 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
 
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.
-    RewritePatternSet patterns(&getContext());
-
-    TSFunctionContext tsFuncContext{};
 
     patterns.insert<EntryOpLowering, ExitOpLowering, ReturnOpLowering, ReturnValOpLowering, ParamOpLowering, ParamOptionalOpLowering,
                     ParamDefaultValueOpLowering, PrefixUnaryOpLowering, PostfixUnaryOpLowering, IfOpLowering, DoWhileOpLowering,
                     WhileOpLowering, ForOpLowering, BreakOpLowering, ContinueOpLowering, SwitchOpLowering, AccessorOpLowering,
                     ThisAccessorOpLowering, LabelOpLowering, CallOpLowering, CallIndirectOpLowering, TryOpLowering, ThrowOpLowering,
                     CatchOpLowering, StateLabelOpLowering, SwitchStateOpLowering, YieldReturnValOpLowering, TypeOfOpLowering,
-                    CaptureOpLowering>(&getContext(), &tsContext, &tsFuncContext);
+                    CaptureOpLowering>(&context, &tsContext, &tsFuncContext);
+}
+
+void TypeScriptToAffineLoweringPass::runOnFunction()
+{
+    auto function = getFunction();
+
+    // We only lower the main function as we expect that all other functions have been inlined.
+    if (function.getName() == "main")
+    {
+        auto voidType = mlir_ts::VoidType::get(function.getContext());
+        // Verify that the given main has no inputs and results.
+        if (function.getNumArguments() || llvm::any_of(function.getType().getResults(), [&](mlir::Type type) { return type != voidType; }))
+        {
+            function.emitError("expected 'main' to have 0 inputs and 0 results");
+            return signalPassFailure();
+        }
+    }
+
+    // The first thing to define is the conversion target. This will define the
+    // final target for this lowering.
+    ConversionTarget target(getContext());
+    RewritePatternSet patterns(&getContext());
+
+    TSFunctionContext tsFuncContext{};
+    AddTsAffinePatterns(getContext(), target, patterns, tsContext, tsFuncContext);
 
     // With the target and rewrite patterns defined, we can now attempt the
     // conversion. The conversion will signal failure if any of our `illegal`

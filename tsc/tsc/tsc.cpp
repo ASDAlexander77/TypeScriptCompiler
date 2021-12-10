@@ -213,6 +213,9 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module
     if (isLoweringToAffine)
     {
         pm.addPass(mlir::createCanonicalizerPass());
+#ifdef ENABLE_ASYNC
+        pm.addPass(mlir::createAsyncToAsyncRuntimePass());
+#endif
 
         mlir::OpPassManager &optPM = pm.nest<mlir::typescript::FuncOp>();
 
@@ -232,7 +235,7 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module
 #endif
 
 #ifdef ENABLE_ASYNC
-        pm.addPass(mlir::createAsyncToAsyncRuntimePass());
+        // pm.addPass(mlir::createAsyncToAsyncRuntimePass());
         pm.addPass(mlir::createCanonicalizerPass());
         pm.addPass(mlir::createAsyncRuntimeRefCountingPass());
         if (enableOpt)

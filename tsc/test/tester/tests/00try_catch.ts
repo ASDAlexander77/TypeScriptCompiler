@@ -41,9 +41,6 @@ function main3() {
         t = 2;
     }
 
-    // TODO: we need to have next line to force optimizator not to break code
-    print(t);
-
     assert(2 == t);
 }
 
