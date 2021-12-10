@@ -3376,7 +3376,7 @@ class MLIRGenImpl
         {
             auto propertyAccessExpressionOp = switchExpr.as<PropertyAccessExpression>();
             auto objAccessExpression = propertyAccessExpressionOp->expression;
-            auto typeOfObject = evaluate(objAccessExpression, genContext);
+            auto typeOfObject = evaluate(objAccessExpression, switchGenContext);
             auto name = propertyAccessExpressionOp->name;
 
             safeCastLogic = [&](Expression caseExpr, mlir::Value constVal) {
