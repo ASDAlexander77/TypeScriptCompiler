@@ -7,6 +7,8 @@
 #include "TypeScript/TypeScriptDialect.h"
 #include "TypeScript/TypeScriptOps.h"
 
+#include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
+
 #include "TypeScript/LowerToLLVM/TypeHelper.h"
 #include "TypeScript/LowerToLLVM/TypeConverterHelper.h"
 #include "TypeScript/LowerToLLVM/CodeLogicHelper.h"
@@ -521,6 +523,20 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                 OpBuilder::InsertionGuard guard(rewriter);
 
                 auto subTupleVal = getTupleFromArrayAttr(loc, constTupleType, llvmType.cast<LLVM::LLVMStructType>(), subArrayAttr);
+
+                tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, subTupleVal, rewriter.getI64ArrayAttr(position++));
+            }
+            else if (auto constTupleType = type.dyn_cast_or_null<mlir_ts::TupleType>())
+            {
+                auto subArrayAttr = item.dyn_cast_or_null<ArrayAttr>();
+
+                OpBuilder::InsertionGuard guard(rewriter);
+
+                ::typescript::MLIRTypeHelper mth(rewriter.getContext());
+
+                auto subTupleVal =
+                    getTupleFromArrayAttr(loc, mth.convertTupleTypeToConstTupleType(constTupleType).cast<mlir_ts::ConstTupleType>(),
+                                          llvmType.cast<LLVM::LLVMStructType>(), subArrayAttr);
 
                 tupleVal = rewriter.create<LLVM::InsertValueOp>(loc, tupleVal, subTupleVal, rewriter.getI64ArrayAttr(position++));
             }

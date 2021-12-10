@@ -468,6 +468,24 @@ class MLIRTypeHelper
         return true;
     }
 
+    template <typename T1, typename T2> bool isSizeEqualLogic(T1 type, T2 matchType)
+    {
+        if (type.getFields().size() != matchType.getFields().size())
+        {
+            return false;
+        }
+
+        if (!llvm::all_of(llvm::zip(type.getFields(), matchType.getFields()),
+                          [&](std::tuple<const ::mlir::typescript::FieldInfo &, const ::mlir::typescript::FieldInfo &> pair) {
+                              return isSizeEqual(std::get<0>(pair).type, std::get<1>(pair).type);
+                          }))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
     bool isCastableTypes(mlir::Type srcType, mlir::Type destType)
     {
         if (canCast(srcType, destType))
@@ -636,7 +654,28 @@ class MLIRTypeHelper
             return true;
         }
 
-        // TODO: finish ti
+        if (auto constTuple = srcType.dyn_cast_or_null<mlir_ts::ConstTupleType>())
+        {
+            if (auto matchConstTuple = dstType.dyn_cast_or_null<mlir_ts::ConstTupleType>())
+            {
+                return isSizeEqualLogic(constTuple, matchConstTuple);
+            }
+
+            if (auto matchTuple = dstType.dyn_cast_or_null<mlir_ts::TupleType>())
+            {
+                return isSizeEqualLogic(constTuple, matchTuple);
+            }
+        }
+
+        if (auto tuple = srcType.dyn_cast_or_null<mlir_ts::TupleType>())
+        {
+            if (auto matchTuple = dstType.dyn_cast_or_null<mlir_ts::TupleType>())
+            {
+                return isSizeEqualLogic(tuple, matchTuple);
+            }
+        }
+
+        // TODO: finish it
 
         return false;
     }
