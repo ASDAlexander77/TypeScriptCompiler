@@ -8245,6 +8245,20 @@ class MLIRGenImpl
         llvm_unreachable("not implemented");
     }
 
+    mlir::Type getFirstTypeFromTypeArguments(NodeArray<TypeNode> &typeArguments, const GenContext &genContext, bool extractType = false)
+    {
+        auto type = getType(typeArguments->front(), genContext);
+        if (extractType)
+        {
+            if (auto literalType = type.dyn_cast<mlir_ts::LiteralType>())
+            {
+                type = literalType.getElementType();
+            }
+        }
+
+        return type;
+    }
+
     mlir::Type getTypeByTypeReference(TypeReferenceNode typeReferenceAST, const GenContext &genContext)
     {
         // check utility types
@@ -8254,14 +8268,19 @@ class MLIRGenImpl
             auto name = MLIRHelper::getName(typeReferenceAST->typeName);
             if (name == "TypeOf")
             {
-                // calculate base type of literal type
-                auto type = getType(typeReferenceAST->typeArguments->front(), genContext);
-                if (auto literalType = type.dyn_cast<mlir_ts::LiteralType>())
-                {
-                    type = literalType.getElementType();
-                }
+                return getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext, true);
+            }
 
-                return type;
+            if (name == "Array")
+            {
+                auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                return getArrayType(elemnentType);
+            }
+
+            if (name == "ReadonlyArray")
+            {
+                auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                return getArrayType(elemnentType);
             }
         }
 
