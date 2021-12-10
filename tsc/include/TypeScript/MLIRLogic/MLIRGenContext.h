@@ -123,6 +123,7 @@ struct GenContext
     bool allocateVarsOutsideOfOperation;
     bool skipProcessed;
     bool rediscover;
+    bool insertIntoParentScope;
     mlir::Operation *currentOperation;
     mlir_ts::FuncOp funcOp;
     llvm::StringMap<ts::VariableDeclarationDOM::TypePtr> *capturedVars;

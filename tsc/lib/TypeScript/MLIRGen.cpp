@@ -1016,7 +1016,7 @@ class MLIRGenImpl
 
         if (!isGlobal)
         {
-            declare(varDecl, variableOp);
+            declare(varDecl, variableOp, genContext);
         }
         else if (isFullName)
         {
@@ -1941,7 +1941,7 @@ class MLIRGenImpl
             auto entryOp = builder.create<mlir_ts::EntryOp>(location, mlir_ts::RefType::get(retType));
             auto varDecl = std::make_shared<VariableDeclarationDOM>(RETURN_VARIABLE_NAME, retType, location);
             varDecl->setReadWriteAccess();
-            declare(varDecl, entryOp.reference());
+            declare(varDecl, entryOp.reference(), genContext);
         }
         else
         {
@@ -2003,7 +2003,7 @@ class MLIRGenImpl
 
         auto capturedParamVar = std::make_shared<VariableDeclarationDOM>(CAPTURED_NAME, capturedRefType, loc);
 
-        declare(capturedParamVar, capturedParam);
+        declare(capturedParamVar, capturedParam, genContext);
 
         return mlir::success();
     }
@@ -2034,7 +2034,7 @@ class MLIRGenImpl
 
             // captured is in this->".captured"
             auto capturedParamVar = std::make_shared<VariableDeclarationDOM>(CAPTURED_NAME, propValue.getType(), loc);
-            declare(capturedParamVar, propValue);
+            declare(capturedParamVar, propValue, genContext);
         }
 
         return mlir::success();
@@ -2100,7 +2100,7 @@ class MLIRGenImpl
             {
                 // redefine variable
                 param->setReadWriteAccess();
-                declare(param, paramValue, true);
+                declare(param, paramValue, genContext, true);
             }
         }
 
@@ -2142,7 +2142,7 @@ class MLIRGenImpl
             LLVM_DEBUG(dbgs() << "\n!! captured '\".captured\"->" << name << "' [ " << capturedVarValue << " ] ref val type: [ "
                               << variableRefType << " ]\n\n");
 
-            declare(capturedParam, capturedVarValue);
+            declare(capturedParam, capturedVarValue, genContext);
         }
 
         return mlir::success();
@@ -2166,7 +2166,7 @@ class MLIRGenImpl
         // process function params
         for (auto paramPairs : llvm::zip(funcProto->getArgs(), entryBlock.getArguments()))
         {
-            if (failed(declare(std::get<0>(paramPairs), std::get<1>(paramPairs))))
+            if (failed(declare(std::get<0>(paramPairs), std::get<1>(paramPairs), genContext)))
             {
                 return mlir::failure();
             }
@@ -2992,7 +2992,7 @@ class MLIRGenImpl
         auto location = loc(forOfStatementAST);
 
         auto varDecl = std::make_shared<VariableDeclarationDOM>(EXPR_TEMPVAR_NAME, exprValue.getType(), location);
-        declare(varDecl, exprValue);
+        declare(varDecl, exprValue, genContext);
 
         NodeFactory nf(NodeFactoryFlags::None);
 
@@ -3050,7 +3050,7 @@ class MLIRGenImpl
         auto location = loc(forOfStatementAST);
 
         auto varDecl = std::make_shared<VariableDeclarationDOM>(EXPR_TEMPVAR_NAME, exprValue.getType(), location);
-        declare(varDecl, exprValue);
+        declare(varDecl, exprValue, genContext);
 
         NodeFactory nf(NodeFactoryFlags::None);
 
@@ -3189,6 +3189,8 @@ class MLIRGenImpl
                                           SmallVector<mlir::BranchOp> &pendingBranches, mlir::Operation *&previousConditionOrFirstBranchOp,
                                           std::function<void(Expression, mlir::Value)> extraCode, const GenContext &genContext)
     {
+        SymbolTableScopeT safeCastVarScope(symbolTable);
+
         enum
         {
             trueIndex = 0,
@@ -3358,6 +3360,7 @@ class MLIRGenImpl
         GenContext switchGenContext(genContext);
         switchGenContext.allocateVarsOutsideOfOperation = true;
         switchGenContext.currentOperation = switchOp;
+        switchGenContext.insertIntoParentScope = true;
 
         // add merge block
         switchOp.addMergeBlock();
@@ -3380,6 +3383,9 @@ class MLIRGenImpl
             auto name = propertyAccessExpressionOp->name;
 
             safeCastLogic = [&](Expression caseExpr, mlir::Value constVal) {
+                GenContext safeCastGenContext(switchGenContext);
+                switchGenContext.insertIntoParentScope = false;
+
                 // Safe Cast
                 if (mlir::failed(checkSafeCastTypeOf(switchExpr, caseExpr, switchGenContext)))
                 {
@@ -3735,7 +3741,7 @@ class MLIRGenImpl
         SymbolTableScopeT varScope(symbolTable);
 
         auto varDecl = std::make_shared<VariableDeclarationDOM>(THIS_TEMPVAR_NAME, thisValue.getType(), location);
-        declare(varDecl, thisValue);
+        declare(varDecl, thisValue, genContext);
 
         NodeFactory nf(NodeFactoryFlags::None);
 
@@ -5013,7 +5019,7 @@ class MLIRGenImpl
         }
 
         auto varDecl = std::make_shared<VariableDeclarationDOM>(CONSTRUCTOR_TEMPVAR_NAME, classInfo->classType, location);
-        declare(varDecl, effectiveThisValue);
+        declare(varDecl, effectiveThisValue, genContext);
 
         auto thisToken = nf.createIdentifier(S(CONSTRUCTOR_TEMPVAR_NAME));
 
@@ -8673,17 +8679,26 @@ class MLIRGenImpl
         return mlir_ts::OpaqueType::get(builder.getContext());
     }
 
-    mlir::LogicalResult declare(VariableDeclarationDOM::TypePtr var, mlir::Value value, bool redeclare = false)
+    mlir::LogicalResult declare(VariableDeclarationDOM::TypePtr var, mlir::Value value, const GenContext &genContext,
+                                bool redefineVar = false)
     {
         const auto &name = var->getName();
         /*
-        if (!redeclare && symbolTable.count(name))
+        if (symbolTable.count(name))
         {
             return mlir::failure();
         }
         */
 
-        symbolTable.insert(name, {value, var});
+        if (!genContext.insertIntoParentScope)
+        {
+            symbolTable.insert(name, {value, var});
+        }
+        else
+        {
+            symbolTable.insertIntoScope(symbolTable.getCurScope()->getParentScope(), name, {value, var});
+        }
+
         return mlir::success();
     }
 
