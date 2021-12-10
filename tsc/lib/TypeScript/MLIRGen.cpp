@@ -3174,10 +3174,11 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirGenSwitchCase(mlir::Location location, mlir::Value switchValue, NodeArray<ts::CaseOrDefaultClause> &clauses,
-                                          int index, mlir::Block *mergeBlock, mlir::Block *&defaultBlock,
-                                          SmallVector<mlir::CondBranchOp> &pendingConditions, SmallVector<mlir::BranchOp> &pendingBranches,
-                                          mlir::Operation *&previousConditionOrFirstBranchOp, const GenContext &genContext)
+    mlir::LogicalResult mlirGenSwitchCase(mlir::Location location, Expression switchExpr, mlir::Value switchValue,
+                                          NodeArray<ts::CaseOrDefaultClause> &clauses, int index, mlir::Block *mergeBlock,
+                                          mlir::Block *&defaultBlock, SmallVector<mlir::CondBranchOp> &pendingConditions,
+                                          SmallVector<mlir::BranchOp> &pendingBranches, mlir::Operation *&previousConditionOrFirstBranchOp,
+                                          const GenContext &genContext)
     {
         enum
         {
@@ -3226,7 +3227,14 @@ class MLIRGenImpl
                 setPreviousCondOrJumpOp(previousConditionOrFirstBranchOp, caseConditionBlock);
             }
 
-            auto caseValue = mlirGen(caseBlock.as<CaseClause>()->expression, genContext);
+            auto caseExpr = caseBlock.as<CaseClause>()->expression;
+            auto caseValue = mlirGen(caseExpr, genContext);
+
+            // Safe Cast
+            if (mlir::failed(checkSafeCastTypeOf(switchExpr, caseExpr, genContext)))
+            {
+                checkSafeCastPropertyAccess(switchExpr, caseExpr, genContext);
+            }
 
             auto switchValueEffective = switchValue;
             if (switchValue.getType() != caseValue.getType())
@@ -3288,6 +3296,21 @@ class MLIRGenImpl
             pendingConditions.clear();
 
             // process body case
+            if (genContext.generatedStatements.size() > 0)
+            {
+                // auto generated code
+                for (auto &statement : genContext.generatedStatements)
+                {
+                    if (failed(mlirGen(statement, genContext)))
+                    {
+                        return mlir::failure();
+                    }
+                }
+
+                // clean up
+                const_cast<GenContext &>(genContext).generatedStatements.clear();
+            }
+
             auto hasBreak = false;
             for (auto statement : statements)
             {
@@ -3297,7 +3320,10 @@ class MLIRGenImpl
                     break;
                 }
 
-                mlirGen(statement, genContext);
+                if (failed(mlirGen(statement, genContext)))
+                {
+                    return mlir::failure();
+                }
             }
 
             // exit;
@@ -3317,7 +3343,8 @@ class MLIRGenImpl
 
         auto location = loc(switchStatementAST);
 
-        auto switchValue = mlirGen(switchStatementAST->expression, genContext);
+        auto switchExpr = switchStatementAST->expression;
+        auto switchValue = mlirGen(switchExpr, genContext);
 
         VALIDATE_LOGIC(switchValue, location)
 
@@ -3341,8 +3368,8 @@ class MLIRGenImpl
         // process without default
         for (int index = 0; index < clauses.size(); index++)
         {
-            if (mlir::failed(mlirGenSwitchCase(location, switchValue, clauses, index, mergeBlock, defaultBlock, pendingConditions,
-                                               pendingBranches, previousConditionOrFirstBranchOp, switchGenContext)))
+            if (mlir::failed(mlirGenSwitchCase(location, switchExpr, switchValue, clauses, index, mergeBlock, defaultBlock,
+                                               pendingConditions, pendingBranches, previousConditionOrFirstBranchOp, switchGenContext)))
             {
                 return mlir::failure();
             }
