@@ -2547,12 +2547,7 @@ class MLIRGenImpl
         if (auto typeOfOp = typeOfVal.as<TypeOfExpression>())
         {
             // strip parenthesizes
-            auto expr = typeOfOp->expression;
-            while (expr.is<ParenthesizedExpression>())
-            {
-                expr = expr.as<ParenthesizedExpression>()->expression;
-            }
-
+            auto expr = stripParentheses(typeOfOp->expression);
             if (!expr.is<Identifier>())
             {
                 return mlir::failure();
@@ -2590,7 +2585,7 @@ class MLIRGenImpl
         return mlir::failure();
     }
 
-    mlir::LogicalResult checkSafeCastPropertyAccess(Expression exprVal, Expression constVal, const GenContext &genContext)
+    Expression stripParentheses(Expression exprVal)
     {
         auto expr = exprVal;
         while (expr.is<ParenthesizedExpression>())
@@ -2598,59 +2593,73 @@ class MLIRGenImpl
             expr = expr.as<ParenthesizedExpression>()->expression;
         }
 
+        return expr;
+    }
+
+    mlir::LogicalResult checkSafeCastPropertyAccessLogic(TextRange textRange, Expression objAccessExpression, mlir::Type typeOfObject,
+                                                         Node name, mlir::Value constVal, const GenContext &genContext)
+    {
+        if (auto unionType = typeOfObject.dyn_cast<mlir_ts::UnionType>())
+        {
+            auto isConst = false;
+            mlir::Attribute value;
+            isConst = isConstValue(constVal);
+            if (isConst)
+            {
+                auto constantOp = constVal.getDefiningOp<mlir_ts::ConstantOp>();
+                assert(constantOp);
+                auto valueAttr = constantOp.valueAttr();
+
+                MLIRCodeLogic mcl(builder);
+                auto fieldNameAttr = mcl.TupleFieldName(MLIRHelper::getName(name));
+
+                for (auto unionSubType : unionType.getTypes())
+                {
+                    if (auto tupleType = unionSubType.dyn_cast<mlir_ts::TupleType>())
+                    {
+                        auto fieldIndex = tupleType.getIndex(fieldNameAttr);
+                        auto fieldType = tupleType.getType(fieldIndex);
+                        if (auto literalType = fieldType.dyn_cast<mlir_ts::LiteralType>())
+                        {
+                            if (literalType.getValue() == valueAttr)
+                            {
+                                // enable safe cast found
+                                auto typeAliasNameUTF8 = MLIRHelper::getAnonymousName(loc_check(textRange), "ta_");
+                                auto typeAliasName = ConvertUTF8toWide(typeAliasNameUTF8);
+                                const_cast<GenContext &>(genContext).typeAliasMap.insert({typeAliasNameUTF8, tupleType});
+
+                                NodeFactory nf(NodeFactoryFlags::None);
+                                auto typeRef = nf.createTypeReferenceNode(nf.createIdentifier(typeAliasName));
+                                addSafeCastStatement(objAccessExpression, typeRef, genContext);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return mlir::failure();
+    }
+
+    mlir::LogicalResult checkSafeCastPropertyAccess(Expression exprVal, Expression constVal, const GenContext &genContext)
+    {
+        auto expr = stripParentheses(exprVal);
         if (expr.is<PropertyAccessExpression>())
         {
             auto propertyAccessExpressionOp = expr.as<PropertyAccessExpression>();
-            // TODO:
             auto objAccessExpression = propertyAccessExpressionOp->expression;
             auto typeOfObject = evaluate(objAccessExpression, genContext);
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! SafeCastCheck: " << typeOfObject << "");
 
-            if (auto unionType = typeOfObject.dyn_cast<mlir_ts::UnionType>())
-            {
-                auto isConst = false;
-                mlir::Attribute value;
-                evaluate(
-                    constVal,
-                    [&](mlir::Value val) {
-                        isConst = isConstValue(val);
-                        if (isConst)
-                        {
-                            auto constantOp = val.getDefiningOp<mlir_ts::ConstantOp>();
-                            assert(constantOp);
-                            auto valueAttr = constantOp.valueAttr();
-
-                            MLIRCodeLogic mcl(builder);
-                            auto fieldNameAttr = mcl.TupleFieldName(MLIRHelper::getName(propertyAccessExpressionOp->name));
-
-                            for (auto unionSubType : unionType.getTypes())
-                            {
-                                if (auto tupleType = unionSubType.dyn_cast<mlir_ts::TupleType>())
-                                {
-                                    auto fieldIndex = tupleType.getIndex(fieldNameAttr);
-                                    auto fieldType = tupleType.getType(fieldIndex);
-                                    if (auto literalType = fieldType.dyn_cast<mlir_ts::LiteralType>())
-                                    {
-                                        if (literalType.getValue() == valueAttr)
-                                        {
-                                            // enable safe cast found
-                                            auto typeAliasNameUTF8 = MLIRHelper::getAnonymousName(loc_check(exprVal), "ta_");
-                                            auto typeAliasName = ConvertUTF8toWide(typeAliasNameUTF8);
-                                            const_cast<GenContext &>(genContext).typeAliasMap.insert({typeAliasNameUTF8, tupleType});
-
-                                            NodeFactory nf(NodeFactoryFlags::None);
-                                            auto typeRef = nf.createTypeReferenceNode(nf.createIdentifier(typeAliasName));
-                                            addSafeCastStatement(objAccessExpression, typeRef, genContext);
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    },
-                    genContext);
-            }
+            evaluate(
+                constVal,
+                [&](mlir::Value val) {
+                    checkSafeCastPropertyAccessLogic(constVal, objAccessExpression, typeOfObject, propertyAccessExpressionOp->name, val,
+                                                     genContext);
+                },
+                genContext);
         }
 
         return mlir::failure();
@@ -3178,7 +3187,7 @@ class MLIRGenImpl
                                           NodeArray<ts::CaseOrDefaultClause> &clauses, int index, mlir::Block *mergeBlock,
                                           mlir::Block *&defaultBlock, SmallVector<mlir::CondBranchOp> &pendingConditions,
                                           SmallVector<mlir::BranchOp> &pendingBranches, mlir::Operation *&previousConditionOrFirstBranchOp,
-                                          const GenContext &genContext)
+                                          std::function<void(Expression, mlir::Value)> extraCode, const GenContext &genContext)
     {
         enum
         {
@@ -3230,11 +3239,7 @@ class MLIRGenImpl
             auto caseExpr = caseBlock.as<CaseClause>()->expression;
             auto caseValue = mlirGen(caseExpr, genContext);
 
-            // Safe Cast
-            if (mlir::failed(checkSafeCastTypeOf(switchExpr, caseExpr, genContext)))
-            {
-                checkSafeCastPropertyAccess(switchExpr, caseExpr, genContext);
-            }
+            extraCode(caseExpr, caseValue);
 
             auto switchValueEffective = switchValue;
             if (switchValue.getType() != caseValue.getType())
@@ -3365,11 +3370,34 @@ class MLIRGenImpl
         mlir::Operation *previousConditionOrFirstBranchOp = nullptr;
         mlir::Block *defaultBlock = nullptr;
 
+        // to support safe cast
+        std::function<void(Expression, mlir::Value)> safeCastLogic;
+        if (switchExpr.is<PropertyAccessExpression>())
+        {
+            auto propertyAccessExpressionOp = switchExpr.as<PropertyAccessExpression>();
+            auto objAccessExpression = propertyAccessExpressionOp->expression;
+            auto typeOfObject = evaluate(objAccessExpression, genContext);
+            auto name = propertyAccessExpressionOp->name;
+
+            safeCastLogic = [&](Expression caseExpr, mlir::Value constVal) {
+                // Safe Cast
+                if (mlir::failed(checkSafeCastTypeOf(switchExpr, caseExpr, switchGenContext)))
+                {
+                    checkSafeCastPropertyAccessLogic(caseExpr, objAccessExpression, typeOfObject, name, constVal, switchGenContext);
+                }
+            };
+        }
+        else
+        {
+            safeCastLogic = [&](Expression caseExpr, mlir::Value constVal) {};
+        }
+
         // process without default
         for (int index = 0; index < clauses.size(); index++)
         {
             if (mlir::failed(mlirGenSwitchCase(location, switchExpr, switchValue, clauses, index, mergeBlock, defaultBlock,
-                                               pendingConditions, pendingBranches, previousConditionOrFirstBranchOp, switchGenContext)))
+                                               pendingConditions, pendingBranches, previousConditionOrFirstBranchOp, safeCastLogic,
+                                               switchGenContext)))
             {
                 return mlir::failure();
             }
