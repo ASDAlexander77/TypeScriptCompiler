@@ -1612,7 +1612,6 @@ void AddTsAffinePatterns(MLIRContext &context, ConversionTarget &target, Rewrite
     // this lowering. In our case, we are lowering to a combination of the
     // `Affine` and `Standard` dialects.
     target.addLegalDialect<StandardOpsDialect>();
-    target.addLegalDialect<LLVM::LLVMDialect>();
 
     // We also define the TypeScript dialect as Illegal so that the conversion will fail
     // if any of these operations are *not* converted. Given that we actually want
