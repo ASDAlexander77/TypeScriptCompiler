@@ -1612,6 +1612,7 @@ void AddTsAffinePatterns(MLIRContext &context, ConversionTarget &target, Rewrite
     // this lowering. In our case, we are lowering to a combination of the
     // `Affine` and `Standard` dialects.
     target.addLegalDialect<StandardOpsDialect>();
+    target.addLegalDialect<LLVM::LLVMDialect>();
 
     // We also define the TypeScript dialect as Illegal so that the conversion will fail
     // if any of these operations are *not* converted. Given that we actually want
@@ -1699,6 +1700,9 @@ void TypeScriptToAffineLoweringFuncPass::runOnFunction()
 
     TSFunctionContext tsFuncContext{};
     AddTsAffinePatterns(getContext(), target, patterns, tsContext, tsFuncContext);
+
+    // TODO: Hack to fix issue with Async
+    target.addLegalOp<mlir::FuncOp>();
 
     // With the target and rewrite patterns defined, we can now attempt the
     // conversion. The conversion will signal failure if any of our `illegal`

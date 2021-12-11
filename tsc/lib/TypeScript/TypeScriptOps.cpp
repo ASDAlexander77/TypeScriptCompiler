@@ -1117,6 +1117,8 @@ void mlir_ts::SwitchOp::addMergeBlock()
 
 namespace
 {
+// !!! Results should be removed when IfOp is processed as it is terminator
+/*
 // Pattern to remove unused IfOp results.
 struct RemoveUnusedResults : public OpRewritePattern<mlir_ts::IfOp>
 {
@@ -1170,6 +1172,7 @@ struct RemoveUnusedResults : public OpRewritePattern<mlir_ts::IfOp>
         return success();
     }
 };
+*/
 
 struct RemoveStaticCondition : public OpRewritePattern<mlir_ts::IfOp>
 {
@@ -1203,7 +1206,7 @@ struct RemoveStaticCondition : public OpRewritePattern<mlir_ts::IfOp>
 
 void mlir_ts::IfOp::getCanonicalizationPatterns(OwningRewritePatternList &results, MLIRContext *context)
 {
-    results.insert<RemoveUnusedResults, RemoveStaticCondition>(context);
+    results.insert</*RemoveUnusedResults,*/ RemoveStaticCondition>(context);
 }
 
 void mlir_ts::GlobalOp::build(OpBuilder &builder, OperationState &result, Type type, bool isConstant, StringRef name, Attribute value,
