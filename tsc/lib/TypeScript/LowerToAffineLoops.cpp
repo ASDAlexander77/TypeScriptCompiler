@@ -398,6 +398,17 @@ struct IfOpLowering : public TsPattern<mlir_ts::IfOp>
     }
 };
 
+struct ResultOpLowering : public TsPattern<mlir_ts::ResultOp>
+{
+    using TsPattern<mlir_ts::ResultOp>::TsPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::ResultOp resultOp, PatternRewriter &rewriter) const final
+    {
+        rewriter.eraseOp(resultOp);
+        return success();
+    }
+};
+
 struct WhileOpLowering : public TsPattern<mlir_ts::WhileOp>
 {
     using TsPattern<mlir_ts::WhileOp>::TsPattern;
@@ -1606,33 +1617,34 @@ void AddTsAffinePatterns(MLIRContext &context, ConversionTarget &target, Rewrite
     // if any of these operations are *not* converted. Given that we actually want
     // a partial lowering, we explicitly mark the TypeScript operations that don't want
     // to lower, `typescript.print`, as `legal`.
-    // target.addIllegalDialect<mlir_ts::TypeScriptDialect>();
-    target.addLegalOp<
-        mlir_ts::AddressOfOp, mlir_ts::AddressOfConstStringOp, mlir_ts::AddressOfElementOp, mlir_ts::ArithmeticBinaryOp,
-        mlir_ts::ArithmeticUnaryOp, mlir_ts::AssertOp, mlir_ts::CastOp, mlir_ts::ConstantOp, mlir_ts::ElementRefOp, mlir_ts::FuncOp,
-        mlir_ts::GlobalOp, mlir_ts::GlobalResultOp, mlir_ts::HasValueOp, mlir_ts::ValueOp, mlir_ts::NullOp, mlir_ts::ParseFloatOp,
-        mlir_ts::ParseIntOp, mlir_ts::IsNaNOp, mlir_ts::PrintOp, mlir_ts::SizeOfOp, mlir_ts::StoreOp, mlir_ts::SymbolRefOp,
-        mlir_ts::LengthOfOp, mlir_ts::StringLengthOp, mlir_ts::StringConcatOp, mlir_ts::StringCompareOp, mlir_ts::LoadOp, mlir_ts::NewOp,
-        mlir_ts::CreateTupleOp, mlir_ts::DeconstructTupleOp, mlir_ts::CreateArrayOp, mlir_ts::NewEmptyArrayOp, mlir_ts::NewArrayOp,
-        mlir_ts::DeleteOp, mlir_ts::PropertyRefOp, mlir_ts::InsertPropertyOp, mlir_ts::ExtractPropertyOp, mlir_ts::LogicalBinaryOp,
-        mlir_ts::UndefOp, mlir_ts::VariableOp, mlir_ts::TrampolineOp, mlir_ts::InvokeOp, mlir_ts::ResultOp, mlir_ts::ThisVirtualSymbolRefOp,
-        mlir_ts::InterfaceSymbolRefOp, mlir_ts::ExtractInterfaceThisOp, mlir_ts::ExtractInterfaceVTableOp, mlir_ts::PushOp, mlir_ts::PopOp,
-        mlir_ts::NewInterfaceOp, mlir_ts::VTableOffsetRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp, mlir_ts::DebuggerOp,
-        mlir_ts::LandingPadOp, mlir_ts::CompareCatchTypeOp, mlir_ts::BeginCatchOp, mlir_ts::SaveCatchVarOp, mlir_ts::EndCatchOp,
-        mlir_ts::BeginCleanupOp, mlir_ts::EndCleanupOp, mlir_ts::ThrowUnwindOp, mlir_ts::ThrowCallOp, mlir_ts::SymbolCallInternalOp,
-        mlir_ts::CallInternalOp, mlir_ts::ReturnInternalOp, mlir_ts::NoOp, mlir_ts::SwitchStateInternalOp, mlir_ts::UnreachableOp,
-        mlir_ts::GlobalConstructorOp, mlir_ts::CreateBoundFunctionOp, mlir_ts::TypeOfAnyOp, mlir_ts::BoxOp, mlir_ts::UnboxOp,
-        mlir_ts::CreateUnionInstanceOp, mlir_ts::GetValueFromUnionOp, mlir_ts::GetTypeInfoFromUnionOp>();
+    target.addIllegalDialect<mlir_ts::TypeScriptDialect>();
+    target.addLegalOp<mlir_ts::AddressOfOp, mlir_ts::AddressOfConstStringOp, mlir_ts::AddressOfElementOp, mlir_ts::ArithmeticBinaryOp,
+                      mlir_ts::ArithmeticUnaryOp, mlir_ts::AssertOp, mlir_ts::CastOp, mlir_ts::ConstantOp, mlir_ts::ElementRefOp,
+                      mlir_ts::FuncOp, mlir_ts::GlobalOp, mlir_ts::GlobalResultOp, mlir_ts::HasValueOp, mlir_ts::ValueOp, mlir_ts::NullOp,
+                      mlir_ts::ParseFloatOp, mlir_ts::ParseIntOp, mlir_ts::IsNaNOp, mlir_ts::PrintOp, mlir_ts::SizeOfOp, mlir_ts::StoreOp,
+                      mlir_ts::SymbolRefOp, mlir_ts::LengthOfOp, mlir_ts::StringLengthOp, mlir_ts::StringConcatOp, mlir_ts::StringCompareOp,
+                      mlir_ts::LoadOp, mlir_ts::NewOp, mlir_ts::CreateTupleOp, mlir_ts::DeconstructTupleOp, mlir_ts::CreateArrayOp,
+                      mlir_ts::NewEmptyArrayOp, mlir_ts::NewArrayOp, mlir_ts::DeleteOp, mlir_ts::PropertyRefOp, mlir_ts::InsertPropertyOp,
+                      mlir_ts::ExtractPropertyOp, mlir_ts::LogicalBinaryOp, mlir_ts::UndefOp, mlir_ts::VariableOp, mlir_ts::TrampolineOp,
+                      mlir_ts::InvokeOp, /*mlir_ts::ResultOp,*/ mlir_ts::ThisVirtualSymbolRefOp, mlir_ts::InterfaceSymbolRefOp,
+                      mlir_ts::ExtractInterfaceThisOp, mlir_ts::ExtractInterfaceVTableOp, mlir_ts::PushOp, mlir_ts::PopOp,
+                      mlir_ts::NewInterfaceOp, mlir_ts::VTableOffsetRefOp, mlir_ts::GetThisOp, mlir_ts::GetMethodOp, mlir_ts::DebuggerOp,
+                      mlir_ts::LandingPadOp, mlir_ts::CompareCatchTypeOp, mlir_ts::BeginCatchOp, mlir_ts::SaveCatchVarOp,
+                      mlir_ts::EndCatchOp, mlir_ts::BeginCleanupOp, mlir_ts::EndCleanupOp, mlir_ts::ThrowUnwindOp, mlir_ts::ThrowCallOp,
+                      mlir_ts::SymbolCallInternalOp, mlir_ts::CallInternalOp, mlir_ts::ReturnInternalOp, mlir_ts::NoOp,
+                      mlir_ts::SwitchStateInternalOp, mlir_ts::UnreachableOp, mlir_ts::GlobalConstructorOp, mlir_ts::CreateBoundFunctionOp,
+                      mlir_ts::TypeOfAnyOp, mlir_ts::BoxOp, mlir_ts::UnboxOp, mlir_ts::CreateUnionInstanceOp, mlir_ts::GetValueFromUnionOp,
+                      mlir_ts::GetTypeInfoFromUnionOp>();
 
     // Now that the conversion target has been defined, we just need to provide
     // the set of patterns that will lower the TypeScript operations.
 
     patterns.insert<EntryOpLowering, ExitOpLowering, ReturnOpLowering, ReturnValOpLowering, ParamOpLowering, ParamOptionalOpLowering,
-                    ParamDefaultValueOpLowering, PrefixUnaryOpLowering, PostfixUnaryOpLowering, IfOpLowering, DoWhileOpLowering,
-                    WhileOpLowering, ForOpLowering, BreakOpLowering, ContinueOpLowering, SwitchOpLowering, AccessorOpLowering,
-                    ThisAccessorOpLowering, LabelOpLowering, CallOpLowering, CallIndirectOpLowering, TryOpLowering, ThrowOpLowering,
-                    CatchOpLowering, StateLabelOpLowering, SwitchStateOpLowering, YieldReturnValOpLowering, TypeOfOpLowering,
-                    CaptureOpLowering>(&context, &tsContext, &tsFuncContext);
+                    ParamDefaultValueOpLowering, PrefixUnaryOpLowering, PostfixUnaryOpLowering, IfOpLowering, /*ResultOpLowering,*/
+                    DoWhileOpLowering, WhileOpLowering, ForOpLowering, BreakOpLowering, ContinueOpLowering, SwitchOpLowering,
+                    AccessorOpLowering, ThisAccessorOpLowering, LabelOpLowering, CallOpLowering, CallIndirectOpLowering, TryOpLowering,
+                    ThrowOpLowering, CatchOpLowering, StateLabelOpLowering, SwitchStateOpLowering, YieldReturnValOpLowering,
+                    TypeOfOpLowering, CaptureOpLowering>(&context, &tsContext, &tsFuncContext);
 }
 
 void TypeScriptToAffineLoweringPass::runOnFunction()

@@ -1528,8 +1528,8 @@ def TypeScript_ReturnInternalOp : TypeScript_Op<"ReturnInternal", [NoSideEffect,
 }
 
 def TypeScript_IfOp : TypeScript_Op<"If",
-      [DeclareOpInterfaceMethods<RegionBranchOpInterface>,
-       SingleBlockImplicitTerminator<"typescript::ResultOp">]> {
+      [DeclareOpInterfaceMethods<RegionBranchOpInterface>, SingleBlockImplicitTerminator<"typescript::ResultOp">, 
+      RecursiveSideEffects, NoRegionArguments]> {
   let summary = "if-then-else operation";
 
   let arguments = (ins TypeScript_Boolean:$condition);
@@ -1581,7 +1581,7 @@ def TypeScript_ResultOp : TypeScript_Op<"Result", [NoSideEffect, ReturnLike, Ter
 }
 
 def TypeScript_WhileOp : TypeScript_Op<"While",
-    [DeclareOpInterfaceMethods<RegionBranchOpInterface>]> {
+    [DeclareOpInterfaceMethods<RegionBranchOpInterface>, RecursiveSideEffects]> {
   let summary = "a generic 'while' loop";
   let description = [{
     This operation represents a generic "while" loop that keeps
@@ -1617,7 +1617,7 @@ def TypeScript_WhileOp : TypeScript_Op<"While",
 }
 
 def TypeScript_DoWhileOp : TypeScript_Op<"DoWhile",
-    [DeclareOpInterfaceMethods<RegionBranchOpInterface>]> {
+    [DeclareOpInterfaceMethods<RegionBranchOpInterface>, RecursiveSideEffects]> {
   let summary = "a generic 'do-while' loop";
   let description = [{
     This operation represents a generic "do-while" loop.
@@ -1636,7 +1636,7 @@ def TypeScript_DoWhileOp : TypeScript_Op<"DoWhile",
 }
 
 def TypeScript_ForOp : TypeScript_Op<"For",
-    [DeclareOpInterfaceMethods<RegionBranchOpInterface>]> {
+    [DeclareOpInterfaceMethods<RegionBranchOpInterface>, RecursiveSideEffects]> {
   let summary = "a generic 'for' loop";
 
   let arguments = (ins Variadic<AnyType>:$inits);

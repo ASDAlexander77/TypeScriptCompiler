@@ -255,7 +255,6 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module
 
     if (isLoweringToLLVM)
     {
-        // Finish lowering the TypeScript IR to the LLVM dialect.
 #ifdef ENABLE_ASYNC
         pm.addPass(mlir::createConvertAsyncToLLVMPass());
 #endif
