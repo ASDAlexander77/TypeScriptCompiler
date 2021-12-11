@@ -2369,25 +2369,10 @@ class MLIRGenImpl
                     types.push_back(resultType);
                 }
 
-                auto body = builder.create<mlir_ts::BodyInternalOp>(location, types);
-                /*auto *cond =*/builder.createBlock(&body.body(), {}, types);
-                builder.setInsertionPointToStart(&body.body().front());
-
                 auto value = mlirGen(awaitExpressionAST->expression, genContext);
                 if (value)
                 {
-                    builder.create<mlir_ts::BodyResultInternalOp>(location, mlir::ValueRange{value});
-                }
-                else
-                {
-                    builder.create<mlir_ts::BodyResultInternalOp>(location, mlir::ValueRange{});
-                }
-
-                builder.setInsertionPointAfter(body);
-
-                if (value)
-                {
-                    builder.create<mlir::async::YieldOp>(location, mlir::ValueRange{body.getResults()});
+                    builder.create<mlir::async::YieldOp>(location, mlir::ValueRange{value});
                 }
                 else
                 {
@@ -2918,17 +2903,7 @@ class MLIRGenImpl
                                                        [&](mlir::OpBuilder &builder, mlir::Location location, mlir::ValueRange values) {
                                                            GenContext execOpBodyGenContext(genContext);
                                                            execOpBodyGenContext.skipProcessed = true;
-
-                                                           auto body = builder.create<mlir_ts::BodyInternalOp>(location, mlir::TypeRange{});
-                                                           /*auto *cond =*/builder.createBlock(&body.body(), {}, types);
-                                                           builder.setInsertionPointToStart(&body.body().front());
-
                                                            mlirGen(forStatementAST->statement, execOpBodyGenContext);
-
-                                                           builder.create<mlir_ts::BodyResultInternalOp>(location, mlir::ValueRange{});
-
-                                                           builder.setInsertionPointAfter(body);
-
                                                            builder.create<mlir::async::YieldOp>(location, mlir::ValueRange{});
                                                        });
 
@@ -5954,7 +5929,7 @@ class MLIRGenImpl
             auto valueRegion = value.first.getParentRegion();
             auto isOuterVar = false;
             // TODO: review code "valueRegion && valueRegion->getParentOp()" is to support async.execute
-            if (genContext.funcOp && valueRegion && valueRegion->getParentOp() && valueRegion->getParentOp()->getParentOp())
+            if (genContext.funcOp && valueRegion && valueRegion->getParentOp() /* && valueRegion->getParentOp()->getParentOp()*/)
             {
                 auto funcRegion = const_cast<GenContext &>(genContext).funcOp.getCallableRegion();
                 isOuterVar = !funcRegion->isAncestor(valueRegion);
