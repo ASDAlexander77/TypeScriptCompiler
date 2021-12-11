@@ -1269,3 +1269,20 @@ void mlir_ts::LabelOp::addMergeBlock()
     // Add a ts.merge op into the merge block.
     builder.create<mlir_ts::MergeOp>(getLoc());
 }
+
+//===----------------------------------------------------------------------===//
+// BodyInternalOp
+//===----------------------------------------------------------------------===//
+
+OperandRange mlir_ts::BodyInternalOp::getSuccessorEntryOperands(unsigned index)
+{
+    assert(index == 0 && "BodyInternalOp is expected to branch only to the first region");
+
+    return getODSOperands(0);
+}
+
+void mlir_ts::BodyInternalOp::getSuccessorRegions(Optional<unsigned> index, ArrayRef<Attribute> operands,
+                                                  SmallVectorImpl<RegionSuccessor> &regions)
+{
+    regions.push_back(RegionSuccessor(&body()));
+}

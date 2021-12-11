@@ -1588,7 +1588,7 @@ void AddTsAffinePatterns(MLIRContext &context, ConversionTarget &target, Rewrite
     // if any of these operations are *not* converted. Given that we actually want
     // a partial lowering, we explicitly mark the TypeScript operations that don't want
     // to lower, `typescript.print`, as `legal`.
-    target.addIllegalDialect<mlir_ts::TypeScriptDialect>();
+    // target.addIllegalDialect<mlir_ts::TypeScriptDialect>();
     target.addLegalOp<
         mlir_ts::AddressOfOp, mlir_ts::AddressOfConstStringOp, mlir_ts::AddressOfElementOp, mlir_ts::ArithmeticBinaryOp,
         mlir_ts::ArithmeticUnaryOp, mlir_ts::AssertOp, mlir_ts::CastOp, mlir_ts::ConstantOp, mlir_ts::ElementRefOp, mlir_ts::FuncOp,

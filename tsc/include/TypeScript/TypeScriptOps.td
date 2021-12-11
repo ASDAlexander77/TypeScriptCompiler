@@ -1529,8 +1529,7 @@ def TypeScript_ReturnInternalOp : TypeScript_Op<"ReturnInternal", [NoSideEffect,
 
 def TypeScript_IfOp : TypeScript_Op<"If",
       [DeclareOpInterfaceMethods<RegionBranchOpInterface>,
-       SingleBlockImplicitTerminator<"typescript::ResultOp">, RecursiveSideEffects,
-       NoRegionArguments]> {
+       SingleBlockImplicitTerminator<"typescript::ResultOp">]> {
   let summary = "if-then-else operation";
 
   let arguments = (ins TypeScript_Boolean:$condition);
@@ -1582,8 +1581,7 @@ def TypeScript_ResultOp : TypeScript_Op<"Result", [NoSideEffect, ReturnLike, Ter
 }
 
 def TypeScript_WhileOp : TypeScript_Op<"While",
-    [DeclareOpInterfaceMethods<RegionBranchOpInterface>,
-     RecursiveSideEffects]> {
+    [DeclareOpInterfaceMethods<RegionBranchOpInterface>]> {
   let summary = "a generic 'while' loop";
   let description = [{
     This operation represents a generic "while" loop that keeps
@@ -1619,8 +1617,7 @@ def TypeScript_WhileOp : TypeScript_Op<"While",
 }
 
 def TypeScript_DoWhileOp : TypeScript_Op<"DoWhile",
-    [DeclareOpInterfaceMethods<RegionBranchOpInterface>,
-     RecursiveSideEffects]> {
+    [DeclareOpInterfaceMethods<RegionBranchOpInterface>]> {
   let summary = "a generic 'do-while' loop";
   let description = [{
     This operation represents a generic "do-while" loop.
@@ -1639,8 +1636,7 @@ def TypeScript_DoWhileOp : TypeScript_Op<"DoWhile",
 }
 
 def TypeScript_ForOp : TypeScript_Op<"For",
-    [DeclareOpInterfaceMethods<RegionBranchOpInterface>,
-     RecursiveSideEffects]> {
+    [DeclareOpInterfaceMethods<RegionBranchOpInterface>]> {
   let summary = "a generic 'for' loop";
 
   let arguments = (ins Variadic<AnyType>:$inits);
@@ -2024,6 +2020,42 @@ def TypeScript_GlobalConstructorOp : TypeScript_Op<"GlobalConstructor"> {
     /// Return the ts.func operation that is referenced here.
     FuncOp getFunction();
   }];
+}
+
+def TypeScript_BodyInternalOp : TypeScript_Op<"BodyInternal",
+    [DeclareOpInterfaceMethods<RegionBranchOpInterface>, SingleBlockImplicitTerminator<"typescript::BodyResultInternalOp">]> {
+  let summary = "a generic 'body'";
+
+  let arguments = (ins );
+  let results = (outs Variadic<AnyType>:$results);
+  let regions = (region AnyRegion:$body);
+
+  let assemblyFormat =
+      [{ attr-dict `->` type($results) `:` $body }];
+
+  let extraClassDeclaration = [{
+    OperandRange getSuccessorEntryOperands(unsigned index);
+
+    Region &getBodyRegion() {
+      return getOperation()->getRegion(0);
+    }
+
+    Block *getBodyBlock() {
+      return getBodyRegion().empty() ?
+        nullptr : &getBodyRegion().front();
+    }
+  }];      
+}
+
+def TypeScript_BodyResultInternalOp : TypeScript_Op<"BodyResultInternal", [NoSideEffect, ReturnLike, Terminator,
+                               ParentOneOf<["typescript::BodyInternalOp"]>]> {
+  let summary = "termination operation";
+
+  let arguments = (ins Variadic<AnyType>:$results);
+  let builders = [OpBuilder<(ins), [{ /* nothing to do */ }]>];
+  // Override default verifier, no custom verification
+  // needed.
+  let verifier = ?;
 }
 
 def TypeScript_PushOp : TypeScript_Op<"Push"> {

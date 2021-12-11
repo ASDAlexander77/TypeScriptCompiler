@@ -3931,6 +3931,53 @@ struct GlobalConstructorOpLowering : public TsLlvmPattern<mlir_ts::GlobalConstru
     }
 };
 
+struct BodyInternalOpLowering : public TsLlvmPattern<mlir_ts::BodyInternalOp>
+{
+    using TsLlvmPattern<mlir_ts::BodyInternalOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::BodyInternalOp bodyInternalOp, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        TypeHelper th(rewriter);
+        CodeLogicHelper clh(bodyInternalOp, rewriter);
+
+        auto location = bodyInternalOp.getLoc();
+
+        auto *opBlock = rewriter.getInsertionBlock();
+        auto opPosition = rewriter.getInsertionPoint();
+        auto *continuationBlock = rewriter.splitBlock(opBlock, opPosition);
+
+        Block *beforeBody = &bodyInternalOp.body().front();
+        Block *afterBody = &bodyInternalOp.body().back();
+        rewriter.inlineRegionBefore(bodyInternalOp.body(), continuationBlock);
+
+        rewriter.setInsertionPointToEnd(opBlock);
+        rewriter.create<LLVM::BrOp>(location, ValueRange(), beforeBody);
+
+        rewriter.setInsertionPointToEnd(afterBody);
+        auto bodyResultInternalOp = cast<mlir_ts::BodyResultInternalOp>(afterBody->getTerminator());
+        auto branchOp = rewriter.replaceOpWithNewOp<LLVM::BrOp>(bodyResultInternalOp, bodyResultInternalOp.results(), continuationBlock);
+
+        rewriter.setInsertionPoint(branchOp);
+
+        rewriter.replaceOp(bodyInternalOp, continuationBlock->getArguments());
+
+        return success();
+    }
+};
+
+struct BodyResultInternalOpLowering : public TsLlvmPattern<mlir_ts::BodyResultInternalOp>
+{
+    using TsLlvmPattern<mlir_ts::BodyResultInternalOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::BodyResultInternalOp op, ArrayRef<Value> operands,
+                                  ConversionPatternRewriter &rewriter) const final
+    {
+        rewriter.replaceOp(op, op.results());
+        return success();
+    }
+};
+
 struct NoOpLowering : public TsLlvmPattern<mlir_ts::NoOp>
 {
     using TsLlvmPattern<mlir_ts::NoOp>::TsLlvmPattern;
@@ -4371,7 +4418,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         SaveCatchVarOpLowering, EndCatchOpLowering, BeginCleanupOpLowering, EndCleanupOpLowering, SymbolCallInternalOpLowering,
         CallInternalOpLowering, CallHybridInternalOpLowering, ReturnInternalOpLowering, NoOpLowering,
         /*GlobalConstructorOpLowering,*/ ExtractInterfaceThisOpLowering, ExtractInterfaceVTableOpLowering, BoxOpLowering, UnboxOpLowering,
-        DialectCastOpLowering, CreateUnionInstanceOpLowering, GetValueFromUnionOpLowering, GetTypeInfoFromUnionOpLowering
+        DialectCastOpLowering, CreateUnionInstanceOpLowering, GetValueFromUnionOpLowering, GetTypeInfoFromUnionOpLowering,
+        BodyInternalOpLowering, BodyResultInternalOpLowering
 #ifndef DISABLE_SWITCH_STATE_PASS
         ,
         SwitchStateOpLowering, StateLabelOpLowering, YieldReturnValOpLowering
