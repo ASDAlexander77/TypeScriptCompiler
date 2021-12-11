@@ -214,12 +214,23 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module
     {
         pm.addPass(mlir::createCanonicalizerPass());
 
+#ifdef ENABLE_ASYNC
+        pm.addPass(mlir::createAsyncToAsyncRuntimePass());
+#endif
+
         mlir::OpPassManager &optPM = pm.nest<mlir::typescript::FuncOp>();
 
         // Partially lower the TypeScript dialect with a few cleanups afterwards.
         optPM.addPass(mlir::typescript::createLowerToAffinePass());
         optPM.addPass(mlir::createCanonicalizerPass());
         optPM.addPass(mlir::typescript::createRelocateConstantPass());
+
+        mlir::OpPassManager &optPM2 = pm.nest<mlir::FuncOp>();
+
+        // Partially lower the TypeScript dialect with a few cleanups afterwards.
+        optPM2.addPass(mlir::typescript::createLowerToAffineFuncPass());
+        optPM2.addPass(mlir::createCanonicalizerPass());
+
 #ifdef ENABLE_OPT_PASSES
         if (enableOpt)
         {
@@ -232,7 +243,7 @@ int loadAndProcessMLIR(mlir::MLIRContext &context, mlir::OwningModuleRef &module
 #endif
 
 #ifdef ENABLE_ASYNC
-        pm.addPass(mlir::createAsyncToAsyncRuntimePass());
+        // pm.addPass(mlir::createAsyncToAsyncRuntimePass());
         pm.addPass(mlir::createCanonicalizerPass());
         pm.addPass(mlir::createAsyncRuntimeRefCountingPass());
         if (enableOpt)

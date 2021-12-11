@@ -391,6 +391,9 @@ struct IfOpLowering : public TsPattern<mlir_ts::IfOp>
 
         // Ok, we're done!
         rewriter.replaceOp(ifOp, continueBlock->getArguments());
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! IfOpLowering AFTER DUMP: \n" << *ifOp->getParentOp() << "\n";);
+
         return success();
     }
 };
@@ -1485,6 +1488,21 @@ struct TypeScriptToAffineLoweringPass : public PassWrapper<TypeScriptToAffineLow
 };
 } // end anonymous namespace.
 
+namespace
+{
+struct TypeScriptToAffineLoweringFuncPass : public PassWrapper<TypeScriptToAffineLoweringFuncPass, FunctionPass>
+{
+    void getDependentDialects(DialectRegistry &registry) const override
+    {
+        registry.insert<StandardOpsDialect>();
+    }
+
+    void runOnFunction() final;
+
+    TSContext tsContext;
+};
+} // end anonymous namespace.
+
 static LogicalResult verifySuccessors(Operation *op)
 {
     auto *parent = op->getParentRegion();
@@ -1658,9 +1676,37 @@ void TypeScriptToAffineLoweringPass::runOnFunction()
     LLVM_DEBUG(verifyFunction(function););
 }
 
+void TypeScriptToAffineLoweringFuncPass::runOnFunction()
+{
+    auto function = getFunction();
+
+    // The first thing to define is the conversion target. This will define the
+    // final target for this lowering.
+    ConversionTarget target(getContext());
+    RewritePatternSet patterns(&getContext());
+
+    TSFunctionContext tsFuncContext{};
+    AddTsAffinePatterns(getContext(), target, patterns, tsContext, tsFuncContext);
+
+    // With the target and rewrite patterns defined, we can now attempt the
+    // conversion. The conversion will signal failure if any of our `illegal`
+    // operations were not converted successfully.
+    if (failed(applyPartialConversion(function, target, std::move(patterns))))
+    {
+        signalPassFailure();
+    }
+
+    LLVM_DEBUG(llvm::dbgs() << "\n!! (FUNC) AFTER FUNC DUMP: \n" << function << "\n";);
+}
+
 /// Create a pass for lowering operations in the `Affine` and `Std` dialects,
 /// for a subset of the TypeScript IR.
 std::unique_ptr<mlir::Pass> mlir_ts::createLowerToAffinePass()
 {
     return std::make_unique<TypeScriptToAffineLoweringPass>();
+}
+
+std::unique_ptr<mlir::Pass> mlir_ts::createLowerToAffineFuncPass()
+{
+    return std::make_unique<TypeScriptToAffineLoweringFuncPass>();
 }
