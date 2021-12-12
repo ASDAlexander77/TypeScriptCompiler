@@ -17,14 +17,7 @@ function testUnionIndexer(): void {
     assert(arr[index] === arr[2]);
 }
 
-type a = TypeOf<1>;
-type i = a & a;
-type j = a | a;
-
 function main() {
     testUnionIndexer();
-
-    assert(sizeof(i) != sizeof(j));
-
     print("done.");
 }

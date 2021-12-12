@@ -7707,6 +7707,11 @@ class MLIRGenImpl
             declareInterface = true;
         }
 
+        if (declareInterface)
+        {
+            mlirGenInterfaceType(newInterfacePtr);
+        }
+
         return newInterfacePtr;
     }
 
@@ -7722,11 +7727,6 @@ class MLIRGenImpl
         }
 
         auto ifaceGenContext = GenContext(genContext);
-        if (mlir::failed(mlirGenInterfaceType(interfaceDeclarationAST, newInterfacePtr, declareInterface, ifaceGenContext)))
-        {
-            return mlir::failure();
-        }
-
         ifaceGenContext.thisType = newInterfacePtr->interfaceType;
 
         // clear all flags
@@ -7764,29 +7764,16 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirGenInterfaceType(InterfaceDeclaration interfaceDeclarationAST, InterfaceInfo::TypePtr newInterfacePtr,
-                                             bool declareInterface, const GenContext &genContext)
+    mlir::LogicalResult mlirGenInterfaceType(InterfaceInfo::TypePtr newInterfacePtr)
     {
-        MLIRCodeLogic mcl(builder);
-        SmallVector<mlir_ts::FieldInfo> fieldInfos;
-
         if (newInterfacePtr)
         {
-            /*
-            // add virtual table field
-            MLIRCodeLogic mcl(builder);
-            auto vtFieldId = mcl.TupleFieldName(VTABLE_NAME);
-            fieldInfos.insert(fieldInfos.begin(), {vtFieldId, getOpaqueType()});
-
-            auto thisFieldId = mcl.TupleFieldName(THIS_NAME);
-            fieldInfos.insert(fieldInfos.begin(), {thisFieldId, getOpaqueType()});
-            */
-
             auto interfaceFullNameSymbol = mlir::FlatSymbolRefAttr::get(builder.getContext(), newInterfacePtr->fullName);
             newInterfacePtr->interfaceType = getInterfaceType(interfaceFullNameSymbol /*, fieldInfos*/);
+            return mlir::success();
         }
 
-        return mlir::success();
+        return mlir::failure();
     }
 
     mlir::LogicalResult mlirGenInterfaceMethodMember(InterfaceDeclaration interfaceDeclarationAST, InterfaceInfo::TypePtr newInterfacePtr,
@@ -8683,7 +8670,9 @@ class MLIRGenImpl
             {
                 if (auto ifaceType = type.dyn_cast<mlir_ts::InterfaceType>())
                 {
-                    mergeInterfaces(newInterfaceInfo, ifaceType);
+                    auto srcInterfaceInfo = getInterfaceByFullName(ifaceType.getName().getValue());
+                    assert(srcInterfaceInfo);
+                    newInterfaceInfo->implements.push_back(srcInterfaceInfo);
                 }
             }
 
@@ -8707,18 +8696,9 @@ class MLIRGenImpl
         return interfaceInfo;
     }
 
-    mlir::LogicalResult mergeInterfaces(InterfaceInfo::TypePtr dest, mlir_ts::InterfaceType src)
-    {
-        auto srcInterfaceInfo = getInterfaceByFullName(src.getName().getValue());
-        assert(srcInterfaceInfo);
-
-        return mergeInterfaces(dest, srcInterfaceInfo);
-
-        return mlir::success();
-    }
-
     mlir::LogicalResult mergeInterfaces(InterfaceInfo::TypePtr dest, InterfaceInfo::TypePtr src)
     {
+        // TODO: use it to merge with TupleType
         for (auto &item : src->implements)
         {
             dest->implements.push_back(item);
@@ -8733,6 +8713,8 @@ class MLIRGenImpl
         {
             dest->methods.push_back(item);
         }
+
+        llvm_unreachable("not finished, use it as tuple type merger");
 
         return mlir::success();
     }
