@@ -6171,12 +6171,14 @@ class MLIRGenImpl
         if (getTypeAliasMap().count(name))
         {
             auto typeAliasInfo = getTypeAliasMap().lookup(name);
+            assert(typeAliasInfo);
             return builder.create<mlir_ts::TypeRefOp>(location, typeAliasInfo);
         }
 
         if (genContext.typeAliasMap.count(name))
         {
             auto typeAliasInfo = genContext.typeAliasMap.lookup(name);
+            assert(typeAliasInfo);
             return builder.create<mlir_ts::TypeRefOp>(location, typeAliasInfo);
         }
 
@@ -8674,19 +8676,26 @@ class MLIRGenImpl
         // find base type
         if (baseInterfaceType)
         {
-            auto newInterfaceInfo = cloneInterfaceType(intersectionTypeNode, baseInterfaceType);
+            auto newInterfaceInfo = newInterfaceType(intersectionTypeNode);
+
+            // merge all interfaces;
+            for (auto type : types)
+            {
+                if (auto ifaceType = type.dyn_cast<mlir_ts::InterfaceType>())
+                {
+                    mergeInterfaces(newInterfaceInfo, ifaceType);
+                }
+            }
+
             return newInterfaceInfo->interfaceType;
         }
 
         llvm_unreachable("not implemented yet");
     }
 
-    InterfaceInfo::TypePtr cloneInterfaceType(IntersectionTypeNode intersectionTypeNode, mlir_ts::InterfaceType sourceInterfaceType)
+    InterfaceInfo::TypePtr newInterfaceType(IntersectionTypeNode intersectionTypeNode)
     {
         auto newName = MLIRHelper::getAnonymousName(loc_check(intersectionTypeNode), "ifce");
-
-        auto baseInterfaceInfo = getInterfaceByFullName(sourceInterfaceType.getName().getValue());
-        assert(baseInterfaceInfo);
 
         // clone into new interface
         bool declareInterface;
@@ -8696,6 +8705,36 @@ class MLIRGenImpl
         assert(declareInterface);
 
         return interfaceInfo;
+    }
+
+    mlir::LogicalResult mergeInterfaces(InterfaceInfo::TypePtr dest, mlir_ts::InterfaceType src)
+    {
+        auto srcInterfaceInfo = getInterfaceByFullName(src.getName().getValue());
+        assert(srcInterfaceInfo);
+
+        return mergeInterfaces(dest, srcInterfaceInfo);
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult mergeInterfaces(InterfaceInfo::TypePtr dest, InterfaceInfo::TypePtr src)
+    {
+        for (auto &item : src->implements)
+        {
+            dest->implements.push_back(item);
+        }
+
+        for (auto &item : src->fields)
+        {
+            dest->fields.push_back(item);
+        }
+
+        for (auto &item : src->methods)
+        {
+            dest->methods.push_back(item);
+        }
+
+        return mlir::success();
     }
 
     mlir::Type getParenthesizedType(ParenthesizedTypeNode parenthesizedTypeNode, const GenContext &genContext)
