@@ -271,6 +271,50 @@ struct InterfaceInfo
         return (signed)dist >= (signed)fields.size() ? -1 : dist;
     }
 
+    InterfaceFieldInfo findField(mlir::Attribute id, bool &foundField)
+    {
+        foundField = false;
+        auto index = getFieldIndex(id);
+        if (index >= 0)
+        {
+            foundField = true;
+            return this->fields[index];
+        }
+
+        for (auto &implement : implements)
+        {
+            auto field = implement->findField(id, foundField);
+            if (foundField)
+            {
+                return field;
+            }
+        }
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! can't resolve field: " << id << " in interface type: " << interfaceType << "\n";);
+
+        return InterfaceFieldInfo();
+    }
+
+    InterfaceMethodInfo *findMethod(mlir::StringRef name)
+    {
+        auto index = getMethodIndex(name);
+        if (index >= 0)
+        {
+            return &methods[index];
+        }
+
+        for (auto &implement : implements)
+        {
+            auto *method = implement->findMethod(name);
+            if (method)
+            {
+                return method;
+            }
+        }
+
+        return nullptr;
+    }
+
     int getNextVTableMemberIndex()
     {
         return fields.size() + methods.size();
@@ -477,20 +521,18 @@ struct ClassInfo
         return mlir_ts::FieldInfo();
     }
 
-    MethodInfo *findMethod(mlir::StringRef name, bool &foundMethod)
+    MethodInfo *findMethod(mlir::StringRef name)
     {
-        foundMethod = false;
         auto index = getMethodIndex(name);
         if (index >= 0)
         {
-            foundMethod = true;
             return &methods[index];
         }
 
         for (auto &baseClass : baseClasses)
         {
-            auto *method = baseClass->findMethod(name, foundMethod);
-            if (foundMethod)
+            auto *method = baseClass->findMethod(name);
+            if (method)
             {
                 return method;
             }

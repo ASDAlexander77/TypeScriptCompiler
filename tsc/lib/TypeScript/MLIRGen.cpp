@@ -7250,9 +7250,8 @@ class MLIRGenImpl
                 return foundField;
             },
             [&](std::string name, mlir::FunctionType funcType) -> MethodInfo & {
-                auto found = false;
-                auto foundMethodPtr = newClassPtr->findMethod(name, found);
-                if (!found)
+                auto foundMethodPtr = newClassPtr->findMethod(name);
+                if (!foundMethodPtr)
                 {
                     emitError(location) << "can't find method '" << name << "' for interface '" << newInterfacePtr->fullName
                                         << "' in class '" << newClassPtr->fullName << "'";
