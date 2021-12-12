@@ -4205,7 +4205,13 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         }
 
         convertedTypes.push_back(selectedType);
-        return LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, false);
+        if (convertedTypes.size() == 1)
+        {
+            return convertedTypes.front();
+        }
+
+        mlir::Type structType = LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, false);
+        return structType;
     });
 
     converter.addConversion([&](mlir_ts::NeverType type) { return LLVM::LLVMVoidType::get(type.getContext()); });
