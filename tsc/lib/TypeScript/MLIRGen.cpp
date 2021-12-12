@@ -7669,14 +7669,19 @@ class MLIRGenImpl
     InterfaceInfo::TypePtr mlirGenInterfaceInfo(InterfaceDeclaration interfaceDeclarationAST, bool &declareInterface,
                                                 const GenContext &genContext)
     {
-        declareInterface = false;
-
         auto name = MLIRHelper::getName(interfaceDeclarationAST->name);
         if (name.empty())
         {
             llvm_unreachable("not implemented");
             return InterfaceInfo::TypePtr();
         }
+
+        return mlirGenInterfaceInfo(name, declareInterface);
+    }
+
+    InterfaceInfo::TypePtr mlirGenInterfaceInfo(std::string name, bool &declareInterface)
+    {
+        declareInterface = false;
 
         auto namePtr = StringRef(name).copy(stringAllocator);
         auto fullNamePtr = getFullNamespaceName(namePtr);
@@ -8623,8 +8628,10 @@ class MLIRGenImpl
         return mlir_ts::UnionType::get(builder.getContext(), types);
     }
 
-    mlir_ts::IntersectionType getIntersectionType(IntersectionTypeNode intersectionTypeNode, const GenContext &genContext)
+    mlir::Type getIntersectionType(IntersectionTypeNode intersectionTypeNode, const GenContext &genContext)
     {
+        mlir_ts::InterfaceType baseInterfaceType;
+        mlir_ts::TupleType baseTupleType;
         mlir::SmallVector<mlir::Type> types;
         for (auto typeItem : intersectionTypeNode->types)
         {
@@ -8634,15 +8641,61 @@ class MLIRGenImpl
                 llvm_unreachable("wrong type");
             }
 
-            types.push_back(type);
+            if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
+            {
+                types.push_back(type);
+                if (!baseTupleType)
+                {
+                    baseTupleType = tupleType;
+                }
+            }
+
+            if (auto ifaceType = type.dyn_cast<mlir_ts::InterfaceType>())
+            {
+                types.push_back(type);
+                if (!baseInterfaceType)
+                {
+                    baseInterfaceType = ifaceType;
+                }
+            }
+
+            if (type.isa<mlir_ts::UnionType>())
+            {
+                types.push_back(type);
+            }
         }
 
-        return getIntersectionType(types);
+        if (types.size() == 0)
+        {
+            // this is never type
+            return getNeverType();
+        }
+
+        // find base type
+        if (baseInterfaceType)
+        {
+            auto newInterfaceInfo = cloneInterfaceType(intersectionTypeNode, baseInterfaceType);
+            return newInterfaceInfo->interfaceType;
+        }
+
+        llvm_unreachable("not implemented yet");
     }
 
-    mlir_ts::IntersectionType getIntersectionType(mlir::SmallVector<mlir::Type> &types)
+    InterfaceInfo::TypePtr cloneInterfaceType(IntersectionTypeNode intersectionTypeNode, mlir_ts::InterfaceType sourceInterfaceType)
     {
-        return mlir_ts::IntersectionType::get(builder.getContext(), types);
+        auto newName = MLIRHelper::getAnonymousName(loc_check(intersectionTypeNode), "ifce");
+
+        auto baseInterfaceInfo = getInterfaceByFullName(sourceInterfaceType.getName().getValue());
+        assert(baseInterfaceInfo);
+
+        // clone into new interface
+        bool declareInterface;
+        auto interfaceInfo = mlirGenInterfaceInfo(newName, declareInterface);
+
+        // must be new
+        assert(declareInterface);
+
+        return interfaceInfo;
     }
 
     mlir::Type getParenthesizedType(ParenthesizedTypeNode parenthesizedTypeNode, const GenContext &genContext)
@@ -8683,6 +8736,11 @@ class MLIRGenImpl
     mlir_ts::UnknownType getUnknownType()
     {
         return mlir_ts::UnknownType::get(builder.getContext());
+    }
+
+    mlir_ts::NeverType getNeverType()
+    {
+        return mlir_ts::NeverType::get(builder.getContext());
     }
 
     mlir_ts::SymbolType getSymbolType()

@@ -4208,15 +4208,7 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         return LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, false);
     });
 
-    converter.addConversion([&](mlir_ts::IntersectionType type) {
-        SmallVector<mlir::Type> convertedTypes;
-        for (auto subType : type)
-        {
-            convertedTypes.push_back(converter.convertType(subType));
-        }
-
-        return LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, false);
-    });
+    converter.addConversion([&](mlir_ts::NeverType type) { return LLVM::LLVMVoidType::get(type.getContext()); });
 
     converter.addConversion([&](mlir_ts::LiteralType type) { return converter.convertType(type.getElementType()); });
 
