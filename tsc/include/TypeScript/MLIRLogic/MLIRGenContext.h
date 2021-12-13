@@ -218,7 +218,7 @@ struct InterfaceInfo
 
     mlir_ts::InterfaceType interfaceType;
 
-    llvm::SmallVector<InterfaceInfoWithOffset> implements;
+    llvm::SmallVector<InterfaceInfoWithOffset> extends;
 
     llvm::SmallVector<InterfaceFieldInfo> fields;
 
@@ -232,9 +232,9 @@ struct InterfaceInfo
                                         std::function<mlir_ts::FieldInfo(mlir::Attribute, mlir::Type)> resolveField,
                                         std::function<MethodInfo &(std::string, mlir::FunctionType)> resolveMethod)
     {
-        for (auto &implement : implements)
+        for (auto &extent : extends)
         {
-            if (mlir::failed(std::get<1>(implement)->getVirtualTable(vtable, resolveField, resolveMethod)))
+            if (mlir::failed(std::get<1>(extent)->getVirtualTable(vtable, resolveField, resolveMethod)))
             {
                 return mlir::failure();
             }
@@ -288,13 +288,13 @@ struct InterfaceInfo
             return &this->fields[index];
         }
 
-        for (auto &implement : implements)
+        for (auto &extent : extends)
         {
             auto totalOffsetLocal = 0;
-            auto field = std::get<1>(implement)->findField(id, totalOffsetLocal);
+            auto field = std::get<1>(extent)->findField(id, totalOffsetLocal);
             if (field)
             {
-                totalOffset = std::get<0>(implement) + totalOffsetLocal;
+                totalOffset = std::get<0>(extent) + totalOffsetLocal;
                 return field;
             }
         }
@@ -312,13 +312,13 @@ struct InterfaceInfo
             return &methods[index];
         }
 
-        for (auto &implement : implements)
+        for (auto &extent : extends)
         {
             auto totalOffsetLocal = 0;
-            auto *method = std::get<1>(implement)->findMethod(name, totalOffsetLocal);
+            auto *method = std::get<1>(extent)->findMethod(name, totalOffsetLocal);
             if (method)
             {
-                totalOffset = std::get<0>(implement) + totalOffsetLocal;
+                totalOffset = std::get<0>(extent) + totalOffsetLocal;
                 return method;
             }
         }
@@ -334,9 +334,9 @@ struct InterfaceInfo
     int getVTableSize()
     {
         auto offset = 0;
-        for (auto &implement : implements)
+        for (auto &extent : extends)
         {
-            offset += std::get<1>(implement)->getVTableSize();
+            offset += std::get<1>(extent)->getVTableSize();
         }
 
         return fields.size() + methods.size();
@@ -345,10 +345,10 @@ struct InterfaceInfo
     void recalcOffsets()
     {
         auto offset = 0;
-        for (auto &implement : implements)
+        for (auto &extent : extends)
         {
-            std::get<0>(implement) = offset;
-            offset += std::get<1>(implement)->getVTableSize();
+            std::get<0>(extent) = offset;
+            offset += std::get<1>(extent)->getVTableSize();
         }
     }
 };

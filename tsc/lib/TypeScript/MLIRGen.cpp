@@ -7713,11 +7713,11 @@ class MLIRGenImpl
         return newInterfacePtr;
     }
 
-    mlir::LogicalResult mlirGenInterfaceHeritageClauseImplements(InterfaceDeclaration interfaceDeclarationAST,
-                                                                 InterfaceInfo::TypePtr newInterfacePtr, HeritageClause heritageClause,
-                                                                 bool declareClass, const GenContext &genContext)
+    mlir::LogicalResult mlirGenInterfaceHeritageClauseExtends(InterfaceDeclaration interfaceDeclarationAST,
+                                                              InterfaceInfo::TypePtr newInterfacePtr, HeritageClause heritageClause,
+                                                              bool declareClass, const GenContext &genContext)
     {
-        if (heritageClause->token != SyntaxKind::ImplementsKeyword)
+        if (heritageClause->token != SyntaxKind::ExtendsKeyword)
         {
             return mlir::success();
         }
@@ -7734,7 +7734,7 @@ class MLIRGenImpl
             TypeSwitch<mlir::Type>(ifaceType.getType())
                 .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
                     auto interfaceInfo = getInterfaceByFullName(interfaceType.getName().getValue());
-                    newInterfacePtr->implements.push_back({-1, interfaceInfo});
+                    newInterfacePtr->extends.push_back({-1, interfaceInfo});
                     success = true;
                 })
                 .Default([&](auto type) { llvm_unreachable("not implemented"); });
@@ -7764,8 +7764,8 @@ class MLIRGenImpl
 
         for (auto &heritageClause : interfaceDeclarationAST->heritageClauses)
         {
-            if (mlir::failed(mlirGenInterfaceHeritageClauseImplements(interfaceDeclarationAST, newInterfacePtr, heritageClause,
-                                                                      declareInterface, genContext)))
+            if (mlir::failed(mlirGenInterfaceHeritageClauseExtends(interfaceDeclarationAST, newInterfacePtr, heritageClause,
+                                                                   declareInterface, genContext)))
             {
                 return mlir::failure();
             }
@@ -8716,7 +8716,7 @@ class MLIRGenImpl
                 {
                     auto srcInterfaceInfo = getInterfaceByFullName(ifaceType.getName().getValue());
                     assert(srcInterfaceInfo);
-                    newInterfaceInfo->implements.push_back({-1, srcInterfaceInfo});
+                    newInterfaceInfo->extends.push_back({-1, srcInterfaceInfo});
                 }
             }
 
@@ -8745,9 +8745,9 @@ class MLIRGenImpl
     mlir::LogicalResult mergeInterfaces(InterfaceInfo::TypePtr dest, InterfaceInfo::TypePtr src)
     {
         // TODO: use it to merge with TupleType
-        for (auto &item : src->implements)
+        for (auto &item : src->extends)
         {
-            dest->implements.push_back(item);
+            dest->extends.push_back(item);
         }
 
         for (auto &item : src->fields)
