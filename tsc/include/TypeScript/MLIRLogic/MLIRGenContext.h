@@ -210,6 +210,7 @@ struct InterfaceInfo
 {
   public:
     using TypePtr = std::shared_ptr<InterfaceInfo>;
+    using InterfaceInfoWithOffset = std::pair<int, InterfaceInfo::TypePtr>;
 
     mlir::StringRef name;
 
@@ -217,7 +218,7 @@ struct InterfaceInfo
 
     mlir_ts::InterfaceType interfaceType;
 
-    llvm::SmallVector<InterfaceInfo::TypePtr> implements;
+    llvm::SmallVector<InterfaceInfoWithOffset> implements;
 
     llvm::SmallVector<InterfaceFieldInfo> fields;
 
@@ -233,7 +234,7 @@ struct InterfaceInfo
     {
         for (auto &implement : implements)
         {
-            if (mlir::succeeded(implement->getVirtualTable(vtable, resolveField, resolveMethod)))
+            if (mlir::succeeded(std::get<1>(implement)->getVirtualTable(vtable, resolveField, resolveMethod)))
             {
                 return mlir::success();
             }
@@ -279,20 +280,18 @@ struct InterfaceInfo
         return (signed)dist >= (signed)fields.size() ? -1 : dist;
     }
 
-    InterfaceFieldInfo findField(mlir::Attribute id, bool &foundField)
+    InterfaceFieldInfo *findField(mlir::Attribute id)
     {
-        foundField = false;
         auto index = getFieldIndex(id);
         if (index >= 0)
         {
-            foundField = true;
-            return this->fields[index];
+            return &this->fields[index];
         }
 
         for (auto &implement : implements)
         {
-            auto field = implement->findField(id, foundField);
-            if (foundField)
+            auto field = std::get<1>(implement)->findField(id);
+            if (field)
             {
                 return field;
             }
@@ -300,7 +299,7 @@ struct InterfaceInfo
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! can't resolve field: " << id << " in interface type: " << interfaceType << "\n";);
 
-        return InterfaceFieldInfo();
+        return nullptr;
     }
 
     InterfaceMethodInfo *findMethod(mlir::StringRef name)
@@ -313,7 +312,7 @@ struct InterfaceInfo
 
         for (auto &implement : implements)
         {
-            auto *method = implement->findMethod(name);
+            auto *method = std::get<1>(implement)->findMethod(name);
             if (method)
             {
                 return method;
@@ -325,6 +324,17 @@ struct InterfaceInfo
 
     int getNextVTableMemberIndex()
     {
+        return getVTableSize();
+    }
+
+    int getVTableSize()
+    {
+        auto offset = 0;
+        for (auto &implement : implements)
+        {
+            offset += std::get<1>(implement)->getVTableSize();
+        }
+
         return fields.size() + methods.size();
     }
 };

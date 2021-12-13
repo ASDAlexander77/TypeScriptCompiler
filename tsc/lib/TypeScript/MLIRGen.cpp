@@ -4622,22 +4622,21 @@ class MLIRGenImpl
         assert(interfaceInfo);
 
         // check field access
-        auto foundField = false;
-        auto fieldInfo = interfaceInfo->findField(id, foundField);
-        if (foundField)
+        auto fieldInfo = interfaceInfo->findField(id);
+        if (fieldInfo)
         {
-            assert(fieldInfo.interfacePosIndex >= 0);
+            assert(fieldInfo->interfacePosIndex >= 0);
 
-            auto fieldRefType = mlir_ts::RefType::get(fieldInfo.type);
+            auto fieldRefType = mlir_ts::RefType::get(fieldInfo->type);
 
             auto interfaceSymbolRefValue = builder.create<mlir_ts::InterfaceSymbolRefOp>(
-                location, fieldRefType, interfaceValue, builder.getI32IntegerAttr(fieldInfo.interfacePosIndex), builder.getStringAttr(""));
+                location, fieldRefType, interfaceValue, builder.getI32IntegerAttr(fieldInfo->interfacePosIndex), builder.getStringAttr(""));
 
             mlir::Value value =
                 builder.create<mlir_ts::LoadOp>(location, fieldRefType.getElementType(), interfaceSymbolRefValue.getResult());
 
             // if it is FuncType, we need to create BoundMethod again
-            if (auto funcType = fieldInfo.type.dyn_cast<mlir::FunctionType>())
+            if (auto funcType = fieldInfo->type.dyn_cast<mlir::FunctionType>())
             {
                 auto thisVal = builder.create<mlir_ts::ExtractInterfaceThisOp>(location, getOpaqueType(), interfaceValue);
                 value = builder.create<mlir_ts::CreateBoundFunctionOp>(location, getBoundFunctionType(funcType), thisVal, value);
