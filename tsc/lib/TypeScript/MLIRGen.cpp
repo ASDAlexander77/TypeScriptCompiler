@@ -4622,11 +4622,10 @@ class MLIRGenImpl
         assert(interfaceInfo);
 
         // check field access
-        auto fieldIndex = interfaceInfo->getFieldIndex(id);
-        if (fieldIndex >= 0)
+        auto foundField = false;
+        auto fieldInfo = interfaceInfo->findField(id, foundField);
+        if (foundField)
         {
-            auto fieldInfo = interfaceInfo->fields[fieldIndex];
-
             assert(fieldInfo.interfacePosIndex >= 0);
 
             auto fieldRefType = mlir_ts::RefType::get(fieldInfo.type);
@@ -4651,18 +4650,16 @@ class MLIRGenImpl
         if (auto nameAttr = id.dyn_cast_or_null<mlir::StringAttr>())
         {
             auto name = nameAttr.getValue();
-            auto methodIndex = interfaceInfo->getMethodIndex(name);
-            if (methodIndex >= 0)
+            auto methodInfo = interfaceInfo->findMethod(name);
+            if (methodInfo)
             {
-                auto methodInfo = interfaceInfo->methods[methodIndex];
+                assert(methodInfo->interfacePosIndex >= 0);
 
-                assert(methodInfo.interfacePosIndex >= 0);
-
-                auto effectiveFuncType = getBoundFunctionType(methodInfo.funcType);
+                auto effectiveFuncType = getBoundFunctionType(methodInfo->funcType);
 
                 auto interfaceSymbolRefValue = builder.create<mlir_ts::InterfaceSymbolRefOp>(
-                    location, effectiveFuncType, interfaceValue, builder.getI32IntegerAttr(methodInfo.interfacePosIndex),
-                    builder.getStringAttr(methodInfo.name));
+                    location, effectiveFuncType, interfaceValue, builder.getI32IntegerAttr(methodInfo->interfacePosIndex),
+                    builder.getStringAttr(methodInfo->name));
 
                 return interfaceSymbolRefValue;
             }

@@ -231,6 +231,14 @@ struct InterfaceInfo
                                         std::function<mlir_ts::FieldInfo(mlir::Attribute, mlir::Type)> resolveField,
                                         std::function<MethodInfo &(std::string, mlir::FunctionType)> resolveMethod)
     {
+        for (auto &implement : implements)
+        {
+            if (mlir::succeeded(implement->getVirtualTable(vtable, resolveField, resolveMethod)))
+            {
+                return mlir::success();
+            }
+        }
+
         // do vtable for current
         for (auto &method : methods)
         {
