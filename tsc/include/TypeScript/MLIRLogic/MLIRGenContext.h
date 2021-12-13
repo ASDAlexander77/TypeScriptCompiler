@@ -337,6 +337,16 @@ struct InterfaceInfo
 
         return fields.size() + methods.size();
     }
+
+    void recalcOffsets()
+    {
+        auto offset = 0;
+        for (auto &implement : implements)
+        {
+            std::get<0>(implement) = offset;
+            offset += std::get<1>(implement)->getVTableSize();
+        }
+    }
 };
 
 struct ImplementInfo

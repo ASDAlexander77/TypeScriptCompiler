@@ -7710,6 +7710,41 @@ class MLIRGenImpl
         return newInterfacePtr;
     }
 
+    mlir::LogicalResult mlirGenInterfaceHeritageClauseImplements(InterfaceDeclaration interfaceDeclarationAST,
+                                                                 InterfaceInfo::TypePtr newInterfacePtr, HeritageClause heritageClause,
+                                                                 bool declareClass, const GenContext &genContext)
+    {
+        if (heritageClause->token != SyntaxKind::ImplementsKeyword)
+        {
+            return mlir::success();
+        }
+
+        for (auto &implementingType : heritageClause->types)
+        {
+            if (implementingType->processed)
+            {
+                continue;
+            }
+
+            auto ifaceType = mlirGen(implementingType->expression, genContext);
+            auto success = false;
+            TypeSwitch<mlir::Type>(ifaceType.getType())
+                .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
+                    auto interfaceInfo = getInterfaceByFullName(interfaceType.getName().getValue());
+                    newInterfacePtr->implements.push_back({-1, interfaceInfo});
+                    success = true;
+                })
+                .Default([&](auto type) { llvm_unreachable("not implemented"); });
+
+            if (!success)
+            {
+                return mlir::failure();
+            }
+        }
+
+        return mlir::success();
+    }
+
     mlir::LogicalResult mlirGen(InterfaceDeclaration interfaceDeclarationAST, const GenContext &genContext)
     {
         auto location = loc(interfaceDeclarationAST);
@@ -7723,6 +7758,17 @@ class MLIRGenImpl
 
         auto ifaceGenContext = GenContext(genContext);
         ifaceGenContext.thisType = newInterfacePtr->interfaceType;
+
+        for (auto &heritageClause : interfaceDeclarationAST->heritageClauses)
+        {
+            if (mlir::failed(mlirGenInterfaceHeritageClauseImplements(interfaceDeclarationAST, newInterfacePtr, heritageClause,
+                                                                      declareInterface, genContext)))
+            {
+                return mlir::failure();
+            }
+        }
+
+        newInterfacePtr->recalcOffsets();
 
         // clear all flags
         for (auto &interfaceMember : interfaceDeclarationAST->members)
@@ -8667,9 +8713,11 @@ class MLIRGenImpl
                 {
                     auto srcInterfaceInfo = getInterfaceByFullName(ifaceType.getName().getValue());
                     assert(srcInterfaceInfo);
-                    newInterfaceInfo->implements.push_back(srcInterfaceInfo);
+                    newInterfaceInfo->implements.push_back({-1, srcInterfaceInfo});
                 }
             }
+
+            newInterfaceInfo->recalcOffsets();
 
             return newInterfaceInfo->interfaceType;
         }
