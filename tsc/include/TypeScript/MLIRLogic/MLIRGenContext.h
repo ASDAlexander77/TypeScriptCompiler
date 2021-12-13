@@ -234,9 +234,9 @@ struct InterfaceInfo
     {
         for (auto &implement : implements)
         {
-            if (mlir::succeeded(std::get<1>(implement)->getVirtualTable(vtable, resolveField, resolveMethod)))
+            if (mlir::failed(std::get<1>(implement)->getVirtualTable(vtable, resolveField, resolveMethod)))
             {
-                return mlir::success();
+                return mlir::failure();
             }
         }
 
@@ -280,7 +280,7 @@ struct InterfaceInfo
         return (signed)dist >= (signed)fields.size() ? -1 : dist;
     }
 
-    InterfaceFieldInfo *findField(mlir::Attribute id)
+    InterfaceFieldInfo *findField(mlir::Attribute id, int &totalOffset)
     {
         auto index = getFieldIndex(id);
         if (index >= 0)
@@ -290,9 +290,11 @@ struct InterfaceInfo
 
         for (auto &implement : implements)
         {
-            auto field = std::get<1>(implement)->findField(id);
+            auto totalOffsetLocal = 0;
+            auto field = std::get<1>(implement)->findField(id, totalOffsetLocal);
             if (field)
             {
+                totalOffset = std::get<0>(implement) + totalOffsetLocal;
                 return field;
             }
         }
@@ -302,7 +304,7 @@ struct InterfaceInfo
         return nullptr;
     }
 
-    InterfaceMethodInfo *findMethod(mlir::StringRef name)
+    InterfaceMethodInfo *findMethod(mlir::StringRef name, int &totalOffset)
     {
         auto index = getMethodIndex(name);
         if (index >= 0)
@@ -312,9 +314,11 @@ struct InterfaceInfo
 
         for (auto &implement : implements)
         {
-            auto *method = std::get<1>(implement)->findMethod(name);
+            auto totalOffsetLocal = 0;
+            auto *method = std::get<1>(implement)->findMethod(name, totalOffsetLocal);
             if (method)
             {
+                totalOffset = std::get<0>(implement) + totalOffsetLocal;
                 return method;
             }
         }

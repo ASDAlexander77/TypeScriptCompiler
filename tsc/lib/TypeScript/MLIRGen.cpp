@@ -4622,15 +4622,17 @@ class MLIRGenImpl
         assert(interfaceInfo);
 
         // check field access
-        auto fieldInfo = interfaceInfo->findField(id);
+        auto totalOffset = 0;
+        auto fieldInfo = interfaceInfo->findField(id, totalOffset);
         if (fieldInfo)
         {
             assert(fieldInfo->interfacePosIndex >= 0);
+            auto vtableIndex = fieldInfo->interfacePosIndex + totalOffset;
 
             auto fieldRefType = mlir_ts::RefType::get(fieldInfo->type);
 
             auto interfaceSymbolRefValue = builder.create<mlir_ts::InterfaceSymbolRefOp>(
-                location, fieldRefType, interfaceValue, builder.getI32IntegerAttr(fieldInfo->interfacePosIndex), builder.getStringAttr(""));
+                location, fieldRefType, interfaceValue, builder.getI32IntegerAttr(vtableIndex), builder.getStringAttr(""));
 
             mlir::Value value =
                 builder.create<mlir_ts::LoadOp>(location, fieldRefType.getElementType(), interfaceSymbolRefValue.getResult());
@@ -4649,16 +4651,17 @@ class MLIRGenImpl
         if (auto nameAttr = id.dyn_cast_or_null<mlir::StringAttr>())
         {
             auto name = nameAttr.getValue();
-            auto methodInfo = interfaceInfo->findMethod(name);
+            auto methodInfo = interfaceInfo->findMethod(name, totalOffset);
             if (methodInfo)
             {
                 assert(methodInfo->interfacePosIndex >= 0);
+                auto vtableIndex = methodInfo->interfacePosIndex + totalOffset;
 
                 auto effectiveFuncType = getBoundFunctionType(methodInfo->funcType);
 
-                auto interfaceSymbolRefValue = builder.create<mlir_ts::InterfaceSymbolRefOp>(
-                    location, effectiveFuncType, interfaceValue, builder.getI32IntegerAttr(methodInfo->interfacePosIndex),
-                    builder.getStringAttr(methodInfo->name));
+                auto interfaceSymbolRefValue = builder.create<mlir_ts::InterfaceSymbolRefOp>(location, effectiveFuncType, interfaceValue,
+                                                                                             builder.getI32IntegerAttr(vtableIndex),
+                                                                                             builder.getStringAttr(methodInfo->name));
 
                 return interfaceSymbolRefValue;
             }
