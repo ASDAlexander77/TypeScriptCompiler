@@ -8717,6 +8717,11 @@ class MLIRGenImpl
                     auto srcInterfaceInfo = getInterfaceByFullName(ifaceType.getName().getValue());
                     assert(srcInterfaceInfo);
                     newInterfaceInfo->extends.push_back({-1, srcInterfaceInfo});
+                    continue;
+                }
+                else if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
+                {
+                    mergeInterfaces(newInterfaceInfo, tupleType);
                 }
             }
 
@@ -8742,25 +8747,13 @@ class MLIRGenImpl
         return interfaceInfo;
     }
 
-    mlir::LogicalResult mergeInterfaces(InterfaceInfo::TypePtr dest, InterfaceInfo::TypePtr src)
+    mlir::LogicalResult mergeInterfaces(InterfaceInfo::TypePtr dest, mlir_ts::TupleType src)
     {
         // TODO: use it to merge with TupleType
-        for (auto &item : src->extends)
+        for (auto &item : src.getFields())
         {
-            dest->extends.push_back(item);
+            dest->fields.push_back({item.id, item.type, dest->getNextVTableMemberIndex()});
         }
-
-        for (auto &item : src->fields)
-        {
-            dest->fields.push_back(item);
-        }
-
-        for (auto &item : src->methods)
-        {
-            dest->methods.push_back(item);
-        }
-
-        llvm_unreachable("not finished, use it as tuple type merger");
 
         return mlir::success();
     }

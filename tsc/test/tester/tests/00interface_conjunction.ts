@@ -11,6 +11,7 @@ interface F2 {
 type t = F1 & F2;
 
 interface t2 extends F1, F2 {
+    c: number;
 }
 
 function main() {
@@ -31,11 +32,12 @@ function main() {
     assert(a.a2);
     assert(a.b2 == 20.0);
 
-    const b: t2 = { a: 10.0, a2: true, b: "Hello", b2: 20.0 };
-    print(b.a, b.a2, b.b, b.b2);
+    const b: t2 = { a: 10.0, a2: true, b: "Hello", b2: 20.0, c: 30.0 };
+    print(b.a, b.a2, b.b, b.b2, b.c);
 
     assert(b.a2);
     assert(b.b2 == 20.0);
+    assert(b.c == 30.0);
 
     print("done.");
 }

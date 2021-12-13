@@ -339,7 +339,7 @@ struct InterfaceInfo
             offset += std::get<1>(extent)->getVTableSize();
         }
 
-        return fields.size() + methods.size();
+        return offset + fields.size() + methods.size();
     }
 
     void recalcOffsets()
