@@ -8,7 +8,7 @@ interface F2 {
     b2: number;
 }
 
-type t = F1 & F2;
+type t = F1 & F2 & { c: number };
 
 interface t2 extends F1, F2 {
     c: number;
@@ -26,11 +26,12 @@ function main() {
 
     assert(f2.b2 == 20.0);
 
-    const a: t = { a: 10.0, a2: true, b: "Hello", b2: 20.0 };
+    const a: t = { a: 10.0, a2: true, b: "Hello", b2: 20.0, c: 30.0 };
     print(a.a, a.a2, a.b, a.b2);
 
     assert(a.a2);
     assert(a.b2 == 20.0);
+    assert(a.c == 30.0);
 
     const b: t2 = { a: 10.0, a2: true, b: "Hello", b2: 20.0, c: 30.0 };
     print(b.a, b.a2, b.b, b.b2, b.c);
