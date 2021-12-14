@@ -8730,6 +8730,28 @@ class MLIRGenImpl
             return newInterfaceInfo->interfaceType;
         }
 
+        if (baseTupleType)
+        {
+            SmallVector<::mlir::typescript::FieldInfo> typesForNewTuple;
+            for (auto type : types)
+            {
+                if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
+                {
+                    for (auto field : tupleType.getFields())
+                    {
+                        typesForNewTuple.push_back(field);
+                    }
+                }
+                else
+                {
+                    llvm_unreachable("not implemented yet");
+                    return getNeverType();
+                }
+            }
+
+            return getTupleType(typesForNewTuple);
+        }
+
         llvm_unreachable("not implemented yet");
     }
 

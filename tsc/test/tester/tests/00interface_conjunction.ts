@@ -14,6 +14,12 @@ interface t2 extends F1, F2 {
     c: number;
 }
 
+type tt = { a: boolean };
+type tt2 = { b: number };
+type tt3 = { c: string };
+
+type r = tt & tt2 & tt3;
+
 function main() {
 
     const f1: F1 = { a: 10.0, a2: true };
@@ -39,6 +45,13 @@ function main() {
     assert(b.a2);
     assert(b.b2 == 20.0);
     assert(b.c == 30.0);
+
+    const c: r = { a: true, b: 10.0, c: "Hello" };
+    print(c.a, c.b, c.c);
+
+    assert(c.a);
+    assert(c.b == 10.0);
+    assert(c.c == "Hello");
 
     print("done.");
 }
