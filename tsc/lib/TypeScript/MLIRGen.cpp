@@ -6750,6 +6750,8 @@ class MLIRGenImpl
                     .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
                         auto interfaceInfo = getInterfaceByFullName(interfaceType.getName().getValue());
                         interfaceInfos.push_back({interfaceInfo, -1, false});
+                        // TODO: it will error
+                        // implementingType->processed = true;
                     })
                     .Default([&](auto type) { llvm_unreachable("not implemented"); });
             }
@@ -7676,10 +7678,10 @@ class MLIRGenImpl
             return InterfaceInfo::TypePtr();
         }
 
-        return mlirGenInterfaceInfo(name, declareInterface);
+        return mlirGenInterfaceInfo(name, false, declareInterface);
     }
 
-    InterfaceInfo::TypePtr mlirGenInterfaceInfo(std::string name, bool &declareInterface)
+    InterfaceInfo::TypePtr mlirGenInterfaceInfo(std::string name, bool forceNew, bool &declareInterface)
     {
         declareInterface = false;
 
@@ -7687,7 +7689,7 @@ class MLIRGenImpl
         auto fullNamePtr = getFullNamespaceName(namePtr);
 
         InterfaceInfo::TypePtr newInterfacePtr;
-        if (fullNameClassesMap.count(fullNamePtr))
+        if (fullNameInterfacesMap.count(fullNamePtr) && !forceNew)
         {
             newInterfacePtr = fullNameInterfacesMap.lookup(fullNamePtr);
             getInterfacesMap().insert({namePtr, newInterfacePtr});
@@ -7722,20 +7724,21 @@ class MLIRGenImpl
             return mlir::success();
         }
 
-        for (auto &implementingType : heritageClause->types)
+        for (auto &extendsType : heritageClause->types)
         {
-            if (implementingType->processed)
+            if (extendsType->processed)
             {
                 continue;
             }
 
-            auto ifaceType = mlirGen(implementingType->expression, genContext);
+            auto ifaceType = mlirGen(extendsType->expression, genContext);
             auto success = false;
             TypeSwitch<mlir::Type>(ifaceType.getType())
                 .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
                     auto interfaceInfo = getInterfaceByFullName(interfaceType.getName().getValue());
                     newInterfacePtr->extends.push_back({-1, interfaceInfo});
                     success = true;
+                    extendsType->processed = true;
                 })
                 .Default([&](auto type) { llvm_unreachable("not implemented"); });
 
@@ -7840,7 +7843,7 @@ class MLIRGenImpl
 
         MLIRCodeLogic mcl(builder);
 
-        if (declareInterface && interfaceMember == SyntaxKind::PropertySignature)
+        if (interfaceMember == SyntaxKind::PropertySignature)
         {
             // property declaration
             auto propertyDeclaration = interfaceMember.as<PropertySignature>();
@@ -7878,7 +7881,10 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
-            fieldInfos.push_back({fieldId, type, newInterfacePtr->getNextVTableMemberIndex()});
+            if (declareInterface || newInterfacePtr->getFieldIndex(fieldId) == -1)
+            {
+                fieldInfos.push_back({fieldId, type, newInterfacePtr->getNextVTableMemberIndex()});
+            }
         }
 
         if (interfaceMember == SyntaxKind::MethodSignature)
@@ -7910,7 +7916,7 @@ class MLIRGenImpl
 
             methodSignature->processed = true;
 
-            if (declareInterface)
+            if (declareInterface || newInterfacePtr->getMethodIndex(methodName) == -1)
             {
                 methodInfos.push_back({methodName, funcType, newInterfacePtr->getNextVTableMemberIndex()});
             }
@@ -8316,6 +8322,13 @@ class MLIRGenImpl
                 return getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext, true);
             }
 
+            if (name == "Readonly")
+            {
+                // TODO: ???
+                auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                return elemnentType;
+            }
+
             if (name == "Array")
             {
                 auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
@@ -8326,6 +8339,18 @@ class MLIRGenImpl
             {
                 auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
                 return getArrayType(elemnentType);
+            }
+
+            if (name == "Awaited")
+            {
+                auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                return elemnentType;
+            }
+
+            if (name == "Promise")
+            {
+                auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                return elemnentType;
             }
         }
 
@@ -8757,14 +8782,11 @@ class MLIRGenImpl
 
     InterfaceInfo::TypePtr newInterfaceType(IntersectionTypeNode intersectionTypeNode)
     {
+        auto declareInterface = false;
         auto newName = MLIRHelper::getAnonymousName(loc_check(intersectionTypeNode), "ifce");
 
         // clone into new interface
-        bool declareInterface;
-        auto interfaceInfo = mlirGenInterfaceInfo(newName, declareInterface);
-
-        // must be new
-        assert(declareInterface);
+        auto interfaceInfo = mlirGenInterfaceInfo(newName, true, declareInterface);
 
         return interfaceInfo;
     }
