@@ -7678,10 +7678,10 @@ class MLIRGenImpl
             return InterfaceInfo::TypePtr();
         }
 
-        return mlirGenInterfaceInfo(name, false, declareInterface);
+        return mlirGenInterfaceInfo(name, declareInterface);
     }
 
-    InterfaceInfo::TypePtr mlirGenInterfaceInfo(std::string name, bool forceNew, bool &declareInterface)
+    InterfaceInfo::TypePtr mlirGenInterfaceInfo(std::string name, bool &declareInterface)
     {
         declareInterface = false;
 
@@ -7689,7 +7689,7 @@ class MLIRGenImpl
         auto fullNamePtr = getFullNamespaceName(namePtr);
 
         InterfaceInfo::TypePtr newInterfacePtr;
-        if (fullNameInterfacesMap.count(fullNamePtr) && !forceNew)
+        if (fullNameInterfacesMap.count(fullNamePtr))
         {
             newInterfacePtr = fullNameInterfacesMap.lookup(fullNamePtr);
             getInterfacesMap().insert({namePtr, newInterfacePtr});
@@ -8732,21 +8732,24 @@ class MLIRGenImpl
         // find base type
         if (baseInterfaceType)
         {
-            auto newInterfaceInfo = newInterfaceType(intersectionTypeNode);
-
-            // merge all interfaces;
-            for (auto type : types)
+            auto declareInterface = false;
+            auto newInterfaceInfo = newInterfaceType(intersectionTypeNode, declareInterface);
+            if (declareInterface)
             {
-                if (auto ifaceType = type.dyn_cast<mlir_ts::InterfaceType>())
+                // merge all interfaces;
+                for (auto type : types)
                 {
-                    auto srcInterfaceInfo = getInterfaceByFullName(ifaceType.getName().getValue());
-                    assert(srcInterfaceInfo);
-                    newInterfaceInfo->extends.push_back({-1, srcInterfaceInfo});
-                    continue;
-                }
-                else if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
-                {
-                    mergeInterfaces(newInterfaceInfo, tupleType);
+                    if (auto ifaceType = type.dyn_cast<mlir_ts::InterfaceType>())
+                    {
+                        auto srcInterfaceInfo = getInterfaceByFullName(ifaceType.getName().getValue());
+                        assert(srcInterfaceInfo);
+                        newInterfaceInfo->extends.push_back({-1, srcInterfaceInfo});
+                        continue;
+                    }
+                    else if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
+                    {
+                        mergeInterfaces(newInterfaceInfo, tupleType);
+                    }
                 }
             }
 
@@ -8780,13 +8783,12 @@ class MLIRGenImpl
         llvm_unreachable("not implemented yet");
     }
 
-    InterfaceInfo::TypePtr newInterfaceType(IntersectionTypeNode intersectionTypeNode)
+    InterfaceInfo::TypePtr newInterfaceType(IntersectionTypeNode intersectionTypeNode, bool &declareInterface)
     {
-        auto declareInterface = false;
         auto newName = MLIRHelper::getAnonymousName(loc_check(intersectionTypeNode), "ifce");
 
         // clone into new interface
-        auto interfaceInfo = mlirGenInterfaceInfo(newName, true, declareInterface);
+        auto interfaceInfo = mlirGenInterfaceInfo(newName, declareInterface);
 
         return interfaceInfo;
     }
