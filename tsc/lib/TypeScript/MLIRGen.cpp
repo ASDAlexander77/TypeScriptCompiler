@@ -3925,6 +3925,10 @@ class MLIRGenImpl
                                                 mlir::ValueRange{thisAccessorOp.thisVal(), savingValue});
             savingValue = callRes.getResult(0);
         }
+        else if (auto createBoundFunction = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
+        {
+            return mlirGenSaveLogicOneItem(location, createBoundFunction.func(), rightExpressionValue, genContext);
+        }
         else
         {
             LLVM_DEBUG(dbgs() << "\n!! left expr.: " << leftExpressionValueBeforeCast << " ...\n";);
@@ -5108,6 +5112,7 @@ class MLIRGenImpl
             typeExpression == SyntaxKind::PropertyAccessExpression)
         {
             type = getTypeByTypeName(typeExpression, genContext);
+            type = mth.convertConstTupleTypeToTupleType(type);
 
             assert(type);
 
@@ -5127,6 +5132,7 @@ class MLIRGenImpl
             auto elementAccessExpression = typeExpression.as<ElementAccessExpression>();
             typeExpression = elementAccessExpression->expression;
             type = getTypeByTypeName(typeExpression, genContext);
+            type = mth.convertConstTupleTypeToTupleType(type);
 
             assert(type);
 
@@ -7124,6 +7130,7 @@ class MLIRGenImpl
                                                                         InterfaceInfo::TypePtr newInterfacePtr,
                                                                         const GenContext &genContext)
     {
+        // TODO: I think we do not need VTable for interface (all of them is shift of field number 0, 1, 2, 3, 4... )
         MLIRTypeHelper mth(builder.getContext());
         MLIRCodeLogic mcl(builder);
 
@@ -8147,11 +8154,13 @@ class MLIRGenImpl
     {
         MLIRTypeHelper mth(builder.getContext());
 
+        auto tupleType = mth.convertConstTupleTypeToTupleType(tupleTypeIn);
+
         // TODO: finish it
         // convert Tuple to Object
-        auto objType = mlir_ts::ObjectType::get(tupleTypeIn);
+        auto objType = mlir_ts::ObjectType::get(tupleType);
 
-        auto valueAddr = builder.create<mlir_ts::NewOp>(location, mlir_ts::ValueRefType::get(tupleTypeIn), builder.getBoolAttr(false));
+        auto valueAddr = builder.create<mlir_ts::NewOp>(location, mlir_ts::ValueRefType::get(tupleType), builder.getBoolAttr(false));
         builder.create<mlir_ts::StoreOp>(location, in, valueAddr);
         auto inCasted = builder.create<mlir_ts::CastOp>(location, objType, valueAddr);
 

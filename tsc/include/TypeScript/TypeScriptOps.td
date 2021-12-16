@@ -1211,7 +1211,7 @@ def TypeScript_CreateBoundFunctionOp : TypeScript_Op<"CreateBoundFunction"> {
     TypeScript_BoundFunctionLike:$result
   );
 
-  let assemblyFormat = "$thisVal `:``:` $func `:` type($thisVal) `,` type($func) attr-dict `->` type($result)";
+  let assemblyFormat = "$thisVal `,` $func `:` type($thisVal) `,` type($func) attr-dict `->` type($result)";
 }
 
 def TypeScript_GetThisOp : TypeScript_Op<"GetThis"> {
