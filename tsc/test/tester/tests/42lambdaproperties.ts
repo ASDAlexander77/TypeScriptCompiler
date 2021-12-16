@@ -23,7 +23,7 @@ namespace LambdaProperty {
         */
 
         x.bar = () => {
-            // TODO: finish itr
+            // TODO: finish it, we can't convert BoundMethod to method, x is captured, not this parameter
             return 3.0//x.y
         }
 
