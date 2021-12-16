@@ -3925,10 +3925,13 @@ class MLIRGenImpl
                                                 mlir::ValueRange{thisAccessorOp.thisVal(), savingValue});
             savingValue = callRes.getResult(0);
         }
+        /*
         else if (auto createBoundFunction = leftExpressionValueBeforeCast.getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
         {
+            // TODO: i should not allow to change interface
             return mlirGenSaveLogicOneItem(location, createBoundFunction.func(), rightExpressionValue, genContext);
         }
+        */
         else
         {
             LLVM_DEBUG(dbgs() << "\n!! left expr.: " << leftExpressionValueBeforeCast << " ...\n";);

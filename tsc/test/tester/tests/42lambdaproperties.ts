@@ -22,10 +22,12 @@ namespace LambdaProperty {
         }
         */
 
+        /*
         x.bar = () => {
             // TODO: finish it, we can't convert BoundMethod to method, x is captured, not this parameter
             return 3.0//x.y
         }
+        */
 
         assert(x.bar() == 3);
         assert(x.baz(42) == 43);
