@@ -7129,21 +7129,15 @@ class MLIRGenImpl
         return concat(newInterfacePtr->fullName, ss.str().c_str(), VTABLE_NAME);
     }
 
-    mlir::LogicalResult mlirGenObjectVirtualTableDefinitionForInterface(mlir::Location location, mlir_ts::ObjectType objectType,
-                                                                        InterfaceInfo::TypePtr newInterfacePtr,
-                                                                        const GenContext &genContext)
+    mlir::LogicalResult getInterfaceVirtualTableForObject(mlir::Location location, mlir_ts::TupleType tupleStorageType,
+                                                          InterfaceInfo::TypePtr newInterfacePtr,
+                                                          SmallVector<VirtualMethodOrFieldInfo> &virtualTable, const GenContext &genContext)
     {
-        // TODO: I think we do not need VTable for interface (all of them is shift of field number 0, 1, 2, 3, 4... )
         MLIRTypeHelper mth(builder.getContext());
-        MLIRCodeLogic mcl(builder);
 
         MethodInfo emptyMethod;
         mlir_ts::FieldInfo emptyFieldInfo;
 
-        auto storeType = objectType.getStorageType();
-        auto tupleStorageType = mth.convertConstTupleTypeToTupleType(storeType).cast<mlir_ts::TupleType>();
-
-        llvm::SmallVector<VirtualMethodOrFieldInfo> virtualTable;
         auto result = newInterfacePtr->getVirtualTable(
             virtualTable,
             [&](mlir::Attribute id, mlir::Type fieldType) -> mlir_ts::FieldInfo {
@@ -7174,6 +7168,22 @@ class MLIRGenImpl
             },
             [&](std::string name, mlir::FunctionType funcType) -> MethodInfo & { llvm_unreachable("not implemented yet"); });
 
+        return result;
+    }
+
+    mlir::LogicalResult mlirGenObjectVirtualTableDefinitionForInterface(mlir::Location location, mlir_ts::ObjectType objectType,
+                                                                        InterfaceInfo::TypePtr newInterfacePtr,
+                                                                        const GenContext &genContext)
+    {
+        // TODO: I think we do not need VTable for interface (all of them is shift of field number 0, 1, 2, 3, 4... )
+        MLIRTypeHelper mth(builder.getContext());
+        MLIRCodeLogic mcl(builder);
+
+        auto storeType = objectType.getStorageType();
+        auto tupleStorageType = mth.convertConstTupleTypeToTupleType(storeType).cast<mlir_ts::TupleType>();
+
+        SmallVector<VirtualMethodOrFieldInfo> virtualTable;
+        auto result = getInterfaceVirtualTableForObject(location, tupleStorageType, newInterfacePtr, virtualTable, genContext);
         if (mlir::failed(result))
         {
             return result;
@@ -7185,8 +7195,6 @@ class MLIRGenImpl
             location, fullClassInterfaceVTableFieldName, true, VariableClass::Var,
             [&]() {
                 // build vtable from names of methods
-
-                MLIRCodeLogic mcl(builder);
 
                 auto virtTuple = getVirtualTableType(virtualTable);
 
