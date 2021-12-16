@@ -22,7 +22,12 @@ namespace LambdaProperty {
         }
         */
 
-        //assert(x.bar() == 3);
+        x.bar = () => {
+            // TODO: finish itr
+            return 3.0//x.y
+        }
+
+        assert(x.bar() == 3);
         assert(x.baz(42) == 43);
         x = null // release memory
     }
