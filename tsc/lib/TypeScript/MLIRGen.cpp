@@ -1259,7 +1259,8 @@ class MLIRGenImpl
             params.push_back(std::make_shared<FunctionParamDOM>(THIS_NAME, genContext.thisType, loc(parametersContextAST)));
         }
 
-        if (!isStatic && genContext.thisType && parametersContextAST == SyntaxKind::FunctionExpression)
+        if (!isStatic && genContext.thisType &&
+            (parametersContextAST == SyntaxKind::FunctionExpression || parametersContextAST == SyntaxKind::ArrowFunction))
         {
             params.push_back(std::make_shared<FunctionParamDOM>(THIS_NAME, genContext.thisType, loc(parametersContextAST)));
         }
@@ -5491,6 +5492,8 @@ class MLIRGenImpl
 
     mlir::Value mlirGen(ts::ObjectLiteralExpression objectLiteral, const GenContext &genContext)
     {
+        // TODO: replace all Opaque with ThisType
+
         MLIRCodeLogic mcl(builder);
         MLIRTypeHelper mth(builder.getContext());
 
@@ -5669,7 +5672,8 @@ class MLIRGenImpl
             if (item == SyntaxKind::PropertyAssignment)
             {
                 auto propertyAssignment = item.as<PropertyAssignment>();
-                if (propertyAssignment->initializer == SyntaxKind::FunctionExpression)
+                if (propertyAssignment->initializer == SyntaxKind::FunctionExpression ||
+                    propertyAssignment->initializer == SyntaxKind::ArrowFunction)
                 {
                     continue;
                 }
@@ -5683,7 +5687,8 @@ class MLIRGenImpl
             else if (item == SyntaxKind::ShorthandPropertyAssignment)
             {
                 auto shorthandPropertyAssignment = item.as<ShorthandPropertyAssignment>();
-                if (shorthandPropertyAssignment->initializer == SyntaxKind::FunctionExpression)
+                if (shorthandPropertyAssignment->initializer == SyntaxKind::FunctionExpression ||
+                    shorthandPropertyAssignment->initializer == SyntaxKind::ArrowFunction)
                 {
                     continue;
                 }
@@ -5715,7 +5720,8 @@ class MLIRGenImpl
             if (item == SyntaxKind::PropertyAssignment)
             {
                 auto propertyAssignment = item.as<PropertyAssignment>();
-                if (propertyAssignment->initializer != SyntaxKind::FunctionExpression)
+                if (propertyAssignment->initializer != SyntaxKind::FunctionExpression &&
+                    propertyAssignment->initializer != SyntaxKind::ArrowFunction)
                 {
                     continue;
                 }
@@ -5727,7 +5733,8 @@ class MLIRGenImpl
             else if (item == SyntaxKind::ShorthandPropertyAssignment)
             {
                 auto shorthandPropertyAssignment = item.as<ShorthandPropertyAssignment>();
-                if (shorthandPropertyAssignment->initializer != SyntaxKind::FunctionExpression)
+                if (shorthandPropertyAssignment->initializer != SyntaxKind::FunctionExpression &&
+                    shorthandPropertyAssignment->initializer != SyntaxKind::ArrowFunction)
                 {
                     continue;
                 }
@@ -5802,7 +5809,8 @@ class MLIRGenImpl
             if (item == SyntaxKind::PropertyAssignment)
             {
                 auto propertyAssignment = item.as<PropertyAssignment>();
-                if (propertyAssignment->initializer != SyntaxKind::FunctionExpression)
+                if (propertyAssignment->initializer != SyntaxKind::FunctionExpression &&
+                    propertyAssignment->initializer != SyntaxKind::ArrowFunction)
                 {
                     continue;
                 }
@@ -5813,7 +5821,8 @@ class MLIRGenImpl
             else if (item == SyntaxKind::ShorthandPropertyAssignment)
             {
                 auto shorthandPropertyAssignment = item.as<ShorthandPropertyAssignment>();
-                if (shorthandPropertyAssignment->initializer != SyntaxKind::FunctionExpression)
+                if (shorthandPropertyAssignment->initializer != SyntaxKind::FunctionExpression &&
+                    shorthandPropertyAssignment->initializer != SyntaxKind::ArrowFunction)
                 {
                     continue;
                 }
@@ -7138,8 +7147,8 @@ class MLIRGenImpl
                             : fieldType == foundField.type;
                     if (!test)
                     {
-                        emitError(location) << "field '" << id << "' not matching type: '" << fieldType << "' and '" << foundField.type
-                                            << "' in interface '" << newInterfacePtr->fullName << "' for object '" << tupleStorageType
+                        emitError(location) << "field " << id << " not matching type: " << fieldType << " and " << foundField.type
+                                            << " in interface '" << newInterfacePtr->fullName << "' for object '" << tupleStorageType
                                             << "'";
 
                         return emptyFieldInfo;
@@ -7148,7 +7157,7 @@ class MLIRGenImpl
                     return foundField;
                 }
 
-                emitError(location) << "field can't be found '" << id << "' for interface '" << newInterfacePtr->fullName << "' in object '"
+                emitError(location) << "field can't be found " << id << " for interface '" << newInterfacePtr->fullName << "' in object '"
                                     << tupleStorageType << "'";
 
                 return emptyFieldInfo;
