@@ -29,7 +29,7 @@ namespace LambdaProperty {
         }
         */
 
-        assert(x.bar() == 3);
+        //assert(x.bar() == 3);
         assert(x.baz(42) == 43);
         x = null // release memory
     }
