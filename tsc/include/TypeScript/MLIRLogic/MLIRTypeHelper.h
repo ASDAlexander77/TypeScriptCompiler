@@ -504,6 +504,13 @@ class MLIRTypeHelper
             {
                 return isCastableTypesLogic(constTuple, matchTuple);
             }
+
+            /*
+            // TODO: finish it
+            if (auto ifaceType = destType.dyn_cast_or_null<mlir_ts::InterfaceType>())
+            {
+            }
+            */
         }
 
         if (auto tuple = srcType.dyn_cast_or_null<mlir_ts::TupleType>())

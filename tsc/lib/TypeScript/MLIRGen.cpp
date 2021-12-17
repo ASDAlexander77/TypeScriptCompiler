@@ -7129,9 +7129,16 @@ class MLIRGenImpl
         return concat(newInterfacePtr->fullName, ss.str().c_str(), VTABLE_NAME);
     }
 
+    mlir::LogicalResult canCastTupleToInterface(mlir_ts::TupleType tupleStorageType, InterfaceInfo::TypePtr newInterfacePtr)
+    {
+        SmallVector<VirtualMethodOrFieldInfo> virtualTable;
+        auto location = loc(TextRange());
+        return getInterfaceVirtualTableForObject(location, tupleStorageType, newInterfacePtr, virtualTable);
+    }
+
     mlir::LogicalResult getInterfaceVirtualTableForObject(mlir::Location location, mlir_ts::TupleType tupleStorageType,
                                                           InterfaceInfo::TypePtr newInterfacePtr,
-                                                          SmallVector<VirtualMethodOrFieldInfo> &virtualTable, const GenContext &genContext)
+                                                          SmallVector<VirtualMethodOrFieldInfo> &virtualTable)
     {
         MLIRTypeHelper mth(builder.getContext());
 
@@ -7183,7 +7190,7 @@ class MLIRGenImpl
         auto tupleStorageType = mth.convertConstTupleTypeToTupleType(storeType).cast<mlir_ts::TupleType>();
 
         SmallVector<VirtualMethodOrFieldInfo> virtualTable;
-        auto result = getInterfaceVirtualTableForObject(location, tupleStorageType, newInterfacePtr, virtualTable, genContext);
+        auto result = getInterfaceVirtualTableForObject(location, tupleStorageType, newInterfacePtr, virtualTable);
         if (mlir::failed(result))
         {
             return result;
@@ -9047,7 +9054,7 @@ class MLIRGenImpl
     {
         if (!loc)
         {
-            return mlir::FileLineColLoc::get(builder.getContext(), builder.getIdentifier(fileName), 1, 1);
+            return mlir::UnknownLoc::get(builder.getContext());
         }
 
         // return builder.getFileLineColLoc(builder.getIdentifier(fileName), loc->pos, loc->_end);
