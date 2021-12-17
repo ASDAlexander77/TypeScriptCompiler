@@ -7144,10 +7144,11 @@ class MLIRGenImpl
 
         MethodInfo emptyMethod;
         mlir_ts::FieldInfo emptyFieldInfo;
+        mlir_ts::FieldInfo missingFieldInfo;
 
         auto result = newInterfacePtr->getVirtualTable(
             virtualTable,
-            [&](mlir::Attribute id, mlir::Type fieldType) -> mlir_ts::FieldInfo {
+            [&](mlir::Attribute id, mlir::Type fieldType, bool isConditional) -> mlir_ts::FieldInfo {
                 auto foundIndex = tupleStorageType.getIndex(id);
                 if (foundIndex >= 0)
                 {
@@ -7168,12 +7169,17 @@ class MLIRGenImpl
                     return foundField;
                 }
 
-                emitError(location) << "field can't be found " << id << " for interface '" << newInterfacePtr->fullName << "' in object '"
-                                    << tupleStorageType << "'";
+                if (!isConditional)
+                {
+                    emitError(location) << "field can't be found " << id << " for interface '" << newInterfacePtr->fullName
+                                        << "' in object '" << tupleStorageType << "'";
+                }
 
                 return emptyFieldInfo;
             },
-            [&](std::string name, mlir::FunctionType funcType) -> MethodInfo & { llvm_unreachable("not implemented yet"); });
+            [&](std::string name, mlir::FunctionType funcType, bool isConditional) -> MethodInfo & {
+                llvm_unreachable("not implemented yet");
+            });
 
         return result;
     }
@@ -7182,7 +7188,6 @@ class MLIRGenImpl
                                                                         InterfaceInfo::TypePtr newInterfacePtr,
                                                                         const GenContext &genContext)
     {
-        // TODO: I think we do not need VTable for interface (all of them is shift of field number 0, 1, 2, 3, 4... )
         MLIRTypeHelper mth(builder.getContext());
         MLIRCodeLogic mcl(builder);
 
@@ -7212,25 +7217,38 @@ class MLIRGenImpl
                     if (methodOrField.isField)
                     {
                         auto nullObj = builder.create<mlir_ts::NullOp>(location, getNullType());
-                        auto objectNull = cast(location, objectType, nullObj, genContext);
-                        auto fieldValue = mlirGenPropertyAccessExpression(location, objectNull, methodOrField.fieldInfo.id, genContext);
-                        auto fieldRef = mcl.GetReferenceOfLoadOp(fieldValue);
-
-                        LLVM_DEBUG(llvm::dbgs() << "\n!! vtable field: " << methodOrField.fieldInfo.id
-                                                << " type: " << methodOrField.fieldInfo.type << " provided data: " << fieldRef << "\n";);
-
-                        if (fieldRef.getType().isa<mlir_ts::BoundRefType>())
+                        if (!methodOrField.isMissing)
                         {
-                            fieldRef = cast(location, mlir_ts::RefType::get(methodOrField.fieldInfo.type), fieldRef, genContext);
+                            auto objectNull = cast(location, objectType, nullObj, genContext);
+                            auto fieldValue = mlirGenPropertyAccessExpression(location, objectNull, methodOrField.fieldInfo.id, genContext);
+                            assert(fieldValue);
+                            auto fieldRef = mcl.GetReferenceOfLoadOp(fieldValue);
+
+                            LLVM_DEBUG(llvm::dbgs() << "\n!! vtable field: " << methodOrField.fieldInfo.id << " type: "
+                                                    << methodOrField.fieldInfo.type << " provided data: " << fieldRef << "\n";);
+
+                            if (fieldRef.getType().isa<mlir_ts::BoundRefType>())
+                            {
+                                fieldRef = cast(location, mlir_ts::RefType::get(methodOrField.fieldInfo.type), fieldRef, genContext);
+                            }
+                            else
+                            {
+                                assert(fieldRef.getType().cast<mlir_ts::RefType>().getElementType() == methodOrField.fieldInfo.type);
+                            }
+
+                            // insert &(null)->field
+                            vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
+                                location, virtTuple, fieldRef, vtableValue, builder.getArrayAttr(mth.getStructIndexAttrValue(fieldIndex)));
                         }
                         else
                         {
-                            assert(fieldRef.getType().cast<mlir_ts::RefType>().getElementType() == methodOrField.fieldInfo.type);
+                            // null value, as missing field/method
+                            auto nullObj = builder.create<mlir_ts::NullOp>(location, getNullType());
+                            auto castedNull = cast(location, mlir_ts::RefType::get(methodOrField.fieldInfo.type), nullObj, genContext);
+                            vtableValue =
+                                builder.create<mlir_ts::InsertPropertyOp>(location, virtTuple, castedNull, vtableValue,
+                                                                          builder.getArrayAttr(mth.getStructIndexAttrValue(fieldIndex)));
                         }
-
-                        // insert &(null)->field
-                        vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
-                            location, virtTuple, fieldRef, vtableValue, builder.getArrayAttr(mth.getStructIndexAttrValue(fieldIndex)));
                     }
                     else
                     {
@@ -7271,25 +7289,32 @@ class MLIRGenImpl
         llvm::SmallVector<VirtualMethodOrFieldInfo> virtualTable;
         auto result = newInterfacePtr->getVirtualTable(
             virtualTable,
-            [&](mlir::Attribute id, mlir::Type fieldType) -> mlir_ts::FieldInfo {
+            [&](mlir::Attribute id, mlir::Type fieldType, bool isConditional) -> mlir_ts::FieldInfo {
                 auto found = false;
                 auto foundField = newClassPtr->findField(id, found);
                 if (!found || fieldType != foundField.type)
                 {
-                    emitError(location) << "field type not matching for '" << id << "' for interface '" << newInterfacePtr->fullName
-                                        << "' in class '" << newClassPtr->fullName << "'";
+                    if (!found && !isConditional || found)
+                    {
+                        emitError(location) << "field type not matching for '" << id << "' for interface '" << newInterfacePtr->fullName
+                                            << "' in class '" << newClassPtr->fullName << "'";
+                    }
 
                     return emptyFieldInfo;
                 }
 
                 return foundField;
             },
-            [&](std::string name, mlir::FunctionType funcType) -> MethodInfo & {
+            [&](std::string name, mlir::FunctionType funcType, bool isConditional) -> MethodInfo & {
                 auto foundMethodPtr = newClassPtr->findMethod(name);
                 if (!foundMethodPtr)
                 {
-                    emitError(location) << "can't find method '" << name << "' for interface '" << newInterfacePtr->fullName
-                                        << "' in class '" << newClassPtr->fullName << "'";
+                    if (!isConditional)
+                    {
+                        emitError(location) << "can't find method '" << name << "' for interface '" << newInterfacePtr->fullName
+                                            << "' in class '" << newClassPtr->fullName << "'";
+                    }
+
                     return emptyMethod;
                 }
 
@@ -7597,7 +7622,7 @@ class MLIRGenImpl
 
             if (newClassPtr->getMethodIndex(methodName) < 0)
             {
-                methodInfos.push_back({methodName, funcOp, isStatic, isAbstract || isVirtual, -1});
+                methodInfos.push_back({methodName, funcOp.getType(), funcOp, isStatic, isAbstract || isVirtual, -1});
             }
 
             if (propertyName.size() > 0)
@@ -7880,9 +7905,10 @@ class MLIRGenImpl
         if (interfaceMember == SyntaxKind::PropertySignature)
         {
             // property declaration
-            auto propertyDeclaration = interfaceMember.as<PropertySignature>();
+            auto propertySignature = interfaceMember.as<PropertySignature>();
+            auto isConditional = !!propertySignature->questionToken;
 
-            auto memberName = MLIRHelper::getName(propertyDeclaration->name);
+            auto memberName = MLIRHelper::getName(propertySignature->name);
             if (memberName.empty())
             {
                 llvm_unreachable("not implemented");
@@ -7892,7 +7918,7 @@ class MLIRGenImpl
             memberNamePtr = StringRef(memberName).copy(stringAllocator);
             fieldId = mcl.TupleFieldName(memberNamePtr);
 
-            auto typeAndInit = getTypeAndInit(propertyDeclaration, genContext);
+            auto typeAndInit = getTypeAndInit(propertySignature, genContext);
             type = typeAndInit.first;
 
             // fix type for fields with FuncType
@@ -7917,13 +7943,15 @@ class MLIRGenImpl
 
             if (declareInterface || newInterfacePtr->getFieldIndex(fieldId) == -1)
             {
-                fieldInfos.push_back({fieldId, type, newInterfacePtr->getNextVTableMemberIndex()});
+                fieldInfos.push_back({fieldId, type, isConditional, newInterfacePtr->getNextVTableMemberIndex()});
             }
         }
 
         if (interfaceMember == SyntaxKind::MethodSignature)
         {
             auto methodSignature = interfaceMember.as<MethodSignature>();
+            auto isConditional = !!methodSignature->questionToken;
+
             std::string methodName;
             std::string propertyName;
             getMethodNameOrPropertyName(methodSignature, methodName, propertyName);
@@ -7952,7 +7980,7 @@ class MLIRGenImpl
 
             if (declareInterface || newInterfacePtr->getMethodIndex(methodName) == -1)
             {
-                methodInfos.push_back({methodName, funcType, newInterfacePtr->getNextVTableMemberIndex()});
+                methodInfos.push_back({methodName, funcType, isConditional, newInterfacePtr->getNextVTableMemberIndex()});
             }
         }
 
@@ -8834,7 +8862,7 @@ class MLIRGenImpl
         // TODO: use it to merge with TupleType
         for (auto &item : src.getFields())
         {
-            dest->fields.push_back({item.id, item.type, dest->getNextVTableMemberIndex()});
+            dest->fields.push_back({item.id, item.type, false, dest->getNextVTableMemberIndex()});
         }
 
         return mlir::success();

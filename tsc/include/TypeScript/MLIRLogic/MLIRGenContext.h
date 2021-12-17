@@ -154,6 +154,7 @@ struct StaticFieldInfo
 struct MethodInfo
 {
     std::string name;
+    mlir::FunctionType funcType;
     mlir_ts::FuncOp funcOp;
     bool isStatic;
     bool isVirtual;
@@ -181,6 +182,7 @@ struct InterfaceFieldInfo
 {
     mlir::Attribute id;
     mlir::Type type;
+    bool isConditional;
     int interfacePosIndex;
 };
 
@@ -188,22 +190,32 @@ struct InterfaceMethodInfo
 {
     std::string name;
     mlir::FunctionType funcType;
+    bool isConditional;
     int interfacePosIndex;
 };
 
 struct VirtualMethodOrFieldInfo
 {
-    VirtualMethodOrFieldInfo(MethodInfo methodInfo) : methodInfo(methodInfo), isField(false)
+    VirtualMethodOrFieldInfo(MethodInfo methodInfo) : methodInfo(methodInfo), isField(false), isMissing(false)
     {
     }
 
-    VirtualMethodOrFieldInfo(mlir_ts::FieldInfo fieldInfo) : fieldInfo(fieldInfo), isField(true)
+    VirtualMethodOrFieldInfo(mlir_ts::FieldInfo fieldInfo) : fieldInfo(fieldInfo), isField(true), isMissing(false)
+    {
+    }
+
+    VirtualMethodOrFieldInfo(MethodInfo methodInfo, bool isMissing) : methodInfo(methodInfo), isField(false), isMissing(isMissing)
+    {
+    }
+
+    VirtualMethodOrFieldInfo(mlir_ts::FieldInfo fieldInfo, bool isMissing) : fieldInfo(fieldInfo), isField(true), isMissing(isMissing)
     {
     }
 
     MethodInfo methodInfo;
     mlir_ts::FieldInfo fieldInfo;
     bool isField;
+    bool isMissing;
 };
 
 struct InterfaceInfo
@@ -229,8 +241,8 @@ struct InterfaceInfo
     }
 
     mlir::LogicalResult getVirtualTable(llvm::SmallVector<VirtualMethodOrFieldInfo> &vtable,
-                                        std::function<mlir_ts::FieldInfo(mlir::Attribute, mlir::Type)> resolveField,
-                                        std::function<MethodInfo &(std::string, mlir::FunctionType)> resolveMethod)
+                                        std::function<mlir_ts::FieldInfo(mlir::Attribute, mlir::Type, bool)> resolveField,
+                                        std::function<MethodInfo &(std::string, mlir::FunctionType, bool)> resolveMethod)
     {
         for (auto &extent : extends)
         {
@@ -243,24 +255,48 @@ struct InterfaceInfo
         // do vtable for current
         for (auto &method : methods)
         {
-            auto &classMethodInfo = resolveMethod(method.name, method.funcType);
+            auto &classMethodInfo = resolveMethod(method.name, method.funcType, method.isConditional);
             if (classMethodInfo.name.empty())
             {
-                return mlir::failure();
+                if (method.isConditional)
+                {
+                    MethodInfo missingMethod;
+                    missingMethod.name = method.name;
+                    missingMethod.funcType = method.funcType;
+                    vtable.push_back({missingMethod, true});
+                }
+                else
+                {
+                    return mlir::failure();
+                }
             }
-
-            vtable.push_back({classMethodInfo});
+            else
+            {
+                vtable.push_back({classMethodInfo});
+            }
         }
 
         for (auto &field : fields)
         {
-            auto fieldInfo = resolveField(field.id, field.type);
+            auto fieldInfo = resolveField(field.id, field.type, field.isConditional);
             if (!fieldInfo.id)
             {
-                return mlir::failure();
+                if (field.isConditional)
+                {
+                    mlir_ts::FieldInfo missingField;
+                    missingField.id = field.id;
+                    missingField.type = field.type;
+                    vtable.push_back({missingField, true});
+                }
+                else
+                {
+                    return mlir::failure();
+                }
             }
-
-            vtable.push_back({fieldInfo});
+            else
+            {
+                vtable.push_back({fieldInfo});
+            }
         }
 
         return mlir::success();
