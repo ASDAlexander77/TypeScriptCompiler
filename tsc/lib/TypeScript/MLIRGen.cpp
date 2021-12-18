@@ -4640,10 +4640,21 @@ class MLIRGenImpl
             auto fieldRefType = mlir_ts::RefType::get(fieldInfo->type);
 
             auto interfaceSymbolRefValue = builder.create<mlir_ts::InterfaceSymbolRefOp>(
-                location, fieldRefType, interfaceValue, builder.getI32IntegerAttr(vtableIndex), builder.getStringAttr(""));
+                location, fieldRefType, interfaceValue, builder.getI32IntegerAttr(vtableIndex), builder.getStringAttr(""),
+                builder.getBoolAttr(fieldInfo->isConditional));
 
-            mlir::Value value =
-                builder.create<mlir_ts::LoadOp>(location, fieldRefType.getElementType(), interfaceSymbolRefValue.getResult());
+            mlir::Value value;
+            if (!fieldInfo->isConditional)
+            {
+                value = builder.create<mlir_ts::LoadOp>(location, fieldRefType.getElementType(), interfaceSymbolRefValue.getResult());
+            }
+            else
+            {
+                auto actualType = fieldRefType.getElementType().isa<mlir_ts::OptionalType>()
+                                      ? fieldRefType.getElementType()
+                                      : mlir_ts::OptionalType::get(fieldRefType.getElementType());
+                value = builder.create<mlir_ts::LoadOp>(location, actualType, interfaceSymbolRefValue.getResult());
+            }
 
             // if it is FuncType, we need to create BoundMethod again
             if (auto funcType = fieldInfo->type.dyn_cast<mlir::FunctionType>())
@@ -4667,9 +4678,9 @@ class MLIRGenImpl
 
                 auto effectiveFuncType = getBoundFunctionType(methodInfo->funcType);
 
-                auto interfaceSymbolRefValue = builder.create<mlir_ts::InterfaceSymbolRefOp>(location, effectiveFuncType, interfaceValue,
-                                                                                             builder.getI32IntegerAttr(vtableIndex),
-                                                                                             builder.getStringAttr(methodInfo->name));
+                auto interfaceSymbolRefValue = builder.create<mlir_ts::InterfaceSymbolRefOp>(
+                    location, effectiveFuncType, interfaceValue, builder.getI32IntegerAttr(vtableIndex),
+                    builder.getStringAttr(methodInfo->name), builder.getBoolAttr(methodInfo->isConditional));
 
                 return interfaceSymbolRefValue;
             }

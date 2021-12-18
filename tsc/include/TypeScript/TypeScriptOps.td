@@ -168,12 +168,12 @@ def InterfaceSymbolRefOp : TypeScript_Op<"InterfaceSymbolRef",
     [NoSideEffect]> {
   let summary = "symbol reference as to interface member";
 
-  let arguments = (ins TypeScript_Interface:$interfaceVal, I32Attr:$index, StrAttr:$identifier);
+  let arguments = (ins TypeScript_Interface:$interfaceVal, I32Attr:$index, StrAttr:$identifier, OptionalAttr<BoolAttr>:$optional);
   let results = (outs TypeScript_AnyRefOrCallable:$funcOrFieldReference);
 
   let builders = [
     OpBuilder<(ins "Value":$interfaceVal, "IntegerAttr":$index, "StringAttr":$identifier),
-    [{ build($_builder, $_state, identifier.getType(), interfaceVal, index, identifier); }]>];
+    [{ build($_builder, $_state, identifier.getType(), interfaceVal, index, identifier, $_builder.getBoolAttr(false)); }]>];
 
   let extraClassDeclaration = [{
     Attribute getValue() { return (*this)->getAttr("identifier"); }
