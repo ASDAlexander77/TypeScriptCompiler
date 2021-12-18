@@ -7243,8 +7243,9 @@ class MLIRGenImpl
                         else
                         {
                             // null value, as missing field/method
-                            auto nullObj = builder.create<mlir_ts::NullOp>(location, getNullType());
-                            auto castedNull = cast(location, mlir_ts::RefType::get(methodOrField.fieldInfo.type), nullObj, genContext);
+                            // auto nullObj = builder.create<mlir_ts::NullOp>(location, getNullType());
+                            auto negative1 = builder.create<mlir_ts::ConstantOp>(location, builder.getI64Type(), mth.getI64AttrValue(-1));
+                            auto castedNull = cast(location, mlir_ts::RefType::get(methodOrField.fieldInfo.type), negative1, genContext);
                             vtableValue =
                                 builder.create<mlir_ts::InsertPropertyOp>(location, virtTuple, castedNull, vtableValue,
                                                                           builder.getArrayAttr(mth.getStructIndexAttrValue(fieldIndex)));

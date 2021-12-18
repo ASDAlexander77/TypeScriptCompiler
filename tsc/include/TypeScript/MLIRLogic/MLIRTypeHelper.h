@@ -117,6 +117,11 @@ class MLIRTypeHelper
         return mlir::IntegerAttr::get(getI32Type(), mlir::APInt(32, value));
     }
 
+    mlir::IntegerAttr getI64AttrValue(int64_t value)
+    {
+        return mlir::IntegerAttr::get(getI64Type(), mlir::APInt(64, value));
+    }
+
     mlir::Type getStructIndexType()
     {
         return getI32Type();
