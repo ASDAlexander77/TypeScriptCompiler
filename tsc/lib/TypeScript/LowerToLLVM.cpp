@@ -3272,6 +3272,10 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
         TypeConverterHelper tch(getTypeConverter());
         CodeLogicHelper clh(interfaceSymbolRefOp, rewriter);
 
+        auto fieldLLVMTypeRef = tch.convertType(interfaceSymbolRefOp.getType());
+
+        auto isOptional = interfaceSymbolRefOp.optional().hasValue() && interfaceSymbolRefOp.optional().getValue();
+
         auto vtable = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), transformed.interfaceVal(),
                                                             clh.getStructIndexAttr(DATA_VALUE_INDEX));
         auto thisVal = rewriter.create<LLVM::ExtractValueOp>(loc, th.getI8PtrType(), transformed.interfaceVal(),
@@ -3289,15 +3293,43 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
         }
         else
         {
-            // BoundRef
-            auto p1 = rewriter.create<LLVM::PtrToIntOp>(loc, th.getIndexType(), thisVal);
-            auto p2 = rewriter.create<LLVM::PtrToIntOp>(loc, th.getIndexType(), methodOrFieldPtr);
-            auto padded = rewriter.create<LLVM::AddOp>(loc, th.getIndexType(), p1, p2);
-            auto typedPtr = rewriter.create<LLVM::IntToPtrOp>(loc, tch.convertType(interfaceSymbolRefOp.getType()), padded);
+            auto calcFieldTotalAddrFunc = [&](OpBuilder &builder, Location location) -> mlir::Value {
+                // BoundRef
+                auto p1 = rewriter.create<LLVM::PtrToIntOp>(loc, th.getIndexType(), thisVal);
+                auto p2 = rewriter.create<LLVM::PtrToIntOp>(loc, th.getIndexType(), methodOrFieldPtr);
+                auto padded = rewriter.create<LLVM::AddOp>(loc, th.getIndexType(), p1, p2);
+                auto typedPtr = rewriter.create<LLVM::IntToPtrOp>(loc, fieldLLVMTypeRef, padded);
 
-            // no need to BoundRef
-            // auto boundRefVal = rewriter.create<mlir_ts::CreateBoundRefOp>(loc, thisVal, typedPtr);
-            rewriter.replaceOp(interfaceSymbolRefOp, ValueRange{typedPtr});
+                // no need to BoundRef
+                // auto boundRefVal = rewriter.create<mlir_ts::CreateBoundRefOp>(loc, thisVal, typedPtr);
+                return typedPtr;
+            };
+
+            mlir::Value fieldAddr;
+            if (isOptional)
+            {
+                auto nullAddrFunc = [&](OpBuilder &builder, Location location) -> mlir::Value {
+                    auto typedPtr = rewriter.create<LLVM::NullOp>(loc, fieldLLVMTypeRef);
+                    return typedPtr;
+                };
+
+                LLVMTypeConverterHelper llvmtch(*(LLVMTypeConverter *)getTypeConverter());
+
+                auto negative1 = clh.createI64ConstantOf(-1);
+                auto intPtrType = llvmtch.getIntPtrType(0);
+                auto negative1PtrValue = rewriter.create<LLVM::PtrToIntOp>(loc, intPtrType, negative1);
+                auto methodOrFieldIntPtrValue = rewriter.create<LLVM::PtrToIntOp>(loc, intPtrType, methodOrFieldPtr);
+                auto condVal = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, methodOrFieldIntPtrValue, negative1PtrValue);
+
+                auto result = clh.conditionalExpressionLowering(fieldLLVMTypeRef, condVal, nullAddrFunc, calcFieldTotalAddrFunc);
+            }
+            else
+            {
+                auto typedPtr = calcFieldTotalAddrFunc(rewriter, loc);
+                fieldAddr = typedPtr;
+            }
+
+            rewriter.replaceOp(interfaceSymbolRefOp, ValueRange{fieldAddr});
         }
 
         return success();

@@ -66,18 +66,18 @@ class CodeLogicHelper
         return rewriter.create<LLVM::ConstantOp>(loc, ftype, rewriter.getFloatAttr(ftype, value));
     }
 
-    mlir::Value createI8ConstantOf(unsigned value)
+    mlir::Value createI8ConstantOf(int8_t value)
     {
         return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(8),
                                                  rewriter.getIntegerAttr(rewriter.getIntegerType(8), value));
     }
 
-    mlir::Value createI32ConstantOf(unsigned value)
+    mlir::Value createI32ConstantOf(int32_t value)
     {
         return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(32), rewriter.getIntegerAttr(rewriter.getI32Type(), value));
     }
 
-    mlir::Value createI64ConstantOf(unsigned value)
+    mlir::Value createI64ConstantOf(int64_t value)
     {
         return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(64), rewriter.getIntegerAttr(rewriter.getI64Type(), value));
     }
@@ -89,20 +89,20 @@ class CodeLogicHelper
 
     mlir::Value createF32ConstantOf(float value)
     {
-        return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getF32Type(), rewriter.getIntegerAttr(rewriter.getF32Type(), value));
+        return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getF32Type(), rewriter.getF32FloatAttr(value));
     }
 
-    mlir::Value createF64ConstantOf(float value)
+    mlir::Value createF64ConstantOf(double value)
     {
-        return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getF64Type(), rewriter.getIntegerAttr(rewriter.getF64Type(), value));
+        return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getF64Type(), rewriter.getF64FloatAttr(value));
     }
 
-    mlir::Value createIndexConstantOf(unsigned value)
+    mlir::Value createIndexConstantOf(int64_t value)
     {
         return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(64), rewriter.getIntegerAttr(rewriter.getI64Type(), value));
     }
 
-    mlir::Value createStructIndexConstantOf(unsigned value)
+    mlir::Value createStructIndexConstantOf(int32_t value)
     {
         return rewriter.create<LLVM::ConstantOp>(loc, rewriter.getIntegerType(32), rewriter.getIntegerAttr(rewriter.getI32Type(), value));
     }
