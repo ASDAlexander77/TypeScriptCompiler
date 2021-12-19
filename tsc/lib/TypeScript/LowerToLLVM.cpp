@@ -2206,32 +2206,38 @@ struct LoadOpLowering : public TsLlvmPattern<mlir_ts::LoadOp>
         TypeConverterHelper tch(getTypeConverter());
         CodeLogicHelper clh(loadOp, rewriter);
 
+        auto loc = loadOp.getLoc();
+
+        mlir::Value loadedValue;
+
         auto type = loadOp.reference().getType();
         if (auto refType = type.dyn_cast_or_null<mlir_ts::RefType>())
         {
             auto elementType = refType.getElementType();
             auto elementTypeConverted = tch.convertType(elementType);
 
-            rewriter.replaceOpWithNewOp<LLVM::LoadOp>(loadOp, elementTypeConverted, transformed.reference());
-            return success();
+            loadedValue = rewriter.create<LLVM::LoadOp>(loc, elementTypeConverted, transformed.reference());
         }
-
-        if (auto valueRefType = type.dyn_cast_or_null<mlir_ts::ValueRefType>())
+        else if (auto valueRefType = type.dyn_cast_or_null<mlir_ts::ValueRefType>())
         {
             auto elementType = valueRefType.getElementType();
             auto elementTypeConverted = tch.convertType(elementType);
 
-            rewriter.replaceOpWithNewOp<LLVM::LoadOp>(loadOp, elementTypeConverted, transformed.reference());
-            return success();
+            loadedValue = rewriter.create<LLVM::LoadOp>(loc, elementTypeConverted, transformed.reference());
         }
-
-        if (auto boundRefType = type.dyn_cast_or_null<mlir_ts::BoundRefType>())
+        else if (auto boundRefType = type.dyn_cast_or_null<mlir_ts::BoundRefType>())
         {
-            rewriter.replaceOpWithNewOp<mlir_ts::LoadBoundRefOp>(loadOp, loadOp.getType(), loadOp.reference());
-            return success();
+            loadedValue = rewriter.create<mlir_ts::LoadBoundRefOp>(loc, loadOp.getType(), loadOp.reference());
+        }
+        else
+        {
+            llvm_unreachable("not implemented");
+            return failure();
         }
 
-        return failure();
+        rewriter.replaceOp(loadOp, ValueRange{loadedValue});
+
+        return success();
     }
 };
 
