@@ -2208,34 +2208,83 @@ struct LoadOpLowering : public TsLlvmPattern<mlir_ts::LoadOp>
 
         auto loc = loadOp.getLoc();
 
+        mlir::Type elementType;
+        mlir::Type elementTypeConverted;
+
+        auto elementRefType = loadOp.reference().getType();
+        auto resultType = loadOp.getType();
+
+        if (auto refType = elementRefType.dyn_cast_or_null<mlir_ts::RefType>())
+        {
+            elementType = refType.getElementType();
+            elementTypeConverted = tch.convertType(elementType);
+        }
+        else if (auto valueRefType = elementRefType.dyn_cast_or_null<mlir_ts::ValueRefType>())
+        {
+            elementType = valueRefType.getElementType();
+            elementTypeConverted = tch.convertType(elementType);
+        }
+
+        auto isOptional = false;
+        if (auto optType = resultType.dyn_cast<mlir_ts::OptionalType>())
+        {
+            isOptional = optType.getElementType() == elementType;
+        }
+
         mlir::Value loadedValue;
+        auto loadedValueFunc = [&](OpBuilder &builder, Location location) -> mlir::Value {
+            mlir::Value loadedValue;
+            if (elementType)
+            {
+                loadedValue = rewriter.create<LLVM::LoadOp>(loc, elementTypeConverted, transformed.reference());
+            }
+            else if (auto boundRefType = elementRefType.dyn_cast_or_null<mlir_ts::BoundRefType>())
+            {
+                loadedValue = rewriter.create<mlir_ts::LoadBoundRefOp>(loc, resultType, loadOp.reference());
+            }
 
-        auto type = loadOp.reference().getType();
-        if (auto refType = type.dyn_cast_or_null<mlir_ts::RefType>())
-        {
-            auto elementType = refType.getElementType();
-            auto elementTypeConverted = tch.convertType(elementType);
+            return loadedValue;
+        };
 
-            loadedValue = rewriter.create<LLVM::LoadOp>(loc, elementTypeConverted, transformed.reference());
-        }
-        else if (auto valueRefType = type.dyn_cast_or_null<mlir_ts::ValueRefType>())
+        if (isOptional)
         {
-            auto elementType = valueRefType.getElementType();
-            auto elementTypeConverted = tch.convertType(elementType);
+            auto resultTypeLlvm = tch.convertType(resultType);
 
-            loadedValue = rewriter.create<LLVM::LoadOp>(loc, elementTypeConverted, transformed.reference());
-        }
-        else if (auto boundRefType = type.dyn_cast_or_null<mlir_ts::BoundRefType>())
-        {
-            loadedValue = rewriter.create<mlir_ts::LoadBoundRefOp>(loc, loadOp.getType(), loadOp.reference());
+            auto undefOptionalFunc = [&](OpBuilder &builder, Location location) -> mlir::Value {
+                return rewriter.create<mlir_ts::UndefOptionalOp>(loc, resultType);
+            };
+
+            auto createOptionalFunc = [&](OpBuilder &builder, Location location) -> mlir::Value {
+                auto dataValue = loadedValueFunc(builder, location);
+                return rewriter.create<mlir_ts::CreateOptionalOp>(loc, resultType, dataValue);
+            };
+
+            LLVMTypeConverterHelper llvmtch(*(LLVMTypeConverter *)getTypeConverter());
+
+            auto intPtrType = llvmtch.getIntPtrType(0);
+
+            // not null condition
+            auto dataIntPtrValue = rewriter.create<LLVM::PtrToIntOp>(loc, intPtrType, transformed.reference());
+            auto const0 = clh.createIConstantOf(llvmtch.getPointerBitwidth(0), 0);
+            auto ptrCmpResult1 = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::ne, dataIntPtrValue, const0);
+
+            loadedValue = clh.conditionalExpressionLowering(resultTypeLlvm, ptrCmpResult1, createOptionalFunc, undefOptionalFunc);
         }
         else
+        {
+            loadedValue = loadedValueFunc(rewriter, loc);
+        }
+
+        if (!loadedValue)
         {
             llvm_unreachable("not implemented");
             return failure();
         }
 
         rewriter.replaceOp(loadOp, ValueRange{loadedValue});
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! LoadOp Ref value: \n" << transformed.reference() << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! LoadOp DUMP: \n" << *loadOp->getParentOp() << "\n";);
 
         return success();
     }
@@ -3323,11 +3372,11 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
 
                 auto negative1 = clh.createI64ConstantOf(-1);
                 auto intPtrType = llvmtch.getIntPtrType(0);
-                auto negative1PtrValue = rewriter.create<LLVM::PtrToIntOp>(loc, intPtrType, negative1);
                 auto methodOrFieldIntPtrValue = rewriter.create<LLVM::PtrToIntOp>(loc, intPtrType, methodOrFieldPtr);
-                auto condVal = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, methodOrFieldIntPtrValue, negative1PtrValue);
+                auto condVal = rewriter.create<LLVM::ICmpOp>(loc, LLVM::ICmpPredicate::eq, methodOrFieldIntPtrValue, negative1);
 
                 auto result = clh.conditionalExpressionLowering(fieldLLVMTypeRef, condVal, nullAddrFunc, calcFieldTotalAddrFunc);
+                fieldAddr = result;
             }
             else
             {
