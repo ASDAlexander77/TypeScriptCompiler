@@ -584,7 +584,7 @@ class MLIRTypeHelper
         return false;
     }
 
-    mlir::Type findBaseType(mlir::Type typeLeft, mlir::Type typeRight)
+    mlir::Type findBaseType(mlir::Type typeLeft, mlir::Type typeRight, mlir::Type defaultType = mlir::Type())
     {
         if (!typeLeft && !typeRight)
         {
@@ -604,6 +604,11 @@ class MLIRTypeHelper
         if (canCast(typeLeft, typeRight))
         {
             return typeRight;
+        }
+
+        if (defaultType)
+        {
+            return defaultType;
         }
 
         return typeLeft;

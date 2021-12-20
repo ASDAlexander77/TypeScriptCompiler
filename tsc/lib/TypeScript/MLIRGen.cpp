@@ -764,6 +764,10 @@ class MLIRGenImpl
         {
             return mlirGen(expressionAST.as<AwaitExpression>(), genContext);
         }
+        else if (kind == SyntaxKind::NonNullExpression)
+        {
+            return mlirGen(expressionAST.as<NonNullExpression>(), genContext);
+        }
         else if (kind == SyntaxKind::Unknown /*TODO: temp solution to treat null expr as empty expr*/)
         {
             return mlir::Value();
@@ -2459,6 +2463,8 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
+            // TODO: use "mth.findBaseType(leftExpressionValue.getType(), resultWhenFalseType);" to find base type for both types
+
             // we can save result type after joining two types
             genContext.passResult->functionReturnType = type;
         }
@@ -3637,7 +3643,8 @@ class MLIRGenImpl
         MLIRTypeHelper mth(builder.getContext());
         auto resultWhenTrueType = evaluate(conditionalExpressionAST->whenTrue, genContext);
         auto resultWhenFalseType = evaluate(conditionalExpressionAST->whenFalse, genContext);
-        auto resultType = mth.findBaseType(resultWhenTrueType, resultWhenFalseType);
+        auto defaultUnionType = getUnionType(resultWhenTrueType, resultWhenFalseType);
+        auto resultType = mth.findBaseType(resultWhenTrueType, resultWhenFalseType, defaultUnionType);
 
         if (genContext.allowPartialResolve)
         {
@@ -3690,7 +3697,11 @@ class MLIRGenImpl
 
         VALIDATE(leftExpressionValue, location)
 
-        auto resultType = leftExpressionValue.getType();
+        MLIRTypeHelper mth(builder.getContext());
+        auto resultWhenFalseType = evaluate(rightExpression, genContext);
+        auto defaultUnionType = getUnionType(leftExpressionValue.getType(), resultWhenFalseType);
+        auto resultType = andOp ? mth.findBaseType(resultWhenFalseType, leftExpressionValue.getType(), defaultUnionType)
+                                : mth.findBaseType(leftExpressionValue.getType(), resultWhenFalseType, defaultUnionType);
 
         auto condValue = cast(location, getBooleanType(), leftExpressionValue, genContext);
 
@@ -3704,6 +3715,12 @@ class MLIRGenImpl
             VALIDATE(resultTrue, location)
         }
 
+        // sync left part
+        if (resultType != resultTrue.getType())
+        {
+            resultTrue = cast(location, resultType, resultTrue, genContext);
+        }
+
         builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{resultTrue});
 
         builder.setInsertionPointToStart(&ifOp.elseRegion().front());
@@ -3715,16 +3732,16 @@ class MLIRGenImpl
         }
 
         // sync right part
-        if (resultTrue.getType() != resultFalse.getType())
+        if (resultType != resultFalse.getType())
         {
-            resultFalse = cast(location, resultTrue.getType(), resultFalse, genContext);
+            resultFalse = cast(location, resultType, resultFalse, genContext);
         }
 
         builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{resultFalse});
 
         builder.setInsertionPointAfter(ifOp);
 
-        return ifOp.getResult(0);
+        return ifOp.results().front();
     }
 
     mlir::Value mlirGenInLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
@@ -5210,6 +5227,11 @@ class MLIRGenImpl
         auto result = mlirGen(typeOfExpression->expression, genContext);
         auto typeOfValue = builder.create<mlir_ts::TypeOfOp>(location, getStringType(), result);
         return typeOfValue;
+    }
+
+    mlir::Value mlirGen(NonNullExpression nonNullExpression, const GenContext &genContext)
+    {
+        return mlirGen(nonNullExpression->expression, genContext);
     }
 
     mlir::Value mlirGen(TemplateLiteralLikeNode templateExpressionAST, const GenContext &genContext)
@@ -8755,6 +8777,14 @@ class MLIRGenImpl
         }
 
         return getUnionType(typesAll);
+    }
+
+    mlir_ts::UnionType getUnionType(mlir::Type type1, mlir::Type type2)
+    {
+        mlir::SmallVector<mlir::Type> types;
+        types.push_back(type1);
+        types.push_back(type2);
+        return mlir_ts::UnionType::get(builder.getContext(), types);
     }
 
     mlir_ts::UnionType getUnionType(mlir::SmallVector<mlir::Type> &types)
