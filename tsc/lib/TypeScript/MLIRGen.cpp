@@ -2031,7 +2031,7 @@ class MLIRGenImpl
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! this value: " << thisVal << "\n";);
 
-            mlir::Value propValue = mlirGenPropertyAccessExpression(loc, thisVal, mth.TupleFieldName(CAPTURED_NAME), false, genContext);
+            mlir::Value propValue = mlirGenPropertyAccessExpression(loc, thisVal, mth.TupleFieldName(CAPTURED_NAME), genContext);
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! this->.captured value: " << propValue << "\n";);
 
@@ -4296,7 +4296,7 @@ class MLIRGenImpl
 
         auto name = MLIRHelper::getName(qualifiedName->right);
 
-        return mlirGenPropertyAccessExpression(location, expressionValue, name, false, genContext);
+        return mlirGenPropertyAccessExpression(location, expressionValue, name, genContext);
     }
 
     mlir::Value mlirGen(PropertyAccessExpression propertyAccessExpression, const GenContext &genContext)
@@ -4313,12 +4313,27 @@ class MLIRGenImpl
         return mlirGenPropertyAccessExpression(location, expressionValue, name, !!propertyAccessExpression->questionDotToken, genContext);
     }
 
+    mlir::Value mlirGenPropertyAccessExpression(mlir::Location location, mlir::Value objectValue, mlir::StringRef name,
+                                                const GenContext &genContext)
+    {
+        assert(objectValue);
+        MLIRPropertyAccessCodeLogic cl(builder, location, objectValue, name);
+        return mlirGenPropertyAccessExpressionLogic(location, objectValue, false, cl, genContext);
+    }
+
     mlir::Value mlirGenPropertyAccessExpression(mlir::Location location, mlir::Value objectValue, mlir::StringRef name, bool isConditional,
                                                 const GenContext &genContext)
     {
         assert(objectValue);
         MLIRPropertyAccessCodeLogic cl(builder, location, objectValue, name);
         return mlirGenPropertyAccessExpressionLogic(location, objectValue, isConditional, cl, genContext);
+    }
+
+    mlir::Value mlirGenPropertyAccessExpression(mlir::Location location, mlir::Value objectValue, mlir::Attribute id,
+                                                const GenContext &genContext)
+    {
+        MLIRPropertyAccessCodeLogic cl(builder, location, objectValue, id);
+        return mlirGenPropertyAccessExpressionLogic(location, objectValue, false, cl, genContext);
     }
 
     mlir::Value mlirGenPropertyAccessExpression(mlir::Location location, mlir::Value objectValue, mlir::Attribute id, bool isConditional,
@@ -4331,7 +4346,35 @@ class MLIRGenImpl
     mlir::Value mlirGenPropertyAccessExpressionLogic(mlir::Location location, mlir::Value objectValue, bool isConditional,
                                                      MLIRPropertyAccessCodeLogic &cl, const GenContext &genContext)
     {
-        return mlirGenPropertyAccessExpressionBaseLogic(location, objectValue, cl, genContext);
+        if (isConditional)
+        {
+            auto condValue = cast(location, getBooleanType(), objectValue, genContext);
+
+            auto propType = evaluateProperty(objectValue, cl.getName().str(), genContext);
+
+            auto ifOp = builder.create<mlir_ts::IfOp>(location, getOptionalType(propType), condValue, true);
+
+            builder.setInsertionPointToStart(&ifOp.thenRegion().front());
+
+            // value if true
+            auto value = mlirGenPropertyAccessExpressionBaseLogic(location, objectValue, cl, genContext);
+            auto optValue = builder.create<mlir_ts::CreateOptionalOp>(location, getOptionalType(value.getType()), value);
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{optValue});
+
+            // else
+            builder.setInsertionPointToStart(&ifOp.elseRegion().front());
+
+            auto optUndefValue = builder.create<mlir_ts::UndefOptionalOp>(location, getOptionalType(value.getType()));
+            builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{optUndefValue});
+
+            builder.setInsertionPointAfter(ifOp);
+
+            return ifOp.results().front();
+        }
+        else
+        {
+            return mlirGenPropertyAccessExpressionBaseLogic(location, objectValue, cl, genContext);
+        }
     }
 
     mlir::Value mlirGenPropertyAccessExpressionBaseLogic(mlir::Location location, mlir::Value objectValue, MLIRPropertyAccessCodeLogic &cl,
@@ -4483,7 +4526,7 @@ class MLIRGenImpl
 
                     // auto inTheSameFunc = funcOp.getName() == const_cast<GenContext &>(genContext).funcOp.getName();
 
-                    auto vtableAccess = mlirGenPropertyAccessExpression(location, effectiveThisValue, VTABLE_NAME, false, genContext);
+                    auto vtableAccess = mlirGenPropertyAccessExpression(location, effectiveThisValue, VTABLE_NAME, genContext);
 
                     assert(genContext.allowPartialResolve || methodInfo.virtualIndex >= 0);
 
@@ -4556,7 +4599,7 @@ class MLIRGenImpl
         {
             if (first && name == SUPER_NAME)
             {
-                auto value = mlirGenPropertyAccessExpression(location, thisValue, baseClass->fullName, false, genContext);
+                auto value = mlirGenPropertyAccessExpression(location, thisValue, baseClass->fullName, genContext);
                 return value;
             }
 
@@ -4573,7 +4616,7 @@ class MLIRGenImpl
                 auto currentObject = thisValue;
                 for (auto &chain : fieldPath)
                 {
-                    auto fieldValue = mlirGenPropertyAccessExpression(location, currentObject, chain->fullName, false, genContext);
+                    auto fieldValue = mlirGenPropertyAccessExpression(location, currentObject, chain->fullName, genContext);
                     if (!fieldValue)
                     {
                         if (!genContext.allowPartialResolve)
@@ -4590,7 +4633,7 @@ class MLIRGenImpl
                 }
 
                 // last value
-                auto value = mlirGenPropertyAccessExpression(location, currentObject, name, false, genContext);
+                auto value = mlirGenPropertyAccessExpression(location, currentObject, name, genContext);
                 if (value)
                 {
                     return value;
@@ -5080,7 +5123,7 @@ class MLIRGenImpl
         // set virtual table
         if (setVTable && classInfo->getHasVirtualTable())
         {
-            auto vtableVal = mlirGenPropertyAccessExpression(location, effectiveThisValue, VTABLE_NAME, false, genContext);
+            auto vtableVal = mlirGenPropertyAccessExpression(location, effectiveThisValue, VTABLE_NAME, genContext);
             MLIRCodeLogic mcl(builder);
             auto vtableRefVal = mcl.GetReferenceOfLoadOp(vtableVal);
 
@@ -5951,7 +5994,7 @@ class MLIRGenImpl
         for (auto fieldToSet : fieldsToSet)
         {
             auto location = fieldToSet.second.getLoc();
-            auto getField = mlirGenPropertyAccessExpression(location, tupleVar, fieldToSet.first, false, genContext);
+            auto getField = mlirGenPropertyAccessExpression(location, tupleVar, fieldToSet.first, genContext);
 
             VALIDATE(fieldToSet.second, location)
 
@@ -6372,7 +6415,7 @@ class MLIRGenImpl
             auto classInfo = getClassByFullName(genContext.thisType.cast<mlir_ts::ClassType>().getName().getValue());
             auto baseClassInfo = classInfo->baseClasses.front();
 
-            return mlirGenPropertyAccessExpression(location, thisValue, baseClassInfo->fullName, false, genContext);
+            return mlirGenPropertyAccessExpression(location, thisValue, baseClassInfo->fullName, genContext);
         }
 
         value = resolveFullNameIdentifier(location, name, false, genContext);
@@ -7265,8 +7308,7 @@ class MLIRGenImpl
                         if (!methodOrField.isMissing)
                         {
                             auto objectNull = cast(location, objectType, nullObj, genContext);
-                            auto fieldValue =
-                                mlirGenPropertyAccessExpression(location, objectNull, methodOrField.fieldInfo.id, false, genContext);
+                            auto fieldValue = mlirGenPropertyAccessExpression(location, objectNull, methodOrField.fieldInfo.id, genContext);
                             assert(fieldValue);
                             auto fieldRef = mcl.GetReferenceOfLoadOp(fieldValue);
 
@@ -7404,8 +7446,7 @@ class MLIRGenImpl
                     {
                         auto nullObj = builder.create<mlir_ts::NullOp>(location, getNullType());
                         auto classNull = cast(location, newClassPtr->classType, nullObj, genContext);
-                        auto fieldValue =
-                            mlirGenPropertyAccessExpression(location, classNull, methodOrField.fieldInfo.id, false, genContext);
+                        auto fieldValue = mlirGenPropertyAccessExpression(location, classNull, methodOrField.fieldInfo.id, genContext);
                         auto fieldRef = mcl.GetReferenceOfLoadOp(fieldValue);
 
                         // insert &(null)->field
@@ -8149,7 +8190,7 @@ class MLIRGenImpl
         mlir::Type result;
         GenContext evalGenContext(genContext);
         evalGenContext.allowPartialResolve = true;
-        auto initValue = mlirGenPropertyAccessExpression(location, exprValue, propertyName, false, evalGenContext);
+        auto initValue = mlirGenPropertyAccessExpression(location, exprValue, propertyName, evalGenContext);
         if (initValue)
         {
             result = initValue.getType();
@@ -8184,7 +8225,7 @@ class MLIRGenImpl
         {
             if (auto classType = value.getType().dyn_cast_or_null<mlir_ts::ClassType>())
             {
-                auto vtableAccess = mlirGenPropertyAccessExpression(location, value, VTABLE_NAME, false, genContext);
+                auto vtableAccess = mlirGenPropertyAccessExpression(location, value, VTABLE_NAME, genContext);
 
                 auto classInfo = getClassByFullName(classType.getName().getValue());
                 assert(classInfo);
