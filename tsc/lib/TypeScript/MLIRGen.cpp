@@ -2464,6 +2464,7 @@ class MLIRGenImpl
             }
 
             // TODO: use "mth.findBaseType(leftExpressionValue.getType(), resultWhenFalseType);" to find base type for both types
+            // + auto defaultUnionType = getUnionType(resultWhenTrueType, resultWhenFalseType);
 
             // we can save result type after joining two types
             genContext.passResult->functionReturnType = type;
@@ -4372,6 +4373,11 @@ class MLIRGenImpl
             })
             .Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
                 value = InterfaceMembers(location, objectValue, interfaceType.getName().getValue(), cl.getAttribute(), genContext);
+            })
+            .Case<mlir_ts::OptionalType>([&](auto optionalType) {
+                auto frontType = optionalType.getElementType();
+                auto casted = cast(location, frontType, objectValue, genContext);
+                value = mlirGenPropertyAccessExpression(location, casted, name, genContext);
             })
             .Case<mlir_ts::UnionType>([&](auto unionType) {
                 // all union types must have the same property
