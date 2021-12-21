@@ -5111,17 +5111,17 @@ class MLIRGenImpl
         for (auto expression : arguments)
         {
             auto argTypeGenContext = GenContext(genContext);
-            argTypeGenContext.argTypeDestFuncType = argFuncTypes[i];
-
-            auto value = mlirGen(expression, argTypeGenContext);
-
-            VALIDATE_LOGIC(value, loc(expression))
-
             if (i >= argFuncTypes.size())
             {
                 emitError(loc(expression)) << "function does not have enough parameters to accept all arguments, arg #" << i;
                 return mlir::failure();
             }
+
+            argTypeGenContext.argTypeDestFuncType = argFuncTypes[i];
+
+            auto value = mlirGen(expression, argTypeGenContext);
+
+            VALIDATE_LOGIC(value, loc(expression))
 
             if (value.getType() != argFuncTypes[i])
             {
@@ -8420,6 +8420,10 @@ class MLIRGenImpl
         {
             return getFunctionType(typeReferenceAST.as<FunctionTypeNode>(), genContext);
         }
+        else if (kind == SyntaxKind::MethodSignature)
+        {
+            return getMethodSignature(typeReferenceAST.as<MethodSignature>(), genContext);
+        }
         else if (kind == SyntaxKind::TupleType)
         {
             return getTupleType(typeReferenceAST.as<TupleTypeNode>(), genContext);
@@ -8786,6 +8790,16 @@ class MLIRGenImpl
                 assert(type);
                 types.push_back({mcl.TupleFieldName(namePtr), type});
             }
+            else if (typeItem == SyntaxKind::MethodSignature)
+            {
+                auto methodSignature = typeItem.as<MethodSignature>();
+                auto namePtr = MLIRHelper::getName(methodSignature->name, stringAllocator);
+
+                auto type = getType(typeItem, genContext);
+
+                assert(type);
+                types.push_back({mcl.TupleFieldName(namePtr), type});
+            }
             else
             {
                 auto type = getType(typeItem, genContext);
@@ -8863,6 +8877,25 @@ class MLIRGenImpl
         }
 
         auto funcType = mlir_ts::HybridFunctionType::get(builder.getContext(), argTypes, resultType);
+        return funcType;
+    }
+
+    mlir::FunctionType getMethodSignature(MethodSignature methodSignature, const GenContext &genContext)
+    {
+        auto resultType = getType(methodSignature->type, genContext);
+        SmallVector<mlir::Type> argTypes;
+        for (auto paramItem : methodSignature->parameters)
+        {
+            auto type = getType(paramItem->type, genContext);
+            if (paramItem->questionToken)
+            {
+                type = getOptionalType(type);
+            }
+
+            argTypes.push_back(type);
+        }
+
+        auto funcType = mlir::FunctionType::get(builder.getContext(), argTypes, resultType);
         return funcType;
     }
 
