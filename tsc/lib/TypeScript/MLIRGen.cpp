@@ -3745,6 +3745,60 @@ class MLIRGenImpl
         return ifOp.results().front();
     }
 
+    mlir::Value mlirGenQuestionQuestionLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
+    {
+        auto location = loc(binaryExpressionAST);
+
+        auto leftExpression = binaryExpressionAST->left;
+        auto rightExpression = binaryExpressionAST->right;
+
+        // condition
+        auto leftExpressionValue = mlirGen(leftExpression, genContext);
+
+        VALIDATE(leftExpressionValue, location)
+
+        MLIRTypeHelper mth(builder.getContext());
+        auto resultWhenFalseType = evaluate(rightExpression, genContext);
+        auto defaultUnionType = getUnionType(leftExpressionValue.getType(), resultWhenFalseType);
+        auto resultType = mth.findBaseType(resultWhenFalseType, leftExpressionValue.getType(), defaultUnionType);
+
+        auto methodPtr = cast(location, getOpaqueType(), leftExpressionValue, genContext);
+
+        auto nullVal = builder.create<mlir_ts::NullOp>(location, getNullType());
+        auto compareToNull = builder.create<mlir_ts::LogicalBinaryOp>(
+            location, getBooleanType(), builder.getI32IntegerAttr((int)SyntaxKind::EqualsEqualsToken), methodPtr, nullVal);
+
+        auto ifOp = builder.create<mlir_ts::IfOp>(location, mlir::TypeRange{resultType}, compareToNull, true);
+
+        builder.setInsertionPointToStart(&ifOp.thenRegion().front());
+        auto resultTrue = mlirGen(rightExpression, genContext);
+
+        VALIDATE(resultTrue, location)
+
+        // sync left part
+        if (resultType != resultTrue.getType())
+        {
+            resultTrue = cast(location, resultType, resultTrue, genContext);
+        }
+
+        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{resultTrue});
+
+        builder.setInsertionPointToStart(&ifOp.elseRegion().front());
+        auto resultFalse = leftExpressionValue;
+
+        // sync right part
+        if (resultType != resultFalse.getType())
+        {
+            resultFalse = cast(location, resultType, resultFalse, genContext);
+        }
+
+        builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{resultFalse});
+
+        builder.setInsertionPointAfter(ifOp);
+
+        return ifOp.results().front();
+    }
+
     mlir::Value mlirGenInLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
     {
         // Supports only array now
@@ -4041,6 +4095,11 @@ class MLIRGenImpl
         if (opCode == SyntaxKind::AmpersandAmpersandToken || opCode == SyntaxKind::BarBarToken)
         {
             return mlirGenAndOrLogic(binaryExpressionAST, genContext, opCode == SyntaxKind::AmpersandAmpersandToken);
+        }
+
+        if (opCode == SyntaxKind::QuestionQuestionToken)
+        {
+            return mlirGenQuestionQuestionLogic(binaryExpressionAST, genContext);
         }
 
         if (opCode == SyntaxKind::InKeyword)

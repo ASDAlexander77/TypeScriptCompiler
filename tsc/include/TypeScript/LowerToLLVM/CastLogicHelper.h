@@ -341,6 +341,31 @@ class CastLogicHelper
             return cast(val, val.getType(), tch.convertType(val.getType()), resType, resLLVMType);
         }
 
+        if (auto opaqueType = resType.dyn_cast_or_null<mlir_ts::OpaqueType>())
+        {
+            if (auto ifaceType = inType.dyn_cast_or_null<mlir_ts::InterfaceType>())
+            {
+                auto ptrValue = rewriter.create<mlir_ts::ExtractInterfaceThisOp>(loc, mlir_ts::OpaqueType::get(rewriter.getContext()), in);
+                return ptrValue;
+            }
+
+            if (auto hybridFuncType = inType.dyn_cast_or_null<mlir_ts::HybridFunctionType>())
+            {
+                auto funcType = mlir::FunctionType::get(rewriter.getContext(), hybridFuncType.getInputs(), hybridFuncType.getResults());
+                auto ptrValue = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, in);
+                auto bitcast = rewriter.create<LLVM::BitcastOp>(loc, tch.convertType(opaqueType), ptrValue);
+                return bitcast;
+            }
+
+            if (auto boundFuncType = inType.dyn_cast_or_null<mlir_ts::BoundFunctionType>())
+            {
+                auto funcType = mlir::FunctionType::get(rewriter.getContext(), boundFuncType.getInputs(), boundFuncType.getResults());
+                auto ptrValue = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, in);
+                auto bitcast = rewriter.create<LLVM::BitcastOp>(loc, tch.convertType(opaqueType), ptrValue);
+                return bitcast;
+            }
+        }
+
         /*
         // TODO: we do not need as struct can cast to struct
         if (auto inUnionType = inType.dyn_cast_or_null<mlir_ts::UnionType>())

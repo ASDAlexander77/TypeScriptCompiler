@@ -117,7 +117,8 @@ mlir::Value LogicOp(Operation *binOp, SyntaxKind op, mlir::Value left, mlir::Typ
 
         return value;
     }
-    else if (leftType.dyn_cast_or_null<mlir_ts::AnyType>() || leftType.dyn_cast_or_null<mlir_ts::ClassType>())
+    else if (leftType.dyn_cast_or_null<mlir_ts::AnyType>() || leftType.dyn_cast_or_null<mlir_ts::ClassType>() ||
+             leftType.dyn_cast_or_null<mlir_ts::OpaqueType>())
     {
         // excluded string
         auto intPtrType = llvmtch.getIntPtrType(0);
