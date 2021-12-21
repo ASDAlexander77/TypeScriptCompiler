@@ -8430,6 +8430,8 @@ class MLIRGenImpl
         }
         else if (kind == SyntaxKind::TypeLiteral)
         {
+            // TODO: review it, I think it should be ObjectType
+            // return getObjectType(getTupleType(typeReferenceAST.as<TypeLiteralNode>(), genContext));
             return getTupleType(typeReferenceAST.as<TypeLiteralNode>(), genContext);
         }
         else if (kind == SyntaxKind::ArrayType)
@@ -8884,6 +8886,10 @@ class MLIRGenImpl
     {
         auto resultType = getType(methodSignature->type, genContext);
         SmallVector<mlir::Type> argTypes;
+
+        // add this type
+        argTypes.push_back(getOpaqueType());
+
         for (auto paramItem : methodSignature->parameters)
         {
             auto type = getType(paramItem->type, genContext);
