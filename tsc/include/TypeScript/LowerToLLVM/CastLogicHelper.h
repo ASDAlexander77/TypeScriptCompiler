@@ -142,28 +142,6 @@ class CastLogicHelper
             return rewriter.create<mlir_ts::ParseFloatOp>(loc, resLLVMType, in);
         }
 
-        // cast value value to optional value
-        if (auto optType = resType.dyn_cast_or_null<mlir_ts::OptionalType>())
-        {
-            return rewriter.create<mlir_ts::CreateOptionalOp>(loc, resType, in);
-        }
-
-        if (auto optType = inType.dyn_cast_or_null<mlir_ts::OptionalType>())
-        {
-            if (optType.getElementType().isa<mlir_ts::UndefPlaceHolderType>())
-            {
-                if (auto ifaceType = resType.dyn_cast_or_null<mlir_ts::InterfaceType>())
-                {
-                    // create null interface
-                    auto nullVal = rewriter.create<mlir_ts::NullOp>(loc, mlir_ts::NullType::get(ifaceType.getContext()));
-                    return rewriter.create<mlir_ts::NewInterfaceOp>(loc, ifaceType, nullVal, nullVal);
-                }
-            }
-
-            auto val = rewriter.create<mlir_ts::ValueOp>(loc, optType.getElementType(), in);
-            return cast(val, val.getType(), tch.convertType(val.getType()), resType, resLLVMType);
-        }
-
         // array to ref of element
         if (auto arrayType = inType.dyn_cast_or_null<mlir_ts::ArrayType>())
         {
@@ -314,6 +292,53 @@ class CastLogicHelper
                 auto llvmBoolType = tch.convertType(boolType);
                 return castLLVMTypes(ptrValue, inLLVMType, boolType, llvmBoolType);
             }
+
+            if (auto boundFuncType = inType.dyn_cast_or_null<mlir_ts::BoundFunctionType>())
+            {
+                auto funcType = mlir::FunctionType::get(rewriter.getContext(), boundFuncType.getInputs(), boundFuncType.getResults());
+                auto ptrValue = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, in);
+                auto inLLVMType = tch.convertType(ptrValue.getType());
+                auto llvmBoolType = tch.convertType(boolType);
+                return castLLVMTypes(ptrValue, inLLVMType, boolType, llvmBoolType);
+            }
+
+            if (auto funcType = inType.dyn_cast_or_null<mlir::FunctionType>())
+            {
+                auto llvmBoolType = tch.convertType(boolType);
+                return castLLVMTypes(in, inLLVMType, boolType, llvmBoolType);
+            }
+
+            if (auto optType = inType.dyn_cast_or_null<mlir_ts::OptionalType>())
+            {
+                // TODO: use cond switch
+                auto v1 = rewriter.create<mlir_ts::HasValueOp>(loc, boolType, in);
+                auto val = rewriter.create<mlir_ts::ValueOp>(loc, optType.getElementType(), in);
+                auto llvmBoolType = tch.convertType(boolType);
+                auto valAsBool = cast(val, val.getType(), tch.convertType(val.getType()), boolType, llvmBoolType);
+                return rewriter.create<LLVM::AndOp>(loc, llvmBoolType, v1, valAsBool);
+            }
+        }
+
+        // cast value value to optional value
+        if (auto optType = resType.dyn_cast_or_null<mlir_ts::OptionalType>())
+        {
+            return rewriter.create<mlir_ts::CreateOptionalOp>(loc, resType, in);
+        }
+
+        if (auto optType = inType.dyn_cast_or_null<mlir_ts::OptionalType>())
+        {
+            if (optType.getElementType().isa<mlir_ts::UndefPlaceHolderType>())
+            {
+                if (auto ifaceType = resType.dyn_cast_or_null<mlir_ts::InterfaceType>())
+                {
+                    // create null interface
+                    auto nullVal = rewriter.create<mlir_ts::NullOp>(loc, mlir_ts::NullType::get(ifaceType.getContext()));
+                    return rewriter.create<mlir_ts::NewInterfaceOp>(loc, ifaceType, nullVal, nullVal);
+                }
+            }
+
+            auto val = rewriter.create<mlir_ts::ValueOp>(loc, optType.getElementType(), in);
+            return cast(val, val.getType(), tch.convertType(val.getType()), resType, resLLVMType);
         }
 
         /*

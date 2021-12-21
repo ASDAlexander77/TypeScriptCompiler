@@ -4877,29 +4877,114 @@ class MLIRGenImpl
             return cm.callMethod(functionName, operands, genContext);
         }
 
-        mlir::Value value;
-        auto testResult = false;
-        TypeSwitch<mlir::Type>(funcRefValue.getType())
+        if (auto optFuncRef = funcRefValue.getType().dyn_cast<mlir_ts::OptionalType>())
+        {
+            auto condValue = cast(location, getBooleanType(), funcRefValue, genContext);
+
+            auto resultType = getReturnTypeFromFuncRef(optFuncRef.getElementType());
+
+            auto ifOp = resultType ? builder.create<mlir_ts::IfOp>(location, getOptionalType(resultType), condValue, true)
+                                   : builder.create<mlir_ts::IfOp>(location, condValue, false);
+
+            builder.setInsertionPointToStart(&ifOp.thenRegion().front());
+
+            // value if true
+
+            auto innerFuncRef = cast(location, optFuncRef.getElementType(), funcRefValue, genContext);
+
+            auto hasReturn = false;
+            auto value =
+                mlirGenCall(location, innerFuncRef, callExpression->typeArguments, callExpression->arguments, hasReturn, genContext);
+            if (hasReturn)
+            {
+                auto optValue = builder.create<mlir_ts::CreateOptionalOp>(location, getOptionalType(value.getType()), value);
+                builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{optValue});
+            }
+
+            if (hasReturn)
+            {
+                // else
+                builder.setInsertionPointToStart(&ifOp.elseRegion().front());
+
+                auto optUndefValue = builder.create<mlir_ts::UndefOptionalOp>(location, getOptionalType(resultType));
+                builder.create<mlir_ts::ResultOp>(location, mlir::ValueRange{optUndefValue});
+            }
+
+            builder.setInsertionPointAfter(ifOp);
+
+            if (resultType)
+            {
+                return ifOp.results().front();
+            }
+
+            return mlir::Value();
+        }
+
+        auto hasReturn = false;
+        auto value = mlirGenCall(location, funcRefValue, callExpression->typeArguments, callExpression->arguments, hasReturn, genContext);
+        if (value)
+        {
+            return value;
+        }
+
+        assert(!hasReturn);
+        return mlir::Value();
+    }
+
+    mlir::Type getReturnTypeFromFuncRef(mlir::Type funcType)
+    {
+        mlir::Type returnType;
+
+        TypeSwitch<mlir::Type>(funcType)
             .Case<mlir::FunctionType>([&](auto calledFuncType) {
-                value = mlirGenCallFunction(location, calledFuncType, funcRefValue, callExpression->typeArguments,
-                                            callExpression->arguments, testResult, genContext);
+                if (calledFuncType.getResults().size() > 0)
+                {
+                    returnType = calledFuncType.getResults().front();
+                }
             })
             .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) {
-                value = mlirGenCallFunction(location, calledFuncType, funcRefValue, callExpression->typeArguments,
-                                            callExpression->arguments, testResult, genContext);
+                if (calledFuncType.getResults().size() > 0)
+                {
+                    returnType = calledFuncType.getResults().front();
+                }
+            })
+            .Case<mlir_ts::BoundFunctionType>([&](auto calledBoundFuncType) {
+                auto calledFuncType = getFunctionType(calledBoundFuncType.getInputs(), calledBoundFuncType.getResults());
+                if (calledFuncType.getResults().size() > 0)
+                {
+                    returnType = calledFuncType.getResults().front();
+                }
+            })
+            .Case<mlir_ts::ClassType>([&](auto classType) {})
+            .Case<mlir_ts::ClassStorageType>([&](auto classStorageType) {})
+            .Default([&](auto type) {});
+
+        return returnType;
+    }
+
+    mlir::Value mlirGenCall(mlir::Location location, mlir::Value funcRefValue, NodeArray<TypeNode> typeArguments,
+                            NodeArray<Expression> arguments, bool &hasReturn, const GenContext &genContext)
+    {
+        mlir::Value value;
+        hasReturn = false;
+        TypeSwitch<mlir::Type>(funcRefValue.getType())
+            .Case<mlir::FunctionType>([&](auto calledFuncType) {
+                value = mlirGenCallFunction(location, calledFuncType, funcRefValue, typeArguments, arguments, hasReturn, genContext);
+            })
+            .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) {
+                value = mlirGenCallFunction(location, calledFuncType, funcRefValue, typeArguments, arguments, hasReturn, genContext);
             })
             .Case<mlir_ts::BoundFunctionType>([&](auto calledBoundFuncType) {
                 auto calledFuncType = getFunctionType(calledBoundFuncType.getInputs(), calledBoundFuncType.getResults());
                 auto thisValue = builder.create<mlir_ts::GetThisOp>(location, calledFuncType.getInput(0), funcRefValue);
                 auto unboundFuncRefValue = builder.create<mlir_ts::GetMethodOp>(location, calledFuncType, funcRefValue);
-                value = mlirGenCallFunction(location, calledFuncType, unboundFuncRefValue, thisValue, callExpression->typeArguments,
-                                            callExpression->arguments, testResult, genContext);
+                value = mlirGenCallFunction(location, calledFuncType, unboundFuncRefValue, thisValue, typeArguments, arguments, hasReturn,
+                                            genContext);
             })
             .Case<mlir_ts::ClassType>([&](auto classType) {
                 // seems we are calling type constructor
                 auto newOp = builder.create<mlir_ts::NewOp>(location, classType, builder.getBoolAttr(true));
-                mlirGenCallConstructor(location, classType, newOp, callExpression->typeArguments, callExpression->arguments, false, true,
-                                       genContext);
+                mlirGenCallConstructor(location, classType, newOp, typeArguments, arguments, false, true, genContext);
                 value = newOp;
             })
             .Case<mlir_ts::ClassStorageType>([&](auto classStorageType) {
@@ -4908,8 +4993,7 @@ class MLIRGenImpl
                 if (refValue)
                 {
                     // seems we are calling type constructor for super()
-                    mlirGenCallConstructor(location, classStorageType, refValue, callExpression->typeArguments, callExpression->arguments,
-                                           true, false, genContext);
+                    mlirGenCallConstructor(location, classStorageType, refValue, typeArguments, arguments, true, false, genContext);
                 }
                 else
                 {
@@ -4917,17 +5001,12 @@ class MLIRGenImpl
                 }
             })
             .Default([&](auto type) {
+                // TODO: this is hack, rewrite it
                 // it is not function, so just return value as maybe it has been resolved earlier like in case "<number>.ToString()"
                 value = funcRefValue;
             });
 
-        if (value)
-        {
-            return value;
-        }
-
-        assert(!testResult);
-        return mlir::Value();
+        return value;
     }
 
     template <typename T = mlir::FunctionType>
