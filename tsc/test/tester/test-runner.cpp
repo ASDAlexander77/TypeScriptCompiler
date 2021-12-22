@@ -254,13 +254,13 @@ void createCompileBatchFile()
 void createCompileBatchFileWithAsyncRT()
 {
 #ifndef NEW_BAT
-    if (exists("compile_asyncrt" _D_ ".bat"))
+    if (exists("compile_async" _D_ ".bat"))
     {
         return;
     }
 #endif
 
-    std::ofstream batFile("compile_asyncrt" _D_ ".bat");
+    std::ofstream batFile("compile_async" _D_ ".bat");
     // batFile << "echo off" << std::endl;
     batFile << "set FILENAME=%1" << std::endl;
     batFile << "set LIBPATH=\"" << TEST_LIBPATH << "\"" << std::endl;
@@ -469,13 +469,13 @@ void createCompileBatchFile()
 void createCompileBatchFileWithAsyncRT()
 {
 #ifndef NEW_BAT
-    if (exists("compile_asyncrt.sh"))
+    if (exists("compile_async.sh"))
     {
         return;
     }
 #endif
 
-    std::ofstream batFile("compile_asyncrt.sh");
+    std::ofstream batFile("compile_async.sh");
     batFile << "FILENAME=$1" << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "TSCLIBPATH=" << TEST_TSC_LIBPATH << std::endl;
@@ -515,13 +515,13 @@ void createCompileBatchFileGC()
 void createCompileBatchFileGCWithAsyncRT()
 {
 #ifndef NEW_BAT
-    if (exists("compile_gc_asyncrt.sh"))
+    if (exists("compile_gc_async.sh"))
     {
         return;
     }
 #endif
 
-    std::ofstream batFile("compile_gc_asyncrt.sh");
+    std::ofstream batFile("compile_gc_async.sh");
     batFile << "FILENAME=$1" << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "TSCLIBPATH=" << TEST_TSC_LIBPATH << std::endl;
@@ -735,11 +735,11 @@ void testFile(const char *file)
     {
         if (noGC)
         {
-            ss << RUN_CMD << "compile_asyncrt" _D_ << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
+            ss << RUN_CMD << "compile_async" _D_ << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
         }
         else
         {
-            ss << RUN_CMD << "compile_gc_asyncrt" _D_ << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
+            ss << RUN_CMD << "compile_gc_async" _D_ << BAT_NAME << stem.generic_string() << ms.count() << " " << file;
         }
     }
     else
