@@ -113,7 +113,7 @@ namespace fs = std::experimental::filesystem;
 #define _D_ ""
 #endif
 
-#define _OPT_ "-opt "
+#define _OPT_ "--opt "
 
 bool isJit = false;
 bool isJitCompile = false;
@@ -551,7 +551,7 @@ void createJitCompileBatchFile()
     batFile << "FILENAME=$1" << std::endl;
     batFile << "LLVMPATH=" << TEST_LLVM_EXEPATH << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "$TSCEXEPATH/tsc --emit=jit -nogc --shared-libs=../../lib/libTypeScriptRuntime.so -dump-object-file "
+    batFile << "$TSCEXEPATH/tsc --emit=jit " _OPT_ " -nogc --shared-libs=../../lib/libTypeScriptRuntime.so -dump-object-file "
                "-object-filename=$FILENAME.o $2"
             << std::endl;
     batFile << "gcc -o $FILENAME $FILENAME.o"
@@ -576,9 +576,9 @@ void createJitCompileBatchFileGC()
     batFile << "LLVMPATH=" << TEST_LLVM_EXEPATH << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
     batFile << "GCLIBPATH=" << TEST_GCPATH << std::endl;
-    batFile
-        << "$TSCEXEPATH/tsc --emit=jit --shared-libs=../../lib/libTypeScriptRuntime.so -dump-object-file -object-filename=$FILENAME.o $2"
-        << std::endl;
+    batFile << "$TSCEXEPATH/tsc --emit=jit " _OPT_
+               " --shared-libs=../../lib/libTypeScriptRuntime.so -dump-object-file -object-filename=$FILENAME.o $2"
+            << std::endl;
     batFile << "gcc -o $FILENAME -L$GCLIBPATH $FILENAME.o " << GC_LIB << " " << LIBS << std::endl;
     batFile << "./$FILENAME 1> $FILENAME.txt 2> $FILENAME.err" << std::endl;
     batFile << "rm $FILENAME.o" << std::endl;
@@ -599,7 +599,8 @@ void createJitBatchFile()
     batFile << "FILENAME=$1" << std::endl;
     batFile << "LLVMPATH=" << TEST_LLVM_EXEPATH << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "$TSCEXEPATH/tsc --emit=jit -nogc --shared-libs=../../lib/libTypeScriptRuntime.so $2 1> $FILENAME.txt 2> $FILENAME.err"
+    batFile << "$TSCEXEPATH/tsc --emit=jit " _OPT_
+               " -nogc --shared-libs=../../lib/libTypeScriptRuntime.so $2 1> $FILENAME.txt 2> $FILENAME.err"
             << std::endl;
     batFile.close();
 }
@@ -617,7 +618,7 @@ void createJitBatchFileGC()
     batFile << "FILENAME=$1" << std::endl;
     batFile << "LLVMPATH=" << TEST_LLVM_EXEPATH << std::endl;
     batFile << "TSCEXEPATH=" << TEST_TSC_EXEPATH << std::endl;
-    batFile << "$TSCEXEPATH/tsc --emit=jit --shared-libs=../../lib/libTypeScriptRuntime.so $2 1> $FILENAME.txt 2> $FILENAME.err"
+    batFile << "$TSCEXEPATH/tsc --emit=jit " _OPT_ " --shared-libs=../../lib/libTypeScriptRuntime.so $2 1> $FILENAME.txt 2> $FILENAME.err"
             << std::endl;
     batFile.close();
 }
