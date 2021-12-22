@@ -3,6 +3,7 @@
 
 #include "TypeScript/TypeScriptOps.h"
 #include "llvm/Support/ConvertUTF.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 #include "parser.h"
 
@@ -83,7 +84,14 @@ class MLIRHelper
     {
         // auto calculate name
         std::stringstream ssName;
-        ssName << prefix << hash_value(loc);
+        ssName << prefix;
+        mlir::TypeSwitch<mlir::LocationAttr>(loc).Case<mlir::FileLineColLoc>([&](auto loc) {
+            // auto fileName = loc.getFilename();
+            auto line = loc.getLine();
+            auto column = loc.getColumn();
+            ssName << 'L' << line << 'C' << column;
+        });
+        ssName << 'H' << hash_value(loc);
         return ssName.str();
     }
 

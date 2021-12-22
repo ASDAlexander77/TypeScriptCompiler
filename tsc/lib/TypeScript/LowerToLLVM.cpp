@@ -2422,7 +2422,8 @@ struct GlobalOpLowering : public TsLlvmPattern<mlir_ts::GlobalOp>
             lch.createUndefGlobalVarIfNew(globalOp.sym_name(), getTypeConverter()->convertType(globalOp.type()), globalOp.valueAttr(),
                                           globalOp.constant(), linkage);
 
-            auto name = MLIRHelper::getAnonymousName(loc);
+            auto name = globalOp.sym_name().str();
+            name.append("__cctor");
             lch.createFunctionFromRegion(loc, name, globalOp.getInitializerRegion(), globalOp.sym_name());
             rewriter.create<mlir_ts::GlobalConstructorOp>(loc, name);
         }
