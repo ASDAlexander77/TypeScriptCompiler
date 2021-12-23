@@ -6600,11 +6600,11 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGen(TypeAliasDeclaration typeAliasDeclarationAST, const GenContext &genContext)
     {
-        auto name = MLIRHelper::getName(typeAliasDeclarationAST->name);
-        if (!name.empty())
+        auto namePtr = MLIRHelper::getName(typeAliasDeclarationAST->name, stringAllocator);
+        if (!namePtr.empty())
         {
             auto type = getType(typeAliasDeclarationAST->type, genContext);
-            getTypeAliasMap().insert({name, type});
+            getTypeAliasMap().insert({namePtr, type});
             return mlir::success();
         }
         else
