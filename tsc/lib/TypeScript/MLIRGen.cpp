@@ -326,8 +326,8 @@ class MLIRGenImpl
     {
         auto location = loc(moduleDeclarationAST);
 
-        auto namespaceName = MLIRHelper::getName(moduleDeclarationAST->name);
-        auto namePtr = StringRef(namespaceName).copy(stringAllocator);
+        auto namespaceName = MLIRHelper::getName(moduleDeclarationAST->name, stringAllocator);
+        auto namePtr = namespaceName;
 
         auto savedNamespace = currentNamespace;
 
@@ -2626,7 +2626,7 @@ class MLIRGenImpl
                 auto valueAttr = constantOp.valueAttr();
 
                 MLIRCodeLogic mcl(builder);
-                auto fieldNameAttr = mcl.TupleFieldName(MLIRHelper::getName(name));
+                auto fieldNameAttr = mcl.TupleFieldName(MLIRHelper::getName(name, stringAllocator));
 
                 for (auto unionSubType : unionType.getTypes())
                 {
@@ -5805,26 +5805,23 @@ class MLIRGenImpl
         };
 
         auto getFieldIdForProperty = [&](PropertyAssignment &propertyAssignment) {
-            auto name = MLIRHelper::getName(propertyAssignment->name);
-            if (name.empty())
+            auto namePtr = MLIRHelper::getName(propertyAssignment->name, stringAllocator);
+            if (namePtr.empty())
             {
                 auto value = mlirGen(propertyAssignment->name.as<Expression>(), genContext);
                 return mcl.ExtractAttr(value);
             }
 
-            auto namePtr = StringRef(name).copy(stringAllocator);
             return mcl.TupleFieldName(namePtr);
         };
 
         auto getFieldIdForShorthandProperty = [&](ShorthandPropertyAssignment &shorthandPropertyAssignment) {
-            auto name = MLIRHelper::getName(shorthandPropertyAssignment->name);
-            auto namePtr = StringRef(name).copy(stringAllocator);
+            auto namePtr = MLIRHelper::getName(shorthandPropertyAssignment->name, stringAllocator);
             return mcl.TupleFieldName(namePtr);
         };
 
         auto getFieldIdForFunctionLike = [&](FunctionLikeDeclarationBase &funcLikeDecl) {
-            auto name = MLIRHelper::getName(funcLikeDecl->name);
-            auto namePtr = StringRef(name).copy(stringAllocator);
+            auto namePtr = MLIRHelper::getName(funcLikeDecl->name, stringAllocator);
             return mcl.TupleFieldName(namePtr);
         };
 
@@ -6659,14 +6656,12 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGen(EnumDeclaration enumDeclarationAST, const GenContext &genContext)
     {
-        auto name = MLIRHelper::getName(enumDeclarationAST->name);
-        if (name.empty())
+        auto namePtr = MLIRHelper::getName(enumDeclarationAST->name, stringAllocator);
+        if (namePtr.empty())
         {
             llvm_unreachable("not implemented");
             return mlir::failure();
         }
-
-        auto namePtr = StringRef(name).copy(stringAllocator);
 
         SmallVector<mlir::NamedAttribute> enumValues;
         int64_t index = 0;
@@ -6817,14 +6812,13 @@ class MLIRGenImpl
     {
         declareClass = false;
 
-        auto name = MLIRHelper::getName(classDeclarationAST->name);
-        if (name.empty())
+        auto namePtr = MLIRHelper::getName(classDeclarationAST->name, stringAllocator);
+        if (namePtr.empty())
         {
             llvm_unreachable("not implemented");
             return ClassInfo::TypePtr();
         }
 
-        auto namePtr = StringRef(name).copy(stringAllocator);
         auto fullNamePtr = getFullNamespaceName(namePtr);
 
         ClassInfo::TypePtr newClassPtr;
@@ -7078,14 +7072,13 @@ class MLIRGenImpl
             // property declaration
             auto propertyDeclaration = classMember.as<PropertyDeclaration>();
 
-            auto memberName = MLIRHelper::getName(propertyDeclaration->name);
-            if (memberName.empty())
+            auto memberNamePtr = MLIRHelper::getName(propertyDeclaration->name, stringAllocator);
+            if (memberNamePtr.empty())
             {
                 llvm_unreachable("not implemented");
                 return mlir::failure();
             }
 
-            memberNamePtr = StringRef(memberName).copy(stringAllocator);
             fieldId = mcl.TupleFieldName(memberNamePtr);
 
             if (!isStatic)
@@ -7154,15 +7147,14 @@ class MLIRGenImpl
                     continue;
                 }
 
-                auto parameterName = MLIRHelper::getName(parameter->name);
-                if (parameterName.empty())
+                auto parameterNamePtr = MLIRHelper::getName(parameter->name, stringAllocator);
+                if (parameterNamePtr.empty())
                 {
                     llvm_unreachable("not implemented");
                     return mlir::failure();
                 }
 
-                memberNamePtr = StringRef(parameterName).copy(stringAllocator);
-                fieldId = mcl.TupleFieldName(memberNamePtr);
+                fieldId = mcl.TupleFieldName(parameterNamePtr);
 
                 auto typeAndInit = getTypeAndInit(parameter, genContext);
                 type = typeAndInit.first;
@@ -7908,14 +7900,12 @@ class MLIRGenImpl
                     }
                 }
 
-                auto memberName = MLIRHelper::getName(propertyDeclaration->name);
-                if (memberName.empty())
+                auto memberNamePtr = MLIRHelper::getName(propertyDeclaration->name, stringAllocator);
+                if (memberNamePtr.empty())
                 {
                     llvm_unreachable("not implemented");
                     return mlir::failure();
                 }
-
-                auto memberNamePtr = StringRef(memberName).copy(stringAllocator);
 
                 auto _this = nf.createIdentifier(S(THIS_NAME));
                 auto _name = nf.createIdentifier(stows(std::string(memberNamePtr)));
@@ -7946,14 +7936,12 @@ class MLIRGenImpl
                         continue;
                     }
 
-                    auto propertyName = MLIRHelper::getName(parameter->name);
-                    if (propertyName.empty())
+                    auto propertyNamePtr = MLIRHelper::getName(parameter->name, stringAllocator);
+                    if (propertyNamePtr.empty())
                     {
                         llvm_unreachable("not implemented");
                         return mlir::failure();
                     }
-
-                    auto propertyNamePtr = StringRef(propertyName).copy(stringAllocator);
 
                     auto _this = nf.createIdentifier(stows(THIS_NAME));
                     auto _name = nf.createIdentifier(stows(std::string(propertyNamePtr)));
@@ -8150,14 +8138,13 @@ class MLIRGenImpl
             auto propertySignature = interfaceMember.as<PropertySignature>();
             auto isConditional = !!propertySignature->questionToken;
 
-            auto memberName = MLIRHelper::getName(propertySignature->name);
-            if (memberName.empty())
+            auto memberNamePtr = MLIRHelper::getName(propertySignature->name, stringAllocator);
+            if (memberNamePtr.empty())
             {
                 llvm_unreachable("not implemented");
                 return mlir::failure();
             }
 
-            memberNamePtr = StringRef(memberName).copy(stringAllocator);
             fieldId = mcl.TupleFieldName(memberNamePtr);
 
             auto typeAndInit = getTypeAndInit(propertySignature, genContext);
