@@ -111,8 +111,8 @@ function testNums(): void {
     testLeft(1, 29, 0x20000000)
     testLeft(1, 30, 0x40000000)
     testLeft(1, 31, 0x80000000 >> 0)
-    */
     testLeft(1, 32, 1);
+    */
 
     tt = 2;
     assert(-tt * -3 == 6, "-2*-3");
