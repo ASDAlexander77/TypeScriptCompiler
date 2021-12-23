@@ -170,7 +170,7 @@ struct ParamOpLowering : public TsPattern<mlir_ts::ParamOp>
 
     LogicalResult matchAndRewrite(mlir_ts::ParamOp paramOp, PatternRewriter &rewriter) const final
     {
-        rewriter.replaceOpWithNewOp<mlir_ts::VariableOp>(paramOp, paramOp.getType(), paramOp.argValue(), rewriter.getBoolAttr(false));
+        rewriter.replaceOpWithNewOp<mlir_ts::VariableOp>(paramOp, paramOp.getType(), paramOp.argValue(), paramOp.capturedAttr());
         return success();
     }
 };
@@ -206,12 +206,13 @@ struct ParamOptionalOpLowering : public TsPattern<mlir_ts::ParamOptionalOp>
         rewriter.setInsertionPointToStart(&elseRegion.back());
 
         rewriter.inlineRegionBefore(paramOp.defaultValueRegion(), &ifOp.elseRegion().back());
+        // TODO: do I need next line?
         rewriter.eraseBlock(&ifOp.elseRegion().back());
 
         rewriter.setInsertionPointAfter(ifOp);
 
         mlir::Value variable =
-            rewriter.create<mlir_ts::VariableOp>(location, paramOp.getType(), ifOp.results().front(), rewriter.getBoolAttr(false));
+            rewriter.create<mlir_ts::VariableOp>(location, paramOp.getType(), ifOp.results().front(), paramOp.capturedAttr());
 
         rewriter.replaceOp(paramOp, variable);
 

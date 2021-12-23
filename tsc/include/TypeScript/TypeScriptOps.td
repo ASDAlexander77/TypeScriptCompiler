@@ -941,7 +941,7 @@ def TypeScript_ParamOp : TypeScript_Op<"Param", []> {
   }];
 
   let arguments = (ins
-    AnyType:$argValue
+    AnyType:$argValue, OptionalAttr<BoolAttr>:$captured
   );
 
   let results = (outs
@@ -962,7 +962,7 @@ def TypeScript_ParamOptionalOp : TypeScript_Op<"ParamOpt", [SingleBlockImplicitT
   }];
 
   let arguments = (ins
-    TypeScript_AnyOptional:$argValue
+    TypeScript_AnyOptional:$argValue, OptionalAttr<BoolAttr>:$captured
   );
 
   let results = (outs

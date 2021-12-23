@@ -6223,10 +6223,20 @@ class MLIRGenImpl
                 {
                     varOp.capturedAttr(builder.getBoolAttr(true));
                 }
+                else if (auto paramOp = refValue.getDefiningOp<mlir_ts::ParamOp>())
+                {
+                    paramOp.capturedAttr(builder.getBoolAttr(true));
+                }
+                else if (auto paramOptOp = refValue.getDefiningOp<mlir_ts::ParamOptionalOp>())
+                {
+                    paramOptOp.capturedAttr(builder.getBoolAttr(true));
+                }
                 else
                 {
-                    LLVM_DEBUG(llvm::dbgs() << "\n!! var must be able to capture: " << refValue << "\n";);
-                    llvm_unreachable("variable must be captured.");
+                    // TODO: review it.
+                    // find out if u need to ensure that data is captured and belong to VariableOp or ParamOp with captured = true
+                    LLVM_DEBUG(llvm::dbgs() << "\n!! var must be captured when loaded from other Op: " << refValue << "\n";);
+                    // llvm_unreachable("variable must be captured.");
                 }
             }
             else
