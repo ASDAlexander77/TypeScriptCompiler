@@ -1278,7 +1278,7 @@ class MLIRGenImpl
         auto index = 0;
         for (auto arg : formalParams)
         {
-            auto name = MLIRHelper::getName(arg->name);
+            auto namePtr = MLIRHelper::getName(arg->name, stringAllocator);
             mlir::Type type;
             auto isOptional = !!arg->questionToken;
             auto typeParameter = arg->type;
@@ -1314,7 +1314,7 @@ class MLIRGenImpl
                     type = hybridFuncType.getInput(index);
                 }
 
-                LLVM_DEBUG(dbgs() << "\n!! param " << name << " mapped to type " << type << "\n\n");
+                LLVM_DEBUG(dbgs() << "\n!! param " << namePtr << " mapped to type " << type << "\n\n");
             }
 
             if (isNoneType(type))
@@ -1322,12 +1322,12 @@ class MLIRGenImpl
                 if (!typeParameter && !initializer)
                 {
                     auto funcName = MLIRHelper::getName(parametersContextAST->name);
-                    emitError(loc(arg)) << "type of parameter '" << name
+                    emitError(loc(arg)) << "type of parameter '" << namePtr
                                         << "' is not provided, parameter must have type or initializer, function: " << funcName;
                     return params;
                 }
 
-                emitError(loc(typeParameter)) << "can't resolve type for parameter '" << name << "'";
+                emitError(loc(typeParameter)) << "can't resolve type for parameter '" << namePtr << "'";
 
                 return params;
             }
@@ -1340,7 +1340,7 @@ class MLIRGenImpl
             }
             */
 
-            params.push_back(std::make_shared<FunctionParamDOM>(name, type, loc(arg), isOptional, initializer));
+            params.push_back(std::make_shared<FunctionParamDOM>(namePtr, type, loc(arg), isOptional, initializer));
 
             index++;
         }
@@ -4367,9 +4367,10 @@ class MLIRGenImpl
 
         VALIDATE(expressionValue, location)
 
-        auto name = MLIRHelper::getName(propertyAccessExpression->name);
+        auto namePtr = MLIRHelper::getName(propertyAccessExpression->name, stringAllocator);
 
-        return mlirGenPropertyAccessExpression(location, expressionValue, name, !!propertyAccessExpression->questionDotToken, genContext);
+        return mlirGenPropertyAccessExpression(location, expressionValue, namePtr, !!propertyAccessExpression->questionDotToken,
+                                               genContext);
     }
 
     mlir::Value mlirGenPropertyAccessExpression(mlir::Location location, mlir::Value objectValue, mlir::StringRef name,
@@ -6668,8 +6669,8 @@ class MLIRGenImpl
         auto activeBits = 0;
         for (auto enumMember : enumDeclarationAST->members)
         {
-            auto memberName = MLIRHelper::getName(enumMember->name);
-            if (memberName.empty())
+            auto memberNamePtr = MLIRHelper::getName(enumMember->name, stringAllocator);
+            if (memberNamePtr.empty())
             {
                 llvm_unreachable("not implemented");
                 return mlir::failure();
@@ -6704,7 +6705,7 @@ class MLIRGenImpl
                 enumValueAttr = builder.getI32IntegerAttr(index);
             }
 
-            enumValues.push_back({mlir::Identifier::get(memberName, builder.getContext()), enumValueAttr});
+            enumValues.push_back({mlir::Identifier::get(memberNamePtr, builder.getContext()), enumValueAttr});
             index++;
         }
 
