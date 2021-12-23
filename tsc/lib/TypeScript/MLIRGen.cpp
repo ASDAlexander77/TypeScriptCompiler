@@ -6223,6 +6223,11 @@ class MLIRGenImpl
                 {
                     varOp.capturedAttr(builder.getBoolAttr(true));
                 }
+                else
+                {
+                    LLVM_DEBUG(llvm::dbgs() << "\n!! var must be able to capture: " << refValue << "\n";);
+                    llvm_unreachable("variable must be captured.");
+                }
             }
             else
             {
