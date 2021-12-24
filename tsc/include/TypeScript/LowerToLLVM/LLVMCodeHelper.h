@@ -151,7 +151,8 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
         TypeHelper th(rewriter);
 
         // TODO: finish it
-        auto newFuncOp = rewriter.create<mlir::FuncOp>(location, name, mlir::FunctionType::get(rewriter.getContext(), {}, {}));
+        auto newFuncOp = rewriter.create<mlir::FuncOp>(
+            location, name, mlir::FunctionType::get(rewriter.getContext(), llvm::ArrayRef<mlir::Type>(), llvm::ArrayRef<mlir::Type>()));
         if (!initRegion.empty())
         {
             OpBuilder::InsertionGuard insertGuard(rewriter);

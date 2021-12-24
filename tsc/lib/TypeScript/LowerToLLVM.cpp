@@ -1021,7 +1021,7 @@ struct CallHybridInternalOpLowering : public TsLlvmPattern<mlir_ts::CallHybridIn
                     inputs.append(hybridFuncType.getInputs().begin(), hybridFuncType.getInputs().end());
 
                     // with this
-                    auto funcType = mlir::FunctionType::get(rewriter.getContext(), inputs, hybridFuncType.getResults());
+                    auto funcType = mlir_ts::FunctionType::get(rewriter.getContext(), inputs, hybridFuncType.getResults());
                     auto methodPtr = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, op.getOperand(0));
 
                     mlir::SmallVector<mlir::Value> ops;
@@ -1033,7 +1033,8 @@ struct CallHybridInternalOpLowering : public TsLlvmPattern<mlir_ts::CallHybridIn
                 },
                 [&](OpBuilder &builder, Location loc) {
                     // no this
-                    auto funcType = mlir::FunctionType::get(rewriter.getContext(), hybridFuncType.getInputs(), hybridFuncType.getResults());
+                    auto funcType =
+                        mlir_ts::FunctionType::get(rewriter.getContext(), hybridFuncType.getInputs(), hybridFuncType.getResults());
                     auto methodPtr = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, op.getOperand(0));
 
                     mlir::SmallVector<mlir::Value> ops;
@@ -1142,7 +1143,7 @@ struct InvokeHybridOpLowering : public TsLlvmPattern<mlir_ts::InvokeHybridOp>
                     inputs.append(hybridFuncType.getInputs().begin(), hybridFuncType.getInputs().end());
 
                     // with this
-                    auto funcType = mlir::FunctionType::get(rewriter.getContext(), inputs, hybridFuncType.getResults());
+                    auto funcType = mlir_ts::FunctionType::get(rewriter.getContext(), inputs, hybridFuncType.getResults());
                     auto methodPtr = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, op.getOperand(0));
 
                     mlir::SmallVector<mlir::Value> ops;
@@ -1161,7 +1162,8 @@ struct InvokeHybridOpLowering : public TsLlvmPattern<mlir_ts::InvokeHybridOp>
                 },
                 [&](OpBuilder &builder, Location loc) {
                     // no this
-                    auto funcType = mlir::FunctionType::get(rewriter.getContext(), hybridFuncType.getInputs(), hybridFuncType.getResults());
+                    auto funcType =
+                        mlir_ts::FunctionType::get(rewriter.getContext(), hybridFuncType.getInputs(), hybridFuncType.getResults());
                     auto methodPtr = rewriter.create<mlir_ts::GetMethodOp>(loc, funcType, op.getOperand(0));
 
                     mlir::SmallVector<mlir::Value> ops;
@@ -3298,7 +3300,7 @@ struct ThisVirtualSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::ThisVirtua
         {
             auto thisOpaque = rewriter.create<mlir_ts::CastOp>(loc, mlir_ts::OpaqueType::get(rewriter.getContext()), transformed.thisVal());
             auto methodTyped = rewriter.create<mlir_ts::CastOp>(
-                loc, mlir::FunctionType::get(rewriter.getContext(), boundFunc.getInputs(), boundFunc.getResults()), methodPtr);
+                loc, mlir_ts::FunctionType::get(rewriter.getContext(), boundFunc.getInputs(), boundFunc.getResults()), methodPtr);
             auto boundFuncVal = rewriter.create<mlir_ts::CreateBoundFunctionOp>(loc, boundFunc, thisOpaque, methodTyped);
             rewriter.replaceOp(thisVirtualSymbolRefOp, ValueRange{boundFuncVal});
         }
@@ -3343,7 +3345,7 @@ struct InterfaceSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::InterfaceSym
         {
             auto thisOpaque = rewriter.create<mlir_ts::CastOp>(loc, mlir_ts::OpaqueType::get(rewriter.getContext()), thisVal);
             auto methodTypedPtr = rewriter.create<mlir_ts::CastOp>(
-                loc, mlir::FunctionType::get(rewriter.getContext(), boundFunc.getInputs(), boundFunc.getResults()), methodOrFieldPtr);
+                loc, mlir_ts::FunctionType::get(rewriter.getContext(), boundFunc.getInputs(), boundFunc.getResults()), methodOrFieldPtr);
             auto boundFuncVal = rewriter.create<mlir_ts::CreateBoundFunctionOp>(loc, boundFunc, thisOpaque, methodTypedPtr);
             rewriter.replaceOp(interfaceSymbolRefOp, ValueRange{boundFuncVal});
         }
@@ -3502,7 +3504,7 @@ struct LoadBoundRefOpLowering : public TsLlvmPattern<mlir_ts::LoadBoundRefOp>
 
         mlir::Value loadedValue = rewriter.create<LLVM::LoadOp>(loc, valueRefVal);
 
-        if (auto funcType = boundRefType.getElementType().dyn_cast_or_null<mlir::FunctionType>())
+        if (auto funcType = boundRefType.getElementType().dyn_cast_or_null<mlir_ts::FunctionType>())
         {
             mlir::Value boundMethodValue =
                 rewriter.create<mlir_ts::CreateBoundFunctionOp>(loc, loadBoundRefOp.getType(), thisVal, loadedValue);
@@ -3660,16 +3662,16 @@ struct GetMethodOpLowering : public TsLlvmPattern<mlir_ts::GetMethodOp>
 
         auto origType = getMethodOp.boundFunc().getType();
 
-        mlir::FunctionType funcType;
+        mlir_ts::FunctionType funcType;
         mlir::Type llvmMethodType;
         if (auto boundType = origType.dyn_cast<mlir_ts::BoundFunctionType>())
         {
-            funcType = rewriter.getFunctionType(boundType.getInputs(), boundType.getResults());
+            funcType = mlir_ts::FunctionType::get(rewriter.getContext(), boundType.getInputs(), boundType.getResults());
             llvmMethodType = tch.convertType(funcType);
         }
         else if (auto hybridType = origType.dyn_cast<mlir_ts::HybridFunctionType>())
         {
-            funcType = rewriter.getFunctionType(hybridType.getInputs(), hybridType.getResults());
+            funcType = mlir_ts::FunctionType::get(rewriter.getContext(), hybridType.getInputs(), hybridType.getResults());
             llvmMethodType = tch.convertType(funcType);
         }
         else if (auto structType = origType.dyn_cast<LLVM::LLVMStructType>())
@@ -4164,6 +4166,27 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
         llvmStructType.push_back(converter.convertType(mlir_ts::RefType::get(type.getElementType())));
         llvmStructType.push_back(LLVM::LLVMPointerType::get(IntegerType::get(m.getContext(), 8)));
         return LLVM::LLVMStructType::getLiteral(type.getContext(), llvmStructType, false);
+    });
+
+    converter.addConversion([&](mlir_ts::FunctionType type) {
+        SmallVector<mlir::Type> convertedInputs;
+        for (auto subType : type.getInputs())
+        {
+            convertedInputs.push_back(converter.convertType(subType));
+        }
+
+        SmallVector<mlir::Type> convertedResults;
+        for (auto subType : type.getResults())
+        {
+            convertedResults.push_back(converter.convertType(subType));
+        }
+
+        auto funcType = mlir::FunctionType::get(type.getContext(), convertedInputs, convertedResults);
+
+        LLVMTypeConverter::SignatureConversion result(convertedInputs.size());
+        auto llvmFuncType = converter.convertFunctionSignature(funcType, false, result);
+        auto llvmPtrType = LLVM::LLVMPointerType::get(llvmFuncType);
+        return llvmPtrType;
     });
 
     converter.addConversion([&](mlir_ts::BoundFunctionType type) {

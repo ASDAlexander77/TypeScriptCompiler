@@ -80,7 +80,7 @@ class TypeOfOpHelper
             return typeOfValue;
         }
 
-        if (type.isa<mlir::FunctionType>())
+        if (type.isa<mlir_ts::FunctionType>())
         {
             auto typeOfValue = strValue(loc, "function");
             return typeOfValue;

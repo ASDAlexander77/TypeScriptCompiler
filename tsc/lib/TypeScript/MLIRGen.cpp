@@ -883,7 +883,7 @@ class MLIRGenImpl
                 auto actualType = mth.convertConstArrayTypeToArrayType(type);
 
                 // this is 'let', if 'let' is func, it should be HybridFunction
-                if (auto funcType = actualType.dyn_cast<mlir::FunctionType>())
+                if (auto funcType = actualType.dyn_cast<mlir_ts::FunctionType>())
                 {
                     actualType = mlir_ts::HybridFunctionType::get(builder.getContext(), funcType);
                 }
@@ -1306,7 +1306,7 @@ class MLIRGenImpl
 
             if (isNoneType(type) && genContext.argTypeDestFuncType)
             {
-                if (auto funcType = genContext.argTypeDestFuncType.dyn_cast<mlir::FunctionType>())
+                if (auto funcType = genContext.argTypeDestFuncType.dyn_cast<mlir_ts::FunctionType>())
                 {
                     type = funcType.getInput(index);
                 }
@@ -1418,7 +1418,7 @@ class MLIRGenImpl
         return std::make_tuple(fullName, name);
     }
 
-    std::tuple<FunctionPrototypeDOM::TypePtr, mlir::FunctionType, SmallVector<mlir::Type>> mlirGenFunctionSignaturePrototype(
+    std::tuple<FunctionPrototypeDOM::TypePtr, mlir_ts::FunctionType, SmallVector<mlir::Type>> mlirGenFunctionSignaturePrototype(
         SignatureDeclarationBase signatureDeclarationBaseAST, bool defaultVoid, const GenContext &genContext)
     {
         auto res = getNameOfFunction(signatureDeclarationBaseAST, genContext);
@@ -1431,7 +1431,7 @@ class MLIRGenImpl
 
         // auto isAsync = hasModifier(signatureDeclarationBaseAST, SyntaxKind::AsyncKeyword);
 
-        mlir::FunctionType funcType;
+        mlir_ts::FunctionType funcType;
 
         for (const auto &param : params)
         {
@@ -1522,7 +1522,7 @@ class MLIRGenImpl
                 else if (genContext.argTypeDestFuncType)
                 {
                     auto &argTypeDestFuncType = genContext.argTypeDestFuncType;
-                    if (auto funcType = argTypeDestFuncType.dyn_cast<mlir::FunctionType>())
+                    if (auto funcType = argTypeDestFuncType.dyn_cast<mlir_ts::FunctionType>())
                     {
                         if (funcType.getNumResults() > 0)
                         {
@@ -1924,13 +1924,13 @@ class MLIRGenImpl
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! reg. func: " << name << " type:" << funcOp.getType() << "\n";);
             LLVM_DEBUG(llvm::dbgs() << "\n!! reg. func: " << name
-                                    << " num inputs:" << funcOp.getType().cast<mlir::FunctionType>().getNumInputs() << "\n";);
+                                    << " num inputs:" << funcOp.getType().cast<mlir_ts::FunctionType>().getNumInputs() << "\n";);
         }
         else
         {
             LLVM_DEBUG(llvm::dbgs() << "\n!! re-process. func: " << name << " type:" << funcOp.getType() << "\n";);
             LLVM_DEBUG(llvm::dbgs() << "\n!! re-process. func: " << name
-                                    << " num inputs:" << funcOp.getType().cast<mlir::FunctionType>().getNumInputs() << "\n";);
+                                    << " num inputs:" << funcOp.getType().cast<mlir_ts::FunctionType>().getNumInputs() << "\n";);
         }
 
         builder.setInsertionPointAfter(funcOp);
@@ -3885,8 +3885,9 @@ class MLIRGenImpl
 
                         assert(rttiOfClassValue);
 
-                        auto instanceOfFuncType = mlir::FunctionType::get(
-                            builder.getContext(), mlir::TypeRange{getOpaqueType(), getStringType()}, mlir::TypeRange{getBooleanType()});
+                        auto instanceOfFuncType =
+                            mlir_ts::FunctionType::get(builder.getContext(), SmallVector<mlir::Type>{getOpaqueType(), getStringType()},
+                                                       SmallVector<mlir::Type>{getBooleanType()});
 
                         auto funcPtr = cast(location, instanceOfFuncType, instanceOfPtr, genContext);
 
@@ -4040,7 +4041,7 @@ class MLIRGenImpl
         {
             rightExprGenContext.argTypeDestFuncType = hybridFuncType;
         }
-        else if (auto funcType = leftExpressionValue.getType().dyn_cast<mlir::FunctionType>())
+        else if (auto funcType = leftExpressionValue.getType().dyn_cast<mlir_ts::FunctionType>())
         {
             rightExprGenContext.argTypeDestFuncType = funcType;
         }
@@ -4619,7 +4620,7 @@ class MLIRGenImpl
             mlir::Type effectiveFuncType;
             if (getFuncOp)
             {
-                auto funcType = getFuncOp.getType().dyn_cast<mlir::FunctionType>();
+                auto funcType = getFuncOp.getType().dyn_cast<mlir_ts::FunctionType>();
                 if (funcType.getNumResults() > 0)
                 {
                     effectiveFuncType = funcType.getResult(0);
@@ -4628,7 +4629,7 @@ class MLIRGenImpl
 
             if (!effectiveFuncType && setFuncOp)
             {
-                effectiveFuncType = setFuncOp.getType().dyn_cast<mlir::FunctionType>().getInput(accessorInfo.isStatic ? 0 : 1);
+                effectiveFuncType = setFuncOp.getType().dyn_cast<mlir_ts::FunctionType>().getInput(accessorInfo.isStatic ? 0 : 1);
             }
 
             if (!effectiveFuncType)
@@ -4794,7 +4795,7 @@ class MLIRGenImpl
             }
 
             // if it is FuncType, we need to create BoundMethod again
-            if (auto funcType = fieldInfo->type.dyn_cast<mlir::FunctionType>())
+            if (auto funcType = fieldInfo->type.dyn_cast<mlir_ts::FunctionType>())
             {
                 auto thisVal = builder.create<mlir_ts::ExtractInterfaceThisOp>(location, getOpaqueType(), interfaceValue);
                 value = builder.create<mlir_ts::CreateBoundFunctionOp>(location, getBoundFunctionType(funcType), thisVal, value);
@@ -5001,7 +5002,7 @@ class MLIRGenImpl
         mlir::Type returnType;
 
         TypeSwitch<mlir::Type>(funcType)
-            .Case<mlir::FunctionType>([&](auto calledFuncType) {
+            .Case<mlir_ts::FunctionType>([&](auto calledFuncType) {
                 if (calledFuncType.getResults().size() > 0)
                 {
                     returnType = calledFuncType.getResults().front();
@@ -5033,7 +5034,7 @@ class MLIRGenImpl
         mlir::Value value;
         hasReturn = false;
         TypeSwitch<mlir::Type>(funcRefValue.getType())
-            .Case<mlir::FunctionType>([&](auto calledFuncType) {
+            .Case<mlir_ts::FunctionType>([&](auto calledFuncType) {
                 value = mlirGenCallFunction(location, calledFuncType, funcRefValue, typeArguments, arguments, hasReturn, genContext);
             })
             .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) {
@@ -5074,14 +5075,14 @@ class MLIRGenImpl
         return value;
     }
 
-    template <typename T = mlir::FunctionType>
+    template <typename T = mlir_ts::FunctionType>
     mlir::Value mlirGenCallFunction(mlir::Location location, T calledFuncType, mlir::Value funcRefValue, NodeArray<TypeNode> typeArguments,
                                     NodeArray<Expression> arguments, bool &hasReturn, const GenContext &genContext)
     {
         return mlirGenCallFunction(location, calledFuncType, funcRefValue, mlir::Value(), typeArguments, arguments, hasReturn, genContext);
     }
 
-    template <typename T = mlir::FunctionType>
+    template <typename T = mlir_ts::FunctionType>
     mlir::Value mlirGenCallFunction(mlir::Location location, T calledFuncType, mlir::Value funcRefValue, mlir::Value thisValue,
                                     NodeArray<TypeNode> typeArguments, NodeArray<Expression> arguments, bool &hasReturn,
                                     const GenContext &genContext)
@@ -5522,7 +5523,7 @@ class MLIRGenImpl
         {
             inputs = hybridFuncType.getInputs();
         }
-        else if (auto funcType = callee.getType().cast<mlir::FunctionType>())
+        else if (auto funcType = callee.getType().cast<mlir_ts::FunctionType>())
         {
             inputs = funcType.getInputs();
         }
@@ -5747,7 +5748,7 @@ class MLIRGenImpl
 
         auto location = loc(objectLiteral);
 
-        auto addFuncFieldInfo = [&](mlir::Attribute fieldId, std::string funcName, mlir::FunctionType funcType) {
+        auto addFuncFieldInfo = [&](mlir::Attribute fieldId, std::string funcName, mlir_ts::FunctionType funcType) {
             auto type = funcType;
 
             auto captureVars = getCaptureVarsMap().find(funcName);
@@ -5999,7 +6000,7 @@ class MLIRGenImpl
             auto methodRef = std::get<1>(methodRefWithName);
             auto &methodInfo = fieldInfos[methodRef];
 
-            if (auto funcType = methodInfo.type.dyn_cast_or_null<mlir::FunctionType>())
+            if (auto funcType = methodInfo.type.dyn_cast_or_null<mlir_ts::FunctionType>())
             {
                 auto captureVars = getCaptureVarsMap().find(funcName);
                 if (captureVars != getCaptureVarsMap().end())
@@ -6079,7 +6080,7 @@ class MLIRGenImpl
         for (auto &methodRef : methodInfos)
         {
             auto &methodInfo = fieldInfos[methodRef];
-            if (auto funcType = methodInfo.type.dyn_cast_or_null<mlir::FunctionType>())
+            if (auto funcType = methodInfo.type.dyn_cast_or_null<mlir_ts::FunctionType>())
             {
                 MLIRTypeHelper mth(builder.getContext());
 
@@ -6094,7 +6095,7 @@ class MLIRGenImpl
             auto methodRef = std::get<1>(methodRefWithName);
             auto &methodInfo = fieldInfos[methodRef];
 
-            if (auto funcType = methodInfo.type.dyn_cast_or_null<mlir::FunctionType>())
+            if (auto funcType = methodInfo.type.dyn_cast_or_null<mlir_ts::FunctionType>())
             {
                 MLIRTypeHelper mth(builder.getContext());
                 methodInfo.type = mth.getFunctionTypeReplaceOpaqueWithThisType(funcType, objThis);
@@ -6262,8 +6263,8 @@ class MLIRGenImpl
         return captured;
     }
 
-    mlir::Value resolveFunctionWithCapture(mlir::Location location, StringRef name, mlir::FunctionType funcType, bool allocTrampolineInHeap,
-                                           const GenContext &genContext)
+    mlir::Value resolveFunctionWithCapture(mlir::Location location, StringRef name, mlir_ts::FunctionType funcType,
+                                           bool allocTrampolineInHeap, const GenContext &genContext)
     {
         // check if required capture of vars
         auto captureVars = getCaptureVarsMap().find(name);
@@ -7393,7 +7394,7 @@ class MLIRGenImpl
                 {
                     auto foundField = tupleStorageType.getFieldInfo(foundIndex);
                     auto test =
-                        foundField.type.isa<mlir::FunctionType>() && fieldType.isa<mlir::FunctionType>()
+                        foundField.type.isa<mlir_ts::FunctionType>() && fieldType.isa<mlir_ts::FunctionType>()
                             ? mth.TestFunctionTypesMatchWithObjectMethods(foundField.type, fieldType).result == MatchResultType::Match
                             : fieldType == foundField.type;
                     if (!test)
@@ -7416,7 +7417,7 @@ class MLIRGenImpl
 
                 return emptyFieldInfo;
             },
-            [&](std::string name, mlir::FunctionType funcType, bool isConditional) -> MethodInfo & {
+            [&](std::string name, mlir_ts::FunctionType funcType, bool isConditional) -> MethodInfo & {
                 llvm_unreachable("not implemented yet");
             });
 
@@ -7545,7 +7546,7 @@ class MLIRGenImpl
 
                 return foundField;
             },
-            [&](std::string name, mlir::FunctionType funcType, bool isConditional) -> MethodInfo & {
+            [&](std::string name, mlir_ts::FunctionType funcType, bool isConditional) -> MethodInfo & {
                 auto foundMethodPtr = newClassPtr->findMethod(name);
                 if (!foundMethodPtr)
                 {
@@ -7558,7 +7559,7 @@ class MLIRGenImpl
                     return emptyMethod;
                 }
 
-                auto foundMethodFunctionType = foundMethodPtr->funcOp.getType().cast<mlir::FunctionType>();
+                auto foundMethodFunctionType = foundMethodPtr->funcOp.getType().cast<mlir_ts::FunctionType>();
 
                 auto result = mth.TestFunctionTypesMatch(funcType, foundMethodFunctionType, 1);
                 if (result.result != MatchResultType::Match)
@@ -8163,7 +8164,7 @@ class MLIRGenImpl
                 auto funcType = getFunctionType(hybridFuncType.getInputs(), hybridFuncType.getResults());
                 type = mth.getFunctionTypeAddingFirstArgType(funcType, getOpaqueType());
             }
-            else if (auto funcType = type.dyn_cast<mlir::FunctionType>())
+            else if (auto funcType = type.dyn_cast<mlir_ts::FunctionType>())
             {
                 MLIRTypeHelper mth(builder.getContext());
                 type = mth.getFunctionTypeAddingFirstArgType(funcType, getOpaqueType());
@@ -8297,7 +8298,7 @@ class MLIRGenImpl
         }
 
         // we need to add temporary block
-        auto tempFuncType = getFunctionType(llvm::None, llvm::None);
+        auto tempFuncType = mlir::FunctionType::get(builder.getContext(), ArrayRef<mlir::Type>(), ArrayRef<mlir::Type>());
         auto tempFuncOp = mlir::FuncOp::create(loc(expr), ".tempfunc", tempFuncType);
         auto &entryBlock = *tempFuncOp.addEntryBlock();
 
@@ -8326,7 +8327,7 @@ class MLIRGenImpl
     {
         auto location = exprValue.getLoc();
         // we need to add temporary block
-        auto tempFuncType = getFunctionType(llvm::None, llvm::None);
+        auto tempFuncType = mlir::FunctionType::get(builder.getContext(), llvm::None, llvm::None);
         auto tempFuncOp = mlir::FuncOp::create(location, ".tempfunc", tempFuncType);
         auto &entryBlock = *tempFuncOp.addEntryBlock();
 
@@ -8915,7 +8916,7 @@ class MLIRGenImpl
         return mlir_ts::ObjectType::get(type);
     }
 
-    mlir_ts::BoundFunctionType getBoundFunctionType(mlir::FunctionType funcType)
+    mlir_ts::BoundFunctionType getBoundFunctionType(mlir_ts::FunctionType funcType)
     {
         return mlir_ts::BoundFunctionType::get(builder.getContext(), funcType.getInputs(), funcType.getResults());
     }
@@ -8925,9 +8926,9 @@ class MLIRGenImpl
         return mlir_ts::BoundFunctionType::get(builder.getContext(), inputs, results);
     }
 
-    mlir::FunctionType getFunctionType(ArrayRef<mlir::Type> inputs, ArrayRef<mlir::Type> results)
+    mlir_ts::FunctionType getFunctionType(ArrayRef<mlir::Type> inputs, ArrayRef<mlir::Type> results)
     {
-        return builder.getFunctionType(inputs, results);
+        return mlir_ts::FunctionType::get(builder.getContext(), inputs, results);
     }
 
     mlir_ts::HybridFunctionType getFunctionType(FunctionTypeNode functionType, const GenContext &genContext)
@@ -8949,7 +8950,7 @@ class MLIRGenImpl
         return funcType;
     }
 
-    mlir::FunctionType getMethodSignature(MethodSignature methodSignature, const GenContext &genContext)
+    mlir_ts::FunctionType getMethodSignature(MethodSignature methodSignature, const GenContext &genContext)
     {
         auto resultType = getType(methodSignature->type, genContext);
         SmallVector<mlir::Type> argTypes;
@@ -8968,7 +8969,7 @@ class MLIRGenImpl
             argTypes.push_back(type);
         }
 
-        auto funcType = mlir::FunctionType::get(builder.getContext(), argTypes, resultType);
+        auto funcType = mlir_ts::FunctionType::get(builder.getContext(), argTypes, resultType);
         return funcType;
     }
 

@@ -157,7 +157,7 @@ class MLIRTypeHelper
     mlir::Type isBoundReference(mlir::Type elementType, bool &isBound)
     {
 #ifdef USE_BOUND_FUNCTION_FOR_OBJECTS
-        if (auto funcType = elementType.dyn_cast_or_null<mlir::FunctionType>())
+        if (auto funcType = elementType.dyn_cast_or_null<mlir_ts::FunctionType>())
         {
             isBound = true;
             return mlir_ts::BoundFunctionType::get(context, funcType.getInputs(), funcType.getResults());
@@ -200,30 +200,30 @@ class MLIRTypeHelper
         return type;
     }
 
-    mlir::FunctionType getFunctionTypeWithThisType(mlir::FunctionType funcType, mlir::Type thisType, bool replace = false)
+    mlir_ts::FunctionType getFunctionTypeWithThisType(mlir_ts::FunctionType funcType, mlir::Type thisType, bool replace = false)
     {
         mlir::SmallVector<mlir::Type> args;
         args.push_back(thisType);
         auto offset = replace || funcType.getNumInputs() > 0 && funcType.getInput(0) == mlir_ts::OpaqueType::get(context) ? 1 : 0;
         auto sliced = funcType.getInputs().slice(offset);
         args.append(sliced.begin(), sliced.end());
-        auto newFuncType = mlir::FunctionType::get(context, args, funcType.getResults());
+        auto newFuncType = mlir_ts::FunctionType::get(context, args, funcType.getResults());
         return newFuncType;
     }
 
-    mlir::FunctionType getFunctionTypeWithOpaqueThis(mlir::FunctionType funcType, bool replace = false)
+    mlir_ts::FunctionType getFunctionTypeWithOpaqueThis(mlir_ts::FunctionType funcType, bool replace = false)
     {
         return getFunctionTypeWithThisType(funcType, mlir_ts::OpaqueType::get(context), replace);
     }
 
-    mlir::FunctionType getFunctionTypeAddingFirstArgType(mlir::FunctionType funcType, mlir::Type firstArgType)
+    mlir_ts::FunctionType getFunctionTypeAddingFirstArgType(mlir_ts::FunctionType funcType, mlir::Type firstArgType)
     {
         mlir::SmallVector<mlir::Type> funcArgTypes(funcType.getInputs().begin(), funcType.getInputs().end());
         funcArgTypes.insert(funcArgTypes.begin(), firstArgType);
-        return mlir::FunctionType::get(context, funcArgTypes, funcType.getResults());
+        return mlir_ts::FunctionType::get(context, funcArgTypes, funcType.getResults());
     }
 
-    mlir::FunctionType getFunctionTypeReplaceOpaqueWithThisType(mlir::FunctionType funcType, mlir::Type opaqueReplacementType)
+    mlir_ts::FunctionType getFunctionTypeReplaceOpaqueWithThisType(mlir_ts::FunctionType funcType, mlir::Type opaqueReplacementType)
     {
         mlir::SmallVector<mlir::Type> funcArgTypes(funcType.getInputs().begin(), funcType.getInputs().end());
         for (auto &type : funcArgTypes)
@@ -235,7 +235,7 @@ class MLIRTypeHelper
             }
         }
 
-        return mlir::FunctionType::get(context, funcArgTypes, funcType.getResults());
+        return mlir_ts::FunctionType::get(context, funcArgTypes, funcType.getResults());
     }
 
     mlir_ts::BoundFunctionType getBoundFunctionTypeReplaceOpaqueWithThisType(mlir_ts::BoundFunctionType funcType,
@@ -254,7 +254,7 @@ class MLIRTypeHelper
         return mlir_ts::BoundFunctionType::get(context, funcArgTypes, funcType.getResults());
     }
 
-    MatchResult TestFunctionTypesMatch(mlir::FunctionType inFuncType, mlir::FunctionType resFuncType, unsigned startParam = 0)
+    MatchResult TestFunctionTypesMatch(mlir_ts::FunctionType inFuncType, mlir_ts::FunctionType resFuncType, unsigned startParam = 0)
     {
         // TODO: make 1 common function
         if (inFuncType.getInputs().size() != resFuncType.getInputs().size())
@@ -326,11 +326,11 @@ class MLIRTypeHelper
     MatchResult TestFunctionTypesMatchWithObjectMethods(mlir::Type inFuncType, mlir::Type resFuncType, unsigned startParamIn = 0,
                                                         unsigned startParamRes = 0)
     {
-        return TestFunctionTypesMatchWithObjectMethods(inFuncType.cast<mlir::FunctionType>(), resFuncType.cast<mlir::FunctionType>(),
+        return TestFunctionTypesMatchWithObjectMethods(inFuncType.cast<mlir_ts::FunctionType>(), resFuncType.cast<mlir_ts::FunctionType>(),
                                                        startParamIn, startParamRes);
     }
 
-    MatchResult TestFunctionTypesMatchWithObjectMethods(mlir::FunctionType inFuncType, mlir::FunctionType resFuncType,
+    MatchResult TestFunctionTypesMatchWithObjectMethods(mlir_ts::FunctionType inFuncType, mlir_ts::FunctionType resFuncType,
                                                         unsigned startParamIn = 0, unsigned startParamRes = 0)
     {
         // 1 we need to skip opaque and objects

@@ -154,7 +154,7 @@ struct StaticFieldInfo
 struct MethodInfo
 {
     std::string name;
-    mlir::FunctionType funcType;
+    mlir_ts::FunctionType funcType;
     mlir_ts::FuncOp funcOp;
     bool isStatic;
     bool isVirtual;
@@ -189,7 +189,7 @@ struct InterfaceFieldInfo
 struct InterfaceMethodInfo
 {
     std::string name;
-    mlir::FunctionType funcType;
+    mlir_ts::FunctionType funcType;
     bool isConditional;
     int interfacePosIndex;
 };
@@ -242,7 +242,7 @@ struct InterfaceInfo
 
     mlir::LogicalResult getVirtualTable(llvm::SmallVector<VirtualMethodOrFieldInfo> &vtable,
                                         std::function<mlir_ts::FieldInfo(mlir::Attribute, mlir::Type, bool)> resolveField,
-                                        std::function<MethodInfo &(std::string, mlir::FunctionType, bool)> resolveMethod)
+                                        std::function<MethodInfo &(std::string, mlir_ts::FunctionType, bool)> resolveMethod)
     {
         for (auto &extent : extends)
         {

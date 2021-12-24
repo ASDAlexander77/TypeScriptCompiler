@@ -70,6 +70,65 @@ size_t mlir_ts::TupleType::size() const
 }
 
 //===----------------------------------------------------------------------===//
+/// FunctionType
+//===----------------------------------------------------------------------===//
+unsigned mlir_ts::FunctionType::getNumInputs() const
+{
+    return getInputs().size();
+}
+
+unsigned mlir_ts::FunctionType::getNumResults() const
+{
+    return getResults().size();
+}
+
+mlir::Type mlir_ts::FunctionType::getReturnType()
+{
+    return getResults().empty() ? mlir::Type() : getResults().front();
+}
+
+unsigned mlir_ts::FunctionType::getNumParams()
+{
+    return getNumInputs();
+}
+
+mlir::Type mlir_ts::FunctionType::getParamType(unsigned i)
+{
+    return getInputs()[i];
+}
+
+ArrayRef<mlir::Type> mlir_ts::FunctionType::getParams()
+{
+    return getInputs();
+}
+
+//===----------------------------------------------------------------------===//
+/// HybridFunctionType
+//===----------------------------------------------------------------------===//
+unsigned mlir_ts::HybridFunctionType::getNumInputs() const
+{
+    return getInputs().size();
+}
+
+unsigned mlir_ts::HybridFunctionType::getNumResults() const
+{
+    return getResults().size();
+}
+
+//===----------------------------------------------------------------------===//
+/// BoundFunctionType
+//===----------------------------------------------------------------------===//
+unsigned mlir_ts::BoundFunctionType::getNumInputs() const
+{
+    return getInputs().size();
+}
+
+unsigned mlir_ts::BoundFunctionType::getNumResults() const
+{
+    return getResults().size();
+}
+
+//===----------------------------------------------------------------------===//
 /// ClassStorageType
 //===----------------------------------------------------------------------===//
 
@@ -247,8 +306,8 @@ LogicalResult verify(mlir_ts::CastOp op)
     auto resType = op.res().getType();
 
     // funcType -> funcType
-    auto inFuncType = inType.dyn_cast_or_null<mlir::FunctionType>();
-    auto resFuncType = resType.dyn_cast_or_null<mlir::FunctionType>();
+    auto inFuncType = inType.dyn_cast_or_null<mlir_ts::FunctionType>();
+    auto resFuncType = resType.dyn_cast_or_null<mlir_ts::FunctionType>();
     if (inFuncType && resFuncType)
     {
         ::typescript::MLIRTypeHelper mth(op.getContext());
@@ -482,6 +541,23 @@ bool mlir_ts::DialectCastOp::areCastCompatible(TypeRange inputs, TypeRange outpu
 // FuncOp
 //===----------------------------------------------------------------------===//
 
+mlir::Block *mlir_ts::FuncOp::addEntryBlock()
+{
+    assert(empty() && "function already has an entry block");
+    // assert(!isVarArg() && "unimplemented: non-external variadic functions");
+
+    auto *entry = new Block;
+    push_back(entry);
+
+    mlir_ts::FunctionType type = getType();
+    for (unsigned i = 0, e = type.getNumParams(); i < e; ++i)
+    {
+        entry->addArgument(type.getParamType(i));
+    }
+
+    return entry;
+}
+
 mlir_ts::FuncOp mlir_ts::FuncOp::create(Location location, StringRef name, FunctionType type, ArrayRef<NamedAttribute> attrs)
 {
     OperationState state(location, mlir_ts::FuncOp::getOperationName());
@@ -652,9 +728,11 @@ LogicalResult mlir_ts::CallOp::verifySymbolUses(SymbolTableCollection &symbolTab
     return success();
 }
 
-FunctionType mlir_ts::CallOp::getCalleeType()
+mlir_ts::FunctionType mlir_ts::CallOp::getCalleeType()
 {
-    return FunctionType::get(getContext(), getOperandTypes(), getResultTypes());
+    SmallVector<mlir::Type> oper(getOperandTypes());
+    SmallVector<mlir::Type> res(getResultTypes());
+    return mlir_ts::FunctionType::get(getContext(), oper, res);
 }
 
 //===----------------------------------------------------------------------===//
@@ -667,7 +745,7 @@ LogicalResult mlir_ts::CallIndirectOp::verifySymbolUses(SymbolTableCollection &s
     mlir::ArrayRef<mlir::Type> results;
 
     // Verify that the operand and result types match the callee.
-    if (auto funcType = getCallee().getType().dyn_cast<mlir::FunctionType>())
+    if (auto funcType = getCallee().getType().dyn_cast<mlir_ts::FunctionType>())
     {
         input = funcType.getInputs();
         results = funcType.getResults();

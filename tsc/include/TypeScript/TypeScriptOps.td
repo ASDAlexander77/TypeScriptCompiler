@@ -268,11 +268,21 @@ def TypeScript_FuncOp : TypeScript_Op<"Func", [
     CArg<"ArrayRef<DictionaryAttr>", "{}">:$argAttrs)
   >];
   let extraClassDeclaration = [{
+    Block *addEntryBlock();
+
     static FuncOp create(Location location, StringRef name, FunctionType type,
                          ArrayRef<NamedAttribute> attrs = {});
     static FuncOp create(Location location, StringRef name, FunctionType type,
                          ArrayRef<NamedAttribute> attrs,
                          ArrayRef<DictionaryAttr> argAttrs);
+
+    FunctionType getType() {
+      return (*this)->getAttrOfType<TypeAttr>(getTypeAttrName())
+          .getValue().cast<FunctionType>();
+    }
+    //bool isVarArg() {
+    //  return getType().isVarArg();
+    //}
 
     /// Create a deep copy of this function and all of its blocks, remapping any
     /// operands that use values outside of the function using the map that is
@@ -309,10 +319,6 @@ def TypeScript_FuncOp : TypeScript_Op<"Func", [
 
     bool isDeclaration() { return isExternal(); }
 
-  private:
-    // This trait needs access to the hooks defined below.
-    friend class OpTrait::FunctionLike<FuncOp>;
-
     /// Returns the number of arguments. This is a hook for
     /// OpTrait::FunctionLike.
     unsigned getNumFuncArguments() { return getType().getInputs().size(); }
@@ -325,11 +331,12 @@ def TypeScript_FuncOp : TypeScript_Op<"Func", [
     /// getType, getNumFuncArguments, and getNumFuncResults can be called
     /// safely.
     LogicalResult verifyType() {
-      auto type = getTypeAttr().getValue();
-      if (!type.isa<FunctionType>())
-        return emitOpError("requires '" + getTypeAttrName() +
-                           "' attribute of function type");
-      return success();
+        auto type = getTypeAttr().getValue().dyn_cast_or_null<FunctionType>();
+        if (!type)
+            return emitOpError("requires '" + getTypeAttrName() +
+                            "' attribute of function type");
+
+        return success();
     }
   }];
 
@@ -924,8 +931,8 @@ def TypeScript_CaptureOp : TypeScript_Op<"Capture", []> {
 def TypeScript_TrampolineOp : TypeScript_Op<"Trampoline", []> {
   let summary = "trampoline logic";
 
-  let arguments = (ins FunctionType:$callee, AnyType:$data_reference, OptionalAttr<BoolAttr>:$allocInHeap);
-  let results = (outs FunctionType:$newCallee);
+  let arguments = (ins TypeScript_Function:$callee, AnyType:$data_reference, OptionalAttr<BoolAttr>:$allocInHeap);
+  let results = (outs TypeScript_Function:$newCallee);
 }
 
 def TypeScript_ParamOp : TypeScript_Op<"Param", []> {
@@ -1204,7 +1211,7 @@ def TypeScript_CreateBoundFunctionOp : TypeScript_Op<"CreateBoundFunction"> {
   }];
 
   let arguments = (ins
-    TypeScript_AnyRefLike:$thisVal, FunctionType:$func
+    TypeScript_AnyRefLike:$thisVal, TypeScript_Function:$func
   );
 
   let results = (outs
@@ -1244,7 +1251,7 @@ def TypeScript_GetMethodOp : TypeScript_Op<"GetMethod"> {
   );
 
   let results = (outs
-    FunctionType:$result
+    TypeScript_Function:$result
   );
 
   let assemblyFormat = "$boundFunc attr-dict `:` type($boundFunc) `->` type($result)";
