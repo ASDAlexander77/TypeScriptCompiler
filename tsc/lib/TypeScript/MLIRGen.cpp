@@ -3399,7 +3399,7 @@ class MLIRGenImpl
             auto typeOfObject = evaluate(objAccessExpression, switchGenContext);
             auto name = propertyAccessExpressionOp->name;
 
-            safeCastLogic = [&](Expression caseExpr, mlir::Value constVal) {
+            safeCastLogic = [=, &switchGenContext](Expression caseExpr, mlir::Value constVal) {
                 GenContext safeCastGenContext(switchGenContext);
                 switchGenContext.insertIntoParentScope = false;
 
