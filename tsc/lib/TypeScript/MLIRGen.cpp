@@ -2626,7 +2626,8 @@ class MLIRGenImpl
                 auto valueAttr = constantOp.valueAttr();
 
                 MLIRCodeLogic mcl(builder);
-                auto fieldNameAttr = mcl.TupleFieldName(MLIRHelper::getName(name, stringAllocator));
+                auto namePtr = MLIRHelper::getName(name, stringAllocator);
+                auto fieldNameAttr = mcl.TupleFieldName(namePtr);
 
                 for (auto unionSubType : unionType.getTypes())
                 {
