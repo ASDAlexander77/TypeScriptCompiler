@@ -1280,6 +1280,7 @@ class MLIRGenImpl
         {
             auto namePtr = MLIRHelper::getName(arg->name, stringAllocator);
             mlir::Type type;
+            auto isMultiArgs = !!arg->dotDotDotToken;
             auto isOptional = !!arg->questionToken;
             auto typeParameter = arg->type;
             if (typeParameter)
@@ -1340,7 +1341,7 @@ class MLIRGenImpl
             }
             */
 
-            params.push_back(std::make_shared<FunctionParamDOM>(namePtr, type, loc(arg), isOptional, initializer));
+            params.push_back(std::make_shared<FunctionParamDOM>(namePtr, type, loc(arg), isOptional, isMultiArgs, initializer));
 
             index++;
         }

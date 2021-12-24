@@ -118,14 +118,20 @@ class FunctionParamDOM : public VariableDeclarationDOM
   public:
     using TypePtr = std::shared_ptr<FunctionParamDOM>;
 
-    FunctionParamDOM(StringRef name, mlir::Type type, mlir::Location loc, bool isOptional = false, Expression initValue = undefined)
-        : VariableDeclarationDOM(name, type, loc, initValue), isOptional(isOptional)
+    FunctionParamDOM(StringRef name, mlir::Type type, mlir::Location loc, bool isOptional = false, bool isMultiArgs = false,
+                     Expression initValue = undefined)
+        : VariableDeclarationDOM(name, type, loc, initValue), isOptional(isOptional), isMultiArgs(isMultiArgs)
     {
     }
 
     bool getIsOptional()
     {
         return isOptional;
+    }
+
+    bool getIsMultiArgs()
+    {
+        return isMultiArgs;
     }
 
     /// LLVM style RTTI
@@ -136,6 +142,7 @@ class FunctionParamDOM : public VariableDeclarationDOM
 
   private:
     bool isOptional;
+    bool isMultiArgs;
 };
 
 class FunctionPrototypeDOM
