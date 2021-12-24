@@ -2063,8 +2063,8 @@ class MLIRGenImpl
             if (param->hasInitValue())
             {
                 auto dataType = param->getType();
-                auto paramOptionalOp =
-                    builder.create<mlir_ts::ParamOptionalOp>(location, mlir_ts::RefType::get(dataType), arguments[index]);
+                auto paramOptionalOp = builder.create<mlir_ts::ParamOptionalOp>(location, mlir_ts::RefType::get(dataType), arguments[index],
+                                                                                builder.getBoolAttr(false));
 
                 paramValue = paramOptionalOp;
 
@@ -2094,11 +2094,13 @@ class MLIRGenImpl
             {
                 auto optType = getOptionalType(param->getType());
                 param->setType(optType);
-                paramValue = builder.create<mlir_ts::ParamOp>(location, mlir_ts::RefType::get(optType), arguments[index]);
+                paramValue = builder.create<mlir_ts::ParamOp>(location, mlir_ts::RefType::get(optType), arguments[index],
+                                                              builder.getBoolAttr(false));
             }
             else
             {
-                paramValue = builder.create<mlir_ts::ParamOp>(location, mlir_ts::RefType::get(param->getType()), arguments[index]);
+                paramValue = builder.create<mlir_ts::ParamOp>(location, mlir_ts::RefType::get(param->getType()), arguments[index],
+                                                              builder.getBoolAttr(false));
             }
 
             if (paramValue)
