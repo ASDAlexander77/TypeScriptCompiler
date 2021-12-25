@@ -1695,9 +1695,10 @@ struct CreateArrayOpLowering : public TsLlvmPattern<mlir_ts::CreateArrayOp>
             auto offset = rewriter.create<LLVM::GEPOp>(loc, llvmPtrElementType, allocated, ValueRange{index});
 
             auto effectiveItem = item;
-            if (elementType != item.getType())
+            if (llvmElementType != item.getType())
             {
-                effectiveItem = rewriter.create<mlir_ts::CastOp>(loc, elementType, item);
+                // effectiveItem = rewriter.create<mlir_ts::CastOp>(loc, llvmElementType, item);
+                llvm_unreachable("type mismatch");
             }
 
             auto save = rewriter.create<LLVM::StoreOp>(loc, effectiveItem, offset);
