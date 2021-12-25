@@ -119,8 +119,9 @@ class FunctionParamDOM : public VariableDeclarationDOM
     using TypePtr = std::shared_ptr<FunctionParamDOM>;
 
     FunctionParamDOM(StringRef name, mlir::Type type, mlir::Location loc, bool isOptional = false, bool isMultiArgs = false,
-                     Expression initValue = undefined)
-        : VariableDeclarationDOM(name, type, loc, initValue), isOptional(isOptional), isMultiArgs(isMultiArgs)
+                     Expression initValue = undefined, Node bindingPattern = undefined)
+        : VariableDeclarationDOM(name, type, loc, initValue), isOptional(isOptional), isMultiArgs(isMultiArgs),
+          bindingPattern(bindingPattern)
     {
     }
 
@@ -134,6 +135,11 @@ class FunctionParamDOM : public VariableDeclarationDOM
         return isMultiArgs;
     }
 
+    Node getBindingPattern()
+    {
+        return bindingPattern;
+    }
+
     /// LLVM style RTTI
     static bool classof(const BaseDOM *c)
     {
@@ -143,6 +149,7 @@ class FunctionParamDOM : public VariableDeclarationDOM
   private:
     bool isOptional;
     bool isMultiArgs;
+    Node bindingPattern;
 };
 
 class FunctionPrototypeDOM

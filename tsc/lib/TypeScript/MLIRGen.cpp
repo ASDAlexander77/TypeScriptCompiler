@@ -1096,8 +1096,7 @@ class MLIRGenImpl
 
                 auto objectBindingPattern = objectBindingElement->name.as<ObjectBindingPattern>();
                 return processDeclarationObjectBindingPattern(
-                    location, objectBindingPattern, varClass,
-                    [&]() { return std::make_pair(subInit.getType(), subInit); }, genContext);
+                    location, objectBindingPattern, varClass, [&]() { return std::make_pair(subInit.getType(), subInit); }, genContext);
             }
 
             auto name = MLIRHelper::getName(objectBindingElement->name);
@@ -1278,7 +1277,17 @@ class MLIRGenImpl
         auto index = 0;
         for (auto arg : formalParams)
         {
+            auto isBindingPattern = false;
             auto namePtr = MLIRHelper::getName(arg->name, stringAllocator);
+            if (namePtr.empty())
+            {
+                isBindingPattern = true;
+
+                std::stringstream ss;
+                ss << "arg" << index;
+                namePtr = mlir::StringRef(ss.str()).copy(stringAllocator);
+            }
+
             mlir::Type type;
             auto isMultiArgs = !!arg->dotDotDotToken;
             auto isOptional = !!arg->questionToken;
@@ -1341,7 +1350,15 @@ class MLIRGenImpl
             }
             */
 
-            params.push_back(std::make_shared<FunctionParamDOM>(namePtr, type, loc(arg), isOptional, isMultiArgs, initializer));
+            if (isBindingPattern)
+            {
+                params.push_back(
+                    std::make_shared<FunctionParamDOM>(namePtr, type, loc(arg), isOptional, isMultiArgs, initializer, arg->name));
+            }
+            else
+            {
+                params.push_back(std::make_shared<FunctionParamDOM>(namePtr, type, loc(arg), isOptional, isMultiArgs, initializer));
+            }
 
             index++;
         }
@@ -2118,6 +2135,39 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    mlir::LogicalResult mlirGenFunctionParamsBindings(int firstIndex, FunctionPrototypeDOM::TypePtr funcProto,
+                                                      mlir::Block::BlockArgListType arguments, const GenContext &genContext)
+    {
+        for (const auto &param : funcProto->getArgs())
+        {
+            if (auto bindingPattern = param->getBindingPattern())
+            {
+                auto location = loc(bindingPattern);
+                auto val = resolveIdentifier(location, param->getName(), genContext);
+                auto initFunc = [&]() { return std::make_pair(val.getType(), val); };
+
+                if (bindingPattern == SyntaxKind::ArrayBindingPattern)
+                {
+                    auto arrayBindingPattern = bindingPattern.as<ArrayBindingPattern>();
+                    if (!processDeclarationArrayBindingPattern(location, arrayBindingPattern, VariableClass::Let, initFunc, genContext))
+                    {
+                        continue;
+                    }
+                }
+                else if (bindingPattern == SyntaxKind::ObjectBindingPattern)
+                {
+                    auto objectBindingPattern = bindingPattern.as<ObjectBindingPattern>();
+                    if (!processDeclarationObjectBindingPattern(location, objectBindingPattern, VariableClass::Let, initFunc, genContext))
+                    {
+                        continue;
+                    }
+                }
+            }
+        }
+
+        return mlir::success();
+    }
+
     mlir::LogicalResult mlirGenFunctionCaptures(FunctionPrototypeDOM::TypePtr funcProto, const GenContext &genContext)
     {
         if (genContext.capturedVars == nullptr)
@@ -2204,6 +2254,11 @@ class MLIRGenImpl
 
         // allocate function parameters as variable
         if (failed(mlirGenFunctionParams(firstIndex, funcProto, arguments, genContext)))
+        {
+            return mlir::failure();
+        }
+
+        if (failed(mlirGenFunctionParamsBindings(firstIndex, funcProto, arguments, genContext)))
         {
             return mlir::failure();
         }
