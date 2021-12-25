@@ -184,6 +184,16 @@ class FunctionPrototypeDOM
         return args;
     }
 
+    bool isMultiArgs()
+    {
+        if (args.size() == 0)
+        {
+            return false;
+        }
+
+        return args.back()->getIsMultiArgs();
+    }
+
     const mlir::Type &getReturnType() const
     {
         return returnType;

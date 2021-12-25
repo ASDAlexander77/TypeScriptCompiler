@@ -1428,6 +1428,7 @@ class MLIRGenImpl
         auto params = mlirGenParameters(signatureDeclarationBaseAST, genContext);
         SmallVector<mlir::Type> argTypes;
         auto argNumber = 0;
+        auto isMultiArgs = false;
 
         // auto isAsync = hasModifier(signatureDeclarationBaseAST, SyntaxKind::AsyncKeyword);
 
@@ -1449,6 +1450,8 @@ class MLIRGenImpl
             {
                 argTypes.push_back(paramType);
             }
+
+            isMultiArgs |= param->getIsMultiArgs();
 
             argNumber++;
         }
@@ -1475,14 +1478,14 @@ class MLIRGenImpl
             auto returnType = getType(typeParameter, genContext);
             funcProto->setReturnType(returnType);
 
-            funcType = getFunctionType(argTypes, returnType);
+            funcType = getFunctionType(argTypes, returnType, isMultiArgs);
         }
         else if (defaultVoid)
         {
             auto returnType = getVoidType();
             funcProto->setReturnType(returnType);
 
-            funcType = getFunctionType(argTypes, returnType);
+            funcType = getFunctionType(argTypes, returnType, isMultiArgs);
         }
 
         return std::make_tuple(funcProto, funcType, argTypes);
@@ -1548,12 +1551,12 @@ class MLIRGenImpl
                 // create funcType
                 if (funcProto->getReturnType())
                 {
-                    funcType = getFunctionType(argTypes, funcProto->getReturnType());
+                    funcType = getFunctionType(argTypes, funcProto->getReturnType(), funcProto->isMultiArgs());
                 }
                 else
                 {
                     // no return type
-                    funcType = getFunctionType(argTypes, llvm::None);
+                    funcType = getFunctionType(argTypes, llvm::None, funcProto->isMultiArgs());
                 }
             }
             else

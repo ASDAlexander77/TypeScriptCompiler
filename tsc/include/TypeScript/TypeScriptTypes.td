@@ -924,6 +924,10 @@ def TypeScript_Function : TypeScript_Type<"Function"> {
         if (i < getImpl()->inputs.size() - 1)
           $_printer << ",";
       }      
+      if (getImpl()->isVarArg)
+      {
+        $_printer << "...";    
+      }
       $_printer << ") -> (";
       for (size_t i=0, e = getImpl()->results.size(); i < e; i++) {
         const auto& result = getImpl()->results[i];
@@ -936,6 +940,7 @@ def TypeScript_Function : TypeScript_Type<"Function"> {
 
   // Parses the above format
   let parser = [{
+    bool isVarArg = false;
     Type elementType;
     SmallVector<Type> inputs;
     SmallVector<Type> results;
@@ -945,6 +950,7 @@ def TypeScript_Function : TypeScript_Type<"Function"> {
     {
         if ($_parser.parseType(elementType)) return Type();
         inputs.push_back(elementType);
+        if ($_parser.parseOptionalEllipsis()) isVarArg;
         if ($_parser.parseOptionalComma()) break;
     }
     if ($_parser.parseArrow()) return Type();
@@ -955,7 +961,7 @@ def TypeScript_Function : TypeScript_Type<"Function"> {
         if ($_parser.parseOptionalComma()) break;
     }    
     if ($_parser.parseGreater()) return Type();
-    return get(context, inputs, results);
+    return get(context, inputs, results, isVarArg);
   }]; 
 
   let builders = [
@@ -1012,6 +1018,10 @@ def TypeScript_HybridFunction : TypeScript_Type<"HybridFunction"> {
         if (i < getImpl()->inputs.size() - 1)
           $_printer << ",";
       }      
+      if (getImpl()->isVarArg)
+      {
+        $_printer << "...";    
+      }
       $_printer << ") -> (";
       for (size_t i=0, e = getImpl()->results.size(); i < e; i++) {
         const auto& result = getImpl()->results[i];
@@ -1024,6 +1034,7 @@ def TypeScript_HybridFunction : TypeScript_Type<"HybridFunction"> {
 
   // Parses the above format
   let parser = [{
+    bool isVarArg = false;
     Type elementType;
     SmallVector<Type> inputs;
     SmallVector<Type> results;
@@ -1033,6 +1044,7 @@ def TypeScript_HybridFunction : TypeScript_Type<"HybridFunction"> {
     {
         if ($_parser.parseType(elementType)) return Type();
         inputs.push_back(elementType);
+        if ($_parser.parseOptionalEllipsis()) isVarArg;
         if ($_parser.parseOptionalComma()) break;
     }
     if ($_parser.parseArrow()) return Type();
@@ -1043,7 +1055,7 @@ def TypeScript_HybridFunction : TypeScript_Type<"HybridFunction"> {
         if ($_parser.parseOptionalComma()) break;
     }    
     if ($_parser.parseGreater()) return Type();
-    return get(context, inputs, results);
+    return get(context, inputs, results, isVarArg);
   }]; 
 
   let builders = [
@@ -1087,6 +1099,10 @@ def TypeScript_BoundFunction : TypeScript_Type<"BoundFunction"> {
         if (i < getImpl()->inputs.size() - 1)
           $_printer << ",";
       }      
+      if (getImpl()->isVarArg)
+      {
+        $_printer << "...";    
+      }
       $_printer << ") -> (";
       for (size_t i=0, e = getImpl()->results.size(); i < e; i++) {
         const auto& result = getImpl()->results[i];
@@ -1099,6 +1115,7 @@ def TypeScript_BoundFunction : TypeScript_Type<"BoundFunction"> {
 
   // Parses the above format
   let parser = [{
+    bool isVarArg = false;
     Type elementType;
     SmallVector<Type> inputs;
     SmallVector<Type> results;
@@ -1108,6 +1125,7 @@ def TypeScript_BoundFunction : TypeScript_Type<"BoundFunction"> {
     {
         if ($_parser.parseType(elementType)) return Type();
         inputs.push_back(elementType);
+        if ($_parser.parseOptionalEllipsis()) isVarArg;
         if ($_parser.parseOptionalComma()) break;
     }
     if ($_parser.parseArrow()) return Type();
@@ -1118,7 +1136,7 @@ def TypeScript_BoundFunction : TypeScript_Type<"BoundFunction"> {
         if ($_parser.parseOptionalComma()) break;
     }    
     if ($_parser.parseGreater()) return Type();
-    return get(context, inputs, results);
+    return get(context, inputs, results, isVarArg);
   }]; 
 
   let builders = [
