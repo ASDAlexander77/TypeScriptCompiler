@@ -1034,15 +1034,13 @@ class MLIRGenImpl
         return true;
     }
 
-    template <typename ItemTy>
-    bool processDeclarationArrayBindingPattern(mlir::Location location, ItemTy item, VariableClass varClass,
+    bool processDeclarationArrayBindingPattern(mlir::Location location, ArrayBindingPattern arrayBindingPattern, VariableClass varClass,
                                                std::function<std::pair<mlir::Type, mlir::Value>()> func, const GenContext &genContext)
     {
         auto res = func();
         auto type = std::get<0>(res);
         auto init = std::get<1>(res);
 
-        auto arrayBindingPattern = item->name.template as<ArrayBindingPattern>();
         auto index = 0;
         for (auto arrayBindingElement : arrayBindingPattern->elements)
         {
@@ -1080,15 +1078,13 @@ class MLIRGenImpl
         return true;
     }
 
-    template <typename ItemTy>
-    bool processDeclarationObjectBindingPattern(mlir::Location location, ItemTy item, VariableClass varClass,
+    bool processDeclarationObjectBindingPattern(mlir::Location location, ObjectBindingPattern objectBindingPattern, VariableClass varClass,
                                                 std::function<std::pair<mlir::Type, mlir::Value>()> func, const GenContext &genContext)
     {
         auto res = func();
         auto type = std::get<0>(res);
         auto init = std::get<1>(res);
 
-        auto objectBindingPattern = item->name.template as<ObjectBindingPattern>();
         auto index = 0;
         for (auto objectBindingElement : objectBindingPattern->elements)
         {
@@ -1098,8 +1094,10 @@ class MLIRGenImpl
                 auto name = MLIRHelper::getName(objectBindingElement->propertyName);
                 auto subInit = mlirGenPropertyAccessExpression(location, init, name, false, genContext);
 
+                auto objectBindingPattern = objectBindingElement->name.as<ObjectBindingPattern>();
                 return processDeclarationObjectBindingPattern(
-                    location, objectBindingElement, varClass, [&]() { return std::make_pair(subInit.getType(), subInit); }, genContext);
+                    location, objectBindingPattern, varClass,
+                    [&]() { return std::make_pair(subInit.getType(), subInit); }, genContext);
             }
 
             auto name = MLIRHelper::getName(objectBindingElement->name);
@@ -1126,14 +1124,16 @@ class MLIRGenImpl
 
         if (item->name == SyntaxKind::ArrayBindingPattern)
         {
-            if (!processDeclarationArrayBindingPattern(location, item, varClass, func, genContext))
+            auto arrayBindingPattern = item->name.as<ArrayBindingPattern>();
+            if (!processDeclarationArrayBindingPattern(location, arrayBindingPattern, varClass, func, genContext))
             {
                 return false;
             }
         }
         else if (item->name == SyntaxKind::ObjectBindingPattern)
         {
-            if (!processDeclarationObjectBindingPattern(location, item, varClass, func, genContext))
+            auto objectBindingPattern = item->name.as<ObjectBindingPattern>();
+            if (!processDeclarationObjectBindingPattern(location, objectBindingPattern, varClass, func, genContext))
             {
                 return false;
             }
