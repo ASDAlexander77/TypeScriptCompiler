@@ -5099,7 +5099,8 @@ class MLIRGenImpl
             operands.push_back(thisValue);
         }
 
-        if (mlir::failed(mlirGenCallOperands(location, calledFuncType.getInputs(), arguments, operands, genContext)))
+        if (mlir::failed(
+                mlirGenCallOperands(location, calledFuncType.getInputs(), arguments, operands, calledFuncType.isVarArg(), genContext)))
         {
             emitError(location) << "Call Method: can't resolve values of all parameters";
         }
@@ -5108,6 +5109,25 @@ class MLIRGenImpl
             for (auto &oper : operands)
             {
                 VALIDATE(oper, location)
+            }
+
+            // if last is vararg
+            if (calledFuncType.isVarArg())
+            {
+                SmallVector<mlir::Value, 4> varArgOperands;
+
+                auto fromIndex = calledFuncType.getInputs().size() - 1;
+                auto toIndex = operands.size();
+                for (auto i = fromIndex; i < toIndex; i++)
+                {
+                    varArgOperands.push_back(operands[i]);
+                }
+
+                operands.pop_back_n(toIndex - fromIndex);
+
+                // create array
+                auto array = builder.create<mlir_ts::CreateArrayOp>(location, calledFuncType.getInputs().back(), varArgOperands);
+                operands.push_back(array);
             }
 
             // default call by name
@@ -5124,13 +5144,13 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult mlirGenCallOperands(mlir::Location location, mlir::ArrayRef<mlir::Type> argFuncTypes,
-                                            NodeArray<Expression> argumentsContext, SmallVector<mlir::Value, 4> &operands,
+                                            NodeArray<Expression> argumentsContext, SmallVector<mlir::Value, 4> &operands, bool isVarArg,
                                             const GenContext &genContext)
     {
         auto opArgsCount = std::distance(argumentsContext.begin(), argumentsContext.end()) + operands.size();
         auto funcArgsCount = argFuncTypes.size();
 
-        if (mlir::failed(mlirGen(argumentsContext, operands, argFuncTypes, genContext)))
+        if (mlir::failed(mlirGen(argumentsContext, operands, argFuncTypes, isVarArg, genContext)))
         {
             return mlir::failure();
         }
@@ -5174,27 +5194,41 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult mlirGen(NodeArray<Expression> arguments, SmallVector<mlir::Value, 4> &operands,
-                                mlir::ArrayRef<mlir::Type> argFuncTypes, const GenContext &genContext)
+                                mlir::ArrayRef<mlir::Type> argFuncTypes, bool isVarArg, const GenContext &genContext)
     {
         auto i = operands.size(); // we need to shift in case of 'this'
+        auto lastArgIndex = argFuncTypes.size() - 1;
+        mlir::Type varArgType;
+        if (isVarArg)
+        {
+            varArgType = argFuncTypes.back().cast<mlir_ts::ArrayType>().getElementType();
+        }
+
         for (auto expression : arguments)
         {
             auto argTypeGenContext = GenContext(genContext);
-            if (i >= argFuncTypes.size())
+            if (i >= argFuncTypes.size() && !isVarArg)
             {
                 emitError(loc(expression)) << "function does not have enough parameters to accept all arguments, arg #" << i;
                 return mlir::failure();
             }
 
-            argTypeGenContext.argTypeDestFuncType = argFuncTypes[i];
+            if (isVarArg && i >= lastArgIndex)
+            {
+                argTypeGenContext.argTypeDestFuncType = varArgType;
+            }
+            else
+            {
+                argTypeGenContext.argTypeDestFuncType = argFuncTypes[i];
+            }
 
             auto value = mlirGen(expression, argTypeGenContext);
 
             VALIDATE_LOGIC(value, loc(expression))
 
-            if (value.getType() != argFuncTypes[i])
+            if (value.getType() != argTypeGenContext.argTypeDestFuncType)
             {
-                auto castValue = cast(loc(expression), argFuncTypes[i], value, genContext);
+                auto castValue = cast(loc(expression), argTypeGenContext.argTypeDestFuncType, value, genContext);
                 operands.push_back(castValue);
             }
             else
