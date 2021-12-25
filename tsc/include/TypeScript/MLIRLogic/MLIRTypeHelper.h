@@ -160,7 +160,7 @@ class MLIRTypeHelper
         if (auto funcType = elementType.dyn_cast_or_null<mlir_ts::FunctionType>())
         {
             isBound = true;
-            return mlir_ts::BoundFunctionType::get(context, funcType.getInputs(), funcType.getResults());
+            return mlir_ts::BoundFunctionType::get(context, funcType);
         }
 #endif
 
@@ -251,7 +251,7 @@ class MLIRTypeHelper
             }
         }
 
-        return mlir_ts::BoundFunctionType::get(context, funcArgTypes, funcType.getResults());
+        return mlir_ts::BoundFunctionType::get(context, funcArgTypes, funcType.getResults(), funcType.isVarArg());
     }
 
     MatchResult TestFunctionTypesMatch(mlir_ts::FunctionType inFuncType, mlir_ts::FunctionType resFuncType, unsigned startParam = 0)

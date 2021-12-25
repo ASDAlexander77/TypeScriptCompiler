@@ -8918,17 +8918,17 @@ class MLIRGenImpl
 
     mlir_ts::BoundFunctionType getBoundFunctionType(mlir_ts::FunctionType funcType)
     {
-        return mlir_ts::BoundFunctionType::get(builder.getContext(), funcType.getInputs(), funcType.getResults());
+        return mlir_ts::BoundFunctionType::get(builder.getContext(), funcType);
     }
 
-    mlir_ts::BoundFunctionType getBoundFunctionType(ArrayRef<mlir::Type> inputs, ArrayRef<mlir::Type> results)
+    mlir_ts::BoundFunctionType getBoundFunctionType(ArrayRef<mlir::Type> inputs, ArrayRef<mlir::Type> results, bool isVarArg = false)
     {
-        return mlir_ts::BoundFunctionType::get(builder.getContext(), inputs, results);
+        return mlir_ts::BoundFunctionType::get(builder.getContext(), inputs, results, isVarArg);
     }
 
-    mlir_ts::FunctionType getFunctionType(ArrayRef<mlir::Type> inputs, ArrayRef<mlir::Type> results)
+    mlir_ts::FunctionType getFunctionType(ArrayRef<mlir::Type> inputs, ArrayRef<mlir::Type> results, bool isVarArg = false)
     {
-        return mlir_ts::FunctionType::get(builder.getContext(), inputs, results);
+        return mlir_ts::FunctionType::get(builder.getContext(), inputs, results, isVarArg);
     }
 
     mlir_ts::HybridFunctionType getFunctionType(FunctionTypeNode functionType, const GenContext &genContext)

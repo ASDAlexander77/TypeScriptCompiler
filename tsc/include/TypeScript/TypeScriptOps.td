@@ -280,9 +280,10 @@ def TypeScript_FuncOp : TypeScript_Op<"Func", [
       return (*this)->getAttrOfType<TypeAttr>(getTypeAttrName())
           .getValue().cast<FunctionType>();
     }
-    //bool isVarArg() {
-    //  return getType().isVarArg();
-    //}
+    
+    bool isVarArg() {
+     return getType().isVarArg();
+    }
 
     /// Create a deep copy of this function and all of its blocks, remapping any
     /// operands that use values outside of the function using the map that is

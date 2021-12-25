@@ -913,7 +913,7 @@ def TypeScript_Function : TypeScript_Type<"Function"> {
   let summary = "Map from a list of inputs to a list of results";
   let description = [{
   }];
-  let parameters = (ins ArrayRefParameter<"Type", "type">:$inputs, ArrayRefParameter<"Type", "type">:$results);
+  let parameters = (ins ArrayRefParameter<"Type", "type">:$inputs, ArrayRefParameter<"Type", "type">:$results, "bool":$isVarArg);
 
   // We define the printer inline.
   let printer = [{ 
@@ -959,17 +959,19 @@ def TypeScript_Function : TypeScript_Type<"Function"> {
   }]; 
 
   let builders = [
-     TypeBuilder<(ins CArg<"ArrayRef<Type>", "{}">:$inputs, CArg<"ArrayRef<Type>", "{}">:$results), [{
-       return Base::get($_ctxt, inputs, results);
+     TypeBuilder<(ins CArg<"ArrayRef<Type>", "{}">:$inputs, CArg<"ArrayRef<Type>", "{}">:$results, CArg<"bool", "false">:$isVarArg), [{
+       return Base::get($_ctxt, inputs, results, isVarArg);
      }]>,
-     TypeBuilder<(ins "mlir::FunctionType":$funcType), [{
-       return Base::get(funcType.getContext(), funcType.getInputs(), funcType.getResults());
+     TypeBuilder<(ins "mlir::FunctionType":$funcType, CArg<"bool", "false">:$isVarArg), [{
+       return Base::get(funcType.getContext(), funcType.getInputs(), funcType.getResults(), isVarArg);
      }]>
   ];
   
   let skipDefaultBuilders = 1;
   //let genStorageClass = 0;
   let extraClassDeclaration = [{
+    bool isVarArg() const;
+
     /// Returns the result type of the function.
     Type getReturnType();
 
@@ -999,7 +1001,7 @@ def TypeScript_HybridFunction : TypeScript_Type<"HybridFunction"> {
   let summary = "Map from a list of inputs to a list of results with/without 'this' reference";
   let description = [{
   }];
-  let parameters = (ins ArrayRefParameter<"Type", "type">:$inputs, ArrayRefParameter<"Type", "type">:$results);
+  let parameters = (ins ArrayRefParameter<"Type", "type">:$inputs, ArrayRefParameter<"Type", "type">:$results, "bool":$isVarArg);
 
   // We define the printer inline.
   let printer = [{ 
@@ -1045,17 +1047,19 @@ def TypeScript_HybridFunction : TypeScript_Type<"HybridFunction"> {
   }]; 
 
   let builders = [
-     TypeBuilder<(ins CArg<"ArrayRef<Type>", "{}">:$inputs, CArg<"ArrayRef<Type>", "{}">:$results), [{
-       return Base::get($_ctxt, inputs, results);
+     TypeBuilder<(ins CArg<"ArrayRef<Type>", "{}">:$inputs, CArg<"ArrayRef<Type>", "{}">:$results, CArg<"bool", "false">:$isVarArg), [{
+       return Base::get($_ctxt, inputs, results, isVarArg);
      }]>,
      TypeBuilder<(ins "FunctionType":$funcType), [{
-       return Base::get(funcType.getContext(), funcType.getInputs(), funcType.getResults());
+       return Base::get(funcType.getContext(), funcType.getInputs(), funcType.getResults(), funcType.isVarArg());
      }]>
   ];
   
   let skipDefaultBuilders = 1;
   //let genStorageClass = 0;
   let extraClassDeclaration = [{
+    bool isVarArg() const;
+
     /// Input types.
     unsigned getNumInputs() const;
     Type getInput(unsigned i) const { return getInputs()[i]; }
@@ -1072,7 +1076,7 @@ def TypeScript_BoundFunction : TypeScript_Type<"BoundFunction"> {
   let summary = "Map from a list of inputs to a list of results with 'this' reference";
   let description = [{
   }];
-  let parameters = (ins ArrayRefParameter<"Type", "type">:$inputs, ArrayRefParameter<"Type", "type">:$results);
+  let parameters = (ins ArrayRefParameter<"Type", "type">:$inputs, ArrayRefParameter<"Type", "type">:$results, "bool":$isVarArg);
 
   // We define the printer inline.
   let printer = [{ 
@@ -1118,17 +1122,19 @@ def TypeScript_BoundFunction : TypeScript_Type<"BoundFunction"> {
   }]; 
 
   let builders = [
-     TypeBuilder<(ins CArg<"ArrayRef<Type>", "{}">:$inputs, CArg<"ArrayRef<Type>", "{}">:$results), [{
-       return Base::get($_ctxt, inputs, results);
+     TypeBuilder<(ins CArg<"ArrayRef<Type>", "{}">:$inputs, CArg<"ArrayRef<Type>", "{}">:$results, CArg<"bool", "false">:$isVarArg), [{
+       return Base::get($_ctxt, inputs, results, isVarArg);
      }]>,
      TypeBuilder<(ins "FunctionType":$funcType), [{
-       return Base::get(funcType.getContext(), funcType.getInputs(), funcType.getResults());
+       return Base::get(funcType.getContext(), funcType.getInputs(), funcType.getResults(), funcType.isVarArg());
      }]>
   ];
   
   let skipDefaultBuilders = 1;
   //let genStorageClass = 0;
   let extraClassDeclaration = [{
+    bool isVarArg() const;
+
     /// Input types.
     unsigned getNumInputs() const;
     Type getInput(unsigned i) const { return getInputs()[i]; }

@@ -72,6 +72,12 @@ size_t mlir_ts::TupleType::size() const
 //===----------------------------------------------------------------------===//
 /// FunctionType
 //===----------------------------------------------------------------------===//
+
+bool mlir_ts::FunctionType::isVarArg() const
+{
+    return getIsVarArg();
+}
+
 unsigned mlir_ts::FunctionType::getNumInputs() const
 {
     return getInputs().size();
@@ -105,6 +111,11 @@ ArrayRef<mlir::Type> mlir_ts::FunctionType::getParams()
 //===----------------------------------------------------------------------===//
 /// HybridFunctionType
 //===----------------------------------------------------------------------===//
+bool mlir_ts::HybridFunctionType::isVarArg() const
+{
+    return getIsVarArg();
+}
+
 unsigned mlir_ts::HybridFunctionType::getNumInputs() const
 {
     return getInputs().size();
@@ -118,6 +129,11 @@ unsigned mlir_ts::HybridFunctionType::getNumResults() const
 //===----------------------------------------------------------------------===//
 /// BoundFunctionType
 //===----------------------------------------------------------------------===//
+bool mlir_ts::BoundFunctionType::isVarArg() const
+{
+    return getIsVarArg();
+}
+
 unsigned mlir_ts::BoundFunctionType::getNumInputs() const
 {
     return getInputs().size();
