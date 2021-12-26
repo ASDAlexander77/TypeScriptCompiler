@@ -1239,10 +1239,6 @@ def TypeScript_Generic : TypeScript_Type<"Generic"> {
     let mnemonic = "Generic";
 }
 
-def TypeScript_IsTupleType : CPred<"$_self.isa<::mlir::typescript::TupleType>()">;
-
-def TypeScript_AnyTuple : DialectType<TypeScript_Dialect, TypeScript_IsTupleType, "any tuple type">;
-
 def TypeScript_IsConstTupleRefType : CPred<"$_self.isa<::mlir::typescript::RefType>() && $_self.cast<::mlir::typescript::RefType>().getElementType().isa<::mlir::typescript::ConstTupleType>()">;
 
 def TypeScript_AnyConstTupleRef : DialectType<TypeScript_Dialect, TypeScript_IsConstTupleRefType, "any const tuple reference type">;
@@ -1265,6 +1261,10 @@ def TypeScript_AnyArrayRef : DialectType<TypeScript_Dialect, TypeScript_IsArrayR
 
 def TypeScript_ArrayLike : AnyTypeOf<[
     TypeScript_ConstArray, TypeScript_Array, TypeScript_String
+  ]>;
+
+def TypeScript_TupleLike : AnyTypeOf<[
+    TypeScript_ConstTuple, TypeScript_Tuple
   ]>;
 
 def TypeScript_AnyStructRefLike : AnyTypeOf<[

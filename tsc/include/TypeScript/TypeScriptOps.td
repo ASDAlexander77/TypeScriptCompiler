@@ -575,7 +575,7 @@ def TypeScript_DeconstructTupleOp : TypeScript_Op<"DeconstructTuple"> {
     deconstruct tuple
   }];
 
-  let arguments = (ins TypeScript_Tuple:$instance);
+  let arguments = (ins TypeScript_TupleLike:$instance);
   let results = (outs Variadic<AnyType>:$results);
 
   let assemblyFormat = "$instance attr-dict `:` type($instance) `->` `{` type($results) `}`";
@@ -1827,7 +1827,7 @@ def TypeScript_LandingPadOp : TypeScript_Op<"LandingPad"> {
   }];
 
   let arguments = (ins BoolAttr:$cleanup, Variadic<AnyType>:$catches);
-  let results = (outs TypeScript_AnyTuple:$result);
+  let results = (outs TypeScript_Tuple:$result);
 
   // Override the default verifier, everything is checked by traits.
   let verifier = ?;
@@ -1838,7 +1838,7 @@ def TypeScript_CompareCatchTypeOp : TypeScript_Op<"CompareCatchType"> {
   let description = [{
   }];
 
-  let arguments = (ins TypeScript_AnyTuple:$landingPad, TypeScript_Ref:$throwTypeInfo);
+  let arguments = (ins TypeScript_Tuple:$landingPad, TypeScript_Ref:$throwTypeInfo);
   let results = (outs TypeScript_Boolean:$result);
 
   // Override the default verifier, everything is checked by traits.
@@ -1850,7 +1850,7 @@ def TypeScript_BeginCatchOp : TypeScript_Op<"BeginCatch"> {
   let description = [{
   }];
 
-  let arguments = (ins TypeScript_AnyTuple:$landingPad);
+  let arguments = (ins TypeScript_Tuple:$landingPad);
   let results = (outs TypeScript_Opaque:$exceptionInfo);
 
   // Override the default verifier, everything is checked by traits.
@@ -1898,7 +1898,7 @@ def TypeScript_EndCleanupOp : TypeScript_Op<"EndCleanup", [Terminator]> {
   let description = [{
   }];
 
-  let arguments = (ins TypeScript_AnyTuple:$landingPad);
+  let arguments = (ins TypeScript_Tuple:$landingPad);
   let results = (outs );
   let successors = (successor VariadicSuccessor<AnySuccessor>:$unwindDest);
 

@@ -6034,6 +6034,36 @@ class MLIRGenImpl
             {
                 continue;
             }
+            else if (item == SyntaxKind::SpreadAssignment)
+            {
+                auto spreadAssignment = item.as<SpreadAssignment>();
+                auto tupleValue = mlirGen(spreadAssignment->expression, genContext);
+
+                LLVM_DEBUG(llvm::dbgs() << "\n!! SpreadAssignment value: " << tupleValue << "\n";);
+
+                ::llvm::ArrayRef<mlir_ts::FieldInfo> fields;
+                TypeSwitch<mlir::Type>(tupleValue.getType())
+                    .template Case<mlir_ts::TupleType>([&](auto tupleType) { fields = tupleType.getFields(); })
+                    .template Case<mlir_ts::ConstTupleType>([&](auto constTupleType) { fields = constTupleType.getFields(); })
+                    .Default([&](auto type) { llvm_unreachable("not implemented"); });
+
+                SmallVector<mlir::Type> types;
+                for (auto &field : fields)
+                {
+                    types.push_back(field.type);
+                }
+
+                // deconstruct tuple
+                auto res = builder.create<mlir_ts::DeconstructTupleOp>(loc(spreadAssignment), types, tupleValue);
+
+                // read all fields
+                for (auto pair : llvm::zip(fields, res.results()))
+                {
+                    addFieldInfo(std::get<0>(pair).id, std::get<1>(pair));
+                }
+
+                continue;
+            }
             else
             {
                 llvm_unreachable("object literal is not implemented(1)");
