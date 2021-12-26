@@ -1066,8 +1066,8 @@ class MLIRGenImpl
                 .Default([&](auto type) { llvm_unreachable("not implemented"); });
 
             if (!processDeclaration(
-                    arrayBindingElement.template as<BindingElement>(), varClass,
-                    [&]() { return std::make_pair(subInit.getType(), subInit); }, genContext))
+                    arrayBindingElement.as<BindingElement>(), varClass, [&]() { return std::make_pair(subInit.getType(), subInit); },
+                    genContext))
             {
                 return false;
             }
@@ -1103,8 +1103,8 @@ class MLIRGenImpl
             auto subInit = mlirGenPropertyAccessExpression(location, init, name, false, genContext);
 
             if (!processDeclaration(
-                    objectBindingElement.template as<BindingElement>(), varClass,
-                    [&]() { return std::make_pair(subInit.getType(), subInit); }, genContext))
+                    objectBindingElement.as<BindingElement>(), varClass, [&]() { return std::make_pair(subInit.getType(), subInit); },
+                    genContext))
             {
                 return false;
             }
@@ -1115,8 +1115,7 @@ class MLIRGenImpl
         return true;
     }
 
-    template <typename ItemTy>
-    bool processDeclaration(ItemTy item, VariableClass varClass, std::function<std::pair<mlir::Type, mlir::Value>()> func,
+    bool processDeclaration(NamedDeclaration item, VariableClass varClass, std::function<std::pair<mlir::Type, mlir::Value>()> func,
                             const GenContext &genContext)
     {
         auto location = loc(item);
