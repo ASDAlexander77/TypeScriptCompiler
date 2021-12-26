@@ -950,7 +950,7 @@ def TypeScript_Function : TypeScript_Type<"Function"> {
     {
         if ($_parser.parseType(elementType)) return Type();
         inputs.push_back(elementType);
-        if ($_parser.parseOptionalEllipsis()) isVarArg;
+        if ($_parser.parseOptionalEllipsis()) isVarArg = true;
         if ($_parser.parseOptionalComma()) break;
     }
     if ($_parser.parseArrow()) return Type();
@@ -1044,7 +1044,7 @@ def TypeScript_HybridFunction : TypeScript_Type<"HybridFunction"> {
     {
         if ($_parser.parseType(elementType)) return Type();
         inputs.push_back(elementType);
-        if ($_parser.parseOptionalEllipsis()) isVarArg;
+        if ($_parser.parseOptionalEllipsis()) isVarArg = true;
         if ($_parser.parseOptionalComma()) break;
     }
     if ($_parser.parseArrow()) return Type();
@@ -1125,7 +1125,7 @@ def TypeScript_BoundFunction : TypeScript_Type<"BoundFunction"> {
     {
         if ($_parser.parseType(elementType)) return Type();
         inputs.push_back(elementType);
-        if ($_parser.parseOptionalEllipsis()) isVarArg;
+        if ($_parser.parseOptionalEllipsis()) isVarArg = true;
         if ($_parser.parseOptionalComma()) break;
     }
     if ($_parser.parseArrow()) return Type();
