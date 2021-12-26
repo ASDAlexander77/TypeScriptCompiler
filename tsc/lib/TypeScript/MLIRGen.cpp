@@ -5729,17 +5729,37 @@ class MLIRGenImpl
             }
 
             auto type = itemValue.getType();
-
-            values.push_back(itemValue);
-            types.push_back(type);
-            if (!elementType)
+            if (item == SyntaxKind::SpreadElement)
             {
-                elementType = type;
+                if (auto constArray = type.cast<mlir_ts::ConstArrayType>())
+                {
+                    auto constantOp = itemValue.getDefiningOp<mlir_ts::ConstantOp>();
+                    auto arrayAttr = constantOp.value().cast<mlir::ArrayAttr>();
+                    for (auto val : arrayAttr)
+                    {
+                        auto newConstVal = builder.create<mlir_ts::ConstantOp>(location, val);
+                        values.push_back(newConstVal);
+                        types.push_back(constArray.getElementType());
+                    }
+                }
+                else
+                {
+                    llvm_unreachable("not implemented");
+                }
             }
-            else if (elementType != type)
+            else
             {
-                // this is tuple.
-                isTuple = true;
+                values.push_back(itemValue);
+                types.push_back(type);
+                if (!elementType)
+                {
+                    elementType = type;
+                }
+                else if (elementType != type)
+                {
+                    // this is tuple.
+                    isTuple = true;
+                }
             }
         }
 
