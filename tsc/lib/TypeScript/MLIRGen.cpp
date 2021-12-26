@@ -5716,6 +5716,7 @@ class MLIRGenImpl
         declare(srcArrayVarDecl, arraySrc, genContext);
 
         auto dstArrayVarDecl = std::make_shared<VariableDeclarationDOM>("_dst_array_", arrayDest.getType(), location);
+        dstArrayVarDecl->setReadWriteAccess(true);
         declare(dstArrayVarDecl, arrayDest, genContext);
 
         NodeFactory nf(NodeFactoryFlags::None);
@@ -5771,7 +5772,7 @@ class MLIRGenImpl
             auto type = itemValue.getType();
             if (item == SyntaxKind::SpreadElement)
             {
-                if (auto constArray = type.cast<mlir_ts::ConstArrayType>())
+                if (auto constArray = type.dyn_cast<mlir_ts::ConstArrayType>())
                 {
                     auto constantOp = itemValue.getDefiningOp<mlir_ts::ConstantOp>();
                     auto arrayAttr = constantOp.value().cast<mlir::ArrayAttr>();
@@ -5781,7 +5782,7 @@ class MLIRGenImpl
                         values.push_back(std::make_tuple(constArray.getElementType(), newConstVal, false));
                     }
                 }
-                else if (auto array = type.cast<mlir_ts::ArrayType>())
+                else if (auto array = type.dyn_cast<mlir_ts::ArrayType>())
                 {
                     nonConst = true;
                     spreadElements = true;
@@ -5789,6 +5790,8 @@ class MLIRGenImpl
                     {
                         elementType = array.getElementType();
                     }
+
+                    values.push_back(std::make_tuple(array, itemValue, true));
                 }
                 else
                 {
@@ -5864,7 +5867,12 @@ class MLIRGenImpl
             {
                 MLIRCustomMethods cm(builder, location);
                 SmallVector<mlir::Value> emptyArrayValues;
-                auto newArrayOp = builder.create<mlir_ts::CreateArrayOp>(location, getArrayType(elementType), emptyArrayValues);
+                auto arrType = getArrayType(elementType);
+                auto newArrayOp = builder.create<mlir_ts::CreateArrayOp>(location, arrType, emptyArrayValues);
+                auto varArray =
+                    builder.create<mlir_ts::VariableOp>(location, mlir_ts::RefType::get(arrType), newArrayOp, builder.getBoolAttr(false));
+
+                auto loadedVarArray = builder.create<mlir_ts::LoadOp>(location, arrType, varArray);
 
                 // TODO: push every element into array
                 for (auto val : values)
@@ -5872,17 +5880,18 @@ class MLIRGenImpl
                     if (!std::get<2>(val))
                     {
                         SmallVector<mlir::Value> ops;
-                        ops.push_back(newArrayOp);
+                        ops.push_back(loadedVarArray);
                         ops.push_back(std::get<1>(val));
                         cm.mlirGenArrayPush(location, ops);
                     }
                     else
                     {
-                        mlirGenAppendArray(location, newArrayOp, std::get<1>(val), genContext);
+                        mlirGenAppendArray(location, varArray, std::get<1>(val), genContext);
                     }
                 }
 
-                return newArrayOp;
+                auto loadedVarArray2 = builder.create<mlir_ts::LoadOp>(location, arrType, varArray);
+                return loadedVarArray2;
             }
         }
         else
