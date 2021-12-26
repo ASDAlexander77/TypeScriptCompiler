@@ -5716,8 +5716,9 @@ class MLIRGenImpl
         // first value
         auto isTuple = false;
         mlir::Type elementType;
-        SmallVector<mlir::Type> types;
-        SmallVector<mlir::Value> values;
+        SmallVector<std::tuple<mlir::Type, mlir::Value, bool>> values;
+        auto nonConst = false;
+        auto spreadElements = false;
 
         for (auto &item : arrayLiteral->elements)
         {
@@ -5738,8 +5739,16 @@ class MLIRGenImpl
                     for (auto val : arrayAttr)
                     {
                         auto newConstVal = builder.create<mlir_ts::ConstantOp>(location, val);
-                        values.push_back(newConstVal);
-                        types.push_back(constArray.getElementType());
+                        values.push_back(std::make_tuple(constArray.getElementType(), newConstVal, false));
+                    }
+                }
+                else if (auto array = type.cast<mlir_ts::ArrayType>())
+                {
+                    nonConst = true;
+                    spreadElements = true;
+                    if (!elementType)
+                    {
+                        elementType = array.getElementType();
                     }
                 }
                 else
@@ -5749,8 +5758,8 @@ class MLIRGenImpl
             }
             else
             {
-                values.push_back(itemValue);
-                types.push_back(type);
+                values.push_back(std::make_tuple(type, itemValue, false));
+
                 if (!elementType)
                 {
                     elementType = type;
@@ -5764,17 +5773,19 @@ class MLIRGenImpl
         }
 
         SmallVector<mlir::Attribute> constValues;
-        auto nonConst = false;
-        for (auto &itemValue : values)
+        if (!nonConst)
         {
-            auto constOp = itemValue.getDefiningOp<mlir_ts::ConstantOp>();
-            if (!constOp)
+            for (auto &itemValue : values)
             {
-                nonConst = true;
-                break;
-            }
+                auto constOp = std::get<1>(itemValue).getDefiningOp<mlir_ts::ConstantOp>();
+                if (!constOp)
+                {
+                    nonConst = true;
+                    break;
+                }
 
-            constValues.push_back(constOp.valueAttr());
+                constValues.push_back(constOp.valueAttr());
+            }
         }
 
         if (nonConst)
@@ -5782,23 +5793,30 @@ class MLIRGenImpl
             // non const array
             if (isTuple)
             {
+                SmallVector<mlir::Value> arrayValues;
                 SmallVector<mlir_ts::FieldInfo> fieldInfos;
-                for (auto type : types)
+                for (auto val : values)
                 {
-                    fieldInfos.push_back({mlir::Attribute(), type});
+                    fieldInfos.push_back({mlir::Attribute(), std::get<0>(val)});
+                    arrayValues.push_back(std::get<1>(val));
                 }
 
-                return builder.create<mlir_ts::CreateTupleOp>(loc(arrayLiteral), getTupleType(fieldInfos), values);
+                return builder.create<mlir_ts::CreateTupleOp>(loc(arrayLiteral), getTupleType(fieldInfos), arrayValues);
             }
 
             if (!elementType)
             {
                 // in case of empty array
-                llvm_unreachable("not implemented");
-                return mlir::Value();
+                elementType = getAnyType();
             }
 
-            auto newArrayOp = builder.create<mlir_ts::CreateArrayOp>(loc(arrayLiteral), getArrayType(elementType), values);
+            SmallVector<mlir::Value> arrayValues;
+            for (auto val : values)
+            {
+                arrayValues.push_back(std::get<1>(val));
+            }
+
+            auto newArrayOp = builder.create<mlir_ts::CreateArrayOp>(loc(arrayLiteral), getArrayType(elementType), arrayValues);
             return newArrayOp;
         }
         else
@@ -5809,7 +5827,7 @@ class MLIRGenImpl
             SmallVector<mlir::Type> constTypes;
             for (auto &itemValue : values)
             {
-                auto type = mth.convertConstArrayTypeToArrayType(itemValue.getType());
+                auto type = mth.convertConstArrayTypeToArrayType(std::get<1>(itemValue).getType());
                 constTypes.push_back(type);
                 if (!elementType)
                 {
