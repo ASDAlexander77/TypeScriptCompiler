@@ -1103,8 +1103,7 @@ class MLIRGenImpl
             auto subInit = mlirGenPropertyAccessExpression(location, init, name, false, genContext);
 
             if (!processDeclaration(
-                    objectBindingElement.as<BindingElement>(), varClass, [&]() { return std::make_pair(subInit.getType(), subInit); },
-                    genContext))
+                    objectBindingElement, varClass, [&]() { return std::make_pair(subInit.getType(), subInit); }, genContext))
             {
                 return false;
             }
