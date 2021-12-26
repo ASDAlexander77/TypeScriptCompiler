@@ -5707,6 +5707,45 @@ class MLIRGenImpl
         return builder.create<mlir_ts::ConstantOp>(loc(noSubstitutionTemplateLiteral), getStringType(), getStringAttr(text));
     }
 
+    mlir::Value mlirGenAppendArray(mlir::Location location, mlir::Value arrayDest, mlir::Value arraySrc, const GenContext &genContext)
+    {
+        SymbolTableScopeT varScope(symbolTable);
+
+        // register vals
+        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>("_src_array_", arraySrc.getType(), location);
+        declare(srcArrayVarDecl, arraySrc, genContext);
+
+        auto dstArrayVarDecl = std::make_shared<VariableDeclarationDOM>("_dst_array_", arrayDest.getType(), location);
+        declare(dstArrayVarDecl, arrayDest, genContext);
+
+        NodeFactory nf(NodeFactoryFlags::None);
+
+        auto _src_array_ident = nf.createIdentifier(S("_src_array_"));
+        auto _dst_array_ident = nf.createIdentifier(S("_dst_array_"));
+
+        auto _push_ident = nf.createIdentifier(S("push"));
+
+        auto _v_ident = nf.createIdentifier(S("_v_"));
+
+        NodeArray<VariableDeclaration> declarations;
+        declarations.push_back(nf.createVariableDeclaration(_v_ident));
+        auto declList = nf.createVariableDeclarationList(declarations, NodeFlags::Const);
+
+        // access to push
+        auto pushExpr = nf.createPropertyAccessExpression(_dst_array_ident, _push_ident);
+
+        NodeArray<Expression> argumentsArray;
+        argumentsArray.push_back(_v_ident);
+
+        auto forOfStat =
+            nf.createForOfStatement(undefined, declList, _src_array_ident,
+                                    nf.createExpressionStatement(nf.createCallExpression(pushExpr, undefined, argumentsArray)));
+
+        mlirGen(forOfStat, genContext);
+
+        return mlir::Value();
+    }
+
     mlir::Value mlirGen(ts::ArrayLiteralExpression arrayLiteral, const GenContext &genContext)
     {
         auto location = loc(arrayLiteral);
@@ -5801,7 +5840,7 @@ class MLIRGenImpl
                     arrayValues.push_back(std::get<1>(val));
                 }
 
-                return builder.create<mlir_ts::CreateTupleOp>(loc(arrayLiteral), getTupleType(fieldInfos), arrayValues);
+                return builder.create<mlir_ts::CreateTupleOp>(location, getTupleType(fieldInfos), arrayValues);
             }
 
             if (!elementType)
@@ -5810,14 +5849,41 @@ class MLIRGenImpl
                 elementType = getAnyType();
             }
 
-            SmallVector<mlir::Value> arrayValues;
-            for (auto val : values)
+            if (!spreadElements)
             {
-                arrayValues.push_back(std::get<1>(val));
-            }
+                SmallVector<mlir::Value> arrayValues;
+                for (auto val : values)
+                {
+                    arrayValues.push_back(std::get<1>(val));
+                }
 
-            auto newArrayOp = builder.create<mlir_ts::CreateArrayOp>(loc(arrayLiteral), getArrayType(elementType), arrayValues);
-            return newArrayOp;
+                auto newArrayOp = builder.create<mlir_ts::CreateArrayOp>(location, getArrayType(elementType), arrayValues);
+                return newArrayOp;
+            }
+            else
+            {
+                MLIRCustomMethods cm(builder, location);
+                SmallVector<mlir::Value> emptyArrayValues;
+                auto newArrayOp = builder.create<mlir_ts::CreateArrayOp>(location, getArrayType(elementType), emptyArrayValues);
+
+                // TODO: push every element into array
+                for (auto val : values)
+                {
+                    if (!std::get<2>(val))
+                    {
+                        SmallVector<mlir::Value> ops;
+                        ops.push_back(newArrayOp);
+                        ops.push_back(std::get<1>(val));
+                        cm.mlirGenArrayPush(location, ops);
+                    }
+                    else
+                    {
+                        mlirGenAppendArray(location, newArrayOp, std::get<1>(val), genContext);
+                    }
+                }
+
+                return newArrayOp;
+            }
         }
         else
         {

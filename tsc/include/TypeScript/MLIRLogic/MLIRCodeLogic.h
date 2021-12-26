@@ -232,7 +232,6 @@ class MLIRCustomMethods
         return result;
     }
 
-  private:
     mlir::LogicalResult mlirGenPrint(const mlir::Location &location, ArrayRef<mlir::Value> operands)
     {
         SmallVector<mlir::Value> vals;
