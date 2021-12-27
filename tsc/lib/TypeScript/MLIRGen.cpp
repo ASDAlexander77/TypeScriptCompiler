@@ -5062,27 +5062,39 @@ class MLIRGenImpl
 
         TypeSwitch<mlir::Type>(funcType)
             .Case<mlir_ts::FunctionType>([&](auto calledFuncType) {
-                if (calledFuncType.getResults().size() > 0)
+                auto size = calledFuncType.getResults().size();
+                if (size == 1)
                 {
                     returnType = calledFuncType.getResults().front();
+                }
+                else if (size > 0)
+                {
+                    llvm_unreachable("not implemented");
                 }
             })
             .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) {
-                if (calledFuncType.getResults().size() > 0)
+                auto size = calledFuncType.getResults().size();
+                if (size == 1)
                 {
                     returnType = calledFuncType.getResults().front();
                 }
+                else if (size > 0)
+                {
+                    llvm_unreachable("not implemented");
+                }
             })
-            .Case<mlir_ts::BoundFunctionType>([&](auto calledBoundFuncType) {
-                auto calledFuncType = getFunctionType(calledBoundFuncType.getInputs(), calledBoundFuncType.getResults());
-                if (calledFuncType.getResults().size() > 0)
+            .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) {
+                auto size = calledFuncType.getResults().size();
+                if (size == 1)
                 {
                     returnType = calledFuncType.getResults().front();
                 }
+                else if (size > 0)
+                {
+                    llvm_unreachable("not implemented");
+                }
             })
-            .Case<mlir_ts::ClassType>([&](auto classType) {})
-            .Case<mlir_ts::ClassStorageType>([&](auto classStorageType) {})
-            .Default([&](auto type) {});
+            .Default([&](auto type) { llvm_unreachable("not implemented"); });
 
         return returnType;
     }
@@ -8899,6 +8911,20 @@ class MLIRGenImpl
             {
                 auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
                 return getArrayType(elemnentType);
+            }
+
+            if (name == "ReturnType")
+            {
+                auto elementType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                if (genContext.allowPartialResolve && !elementType)
+                {
+                    return mlir::Type();
+                }
+
+                LLVM_DEBUG(llvm::dbgs() << "\n!! ReturnType Of: " << elementType;);
+                auto retType = getReturnTypeFromFuncRef(elementType);
+                LLVM_DEBUG(llvm::dbgs() << " is " << retType << "\n";);
+                return retType;
             }
 
             if (name == "Awaited")
