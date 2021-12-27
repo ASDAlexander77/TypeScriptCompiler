@@ -8724,9 +8724,22 @@ class MLIRGenImpl
         {
             return getFunctionType(typeReferenceAST.as<FunctionTypeNode>(), genContext);
         }
+        else if (kind == SyntaxKind::ConstructorType)
+        {
+            // TODO: do I need to add flag to FunctionType to show that this is ConstructorType?
+            return getConstructorType(typeReferenceAST.as<ConstructorTypeNode>(), genContext);
+        }
+        else if (kind == SyntaxKind::CallSignature)
+        {
+            return getCallSignature(typeReferenceAST.as<CallSignatureDeclaration>(), genContext);
+        }
         else if (kind == SyntaxKind::MethodSignature)
         {
             return getMethodSignature(typeReferenceAST.as<MethodSignature>(), genContext);
+        }
+        else if (kind == SyntaxKind::ConstructSignature)
+        {
+            return getConstructSignature(typeReferenceAST.as<ConstructSignatureDeclaration>(), genContext);
         }
         else if (kind == SyntaxKind::TupleType)
         {
@@ -8801,10 +8814,6 @@ class MLIRGenImpl
             assert(genContext.thisType);
             // in runtime it is boolean (it is needed to track types)
             return genContext.thisType;
-        }
-        else if (kind == SyntaxKind::CallSignature)
-        {
-            return getCallSignature(typeReferenceAST.as<CallSignatureDeclaration>(), genContext);
         }
         else if (kind == SyntaxKind::Unknown)
         {
@@ -9176,25 +9185,6 @@ class MLIRGenImpl
         return mlir_ts::FunctionType::get(builder.getContext(), inputs, results, isVarArg);
     }
 
-    mlir_ts::HybridFunctionType getFunctionType(FunctionTypeNode functionType, const GenContext &genContext)
-    {
-        auto resultType = getType(functionType->type, genContext);
-        SmallVector<mlir::Type> argTypes;
-        for (auto paramItem : functionType->parameters)
-        {
-            auto type = getType(paramItem->type, genContext);
-            if (paramItem->questionToken)
-            {
-                type = getOptionalType(type);
-            }
-
-            argTypes.push_back(type);
-        }
-
-        auto funcType = mlir_ts::HybridFunctionType::get(builder.getContext(), argTypes, resultType);
-        return funcType;
-    }
-
     mlir_ts::FunctionType getSignature(SignatureDeclarationBase signature, const GenContext &genContext)
     {
         auto resultType = getType(signature->type, genContext);
@@ -9214,10 +9204,27 @@ class MLIRGenImpl
         return funcType;
     }
 
+    mlir_ts::HybridFunctionType getFunctionType(SignatureDeclarationBase signature, const GenContext &genContext)
+    {
+        auto funcType = mlir_ts::HybridFunctionType::get(builder.getContext(), getSignature(signature, genContext));
+        return funcType;
+    }
+
+    mlir_ts::HybridFunctionType getConstructorType(SignatureDeclarationBase signature, const GenContext &genContext)
+    {
+        auto funcType = mlir_ts::HybridFunctionType::get(builder.getContext(), getSignature(signature, genContext));
+        return funcType;
+    }
+
     mlir_ts::HybridFunctionType getCallSignature(CallSignatureDeclaration signature, const GenContext &genContext)
     {
         auto funcType = mlir_ts::HybridFunctionType::get(builder.getContext(), getSignature(signature, genContext));
         return funcType;
+    }
+
+    mlir_ts::FunctionType getConstructSignature(ConstructSignatureDeclaration constructSignature, const GenContext &genContext)
+    {
+        return getSignature(constructSignature, genContext);
     }
 
     mlir_ts::FunctionType getMethodSignature(MethodSignature methodSignature, const GenContext &genContext)
