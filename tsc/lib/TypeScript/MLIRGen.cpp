@@ -997,9 +997,12 @@ class MLIRGenImpl
 
                 globalOp.typeAttr(mlir::TypeAttr::get(type));
 
-                // save value
-                auto address = builder.create<mlir_ts::AddressOfOp>(location, mlir_ts::RefType::get(type), name, mlir::IntegerAttr());
-                builder.create<mlir_ts::StoreOp>(location, init, address);
+                if (init)
+                {
+                    // save value
+                    auto address = builder.create<mlir_ts::AddressOfOp>(location, mlir_ts::RefType::get(type), name, mlir::IntegerAttr());
+                    builder.create<mlir_ts::StoreOp>(location, init, address);
+                }
             }
         }
 
@@ -8799,6 +8802,15 @@ class MLIRGenImpl
             // in runtime it is boolean (it is needed to track types)
             return genContext.thisType;
         }
+        else if (kind == SyntaxKind::CallSignature)
+        {
+            return getCallSignature(typeReferenceAST.as<CallSignatureDeclaration>(), genContext);
+        }
+        else if (kind == SyntaxKind::Unknown)
+        {
+            // in case type is not provided
+            return getAnyType();
+        }
 
         llvm_unreachable("not implemented type declaration");
         // return getAnyType();
@@ -9183,15 +9195,11 @@ class MLIRGenImpl
         return funcType;
     }
 
-    mlir_ts::FunctionType getMethodSignature(MethodSignature methodSignature, const GenContext &genContext)
+    mlir_ts::FunctionType getSignature(SignatureDeclarationBase signature, const GenContext &genContext)
     {
-        auto resultType = getType(methodSignature->type, genContext);
+        auto resultType = getType(signature->type, genContext);
         SmallVector<mlir::Type> argTypes;
-
-        // add this type
-        argTypes.push_back(getOpaqueType());
-
-        for (auto paramItem : methodSignature->parameters)
+        for (auto paramItem : signature->parameters)
         {
             auto type = getType(paramItem->type, genContext);
             if (paramItem->questionToken)
@@ -9204,6 +9212,17 @@ class MLIRGenImpl
 
         auto funcType = mlir_ts::FunctionType::get(builder.getContext(), argTypes, resultType);
         return funcType;
+    }
+
+    mlir_ts::HybridFunctionType getCallSignature(CallSignatureDeclaration signature, const GenContext &genContext)
+    {
+        auto funcType = mlir_ts::HybridFunctionType::get(builder.getContext(), getSignature(signature, genContext));
+        return funcType;
+    }
+
+    mlir_ts::FunctionType getMethodSignature(MethodSignature methodSignature, const GenContext &genContext)
+    {
+        return getSignature(methodSignature, genContext);
     }
 
     mlir::Type getUnionType(UnionTypeNode unionTypeNode, const GenContext &genContext)
