@@ -722,11 +722,16 @@ class MLIRTypeHelper
     {
         bool anyNonTuple = false;
         bool allBaseTypes = true;
+        bool isAnyNullable = false;
+        bool isAnyValue = false;
         for (auto type : unionType.getTypes())
         {
+            auto isNullType = type.isa<mlir_ts::NullType>();
+            isAnyNullable |= isNullType;
+            isAnyValue |= isValueType(type);
             anyNonTuple |= !type.isa<mlir_ts::TupleType>() || !type.isa<mlir_ts::ConstTupleType>();
             auto baseTypeOfCurrent = getBaseType(type);
-            if (!baseType)
+            if (!baseType && !isNullType)
             {
                 baseType = baseTypeOfCurrent;
                 allBaseTypes = true;
@@ -735,6 +740,12 @@ class MLIRTypeHelper
             {
                 allBaseTypes = false;
             }
+        }
+
+        if (isAnyNullable && isAnyValue)
+        {
+            // null & value, needs tag
+            return true;
         }
 
         if (allBaseTypes)
