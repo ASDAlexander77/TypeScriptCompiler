@@ -161,11 +161,6 @@ class TypeOfOpHelper
             return typeOfLogic(loc, subType.getElementType());
         }
 
-        if (auto unionType = type.dyn_cast_or_null<mlir_ts::UnionType>())
-        {
-            return typeOfLogic(loc, unionType);
-        }
-
         LLVM_DEBUG(llvm::dbgs() << "TypeOf: " << type << "\n");
 
         llvm_unreachable("not implemented");
@@ -183,6 +178,12 @@ class TypeOfOpHelper
         if (origType.isa<mlir_ts::UnionType>())
         {
             return rewriter.create<mlir_ts::GetTypeInfoFromUnionOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), value);
+        }
+
+        if (auto subType = origType.dyn_cast_or_null<mlir_ts::OptionalType>())
+        {
+            auto valueOfOpt = rewriter.create<mlir_ts::ValueOp>(loc, subType.getElementType(), value);
+            return typeOfLogic(loc, valueOfOpt, subType.getElementType());
         }
 
         return typeOfLogic(loc, origType);
