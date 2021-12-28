@@ -757,6 +757,21 @@ class MLIRTypeHelper
 
         return false;
     }
+
+    mlir::Type getFirstNonNullUnionType(mlir_ts::UnionType unionType)
+    {
+        for (auto itemType : unionType.getTypes())
+        {
+            if (itemType.isa<mlir_ts::NullType>())
+            {
+                continue;
+            }
+
+            return itemType;
+        }
+
+        return mlir::Type();
+    }
 };
 
 } // namespace typescript

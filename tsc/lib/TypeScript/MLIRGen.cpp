@@ -4556,7 +4556,8 @@ class MLIRGenImpl
             .Case<mlir_ts::UnionType>([&](auto unionType) {
                 // all union types must have the same property
                 // 1) cast to first type
-                auto frontType = unionType.getTypes().front();
+                MLIRTypeHelper mth(builder.getContext());
+                auto frontType = mth.getFirstNonNullUnionType(unionType);
                 auto casted = cast(location, frontType, objectValue, genContext);
                 value = mlirGenPropertyAccessExpression(location, casted, name, false, genContext);
             })
