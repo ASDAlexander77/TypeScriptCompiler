@@ -133,7 +133,7 @@ struct GenContext
     mlir::SmallVector<mlir::Block *> *cleanUps;
     NodeArray<Statement> generatedStatements;
     llvm::StringMap<mlir::Type> typeAliasMap;
-    llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, TypeNode>> typeParamsWithArgs;
+    llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> typeParamsWithArgs;
     mlir::SmallVector<std::pair<mlir::Location, std::string>> *unresolved;
     int *state;
 };

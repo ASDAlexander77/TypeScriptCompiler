@@ -739,6 +739,27 @@ class MLIRTypeHelper
 
         return anyNonTuple;
     }
+
+    bool extendsType(mlir::Type srcType, mlir::Type extendType)
+    {
+        if (srcType == extendType)
+        {
+            return true;
+        }
+
+        if (auto unionType = extendType.dyn_cast_or_null<mlir_ts::UnionType>())
+        {
+            // calculate store size
+            auto pred = [&](auto &item) { return extendsType(srcType, item); };
+            auto types = unionType.getTypes();
+            if (std::find_if(types.begin(), types.end(), pred) == types.end())
+            {
+                return false;
+            }
+        }
+
+        return false;
+    }
 };
 
 } // namespace typescript

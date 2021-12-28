@@ -4808,7 +4808,7 @@ class MLIRGenImpl
     mlir::Value InterfaceMembers(mlir::Location location, mlir::Value interfaceValue, mlir::StringRef interfaceFullName, mlir::Attribute id,
                                  const GenContext &genContext)
     {
-        auto interfaceInfo = getInterfaceByFullName(interfaceFullName);
+        auto interfaceInfo = getInterfaceInfoByFullName(interfaceFullName);
         assert(interfaceInfo);
 
         // static field access
@@ -6698,12 +6698,11 @@ class MLIRGenImpl
             auto found = genContext.typeParamsWithArgs.find(name);
             if (found != genContext.typeParamsWithArgs.end())
             {
-                auto typeNode = (*found).getValue().second;
-                auto resolvedType = getType(typeNode, genContext);
+                auto type = (*found).getValue().second;
 
-                LLVM_DEBUG(llvm::dbgs() << "\n!! type gen. param [" << name << "] -> [" << resolvedType << "]\n";);
+                LLVM_DEBUG(llvm::dbgs() << "\n!! type gen. param [" << name << "] -> [" << type << "]\n";);
 
-                return builder.create<mlir_ts::TypeRefOp>(location, resolvedType);
+                return builder.create<mlir_ts::TypeRefOp>(location, type);
             }
         }
 
@@ -6734,7 +6733,7 @@ class MLIRGenImpl
                     mlir::FlatSymbolRefAttr::get(builder.getContext(), classInfo->classType.getName().getValue()));
             }
 
-            auto interfaceInfo = getInterfaceByFullName(fullName);
+            auto interfaceInfo = getInterfaceInfoByFullName(fullName);
             if (interfaceInfo)
             {
                 return builder.create<mlir_ts::InterfaceRefOp>(
@@ -6876,6 +6875,11 @@ class MLIRGenImpl
             if (!namePtr.empty())
             {
                 auto typeParameterDOM = std::make_shared<TypeParameterDOM>(namePtr.str());
+                if (typeParameter->constraint)
+                {
+                    typeParameterDOM->setConstraint(getType(typeParameter->constraint, genContext));
+                }
+
                 typeParams.push_back(typeParameterDOM);
             }
             else
@@ -7305,7 +7309,7 @@ class MLIRGenImpl
                 auto ifaceType = mlirGen(implementingType->expression, genContext);
                 TypeSwitch<mlir::Type>(ifaceType.getType())
                     .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
-                        auto interfaceInfo = getInterfaceByFullName(interfaceType.getName().getValue());
+                        auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
                         interfaceInfos.push_back({interfaceInfo, -1, false});
                         // TODO: it will error
                         // implementingType->processed = true;
@@ -7966,7 +7970,7 @@ class MLIRGenImpl
             auto success = false;
             TypeSwitch<mlir::Type>(ifaceType.getType())
                 .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
-                    auto interfaceInfo = getInterfaceByFullName(interfaceType.getName().getValue());
+                    auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
                     success = !failed(
                         mlirGenClassVirtualTableDefinitionForInterface(loc(implementingType), newClassPtr, interfaceInfo, genContext));
                 })
@@ -8328,7 +8332,7 @@ class MLIRGenImpl
             auto success = false;
             TypeSwitch<mlir::Type>(ifaceType.getType())
                 .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
-                    auto interfaceInfo = getInterfaceByFullName(interfaceType.getName().getValue());
+                    auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
                     newInterfacePtr->extends.push_back({-1, interfaceInfo});
                     success = true;
                     extendsType->processed = true;
@@ -8692,7 +8696,7 @@ class MLIRGenImpl
                 }
 
                 // create interface vtable from current class
-                auto interfaceInfo = getInterfaceByFullName(interfaceType.getName().getValue());
+                auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
                 assert(interfaceInfo);
 
                 if (auto createdInterfaceVTableForClass =
@@ -8743,7 +8747,7 @@ class MLIRGenImpl
         builder.create<mlir_ts::StoreOp>(location, in, valueAddr);
         auto inCasted = builder.create<mlir_ts::CastOp>(location, objType, valueAddr);
 
-        auto interfaceInfo = getInterfaceByFullName(interfaceType.getName().getValue());
+        auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
         if (auto createdInterfaceVTableForObject = mlirGenCreateInterfaceVTableForObject(location, objType, interfaceInfo, genContext))
         {
 
@@ -8881,6 +8885,10 @@ class MLIRGenImpl
             // in case type is not provided
             return getAnyType();
         }
+        else if (kind == SyntaxKind::ConditionalType)
+        {
+            return getConditionalType(typeReferenceAST.as<ConditionalTypeNode>(), genContext);
+        }
 
         llvm_unreachable("not implemented type declaration");
         // return getAnyType();
@@ -8932,12 +8940,14 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult zipTypeParametersWithArguments(llvm::ArrayRef<TypeParameterDOM::TypePtr> typeParams, NodeArray<TypeNode> typeArgs,
-                                                       llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, TypeNode>> &pairs)
+                                                       llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> &pairs,
+                                                       const GenContext &genContext)
     {
         for (auto index = 0; index < typeParams.size(); index++)
         {
             auto &typeParam = typeParams[index];
-            pairs.insert({typeParam->getName(), std::make_pair(typeParam, typeArgs[index])});
+            auto type = getType(typeArgs[index], genContext);
+            pairs.insert({typeParam->getName(), std::make_pair(typeParam, type)});
         }
 
         return mlir::success();
@@ -8958,7 +8968,8 @@ class MLIRGenImpl
                 auto typeParams = std::get<0>(genericTypeAliasInfo);
                 auto typeNode = std::get<1>(genericTypeAliasInfo);
 
-                zipTypeParametersWithArguments(typeParams, typeReferenceAST->typeArguments, genericTypeGenContext.typeParamsWithArgs);
+                zipTypeParametersWithArguments(typeParams, typeReferenceAST->typeArguments, genericTypeGenContext.typeParamsWithArgs,
+                                               genContext);
 
                 auto newType = getType(typeNode, genericTypeGenContext);
                 return newType;
@@ -9022,6 +9033,49 @@ class MLIRGenImpl
     mlir::Type getTypeByTypeQuery(TypeQueryNode typeQueryAST, const GenContext &genContext)
     {
         return getTypeByTypeName(typeQueryAST->exprName, genContext);
+    }
+
+    mlir::Type getConditionalType(ConditionalTypeNode conditionalTypeNode, const GenContext &genContext)
+    {
+        auto checkType = getType(conditionalTypeNode->checkType, genContext);
+        auto extendsType = getType(conditionalTypeNode->extendsType, genContext);
+
+        MLIRTypeHelper mth(builder.getContext());
+
+        if (mth.extendsType(checkType, extendsType))
+        {
+            return getType(conditionalTypeNode->trueType, genContext);
+        }
+
+        mlir::Type resType;
+        TypeSwitch<mlir::Type>(checkType)
+            .template Case<mlir_ts::InterfaceType>([&](auto ifaceType) {
+                auto interfaceInfo = getInterfaceInfoByFullName(ifaceType.getName().getValue());
+                assert(interfaceInfo);
+                for (auto extend : interfaceInfo->extends)
+                {
+                    if (mth.extendsType(extend.second->interfaceType, extendsType))
+                    {
+                        resType = getType(conditionalTypeNode->trueType, genContext);
+                        break;
+                    }
+                }
+            })
+            .template Case<mlir_ts::ClassType>([&](auto classType) {
+                auto classInfo = getClassByFullName(classType.getName().getValue());
+                assert(classInfo);
+                for (auto extend : classInfo->baseClasses)
+                {
+                    if (mth.extendsType(extend->classType, extendsType))
+                    {
+                        resType = getType(conditionalTypeNode->trueType, genContext);
+                        break;
+                    }
+                }
+            })
+            .Default([&](auto type) { resType = getType(conditionalTypeNode->falseType, genContext); });
+
+        return resType;
     }
 
     mlir_ts::VoidType getVoidType()
@@ -9449,7 +9503,7 @@ class MLIRGenImpl
                 {
                     if (auto ifaceType = type.dyn_cast<mlir_ts::InterfaceType>())
                     {
-                        auto srcInterfaceInfo = getInterfaceByFullName(ifaceType.getName().getValue());
+                        auto srcInterfaceInfo = getInterfaceInfoByFullName(ifaceType.getName().getValue());
                         assert(srcInterfaceInfo);
                         newInterfaceInfo->extends.push_back({-1, srcInterfaceInfo});
                         continue;
@@ -9715,7 +9769,7 @@ class MLIRGenImpl
         return fullNameClassesMap.lookup(fullName);
     }
 
-    auto getInterfaceByFullName(StringRef fullName) -> InterfaceInfo::TypePtr
+    auto getInterfaceInfoByFullName(StringRef fullName) -> InterfaceInfo::TypePtr
     {
         return fullNameInterfacesMap.lookup(fullName);
     }
