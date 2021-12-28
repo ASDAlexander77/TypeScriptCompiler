@@ -714,8 +714,13 @@ class MLIRTypeHelper
 
     bool isUnionTypeNeedsTag(mlir_ts::UnionType unionType)
     {
-        bool anyNonTuple = false;
         mlir::Type baseType;
+        return isUnionTypeNeedsTag(unionType, baseType);
+    }
+
+    bool isUnionTypeNeedsTag(mlir_ts::UnionType unionType, mlir::Type &baseType)
+    {
+        bool anyNonTuple = false;
         bool allBaseTypes = true;
         for (auto type : unionType.getTypes())
         {

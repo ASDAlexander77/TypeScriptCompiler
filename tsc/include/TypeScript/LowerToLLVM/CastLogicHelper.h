@@ -317,6 +317,24 @@ class CastLogicHelper
                 auto valAsBool = cast(val, val.getType(), tch.convertType(val.getType()), boolType, llvmBoolType);
                 return rewriter.create<LLVM::AndOp>(loc, llvmBoolType, v1, valAsBool);
             }
+
+            if (auto unionType = inType.dyn_cast_or_null<mlir_ts::UnionType>())
+            {
+                MLIRTypeHelper mth(unionType.getContext());
+                mlir::Type baseType;
+                bool needTag = mth.isUnionTypeNeedsTag(unionType, baseType);
+                if (!needTag)
+                {
+                    auto llvmBoolType = tch.convertType(boolType);
+                    auto valAsBool = cast(in, baseType, tch.convertType(baseType), boolType, llvmBoolType);
+                    return valAsBool;
+                }
+                else
+                {
+                    // TODO: finish it, union type has RTTI field, test it first
+                    llvm_unreachable("not implemented");
+                }
+            }
         }
 
         // cast value value to optional value
