@@ -5060,43 +5060,48 @@ class MLIRGenImpl
     {
         mlir::Type returnType;
 
+        auto f = [&](auto calledFuncType) {
+            auto size = calledFuncType.getResults().size();
+            if (size == 1)
+            {
+                returnType = calledFuncType.getResults().front();
+            }
+            else if (size > 0)
+            {
+                llvm_unreachable("not implemented");
+            }
+        };
+
         TypeSwitch<mlir::Type>(funcType)
-            .Case<mlir_ts::FunctionType>([&](auto calledFuncType) {
-                auto size = calledFuncType.getResults().size();
-                if (size == 1)
-                {
-                    returnType = calledFuncType.getResults().front();
-                }
-                else if (size > 0)
-                {
-                    llvm_unreachable("not implemented");
-                }
-            })
-            .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) {
-                auto size = calledFuncType.getResults().size();
-                if (size == 1)
-                {
-                    returnType = calledFuncType.getResults().front();
-                }
-                else if (size > 0)
-                {
-                    llvm_unreachable("not implemented");
-                }
-            })
-            .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) {
-                auto size = calledFuncType.getResults().size();
-                if (size == 1)
-                {
-                    returnType = calledFuncType.getResults().front();
-                }
-                else if (size > 0)
-                {
-                    llvm_unreachable("not implemented");
-                }
-            })
+            .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { f(calledFuncType); })
+            .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { f(calledFuncType); })
+            .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { f(calledFuncType); })
             .Default([&](auto type) { llvm_unreachable("not implemented"); });
 
         return returnType;
+    }
+
+    mlir::Type getParamsTupleTypeFromFuncRef(mlir::Type funcType)
+    {
+        mlir::Type paramsType;
+
+        auto f = [&](auto calledFuncType) {
+            SmallVector<mlir_ts::FieldInfo> fieldInfos;
+            for (auto param : calledFuncType.getInputs())
+            {
+                fieldInfos.push_back({mlir::Attribute(), param});
+            }
+
+            return getTupleType(fieldInfos);
+        };
+
+        TypeSwitch<mlir::Type>(funcType)
+            .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { f(calledFuncType); })
+            .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { f(calledFuncType); })
+            .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { f(calledFuncType); })
+            .Default([&](auto type) { llvm_unreachable("not implemented"); });
+
+        return paramsType;
     }
 
     mlir::Value mlirGenCall(mlir::Location location, mlir::Value funcRefValue, NodeArray<TypeNode> typeArguments,
@@ -9004,6 +9009,27 @@ class MLIRGenImpl
                 return elemnentType;
             }
 
+            if (name == "Partial")
+            {
+                // TODO: ???
+                auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                return elemnentType;
+            }
+
+            if (name == "Required")
+            {
+                // TODO: ???
+                auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                return elemnentType;
+            }
+
+            if (name == "NonNullable")
+            {
+                // TODO: ???
+                auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                return elemnentType;
+            }
+
             if (name == "Array")
             {
                 auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
@@ -9026,6 +9052,20 @@ class MLIRGenImpl
 
                 LLVM_DEBUG(llvm::dbgs() << "\n!! ReturnType Of: " << elementType;);
                 auto retType = getReturnTypeFromFuncRef(elementType);
+                LLVM_DEBUG(llvm::dbgs() << " is " << retType << "\n";);
+                return retType;
+            }
+
+            if (name == "Parameters")
+            {
+                auto elementType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                if (genContext.allowPartialResolve && !elementType)
+                {
+                    return mlir::Type();
+                }
+
+                LLVM_DEBUG(llvm::dbgs() << "\n!! ReturnType Of: " << elementType;);
+                auto retType = getParamsTupleTypeFromFuncRef(elementType);
                 LLVM_DEBUG(llvm::dbgs() << " is " << retType << "\n";);
                 return retType;
             }
@@ -9094,7 +9134,7 @@ class MLIRGenImpl
         return resType;
     }
 
-    mlir::Type getTypeOperator(TypeOperatorNode typeOperatorNode, const GenContext &genContext)
+    mlir::Type getKeyOf(TypeOperatorNode typeOperatorNode, const GenContext &genContext)
     {
         // this is "keyof"
         // TODO: finish it
@@ -9161,6 +9201,21 @@ class MLIRGenImpl
         }
 
         return mlir::Type();
+    }
+
+    mlir::Type getTypeOperator(TypeOperatorNode typeOperatorNode, const GenContext &genContext)
+    {
+        if (typeOperatorNode->_operator == SyntaxKind::UniqueKeyword)
+        {
+            // TODO: finish it
+            return getType(typeOperatorNode->type, genContext);
+        }
+        else if (typeOperatorNode->_operator == SyntaxKind::KeyOfKeyword)
+        {
+            return getKeyOf(typeOperatorNode, genContext);
+        }
+
+        llvm_unreachable("not implemented");
     }
 
     mlir_ts::VoidType getVoidType()
