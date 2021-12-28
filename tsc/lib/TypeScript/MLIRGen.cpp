@@ -9237,10 +9237,24 @@ class MLIRGenImpl
         llvm_unreachable("not implemented");
     }
 
-    mlir::Type getIndexedAccessType(IndexedAccessTypeNode indexedAccessTypeNode, const GenContext &genContext)
+    mlir::Type getIndexedAccessType(mlir::Type type, mlir::Type indexType, const GenContext &genContext)
     {
-        auto type = getType(indexedAccessTypeNode->objectType, genContext);
-        auto indexType = getType(indexedAccessTypeNode->indexType, genContext);
+        if (auto unionType = indexType.dyn_cast<mlir_ts::UnionType>())
+        {
+            SmallVector<mlir::Type> resolvedTypes;
+            for (auto itemType : unionType.getTypes())
+            {
+                auto resType = getIndexedAccessType(type, itemType, genContext);
+                if (!resType)
+                {
+                    return mlir::Type();
+                }
+
+                resolvedTypes.push_back(resType);
+            }
+
+            return getUnionType(resolvedTypes);
+        }
 
         if (auto objType = type.dyn_cast<mlir_ts::ObjectType>())
         {
@@ -9285,6 +9299,13 @@ class MLIRGenImpl
         }
 
         return mlir::Type();
+    }
+
+    mlir::Type getIndexedAccessType(IndexedAccessTypeNode indexedAccessTypeNode, const GenContext &genContext)
+    {
+        auto type = getType(indexedAccessTypeNode->objectType, genContext);
+        auto indexType = getType(indexedAccessTypeNode->indexType, genContext);
+        return getIndexedAccessType(type, indexType, genContext);
     }
 
     mlir_ts::VoidType getVoidType()
