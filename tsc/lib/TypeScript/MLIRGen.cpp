@@ -8889,6 +8889,10 @@ class MLIRGenImpl
         {
             return getConditionalType(typeReferenceAST.as<ConditionalTypeNode>(), genContext);
         }
+        else if (kind == SyntaxKind::TypeOperator)
+        {
+            return getTypeOperator(typeReferenceAST.as<TypeOperatorNode>(), genContext);
+        }
 
         llvm_unreachable("not implemented type declaration");
         // return getAnyType();
@@ -8952,7 +8956,7 @@ class MLIRGenImpl
 
             if (typeParam->getConstraint() && !mth.extendsType(type, typeParam->getConstraint()))
             {
-                emitError(location, "") << "Type " << type << " does not satisfy the constraint " << typeParam->getConstraint() << ".";
+                emitWarning(location, "") << "Type " << type << " does not satisfy the constraint " << typeParam->getConstraint() << ".";
                 return mlir::failure();
             }
 
@@ -8980,7 +8984,7 @@ class MLIRGenImpl
                 if (mlir::failed(zipTypeParametersWithArguments(loc(typeReferenceAST), typeParams, typeReferenceAST->typeArguments,
                                                                 genericTypeGenContext.typeParamsWithArgs, genContext)))
                 {
-                    return mlir::Type();
+                    return getNeverType();
                 }
 
                 auto newType = getType(typeNode, genericTypeGenContext);
@@ -9088,6 +9092,75 @@ class MLIRGenImpl
             .Default([&](auto type) { resType = getType(conditionalTypeNode->falseType, genContext); });
 
         return resType;
+    }
+
+    mlir::Type getTypeOperator(TypeOperatorNode typeOperatorNode, const GenContext &genContext)
+    {
+        // this is "keyof"
+        // TODO: finish it
+        auto type = getType(typeOperatorNode->type, genContext);
+        if (type.isa<mlir_ts::AnyType>())
+        {
+            return getUnionType(getStringType(), getNumberType());
+        }
+
+        if (type.isa<mlir_ts::UnknownType>())
+        {
+            return getNeverType();
+        }
+
+        if (type.isa<mlir_ts::ArrayType>())
+        {
+            return getNumberType();
+        }
+
+        if (auto objType = type.dyn_cast<mlir_ts::ObjectType>())
+        {
+            type = objType.getStorageType();
+        }
+
+        if (auto interfaceType = type.dyn_cast<mlir_ts::ClassType>())
+        {
+            auto classTypeInfo = getClassByFullName(interfaceType.getName().getValue());
+            type = classTypeInfo->classType.getStorageType();
+        }
+
+        if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
+        {
+            SmallVector<mlir::Type> literalTypes;
+            for (auto field : tupleType.getFields())
+            {
+                auto litType = mlir_ts::LiteralType::get(field.id, field.id.getType());
+                literalTypes.push_back(litType);
+            }
+
+            if (literalTypes.size() == 1)
+            {
+                return literalTypes.front();
+            }
+
+            return getUnionType(literalTypes);
+        }
+
+        if (auto interfaceType = type.dyn_cast<mlir_ts::InterfaceType>())
+        {
+            auto interfaceTypeInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
+            SmallVector<mlir::Type> literalTypes;
+            for (auto field : interfaceTypeInfo->fields)
+            {
+                auto litType = mlir_ts::LiteralType::get(field.id, field.id.getType());
+                literalTypes.push_back(litType);
+            }
+
+            if (literalTypes.size() == 1)
+            {
+                return literalTypes.front();
+            }
+
+            return getUnionType(literalTypes);
+        }
+
+        return mlir::Type();
     }
 
     mlir_ts::VoidType getVoidType()
@@ -9590,12 +9663,24 @@ class MLIRGenImpl
         genContext.allowPartialResolve = true;
         auto value = mlirGen(literalTypeNode->literal.as<Expression>(), genContext);
         auto type = value.getType();
-        // return type;
 
-        auto valueAttr = value.getDefiningOp<mlir_ts::ConstantOp>().valueAttr();
-        auto literalType = mlir_ts::LiteralType::get(valueAttr, type);
+        auto constantOp = value.getDefiningOp<mlir_ts::ConstantOp>();
+        if (constantOp)
+        {
+            auto valueAttr = value.getDefiningOp<mlir_ts::ConstantOp>().valueAttr();
+            auto literalType = mlir_ts::LiteralType::get(valueAttr, type);
+            return literalType;
+        }
 
-        return literalType;
+        auto nullOp = value.getDefiningOp<mlir_ts::NullOp>();
+        if (nullOp)
+        {
+            return getNullType();
+        }
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! value of literal: " << value << "\n";);
+
+        llvm_unreachable("not implemented");
     }
 
     mlir_ts::OptionalType getOptionalType(mlir::Type type)
