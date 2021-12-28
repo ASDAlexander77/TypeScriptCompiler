@@ -8898,6 +8898,10 @@ class MLIRGenImpl
         {
             return getTypeOperator(typeReferenceAST.as<TypeOperatorNode>(), genContext);
         }
+        else if (kind == SyntaxKind::IndexedAccessType)
+        {
+            return getIndexedAccessType(typeReferenceAST.as<IndexedAccessTypeNode>(), genContext);
+        }
 
         llvm_unreachable("not implemented type declaration");
         // return getAnyType();
@@ -9170,7 +9174,7 @@ class MLIRGenImpl
             SmallVector<mlir::Type> literalTypes;
             for (auto field : tupleType.getFields())
             {
-                auto litType = mlir_ts::LiteralType::get(field.id, field.id.getType());
+                auto litType = mlir_ts::LiteralType::get(field.id, getAttributeType(field.id));
                 literalTypes.push_back(litType);
             }
 
@@ -9188,7 +9192,7 @@ class MLIRGenImpl
             SmallVector<mlir::Type> literalTypes;
             for (auto field : interfaceTypeInfo->fields)
             {
-                auto litType = mlir_ts::LiteralType::get(field.id, field.id.getType());
+                auto litType = mlir_ts::LiteralType::get(field.id, getAttributeType(field.id));
                 literalTypes.push_back(litType);
             }
 
@@ -9216,6 +9220,70 @@ class MLIRGenImpl
         }
 
         llvm_unreachable("not implemented");
+    }
+
+    mlir::Type getAttributeType(mlir::Attribute attr)
+    {
+        if (attr.isa<mlir::StringAttr>())
+        {
+            return getStringType();
+        }
+
+        if (attr.isa<mlir::FloatAttr>())
+        {
+            return getNumberType();
+        }
+
+        llvm_unreachable("not implemented");
+    }
+
+    mlir::Type getIndexedAccessType(IndexedAccessTypeNode indexedAccessTypeNode, const GenContext &genContext)
+    {
+        auto type = getType(indexedAccessTypeNode->objectType, genContext);
+        auto indexType = getType(indexedAccessTypeNode->indexType, genContext);
+
+        if (auto objType = type.dyn_cast<mlir_ts::ObjectType>())
+        {
+            type = objType.getStorageType();
+        }
+
+        if (auto interfaceType = type.dyn_cast<mlir_ts::ClassType>())
+        {
+            auto classTypeInfo = getClassByFullName(interfaceType.getName().getValue());
+            type = classTypeInfo->classType.getStorageType();
+        }
+
+        if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
+        {
+            SmallVector<mlir::Type> literalTypes;
+            for (auto field : tupleType.getFields())
+            {
+                auto litType = mlir_ts::LiteralType::get(field.id, getAttributeType(field.id));
+
+                LLVM_DEBUG(llvm::dbgs() << "\n!! field access type: " << litType << " <-> " << indexType << "\n";);
+
+                if (litType == indexType)
+                {
+                    return field.type;
+                }
+            }
+        }
+
+        if (auto interfaceType = type.dyn_cast<mlir_ts::InterfaceType>())
+        {
+            auto interfaceTypeInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
+            SmallVector<mlir::Type> literalTypes;
+            for (auto field : interfaceTypeInfo->fields)
+            {
+                auto litType = mlir_ts::LiteralType::get(field.id, getAttributeType(field.id));
+                if (litType == indexType)
+                {
+                    return field.type;
+                }
+            }
+        }
+
+        return mlir::Type();
     }
 
     mlir_ts::VoidType getVoidType()
