@@ -133,6 +133,7 @@ struct GenContext
     mlir::SmallVector<mlir::Block *> *cleanUps;
     NodeArray<Statement> generatedStatements;
     llvm::StringMap<mlir::Type> typeAliasMap;
+    llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, TypeNode>> typeParamsWithArgs;
     mlir::SmallVector<std::pair<mlir::Location, std::string>> *unresolved;
     int *state;
 };
@@ -645,6 +646,8 @@ struct NamespaceInfo
     llvm::StringMap<llvm::SmallVector<mlir::typescript::FieldInfo>> localVarsInThisContextMap;
 
     llvm::StringMap<mlir::Type> typeAliasMap;
+
+    llvm::StringMap<std::pair<llvm::SmallVector<TypeParameterDOM::TypePtr>, TypeNode>> genericTypeAliasMap;
 
     llvm::StringMap<mlir::StringRef> importEqualsMap;
 

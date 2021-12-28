@@ -6692,6 +6692,21 @@ class MLIRGenImpl
             return builder.create<mlir_ts::TypeRefOp>(location, typeAliasInfo);
         }
 
+        // support generic types
+        if (genContext.typeParamsWithArgs.size() > 0)
+        {
+            auto found = genContext.typeParamsWithArgs.find(name);
+            if (found != genContext.typeParamsWithArgs.end())
+            {
+                auto typeNode = (*found).getValue().second;
+                auto resolvedType = getType(typeNode, genContext);
+
+                LLVM_DEBUG(llvm::dbgs() << "\n!! type gen. param [" << name << "] -> [" << resolvedType << "]\n";);
+
+                return builder.create<mlir_ts::TypeRefOp>(location, resolvedType);
+            }
+        }
+
         if (getNamespaceMap().count(name))
         {
             auto namespaceInfo = getNamespaceMap().lookup(name);
@@ -6852,13 +6867,47 @@ class MLIRGenImpl
         return unresolvedSymbol;
     }
 
+    mlir::LogicalResult processTypeParameters(NodeArray<TypeParameterDeclaration> typeParameters,
+                                              llvm::SmallVector<TypeParameterDOM::TypePtr> &typeParams, const GenContext &genContext)
+    {
+        for (auto typeParameter : typeParameters)
+        {
+            auto namePtr = MLIRHelper::getName(typeParameter->name, stringAllocator);
+            if (!namePtr.empty())
+            {
+                auto typeParameterDOM = std::make_shared<TypeParameterDOM>(namePtr.str());
+                typeParams.push_back(typeParameterDOM);
+            }
+            else
+            {
+                llvm_unreachable("not implemented");
+            }
+        }
+
+        return mlir::success();
+    }
+
     mlir::LogicalResult mlirGen(TypeAliasDeclaration typeAliasDeclarationAST, const GenContext &genContext)
     {
         auto namePtr = MLIRHelper::getName(typeAliasDeclarationAST->name, stringAllocator);
         if (!namePtr.empty())
         {
-            auto type = getType(typeAliasDeclarationAST->type, genContext);
-            getTypeAliasMap().insert({namePtr, type});
+            if (typeAliasDeclarationAST->typeParameters.size() > 0)
+            {
+                llvm::SmallVector<TypeParameterDOM::TypePtr> typeParameters;
+                if (mlir::failed(processTypeParameters(typeAliasDeclarationAST->typeParameters, typeParameters, genContext)))
+                {
+                    return mlir::failure();
+                }
+
+                getGenericTypeAliasMap().insert({namePtr, {typeParameters, typeAliasDeclarationAST->type}});
+            }
+            else
+            {
+                auto type = getType(typeAliasDeclarationAST->type, genContext);
+                getTypeAliasMap().insert({namePtr, type});
+            }
+
             return mlir::success();
         }
         else
@@ -8882,13 +8931,40 @@ class MLIRGenImpl
         return type;
     }
 
+    mlir::LogicalResult zipTypeParametersWithArguments(llvm::ArrayRef<TypeParameterDOM::TypePtr> typeParams, NodeArray<TypeNode> typeArgs,
+                                                       llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, TypeNode>> &pairs)
+    {
+        for (auto index = 0; index < typeParams.size(); index++)
+        {
+            auto &typeParam = typeParams[index];
+            pairs.insert({typeParam->getName(), std::make_pair(typeParam, typeArgs[index])});
+        }
+
+        return mlir::success();
+    }
+
     mlir::Type getTypeByTypeReference(TypeReferenceNode typeReferenceAST, const GenContext &genContext)
     {
         // check utility types
         if (typeReferenceAST->typeArguments->size() > 0)
         {
-            // can be utility type
             auto name = MLIRHelper::getName(typeReferenceAST->typeName);
+            // try to resolve from type alias first
+            if (getGenericTypeAliasMap().count(name))
+            {
+                auto genericTypeAliasInfo = getGenericTypeAliasMap().lookup(name);
+                GenContext genericTypeGenContext(genContext);
+
+                auto typeParams = std::get<0>(genericTypeAliasInfo);
+                auto typeNode = std::get<1>(genericTypeAliasInfo);
+
+                zipTypeParametersWithArguments(typeParams, typeReferenceAST->typeArguments, genericTypeGenContext.typeParamsWithArgs);
+
+                auto newType = getType(typeNode, genericTypeGenContext);
+                return newType;
+            }
+
+            // can be utility type
             if (name == "TypeOf")
             {
                 return getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext, true);
@@ -9622,6 +9698,11 @@ class MLIRGenImpl
     auto getTypeAliasMap() -> llvm::StringMap<mlir::Type> &
     {
         return currentNamespace->typeAliasMap;
+    }
+
+    auto getGenericTypeAliasMap() -> llvm::StringMap<std::pair<llvm::SmallVector<TypeParameterDOM::TypePtr>, TypeNode>> &
+    {
+        return currentNamespace->genericTypeAliasMap;
     }
 
     auto getImportEqualsMap() -> llvm::StringMap<mlir::StringRef> &

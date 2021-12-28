@@ -24,6 +24,7 @@ class BaseDOM
         Base_VariableDeclaration,
         Base_FunctionParam,
         Base_FunctionProto,
+        Base_TypeParameter,
     };
 
     using TypePtr = std::shared_ptr<BaseDOM>;
@@ -244,6 +245,23 @@ class FunctionPrototypeDOM
     void setNoBody(bool noBody_)
     {
         noBody = noBody_;
+    }
+};
+
+class TypeParameterDOM : public BaseDOM
+{
+    std::string name;
+
+  public:
+    using TypePtr = std::shared_ptr<TypeParameterDOM>;
+
+    TypeParameterDOM(std::string name) : BaseDOM(Base_TypeParameter), name(name)
+    {
+    }
+
+    StringRef getName() const
+    {
+        return name;
     }
 };
 
