@@ -347,6 +347,23 @@ LogicalResult verify(mlir_ts::CastOp op)
         return success();
     }
 
+    // optional<T> -> <T>
+    if (auto inOptType = inType.dyn_cast_or_null<mlir_ts::OptionalType>())
+    {
+        if (inOptType.getElementType() == resType)
+        {
+            return success();
+        }
+    }
+
+    if (auto resOptType = resType.dyn_cast_or_null<mlir_ts::OptionalType>())
+    {
+        if (resOptType.getElementType() == inType)
+        {
+            return success();
+        }
+    }
+
     // check if we can cast type to union type
     auto inUnionType = inType.dyn_cast_or_null<mlir_ts::UnionType>();
     auto resUnionType = resType.dyn_cast_or_null<mlir_ts::UnionType>();
