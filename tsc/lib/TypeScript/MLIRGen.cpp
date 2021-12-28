@@ -8939,14 +8939,23 @@ class MLIRGenImpl
         return type;
     }
 
-    mlir::LogicalResult zipTypeParametersWithArguments(llvm::ArrayRef<TypeParameterDOM::TypePtr> typeParams, NodeArray<TypeNode> typeArgs,
+    mlir::LogicalResult zipTypeParametersWithArguments(mlir::Location location, llvm::ArrayRef<TypeParameterDOM::TypePtr> typeParams,
+                                                       NodeArray<TypeNode> typeArgs,
                                                        llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> &pairs,
                                                        const GenContext &genContext)
     {
+        MLIRTypeHelper mth(builder.getContext());
         for (auto index = 0; index < typeParams.size(); index++)
         {
             auto &typeParam = typeParams[index];
             auto type = getType(typeArgs[index], genContext);
+
+            if (typeParam->getConstraint() && !mth.extendsType(type, typeParam->getConstraint()))
+            {
+                emitError(location, "") << "Type " << type << " does not satisfy the constraint " << typeParam->getConstraint() << ".";
+                return mlir::failure();
+            }
+
             pairs.insert({typeParam->getName(), std::make_pair(typeParam, type)});
         }
 
@@ -8968,8 +8977,11 @@ class MLIRGenImpl
                 auto typeParams = std::get<0>(genericTypeAliasInfo);
                 auto typeNode = std::get<1>(genericTypeAliasInfo);
 
-                zipTypeParametersWithArguments(typeParams, typeReferenceAST->typeArguments, genericTypeGenContext.typeParamsWithArgs,
-                                               genContext);
+                if (mlir::failed(zipTypeParametersWithArguments(loc(typeReferenceAST), typeParams, typeReferenceAST->typeArguments,
+                                                                genericTypeGenContext.typeParamsWithArgs, genContext)))
+                {
+                    return mlir::Type();
+                }
 
                 auto newType = getType(typeNode, genericTypeGenContext);
                 return newType;

@@ -752,10 +752,7 @@ class MLIRTypeHelper
             // calculate store size
             auto pred = [&](auto &item) { return extendsType(srcType, item); };
             auto types = unionType.getTypes();
-            if (std::find_if(types.begin(), types.end(), pred) == types.end())
-            {
-                return false;
-            }
+            return std::find_if(types.begin(), types.end(), pred) != types.end();
         }
 
         return false;
