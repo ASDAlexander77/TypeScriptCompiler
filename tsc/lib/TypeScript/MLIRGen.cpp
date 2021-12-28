@@ -9264,6 +9264,7 @@ class MLIRGenImpl
 
                 if (litType == indexType)
                 {
+                    LLVM_DEBUG(llvm::dbgs() << "\n!! field access return type: " << field.type << "\n";);
                     return field.type;
                 }
             }
