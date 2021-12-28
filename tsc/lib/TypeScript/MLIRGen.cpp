@@ -2852,6 +2852,14 @@ class MLIRGenImpl
 
         builder.setInsertionPointToStart(&doWhileOp.cond().front());
         auto conditionValue = mlirGen(doStatementAST->expression, genContext);
+
+        VALIDATE_LOGIC(conditionValue, location)
+
+        if (conditionValue.getType() != getBooleanType())
+        {
+            conditionValue = cast(location, getBooleanType(), conditionValue, genContext);
+        }
+
         builder.create<mlir_ts::ConditionOp>(location, conditionValue, mlir::ValueRange{});
 
         builder.setInsertionPointAfter(doWhileOp);
@@ -2882,6 +2890,11 @@ class MLIRGenImpl
         auto conditionValue = mlirGen(whileStatementAST->expression, genContext);
 
         VALIDATE_LOGIC(conditionValue, location)
+
+        if (conditionValue.getType() != getBooleanType())
+        {
+            conditionValue = cast(location, getBooleanType(), conditionValue, genContext);
+        }
 
         builder.create<mlir_ts::ConditionOp>(location, conditionValue, mlir::ValueRange{});
 
