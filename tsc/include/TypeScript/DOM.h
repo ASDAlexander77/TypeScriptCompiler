@@ -252,7 +252,7 @@ class TypeParameterDOM : public BaseDOM
 {
     std::string name;
     mlir::Type constraint;
-    mlir::Type default;
+    mlir::Type _default;
 
   public:
     using TypePtr = std::shared_ptr<TypeParameterDOM>;
@@ -278,12 +278,12 @@ class TypeParameterDOM : public BaseDOM
 
     void setDefault(mlir::Type default_)
     {
-        default = default_;
+        _default = default_;
     }
 
     mlir::Type getDefault()
     {
-        return default;
+        return _default;
     }
 };
 
