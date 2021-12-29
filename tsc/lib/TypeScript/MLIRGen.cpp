@@ -8748,6 +8748,26 @@ class MLIRGenImpl
             }
         }
 
+        if (auto unionType = type.dyn_cast_or_null<mlir_ts::UnionType>())
+        {
+            MLIRTypeHelper mth(builder.getContext());
+            mlir::Type baseType;
+            if (!mth.isUnionTypeNeedsTag(unionType, baseType))
+            {
+                auto valueCasted = cast(location, baseType, value, genContext);
+                VALIDATE(valueCasted, location)
+                return valueCasted;
+            }
+        }
+
+        // optional with union & interface inside
+        if (auto optType = type.dyn_cast_or_null<mlir_ts::OptionalType>())
+        {
+            auto valueCasted = cast(location, optType.getElementType(), value, genContext);
+            VALIDATE(valueCasted, location)
+            return builder.create<mlir_ts::CreateOptionalOp>(location, optType, valueCasted);
+        }
+
         return builder.create<mlir_ts::CastOp>(location, type, value);
     }
 
