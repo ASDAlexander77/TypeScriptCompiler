@@ -7693,12 +7693,12 @@ class MLIRGenImpl
     {
         SmallVector<VirtualMethodOrFieldInfo> virtualTable;
         auto location = loc(TextRange());
-        return getInterfaceVirtualTableForObject(location, tupleStorageType, newInterfacePtr, virtualTable);
+        return getInterfaceVirtualTableForObject(location, tupleStorageType, newInterfacePtr, virtualTable, true);
     }
 
     mlir::LogicalResult getInterfaceVirtualTableForObject(mlir::Location location, mlir_ts::TupleType tupleStorageType,
                                                           InterfaceInfo::TypePtr newInterfacePtr,
-                                                          SmallVector<VirtualMethodOrFieldInfo> &virtualTable)
+                                                          SmallVector<VirtualMethodOrFieldInfo> &virtualTable, bool suppressErrors = false)
     {
         MLIRTypeHelper mth(builder.getContext());
 
@@ -7719,9 +7719,12 @@ class MLIRGenImpl
                             : fieldType == foundField.type;
                     if (!test)
                     {
-                        emitError(location) << "field " << id << " not matching type: " << fieldType << " and " << foundField.type
-                                            << " in interface '" << newInterfacePtr->fullName << "' for object '" << tupleStorageType
-                                            << "'";
+                        if (!suppressErrors)
+                        {
+                            emitError(location)
+                                << "field " << id << " not matching type: " << fieldType << " and " << foundField.type << " in interface '"
+                                << newInterfacePtr->fullName << "' for object '" << tupleStorageType << "'";
+                        }
 
                         return emptyFieldInfo;
                     }
@@ -8777,16 +8780,41 @@ class MLIRGenImpl
         MLIRTypeHelper mth(builder.getContext());
 
         auto tupleType = mth.convertConstTupleTypeToTupleType(tupleTypeIn);
+        auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
+
+        auto inEffective = in;
+
+        if (mlir::failed(canCastTupleToInterface(tupleType.cast<mlir_ts::TupleType>(), interfaceInfo)))
+        {
+            MLIRTypeHelper mth(builder.getContext());
+            SmallVector<mlir_ts::FieldInfo> fields;
+            if (mlir::succeeded(interfaceInfo->getTupleTypeFields(fields, mth)))
+            {
+                auto newInterfaceTupleType = getTupleType(fields);
+                inEffective = cast(location, newInterfaceTupleType, inEffective, genContext);
+                if (inEffective)
+                {
+                    tupleType = newInterfaceTupleType;
+                }
+                else
+                {
+                    return mlir::Value();
+                }
+            }
+            else
+            {
+                return mlir::Value();
+            }
+        }
 
         // TODO: finish it
         // convert Tuple to Object
         auto objType = mlir_ts::ObjectType::get(tupleType);
 
         auto valueAddr = builder.create<mlir_ts::NewOp>(location, mlir_ts::ValueRefType::get(tupleType), builder.getBoolAttr(false));
-        builder.create<mlir_ts::StoreOp>(location, in, valueAddr);
+        builder.create<mlir_ts::StoreOp>(location, inEffective, valueAddr);
         auto inCasted = builder.create<mlir_ts::CastOp>(location, objType, valueAddr);
 
-        auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
         if (auto createdInterfaceVTableForObject = mlirGenCreateInterfaceVTableForObject(location, objType, interfaceInfo, genContext))
         {
 

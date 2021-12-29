@@ -21,6 +21,7 @@
 #include "llvm/Support/Debug.h"
 
 #include "TypeScript/DOM.h"
+#include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
 
 #include "parser_types.h"
 
@@ -239,6 +240,29 @@ struct InterfaceInfo
 
     InterfaceInfo()
     {
+    }
+
+    mlir::LogicalResult getTupleTypeFields(llvm::SmallVector<mlir_ts::FieldInfo> &tupleFields, MLIRTypeHelper &mth)
+    {
+        for (auto &extent : extends)
+        {
+            if (mlir::failed(std::get<1>(extent)->getTupleTypeFields(tupleFields, mth)))
+            {
+                return mlir::failure();
+            }
+        }
+
+        for (auto &method : methods)
+        {
+            tupleFields.push_back({mth.TupleFieldName(method.name), method.funcType});
+        }
+
+        for (auto &field : fields)
+        {
+            tupleFields.push_back({field.id, field.type});
+        }
+
+        return mlir::success();
     }
 
     mlir::LogicalResult getVirtualTable(llvm::SmallVector<VirtualMethodOrFieldInfo> &vtable,
