@@ -3703,6 +3703,23 @@ struct GetMethodOpLowering : public TsLlvmPattern<mlir_ts::GetMethodOp>
     }
 };
 
+// TODO: review it, i need it for Union type
+struct TypeOfOpLowering : public TsLlvmPattern<mlir_ts::TypeOfOp>
+{
+    using TsLlvmPattern<mlir_ts::TypeOfOp>::TsLlvmPattern;
+
+    LogicalResult matchAndRewrite(mlir_ts::TypeOfOp typeOfOp, ArrayRef<Value> operands, ConversionPatternRewriter &rewriter) const final
+    {
+        Adaptor transformed(operands);
+
+        TypeOfOpHelper toh(rewriter);
+        auto typeOfValue = toh.typeOfLogic(typeOfOp->getLoc(), transformed.value(), typeOfOp.value().getType());
+
+        rewriter.replaceOp(typeOfOp, ValueRange{typeOfValue});
+        return success();
+    }
+};
+
 struct TypeOfAnyOpLowering : public TsLlvmPattern<mlir_ts::TypeOfAnyOp>
 {
     using TsLlvmPattern<mlir_ts::TypeOfAnyOp>::TsLlvmPattern;
@@ -4526,10 +4543,10 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
         CharToStringOpLowering, UndefOpLowering, MemoryCopyOpLowering, LoadSaveValueLowering, ThrowUnwindOpLowering, ThrowCallOpLowering,
         TrampolineOpLowering, VariableOpLowering, InvokeOpLowering, InvokeHybridOpLowering, ThisVirtualSymbolRefOpLowering,
         InterfaceSymbolRefOpLowering, NewInterfaceOpLowering, VTableOffsetRefOpLowering, LoadBoundRefOpLowering, StoreBoundRefOpLowering,
-        CreateBoundRefOpLowering, CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering, TypeOfAnyOpLowering,
-        DebuggerOpLowering, UnreachableOpLowering, LandingPadOpLowering, CompareCatchTypeOpLowering, BeginCatchOpLowering,
-        SaveCatchVarOpLowering, EndCatchOpLowering, BeginCleanupOpLowering, EndCleanupOpLowering, SymbolCallInternalOpLowering,
-        CallInternalOpLowering, CallHybridInternalOpLowering, ReturnInternalOpLowering, NoOpLowering,
+        CreateBoundRefOpLowering, CreateBoundFunctionOpLowering, GetThisOpLowering, GetMethodOpLowering, TypeOfOpLowering,
+        TypeOfAnyOpLowering, DebuggerOpLowering, UnreachableOpLowering, LandingPadOpLowering, CompareCatchTypeOpLowering,
+        BeginCatchOpLowering, SaveCatchVarOpLowering, EndCatchOpLowering, BeginCleanupOpLowering, EndCleanupOpLowering,
+        SymbolCallInternalOpLowering, CallInternalOpLowering, CallHybridInternalOpLowering, ReturnInternalOpLowering, NoOpLowering,
         /*GlobalConstructorOpLowering,*/ ExtractInterfaceThisOpLowering, ExtractInterfaceVTableOpLowering, BoxOpLowering, UnboxOpLowering,
         DialectCastOpLowering, CreateUnionInstanceOpLowering, GetValueFromUnionOpLowering, GetTypeInfoFromUnionOpLowering,
         BodyInternalOpLowering, BodyResultInternalOpLowering
