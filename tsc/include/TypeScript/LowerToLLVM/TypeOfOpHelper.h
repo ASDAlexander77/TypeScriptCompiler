@@ -110,6 +110,12 @@ class TypeOfOpHelper
             return typeOfValue;
         }
 
+        if (type.isa<mlir_ts::InterfaceType>())
+        {
+            auto typeOfValue = strValue(loc, "interface");
+            return typeOfValue;
+        }
+
         if (type.isa<mlir_ts::OpaqueType>())
         {
             auto typeOfValue = strValue(loc, "object");

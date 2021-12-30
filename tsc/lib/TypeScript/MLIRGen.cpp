@@ -4562,9 +4562,9 @@ class MLIRGenImpl
                 value = InterfaceMembers(location, objectValue, interfaceType.getName().getValue(), cl.getAttribute(), genContext);
             })
             .Case<mlir_ts::OptionalType>([&](auto optionalType) {
-                auto frontType = optionalType.getElementType();
-                auto casted = cast(location, frontType, objectValue, genContext);
-                value = mlirGenPropertyAccessExpression(location, casted, name, false, genContext);
+                auto elementType = optionalType.getElementType();
+                auto loadedValue = builder.create<mlir_ts::ValueOp>(location, elementType, objectValue);
+                value = mlirGenPropertyAccessExpression(location, loadedValue, name, false, genContext);
             })
             .Case<mlir_ts::UnionType>([&](auto unionType) {
                 // all union types must have the same property
@@ -8681,6 +8681,14 @@ class MLIRGenImpl
             return value;
         }
 
+        if (auto optType = value.getType().dyn_cast<mlir_ts::OptionalType>())
+        {
+            if (optType.getElementType() == type)
+            {
+                llvm_unreachable("for getting value from optional - use ValueOpLowering");
+            }
+        }
+
         // class to string
         if (auto stringType = type.dyn_cast_or_null<mlir_ts::StringType>())
         {
@@ -8759,7 +8767,7 @@ class MLIRGenImpl
             {
                 auto valueCasted = cast(location, baseType, value, genContext);
                 VALIDATE(valueCasted, location)
-                return valueCasted;
+                return builder.create<mlir_ts::CastOp>(location, type, valueCasted);
             }
         }
 
@@ -9697,6 +9705,12 @@ class MLIRGenImpl
             if (type.isa<mlir_ts::UndefinedType>())
             {
                 isUndefined = true;
+                continue;
+            }
+
+            if (type.isa<mlir_ts::NullType>())
+            {
+                isNullable = true;
                 continue;
             }
 

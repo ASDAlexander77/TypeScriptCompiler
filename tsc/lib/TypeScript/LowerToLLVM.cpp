@@ -1385,23 +1385,32 @@ struct GetValueFromUnionOpLowering : public TsLlvmPattern<mlir_ts::GetValueFromU
         TypeHelper th(rewriter);
         TypeConverterHelper tch(getTypeConverter());
         CodeLogicHelper clh(op, rewriter);
+        MLIRTypeHelper mth(rewriter.getContext());
 
-        auto in = transformed.in();
+        bool needTag = mth.isUnionTypeNeedsTag(op.in().getType().cast<mlir_ts::UnionType>());
+        if (needTag)
+        {
+            auto in = transformed.in();
 
-        auto i8PtrTy = th.getI8PtrType();
-        auto valueType = tch.convertType(op.getType());
+            auto i8PtrTy = th.getI8PtrType();
+            auto valueType = tch.convertType(op.getType());
 
-        mlir::SmallVector<mlir::Type> types;
-        types.push_back(i8PtrTy);
-        types.push_back(valueType);
-        auto unionPartialType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), types, false);
+            mlir::SmallVector<mlir::Type> types;
+            types.push_back(i8PtrTy);
+            types.push_back(valueType);
+            auto unionPartialType = LLVM::LLVMStructType::getLiteral(rewriter.getContext(), types, false);
 
-        CastLogicHelper castLogic(op, rewriter, tch);
-        auto casted = castLogic.castLLVMTypes(transformed.in(), transformed.in().getType(), unionPartialType, unionPartialType);
+            CastLogicHelper castLogic(op, rewriter, tch);
+            auto casted = castLogic.castLLVMTypes(transformed.in(), transformed.in().getType(), unionPartialType, unionPartialType);
 
-        auto val0 = rewriter.create<LLVM::ExtractValueOp>(loc, valueType, casted, clh.getStructIndexAttr(1));
+            auto val0 = rewriter.create<LLVM::ExtractValueOp>(loc, valueType, casted, clh.getStructIndexAttr(1));
 
-        rewriter.replaceOp(op, ValueRange{val0});
+            rewriter.replaceOp(op, ValueRange{val0});
+        }
+        else
+        {
+            rewriter.replaceOp(op, ValueRange{transformed.in()});
+        }
 
         return success();
     }
@@ -1418,12 +1427,25 @@ struct GetTypeInfoFromUnionOpLowering : public TsLlvmPattern<mlir_ts::GetTypeInf
 
         TypeConverterHelper tch(getTypeConverter());
         CodeLogicHelper clh(op, rewriter);
+        MLIRTypeHelper mth(rewriter.getContext());
 
         auto loc = op->getLoc();
 
-        auto val0 = rewriter.create<LLVM::ExtractValueOp>(loc, tch.convertType(op.getType()), transformed.in(), clh.getStructIndexAttr(0));
+        mlir::Type baseType;
+        bool needTag = mth.isUnionTypeNeedsTag(op.in().getType().cast<mlir_ts::UnionType>(), baseType);
+        if (needTag)
+        {
+            auto val0 =
+                rewriter.create<LLVM::ExtractValueOp>(loc, tch.convertType(op.getType()), transformed.in(), clh.getStructIndexAttr(0));
 
-        rewriter.replaceOp(op, ValueRange{val0});
+            rewriter.replaceOp(op, ValueRange{val0});
+        }
+        else
+        {
+            auto typeOfValue = rewriter.create<mlir_ts::TypeOfOp>(loc, baseType, transformed.in());
+
+            rewriter.replaceOp(op, ValueRange{typeOfValue});
+        }
 
         return success();
     }
