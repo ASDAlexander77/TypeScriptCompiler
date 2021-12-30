@@ -1584,6 +1584,8 @@ struct CreateTupleOpLowering : public TsLlvmPattern<mlir_ts::CreateTupleOp>
             auto llvmDestValueType = tch.convertType(destItemType);
 
             mlir::Value itemValue = item;
+
+            // TODO: Op should ensure that in ops types are equal result types
             if (llvmDestValueType != llvmValueType)
             {
                 CastLogicHelper castLogic(createTupleOp, rewriter, tch);
@@ -2543,6 +2545,7 @@ struct CreateOptionalOpLowering : public TsLlvmPattern<mlir_ts::CreateOptionalOp
 
         auto structValue = rewriter.create<LLVM::UndefOp>(loc, llvmOptType);
 
+        // TODO: it should be tested by OP that value is equal to value in optional type
         if (valueLLVMType != llvmBoxedType)
         {
             LLVM_DEBUG(llvm::dbgs() << "\n!! CreateOptional value types : " << valueLLVMType << " optional type: " << llvmBoxedType

@@ -205,18 +205,15 @@ class CastLogicHelper
             }
         }
 
-        if (auto tupleTypeIn = inType.dyn_cast_or_null<mlir_ts::TupleType>())
+        if (auto tupleTypeRes = resType.dyn_cast_or_null<mlir_ts::TupleType>())
         {
-            if (auto tupleTypeRes = resType.dyn_cast_or_null<mlir_ts::TupleType>())
+            if (auto tupleTypeIn = inType.dyn_cast_or_null<mlir_ts::ConstTupleType>())
             {
-                SmallVector<mlir::Type> types;
-                for (auto &field : tupleTypeIn.getFields())
-                {
-                    types.push_back(field.type);
-                }
-
-                auto results = rewriter.create<mlir_ts::DeconstructTupleOp>(loc, types, in);
-                return rewriter.create<mlir_ts::CreateTupleOp>(loc, tupleTypeRes, results.getResults());
+                return castTupleToTuple(in, tupleTypeIn.getFields(), tupleTypeRes);
+            }
+            if (auto tupleTypeIn = inType.dyn_cast_or_null<mlir_ts::TupleType>())
+            {
+                return castTupleToTuple(in, tupleTypeIn.getFields(), tupleTypeRes);
             }
         }
 
@@ -555,6 +552,85 @@ class CastLogicHelper
         llvm_unreachable("not implemented");
 
         return mlir::Value();
+    }
+
+    mlir::Value castTupleToTuple(mlir::Value in, ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields, mlir_ts::TupleType tupleTypeRes)
+    {
+        SmallVector<mlir::Type> types;
+        for (auto &field : fields)
+        {
+            types.push_back(field.type);
+        }
+
+        auto results = rewriter.create<mlir_ts::DeconstructTupleOp>(loc, types, in);
+        mlir::SmallVector<mlir::Value> mappedValues;
+
+        auto addByIndex = [&](auto dstIndex, auto destField) {
+            mlir::Value srcValue = results.getResults()[dstIndex];
+            if (srcValue.getType() != destField.type)
+            {
+                srcValue = cast(srcValue, srcValue.getType(), tch.convertType(srcValue.getType()), destField.type,
+                                tch.convertType(destField.type));
+            }
+
+            mappedValues.push_back(srcValue);
+        };
+
+        // map values
+        auto count = fields.size();
+        auto dstIndex = -1;
+        for (auto destField : tupleTypeRes.getFields())
+        {
+            dstIndex++;
+
+            if (!destField.id)
+            {
+                addByIndex(dstIndex, destField);
+                continue;
+            }
+
+            auto found = false;
+            auto anyFieldWithName = false;
+            for (auto index = 0; index < count; index++)
+            {
+                auto srcField = fields[index];
+                if (!srcField.id)
+                {
+                    continue;
+                }
+
+                anyFieldWithName = true;
+                if (srcField.id == destField.id)
+                {
+                    mlir::Value srcValue = results.getResults()[index];
+                    if (srcValue.getType() != destField.type)
+                    {
+                        srcValue = cast(srcValue, srcValue.getType(), tch.convertType(srcValue.getType()), destField.type,
+                                        tch.convertType(destField.type));
+                    }
+
+                    mappedValues.push_back(srcValue);
+                    found = true;
+                    break;
+                }
+            }
+
+            if (!found && !anyFieldWithName)
+            {
+                // find by index
+                addByIndex(dstIndex, destField);
+                continue;
+            }
+
+            // otherwise undef value
+            if (!found)
+            {
+                auto undefVal = rewriter.create<mlir_ts::UndefOp>(loc, destField.type);
+                mappedValues.push_back(undefVal);
+            }
+        }
+
+        return rewriter.create<mlir_ts::CreateTupleOp>(loc, tupleTypeRes, mappedValues);
     }
 
     mlir::Value castBoolToString(mlir::Value in)
