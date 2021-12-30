@@ -453,6 +453,7 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
         }
 
         // union support
+        // TODO: review this code, should it be in "cast" logic?
         auto isInUnionType = in.getType().isa<mlir_ts::UnionType>();
         auto isResUnionType = res.getType().isa<mlir_ts::UnionType>();
         if (isResUnionType && !isInUnionType)

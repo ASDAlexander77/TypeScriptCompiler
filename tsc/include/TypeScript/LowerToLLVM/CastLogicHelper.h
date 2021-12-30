@@ -398,6 +398,21 @@ class CastLogicHelper
         }
         */
 
+        if (auto resUnionType = resType.dyn_cast_or_null<mlir_ts::UnionType>())
+        {
+            // TODO: do I need to test income types?
+            if (auto inUnionType = inType.dyn_cast_or_null<mlir_ts::UnionType>())
+            {
+                // nothing to do
+            }
+            else
+            {
+                auto typeOfValue = rewriter.create<mlir_ts::TypeOfOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
+                auto unionValue = rewriter.create<mlir_ts::CreateUnionInstanceOp>(loc, resUnionType, in, typeOfValue);
+                return unionValue;
+            }
+        }
+
         return mlir::Value();
     }
 
