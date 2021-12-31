@@ -9684,12 +9684,75 @@ class MLIRGenImpl
         return getSignature(methodSignature, genContext);
     }
 
+    struct UnionTypeProcessContext
+    {
+        UnionTypeProcessContext() = default;
+
+        bool isUndefined;
+        bool isNullable;
+        bool isNever;
+        bool isAny;
+        mlir::SmallPtrSet<mlir::Type, 2> types;
+        mlir::SmallPtrSet<mlir::Type, 2> literalTypes;
+    };
+
+    mlir::LogicalResult processUnionTypeItem(mlir::Type type, UnionTypeProcessContext &unionContext, const GenContext &genContext)
+    {
+        if (type.isa<mlir_ts::UndefinedType>())
+        {
+            unionContext.isUndefined = true;
+            return mlir::success();
+        }
+
+        if (type.isa<mlir_ts::NullType>())
+        {
+            unionContext.isNullable = true;
+            return mlir::success();
+        }
+
+        if (type.isa<mlir_ts::AnyType>())
+        {
+            unionContext.isAny = true;
+            return mlir::success();
+        }
+
+        if (type.isa<mlir_ts::NeverType>())
+        {
+            unionContext.isNever = true;
+            return mlir::success();
+        }
+
+        if (auto literalType = type.dyn_cast<mlir_ts::LiteralType>())
+        {
+            unionContext.literalTypes.insert(literalType);
+            return mlir::success();
+        }
+
+        if (auto unionType = type.dyn_cast<mlir_ts::UnionType>())
+        {
+            if (mlir::succeeded(processUnionType(unionType, unionContext, genContext)))
+            {
+                return mlir::success();
+            }
+        }
+
+        unionContext.types.insert(type);
+        return mlir::success();
+    }
+
+    mlir::LogicalResult processUnionType(mlir_ts::UnionType unionType, UnionTypeProcessContext &unionContext, const GenContext &genContext)
+    {
+        for (auto type : unionType.getTypes())
+        {
+            processUnionTypeItem(type, unionContext, genContext);
+        }
+
+        return mlir::success();
+    }
+
     mlir::Type getUnionType(UnionTypeNode unionTypeNode, const GenContext &genContext)
     {
-        bool isUndefined = false;
-        bool isNullable = false;
-        mlir::SmallPtrSet<mlir::Type, 2> types;
-        mlir::Type currentType;
+        UnionTypeProcessContext unionContext = {};
         for (auto typeItem : unionTypeNode->types)
         {
             auto type = getType(typeItem, genContext);
@@ -9698,41 +9761,66 @@ class MLIRGenImpl
                 llvm_unreachable("wrong type");
             }
 
-            if (type.isa<mlir_ts::UndefinedType>())
+            processUnionTypeItem(type, unionContext, genContext);
+
+            // default wide types
+            if (unionContext.isAny)
             {
-                isUndefined = true;
-                continue;
+                return getAnyType();
             }
 
-            if (type.isa<mlir_ts::NullType>())
+            if (unionContext.isNever)
             {
-                isNullable = true;
-                continue;
+                return getNeverType();
             }
-
-            types.insert(type);
         }
 
-        if (std::distance(types.begin(), types.end()) == 1)
+        // merge types with literal types
+        for (auto literalType : unionContext.literalTypes)
         {
-            if (isUndefined || isNullable)
+            auto baseType = literalType.cast<mlir_ts::LiteralType>().getElementType();
+            if (unionContext.types.count(baseType))
             {
-                return getOptionalType(*(types.begin()));
+                continue;
             }
 
-            return *(types.begin());
+            unionContext.types.insert(literalType);
         }
+
+        MLIRTypeHelper mth(builder.getContext());
+        auto isAllValueTypes = true;
+        auto isAllLiteralTypes = true;
 
         mlir::SmallVector<mlir::Type> typesAll;
-        for (auto type : types)
+        for (auto type : unionContext.types)
         {
             typesAll.push_back(type);
+            isAllValueTypes &= mth.isValueType(type);
+            isAllLiteralTypes &= type.isa<mlir_ts::LiteralType>();
         }
 
-        if (isUndefined || isNullable)
+        if ((isAllValueTypes || isAllLiteralTypes) && unionContext.isNullable)
         {
+            // return null type back
+            typesAll.push_back(getNullType());
+        }
+
+        if (unionContext.isUndefined)
+        {
+            if (typesAll.size() == 1)
+            {
+                return getOptionalType(typesAll.front());
+            }
+
             return getOptionalType(getUnionType(typesAll));
         }
+
+        if (typesAll.size() == 1)
+        {
+            return typesAll.front();
+        }
+
+        assert(typesAll.size() > 1);
 
         return getUnionType(typesAll);
     }

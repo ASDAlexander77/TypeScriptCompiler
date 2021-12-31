@@ -132,10 +132,11 @@ class MLIRTypeHelper
         return mlir::IntegerAttr::get(getI32Type(), mlir::APInt(32, value));
     }
 
-    bool isValueType(mlir::Type type)
+    bool isValueType(mlir::Type typeIn)
     {
-        return type && (type.isIntOrIndexOrFloat() || type.isa<mlir_ts::TupleType>() || type.isa<mlir_ts::ConstTupleType>() ||
-                        type.isa<mlir_ts::ConstArrayType>());
+        auto type = getBaseType(typeIn);
+        return type && (type.isIntOrIndexOrFloat() || type.isa<mlir_ts::NumberType>() || type.isa<mlir_ts::BooleanType>() ||
+                        type.isa<mlir_ts::TupleType>() || type.isa<mlir_ts::ConstTupleType>() || type.isa<mlir_ts::ConstArrayType>());
     }
 
     mlir::Attribute TupleFieldName(mlir::StringRef name)
