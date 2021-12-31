@@ -4249,12 +4249,14 @@ class MLIRGenImpl
                 // cast from optional<T> type
                 if (auto leftOptType = leftExpressionValue.getType().dyn_cast_or_null<mlir_ts::OptionalType>())
                 {
-                    leftExpressionValue = cast(loc(leftExpression), leftOptType.getElementType(), leftExpressionValue, genContext);
+                    leftExpressionValue =
+                        builder.create<mlir_ts::ValueOp>(loc(leftExpression), leftOptType.getElementType(), leftExpressionValue);
                 }
 
                 if (auto rightOptType = rightExpressionValue.getType().dyn_cast_or_null<mlir_ts::OptionalType>())
                 {
-                    rightExpressionValue = cast(loc(rightExpression), rightOptType.getElementType(), rightExpressionValue, genContext);
+                    rightExpressionValue =
+                        builder.create<mlir_ts::ValueOp>(loc(rightExpression), rightOptType.getElementType(), rightExpressionValue);
                 }
             }
         }
@@ -4265,8 +4267,10 @@ class MLIRGenImpl
             {
                 if (auto rightOptType = rightExpressionValue.getType().dyn_cast_or_null<mlir_ts::OptionalType>())
                 {
-                    leftExpressionValue = cast(loc(leftExpression), leftOptType.getElementType(), leftExpressionValue, genContext);
-                    rightExpressionValue = cast(loc(rightExpression), rightOptType.getElementType(), rightExpressionValue, genContext);
+                    leftExpressionValue =
+                        builder.create<mlir_ts::ValueOp>(loc(leftExpression), leftOptType.getElementType(), leftExpressionValue);
+                    rightExpressionValue =
+                        builder.create<mlir_ts::ValueOp>(loc(rightExpression), rightOptType.getElementType(), rightExpressionValue);
                 }
             }
         }
@@ -5029,7 +5033,7 @@ class MLIRGenImpl
 
             // value if true
 
-            auto innerFuncRef = cast(location, optFuncRef.getElementType(), funcRefValue, genContext);
+            auto innerFuncRef = builder.create<mlir_ts::ValueOp>(location, optFuncRef.getElementType(), funcRefValue);
 
             auto hasReturn = false;
             auto value =
@@ -8679,14 +8683,6 @@ class MLIRGenImpl
         if (type == value.getType())
         {
             return value;
-        }
-
-        if (auto optType = value.getType().dyn_cast<mlir_ts::OptionalType>())
-        {
-            if (optType.getElementType() == type)
-            {
-                llvm_unreachable("for getting value from optional - use ValueOpLowering");
-            }
         }
 
         // class to string
