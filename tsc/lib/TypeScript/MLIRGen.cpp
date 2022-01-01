@@ -6889,26 +6889,31 @@ class MLIRGenImpl
         return unresolvedSymbol;
     }
 
+    TypeParameterDOM::TypePtr processTypeParameter(TypeParameterDeclaration typeParameter, const GenContext &genContext)
+    {
+        auto namePtr = MLIRHelper::getName(typeParameter->name, stringAllocator);
+        if (!namePtr.empty())
+        {
+            auto typeParameterDOM = std::make_shared<TypeParameterDOM>(namePtr.str());
+            if (typeParameter->constraint)
+            {
+                typeParameterDOM->setConstraint(getType(typeParameter->constraint, genContext));
+            }
+
+            return typeParameterDOM;
+        }
+        else
+        {
+            llvm_unreachable("not implemented");
+        }
+    }
+
     mlir::LogicalResult processTypeParameters(NodeArray<TypeParameterDeclaration> typeParameters,
                                               llvm::SmallVector<TypeParameterDOM::TypePtr> &typeParams, const GenContext &genContext)
     {
         for (auto typeParameter : typeParameters)
         {
-            auto namePtr = MLIRHelper::getName(typeParameter->name, stringAllocator);
-            if (!namePtr.empty())
-            {
-                auto typeParameterDOM = std::make_shared<TypeParameterDOM>(namePtr.str());
-                if (typeParameter->constraint)
-                {
-                    typeParameterDOM->setConstraint(getType(typeParameter->constraint, genContext));
-                }
-
-                typeParams.push_back(typeParameterDOM);
-            }
-            else
-            {
-                llvm_unreachable("not implemented");
-            }
+            typeParams.push_back(processTypeParameter(typeParameter, genContext));
         }
 
         return mlir::success();
@@ -8948,7 +8953,6 @@ class MLIRGenImpl
         else if (kind == SyntaxKind::ThisType)
         {
             assert(genContext.thisType);
-            // in runtime it is boolean (it is needed to track types)
             return genContext.thisType;
         }
         else if (kind == SyntaxKind::Unknown)
@@ -8967,6 +8971,10 @@ class MLIRGenImpl
         else if (kind == SyntaxKind::IndexedAccessType)
         {
             return getIndexedAccessType(typeReferenceAST.as<IndexedAccessTypeNode>(), genContext);
+        }
+        else if (kind == SyntaxKind::MappedType)
+        {
+            return getMappedType(typeReferenceAST.as<MappedTypeNode>(), genContext);
         }
 
         llvm_unreachable("not implemented type declaration");
@@ -9372,6 +9380,43 @@ class MLIRGenImpl
         auto type = getType(indexedAccessTypeNode->objectType, genContext);
         auto indexType = getType(indexedAccessTypeNode->indexType, genContext);
         return getIndexedAccessType(type, indexType, genContext);
+    }
+
+    mlir::Type getMappedType(MappedTypeNode mappedTypeNode, const GenContext &genContext)
+    {
+        // PTR(Node) /**ReadonlyToken | PlusToken | MinusToken*/ readonlyToken;
+        // PTR(TypeParameterDeclaration) typeParameter;
+        // PTR(TypeNode) nameType;
+        // PTR(Node) /**QuestionToken | PlusToken | MinusToken*/ questionToken;
+        // PTR(TypeNode) type;
+
+        auto typeParam = processTypeParameter(mappedTypeNode->typeParameter, genContext);
+
+        const_cast<GenContext &>(genContext)
+            .typeParamsWithArgs.insert({typeParam->getName(), std::make_pair(typeParam, typeParam->getConstraint())});
+
+        auto nameType = getType(mappedTypeNode->nameType, genContext);
+        auto type = getType(mappedTypeNode->type, genContext);
+
+        // remove type param
+        const_cast<GenContext &>(genContext).typeParamsWithArgs.erase(typeParam->getName());
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! mapped type - nameType: " << nameType << " type param: [" << typeParam->getName()
+                                << " constraint: " << typeParam->getConstraint() << "] type: " << type << "\n";);
+
+        // create tuple type out of it
+        auto literalTypes = typeParam->getConstraint().cast<mlir_ts::UnionType>().getTypes();
+        auto fieldTypes = type.cast<mlir_ts::UnionType>().getTypes();
+
+        SmallVector<mlir_ts::FieldInfo> fields;
+        for (auto index = 0; index < literalTypes.size(); index++)
+        {
+            auto literalType = literalTypes[index].cast<mlir_ts::LiteralType>();
+            auto fieldType = fieldTypes[index];
+            fields.push_back({literalType.getValue(), fieldType});
+        }
+
+        return getTupleType(fields);
     }
 
     mlir_ts::VoidType getVoidType()
@@ -9805,24 +9850,13 @@ class MLIRGenImpl
             typesAll.push_back(getNullType());
         }
 
+        mlir::Type retType = typesAll.size() == 1 ? typesAll.front() : getUnionType(typesAll);
         if (unionContext.isUndefined)
         {
-            if (typesAll.size() == 1)
-            {
-                return getOptionalType(typesAll.front());
-            }
-
-            return getOptionalType(getUnionType(typesAll));
+            return getOptionalType(retType);
         }
 
-        if (typesAll.size() == 1)
-        {
-            return typesAll.front();
-        }
-
-        assert(typesAll.size() > 1);
-
-        return getUnionType(typesAll);
+        return retType;
     }
 
     mlir_ts::UnionType getUnionType(mlir::Type type1, mlir::Type type2)
