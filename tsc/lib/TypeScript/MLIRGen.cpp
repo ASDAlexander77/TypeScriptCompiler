@@ -8882,6 +8882,10 @@ class MLIRGenImpl
         {
             return getConstructSignature(typeReferenceAST.as<ConstructSignatureDeclaration>(), genContext);
         }
+        else if (kind == SyntaxKind::IndexSignature)
+        {
+            return getIndexSignature(typeReferenceAST.as<IndexSignatureDeclaration>(), genContext);
+        }
         else if (kind == SyntaxKind::TupleType)
         {
             return getTupleType(typeReferenceAST.as<TupleTypeNode>(), genContext);
@@ -8975,6 +8979,10 @@ class MLIRGenImpl
         else if (kind == SyntaxKind::MappedType)
         {
             return getMappedType(typeReferenceAST.as<MappedTypeNode>(), genContext);
+        }
+        else if (kind == SyntaxKind::TemplateLiteralType)
+        {
+            return getTemplateLiteralType(typeReferenceAST.as<TemplateLiteralTypeNode>(), genContext);
         }
 
         llvm_unreachable("not implemented type declaration");
@@ -9382,6 +9390,71 @@ class MLIRGenImpl
         return getIndexedAccessType(type, indexType, genContext);
     }
 
+    mlir::Type getTemplateLiteralType(TemplateLiteralTypeNode templateLiteralTypeNode, const GenContext &genContext)
+    {
+        auto location = loc(templateLiteralTypeNode);
+
+        // first string
+        auto text = convertWideToUTF8(templateLiteralTypeNode->head->rawText);
+
+        SmallVector<mlir::Type> types;
+        getTemplateLiteralSpan(types, text, templateLiteralTypeNode->templateSpans, 0, genContext);
+
+        if (types.size() == 1)
+        {
+            return types.front();
+        }
+
+        return getUnionType(types);
+    }
+
+    void getTemplateLiteralSpan(SmallVector<mlir::Type> &types, std::string head, NodeArray<TemplateLiteralTypeSpan> &spans, int spanIndex,
+                                const GenContext &genContext)
+    {
+        if (spanIndex >= spans.size())
+        {
+            auto newLiteralType = mlir_ts::LiteralType::get(builder.getStringAttr(head), getStringType());
+            types.push_back(newLiteralType);
+            return;
+        }
+
+        auto span = spans[spanIndex];
+        auto type = getType(span->type, genContext);
+        getTemplateLiteralTypeItem(types, type, head, spans, spanIndex, genContext);
+    }
+
+    void getTemplateLiteralTypeItem(SmallVector<mlir::Type> &types, mlir::Type type, std::string head,
+                                    NodeArray<TemplateLiteralTypeSpan> &spans, int spanIndex, const GenContext &genContext)
+    {
+        if (auto unionType = type.dyn_cast<mlir_ts::UnionType>())
+        {
+            getTemplateLiteralUnionType(types, unionType, head, spans, spanIndex, genContext);
+            return;
+        }
+
+        auto span = spans[spanIndex];
+
+        std::stringstream ss;
+        ss << head;
+
+        auto typeText = type.cast<mlir_ts::LiteralType>().getValue().cast<mlir::StringAttr>().getValue();
+        ss << typeText.str();
+
+        auto spanText = convertWideToUTF8(span->literal->rawText);
+        ss << spanText;
+
+        getTemplateLiteralSpan(types, ss.str(), spans, spanIndex + 1, genContext);
+    }
+
+    void getTemplateLiteralUnionType(SmallVector<mlir::Type> &types, mlir::Type unionType, std::string head,
+                                     NodeArray<TemplateLiteralTypeSpan> &spans, int spanIndex, const GenContext &genContext)
+    {
+        for (auto unionTypeItem : unionType.cast<mlir_ts::UnionType>().getTypes())
+        {
+            getTemplateLiteralTypeItem(types, unionTypeItem, head, spans, spanIndex, genContext);
+        }
+    }
+
     mlir::Type getMappedType(MappedTypeNode mappedTypeNode, const GenContext &genContext)
     {
         // PTR(Node) /**ReadonlyToken | PlusToken | MinusToken*/ readonlyToken;
@@ -9727,6 +9800,11 @@ class MLIRGenImpl
     mlir_ts::FunctionType getMethodSignature(MethodSignature methodSignature, const GenContext &genContext)
     {
         return getSignature(methodSignature, genContext);
+    }
+
+    mlir_ts::FunctionType getIndexSignature(IndexSignatureDeclaration indexSignature, const GenContext &genContext)
+    {
+        return getSignature(indexSignature, genContext);
     }
 
     struct UnionTypeProcessContext
