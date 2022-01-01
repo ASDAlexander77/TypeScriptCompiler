@@ -9286,6 +9286,10 @@ class MLIRGenImpl
             return getUnionType(literalTypes);
         }
 
+        LLVM_DEBUG(llvm::dbgs() << "\n!! can't take 'keyof' from: " << type << "\n";);
+
+        emitError(loc(typeOperatorNode), "can't take keyof: ") << type;
+
         return mlir::Type();
     }
 
@@ -9955,12 +9959,13 @@ class MLIRGenImpl
         mlir_ts::InterfaceType baseInterfaceType;
         mlir_ts::TupleType baseTupleType;
         mlir::SmallVector<mlir::Type> types;
+        mlir::Type firstNonFalseType;
         for (auto typeItem : intersectionTypeNode->types)
         {
             auto type = getType(typeItem, genContext);
             if (!type)
             {
-                llvm_unreachable("wrong type");
+                continue;
             }
 
             if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
@@ -9985,6 +9990,8 @@ class MLIRGenImpl
             {
                 types.push_back(type);
             }
+
+            firstNonFalseType = type;
         }
 
         if (types.size() == 0)
@@ -10044,7 +10051,7 @@ class MLIRGenImpl
             return getTupleType(typesForNewTuple);
         }
 
-        llvm_unreachable("not implemented yet");
+        return firstNonFalseType;
     }
 
     InterfaceInfo::TypePtr newInterfaceType(IntersectionTypeNode intersectionTypeNode, bool &declareInterface)
