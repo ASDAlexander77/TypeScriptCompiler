@@ -9034,6 +9034,20 @@ class MLIRGenImpl
         return type;
     }
 
+    mlir::Type getSecondTypeFromTypeArguments(NodeArray<TypeNode> &typeArguments, const GenContext &genContext, bool extractType = false)
+    {
+        auto type = getType(typeArguments[1], genContext);
+        if (extractType)
+        {
+            if (auto literalType = type.dyn_cast<mlir_ts::LiteralType>())
+            {
+                type = literalType.getElementType();
+            }
+        }
+
+        return type;
+    }
+
     mlir::LogicalResult zipTypeParametersWithArguments(mlir::Location location, llvm::ArrayRef<TypeParameterDOM::TypePtr> typeParams,
                                                        NodeArray<TypeNode> typeArgs,
                                                        llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> &pairs,
@@ -9111,9 +9125,22 @@ class MLIRGenImpl
 
             if (name == "NonNullable")
             {
-                // TODO: ???
                 auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
-                return elemnentType;
+                return NonNullableTypes(elemnentType);
+            }
+
+            if (name == "Exclude")
+            {
+                auto firstType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                auto secondType = getSecondTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                return ExcludeTypes(firstType, secondType);
+            }
+
+            if (name == "Extract")
+            {
+                auto firstType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                auto secondType = getSecondTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                return ExtractTypes(firstType, secondType);
             }
 
             if (name == "Array")
@@ -9150,7 +9177,21 @@ class MLIRGenImpl
                     return mlir::Type();
                 }
 
-                LLVM_DEBUG(llvm::dbgs() << "\n!! ReturnType Of: " << elementType;);
+                LLVM_DEBUG(llvm::dbgs() << "\n!! ElementType Of: " << elementType;);
+                auto retType = getParamsTupleTypeFromFuncRef(elementType);
+                LLVM_DEBUG(llvm::dbgs() << " is " << retType << "\n";);
+                return retType;
+            }
+
+            if (name == "ConstructorParameters")
+            {
+                auto elementType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                if (genContext.allowPartialResolve && !elementType)
+                {
+                    return mlir::Type();
+                }
+
+                LLVM_DEBUG(llvm::dbgs() << "\n!! ElementType Of: " << elementType;);
                 auto retType = getParamsTupleTypeFromFuncRef(elementType);
                 LLVM_DEBUG(llvm::dbgs() << " is " << retType << "\n";);
                 return retType;
@@ -9170,6 +9211,21 @@ class MLIRGenImpl
         }
 
         return getTypeByTypeName(typeReferenceAST->typeName, genContext);
+    }
+
+    mlir::Type NonNullableTypes(mlir::Type type)
+    {
+        llvm_unreachable("not implemented");
+    }
+
+    mlir::Type ExcludeTypes(mlir::Type type, mlir::Type exclude)
+    {
+        llvm_unreachable("not implemented");
+    }
+
+    mlir::Type ExtractTypes(mlir::Type type, mlir::Type exclude)
+    {
+        llvm_unreachable("not implemented");
     }
 
     mlir::Type getTypeByTypeQuery(TypeQueryNode typeQueryAST, const GenContext &genContext)
@@ -9470,6 +9526,7 @@ class MLIRGenImpl
         // PTR(TypeNode) type;
 
         auto typeParam = processTypeParameter(mappedTypeNode->typeParameter, genContext);
+        auto hasNameType = !!mappedTypeNode->nameType;
 
         SmallVector<mlir_ts::FieldInfo> fields;
         for (auto typeParamItem : typeParam->getConstraint().cast<mlir_ts::UnionType>().getTypes())
@@ -9479,8 +9536,8 @@ class MLIRGenImpl
 
             auto type = getType(mappedTypeNode->type, genContext);
 
-            mlir::Type nameType;
-            if (mappedTypeNode->nameType)
+            mlir::Type nameType = typeParamItem;
+            if (hasNameType)
             {
                 nameType = getType(mappedTypeNode->nameType, genContext);
             }
@@ -9491,7 +9548,14 @@ class MLIRGenImpl
             LLVM_DEBUG(llvm::dbgs() << "\n!! mapped type... type param: [" << typeParam->getName() << " constraint item: " << typeParamItem
                                     << ", name: " << nameType << "] type: " << type << "\n";);
 
-            auto literalType = (nameType ? nameType : typeParamItem).cast<mlir_ts::LiteralType>();
+            if (isNoneType(nameType))
+            {
+                // filterting out
+                LLVM_DEBUG(llvm::dbgs() << "\n!! mapped type... filtered.\n";);
+                continue;
+            }
+
+            auto literalType = nameType.cast<mlir_ts::LiteralType>();
             fields.push_back({literalType.getValue(), type});
         }
 
