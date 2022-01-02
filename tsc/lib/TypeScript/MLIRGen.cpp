@@ -9215,16 +9215,43 @@ class MLIRGenImpl
 
     mlir::Type NonNullableTypes(mlir::Type type)
     {
+        SmallPtrSet<mlir::Type, 2> types;
+
+        MLIRHelper::LoadTypes(types, type);
+
         llvm_unreachable("not implemented");
     }
 
     mlir::Type ExcludeTypes(mlir::Type type, mlir::Type exclude)
     {
-        llvm_unreachable("not implemented");
+        SmallPtrSet<mlir::Type, 2> types;
+        SmallPtrSet<mlir::Type, 2> excludeTypes;
+
+        MLIRHelper::LoadTypes(types, type);
+        MLIRHelper::LoadTypes(excludeTypes, exclude);
+
+        SmallVector<mlir::Type> resTypes;
+        for (auto item : types)
+        {
+            if (excludeTypes.count(item))
+            {
+                continue;
+            }
+
+            resTypes.push_back(item);
+        }
+
+        return getUnionType(resTypes);
     }
 
-    mlir::Type ExtractTypes(mlir::Type type, mlir::Type exclude)
+    mlir::Type ExtractTypes(mlir::Type type, mlir::Type extract)
     {
+        SmallPtrSet<mlir::Type, 2> types;
+        SmallPtrSet<mlir::Type, 2> extractTypes;
+
+        MLIRHelper::LoadTypes(types, type);
+        MLIRHelper::LoadTypes(extractTypes, extract);
+
         llvm_unreachable("not implemented");
     }
 
@@ -9548,7 +9575,7 @@ class MLIRGenImpl
             LLVM_DEBUG(llvm::dbgs() << "\n!! mapped type... type param: [" << typeParam->getName() << " constraint item: " << typeParamItem
                                     << ", name: " << nameType << "] type: " << type << "\n";);
 
-            if (isNoneType(nameType))
+            if (isNoneType(nameType) || nameType.isa<mlir_ts::NeverType>())
             {
                 // filterting out
                 LLVM_DEBUG(llvm::dbgs() << "\n!! mapped type... filtered.\n";);
@@ -10015,8 +10042,18 @@ class MLIRGenImpl
         return mlir_ts::UnionType::get(builder.getContext(), types);
     }
 
-    mlir_ts::UnionType getUnionType(mlir::SmallVector<mlir::Type> &types)
+    mlir::Type getUnionType(mlir::SmallVector<mlir::Type> &types)
     {
+        if (types.size() == 0)
+        {
+            return getNeverType();
+        }
+
+        if (types.size() == 1)
+        {
+            return types.front();
+        }
+
         return mlir_ts::UnionType::get(builder.getContext(), types);
     }
 
@@ -10192,16 +10229,6 @@ class MLIRGenImpl
                 newTypes.push_back(uniqType);
             }
 
-            if (newTypes.size() == 0)
-            {
-                return getNeverType();
-            }
-
-            if (newTypes.size() == 1)
-            {
-                return newTypes.front();
-            }
-
             return getUnionType(newTypes);
         }
 
@@ -10267,16 +10294,6 @@ class MLIRGenImpl
         for (auto uniqType : newUniqueTypes)
         {
             newTypes.push_back(uniqType);
-        }
-
-        if (newTypes.size() == 0)
-        {
-            return getNeverType();
-        }
-
-        if (newTypes.size() == 1)
-        {
-            return newTypes.front();
         }
 
         return getUnionType(newTypes);

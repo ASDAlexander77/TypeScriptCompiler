@@ -2,8 +2,10 @@
 #define MLIR_TYPESCRIPT_COMMONGENLOGIC_MLIRHELPER_H_
 
 #include "TypeScript/TypeScriptOps.h"
+
 #include "llvm/Support/ConvertUTF.h"
 #include "llvm/ADT/TypeSwitch.h"
+#include "llvm/ADT/SmallPtrSet.h"
 
 #include "parser.h"
 
@@ -130,6 +132,36 @@ class MLIRHelper
         }
 
         return false;
+    }
+
+    static void LoadTypes(mlir::SmallVector<mlir::Type> &types, mlir::Type type)
+    {
+        if (auto sourceUnionType = type.dyn_cast<mlir_ts::UnionType>())
+        {
+            for (auto item : sourceUnionType.getTypes())
+            {
+                types.push_back(item);
+            }
+        }
+        else
+        {
+            types.push_back(type);
+        }
+    }
+
+    static void LoadTypes(mlir::SmallPtrSet<mlir::Type, 2> &types, mlir::Type type)
+    {
+        if (auto sourceUnionType = type.dyn_cast<mlir_ts::UnionType>())
+        {
+            for (auto item : sourceUnionType.getTypes())
+            {
+                types.insert(item);
+            }
+        }
+        else
+        {
+            types.insert(type);
+        }
     }
 };
 
