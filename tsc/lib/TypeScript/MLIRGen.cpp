@@ -5074,6 +5074,7 @@ class MLIRGenImpl
         return mlir::Value();
     }
 
+    // TODO: rename and put in helper class
     mlir::Type getReturnTypeFromFuncRef(mlir::Type funcType)
     {
         mlir::Type returnType;
@@ -5099,6 +5100,7 @@ class MLIRGenImpl
         return returnType;
     }
 
+    // TODO: rename and put in helper class
     mlir::Type getFirstParamFromFuncRef(mlir::Type funcType)
     {
         mlir::Type paramType;
@@ -5114,6 +5116,7 @@ class MLIRGenImpl
         return paramType;
     }
 
+    // TODO: rename and put in helper class
     mlir::Type getParamsTupleTypeFromFuncRef(mlir::Type funcType)
     {
         mlir::Type paramsType;
@@ -5126,6 +5129,32 @@ class MLIRGenImpl
             }
 
             return getTupleType(fieldInfos);
+        };
+
+        TypeSwitch<mlir::Type>(funcType)
+            .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
+            .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
+            .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
+            .Default([&](auto type) { llvm_unreachable("not implemented"); });
+
+        return paramsType;
+    }
+
+    // TODO: rename and put in helper class
+    mlir::Type getOmitThisFunctionTypeFromFuncRef(mlir::Type funcType)
+    {
+        mlir::Type paramsType;
+
+        auto f = [&](auto calledFuncType) {
+            using t = decltype(calledFuncType);
+            SmallVector<mlir::Type> newInputTypes;
+            if (calledFuncType.getInputs().size() > 0)
+            {
+                newInputTypes.append(calledFuncType.getInputs().begin() + 1, calledFuncType.getInputs().end());
+            }
+
+            auto newType = t::get(builder.getContext(), newInputTypes, calledFuncType.getResults());
+            return newType;
         };
 
         TypeSwitch<mlir::Type>(funcType)
@@ -9223,6 +9252,20 @@ class MLIRGenImpl
 
                 LLVM_DEBUG(llvm::dbgs() << "\n!! ElementType Of: " << elementType;);
                 auto retType = getFirstParamFromFuncRef(elementType);
+                LLVM_DEBUG(llvm::dbgs() << " is " << retType << "\n";);
+                return retType;
+            }
+
+            if (name == "OmitThisParameter")
+            {
+                auto elementType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                if (genContext.allowPartialResolve && !elementType)
+                {
+                    return mlir::Type();
+                }
+
+                LLVM_DEBUG(llvm::dbgs() << "\n!! ElementType Of: " << elementType;);
+                auto retType = getOmitThisFunctionTypeFromFuncRef(elementType);
                 LLVM_DEBUG(llvm::dbgs() << " is " << retType << "\n";);
                 return retType;
             }
