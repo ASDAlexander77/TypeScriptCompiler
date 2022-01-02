@@ -9212,6 +9212,7 @@ class MLIRGenImpl
                 return retType;
             }
 
+            // TODO: add flag to FunctionType to see if type has this parameter (the same way as VarArg)
             if (name == "ThisParameterType")
             {
                 auto elementType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
