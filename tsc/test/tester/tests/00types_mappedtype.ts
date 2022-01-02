@@ -21,10 +21,22 @@ interface Person {
 
 type LazyPerson = Getters<Person>;
 
+type RemoveKindField<Type> = {
+    [Property in keyof Type as Exclude<Property, "kind">]: Type[Property]
+};
+
+interface Circle {
+    kind: "circle";
+    radius: number;
+}
+
+type KindlessCircle = RemoveKindField<Circle>;
+
 function main() {
     let a: LockedAccount = { id: "id1", name: "name1" };
     let b: UnlockedAccount = { id: "id1", name: "name1" };
     let c: LazyPerson;
+    let d: KindlessCircle;
 
     assert(a.id == b.id);
     assert(a.name == b.name);

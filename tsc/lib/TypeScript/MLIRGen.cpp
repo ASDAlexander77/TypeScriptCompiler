@@ -9219,7 +9219,18 @@ class MLIRGenImpl
 
         MLIRHelper::LoadTypes(types, type);
 
-        llvm_unreachable("not implemented");
+        SmallVector<mlir::Type> resTypes;
+        for (auto item : types)
+        {
+            if (item.isa<mlir_ts::NullType>() || item == getOptionalType(getUndefPlaceHolderType()))
+            {
+                continue;
+            }
+
+            resTypes.push_back(item);
+        }
+
+        return getUnionType(resTypes);
     }
 
     mlir::Type ExcludeTypes(mlir::Type type, mlir::Type exclude)
@@ -9252,7 +9263,16 @@ class MLIRGenImpl
         MLIRHelper::LoadTypes(types, type);
         MLIRHelper::LoadTypes(extractTypes, extract);
 
-        llvm_unreachable("not implemented");
+        SmallVector<mlir::Type> resTypes;
+        for (auto item : types)
+        {
+            if (extractTypes.count(item))
+            {
+                resTypes.push_back(item);
+            }
+        }
+
+        return getUnionType(resTypes);
     }
 
     mlir::Type getTypeByTypeQuery(TypeQueryNode typeQueryAST, const GenContext &genContext)
