@@ -9208,9 +9208,69 @@ class MLIRGenImpl
                 auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
                 return elemnentType;
             }
+
+            // string types
+            if (name == "Uppercase")
+            {
+                auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                return UppercaseType(elemnentType);
+            }
+
+            if (name == "Lowercase")
+            {
+                auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                return LowercaseType(elemnentType);
+            }
+
+            if (name == "Capitalize")
+            {
+                auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                return CapitalizeType(elemnentType);
+            }
+
+            if (name == "Uncapitalize")
+            {
+                auto elemnentType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                return UncapitalizeType(elemnentType);
+            }
         }
 
         return getTypeByTypeName(typeReferenceAST->typeName, genContext);
+    }
+
+    mlir::Type StringLiteralTypeFunc(mlir::Type type, std::function<std::string(StringRef)> f)
+    {
+        if (auto literalType = type.dyn_cast<mlir_ts::LiteralType>())
+        {
+            if (literalType.getElementType().isa<mlir_ts::StringType>())
+            {
+                auto newStr = f(literalType.getValue().cast<mlir::StringAttr>().getValue());
+                auto copyVal = StringRef(newStr).copy(stringAllocator);
+                return mlir_ts::LiteralType::get(builder.getStringAttr(copyVal), getStringType());
+            }
+        }
+
+        return mlir::Type();
+    }
+
+    mlir::Type UppercaseType(mlir::Type type)
+    {
+        return StringLiteralTypeFunc(type, [](auto val) { return val.upper(); });
+    }
+
+    mlir::Type LowercaseType(mlir::Type type)
+    {
+        return StringLiteralTypeFunc(type, [](auto val) { return val.lower(); });
+    }
+
+    mlir::Type CapitalizeType(mlir::Type type)
+    {
+        return StringLiteralTypeFunc(type, [](auto val) { return val.slice(0, 1).upper().append(val.slice(1, val.size())); });
+    }
+
+    mlir::Type UncapitalizeType(mlir::Type type)
+    {
+        return StringLiteralTypeFunc(type, [](auto val) { return val.slice(0, 1).lower().append(val.slice(1, val.size())); });
     }
 
     mlir::Type NonNullableTypes(mlir::Type type)

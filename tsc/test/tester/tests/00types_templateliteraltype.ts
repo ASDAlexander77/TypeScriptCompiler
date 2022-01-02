@@ -19,11 +19,19 @@ type person = {
 
 type personEvents = PropEventSource<person>;
 
+
+type Cases<T extends string> = `${Uppercase<T>} ${Lowercase<T>} ${Capitalize<T>} ${Uncapitalize<T>}`;
+
+type TCA1 = Cases<'bar'>;  // 'BAR bar Bar bar'
+type TCA2 = Cases<'BAR'>;  // 'BAR bar BAR bAR'
+
 function main() {
 
     let a: Greeting;
     let b: AllLocaleIDs;
     let c: personEvents;
+    let d: TCA1;
+    let e: TCA2;
 
     print("done.");
 }

@@ -764,9 +764,13 @@ class MLIRTypeHelper
             return true;
         }
 
+        if (auto literalType = srcType.dyn_cast_or_null<mlir_ts::LiteralType>())
+        {
+            return extendsType(literalType.getElementType(), extendType);
+        }
+
         if (auto unionType = extendType.dyn_cast_or_null<mlir_ts::UnionType>())
         {
-            // calculate store size
             auto pred = [&](auto &item) { return extendsType(srcType, item); };
             auto types = unionType.getTypes();
             return std::find_if(types.begin(), types.end(), pred) != types.end();
