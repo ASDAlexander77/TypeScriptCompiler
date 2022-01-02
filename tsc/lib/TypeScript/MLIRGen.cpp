@@ -5099,6 +5099,21 @@ class MLIRGenImpl
         return returnType;
     }
 
+    mlir::Type getFirstParamFromFuncRef(mlir::Type funcType)
+    {
+        mlir::Type paramType;
+
+        auto f = [&](auto calledFuncType) { return calledFuncType.getInputs().front(); };
+
+        TypeSwitch<mlir::Type>(funcType)
+            .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { paramType = f(calledFuncType); })
+            .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { paramType = f(calledFuncType); })
+            .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { paramType = f(calledFuncType); })
+            .Default([&](auto type) { llvm_unreachable("not implemented"); });
+
+        return paramType;
+    }
+
     mlir::Type getParamsTupleTypeFromFuncRef(mlir::Type funcType)
     {
         mlir::Type paramsType;
@@ -5114,9 +5129,9 @@ class MLIRGenImpl
         };
 
         TypeSwitch<mlir::Type>(funcType)
-            .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { f(calledFuncType); })
-            .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { f(calledFuncType); })
-            .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { f(calledFuncType); })
+            .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
+            .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
+            .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
             .Default([&](auto type) { llvm_unreachable("not implemented"); });
 
         return paramsType;
@@ -9195,6 +9210,27 @@ class MLIRGenImpl
                 auto retType = getParamsTupleTypeFromFuncRef(elementType);
                 LLVM_DEBUG(llvm::dbgs() << " is " << retType << "\n";);
                 return retType;
+            }
+
+            if (name == "ThisParameterType")
+            {
+                auto elementType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                if (genContext.allowPartialResolve && !elementType)
+                {
+                    return mlir::Type();
+                }
+
+                LLVM_DEBUG(llvm::dbgs() << "\n!! ElementType Of: " << elementType;);
+                auto retType = getFirstParamFromFuncRef(elementType);
+                LLVM_DEBUG(llvm::dbgs() << " is " << retType << "\n";);
+                return retType;
+            }
+
+            // ThisType is dummy type
+            if (name == "ThisType")
+            {
+                auto elementType = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                return elementType;
             }
 
             if (name == "Awaited")
