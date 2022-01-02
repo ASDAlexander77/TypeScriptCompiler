@@ -9430,6 +9430,8 @@ class MLIRGenImpl
     void getTemplateLiteralTypeItem(SmallVector<mlir::Type> &types, mlir::Type type, std::string head,
                                     NodeArray<TemplateLiteralTypeSpan> &spans, int spanIndex, const GenContext &genContext)
     {
+        LLVM_DEBUG(llvm::dbgs() << "\n!! TemplateLiteralType, processing type: " << type << ", span: " << spanIndex << "\n";);
+
         if (auto unionType = type.dyn_cast<mlir_ts::UnionType>())
         {
             getTemplateLiteralUnionType(types, unionType, head, spans, spanIndex, genContext);
@@ -9469,28 +9471,28 @@ class MLIRGenImpl
 
         auto typeParam = processTypeParameter(mappedTypeNode->typeParameter, genContext);
 
-        const_cast<GenContext &>(genContext)
-            .typeParamsWithArgs.insert({typeParam->getName(), std::make_pair(typeParam, typeParam->getConstraint())});
-
-        auto nameType = getType(mappedTypeNode->nameType, genContext);
-        auto type = getType(mappedTypeNode->type, genContext);
-
-        // remove type param
-        const_cast<GenContext &>(genContext).typeParamsWithArgs.erase(typeParam->getName());
-
-        LLVM_DEBUG(llvm::dbgs() << "\n!! mapped type - nameType: " << nameType << " type param: [" << typeParam->getName()
-                                << " constraint: " << typeParam->getConstraint() << "] type: " << type << "\n";);
-
-        // create tuple type out of it
-        auto literalTypes = typeParam->getConstraint().cast<mlir_ts::UnionType>().getTypes();
-        auto fieldTypes = type.cast<mlir_ts::UnionType>().getTypes();
-
         SmallVector<mlir_ts::FieldInfo> fields;
-        for (auto index = 0; index < literalTypes.size(); index++)
+        for (auto typeParamItem : typeParam->getConstraint().cast<mlir_ts::UnionType>().getTypes())
         {
-            auto literalType = literalTypes[index].cast<mlir_ts::LiteralType>();
-            auto fieldType = fieldTypes[index];
-            fields.push_back({literalType.getValue(), fieldType});
+            const_cast<GenContext &>(genContext)
+                .typeParamsWithArgs.insert({typeParam->getName(), std::make_pair(typeParam, typeParamItem)});
+
+            auto type = getType(mappedTypeNode->type, genContext);
+
+            mlir::Type nameType;
+            if (mappedTypeNode->nameType)
+            {
+                nameType = getType(mappedTypeNode->nameType, genContext);
+            }
+
+            // remove type param
+            const_cast<GenContext &>(genContext).typeParamsWithArgs.erase(typeParam->getName());
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! mapped type... type param: [" << typeParam->getName() << " constraint item: " << typeParamItem
+                                    << ", name: " << nameType << "] type: " << type << "\n";);
+
+            auto literalType = (nameType ? nameType : typeParamItem).cast<mlir_ts::LiteralType>();
+            fields.push_back({literalType.getValue(), type});
         }
 
         return getTupleType(fields);
@@ -9965,12 +9967,11 @@ class MLIRGenImpl
             auto type = getType(typeItem, genContext);
             if (!type)
             {
-                continue;
+                return getNeverType();
             }
 
             if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
             {
-                types.push_back(type);
                 if (!baseTupleType)
                 {
                     baseTupleType = tupleType;
@@ -9979,25 +9980,24 @@ class MLIRGenImpl
 
             if (auto ifaceType = type.dyn_cast<mlir_ts::InterfaceType>())
             {
-                types.push_back(type);
                 if (!baseInterfaceType)
                 {
                     baseInterfaceType = ifaceType;
                 }
             }
 
-            if (type.isa<mlir_ts::UnionType>())
-            {
-                types.push_back(type);
-            }
-
-            firstNonFalseType = type;
+            types.push_back(type);
         }
 
         if (types.size() == 0)
         {
             // this is never type
             return getNeverType();
+        }
+
+        if (types.size() == 1)
+        {
+            return types.front();
         }
 
         // find base type
@@ -10021,6 +10021,11 @@ class MLIRGenImpl
                     {
                         mergeInterfaces(newInterfaceInfo, tupleType);
                     }
+                    else
+                    {
+                        // no intersection
+                        return getNeverType();
+                    }
                 }
             }
 
@@ -10043,7 +10048,7 @@ class MLIRGenImpl
                 }
                 else
                 {
-                    llvm_unreachable("not implemented yet");
+                    // no intersection
                     return getNeverType();
                 }
             }
@@ -10051,7 +10056,166 @@ class MLIRGenImpl
             return getTupleType(typesForNewTuple);
         }
 
-        return firstNonFalseType;
+        // calculate of intersaction between types and literal types
+        mlir::Type resType;
+        for (auto typeItem : types)
+        {
+            if (!resType)
+            {
+                resType = typeItem;
+                continue;
+            }
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! &: " << resType << " & " << typeItem;);
+
+            resType = AndType(resType, typeItem);
+
+            LLVM_DEBUG(llvm::dbgs() << " = " << resType << "\n";);
+
+            if (resType.isa<mlir_ts::NeverType>())
+            {
+                return getNeverType();
+            }
+        }
+
+        if (resType)
+        {
+            return resType;
+        }
+
+        return getNeverType();
+    }
+
+    mlir::Type AndType(mlir::Type left, mlir::Type right)
+    {
+        // TODO: 00types_unknown1.ts contains examples of results with & | for types,  T & {} == T & {}, T | {} == T | {}, (they do not
+        // change)
+        if (left == right)
+        {
+            return left;
+        }
+
+        if (auto literalType = right.dyn_cast<mlir_ts::LiteralType>())
+        {
+            if (literalType.getElementType() == left)
+            {
+                if (left.isa<mlir_ts::LiteralType>())
+                {
+                    return getNeverType();
+                }
+
+                return literalType;
+            }
+        }
+
+        if (auto leftUnionType = left.dyn_cast<mlir_ts::UnionType>())
+        {
+            return AndUnionType(leftUnionType, right);
+        }
+
+        if (auto unionType = right.dyn_cast<mlir_ts::UnionType>())
+        {
+            mlir::SmallPtrSet<mlir::Type, 2> newUniqueTypes;
+            for (auto unionTypeItem : unionType.getTypes())
+            {
+                auto resType = AndType(left, unionTypeItem);
+                newUniqueTypes.insert(resType);
+            }
+
+            SmallVector<mlir::Type> newTypes;
+            for (auto uniqType : newUniqueTypes)
+            {
+                newTypes.push_back(uniqType);
+            }
+
+            if (newTypes.size() == 0)
+            {
+                return getNeverType();
+            }
+
+            if (newTypes.size() == 1)
+            {
+                return newTypes.front();
+            }
+
+            return getUnionType(newTypes);
+        }
+
+        if (left.isa<mlir_ts::NullType>())
+        {
+            MLIRTypeHelper mth(builder.getContext());
+            if (mth.isValueType(right))
+            {
+                return getNeverType();
+            }
+
+            return left;
+        }
+
+        if (right.isa<mlir_ts::NullType>())
+        {
+            MLIRTypeHelper mth(builder.getContext());
+            if (mth.isValueType(left))
+            {
+                return getNeverType();
+            }
+
+            return right;
+        }
+
+        if (left.isa<mlir_ts::NullType>())
+        {
+            MLIRTypeHelper mth(builder.getContext());
+            if (mth.isValueType(right))
+            {
+                return getNeverType();
+            }
+
+            return left;
+        }
+
+        if (left.isa<mlir_ts::AnyType>() || left.isa<mlir_ts::UnknownType>())
+        {
+            return right;
+        }
+
+        if (right.isa<mlir_ts::AnyType>() || right.isa<mlir_ts::UnknownType>())
+        {
+            return left;
+        }
+
+        // TODO: should I add, interface, tuple types here?
+        // PS: string & { __b: number } creating type "string & { __b: number }".
+
+        return mlir::Type();
+    }
+
+    mlir::Type AndUnionType(mlir_ts::UnionType leftUnion, mlir::Type right)
+    {
+        mlir::SmallPtrSet<mlir::Type, 2> newUniqueTypes;
+        for (auto unionTypeItem : leftUnion.getTypes())
+        {
+            auto resType = AndType(unionTypeItem, right);
+            newUniqueTypes.insert(resType);
+        }
+
+        SmallVector<mlir::Type> newTypes;
+        for (auto uniqType : newUniqueTypes)
+        {
+            newTypes.push_back(uniqType);
+        }
+
+        if (newTypes.size() == 0)
+        {
+            return getNeverType();
+        }
+
+        if (newTypes.size() == 1)
+        {
+            return newTypes.front();
+        }
+
+        return getUnionType(newTypes);
     }
 
     InterfaceInfo::TypePtr newInterfaceType(IntersectionTypeNode intersectionTypeNode, bool &declareInterface)
