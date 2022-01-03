@@ -807,6 +807,16 @@ class MLIRGenImpl
                 {
                     return mlir::Value();
                 }
+
+                // create new instance of interface with TypeArguments
+                if (mlir::failed(mlirGen(genericInterfaceInfo->interfaceDeclaration, genericTypeGenContext)))
+                {
+                    return mlir::Value();
+                }
+
+                // get new instance of interface type
+                // TODO: finish it
+                return mlir::Value();
             }
             else
             {
@@ -8437,20 +8447,45 @@ class MLIRGenImpl
         return mlir::failure();
     }
 
-    InterfaceInfo::TypePtr mlirGenInterfaceInfo(InterfaceDeclaration interfaceDeclarationAST, bool &declareInterface,
-                                                const GenContext &genContext)
+    template <typename T> std::string getNameWithArguments(T declarationAST, const GenContext &genContext)
     {
-        auto name = MLIRHelper::getName(interfaceDeclarationAST->name);
+        auto name = MLIRHelper::getName(declarationAST->name);
         if (name.empty())
         {
             llvm_unreachable("not implemented");
-            return InterfaceInfo::TypePtr();
         }
 
-        return mlirGenInterfaceInfo(name, declareInterface);
+        if (genContext.typeParamsWithArgs.size())
+        {
+            name.append("<");
+            auto next = false;
+            for (auto typeParam : declarationAST->typeParameters)
+            {
+                if (next)
+                {
+                    name.append(",");
+                }
+
+                auto type = getType(typeParam, genContext);
+                llvm::raw_string_ostream s(name);
+                s << type;
+                next = false;
+            }
+
+            name.append(">");
+        }
+
+        return name;
     }
 
-    InterfaceInfo::TypePtr mlirGenInterfaceInfo(std::string name, bool &declareInterface)
+    InterfaceInfo::TypePtr mlirGenInterfaceInfo(InterfaceDeclaration interfaceDeclarationAST, bool &declareInterface,
+                                                const GenContext &genContext)
+    {
+        auto name = getNameWithArguments(interfaceDeclarationAST, genContext);
+        return mlirGenInterfaceInfo(name, declareInterface, genContext);
+    }
+
+    InterfaceInfo::TypePtr mlirGenInterfaceInfo(std::string name, bool &declareInterface, const GenContext &genContext)
     {
         declareInterface = false;
 
@@ -9131,9 +9166,35 @@ class MLIRGenImpl
         {
             return getTemplateLiteralType(typeReferenceAST.as<TemplateLiteralTypeNode>(), genContext);
         }
+        else if (kind == SyntaxKind::TypeParameter)
+        {
+            return getResolveTypeParameter(typeReferenceAST.as<TypeParameterDeclaration>(), genContext);
+        }
 
         llvm_unreachable("not implemented type declaration");
         // return getAnyType();
+    }
+
+    mlir::Type getResolveTypeParameter(TypeParameterDeclaration typeParameterDeclaration, const GenContext &genContext)
+    {
+        auto name = MLIRHelper::getName(typeParameterDeclaration->name);
+        if (name.empty())
+        {
+            llvm_unreachable("not implemented");
+            return mlir::Type();
+        }
+
+        auto found = genContext.typeParamsWithArgs.find(name);
+        if (found != genContext.typeParamsWithArgs.end())
+        {
+            auto type = (*found).getValue().second;
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! type gen. param [" << name << "] -> [" << type << "]\n";);
+
+            return type;
+        }
+
+        return mlir::Type();
     }
 
     mlir::Type getTypeByTypeName(Node node, const GenContext &genContext)
@@ -10368,7 +10429,7 @@ class MLIRGenImpl
         if (baseInterfaceType)
         {
             auto declareInterface = false;
-            auto newInterfaceInfo = newInterfaceType(intersectionTypeNode, declareInterface);
+            auto newInterfaceInfo = newInterfaceType(intersectionTypeNode, declareInterface, genContext);
             if (declareInterface)
             {
                 // merge all interfaces;
@@ -10562,12 +10623,12 @@ class MLIRGenImpl
         return getUnionType(newTypes);
     }
 
-    InterfaceInfo::TypePtr newInterfaceType(IntersectionTypeNode intersectionTypeNode, bool &declareInterface)
+    InterfaceInfo::TypePtr newInterfaceType(IntersectionTypeNode intersectionTypeNode, bool &declareInterface, const GenContext &genContext)
     {
         auto newName = MLIRHelper::getAnonymousName(loc_check(intersectionTypeNode), "ifce");
 
         // clone into new interface
-        auto interfaceInfo = mlirGenInterfaceInfo(newName, declareInterface);
+        auto interfaceInfo = mlirGenInterfaceInfo(newName, declareInterface, genContext);
 
         return interfaceInfo;
     }
