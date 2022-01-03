@@ -784,6 +784,8 @@ class MLIRGenImpl
 
     mlir::Value mlirGen(ExpressionWithTypeArguments expressionWithTypeArgumentsAST, const GenContext &genContext)
     {
+        auto location = loc(expressionWithTypeArgumentsAST);
+
         // step 1, resolve expression without Arguments to get reference to Generic Type/Interface etc
         auto genResult = mlirGen(expressionWithTypeArgumentsAST->expression, genContext);
         if (expressionWithTypeArgumentsAST->typeArguments.size() == 0)
@@ -801,8 +803,7 @@ class MLIRGenImpl
 
                 GenContext genericTypeGenContext(genContext);
                 auto typeParams = genericInterfaceInfo->typeParams;
-                if (mlir::failed(zipTypeParametersWithArguments(loc(expressionWithTypeArgumentsAST), typeParams,
-                                                                expressionWithTypeArgumentsAST->typeArguments,
+                if (mlir::failed(zipTypeParametersWithArguments(location, typeParams, expressionWithTypeArgumentsAST->typeArguments,
                                                                 genericTypeGenContext.typeParamsWithArgs, genContext)))
                 {
                     return mlir::Value();
@@ -814,9 +815,11 @@ class MLIRGenImpl
                     return mlir::Value();
                 }
 
-                // get new instance of interface type
-                // TODO: finish it
-                return mlir::Value();
+                // get instance of generic interface type
+                auto specType = getSpecializationInterfaceType(genericInterfaceInfo, genericTypeGenContext);
+
+                return builder.create<mlir_ts::InterfaceRefOp>(
+                    location, specType, mlir::FlatSymbolRefAttr::get(builder.getContext(), specType.getName().getValue()));
             }
             else
             {
@@ -6834,13 +6837,9 @@ class MLIRGenImpl
         // support generic types
         if (genContext.typeParamsWithArgs.size() > 0)
         {
-            auto found = genContext.typeParamsWithArgs.find(name);
-            if (found != genContext.typeParamsWithArgs.end())
+            auto type = getResolveTypeParameter(name, genContext);
+            if (type)
             {
-                auto type = (*found).getValue().second;
-
-                LLVM_DEBUG(llvm::dbgs() << "\n!! type gen. param [" << name << "] -> [" << type << "]\n";);
-
                 return builder.create<mlir_ts::TypeRefOp>(location, type);
             }
         }
@@ -8478,6 +8477,38 @@ class MLIRGenImpl
         return name;
     }
 
+    std::string getSpecializedInterfaceName(GenericInterfaceInfo::TypePtr geneticInterfacePtr, const GenContext &genContext)
+    {
+        auto name = geneticInterfacePtr->fullName.str();
+        if (genContext.typeParamsWithArgs.size())
+        {
+            name.append("<");
+            auto next = false;
+            for (auto typeParam : geneticInterfacePtr->typeParams)
+            {
+                if (next)
+                {
+                    name.append(",");
+                }
+
+                auto type = getResolveTypeParameter(typeParam->getName(), genContext);
+                llvm::raw_string_ostream s(name);
+                s << type;
+                next = false;
+            }
+
+            name.append(">");
+        }
+
+        return name;
+    }
+
+    mlir_ts::InterfaceType getSpecializationInterfaceType(GenericInterfaceInfo::TypePtr geneticInterfacePtr, const GenContext &genContext)
+    {
+        auto fullSpecializedInterfaceName = getSpecializedInterfaceName(geneticInterfacePtr, genContext);
+        return getInterfaceType(fullSpecializedInterfaceName);
+    }
+
     InterfaceInfo::TypePtr mlirGenInterfaceInfo(InterfaceDeclaration interfaceDeclarationAST, bool &declareInterface,
                                                 const GenContext &genContext)
     {
@@ -8625,8 +8656,7 @@ class MLIRGenImpl
     {
         if (newInterfacePtr)
         {
-            auto interfaceFullNameSymbol = mlir::FlatSymbolRefAttr::get(builder.getContext(), newInterfacePtr->fullName);
-            newInterfacePtr->interfaceType = getInterfaceType(interfaceFullNameSymbol /*, fieldInfos*/);
+            newInterfacePtr->interfaceType = getInterfaceType(newInterfacePtr->fullName);
             return mlir::success();
         }
 
@@ -9175,6 +9205,21 @@ class MLIRGenImpl
         // return getAnyType();
     }
 
+    mlir::Type getResolveTypeParameter(StringRef typeParamName, const GenContext &genContext)
+    {
+        auto found = genContext.typeParamsWithArgs.find(typeParamName);
+        if (found != genContext.typeParamsWithArgs.end())
+        {
+            auto type = (*found).getValue().second;
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! type gen. param [" << typeParamName << "] -> [" << type << "]\n";);
+
+            return type;
+        }
+
+        return mlir::Type();
+    }
+
     mlir::Type getResolveTypeParameter(TypeParameterDeclaration typeParameterDeclaration, const GenContext &genContext)
     {
         auto name = MLIRHelper::getName(typeParameterDeclaration->name);
@@ -9184,17 +9229,7 @@ class MLIRGenImpl
             return mlir::Type();
         }
 
-        auto found = genContext.typeParamsWithArgs.find(name);
-        if (found != genContext.typeParamsWithArgs.end())
-        {
-            auto type = (*found).getValue().second;
-
-            LLVM_DEBUG(llvm::dbgs() << "\n!! type gen. param [" << name << "] -> [" << type << "]\n";);
-
-            return type;
-        }
-
-        return mlir::Type();
+        return getResolveTypeParameter(name, genContext);
     }
 
     mlir::Type getTypeByTypeName(Node node, const GenContext &genContext)
@@ -9982,6 +10017,12 @@ class MLIRGenImpl
     {
         auto nsNameAttr = mlir::FlatSymbolRefAttr::get(builder.getContext(), name);
         return mlir_ts::NamespaceType::get(nsNameAttr);
+    }
+
+    mlir_ts::InterfaceType getInterfaceType(StringRef fullName)
+    {
+        auto interfaceFullNameSymbol = mlir::FlatSymbolRefAttr::get(builder.getContext(), fullName);
+        return getInterfaceType(interfaceFullNameSymbol);
     }
 
     mlir_ts::InterfaceType getInterfaceType(mlir::FlatSymbolRefAttr name)
