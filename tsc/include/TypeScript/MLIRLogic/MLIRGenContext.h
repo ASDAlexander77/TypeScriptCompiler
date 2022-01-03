@@ -414,6 +414,26 @@ struct InterfaceInfo
     }
 };
 
+struct GenericInterfaceInfo
+{
+  public:
+    using TypePtr = std::shared_ptr<GenericInterfaceInfo>;
+
+    mlir::StringRef name;
+
+    mlir::StringRef fullName;
+
+    llvm::SmallVector<TypeParameterDOM::TypePtr> typeParams;
+
+    mlir_ts::InterfaceType interfaceType;
+
+    InterfaceDeclaration interfaceDeclaration;
+
+    GenericInterfaceInfo()
+    {
+    }
+};
+
 struct ImplementInfo
 {
     InterfaceInfo::TypePtr interface;
@@ -680,6 +700,8 @@ struct NamespaceInfo
     llvm::StringMap<ClassInfo::TypePtr> classesMap;
 
     llvm::StringMap<InterfaceInfo::TypePtr> interfacesMap;
+
+    llvm::StringMap<GenericInterfaceInfo::TypePtr> genericInterfacesMap;
 
     llvm::StringMap<NamespaceInfo::TypePtr> namespacesMap;
 };

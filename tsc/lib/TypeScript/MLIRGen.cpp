@@ -109,6 +109,8 @@ class MLIRGenImpl
         llvm::ScopedHashTableScope<StringRef, NamespaceInfo::TypePtr> fullNamespacesMapScope(fullNamespacesMap);
         llvm::ScopedHashTableScope<StringRef, ClassInfo::TypePtr> fullNameClassesMapScope(fullNameClassesMap);
         llvm::ScopedHashTableScope<StringRef, InterfaceInfo::TypePtr> fullNameInterfacesMapScope(fullNameInterfacesMap);
+        llvm::ScopedHashTableScope<StringRef, GenericInterfaceInfo::TypePtr> fullNameGenericInterfacesMapScope(
+            fullNameGenericInterfacesMap);
 
         if (mlir::succeeded(mlirDiscoverAllDependencies(module)) && mlir::succeeded(mlirCodeGenModuleWithDiagnostics(module)))
         {
@@ -778,6 +780,57 @@ class MLIRGenImpl
         }
 
         llvm_unreachable("unknown expression");
+    }
+
+    mlir::Value mlirGen(ExpressionWithTypeArguments expressionWithTypeArgumentsAST, const GenContext &genContext)
+    {
+        // step 1, resolve expression without Arguments to get reference to Generic Type/Interface etc
+        auto genResult = mlirGen(expressionWithTypeArgumentsAST->expression, genContext);
+        if (expressionWithTypeArgumentsAST->typeArguments.size() == 0)
+        {
+            return genResult;
+        }
+
+        if (auto ifaceOp = genResult.getDefiningOp<mlir_ts::InterfaceRefOp>())
+        {
+            auto interfaceType = ifaceOp.getType();
+            auto fullNameGenericInterfaceTypeName = interfaceType.getName().getValue();
+            if (hasGenericInterfaceInfoByFullName(fullNameGenericInterfaceTypeName))
+            {
+                auto genericInterfaceInfo = getGenericInterfaceInfoByFullName(fullNameGenericInterfaceTypeName);
+
+                GenContext genericTypeGenContext(genContext);
+                auto typeParams = genericInterfaceInfo->typeParams;
+                if (mlir::failed(zipTypeParametersWithArguments(loc(expressionWithTypeArgumentsAST), typeParams,
+                                                                expressionWithTypeArgumentsAST->typeArguments,
+                                                                genericTypeGenContext.typeParamsWithArgs, genContext)))
+                {
+                    return mlir::Value();
+                }
+            }
+            else
+            {
+                // can't find generic instance
+                return mlir::Value();
+            }
+        }
+
+        /*
+        // steo 2, extract Type/interface paraneters to join with TypeArguments
+        GenContext genericTypeGenContext(genContext);
+
+        // auto typeParams = ;
+
+        if (mlir::failed(zipTypeParametersWithArguments(loc(expressionWithTypeArgumentsAST), typeParams,
+                                                        expressionWithTypeArgumentsAST->typeArguments,
+                                                        genericTypeGenContext.typeParamsWithArgs, genContext)))
+        {
+            return mlir::Value();
+        }
+
+        return mlirGen(expressionWithTypeArgumentsAST->expression, genericTypeGenContext);
+        */
+        return genResult;
     }
 
     mlir::Value registerVariableInThisContext(mlir::Location location, StringRef name, mlir::Type type, const GenContext &genContext)
@@ -6745,6 +6798,15 @@ class MLIRGenImpl
                 mlir::FlatSymbolRefAttr::get(builder.getContext(), interfaceInfo->interfaceType.getName().getValue()));
         }
 
+        if (getGenericInterfacesMap().count(name))
+        {
+            auto genericInterfaceInfo = getGenericInterfacesMap().lookup(name);
+
+            return builder.create<mlir_ts::InterfaceRefOp>(
+                location, genericInterfaceInfo->interfaceType,
+                mlir::FlatSymbolRefAttr::get(builder.getContext(), genericInterfaceInfo->interfaceType.getName().getValue()));
+        }
+
         if (getTypeAliasMap().count(name))
         {
             auto typeAliasInfo = getTypeAliasMap().lookup(name);
@@ -7347,7 +7409,7 @@ class MLIRGenImpl
 
             for (auto &extendingType : heritageClause->types)
             {
-                auto baseType = mlirGen(extendingType->expression, genContext);
+                auto baseType = mlirGen(extendingType, genContext);
                 TypeSwitch<mlir::Type>(baseType.getType())
                     .template Case<mlir_ts::ClassType>([&](auto baseClassType) {
                         auto baseName = baseClassType.getName().getValue();
@@ -8041,7 +8103,7 @@ class MLIRGenImpl
                 continue;
             }
 
-            auto ifaceType = mlirGen(implementingType->expression, genContext);
+            auto ifaceType = mlirGen(implementingType, genContext);
             auto success = false;
             TypeSwitch<mlir::Type>(ifaceType.getType())
                 .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
@@ -8340,6 +8402,41 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    mlir::LogicalResult registerGenericInterface(InterfaceDeclaration interfaceDeclarationAST, const GenContext &genContext)
+    {
+        auto name = MLIRHelper::getName(interfaceDeclarationAST->name);
+        if (!name.empty())
+        {
+            auto namePtr = StringRef(name).copy(stringAllocator);
+            auto fullNamePtr = getFullNamespaceName(namePtr);
+            if (fullNameGenericInterfacesMap.count(fullNamePtr))
+            {
+                return mlir::success();
+            }
+
+            llvm::SmallVector<TypeParameterDOM::TypePtr> typeParameters;
+            if (mlir::failed(processTypeParameters(interfaceDeclarationAST->typeParameters, typeParameters, genContext)))
+            {
+                return mlir::failure();
+            }
+
+            GenericInterfaceInfo::TypePtr newGenericInterfacePtr = std::make_shared<GenericInterfaceInfo>();
+            newGenericInterfacePtr->name = namePtr;
+            newGenericInterfacePtr->fullName = fullNamePtr;
+            newGenericInterfacePtr->typeParams = typeParameters;
+            newGenericInterfacePtr->interfaceDeclaration = interfaceDeclarationAST;
+
+            mlirGenInterfaceType(newGenericInterfacePtr);
+
+            getGenericInterfacesMap().insert({namePtr, newGenericInterfacePtr});
+            fullNameGenericInterfacesMap.insert(fullNamePtr, newGenericInterfacePtr);
+
+            return mlir::success();
+        }
+
+        return mlir::failure();
+    }
+
     InterfaceInfo::TypePtr mlirGenInterfaceInfo(InterfaceDeclaration interfaceDeclarationAST, bool &declareInterface,
                                                 const GenContext &genContext)
     {
@@ -8403,7 +8500,7 @@ class MLIRGenImpl
                 continue;
             }
 
-            auto ifaceType = mlirGen(extendsType->expression, genContext);
+            auto ifaceType = mlirGen(extendsType, genContext);
             auto success = false;
             TypeSwitch<mlir::Type>(ifaceType.getType())
                 .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
@@ -8425,6 +8522,12 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGen(InterfaceDeclaration interfaceDeclarationAST, const GenContext &genContext)
     {
+        // do not proceed for Generic Interfaces for declaration
+        if (interfaceDeclarationAST->typeParameters.size() > 0 && genContext.typeParamsWithArgs.size() == 0)
+        {
+            return registerGenericInterface(interfaceDeclarationAST, genContext);
+        }
+
         auto location = loc(interfaceDeclarationAST);
 
         auto declareInterface = false;
@@ -8483,7 +8586,7 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirGenInterfaceType(InterfaceInfo::TypePtr newInterfacePtr)
+    template <typename T> mlir::LogicalResult mlirGenInterfaceType(T newInterfacePtr)
     {
         if (newInterfacePtr)
         {
@@ -10670,6 +10773,11 @@ class MLIRGenImpl
         return currentNamespace->interfacesMap;
     }
 
+    auto getGenericInterfacesMap() -> llvm::StringMap<GenericInterfaceInfo::TypePtr> &
+    {
+        return currentNamespace->genericInterfacesMap;
+    }
+
     auto getEnumsMap() -> llvm::StringMap<std::pair<mlir::Type, mlir::DictionaryAttr>> &
     {
         return currentNamespace->enumsMap;
@@ -10698,6 +10806,16 @@ class MLIRGenImpl
     auto getInterfaceInfoByFullName(StringRef fullName) -> InterfaceInfo::TypePtr
     {
         return fullNameInterfacesMap.lookup(fullName);
+    }
+
+    auto hasGenericInterfaceInfoByFullName(StringRef fullName) -> bool
+    {
+        return fullNameGenericInterfacesMap.count(fullName) > 0;
+    }
+
+    auto getGenericInterfaceInfoByFullName(StringRef fullName) -> GenericInterfaceInfo::TypePtr
+    {
+        return fullNameGenericInterfacesMap.lookup(fullName);
     }
 
   protected:
@@ -10754,6 +10872,8 @@ class MLIRGenImpl
     llvm::ScopedHashTable<StringRef, ClassInfo::TypePtr> fullNameClassesMap;
 
     llvm::ScopedHashTable<StringRef, InterfaceInfo::TypePtr> fullNameInterfacesMap;
+
+    llvm::ScopedHashTable<StringRef, GenericInterfaceInfo::TypePtr> fullNameGenericInterfacesMap;
 
     llvm::ScopedHashTable<StringRef, VariableDeclarationDOM::TypePtr> fullNameGlobalsMap;
 
