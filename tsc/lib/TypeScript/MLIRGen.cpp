@@ -8593,14 +8593,20 @@ class MLIRGenImpl
             return registerGenericInterface(interfaceDeclarationAST, genContext);
         }
 
-        auto location = loc(interfaceDeclarationAST);
-
         auto declareInterface = false;
         auto newInterfacePtr = mlirGenInterfaceInfo(interfaceDeclarationAST, declareInterface, genContext);
         if (!newInterfacePtr)
         {
             return mlir::failure();
         }
+
+        // do not process specialized interface second time;
+        if (!declareInterface && interfaceDeclarationAST->typeParameters.size() > 0 && genContext.typeParamsWithArgs.size() > 0)
+        {
+            return mlir::success();
+        }
+
+        auto location = loc(interfaceDeclarationAST);
 
         auto ifaceGenContext = GenContext(genContext);
         ifaceGenContext.thisType = newInterfacePtr->interfaceType;

@@ -13,5 +13,12 @@ function main() {
     const r = x.foo(1); // no error
     //const r2 = x.foo(''); // error
 
+    assert(r == 1);
+
+    let x2: I<number> = new AI();
+    const r2 = x2.foo(2); // no error
+
+    assert(r2 == 2);
+
     print("done.");
 }
