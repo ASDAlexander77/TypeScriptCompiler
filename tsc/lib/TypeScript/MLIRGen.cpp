@@ -108,6 +108,7 @@ class MLIRGenImpl
         SymbolTableScopeT varScope(symbolTable);
         llvm::ScopedHashTableScope<StringRef, NamespaceInfo::TypePtr> fullNamespacesMapScope(fullNamespacesMap);
         llvm::ScopedHashTableScope<StringRef, ClassInfo::TypePtr> fullNameClassesMapScope(fullNameClassesMap);
+        llvm::ScopedHashTableScope<StringRef, GenericClassInfo::TypePtr> fullNameGenericClassesMapScope(fullNameGenericClassesMap);
         llvm::ScopedHashTableScope<StringRef, InterfaceInfo::TypePtr> fullNameInterfacesMapScope(fullNameInterfacesMap);
         llvm::ScopedHashTableScope<StringRef, GenericInterfaceInfo::TypePtr> fullNameGenericInterfacesMapScope(
             fullNameGenericInterfacesMap);
@@ -782,6 +783,39 @@ class MLIRGenImpl
         llvm_unreachable("unknown expression");
     }
 
+    mlir::Type instantiateSpecializedClassType(mlir::Location location, mlir_ts::ClassType genericClassType,
+                                               NodeArray<TypeNode> typeArguments, const GenContext &genContext)
+    {
+        auto fullNameGenericClassTypeName = genericClassType.getName().getValue();
+        if (hasGenericClassInfoByFullName(fullNameGenericClassTypeName))
+        {
+            auto genericClassInfo = getGenericClassInfoByFullName(fullNameGenericClassTypeName);
+
+            GenContext genericTypeGenContext(genContext);
+            auto typeParams = genericClassInfo->typeParams;
+            if (mlir::failed(zipTypeParametersWithArguments(location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs,
+                                                            genContext)))
+            {
+                return mlir::Type();
+            }
+
+            // create new instance of interface with TypeArguments
+            if (mlir::failed(mlirGen(genericClassInfo->classDeclaration, genericTypeGenContext)))
+            {
+                return mlir::Type();
+            }
+
+            // get instance of generic interface type
+            auto specType = getSpecializationClassType(genericClassInfo, genericTypeGenContext);
+            return specType;
+        }
+        else
+        {
+            // can't find generic instance
+            return mlir::Type();
+        }
+    }
+
     mlir::Type instantiateSpecializedInterfaceType(mlir::Location location, mlir_ts::InterfaceType genericInterfaceType,
                                                    NodeArray<TypeNode> typeArguments, const GenContext &genContext)
     {
@@ -824,6 +858,20 @@ class MLIRGenImpl
         if (expressionWithTypeArgumentsAST->typeArguments.size() == 0)
         {
             return genResult;
+        }
+
+        if (auto classOp = genResult.getDefiningOp<mlir_ts::ClassRefOp>())
+        {
+            auto classType = classOp.getType();
+            auto specType = instantiateSpecializedClassType(location, classType, expressionWithTypeArgumentsAST->typeArguments, genContext);
+            if (auto specClassType = specType.dyn_cast<mlir_ts::ClassType>())
+            {
+                return builder.create<mlir_ts::ClassRefOp>(
+                    location, specClassType, mlir::FlatSymbolRefAttr::get(builder.getContext(), specClassType.getName().getValue()));
+            }
+
+            // can't find generic instance
+            return mlir::Value();
         }
 
         if (auto ifaceOp = genResult.getDefiningOp<mlir_ts::InterfaceRefOp>())
@@ -3586,7 +3634,8 @@ class MLIRGenImpl
 #else
             MLIRRTTIHelperVCLinux rtti(builder, theModule);
 #endif
-            rtti.setRTTIForType(location, exception.getType(), [&](StringRef classFullName) { return getClassByFullName(classFullName); });
+            rtti.setRTTIForType(location, exception.getType(),
+                                [&](StringRef classFullName) { return getClassInfoByFullName(classFullName); });
         }
 
         return mlir::success();
@@ -3664,7 +3713,7 @@ class MLIRGenImpl
                     MLIRRTTIHelperVCLinux rtti(builder, theModule);
 #endif
                     rtti.setRTTIForType(location, varInfo.getType(),
-                                        [&](StringRef classFullName) { return getClassByFullName(classFullName); });
+                                        [&](StringRef classFullName) { return getClassInfoByFullName(classFullName); });
                 }
             }
 
@@ -3986,7 +4035,7 @@ class MLIRGenImpl
 #ifdef ENABLE_RTTI
         if (auto classType = type.dyn_cast_or_null<mlir_ts::ClassType>())
         {
-            auto classInfo = getClassByFullName(classType.getName().getValue());
+            auto classInfo = getClassInfoByFullName(classType.getName().getValue());
             auto fullNameClassRtti = concat(classInfo->fullName, RTTI_NAME);
 
             if (resultType.isa<mlir_ts::ClassType>())
@@ -4658,7 +4707,7 @@ class MLIRGenImpl
     mlir::Value ClassMembers(mlir::Location location, mlir::Value thisValue, mlir::StringRef classFullName, mlir::StringRef name,
                              bool baseClass, const GenContext &genContext)
     {
-        auto classInfo = getClassByFullName(classFullName);
+        auto classInfo = getClassInfoByFullName(classFullName);
         assert(classInfo);
 
         // static field access
@@ -5452,7 +5501,7 @@ class MLIRGenImpl
         }
 
         // register temp var
-        auto classInfo = getClassByFullName(classType.getName().getValue());
+        auto classInfo = getClassInfoByFullName(classType.getName().getValue());
         return mlirGenCallConstructor(location, classInfo, thisValue, typeArguments, arguments, castThisValueToClass, setVTable,
                                       genContext);
     }
@@ -5467,7 +5516,7 @@ class MLIRGenImpl
         }
 
         // register temp var
-        auto classInfo = getClassByFullName(classStorageType.getName().getValue());
+        auto classInfo = getClassInfoByFullName(classStorageType.getName().getValue());
         return mlirGenCallConstructor(location, classInfo, thisValue, typeArguments, arguments, castThisValueToClass, setVTable,
                                       genContext);
     }
@@ -6792,6 +6841,15 @@ class MLIRGenImpl
                 mlir::FlatSymbolRefAttr::get(builder.getContext(), classInfo->classType.getName().getValue()));
         }
 
+        if (getGenericClassesMap().count(name))
+        {
+            auto genericClassInfo = getGenericClassesMap().lookup(name);
+
+            return builder.create<mlir_ts::ClassRefOp>(
+                location, genericClassInfo->classType,
+                mlir::FlatSymbolRefAttr::get(builder.getContext(), genericClassInfo->classType.getName().getValue()));
+        }
+
         if (getInterfacesMap().count(name))
         {
             auto interfaceInfo = getInterfacesMap().lookup(name);
@@ -6862,7 +6920,7 @@ class MLIRGenImpl
                 return builder.create<mlir_ts::NamespaceRefOp>(location, namespaceInfo->namespaceType, nsName);
             }
 
-            auto classInfo = getClassByFullName(fullName);
+            auto classInfo = getClassInfoByFullName(fullName);
             if (classInfo)
             {
                 return builder.create<mlir_ts::ClassRefOp>(
@@ -6968,7 +7026,7 @@ class MLIRGenImpl
         {
             auto thisValue = mlirGen(location, THIS_NAME, genContext);
 
-            auto classInfo = getClassByFullName(genContext.thisType.cast<mlir_ts::ClassType>().getName().getValue());
+            auto classInfo = getClassInfoByFullName(genContext.thisType.cast<mlir_ts::ClassType>().getName().getValue());
             auto baseClassInfo = classInfo->baseClasses.front();
 
             return mlirGenPropertyAccessExpression(location, thisValue, baseClassInfo->fullName, genContext);
@@ -7195,9 +7253,50 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    mlir::LogicalResult registerGenericClass(ClassLikeDeclaration classDeclarationAST, const GenContext &genContext)
+    {
+        auto name = MLIRHelper::getName(classDeclarationAST->name);
+        if (!name.empty())
+        {
+            auto namePtr = StringRef(name).copy(stringAllocator);
+            auto fullNamePtr = getFullNamespaceName(namePtr);
+            if (fullNameGenericClassesMap.count(fullNamePtr))
+            {
+                return mlir::success();
+            }
+
+            llvm::SmallVector<TypeParameterDOM::TypePtr> typeParameters;
+            if (mlir::failed(processTypeParameters(classDeclarationAST->typeParameters, typeParameters, genContext)))
+            {
+                return mlir::failure();
+            }
+
+            // register class
+            GenericClassInfo::TypePtr newGenericClassPtr = std::make_shared<GenericClassInfo>();
+            newGenericClassPtr->name = namePtr;
+            newGenericClassPtr->fullName = fullNamePtr;
+            newGenericClassPtr->typeParams = typeParameters;
+            newGenericClassPtr->classDeclaration = classDeclarationAST;
+
+            SmallVector<mlir_ts::FieldInfo> emptyFieldInfos;
+            mlirGenClassType(newGenericClassPtr, emptyFieldInfos);
+
+            getGenericClassesMap().insert({namePtr, newGenericClassPtr});
+            fullNameGenericClassesMap.insert(fullNamePtr, newGenericClassPtr);
+
+            return mlir::success();
+        }
+
+        return mlir::failure();
+    }
+
     mlir::LogicalResult mlirGen(ClassLikeDeclaration classDeclarationAST, const GenContext &genContext)
     {
-        auto location = loc(classDeclarationAST);
+        // do not proceed for Generic Interfaces for declaration
+        if (classDeclarationAST->typeParameters.size() > 0 && genContext.typeParamsWithArgs.size() == 0)
+        {
+            return registerGenericClass(classDeclarationAST, genContext);
+        }
 
         auto declareClass = false;
         auto newClassPtr = mlirGenClassInfo(classDeclarationAST, declareClass, genContext);
@@ -7205,6 +7304,14 @@ class MLIRGenImpl
         {
             return mlir::failure();
         }
+
+        // do not process specialized interface second time;
+        if (!declareClass && classDeclarationAST->typeParameters.size() > 0 && genContext.typeParamsWithArgs.size() > 0)
+        {
+            return mlir::success();
+        }
+
+        auto location = loc(classDeclarationAST);
 
         if (mlir::failed(mlirGenClassStorageType(location, classDeclarationAST, newClassPtr, declareClass, genContext)))
         {
@@ -7258,17 +7365,51 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    ClassInfo::TypePtr mlirGenClassInfo(ClassLikeDeclaration classDeclarationAST, bool &declareClass, const GenContext &genContext)
+    std::string getSpecializedClassName(GenericClassInfo::TypePtr geneticClassPtr, const GenContext &genContext)
+    {
+        auto name = geneticClassPtr->fullName.str();
+        if (genContext.typeParamsWithArgs.size())
+        {
+            name.append("<");
+            auto next = false;
+            for (auto typeParam : geneticClassPtr->typeParams)
+            {
+                if (next)
+                {
+                    name.append(",");
+                }
+
+                auto type = getResolveTypeParameter(typeParam->getName(), genContext);
+                llvm::raw_string_ostream s(name);
+                s << type;
+                next = false;
+            }
+
+            name.append(">");
+        }
+
+        return name;
+    }
+
+    mlir_ts::ClassType getSpecializationClassType(GenericClassInfo::TypePtr genericClassPtr, const GenContext &genContext)
+    {
+        auto fullSpecializedClassName = getSpecializedClassName(genericClassPtr, genContext);
+        auto classInfoType = getClassInfoByFullName(fullSpecializedClassName);
+        return classInfoType->classType;
+    }
+
+    ClassInfo::TypePtr mlirGenClassInfo(ClassLikeDeclaration classDeclarationAST, bool &declareInterface, const GenContext &genContext)
+    {
+        auto name = getNameWithArguments(classDeclarationAST, genContext);
+        return mlirGenClassInfo(name, classDeclarationAST, declareInterface, genContext);
+    }
+
+    ClassInfo::TypePtr mlirGenClassInfo(std::string name, ClassLikeDeclaration classDeclarationAST, bool &declareClass,
+                                        const GenContext &genContext)
     {
         declareClass = false;
 
-        auto namePtr = MLIRHelper::getName(classDeclarationAST->name, stringAllocator);
-        if (namePtr.empty())
-        {
-            llvm_unreachable("not implemented");
-            return ClassInfo::TypePtr();
-        }
-
+        auto namePtr = StringRef(name).copy(stringAllocator);
         auto fullNamePtr = getFullNamespaceName(namePtr);
 
         ClassInfo::TypePtr newClassPtr;
@@ -7293,6 +7434,18 @@ class MLIRGenImpl
         }
 
         return newClassPtr;
+    }
+
+    template <typename T> mlir::LogicalResult mlirGenClassType(T newClassPtr, SmallVector<mlir_ts::FieldInfo> &fieldInfos)
+    {
+        if (newClassPtr)
+        {
+            auto classFullNameSymbol = mlir::FlatSymbolRefAttr::get(builder.getContext(), newClassPtr->fullName);
+            newClassPtr->classType = getClassType(classFullNameSymbol, getClassStorageType(classFullNameSymbol, fieldInfos));
+            return mlir::success();
+        }
+
+        return mlir::failure();
     }
 
     mlir::LogicalResult mlirGenClassStorageType(mlir::Location location, ClassLikeDeclaration classDeclarationAST,
@@ -7335,8 +7488,7 @@ class MLIRGenImpl
                 fieldInfos.insert(fieldInfos.begin(), {fieldId, getOpaqueType()});
             }
 
-            auto classFullNameSymbol = mlir::FlatSymbolRefAttr::get(builder.getContext(), newClassPtr->fullName);
-            newClassPtr->classType = getClassType(classFullNameSymbol, getClassStorageType(classFullNameSymbol, fieldInfos));
+            mlirGenClassType(newClassPtr, fieldInfos);
         }
 
         if (mlir::failed(mlirGenClassStaticFields(location, classDeclarationAST, newClassPtr, declareClass, genContext)))
@@ -7424,7 +7576,7 @@ class MLIRGenImpl
                         auto fieldId = mcl.TupleFieldName(baseName);
                         fieldInfos.push_back({fieldId, baseClassType.getStorageType()});
 
-                        auto classInfo = getClassByFullName(baseName);
+                        auto classInfo = getClassInfoByFullName(baseName);
                         if (std::find(baseClassInfos.begin(), baseClassInfos.end(), classInfo) == baseClassInfos.end())
                         {
                             baseClassInfos.push_back(classInfo);
@@ -8505,7 +8657,8 @@ class MLIRGenImpl
     mlir_ts::InterfaceType getSpecializationInterfaceType(GenericInterfaceInfo::TypePtr geneticInterfacePtr, const GenContext &genContext)
     {
         auto fullSpecializedInterfaceName = getSpecializedInterfaceName(geneticInterfacePtr, genContext);
-        return getInterfaceType(fullSpecializedInterfaceName);
+        auto interfaceInfoType = getInterfaceInfoByFullName(fullSpecializedInterfaceName);
+        return interfaceInfoType->interfaceType;
     }
 
     InterfaceInfo::TypePtr mlirGenInterfaceInfo(InterfaceDeclaration interfaceDeclarationAST, bool &declareInterface,
@@ -8923,7 +9076,7 @@ class MLIRGenImpl
             {
                 auto vtableAccess = mlirGenPropertyAccessExpression(location, value, VTABLE_NAME, genContext);
 
-                auto classInfo = getClassByFullName(classType.getName().getValue());
+                auto classInfo = getClassInfoByFullName(classType.getName().getValue());
                 assert(classInfo);
 
                 auto implementIndex = classInfo->getImplementIndex(interfaceType.getName().getValue());
@@ -9661,7 +9814,7 @@ class MLIRGenImpl
                 }
             })
             .template Case<mlir_ts::ClassType>([&](auto classType) {
-                auto classInfo = getClassByFullName(classType.getName().getValue());
+                auto classInfo = getClassInfoByFullName(classType.getName().getValue());
                 assert(classInfo);
                 for (auto extend : classInfo->baseClasses)
                 {
@@ -9704,7 +9857,7 @@ class MLIRGenImpl
 
         if (auto interfaceType = type.dyn_cast<mlir_ts::ClassType>())
         {
-            auto classTypeInfo = getClassByFullName(interfaceType.getName().getValue());
+            auto classTypeInfo = getClassInfoByFullName(interfaceType.getName().getValue());
             type = classTypeInfo->classType.getStorageType();
         }
 
@@ -9806,7 +9959,7 @@ class MLIRGenImpl
 
         if (auto interfaceType = type.dyn_cast<mlir_ts::ClassType>())
         {
-            auto classTypeInfo = getClassByFullName(interfaceType.getName().getValue());
+            auto classTypeInfo = getClassInfoByFullName(interfaceType.getName().getValue());
             type = classTypeInfo->classType.getStorageType();
         }
 
@@ -10885,6 +11038,11 @@ class MLIRGenImpl
         return currentNamespace->classesMap;
     }
 
+    auto getGenericClassesMap() -> llvm::StringMap<GenericClassInfo::TypePtr> &
+    {
+        return currentNamespace->genericClassesMap;
+    }
+
     auto getInterfacesMap() -> llvm::StringMap<InterfaceInfo::TypePtr> &
     {
         return currentNamespace->interfacesMap;
@@ -10915,9 +11073,19 @@ class MLIRGenImpl
         return currentNamespace->importEqualsMap;
     }
 
-    auto getClassByFullName(StringRef fullName) -> ClassInfo::TypePtr
+    auto getClassInfoByFullName(StringRef fullName) -> ClassInfo::TypePtr
     {
         return fullNameClassesMap.lookup(fullName);
+    }
+
+    auto hasGenericClassInfoByFullName(StringRef fullName) -> bool
+    {
+        return fullNameGenericClassesMap.count(fullName) > 0;
+    }
+
+    auto getGenericClassInfoByFullName(StringRef fullName) -> GenericClassInfo::TypePtr
+    {
+        return fullNameGenericClassesMap.lookup(fullName);
     }
 
     auto getInterfaceInfoByFullName(StringRef fullName) -> InterfaceInfo::TypePtr
@@ -10987,6 +11155,8 @@ class MLIRGenImpl
     llvm::ScopedHashTable<StringRef, NamespaceInfo::TypePtr> fullNamespacesMap;
 
     llvm::ScopedHashTable<StringRef, ClassInfo::TypePtr> fullNameClassesMap;
+
+    llvm::ScopedHashTable<StringRef, GenericClassInfo::TypePtr> fullNameGenericClassesMap;
 
     llvm::ScopedHashTable<StringRef, InterfaceInfo::TypePtr> fullNameInterfacesMap;
 

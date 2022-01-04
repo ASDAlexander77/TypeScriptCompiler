@@ -670,6 +670,26 @@ struct ClassInfo
     }
 };
 
+struct GenericClassInfo
+{
+  public:
+    using TypePtr = std::shared_ptr<GenericClassInfo>;
+
+    mlir::StringRef name;
+
+    mlir::StringRef fullName;
+
+    llvm::SmallVector<TypeParameterDOM::TypePtr> typeParams;
+
+    mlir_ts::ClassType classType;
+
+    ClassLikeDeclaration classDeclaration;
+
+    GenericClassInfo()
+    {
+    }
+};
+
 struct NamespaceInfo
 {
   public:
@@ -698,6 +718,8 @@ struct NamespaceInfo
     llvm::StringMap<std::pair<mlir::Type, mlir::DictionaryAttr>> enumsMap;
 
     llvm::StringMap<ClassInfo::TypePtr> classesMap;
+
+    llvm::StringMap<GenericClassInfo::TypePtr> genericClassesMap;
 
     llvm::StringMap<InterfaceInfo::TypePtr> interfacesMap;
 
