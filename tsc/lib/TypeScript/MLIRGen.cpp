@@ -782,6 +782,39 @@ class MLIRGenImpl
         llvm_unreachable("unknown expression");
     }
 
+    mlir::Type instantiateSpecializedInterfaceType(mlir::Location location, mlir_ts::InterfaceType genericInterfaceType,
+                                                   NodeArray<TypeNode> typeArguments, const GenContext &genContext)
+    {
+        auto fullNameGenericInterfaceTypeName = genericInterfaceType.getName().getValue();
+        if (hasGenericInterfaceInfoByFullName(fullNameGenericInterfaceTypeName))
+        {
+            auto genericInterfaceInfo = getGenericInterfaceInfoByFullName(fullNameGenericInterfaceTypeName);
+
+            GenContext genericTypeGenContext(genContext);
+            auto typeParams = genericInterfaceInfo->typeParams;
+            if (mlir::failed(zipTypeParametersWithArguments(location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs,
+                                                            genContext)))
+            {
+                return mlir::Type();
+            }
+
+            // create new instance of interface with TypeArguments
+            if (mlir::failed(mlirGen(genericInterfaceInfo->interfaceDeclaration, genericTypeGenContext)))
+            {
+                return mlir::Type();
+            }
+
+            // get instance of generic interface type
+            auto specType = getSpecializationInterfaceType(genericInterfaceInfo, genericTypeGenContext);
+            return specType;
+        }
+        else
+        {
+            // can't find generic instance
+            return mlir::Type();
+        }
+    }
+
     mlir::Value mlirGen(ExpressionWithTypeArguments expressionWithTypeArgumentsAST, const GenContext &genContext)
     {
         auto location = loc(expressionWithTypeArgumentsAST);
@@ -796,53 +829,19 @@ class MLIRGenImpl
         if (auto ifaceOp = genResult.getDefiningOp<mlir_ts::InterfaceRefOp>())
         {
             auto interfaceType = ifaceOp.getType();
-            auto fullNameGenericInterfaceTypeName = interfaceType.getName().getValue();
-            if (hasGenericInterfaceInfoByFullName(fullNameGenericInterfaceTypeName))
+            auto specType =
+                instantiateSpecializedInterfaceType(location, interfaceType, expressionWithTypeArgumentsAST->typeArguments, genContext);
+            if (auto specInterfaceType = specType.dyn_cast<mlir_ts::InterfaceType>())
             {
-                auto genericInterfaceInfo = getGenericInterfaceInfoByFullName(fullNameGenericInterfaceTypeName);
-
-                GenContext genericTypeGenContext(genContext);
-                auto typeParams = genericInterfaceInfo->typeParams;
-                if (mlir::failed(zipTypeParametersWithArguments(location, typeParams, expressionWithTypeArgumentsAST->typeArguments,
-                                                                genericTypeGenContext.typeParamsWithArgs, genContext)))
-                {
-                    return mlir::Value();
-                }
-
-                // create new instance of interface with TypeArguments
-                if (mlir::failed(mlirGen(genericInterfaceInfo->interfaceDeclaration, genericTypeGenContext)))
-                {
-                    return mlir::Value();
-                }
-
-                // get instance of generic interface type
-                auto specType = getSpecializationInterfaceType(genericInterfaceInfo, genericTypeGenContext);
-
                 return builder.create<mlir_ts::InterfaceRefOp>(
-                    location, specType, mlir::FlatSymbolRefAttr::get(builder.getContext(), specType.getName().getValue()));
+                    location, specInterfaceType,
+                    mlir::FlatSymbolRefAttr::get(builder.getContext(), specInterfaceType.getName().getValue()));
             }
-            else
-            {
-                // can't find generic instance
-                return mlir::Value();
-            }
-        }
 
-        /*
-        // steo 2, extract Type/interface paraneters to join with TypeArguments
-        GenContext genericTypeGenContext(genContext);
-
-        // auto typeParams = ;
-
-        if (mlir::failed(zipTypeParametersWithArguments(loc(expressionWithTypeArgumentsAST), typeParams,
-                                                        expressionWithTypeArgumentsAST->typeArguments,
-                                                        genericTypeGenContext.typeParamsWithArgs, genContext)))
-        {
+            // can't find generic instance
             return mlir::Value();
         }
 
-        return mlirGen(expressionWithTypeArgumentsAST->expression, genericTypeGenContext);
-        */
         return genResult;
     }
 
@@ -9320,6 +9319,7 @@ class MLIRGenImpl
         if (typeReferenceAST->typeArguments->size() > 0)
         {
             auto name = MLIRHelper::getName(typeReferenceAST->typeName);
+
             // try to resolve from type alias first
             if (getGenericTypeAliasMap().count(name))
             {
@@ -9337,6 +9337,15 @@ class MLIRGenImpl
 
                 auto newType = getType(typeNode, genericTypeGenContext);
                 return newType;
+            }
+
+            if (getGenericInterfacesMap().count(name))
+            {
+                auto genericInterfaceTypeInfo = getGenericInterfacesMap().lookup(name);
+                auto interfaceType = genericInterfaceTypeInfo->interfaceType;
+                auto specType =
+                    instantiateSpecializedInterfaceType(loc(typeReferenceAST), interfaceType, typeReferenceAST->typeArguments, genContext);
+                return specType;
             }
 
             // can be utility type
