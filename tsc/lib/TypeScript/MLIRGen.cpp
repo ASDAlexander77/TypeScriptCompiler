@@ -107,6 +107,7 @@ class MLIRGenImpl
 
         SymbolTableScopeT varScope(symbolTable);
         llvm::ScopedHashTableScope<StringRef, NamespaceInfo::TypePtr> fullNamespacesMapScope(fullNamespacesMap);
+        llvm::ScopedHashTableScope<StringRef, VariableDeclarationDOM::TypePtr> fullNameGlobalsMapScope(fullNameGlobalsMap);
         llvm::ScopedHashTableScope<StringRef, ClassInfo::TypePtr> fullNameClassesMapScope(fullNameClassesMap);
         llvm::ScopedHashTableScope<StringRef, GenericClassInfo::TypePtr> fullNameGenericClassesMapScope(fullNameGenericClassesMap);
         llvm::ScopedHashTableScope<StringRef, InterfaceInfo::TypePtr> fullNameInterfacesMapScope(fullNameInterfacesMap);
@@ -849,13 +850,13 @@ class MLIRGenImpl
         }
     }
 
-    mlir::Value mlirGen(ExpressionWithTypeArguments expressionWithTypeArgumentsAST, const GenContext &genContext)
+    mlir::Value mlirGen(Expression expression, NodeArray<TypeNode> typeArguments, const GenContext &genContext)
     {
-        auto location = loc(expressionWithTypeArgumentsAST);
+        auto location = loc(expression);
 
         // step 1, resolve expression without Arguments to get reference to Generic Type/Interface etc
-        auto genResult = mlirGen(expressionWithTypeArgumentsAST->expression, genContext);
-        if (expressionWithTypeArgumentsAST->typeArguments.size() == 0)
+        auto genResult = mlirGen(expression, genContext);
+        if (typeArguments.size() == 0)
         {
             return genResult;
         }
@@ -863,7 +864,7 @@ class MLIRGenImpl
         if (auto classOp = genResult.getDefiningOp<mlir_ts::ClassRefOp>())
         {
             auto classType = classOp.getType();
-            auto specType = instantiateSpecializedClassType(location, classType, expressionWithTypeArgumentsAST->typeArguments, genContext);
+            auto specType = instantiateSpecializedClassType(location, classType, typeArguments, genContext);
             if (auto specClassType = specType.dyn_cast<mlir_ts::ClassType>())
             {
                 return builder.create<mlir_ts::ClassRefOp>(
@@ -877,8 +878,7 @@ class MLIRGenImpl
         if (auto ifaceOp = genResult.getDefiningOp<mlir_ts::InterfaceRefOp>())
         {
             auto interfaceType = ifaceOp.getType();
-            auto specType =
-                instantiateSpecializedInterfaceType(location, interfaceType, expressionWithTypeArgumentsAST->typeArguments, genContext);
+            auto specType = instantiateSpecializedInterfaceType(location, interfaceType, typeArguments, genContext);
             if (auto specInterfaceType = specType.dyn_cast<mlir_ts::InterfaceType>())
             {
                 return builder.create<mlir_ts::InterfaceRefOp>(
@@ -891,6 +891,11 @@ class MLIRGenImpl
         }
 
         return genResult;
+    }
+
+    mlir::Value mlirGen(ExpressionWithTypeArguments expressionWithTypeArgumentsAST, const GenContext &genContext)
+    {
+        return mlirGen(expressionWithTypeArgumentsAST->expression, expressionWithTypeArgumentsAST->typeArguments, genContext);
     }
 
     mlir::Value registerVariableInThisContext(mlir::Location location, StringRef name, mlir::Type type, const GenContext &genContext)
@@ -5628,7 +5633,8 @@ class MLIRGenImpl
         if (typeExpression == SyntaxKind::Identifier || typeExpression == SyntaxKind::QualifiedName ||
             typeExpression == SyntaxKind::PropertyAccessExpression)
         {
-            type = getTypeByTypeName(typeExpression, genContext);
+            auto value = mlirGen(typeExpression, newExpression->typeArguments, genContext);
+            type = value.getType();
             type = mth.convertConstTupleTypeToTupleType(type);
 
             assert(type);
@@ -7293,7 +7299,8 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGen(ClassLikeDeclaration classDeclarationAST, const GenContext &genContext)
     {
         // do not proceed for Generic Interfaces for declaration
-        if (classDeclarationAST->typeParameters.size() > 0 && genContext.typeParamsWithArgs.size() == 0)
+        auto isGenericClass = classDeclarationAST->typeParameters.size() > 0;
+        if (isGenericClass && genContext.typeParamsWithArgs.size() == 0)
         {
             return registerGenericClass(classDeclarationAST, genContext);
         }
@@ -7305,10 +7312,24 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-        // do not process specialized interface second time;
-        if (!declareClass && classDeclarationAST->typeParameters.size() > 0 && genContext.typeParamsWithArgs.size() > 0)
+        // do not process specialized class second time;
+        if (isGenericClass && genContext.typeParamsWithArgs.size() > 0)
         {
-            return mlir::success();
+            if (genContext.allowPartialResolve)
+            {
+                if (!declareClass)
+                {
+                    return mlir::success();
+                }
+            }
+            else
+            {
+                // TODO: investigate why classType is provided already for class
+                if (newClassPtr->fullyProcessed)
+                {
+                    return mlir::success();
+                }
+            }
         }
 
         auto location = loc(classDeclarationAST);
@@ -7316,6 +7337,14 @@ class MLIRGenImpl
         if (mlir::failed(mlirGenClassStorageType(location, classDeclarationAST, newClassPtr, declareClass, genContext)))
         {
             return mlir::failure();
+        }
+
+        // go to root
+        mlir::OpBuilder::InsertPoint savePoint;
+        if (isGenericClass)
+        {
+            savePoint = builder.saveInsertionPoint();
+            builder.setInsertionPointToStart(&theModule.body().front());
         }
 
         mlirGenClassDefaultConstructor(classDeclarationAST, newClassPtr, genContext);
@@ -7361,6 +7390,14 @@ class MLIRGenImpl
             return mlir::failure();
         }
         */
+
+        if (isGenericClass)
+        {
+            builder.restoreInsertionPoint(savePoint);
+        }
+
+        // if we allow multiple class nodes, do we need to store that ClassLikeDecl. has been processed fully
+        newClassPtr->fullyProcessed = !genContext.allowPartialResolve;
 
         return mlir::success();
     }
@@ -9496,6 +9533,15 @@ class MLIRGenImpl
 
                 auto newType = getType(typeNode, genericTypeGenContext);
                 return newType;
+            }
+
+            if (getGenericClassesMap().count(name))
+            {
+                auto genericClassTypeInfo = getGenericClassesMap().lookup(name);
+                auto classType = genericClassTypeInfo->classType;
+                auto specType =
+                    instantiateSpecializedClassType(loc(typeReferenceAST), classType, typeReferenceAST->typeArguments, genContext);
+                return specType;
             }
 
             if (getGenericInterfacesMap().count(name))

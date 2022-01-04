@@ -469,10 +469,11 @@ struct ClassInfo
     bool hasVirtualTable;
     bool isAbstract;
     bool hasRTTI;
+    bool fullyProcessed;
 
     ClassInfo()
         : hasConstructor(false), hasInitializers(false), hasStaticConstructor(false), hasStaticInitializers(false), hasVirtualTable(false),
-          isAbstract(false), hasRTTI(false)
+          isAbstract(false), hasRTTI(false), fullyProcessed(false)
     {
     }
 
