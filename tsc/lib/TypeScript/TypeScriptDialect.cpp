@@ -36,7 +36,7 @@ namespace detail
 {
 struct ClassStorageTypeStorage : public ::mlir::TypeStorage
 {
-    ClassStorageTypeStorage(FlatSymbolRefAttr name) : name(name), fields(fields)
+    ClassStorageTypeStorage(FlatSymbolRefAttr name) : name(name), fields({})
     {
     }
 
