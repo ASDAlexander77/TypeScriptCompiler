@@ -671,12 +671,12 @@ def TypeScript_ClassStorage : TypeScript_Type<"ClassStorage"> {
     class_storage<{i32}, {f32}, {tensor<i1>}, {i5}>
     ```
   }];
-  let parameters = (ins "FlatSymbolRefAttr":$name, ArrayRefOfSelfAllocationParameter<"::mlir::typescript::FieldInfo", "fields">:$fields);
+  let parameters = (ins "FlatSymbolRefAttr":$name);
 
   let printer = [{
-    $_printer << "class_storage<" <<  getImpl()->name << ",";
-    for (size_t i=0, e = getImpl()->fields.size(); i < e; i++) {
-      const auto& field = getImpl()->fields[i];
+    $_printer << "class_storage<" <<  getName() << ",";
+    for (size_t i=0, e = getFields().size(); i < e; i++) {
+      const auto& field = getFields()[i];
       if (field.id) 
       {
           $_printer << "{" << field.id << "," << field.type << "}";
@@ -686,7 +686,7 @@ def TypeScript_ClassStorage : TypeScript_Type<"ClassStorage"> {
           $_printer << field.type;
       }
 
-      if (i < getImpl()->fields.size() - 1)
+      if (i < getFields().size() - 1)
           $_printer << ",";
     }
     $_printer << ">";
@@ -710,7 +710,9 @@ def TypeScript_ClassStorage : TypeScript_Type<"ClassStorage"> {
       if ($_parser.parseOptionalComma()) break;
     }
     if ($_parser.parseGreater()) return Type();
-    return get($_ctxt, name.dyn_cast_or_null<FlatSymbolRefAttr>(), parameters);
+    auto resType = get($_ctxt, name.dyn_cast_or_null<FlatSymbolRefAttr>());
+    resType.setFields(parameters);
+    return resType;
   }];  
 
   let extraClassDeclaration = [{
@@ -743,6 +745,10 @@ def TypeScript_ClassStorage : TypeScript_Type<"ClassStorage"> {
       assert(index >= 0 && index < size() && "invalid index for tuple type");
       return getFields()[index].type;
     }
+
+    ::llvm::ArrayRef<::mlir::typescript::FieldInfo> getFields() const;
+    // Mutator
+    LogicalResult setFields(::llvm::ArrayRef<::mlir::typescript::FieldInfo> newFields);
   }];
 
   let genStorageClass = 0;

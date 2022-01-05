@@ -7287,8 +7287,7 @@ class MLIRGenImpl
             newGenericClassPtr->typeParams = typeParameters;
             newGenericClassPtr->classDeclaration = classDeclarationAST;
 
-            SmallVector<mlir_ts::FieldInfo> emptyFieldInfos;
-            mlirGenClassType(newGenericClassPtr, emptyFieldInfos);
+            mlirGenClassType(newGenericClassPtr);
 
             getGenericClassesMap().insert({namePtr, newGenericClassPtr});
             fullNameGenericClassesMap.insert(fullNamePtr, newGenericClassPtr);
@@ -7338,6 +7337,8 @@ class MLIRGenImpl
         auto location = loc(classDeclarationAST);
 
         newClassPtr->processingStorageClass = true;
+
+        mlirGenClassType(newClassPtr);
 
         if (mlir::failed(mlirGenClassStorageType(location, classDeclarationAST, newClassPtr, declareClass, genContext)))
         {
@@ -7481,12 +7482,23 @@ class MLIRGenImpl
         return newClassPtr;
     }
 
-    template <typename T> mlir::LogicalResult mlirGenClassType(T newClassPtr, SmallVector<mlir_ts::FieldInfo> &fieldInfos)
+    template <typename T> mlir::LogicalResult mlirGenClassType(T newClassPtr)
     {
         if (newClassPtr)
         {
             auto classFullNameSymbol = mlir::FlatSymbolRefAttr::get(builder.getContext(), newClassPtr->fullName);
-            newClassPtr->classType = getClassType(classFullNameSymbol, getClassStorageType(classFullNameSymbol, fieldInfos));
+            newClassPtr->classType = getClassType(classFullNameSymbol, getClassStorageType(classFullNameSymbol));
+            return mlir::success();
+        }
+
+        return mlir::failure();
+    }
+
+    mlir::LogicalResult mlirGenClassTypeSetFields(ClassInfo::TypePtr newClassPtr, SmallVector<mlir_ts::FieldInfo> &fieldInfos)
+    {
+        if (newClassPtr)
+        {
+            newClassPtr->classType.getStorageType().cast<mlir_ts::ClassStorageType>().setFields(fieldInfos);
             return mlir::success();
         }
 
@@ -7533,7 +7545,7 @@ class MLIRGenImpl
                 fieldInfos.insert(fieldInfos.begin(), {fieldId, getOpaqueType()});
             }
 
-            mlirGenClassType(newClassPtr, fieldInfos);
+            mlirGenClassTypeSetFields(newClassPtr, fieldInfos);
         }
 
         if (mlir::failed(mlirGenClassStaticFields(location, classDeclarationAST, newClassPtr, declareClass, genContext)))
@@ -10225,9 +10237,9 @@ class MLIRGenImpl
         return mlir_ts::EnumType::get(elementType);
     }
 
-    mlir_ts::ClassStorageType getClassStorageType(mlir::FlatSymbolRefAttr name, mlir::SmallVector<mlir_ts::FieldInfo> &fieldInfos)
+    mlir_ts::ClassStorageType getClassStorageType(mlir::FlatSymbolRefAttr name)
     {
-        return mlir_ts::ClassStorageType::get(builder.getContext(), name, fieldInfos);
+        return mlir_ts::ClassStorageType::get(builder.getContext(), name);
     }
 
     mlir_ts::ClassType getClassType(mlir::FlatSymbolRefAttr name, mlir::Type storageType)

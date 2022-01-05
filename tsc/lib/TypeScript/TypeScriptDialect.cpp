@@ -36,39 +36,45 @@ namespace detail
 {
 struct ClassStorageTypeStorage : public ::mlir::TypeStorage
 {
-    ClassStorageTypeStorage(FlatSymbolRefAttr name, ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields) : name(name), fields(fields)
+    ClassStorageTypeStorage(FlatSymbolRefAttr name) : name(name), fields(fields)
     {
     }
 
     /// The hash key is a tuple of the parameter types.
-    using KeyTy = std::tuple<FlatSymbolRefAttr, ::llvm::ArrayRef<::mlir::typescript::FieldInfo>>;
+    using KeyTy = FlatSymbolRefAttr;
     bool operator==(const KeyTy &tblgenKey) const
     {
-        if (!(name == std::get<0>(tblgenKey)))
-            return false;
-        if (!(fields == std::get<1>(tblgenKey)))
+        if (!(name == tblgenKey))
             return false;
         return true;
     }
     static ::llvm::hash_code hashKey(const KeyTy &tblgenKey)
     {
-        return ::llvm::hash_combine(std::get<0>(tblgenKey), std::get<1>(tblgenKey));
+        return ::llvm::hash_combine(tblgenKey);
     }
 
-    /// Define a construction method for creating a new instance of this
-    /// storage.
+    /// Define a construction method for creating a new instance of this storage.
     static ClassStorageTypeStorage *construct(::mlir::TypeStorageAllocator &allocator, const KeyTy &tblgenKey)
     {
-        auto name = std::get<0>(tblgenKey);
-        auto fields = std::get<1>(tblgenKey);
+        auto name = tblgenKey;
 
-        llvm::SmallVector<::mlir::typescript::FieldInfo, 4> tmpFields;
-        for (size_t i = 0, e = fields.size(); i < e; ++i)
-            tmpFields.push_back(fields[i].allocateInto(allocator));
-        fields = allocator.copyInto(ArrayRef<::mlir::typescript::FieldInfo>(tmpFields));
-
-        return new (allocator.allocate<ClassStorageTypeStorage>()) ClassStorageTypeStorage(name, fields);
+        return new (allocator.allocate<ClassStorageTypeStorage>()) ClassStorageTypeStorage(name);
     }
+
+    LogicalResult mutate(TypeStorageAllocator &allocator, ::llvm::ArrayRef<::mlir::typescript::FieldInfo> newFields)
+    {
+        // Cannot set a different body than before.
+        llvm::SmallVector<::mlir::typescript::FieldInfo, 4> tmpFields;
+
+        for (size_t i = 0, e = newFields.size(); i < e; ++i)
+            tmpFields.push_back(newFields[i].allocateInto(allocator));
+        auto copiedFields = allocator.copyInto(ArrayRef<::mlir::typescript::FieldInfo>(tmpFields));
+
+        fields = copiedFields;
+
+        return success();
+    }
+
     FlatSymbolRefAttr name;
     ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields;
 };
@@ -83,6 +89,12 @@ FlatSymbolRefAttr ClassStorageType::getName() const
 {
     return getImpl()->fields;
 }
+
+LogicalResult ClassStorageType::setFields(::llvm::ArrayRef<::mlir::typescript::FieldInfo> newFields)
+{
+    return Base::mutate(newFields);
+}
+
 } // namespace typescript
 } // namespace mlir
 #endif
