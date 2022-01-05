@@ -179,7 +179,7 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
                 LLVM_DEBUG(llvm::dbgs() << "\n!! value type: " << resultType << "\n";);
 
                 auto addrToSave = rewriter.create<mlir_ts::AddressOfOp>(
-                    location, mlir_ts::RefType::get(resultType), mlir::FlatSymbolRefAttr::get(rewriter.getContext(), saveToGlobalName),
+                    location, mlir_ts::RefType::get(resultType), ::mlir::FlatSymbolRefAttr::get(rewriter.getContext(), saveToGlobalName),
                     ::mlir::IntegerAttr());
                 rewriter.create<LLVM::StoreOp>(location, value, addrToSave);
             }

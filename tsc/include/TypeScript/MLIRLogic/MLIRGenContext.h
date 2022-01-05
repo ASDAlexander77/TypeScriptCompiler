@@ -470,10 +470,11 @@ struct ClassInfo
     bool isAbstract;
     bool hasRTTI;
     bool fullyProcessed;
+    bool processingStorageClass;
 
     ClassInfo()
         : hasConstructor(false), hasInitializers(false), hasStaticConstructor(false), hasStaticInitializers(false), hasVirtualTable(false),
-          isAbstract(false), hasRTTI(false), fullyProcessed(false)
+          isAbstract(false), hasRTTI(false), fullyProcessed(false), processingStorageClass(false)
     {
     }
 

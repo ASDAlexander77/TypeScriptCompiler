@@ -2985,7 +2985,7 @@ struct EndCleanupOpLowering : public TsLlvmPattern<mlir_ts::EndCleanupOp>
         {
             clh.Invoke(loc, [&](mlir::Block *continueBlock) {
                 rewriter.replaceOpWithNewOp<LLVM::InvokeOp>(
-                    endCleanupOp, mlir::TypeRange{}, mlir::FlatSymbolRefAttr::get(rewriter.getContext(), endCatchFuncName), ValueRange{},
+                    endCleanupOp, mlir::TypeRange{}, ::mlir::FlatSymbolRefAttr::get(rewriter.getContext(), endCatchFuncName), ValueRange{},
                     continueBlock, ValueRange{}, endCleanupOp.unwindDest().front(), ValueRange{});
             });
             rewriter.setInsertionPointAfter(endCleanupOp);

@@ -865,7 +865,7 @@ class MLIRGenImpl
         {
             auto classType = classOp.getType();
             auto specType = instantiateSpecializedClassType(location, classType, typeArguments, genContext);
-            if (auto specClassType = specType.dyn_cast<mlir_ts::ClassType>())
+            if (auto specClassType = specType.dyn_cast_or_null<mlir_ts::ClassType>())
             {
                 return builder.create<mlir_ts::ClassRefOp>(
                     location, specClassType, mlir::FlatSymbolRefAttr::get(builder.getContext(), specClassType.getName().getValue()));
@@ -5634,6 +5634,9 @@ class MLIRGenImpl
             typeExpression == SyntaxKind::PropertyAccessExpression)
         {
             auto value = mlirGen(typeExpression, newExpression->typeArguments, genContext);
+
+            VALIDATE(value, location);
+
             type = value.getType();
             type = mth.convertConstTupleTypeToTupleType(type);
 
@@ -7317,7 +7320,7 @@ class MLIRGenImpl
         {
             if (genContext.allowPartialResolve)
             {
-                if (!declareClass)
+                if (!declareClass || newClassPtr->processingStorageClass)
                 {
                     return mlir::success();
                 }
@@ -7325,7 +7328,7 @@ class MLIRGenImpl
             else
             {
                 // TODO: investigate why classType is provided already for class
-                if (newClassPtr->fullyProcessed)
+                if (newClassPtr->fullyProcessed || newClassPtr->processingStorageClass)
                 {
                     return mlir::success();
                 }
@@ -7334,10 +7337,15 @@ class MLIRGenImpl
 
         auto location = loc(classDeclarationAST);
 
+        newClassPtr->processingStorageClass = true;
+
         if (mlir::failed(mlirGenClassStorageType(location, classDeclarationAST, newClassPtr, declareClass, genContext)))
         {
+            newClassPtr->processingStorageClass = false;
             return mlir::failure();
         }
+
+        newClassPtr->processingStorageClass = false;
 
         // go to root
         mlir::OpBuilder::InsertPoint savePoint;

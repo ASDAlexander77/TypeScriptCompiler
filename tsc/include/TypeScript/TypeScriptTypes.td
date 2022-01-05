@@ -644,8 +644,8 @@ def TypeScript_Object : TypeScript_Type<"Object"> {
   let skipDefaultBuilders = 1;  
 }
 
-def TypeScript_ClassStorage : TypeScript_Type<"ClassStorage"> {
-  let mnemonic = "class_storage";
+def TypeScript_ClassStorage2 : TypeScript_Type<"ClassStorage2"> {
+  let mnemonic = "class_storage2";
 
   let summary = "Fixed-sized collection of other types for class";
   let description = [{
@@ -1247,6 +1247,10 @@ def TypeScript_IsTupleRefType : CPred<"$_self.isa<::mlir::typescript::RefType>()
 
 def TypeScript_AnyTupleRef : DialectType<TypeScript_Dialect, TypeScript_IsTupleRefType, "any tuple reference type">;
 
+def TypeScript_IsClassStorageType : CPred<"$_self.isa<::mlir::typescript::ClassStorageType>()">;
+
+def TypeScript_AnyClassStorageType : DialectType<TypeScript_Dialect, TypeScript_IsClassStorageType, "any class storage type">;
+
 def TypeScript_IsClassStorageRefType : CPred<"$_self.isa<::mlir::typescript::RefType>() && $_self.cast<::mlir::typescript::RefType>().getElementType().isa<::mlir::typescript::ClassStorageType>()">;
 
 def TypeScript_AnyClassStorageRef : DialectType<TypeScript_Dialect, TypeScript_IsClassStorageRefType, "any tuple reference type">;
@@ -1276,7 +1280,7 @@ def TypeScript_AnyRefLike : AnyTypeOf<[
   ]>;
 
 def TypeScript_AnyStructLike : AnyTypeOf<[
-    TypeScript_ConstTuple, TypeScript_Tuple, TypeScript_ConstArrayValue, TypeScript_Class, TypeScript_ClassStorage
+    TypeScript_ConstTuple, TypeScript_Tuple, TypeScript_ConstArrayValue, TypeScript_Class, TypeScript_AnyClassStorageType
   ]>;
 
 def TypeScript_RefOrBoundRef : AnyTypeOf<[
