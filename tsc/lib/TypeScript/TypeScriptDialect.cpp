@@ -27,6 +27,66 @@ LogicalResult verify(mlir_ts::FuncOp op);
 LogicalResult verify(mlir_ts::InvokeOp op);
 LogicalResult verify(mlir_ts::CastOp op);
 
+#ifndef DISABLE_CUSTOM_CLASSSTORAGESTORAGE
+namespace mlir
+{
+namespace typescript
+{
+namespace detail
+{
+struct ClassStorageTypeStorage : public ::mlir::TypeStorage
+{
+    ClassStorageTypeStorage(FlatSymbolRefAttr name, ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields) : name(name), fields(fields)
+    {
+    }
+
+    /// The hash key is a tuple of the parameter types.
+    using KeyTy = std::tuple<FlatSymbolRefAttr, ::llvm::ArrayRef<::mlir::typescript::FieldInfo>>;
+    bool operator==(const KeyTy &tblgenKey) const
+    {
+        if (!(name == std::get<0>(tblgenKey)))
+            return false;
+        if (!(fields == std::get<1>(tblgenKey)))
+            return false;
+        return true;
+    }
+    static ::llvm::hash_code hashKey(const KeyTy &tblgenKey)
+    {
+        return ::llvm::hash_combine(std::get<0>(tblgenKey), std::get<1>(tblgenKey));
+    }
+
+    /// Define a construction method for creating a new instance of this
+    /// storage.
+    static ClassStorageTypeStorage *construct(::mlir::TypeStorageAllocator &allocator, const KeyTy &tblgenKey)
+    {
+        auto name = std::get<0>(tblgenKey);
+        auto fields = std::get<1>(tblgenKey);
+
+        llvm::SmallVector<::mlir::typescript::FieldInfo, 4> tmpFields;
+        for (size_t i = 0, e = fields.size(); i < e; ++i)
+            tmpFields.push_back(fields[i].allocateInto(allocator));
+        fields = allocator.copyInto(ArrayRef<::mlir::typescript::FieldInfo>(tmpFields));
+
+        return new (allocator.allocate<ClassStorageTypeStorage>()) ClassStorageTypeStorage(name, fields);
+    }
+    FlatSymbolRefAttr name;
+    ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields;
+};
+} // namespace detail
+
+FlatSymbolRefAttr ClassStorageType::getName() const
+{
+    return getImpl()->name;
+}
+
+::llvm::ArrayRef<::mlir::typescript::FieldInfo> ClassStorageType::getFields() const
+{
+    return getImpl()->fields;
+}
+} // namespace typescript
+} // namespace mlir
+#endif
+
 #define GET_TYPEDEF_CLASSES
 #include "TypeScript/TypeScriptOpsTypes.cpp.inc"
 
@@ -176,134 +236,11 @@ void mlir_ts::TypeScriptDialect::initialize()
 #include "TypeScript/TypeScriptOps.cpp.inc"
         >();
     addTypes<
-#ifndef DISABLE_CUSTOM_CLASSSTORETYPE
-        ::mlir::typescript::ClassStorageType,
-#endif
 #define GET_TYPEDEF_LIST
 #include "TypeScript/TypeScriptOpsTypes.cpp.inc"
         >();
     addInterfaces<TypeScriptInlinerInterface>();
 }
-
-#ifndef DISABLE_CUSTOM_CLASSSTORETYPE
-namespace mlir
-{
-namespace typescript
-{
-namespace detail
-{
-struct ClassStorageTypeStorage : public ::mlir::TypeStorage
-{
-    ClassStorageTypeStorage(FlatSymbolRefAttr name, ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields) : name(name), fields(fields)
-    {
-    }
-
-    /// The hash key is a tuple of the parameter types.
-    using KeyTy = std::tuple<FlatSymbolRefAttr, ::llvm::ArrayRef<::mlir::typescript::FieldInfo>>;
-    bool operator==(const KeyTy &tblgenKey) const
-    {
-        if (!(name == std::get<0>(tblgenKey)))
-            return false;
-        if (!(fields == std::get<1>(tblgenKey)))
-            return false;
-        return true;
-    }
-    static ::llvm::hash_code hashKey(const KeyTy &tblgenKey)
-    {
-        return ::llvm::hash_combine(std::get<0>(tblgenKey), std::get<1>(tblgenKey));
-    }
-
-    /// Define a construction method for creating a new instance of this
-    /// storage.
-    static ClassStorageTypeStorage *construct(::mlir::TypeStorageAllocator &allocator, const KeyTy &tblgenKey)
-    {
-        auto name = std::get<0>(tblgenKey);
-        auto fields = std::get<1>(tblgenKey);
-
-        llvm::SmallVector<::mlir::typescript::FieldInfo, 4> tmpFields;
-        for (size_t i = 0, e = fields.size(); i < e; ++i)
-            tmpFields.push_back(fields[i].allocateInto(allocator));
-        fields = allocator.copyInto(ArrayRef<::mlir::typescript::FieldInfo>(tmpFields));
-
-        return new (allocator.allocate<ClassStorageTypeStorage>()) ClassStorageTypeStorage(name, fields);
-    }
-    FlatSymbolRefAttr name;
-    ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields;
-};
-} // namespace detail
-
-ClassStorageType ClassStorageType::get(::mlir::MLIRContext *context, FlatSymbolRefAttr name,
-                                       ::llvm::ArrayRef<::mlir::typescript::FieldInfo> fields)
-{
-    return Base::get(context, name, fields);
-}
-
-FlatSymbolRefAttr ClassStorageType::getName() const
-{
-    return getImpl()->name;
-}
-
-::llvm::ArrayRef<::mlir::typescript::FieldInfo> ClassStorageType::getFields() const
-{
-    return getImpl()->fields;
-}
-
-void ClassStorageType::print(::mlir::DialectAsmPrinter &printer) const
-{
-
-    printer << "class_storage<" << getImpl()->name << ",";
-    for (size_t i = 0, e = getImpl()->fields.size(); i < e; i++)
-    {
-        const auto &field = getImpl()->fields[i];
-        if (field.id)
-        {
-            printer << "{" << field.id << "," << field.type << "}";
-        }
-        else
-        {
-            printer << field.type;
-        }
-
-        if (i < getImpl()->fields.size() - 1)
-            printer << ",";
-    }
-    printer << ">";
-}
-
-::mlir::Type ClassStorageType::parse(::mlir::MLIRContext *context, ::mlir::DialectAsmParser &parser)
-{
-
-    Attribute name;
-    SmallVector<FieldInfo, 4> parameters;
-    if (parser.parseLess())
-        return Type();
-    if (parser.parseAttribute(name))
-        return Type();
-    if (parser.parseComma())
-        return Type();
-    while (mlir::succeeded(parser.parseOptionalLBrace()))
-    {
-        Attribute id;
-        if (parser.parseAttribute(id))
-            return Type();
-        if (parser.parseComma())
-            return Type();
-        Type type;
-        if (parser.parseType(type))
-            return Type();
-        if (parser.parseRBrace())
-            return Type();
-        parameters.push_back(FieldInfo{id, type});
-        if (parser.parseOptionalComma())
-            break;
-    }
-    if (parser.parseGreater())
-        return Type();
-    return get(context, name.dyn_cast_or_null<FlatSymbolRefAttr>(), parameters);
-}
-} // namespace typescript
-} // namespace mlir
-#endif
 
 Type mlir_ts::TypeScriptDialect::parseType(DialectAsmParser &parser) const
 {
@@ -371,21 +308,7 @@ void mlir_ts::TypeScriptDialect::printType(Type type, DialectAsmPrinter &os) con
 {
     if (failed(generatedTypePrinter(type, os)))
     {
-#ifndef DISABLE_CUSTOM_CLASSSTORETYPE
-        auto res = TypeSwitch<mlir::Type, mlir::LogicalResult>(type)
-                       .Case<mlir_ts::ClassStorageType>([&](auto t) {
-                           t.print(os);
-                           return mlir::success();
-                       })
-                       .Default([](mlir::Type) { return mlir::failure(); });
-
-        if (mlir::failed(res))
-        {
-#endif
-            llvm_unreachable("unknown 'TypeScript' type");
-#ifndef DISABLE_CUSTOM_CLASSSTORETYPE
-        }
-#endif
+        llvm_unreachable("unknown 'TypeScript' type");
     }
 }
 

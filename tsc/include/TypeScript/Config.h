@@ -36,6 +36,6 @@
 // TODO: if I uncomment it, it will create errors in capture vars. calls. find out why? (wrong size of buffers?)
 //#define ALLOC_TRAMPOLINE_IN_HEAP 1
 
-//#define DISABLE_CUSTOM_CLASSSTORETYPE 1
+//#define DISABLE_CUSTOM_CLASSSTORAGESTORAGE 1
 
 #endif // CONFIG_H_

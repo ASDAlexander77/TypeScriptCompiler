@@ -644,8 +644,8 @@ def TypeScript_Object : TypeScript_Type<"Object"> {
   let skipDefaultBuilders = 1;  
 }
 
-def TypeScript_ClassStorage2 : TypeScript_Type<"ClassStorage2"> {
-  let mnemonic = "class_storage2";
+def TypeScript_ClassStorage : TypeScript_Type<"ClassStorage"> {
+  let mnemonic = "class_storage";
 
   let summary = "Fixed-sized collection of other types for class";
   let description = [{
@@ -744,6 +744,8 @@ def TypeScript_ClassStorage2 : TypeScript_Type<"ClassStorage2"> {
       return getFields()[index].type;
     }
   }];
+
+  let genStorageClass = 0;
 }
 
 def TypeScript_Class : TypeScript_Type<"Class"> {
