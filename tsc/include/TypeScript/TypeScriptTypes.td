@@ -774,7 +774,9 @@ def TypeScript_Class : TypeScript_Type<"Class"> {
   let parameters = (ins "FlatSymbolRefAttr":$name, "Type":$storageType);
 
   // We define the printer inline.
-  let printer = [{ $_printer << "class<" << getImpl()->name << "," << getImpl()->storageType << ">"; }];  
+  // TODO: fix recursive issue
+  //let printer = [{ $_printer << "class<" << getImpl()->name << "," << getImpl()->storageType << ">"; }];  
+  let printer = [{ $_printer << "class<" << getImpl()->name << ">"; }];  
 
   let builders = [
     TypeBuilderWithInferredContext<(ins "FlatSymbolRefAttr":$name, "Type":$storageType), [{
