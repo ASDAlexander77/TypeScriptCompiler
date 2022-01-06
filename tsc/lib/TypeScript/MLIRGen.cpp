@@ -1364,14 +1364,10 @@ class MLIRGenImpl
         return mlirGen(variableStatementAST->declarationList, genContext);
     }
 
-    std::vector<std::shared_ptr<FunctionParamDOM>> mlirGenParameters(SignatureDeclarationBase parametersContextAST,
-                                                                     const GenContext &genContext)
+    std::pair<mlir::LogicalResult, std::vector<std::shared_ptr<FunctionParamDOM>>> mlirGenParameters(
+        SignatureDeclarationBase parametersContextAST, const GenContext &genContext)
     {
         std::vector<std::shared_ptr<FunctionParamDOM>> params;
-        if (!parametersContextAST)
-        {
-            return params;
-        }
 
         // add this param
         auto isStatic = hasModifier(parametersContextAST, SyntaxKind::StaticKeyword);
@@ -1453,12 +1449,12 @@ class MLIRGenImpl
                     auto funcName = MLIRHelper::getName(parametersContextAST->name);
                     emitError(loc(arg)) << "type of parameter '" << namePtr
                                         << "' is not provided, parameter must have type or initializer, function: " << funcName;
-                    return params;
+                    return {mlir::failure(), params};
                 }
 
                 emitError(loc(typeParameter)) << "can't resolve type for parameter '" << namePtr << "'";
 
-                return params;
+                return {mlir::failure(), params};
             }
 
             /*
@@ -1482,7 +1478,7 @@ class MLIRGenImpl
             index++;
         }
 
-        return params;
+        return {mlir::success(), params};
     }
 
     std::tuple<std::string, std::string> getNameOfFunction(SignatureDeclarationBase signatureDeclarationBaseAST,
@@ -1561,19 +1557,25 @@ class MLIRGenImpl
         auto fullName = std::get<0>(res);
         auto name = std::get<1>(res);
 
-        auto params = mlirGenParameters(signatureDeclarationBaseAST, genContext);
+        mlir_ts::FunctionType funcType;
+        auto paramsResult = mlirGenParameters(signatureDeclarationBaseAST, genContext);
+        auto result = std::get<0>(paramsResult);
+        if (mlir::failed(result))
+        {
+            return std::make_tuple(FunctionPrototypeDOM::TypePtr(nullptr), funcType, SmallVector<mlir::Type>{});
+        }
+
+        auto params = std::get<1>(paramsResult);
         SmallVector<mlir::Type> argTypes;
         auto argNumber = 0;
         auto isMultiArgs = false;
 
         // auto isAsync = hasModifier(signatureDeclarationBaseAST, SyntaxKind::AsyncKeyword);
 
-        mlir_ts::FunctionType funcType;
-
         for (const auto &param : params)
         {
             auto paramType = param->getType();
-            if (!paramType)
+            if (isNoneType(paramType))
             {
                 return std::make_tuple(FunctionPrototypeDOM::TypePtr(nullptr), funcType, SmallVector<mlir::Type>{});
             }
@@ -7307,8 +7309,7 @@ class MLIRGenImpl
             return registerGenericClass(classDeclarationAST, genContext);
         }
 
-        auto declareClass = false;
-        auto newClassPtr = mlirGenClassInfo(classDeclarationAST, declareClass, genContext);
+        auto newClassPtr = mlirGenClassInfo(classDeclarationAST, genContext);
         if (!newClassPtr)
         {
             return mlir::failure();
@@ -7317,20 +7318,10 @@ class MLIRGenImpl
         // do not process specialized class second time;
         if (isGenericClass && genContext.typeParamsWithArgs.size() > 0)
         {
-            if (genContext.allowPartialResolve)
+            // TODO: investigate why classType is provided already for class
+            if (newClassPtr->fullyProcessed || newClassPtr->processingStorageClass)
             {
-                if (!declareClass || newClassPtr->processingStorageClass)
-                {
-                    return mlir::success();
-                }
-            }
-            else
-            {
-                // TODO: investigate why classType is provided already for class
-                if (newClassPtr->fullyProcessed || newClassPtr->processingStorageClass)
-                {
-                    return mlir::success();
-                }
+                return mlir::success();
             }
         }
 
@@ -7340,7 +7331,7 @@ class MLIRGenImpl
 
         mlirGenClassType(newClassPtr);
 
-        if (mlir::failed(mlirGenClassStorageType(location, classDeclarationAST, newClassPtr, declareClass, genContext)))
+        if (mlir::failed(mlirGenClassStorageType(location, classDeclarationAST, newClassPtr, genContext)))
         {
             newClassPtr->processingStorageClass = false;
             return mlir::failure();
@@ -7363,13 +7354,13 @@ class MLIRGenImpl
         mlirGenClassInstanceOfMethod(classDeclarationAST, newClassPtr, genContext);
 #endif
 
-        if (mlir::failed(mlirGenClassMembers(location, classDeclarationAST, newClassPtr, declareClass, genContext)))
+        if (mlir::failed(mlirGenClassMembers(location, classDeclarationAST, newClassPtr, genContext)))
         {
             return mlir::failure();
         }
 
         // generate vtable for interfaces in base class
-        if (mlir::failed(mlirGenClassBaseInterfaces(location, newClassPtr, declareClass, genContext)))
+        if (mlir::failed(mlirGenClassBaseInterfaces(location, newClassPtr, genContext)))
         {
             return mlir::failure();
         }
@@ -7377,8 +7368,7 @@ class MLIRGenImpl
         // generate vtable for interfaces
         for (auto &heritageClause : classDeclarationAST->heritageClauses)
         {
-            if (mlir::failed(
-                    mlirGenClassHeritageClauseImplements(classDeclarationAST, newClassPtr, heritageClause, declareClass, genContext)))
+            if (mlir::failed(mlirGenClassHeritageClauseImplements(classDeclarationAST, newClassPtr, heritageClause, genContext)))
             {
                 return mlir::failure();
             }
@@ -7444,17 +7434,14 @@ class MLIRGenImpl
         return classInfoType->classType;
     }
 
-    ClassInfo::TypePtr mlirGenClassInfo(ClassLikeDeclaration classDeclarationAST, bool &declareInterface, const GenContext &genContext)
+    ClassInfo::TypePtr mlirGenClassInfo(ClassLikeDeclaration classDeclarationAST, const GenContext &genContext)
     {
         auto name = getNameWithArguments(classDeclarationAST, genContext);
-        return mlirGenClassInfo(name, classDeclarationAST, declareInterface, genContext);
+        return mlirGenClassInfo(name, classDeclarationAST, genContext);
     }
 
-    ClassInfo::TypePtr mlirGenClassInfo(std::string name, ClassLikeDeclaration classDeclarationAST, bool &declareClass,
-                                        const GenContext &genContext)
+    ClassInfo::TypePtr mlirGenClassInfo(std::string name, ClassLikeDeclaration classDeclarationAST, const GenContext &genContext)
     {
-        declareClass = false;
-
         auto namePtr = StringRef(name).copy(stringAllocator);
         auto fullNamePtr = getFullNamespaceName(namePtr);
 
@@ -7463,7 +7450,6 @@ class MLIRGenImpl
         {
             newClassPtr = fullNameClassesMap.lookup(fullNamePtr);
             getClassesMap().insert({namePtr, newClassPtr});
-            declareClass = !newClassPtr->classType;
         }
         else
         {
@@ -7476,7 +7462,6 @@ class MLIRGenImpl
 
             getClassesMap().insert({namePtr, newClassPtr});
             fullNameClassesMap.insert(fullNamePtr, newClassPtr);
-            declareClass = true;
         }
 
         return newClassPtr;
@@ -7506,7 +7491,7 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult mlirGenClassStorageType(mlir::Location location, ClassLikeDeclaration classDeclarationAST,
-                                                ClassInfo::TypePtr newClassPtr, bool declareClass, const GenContext &genContext)
+                                                ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
     {
         MLIRCodeLogic mcl(builder);
         SmallVector<mlir_ts::FieldInfo> fieldInfos;
@@ -7514,8 +7499,7 @@ class MLIRGenImpl
         // add base classes
         for (auto &heritageClause : classDeclarationAST->heritageClauses)
         {
-            if (mlir::failed(
-                    mlirGenClassHeritageClause(classDeclarationAST, newClassPtr, heritageClause, fieldInfos, declareClass, genContext)))
+            if (mlir::failed(mlirGenClassHeritageClause(classDeclarationAST, newClassPtr, heritageClause, fieldInfos, genContext)))
             {
                 return mlir::failure();
             }
@@ -7523,32 +7507,31 @@ class MLIRGenImpl
 
 #if ENABLE_RTTI
         newClassPtr->hasVirtualTable = true;
-        mlirGenCustomRTTI(location, classDeclarationAST, newClassPtr, declareClass, genContext);
+        mlirGenCustomRTTI(location, classDeclarationAST, newClassPtr, genContext);
 #endif
 
         // non-static first
         for (auto &classMember : classDeclarationAST->members)
         {
-            if (mlir::failed(
-                    mlirGenClassFieldMember(classDeclarationAST, newClassPtr, classMember, fieldInfos, declareClass, false, genContext)))
+            if (mlir::failed(mlirGenClassFieldMember(classDeclarationAST, newClassPtr, classMember, fieldInfos, false, genContext)))
             {
                 return mlir::failure();
             }
         }
 
-        if (declareClass)
+        if (newClassPtr->getHasVirtualTableVariable())
         {
-            if (newClassPtr->getHasVirtualTableVariable())
+            MLIRCodeLogic mcl(builder);
+            auto fieldId = mcl.TupleFieldName(VTABLE_NAME);
+            if (fieldInfos.size() == 0 || fieldInfos.front().id != fieldId)
             {
-                MLIRCodeLogic mcl(builder);
-                auto fieldId = mcl.TupleFieldName(VTABLE_NAME);
                 fieldInfos.insert(fieldInfos.begin(), {fieldId, getOpaqueType()});
             }
-
-            mlirGenClassTypeSetFields(newClassPtr, fieldInfos);
         }
 
-        if (mlir::failed(mlirGenClassStaticFields(location, classDeclarationAST, newClassPtr, declareClass, genContext)))
+        mlirGenClassTypeSetFields(newClassPtr, fieldInfos);
+
+        if (mlir::failed(mlirGenClassStaticFields(location, classDeclarationAST, newClassPtr, genContext)))
         {
             return mlir::failure();
         }
@@ -7557,7 +7540,7 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult mlirGenClassStaticFields(mlir::Location location, ClassLikeDeclaration classDeclarationAST,
-                                                 ClassInfo::TypePtr newClassPtr, bool declareClass, const GenContext &genContext)
+                                                 ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
     {
         // dummy class, not used, needed to sync code
         // TODO: refactor it
@@ -7567,8 +7550,7 @@ class MLIRGenImpl
         // TODO: if I use static method in static field initialization, test if I need process static fields after static methods
         for (auto &classMember : classDeclarationAST->members)
         {
-            if (mlir::failed(
-                    mlirGenClassFieldMember(classDeclarationAST, newClassPtr, classMember, fieldInfos, declareClass, true, genContext)))
+            if (mlir::failed(mlirGenClassFieldMember(classDeclarationAST, newClassPtr, classMember, fieldInfos, true, genContext)))
             {
                 return mlir::failure();
             }
@@ -7578,7 +7560,7 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult mlirGenClassMembers(mlir::Location location, ClassLikeDeclaration classDeclarationAST,
-                                            ClassInfo::TypePtr newClassPtr, bool declareClass, const GenContext &genContext)
+                                            ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
     {
         // clear all flags
         for (auto &classMember : classDeclarationAST->members)
@@ -7595,7 +7577,7 @@ class MLIRGenImpl
 
             for (auto &classMember : classDeclarationAST->members)
             {
-                if (mlir::failed(mlirGenClassMethodMember(classDeclarationAST, newClassPtr, classMember, declareClass, genContext)))
+                if (mlir::failed(mlirGenClassMethodMember(classDeclarationAST, newClassPtr, classMember, genContext)))
                 {
                     notResolved++;
                 }
@@ -7616,7 +7598,7 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGenClassHeritageClause(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr,
                                                    HeritageClause heritageClause, SmallVector<mlir_ts::FieldInfo> &fieldInfos,
-                                                   bool declareClass, const GenContext &genContext)
+                                                   const GenContext &genContext)
     {
         MLIRCodeLogic mcl(builder);
 
@@ -7673,8 +7655,8 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult mlirGenClassFieldMember(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr,
-                                                ClassElement classMember, SmallVector<mlir_ts::FieldInfo> &fieldInfos, bool declareClass,
-                                                bool staticOnly, const GenContext &genContext)
+                                                ClassElement classMember, SmallVector<mlir_ts::FieldInfo> &fieldInfos, bool staticOnly,
+                                                const GenContext &genContext)
     {
         auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
         if (staticOnly != isStatic)
@@ -7719,11 +7701,6 @@ class MLIRGenImpl
         if (isVirtual)
         {
             newClassPtr->hasVirtualTable = true;
-        }
-
-        if (!isStatic && !declareClass)
-        {
-            return mlir::success();
         }
 
         if (classMember == SyntaxKind::PropertyDeclaration)
@@ -7785,7 +7762,8 @@ class MLIRGenImpl
                     },
                     genContext);
 
-                if (declareClass)
+                if (std::find_if(staticFieldInfos.begin(), staticFieldInfos.end(),
+                                 [&](auto staticFld) { return staticFld.id == fieldId; }) == staticFieldInfos.end())
                 {
                     staticFieldInfos.push_back({fieldId, fullClassStaticFieldName});
                 }
@@ -7883,7 +7861,7 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult mlirGenCustomRTTI(mlir::Location location, ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr,
-                                          bool declareClass, const GenContext &genContext)
+                                          const GenContext &genContext)
     {
         MLIRCodeLogic mcl(builder);
 
@@ -7900,9 +7878,10 @@ class MLIRGenImpl
             },
             genContext);
 
-        if (declareClass)
+        auto &staticFieldInfos = newClassPtr->staticFields;
+        if (std::find_if(staticFieldInfos.begin(), staticFieldInfos.end(), [&](auto staticFld) { return staticFld.id == fieldId; }) ==
+            staticFieldInfos.end())
         {
-            auto &staticFieldInfos = newClassPtr->staticFields;
             staticFieldInfos.push_back({fieldId, fullClassStaticFieldName});
         }
 
@@ -8281,8 +8260,7 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirGenClassBaseInterfaces(mlir::Location location, ClassInfo::TypePtr newClassPtr, bool declareClass,
-                                                   const GenContext &genContext)
+    mlir::LogicalResult mlirGenClassBaseInterfaces(mlir::Location location, ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
     {
         for (auto &baseClass : newClassPtr->baseClasses)
         {
@@ -8306,7 +8284,7 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult mlirGenClassHeritageClauseImplements(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr,
-                                                             HeritageClause heritageClause, bool declareClass, const GenContext &genContext)
+                                                             HeritageClause heritageClause, const GenContext &genContext)
     {
         if (heritageClause->token != SyntaxKind::ImplementsKeyword)
         {
@@ -8445,7 +8423,7 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult mlirGenClassMethodMember(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr,
-                                                 ClassElement classMember, bool declareClass, const GenContext &genContext)
+                                                 ClassElement classMember, const GenContext &genContext)
     {
         if (classMember->processed)
         {
