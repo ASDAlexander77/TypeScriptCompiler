@@ -1281,6 +1281,30 @@ class MLIRGenImpl
         return std::make_pair(type, mlir::Value());
     }
 
+    template <typename ItemTy> std::pair<mlir::Type, bool> evaluateTypeAndInit(ItemTy item, const GenContext &genContext)
+    {
+        // type
+        auto hasInit = false;
+        mlir::Type type;
+        if (item->type)
+        {
+            type = getType(item->type, genContext);
+        }
+
+        // init
+        if (auto initializer = item->initializer)
+        {
+            hasInit = true;
+            auto initType = evaluate(initializer, genContext);
+            if (initType && !type)
+            {
+                type = initType;
+            }
+        }
+
+        return std::make_pair(type, hasInit);
+    }
+
     template <typename ItemTy> std::pair<mlir::Type, mlir::Value> getTypeAndInit(ItemTy item, const GenContext &genContext)
     {
         // type
@@ -7719,9 +7743,9 @@ class MLIRGenImpl
 
             if (!isStatic)
             {
-                auto typeAndInit = getTypeAndInit(propertyDeclaration, genContext);
-                type = typeAndInit.first;
-                if (typeAndInit.second)
+                auto typeAndInitFlag = evaluateTypeAndInit(propertyDeclaration, genContext);
+                type = typeAndInitFlag.first;
+                if (typeAndInitFlag.second)
                 {
                     newClassPtr->hasInitializers = true;
                 }
