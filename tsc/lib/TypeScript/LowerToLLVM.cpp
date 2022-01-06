@@ -4122,7 +4122,7 @@ struct NoOpLowering : public TsLlvmPattern<mlir_ts::NoOp>
     }
 };
 
-static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, mlir::ModuleOp &m)
+static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, mlir::ModuleOp &m, SetVector<Type> &stack)
 {
     converter.addConversion([&](mlir_ts::AnyType type) { return LLVM::LLVMPointerType::get(IntegerType::get(m.getContext(), 8)); });
 
@@ -4300,13 +4300,20 @@ static void populateTypeScriptConversionPatterns(LLVMTypeConverter &converter, m
     converter.addConversion([&](mlir_ts::UndefinedType type) { return IntegerType::get(m.getContext(), 1); });
 
     converter.addConversion([&](mlir_ts::ClassStorageType type) {
-        SmallVector<mlir::Type> convertedTypes;
-        for (auto subType : type.getFields())
+        auto identStruct = LLVM::LLVMStructType::getIdentified(type.getContext(), type.getName().getValue());
+        if (!stack.contains(identStruct))
         {
-            convertedTypes.push_back(converter.convertType(subType.type));
+            stack.insert(identStruct);
+            SmallVector<mlir::Type> convertedTypes;
+            for (auto subType : type.getFields())
+            {
+                convertedTypes.push_back(converter.convertType(subType.type));
+            }
+
+            identStruct.setBody(convertedTypes, false);
         }
 
-        return LLVM::LLVMStructType::getLiteral(type.getContext(), convertedTypes, false);
+        return identStruct;
     });
 
     converter.addConversion(
@@ -4581,7 +4588,8 @@ void TypeScriptToLLVMLoweringPass::runOnOperation()
 
     // patterns.insert<SwitchStateOpLowering2>(typeConverter, &getContext(), &tsLlvmContext, /*benegit*/ 2);
 
-    populateTypeScriptConversionPatterns(typeConverter, m);
+    SetVector<Type> stack;
+    populateTypeScriptConversionPatterns(typeConverter, m, stack);
 
     // We want to completely lower to LLVM, so we use a `FullConversion`. This
     // ensures that only legal operations will remain after the conversion.
