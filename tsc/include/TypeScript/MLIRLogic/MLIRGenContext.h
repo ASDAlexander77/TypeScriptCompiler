@@ -462,6 +462,8 @@ struct ClassInfo
 
     llvm::SmallVector<AccessorInfo> accessors;
 
+    NodeArray<ClassElement> extraMembers;
+
     bool hasConstructor;
     bool hasInitializers;
     bool hasStaticConstructor;
@@ -469,12 +471,13 @@ struct ClassInfo
     bool hasVirtualTable;
     bool isAbstract;
     bool hasRTTI;
+    bool fullyProcessedAtEvaluation;
     bool fullyProcessed;
     bool processingStorageClass;
 
     ClassInfo()
         : hasConstructor(false), hasInitializers(false), hasStaticConstructor(false), hasStaticInitializers(false), hasVirtualTable(false),
-          isAbstract(false), hasRTTI(false), fullyProcessed(false), processingStorageClass(false)
+          isAbstract(false), hasRTTI(false), fullyProcessedAtEvaluation(false), fullyProcessed(false), processingStorageClass(false)
     {
     }
 

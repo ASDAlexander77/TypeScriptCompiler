@@ -1512,11 +1512,11 @@ class MLIRGenImpl
         std::string objectOwnerName;
         if (signatureDeclarationBaseAST->parent.is<ClassDeclaration>())
         {
-            objectOwnerName = MLIRHelper::getName(signatureDeclarationBaseAST->parent.as<ClassDeclaration>()->name);
+            objectOwnerName = getNameWithArguments(signatureDeclarationBaseAST->parent.as<ClassDeclaration>(), genContext);
         }
         else if (signatureDeclarationBaseAST->parent.is<InterfaceDeclaration>())
         {
-            objectOwnerName = MLIRHelper::getName(signatureDeclarationBaseAST->parent.as<InterfaceDeclaration>()->name);
+            objectOwnerName = getNameWithArguments(signatureDeclarationBaseAST->parent.as<InterfaceDeclaration>(), genContext);
         }
 
         if (signatureDeclarationBaseAST == SyntaxKind::MethodDeclaration)
@@ -7343,7 +7343,8 @@ class MLIRGenImpl
         if (isGenericClass && genContext.typeParamsWithArgs.size() > 0)
         {
             // TODO: investigate why classType is provided already for class
-            if (newClassPtr->fullyProcessed || newClassPtr->processingStorageClass)
+            if ((genContext.allowPartialResolve && newClassPtr->fullyProcessedAtEvaluation) ||
+                (!genContext.allowPartialResolve && newClassPtr->fullyProcessed) || newClassPtr->processingStorageClass)
             {
                 return mlir::success();
             }
@@ -7420,7 +7421,14 @@ class MLIRGenImpl
         }
 
         // if we allow multiple class nodes, do we need to store that ClassLikeDecl. has been processed fully
-        newClassPtr->fullyProcessed = !genContext.allowPartialResolve;
+        if (genContext.allowPartialResolve)
+        {
+            newClassPtr->fullyProcessedAtEvaluation = true;
+        }
+        else
+        {
+            newClassPtr->fullyProcessed = true;
+        }
 
         return mlir::success();
     }
@@ -7592,6 +7600,11 @@ class MLIRGenImpl
             classMember->processed = false;
         }
 
+        for (auto &classMember : newClassPtr->extraMembers)
+        {
+            classMember->processed = false;
+        }
+
         // add methods when we have classType
         auto notResolved = 0;
         do
@@ -7600,6 +7613,14 @@ class MLIRGenImpl
             notResolved = 0;
 
             for (auto &classMember : classDeclarationAST->members)
+            {
+                if (mlir::failed(mlirGenClassMethodMember(classDeclarationAST, newClassPtr, classMember, genContext)))
+                {
+                    notResolved++;
+                }
+            }
+
+            for (auto &classMember : newClassPtr->extraMembers)
             {
                 if (mlir::failed(mlirGenClassMethodMember(classDeclarationAST, newClassPtr, classMember, genContext)))
                 {
@@ -7855,7 +7876,7 @@ class MLIRGenImpl
 
             auto body = nf.createBlock(statements, /*multiLine*/ false);
             auto generatedConstructor = nf.createConstructorDeclaration(undefined, undefined, undefined, body);
-            classDeclarationAST->members.push_back(generatedConstructor);
+            newClassPtr->extraMembers.push_back(generatedConstructor);
         }
 
         return mlir::success();
@@ -7878,7 +7899,7 @@ class MLIRGenImpl
             ModifiersArray modifiers;
             modifiers.push_back(nf.createToken(SyntaxKind::StaticKeyword));
             auto generatedConstructor = nf.createConstructorDeclaration(undefined, modifiers, undefined, body);
-            classDeclarationAST->members.push_back(generatedConstructor);
+            newClassPtr->extraMembers.push_back(generatedConstructor);
         }
 
         return mlir::success();
@@ -7967,7 +7988,9 @@ class MLIRGenImpl
                 nf.createMethodDeclaration(undefined, undefined, undefined, nf.createIdentifier(LINSTANCEOF_NAME), undefined, undefined,
                                            parameters, nf.createToken(SyntaxKind::BooleanKeyword), body);
             instanceOfMethod->transformFlags |= TransformFlags::ForceVirtual;
-            classDeclarationAST->members.push_back(instanceOfMethod);
+            // TODO: you adding new member to the same DOM(parse) instance but it is used for 2 instances of generic type
+            // ERROR: do not change members!!!!
+            newClassPtr->extraMembers.push_back(instanceOfMethod);
 
             newClassPtr->hasRTTI = true;
         }
