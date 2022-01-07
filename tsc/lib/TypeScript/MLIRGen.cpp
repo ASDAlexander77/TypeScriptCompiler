@@ -1878,12 +1878,8 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGen(FunctionDeclaration functionDeclarationAST, const GenContext &genContext)
     {
         mlir::OpBuilder::InsertionGuard guard(builder);
-        if (mlirGenFunctionLikeDeclaration(functionDeclarationAST, genContext))
-        {
-            return mlir::success();
-        }
-
-        return mlir::failure();
+        auto res = mlirGenFunctionLikeDeclaration(functionDeclarationAST, genContext);
+        return std::get<0>(res);
     }
 
     mlir::Value mlirGen(FunctionExpression functionExpressionAST, const GenContext &genContext)
@@ -1898,11 +1894,13 @@ class MLIRGenImpl
             // provide name for it
             auto funcGenContext = GenContext(genContext);
             funcGenContext.thisType = nullptr;
-            funcOp = mlirGenFunctionLikeDeclaration(functionExpressionAST, funcGenContext);
-            if (!funcOp)
+            auto res = mlirGenFunctionLikeDeclaration(functionExpressionAST, funcGenContext);
+            if (mlir::failed(std::get<0>(res)))
             {
                 return mlir::Value();
             }
+
+            funcOp = std::get<1>(res);
         }
 
         if (auto trampOp = resolveFunctionWithCapture(location, funcOp.getName(), funcOp.getType(), false, genContext))
@@ -1927,11 +1925,13 @@ class MLIRGenImpl
             // provide name for it
             auto allowFuncGenContext = GenContext(genContext);
             allowFuncGenContext.thisType = nullptr;
-            funcOp = mlirGenFunctionLikeDeclaration(arrowFunctionAST, allowFuncGenContext);
-            if (!funcOp)
+            auto res = mlirGenFunctionLikeDeclaration(arrowFunctionAST, allowFuncGenContext);
+            if (mlir::failed(std::get<0>(res)))
             {
                 return mlir::Value();
             }
+
+            funcOp = std::get<1>(res);
         }
 
         if (auto trampOp = resolveFunctionWithCapture(location, funcOp.getName(), funcOp.getType(), false, genContext))
@@ -1944,7 +1944,8 @@ class MLIRGenImpl
         return funcSymbolRef;
     }
 
-    mlir_ts::FuncOp mlirGenFunctionGenerator(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
+    std::pair<mlir::LogicalResult, mlir_ts::FuncOp> mlirGenFunctionGenerator(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST,
+                                                                             const GenContext &genContext)
     {
         auto location = loc(functionLikeDeclarationBaseAST);
         NodeFactory nf(NodeFactoryFlags::None);
@@ -2023,8 +2024,47 @@ class MLIRGenImpl
         return genFuncOp;
     }
 
-    mlir_ts::FuncOp mlirGenFunctionLikeDeclaration(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
+    mlir::LogicalResult registerGenericFunctionLike(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST,
+                                                    const GenContext &genContext)
     {
+        auto name = MLIRHelper::getName(functionLikeDeclarationBaseAST->name);
+        if (!name.empty())
+        {
+            auto namePtr = StringRef(name).copy(stringAllocator);
+            if (getGenericFunctionMap().count(namePtr))
+            {
+                return mlir::success();
+            }
+
+            llvm::SmallVector<TypeParameterDOM::TypePtr> typeParameters;
+            if (mlir::failed(processTypeParameters(functionLikeDeclarationBaseAST->typeParameters, typeParameters, genContext)))
+            {
+                return mlir::failure();
+            }
+
+            // register class
+            GenericFunctionInfo::TypePtr newGenericFunctionPtr = std::make_shared<GenericFunctionInfo>();
+            newGenericFunctionPtr->name = namePtr;
+            newGenericFunctionPtr->typeParams = typeParameters;
+            newGenericFunctionPtr->functionDeclaration = functionLikeDeclarationBaseAST;
+
+            getGenericFunctionMap().insert({namePtr, newGenericFunctionPtr});
+
+            return mlir::success();
+        }
+
+        return mlir::failure();
+    }
+
+    std::pair<mlir::LogicalResult, mlir_ts::FuncOp> mlirGenFunctionLikeDeclaration(
+        FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
+    {
+        auto isGenericFunction = functionLikeDeclarationBaseAST->typeParameters.size() > 0;
+        if (isGenericFunction && genContext.typeParamsWithArgs.size() == 0)
+        {
+            return {registerGenericFunctionLike(functionLikeDeclarationBaseAST, genContext), mlir_ts::FuncOp()};
+        }
+
         // check if it is generator
         if (functionLikeDeclarationBaseAST->asteriskToken)
         {
@@ -2043,7 +2083,7 @@ class MLIRGenImpl
         auto result = std::get<2>(funcOpWithFuncProto);
         if (!result || !funcOp)
         {
-            return funcOp;
+            return {mlir::failure(), funcOp};
         }
 
         auto funcGenContext = GenContext(genContext);
@@ -2067,7 +2107,7 @@ class MLIRGenImpl
 
         if (mlir::failed(resultFromBody))
         {
-            return funcOp;
+            return {mlir::failure(), funcOp};
         }
 
         // set visibility index
@@ -2100,7 +2140,7 @@ class MLIRGenImpl
 
         builder.setInsertionPointAfter(funcOp);
 
-        return funcOp;
+        return {mlir::success(), funcOp};
     }
 
     mlir::LogicalResult mlirGenFunctionEntry(mlir::Location location, FunctionPrototypeDOM::TypePtr funcProto, const GenContext &genContext)
@@ -8532,12 +8572,13 @@ class MLIRGenImpl
                 generateConstructorStatements(classDeclarationAST, isStatic, funcGenContext);
             }
 
-            auto funcOp = mlirGenFunctionLikeDeclaration(funcLikeDeclaration, funcGenContext);
-
-            if (!funcOp)
+            auto res = mlirGenFunctionLikeDeclaration(funcLikeDeclaration, funcGenContext);
+            if (mlir::failed(std::get<0>(res)))
             {
                 return mlir::failure();
             }
+
+            auto funcOp = std::get<1>(res);
 
             funcLikeDeclaration->processed = true;
 
@@ -11107,6 +11148,11 @@ class MLIRGenImpl
     auto getFunctionMap() -> llvm::StringMap<mlir_ts::FuncOp> &
     {
         return currentNamespace->functionMap;
+    }
+
+    auto getGenericFunctionMap() -> llvm::StringMap<GenericFunctionInfo::TypePtr> &
+    {
+        return currentNamespace->genericFunctionMap;
     }
 
     auto getGlobalsMap() -> llvm::StringMap<VariableDeclarationDOM::TypePtr> &

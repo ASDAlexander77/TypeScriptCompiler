@@ -139,6 +139,22 @@ struct GenContext
     int *state;
 };
 
+struct GenericFunctionInfo
+{
+  public:
+    using TypePtr = std::shared_ptr<GenericFunctionInfo>;
+
+    mlir::StringRef name;
+
+    llvm::SmallVector<TypeParameterDOM::TypePtr> typeParams;
+
+    FunctionLikeDeclarationBase functionDeclaration;
+
+    GenericFunctionInfo()
+    {
+    }
+};
+
 enum class VariableClass
 {
     Const,
@@ -707,6 +723,8 @@ struct NamespaceInfo
     mlir_ts::NamespaceType namespaceType;
 
     llvm::StringMap<mlir_ts::FuncOp> functionMap;
+
+    llvm::StringMap<GenericFunctionInfo::TypePtr> genericFunctionMap;
 
     llvm::StringMap<VariableDeclarationDOM::TypePtr> globalsMap;
 
