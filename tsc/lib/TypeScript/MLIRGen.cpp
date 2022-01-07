@@ -784,6 +784,34 @@ class MLIRGenImpl
         llvm_unreachable("unknown expression");
     }
 
+    mlir_ts::FuncOp instantiateSpecializedFunctionType(mlir::Location location, StringRef name, NodeArray<TypeNode> typeArguments,
+                                                       const GenContext &genContext)
+    {
+        if (getGenericFunctionMap().count(name))
+        {
+            auto functionGenericTypeInfo = getGenericFunctionMap().lookup(name);
+
+            GenContext genericTypeGenContext(genContext);
+            auto typeParams = functionGenericTypeInfo->typeParams;
+            if (mlir::failed(zipTypeParametersWithArguments(location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs,
+                                                            genContext)))
+            {
+                return mlir_ts::FuncOp();
+            }
+
+            // create new instance of interface with TypeArguments
+            auto res = mlirGenFunctionLikeDeclaration(functionGenericTypeInfo->functionDeclaration, genericTypeGenContext);
+            if (mlir::failed(std::get<0>(res)))
+            {
+                return mlir_ts::FuncOp();
+            }
+
+            return std::get<1>(res);
+        }
+
+        return mlir_ts::FuncOp();
+    }
+
     mlir::Type instantiateSpecializedClassType(mlir::Location location, mlir_ts::ClassType genericClassType,
                                                NodeArray<TypeNode> typeArguments, const GenContext &genContext)
     {
@@ -852,13 +880,33 @@ class MLIRGenImpl
 
     mlir::Value mlirGen(Expression expression, NodeArray<TypeNode> typeArguments, const GenContext &genContext)
     {
-        auto location = loc(expression);
-
-        // step 1, resolve expression without Arguments to get reference to Generic Type/Interface etc
         auto genResult = mlirGen(expression, genContext);
         if (typeArguments.size() == 0)
         {
             return genResult;
+        }
+
+        auto location = loc(expression);
+
+        // TODO: process generic function
+        if (auto symbolOp = genResult.getDefiningOp<mlir_ts::SymbolRefOp>())
+        {
+            if (!symbolOp.getType().isa<mlir_ts::GenericType>())
+            {
+                // it is not generic function reference
+                return genResult;
+            }
+
+            // create new function instance
+            auto funcOp = instantiateSpecializedFunctionType(location, symbolOp.identifierAttr().getValue(), typeArguments, genContext);
+            if (!funcOp)
+            {
+                return mlir::Value();
+            }
+
+            auto symbOp = builder.create<mlir_ts::SymbolRefOp>(location, funcOp.getType(),
+                                                               mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
+            return symbOp;
         }
 
         if (auto classOp = genResult.getDefiningOp<mlir_ts::ClassRefOp>())
@@ -1508,7 +1556,7 @@ class MLIRGenImpl
     std::tuple<std::string, std::string> getNameOfFunction(SignatureDeclarationBase signatureDeclarationBaseAST,
                                                            const GenContext &genContext)
     {
-        std::string fullName = MLIRHelper::getName(signatureDeclarationBaseAST->name);
+        std::string fullName = getNameWithArguments(signatureDeclarationBaseAST, genContext);
         std::string objectOwnerName;
         if (signatureDeclarationBaseAST->parent.is<ClassDeclaration>())
         {
@@ -2072,6 +2120,14 @@ class MLIRGenImpl
             return mlirGenFunctionGenerator(functionLikeDeclarationBaseAST, genContext);
         }
 
+        // go to root
+        mlir::OpBuilder::InsertPoint savePoint;
+        if (isGenericFunction)
+        {
+            savePoint = builder.saveInsertionPoint();
+            builder.setInsertionPointToStart(&theModule.body().front());
+        }
+
         SymbolTableScopeT varScope(symbolTable);
 
         auto location = loc(functionLikeDeclarationBaseAST);
@@ -2138,7 +2194,14 @@ class MLIRGenImpl
                                     << " num inputs:" << funcOp.getType().cast<mlir_ts::FunctionType>().getNumInputs() << "\n";);
         }
 
-        builder.setInsertionPointAfter(funcOp);
+        if (isGenericFunction)
+        {
+            builder.restoreInsertionPoint(savePoint);
+        }
+        else
+        {
+            builder.setInsertionPointAfter(funcOp);
+        }
 
         return {mlir::success(), funcOp};
     }
@@ -5158,7 +5221,7 @@ class MLIRGenImpl
         auto location = loc(callExpression);
 
         // get function ref.
-        auto funcRefValue = mlirGen(callExpression->expression.as<Expression>(), genContext);
+        auto funcRefValue = mlirGen(callExpression->expression.as<Expression>(), callExpression->typeArguments, genContext);
         if (!funcRefValue)
         {
             if (genContext.allowPartialResolve)
@@ -6896,6 +6959,15 @@ class MLIRGenImpl
         {
             auto enumTypeInfo = getEnumsMap().lookup(name);
             return builder.create<mlir_ts::ConstantOp>(location, getEnumType(enumTypeInfo.first), enumTypeInfo.second);
+        }
+
+        if (getGenericFunctionMap().count(name))
+        {
+            auto genericFunctionInfo = getGenericFunctionMap().lookup(name);
+
+            auto funcSymbolRef = builder.create<mlir_ts::SymbolRefOp>(
+                location, getGenericType(), mlir::FlatSymbolRefAttr::get(builder.getContext(), genericFunctionInfo->name));
+            return funcSymbolRef;
         }
 
         if (getClassesMap().count(name))
@@ -8728,7 +8800,7 @@ class MLIRGenImpl
             llvm_unreachable("not implemented");
         }
 
-        if (genContext.typeParamsWithArgs.size())
+        if (genContext.typeParamsWithArgs.size() && declarationAST->typeParameters.size())
         {
             name.append("<");
             auto next = false;
