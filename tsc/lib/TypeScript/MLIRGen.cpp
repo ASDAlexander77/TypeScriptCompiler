@@ -2120,6 +2120,18 @@ class MLIRGenImpl
             return mlirGenFunctionGenerator(functionLikeDeclarationBaseAST, genContext);
         }
 
+        // do not process generic functions more then 1 time
+        if (isGenericFunction && genContext.typeParamsWithArgs.size() > 0)
+        {
+            auto functionName = getNameWithArguments(functionLikeDeclarationBaseAST, genContext);
+            auto fn = getFunctionMap().find(functionName);
+            if (fn != getFunctionMap().end() && theModule.lookupSymbol(functionName))
+            {
+                auto funcOp = fn->getValue();
+                return {mlir::success(), funcOp};
+            }
+        }
+
         // go to root
         mlir::OpBuilder::InsertPoint savePoint;
         if (isGenericFunction)
