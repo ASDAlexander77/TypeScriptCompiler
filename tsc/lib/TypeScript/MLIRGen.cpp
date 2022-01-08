@@ -8795,11 +8795,6 @@ class MLIRGenImpl
     template <typename T> std::string getNameWithArguments(T declarationAST, const GenContext &genContext)
     {
         auto name = MLIRHelper::getName(declarationAST->name);
-        if (name.empty())
-        {
-            llvm_unreachable("not implemented");
-        }
-
         if (genContext.typeParamsWithArgs.size() && declarationAST->typeParameters.size())
         {
             name.append("<");
