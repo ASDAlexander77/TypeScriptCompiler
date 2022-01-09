@@ -5247,6 +5247,9 @@ class MLIRGenImpl
         auto callExpr = callExpression->expression.as<Expression>();
 
         auto funcResult = mlirGen(callExpr, genContext);
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! evaluate function: " << funcResult << "\n";);
+
         if (!funcResult)
         {
             if (genContext.allowPartialResolve)
@@ -5290,8 +5293,7 @@ class MLIRGenImpl
 
         auto attrName = StringRef(IDENTIFIER_ATTR_NAME);
         auto definingOp = specializedFuncRefValue.getDefiningOp();
-        if (specializedFuncRefValue.getType() == mlir::NoneType::get(builder.getContext()) &&
-            definingOp->hasAttrOfType<mlir::FlatSymbolRefAttr>(attrName))
+        if (isNoneType(specializedFuncRefValue.getType()) && definingOp->hasAttrOfType<mlir::FlatSymbolRefAttr>(attrName))
         {
             // TODO: when you resolve names such as "print", "parseInt" should return names in mlirGen(Identifier)
             auto calleeName = definingOp->getAttrOfType<mlir::FlatSymbolRefAttr>(attrName);
@@ -5383,6 +5385,7 @@ class MLIRGenImpl
             .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { f(calledFuncType); })
             .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { f(calledFuncType); })
             .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { f(calledFuncType); })
+            .Case<mlir::NoneType>([&](auto calledFuncType) { returnType = builder.getNoneType(); })
             .Default([&](auto type) { llvm_unreachable("not implemented"); });
 
         return returnType;
@@ -5399,6 +5402,7 @@ class MLIRGenImpl
             .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { paramType = f(calledFuncType); })
             .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { paramType = f(calledFuncType); })
             .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { paramType = f(calledFuncType); })
+            .Case<mlir::NoneType>([&](auto calledFuncType) { paramType = builder.getNoneType(); })
             .Default([&](auto type) { llvm_unreachable("not implemented"); });
 
         return paramType;
@@ -5423,7 +5427,11 @@ class MLIRGenImpl
             .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
             .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
             .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
-            .Default([&](auto type) { llvm_unreachable("not implemented"); });
+            .Case<mlir::NoneType>([&](auto calledFuncType) { paramsType = builder.getNoneType(); })
+            .Default([&](auto type) {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! getParamsTupleTypeFromFuncRef is not implemented for " << type << "\n";);
+                llvm_unreachable("not implemented");
+            });
 
         return paramsType;
     }
@@ -5449,6 +5457,7 @@ class MLIRGenImpl
             .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
             .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
             .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { paramsType = f(calledFuncType); })
+            .Case<mlir::NoneType>([&](auto calledFuncType) { paramsType = builder.getNoneType(); })
             .Default([&](auto type) { llvm_unreachable("not implemented"); });
 
         return paramsType;
@@ -5600,12 +5609,21 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGen(NodeArray<Expression> arguments, SmallVector<mlir::Value, 4> &operands, mlir::Type funcType,
                                 const GenContext &genContext)
     {
-        auto tupleTypeWithFuncArgs = funcType.dyn_cast<mlir_ts::TupleType>();
+        mlir_ts::TupleType tupleTypeWithFuncArgs;
+        auto hasType = !isNoneType(funcType);
+        if (hasType)
+        {
+            tupleTypeWithFuncArgs = funcType.dyn_cast<mlir_ts::TupleType>();
+        }
+
         auto i = 0;
         for (auto expression : arguments)
         {
             GenContext argGenContext(genContext);
-            argGenContext.argTypeDestFuncType = tupleTypeWithFuncArgs.getFieldInfo(i).type;
+            if (hasType)
+            {
+                argGenContext.argTypeDestFuncType = tupleTypeWithFuncArgs.getFieldInfo(i).type;
+            }
 
             auto value = mlirGen(expression, argGenContext);
 
