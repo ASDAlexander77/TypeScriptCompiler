@@ -878,16 +878,9 @@ class MLIRGenImpl
         }
     }
 
-    mlir::Value mlirGen(Expression expression, NodeArray<TypeNode> typeArguments, const GenContext &genContext)
+    mlir::Value mlirGenSpecialized(mlir::Location location, mlir::Value genResult, NodeArray<TypeNode> typeArguments,
+                                   const GenContext &genContext)
     {
-        auto genResult = mlirGen(expression, genContext);
-        if (typeArguments.size() == 0)
-        {
-            return genResult;
-        }
-
-        auto location = loc(expression);
-
         // TODO: process generic function
         if (auto symbolOp = genResult.getDefiningOp<mlir_ts::SymbolRefOp>())
         {
@@ -936,6 +929,25 @@ class MLIRGenImpl
 
             // can't find generic instance
             return mlir::Value();
+        }
+
+        return mlir::Value();
+    }
+
+    mlir::Value mlirGen(Expression expression, NodeArray<TypeNode> typeArguments, const GenContext &genContext)
+    {
+        auto genResult = mlirGen(expression, genContext);
+        if (typeArguments.size() == 0)
+        {
+            return genResult;
+        }
+
+        auto location = loc(expression);
+
+        auto specializedResult = mlirGenSpecialized(location, genResult, typeArguments, genContext);
+        if (specializedResult)
+        {
+            return specializedResult;
         }
 
         return genResult;
@@ -5232,9 +5244,38 @@ class MLIRGenImpl
     {
         auto location = loc(callExpression);
 
+        auto callExpr = callExpression->expression.as<Expression>();
+
+        auto funcResult = mlirGen(callExpr, genContext);
+        if (!funcResult)
+        {
+            if (genContext.allowPartialResolve)
+            {
+                return mlir::Value();
+            }
+
+            emitError(location, "call expression is empty");
+
+            assert(false);
+            return mlir::Value();
+        }
+
+        auto funcType = getParamsTupleTypeFromFuncRef(funcResult.getType());
+
+        SmallVector<mlir::Value, 4> operands;
+        if (mlir::failed(mlirGen(callExpression->arguments, operands, funcType, genContext)))
+        {
+            if (!genContext.allowPartialResolve)
+            {
+                emitError(location) << "Call Method: can't resolve values of all parameters";
+            }
+
+            return mlir::Value();
+        }
+
         // get function ref.
-        auto funcRefValue = mlirGen(callExpression->expression.as<Expression>(), callExpression->typeArguments, genContext);
-        if (!funcRefValue)
+        auto specializedFuncRefValue = mlirGenSpecialized(location, funcResult, callExpression->typeArguments, genContext);
+        if (!specializedFuncRefValue)
         {
             if (genContext.allowPartialResolve)
             {
@@ -5248,41 +5289,29 @@ class MLIRGenImpl
         }
 
         auto attrName = StringRef(IDENTIFIER_ATTR_NAME);
-        auto definingOp = funcRefValue.getDefiningOp();
-        if (funcRefValue.getType() == mlir::NoneType::get(builder.getContext()) &&
+        auto definingOp = specializedFuncRefValue.getDefiningOp();
+        if (specializedFuncRefValue.getType() == mlir::NoneType::get(builder.getContext()) &&
             definingOp->hasAttrOfType<mlir::FlatSymbolRefAttr>(attrName))
         {
             // TODO: when you resolve names such as "print", "parseInt" should return names in mlirGen(Identifier)
             auto calleeName = definingOp->getAttrOfType<mlir::FlatSymbolRefAttr>(attrName);
             auto functionName = calleeName.getValue();
-            auto argumentsContext = callExpression->arguments;
 
             // resolve function
             MLIRCustomMethods cm(builder, location);
 
-            SmallVector<mlir::Value, 4> operands;
-            if (auto thisSymbolRefOp = funcRefValue.getDefiningOp<mlir_ts::ThisSymbolRefOp>())
+            if (auto thisSymbolRefOp = specializedFuncRefValue.getDefiningOp<mlir_ts::ThisSymbolRefOp>())
             {
                 // do not remove it, it is needed for custom methods to be called correctly
-                operands.push_back(thisSymbolRefOp.thisVal());
-            }
-
-            if (mlir::failed(mlirGen(argumentsContext, operands, genContext)))
-            {
-                if (!genContext.allowPartialResolve)
-                {
-                    emitError(location) << "Call Method: can't resolve values of all parameters";
-                }
-
-                return mlir::Value();
+                operands.insert(operands.begin(), thisSymbolRefOp.thisVal());
             }
 
             return cm.callMethod(functionName, operands, genContext);
         }
 
-        if (auto optFuncRef = funcRefValue.getType().dyn_cast<mlir_ts::OptionalType>())
+        if (auto optFuncRef = specializedFuncRefValue.getType().dyn_cast<mlir_ts::OptionalType>())
         {
-            auto condValue = cast(location, getBooleanType(), funcRefValue, genContext);
+            auto condValue = cast(location, getBooleanType(), specializedFuncRefValue, genContext);
 
             auto resultType = getReturnTypeFromFuncRef(optFuncRef.getElementType());
 
@@ -5293,11 +5322,10 @@ class MLIRGenImpl
 
             // value if true
 
-            auto innerFuncRef = builder.create<mlir_ts::ValueOp>(location, optFuncRef.getElementType(), funcRefValue);
+            auto innerFuncRef = builder.create<mlir_ts::ValueOp>(location, optFuncRef.getElementType(), specializedFuncRefValue);
 
             auto hasReturn = false;
-            auto value =
-                mlirGenCall(location, innerFuncRef, callExpression->typeArguments, callExpression->arguments, hasReturn, genContext);
+            auto value = mlirGenCall(location, innerFuncRef, callExpression->arguments, operands, hasReturn, genContext);
             if (hasReturn)
             {
                 auto optValue = builder.create<mlir_ts::CreateOptionalOp>(location, getOptionalType(value.getType()), value);
@@ -5324,7 +5352,7 @@ class MLIRGenImpl
         }
 
         auto hasReturn = false;
-        auto value = mlirGenCall(location, funcRefValue, callExpression->typeArguments, callExpression->arguments, hasReturn, genContext);
+        auto value = mlirGenCall(location, specializedFuncRefValue, callExpression->arguments, operands, hasReturn, genContext);
         if (value)
         {
             return value;
@@ -5426,29 +5454,28 @@ class MLIRGenImpl
         return paramsType;
     }
 
-    mlir::Value mlirGenCall(mlir::Location location, mlir::Value funcRefValue, NodeArray<TypeNode> typeArguments,
-                            NodeArray<Expression> arguments, bool &hasReturn, const GenContext &genContext)
+    mlir::Value mlirGenCall(mlir::Location location, mlir::Value funcRefValue, NodeArray<Expression> argumentsContext,
+                            SmallVector<mlir::Value, 4> &operands, bool &hasReturn, const GenContext &genContext)
     {
         mlir::Value value;
         hasReturn = false;
         TypeSwitch<mlir::Type>(funcRefValue.getType())
             .Case<mlir_ts::FunctionType>([&](auto calledFuncType) {
-                value = mlirGenCallFunction(location, calledFuncType, funcRefValue, typeArguments, arguments, hasReturn, genContext);
+                value = mlirGenCallFunction(location, calledFuncType, funcRefValue, operands, hasReturn, genContext);
             })
             .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) {
-                value = mlirGenCallFunction(location, calledFuncType, funcRefValue, typeArguments, arguments, hasReturn, genContext);
+                value = mlirGenCallFunction(location, calledFuncType, funcRefValue, operands, hasReturn, genContext);
             })
             .Case<mlir_ts::BoundFunctionType>([&](auto calledBoundFuncType) {
                 auto calledFuncType = getFunctionType(calledBoundFuncType.getInputs(), calledBoundFuncType.getResults());
                 auto thisValue = builder.create<mlir_ts::GetThisOp>(location, calledFuncType.getInput(0), funcRefValue);
                 auto unboundFuncRefValue = builder.create<mlir_ts::GetMethodOp>(location, calledFuncType, funcRefValue);
-                value = mlirGenCallFunction(location, calledFuncType, unboundFuncRefValue, thisValue, typeArguments, arguments, hasReturn,
-                                            genContext);
+                value = mlirGenCallFunction(location, calledFuncType, unboundFuncRefValue, thisValue, operands, hasReturn, genContext);
             })
             .Case<mlir_ts::ClassType>([&](auto classType) {
                 // seems we are calling type constructor
                 auto newOp = builder.create<mlir_ts::NewOp>(location, classType, builder.getBoolAttr(true));
-                mlirGenCallConstructor(location, classType, newOp, typeArguments, arguments, false, true, genContext);
+                mlirGenCallConstructor(location, classType, newOp, operands, false, true, genContext);
                 value = newOp;
             })
             .Case<mlir_ts::ClassStorageType>([&](auto classStorageType) {
@@ -5457,7 +5484,7 @@ class MLIRGenImpl
                 if (refValue)
                 {
                     // seems we are calling type constructor for super()
-                    mlirGenCallConstructor(location, classStorageType, refValue, typeArguments, arguments, true, false, genContext);
+                    mlirGenCallConstructor(location, classStorageType, refValue, operands, true, false, genContext);
                 }
                 else
                 {
@@ -5474,28 +5501,25 @@ class MLIRGenImpl
     }
 
     template <typename T = mlir_ts::FunctionType>
-    mlir::Value mlirGenCallFunction(mlir::Location location, T calledFuncType, mlir::Value funcRefValue, NodeArray<TypeNode> typeArguments,
-                                    NodeArray<Expression> arguments, bool &hasReturn, const GenContext &genContext)
+    mlir::Value mlirGenCallFunction(mlir::Location location, T calledFuncType, mlir::Value funcRefValue,
+                                    SmallVector<mlir::Value, 4> &operands, bool &hasReturn, const GenContext &genContext)
     {
-        return mlirGenCallFunction(location, calledFuncType, funcRefValue, mlir::Value(), typeArguments, arguments, hasReturn, genContext);
+        return mlirGenCallFunction(location, calledFuncType, funcRefValue, mlir::Value(), operands, hasReturn, genContext);
     }
 
     template <typename T = mlir_ts::FunctionType>
     mlir::Value mlirGenCallFunction(mlir::Location location, T calledFuncType, mlir::Value funcRefValue, mlir::Value thisValue,
-                                    NodeArray<TypeNode> typeArguments, NodeArray<Expression> arguments, bool &hasReturn,
-                                    const GenContext &genContext)
+                                    SmallVector<mlir::Value, 4> &operands, bool &hasReturn, const GenContext &genContext)
     {
         hasReturn = false;
         mlir::Value value;
 
-        SmallVector<mlir::Value, 4> operands;
         if (thisValue)
         {
-            operands.push_back(thisValue);
+            operands.insert(operands.begin(), thisValue);
         }
 
-        if (mlir::failed(
-                mlirGenCallOperands(location, calledFuncType.getInputs(), arguments, operands, calledFuncType.isVarArg(), genContext)))
+        if (mlir::failed(mlirGenAdjustOperandTypes(operands, calledFuncType.getInputs(), calledFuncType.isVarArg(), genContext)))
         {
             emitError(location) << "Call Method: can't resolve values of all parameters";
         }
@@ -5539,13 +5563,12 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult mlirGenCallOperands(mlir::Location location, mlir::ArrayRef<mlir::Type> argFuncTypes,
-                                            NodeArray<Expression> argumentsContext, SmallVector<mlir::Value, 4> &operands, bool isVarArg,
-                                            const GenContext &genContext)
+                                            SmallVector<mlir::Value, 4> &operands, bool isVarArg, const GenContext &genContext)
     {
-        auto opArgsCount = std::distance(argumentsContext.begin(), argumentsContext.end()) + operands.size();
-        auto funcArgsCount = argFuncTypes.size();
+        int opArgsCount = operands.size();
+        int funcArgsCount = argFuncTypes.size();
 
-        if (mlir::failed(mlirGen(argumentsContext, operands, argFuncTypes, isVarArg, genContext)))
+        if (mlir::failed(mlirGenAdjustOperandTypes(operands, argFuncTypes, isVarArg, genContext)))
         {
             return mlir::failure();
         }
@@ -5574,24 +5597,32 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirGen(NodeArray<Expression> arguments, SmallVector<mlir::Value, 4> &operands, const GenContext &genContext)
+    mlir::LogicalResult mlirGen(NodeArray<Expression> arguments, SmallVector<mlir::Value, 4> &operands, mlir::Type funcType,
+                                const GenContext &genContext)
     {
+        auto tupleTypeWithFuncArgs = funcType.dyn_cast<mlir_ts::TupleType>();
+        auto i = 0;
         for (auto expression : arguments)
         {
-            auto value = mlirGen(expression, genContext);
+            GenContext argGenContext(genContext);
+            argGenContext.argTypeDestFuncType = tupleTypeWithFuncArgs.getFieldInfo(i).type;
+
+            auto value = mlirGen(expression, argGenContext);
 
             TEST_LOGIC(value)
 
             operands.push_back(value);
+
+            i++;
         }
 
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirGen(NodeArray<Expression> arguments, SmallVector<mlir::Value, 4> &operands,
-                                mlir::ArrayRef<mlir::Type> argFuncTypes, bool isVarArg, const GenContext &genContext)
+    mlir::LogicalResult mlirGenAdjustOperandTypes(SmallVector<mlir::Value, 4> &operands, mlir::ArrayRef<mlir::Type> argFuncTypes,
+                                                  bool isVarArg, const GenContext &genContext)
     {
-        auto i = operands.size(); // we need to shift in case of 'this'
+        auto i = 0; // we need to shift in case of 'this'
         auto lastArgIndex = argFuncTypes.size() - 1;
         mlir::Type varArgType;
         if (isVarArg)
@@ -5599,36 +5630,30 @@ class MLIRGenImpl
             varArgType = argFuncTypes.back().cast<mlir_ts::ArrayType>().getElementType();
         }
 
-        for (auto expression : arguments)
+        for (auto value : operands)
         {
-            auto argTypeGenContext = GenContext(genContext);
+            mlir::Type argTypeDestFuncType;
             if (i >= argFuncTypes.size() && !isVarArg)
             {
-                emitError(loc(expression)) << "function does not have enough parameters to accept all arguments, arg #" << i;
+                emitError(value.getLoc()) << "function does not have enough parameters to accept all arguments, arg #" << i;
                 return mlir::failure();
             }
 
             if (isVarArg && i >= lastArgIndex)
             {
-                argTypeGenContext.argTypeDestFuncType = varArgType;
+                argTypeDestFuncType = varArgType;
             }
             else
             {
-                argTypeGenContext.argTypeDestFuncType = argFuncTypes[i];
+                argTypeDestFuncType = argFuncTypes[i];
             }
 
-            auto value = mlirGen(expression, argTypeGenContext);
+            VALIDATE_LOGIC(value, value.getLoc())
 
-            VALIDATE_LOGIC(value, loc(expression))
-
-            if (value.getType() != argTypeGenContext.argTypeDestFuncType)
+            if (value.getType() != argTypeDestFuncType)
             {
-                auto castValue = cast(loc(expression), argTypeGenContext.argTypeDestFuncType, value, genContext);
-                operands.push_back(castValue);
-            }
-            else
-            {
-                operands.push_back(value);
+                auto castValue = cast(value.getLoc(), argTypeDestFuncType, value, genContext);
+                operands[i] = castValue;
             }
 
             i++;
@@ -5638,8 +5663,8 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult mlirGenCallConstructor(mlir::Location location, mlir_ts::ClassType classType, mlir::Value thisValue,
-                                               NodeArray<TypeNode> typeArguments, NodeArray<Expression> arguments,
-                                               bool castThisValueToClass, bool setVTable, const GenContext &genContext)
+                                               SmallVector<mlir::Value, 4> &operands, bool castThisValueToClass, bool setVTable,
+                                               const GenContext &genContext)
     {
         if (!classType)
         {
@@ -5648,13 +5673,12 @@ class MLIRGenImpl
 
         // register temp var
         auto classInfo = getClassInfoByFullName(classType.getName().getValue());
-        return mlirGenCallConstructor(location, classInfo, thisValue, typeArguments, arguments, castThisValueToClass, setVTable,
-                                      genContext);
+        return mlirGenCallConstructor(location, classInfo, thisValue, operands, castThisValueToClass, setVTable, genContext);
     }
 
     mlir::LogicalResult mlirGenCallConstructor(mlir::Location location, mlir_ts::ClassStorageType classStorageType, mlir::Value thisValue,
-                                               NodeArray<TypeNode> typeArguments, NodeArray<Expression> arguments,
-                                               bool castThisValueToClass, bool setVTable, const GenContext &genContext)
+                                               SmallVector<mlir::Value, 4> &operands, bool castThisValueToClass, bool setVTable,
+                                               const GenContext &genContext)
     {
         if (!classStorageType)
         {
@@ -5663,13 +5687,12 @@ class MLIRGenImpl
 
         // register temp var
         auto classInfo = getClassInfoByFullName(classStorageType.getName().getValue());
-        return mlirGenCallConstructor(location, classInfo, thisValue, typeArguments, arguments, castThisValueToClass, setVTable,
-                                      genContext);
+        return mlirGenCallConstructor(location, classInfo, thisValue, operands, castThisValueToClass, setVTable, genContext);
     }
 
     mlir::LogicalResult mlirGenCallConstructor(mlir::Location location, ClassInfo::TypePtr classInfo, mlir::Value thisValue,
-                                               NodeArray<TypeNode> typeArguments, NodeArray<Expression> arguments,
-                                               bool castThisValueToClass, bool setVTable, const GenContext &genContext)
+                                               SmallVector<mlir::Value, 4> &operands, bool castThisValueToClass, bool setVTable,
+                                               const GenContext &genContext)
     {
         assert(classInfo);
 
@@ -5755,9 +5778,10 @@ class MLIRGenImpl
         if (classInfo->getHasConstructor())
         {
             auto propAccess = nf.createPropertyAccessExpression(thisToken, nf.createIdentifier(S(CONSTRUCTOR_NAME)));
-            auto callExpr = nf.createCallExpression(propAccess, typeArguments, arguments);
+            // TODO: finish it
+            // auto callExpr = nf.createCallExpression(propAccess, typeArguments, arguments);
 
-            auto callCtorValue = mlirGen(callExpr, genContext);
+            // auto callCtorValue = mlirGen(callExpr, genContext);
         }
 
         return mlir::success();
@@ -5790,8 +5814,23 @@ class MLIRGenImpl
             }
 
             auto newOp = builder.create<mlir_ts::NewOp>(location, resultType, builder.getBoolAttr(false));
-            mlirGenCallConstructor(location, resultType.dyn_cast_or_null<mlir_ts::ClassType>(), newOp, newExpression->typeArguments,
-                                   newExpression->arguments, false, true, genContext);
+
+            // evaluate constructor
+            auto funcValueRef = evaluateProperty(newOp, CONSTRUCTOR_NAME, genContext);
+            auto funcType = getParamsTupleTypeFromFuncRef(funcValueRef);
+
+            SmallVector<mlir::Value, 4> operands;
+            if (mlir::failed(mlirGen(newExpression->arguments, operands, funcType, genContext)))
+            {
+                if (!genContext.allowPartialResolve)
+                {
+                    emitError(location) << "Call Method: can't resolve values of all parameters";
+                }
+
+                return mlir::Value();
+            }
+
+            mlirGenCallConstructor(location, resultType.dyn_cast_or_null<mlir_ts::ClassType>(), newOp, operands, false, true, genContext);
             return newOp;
         }
         else if (typeExpression == SyntaxKind::ElementAccessExpression)
