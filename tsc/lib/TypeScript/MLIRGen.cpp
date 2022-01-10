@@ -5266,7 +5266,7 @@ class MLIRGenImpl
         auto funcType = getParamsTupleTypeFromFuncRef(funcResult.getType());
 
         SmallVector<mlir::Value, 4> operands;
-        if (mlir::failed(mlirGen(callExpression->arguments, operands, funcType, genContext)))
+        if (mlir::failed(mlirGenOperands(callExpression->arguments, operands, funcType, genContext)))
         {
             if (!genContext.allowPartialResolve)
             {
@@ -5276,19 +5276,17 @@ class MLIRGenImpl
             return mlir::Value();
         }
 
+        return mlirGenCallExpression(location, funcResult, callExpression->typeArguments, operands, genContext);
+    }
+
+    mlir::Value mlirGenCallExpression(mlir::Location location, mlir::Value funcResult, NodeArray<TypeNode> typeArguments,
+                                      SmallVector<mlir::Value, 4> &operands, const GenContext &genContext)
+    {
         // get function ref.
-        auto specializedFuncRefValue = mlirGenSpecialized(location, funcResult, callExpression->typeArguments, genContext);
+        auto specializedFuncRefValue = mlirGenSpecialized(location, funcResult, typeArguments, genContext);
         if (!specializedFuncRefValue)
         {
-            if (genContext.allowPartialResolve)
-            {
-                return mlir::Value();
-            }
-
-            emitError(location, "call expression is empty");
-
-            assert(false);
-            return mlir::Value();
+            specializedFuncRefValue = funcResult;
         }
 
         auto attrName = StringRef(IDENTIFIER_ATTR_NAME);
@@ -5327,7 +5325,7 @@ class MLIRGenImpl
             auto innerFuncRef = builder.create<mlir_ts::ValueOp>(location, optFuncRef.getElementType(), specializedFuncRefValue);
 
             auto hasReturn = false;
-            auto value = mlirGenCall(location, innerFuncRef, callExpression->arguments, operands, hasReturn, genContext);
+            auto value = mlirGenCall(location, innerFuncRef, operands, hasReturn, genContext);
             if (hasReturn)
             {
                 auto optValue = builder.create<mlir_ts::CreateOptionalOp>(location, getOptionalType(value.getType()), value);
@@ -5354,7 +5352,7 @@ class MLIRGenImpl
         }
 
         auto hasReturn = false;
-        auto value = mlirGenCall(location, specializedFuncRefValue, callExpression->arguments, operands, hasReturn, genContext);
+        auto value = mlirGenCall(location, specializedFuncRefValue, operands, hasReturn, genContext);
         if (value)
         {
             return value;
@@ -5386,7 +5384,10 @@ class MLIRGenImpl
             .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { f(calledFuncType); })
             .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { f(calledFuncType); })
             .Case<mlir::NoneType>([&](auto calledFuncType) { returnType = builder.getNoneType(); })
-            .Default([&](auto type) { llvm_unreachable("not implemented"); });
+            .Default([&](auto type) {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! getReturnTypeFromFuncRef is not implemented for " << type << "\n";);
+                llvm_unreachable("not implemented");
+            });
 
         return returnType;
     }
@@ -5403,7 +5404,10 @@ class MLIRGenImpl
             .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { paramType = f(calledFuncType); })
             .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { paramType = f(calledFuncType); })
             .Case<mlir::NoneType>([&](auto calledFuncType) { paramType = builder.getNoneType(); })
-            .Default([&](auto type) { llvm_unreachable("not implemented"); });
+            .Default([&](auto type) {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! getFirstParamFromFuncRef is not implemented for " << type << "\n";);
+                paramType = builder.getNoneType();
+            });
 
         return paramType;
     }
@@ -5430,7 +5434,7 @@ class MLIRGenImpl
             .Case<mlir::NoneType>([&](auto calledFuncType) { paramsType = builder.getNoneType(); })
             .Default([&](auto type) {
                 LLVM_DEBUG(llvm::dbgs() << "\n!! getParamsTupleTypeFromFuncRef is not implemented for " << type << "\n";);
-                llvm_unreachable("not implemented");
+                paramsType = builder.getNoneType();
             });
 
         return paramsType;
@@ -5463,8 +5467,8 @@ class MLIRGenImpl
         return paramsType;
     }
 
-    mlir::Value mlirGenCall(mlir::Location location, mlir::Value funcRefValue, NodeArray<Expression> argumentsContext,
-                            SmallVector<mlir::Value, 4> &operands, bool &hasReturn, const GenContext &genContext)
+    mlir::Value mlirGenCall(mlir::Location location, mlir::Value funcRefValue, SmallVector<mlir::Value, 4> &operands, bool &hasReturn,
+                            const GenContext &genContext)
     {
         mlir::Value value;
         hasReturn = false;
@@ -5606,8 +5610,8 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirGen(NodeArray<Expression> arguments, SmallVector<mlir::Value, 4> &operands, mlir::Type funcType,
-                                const GenContext &genContext)
+    mlir::LogicalResult mlirGenOperands(NodeArray<Expression> arguments, SmallVector<mlir::Value, 4> &operands, mlir::Type funcType,
+                                        const GenContext &genContext)
     {
         mlir_ts::TupleType tupleTypeWithFuncArgs;
         auto hasType = !isNoneType(funcType);
@@ -5721,22 +5725,11 @@ class MLIRGenImpl
             return mlir::success();
         }
 
-        // adding call of ctor
-        NodeFactory nf(NodeFactoryFlags::None);
-
-        // to remove temp var .ctor after call
-        SymbolTableScopeT varScope(symbolTable);
-
         auto effectiveThisValue = thisValue;
         if (castThisValueToClass)
         {
             effectiveThisValue = cast(location, classInfo->classType, thisValue, genContext);
         }
-
-        auto varDecl = std::make_shared<VariableDeclarationDOM>(CONSTRUCTOR_TEMPVAR_NAME, classInfo->classType, location);
-        declare(varDecl, effectiveThisValue, genContext);
-
-        auto thisToken = nf.createIdentifier(S(CONSTRUCTOR_TEMPVAR_NAME));
 
         // set virtual table
         if (setVTable && classInfo->getHasVirtualTable())
@@ -5765,41 +5758,13 @@ class MLIRGenImpl
             }
 
             builder.create<mlir_ts::StoreOp>(location, vtableValue, vtableRefVal);
-
-            /*
-            auto _vtable_name = nf.createIdentifier(S(VTABLE_NAME));
-            auto propAccess = nf.createPropertyAccessExpression(thisToken, _vtable_name);
-
-            // set temp vtable
-            auto fullClassVTableFieldName = concat(classInfo->fullName, VTABLE_NAME);
-            auto vtableAddress = resolveFullNameIdentifier(location, fullClassVTableFieldName, true, genContext);
-            if (vtableAddress)
-            {
-                auto anyTypeValue = cast(location, getOpaqueType(), vtableAddress, genContext);
-                auto varDecl = std::make_shared<VariableDeclarationDOM>(VTABLE_NAME, anyTypeValue.getType(), location);
-                declare(varDecl, anyTypeValue);
-
-                // save vtable value
-                auto setPropValue = nf.createBinaryExpression(propAccess, nf.createToken(SyntaxKind::EqualsToken), _vtable_name);
-
-                mlirGen(setPropValue, genContext);
-            }
-            else if (classInfo->hasConstructor)
-            {
-                // TODO: check if you are not creating useless code when VTABLE is not in static class
-                theModule.emitError("class does not have virtual table but has constructor. Class: ") << classInfo->fullName;
-                return mlir::failure();
-            }
-            */
         }
 
         if (classInfo->getHasConstructor())
         {
-            auto propAccess = nf.createPropertyAccessExpression(thisToken, nf.createIdentifier(S(CONSTRUCTOR_NAME)));
-            // TODO: finish it
-            // auto callExpr = nf.createCallExpression(propAccess, typeArguments, arguments);
-
-            // auto callCtorValue = mlirGen(callExpr, genContext);
+            auto propAccess = mlirGenPropertyAccessExpression(location, effectiveThisValue, CONSTRUCTOR_NAME, false, genContext);
+            bool hasReturn;
+            mlirGenCall(location, propAccess, operands, hasReturn, genContext);
         }
 
         return mlir::success();
@@ -5834,11 +5799,15 @@ class MLIRGenImpl
             auto newOp = builder.create<mlir_ts::NewOp>(location, resultType, builder.getBoolAttr(false));
 
             // evaluate constructor
+            mlir::Type funcType;
             auto funcValueRef = evaluateProperty(newOp, CONSTRUCTOR_NAME, genContext);
-            auto funcType = getParamsTupleTypeFromFuncRef(funcValueRef);
+            if (funcValueRef)
+            {
+                funcType = getParamsTupleTypeFromFuncRef(funcValueRef);
+            }
 
             SmallVector<mlir::Value, 4> operands;
-            if (mlir::failed(mlirGen(newExpression->arguments, operands, funcType, genContext)))
+            if (mlir::failed(mlirGenOperands(newExpression->arguments, operands, funcType, genContext)))
             {
                 if (!genContext.allowPartialResolve)
                 {
