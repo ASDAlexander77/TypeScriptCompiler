@@ -5247,9 +5247,6 @@ class MLIRGenImpl
         auto callExpr = callExpression->expression.as<Expression>();
 
         auto funcResult = mlirGen(callExpr, genContext);
-
-        LLVM_DEBUG(llvm::dbgs() << "\n!! evaluate function: " << funcResult << "\n";);
-
         if (!funcResult)
         {
             if (genContext.allowPartialResolve)
@@ -5262,6 +5259,8 @@ class MLIRGenImpl
             assert(false);
             return mlir::Value();
         }
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! evaluate function: " << funcResult << "\n";);
 
         SmallVector<mlir::Value, 4> operands;
         if (mlir::failed(mlirGenOperands(callExpression->arguments, operands, funcResult.getType(), genContext)))
@@ -5414,6 +5413,10 @@ class MLIRGenImpl
     mlir::Type getParamsTupleTypeFromFuncRef(mlir::Type funcType)
     {
         mlir::Type paramsType;
+        if (!funcType)
+        {
+            return paramsType;
+        }
 
         auto f = [&](auto calledFuncType) {
             SmallVector<mlir_ts::FieldInfo> fieldInfos;
@@ -5631,10 +5634,11 @@ class MLIRGenImpl
         auto lastArgIndex = operands.size() - 1;
         auto isVarArg = false;
         mlir::Type varArgType;
-        auto hasType = !isNoneType(funcType);
-        if (hasType)
+        auto hasType = false;
+        auto tupleParamsType = getParamsTupleTypeFromFuncRef(funcType);
+        if (!isNoneType(tupleParamsType))
         {
-            auto tupleParamsType = getParamsTupleTypeFromFuncRef(funcType);
+            hasType = true;
             tupleTypeWithFuncArgs = tupleParamsType.cast<mlir_ts::TupleType>();
             lastArgIndex = tupleTypeWithFuncArgs.getFields().size() - 1;
             isVarArg = getVarArgFromFuncRef(funcType);
@@ -5794,8 +5798,15 @@ class MLIRGenImpl
         if (classInfo->getHasConstructor())
         {
             auto propAccess = mlirGenPropertyAccessExpression(location, effectiveThisValue, CONSTRUCTOR_NAME, false, genContext);
-            bool hasReturn;
-            mlirGenCall(location, propAccess, operands, hasReturn, genContext);
+            if (propAccess)
+            {
+                bool hasReturn;
+                mlirGenCall(location, propAccess, operands, hasReturn, genContext);
+            }
+            else if (!genContext.allowPartialResolve)
+            {
+                emitError(location) << "Call Constructor: can't find constructor";
+            }
         }
 
         return mlir::success();
