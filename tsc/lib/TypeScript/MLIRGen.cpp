@@ -5263,10 +5263,8 @@ class MLIRGenImpl
             return mlir::Value();
         }
 
-        auto funcType = getParamsTupleTypeFromFuncRef(funcResult.getType());
-
         SmallVector<mlir::Value, 4> operands;
-        if (mlir::failed(mlirGenOperands(callExpression->arguments, operands, funcType, genContext)))
+        if (mlir::failed(mlirGenOperands(callExpression->arguments, operands, funcResult.getType(), genContext)))
         {
             if (!genContext.allowPartialResolve)
             {
@@ -5438,6 +5436,22 @@ class MLIRGenImpl
             });
 
         return paramsType;
+    }
+
+    bool getVarArgFromFuncRef(mlir::Type funcType)
+    {
+        bool isVarArg = false;
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! getVarArgFromFuncRef for " << funcType << "\n";);
+
+        TypeSwitch<mlir::Type>(funcType)
+            .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { isVarArg = calledFuncType.isVarArg(); })
+            .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { isVarArg = calledFuncType.isVarArg(); })
+            .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { isVarArg = calledFuncType.isVarArg(); })
+            .Case<mlir::NoneType>([&](auto calledFuncType) {})
+            .Default([&](auto type) { LLVM_DEBUG(llvm::dbgs() << "\n!! getVarArgFromFuncRef is not implemented for " << type << "\n";); });
+
+        return isVarArg;
     }
 
     // TODO: rename and put in helper class
@@ -5614,10 +5628,20 @@ class MLIRGenImpl
                                         const GenContext &genContext)
     {
         mlir_ts::TupleType tupleTypeWithFuncArgs;
+        auto lastArgIndex = operands.size() - 1;
+        auto isVarArg = false;
+        mlir::Type varArgType;
         auto hasType = !isNoneType(funcType);
         if (hasType)
         {
-            tupleTypeWithFuncArgs = funcType.dyn_cast<mlir_ts::TupleType>();
+            auto tupleParamsType = getParamsTupleTypeFromFuncRef(funcType);
+            tupleTypeWithFuncArgs = tupleParamsType.cast<mlir_ts::TupleType>();
+            lastArgIndex = tupleTypeWithFuncArgs.getFields().size() - 1;
+            isVarArg = getVarArgFromFuncRef(funcType);
+            if (isVarArg)
+            {
+                varArgType = tupleTypeWithFuncArgs.getFields().back().type.cast<mlir_ts::ArrayType>().getElementType();
+            }
         }
 
         auto i = 0;
@@ -5626,7 +5650,14 @@ class MLIRGenImpl
             GenContext argGenContext(genContext);
             if (hasType)
             {
-                argGenContext.argTypeDestFuncType = tupleTypeWithFuncArgs.getFieldInfo(i).type;
+                if (isVarArg && i >= lastArgIndex)
+                {
+                    argGenContext.argTypeDestFuncType = varArgType;
+                }
+                else
+                {
+                    argGenContext.argTypeDestFuncType = tupleTypeWithFuncArgs.getFieldInfo(i).type;
+                }
             }
 
             auto value = mlirGen(expression, argGenContext);
@@ -5799,15 +5830,11 @@ class MLIRGenImpl
             auto newOp = builder.create<mlir_ts::NewOp>(location, resultType, builder.getBoolAttr(false));
 
             // evaluate constructor
-            mlir::Type funcType;
+            mlir::Type tupleParamsType;
             auto funcValueRef = evaluateProperty(newOp, CONSTRUCTOR_NAME, genContext);
-            if (funcValueRef)
-            {
-                funcType = getParamsTupleTypeFromFuncRef(funcValueRef);
-            }
 
             SmallVector<mlir::Value, 4> operands;
-            if (mlir::failed(mlirGenOperands(newExpression->arguments, operands, funcType, genContext)))
+            if (mlir::failed(mlirGenOperands(newExpression->arguments, operands, funcValueRef, genContext)))
             {
                 if (!genContext.allowPartialResolve)
                 {
