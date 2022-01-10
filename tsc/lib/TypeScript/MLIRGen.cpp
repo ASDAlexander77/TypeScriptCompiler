@@ -5532,7 +5532,7 @@ class MLIRGenImpl
             operands.insert(operands.begin(), thisValue);
         }
 
-        if (mlir::failed(mlirGenAdjustOperandTypes(operands, calledFuncType.getInputs(), calledFuncType.isVarArg(), genContext)))
+        if (mlir::failed(mlirGenCallOperands(location, operands, calledFuncType.getInputs(), calledFuncType.isVarArg(), genContext)))
         {
             emitError(location) << "Call Method: can't resolve values of all parameters";
         }
@@ -5575,8 +5575,8 @@ class MLIRGenImpl
         return value;
     }
 
-    mlir::LogicalResult mlirGenCallOperands(mlir::Location location, mlir::ArrayRef<mlir::Type> argFuncTypes,
-                                            SmallVector<mlir::Value, 4> &operands, bool isVarArg, const GenContext &genContext)
+    mlir::LogicalResult mlirGenCallOperands(mlir::Location location, SmallVector<mlir::Value, 4> &operands,
+                                            mlir::ArrayRef<mlir::Type> argFuncTypes, bool isVarArg, const GenContext &genContext)
     {
         int opArgsCount = operands.size();
         int funcArgsCount = argFuncTypes.size();
