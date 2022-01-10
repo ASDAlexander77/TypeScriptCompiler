@@ -674,7 +674,7 @@ def TypeScript_ClassStorage : TypeScript_Type<"ClassStorage"> {
   let parameters = (ins "FlatSymbolRefAttr":$name);
 
   let printer = [{
-    $_printer << "class_storage<" <<  getName() << ",";
+    $_printer << "class_storage<" << getName() << ",";
     for (size_t i=0, e = getFields().size(); i < e; i++) {
       const auto& field = getFields()[i];
       if (field.id) 
@@ -1247,6 +1247,25 @@ def TypeScript_Union : TypeScript_Type<"Union"> {
 
 def TypeScript_Generic : TypeScript_Type<"Generic"> {
     let mnemonic = "Generic";
+}
+
+def TypeScript_NamedGeneric : TypeScript_Type<"NamedGeneric"> {
+    let mnemonic = "named_generic";
+
+    let parameters = (ins "FlatSymbolRefAttr":$name);
+
+    let printer = [{
+        $_printer << getImpl()->name;
+    }];
+
+    let parser = [{
+        Type elementType;
+        if ($_parser.parseLess()) return Type();
+        Attribute name;
+        if ($_parser.parseAttribute(name)) return Type();
+        if ($_parser.parseGreater()) return Type();
+        return get($_ctxt, name.dyn_cast_or_null<FlatSymbolRefAttr>());
+    }];  
 }
 
 def TypeScript_IsConstTupleRefType : CPred<"$_self.isa<::mlir::typescript::RefType>() && $_self.cast<::mlir::typescript::RefType>().getElementType().isa<::mlir::typescript::ConstTupleType>()">;

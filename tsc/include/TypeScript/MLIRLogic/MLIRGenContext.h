@@ -136,6 +136,7 @@ struct GenContext
     NodeArray<Statement> generatedStatements;
     llvm::StringMap<mlir::Type> typeAliasMap;
     llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> typeParamsWithArgs;
+    ArrayRef<mlir::Value> callOperands;
     mlir::SmallVector<std::pair<mlir::Location, std::string>> *unresolved;
     int *state;
 };
