@@ -9870,9 +9870,9 @@ class MLIRGenImpl
             auto name = MLIRHelper::getName(typeReferenceAST->typeName);
 
             // try to resolve from type alias first
-            if (getGenericTypeAliasMap().count(name))
+            auto genericTypeAliasInfo = lookupGenericTypeAliasMap(name);
+            if (!is_default(genericTypeAliasInfo))
             {
-                auto genericTypeAliasInfo = getGenericTypeAliasMap().lookup(name);
                 GenContext genericTypeGenContext(genContext);
 
                 auto typeParams = std::get<0>(genericTypeAliasInfo);
@@ -9888,18 +9888,18 @@ class MLIRGenImpl
                 return newType;
             }
 
-            if (getGenericClassesMap().count(name))
+            auto genericClassTypeInfo = lookupGenericClassesMap(name);
+            if (genericClassTypeInfo)
             {
-                auto genericClassTypeInfo = getGenericClassesMap().lookup(name);
                 auto classType = genericClassTypeInfo->classType;
                 auto specType =
                     instantiateSpecializedClassType(loc(typeReferenceAST), classType, typeReferenceAST->typeArguments, genContext);
                 return specType;
             }
 
-            if (getGenericInterfacesMap().count(name))
+            auto genericInterfaceTypeInfo = lookupGenericInterfacesMap(name);
+            if (genericInterfaceTypeInfo)
             {
-                auto genericInterfaceTypeInfo = getGenericInterfacesMap().lookup(name);
                 auto interfaceType = genericInterfaceTypeInfo->interfaceType;
                 auto specType =
                     instantiateSpecializedInterfaceType(loc(typeReferenceAST), interfaceType, typeReferenceAST->typeArguments, genContext);
@@ -11524,6 +11524,11 @@ class MLIRGenImpl
         return currentNamespace->genericClassesMap;
     }
 
+    auto lookupGenericClassesMap(StringRef name) -> GenericClassInfo::TypePtr
+    {
+        lookupLogic(genericClassesMap);
+    }
+
     auto getInterfacesMap() -> llvm::StringMap<InterfaceInfo::TypePtr> &
     {
         return currentNamespace->interfacesMap;
@@ -11532,6 +11537,11 @@ class MLIRGenImpl
     auto getGenericInterfacesMap() -> llvm::StringMap<GenericInterfaceInfo::TypePtr> &
     {
         return currentNamespace->genericInterfacesMap;
+    }
+
+    auto lookupGenericInterfacesMap(StringRef name) -> GenericInterfaceInfo::TypePtr
+    {
+        lookupLogic(genericInterfacesMap);
     }
 
     auto getEnumsMap() -> llvm::StringMap<std::pair<mlir::Type, mlir::DictionaryAttr>> &
@@ -11547,6 +11557,16 @@ class MLIRGenImpl
     auto getGenericTypeAliasMap() -> llvm::StringMap<std::pair<llvm::SmallVector<TypeParameterDOM::TypePtr>, TypeNode>> &
     {
         return currentNamespace->genericTypeAliasMap;
+    }
+
+    template <> bool is_default(std::pair<llvm::SmallVector<TypeParameterDOM::TypePtr>, TypeNode> &t)
+    {
+        return std::get<0>(t).size() == 0;
+    }
+
+    auto lookupGenericTypeAliasMap(StringRef name) -> std::pair<llvm::SmallVector<TypeParameterDOM::TypePtr>, TypeNode>
+    {
+        lookupLogic(genericTypeAliasMap);
     }
 
     auto getImportEqualsMap() -> llvm::StringMap<mlir::StringRef> &
