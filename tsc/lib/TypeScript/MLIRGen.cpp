@@ -326,13 +326,8 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirGenNamespace(ModuleDeclaration moduleDeclarationAST, const GenContext &genContext)
+    mlir::LogicalResult registerNamespace(llvm::StringRef namePtr, bool isFunctionNamespace = false)
     {
-        auto location = loc(moduleDeclarationAST);
-
-        auto namespaceName = MLIRHelper::getName(moduleDeclarationAST->name, stringAllocator);
-        auto namePtr = namespaceName;
-
         auto savedNamespace = currentNamespace;
 
         auto fullNamePtr = getFullNamespaceName(namePtr);
@@ -344,6 +339,8 @@ class MLIRGenImpl
             newNamespacePtr->name = namePtr;
             newNamespacePtr->fullName = fullNamePtr;
             newNamespacePtr->namespaceType = getNamespaceType(fullNamePtr);
+            newNamespacePtr->parentNamespace = currentNamespace;
+            newNamespacePtr->isFunctionNamespace = isFunctionNamespace;
             namespacesMap.insert({namePtr, newNamespacePtr});
             fullNamespacesMap.insert(fullNamePtr, newNamespacePtr);
             currentNamespace = newNamespacePtr;
@@ -353,10 +350,21 @@ class MLIRGenImpl
             currentNamespace = it->getValue();
         }
 
-        GenContext moduleGenContext{};
+        return mlir::success();
+    }
+
+    mlir::LogicalResult mlirGenNamespace(ModuleDeclaration moduleDeclarationAST, const GenContext &genContext)
+    {
+        auto location = loc(moduleDeclarationAST);
+
+        auto namespaceName = MLIRHelper::getName(moduleDeclarationAST->name, stringAllocator);
+        auto namePtr = namespaceName;
+
+        registerNamespace(namePtr);
+
         auto result = mlirGenBody(moduleDeclarationAST->body, genContext);
 
-        currentNamespace = savedNamespace;
+        currentNamespace = currentNamespace->parentNamespace;
 
         return mlir::success();
     }
@@ -1634,6 +1642,10 @@ class MLIRGenImpl
         {
             objectOwnerName = getNameWithArguments(signatureDeclarationBaseAST->parent.as<InterfaceDeclaration>(), genContext);
         }
+        else if (genContext.funcOp)
+        {
+            objectOwnerName = const_cast<GenContext &>(genContext).funcOp.sym_name().str();
+        }
 
         if (signatureDeclarationBaseAST == SyntaxKind::MethodDeclaration)
         {
@@ -1677,6 +1689,13 @@ class MLIRGenImpl
         }
 
         auto name = fullName;
+        // nested functions
+        if ((signatureDeclarationBaseAST == SyntaxKind::FunctionDeclaration || signatureDeclarationBaseAST == SyntaxKind::ArrowFunction) &&
+            objectOwnerName.length() > 0)
+        {
+            // fullName = objectOwnerName + "." + fullName;
+        }
+
         if (fullName.empty())
         {
             // auto calculate name
@@ -1684,7 +1703,7 @@ class MLIRGenImpl
         }
         else
         {
-            fullName = getFullNamespaceName(name).str();
+            fullName = getFullNamespaceName(fullName).str();
         }
 
         return std::make_tuple(fullName, name);
@@ -2208,8 +2227,6 @@ class MLIRGenImpl
             builder.setInsertionPointToStart(&theModule.body().front());
         }
 
-        SymbolTableScopeT varScope(symbolTable);
-
         auto location = loc(functionLikeDeclarationBaseAST);
 
         auto funcOpWithFuncProto = mlirGenFunctionPrototype(functionLikeDeclarationBaseAST, genContext);
@@ -2237,7 +2254,13 @@ class MLIRGenImpl
             funcGenContext.capturedVars = &it->getValue();
         }
 
-        auto resultFromBody = mlirGenFunctionBody(functionLikeDeclarationBaseAST, funcOp, funcProto, funcGenContext);
+        auto resultFromBody = mlir::failure();
+        {
+            // registerNamespace(funcProto->getNameWithoutNamespace(), true);
+            SymbolTableScopeT varScope(symbolTable);
+            resultFromBody = mlirGenFunctionBody(functionLikeDeclarationBaseAST, funcOp, funcProto, funcGenContext);
+            // currentNamespace = currentNamespace->parentNamespace;
+        }
 
         funcGenContext.cleanState();
 

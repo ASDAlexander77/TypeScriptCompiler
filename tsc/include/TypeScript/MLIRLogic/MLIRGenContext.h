@@ -751,6 +751,10 @@ struct NamespaceInfo
     llvm::StringMap<GenericInterfaceInfo::TypePtr> genericInterfacesMap;
 
     llvm::StringMap<NamespaceInfo::TypePtr> namespacesMap;
+
+    bool isFunctionNamespace;
+
+    NamespaceInfo::TypePtr parentNamespace;
 };
 
 } // namespace
