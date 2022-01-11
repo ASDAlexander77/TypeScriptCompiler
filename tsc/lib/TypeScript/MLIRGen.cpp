@@ -11368,7 +11368,7 @@ class MLIRGenImpl
     {
         if (currentNamespace->fullName.empty())
         {
-            return name;
+            return StringRef(name).copy(stringAllocator);
         }
 
         std::string res;
