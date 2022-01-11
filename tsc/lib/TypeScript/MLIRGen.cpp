@@ -16,6 +16,7 @@
 #include "TypeScript/MLIRLogic/MLIRCodeLogic.h"
 #include "TypeScript/MLIRLogic/MLIRGenContext.h"
 #include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
+#include "TypeScript/MLIRLogic/MLIRNamespaceGuard.h"
 #ifdef WIN_EXCEPTION
 #include "TypeScript/MLIRLogic/MLIRRTTIHelperVCWin32.h"
 #else
@@ -805,9 +806,11 @@ class MLIRGenImpl
     mlir_ts::FuncOp instantiateSpecializedFunctionType(mlir::Location location, StringRef name, NodeArray<TypeNode> typeArguments,
                                                        const GenContext &genContext)
     {
-        if (getGenericFunctionMap().count(name))
+        auto functionGenericTypeInfo = lookupGenericFunctionMap(name);
+        if (functionGenericTypeInfo)
         {
-            auto functionGenericTypeInfo = getGenericFunctionMap().lookup(name);
+            MLIRNamespaceGuard ng(currentNamespace);
+            currentNamespace = functionGenericTypeInfo->elementNamespace;
 
             GenContext genericTypeGenContext(genContext);
             auto typeParams = functionGenericTypeInfo->typeParams;
@@ -883,6 +886,7 @@ class MLIRGenImpl
             return std::get<1>(res);
         }
 
+        emitError(location) << "can't find generic " << name << " function.";
         return mlir_ts::FuncOp();
     }
 
@@ -1870,7 +1874,7 @@ class MLIRGenImpl
         // we need it, when we run rediscovery second time
         if (!funcProto->getHasExtraFields())
         {
-            funcProto->setHasExtraFields(getLocalVarsInThisContextMap().find(funcProto->getName()) != getLocalVarsInThisContextMap().end());
+            funcProto->setHasExtraFields(existLocalVarsInThisContextMap(funcProto->getName()));
         }
 
         auto it = getCaptureVarsMap().find(funcProto->getName());
@@ -2175,12 +2179,12 @@ class MLIRGenImpl
         auto name = MLIRHelper::getName(functionLikeDeclarationBaseAST->name);
         if (!name.empty())
         {
-            auto namePtr = StringRef(name).copy(stringAllocator);
-            if (getGenericFunctionMap().count(namePtr))
+            if (existGenericFunctionMap(name))
             {
                 return mlir::success();
             }
 
+            auto namePtr = StringRef(name).copy(stringAllocator);
             llvm::SmallVector<TypeParameterDOM::TypePtr> typeParameters;
             if (mlir::failed(processTypeParameters(functionLikeDeclarationBaseAST->typeParameters, typeParameters, genContext)))
             {
@@ -2192,6 +2196,7 @@ class MLIRGenImpl
             newGenericFunctionPtr->name = namePtr;
             newGenericFunctionPtr->typeParams = typeParameters;
             newGenericFunctionPtr->functionDeclaration = functionLikeDeclarationBaseAST;
+            newGenericFunctionPtr->elementNamespace = currentNamespace;
 
             getGenericFunctionMap().insert({namePtr, newGenericFunctionPtr});
 
@@ -2221,10 +2226,9 @@ class MLIRGenImpl
         if (isGenericFunction && genContext.typeParamsWithArgs.size() > 0)
         {
             auto functionName = getNameWithArguments(functionLikeDeclarationBaseAST, genContext);
-            auto fn = getFunctionMap().find(functionName);
-            if (fn != getFunctionMap().end() && theModule.lookupSymbol(functionName))
+            auto funcOp = lookupFunctionMap(functionName);
+            if (funcOp && theModule.lookupSymbol(functionName))
             {
-                auto funcOp = fn->getValue();
                 return {mlir::success(), funcOp};
             }
         }
@@ -4904,12 +4908,10 @@ class MLIRGenImpl
                 auto namespaceInfo = getNamespaceByFullName(namespaceType.getName().getValue());
                 assert(namespaceInfo);
 
-                auto saveNamespace = currentNamespace;
+                MLIRNamespaceGuard ng(currentNamespace);
                 currentNamespace = namespaceInfo;
 
                 value = mlirGen(location, name, genContext);
-
-                currentNamespace = saveNamespace;
             })
             .Case<mlir_ts::ClassStorageType>([&](auto classStorageType) {
                 value = cl.TupleNoError(classStorageType);
@@ -7321,27 +7323,27 @@ class MLIRGenImpl
             return value;
         }
 
-        auto saveNamespace = currentNamespace;
-
-        // search in outer namespaces
-        while (currentNamespace->isFunctionNamespace)
         {
-            currentNamespace = currentNamespace->parentNamespace;
+            MLIRNamespaceGuard ng(currentNamespace);
+
+            // search in outer namespaces
+            while (currentNamespace->isFunctionNamespace)
+            {
+                currentNamespace = currentNamespace->parentNamespace;
+                value = resolveIdentifierInNamespace(location, name, genContext);
+                if (value)
+                {
+                    return value;
+                }
+            }
+
+            // search in root namespace
+            currentNamespace = rootNamespace;
             value = resolveIdentifierInNamespace(location, name, genContext);
             if (value)
             {
-                currentNamespace = saveNamespace;
                 return value;
             }
-        }
-
-        // search in root namespace
-        currentNamespace = rootNamespace;
-        value = resolveIdentifierInNamespace(location, name, genContext);
-        currentNamespace = saveNamespace;
-        if (value)
-        {
-            return value;
         }
 
         // try to resolve 'this' if not resolved yet
@@ -11404,6 +11406,47 @@ class MLIRGenImpl
         return namePtr;
     }
 
+    template <typename T> bool is_default(T &t)
+    {
+        return !static_cast<bool>(t);
+    }
+
+#define lookupLogic(S)                                                                                                                     \
+    MLIRNamespaceGuard ng(currentNamespace);                                                                                               \
+    decltype(currentNamespace->S.lookup(name)) res;                                                                                        \
+    do                                                                                                                                     \
+    {                                                                                                                                      \
+        res = currentNamespace->S.lookup(name);                                                                                            \
+        if (!is_default(res) || !currentNamespace->isFunctionNamespace)                                                                    \
+        {                                                                                                                                  \
+            break;                                                                                                                         \
+        }                                                                                                                                  \
+                                                                                                                                           \
+        currentNamespace = currentNamespace->parentNamespace;                                                                              \
+    } while (true);                                                                                                                        \
+                                                                                                                                           \
+    return res;
+
+#define existLogic(S)                                                                                                                      \
+    MLIRNamespaceGuard ng(currentNamespace);                                                                                               \
+    do                                                                                                                                     \
+    {                                                                                                                                      \
+        auto res = currentNamespace->S.count(name);                                                                                        \
+        if (res > 0)                                                                                                                       \
+        {                                                                                                                                  \
+            return true;                                                                                                                   \
+        }                                                                                                                                  \
+                                                                                                                                           \
+        if (!currentNamespace->isFunctionNamespace)                                                                                        \
+        {                                                                                                                                  \
+            return false;                                                                                                                  \
+        }                                                                                                                                  \
+                                                                                                                                           \
+        currentNamespace = currentNamespace->parentNamespace;                                                                              \
+    } while (true);                                                                                                                        \
+                                                                                                                                           \
+    return false;
+
     auto getNamespaceByFullName(StringRef fullName) -> NamespaceInfo::TypePtr
     {
         return fullNamespacesMap.lookup(fullName);
@@ -11419,9 +11462,25 @@ class MLIRGenImpl
         return currentNamespace->functionMap;
     }
 
+    auto lookupFunctionMap(StringRef name) -> mlir_ts::FuncOp
+    {
+        lookupLogic(functionMap);
+    }
+
+    // TODO: all lookup/count should be replaced by GenericFunctionMapLookup
     auto getGenericFunctionMap() -> llvm::StringMap<GenericFunctionInfo::TypePtr> &
     {
         return currentNamespace->genericFunctionMap;
+    }
+
+    auto lookupGenericFunctionMap(StringRef name) -> GenericFunctionInfo::TypePtr
+    {
+        lookupLogic(genericFunctionMap);
+    }
+
+    auto existGenericFunctionMap(StringRef name) -> bool
+    {
+        existLogic(localVarsInThisContextMap);
     }
 
     auto getGlobalsMap() -> llvm::StringMap<VariableDeclarationDOM::TypePtr> &
@@ -11437,6 +11496,21 @@ class MLIRGenImpl
     auto getLocalVarsInThisContextMap() -> llvm::StringMap<llvm::SmallVector<mlir::typescript::FieldInfo>> &
     {
         return currentNamespace->localVarsInThisContextMap;
+    }
+
+    template <typename T> bool is_default(llvm::SmallVector<T> &t)
+    {
+        return t.size() == 0;
+    }
+
+    auto lookupLocalVarsInThisContextMap(StringRef name) -> llvm::SmallVector<mlir::typescript::FieldInfo>
+    {
+        lookupLogic(localVarsInThisContextMap);
+    }
+
+    auto existLocalVarsInThisContextMap(StringRef name) -> bool
+    {
+        existLogic(localVarsInThisContextMap);
     }
 
     auto getClassesMap() -> llvm::StringMap<ClassInfo::TypePtr> &

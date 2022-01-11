@@ -141,6 +141,9 @@ struct GenContext
     int *state;
 };
 
+struct NamespaceInfo;
+using NamespaceInfo_TypePtr = std::shared_ptr<NamespaceInfo>;
+
 struct GenericFunctionInfo
 {
   public:
@@ -151,6 +154,8 @@ struct GenericFunctionInfo
     llvm::SmallVector<TypeParameterDOM::TypePtr> typeParams;
 
     FunctionLikeDeclarationBase functionDeclaration;
+
+    NamespaceInfo_TypePtr elementNamespace;
 
     GenericFunctionInfo()
     {
