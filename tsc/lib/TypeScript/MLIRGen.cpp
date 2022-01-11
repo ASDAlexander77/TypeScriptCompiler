@@ -1256,7 +1256,8 @@ class MLIRGenImpl
                 if (init)
                 {
                     // save value
-                    auto address = builder.create<mlir_ts::AddressOfOp>(location, mlir_ts::RefType::get(type), name, mlir::IntegerAttr());
+                    auto address =
+                        builder.create<mlir_ts::AddressOfOp>(location, mlir_ts::RefType::get(type), effectiveName, mlir::IntegerAttr());
                     builder.create<mlir_ts::StoreOp>(location, init, address);
                 }
             }
