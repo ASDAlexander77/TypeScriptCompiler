@@ -328,8 +328,6 @@ class MLIRGenImpl
 
     mlir::LogicalResult registerNamespace(llvm::StringRef namePtr, bool isFunctionNamespace = false)
     {
-        auto savedNamespace = currentNamespace;
-
         auto fullNamePtr = getFullNamespaceName(namePtr);
         auto &namespacesMap = getNamespaceMap();
         auto it = namespacesMap.find(namePtr);
@@ -342,7 +340,12 @@ class MLIRGenImpl
             newNamespacePtr->parentNamespace = currentNamespace;
             newNamespacePtr->isFunctionNamespace = isFunctionNamespace;
             namespacesMap.insert({namePtr, newNamespacePtr});
-            fullNamespacesMap.insert(fullNamePtr, newNamespacePtr);
+            if (!isFunctionNamespace && !fullNamespacesMap.count(fullNamePtr))
+            {
+                // TODO: full investigation needed, if i register function namespace as full namespace, it will fail running
+                fullNamespacesMap.insert(fullNamePtr, newNamespacePtr);
+            }
+
             currentNamespace = newNamespacePtr;
         }
         else
@@ -350,6 +353,13 @@ class MLIRGenImpl
             currentNamespace = it->getValue();
         }
 
+        return mlir::success();
+    }
+
+    mlir::LogicalResult exitNamespace()
+    {
+        // TODO: it will increase reference count, investigate how to fix it
+        currentNamespace = currentNamespace->parentNamespace;
         return mlir::success();
     }
 
@@ -364,7 +374,7 @@ class MLIRGenImpl
 
         auto result = mlirGenBody(moduleDeclarationAST->body, genContext);
 
-        currentNamespace = currentNamespace->parentNamespace;
+        exitNamespace();
 
         return mlir::success();
     }
@@ -1644,7 +1654,8 @@ class MLIRGenImpl
         }
         else if (genContext.funcOp)
         {
-            objectOwnerName = const_cast<GenContext &>(genContext).funcOp.sym_name().str();
+            auto funcName = const_cast<GenContext &>(genContext).funcOp.sym_name().str();
+            objectOwnerName = funcName;
         }
 
         if (signatureDeclarationBaseAST == SyntaxKind::MethodDeclaration)
@@ -1689,13 +1700,6 @@ class MLIRGenImpl
         }
 
         auto name = fullName;
-        // nested functions
-        if ((signatureDeclarationBaseAST == SyntaxKind::FunctionDeclaration || signatureDeclarationBaseAST == SyntaxKind::ArrowFunction) &&
-            objectOwnerName.length() > 0)
-        {
-            // fullName = objectOwnerName + "." + fullName;
-        }
-
         if (fullName.empty())
         {
             // auto calculate name
@@ -1953,8 +1957,12 @@ class MLIRGenImpl
                 TransformFlags::VarsInObjectContext;
             genContextWithPassResult.unresolved = genContext.unresolved;
 
+            registerNamespace(funcProto->getNameWithoutNamespace(), true);
+
             if (succeeded(mlirGenFunctionBody(functionLikeDeclarationBaseAST, dummyFuncOp, funcProto, genContextWithPassResult)))
             {
+                exitNamespace();
+
                 auto &passResult = genContextWithPassResult.passResult;
                 if (!passResult->functionReturnType && passResult->functionReturnTypeShouldBeProvided)
                 {
@@ -2004,6 +2012,8 @@ class MLIRGenImpl
             }
             else
             {
+                exitNamespace();
+
                 genContextWithPassResult.clean();
                 return mlir::failure();
             }
@@ -2256,10 +2266,12 @@ class MLIRGenImpl
 
         auto resultFromBody = mlir::failure();
         {
-            // registerNamespace(funcProto->getNameWithoutNamespace(), true);
+            registerNamespace(funcProto->getNameWithoutNamespace(), true);
+
             SymbolTableScopeT varScope(symbolTable);
             resultFromBody = mlirGenFunctionBody(functionLikeDeclarationBaseAST, funcOp, funcProto, funcGenContext);
-            // currentNamespace = currentNamespace->parentNamespace;
+
+            exitNamespace();
         }
 
         funcGenContext.cleanState();
@@ -2287,7 +2299,7 @@ class MLIRGenImpl
             getFunctionMap().insert({name, funcOp});
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! reg. func: " << name << " type:" << funcOp.getType() << "\n";);
-            LLVM_DEBUG(llvm::dbgs() << "\n!! reg. func: " << name
+            LLVM_DEBUG(llvm::dbgs() << "\n!! reg. func: " << name << " full name: " << funcProto->getName()
                                     << " num inputs:" << funcOp.getType().cast<mlir_ts::FunctionType>().getNumInputs() << "\n";);
         }
         else
@@ -7309,8 +7321,21 @@ class MLIRGenImpl
             return value;
         }
 
-        // search in root namespace
         auto saveNamespace = currentNamespace;
+
+        // search in outer namespaces
+        while (currentNamespace->isFunctionNamespace)
+        {
+            currentNamespace = currentNamespace->parentNamespace;
+            value = resolveIdentifierInNamespace(location, name, genContext);
+            if (value)
+            {
+                currentNamespace = saveNamespace;
+                return value;
+            }
+        }
+
+        // search in root namespace
         currentNamespace = rootNamespace;
         value = resolveIdentifierInNamespace(location, name, genContext);
         currentNamespace = saveNamespace;
