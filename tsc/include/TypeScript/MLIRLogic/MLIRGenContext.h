@@ -452,6 +452,8 @@ struct GenericInterfaceInfo
 
     InterfaceDeclaration interfaceDeclaration;
 
+    NamespaceInfo_TypePtr elementNamespace;
+
     GenericInterfaceInfo()
     {
     }
@@ -712,6 +714,8 @@ struct GenericClassInfo
     mlir_ts::ClassType classType;
 
     ClassLikeDeclaration classDeclaration;
+
+    NamespaceInfo_TypePtr elementNamespace;
 
     GenericClassInfo()
     {

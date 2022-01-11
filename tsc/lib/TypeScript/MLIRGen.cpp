@@ -897,6 +897,9 @@ class MLIRGenImpl
         auto genericClassInfo = getGenericClassInfoByFullName(fullNameGenericClassTypeName);
         if (genericClassInfo)
         {
+            MLIRNamespaceGuard ng(currentNamespace);
+            currentNamespace = genericClassInfo->elementNamespace;
+
             GenContext genericTypeGenContext(genContext);
             auto typeParams = genericClassInfo->typeParams;
             if (mlir::failed(zipTypeParametersWithArguments(location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs,
@@ -929,6 +932,9 @@ class MLIRGenImpl
         auto genericInterfaceInfo = getGenericInterfaceInfoByFullName(fullNameGenericInterfaceTypeName);
         if (genericInterfaceInfo)
         {
+            MLIRNamespaceGuard ng(currentNamespace);
+            currentNamespace = genericInterfaceInfo->elementNamespace;
+
             GenContext genericTypeGenContext(genContext);
             auto typeParams = genericInterfaceInfo->typeParams;
             if (mlir::failed(zipTypeParametersWithArguments(location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs,
@@ -7608,6 +7614,7 @@ class MLIRGenImpl
             newGenericClassPtr->fullName = fullNamePtr;
             newGenericClassPtr->typeParams = typeParameters;
             newGenericClassPtr->classDeclaration = classDeclarationAST;
+            newGenericClassPtr->elementNamespace = currentNamespace;
 
             mlirGenClassType(newGenericClassPtr);
 
@@ -8965,6 +8972,7 @@ class MLIRGenImpl
             newGenericInterfacePtr->fullName = fullNamePtr;
             newGenericInterfacePtr->typeParams = typeParameters;
             newGenericInterfacePtr->interfaceDeclaration = interfaceDeclarationAST;
+            newGenericInterfacePtr->elementNamespace = currentNamespace;
 
             mlirGenInterfaceType(newGenericInterfacePtr);
 
