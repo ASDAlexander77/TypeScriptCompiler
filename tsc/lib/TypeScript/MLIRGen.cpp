@@ -894,10 +894,9 @@ class MLIRGenImpl
                                                NodeArray<TypeNode> typeArguments, const GenContext &genContext)
     {
         auto fullNameGenericClassTypeName = genericClassType.getName().getValue();
-        if (hasGenericClassInfoByFullName(fullNameGenericClassTypeName))
+        auto genericClassInfo = getGenericClassInfoByFullName(fullNameGenericClassTypeName);
+        if (genericClassInfo)
         {
-            auto genericClassInfo = getGenericClassInfoByFullName(fullNameGenericClassTypeName);
-
             GenContext genericTypeGenContext(genContext);
             auto typeParams = genericClassInfo->typeParams;
             if (mlir::failed(zipTypeParametersWithArguments(location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs,
@@ -927,10 +926,9 @@ class MLIRGenImpl
                                                    NodeArray<TypeNode> typeArguments, const GenContext &genContext)
     {
         auto fullNameGenericInterfaceTypeName = genericInterfaceType.getName().getValue();
-        if (hasGenericInterfaceInfoByFullName(fullNameGenericInterfaceTypeName))
+        auto genericInterfaceInfo = getGenericInterfaceInfoByFullName(fullNameGenericInterfaceTypeName);
+        if (genericInterfaceInfo)
         {
-            auto genericInterfaceInfo = getGenericInterfaceInfoByFullName(fullNameGenericInterfaceTypeName);
-
             GenContext genericTypeGenContext(genContext);
             auto typeParams = genericInterfaceInfo->typeParams;
             if (mlir::failed(zipTypeParametersWithArguments(location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs,
@@ -7761,6 +7759,7 @@ class MLIRGenImpl
     {
         auto fullSpecializedClassName = getSpecializedClassName(genericClassPtr, genContext);
         auto classInfoType = getClassInfoByFullName(fullSpecializedClassName);
+        assert(classInfoType);
         return classInfoType->classType;
     }
 
@@ -9034,6 +9033,7 @@ class MLIRGenImpl
     {
         auto fullSpecializedInterfaceName = getSpecializedInterfaceName(geneticInterfacePtr, genContext);
         auto interfaceInfoType = getInterfaceInfoByFullName(fullSpecializedInterfaceName);
+        assert(interfaceInfoType);
         return interfaceInfoType->interfaceType;
     }
 
@@ -11579,11 +11579,6 @@ class MLIRGenImpl
         return fullNameClassesMap.lookup(fullName);
     }
 
-    auto hasGenericClassInfoByFullName(StringRef fullName) -> bool
-    {
-        return fullNameGenericClassesMap.count(fullName) > 0;
-    }
-
     auto getGenericClassInfoByFullName(StringRef fullName) -> GenericClassInfo::TypePtr
     {
         return fullNameGenericClassesMap.lookup(fullName);
@@ -11592,11 +11587,6 @@ class MLIRGenImpl
     auto getInterfaceInfoByFullName(StringRef fullName) -> InterfaceInfo::TypePtr
     {
         return fullNameInterfacesMap.lookup(fullName);
-    }
-
-    auto hasGenericInterfaceInfoByFullName(StringRef fullName) -> bool
-    {
-        return fullNameGenericInterfacesMap.count(fullName) > 0;
     }
 
     auto getGenericInterfaceInfoByFullName(StringRef fullName) -> GenericInterfaceInfo::TypePtr
