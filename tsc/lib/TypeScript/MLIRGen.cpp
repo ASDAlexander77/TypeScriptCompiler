@@ -942,6 +942,17 @@ class MLIRGenImpl
                 llvm_unreachable("not implemented");
             }
 
+            LLVM_DEBUG(llvm::dbgs() << "\n!! instantiate specialized function: " << functionGenericTypeInfo->name << " ";
+                       for (auto &typeParam
+                            : genericTypeGenContext.typeParamsWithArgs) llvm::dbgs()
+                       << " param: " << std::get<0>(typeParam.getValue())->getName() << " type: " << std::get<1>(typeParam.getValue());
+                       llvm::dbgs() << "\n";);
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! type alias: "; for (auto &typeAlias
+                                                                 : genericTypeGenContext.typeAliasMap) llvm::dbgs()
+                                                            << " name: " << typeAlias.getKey() << " type: " << typeAlias.getValue();
+                       llvm::dbgs() << "\n";);
+
             // create new instance of interface with TypeArguments
             auto res = mlirGenFunctionLikeDeclaration(functionGenericTypeInfo->functionDeclaration, genericTypeGenContext);
             if (mlir::failed(std::get<0>(res)))
@@ -973,6 +984,17 @@ class MLIRGenImpl
             {
                 return mlir::Type();
             }
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! instantiate specialized class: " << fullNameGenericClassTypeName << " ";
+                       for (auto &typeParam
+                            : genericTypeGenContext.typeParamsWithArgs) llvm::dbgs()
+                       << " param: " << std::get<0>(typeParam.getValue())->getName() << " type: " << std::get<1>(typeParam.getValue());
+                       llvm::dbgs() << "\n";);
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! type alias: "; for (auto &typeAlias
+                                                                 : genericTypeGenContext.typeAliasMap) llvm::dbgs()
+                                                            << " name: " << typeAlias.getKey() << " type: " << typeAlias.getValue();
+                       llvm::dbgs() << "\n";);
 
             // create new instance of interface with TypeArguments
             if (mlir::failed(mlirGen(genericClassInfo->classDeclaration, genericTypeGenContext)))
@@ -1008,6 +1030,17 @@ class MLIRGenImpl
             {
                 return mlir::Type();
             }
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! instantiate specialized interface: " << fullNameGenericInterfaceTypeName << " ";
+                       for (auto &typeParam
+                            : genericTypeGenContext.typeParamsWithArgs) llvm::dbgs()
+                       << " param: " << std::get<0>(typeParam.getValue())->getName() << " type: " << std::get<1>(typeParam.getValue());
+                       llvm::dbgs() << "\n";);
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! type alias: "; for (auto &typeAlias
+                                                                 : genericTypeGenContext.typeAliasMap) llvm::dbgs()
+                                                            << " name: " << typeAlias.getKey() << " type: " << typeAlias.getValue();
+                       llvm::dbgs() << "\n";);
 
             // create new instance of interface with TypeArguments
             if (mlir::failed(mlirGen(genericInterfaceInfo->interfaceDeclaration, genericTypeGenContext)))
