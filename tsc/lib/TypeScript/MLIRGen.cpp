@@ -808,7 +808,7 @@ class MLIRGenImpl
         llvm_unreachable("unknown expression");
     }
 
-    mlir::Type inferType(mlir::StringRef name, mlir::Type templateType, mlir::Type concreteType)
+    std::pair<mlir::Type, mlir::Type> inferType(mlir::Type templateType, mlir::Type concreteType)
     {
         auto currentTemplateType = templateType;
         auto currentType = concreteType;
@@ -817,10 +817,7 @@ class MLIRGenImpl
         {
             if (auto namedGenType = currentTemplateType.dyn_cast<mlir_ts::NamedGenericType>())
             {
-                if (namedGenType.getName().getValue() == name)
-                {
-                    return currentType;
-                }
+                return {namedGenType, currentType};
             }
 
             if (auto tempClass = currentTemplateType.dyn_cast<mlir_ts::ClassType>())
@@ -830,19 +827,26 @@ class MLIRGenImpl
                     auto tempClassInfo = getClassInfoByFullName(tempClass.getName().getValue());
                     auto typeClassInfo = getClassInfoByFullName(typeClass.getName().getValue());
 
-                    auto templateFound = tempClassInfo->typeParamsWithArgs.find(name);
-                    if (templateFound != tempClassInfo->typeParamsWithArgs.end())
+                    auto cont = false;
+                    for (auto &templateParam : tempClassInfo->typeParamsWithArgs)
                     {
+                        auto name = templateParam.getValue().first->getName();
                         auto found = typeClassInfo->typeParamsWithArgs.find(name);
                         if (found != typeClassInfo->typeParamsWithArgs.end())
                         {
-                            // TODO: convert GenericType -> AnyGenericType,  and NamedGenericType -> GenericType, and add 2 type Parameters
-                            // to it Constrain, Default
-                            currentTemplateType = getNamedGenericType(templateFound->getValue().first->getName());
+                            // TODO: convert GenericType -> AnyGenericType,  and NamedGenericType -> GenericType, and add 2 type
+                            // Parameters to it Constrain, Default
+                            currentTemplateType = getNamedGenericType(found->getValue().first->getName());
                             currentType = found->getValue().second;
 
-                            continue;
+                            cont = true;
+                            break;
                         }
+                    }
+
+                    if (cont)
+                    {
+                        continue;
                     }
                 }
             }
@@ -850,7 +854,7 @@ class MLIRGenImpl
             break;
         } while (true);
 
-        return mlir::Type();
+        return {mlir::Type(), mlir::Type()};
     }
 
     mlir_ts::FuncOp instantiateSpecializedFunctionType(mlir::Location location, StringRef name, NodeArray<TypeNode> typeArguments,
@@ -891,23 +895,40 @@ class MLIRGenImpl
                     return mlir_ts::FuncOp();
                 }
 
+                LLVM_DEBUG(llvm::dbgs() << "\n!! func Op type (resolving from operands): " << funcOp.getType() << "\n";);
+
                 // TODO: we have func params.
                 auto index = 0;
                 for (auto argInfo : funcProto->getArgs())
                 {
                     auto type = argInfo->getType();
-                    auto typeParam = typeParams[index];
                     auto op = genContext.callOperands[index++];
 
-                    LLVM_DEBUG(llvm::dbgs() << "\n!! inferring type. Name: " << typeParam->getName() << " template: " << type
-                                            << " value type: " << op.getType() << "\n";);
-
-                    auto inferredType = inferType(typeParam->getName(), type, op.getType());
-                    if (!inferredType)
+                    if (type == op.getType())
                     {
+                        continue;
+                    }
+
+                    LLVM_DEBUG(llvm::dbgs() << "\n!! inferring type. template: " << type << " value type: " << op.getType() << "\n";);
+
+                    auto [templateType, inferredType] = inferType(type, op.getType());
+                    if (!templateType)
+                    {
+                        // no resolve needed, this type without param
                         emitError(location) << "type can't be inferred";
                         return mlir_ts::FuncOp();
                     }
+
+                    // find typeParam
+                    auto typeParamName = templateType.cast<mlir_ts::NamedGenericType>().getName().getValue();
+                    auto found = std::find_if(typeParams.begin(), typeParams.end(),
+                                              [&](auto &paramItem) { return paramItem->getName() == typeParamName; });
+                    if (found == typeParams.end())
+                    {
+                        return mlir_ts::FuncOp();
+                    }
+
+                    auto typeParam = (*found);
 
                     if (mlir::failed(
                             zipTypeParameterWithArgument(location, genericTypeGenContext.typeParamsWithArgs, typeParam, inferredType)))
@@ -5416,6 +5437,11 @@ class MLIRGenImpl
             return mlir::Value();
         }
 
+        LLVM_DEBUG(llvm::dbgs() << "\n!! function ops: "; for (auto o
+                                                               : operands) llvm::dbgs()
+                                                          << " param type: " << o.getType();
+                   llvm::dbgs() << "\n";);
+
         return mlirGenCallExpression(location, funcResult, callExpression->typeArguments, operands, genContext);
     }
 
@@ -7661,7 +7687,7 @@ class MLIRGenImpl
             newGenericClassPtr->classDeclaration = classDeclarationAST;
             newGenericClassPtr->elementNamespace = currentNamespace;
 
-            mlirGenClassType(newGenericClassPtr);
+            mlirGenClassType(newGenericClassPtr, genContext);
 
             getGenericClassesMap().insert({namePtr, newGenericClassPtr});
             fullNameGenericClassesMap.insert(fullNamePtr, newGenericClassPtr);
@@ -7703,7 +7729,10 @@ class MLIRGenImpl
         newClassPtr->processingStorageClass = true;
         newClassPtr->enteredProcessingStorageClass = true;
 
-        mlirGenClassType(newClassPtr);
+        if (mlir::succeeded(mlirGenClassType(newClassPtr, genContext)))
+        {
+            newClassPtr->typeParamsWithArgs = genContext.typeParamsWithArgs;
+        }
 
         if (mlir::failed(mlirGenClassStorageType(location, classDeclarationAST, newClassPtr, genContext)))
         {
@@ -7817,7 +7846,6 @@ class MLIRGenImpl
         auto fullSpecializedClassName = getSpecializedClassName(genericClassPtr, genContext);
         auto classInfoType = getClassInfoByFullName(fullSpecializedClassName);
         assert(classInfoType);
-        classInfoType->typeParamsWithArgs = genContext.typeParamsWithArgs;
         return classInfoType->classType;
     }
 
@@ -7854,7 +7882,7 @@ class MLIRGenImpl
         return newClassPtr;
     }
 
-    template <typename T> mlir::LogicalResult mlirGenClassType(T newClassPtr)
+    template <typename T> mlir::LogicalResult mlirGenClassType(T newClassPtr, const GenContext &genContext)
     {
         if (newClassPtr)
         {
@@ -9025,7 +9053,7 @@ class MLIRGenImpl
             newGenericInterfacePtr->interfaceDeclaration = interfaceDeclarationAST;
             newGenericInterfacePtr->elementNamespace = currentNamespace;
 
-            mlirGenInterfaceType(newGenericInterfacePtr);
+            mlirGenInterfaceType(newGenericInterfacePtr, genContext);
 
             getGenericInterfacesMap().insert({namePtr, newGenericInterfacePtr});
             fullNameGenericInterfacesMap.insert(fullNamePtr, newGenericInterfacePtr);
@@ -9093,7 +9121,6 @@ class MLIRGenImpl
         auto fullSpecializedInterfaceName = getSpecializedInterfaceName(geneticInterfacePtr, genContext);
         auto interfaceInfoType = getInterfaceInfoByFullName(fullSpecializedInterfaceName);
         assert(interfaceInfoType);
-        interfaceInfoType->typeParamsWithArgs = genContext.typeParamsWithArgs;
         return interfaceInfoType->interfaceType;
     }
 
@@ -9130,9 +9157,9 @@ class MLIRGenImpl
             declareInterface = true;
         }
 
-        if (declareInterface)
+        if (declareInterface && mlir::succeeded(mlirGenInterfaceType(newInterfacePtr, genContext)))
         {
-            mlirGenInterfaceType(newInterfacePtr);
+            newInterfacePtr->typeParamsWithArgs = genContext.typeParamsWithArgs;
         }
 
         return newInterfacePtr;
@@ -9246,7 +9273,7 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    template <typename T> mlir::LogicalResult mlirGenInterfaceType(T newInterfacePtr)
+    template <typename T> mlir::LogicalResult mlirGenInterfaceType(T newInterfacePtr, const GenContext &genContext)
     {
         if (newInterfacePtr)
         {
@@ -9801,6 +9828,17 @@ class MLIRGenImpl
 
     mlir::Type getResolveTypeParameter(StringRef typeParamName, const GenContext &genContext)
     {
+        // to build generic type with generic names
+        auto foundAlias = genContext.typeAliasMap.find(typeParamName);
+        if (foundAlias != genContext.typeAliasMap.end())
+        {
+            auto type = (*foundAlias).getValue();
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! type gen. param as alias [" << typeParamName << "] -> [" << type << "]\n";);
+
+            return type;
+        }
+
         auto found = genContext.typeParamsWithArgs.find(typeParamName);
         if (found != genContext.typeParamsWithArgs.end())
         {
