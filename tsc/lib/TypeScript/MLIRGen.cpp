@@ -7647,7 +7647,7 @@ class MLIRGenImpl
         {
             // TODO: investigate why classType is provided already for class
             if ((genContext.allowPartialResolve && newClassPtr->fullyProcessedAtEvaluation) ||
-                (!genContext.allowPartialResolve && newClassPtr->fullyProcessed) || newClassPtr->processingStorageClass)
+                (!genContext.allowPartialResolve && newClassPtr->fullyProcessed) || newClassPtr->enteredProcessingStorageClass)
             {
                 return mlir::success();
             }
@@ -7656,16 +7656,19 @@ class MLIRGenImpl
         auto location = loc(classDeclarationAST);
 
         newClassPtr->processingStorageClass = true;
+        newClassPtr->enteredProcessingStorageClass = true;
 
         mlirGenClassType(newClassPtr);
 
         if (mlir::failed(mlirGenClassStorageType(location, classDeclarationAST, newClassPtr, genContext)))
         {
             newClassPtr->processingStorageClass = false;
+            newClassPtr->enteredProcessingStorageClass = false;
             return mlir::failure();
         }
 
         newClassPtr->processingStorageClass = false;
+        newClassPtr->processedStorageClass = true;
 
         // go to root
         mlir::OpBuilder::InsertPoint savePoint;
@@ -7722,6 +7725,8 @@ class MLIRGenImpl
         {
             builder.restoreInsertionPoint(savePoint);
         }
+
+        newClassPtr->enteredProcessingStorageClass = false;
 
         // if we allow multiple class nodes, do we need to store that ClassLikeDecl. has been processed fully
         if (genContext.allowPartialResolve)

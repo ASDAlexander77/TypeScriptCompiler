@@ -499,10 +499,13 @@ struct ClassInfo
     bool fullyProcessedAtEvaluation;
     bool fullyProcessed;
     bool processingStorageClass;
+    bool processedStorageClass;
+    bool enteredProcessingStorageClass;
 
     ClassInfo()
         : hasConstructor(false), hasInitializers(false), hasStaticConstructor(false), hasStaticInitializers(false), hasVirtualTable(false),
-          isAbstract(false), hasRTTI(false), fullyProcessedAtEvaluation(false), fullyProcessed(false), processingStorageClass(false)
+          isAbstract(false), hasRTTI(false), fullyProcessedAtEvaluation(false), fullyProcessed(false), processingStorageClass(false),
+          processedStorageClass(false), enteredProcessingStorageClass(false)
     {
     }
 
