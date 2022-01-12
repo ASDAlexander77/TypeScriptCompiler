@@ -799,8 +799,58 @@ class MLIRGenImpl
         {
             return mlir::Value();
         }
+        else if (kind == SyntaxKind::ClassExpression)
+        {
+            // TODO: implement it
+            llvm_unreachable("ClassExpression not implemented yet");
+        }
 
         llvm_unreachable("unknown expression");
+    }
+
+    mlir::Type inferType(mlir::StringRef name, mlir::Type templateType, mlir::Type concreteType)
+    {
+        auto currentTemplateType = templateType;
+        auto currentType = concreteType;
+
+        do
+        {
+            if (auto namedGenType = currentTemplateType.dyn_cast<mlir_ts::NamedGenericType>())
+            {
+                if (namedGenType.getName().getValue() == name)
+                {
+                    return currentType;
+                }
+            }
+
+            if (auto tempClass = currentTemplateType.dyn_cast<mlir_ts::ClassType>())
+            {
+                if (auto typeClass = concreteType.dyn_cast<mlir_ts::ClassType>())
+                {
+                    auto tempClassInfo = getClassInfoByFullName(tempClass.getName().getValue());
+                    auto typeClassInfo = getClassInfoByFullName(typeClass.getName().getValue());
+
+                    auto templateFound = tempClassInfo->typeParamsWithArgs.find(name);
+                    if (templateFound != tempClassInfo->typeParamsWithArgs.end())
+                    {
+                        auto found = typeClassInfo->typeParamsWithArgs.find(name);
+                        if (found != typeClassInfo->typeParamsWithArgs.end())
+                        {
+                            // TODO: convert GenericType -> AnyGenericType,  and NamedGenericType -> GenericType, and add 2 type Parameters
+                            // to it Constrain, Default
+                            currentTemplateType = getNamedGenericType(templateFound->getValue().first->getName());
+                            currentType = found->getValue().second;
+
+                            continue;
+                        }
+                    }
+                }
+            }
+
+            break;
+        } while (true);
+
+        return mlir::Type();
     }
 
     mlir_ts::FuncOp instantiateSpecializedFunctionType(mlir::Location location, StringRef name, NodeArray<TypeNode> typeArguments,
@@ -849,23 +899,18 @@ class MLIRGenImpl
                     auto typeParam = typeParams[index];
                     auto op = genContext.callOperands[index++];
 
-                    if (auto namedGenericType = type.dyn_cast<mlir_ts::NamedGenericType>())
-                    {
-                        if (namedGenericType.getName().getValue() != typeParam->getName())
-                        {
-                            emitError(location) << "generic parameter names mismatch.";
-                            return mlir_ts::FuncOp();
-                        }
-                    }
-                    else
-                    {
-                        llvm_unreachable("not implemented yet");
-                    }
+                    LLVM_DEBUG(llvm::dbgs() << "\n!! inferring type. Name: " << typeParam->getName() << " template: " << type
+                                            << " value type: " << op.getType() << "\n";);
 
-                    // TODO: if type in generic is complex such Array<T>. finish logic to unwrap T and assing it to unwrapped operand type
+                    auto inferredType = inferType(typeParam->getName(), type, op.getType());
+                    if (!inferredType)
+                    {
+                        emitError(location) << "type can't be inferred";
+                        return mlir_ts::FuncOp();
+                    }
 
                     if (mlir::failed(
-                            zipTypeParameterWithArgument(location, genericTypeGenContext.typeParamsWithArgs, typeParam, op.getType())))
+                            zipTypeParameterWithArgument(location, genericTypeGenContext.typeParamsWithArgs, typeParam, inferredType)))
                     {
                         return mlir_ts::FuncOp();
                     }
@@ -7772,6 +7817,7 @@ class MLIRGenImpl
         auto fullSpecializedClassName = getSpecializedClassName(genericClassPtr, genContext);
         auto classInfoType = getClassInfoByFullName(fullSpecializedClassName);
         assert(classInfoType);
+        classInfoType->typeParamsWithArgs = genContext.typeParamsWithArgs;
         return classInfoType->classType;
     }
 
@@ -9047,6 +9093,7 @@ class MLIRGenImpl
         auto fullSpecializedInterfaceName = getSpecializedInterfaceName(geneticInterfacePtr, genContext);
         auto interfaceInfoType = getInterfaceInfoByFullName(fullSpecializedInterfaceName);
         assert(interfaceInfoType);
+        interfaceInfoType->typeParamsWithArgs = genContext.typeParamsWithArgs;
         return interfaceInfoType->interfaceType;
     }
 
@@ -11572,7 +11619,7 @@ class MLIRGenImpl
         return currentNamespace->genericTypeAliasMap;
     }
 
-    template <> bool is_default(std::pair<llvm::SmallVector<TypeParameterDOM::TypePtr>, TypeNode> &t)
+    bool is_default(std::pair<llvm::SmallVector<TypeParameterDOM::TypePtr>, TypeNode> &t)
     {
         return std::get<0>(t).size() == 0;
     }

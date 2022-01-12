@@ -261,6 +261,8 @@ struct InterfaceInfo
 
     llvm::SmallVector<InterfaceMethodInfo> methods;
 
+    llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> typeParamsWithArgs;
+
     InterfaceInfo()
     {
     }
@@ -488,6 +490,8 @@ struct ClassInfo
     llvm::SmallVector<AccessorInfo> accessors;
 
     NodeArray<ClassElement> extraMembers;
+
+    llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> typeParamsWithArgs;
 
     bool hasConstructor;
     bool hasInitializers;
