@@ -820,6 +820,7 @@ class MLIRGenImpl
                 return {namedGenType, currentType};
             }
 
+            // class -> class
             if (auto tempClass = currentTemplateType.dyn_cast<mlir_ts::ClassType>())
             {
                 if (auto typeClass = concreteType.dyn_cast<mlir_ts::ClassType>())
@@ -873,6 +874,28 @@ class MLIRGenImpl
                             continue;
                         }
                     }
+                }
+            }
+
+            // array -> array
+            if (auto tempArray = currentTemplateType.dyn_cast<mlir_ts::ArrayType>())
+            {
+                if (auto typeArray = concreteType.dyn_cast<mlir_ts::ArrayType>())
+                {
+                    currentTemplateType = tempArray.getElementType();
+                    currentType = typeArray.getElementType();
+                    continue;
+                }
+            }
+
+            // optional -> optional
+            if (auto tempOpt = currentTemplateType.dyn_cast<mlir_ts::OptionalType>())
+            {
+                if (auto typeOpt = concreteType.dyn_cast<mlir_ts::OptionalType>())
+                {
+                    currentTemplateType = tempOpt.getElementType();
+                    currentType = typeOpt.getElementType();
+                    continue;
                 }
             }
 
