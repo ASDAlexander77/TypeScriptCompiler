@@ -824,29 +824,54 @@ class MLIRGenImpl
             {
                 if (auto typeClass = concreteType.dyn_cast<mlir_ts::ClassType>())
                 {
-                    auto tempClassInfo = getClassInfoByFullName(tempClass.getName().getValue());
                     auto typeClassInfo = getClassInfoByFullName(typeClass.getName().getValue());
-
-                    auto cont = false;
-                    for (auto &templateParam : tempClassInfo->typeParamsWithArgs)
+                    if (auto tempClassInfo = getClassInfoByFullName(tempClass.getName().getValue()))
                     {
-                        auto name = templateParam.getValue().first->getName();
-                        auto found = typeClassInfo->typeParamsWithArgs.find(name);
-                        if (found != typeClassInfo->typeParamsWithArgs.end())
+                        auto cont = false;
+                        for (auto &templateParam : tempClassInfo->typeParamsWithArgs)
                         {
-                            // TODO: convert GenericType -> AnyGenericType,  and NamedGenericType -> GenericType, and add 2 type
-                            // Parameters to it Constrain, Default
-                            currentTemplateType = getNamedGenericType(found->getValue().first->getName());
-                            currentType = found->getValue().second;
+                            auto name = templateParam.getValue().first->getName();
+                            auto found = typeClassInfo->typeParamsWithArgs.find(name);
+                            if (found != typeClassInfo->typeParamsWithArgs.end())
+                            {
+                                // TODO: convert GenericType -> AnyGenericType,  and NamedGenericType -> GenericType, and add 2 type
+                                // Parameters to it Constrain, Default
+                                currentTemplateType = getNamedGenericType(found->getValue().first->getName());
+                                currentType = found->getValue().second;
 
-                            cont = true;
-                            break;
+                                cont = true;
+                                break;
+                            }
+                        }
+
+                        if (cont)
+                        {
+                            continue;
                         }
                     }
-
-                    if (cont)
+                    else if (auto tempGenericClassInfo = getGenericClassInfoByFullName(tempClass.getName().getValue()))
                     {
-                        continue;
+                        auto cont = false;
+                        for (auto &templateParam : tempGenericClassInfo->typeParams)
+                        {
+                            auto name = templateParam->getName();
+                            auto found = typeClassInfo->typeParamsWithArgs.find(name);
+                            if (found != typeClassInfo->typeParamsWithArgs.end())
+                            {
+                                // TODO: convert GenericType -> AnyGenericType,  and NamedGenericType -> GenericType, and add 2 type
+                                // Parameters to it Constrain, Default
+                                currentTemplateType = getNamedGenericType(found->getValue().first->getName());
+                                currentType = found->getValue().second;
+
+                                cont = true;
+                                break;
+                            }
+                        }
+
+                        if (cont)
+                        {
+                            continue;
+                        }
                     }
                 }
             }
@@ -880,7 +905,9 @@ class MLIRGenImpl
             else if (genericTypeGenContext.callOperands.size() > 0)
             {
                 GenContext funcGenContext(genContext);
-                // we need to map generic parameters to generic types to be able to resolve function
+                funcGenContext.typeParamsWithArgs.clear();
+
+                // we need to map generic parameters to generic types to be able to resolve function parameters which are not generic
                 for (auto typeParam : typeParams)
                 {
                     funcGenContext.typeAliasMap.insert({typeParam->getName(), getNamedGenericType(typeParam->getName())});
@@ -982,7 +1009,9 @@ class MLIRGenImpl
             if (mlir::failed(zipTypeParametersWithArguments(location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs,
                                                             genContext)))
             {
-                return mlir::Type();
+                // return mlir::Type();
+                // type can't be resolved, so return generic base type
+                return genericClassInfo->classType;
             }
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! instantiate specialized class: " << fullNameGenericClassTypeName << " ";
@@ -1045,7 +1074,9 @@ class MLIRGenImpl
             // create new instance of interface with TypeArguments
             if (mlir::failed(mlirGen(genericInterfaceInfo->interfaceDeclaration, genericTypeGenContext)))
             {
-                return mlir::Type();
+                // return mlir::Type();
+                // type can't be resolved, so return generic base type
+                return genericInterfaceInfo->interfaceType;
             }
 
             // get instance of generic interface type
@@ -7322,7 +7353,7 @@ class MLIRGenImpl
         // support generic types
         if (genContext.typeParamsWithArgs.size() > 0)
         {
-            auto type = getResolveTypeParameter(name, genContext);
+            auto type = getResolveTypeParameter(name, false, genContext);
             if (type)
             {
                 return builder.create<mlir_ts::TypeRefOp>(location, type);
@@ -7862,9 +7893,17 @@ class MLIRGenImpl
                     name.append(",");
                 }
 
-                auto type = getResolveTypeParameter(typeParam->getName(), genContext);
-                llvm::raw_string_ostream s(name);
-                s << type;
+                auto type = getResolveTypeParameter(typeParam->getName(), false, genContext);
+                if (type)
+                {
+                    llvm::raw_string_ostream s(name);
+                    s << type;
+                }
+                else
+                {
+                    name.append(typeParam->getName());
+                }
+
                 next = false;
             }
 
@@ -9112,8 +9151,17 @@ class MLIRGenImpl
                 }
 
                 auto type = getType(typeParam, genContext);
-                llvm::raw_string_ostream s(name);
-                s << type;
+                if (type)
+                {
+                    llvm::raw_string_ostream s(name);
+                    s << type;
+                }
+                else
+                {
+                    // TODO: finish it
+                    // name.append(MLIRHelper::getName(typeParam));
+                }
+
                 next = false;
             }
 
@@ -9137,9 +9185,17 @@ class MLIRGenImpl
                     name.append(",");
                 }
 
-                auto type = getResolveTypeParameter(typeParam->getName(), genContext);
-                llvm::raw_string_ostream s(name);
-                s << type;
+                auto type = getResolveTypeParameter(typeParam->getName(), false, genContext);
+                if (type)
+                {
+                    llvm::raw_string_ostream s(name);
+                    s << type;
+                }
+                else
+                {
+                    name.append(typeParam->getName());
+                }
+
                 next = false;
             }
 
@@ -9859,18 +9915,18 @@ class MLIRGenImpl
         // return getAnyType();
     }
 
-    mlir::Type getResolveTypeParameter(StringRef typeParamName, const GenContext &genContext)
+    mlir::Type getResolveTypeParameter(StringRef typeParamName, bool defaultType, const GenContext &genContext)
     {
         // to build generic type with generic names
-        auto foundAlias = genContext.typeAliasMap.find(typeParamName);
-        if (foundAlias != genContext.typeAliasMap.end())
-        {
-            auto type = (*foundAlias).getValue();
+        // auto foundAlias = genContext.typeAliasMap.find(typeParamName);
+        // if (foundAlias != genContext.typeAliasMap.end())
+        // {
+        //     auto type = (*foundAlias).getValue();
 
-            LLVM_DEBUG(llvm::dbgs() << "\n!! type gen. param as alias [" << typeParamName << "] -> [" << type << "]\n";);
+        //     LLVM_DEBUG(llvm::dbgs() << "\n!! type gen. param as alias [" << typeParamName << "] -> [" << type << "]\n";);
 
-            return type;
-        }
+        //     return type;
+        // }
 
         auto found = genContext.typeParamsWithArgs.find(typeParamName);
         if (found != genContext.typeParamsWithArgs.end())
@@ -9882,6 +9938,13 @@ class MLIRGenImpl
             return type;
         }
 
+        if (defaultType)
+        {
+            // unresolved generic
+            return getNamedGenericType(typeParamName);
+        }
+
+        // name is not found
         return mlir::Type();
     }
 
@@ -9894,7 +9957,7 @@ class MLIRGenImpl
             return mlir::Type();
         }
 
-        return getResolveTypeParameter(name, genContext);
+        return getResolveTypeParameter(name, true, genContext);
     }
 
     mlir::Type getTypeByTypeName(Node node, const GenContext &genContext)
@@ -9962,6 +10025,18 @@ class MLIRGenImpl
     {
         LLVM_DEBUG(llvm::dbgs() << "\n!! assigning generic type: " << typeParam->getName() << " type: " << type << "\n";);
 
+        if (isNoneType(type))
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! skip. failed.\n";);
+            return mlir::failure();
+        }
+
+        if (type.isa<mlir_ts::NamedGenericType>())
+        {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! skip - GenericType. failed.\n";);
+            return mlir::failure();
+        }
+
         MLIRTypeHelper mth(builder.getContext());
         if (typeParam->getConstraint() && !mth.extendsType(type, typeParam->getConstraint()))
         {
@@ -9983,7 +10058,6 @@ class MLIRGenImpl
         {
             auto &typeParam = typeParams[index];
             auto type = getType(typeArgs[index], genContext);
-
             if (mlir::failed(zipTypeParameterWithArgument(location, pairs, typeParam, type)))
             {
                 return mlir::failure();
