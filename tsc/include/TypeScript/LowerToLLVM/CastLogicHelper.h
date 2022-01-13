@@ -481,6 +481,12 @@ class CastLogicHelper
             return rewriter.create<LLVM::PtrToIntOp>(loc, resLLVMType, in);
         }
 
+        if (inLLVMType.isa<LLVM::LLVMPointerType>() && isFloat(resLLVMType))
+        {
+            auto intVal = rewriter.create<LLVM::PtrToIntOp>(loc, th.getI64Type(), in);
+            return rewriter.create<SIToFPOp>(loc, resLLVMType, intVal);
+        }
+
         if (isInt(inLLVMType) && resLLVMType.isa<LLVM::LLVMPointerType>())
         {
             return rewriter.create<LLVM::IntToPtrOp>(loc, resLLVMType, in);
