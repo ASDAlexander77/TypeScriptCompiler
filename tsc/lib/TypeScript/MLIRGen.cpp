@@ -905,8 +905,6 @@ class MLIRGenImpl
             else if (genericTypeGenContext.callOperands.size() > 0)
             {
                 GenContext funcGenContext(genContext);
-                funcGenContext.typeParamsWithArgs.clear();
-
                 // we need to map generic parameters to generic types to be able to resolve function parameters which are not generic
                 for (auto typeParam : typeParams)
                 {
@@ -9918,15 +9916,15 @@ class MLIRGenImpl
     mlir::Type getResolveTypeParameter(StringRef typeParamName, bool defaultType, const GenContext &genContext)
     {
         // to build generic type with generic names
-        // auto foundAlias = genContext.typeAliasMap.find(typeParamName);
-        // if (foundAlias != genContext.typeAliasMap.end())
-        // {
-        //     auto type = (*foundAlias).getValue();
+        auto foundAlias = genContext.typeAliasMap.find(typeParamName);
+        if (foundAlias != genContext.typeAliasMap.end())
+        {
+            auto type = (*foundAlias).getValue();
 
-        //     LLVM_DEBUG(llvm::dbgs() << "\n!! type gen. param as alias [" << typeParamName << "] -> [" << type << "]\n";);
+            LLVM_DEBUG(llvm::dbgs() << "\n!! type gen. param as alias [" << typeParamName << "] -> [" << type << "]\n";);
 
-        //     return type;
-        // }
+            return type;
+        }
 
         auto found = genContext.typeParamsWithArgs.find(typeParamName);
         if (found != genContext.typeParamsWithArgs.end())
