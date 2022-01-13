@@ -922,7 +922,8 @@ class MLIRGenImpl
                     return mlir_ts::FuncOp();
                 }
 
-                LLVM_DEBUG(llvm::dbgs() << "\n!! func Op type (resolving from operands): " << funcOp.getType() << "\n";);
+                LLVM_DEBUG(llvm::dbgs() << "\n!! func name: " << name << ", Op type (resolving from operands): " << funcOp.getType()
+                                        << "\n";);
 
                 // TODO: we have func params.
                 auto index = 0;
@@ -2096,6 +2097,8 @@ class MLIRGenImpl
                 TransformFlags::VarsInObjectContext;
             genContextWithPassResult.unresolved = genContext.unresolved;
             genContextWithPassResult.discoverParamsOnly = genContext.discoverParamsOnly;
+            genContextWithPassResult.typeAliasMap = genContext.typeAliasMap;
+            genContextWithPassResult.typeParamsWithArgs = genContext.typeParamsWithArgs;
 
             registerNamespace(funcProto->getNameWithoutNamespace(), true);
 
