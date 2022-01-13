@@ -124,6 +124,7 @@ struct GenContext
     bool allocateVarsOutsideOfOperation;
     bool skipProcessed;
     bool rediscover;
+    bool discoverParamsOnly;
     bool insertIntoParentScope;
     mlir::Operation *currentOperation;
     mlir_ts::FuncOp funcOp;

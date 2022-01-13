@@ -905,6 +905,8 @@ class MLIRGenImpl
             else if (genericTypeGenContext.callOperands.size() > 0)
             {
                 GenContext funcGenContext(genContext);
+                funcGenContext.discoverParamsOnly = true;
+
                 // we need to map generic parameters to generic types to be able to resolve function parameters which are not generic
                 for (auto typeParam : typeParams)
                 {
@@ -2093,6 +2095,7 @@ class MLIRGenImpl
                 (functionLikeDeclarationBaseAST->transformFlags & TransformFlags::VarsInObjectContext) ==
                 TransformFlags::VarsInObjectContext;
             genContextWithPassResult.unresolved = genContext.unresolved;
+            genContextWithPassResult.discoverParamsOnly = genContext.discoverParamsOnly;
 
             registerNamespace(funcProto->getNameWithoutNamespace(), true);
 
@@ -2775,9 +2778,14 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-        if (failed(mlirGenBody(functionLikeDeclarationBaseAST->body, genContext)))
+        // if we need params only we do not need to process body
+        auto discoverParamsOnly = genContext.allowPartialResolve && genContext.discoverParamsOnly;
+        if (!discoverParamsOnly)
         {
-            return mlir::failure();
+            if (failed(mlirGenBody(functionLikeDeclarationBaseAST->body, genContext)))
+            {
+                return mlir::failure();
+            }
         }
 
         // add exit code
@@ -5092,7 +5100,18 @@ class MLIRGenImpl
                              bool baseClass, const GenContext &genContext)
     {
         auto classInfo = getClassInfoByFullName(classFullName);
-        assert(classInfo);
+        if (!classInfo)
+        {
+            auto genericClassInfo = getGenericClassInfoByFullName(classFullName);
+            if (genericClassInfo)
+            {
+                // we can't discover anything in generic class
+                return mlir::Value();
+            }
+
+            emitError(location, "Class can't be found ") << classFullName;
+            return mlir::Value();
+        }
 
         // static field access
         auto value = ClassMembers(location, thisValue, classInfo, name, baseClass, genContext);
@@ -5325,6 +5344,19 @@ class MLIRGenImpl
                                  const GenContext &genContext)
     {
         auto interfaceInfo = getInterfaceInfoByFullName(interfaceFullName);
+        if (!interfaceInfo)
+        {
+            auto genericInterfaceInfo = getGenericInterfaceInfoByFullName(interfaceFullName);
+            if (genericInterfaceInfo)
+            {
+                // we can't detect value of generic interface (we can only if it is specialization)
+                emitError(location, "Interface can't be found ") << interfaceFullName;
+                return mlir::Value();
+            }
+
+            return mlir::Value();
+        }
+
         assert(interfaceInfo);
 
         // static field access
