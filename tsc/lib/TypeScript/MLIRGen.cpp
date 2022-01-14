@@ -968,6 +968,7 @@ class MLIRGenImpl
                                         << "\n";);
 
                 // TODO: we have func params.
+                StringMap<mlir::Type> inferredTypes;
                 auto index = 0;
                 for (auto argInfo : funcProto->getArgs())
                 {
@@ -981,34 +982,34 @@ class MLIRGenImpl
 
                     LLVM_DEBUG(llvm::dbgs() << "\n!! inferring type. template: " << type << " value type: " << op.getType() << "\n";);
 
-                    StringMap<mlir::Type> inferredTypes;
                     inferType(type, op.getType(), inferredTypes);
-                    if (!inferredTypes.size())
+                }
+
+                if (!inferredTypes.size())
+                {
+                    // no resolve needed, this type without param
+                    emitError(location) << "type can't be inferred";
+                    return mlir_ts::FuncOp();
+                }
+
+                for (auto &pair : inferredTypes)
+                {
+                    // find typeParam
+                    auto typeParamName = pair.getKey();
+                    auto inferredType = pair.getValue();
+                    auto found = std::find_if(typeParams.begin(), typeParams.end(),
+                                              [&](auto &paramItem) { return paramItem->getName() == typeParamName; });
+                    if (found == typeParams.end())
                     {
-                        // no resolve needed, this type without param
-                        emitError(location) << "type can't be inferred";
                         return mlir_ts::FuncOp();
                     }
 
-                    for (auto &pair : inferredTypes)
+                    auto typeParam = (*found);
+
+                    if (mlir::failed(
+                            zipTypeParameterWithArgument(location, genericTypeGenContext.typeParamsWithArgs, typeParam, inferredType)))
                     {
-                        // find typeParam
-                        auto typeParamName = pair.getKey();
-                        auto inferredType = pair.getValue();
-                        auto found = std::find_if(typeParams.begin(), typeParams.end(),
-                                                  [&](auto &paramItem) { return paramItem->getName() == typeParamName; });
-                        if (found == typeParams.end())
-                        {
-                            return mlir_ts::FuncOp();
-                        }
-
-                        auto typeParam = (*found);
-
-                        if (mlir::failed(
-                                zipTypeParameterWithArgument(location, genericTypeGenContext.typeParamsWithArgs, typeParam, inferredType)))
-                        {
-                            return mlir_ts::FuncOp();
-                        }
+                        return mlir_ts::FuncOp();
                     }
                 }
             }
