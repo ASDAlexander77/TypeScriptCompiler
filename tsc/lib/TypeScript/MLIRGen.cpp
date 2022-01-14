@@ -807,101 +807,85 @@ class MLIRGenImpl
         llvm_unreachable("unknown expression");
     }
 
-    std::pair<mlir::Type, mlir::Type> inferType(mlir::Type templateType, mlir::Type concreteType)
+    void inferType(mlir::Type templateType, mlir::Type concreteType, StringMap<mlir::Type> &results)
     {
         auto currentTemplateType = templateType;
         auto currentType = concreteType;
 
-        do
+        if (auto namedGenType = currentTemplateType.dyn_cast<mlir_ts::NamedGenericType>())
         {
-            if (auto namedGenType = currentTemplateType.dyn_cast<mlir_ts::NamedGenericType>())
-            {
-                return {namedGenType, currentType};
-            }
+            results.insert({namedGenType.getName().getValue(), currentType});
+            return;
+        }
 
-            // class -> class
-            if (auto tempClass = currentTemplateType.dyn_cast<mlir_ts::ClassType>())
+        // class -> class
+        if (auto tempClass = currentTemplateType.dyn_cast<mlir_ts::ClassType>())
+        {
+            if (auto typeClass = concreteType.dyn_cast<mlir_ts::ClassType>())
             {
-                if (auto typeClass = concreteType.dyn_cast<mlir_ts::ClassType>())
+                auto typeClassInfo = getClassInfoByFullName(typeClass.getName().getValue());
+                if (auto tempClassInfo = getClassInfoByFullName(tempClass.getName().getValue()))
                 {
-                    auto typeClassInfo = getClassInfoByFullName(typeClass.getName().getValue());
-                    if (auto tempClassInfo = getClassInfoByFullName(tempClass.getName().getValue()))
+                    for (auto &templateParam : tempClassInfo->typeParamsWithArgs)
                     {
-                        auto cont = false;
-                        for (auto &templateParam : tempClassInfo->typeParamsWithArgs)
+                        auto name = templateParam.getValue().first->getName();
+                        auto found = typeClassInfo->typeParamsWithArgs.find(name);
+                        if (found != typeClassInfo->typeParamsWithArgs.end())
                         {
-                            auto name = templateParam.getValue().first->getName();
-                            auto found = typeClassInfo->typeParamsWithArgs.find(name);
-                            if (found != typeClassInfo->typeParamsWithArgs.end())
-                            {
-                                // TODO: convert GenericType -> AnyGenericType,  and NamedGenericType -> GenericType, and add 2 type
-                                // Parameters to it Constrain, Default
-                                currentTemplateType = getNamedGenericType(found->getValue().first->getName());
-                                currentType = found->getValue().second;
+                            // TODO: convert GenericType -> AnyGenericType,  and NamedGenericType -> GenericType, and add 2 type
+                            // Parameters to it Constrain, Default
+                            currentTemplateType = getNamedGenericType(found->getValue().first->getName());
+                            currentType = found->getValue().second;
 
-                                cont = true;
-                                break;
-                            }
-                        }
-
-                        if (cont)
-                        {
-                            continue;
+                            inferType(currentTemplateType, currentType, results);
                         }
                     }
-                    else if (auto tempGenericClassInfo = getGenericClassInfoByFullName(tempClass.getName().getValue()))
+
+                    return;
+                }
+                else if (auto tempGenericClassInfo = getGenericClassInfoByFullName(tempClass.getName().getValue()))
+                {
+                    for (auto &templateParam : tempGenericClassInfo->typeParams)
                     {
-                        auto cont = false;
-                        for (auto &templateParam : tempGenericClassInfo->typeParams)
+                        auto name = templateParam->getName();
+                        auto found = typeClassInfo->typeParamsWithArgs.find(name);
+                        if (found != typeClassInfo->typeParamsWithArgs.end())
                         {
-                            auto name = templateParam->getName();
-                            auto found = typeClassInfo->typeParamsWithArgs.find(name);
-                            if (found != typeClassInfo->typeParamsWithArgs.end())
-                            {
-                                // TODO: convert GenericType -> AnyGenericType,  and NamedGenericType -> GenericType, and add 2 type
-                                // Parameters to it Constrain, Default
-                                currentTemplateType = getNamedGenericType(found->getValue().first->getName());
-                                currentType = found->getValue().second;
+                            currentTemplateType = getNamedGenericType(found->getValue().first->getName());
+                            currentType = found->getValue().second;
 
-                                cont = true;
-                                break;
-                            }
-                        }
-
-                        if (cont)
-                        {
-                            continue;
+                            inferType(currentTemplateType, currentType, results);
                         }
                     }
+
+                    return;
                 }
             }
+        }
 
-            // array -> array
-            if (auto tempArray = currentTemplateType.dyn_cast<mlir_ts::ArrayType>())
+        // array -> array
+        if (auto tempArray = currentTemplateType.dyn_cast<mlir_ts::ArrayType>())
+        {
+            if (auto typeArray = concreteType.dyn_cast<mlir_ts::ArrayType>())
             {
-                if (auto typeArray = concreteType.dyn_cast<mlir_ts::ArrayType>())
-                {
-                    currentTemplateType = tempArray.getElementType();
-                    currentType = typeArray.getElementType();
-                    continue;
-                }
+                currentTemplateType = tempArray.getElementType();
+                currentType = typeArray.getElementType();
+                inferType(currentTemplateType, currentType, results);
+                return;
             }
+        }
 
-            // optional -> optional
-            if (auto tempOpt = currentTemplateType.dyn_cast<mlir_ts::OptionalType>())
+        // optional -> optional
+        if (auto tempOpt = currentTemplateType.dyn_cast<mlir_ts::OptionalType>())
+        {
+            if (auto typeOpt = concreteType.dyn_cast<mlir_ts::OptionalType>())
             {
-                if (auto typeOpt = concreteType.dyn_cast<mlir_ts::OptionalType>())
-                {
-                    currentTemplateType = tempOpt.getElementType();
-                    currentType = typeOpt.getElementType();
-                    continue;
-                }
+                currentTemplateType = tempOpt.getElementType();
+                currentType = typeOpt.getElementType();
+                inferType(currentTemplateType, currentType, results);
+                return;
             }
-
-            break;
-        } while (true);
-
-        return {mlir::Type(), mlir::Type()};
+        }
     }
 
     mlir_ts::FuncOp instantiateSpecializedFunctionType(mlir::Location location, StringRef name, NodeArray<TypeNode> typeArguments,
@@ -961,29 +945,34 @@ class MLIRGenImpl
 
                     LLVM_DEBUG(llvm::dbgs() << "\n!! inferring type. template: " << type << " value type: " << op.getType() << "\n";);
 
-                    auto [templateType, inferredType] = inferType(type, op.getType());
-                    if (!templateType)
+                    StringMap<mlir::Type> inferredTypes;
+                    inferType(type, op.getType(), inferredTypes);
+                    if (!inferredTypes.size())
                     {
                         // no resolve needed, this type without param
                         emitError(location) << "type can't be inferred";
                         return mlir_ts::FuncOp();
                     }
 
-                    // find typeParam
-                    auto typeParamName = templateType.cast<mlir_ts::NamedGenericType>().getName().getValue();
-                    auto found = std::find_if(typeParams.begin(), typeParams.end(),
-                                              [&](auto &paramItem) { return paramItem->getName() == typeParamName; });
-                    if (found == typeParams.end())
+                    for (auto &pair : inferredTypes)
                     {
-                        return mlir_ts::FuncOp();
-                    }
+                        // find typeParam
+                        auto typeParamName = pair.getKey();
+                        auto inferredType = pair.getValue();
+                        auto found = std::find_if(typeParams.begin(), typeParams.end(),
+                                                  [&](auto &paramItem) { return paramItem->getName() == typeParamName; });
+                        if (found == typeParams.end())
+                        {
+                            return mlir_ts::FuncOp();
+                        }
 
-                    auto typeParam = (*found);
+                        auto typeParam = (*found);
 
-                    if (mlir::failed(
-                            zipTypeParameterWithArgument(location, genericTypeGenContext.typeParamsWithArgs, typeParam, inferredType)))
-                    {
-                        return mlir_ts::FuncOp();
+                        if (mlir::failed(
+                                zipTypeParameterWithArgument(location, genericTypeGenContext.typeParamsWithArgs, typeParam, inferredType)))
+                        {
+                            return mlir_ts::FuncOp();
+                        }
                     }
                 }
             }
@@ -7789,7 +7778,7 @@ class MLIRGenImpl
 
     mlir::LogicalResult registerGenericClass(ClassLikeDeclaration classDeclarationAST, const GenContext &genContext)
     {
-        auto name = ClassName(classDeclarationAST, genContext);
+        auto name = className(classDeclarationAST, genContext);
         if (!name.empty())
         {
             auto namePtr = StringRef(name).copy(stringAllocator);
@@ -8007,7 +7996,7 @@ class MLIRGenImpl
         return classInfoType->classType;
     }
 
-    std::string ClassName(ClassLikeDeclaration classDeclarationAST, const GenContext &genContext)
+    std::string className(ClassLikeDeclaration classDeclarationAST, const GenContext &genContext)
     {
         auto name = getNameWithArguments(classDeclarationAST, genContext);
         if (classDeclarationAST == SyntaxKind::ClassExpression)
@@ -8021,7 +8010,7 @@ class MLIRGenImpl
 
     ClassInfo::TypePtr mlirGenClassInfo(ClassLikeDeclaration classDeclarationAST, const GenContext &genContext)
     {
-        return mlirGenClassInfo(ClassName(classDeclarationAST, genContext), classDeclarationAST, genContext);
+        return mlirGenClassInfo(className(classDeclarationAST, genContext), classDeclarationAST, genContext);
     }
 
     ClassInfo::TypePtr mlirGenClassInfo(std::string name, ClassLikeDeclaration classDeclarationAST, const GenContext &genContext)
