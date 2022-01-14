@@ -109,6 +109,7 @@ class MLIRGenImpl
         SymbolTableScopeT varScope(symbolTable);
         llvm::ScopedHashTableScope<StringRef, NamespaceInfo::TypePtr> fullNamespacesMapScope(fullNamespacesMap);
         llvm::ScopedHashTableScope<StringRef, VariableDeclarationDOM::TypePtr> fullNameGlobalsMapScope(fullNameGlobalsMap);
+        llvm::ScopedHashTableScope<StringRef, GenericFunctionInfo::TypePtr> fullNameGenericFunctionsMapScope(fullNameGenericFunctionsMap);
         llvm::ScopedHashTableScope<StringRef, ClassInfo::TypePtr> fullNameClassesMapScope(fullNameClassesMap);
         llvm::ScopedHashTableScope<StringRef, GenericClassInfo::TypePtr> fullNameGenericClassesMapScope(fullNameGenericClassesMap);
         llvm::ScopedHashTableScope<StringRef, InterfaceInfo::TypePtr> fullNameInterfacesMapScope(fullNameInterfacesMap);
@@ -812,6 +813,8 @@ class MLIRGenImpl
         auto currentTemplateType = templateType;
         auto currentType = concreteType;
 
+        LLVM_DEBUG(llvm::dbgs() << "\n!! inferring template type: " << templateType << ", type: " << concreteType << "\n";);
+
         if (auto namedGenType = currentTemplateType.dyn_cast<mlir_ts::NamedGenericType>())
         {
             results.insert({namedGenType.getName().getValue(), currentType});
@@ -885,13 +888,46 @@ class MLIRGenImpl
                 inferType(currentTemplateType, currentType, results);
                 return;
             }
+
+            // optional -> value
+            currentTemplateType = tempOpt.getElementType();
+            currentType = concreteType;
+            inferType(currentTemplateType, currentType, results);
+            return;
+        }
+
+        // lambda -> lambda
+        auto tempfuncType = getParamsFromFuncRef(currentTemplateType);
+        if (tempfuncType.size() > 0)
+        {
+            auto funcType = getParamsFromFuncRef(concreteType);
+            if (funcType.size() > 0)
+            {
+                inferTypeFuncType(tempfuncType, funcType, results);
+                return;
+            }
+        }
+    }
+
+    void inferTypeFuncType(mlir::ArrayRef<mlir::Type> tempfuncType, mlir::ArrayRef<mlir::Type> funcType, StringMap<mlir::Type> &results)
+    {
+        if (tempfuncType.size() != funcType.size())
+        {
+            return;
+        }
+
+        for (auto paramIndex = 0; paramIndex < tempfuncType.size(); paramIndex++)
+        {
+            auto currentTemplateType = tempfuncType[paramIndex];
+            auto currentType = funcType[paramIndex];
+            inferType(currentTemplateType, currentType, results);
         }
     }
 
     mlir_ts::FuncOp instantiateSpecializedFunctionType(mlir::Location location, StringRef name, NodeArray<TypeNode> typeArguments,
                                                        const GenContext &genContext)
     {
-        auto functionGenericTypeInfo = lookupGenericFunctionMap(name);
+        auto functionGenericTypeInfo = getGenericFunctionInfoByFullName(name);
         if (functionGenericTypeInfo)
         {
             MLIRNamespaceGuard ng(currentNamespace);
@@ -2326,7 +2362,10 @@ class MLIRGenImpl
     mlir::LogicalResult registerGenericFunctionLike(FunctionLikeDeclarationBase functionLikeDeclarationBaseAST,
                                                     const GenContext &genContext)
     {
-        auto name = MLIRHelper::getName(functionLikeDeclarationBaseAST->name);
+        auto res = getNameOfFunction(functionLikeDeclarationBaseAST, genContext);
+        auto fullName = std::get<0>(res);
+        auto name = std::get<1>(res);
+
         if (!name.empty())
         {
             if (existGenericFunctionMap(name))
@@ -2334,7 +2373,6 @@ class MLIRGenImpl
                 return mlir::success();
             }
 
-            auto namePtr = StringRef(name).copy(stringAllocator);
             llvm::SmallVector<TypeParameterDOM::TypePtr> typeParameters;
             if (mlir::failed(processTypeParameters(functionLikeDeclarationBaseAST->typeParameters, typeParameters, genContext)))
             {
@@ -2342,13 +2380,16 @@ class MLIRGenImpl
             }
 
             // register class
+            auto namePtr = StringRef(name).copy(stringAllocator);
+            auto fullNamePtr = StringRef(fullName).copy(stringAllocator);
             GenericFunctionInfo::TypePtr newGenericFunctionPtr = std::make_shared<GenericFunctionInfo>();
-            newGenericFunctionPtr->name = namePtr;
+            newGenericFunctionPtr->name = fullNamePtr;
             newGenericFunctionPtr->typeParams = typeParameters;
             newGenericFunctionPtr->functionDeclaration = functionLikeDeclarationBaseAST;
             newGenericFunctionPtr->elementNamespace = currentNamespace;
 
             getGenericFunctionMap().insert({namePtr, newGenericFunctionPtr});
+            fullNameGenericFunctionsMap.insert(fullNamePtr, newGenericFunctionPtr);
 
             return mlir::success();
         }
@@ -5545,9 +5586,9 @@ class MLIRGenImpl
             return mlir::Value();
         }
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! function ops: "; for (auto o
-                                                               : operands) llvm::dbgs()
-                                                          << " param type: " << o.getType();
+        LLVM_DEBUG(llvm::dbgs() << "\n!! function: [" << funcResult << "] ops: "; for (auto o
+                                                                                       : operands) llvm::dbgs()
+                                                                                  << " param type: " << o.getType();
                    llvm::dbgs() << "\n";);
 
         return mlirGenCallExpression(location, funcResult, callExpression->typeArguments, operands, genContext);
@@ -5690,6 +5731,24 @@ class MLIRGenImpl
     }
 
     // TODO: rename and put in helper class
+    mlir::ArrayRef<mlir::Type> getParamsFromFuncRef(mlir::Type funcType)
+    {
+        mlir::ArrayRef<mlir::Type> paramsType;
+        if (!funcType)
+        {
+            return paramsType;
+        }
+
+        TypeSwitch<mlir::Type>(funcType)
+            .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { paramsType = calledFuncType.getInputs(); })
+            .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { paramsType = calledFuncType.getInputs(); })
+            .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { paramsType = calledFuncType.getInputs(); })
+            .Case<mlir::NoneType>([&](auto calledFuncType) { paramsType = builder.getNoneType(); })
+            .Default([&](auto type) { LLVM_DEBUG(llvm::dbgs() << "\n!! getParamsFromFuncRef is not implemented for " << type << "\n";); });
+
+        return paramsType;
+    }
+
     mlir::Type getParamsTupleTypeFromFuncRef(mlir::Type funcType)
     {
         mlir::Type paramsType;
@@ -7289,14 +7348,15 @@ class MLIRGenImpl
         {
             auto funcOp = fn->getValue();
             auto funcType = funcOp.getType();
+            auto funcName = funcOp.getName();
 
-            if (auto trampOp = resolveFunctionWithCapture(location, funcOp.getName(), funcType, false, genContext))
+            if (auto trampOp = resolveFunctionWithCapture(location, funcName, funcType, false, genContext))
             {
                 return trampOp;
             }
 
-            auto symbOp = builder.create<mlir_ts::SymbolRefOp>(location, funcType,
-                                                               mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
+            auto symbOp =
+                builder.create<mlir_ts::SymbolRefOp>(location, funcType, mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName));
             return symbOp;
         }
 
@@ -11772,7 +11832,7 @@ class MLIRGenImpl
 
     auto existGenericFunctionMap(StringRef name) -> bool
     {
-        existLogic(localVarsInThisContextMap);
+        existLogic(genericFunctionMap);
     }
 
     auto getGlobalsMap() -> llvm::StringMap<VariableDeclarationDOM::TypePtr> &
@@ -11865,6 +11925,11 @@ class MLIRGenImpl
         return currentNamespace->importEqualsMap;
     }
 
+    auto getGenericFunctionInfoByFullName(StringRef fullName) -> GenericFunctionInfo::TypePtr
+    {
+        return fullNameGenericFunctionsMap.lookup(fullName);
+    }
+
     auto getClassInfoByFullName(StringRef fullName) -> ClassInfo::TypePtr
     {
         return fullNameClassesMap.lookup(fullName);
@@ -11935,6 +12000,8 @@ class MLIRGenImpl
     NamespaceInfo::TypePtr currentNamespace;
 
     llvm::ScopedHashTable<StringRef, NamespaceInfo::TypePtr> fullNamespacesMap;
+
+    llvm::ScopedHashTable<StringRef, GenericFunctionInfo::TypePtr> fullNameGenericFunctionsMap;
 
     llvm::ScopedHashTable<StringRef, ClassInfo::TypePtr> fullNameClassesMap;
 
