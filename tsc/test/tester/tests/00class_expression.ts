@@ -1,4 +1,5 @@
 // TODO: bug.  because x class and class in foo are different types, static fields are not copied
+// to implement it, you can store all static fields into VTable, and access them via class reference but when you access static via class_storage you can do as for C++
 function foo(x = class { static prop: string }): string {
     return undefined;
 }

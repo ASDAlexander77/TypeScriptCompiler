@@ -7789,7 +7789,7 @@ class MLIRGenImpl
 
     mlir::LogicalResult registerGenericClass(ClassLikeDeclaration classDeclarationAST, const GenContext &genContext)
     {
-        auto name = MLIRHelper::getName(classDeclarationAST->name);
+        auto name = ClassName(classDeclarationAST, genContext);
         if (!name.empty())
         {
             auto namePtr = StringRef(name).copy(stringAllocator);
@@ -8007,10 +8007,21 @@ class MLIRGenImpl
         return classInfoType->classType;
     }
 
-    ClassInfo::TypePtr mlirGenClassInfo(ClassLikeDeclaration classDeclarationAST, const GenContext &genContext)
+    std::string ClassName(ClassLikeDeclaration classDeclarationAST, const GenContext &genContext)
     {
         auto name = getNameWithArguments(classDeclarationAST, genContext);
-        return mlirGenClassInfo(name, classDeclarationAST, genContext);
+        if (classDeclarationAST == SyntaxKind::ClassExpression)
+        {
+            // this is Class Expression
+            return MLIRHelper::getAnonymousName(loc(classDeclarationAST), ".anoncls") + name;
+        }
+
+        return name;
+    }
+
+    ClassInfo::TypePtr mlirGenClassInfo(ClassLikeDeclaration classDeclarationAST, const GenContext &genContext)
+    {
+        return mlirGenClassInfo(ClassName(classDeclarationAST, genContext), classDeclarationAST, genContext);
     }
 
     ClassInfo::TypePtr mlirGenClassInfo(std::string name, ClassLikeDeclaration classDeclarationAST, const GenContext &genContext)
@@ -9225,12 +9236,6 @@ class MLIRGenImpl
     template <typename T> std::string getNameWithArguments(T declarationAST, const GenContext &genContext)
     {
         auto name = MLIRHelper::getName(declarationAST->name);
-        if (name.empty())
-        {
-            // this is Class Expression
-            name = MLIRHelper::getAnonymousName(loc(declarationAST), ".anoncls");
-        }
-
         if (genContext.typeParamsWithArgs.size() && declarationAST->typeParameters.size())
         {
             name.append("<");
