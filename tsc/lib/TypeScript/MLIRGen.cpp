@@ -616,7 +616,7 @@ class MLIRGenImpl
         else if (kind == SyntaxKind::ClassDeclaration)
         {
             // declaration
-            return mlirGen(statementAST.as<ClassLikeDeclaration>(), genContext);
+            return mlirGen(statementAST.as<ClassDeclaration>(), genContext);
         }
         else if (kind == SyntaxKind::InterfaceDeclaration)
         {
@@ -791,6 +791,10 @@ class MLIRGenImpl
         {
             return mlirGen(expressionAST.as<NonNullExpression>(), genContext);
         }
+        else if (kind == SyntaxKind::ClassExpression)
+        {
+            return mlirGen(expressionAST.as<ClassExpression>(), genContext);
+        }
         else if (kind == SyntaxKind::Unknown /*TODO: temp solution to treat null expr as empty expr*/)
         {
             return mlir::Value();
@@ -798,11 +802,6 @@ class MLIRGenImpl
         else if (kind == SyntaxKind::OmittedExpression /*TODO: temp solution to treat null expr as empty expr*/)
         {
             return mlir::Value();
-        }
-        else if (kind == SyntaxKind::ClassExpression)
-        {
-            // TODO: implement it
-            llvm_unreachable("ClassExpression not implemented yet");
         }
 
         llvm_unreachable("unknown expression");
@@ -1050,7 +1049,7 @@ class MLIRGenImpl
                        llvm::dbgs() << "\n";);
 
             // create new instance of interface with TypeArguments
-            if (mlir::failed(mlirGen(genericClassInfo->classDeclaration, genericTypeGenContext)))
+            if (mlir::failed(std::get<0>(mlirGen(genericClassInfo->classDeclaration, genericTypeGenContext))))
             {
                 return mlir::Type();
             }
@@ -6104,6 +6103,42 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    mlir::Value NewClassInstance(mlir::Location location, mlir::Value value, NodeArray<Expression> arguments, const GenContext &genContext)
+    {
+        MLIRTypeHelper mth(builder.getContext());
+
+        auto type = value.getType();
+        type = mth.convertConstTupleTypeToTupleType(type);
+
+        assert(type);
+
+        auto resultType = type;
+        if (mth.isValueType(type))
+        {
+            resultType = getValueRefType(type);
+        }
+
+        auto newOp = builder.create<mlir_ts::NewOp>(location, resultType, builder.getBoolAttr(false));
+
+        // evaluate constructor
+        mlir::Type tupleParamsType;
+        auto funcValueRef = evaluateProperty(newOp, CONSTRUCTOR_NAME, genContext);
+
+        SmallVector<mlir::Value, 4> operands;
+        if (mlir::failed(mlirGenOperands(arguments, operands, funcValueRef, genContext)))
+        {
+            if (!genContext.allowPartialResolve)
+            {
+                emitError(location) << "Call Method: can't resolve values of all parameters";
+            }
+
+            return mlir::Value();
+        }
+
+        mlirGenCallConstructor(location, resultType.dyn_cast_or_null<mlir_ts::ClassType>(), newOp, operands, false, true, genContext);
+        return newOp;
+    }
+
     mlir::Value mlirGen(NewExpression newExpression, const GenContext &genContext)
     {
         MLIRTypeHelper mth(builder.getContext());
@@ -6119,36 +6154,7 @@ class MLIRGenImpl
 
             VALIDATE(value, location);
 
-            type = value.getType();
-            type = mth.convertConstTupleTypeToTupleType(type);
-
-            assert(type);
-
-            auto resultType = type;
-            if (mth.isValueType(type))
-            {
-                resultType = getValueRefType(type);
-            }
-
-            auto newOp = builder.create<mlir_ts::NewOp>(location, resultType, builder.getBoolAttr(false));
-
-            // evaluate constructor
-            mlir::Type tupleParamsType;
-            auto funcValueRef = evaluateProperty(newOp, CONSTRUCTOR_NAME, genContext);
-
-            SmallVector<mlir::Value, 4> operands;
-            if (mlir::failed(mlirGenOperands(newExpression->arguments, operands, funcValueRef, genContext)))
-            {
-                if (!genContext.allowPartialResolve)
-                {
-                    emitError(location) << "Call Method: can't resolve values of all parameters";
-                }
-
-                return mlir::Value();
-            }
-
-            mlirGenCallConstructor(location, resultType.dyn_cast_or_null<mlir_ts::ClassType>(), newOp, operands, false, true, genContext);
-            return newOp;
+            return NewClassInstance(location, value, newExpression->arguments, genContext);
         }
         else if (typeExpression == SyntaxKind::ElementAccessExpression)
         {
@@ -7818,19 +7824,57 @@ class MLIRGenImpl
         return mlir::failure();
     }
 
-    mlir::LogicalResult mlirGen(ClassLikeDeclaration classDeclarationAST, const GenContext &genContext)
+    mlir::LogicalResult mlirGen(ClassDeclaration classDeclarationAST, const GenContext &genContext)
+    {
+        auto value = mlirGen(classDeclarationAST.as<ClassLikeDeclaration>(), genContext);
+        return std::get<0>(value);
+    }
+
+    mlir::Value mlirGen(ClassExpression classExpressionAST, const GenContext &genContext)
+    {
+        // go to root
+        mlir::OpBuilder::InsertPoint savePoint;
+        savePoint = builder.saveInsertionPoint();
+        builder.setInsertionPointToStart(&theModule.body().front());
+
+        auto value = mlirGen(classExpressionAST.as<ClassLikeDeclaration>(), genContext);
+
+        builder.restoreInsertionPoint(savePoint);
+
+        if (mlir::failed(std::get<0>(value)))
+        {
+            return mlir::Value();
+        }
+
+        auto location = loc(classExpressionAST);
+
+        auto fullName = std::get<1>(value);
+        auto classInfo = getClassInfoByFullName(fullName);
+        if (classInfo)
+        {
+            auto classValue = builder.create<mlir_ts::ClassRefOp>(
+                location, classInfo->classType,
+                mlir::FlatSymbolRefAttr::get(builder.getContext(), classInfo->classType.getName().getValue()));
+
+            return NewClassInstance(location, classValue, undefined, genContext);
+        }
+
+        return mlir::Value();
+    }
+
+    std::pair<mlir::LogicalResult, mlir::StringRef> mlirGen(ClassLikeDeclaration classDeclarationAST, const GenContext &genContext)
     {
         // do not proceed for Generic Interfaces for declaration
         auto isGenericClass = classDeclarationAST->typeParameters.size() > 0;
         if (isGenericClass && genContext.typeParamsWithArgs.size() == 0)
         {
-            return registerGenericClass(classDeclarationAST, genContext);
+            return {registerGenericClass(classDeclarationAST, genContext), ""};
         }
 
         auto newClassPtr = mlirGenClassInfo(classDeclarationAST, genContext);
         if (!newClassPtr)
         {
-            return mlir::failure();
+            return {mlir::failure(), ""};
         }
 
         // do not process specialized class second time;
@@ -7840,7 +7884,7 @@ class MLIRGenImpl
             if ((genContext.allowPartialResolve && newClassPtr->fullyProcessedAtEvaluation) ||
                 (!genContext.allowPartialResolve && newClassPtr->fullyProcessed) || newClassPtr->enteredProcessingStorageClass)
             {
-                return mlir::success();
+                return {mlir::success(), newClassPtr->classType.getName().getValue()};
             }
         }
 
@@ -7858,7 +7902,7 @@ class MLIRGenImpl
         {
             newClassPtr->processingStorageClass = false;
             newClassPtr->enteredProcessingStorageClass = false;
-            return mlir::failure();
+            return {mlir::failure(), ""};
         }
 
         newClassPtr->processingStorageClass = false;
@@ -7881,13 +7925,13 @@ class MLIRGenImpl
 
         if (mlir::failed(mlirGenClassMembers(location, classDeclarationAST, newClassPtr, genContext)))
         {
-            return mlir::failure();
+            return {mlir::failure(), ""};
         }
 
         // generate vtable for interfaces in base class
         if (mlir::failed(mlirGenClassBaseInterfaces(location, newClassPtr, genContext)))
         {
-            return mlir::failure();
+            return {mlir::failure(), ""};
         }
 
         // generate vtable for interfaces
@@ -7895,25 +7939,11 @@ class MLIRGenImpl
         {
             if (mlir::failed(mlirGenClassHeritageClauseImplements(classDeclarationAST, newClassPtr, heritageClause, genContext)))
             {
-                return mlir::failure();
+                return {mlir::failure(), ""};
             }
         }
 
         mlirGenClassVirtualTableDefinition(location, newClassPtr, genContext);
-
-        /*
-        // static fields. must be generated after all non-static methods
-        if (mlir::failed(mlirGenClassStaticFields(location, classDeclarationAST, newClassPtr, declareClass, genContext)))
-        {
-            return mlir::failure();
-        }
-
-        // static classes needed to be defined after all methods/fields/vtables generated
-        if (mlir::failed(mlirGenClassMembers(location, classDeclarationAST, newClassPtr, declareClass, true, genContext)))
-        {
-            return mlir::failure();
-        }
-        */
 
         if (isGenericClass)
         {
@@ -7932,7 +7962,7 @@ class MLIRGenImpl
             newClassPtr->fullyProcessed = true;
         }
 
-        return mlir::success();
+        return {mlir::success(), newClassPtr->classType.getName().getValue()};
     }
 
     std::string getSpecializedClassName(GenericClassInfo::TypePtr geneticClassPtr, const GenContext &genContext)
@@ -9195,6 +9225,12 @@ class MLIRGenImpl
     template <typename T> std::string getNameWithArguments(T declarationAST, const GenContext &genContext)
     {
         auto name = MLIRHelper::getName(declarationAST->name);
+        if (name.empty())
+        {
+            // this is Class Expression
+            name = MLIRHelper::getAnonymousName(loc(declarationAST), ".anoncls");
+        }
+
         if (genContext.typeParamsWithArgs.size() && declarationAST->typeParameters.size())
         {
             name.append("<");
