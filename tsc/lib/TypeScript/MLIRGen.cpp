@@ -830,9 +830,15 @@ class MLIRGenImpl
                 currentType = mth.findBaseType(existType, currentType, defaultUnionType);
 
                 LLVM_DEBUG(llvm::dbgs() << "\n!! result type: " << currentType << "\n";);
+                results[name] = currentType;
+            }
+            else
+            {
+                results.insert({name, currentType});
             }
 
-            results.insert({name, currentType});
+            assert(results.lookup(name) == currentType);
+
             return;
         }
 
@@ -982,6 +988,13 @@ class MLIRGenImpl
                 LLVM_DEBUG(llvm::dbgs() << "\n!! func name: " << name << ", Op type (resolving from operands): " << funcOp.getType()
                                         << "\n";);
 
+                LLVM_DEBUG(llvm::dbgs() << "\n!! func args: "; auto index = 0;
+                           for (auto argInfo
+                                : funcProto->getArgs()) llvm::dbgs()
+                           << "\n_ " << argInfo->getName() << ": " << argInfo->getType() << " = (" << index << ") "
+                           << genContext.callOperands[index++];
+                           llvm::dbgs() << "\n";);
+
                 // TODO: we have func params.
                 StringMap<mlir::Type> inferredTypes;
                 auto index = 0;
@@ -994,8 +1007,6 @@ class MLIRGenImpl
                     {
                         continue;
                     }
-
-                    LLVM_DEBUG(llvm::dbgs() << "\n!! inferring type. template: " << type << " value type: " << op.getType() << "\n";);
 
                     inferType(type, op.getType(), inferredTypes);
                 }
