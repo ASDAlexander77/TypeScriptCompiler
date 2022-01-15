@@ -817,7 +817,22 @@ class MLIRGenImpl
 
         if (auto namedGenType = currentTemplateType.dyn_cast<mlir_ts::NamedGenericType>())
         {
-            results.insert({namedGenType.getName().getValue(), currentType});
+            // merge if exists
+            auto name = namedGenType.getName().getValue();
+            auto existType = results.lookup(name);
+            if (existType)
+            {
+                MLIRTypeHelper mth(builder.getContext());
+                auto defaultUnionType = getUnionType(existType, currentType);
+
+                LLVM_DEBUG(llvm::dbgs() << "\n!! existing type: " << existType << " default type: " << defaultUnionType << "\n";);
+
+                currentType = mth.findBaseType(existType, currentType, defaultUnionType);
+
+                LLVM_DEBUG(llvm::dbgs() << "\n!! result type: " << currentType << "\n";);
+            }
+
+            results.insert({name, currentType});
             return;
         }
 
