@@ -41,9 +41,7 @@
         "editor.detectIndentation": false,
         "editor.insertSpaces": true,
         "editor.tabSize": 4,
-        "editor.defaultFormatter": "ms-vscode.cpptools",
         "editor.formatOnSave": true,
-        "C_Cpp.clang_format_fallbackStyle": "{ BasedOnStyle: Microsoft, ColumnLimit: 140 }",
         "files.exclude": {
             "**/__build": true,
             "**/__build_*": true,
@@ -154,6 +152,10 @@
         },
         "cmake.buildDirectory": "${workspaceRoot}/../../__build/tsc",
         "cmake.sourceDirectory": "${workspaceFolder}/..",
-        "cmake.parallelJobs": 4
+        "cmake.parallelJobs": 4,
+        "[cpp]": {
+            "editor.defaultFormatter": "xaver.clang-format",
+        },
+        "C_Cpp.clang_format_style": "Microsoft"
     }
 }
