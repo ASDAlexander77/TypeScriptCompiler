@@ -31,6 +31,10 @@
         {
             "name": "TypeScript New Parser - Tester",
             "path": "./tsc/tsc-new-parser/test/scannertree_ts"
+        },
+        {
+            "name": "TypeScriptCompiler @ b329fc7",
+            "uri": "gitlens://b329fc7/c:/dev/TypeScriptCompiler?{\"path\":\"/c:/dev/TypeScriptCompiler\",\"ref\":\"b329fc735d67848c575919dd876596fb23c1b1ee\",\"repoPath\":\"c:/dev/TypeScriptCompiler\"}"
         }
     ],
     "settings": {
