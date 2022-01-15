@@ -494,7 +494,7 @@ class MLIRTypeHelper
 
     bool isCastableTypes(mlir::Type srcType, mlir::Type destType)
     {
-        if (canCast(srcType, destType))
+        if (canWideTypeWithoutDataLoss(srcType, destType))
         {
             return true;
         }
@@ -602,9 +602,14 @@ class MLIRTypeHelper
             return typeRight;
         }
 
-        if (canCast(typeLeft, typeRight))
+        if (canWideTypeWithoutDataLoss(typeLeft, typeRight))
         {
             return typeRight;
+        }
+
+        if (canWideTypeWithoutDataLoss(typeRight, typeLeft))
+        {
+            return typeLeft;
         }
 
         if (defaultType)
@@ -615,7 +620,8 @@ class MLIRTypeHelper
         return typeLeft;
     }
 
-    bool canCast(mlir::Type srcType, mlir::Type dstType)
+    // TODO: review using canCast in detecting base Type, in case of "i32" & "number" + "number" & "i32"
+    bool canWideTypeWithoutDataLoss(mlir::Type srcType, mlir::Type dstType)
     {
         if (!srcType || !dstType)
         {
