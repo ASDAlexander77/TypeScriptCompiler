@@ -1681,17 +1681,26 @@ class MLIRGenImpl
             }
         }
 
+#ifdef ANY_AS_DEFAULT
+        if (!type)
+        {
+            type = getAnyType();
+        }
+#endif
+
         return std::make_pair(type, init);
     }
 
     mlir::LogicalResult mlirGen(VariableDeclaration item, VariableClass varClass, const GenContext &genContext)
     {
+#ifndef ANY_AS_DEFAULT
         if (!item->type && !item->initializer)
         {
             auto name = MLIRHelper::getName(item->name);
             emitError(loc(item)) << "type of variable '" << name << "' is not provided, variable must have type or initializer";
             return mlir::failure();
         }
+#endif
 
         auto initFunc = [&]() { return getTypeAndInit(item, genContext); };
 
@@ -6629,8 +6638,13 @@ class MLIRGenImpl
 
             if (!elementType)
             {
+#ifdef ANY_AS_DEFAULT
                 // in case of empty array
                 elementType = getAnyType();
+#else
+                emitError(location) << "type of array is not provided";
+                return mlir::Value();
+#endif
             }
 
             if (!spreadElements)

@@ -21,6 +21,7 @@
 #endif
 
 #define NUMBER_F64 1
+#define ANY_AS_DEFAULT 1
 
 #ifdef WIN32
 #define WIN_EXCEPTION 1
