@@ -148,7 +148,9 @@
             "regex": "cpp",
             "optional": "cpp",
             "*.rh": "cpp",
-            "forward_list": "cpp"
+            "forward_list": "cpp",
+            "charconv": "cpp",
+            "format": "cpp"
         },
         "cmake.buildDirectory": "${workspaceRoot}/../../__build/tsc",
         "cmake.sourceDirectory": "${workspaceFolder}/..",
@@ -156,6 +158,14 @@
         "[cpp]": {
             "editor.defaultFormatter": "xaver.clang-format",
         },
-        "C_Cpp.clang_format_style": "Microsoft"
+        "C_Cpp.clang_format_style": "Microsoft",
+        "clang-tidy.compilerArgs": [
+            "-I../include",
+            "-I../../3rdParty/llvm/debug/include",
+            "-I../../__build/tsc/include"
+        ],
+        "clang-tidy.buildPath": "../../__build/tsc",
+        "C_Cpp.codeAnalysis.clangTidy.headerFilter": ".*",
+        "clang-tidy.lintOnSave": false
     }
 }

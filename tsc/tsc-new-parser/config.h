@@ -1,11 +1,11 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+#include <cctype>
 #include <functional>
 #include <regex>
 #include <sstream>
 #include <string>
-#include <cctype>
 
 #if _MSC_VER
 #pragma warning(disable : 4062)
@@ -21,6 +21,7 @@ using sstream = std::wstringstream;
 using regex = std::wregex;
 using sregex_iterator = std::wsregex_iterator;
 using stringstream = std::wstringstream;
+using smatch = std::wsmatch;
 #define regex_replace std::regex_replace
 
 #define to_number_base(x, y) std::stoi(x, nullptr, y)

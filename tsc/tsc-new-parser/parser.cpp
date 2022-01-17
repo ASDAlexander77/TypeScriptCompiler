@@ -128,7 +128,9 @@ struct Parser
     // up by avoiding the cost of creating/compiling scanners over and over again.
     Parser()
         : scanner(ScriptTarget::Latest, /*skipTrivia*/ true),
-          factory(&scanner, NodeFactoryFlags::NoParenthesizerRules | NodeFactoryFlags::NoNodeConverters | NodeFactoryFlags::NoOriginalNode,
+          factory(&scanner,
+                  NodeFactoryFlags::NoParenthesizerRules | NodeFactoryFlags::NoNodeConverters |
+                      NodeFactoryFlags::NoOriginalNode,
                   [&](Node node) -> void { countNode(node); })
     {
     }
@@ -139,15 +141,17 @@ struct Parser
         return node;
     }
 
-    auto parseSourceFile(string fileName, string sourceText, ScriptTarget languageVersion, IncrementalParser::SyntaxCursor syntaxCursor,
-                         boolean setParentNodes = false, ScriptKind scriptKind = ScriptKind::Unknown) -> SourceFile
+    auto parseSourceFile(string fileName, string sourceText, ScriptTarget languageVersion,
+                         IncrementalParser::SyntaxCursor syntaxCursor, boolean setParentNodes = false,
+                         ScriptKind scriptKind = ScriptKind::Unknown) -> SourceFile
     {
         scriptKind = ensureScriptKind(fileName, scriptKind);
         if (scriptKind == ScriptKind::JSON)
         {
             auto result = parseJsonText(fileName, sourceText, languageVersion, syntaxCursor, setParentNodes);
             // TODO: review if we need it
-            // convertToObjectWorker(result, result.statements[0].expression, result.parseDiagnostics, /*returnValue*/ false,
+            // convertToObjectWorker(result, result.statements[0].expression, result.parseDiagnostics, /*returnValue*/
+            // false,
             // /*knownRootOptions*/ undefined, /*jsonConversionNotifier*/ undefined);
             result->referencedFiles.clear();
             result->typeReferenceDirectives.clear();
@@ -194,7 +198,8 @@ struct Parser
      * @param sourceText
      */
     auto parseJsonText(string fileName, string sourceText, ScriptTarget languageVersion = ScriptTarget::ES2015,
-                       IncrementalParser::SyntaxCursor syntaxCursor = undefined, boolean setParentNodes = false) -> JsonSourceFile
+                       IncrementalParser::SyntaxCursor syntaxCursor = undefined, boolean setParentNodes = false)
+        -> JsonSourceFile
     {
         initializeState(fileName, sourceText, languageVersion, syntaxCursor, ScriptKind::JSON);
         sourceFlags = contextFlags;
@@ -230,8 +235,9 @@ struct Parser
                     expression = parseTokenNode<NullLiteral>();
                     break;
                 case SyntaxKind::MinusToken:
-                    if (lookAhead<boolean>(
-                            [&]() { return nextToken() == SyntaxKind::NumericLiteral && nextToken() != SyntaxKind::ColonToken; }))
+                    if (lookAhead<boolean>([&]() {
+                            return nextToken() == SyntaxKind::NumericLiteral && nextToken() != SyntaxKind::ColonToken;
+                        }))
                     {
                         expression = parsePrefixUnaryExpression();
                     }
@@ -257,21 +263,24 @@ struct Parser
                 expressions.push_back(expression);
                 if (token() != SyntaxKind::EndOfFileToken)
                 {
-                    parseErrorAtCurrentToken(ts::DiagnosticMessage(data::DiagnosticMessage(Diagnostics::Unexpected_token)));
+                    parseErrorAtCurrentToken(
+                        ts::DiagnosticMessage(data::DiagnosticMessage(Diagnostics::Unexpected_token)));
                 }
             }
 
-            auto expression = expressions.size() > 1 ? finishNode(factory.createArrayLiteralExpression(expressions), pos).as<Expression>()
-                                                     : Debug::checkDefined(expressions[0]);
+            auto expression = expressions.size() > 1
+                                  ? finishNode(factory.createArrayLiteralExpression(expressions), pos).as<Expression>()
+                                  : Debug::checkDefined(expressions[0]);
             auto statement = factory.createExpressionStatement(expression).as<Statement>();
             finishNode(statement, pos);
             statements = createNodeArray(NodeArray<Statement>(statement), pos);
-            endOfFileToken = parseExpectedToken(SyntaxKind::EndOfFileToken, data::DiagnosticMessage(Diagnostics::Unexpected_token));
+            endOfFileToken =
+                parseExpectedToken(SyntaxKind::EndOfFileToken, data::DiagnosticMessage(Diagnostics::Unexpected_token));
         }
 
         // Set source file so that errors will be reported with this file name
-        auto sourceFile = createSourceFile(fileName, ScriptTarget::ES2015, ScriptKind::JSON, /*isDeclaration*/ false, statements,
-                                           endOfFileToken, sourceFlags);
+        auto sourceFile = createSourceFile(fileName, ScriptTarget::ES2015, ScriptKind::JSON, /*isDeclaration*/ false,
+                                           statements, endOfFileToken, sourceFlags);
 
         if (setParentNodes)
         {
@@ -294,8 +303,8 @@ struct Parser
         return result;
     }
 
-    auto initializeState(string _fileName, string _sourceText, ScriptTarget _languageVersion, IncrementalParser::SyntaxCursor _syntaxCursor,
-                         ScriptKind _scriptKind) -> void
+    auto initializeState(string _fileName, string _sourceText, ScriptTarget _languageVersion,
+                         IncrementalParser::SyntaxCursor _syntaxCursor, ScriptKind _scriptKind) -> void
     {
         fileName = normalizePath(_fileName);
         sourceText = _sourceText;
@@ -363,7 +372,8 @@ struct Parser
         return fileExtensionIs(fileName, Extension::Dts);
     }
 
-    auto parseSourceFileWorker(ScriptTarget languageVersion, boolean setParentNodes, ScriptKind scriptKind) -> SourceFile
+    auto parseSourceFileWorker(ScriptTarget languageVersion, boolean setParentNodes, ScriptKind scriptKind)
+        -> SourceFile
     {
         auto isDeclarationFile = isDeclarationFileName(fileName);
         if (isDeclarationFile)
@@ -376,15 +386,16 @@ struct Parser
         // Prime the scanner.
         nextToken();
 
-        auto statements = parseList<Statement>(ParsingContext::SourceElements, std::bind(&Parser::parseStatement, this));
+        auto statements =
+            parseList<Statement>(ParsingContext::SourceElements, std::bind(&Parser::parseStatement, this));
         Debug::_assert(token() == SyntaxKind::EndOfFileToken);
         auto endOfFileToken = addJSDocComment(parseTokenNode<EndOfFileToken>());
 
-        auto sourceFile =
-            createSourceFile(fileName, languageVersion, scriptKind, isDeclarationFile, statements, endOfFileToken, sourceFlags);
+        auto sourceFile = createSourceFile(fileName, languageVersion, scriptKind, isDeclarationFile, statements,
+                                           endOfFileToken, sourceFlags);
 
-        // A member of ReadonlyArray<T> isn't assignable to a member of T[] (and prevents a direct cast) - but this is where we set up those
-        // members so they can be in the future
+        // A member of ReadonlyArray<T> isn't assignable to a member of T[] (and prevents a direct cast) - but this is
+        // where we set up those members so they can be in the future
         processCommentPragmas(sourceFile, sourceText);
 
         auto reportPragmaDiagnostic = [&](pos_type pos, number end, DiagnosticMessage diagnostic) -> void {
@@ -423,9 +434,9 @@ struct Parser
         // TODO:
         // Debug::_assert(!node.as<JSDocContainer>()->jsDoc); // Should only be called once per node
         /*
-        auto jsDoc = mapDefined(getJSDocCommentRanges(node, sourceText), [&] (auto comment) { return JSDocParser::parseJSDocComment(node,
-        comment->pos, comment->_end - comment->pos); }); if (jsDoc.size()) node->jsDoc = jsDoc; if (hasDeprecatedTag) { hasDeprecatedTag =
-        false; node->flags |= NodeFlags::Deprecated;
+        auto jsDoc = mapDefined(getJSDocCommentRanges(node, sourceText), [&] (auto comment) { return
+        JSDocParser::parseJSDocComment(node, comment->pos, comment->_end - comment->pos); }); if (jsDoc.size())
+        node->jsDoc = jsDoc; if (hasDeprecatedTag) { hasDeprecatedTag = false; node->flags |= NodeFlags::Deprecated;
         }
         */
         return node;
@@ -437,7 +448,8 @@ struct Parser
         auto baseSyntaxCursor = IncrementalParser::createSyntaxCursor(sourceFile);
 
         auto containsPossibleTopLevelAwait = [](Node node) {
-            return !(node->flags & NodeFlags::AwaitContext) && !!(node->transformFlags & TransformFlags::ContainsPossibleTopLevelAwait);
+            return !(node->flags & NodeFlags::AwaitContext) &&
+                   !!(node->transformFlags & TransformFlags::ContainsPossibleTopLevelAwait);
         };
 
         auto findNextStatementWithAwait = [&](NodeArray<Statement> statements, number start) {
@@ -489,21 +501,24 @@ struct Parser
             pos = findNextStatementWithoutAwait(sourceFile->statements, start);
 
             // append all diagnostics associated with the copied range
-            auto diagnosticStart =
-                findIndex(savedParseDiagnostics, [&](auto diagnostic, number index) { return diagnostic->start >= prevStatement->pos; });
+            auto diagnosticStart = findIndex(savedParseDiagnostics, [&](auto diagnostic, number index) {
+                return diagnostic->start >= prevStatement->pos;
+            });
             auto diagnosticEnd =
                 diagnosticStart >= 0
                     ? findIndex(
-                          savedParseDiagnostics, [&](auto diagnostic, number index) { return diagnostic->start >= nextStatement->pos; },
+                          savedParseDiagnostics,
+                          [&](auto diagnostic, number index) { return diagnostic->start >= nextStatement->pos; },
                           diagnosticStart)
                     : -1;
             if (diagnosticStart >= 0)
             {
-                addRange(parseDiagnostics, savedParseDiagnostics, diagnosticStart, diagnosticEnd >= 0 ? diagnosticEnd : -1);
+                addRange(parseDiagnostics, savedParseDiagnostics, diagnosticStart,
+                         diagnosticEnd >= 0 ? diagnosticEnd : -1);
             }
 
-            // reparse all statements between start and pos. We skip existing diagnostics for the same range and allow the parser to
-            // generate new ones.
+            // reparse all statements between start and pos. We skip existing diagnostics for the same range and allow
+            // the parser to generate new ones.
             speculationHelper<boolean>(
                 [&]() {
                     auto savedContextFlags = contextFlags;
@@ -514,8 +529,8 @@ struct Parser
                     while (token() != SyntaxKind::EndOfFileToken)
                     {
                         auto startPos = scanner.getStartPos();
-                        auto statement =
-                            parseListElement<Statement>(ParsingContext::SourceElements, std::bind(&Parser::parseStatement, this));
+                        auto statement = parseListElement<Statement>(ParsingContext::SourceElements,
+                                                                     std::bind(&Parser::parseStatement, this));
                         statements.push_back(statement);
                         if (startPos == scanner.getStartPos())
                         {
@@ -555,8 +570,9 @@ struct Parser
             addRange(statements, sourceFile->statements, pos);
 
             // append all diagnostics associated with the copied range
-            auto diagnosticStart =
-                findIndex(savedParseDiagnostics, [&](auto diagnostic, number index) { return diagnostic->start >= prevStatement->pos; });
+            auto diagnosticStart = findIndex(savedParseDiagnostics, [&](auto diagnostic, number index) {
+                return diagnostic->start >= prevStatement->pos;
+            });
             if (diagnosticStart >= 0)
             {
                 addRange(parseDiagnostics, savedParseDiagnostics, diagnosticStart);
@@ -564,15 +580,16 @@ struct Parser
         }
 
         syntaxCursor = savedSyntaxCursor;
-        return factory.updateSourceFile(sourceFile,
-                                        setTextRange(factory.createNodeArray(statements), (data::TextRange)sourceFile->statements));
+        return factory.updateSourceFile(
+            sourceFile, setTextRange(factory.createNodeArray(statements), (data::TextRange)sourceFile->statements));
     }
 
-    auto createSourceFile(string fileName, ScriptTarget languageVersion, ScriptKind scriptKind, boolean isDeclarationFile,
-                          NodeArray<Statement> statements, Node endOfFileToken, NodeFlags flags) -> SourceFile
+    auto createSourceFile(string fileName, ScriptTarget languageVersion, ScriptKind scriptKind,
+                          boolean isDeclarationFile, NodeArray<Statement> statements, Node endOfFileToken,
+                          NodeFlags flags) -> SourceFile
     {
-        // code from createNode is inlined here so createNode won't have to deal with special case of creating source files
-        // this is quite rare comparing to other nodes and createNode should be.as<fast>().as<possible>()
+        // code from createNode is inlined here so createNode won't have to deal with special case of creating source
+        // files this is quite rare comparing to other nodes and createNode should be.as<fast>().as<possible>()
         auto sourceFile = factory.createSourceFile(statements, endOfFileToken, flags);
         setTextRangePosWidth(sourceFile, 0, sourceText.size());
         setExternalModuleIndicator(sourceFile);
@@ -890,7 +907,8 @@ struct Parser
         // If we're only looking ahead, then tell the scanner to only lookahead.as<well>().
         // Otherwise, if we're actually speculatively parsing, then tell the scanner to do the
         // same.
-        auto result = speculationKind != SpeculationKind::TryParse ? scanner.lookAhead<T>(callback) : scanner.tryScan<T>(callback);
+        auto result = speculationKind != SpeculationKind::TryParse ? scanner.lookAhead<T>(callback)
+                                                                   : scanner.tryScan<T>(callback);
 
         Debug::_assert(saveContextFlags == contextFlags);
 
@@ -963,7 +981,8 @@ struct Parser
         return token() > SyntaxKind::LastReservedWord;
     }
 
-    auto parseExpected(SyntaxKind kind, DiagnosticMessage diagnosticMessage = undefined, boolean shouldAdvance = true) -> boolean
+    auto parseExpected(SyntaxKind kind, DiagnosticMessage diagnosticMessage = undefined, boolean shouldAdvance = true)
+        -> boolean
     {
         if (token() == kind)
         {
@@ -1025,16 +1044,18 @@ struct Parser
         return undefined;
     }
 
-    auto parseExpectedToken(SyntaxKind t, DiagnosticMessage diagnosticMessage = undefined, string arg0 = string()) -> Node
+    auto parseExpectedToken(SyntaxKind t, DiagnosticMessage diagnosticMessage = undefined, string arg0 = string())
+        -> Node
     {
-        return parseOptionalToken(t) || [&]() { return createMissingNode(t, /*reportAtCurrentPosition*/ false, diagnosticMessage, arg0); };
+        return parseOptionalToken(t) ||
+               [&]() { return createMissingNode(t, /*reportAtCurrentPosition*/ false, diagnosticMessage, arg0); };
     }
 
     auto parseExpectedTokenJSDoc(SyntaxKind t) -> Node
     {
         return parseOptionalTokenJSDoc(t) || [&]() {
-            return createMissingNode(t, /*reportAtCurrentPosition*/ false, data::DiagnosticMessage(Diagnostics::_0_expected),
-                                     scanner.tokenToString(t));
+            return createMissingNode(t, /*reportAtCurrentPosition*/ false,
+                                     data::DiagnosticMessage(Diagnostics::_0_expected), scanner.tokenToString(t));
         };
     }
 
@@ -1063,7 +1084,8 @@ struct Parser
         }
 
         // We can parse out an optional semicolon in ASI cases in the following cases.
-        return token() == SyntaxKind::CloseBraceToken || token() == SyntaxKind::EndOfFileToken || scanner.hasPrecedingLineBreak();
+        return token() == SyntaxKind::CloseBraceToken || token() == SyntaxKind::EndOfFileToken ||
+               scanner.hasPrecedingLineBreak();
     }
 
     auto parseSemicolon() -> boolean
@@ -1084,7 +1106,8 @@ struct Parser
         }
     }
 
-    auto createNodeArray(NodeArray<Node> elements, pos_type pos, number end = -1, boolean hasTrailingComma = false) -> NodeArray<Node>
+    auto createNodeArray(NodeArray<Node> elements, pos_type pos, number end = -1, boolean hasTrailingComma = false)
+        -> NodeArray<Node>
     {
         auto array = factory.createNodeArray(elements, hasTrailingComma);
         setTextRangePosEnd(array, pos, end != -1 ? end : scanner.getStartPos());
@@ -1093,7 +1116,8 @@ struct Parser
     }
 
     template <typename T>
-    auto createNodeArray(NodeArray<T> elements, pos_type pos, number end = -1, boolean hasTrailingComma = false) -> NodeArray<T>
+    auto createNodeArray(NodeArray<T> elements, pos_type pos, number end = -1, boolean hasTrailingComma = false)
+        -> NodeArray<T>
     {
         auto array = factory.createNodeArray<T>(elements, hasTrailingComma);
         setTextRangePosEnd(array, pos, end != -1 ? end : scanner.getStartPos());
@@ -1124,8 +1148,8 @@ struct Parser
     }
 
     template <typename T = Node>
-    auto createMissingNode(SyntaxKind kind, boolean reportAtCurrentPosition, DiagnosticMessage diagnosticMessage = undefined,
-                           string arg0 = string()) -> Node
+    auto createMissingNode(SyntaxKind kind, boolean reportAtCurrentPosition,
+                           DiagnosticMessage diagnosticMessage = undefined, string arg0 = string()) -> Node
     {
         if (reportAtCurrentPosition)
         {
@@ -1137,14 +1161,17 @@ struct Parser
         }
 
         auto pos = getNodePos();
-        auto result = kind == SyntaxKind::Identifier ? factory.createIdentifier(string()).as<Node>()
-                      : isTemplateLiteralKind(kind)
-                          ? factory.createTemplateLiteralLikeNode(kind, string(), string(), /*templateFlags*/ TokenFlags::None).as<Node>()
-                      : kind == SyntaxKind::NumericLiteral
-                          ? factory.createNumericLiteral(string(), /*numericLiteralFlags*/ TokenFlags::None).as<Node>()
-                      : kind == SyntaxKind::StringLiteral      ? factory.createStringLiteral(string(), /*isSingleQuote*/ false).as<Node>()
-                      : kind == SyntaxKind::MissingDeclaration ? factory.createMissingDeclaration().as<Node>()
-                                                               : factory.createToken<T>(kind).template as<Node>();
+        auto result =
+            kind == SyntaxKind::Identifier ? factory.createIdentifier(string()).as<Node>()
+            : isTemplateLiteralKind(kind)
+                ? factory.createTemplateLiteralLikeNode(kind, string(), string(), /*templateFlags*/ TokenFlags::None)
+                      .as<Node>()
+            : kind == SyntaxKind::NumericLiteral
+                ? factory.createNumericLiteral(string(), /*numericLiteralFlags*/ TokenFlags::None).as<Node>()
+            : kind == SyntaxKind::StringLiteral
+                ? factory.createStringLiteral(string(), /*isSingleQuote*/ false).as<Node>()
+            : kind == SyntaxKind::MissingDeclaration ? factory.createMissingDeclaration().as<Node>()
+                                                     : factory.createToken<T>(kind).template as<Node>();
         return finishNode(result, pos);
     }
 
@@ -1155,8 +1182,8 @@ struct Parser
     }
 
     // An identifier that starts with two underscores has an extra underscore character prepended to it to avoid issues
-    // with magic property names like '__proto__'. The 'identifiers' object is used to share a single string instance for
-    // each identifier in order to reduce memory consumption.
+    // with magic property names like '__proto__'. The 'identifiers' object is used to share a single string instance
+    // for each identifier in order to reduce memory consumption.
     auto createIdentifier(boolean isIdentifier, DiagnosticMessage diagnosticMessage = undefined,
                           DiagnosticMessage privateIdentifierDiagnosticMessage = undefined) -> Identifier
     {
@@ -1164,7 +1191,8 @@ struct Parser
         {
             identifierCount++;
             auto pos = getNodePos();
-            // Store original token kind if it is not just an Identifier so we can report appropriate error later in type checker
+            // Store original token kind if it is not just an Identifier so we can report appropriate error later in
+            // type checker
             auto originalKeywordKind = token();
             auto text = internIdentifier(scanner.getTokenValue());
             nextTokenWithoutCheck();
@@ -1195,20 +1223,23 @@ struct Parser
         auto msgArg = scanner.getTokenText();
 
         auto defaultMessage = isReservedWord
-                                  ? data::DiagnosticMessage(Diagnostics::Identifier_expected_0_is_a_reserved_word_that_cannot_be_used_here)
+                                  ? data::DiagnosticMessage(
+                                        Diagnostics::Identifier_expected_0_is_a_reserved_word_that_cannot_be_used_here)
                                   : data::DiagnosticMessage(Diagnostics::Identifier_expected);
 
-        return createMissingNode<Identifier>(SyntaxKind::Identifier, reportAtCurrentPosition,
-                                             !!diagnosticMessage ? diagnosticMessage : ts::DiagnosticMessage(defaultMessage), msgArg);
+        return createMissingNode<Identifier>(
+            SyntaxKind::Identifier, reportAtCurrentPosition,
+            !!diagnosticMessage ? diagnosticMessage : ts::DiagnosticMessage(defaultMessage), msgArg);
     }
 
     auto parseBindingIdentifier(DiagnosticMessage privateIdentifierDiagnosticMessage = undefined)
     {
-        return createIdentifier(isBindingIdentifier(), /*diagnosticMessage*/ undefined, privateIdentifierDiagnosticMessage);
+        return createIdentifier(isBindingIdentifier(), /*diagnosticMessage*/ undefined,
+                                privateIdentifierDiagnosticMessage);
     }
 
-    auto parseIdentifier(DiagnosticMessage diagnosticMessage = undefined, DiagnosticMessage privateIdentifierDiagnosticMessage = undefined)
-        -> Identifier
+    auto parseIdentifier(DiagnosticMessage diagnosticMessage = undefined,
+                         DiagnosticMessage privateIdentifierDiagnosticMessage = undefined) -> Identifier
     {
         return createIdentifier(isIdentifier(), diagnosticMessage, privateIdentifierDiagnosticMessage);
     }
@@ -1220,7 +1251,8 @@ struct Parser
 
     auto isLiteralPropertyName() -> boolean
     {
-        return scanner.tokenIsIdentifierOrKeyword(token()) || token() == SyntaxKind::StringLiteral || token() == SyntaxKind::NumericLiteral;
+        return scanner.tokenIsIdentifierOrKeyword(token()) || token() == SyntaxKind::StringLiteral ||
+               token() == SyntaxKind::NumericLiteral;
     }
 
     auto parsePropertyNameWorker(boolean allowComputedPropertyNames) -> Node
@@ -1324,8 +1356,8 @@ struct Parser
 
     auto canFollowExportModifier() -> boolean
     {
-        return token() != SyntaxKind::AsteriskToken && token() != SyntaxKind::AsKeyword && token() != SyntaxKind::OpenBraceToken &&
-               canFollowModifier();
+        return token() != SyntaxKind::AsteriskToken && token() != SyntaxKind::AsKeyword &&
+               token() != SyntaxKind::OpenBraceToken && canFollowModifier();
     }
 
     auto nextTokenCanFollowExportModifier() -> boolean
@@ -1341,17 +1373,19 @@ struct Parser
 
     auto canFollowModifier() -> boolean
     {
-        return token() == SyntaxKind::OpenBracketToken || token() == SyntaxKind::OpenBraceToken || token() == SyntaxKind::AsteriskToken ||
-               token() == SyntaxKind::DotDotDotToken || isLiteralPropertyName();
+        return token() == SyntaxKind::OpenBracketToken || token() == SyntaxKind::OpenBraceToken ||
+               token() == SyntaxKind::AsteriskToken || token() == SyntaxKind::DotDotDotToken || isLiteralPropertyName();
     }
 
     auto nextTokenCanFollowDefaultKeyword() -> boolean
     {
         nextToken();
-        return token() == SyntaxKind::ClassKeyword || token() == SyntaxKind::FunctionKeyword || token() == SyntaxKind::InterfaceKeyword ||
+        return token() == SyntaxKind::ClassKeyword || token() == SyntaxKind::FunctionKeyword ||
+               token() == SyntaxKind::InterfaceKeyword ||
                (token() == SyntaxKind::AbstractKeyword &&
                 lookAhead<boolean>(std::bind(&Parser::nextTokenIsClassKeywordOnSameLine, this))) ||
-               (token() == SyntaxKind::AsyncKeyword && lookAhead<boolean>(std::bind(&Parser::nextTokenIsFunctionKeywordOnSameLine, this)));
+               (token() == SyntaxKind::AsyncKeyword &&
+                lookAhead<boolean>(std::bind(&Parser::nextTokenIsFunctionKeywordOnSameLine, this)));
     }
 
     // True if positioned at the start of a list element
@@ -1405,7 +1439,8 @@ struct Parser
         case ParsingContext::RestProperties:
             return isLiteralPropertyName();
         case ParsingContext::ObjectBindingElements:
-            return token() == SyntaxKind::OpenBracketToken || token() == SyntaxKind::DotDotDotToken || isLiteralPropertyName();
+            return token() == SyntaxKind::OpenBracketToken || token() == SyntaxKind::DotDotDotToken ||
+                   isLiteralPropertyName();
         case ParsingContext::HeritageClauseElement:
             // If we see `{ ... }` then only consume it.as<an>() expression if it is followed by `,` or `{`
             // That way we won't consume the body of a class in its heritage clause.
@@ -1477,8 +1512,8 @@ struct Parser
             //      extends {} implements
 
             auto next = nextToken();
-            return next == SyntaxKind::CommaToken || next == SyntaxKind::OpenBraceToken || next == SyntaxKind::ExtendsKeyword ||
-                   next == SyntaxKind::ImplementsKeyword;
+            return next == SyntaxKind::CommaToken || next == SyntaxKind::OpenBraceToken ||
+                   next == SyntaxKind::ExtendsKeyword || next == SyntaxKind::ImplementsKeyword;
         }
 
         return true;
@@ -1546,7 +1581,8 @@ struct Parser
         case ParsingContext::ImportOrExportSpecifiers:
             return token() == SyntaxKind::CloseBraceToken;
         case ParsingContext::SwitchClauseStatements:
-            return token() == SyntaxKind::CloseBraceToken || token() == SyntaxKind::CaseKeyword || token() == SyntaxKind::DefaultKeyword;
+            return token() == SyntaxKind::CloseBraceToken || token() == SyntaxKind::CaseKeyword ||
+                   token() == SyntaxKind::DefaultKeyword;
         case ParsingContext::HeritageClauseElement:
             return token() == SyntaxKind::OpenBraceToken || token() == SyntaxKind::ExtendsKeyword ||
                    token() == SyntaxKind::ImplementsKeyword;
@@ -1578,7 +1614,8 @@ struct Parser
         case ParsingContext::JsxAttributes:
             return token() == SyntaxKind::GreaterThanToken || token() == SyntaxKind::SlashToken;
         case ParsingContext::JsxChildren:
-            return token() == SyntaxKind::LessThanToken && lookAhead<boolean>(std::bind(&Parser::nextTokenIsSlash, this));
+            return token() == SyntaxKind::LessThanToken &&
+                   lookAhead<boolean>(std::bind(&Parser::nextTokenIsSlash, this));
         default:
             return false;
         }
@@ -1620,7 +1657,8 @@ struct Parser
         {
             if (!!(parsingContext & (ParsingContext)(1 << kind)))
             {
-                if (isListElement((ParsingContext)kind, /*inErrorRecovery*/ true) || isListTerminator((ParsingContext)kind))
+                if (isListElement((ParsingContext)kind, /*inErrorRecovery*/ true) ||
+                    isListTerminator((ParsingContext)kind))
                 {
                     return true;
                 }
@@ -1854,8 +1892,9 @@ struct Parser
                 // may have a method calls "constructor(...)" and we must reparse that
                 // into an actual .ConstructorDeclaration.
                 auto methodDeclaration = node.as<MethodDeclaration>();
-                auto nameIsConstructor = methodDeclaration->name == SyntaxKind::Identifier &&
-                                         methodDeclaration->name.as<Identifier>()->originalKeywordKind == SyntaxKind::ConstructorKeyword;
+                auto nameIsConstructor =
+                    methodDeclaration->name == SyntaxKind::Identifier &&
+                    methodDeclaration->name.as<Identifier>()->originalKeywordKind == SyntaxKind::ConstructorKeyword;
 
                 return !nameIsConstructor;
             }
@@ -2010,21 +2049,24 @@ struct Parser
         case ParsingContext::TypeMembers:
             return parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::Property_or_signature_expected));
         case ParsingContext::ClassMembers:
-            return parseErrorAtCurrentToken(
-                data::DiagnosticMessage(Diagnostics::Unexpected_token_A_constructor_method_accessor_or_property_was_expected));
+            return parseErrorAtCurrentToken(data::DiagnosticMessage(
+                Diagnostics::Unexpected_token_A_constructor_method_accessor_or_property_was_expected));
         case ParsingContext::EnumMembers:
             return parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::Enum_member_expected));
         case ParsingContext::HeritageClauseElement:
             return parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::Expression_expected));
         case ParsingContext::VariableDeclarations:
             return isKeyword(token())
-                       ? parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::_0_is_not_allowed_as_a_variable_declaration_name),
-                                                  scanner.tokenToString(token()))
+                       ? parseErrorAtCurrentToken(
+                             data::DiagnosticMessage(Diagnostics::_0_is_not_allowed_as_a_variable_declaration_name),
+                             scanner.tokenToString(token()))
                        : parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::Variable_declaration_expected));
         case ParsingContext::ObjectBindingElements:
-            return parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::Property_destructuring_pattern_expected));
+            return parseErrorAtCurrentToken(
+                data::DiagnosticMessage(Diagnostics::Property_destructuring_pattern_expected));
         case ParsingContext::ArrayBindingElements:
-            return parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::Array_element_destructuring_pattern_expected));
+            return parseErrorAtCurrentToken(
+                data::DiagnosticMessage(Diagnostics::Array_element_destructuring_pattern_expected));
         case ParsingContext::ArgumentExpressions:
             return parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::Argument_expression_expected));
         case ParsingContext::ObjectLiteralMembers:
@@ -2055,8 +2097,8 @@ struct Parser
 
     // Parses a comma-delimited list of elements
     template <typename T>
-    auto parseDelimitedList(ParsingContext kind, std::function<T()> parseElement, boolean considerSemicolonAsDelimiter = false)
-        -> NodeArray<T>
+    auto parseDelimitedList(ParsingContext kind, std::function<T()> parseElement,
+                            boolean considerSemicolonAsDelimiter = false) -> NodeArray<T>
     {
         auto saveParsingContext = parsingContext;
         parsingContext |= (ParsingContext)(1 << (number)kind);
@@ -2093,16 +2135,18 @@ struct Parser
                 // parse errors.  For example, this can happen when people do things like use
                 // a semicolon to delimit object literal members.   we Note'll have already
                 // reported an error when we called parseExpected above.
-                if (considerSemicolonAsDelimiter && token() == SyntaxKind::SemicolonToken && !scanner.hasPrecedingLineBreak())
+                if (considerSemicolonAsDelimiter && token() == SyntaxKind::SemicolonToken &&
+                    !scanner.hasPrecedingLineBreak())
                 {
                     nextToken();
                 }
                 if (startPos == scanner.getStartPos())
                 {
-                    // What we're parsing isn't actually remotely recognizable.as<a>() element and we've consumed no tokens whatsoever
-                    // Consume a token to advance the parser in some way and avoid an infinite loop
-                    // This can happen when we're speculatively parsing parenthesized expressions which we think may be arrow functions,
-                    // or when a modifier keyword which is disallowed.as<a>() parameter name (ie, `static` in strict mode) is supplied
+                    // What we're parsing isn't actually remotely recognizable.as<a>() element and we've consumed no
+                    // tokens whatsoever Consume a token to advance the parser in some way and avoid an infinite loop
+                    // This can happen when we're speculatively parsing parenthesized expressions which we think may be
+                    // arrow functions, or when a modifier keyword which is disallowed.as<a>() parameter name (ie,
+                    // `static` in strict mode) is supplied
                     nextToken();
                 }
                 continue;
@@ -2131,9 +2175,9 @@ struct Parser
 
     auto getExpectedCommaDiagnostic(ParsingContext kind) -> DiagnosticMessage
     {
-        return kind == ParsingContext::EnumMembers
-                   ? DiagnosticMessage(data::DiagnosticMessage(Diagnostics::An_enum_member_name_must_be_followed_by_a_or))
-                   : undefined;
+        return kind == ParsingContext::EnumMembers ? DiagnosticMessage(data::DiagnosticMessage(
+                                                         Diagnostics::An_enum_member_name_must_be_followed_by_a_or))
+                                                   : undefined;
     }
 
     template <typename T> using MissingList = NodeArray<T>;
@@ -2151,7 +2195,8 @@ struct Parser
     }
 
     template <typename T>
-    auto parseBracketedList(ParsingContext kind, std::function<T()> parseElement, SyntaxKind open, SyntaxKind close) -> NodeArray<T>
+    auto parseBracketedList(ParsingContext kind, std::function<T()> parseElement, SyntaxKind open, SyntaxKind close)
+        -> NodeArray<T>
     {
         if (parseExpected(open))
         {
@@ -2177,9 +2222,11 @@ struct Parser
                 break;
             }
             dotPos = getNodePos();
-            entity = finishNode(factory.createQualifiedName(
-                                    entity, parseRightSideOfDot(allowReservedWords, /* allowPrivateIdentifiers */ false).as<Identifier>()),
-                                pos);
+            entity = finishNode(
+                factory.createQualifiedName(
+                    entity,
+                    parseRightSideOfDot(allowReservedWords, /* allowPrivateIdentifiers */ false).as<Identifier>()),
+                pos);
         }
         return entity;
     }
@@ -2212,7 +2259,8 @@ struct Parser
         // line terminator after the identifier or keyword.
         if (scanner.hasPrecedingLineBreak() && scanner.tokenIsIdentifierOrKeyword(token()))
         {
-            auto matchesPattern = lookAhead<boolean>(std::bind(&Parser::nextTokenIsIdentifierOrKeywordOnSameLine, this));
+            auto matchesPattern =
+                lookAhead<boolean>(std::bind(&Parser::nextTokenIsIdentifierOrKeywordOnSameLine, this));
 
             if (matchesPattern)
             {
@@ -2227,9 +2275,10 @@ struct Parser
         if (token() == SyntaxKind::PrivateIdentifier)
         {
             auto node = parsePrivateIdentifier();
-            return allowPrivateIdentifiers ? node
-                                           : createMissingNode<Identifier>(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ true,
-                                                                           data::DiagnosticMessage(Diagnostics::Identifier_expected));
+            return allowPrivateIdentifiers
+                       ? node
+                       : createMissingNode<Identifier>(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ true,
+                                                       data::DiagnosticMessage(Diagnostics::Identifier_expected));
         }
 
         return allowIdentifierNames ? parseIdentifierName() : parseIdentifier();
@@ -2294,7 +2343,8 @@ struct Parser
         }
         else
         {
-            // TODO(rbuckton) -> Do we need to call `parseExpectedToken` or can we just call `createMissingNode` directly?
+            // TODO(rbuckton) -> Do we need to call `parseExpectedToken` or can we just call `createMissingNode`
+            // directly?
             return parseExpectedToken(SyntaxKind::TemplateTail, data::DiagnosticMessage(Diagnostics::_0_expected),
                                       scanner.tokenToString(SyntaxKind::CloseBraceToken));
         }
@@ -2343,23 +2393,26 @@ struct Parser
     {
         auto pos = getNodePos();
         LiteralLikeNode node =
-            isTemplateLiteralKind(kind) ? factory
-                                              .createTemplateLiteralLikeNode(kind, scanner.getTokenValue(), getTemplateLiteralRawText(kind),
-                                                                             scanner.getTokenFlags() & TokenFlags::TemplateLiteralLikeFlags)
-                                              .as<LiteralLikeNode>()
-                                        :
-                                        // Octal literals are not allowed in strict mode or ES5
-                                        // Note that theoretically the following condition would hold true literals like 009,
-                                        // which is not octal. But because of how the scanner separates the tokens, we would
-                                        // never get a token like this. Instead, we would get 00 and 9.as<two>() separate tokens.
-                                        // We also do not need to check for negatives because any prefix operator would be part of a
-                                        // parent unary expression.
+            isTemplateLiteralKind(kind)
+                ? factory
+                      .createTemplateLiteralLikeNode(kind, scanner.getTokenValue(), getTemplateLiteralRawText(kind),
+                                                     scanner.getTokenFlags() & TokenFlags::TemplateLiteralLikeFlags)
+                      .as<LiteralLikeNode>()
+                :
+                // Octal literals are not allowed in strict mode or ES5
+                // Note that theoretically the following condition would hold true literals like 009,
+                // which is not octal. But because of how the scanner separates the tokens, we would
+                // never get a token like this. Instead, we would get 00 and 9.as<two>() separate tokens.
+                // We also do not need to check for negatives because any prefix operator would be part of a
+                // parent unary expression.
                 kind == SyntaxKind::NumericLiteral
-                ? factory.createNumericLiteral(scanner.getTokenValue(), scanner.getNumericLiteralFlags()).as<LiteralLikeNode>()
-            : kind == SyntaxKind::StringLiteral ? factory
-                                                      .createStringLiteral(scanner.getTokenValue(), /*isSingleQuote*/ /*undefined*/ false,
-                                                                           scanner.hasExtendedUnicodeEscape())
-                                                      .as<LiteralLikeNode>()
+                ? factory.createNumericLiteral(scanner.getTokenValue(), scanner.getNumericLiteralFlags())
+                      .as<LiteralLikeNode>()
+            : kind == SyntaxKind::StringLiteral
+                ? factory
+                      .createStringLiteral(scanner.getTokenValue(), /*isSingleQuote*/ /*undefined*/ false,
+                                           scanner.hasExtendedUnicodeEscape())
+                      .as<LiteralLikeNode>()
             : isLiteralKind(kind) ? factory.createLiteralLikeNode(kind, scanner.getTokenValue())
                                   : Debug::fail<LiteralLikeNode>();
 
@@ -2400,7 +2453,8 @@ struct Parser
         auto pos = getNodePos();
         auto entityNameOfTypeReference = parseEntityNameOfTypeReference();
         auto typeArgumentsOfTypeReference = parseTypeArgumentsOfTypeReference();
-        return finishNode(factory.createTypeReferenceNode(entityNameOfTypeReference, typeArgumentsOfTypeReference), pos);
+        return finishNode(factory.createTypeReferenceNode(entityNameOfTypeReference, typeArgumentsOfTypeReference),
+                          pos);
     }
 
     // If true, we should abort parsing an error function.
@@ -2474,8 +2528,9 @@ struct Parser
         //      Foo<?>
         //      Foo(?=
         //      (?|
-        if (token() == SyntaxKind::CommaToken || token() == SyntaxKind::CloseBraceToken || token() == SyntaxKind::CloseParenToken ||
-            token() == SyntaxKind::GreaterThanToken || token() == SyntaxKind::EqualsToken || token() == SyntaxKind::BarToken)
+        if (token() == SyntaxKind::CommaToken || token() == SyntaxKind::CloseBraceToken ||
+            token() == SyntaxKind::CloseParenToken || token() == SyntaxKind::GreaterThanToken ||
+            token() == SyntaxKind::EqualsToken || token() == SyntaxKind::BarToken)
         {
             return finishNode(factory.createJSDocUnknownType(), pos);
         }
@@ -2508,16 +2563,16 @@ struct Parser
             name = parseIdentifierName();
             parseExpected(SyntaxKind::ColonToken);
         }
-        return finishNode(
-            factory.createParameterDeclaration(
-                /*decorators*/ undefined,
-                /*modifiers*/ undefined,
-                /*dotDotDotToken*/ undefined,
-                // TODO(rbuckton) -> JSDoc parameters don't have names (except `this`/`new`), should we manufacture an empty identifier?
-                name,
-                /*questionToken*/ undefined, parseJSDocType(),
-                /*initializer*/ undefined),
-            pos);
+        return finishNode(factory.createParameterDeclaration(
+                              /*decorators*/ undefined,
+                              /*modifiers*/ undefined,
+                              /*dotDotDotToken*/ undefined,
+                              // TODO(rbuckton) -> JSDoc parameters don't have names (except `this`/`new`), should we
+                              // manufacture an empty identifier?
+                              name,
+                              /*questionToken*/ undefined, parseJSDocType(),
+                              /*initializer*/ undefined),
+                          pos);
     }
 
     auto parseJSDocType() -> TypeNode
@@ -2607,9 +2662,9 @@ struct Parser
     {
         if (token() == SyntaxKind::LessThanToken)
         {
-            return parseBracketedList<TypeParameterDeclaration>(ParsingContext::TypeParameters,
-                                                                std::bind(&Parser::parseTypeParameter, this), SyntaxKind::LessThanToken,
-                                                                SyntaxKind::GreaterThanToken);
+            return parseBracketedList<TypeParameterDeclaration>(
+                ParsingContext::TypeParameters, std::bind(&Parser::parseTypeParameter, this), SyntaxKind::LessThanToken,
+                SyntaxKind::GreaterThanToken);
         }
 
         return undefined;
@@ -2617,15 +2672,17 @@ struct Parser
 
     auto isStartOfParameter(boolean isJSDocParameter) -> boolean
     {
-        return token() == SyntaxKind::DotDotDotToken || isBindingIdentifierOrPrivateIdentifierOrPattern() || isModifierKind(token()) ||
-               token() == SyntaxKind::AtToken || isStartOfType(/*inStartOfParameter*/ !isJSDocParameter);
+        return token() == SyntaxKind::DotDotDotToken || isBindingIdentifierOrPrivateIdentifierOrPattern() ||
+               isModifierKind(token()) || token() == SyntaxKind::AtToken ||
+               isStartOfType(/*inStartOfParameter*/ !isJSDocParameter);
     }
 
     auto parseNameOfParameter(ModifiersArray modifiers)
     {
         // FormalParameter [Yield,Await]:
         //      BindingElement[?Yield,?Await]
-        auto name = parseIdentifierOrPattern(data::DiagnosticMessage(Diagnostics::Private_identifiers_cannot_be_used_as_parameters));
+        auto name = parseIdentifierOrPattern(
+            data::DiagnosticMessage(Diagnostics::Private_identifiers_cannot_be_used_as_parameters));
         if (getFullWidth(name) == 0 && !some<ModifiersArray>(modifiers) && isModifierKind(token()))
         {
             // in cases like
@@ -2633,9 +2690,9 @@ struct Parser
             // auto foo(static)
             // isParameter('static') == true, because of isModifier('static')
             // however 'static' is not a legal identifier in a strict mode.
-            // so result of this auto will be ParameterDeclaration (flags = 0, name = missing, type = undefined, initializer = undefined)
-            // and current token will not change => parsing of the enclosing parameter list will last till the end of time (or OOM)
-            // to avoid this we'll advance cursor to the next token.
+            // so result of this auto will be ParameterDeclaration (flags = 0, name = missing, type = undefined,
+            // initializer = undefined) and current token will not change => parsing of the enclosing parameter list
+            // will last till the end of time (or OOM) to avoid this we'll advance cursor to the next token.
             nextToken();
         }
         return name;
@@ -2671,9 +2728,11 @@ struct Parser
         // FormalParameter [Yield,Await]:
         //      BindingElement[?Yield,?Await]
 
-        // Decorators are parsed in the outer [Await] context, the rest of the parameter is parsed in the function's [Await] context->
-        auto decorators =
-            inOuterAwaitContext ? doInAwaitContext<NodeArray<Decorator>>(std::bind(&Parser::parseDecorators, this)) : parseDecorators();
+        // Decorators are parsed in the outer [Await] context, the rest of the parameter is parsed in the function's
+        // [Await] context->
+        auto decorators = inOuterAwaitContext
+                              ? doInAwaitContext<NodeArray<Decorator>>(std::bind(&Parser::parseDecorators, this))
+                              : parseDecorators();
         auto savedTopLevel = topLevel;
         topLevel = false;
         auto modifiers = parseModifiers();
@@ -2684,10 +2743,11 @@ struct Parser
         auto typeAnnotation = parseTypeAnnotation();
         auto initializer = parseInitializer();
 
-        auto node = withJSDoc(finishNode(factory.createParameterDeclaration(decorators, modifiers, dotDotDotToken, nameOfParameter,
-                                                                            questionToken, typeAnnotation, initializer),
-                                         pos),
-                              hasJSDoc);
+        auto node = withJSDoc(
+            finishNode(factory.createParameterDeclaration(decorators, modifiers, dotDotDotToken, nameOfParameter,
+                                                          questionToken, typeAnnotation, initializer),
+                       pos),
+            hasJSDoc);
         topLevel = savedTopLevel;
         return node;
     }
@@ -2716,7 +2776,8 @@ struct Parser
         else if (isType && token() == SyntaxKind::EqualsGreaterThanToken)
         {
             // This is easy to get backward, especially in type contexts, so parse the type anyway
-            parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::_0_expected), scanner.tokenToString(SyntaxKind::ColonToken));
+            parseErrorAtCurrentToken(data::DiagnosticMessage(Diagnostics::_0_expected),
+                                     scanner.tokenToString(SyntaxKind::ColonToken));
             nextToken();
             return true;
         }
@@ -2744,12 +2805,13 @@ struct Parser
         setYieldContext(!!(flags & SignatureFlags::Yield));
         setAwaitContext(!!(flags & SignatureFlags::Await));
 
-        auto parameters =
-            !!(flags & SignatureFlags::JSDoc)
-                ? parseDelimitedList<ParameterDeclaration>(ParsingContext::JSDocParameters, std::bind(&Parser::parseJSDocParameter, this))
-                : parseDelimitedList<ParameterDeclaration>(ParsingContext::Parameters,
-                                                           savedAwaitContext ? std::bind(&Parser::parseParameterInOuterAwaitContext, this)
-                                                                             : std::bind(&Parser::parseParameter, this));
+        auto parameters = !!(flags & SignatureFlags::JSDoc)
+                              ? parseDelimitedList<ParameterDeclaration>(ParsingContext::JSDocParameters,
+                                                                         std::bind(&Parser::parseJSDocParameter, this))
+                              : parseDelimitedList<ParameterDeclaration>(
+                                    ParsingContext::Parameters,
+                                    savedAwaitContext ? std::bind(&Parser::parseParameterInOuterAwaitContext, this)
+                                                      : std::bind(&Parser::parseParameter, this));
 
         setYieldContext(savedYieldContext);
         setAwaitContext(savedAwaitContext);
@@ -2808,15 +2870,17 @@ struct Parser
         auto parameters = parseParameters(SignatureFlags::Type);
         auto type = parseReturnType(SyntaxKind::ColonToken, /*isType*/ true);
         parseTypeMemberSemicolon();
-        auto node = kind == SyntaxKind::CallSignature
-                        ? factory.createCallSignature(typeParameters, parameters, type).as<SignatureDeclarationBase>()
-                        : factory.createConstructSignature(typeParameters, parameters, type).as<SignatureDeclarationBase>();
+        auto node =
+            kind == SyntaxKind::CallSignature
+                ? factory.createCallSignature(typeParameters, parameters, type).as<SignatureDeclarationBase>()
+                : factory.createConstructSignature(typeParameters, parameters, type).as<SignatureDeclarationBase>();
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
     auto isIndexSignature() -> boolean
     {
-        return token() == SyntaxKind::OpenBracketToken && lookAhead<boolean>(std::bind(&Parser::isUnambiguouslyIndexSignature, this));
+        return token() == SyntaxKind::OpenBracketToken &&
+               lookAhead<boolean>(std::bind(&Parser::isUnambiguouslyIndexSignature, this));
     }
 
     auto isUnambiguouslyIndexSignature() -> boolean
@@ -2879,14 +2943,16 @@ struct Parser
         // If any of the following tokens are after the question mark, it cannot
         // be a conditional expression, so treat it.as<an>() indexer.
         nextToken();
-        return token() == SyntaxKind::ColonToken || token() == SyntaxKind::CommaToken || token() == SyntaxKind::CloseBracketToken;
+        return token() == SyntaxKind::ColonToken || token() == SyntaxKind::CommaToken ||
+               token() == SyntaxKind::CloseBracketToken;
     }
 
-    auto parseIndexSignatureDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
-        -> IndexSignatureDeclaration
+    auto parseIndexSignatureDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
+                                        NodeArray<Modifier> modifiers) -> IndexSignatureDeclaration
     {
-        auto parameters = parseBracketedList<ParameterDeclaration>(ParsingContext::Parameters, std::bind(&Parser::parseParameter, this),
-                                                                   SyntaxKind::OpenBracketToken, SyntaxKind::CloseBracketToken);
+        auto parameters = parseBracketedList<ParameterDeclaration>(
+            ParsingContext::Parameters, std::bind(&Parser::parseParameter, this), SyntaxKind::OpenBracketToken,
+            SyntaxKind::CloseBracketToken);
         auto type = parseTypeAnnotation();
         parseTypeMemberSemicolon();
         auto node = factory.createIndexSignature(decorators, modifiers, parameters, type);
@@ -2950,8 +3016,9 @@ struct Parser
         // the start of a member declaration
         if (idToken)
         {
-            return token() == SyntaxKind::OpenParenToken || token() == SyntaxKind::LessThanToken || token() == SyntaxKind::QuestionToken ||
-                   token() == SyntaxKind::ColonToken || token() == SyntaxKind::CommaToken || canParseSemicolon();
+            return token() == SyntaxKind::OpenParenToken || token() == SyntaxKind::LessThanToken ||
+                   token() == SyntaxKind::QuestionToken || token() == SyntaxKind::ColonToken ||
+                   token() == SyntaxKind::CommaToken || canParseSemicolon();
         }
         return false;
     }
@@ -2962,7 +3029,8 @@ struct Parser
         {
             return parseSignatureMember(SyntaxKind::CallSignature);
         }
-        if (token() == SyntaxKind::NewKeyword && lookAhead<boolean>(std::bind(&Parser::nextTokenIsOpenParenOrLessThan, this)))
+        if (token() == SyntaxKind::NewKeyword &&
+            lookAhead<boolean>(std::bind(&Parser::nextTokenIsOpenParenOrLessThan, this)))
         {
             return parseSignatureMember(SyntaxKind::ConstructSignature);
         }
@@ -3032,7 +3100,8 @@ struct Parser
         {
             nextToken();
         }
-        return token() == SyntaxKind::OpenBracketToken && nextTokenIsIdentifier() && nextToken() == SyntaxKind::InKeyword;
+        return token() == SyntaxKind::OpenBracketToken && nextTokenIsIdentifier() &&
+               nextToken() == SyntaxKind::InKeyword;
     }
 
     auto parseMappedTypeParameter()
@@ -3049,7 +3118,8 @@ struct Parser
         auto pos = getNodePos();
         parseExpected(SyntaxKind::OpenBraceToken);
         Node readonlyToken;
-        if (token() == SyntaxKind::ReadonlyKeyword || token() == SyntaxKind::PlusToken || token() == SyntaxKind::MinusToken)
+        if (token() == SyntaxKind::ReadonlyKeyword || token() == SyntaxKind::PlusToken ||
+            token() == SyntaxKind::MinusToken)
         {
             // readonlyToken = parseTokenNode<ReadonlyKeyword, PlusToken, MinusToken>();
             readonlyToken = parseTokenNode<Node>();
@@ -3063,7 +3133,8 @@ struct Parser
         auto nameType = parseOptional(SyntaxKind::AsKeyword) ? parseType() : undefined;
         parseExpected(SyntaxKind::CloseBracketToken);
         Node questionToken;
-        if (token() == SyntaxKind::QuestionToken || token() == SyntaxKind::PlusToken || token() == SyntaxKind::MinusToken)
+        if (token() == SyntaxKind::QuestionToken || token() == SyntaxKind::PlusToken ||
+            token() == SyntaxKind::MinusToken)
         {
             // questionToken = parseTokenNode<QuestionToken, PlusToken, MinusToken>();
             questionToken = parseTokenNode<Node>();
@@ -3075,7 +3146,8 @@ struct Parser
         auto type = parseTypeAnnotation();
         parseSemicolon();
         parseExpected(SyntaxKind::CloseBraceToken);
-        return finishNode(factory.createMappedTypeNode(readonlyToken, typeParameter, nameType, questionToken, type), pos);
+        return finishNode(factory.createMappedTypeNode(readonlyToken, typeParameter, nameType, questionToken, type),
+                          pos);
     }
 
     auto parseTupleElementType() -> TypeNode
@@ -3098,7 +3170,8 @@ struct Parser
 
     auto isNextTokenColonOrQuestionColon()
     {
-        return nextToken() == SyntaxKind::ColonToken || (token() == SyntaxKind::QuestionToken && nextToken() == SyntaxKind::ColonToken);
+        return nextToken() == SyntaxKind::ColonToken ||
+               (token() == SyntaxKind::QuestionToken && nextToken() == SyntaxKind::ColonToken);
     }
 
     auto isTupleElementName()
@@ -3130,10 +3203,11 @@ struct Parser
     auto parseTupleType() -> TupleTypeNode
     {
         auto pos = getNodePos();
-        return finishNode(factory.createTupleTypeNode(parseBracketedList<Node>(
-                              ParsingContext::TupleElementTypes, std::bind(&Parser::parseTupleElementNameOrTupleElementType, this),
-                              SyntaxKind::OpenBracketToken, SyntaxKind::CloseBracketToken)),
-                          pos);
+        return finishNode(
+            factory.createTupleTypeNode(parseBracketedList<Node>(
+                ParsingContext::TupleElementTypes, std::bind(&Parser::parseTupleElementNameOrTupleElementType, this),
+                SyntaxKind::OpenBracketToken, SyntaxKind::CloseBracketToken)),
+            pos);
     }
 
     auto parseParenthesizedType() -> TypeNode
@@ -3167,10 +3241,10 @@ struct Parser
         auto typeParameters = parseTypeParameters();
         auto parameters = parseParameters(SignatureFlags::Type);
         auto type = parseReturnType(SyntaxKind::EqualsGreaterThanToken, /*isType*/ false);
-        auto node =
-            isConstructorType
-                ? factory.createConstructorTypeNode(modifiers, typeParameters, parameters, type).as<FunctionOrConstructorTypeNodeBase>()
-                : factory.createFunctionTypeNode(typeParameters, parameters, type).as<FunctionOrConstructorTypeNodeBase>();
+        auto node = isConstructorType ? factory.createConstructorTypeNode(modifiers, typeParameters, parameters, type)
+                                            .as<FunctionOrConstructorTypeNodeBase>()
+                                      : factory.createFunctionTypeNode(typeParameters, parameters, type)
+                                            .as<FunctionOrConstructorTypeNodeBase>();
         if (!isConstructorType)
             copy(node->modifiers, modifiers);
         return withJSDoc(finishNode(node, pos), hasJSDoc);
@@ -3189,7 +3263,8 @@ struct Parser
         {
             nextToken();
         }
-        Node expression = token() == SyntaxKind::TrueKeyword || token() == SyntaxKind::FalseKeyword || token() == SyntaxKind::NullKeyword
+        Node expression = token() == SyntaxKind::TrueKeyword || token() == SyntaxKind::FalseKeyword ||
+                                  token() == SyntaxKind::NullKeyword
                               ? parseTokenNode</*BooleanLiteral, NullLiteral*/ Node>().as<Expression>()
                               : parseLiteralLikeNode(token()).as<Expression>();
         if (negative)
@@ -3240,7 +3315,8 @@ struct Parser
         case SyntaxKind::NeverKeyword:
         case SyntaxKind::ObjectKeyword:
             // If these are followed by a dot, then parse these out.as<a>() dotted type reference instead.
-            return tryParse<TypeNode>(std::bind(&Parser::parseKeywordAndNoDot, this)) || [&]() { return parseTypeReference(); };
+            return tryParse<TypeNode>(std::bind(&Parser::parseKeywordAndNoDot, this)) ||
+                   [&]() { return parseTypeReference(); };
         case SyntaxKind::AsteriskEqualsToken:
             // If there is '*=', treat it as * followed by postfix =
             scanner.reScanAsteriskEqualsToken();
@@ -3283,10 +3359,12 @@ struct Parser
             }
         }
         case SyntaxKind::TypeOfKeyword:
-            return lookAhead<boolean>(std::bind(&Parser::isStartOfTypeOfImportType, this)) ? parseImportType().as<Node>()
-                                                                                           : parseTypeQuery().as<Node>();
+            return lookAhead<boolean>(std::bind(&Parser::isStartOfTypeOfImportType, this))
+                       ? parseImportType().as<Node>()
+                       : parseTypeQuery().as<Node>();
         case SyntaxKind::OpenBraceToken:
-            return lookAhead<boolean>(std::bind(&Parser::isStartOfMappedType, this)) ? parseMappedType() : parseTypeLiteral().as<Node>();
+            return lookAhead<boolean>(std::bind(&Parser::isStartOfMappedType, this)) ? parseMappedType()
+                                                                                     : parseTypeLiteral().as<Node>();
         case SyntaxKind::OpenBracketToken:
             return parseTupleType();
         case SyntaxKind::OpenParenToken:
@@ -3348,11 +3426,13 @@ struct Parser
         case SyntaxKind::FunctionKeyword:
             return !inStartOfParameter;
         case SyntaxKind::MinusToken:
-            return !inStartOfParameter && lookAhead<boolean>(std::bind(&Parser::nextTokenIsNumericOrBigIntLiteral, this));
+            return !inStartOfParameter &&
+                   lookAhead<boolean>(std::bind(&Parser::nextTokenIsNumericOrBigIntLiteral, this));
         case SyntaxKind::OpenParenToken:
             // Only consider '(' the start of a type if followed by ')', '...', an identifier, a modifier,
             // or something that starts a type. We don't want to consider things like '(1)' a type.
-            return !inStartOfParameter && lookAhead<boolean>(std::bind(&Parser::isStartOfParenthesizedOrFunctionType, this));
+            return !inStartOfParameter &&
+                   lookAhead<boolean>(std::bind(&Parser::isStartOfParenthesizedOrFunctionType, this));
         default:
             return isIdentifier();
         }
@@ -3361,7 +3441,8 @@ struct Parser
     auto isStartOfParenthesizedOrFunctionType() -> boolean
     {
         nextToken();
-        return token() == SyntaxKind::CloseParenToken || isStartOfParameter(/*isJSDocParameter*/ false) || isStartOfType();
+        return token() == SyntaxKind::CloseParenToken || isStartOfParameter(/*isJSDocParameter*/ false) ||
+               isStartOfType();
     }
 
     auto parsePostfixTypeOrHigher() -> TypeNode
@@ -3457,17 +3538,21 @@ struct Parser
             {
                 diagnostic =
                     isInUnionType
-                        ? data::DiagnosticMessage(Diagnostics::Function_type_notation_must_be_parenthesized_when_used_in_a_union_type)
+                        ? data::DiagnosticMessage(
+                              Diagnostics::Function_type_notation_must_be_parenthesized_when_used_in_a_union_type)
                         : data::DiagnosticMessage(
-                              Diagnostics::Function_type_notation_must_be_parenthesized_when_used_in_an_intersection_type);
+                              Diagnostics::
+                                  Function_type_notation_must_be_parenthesized_when_used_in_an_intersection_type);
             }
             else
             {
                 diagnostic =
                     isInUnionType
-                        ? data::DiagnosticMessage(Diagnostics::Constructor_type_notation_must_be_parenthesized_when_used_in_a_union_type)
+                        ? data::DiagnosticMessage(
+                              Diagnostics::Constructor_type_notation_must_be_parenthesized_when_used_in_a_union_type)
                         : data::DiagnosticMessage(
-                              Diagnostics::Constructor_type_notation_must_be_parenthesized_when_used_in_an_intersection_type);
+                              Diagnostics::
+                                  Constructor_type_notation_must_be_parenthesized_when_used_in_an_intersection_type);
             }
             parseErrorAtRange(type, diagnostic);
             return type;
@@ -3476,7 +3561,8 @@ struct Parser
     }
 
     auto parseUnionOrIntersectionType(SyntaxKind operator_, std::function<TypeNode()> parseConstituentType,
-                                      std::function<UnionOrIntersectionTypeNode(NodeArray<TypeNode>)> createTypeNode) -> TypeNode
+                                      std::function<UnionOrIntersectionTypeNode(NodeArray<TypeNode>)> createTypeNode)
+        -> TypeNode
     {
         auto pos = getNodePos();
         auto isUnionType = operator_ == SyntaxKind::BarToken;
@@ -3488,7 +3574,8 @@ struct Parser
             auto types = NodeArray<TypeNode>(type);
             while (parseOptional(operator_))
             {
-                types.push_back(parseFunctionOrConstructorTypeToError(isUnionType) || [&]() { return parseConstituentType(); });
+                types.push_back(parseFunctionOrConstructorTypeToError(isUnionType) ||
+                                [&]() { return parseConstituentType(); });
             }
             type = finishNode(createTypeNode(createNodeArray(types, pos)), pos);
         }
@@ -3497,14 +3584,16 @@ struct Parser
 
     auto parseIntersectionTypeOrHigher() -> TypeNode
     {
-        return parseUnionOrIntersectionType(SyntaxKind::AmpersandToken, std::bind(&Parser::parseTypeOperatorOrHigher, this),
-                                            std::bind(&NodeFactory::createIntersectionTypeNode, factory, std::placeholders::_1));
+        return parseUnionOrIntersectionType(
+            SyntaxKind::AmpersandToken, std::bind(&Parser::parseTypeOperatorOrHigher, this),
+            std::bind(&NodeFactory::createIntersectionTypeNode, factory, std::placeholders::_1));
     }
 
     auto parseUnionTypeOrHigher() -> TypeNode
     {
-        return parseUnionOrIntersectionType(SyntaxKind::BarToken, std::bind(&Parser::parseIntersectionTypeOrHigher, this),
-                                            std::bind(&NodeFactory::createUnionTypeNode, factory, std::placeholders::_1));
+        return parseUnionOrIntersectionType(
+            SyntaxKind::BarToken, std::bind(&Parser::parseIntersectionTypeOrHigher, this),
+            std::bind(&NodeFactory::createUnionTypeNode, factory, std::placeholders::_1));
     }
 
     auto nextTokenIsNewKeyword() -> boolean
@@ -3519,12 +3608,14 @@ struct Parser
         {
             return true;
         }
-        if (token() == SyntaxKind::OpenParenToken && lookAhead<boolean>(std::bind(&Parser::isUnambiguouslyStartOfFunctionType, this)))
+        if (token() == SyntaxKind::OpenParenToken &&
+            lookAhead<boolean>(std::bind(&Parser::isUnambiguouslyStartOfFunctionType, this)))
         {
             return true;
         }
         return token() == SyntaxKind::NewKeyword ||
-               token() == SyntaxKind::AbstractKeyword && lookAhead<boolean>(std::bind(&Parser::nextTokenIsNewKeyword, this));
+               token() == SyntaxKind::AbstractKeyword &&
+                   lookAhead<boolean>(std::bind(&Parser::nextTokenIsNewKeyword, this));
     }
 
     auto skipParameterStart() -> boolean
@@ -3562,8 +3653,8 @@ struct Parser
         {
             // We successfully skipped modifiers (if any) and an identifier or binding pattern,
             // now see if we have something that indicates a parameter declaration
-            if (token() == SyntaxKind::ColonToken || token() == SyntaxKind::CommaToken || token() == SyntaxKind::QuestionToken ||
-                token() == SyntaxKind::EqualsToken)
+            if (token() == SyntaxKind::ColonToken || token() == SyntaxKind::CommaToken ||
+                token() == SyntaxKind::QuestionToken || token() == SyntaxKind::EqualsToken)
             {
                 // ( xxx :
                 // ( xxx ,
@@ -3587,11 +3678,13 @@ struct Parser
     auto parseTypeOrTypePredicate() -> TypeNode
     {
         auto pos = getNodePos();
-        auto typePredicateVariable = isIdentifier() ? tryParse<Identifier>(std::bind(&Parser::parseTypePredicatePrefix, this)) : undefined;
+        auto typePredicateVariable =
+            isIdentifier() ? tryParse<Identifier>(std::bind(&Parser::parseTypePredicatePrefix, this)) : undefined;
         auto type = parseType();
         if (!!typePredicateVariable)
         {
-            return finishNode(factory.createTypePredicateNode(/*assertsModifier*/ undefined, typePredicateVariable, type), pos);
+            return finishNode(
+                factory.createTypePredicateNode(/*assertsModifier*/ undefined, typePredicateVariable, type), pos);
         }
         else
         {
@@ -3615,7 +3708,8 @@ struct Parser
     {
         auto pos = getNodePos();
         auto assertsModifier = parseExpectedToken(SyntaxKind::AssertsKeyword);
-        auto parameterName = token() == SyntaxKind::ThisKeyword ? parseThisTypeNode().as<Node>() : parseIdentifier().as<Node>();
+        auto parameterName =
+            token() == SyntaxKind::ThisKeyword ? parseThisTypeNode().as<Node>() : parseIdentifier().as<Node>();
         auto type = parseOptional(SyntaxKind::IsKeyword) ? parseType() : undefined;
         return finishNode(factory.createTypePredicateNode(assertsModifier, parameterName, type), pos);
     }
@@ -3733,8 +3827,8 @@ struct Parser
     auto isStartOfExpressionStatement() -> boolean
     {
         // As per the grammar, none of '{' or 'function' or 'class' can start an expression statement.
-        return token() != SyntaxKind::OpenBraceToken && token() != SyntaxKind::FunctionKeyword && token() != SyntaxKind::ClassKeyword &&
-               token() != SyntaxKind::AtToken && isStartOfExpression();
+        return token() != SyntaxKind::OpenBraceToken && token() != SyntaxKind::FunctionKeyword &&
+               token() != SyntaxKind::ClassKeyword && token() != SyntaxKind::AtToken && isStartOfExpression();
     }
 
     auto parseExpression() -> Expression
@@ -3792,16 +3886,17 @@ struct Parser
         // Then, check if we have an arrow auto (production '4' and '5') that starts with a parenthesized
         // parameter list or is an async arrow function.
         // AsyncArrowFunctionExpression:
-        //      1) async[no LineTerminator here]AsyncArrowBindingIdentifier[?Yield][no LineTerminator here]=>AsyncConciseBody[?In]
-        //      2) CoverCallExpressionAndAsyncArrowHead[?Yield, ?Await][no LineTerminator here]=>AsyncConciseBody[?In]
+        //      1) async[no LineTerminator here]AsyncArrowBindingIdentifier[?Yield][no LineTerminator
+        //      here]=>AsyncConciseBody[?In] 2) CoverCallExpressionAndAsyncArrowHead[?Yield, ?Await][no LineTerminator
+        //      here]=>AsyncConciseBody[?In]
         // Production (1) of AsyncArrowFunctionExpression is parsed in "tryParseAsyncSimpleArrowFunctionExpression".
         // And production (2) is parsed in "tryParseParenthesizedArrowFunctionExpression".
         //
-        // If we do successfully parse arrow-function, we must *not* recurse for productions 1, 2 or 3. An ArrowFunction is
-        // not a LeftHandSideExpression, nor does it start a ConditionalExpression.  So we are done
-        // with AssignmentExpression if we see one.
-        auto arrowExpression =
-            tryParseParenthesizedArrowFunctionExpression() || [&]() { return tryParseAsyncSimpleArrowFunctionExpression(); };
+        // If we do successfully parse arrow-function, we must *not* recurse for productions 1, 2 or 3. An ArrowFunction
+        // is not a LeftHandSideExpression, nor does it start a ConditionalExpression.  So we are done with
+        // AssignmentExpression if we see one.
+        auto arrowExpression = tryParseParenthesizedArrowFunctionExpression() ||
+                               [&]() { return tryParseAsyncSimpleArrowFunctionExpression(); };
         if (arrowExpression)
         {
             return arrowExpression;
@@ -3901,11 +3996,13 @@ struct Parser
         {
             // if the next token is not on the same line.as<yield>().  or we don't have an '*' or
             // the start of an expression, then this is just a simple "yield" expression.
-            return finishNode(factory.createYieldExpression(/*asteriskToken*/ undefined, /*expression*/ undefined), pos);
+            return finishNode(factory.createYieldExpression(/*asteriskToken*/ undefined, /*expression*/ undefined),
+                              pos);
         }
     }
 
-    auto parseSimpleArrowFunctionExpression(pos_type pos, Identifier identifier, NodeArray<Modifier> asyncModifier) -> ArrowFunction
+    auto parseSimpleArrowFunctionExpression(pos_type pos, Identifier identifier, NodeArray<Modifier> asyncModifier)
+        -> ArrowFunction
     {
         Debug::_assert(token() == SyntaxKind::EqualsGreaterThanToken,
                        S("parseSimpleArrowFunctionExpression should only have been called if we had a =>"));
@@ -3918,12 +4015,12 @@ struct Parser
             /*initializer*/ undefined);
         finishNode(parameter, identifier->pos);
 
-        auto parameters =
-            createNodeArray<ParameterDeclaration>(NodeArray<ParameterDeclaration>({parameter}), parameter->pos, parameter->_end);
+        auto parameters = createNodeArray<ParameterDeclaration>(NodeArray<ParameterDeclaration>({parameter}),
+                                                                parameter->pos, parameter->_end);
         auto equalsGreaterThanToken = parseExpectedToken(SyntaxKind::EqualsGreaterThanToken);
         auto body = parseArrowFunctionExpressionBody(/*isAsync*/ !!asyncModifier);
-        auto node = factory.createArrowFunction(asyncModifier, /*typeParameters*/ undefined, parameters, /*type*/ undefined,
-                                                equalsGreaterThanToken, body);
+        auto node = factory.createArrowFunction(asyncModifier, /*typeParameters*/ undefined, parameters,
+                                                /*type*/ undefined, equalsGreaterThanToken, body);
         return addJSDocComment(finishNode(node, pos));
     }
 
@@ -3940,9 +4037,9 @@ struct Parser
         // following => or { token. Otherwise, we *might* have an arrow function.  Try to parse
         // it out, but don't allow any ambiguity, and return 'undefined' if this could be an
         // expression instead.
-        return triState == Tristate::True
-                   ? parseParenthesizedArrowFunctionExpression(/*allowAmbiguity*/ true)
-                   : tryParse<ArrowFunction>(std::bind(&Parser::parsePossibleParenthesizedArrowFunctionExpression, this));
+        return triState == Tristate::True ? parseParenthesizedArrowFunctionExpression(/*allowAmbiguity*/ true)
+                                          : tryParse<ArrowFunction>(std::bind(
+                                                &Parser::parsePossibleParenthesizedArrowFunctionExpression, this));
     }
 
     //  True        -> We definitely expect a parenthesized arrow auto here.
@@ -3951,7 +4048,8 @@ struct Parser
     //                 Speculatively look ahead to be sure, and rollback if not.
     auto isParenthesizedArrowFunctionExpression() -> Tristate
     {
-        if (token() == SyntaxKind::OpenParenToken || token() == SyntaxKind::LessThanToken || token() == SyntaxKind::AsyncKeyword)
+        if (token() == SyntaxKind::OpenParenToken || token() == SyntaxKind::LessThanToken ||
+            token() == SyntaxKind::AsyncKeyword)
         {
             return lookAhead<Tristate>(std::bind(&Parser::isParenthesizedArrowFunctionExpressionWorker, this));
         }
@@ -4049,8 +4147,8 @@ struct Parser
             case SyntaxKind::QuestionToken:
                 nextToken();
                 // If we have "(a?:" or "(a?," or "(a?=" or "(a?)" then it is definitely a lambda.
-                if (token() == SyntaxKind::ColonToken || token() == SyntaxKind::CommaToken || token() == SyntaxKind::EqualsToken ||
-                    token() == SyntaxKind::CloseParenToken)
+                if (token() == SyntaxKind::ColonToken || token() == SyntaxKind::CommaToken ||
+                    token() == SyntaxKind::EqualsToken || token() == SyntaxKind::CloseParenToken)
                 {
                     return Tristate::True;
                 }
@@ -4116,7 +4214,8 @@ struct Parser
     auto parsePossibleParenthesizedArrowFunctionExpression() -> ArrowFunction
     {
         auto tokenPos = scanner.getTokenPos();
-        if (std::find(notParenthesizedArrow.begin(), notParenthesizedArrow.end(), tokenPos) != notParenthesizedArrow.end())
+        if (std::find(notParenthesizedArrow.begin(), notParenthesizedArrow.end(), tokenPos) !=
+            notParenthesizedArrow.end())
         {
             return undefined;
         }
@@ -4135,7 +4234,8 @@ struct Parser
         // We do a check here so that we won't be doing unnecessarily call to "lookAhead"
         if (token() == SyntaxKind::AsyncKeyword)
         {
-            if (lookAhead<Tristate>(std::bind(&Parser::isUnParenthesizedAsyncArrowFunctionWorker, this)) == Tristate::True)
+            if (lookAhead<Tristate>(std::bind(&Parser::isUnParenthesizedAsyncArrowFunctionWorker, this)) ==
+                Tristate::True)
             {
                 auto pos = getNodePos();
                 auto asyncModifier = parseModifiersForArrowFunction();
@@ -4149,8 +4249,9 @@ struct Parser
     auto isUnParenthesizedAsyncArrowFunctionWorker() -> Tristate
     {
         // AsyncArrowFunctionExpression:
-        //      1) async[no LineTerminator here]AsyncArrowBindingIdentifier[?Yield][no LineTerminator here]=>AsyncConciseBody[?In]
-        //      2) CoverCallExpressionAndAsyncArrowHead[?Yield, ?Await][no LineTerminator here]=>AsyncConciseBody[?In]
+        //      1) async[no LineTerminator here]AsyncArrowBindingIdentifier[?Yield][no LineTerminator
+        //      here]=>AsyncConciseBody[?In] 2) CoverCallExpressionAndAsyncArrowHead[?Yield, ?Await][no LineTerminator
+        //      here]=>AsyncConciseBody[?In]
         if (token() == SyntaxKind::AsyncKeyword)
         {
             nextToken();
@@ -4162,7 +4263,8 @@ struct Parser
             }
             // Check for un-parenthesized AsyncArrowFunction
             auto expr = parseBinaryExpressionOrHigher(OperatorPrecedence::Lowest);
-            if (!scanner.hasPrecedingLineBreak() && expr == SyntaxKind::Identifier && token() == SyntaxKind::EqualsGreaterThanToken)
+            if (!scanner.hasPrecedingLineBreak() && expr == SyntaxKind::Identifier &&
+                token() == SyntaxKind::EqualsGreaterThanToken)
             {
                 return Tristate::True;
             }
@@ -4235,7 +4337,8 @@ struct Parser
                         ? parseArrowFunctionExpressionBody(some(modifiers, isAsyncModifier))
                         : parseIdentifier().as<Node>();
 
-        auto node = factory.createArrowFunction(modifiers, typeParameters, parameters, type, equalsGreaterThanToken, body);
+        auto node =
+            factory.createArrowFunction(modifiers, typeParameters, parameters, type, equalsGreaterThanToken, body);
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
@@ -4246,10 +4349,11 @@ struct Parser
             return parseFunctionBlock(isAsync ? SignatureFlags::Await : SignatureFlags::None);
         }
 
-        if (token() != SyntaxKind::SemicolonToken && token() != SyntaxKind::FunctionKeyword && token() != SyntaxKind::ClassKeyword &&
-            isStartOfStatement() && !isStartOfExpressionStatement())
+        if (token() != SyntaxKind::SemicolonToken && token() != SyntaxKind::FunctionKeyword &&
+            token() != SyntaxKind::ClassKeyword && isStartOfStatement() && !isStartOfExpressionStatement())
         {
-            // Check if we got a plain statement (i.e. no expression-statements, no function/class expressions/declarations)
+            // Check if we got a plain statement (i.e. no expression-statements, no function/class
+            // expressions/declarations)
             //
             // Here we try to recover from a potential error situation in the case where the
             // user meant to supply a block. For example, if the user wrote:
@@ -4263,13 +4367,15 @@ struct Parser
             // up preemptively closing the containing construct.
             //
             // even Note when 'IgnoreMissingOpenBrace' is passed, parseBody will still error.
-            return parseFunctionBlock(SignatureFlags::IgnoreMissingOpenBrace | (isAsync ? SignatureFlags::Await : SignatureFlags::None));
+            return parseFunctionBlock(SignatureFlags::IgnoreMissingOpenBrace |
+                                      (isAsync ? SignatureFlags::Await : SignatureFlags::None));
         }
 
         auto savedTopLevel = topLevel;
         topLevel = false;
-        auto node = isAsync ? doInAwaitContext<Expression>(std::bind(&Parser::parseAssignmentExpressionOrHigher, this))
-                            : doOutsideOfAwaitContext<Expression>(std::bind(&Parser::parseAssignmentExpressionOrHigher, this));
+        auto node =
+            isAsync ? doInAwaitContext<Expression>(std::bind(&Parser::parseAssignmentExpressionOrHigher, this))
+                    : doOutsideOfAwaitContext<Expression>(std::bind(&Parser::parseAssignmentExpressionOrHigher, this));
         topLevel = savedTopLevel;
         return node;
     }
@@ -4286,15 +4392,16 @@ struct Parser
         // we Note explicitly 'allowIn' in the whenTrue part of the condition expression, and
         // we do not that for the 'whenFalse' part.
 
-        auto whenTrue =
-            doOutsideOfContext<Expression>(disallowInAndDecoratorContext, std::bind(&Parser::parseAssignmentExpressionOrHigher, this));
+        auto whenTrue = doOutsideOfContext<Expression>(disallowInAndDecoratorContext,
+                                                       std::bind(&Parser::parseAssignmentExpressionOrHigher, this));
         auto colonToken = parseExpectedToken(SyntaxKind::ColonToken);
         auto whenFalse = nodeIsPresent(colonToken)
                              ? parseAssignmentExpressionOrHigher().as<Node>()
                              : createMissingNode<Identifier>(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ false,
                                                              data::DiagnosticMessage(Diagnostics::_0_expected),
                                                              scanner.tokenToString(SyntaxKind::ColonToken));
-        return finishNode(factory.createConditionalExpression(leftOperand, questionToken, whenTrue, colonToken, whenFalse), pos);
+        return finishNode(
+            factory.createConditionalExpression(leftOperand, questionToken, whenTrue, colonToken, whenFalse), pos);
     }
 
     auto parseBinaryExpressionOrHigher(OperatorPrecedence precedence) -> Expression
@@ -4391,7 +4498,8 @@ struct Parser
         return getBinaryOperatorPrecedence(token()) > (OperatorPrecedence)0;
     }
 
-    auto makeBinaryExpression(Expression left, BinaryOperatorToken operatorToken, Expression right, pos_type pos) -> BinaryExpression
+    auto makeBinaryExpression(Expression left, BinaryOperatorToken operatorToken, Expression right, pos_type pos)
+        -> BinaryExpression
     {
         return finishNode(factory.createBinaryExpression(left, operatorToken, right), pos);
     }
@@ -4412,21 +4520,24 @@ struct Parser
     auto parseDeleteExpression() -> Node
     {
         auto pos = getNodePos();
-        return finishNode(
-            factory.createDeleteExpression(nextTokenAnd<UnaryExpression>(std::bind(&Parser::parseSimpleUnaryExpression, this))), pos);
+        return finishNode(factory.createDeleteExpression(
+                              nextTokenAnd<UnaryExpression>(std::bind(&Parser::parseSimpleUnaryExpression, this))),
+                          pos);
     }
 
     auto parseTypeOfExpression() -> Node
     {
         auto pos = getNodePos();
-        return finishNode(
-            factory.createTypeOfExpression(nextTokenAnd<UnaryExpression>(std::bind(&Parser::parseSimpleUnaryExpression, this))), pos);
+        return finishNode(factory.createTypeOfExpression(
+                              nextTokenAnd<UnaryExpression>(std::bind(&Parser::parseSimpleUnaryExpression, this))),
+                          pos);
     }
 
     auto parseVoidExpression() -> Node
     {
         auto pos = getNodePos();
-        return finishNode(factory.createVoidExpression(nextTokenAnd<UnaryExpression>(std::bind(&Parser::parseSimpleUnaryExpression, this))),
+        return finishNode(factory.createVoidExpression(
+                              nextTokenAnd<UnaryExpression>(std::bind(&Parser::parseSimpleUnaryExpression, this))),
                           pos);
     }
 
@@ -4449,8 +4560,9 @@ struct Parser
     auto parseAwaitExpression() -> Node
     {
         auto pos = getNodePos();
-        return finishNode(
-            factory.createAwaitExpression(nextTokenAnd<UnaryExpression>(std::bind(&Parser::parseSimpleUnaryExpression, this))), pos);
+        return finishNode(factory.createAwaitExpression(
+                              nextTokenAnd<UnaryExpression>(std::bind(&Parser::parseSimpleUnaryExpression, this))),
+                          pos);
     }
 
     /**
@@ -4633,7 +4745,8 @@ struct Parser
         auto expression = parseLeftHandSideExpressionOrHigher();
 
         Debug::_assert(isLeftHandSideExpression(expression));
-        if ((token() == SyntaxKind::PlusPlusToken || token() == SyntaxKind::MinusMinusToken) && !scanner.hasPrecedingLineBreak())
+        if ((token() == SyntaxKind::PlusPlusToken || token() == SyntaxKind::MinusMinusToken) &&
+            !scanner.hasPrecedingLineBreak())
         {
             auto _operator = token();
             nextToken();
@@ -4682,8 +4795,8 @@ struct Parser
         {
             if (lookAhead<boolean>(std::bind(&Parser::nextTokenIsOpenParenOrLessThan, this)))
             {
-                // We don't want to eagerly consume all import keyword.as<import>() call expression so we look ahead to find "("
-                // For example:
+                // We don't want to eagerly consume all import keyword.as<import>() call expression so we look ahead to
+                // find "(" For example:
                 //      var foo3 = require("subfolder
                 //      import *.as<foo1>() from "module-from-node
                 // We want this import to be a statement rather than import call expression
@@ -4695,7 +4808,8 @@ struct Parser
                 // This is an 'import.*' metaproperty (i.e. 'import.meta')
                 nextToken(); // advance past the 'import'
                 nextToken(); // advance past the dot
-                expression = finishNode(factory.createMetaProperty(SyntaxKind::ImportKeyword, parseIdentifierName()), pos);
+                expression =
+                    finishNode(factory.createMetaProperty(SyntaxKind::ImportKeyword, parseIdentifierName()), pos);
                 sourceFlags |= NodeFlags::PossiblyContainsImportMeta;
             }
             else
@@ -4775,29 +4889,35 @@ struct Parser
         if (token() == SyntaxKind::LessThanToken)
         {
             auto startPos = getNodePos();
-            auto typeArguments = tryParse<NodeArray<TypeNode>>(std::bind(&Parser::parseTypeArgumentsInExpression, this));
+            auto typeArguments =
+                tryParse<NodeArray<TypeNode>>(std::bind(&Parser::parseTypeArgumentsInExpression, this));
             if (typeArguments != undefined)
             {
-                parseErrorAt(startPos, getNodePos(), data::DiagnosticMessage(Diagnostics::super_may_not_use_type_arguments));
+                parseErrorAt(startPos, getNodePos(),
+                             data::DiagnosticMessage(Diagnostics::super_may_not_use_type_arguments));
             }
         }
 
-        if (token() == SyntaxKind::OpenParenToken || token() == SyntaxKind::DotToken || token() == SyntaxKind::OpenBracketToken)
+        if (token() == SyntaxKind::OpenParenToken || token() == SyntaxKind::DotToken ||
+            token() == SyntaxKind::OpenBracketToken)
         {
             return expression;
         }
 
         // If we have seen "super" it must be followed by '(' or '.'.
         // If it wasn't then just try to parse out a '.' and report an error.
-        parseExpectedToken(SyntaxKind::DotToken,
-                           data::DiagnosticMessage(Diagnostics::super_must_be_followed_by_an_argument_list_or_member_access));
+        parseExpectedToken(
+            SyntaxKind::DotToken,
+            data::DiagnosticMessage(Diagnostics::super_must_be_followed_by_an_argument_list_or_member_access));
         // private names will never work with `super` (`super.#foo`), but that's a semantic error, not syntactic
-        return finishNode(factory.createPropertyAccessExpression(
-                              expression, parseRightSideOfDot(/*allowIdentifierNames*/ true, /*allowPrivateIdentifiers*/ true)),
-                          pos);
+        return finishNode(
+            factory.createPropertyAccessExpression(
+                expression, parseRightSideOfDot(/*allowIdentifierNames*/ true, /*allowPrivateIdentifiers*/ true)),
+            pos);
     }
 
-    auto parseJsxElementOrSelfClosingElementOrFragment(boolean inExpressionContext, number topInvalidNodePosition = -1) -> Node
+    auto parseJsxElementOrSelfClosingElementOrFragment(boolean inExpressionContext, number topInvalidNodePosition = -1)
+        -> Node
     {
         auto pos = getNodePos();
         auto opening = parseJsxOpeningOrSelfClosingElementOrOpeningFragment(inExpressionContext);
@@ -4810,7 +4930,8 @@ struct Parser
             if (!tagNamesAreEquivalent(opening.as<JsxOpeningElement>()->tagName.as<JsxTagNameExpression>(),
                                        closingElement->tagName.as<JsxTagNameExpression>()))
             {
-                parseErrorAtRange(closingElement, data::DiagnosticMessage(Diagnostics::Expected_corresponding_JSX_closing_tag_for_0),
+                parseErrorAtRange(closingElement,
+                                  data::DiagnosticMessage(Diagnostics::Expected_corresponding_JSX_closing_tag_for_0),
                                   getTextOfNodeFromSourceText(sourceText, opening.as<JsxOpeningElement>()->tagName));
             }
 
@@ -4830,7 +4951,8 @@ struct Parser
         }
 
         // If the user writes the invalid code '<div></div><div></div>' in an expression context (i.e. not wrapped in
-        // an enclosing tag), we'll naively try to parse   ^ this.as<a>() 'less than' operator and the remainder of the tag
+        // an enclosing tag), we'll naively try to parse   ^ this.as<a>() 'less than' operator and the remainder of the
+        // tag
         //.as<garbage>(), which will cause the formatter to badly mangle the JSX. Perform a speculative parse of a JSX
         // element if we see a < token so that we can wrap it in a synthetic binary expression so the formatter
         // does less damage and we can report a better error.
@@ -4839,8 +4961,9 @@ struct Parser
         if (inExpressionContext && token() == SyntaxKind::LessThanToken)
         {
             auto topBadPos = topInvalidNodePosition == -1 ? static_cast<number>(result->pos) : topInvalidNodePosition;
-            auto invalidElement =
-                tryParse<Node>([&]() { return parseJsxElementOrSelfClosingElementOrFragment(/*inExpressionContext*/ true, topBadPos); });
+            auto invalidElement = tryParse<Node>([&]() {
+                return parseJsxElementOrSelfClosingElementOrFragment(/*inExpressionContext*/ true, topBadPos);
+            });
             if (invalidElement)
             {
                 auto operatorToken = createMissingNode(SyntaxKind::CommaToken, /*reportAtCurrentPosition*/ false);
@@ -4874,7 +4997,8 @@ struct Parser
             // rather than at the end of the file (which is useless)
             if (isJsxOpeningFragment(openingTag))
             {
-                parseErrorAtRange(openingTag, data::DiagnosticMessage(Diagnostics::JSX_fragment_has_no_corresponding_closing_tag));
+                parseErrorAtRange(openingTag,
+                                  data::DiagnosticMessage(Diagnostics::JSX_fragment_has_no_corresponding_closing_tag));
             }
             else
             {
@@ -4883,7 +5007,8 @@ struct Parser
                 auto tag = openingTag.as<JsxOpeningElement>()->tagName;
                 auto safe_str = safe_string(sourceText);
                 auto start = scanner.skipTrivia(safe_str, tag->pos);
-                parseErrorAt(start, tag->_end, data::DiagnosticMessage(Diagnostics::JSX_element_0_has_no_corresponding_closing_tag),
+                parseErrorAt(start, tag->_end,
+                             data::DiagnosticMessage(Diagnostics::JSX_element_0_has_no_corresponding_closing_tag),
                              getTextOfNodeFromSourceText(sourceText, openingTag.as<JsxOpeningElement>()->tagName));
             }
             return undefined;
@@ -4924,8 +5049,9 @@ struct Parser
     auto parseJsxAttributes() -> JsxAttributes
     {
         auto pos = getNodePos();
-        return finishNode(
-            factory.createJsxAttributes(parseList<Node>(ParsingContext::JsxAttributes, std::bind(&Parser::parseJsxAttribute, this))), pos);
+        return finishNode(factory.createJsxAttributes(parseList<Node>(ParsingContext::JsxAttributes,
+                                                                      std::bind(&Parser::parseJsxAttribute, this))),
+                          pos);
     }
 
     auto parseJsxOpeningOrSelfClosingElementOrOpeningFragment(boolean inExpressionContext) -> Node
@@ -4942,7 +5068,8 @@ struct Parser
         }
 
         auto tagName = parseJsxElementName();
-        auto typeArguments = (contextFlags & NodeFlags::JavaScriptFile) == NodeFlags::None ? tryParseTypeArguments() : undefined;
+        auto typeArguments =
+            (contextFlags & NodeFlags::JavaScriptFile) == NodeFlags::None ? tryParseTypeArguments() : undefined;
         auto attributes = parseJsxAttributes();
 
         JsxOpeningLikeElement node;
@@ -4980,14 +5107,15 @@ struct Parser
         // JsxElement can have name in the form of
         //      propertyAccessExpression
         //      primaryExpression in the form of an identifier and "this" keyword
-        // We can't just simply use parseLeftHandSideExpressionOrHigher because then we will start consider class,auto etc.as<a>() keyword
-        // We only want to consider "this".as<a>() primaryExpression
+        // We can't just simply use parseLeftHandSideExpressionOrHigher because then we will start consider class,auto
+        // etc.as<a>() keyword We only want to consider "this".as<a>() primaryExpression
         JsxTagNameExpression expression =
             token() == SyntaxKind::ThisKeyword ? parseTokenNode<ThisExpression>() : parseIdentifierName().as<Node>();
         while (parseOptional(SyntaxKind::DotToken))
         {
             expression = finishNode(factory.createPropertyAccessExpression(
-                                        expression, parseRightSideOfDot(/*allowIdentifierNames*/ true, /*allowPrivateIdentifiers*/ false)),
+                                        expression, parseRightSideOfDot(/*allowIdentifierNames*/ true,
+                                                                        /*allowPrivateIdentifiers*/ false)),
                                     pos)
                              .as<JsxTagNamePropertyAccess>();
         }
@@ -5077,8 +5205,9 @@ struct Parser
         parseExpected(SyntaxKind::LessThanSlashToken);
         if (scanner.tokenIsIdentifierOrKeyword(token()))
         {
-            parseErrorAtRange(parseJsxElementName(),
-                              data::DiagnosticMessage(Diagnostics::Expected_corresponding_closing_tag_for_JSX_fragment));
+            parseErrorAtRange(
+                parseJsxElementName(),
+                data::DiagnosticMessage(Diagnostics::Expected_corresponding_closing_tag_for_JSX_fragment));
         }
         if (inExpressionContext)
         {
@@ -5105,7 +5234,8 @@ struct Parser
     auto nextTokenIsIdentifierOrKeywordOrOpenBracketOrTemplate() -> boolean
     {
         nextToken();
-        return scanner.tokenIsIdentifierOrKeyword(token()) || token() == SyntaxKind::OpenBracketToken || isTemplateStartOfTaggedTemplate();
+        return scanner.tokenIsIdentifierOrKeyword(token()) || token() == SyntaxKind::OpenBracketToken ||
+               isTemplateStartOfTaggedTemplate();
     }
 
     auto isStartOfOptionalPropertyOrElementAccessChain() -> boolean
@@ -5142,29 +5272,33 @@ struct Parser
         return false;
     }
 
-    auto parsePropertyAccessExpressionRest(pos_type pos, LeftHandSideExpression expression, QuestionDotToken questionDotToken)
+    auto parsePropertyAccessExpressionRest(pos_type pos, LeftHandSideExpression expression,
+                                           QuestionDotToken questionDotToken)
     {
         auto name = parseRightSideOfDot(/*allowIdentifierNames*/ true, /*allowPrivateIdentifiers*/ true);
         auto isOptionalChain = (number)questionDotToken || tryReparseOptionalChain(expression);
-        auto propertyAccess = isOptionalChain
-                                  ? factory.createPropertyAccessChain(expression, questionDotToken, name).as<PropertyAccessExpression>()
-                                  : factory.createPropertyAccessExpression(expression, name);
+        auto propertyAccess =
+            isOptionalChain
+                ? factory.createPropertyAccessChain(expression, questionDotToken, name).as<PropertyAccessExpression>()
+                : factory.createPropertyAccessExpression(expression, name);
         if (isOptionalChain && isPrivateIdentifier(propertyAccess->name))
         {
-            parseErrorAtRange(propertyAccess->name,
-                              data::DiagnosticMessage(Diagnostics::An_optional_chain_cannot_contain_private_identifiers));
+            parseErrorAtRange(
+                propertyAccess->name,
+                data::DiagnosticMessage(Diagnostics::An_optional_chain_cannot_contain_private_identifiers));
         }
         return finishNode(propertyAccess, pos);
     }
 
-    auto parseElementAccessExpressionRest(pos_type pos, LeftHandSideExpression expression, QuestionDotToken questionDotToken)
+    auto parseElementAccessExpressionRest(pos_type pos, LeftHandSideExpression expression,
+                                          QuestionDotToken questionDotToken)
     {
         Expression argumentExpression;
         if (token() == SyntaxKind::CloseBracketToken)
         {
-            argumentExpression =
-                createMissingNode<Identifier>(SyntaxKind::Identifier, /*reportAtCurrentPosition*/ true,
-                                              data::DiagnosticMessage(Diagnostics::An_element_access_expression_should_take_an_argument));
+            argumentExpression = createMissingNode<Identifier>(
+                SyntaxKind::Identifier, /*reportAtCurrentPosition*/ true,
+                data::DiagnosticMessage(Diagnostics::An_element_access_expression_should_take_an_argument));
         }
         else
         {
@@ -5178,14 +5312,15 @@ struct Parser
 
         parseExpected(SyntaxKind::CloseBracketToken);
 
-        auto indexedAccess =
-            (number)questionDotToken || tryReparseOptionalChain(expression)
-                ? factory.createElementAccessChain(expression, questionDotToken, argumentExpression).as<ElementAccessExpression>()
-                : factory.createElementAccessExpression(expression, argumentExpression);
+        auto indexedAccess = (number)questionDotToken || tryReparseOptionalChain(expression)
+                                 ? factory.createElementAccessChain(expression, questionDotToken, argumentExpression)
+                                       .as<ElementAccessExpression>()
+                                 : factory.createElementAccessExpression(expression, argumentExpression);
         return finishNode(indexedAccess, pos);
     }
 
-    auto parseMemberExpressionRest(pos_type pos, LeftHandSideExpression expression, boolean allowOptionalChain) -> MemberExpression
+    auto parseMemberExpressionRest(pos_type pos, LeftHandSideExpression expression, boolean allowOptionalChain)
+        -> MemberExpression
     {
         while (true)
         {
@@ -5214,7 +5349,8 @@ struct Parser
                 continue;
             }
 
-            // when in the [Decorator] context, we do not parse ElementAccess.as<it>() could be part of a ComputedPropertyName
+            // when in the [Decorator] context, we do not parse ElementAccess.as<it>() could be part of a
+            // ComputedPropertyName
             if ((questionDotToken || !inDecoratorContext()) && parseOptional(SyntaxKind::OpenBracketToken))
             {
                 expression = parseElementAccessExpressionRest(pos, expression, questionDotToken);
@@ -5247,12 +5383,12 @@ struct Parser
     auto parseTaggedTemplateRest(pos_type pos, LeftHandSideExpression tag, QuestionDotToken questionDotToken,
                                  NodeArray<TypeNode> typeArguments) -> Node
     {
-        auto tagExpression =
-            factory.createTaggedTemplateExpression(tag, typeArguments,
-                                                   token() == SyntaxKind::NoSubstitutionTemplateLiteral
-                                                       ? (reScanTemplateHeadOrNoSubstitutionTemplate(),
-                                                          toNoSubstitutionTemplateLiteral(parseLiteralNode()).as<TemplateLiteralLikeNode>())
-                                                       : parseTemplateExpression(/*isTaggedTemplate*/ true).as<TemplateLiteralLikeNode>());
+        auto tagExpression = factory.createTaggedTemplateExpression(
+            tag, typeArguments,
+            token() == SyntaxKind::NoSubstitutionTemplateLiteral
+                ? (reScanTemplateHeadOrNoSubstitutionTemplate(),
+                   toNoSubstitutionTemplateLiteral(parseLiteralNode()).as<TemplateLiteralLikeNode>())
+                : parseTemplateExpression(/*isTaggedTemplate*/ true).as<TemplateLiteralLikeNode>());
         if ((number)questionDotToken || !!(tag->flags & NodeFlags::OptionalChain))
         {
             (tagExpression.asMutable<Node>())->flags |= NodeFlags::OptionalChain;
@@ -5276,7 +5412,8 @@ struct Parser
                 // keep checking for postfix expressions.  Otherwise, it's just a '<' that's
                 // part of an arithmetic expression.  Break out so we consume it higher in the
                 // stack.
-                auto typeArguments = tryParse<NodeArray<TypeNode>>(std::bind(&Parser::parseTypeArgumentsInExpression, this));
+                auto typeArguments =
+                    tryParse<NodeArray<TypeNode>>(std::bind(&Parser::parseTypeArgumentsInExpression, this));
                 if (!!typeArguments)
                 {
                     if (isTemplateStartOfTaggedTemplate())
@@ -5288,7 +5425,8 @@ struct Parser
                     auto argumentList = parseArgumentList();
                     auto callExpr =
                         questionDotToken || tryReparseOptionalChain(expression)
-                            ? factory.createCallChain(expression, questionDotToken, typeArguments, argumentList).as<CallExpression>()
+                            ? factory.createCallChain(expression, questionDotToken, typeArguments, argumentList)
+                                  .as<CallExpression>()
                             : factory.createCallExpression(expression, typeArguments, argumentList);
                     expression = finishNode(callExpr, pos);
                     continue;
@@ -5297,10 +5435,12 @@ struct Parser
             else if (token() == SyntaxKind::OpenParenToken)
             {
                 auto argumentList = parseArgumentList();
-                auto callExpr = questionDotToken || tryReparseOptionalChain(expression)
-                                    ? factory.createCallChain(expression, questionDotToken, /*typeArguments*/ undefined, argumentList)
-                                          .as<CallExpression>()
-                                    : factory.createCallExpression(expression, /*typeArguments*/ undefined, argumentList);
+                auto callExpr =
+                    questionDotToken || tryReparseOptionalChain(expression)
+                        ? factory
+                              .createCallChain(expression, questionDotToken, /*typeArguments*/ undefined, argumentList)
+                              .as<CallExpression>()
+                        : factory.createCallExpression(expression, /*typeArguments*/ undefined, argumentList);
                 expression = finishNode(callExpr, pos);
                 continue;
             }
@@ -5319,8 +5459,8 @@ struct Parser
     auto parseArgumentList() -> NodeArray<Expression>
     {
         parseExpected(SyntaxKind::OpenParenToken);
-        auto result =
-            parseDelimitedList<Expression>(ParsingContext::ArgumentExpressions, std::bind(&Parser::parseArgumentExpression, this));
+        auto result = parseDelimitedList<Expression>(ParsingContext::ArgumentExpressions,
+                                                     std::bind(&Parser::parseArgumentExpression, this));
         parseExpected(SyntaxKind::CloseParenToken);
         return result;
     }
@@ -5339,7 +5479,8 @@ struct Parser
         }
         nextToken();
 
-        auto typeArguments = parseDelimitedList<TypeNode>(ParsingContext::TypeArguments, std::bind(&Parser::parseType, this));
+        auto typeArguments =
+            parseDelimitedList<TypeNode>(ParsingContext::TypeArguments, std::bind(&Parser::parseType, this));
         if (!parseExpected(SyntaxKind::GreaterThanToken))
         {
             // If it doesn't have the closing `>` then it's definitely not an type argument list.
@@ -5468,13 +5609,15 @@ struct Parser
     auto parseArgumentOrArrayLiteralElement() -> Expression
     {
         return token() == SyntaxKind::DotDotDotToken ? parseSpreadElement()
-               : token() == SyntaxKind::CommaToken   ? finishNode(factory.createOmittedExpression(), getNodePos()).as<Expression>()
-                                                     : parseAssignmentExpressionOrHigher();
+               : token() == SyntaxKind::CommaToken
+                   ? finishNode(factory.createOmittedExpression(), getNodePos()).as<Expression>()
+                   : parseAssignmentExpressionOrHigher();
     }
 
     auto parseArgumentExpression() -> Expression
     {
-        return doOutsideOfContext<Expression>(disallowInAndDecoratorContext, std::bind(&Parser::parseArgumentOrArrayLiteralElement, this));
+        return doOutsideOfContext<Expression>(disallowInAndDecoratorContext,
+                                              std::bind(&Parser::parseArgumentOrArrayLiteralElement, this));
     }
 
     auto parseArrayLiteralExpression() -> Node
@@ -5515,30 +5658,36 @@ struct Parser
         auto tokenIsIdentifier = isIdentifier();
         auto name = parsePropertyName();
 
-        // Disallowing of optional property assignments and definite assignment assertion happens in the grammar checker.
+        // Disallowing of optional property assignments and definite assignment assertion happens in the grammar
+        // checker.
         auto questionToken = parseOptionalToken(SyntaxKind::QuestionToken);
         auto exclamationToken = parseOptionalToken(SyntaxKind::ExclamationToken);
 
         if (asteriskToken || token() == SyntaxKind::OpenParenToken || token() == SyntaxKind::LessThanToken)
         {
-            return parseMethodDeclaration(pos, hasJSDoc, decorators, modifiers, asteriskToken, name, questionToken, exclamationToken);
+            return parseMethodDeclaration(pos, hasJSDoc, decorators, modifiers, asteriskToken, name, questionToken,
+                                          exclamationToken);
         }
 
         // check if it is short-hand property assignment or normal property assignment
         // if NOTE token is EqualsToken it is interpreted.as<CoverInitializedName>() production
         // CoverInitializedName[Yield] :
         //     IdentifierReference[?Yield] Initializer[In, ?Yield]
-        // this is necessary because ObjectLiteral productions are also used to cover grammar for ObjectAssignmentPattern
+        // this is necessary because ObjectLiteral productions are also used to cover grammar for
+        // ObjectAssignmentPattern
         PropertyAssignment node;
         auto isShorthandPropertyAssignment = tokenIsIdentifier && (token() != SyntaxKind::ColonToken);
         if (isShorthandPropertyAssignment)
         {
             auto equalsToken = parseOptionalToken(SyntaxKind::EqualsToken);
             auto objectAssignmentInitializer =
-                equalsToken ? allowInAnd<Expression>(std::bind(&Parser::parseAssignmentExpressionOrHigher, this)) : undefined;
-            auto nodeSpa = factory.createShorthandPropertyAssignment(name.as<Identifier>(), objectAssignmentInitializer);
+                equalsToken ? allowInAnd<Expression>(std::bind(&Parser::parseAssignmentExpressionOrHigher, this))
+                            : undefined;
+            auto nodeSpa =
+                factory.createShorthandPropertyAssignment(name.as<Identifier>(), objectAssignmentInitializer);
             // Save equals token for error reporting.
-            // TODO(rbuckton) -> Consider manufacturing this when we need to report an error.as<it>() is otherwise not useful.
+            // TODO(rbuckton) -> Consider manufacturing this when we need to report an error.as<it>() is otherwise not
+            // useful.
             nodeSpa->equalsToken = equalsToken;
             node = nodeSpa.as<PropertyAssignment>();
         }
@@ -5548,8 +5697,8 @@ struct Parser
             auto initializer = allowInAnd<Expression>(std::bind(&Parser::parseAssignmentExpressionOrHigher, this));
             node = factory.createPropertyAssignment(name, initializer);
         }
-        // Decorators, Modifiers, questionToken, and exclamationToken are not supported by property assignments and are reported in the
-        // grammar checker
+        // Decorators, Modifiers, questionToken, and exclamationToken are not supported by property assignments and are
+        // reported in the grammar checker
         node->decorators = decorators;
         copy(node->modifiers, modifiers);
         node->questionToken = questionToken;
@@ -5563,9 +5712,9 @@ struct Parser
         auto openBracePosition = scanner.getTokenPos();
         parseExpected(SyntaxKind::OpenBraceToken);
         auto multiLine = scanner.hasPrecedingLineBreak();
-        auto properties = parseDelimitedList<ObjectLiteralElementLike>(ParsingContext::ObjectLiteralMembers,
-                                                                       std::bind(&Parser::parseObjectLiteralElement, this),
-                                                                       /*considerSemicolonAsDelimiter*/ true);
+        auto properties = parseDelimitedList<ObjectLiteralElementLike>(
+            ParsingContext::ObjectLiteralMembers, std::bind(&Parser::parseObjectLiteralElement, this),
+            /*considerSemicolonAsDelimiter*/ true);
         if (!parseExpected(SyntaxKind::CloseBraceToken))
         {
             auto lastError = lastOrUndefined(parseDiagnostics);
@@ -5573,7 +5722,8 @@ struct Parser
             {
                 addRelatedInfo(lastError, createDetachedDiagnostic(
                                               fileName, openBracePosition, 1,
-                                              data::DiagnosticMessage(Diagnostics::The_parser_expected_to_find_a_to_match_the_token_here)));
+                                              data::DiagnosticMessage(
+                                                  Diagnostics::The_parser_expected_to_find_a_to_match_the_token_here)));
             }
         }
         return finishNode(factory.createObjectLiteralExpression(properties, multiLine), pos);
@@ -5601,9 +5751,10 @@ struct Parser
         auto isAsync = some(modifiers, isAsyncModifier) ? SignatureFlags::Await : SignatureFlags::None;
         auto name = !!isGenerator && !!isAsync
                         ? doInYieldAndAwaitContext<Identifier>(std::bind(&Parser::parseOptionalBindingIdentifier, this))
-                    : !!isGenerator ? doInYieldContext<Identifier>(std::bind(&Parser::parseOptionalBindingIdentifier, this))
-                    : !!isAsync     ? doInAwaitContext<Identifier>(std::bind(&Parser::parseOptionalBindingIdentifier, this))
-                                    : parseOptionalBindingIdentifier();
+                    : !!isGenerator
+                        ? doInYieldContext<Identifier>(std::bind(&Parser::parseOptionalBindingIdentifier, this))
+                    : !!isAsync ? doInAwaitContext<Identifier>(std::bind(&Parser::parseOptionalBindingIdentifier, this))
+                                : parseOptionalBindingIdentifier();
 
         auto typeParameters = parseTypeParameters();
         auto parameters = parseParameters(isGenerator | isAsync);
@@ -5615,7 +5766,8 @@ struct Parser
             setDecoratorContext(/*val*/ true);
         }
 
-        auto node = factory.createFunctionExpression(modifiers, asteriskToken, name, typeParameters, parameters, type, body);
+        auto node =
+            factory.createFunctionExpression(modifiers, asteriskToken, name, typeParameters, parameters, type, body);
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
@@ -5643,10 +5795,10 @@ struct Parser
             typeArguments = tryParse<NodeArray<TypeNode>>(std::bind(&Parser::parseTypeArgumentsInExpression, this));
             if (isTemplateStartOfTaggedTemplate())
             {
-                Debug::_assert(
-                    !!typeArguments,
-                    S("Expected a type argument list; all plain tagged template starts should be consumed in 'parseMemberExpressionRest'"));
-                expression = parseTaggedTemplateRest(expressionPos, expression, /*optionalChain*/ undefined, typeArguments);
+                Debug::_assert(!!typeArguments, S("Expected a type argument list; all plain tagged template starts "
+                                                  "should be consumed in 'parseMemberExpressionRest'"));
+                expression =
+                    parseTaggedTemplateRest(expressionPos, expression, /*optionalChain*/ undefined, typeArguments);
                 typeArguments = undefined;
             }
             break;
@@ -5659,9 +5811,11 @@ struct Parser
         }
         else if (!!typeArguments)
         {
-            parseErrorAt(pos, scanner.getStartPos(),
-                         data::DiagnosticMessage(
-                             Diagnostics::A_new_expression_with_type_arguments_must_always_be_followed_by_a_parenthesized_argument_list));
+            parseErrorAt(
+                pos, scanner.getStartPos(),
+                data::DiagnosticMessage(
+                    Diagnostics::
+                        A_new_expression_with_type_arguments_must_always_be_followed_by_a_parenthesized_argument_list));
         }
         return finishNode(factory.createNewExpression(expression, typeArguments, argumentsArray), pos);
     }
@@ -5674,7 +5828,8 @@ struct Parser
         if (parseExpected(SyntaxKind::OpenBraceToken, diagnosticMessage) || ignoreMissingOpenBrace)
         {
             auto multiLine = scanner.hasPrecedingLineBreak();
-            auto statements = parseList<Statement>(ParsingContext::BlockStatements, std::bind(&Parser::parseStatement, this));
+            auto statements =
+                parseList<Statement>(ParsingContext::BlockStatements, std::bind(&Parser::parseStatement, this));
             if (!parseExpected(SyntaxKind::CloseBraceToken))
             {
                 auto lastError = lastOrUndefined(parseDiagnostics);
@@ -5683,7 +5838,8 @@ struct Parser
                     addRelatedInfo(lastError,
                                    createDetachedDiagnostic(
                                        fileName, openBracePosition, 1,
-                                       data::DiagnosticMessage(Diagnostics::The_parser_expected_to_find_a_to_match_the_token_here)));
+                                       data::DiagnosticMessage(
+                                           Diagnostics::The_parser_expected_to_find_a_to_match_the_token_here)));
                 }
             }
             return finishNode(factory.createBlock(statements, multiLine), pos);
@@ -5786,7 +5942,8 @@ struct Parser
         Node initializer;
         if (token() != SyntaxKind::SemicolonToken)
         {
-            if (token() == SyntaxKind::VarKeyword || token() == SyntaxKind::LetKeyword || token() == SyntaxKind::ConstKeyword)
+            if (token() == SyntaxKind::VarKeyword || token() == SyntaxKind::LetKeyword ||
+                token() == SyntaxKind::ConstKeyword)
             {
                 initializer = parseVariableDeclarationList(/*inForStatementInitializer*/ true);
             }
@@ -5816,8 +5973,9 @@ struct Parser
                                  ? allowInAnd<Expression>(std::bind(&Parser::parseExpression, this))
                                  : undefined;
             parseExpected(SyntaxKind::SemicolonToken);
-            auto incrementor =
-                token() != SyntaxKind::CloseParenToken ? allowInAnd<Expression>(std::bind(&Parser::parseExpression, this)) : undefined;
+            auto incrementor = token() != SyntaxKind::CloseParenToken
+                                   ? allowInAnd<Expression>(std::bind(&Parser::parseExpression, this))
+                                   : undefined;
             parseExpected(SyntaxKind::CloseParenToken);
             node = factory.createForStatement(initializer, condition, incrementor, parseStatement());
         }
@@ -5833,8 +5991,9 @@ struct Parser
         auto label = canParseSemicolon() ? undefined : parseIdentifier();
 
         parseSemicolon();
-        auto node = kind == SyntaxKind::BreakStatement ? factory.createBreakStatement(label).as<BreakOrContinueStatement>()
-                                                       : factory.createContinueStatement(label).as<BreakOrContinueStatement>();
+        auto node = kind == SyntaxKind::BreakStatement
+                        ? factory.createBreakStatement(label).as<BreakOrContinueStatement>()
+                        : factory.createContinueStatement(label).as<BreakOrContinueStatement>();
         return finishNode(node, pos);
     }
 
@@ -5842,7 +6001,8 @@ struct Parser
     {
         auto pos = getNodePos();
         parseExpected(SyntaxKind::ReturnKeyword);
-        auto expression = canParseSemicolon() ? undefined : allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
+        auto expression =
+            canParseSemicolon() ? undefined : allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
         parseSemicolon();
         return finishNode(factory.createReturnStatement(expression), pos);
     }
@@ -5854,7 +6014,8 @@ struct Parser
         parseExpected(SyntaxKind::OpenParenToken);
         auto expression = allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
         parseExpected(SyntaxKind::CloseParenToken);
-        auto statement = doInsideOfContext<Statement>(NodeFlags::InWithStatement, std::bind(&Parser::parseStatement, this));
+        auto statement =
+            doInsideOfContext<Statement>(NodeFlags::InWithStatement, std::bind(&Parser::parseStatement, this));
         return finishNode(factory.createWithStatement(expression, statement), pos);
     }
 
@@ -5864,7 +6025,8 @@ struct Parser
         parseExpected(SyntaxKind::CaseKeyword);
         auto expression = allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
         parseExpected(SyntaxKind::ColonToken);
-        auto statements = parseList<Statement>(ParsingContext::SwitchClauseStatements, std::bind(&Parser::parseStatement, this));
+        auto statements =
+            parseList<Statement>(ParsingContext::SwitchClauseStatements, std::bind(&Parser::parseStatement, this));
         return finishNode(factory.createCaseClause(expression, statements), pos);
     }
 
@@ -5873,20 +6035,23 @@ struct Parser
         auto pos = getNodePos();
         parseExpected(SyntaxKind::DefaultKeyword);
         parseExpected(SyntaxKind::ColonToken);
-        auto statements = parseList<Statement>(ParsingContext::SwitchClauseStatements, std::bind(&Parser::parseStatement, this));
+        auto statements =
+            parseList<Statement>(ParsingContext::SwitchClauseStatements, std::bind(&Parser::parseStatement, this));
         return finishNode(factory.createDefaultClause(statements), pos);
     }
 
     auto parseCaseOrDefaultClause() -> CaseOrDefaultClause
     {
-        return token() == SyntaxKind::CaseKeyword ? (CaseOrDefaultClause)parseCaseClause() : (CaseOrDefaultClause)parseDefaultClause();
+        return token() == SyntaxKind::CaseKeyword ? (CaseOrDefaultClause)parseCaseClause()
+                                                  : (CaseOrDefaultClause)parseDefaultClause();
     }
 
     auto parseCaseBlock() -> CaseBlock
     {
         auto pos = getNodePos();
         parseExpected(SyntaxKind::OpenBraceToken);
-        auto clauses = parseList<CaseOrDefaultClause>(ParsingContext::SwitchClauses, std::bind(&Parser::parseCaseOrDefaultClause, this));
+        auto clauses = parseList<CaseOrDefaultClause>(ParsingContext::SwitchClauses,
+                                                      std::bind(&Parser::parseCaseOrDefaultClause, this));
         parseExpected(SyntaxKind::CloseBraceToken);
         return finishNode(factory.createCaseBlock(clauses), pos);
     }
@@ -5915,7 +6080,9 @@ struct Parser
         // directly.as<that>() might consume an expression on the following line.
         // Instead, we create a "missing" identifier, but don't report an error. The actual error
         // will be reported in the grammar walker.
-        auto expression = scanner.hasPrecedingLineBreak() ? undefined : allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
+        auto expression = scanner.hasPrecedingLineBreak()
+                              ? undefined
+                              : allowInAnd<Expression>(std::bind(&Parser::parseExpression, this));
         if (expression == undefined)
         {
             identifierCount++;
@@ -6086,7 +6253,8 @@ struct Parser
 
             case SyntaxKind::GlobalKeyword:
                 nextToken();
-                return token() == SyntaxKind::OpenBraceToken || token() == SyntaxKind::Identifier || token() == SyntaxKind::ExportKeyword;
+                return token() == SyntaxKind::OpenBraceToken || token() == SyntaxKind::Identifier ||
+                       token() == SyntaxKind::ExportKeyword;
 
             case SyntaxKind::ImportKeyword:
                 nextToken();
@@ -6152,7 +6320,8 @@ struct Parser
             return true;
 
         case SyntaxKind::ImportKeyword:
-            return isStartOfDeclaration() || lookAhead<boolean>(std::bind(&Parser::nextTokenIsOpenParenOrLessThanOrDot, this));
+            return isStartOfDeclaration() ||
+                   lookAhead<boolean>(std::bind(&Parser::nextTokenIsOpenParenOrLessThanOrDot, this));
 
         case SyntaxKind::ConstKeyword:
         case SyntaxKind::ExportKeyword:
@@ -6175,7 +6344,8 @@ struct Parser
         case SyntaxKind::ReadonlyKeyword:
             // When these don't start a declaration, they may be the start of a class member if an identifier
             // immediately follows. Otherwise they're an identifier in an expression statement.
-            return isStartOfDeclaration() || !lookAhead<boolean>(std::bind(&Parser::nextTokenIsIdentifierOrKeywordOnSameLine, this));
+            return isStartOfDeclaration() ||
+                   !lookAhead<boolean>(std::bind(&Parser::nextTokenIsIdentifierOrKeywordOnSameLine, this));
 
         default:
             return isStartOfExpression();
@@ -6204,17 +6374,21 @@ struct Parser
         case SyntaxKind::OpenBraceToken:
             return parseBlock(/*ignoreMissingOpenBrace*/ false);
         case SyntaxKind::VarKeyword:
-            return parseVariableStatement(getNodePos(), hasPrecedingJSDocComment(), /*decorators*/ undefined, /*modifiers*/ undefined);
+            return parseVariableStatement(getNodePos(), hasPrecedingJSDocComment(), /*decorators*/ undefined,
+                                          /*modifiers*/ undefined);
         case SyntaxKind::LetKeyword:
             if (isLetDeclaration())
             {
-                return parseVariableStatement(getNodePos(), hasPrecedingJSDocComment(), /*decorators*/ undefined, /*modifiers*/ undefined);
+                return parseVariableStatement(getNodePos(), hasPrecedingJSDocComment(), /*decorators*/ undefined,
+                                              /*modifiers*/ undefined);
             }
             break;
         case SyntaxKind::FunctionKeyword:
-            return parseFunctionDeclaration(getNodePos(), hasPrecedingJSDocComment(), /*decorators*/ undefined, /*modifiers*/ undefined);
+            return parseFunctionDeclaration(getNodePos(), hasPrecedingJSDocComment(), /*decorators*/ undefined,
+                                            /*modifiers*/ undefined);
         case SyntaxKind::ClassKeyword:
-            return parseClassDeclaration(getNodePos(), hasPrecedingJSDocComment(), /*decorators*/ undefined, /*modifiers*/ undefined);
+            return parseClassDeclaration(getNodePos(), hasPrecedingJSDocComment(), /*decorators*/ undefined,
+                                         /*modifiers*/ undefined);
         case SyntaxKind::IfKeyword:
             return parseIfStatement();
         case SyntaxKind::DoKeyword:
@@ -6308,8 +6482,8 @@ struct Parser
             {
                 (m.asMutable<Node>())->flags |= NodeFlags::Ambient;
             }
-            return doInsideOfContext<Node>(NodeFlags::Ambient,
-                                           [&]() { return parseDeclarationWorker(pos, hasJSDoc, decorators, modifiers); });
+            return doInsideOfContext<Node>(
+                NodeFlags::Ambient, [&]() { return parseDeclarationWorker(pos, hasJSDoc, decorators, modifiers); });
         }
         else
         {
@@ -6330,7 +6504,8 @@ struct Parser
         });
     }
 
-    auto parseDeclarationWorker(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers) -> Statement
+    auto parseDeclarationWorker(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
+                                NodeArray<Modifier> modifiers) -> Statement
     {
         switch (token())
         {
@@ -6371,8 +6546,9 @@ struct Parser
             {
                 // We reached this point because we encountered decorators and/or modifiers and assumed a declaration
                 // would follow. For recovery and error reporting purposes, return an incomplete declaration.
-                auto missing = createMissingNode<MissingDeclaration>(SyntaxKind::MissingDeclaration, /*reportAtCurrentPosition*/ true,
-                                                                     data::DiagnosticMessage(Diagnostics::Declaration_expected));
+                auto missing = createMissingNode<MissingDeclaration>(
+                    SyntaxKind::MissingDeclaration, /*reportAtCurrentPosition*/ true,
+                    data::DiagnosticMessage(Diagnostics::Declaration_expected));
                 setTextRangePos(missing, pos);
                 missing->decorators = decorators;
                 copy(missing->modifiers, modifiers);
@@ -6411,7 +6587,8 @@ struct Parser
         auto dotDotDotToken = parseOptionalToken(SyntaxKind::DotDotDotToken);
         auto name = parseIdentifierOrPattern();
         auto initializer = parseInitializer();
-        return finishNode(factory.createBindingElement(dotDotDotToken, /*propertyName*/ undefined, name, initializer), pos);
+        return finishNode(factory.createBindingElement(dotDotDotToken, /*propertyName*/ undefined, name, initializer),
+                          pos);
     }
 
     auto parseObjectBindingElement() -> BindingElement
@@ -6439,8 +6616,8 @@ struct Parser
     {
         auto pos = getNodePos();
         parseExpected(SyntaxKind::OpenBraceToken);
-        auto elements =
-            parseDelimitedList<BindingElement>(ParsingContext::ObjectBindingElements, std::bind(&Parser::parseObjectBindingElement, this));
+        auto elements = parseDelimitedList<BindingElement>(ParsingContext::ObjectBindingElements,
+                                                           std::bind(&Parser::parseObjectBindingElement, this));
         parseExpected(SyntaxKind::CloseBraceToken);
         return finishNode(factory.createObjectBindingPattern(elements), pos);
     }
@@ -6488,8 +6665,8 @@ struct Parser
     {
         auto pos = getNodePos();
         auto hasJSDoc = hasPrecedingJSDocComment();
-        auto name =
-            parseIdentifierOrPattern(data::DiagnosticMessage(Diagnostics::Private_identifiers_are_not_allowed_in_variable_declarations));
+        auto name = parseIdentifierOrPattern(
+            data::DiagnosticMessage(Diagnostics::Private_identifiers_are_not_allowed_in_variable_declarations));
         ExclamationToken exclamationToken;
         if (allowExclamation && name == SyntaxKind::Identifier && token() == SyntaxKind::ExclamationToken &&
             !scanner.hasPrecedingLineBreak())
@@ -6533,7 +6710,8 @@ struct Parser
         // this context->
         // The checker will then give an error that there is an empty declaration list.
         NodeArray<VariableDeclaration> declarations;
-        if (token() == SyntaxKind::OfKeyword && lookAhead<boolean>(std::bind(&Parser::canFollowContextualOfKeyword, this)))
+        if (token() == SyntaxKind::OfKeyword &&
+            lookAhead<boolean>(std::bind(&Parser::canFollowContextualOfKeyword, this)))
         {
             declarations = createMissingList<VariableDeclaration>();
         }
@@ -6546,7 +6724,8 @@ struct Parser
                 ParsingContext::VariableDeclarations,
                 inForStatementInitializer
                     ? (std::function<VariableDeclaration()>)std::bind(&Parser::parseVariableDeclaration0, this)
-                    : (std::function<VariableDeclaration()>)std::bind(&Parser::parseVariableDeclarationAllowExclamation, this));
+                    : (std::function<VariableDeclaration()>)std::bind(&Parser::parseVariableDeclarationAllowExclamation,
+                                                                      this));
 
             setDisallowInContext(savedDisallowIn);
         }
@@ -6559,26 +6738,28 @@ struct Parser
         return nextTokenIsIdentifier() && nextToken() == SyntaxKind::CloseParenToken;
     }
 
-    auto parseVariableStatement(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
-        -> VariableStatement
+    auto parseVariableStatement(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
+                                NodeArray<Modifier> modifiers) -> VariableStatement
     {
         auto declarationList = parseVariableDeclarationList(/*inForStatementInitializer*/ false);
         parseSemicolon();
         auto node = factory.createVariableStatement(modifiers, declarationList);
-        // Decorators are not allowed on a variable statement, so we keep track of them to report them in the grammar checker.
+        // Decorators are not allowed on a variable statement, so we keep track of them to report them in the grammar
+        // checker.
         node->decorators = decorators;
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
-    auto parseFunctionDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
-        -> FunctionDeclaration
+    auto parseFunctionDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
+                                  NodeArray<Modifier> modifiers) -> FunctionDeclaration
     {
         auto savedAwaitContext = inAwaitContext();
         auto modifierFlags = modifiersToFlags(modifiers);
         parseExpected(SyntaxKind::FunctionKeyword);
         auto asteriskToken = parseOptionalToken(SyntaxKind::AsteriskToken);
         // We don't parse the name here in await context, instead we will report a grammar error in the checker.
-        auto name = !!(modifierFlags & ModifierFlags::Default) ? parseOptionalBindingIdentifier() : parseBindingIdentifier();
+        auto name =
+            !!(modifierFlags & ModifierFlags::Default) ? parseOptionalBindingIdentifier() : parseBindingIdentifier();
         auto isGenerator = asteriskToken ? SignatureFlags::Yield : SignatureFlags::None;
         auto isAsync = !!(modifierFlags & ModifierFlags::Async) ? SignatureFlags::Await : SignatureFlags::None;
         auto typeParameters = parseTypeParameters();
@@ -6586,9 +6767,11 @@ struct Parser
             setAwaitContext(/*value*/ true);
         auto parameters = parseParameters(isGenerator | isAsync);
         auto type = parseReturnType(SyntaxKind::ColonToken, /*isType*/ false);
-        auto body = parseFunctionBlockOrSemicolon(isGenerator | isAsync, data::DiagnosticMessage(Diagnostics::or_expected));
+        auto body =
+            parseFunctionBlockOrSemicolon(isGenerator | isAsync, data::DiagnosticMessage(Diagnostics::or_expected));
         setAwaitContext(savedAwaitContext);
-        auto node = factory.createFunctionDeclaration(decorators, modifiers, asteriskToken, name, typeParameters, parameters, type, body);
+        auto node = factory.createFunctionDeclaration(decorators, modifiers, asteriskToken, name, typeParameters,
+                                                      parameters, type, body);
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
@@ -6610,8 +6793,8 @@ struct Parser
         return false;
     }
 
-    auto tryParseConstructorDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
-        -> ConstructorDeclaration
+    auto tryParseConstructorDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
+                                        NodeArray<Modifier> modifiers) -> ConstructorDeclaration
     {
         return tryParse<ConstructorDeclaration>([&]() {
             if (parseConstructorName())
@@ -6619,7 +6802,8 @@ struct Parser
                 auto typeParameters = parseTypeParameters();
                 auto parameters = parseParameters(SignatureFlags::None);
                 auto type = parseReturnType(SyntaxKind::ColonToken, /*isType*/ false);
-                auto body = parseFunctionBlockOrSemicolon(SignatureFlags::None, data::DiagnosticMessage(Diagnostics::or_expected));
+                auto body = parseFunctionBlockOrSemicolon(SignatureFlags::None,
+                                                          data::DiagnosticMessage(Diagnostics::or_expected));
                 auto node = factory.createConstructorDeclaration(decorators, modifiers, parameters, body);
                 // Attach `typeParameters` and `type` if they exist so that we can report them in the grammar checker.
                 node->typeParameters = typeParameters;
@@ -6633,9 +6817,10 @@ struct Parser
         return undefined;
     }
 
-    auto parseMethodDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers,
-                                AsteriskToken asteriskToken, PropertyName name, QuestionToken questionToken,
-                                ExclamationToken exclamationToken, DiagnosticMessage diagnosticMessage = undefined) -> MethodDeclaration
+    auto parseMethodDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
+                                NodeArray<Modifier> modifiers, AsteriskToken asteriskToken, PropertyName name,
+                                QuestionToken questionToken, ExclamationToken exclamationToken,
+                                DiagnosticMessage diagnosticMessage = undefined) -> MethodDeclaration
     {
         auto isGenerator = asteriskToken == SyntaxKind::AsteriskToken ? SignatureFlags::Yield : SignatureFlags::None;
         auto isAsync = some(modifiers, isAsyncModifier) ? SignatureFlags::Await : SignatureFlags::None;
@@ -6643,29 +6828,33 @@ struct Parser
         auto parameters = parseParameters(isGenerator | isAsync);
         auto type = parseReturnType(SyntaxKind::ColonToken, /*isType*/ false);
         auto body = parseFunctionBlockOrSemicolon(isGenerator | isAsync, diagnosticMessage);
-        auto node = factory.createMethodDeclaration(decorators, modifiers, asteriskToken, name, questionToken, typeParameters, parameters,
-                                                    type, body);
+        auto node = factory.createMethodDeclaration(decorators, modifiers, asteriskToken, name, questionToken,
+                                                    typeParameters, parameters, type, body);
         // An exclamation token on a method is invalid syntax and will be handled by the grammar checker
         node->exclamationToken = exclamationToken;
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
-    auto parsePropertyDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers,
-                                  PropertyName name, QuestionToken questionToken) -> PropertyDeclaration
+    auto parsePropertyDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
+                                  NodeArray<Modifier> modifiers, PropertyName name, QuestionToken questionToken)
+        -> PropertyDeclaration
     {
-        auto exclamationToken =
-            !questionToken && !scanner.hasPrecedingLineBreak() ? parseOptionalToken(SyntaxKind::ExclamationToken) : undefined;
+        auto exclamationToken = !questionToken && !scanner.hasPrecedingLineBreak()
+                                    ? parseOptionalToken(SyntaxKind::ExclamationToken)
+                                    : undefined;
         auto type = parseTypeAnnotation();
-        auto initializer = doOutsideOfContext<Expression>(NodeFlags::YieldContext | NodeFlags::AwaitContext | NodeFlags::DisallowInContext,
+        auto initializer = doOutsideOfContext<Expression>(NodeFlags::YieldContext | NodeFlags::AwaitContext |
+                                                              NodeFlags::DisallowInContext,
                                                           std::bind(&Parser::parseInitializer, this));
         parseSemicolon();
         auto node = factory.createPropertyDeclaration(
-            decorators, modifiers, name, questionToken.as<Node>() || [&]() { return exclamationToken.as<Node>(); }, type, initializer);
+            decorators, modifiers, name, questionToken.as<Node>() || [&]() { return exclamationToken.as<Node>(); },
+            type, initializer);
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
-    auto parsePropertyOrMethodDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
-        -> Node
+    auto parsePropertyOrMethodDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
+                                          NodeArray<Modifier> modifiers) -> Node
     {
         auto asteriskToken = parseOptionalToken(SyntaxKind::AsteriskToken);
         auto name = parsePropertyName();
@@ -6675,24 +6864,27 @@ struct Parser
         if (asteriskToken || token() == SyntaxKind::OpenParenToken || token() == SyntaxKind::LessThanToken)
         {
             return parseMethodDeclaration(pos, hasJSDoc, decorators, modifiers, asteriskToken, name, questionToken,
-                                          /*exclamationToken*/ undefined, data::DiagnosticMessage(Diagnostics::or_expected));
+                                          /*exclamationToken*/ undefined,
+                                          data::DiagnosticMessage(Diagnostics::or_expected));
         }
         return parsePropertyDeclaration(pos, hasJSDoc, decorators, modifiers, name, questionToken);
     }
 
-    auto parseAccessorDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers,
-                                  SyntaxKind kind) -> AccessorDeclaration
+    auto parseAccessorDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
+                                  NodeArray<Modifier> modifiers, SyntaxKind kind) -> AccessorDeclaration
     {
         auto name = parsePropertyName();
         auto typeParameters = parseTypeParameters();
         auto parameters = parseParameters(SignatureFlags::None);
         auto type = parseReturnType(SyntaxKind::ColonToken, /*isType*/ false);
         auto body = parseFunctionBlockOrSemicolon(SignatureFlags::None);
-        auto node =
-            kind == SyntaxKind::GetAccessor
-                ? factory.createGetAccessorDeclaration(decorators, modifiers, name, parameters, type, body).as<AccessorDeclaration>()
-                : factory.createSetAccessorDeclaration(decorators, modifiers, name, parameters, body).as<AccessorDeclaration>();
-        // Keep track of `typeParameters` (for both) and `type` (for setters) if they were parsed those indicate grammar errors
+        auto node = kind == SyntaxKind::GetAccessor
+                        ? factory.createGetAccessorDeclaration(decorators, modifiers, name, parameters, type, body)
+                              .as<AccessorDeclaration>()
+                        : factory.createSetAccessorDeclaration(decorators, modifiers, name, parameters, body)
+                              .as<AccessorDeclaration>();
+        // Keep track of `typeParameters` (for both) and `type` (for setters) if they were parsed those indicate grammar
+        // errors
         node->typeParameters = typeParameters;
         if (!!type && node == SyntaxKind::SetAccessor)
             (node.asMutable<SetAccessorDeclaration>())->type = type;
@@ -6800,7 +6992,8 @@ struct Parser
         {
             return undefined;
         }
-        auto expression = doInDecoratorContext<LeftHandSideExpression>(std::bind(&Parser::parseDecoratorExpression, this));
+        auto expression =
+            doInDecoratorContext<LeftHandSideExpression>(std::bind(&Parser::parseDecoratorExpression, this));
         return finishNode(factory.createDecorator(expression), pos);
     }
 
@@ -6843,8 +7036,8 @@ struct Parser
 
     /*
      * There are situations in which a modifier like 'const' will appear unexpectedly, such.as<on>() a class member.
-     * In those situations, if we are entirely sure that 'const' is not valid on its own (such.as<when>() ASI takes effect
-     * and turns it into a standalone declaration), then it is better to parse it and report an error later.
+     * In those situations, if we are entirely sure that 'const' is not valid on its own (such.as<when>() ASI takes
+     * effect and turns it into a standalone declaration), then it is better to parse it and report an error later.
      *
      * In such situations, 'permitInvalidConstAsModifier' should be set to true.
      */
@@ -6912,18 +7105,21 @@ struct Parser
 
         // It is very important that we check this *after* checking indexers because
         // the [ token can start an index signature or a computed property name
-        if (scanner.tokenIsIdentifierOrKeyword(token()) || token() == SyntaxKind::StringLiteral || token() == SyntaxKind::NumericLiteral ||
-            token() == SyntaxKind::AsteriskToken || token() == SyntaxKind::OpenBracketToken)
+        if (scanner.tokenIsIdentifierOrKeyword(token()) || token() == SyntaxKind::StringLiteral ||
+            token() == SyntaxKind::NumericLiteral || token() == SyntaxKind::AsteriskToken ||
+            token() == SyntaxKind::OpenBracketToken)
         {
-            auto isAmbient = some<ModifiersArray>(modifiers, std::bind(&Parser::isDeclareModifier, this, std::placeholders::_1));
+            auto isAmbient =
+                some<ModifiersArray>(modifiers, std::bind(&Parser::isDeclareModifier, this, std::placeholders::_1));
             if (isAmbient)
             {
                 for (auto m : modifiers)
                 {
                     (m.asMutable<Node>())->flags |= NodeFlags::Ambient;
                 }
-                return doInsideOfContext<Node>(NodeFlags::Ambient,
-                                               [&]() { return parsePropertyOrMethodDeclaration(pos, hasJSDoc, decorators, modifiers); });
+                return doInsideOfContext<Node>(NodeFlags::Ambient, [&]() {
+                    return parsePropertyOrMethodDeclaration(pos, hasJSDoc, decorators, modifiers);
+                });
             }
             else
             {
@@ -6949,14 +7145,14 @@ struct Parser
                                                  /*modifiers*/ undefined, SyntaxKind::ClassExpression);
     }
 
-    auto parseClassDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
-        -> ClassDeclaration
+    auto parseClassDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
+                               NodeArray<Modifier> modifiers) -> ClassDeclaration
     {
         return parseClassDeclarationOrExpression(pos, hasJSDoc, decorators, modifiers, SyntaxKind::ClassDeclaration);
     }
 
-    auto parseClassDeclarationOrExpression(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers,
-                                           SyntaxKind kind) -> ClassLikeDeclaration
+    auto parseClassDeclarationOrExpression(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
+                                           NodeArray<Modifier> modifiers, SyntaxKind kind) -> ClassLikeDeclaration
     {
         auto savedAwaitContext = inAwaitContext();
         parseExpected(SyntaxKind::ClassKeyword);
@@ -6980,11 +7176,12 @@ struct Parser
             members = createMissingList<ClassElement>();
         }
         setAwaitContext(savedAwaitContext);
-        auto node = kind == SyntaxKind::ClassDeclaration
-                        ? factory.createClassDeclaration(decorators, modifiers, name, typeParameters, heritageClauses, members)
-                              .as<ClassLikeDeclaration>()
-                        : factory.createClassExpression(decorators, modifiers, name, typeParameters, heritageClauses, members)
-                              .as<ClassLikeDeclaration>();
+        auto node =
+            kind == SyntaxKind::ClassDeclaration
+                ? factory.createClassDeclaration(decorators, modifiers, name, typeParameters, heritageClauses, members)
+                      .as<ClassLikeDeclaration>()
+                : factory.createClassExpression(decorators, modifiers, name, typeParameters, heritageClauses, members)
+                      .as<ClassLikeDeclaration>();
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
@@ -7000,7 +7197,8 @@ struct Parser
 
     auto isImplementsClause() -> boolean
     {
-        return token() == SyntaxKind::ImplementsKeyword && lookAhead<boolean>(std::bind(&Parser::nextTokenIsIdentifierOrKeyword, this));
+        return token() == SyntaxKind::ImplementsKeyword &&
+               lookAhead<boolean>(std::bind(&Parser::nextTokenIsIdentifierOrKeyword, this));
     }
 
     auto parseHeritageClauses() -> NodeArray<HeritageClause>
@@ -7010,7 +7208,8 @@ struct Parser
 
         if (isHeritageClause())
         {
-            return parseList<HeritageClause>(ParsingContext::HeritageClauses, std::bind(&Parser::parseHeritageClause, this));
+            return parseList<HeritageClause>(ParsingContext::HeritageClauses,
+                                             std::bind(&Parser::parseHeritageClause, this));
         }
 
         return undefined;
@@ -7020,10 +7219,11 @@ struct Parser
     {
         auto pos = getNodePos();
         auto tok = token();
-        Debug::_assert(tok == SyntaxKind::ExtendsKeyword || tok == SyntaxKind::ImplementsKeyword); // isListElement() should ensure this.
+        Debug::_assert(tok == SyntaxKind::ExtendsKeyword ||
+                       tok == SyntaxKind::ImplementsKeyword); // isListElement() should ensure this.
         nextToken();
-        auto types = parseDelimitedList<ExpressionWithTypeArguments>(ParsingContext::HeritageClauseElement,
-                                                                     std::bind(&Parser::parseExpressionWithTypeArguments, this));
+        auto types = parseDelimitedList<ExpressionWithTypeArguments>(
+            ParsingContext::HeritageClauseElement, std::bind(&Parser::parseExpressionWithTypeArguments, this));
         return finishNode(factory.createHeritageClause(tok, types), pos);
     }
 
@@ -7053,28 +7253,30 @@ struct Parser
         return parseList<ClassElement>(ParsingContext::ClassMembers, std::bind(&Parser::parseClassElement, this));
     }
 
-    auto parseInterfaceDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
-        -> InterfaceDeclaration
+    auto parseInterfaceDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
+                                   NodeArray<Modifier> modifiers) -> InterfaceDeclaration
     {
         parseExpected(SyntaxKind::InterfaceKeyword);
         auto name = parseIdentifier();
         auto typeParameters = parseTypeParameters();
         auto heritageClauses = parseHeritageClauses();
         auto members = parseObjectTypeMembers();
-        auto node = factory.createInterfaceDeclaration(decorators, modifiers, name, typeParameters, heritageClauses, members);
+        auto node =
+            factory.createInterfaceDeclaration(decorators, modifiers, name, typeParameters, heritageClauses, members);
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
-    auto parseTypeAliasDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
-        -> TypeAliasDeclaration
+    auto parseTypeAliasDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
+                                   NodeArray<Modifier> modifiers) -> TypeAliasDeclaration
     {
         parseExpected(SyntaxKind::TypeKeyword);
         auto name = parseIdentifier();
         auto typeParameters = parseTypeParameters();
         parseExpected(SyntaxKind::EqualsToken);
-        auto type =
-            (token() == SyntaxKind::IntrinsicKeyword ? tryParse<TypeNode>(std::bind(&Parser::parseKeywordAndNoDot, this)) : undefined) ||
-            [&]() { return parseType(); };
+        auto type = (token() == SyntaxKind::IntrinsicKeyword
+                         ? tryParse<TypeNode>(std::bind(&Parser::parseKeywordAndNoDot, this))
+                         : undefined) ||
+                    [&]() { return parseType(); };
         parseSemicolon();
         auto node = factory.createTypeAliasDeclaration(decorators, modifiers, name, typeParameters, type);
         return withJSDoc(finishNode(node, pos), hasJSDoc);
@@ -7093,16 +7295,18 @@ struct Parser
         return withJSDoc(finishNode(factory.createEnumMember(name, initializer), pos), hasJSDoc);
     }
 
-    auto parseEnumDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
-        -> EnumDeclaration
+    auto parseEnumDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
+                              NodeArray<Modifier> modifiers) -> EnumDeclaration
     {
         parseExpected(SyntaxKind::EnumKeyword);
         auto name = parseIdentifier();
         NodeArray<EnumMember> members;
         if (parseExpected(SyntaxKind::OpenBraceToken))
         {
-            members = doOutsideOfYieldAndAwaitContext<NodeArray<EnumMember>>(
-                [&]() { return parseDelimitedList<EnumMember>(ParsingContext::EnumMembers, std::bind(&Parser::parseEnumMember, this)); });
+            members = doOutsideOfYieldAndAwaitContext<NodeArray<EnumMember>>([&]() {
+                return parseDelimitedList<EnumMember>(ParsingContext::EnumMembers,
+                                                      std::bind(&Parser::parseEnumMember, this));
+            });
             parseExpected(SyntaxKind::CloseBraceToken);
         }
         else
@@ -7119,7 +7323,8 @@ struct Parser
         NodeArray<Statement> statements;
         if (parseExpected(SyntaxKind::OpenBraceToken))
         {
-            statements = parseList<Statement>(ParsingContext::BlockStatements, std::bind(&Parser::parseStatement, this));
+            statements =
+                parseList<Statement>(ParsingContext::BlockStatements, std::bind(&Parser::parseStatement, this));
             parseExpected(SyntaxKind::CloseBraceToken);
         }
         else
@@ -7129,18 +7334,19 @@ struct Parser
         return finishNode(factory.createModuleBlock(statements), pos);
     }
 
-    auto parseModuleOrNamespaceDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers,
-                                           NodeFlags flags) -> ModuleDeclaration
+    auto parseModuleOrNamespaceDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
+                                           NodeArray<Modifier> modifiers, NodeFlags flags) -> ModuleDeclaration
     {
         // If we are parsing a dotted namespace name, we want to
         // propagate the 'Namespace' flag across the names if set.
         auto namespaceFlag = flags & NodeFlags::Namespace;
         auto name = parseIdentifier();
-        auto body = parseOptional(SyntaxKind::DotToken)
-                        ? parseModuleOrNamespaceDeclaration(getNodePos(), /*hasJSDoc*/ false, /*decorators*/ undefined,
-                                                            /*modifiers*/ undefined, NodeFlags::NestedNamespace | namespaceFlag)
-                              .as<ModuleBody>()
-                        : parseModuleBlock().as<ModuleBody>();
+        auto body =
+            parseOptional(SyntaxKind::DotToken)
+                ? parseModuleOrNamespaceDeclaration(getNodePos(), /*hasJSDoc*/ false, /*decorators*/ undefined,
+                                                    /*modifiers*/ undefined, NodeFlags::NestedNamespace | namespaceFlag)
+                      .as<ModuleBody>()
+                : parseModuleBlock().as<ModuleBody>();
         auto node = factory.createModuleDeclaration(decorators, modifiers, name, body, flags);
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
@@ -7174,8 +7380,8 @@ struct Parser
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
-    auto parseModuleDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
-        -> ModuleDeclaration
+    auto parseModuleDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
+                                NodeArray<Modifier> modifiers) -> ModuleDeclaration
     {
         NodeFlags flags = NodeFlags::None;
         if (token() == SyntaxKind::GlobalKeyword)
@@ -7200,7 +7406,8 @@ struct Parser
 
     auto isExternalModuleReference() -> boolean
     {
-        return token() == SyntaxKind::RequireKeyword && lookAhead<boolean>(std::bind(&Parser::nextTokenIsOpenParen, this));
+        return token() == SyntaxKind::RequireKeyword &&
+               lookAhead<boolean>(std::bind(&Parser::nextTokenIsOpenParen, this));
     }
 
     auto nextTokenIsOpenParen() -> boolean
@@ -7213,23 +7420,24 @@ struct Parser
         return nextToken() == SyntaxKind::SlashToken;
     }
 
-    auto parseNamespaceExportDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
-        -> NamespaceExportDeclaration
+    auto parseNamespaceExportDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
+                                         NodeArray<Modifier> modifiers) -> NamespaceExportDeclaration
     {
         parseExpected(SyntaxKind::AsKeyword);
         parseExpected(SyntaxKind::NamespaceKeyword);
         auto name = parseIdentifier();
         parseSemicolon();
         auto node = factory.createNamespaceExportDeclaration(name);
-        // NamespaceExportDeclaration nodes cannot have decorators or modifiers, so we attach them here so we can report them in the grammar
-        // checker
+        // NamespaceExportDeclaration nodes cannot have decorators or modifiers, so we attach them here so we can report
+        // them in the grammar checker
         node->decorators = decorators;
         copy(node->modifiers, modifiers);
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
-    auto parseImportDeclarationOrImportEqualsDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
-                                                         NodeArray<Modifier> modifiers) -> Node
+    auto parseImportDeclarationOrImportEqualsDeclaration(pos_type pos, boolean hasJSDoc,
+                                                         NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
+        -> Node
     {
         parseExpected(SyntaxKind::ImportKeyword);
 
@@ -7286,13 +7494,15 @@ struct Parser
         return token() == SyntaxKind::CommaToken || token() == SyntaxKind::FromKeyword;
     }
 
-    auto parseImportEqualsDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers,
-                                      Identifier identifier, boolean isTypeOnly) -> ImportEqualsDeclaration
+    auto parseImportEqualsDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
+                                      NodeArray<Modifier> modifiers, Identifier identifier, boolean isTypeOnly)
+        -> ImportEqualsDeclaration
     {
         parseExpected(SyntaxKind::EqualsToken);
         auto moduleReference = parseModuleReference();
         parseSemicolon();
-        auto node = factory.createImportEqualsDeclaration(decorators, modifiers, isTypeOnly, identifier, moduleReference);
+        auto node =
+            factory.createImportEqualsDeclaration(decorators, modifiers, isTypeOnly, identifier, moduleReference);
         auto finished = withJSDoc(finishNode(node, pos), hasJSDoc);
         return finished;
     }
@@ -7311,8 +7521,9 @@ struct Parser
         Node namedBindings;
         if (!identifier || parseOptional(SyntaxKind::CommaToken))
         {
-            namedBindings = token() == SyntaxKind::AsteriskToken ? parseNamespaceImport().as<Node>()
-                                                                 : parseNamedImportsOrExports(SyntaxKind::NamedImports).as<Node>();
+            namedBindings = token() == SyntaxKind::AsteriskToken
+                                ? parseNamespaceImport().as<Node>()
+                                : parseNamedImportsOrExports(SyntaxKind::NamedImports).as<Node>();
         }
 
         return finishNode(factory.createImportClause(isTypeOnly, identifier, namedBindings), pos);
@@ -7377,14 +7588,14 @@ struct Parser
         auto node =
             kind == SyntaxKind::NamedImports
                 ? factory
-                      .createNamedImports(parseBracketedList<ImportSpecifier>(ParsingContext::ImportOrExportSpecifiers,
-                                                                              std::bind(&Parser::parseImportSpecifier, this),
-                                                                              SyntaxKind::OpenBraceToken, SyntaxKind::CloseBraceToken))
+                      .createNamedImports(parseBracketedList<ImportSpecifier>(
+                          ParsingContext::ImportOrExportSpecifiers, std::bind(&Parser::parseImportSpecifier, this),
+                          SyntaxKind::OpenBraceToken, SyntaxKind::CloseBraceToken))
                       .as<NamedImportsOrExports>()
                 : factory
-                      .createNamedExports(parseBracketedList<ExportSpecifier>(ParsingContext::ImportOrExportSpecifiers,
-                                                                              std::bind(&Parser::parseExportSpecifier, this),
-                                                                              SyntaxKind::OpenBraceToken, SyntaxKind::CloseBraceToken))
+                      .createNamedExports(parseBracketedList<ExportSpecifier>(
+                          ParsingContext::ImportOrExportSpecifiers, std::bind(&Parser::parseExportSpecifier, this),
+                          SyntaxKind::OpenBraceToken, SyntaxKind::CloseBraceToken))
                       .as<NamedImportsOrExports>();
         return finishNode(node, pos);
     }
@@ -7429,10 +7640,12 @@ struct Parser
         }
         if (kind == SyntaxKind::ImportSpecifier && checkIdentifierIsKeyword)
         {
-            parseErrorAt(checkIdentifierStart, checkIdentifierEnd, data::DiagnosticMessage(Diagnostics::Identifier_expected));
+            parseErrorAt(checkIdentifierStart, checkIdentifierEnd,
+                         data::DiagnosticMessage(Diagnostics::Identifier_expected));
         }
-        auto node = kind == SyntaxKind::ImportSpecifier ? factory.createImportSpecifier(propertyName, name).as<ImportOrExportSpecifier>()
-                                                        : factory.createExportSpecifier(propertyName, name).as<ImportOrExportSpecifier>();
+        auto node = kind == SyntaxKind::ImportSpecifier
+                        ? factory.createImportSpecifier(propertyName, name).as<ImportOrExportSpecifier>()
+                        : factory.createExportSpecifier(propertyName, name).as<ImportOrExportSpecifier>();
         return finishNode(node, pos);
     }
 
@@ -7441,8 +7654,8 @@ struct Parser
         return finishNode(factory.createNamespaceExport(parseIdentifierName()), pos);
     }
 
-    auto parseExportDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
-        -> ExportDeclaration
+    auto parseExportDeclaration(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
+                                NodeArray<Modifier> modifiers) -> ExportDeclaration
     {
         auto savedAwaitContext = inAwaitContext();
         setAwaitContext(/*value*/ true);
@@ -7463,9 +7676,11 @@ struct Parser
         {
             exportClause = parseNamedImportsOrExports(SyntaxKind::NamedExports);
             // It is not uncommon to accidentally omit the 'from' keyword. Additionally, in editing scenarios,
-            // the 'from' keyword can be parsed.as<a>() named when the clause is unterminated (i.e. `{ from "moduleName";`)
-            // If we don't have a 'from' keyword, see if we have a string literal such that ASI won't take effect.
-            if (token() == SyntaxKind::FromKeyword || (token() == SyntaxKind::StringLiteral && !scanner.hasPrecedingLineBreak()))
+            // the 'from' keyword can be parsed.as<a>() named when the clause is unterminated (i.e. `{ from
+            // "moduleName";`) If we don't have a 'from' keyword, see if we have a string literal such that ASI won't
+            // take effect.
+            if (token() == SyntaxKind::FromKeyword ||
+                (token() == SyntaxKind::StringLiteral && !scanner.hasPrecedingLineBreak()))
             {
                 parseExpected(SyntaxKind::FromKeyword);
                 moduleSpecifier = parseModuleSpecifier();
@@ -7477,8 +7692,8 @@ struct Parser
         return withJSDoc(finishNode(node, pos), hasJSDoc);
     }
 
-    auto parseExportAssignment(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators, NodeArray<Modifier> modifiers)
-        -> ExportAssignment
+    auto parseExportAssignment(pos_type pos, boolean hasJSDoc, NodeArray<Decorator> decorators,
+                               NodeArray<Modifier> modifiers) -> ExportAssignment
     {
         auto savedAwaitContext = inAwaitContext();
         setAwaitContext(/*value*/ true);
@@ -7504,7 +7719,8 @@ struct Parser
         // fall back to looking for an 'import.meta' somewhere in the tree if necessary.
         sourceFile->externalModuleIndicator =
             forEach<decltype(sourceFile->statements), Node>(
-                sourceFile->statements, (FuncT<Node>)std::bind(&Parser::isAnExternalModuleIndicatorNode, this, std::placeholders::_1)) ||
+                sourceFile->statements,
+                (FuncT<Node>)std::bind(&Parser::isAnExternalModuleIndicatorNode, this, std::placeholders::_1)) ||
             [&]() { return getImportMetaIfNecessary(sourceFile); };
     }
 
@@ -7520,14 +7736,17 @@ struct Parser
 
     auto getImportMetaIfNecessary(SourceFile sourceFile) -> Node
     {
-        return !!(sourceFile->flags & NodeFlags::PossiblyContainsImportMeta) ? walkTreeForExternalModuleIndicators(sourceFile) : undefined;
+        return !!(sourceFile->flags & NodeFlags::PossiblyContainsImportMeta)
+                   ? walkTreeForExternalModuleIndicators(sourceFile)
+                   : undefined;
     }
 
     auto walkTreeForExternalModuleIndicators(Node node) -> Node
     {
         return isImportMeta(node)
                    ? node
-                   : forEachChild<Node, Node>(node, std::bind(&Parser::walkTreeForExternalModuleIndicators, this, std::placeholders::_1));
+                   : forEachChild<Node, Node>(
+                         node, std::bind(&Parser::walkTreeForExternalModuleIndicators, this, std::placeholders::_1));
     }
 
     /** Do not use hasModifier inside the parser; it relies on parent pointers. Use this instead. */
@@ -7551,8 +7770,9 @@ struct Parser
         currentToken = scanner.scan();
         auto jsDocTypeExpression = parseJSDocTypeExpression();
 
-        auto sourceFile = createSourceFile(S("file.js"), ScriptTarget::Latest, ScriptKind::JS, /*isDeclarationFile*/ false,
-                                           NodeArray<Statement>(), factory.createToken(SyntaxKind::EndOfFileToken), NodeFlags::None);
+        auto sourceFile =
+            createSourceFile(S("file.js"), ScriptTarget::Latest, ScriptKind::JS, /*isDeclarationFile*/ false,
+                             NodeArray<Statement>(), factory.createToken(SyntaxKind::EndOfFileToken), NodeFlags::None);
         auto diagnostics = attachFileToDiagnostics(parseDiagnostics, sourceFile);
         if (!!jsDocDiagnostics)
         {
@@ -7575,7 +7795,8 @@ struct Parser
     auto parseJSDocTypeExpression(boolean mayOmitBraces = false) -> JSDocTypeExpression
     {
         auto pos = getNodePos();
-        auto hasBrace = mayOmitBraces ? parseOptional(SyntaxKind::OpenBraceToken) : parseExpected(SyntaxKind::OpenBraceToken);
+        auto hasBrace =
+            mayOmitBraces ? parseOptional(SyntaxKind::OpenBraceToken) : parseExpected(SyntaxKind::OpenBraceToken);
         auto type = doInsideOfContext<TypeNode>(NodeFlags::JSDoc, std::bind(&Parser::parseJSDocType, this));
         if (!mayOmitBraces || hasBrace)
         {
@@ -7605,7 +7826,8 @@ struct Parser
     auto parseIsolatedJSDocComment(string content, number start, number length) -> NodeWithDiagnostics
     {
         initializeState(string(), content, ScriptTarget::Latest, /*_syntaxCursor:*/ undefined, ScriptKind::JS);
-        auto jsDoc = doInsideOfContext<JSDoc>(NodeFlags::JSDoc, [&]() { return parseJSDocCommentWorker(start, length); });
+        auto jsDoc =
+            doInsideOfContext<JSDoc>(NodeFlags::JSDoc, [&]() { return parseJSDocCommentWorker(start, length); });
 
         auto sourceFile = SourceFile();
         sourceFile->text = content;
@@ -7630,7 +7852,8 @@ struct Parser
         // auto saveParseDiagnosticsLength = parseDiagnostics.size();
         auto saveParseErrorBeforeNextFinishedNode = parseErrorBeforeNextFinishedNode;
 
-        auto comment = doInsideOfContext<JSDoc>(NodeFlags::JSDoc, [&]() { return parseJSDocCommentWorker(start, length); });
+        auto comment =
+            doInsideOfContext<JSDoc>(NodeFlags::JSDoc, [&]() { return parseJSDocCommentWorker(start, length); });
         setParent(comment, parent);
 
         if (!!(contextFlags & NodeFlags::JavaScriptFile))
@@ -7657,17 +7880,19 @@ struct Parser
     } // end of parseJSDocCommentWorker
 
   public:
-    auto createSourceFile(string fileName, string sourceText, ScriptTarget languageVersion, boolean setParentNodes = false,
-                          ScriptKind scriptKind = ScriptKind::Unknown) -> SourceFile
+    auto createSourceFile(string fileName, string sourceText, ScriptTarget languageVersion,
+                          boolean setParentNodes = false, ScriptKind scriptKind = ScriptKind::Unknown) -> SourceFile
     {
         SourceFile result;
         if (languageVersion == ScriptTarget::JSON)
         {
-            result = parseSourceFile(fileName, sourceText, languageVersion, undefined /*syntaxCursor*/, setParentNodes, ScriptKind::JSON);
+            result = parseSourceFile(fileName, sourceText, languageVersion, undefined /*syntaxCursor*/, setParentNodes,
+                                     ScriptKind::JSON);
         }
         else
         {
-            result = parseSourceFile(fileName, sourceText, languageVersion, undefined /*syntaxCursor*/, setParentNodes, scriptKind);
+            result = parseSourceFile(fileName, sourceText, languageVersion, undefined /*syntaxCursor*/, setParentNodes,
+                                     scriptKind);
         }
 
         return result;
@@ -7731,9 +7956,10 @@ struct Parser
             auto entryOrList = pair.first;
             auto key = pair.second;
 
-            static std::map<string, int> cases = {{S("reference"), 1},  {S("amd-dependency"), 2},  {S("amd-module"), 3},
-                                                  {S("ts-nocheck"), 4}, {S("ts-check"), 5},        {S("jsx"), 6},
-                                                  {S("jsxfrag"), 7},    {S("jsximportsource"), 8}, {S("jsxruntime"), 9}};
+            static std::map<string, int> cases = {
+                {S("reference"), 1},  {S("amd-dependency"), 2},  {S("amd-module"), 3},
+                {S("ts-nocheck"), 4}, {S("ts-check"), 5},        {S("jsx"), 6},
+                {S("jsxfrag"), 7},    {S("jsximportsource"), 8}, {S("jsxruntime"), 9}};
 
             /*JSDocTag*/ Node tag;
             auto index = cases[key];
@@ -7775,29 +8001,90 @@ struct Parser
     //     if (namedArgRegExCache.find(name) != namedArgRegExCache.end()) {
     //         return namedArgRegExCache.at(name);
     //     }
-    //     regex result(S("(\\s${name}\\s*=\\s*)('|\")(.+?)\\2"), std::regex_constants::extended|std::regex_constants::icase);
-    //     namedArgRegExCache[name] = result;
-    //     return result;
+    //     regex result(S("(\\s${name}\\s*=\\s*)('|\")(.+?)\\2"),
+    //     std::regex_constants::extended|std::regex_constants::icase); namedArgRegExCache[name] = result; return
+    //     result;
     // }
 
-    // regex tripleSlashXMLCommentStartRegEx = regex(S("^\\/\\/\\/\\s*<(\\S+)\\s.*?\\/"),
-    // std::regex_constants::extended|std::regex_constants::icase); regex singleLinePragmaRegEx =
-    // regex(S("^\\/\\/\\/?\\s*@(\\S+)\\s*(.*)\\s*$"), std::regex_constants::extended|std::regex_constants::icase); regex
-    // multiLinePragmaRegEx = regex(S("\\s*@(\\S+)\\s*(.*)\\s*$"), std::regex_constants::extended|std::regex_constants::icase); // Defined
-    // inline since it uses the "g" flag, which keeps a persistent index (for iterating)
+    regex tripleSlashXMLCommentStartRegEx = regex(S(R"(^///\s*<(\S+)\s(.*)?/>)"), std::regex_constants::ECMAScript);
+    regex singleLinePragmaRegEx = regex(S(R"(^///?\s*@(\S+)\s*(.*)\s*$)"), std::regex_constants::ECMAScript);
+    regex multiLinePragmaRegEx =
+        regex(S(R"(\s*@(\S+)\s*(.*)\s*$)"),
+              std::regex_constants::ECMAScript); // Defined inline since it uses the "g" flag,
+                                                 // which keeps a persistent index (for iterating)
+
+    std::map<string, regex> namedArgRegExCache;
+    auto getNamedArgRegEx(string name) -> regex
+    {
+        if (namedArgRegExCache.count(name))
+        {
+            return namedArgRegExCache.at(name);
+        }
+
+        string r;
+        r.append(S(R"((\s)"));
+        r.append(name);
+        r.append(S(R"(\s*=\s*)('|")(.+?)\2)"));
+        auto result = regex(r, std::regex_constants::ECMAScript);
+        namedArgRegExCache.insert({name, result});
+        return result;
+    }
+
     auto extractPragmas(std::vector<Pair> pragmas, CommentRange range, string text) -> void
     {
-        // auto tripleSlash = range->kind == SyntaxKind::SingleLineCommentTrivia && regex_exec(text, tripleSlashXMLCommentStartRegEx);
-        // if (tripleSlash) {
-        //}
+        if (range->kind == SyntaxKind::SingleLineCommentTrivia)
+        {
+            auto tripleSlashXMLComment_begin =
+                sregex_iterator(text.begin(), text.end(), tripleSlashXMLCommentStartRegEx);
+            auto tripleSlashXMLComment_end = sregex_iterator();
+            // tripleSlash
+            if (tripleSlashXMLComment_begin != tripleSlashXMLComment_end)
+            {
+                for (sregex_iterator i = tripleSlashXMLComment_begin; i != tripleSlashXMLComment_end; ++i)
+                {
+                    smatch match = *i;
+                    string name = match[1].str();
+
+                    if (name == S("reference"))
+                    {
+                        for (auto arg : {S("types"), S("lib"), S("path"), S("no-default-lib")})
+                        {
+                            auto matcher = getNamedArgRegEx(arg);
+                            auto matchResult_begin = sregex_iterator(text.begin(), text.end(), matcher);
+                            auto matchResult_end = sregex_iterator();
+                            if (matchResult_begin == matchResult_end)
+                            {
+                                continue;
+                            }
+
+                            smatch matchResult = *matchResult_begin;
+
+                            if (arg == string(S("no-default-lib")))
+                            {
+                                matchResult[3].str();
+                            }
+                            else
+                            {
+                                // span
+                                auto startPos = range->pos + std::distance(matchResult_begin, matchResult_end) +
+                                                matchResult[1].length() + matchResult[2].length();
+                                matchResult[3].str();
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // TODO: complete later
     }
 
-    // auto addPragmaForMatch(std::vector<PragmaPseudoMapEntry> pragmas, CommentRange range, PragmaKindFlags kind, RegExpExecArray match) {
+    // auto addPragmaForMatch(std::vector<PragmaPseudoMapEntry> pragmas, CommentRange range, PragmaKindFlags kind,
+    // RegExpExecArray match) {
     //     if (!match) return;
-    //     auto name = match[1].toLowerCase().as<keyof>() PragmaPseudoMap; // Technically unsafe cast, but we do it so they below check to
-    //     make it safe typechecks auto pragma = commentPragmas[name].as<PragmaDefinition>(); if (!pragma || !(pragma->kind! & kind)) {
+    //     auto name = match[1].toLowerCase().as<keyof>() PragmaPseudoMap; // Technically unsafe cast, but we do it so
+    //     they below check to make it safe typechecks auto pragma = commentPragmas[name].as<PragmaDefinition>(); if
+    //     (!pragma || !(pragma->kind! & kind)) {
     //         return;
     //     }
     //     auto args = match[2]; // Split on spaces and match up positionally with definition
@@ -7843,9 +8130,10 @@ struct Parser
             return true;
         }
 
-        // If we are at this statement then we must have PropertyAccessExpression and because tag name in Jsx element can only
-        // take forms of JsxTagNameExpression which includes an identifier, "this" expression, or another propertyAccessExpression
-        // it is safe to case the expression property.as<such>(). See parseJsxElementName for how we parse tag name in Jsx element
+        // If we are at this statement then we must have PropertyAccessExpression and because tag name in Jsx element
+        // can only take forms of JsxTagNameExpression which includes an identifier, "this" expression, or another
+        // propertyAccessExpression it is safe to case the expression property.as<such>(). See parseJsxElementName for
+        // how we parse tag name in Jsx element
 
         auto lhsName = ts::isIdentifier(lhs.as<PropertyAccessExpression>()->name)
                            ? lhs.as<PropertyAccessExpression>()->name.as<Identifier>()->escapedText
@@ -7857,8 +8145,9 @@ struct Parser
                        : isPrivateIdentifier(rhs.as<PropertyAccessExpression>()->name)
                            ? rhs.as<PropertyAccessExpression>()->name.as<PrivateIdentifier>()->escapedText
                            : string();
-        return lhsName == rhsName && tagNamesAreEquivalent(lhs.as<PropertyAccessExpression>()->expression.as<JsxTagNameExpression>(),
-                                                           rhs.as<PropertyAccessExpression>()->expression.as<JsxTagNameExpression>());
+        return lhsName == rhsName &&
+               tagNamesAreEquivalent(lhs.as<PropertyAccessExpression>()->expression.as<JsxTagNameExpression>(),
+                                     rhs.as<PropertyAccessExpression>()->expression.as<JsxTagNameExpression>());
     }
 
 }; // End of Scanner
@@ -7872,11 +8161,11 @@ struct Parser
 // // from this SourceFile that are being held onto may change.as<a>() result (including
 // // becoming detached from any SourceFile).  It is recommended that this SourceFile not
 // // be used once 'update' is called on it.
-// auto updateSourceFile(SourceFile sourceFile, string newText, TextChangeRange textChangeRange, boolean aggressiveChecks = false) ->
-// SourceFile {
+// auto updateSourceFile(SourceFile sourceFile, string newText, TextChangeRange textChangeRange, boolean
+// aggressiveChecks = false) -> SourceFile {
 //     auto newSourceFile = IncrementalParser::updateSourceFile(sourceFile, newText, textChangeRange, aggressiveChecks);
-//     // Because new source file node is created, it may not have the flag PossiblyContainDynamicImport. This is the case if there is no
-//     new edit to add dynamic import.
+//     // Because new source file node is created, it may not have the flag PossiblyContainDynamicImport. This is the
+//     case if there is no new edit to add dynamic import.
 //     // We will manually port the flag to the new source file.
 //     newSourceFile->flags |= (sourceFile->flags & NodeFlags::PermanentlySetIncrementalFlags);
 //     return newSourceFile;
@@ -7904,8 +8193,9 @@ auto Parser::parseSourceFile(string fileName, string sourceText, ScriptTarget la
     return impl->parseSourceFile(fileName, sourceText, languageVersion, IncrementalParser::SyntaxCursor());
 }
 
-auto Parser::parseSourceFile(string fileName, string sourceText, ScriptTarget languageVersion, IncrementalParser::SyntaxCursor syntaxCursor,
-                             boolean setParentNodes, ScriptKind scriptKind) -> SourceFile
+auto Parser::parseSourceFile(string fileName, string sourceText, ScriptTarget languageVersion,
+                             IncrementalParser::SyntaxCursor syntaxCursor, boolean setParentNodes,
+                             ScriptKind scriptKind) -> SourceFile
 {
     return impl->parseSourceFile(fileName, sourceText, languageVersion, syntaxCursor, setParentNodes, scriptKind);
 }

@@ -46,14 +46,14 @@ void printParser(const wchar_t *fileName, const wchar_t *str, boolean showLineCh
             auto posLineChar = parser.getLineAndCharacterOfPosition(sourceFile, child->pos);
             auto endLineChar = parser.getLineAndCharacterOfPosition(sourceFile, child->_end);
 
-            std::cout << "Node: " << wtoc(parser.syntaxKindString(child).c_str()) << " @ [ " << child->pos << "(" << posLineChar.line + 1
-                      << ":" << posLineChar.character + 1 << ") - " << child->_end << "(" << endLineChar.line + 1 << ":"
-                      << endLineChar.character << ") ]" << std::endl;
+            std::cout << "Node: " << wtoc(parser.syntaxKindString(child).c_str()) << " @ [ " << child->pos << "("
+                      << posLineChar.line + 1 << ":" << posLineChar.character + 1 << ") - " << child->_end << "("
+                      << endLineChar.line + 1 << ":" << endLineChar.character << ") ]" << std::endl;
         }
         else
         {
-            std::cout << "Node: " << wtoc(parser.syntaxKindString(child).c_str()) << " @ [ " << child->pos << " - " << child->_end << " ]"
-                      << std::endl;
+            std::cout << "Node: " << wtoc(parser.syntaxKindString(child).c_str()) << " @ [ " << child->pos << " - "
+                      << child->_end << " ]" << std::endl;
         }
 
         intent++;
