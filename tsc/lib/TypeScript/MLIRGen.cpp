@@ -55,6 +55,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <numeric>
@@ -101,7 +102,7 @@ class MLIRGenImpl
         rootNamespace = currentNamespace = std::make_shared<NamespaceInfo>();
     }
 
-    mlir::ModuleOp mlirGenSourceFile(SourceFile module)
+    mlir::ModuleOp mlirGenSourceFile(SourceFile module, std::vector<SourceFile> includeFiles)
     {
         if (failed(mlirGenCodeGenInit(module)))
         {
@@ -12276,11 +12277,6 @@ class MLIRGenImpl
     }
 
   protected:
-    mlir::StringAttr getStringAttr(std::string text)
-    {
-        return builder.getStringAttr(text);
-    }
-
     /// Helper conversion for a TypeScript AST location to an MLIR location.
     mlir::Location loc(TextRange loc)
     {
@@ -12294,6 +12290,11 @@ class MLIRGenImpl
             parser.getLineAndCharacterOfPosition(sourceFile, loc->pos.textPos != -1 ? loc->pos.textPos : loc->pos.pos);
         return mlir::FileLineColLoc::get(builder.getContext(), builder.getIdentifier(fileName), posLineChar.line + 1,
                                          posLineChar.character + 1);
+    }
+
+    mlir::StringAttr getStringAttr(std::string text)
+    {
+        return builder.getStringAttr(text);
     }
 
     mlir::Location loc_check(TextRange loc_)
@@ -12410,10 +12411,44 @@ namespace typescript
 mlir::OwningModuleRef mlirGenFromSource(const mlir::MLIRContext &context, const llvm::StringRef &fileName,
                                         const llvm::StringRef &source, CompileOptions compileOptions)
 {
+    MLIRGenImpl mlirGenImpl(context, fileName, compileOptions);
+
+    std::vector<SourceFile> includeFiles;
+    std::vector<string> filesToProcess;
+
     Parser parser;
-    auto sourceFile = parser.parseSourceFile(stows(static_cast<std::string>(fileName)),
-                                             stows(static_cast<std::string>(source)), ScriptTarget::Latest);
-    return MLIRGenImpl(context, fileName, compileOptions).mlirGenSourceFile(sourceFile);
+    auto sourceFile = parser.parseSourceFile(stows(fileName.str()), stows(source.str()), ScriptTarget::Latest);
+    for (auto refFile : sourceFile->referencedFiles)
+    {
+        filesToProcess.push_back(refFile.fileName);
+    }
+
+    while (filesToProcess.size() > 0)
+    {
+        mlir::StringRef refFileName(wstos(filesToProcess.back()));
+
+        filesToProcess.pop_back();
+
+        auto fileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(refFileName);
+        if (std::error_code ec = fileOrErr.getError())
+        {
+            emitError(mlir::UnknownLoc::get(const_cast<mlir::MLIRContext *>(&context)))
+                << "Could not open file: '" << refFileName << "' Error:" << ec.message() << "\n";
+            continue;
+        }
+
+        auto includeFile = parser.parseSourceFile(stows(refFileName.str()), stows(source.str()), ScriptTarget::Latest);
+        for (auto refFile : includeFile->referencedFiles)
+        {
+            filesToProcess.push_back(refFile.fileName);
+        }
+
+        includeFiles.push_back(includeFile);
+    }
+
+    std::reverse(includeFiles.begin(), includeFiles.end());
+
+    return mlirGenImpl.mlirGenSourceFile(sourceFile, includeFiles);
 }
 
 } // namespace typescript
