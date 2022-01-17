@@ -7932,10 +7932,7 @@ struct Parser
         context->pragmas.clear();
         for (auto &pragma : pragmas)
         {
-            for (auto _arg : pragma._args)
-            {
-                context->pragmas[pragma.name].insert(_arg);
-            }
+            context->pragmas[pragma.name].push_back(pragma._args);
         }
     }
 
@@ -7966,7 +7963,20 @@ struct Parser
                 auto referencedFiles = context->referencedFiles;
                 auto typeReferenceDirectives = context->typeReferenceDirectives;
                 auto libReferenceDirectives = context->libReferenceDirectives;
-                // TODO...
+                for (auto _args : entryOrList)
+                {
+                    if (_args.count(S("no-default-lib")))
+                    {
+                        context->hasNoDefaultLib = true;
+                    }
+                    else if (_args.count(S("path")))
+                    {
+                        auto path = _args[S("path")];
+                        context->referencedFiles.push_back(
+                            data::FileReference{{path.range->pos, path.range->_end}, path._arg.value});
+                    }
+                }
+
                 break;
             }
             case 2: {

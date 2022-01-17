@@ -2464,7 +2464,7 @@ struct SourceFile : SourceFileLike
     /* @internal */ std::vector<string> ambientModuleNames;
     /* @internal */ PTR(CheckJsDirective) checkJsDirective;
     /* @internal */ string version;
-    /* @internal */ std::map<string, std::map<string, ArgumentWithCommentRange>> pragmas;
+    /* @internal */ std::map<string, std::vector<std::map<string, ArgumentWithCommentRange>>> pragmas;
     /* @internal */ string localJsxNamespace;
     /* @internal */ string localJsxFragmentNamespace;
     /* @internal */ PTR(EntityName) localJsxFactory;
