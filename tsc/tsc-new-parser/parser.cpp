@@ -7921,7 +7921,7 @@ struct Parser
 
     auto processCommentPragmas(SourceFile context, string sourceText) -> void
     {
-        std::vector<Pair> pragmas;
+        std::vector<ts::data::PragmaPseudoMapEntry> pragmas;
 
         for (auto &range : scanner.getLeadingCommentRanges(sourceText, 0))
         {
@@ -7932,13 +7932,10 @@ struct Parser
         context->pragmas.clear();
         for (auto &pragma : pragmas)
         {
-            if (context->pragmas.find(pragma.name) != context->pragmas.end())
+            for (auto _arg : pragma._args)
             {
-                auto currentValue = context->pragmas.at(pragma.name);
-                context->pragmas[pragma.name] = currentValue + S(";") + pragma._args;
-                continue;
+                context->pragmas[pragma.name].insert(_arg);
             }
-            context->pragmas[pragma.name] = pragma._args;
         }
     }
 
@@ -7953,8 +7950,8 @@ struct Parser
         context->hasNoDefaultLib = false;
         for (auto &pair : context->pragmas)
         {
-            auto entryOrList = pair.first;
-            auto key = pair.second;
+            auto key = pair.first;
+            auto entryOrList = pair.second;
 
             static std::map<string, int> cases = {
                 {S("reference"), 1},  {S("amd-dependency"), 2},  {S("amd-module"), 3},
@@ -8030,7 +8027,7 @@ struct Parser
         return result;
     }
 
-    auto extractPragmas(std::vector<Pair> pragmas, CommentRange range, string text) -> void
+    auto extractPragmas(std::vector<data::PragmaPseudoMapEntry> &pragmas, CommentRange range, string text) -> void
     {
         if (range->kind == SyntaxKind::SingleLineCommentTrivia)
         {
@@ -8047,6 +8044,7 @@ struct Parser
 
                     if (name == S("reference"))
                     {
+                        std::map<string, data::ArgumentWithCommentRange> _args;
                         for (auto arg : {S("types"), S("lib"), S("path"), S("no-default-lib")})
                         {
                             auto matcher = getNamedArgRegEx(arg);
@@ -8061,16 +8059,20 @@ struct Parser
 
                             if (arg == string(S("no-default-lib")))
                             {
-                                matchResult[3].str();
+                                _args[arg] = {{matchResult[3], 0, 0}, range};
                             }
                             else
                             {
                                 // span
-                                auto startPos = range->pos + std::distance(matchResult_begin, matchResult_end) +
+                                auto startPos = range->pos.pos + std::distance(matchResult_begin, matchResult_end) +
                                                 matchResult[1].length() + matchResult[2].length();
-                                matchResult[3].str();
+                                _args[arg] = {
+                                    {matchResult[3], (int)startPos, (int)startPos + (int)matchResult[3].length()},
+                                    range};
                             }
                         }
+
+                        pragmas.push_back({name, _args});
                     }
                 }
             }

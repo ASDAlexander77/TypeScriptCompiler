@@ -13,36 +13,36 @@
 #define REF_NAME(x) x##Ref
 #define REF_TYPE(x) std::shared_ptr<x>
 
-#define FORWARD_DECLARATION(x)                                                                                                             \
-    struct x;                                                                                                                              \
+#define FORWARD_DECLARATION(x)                                                                                         \
+    struct x;                                                                                                          \
     using REF_NAME(x) = REF_TYPE(x);
 
-#define FORWARD_DECLARATION_T(x)                                                                                                           \
-    template <typename T> struct x;                                                                                                        \
+#define FORWARD_DECLARATION_T(x)                                                                                       \
+    template <typename T> struct x;                                                                                    \
     template <typename T> using REF_NAME(x) = REF_TYPE(x<T>);
 
-#define FORWARD_DECLARATION_VAR(x, v)                                                                                                      \
-    template <v TKind> struct x;                                                                                                           \
+#define FORWARD_DECLARATION_VAR(x, v)                                                                                  \
+    template <v TKind> struct x;                                                                                       \
     template <v TKind> using REF_NAME(x) = REF_TYPE(x<TKind>);
 
-#define FORWARD_DECLARATION_VARS(x, v)                                                                                                     \
-    template <v... TKind> struct x;                                                                                                        \
+#define FORWARD_DECLARATION_VARS(x, v)                                                                                 \
+    template <v... TKind> struct x;                                                                                    \
     template <v... TKind> using REF_NAME(x) = REF_TYPE(x<TKind...>);
 
-#define NODE_REF(x)                                                                                                                        \
-    using x = Node;                                                                                                                        \
+#define NODE_REF(x)                                                                                                    \
+    using x = Node;                                                                                                    \
     using REF_NAME(x) = REF_NAME(Node);
 
-#define CLASS_REF(x, c)                                                                                                                    \
-    using x = c;                                                                                                                           \
+#define CLASS_REF(x, c)                                                                                                \
+    using x = c;                                                                                                       \
     using REF_NAME(x) = REF_NAME(c);
 
-#define TMPL_REF(x, n, t)                                                                                                                  \
-    using x = n<t>;                                                                                                                        \
+#define TMPL_REF(x, n, t)                                                                                              \
+    using x = n<t>;                                                                                                    \
     using REF_NAME(x) = REF_NAME(n)<t>;
 
-#define TMPL_REF2(x, n, t1, t2)                                                                                                            \
-    using x = n<t1>;                                                                                                                       \
+#define TMPL_REF2(x, n, t1, t2)                                                                                        \
+    using x = n<t1>;                                                                                                   \
     using REF_NAME(x) = REF_NAME(n)<t1, t2>;
 
 #define PTR(x) ptr<x>
@@ -504,6 +504,7 @@ FORWARD_DECLARATION(JSDocParameterTag)
 FORWARD_DECLARATION(JSDocTypeLiteral)
 FORWARD_DECLARATION(AmdDependency)
 FORWARD_DECLARATION(CommentDirective)
+FORWARD_DECLARATION(PragmaPseudoMapEntry)
 FORWARD_DECLARATION(SourceFileLike)
 FORWARD_DECLARATION(RedirectInfo)
 FORWARD_DECLARATION(DiagnosticMessage)
@@ -910,6 +911,7 @@ POINTER(JSDocParameterTag)
 POINTER(JSDocTypeLiteral)
 POINTER(AmdDependency)
 POINTER(CommentDirective)
+POINTER(PragmaPseudoMapEntry)
 POINTER(SourceFileLike)
 POINTER(RedirectInfo)
 POINTER(DiagnosticMessage)

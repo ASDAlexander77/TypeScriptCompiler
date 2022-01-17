@@ -89,8 +89,9 @@ template <typename T /*extends Node*/> struct NodeArray : ReadonlyArray<T>, Text
 
     template <typename U>
     NodeArray(NodeArray<U> other)
-        : ReadonlyArray<T>(other.begin(), other.end()), TextRange(other.pos, other._end), isUndefined(other.isUndefined),
-          hasTrailingComma(other.hasTrailingComma), isMissingList(other.isMissingList), transformFlags(other.transformFlags)
+        : ReadonlyArray<T>(other.begin(), other.end()), TextRange(other.pos, other._end),
+          isUndefined(other.isUndefined), hasTrailingComma(other.hasTrailingComma), isMissingList(other.isMissingList),
+          transformFlags(other.transformFlags)
     {
     }
 
@@ -165,20 +166,21 @@ using ModifiersArray = NodeArray<PTR(Modifier)>;
 
 struct Symbol
 {
-    SymbolFlags flags;                           // Symbol flags
-    string escapedName;                          // Name of symbol
-    NodeArray<PTR(Declaration)> declarations;    // Declarations associated with this symbol
-    PTR(Declaration) valueDeclaration;           // First value declaration of the symbol
-    SymbolTable members;                         // Class, interface or object literal instance members
-    SymbolTable exports;                         // Module exports
-    SymbolTable globalExports;                   // Conditional global UMD exports
-    /* @internal */ SymbolId id;                 // Unique id (used to look up SymbolLinks)
-    /* @internal */ number mergeId;              // Merge id (used to look up merged symbol)
-    /* @internal */ PTR(Symbol) parent;          // Parent symbol
-    /* @internal */ PTR(Symbol) exportSymbol;    // Exported symbol associated with this symbol
-    /* @internal */ boolean constEnumOnlyModule; // True if module contains only const enums or other modules with only const enums
-    /* @internal */ SymbolFlags isReferenced;    // True if the symbol is referenced elsewhere. Keeps track of the meaning of a reference in
-                                                 // case a symbol is both a type parameter and parameter.
+    SymbolFlags flags;                        // Symbol flags
+    string escapedName;                       // Name of symbol
+    NodeArray<PTR(Declaration)> declarations; // Declarations associated with this symbol
+    PTR(Declaration) valueDeclaration;        // First value declaration of the symbol
+    SymbolTable members;                      // Class, interface or object literal instance members
+    SymbolTable exports;                      // Module exports
+    SymbolTable globalExports;                // Conditional global UMD exports
+    /* @internal */ SymbolId id;              // Unique id (used to look up SymbolLinks)
+    /* @internal */ number mergeId;           // Merge id (used to look up merged symbol)
+    /* @internal */ PTR(Symbol) parent;       // Parent symbol
+    /* @internal */ PTR(Symbol) exportSymbol; // Exported symbol associated with this symbol
+    /* @internal */ boolean
+        constEnumOnlyModule; // True if module contains only const enums or other modules with only const enums
+    /* @internal */ SymbolFlags isReferenced; // True if the symbol is referenced elsewhere. Keeps track of the meaning
+                                              // of a reference in case a symbol is both a type parameter and parameter.
     /* @internal */ boolean isReplaceableByMethod; // Can this Javascript class property be replaced by a method symbol?
     /* @internal */ boolean isAssigned;            // True if the symbol is a parameter with assignments
     /* @internal */ std::map<number, Declaration>
@@ -229,10 +231,12 @@ struct Node : TextRange
     /* @internal */ PTR(Symbol) symbol;            // Symbol declared by node (initialized by binding)
     /* @internal */ SymbolTable locals;            // Locals associated with node (initialized by binding)
     /* @internal */ PTR(Node) nextContainer;       // Next container in declaration order (initialized by binding)
-    /* @internal */ PTR(Symbol) localSymbol;       // Local symbol declared by node (initialized by binding only for exported nodes)
+    /* @internal */ PTR(Symbol)
+    localSymbol; // Local symbol declared by node (initialized by binding only for exported nodes)
     ///* @internal */ PTR(FlowNode) flowNode;                  // Associated FlowNode (initialized by binding)
     ///* @internal */ PTR(EmitNode) emitNode;                  // Associated EmitNode (initialized by transforms)
-    ///* @internal */ PTR(Type) contextualType;                // Used to temporarily assign a contextual type during overload resolution
+    ///* @internal */ PTR(Type) contextualType;                // Used to temporarily assign a contextual type during
+    /// overload resolution
     ///* @internal */ PTR(InferenceContext) inferenceContext;  // Inference context for contextual type
     /* @internal */ bool processed; // internal field to mark processed node
 };
@@ -405,7 +409,8 @@ struct SignatureDeclarationBase : TypeElement
     NodeArray<PTR(TypeParameterDeclaration)> typeParameters;
     NodeArray<PTR(ParameterDeclaration)> parameters;
     PTR(TypeNode) type;
-    /* @internal */ NodeArray<PTR(TypeNode)> typeArguments; // Used for quick info, replaces typeParameters for instantiated signatures
+    /* @internal */ NodeArray<PTR(TypeNode)>
+        typeArguments; // Used for quick info, replaces typeParameters for instantiated signatures
 };
 
 struct CallSignatureDeclaration : SignatureDeclarationBase
@@ -574,8 +579,9 @@ struct MethodDeclaration : FunctionLikeDeclarationBase /*, ObjectLiteralElement*
 struct ConstructorDeclaration : FunctionLikeDeclarationBase
 {
     // kind: SyntaxKind::Constructor;
-    /* @internal */ NodeArray<PTR(TypeParameterDeclaration)> typeParameters; // Present for use with reporting a grammar error
-    /* @internal */ PTR(TypeNode) type;                                      // Present for use with reporting a grammar error
+    /* @internal */ NodeArray<PTR(TypeParameterDeclaration)>
+        typeParameters;                 // Present for use with reporting a grammar error
+    /* @internal */ PTR(TypeNode) type; // Present for use with reporting a grammar error
 };
 
 /** For when we encounter a semicolon in a class declaration. ES6 allows these as class elements. */
@@ -584,10 +590,12 @@ struct SemicolonClassElement : ClassElement
     // kind: SyntaxKind::SemicolonClassElement;
 };
 
-struct AccessorDeclaration : FunctionLikeDeclarationBase /*, ObjectLiteralElement*/ // ClassElement and ObjectLiteralElement contains all
-                                                                                    // fields in FunctionLikeDeclarationBase
+struct AccessorDeclaration
+    : FunctionLikeDeclarationBase /*, ObjectLiteralElement*/ // ClassElement and ObjectLiteralElement contains all
+                                                             // fields in FunctionLikeDeclarationBase
 {
-    /* @internal */ NodeArray<PTR(TypeParameterDeclaration)> typeParameters; // Present for use with reporting a grammar error
+    /* @internal */ NodeArray<PTR(TypeParameterDeclaration)>
+        typeParameters; // Present for use with reporting a grammar error
 };
 
 // See the comment on MethodDeclaration for the intuition behind GetAccessorDeclaration being a
@@ -834,10 +842,10 @@ struct PartiallyEmittedExpression : LeftHandSideExpression
     PTR(Expression) expression;
 };
 
-// The text property of a LiteralExpression stores the interpreted value of the literal in text form. For a StringLiteral,
-// or any literal of a template, this means quotes have been removed and escapes have been converted to actual characters.
-// For a NumericLiteral, the stored value is the toString() representation of the number. For example 1, 1.00, and 1e0 are all stored as
-// just "1".
+// The text property of a LiteralExpression stores the interpreted value of the literal in text form. For a
+// StringLiteral, or any literal of a template, this means quotes have been removed and escapes have been converted to
+// actual characters. For a NumericLiteral, the stored value is the toString() representation of the number. For example
+// 1, 1.00, and 1e0 are all stored as just "1".
 struct LiteralLikeNode : PrimaryExpression
 {
     string text;
@@ -845,10 +853,10 @@ struct LiteralLikeNode : PrimaryExpression
     boolean hasExtendedUnicodeEscape;
 };
 
-// The text property of a LiteralExpression stores the interpreted value of the literal in text form. For a StringLiteral,
-// or any literal of a template, this means quotes have been removed and escapes have been converted to actual characters.
-// For a NumericLiteral, the stored value is the toString() representation of the number. For example 1, 1.00, and 1e0 are all stored as
-// just "1".
+// The text property of a LiteralExpression stores the interpreted value of the literal in text form. For a
+// StringLiteral, or any literal of a template, this means quotes have been removed and escapes have been converted to
+// actual characters. For a NumericLiteral, the stored value is the toString() representation of the number. For example
+// 1, 1.00, and 1e0 are all stored as just "1".
 struct LiteralExpression : LiteralLikeNode
 {
     any _literalExpressionBrand;
@@ -862,8 +870,9 @@ struct StringLiteral : LiteralExpression
 {
     // kind: SyntaxKind::StringLiteral;
     /* @internal */ PTR(
-        Node) /**Identifier | StringLiteralLike | NumericLiteral*/ textSourceNode; // Allows a StringLiteral to get its text from another
-                                                                                   // node (used by transforms).
+        Node) /**Identifier | StringLiteralLike | NumericLiteral*/ textSourceNode; // Allows a StringLiteral to get its
+                                                                                   // text from another node (used by
+                                                                                   // transforms).
     /** Note: this is only set when synthesizing a node, not during parsing. */
     /* @internal */ boolean singleQuote;
 };
@@ -881,18 +890,21 @@ struct Identifier : LiteralLikeNode
 
     // kind: SyntaxKind::Identifier;
     /**
-     * Prefer to use `id.unescapedText`. (Note: This is available only in services, not internally to the TypeScript compiler.)
-     * Text of identifier, but if the identifier begins with two underscores, this will begin with three.
+     * Prefer to use `id.unescapedText`. (Note: This is available only in services, not internally to the TypeScript
+     * compiler.) Text of identifier, but if the identifier begins with two underscores, this will begin with three.
      */
     string escapedText;
-    SyntaxKind originalKeywordKind;                           // Original syntaxKind which get set so that we can report an error later
-    /*@internal*/ GeneratedIdentifierFlags autoGenerateFlags; // Specifies whether to auto-generate the text for an identifier.
-    /*@internal*/ number autoGenerateId; // Ensures unique generated identifiers get unique names, but clones get the same name.
-    /*@internal*/ PTR(ImportSpecifier) generatedImportReference; // Reference to the generated import specifier this identifier refers to
-    boolean isInJSDocNamespace;                                  // if the node is a member in a JSDoc namespace
+    SyntaxKind originalKeywordKind; // Original syntaxKind which get set so that we can report an error later
+    /*@internal*/ GeneratedIdentifierFlags
+        autoGenerateFlags; // Specifies whether to auto-generate the text for an identifier.
+    /*@internal*/ number
+        autoGenerateId; // Ensures unique generated identifiers get unique names, but clones get the same name.
+    /*@internal*/ PTR(ImportSpecifier)
+    generatedImportReference;   // Reference to the generated import specifier this identifier refers to
+    boolean isInJSDocNamespace; // if the node is a member in a JSDoc namespace
     /*@internal*/ NodeArray<PTR(Node /*TypeNode | TypeParameterDeclaration*/)>
-        typeArguments; // Only defined on synthesized nodes. Though not syntactically valid, used in emitting diagnostics, quickinfo, and
-                       // signature help.
+        typeArguments; // Only defined on synthesized nodes. Though not syntactically valid, used in emitting
+                       // diagnostics, quickinfo, and signature help.
     /*@internal*/ number jsdocDotPos; // Identifier occurs in JSDoc-style generic: Id.<T>
 };
 
@@ -1058,7 +1070,8 @@ struct LateBoundBinaryExpressionDeclaration : DynamicNamedBinaryExpression
     PTR(LateBoundElementAccessExpression) left;
 };
 
-using AssignmentOperatorToken = Token<SyntaxKind::EqualsToken, SyntaxKind::QuestionQuestionEqualsToken /*to keep it short, [from, to]*/>;
+using AssignmentOperatorToken =
+    Token<SyntaxKind::EqualsToken, SyntaxKind::QuestionQuestionEqualsToken /*to keep it short, [from, to]*/>;
 
 template <typename TOperator /*AssignmentOperatorToken*/> struct AssignmentExpression : BinaryExpression
 {
@@ -1179,10 +1192,10 @@ struct SpreadElement : Expression
 };
 
 /**
- * This interface is a base interface for ObjectLiteralExpression and JSXAttributes to extend from. JSXAttributes is similar to
- * ObjectLiteralExpression in that it contains array of properties; however, JSXAttributes' properties can only be
- * JSXAttribute or JSXSpreadAttribute. ObjectLiteralExpression, on the other hand, can only have properties of type
- * ObjectLiteralElement (e.g. PropertyAssignment, ShorthandPropertyAssignment etc.)
+ * This interface is a base interface for ObjectLiteralExpression and JSXAttributes to extend from. JSXAttributes is
+ * similar to ObjectLiteralExpression in that it contains array of properties; however, JSXAttributes' properties can
+ * only be JSXAttribute or JSXSpreadAttribute. ObjectLiteralExpression, on the other hand, can only have properties of
+ * type ObjectLiteralElement (e.g. PropertyAssignment, ShorthandPropertyAssignment etc.)
  */
 template <typename T /*: ObjectLiteralElement*/> struct ObjectLiteralExpressionBase : PrimaryExpression
 {
@@ -1226,7 +1239,8 @@ struct SuperPropertyAccessExpression : PropertyAccessExpression
     PTR(SuperExpression) expression;
 };
 
-/** Brand for a PropertyAccessExpression which, like a QualifiedName, consists of a sequence of identifiers separated by dots. */
+/** Brand for a PropertyAccessExpression which, like a QualifiedName, consists of a sequence of identifiers separated by
+ * dots. */
 struct PropertyAccessEntityNameExpression : PropertyAccessExpression
 {
     any _propertyAccessExpressionLikeQualifiedNameBrand;
@@ -1823,8 +1837,9 @@ struct ImportDeclaration : Statement
 // import d from "mod" => name = d, namedBinding = undefined
 // import * as ns from "mod" => name = undefined, namedBinding: NamespaceImport = { name: ns }
 // import d, * as ns from "mod" => name = d, namedBinding: NamespaceImport = { name: ns }
-// import { a, b as x } from "mod" => name = undefined, namedBinding: NamedImports = { elements: [{ name: a }, { name: x, propertyName: b}]}
-// import d, { a, b as x } from "mod" => name = d, namedBinding: NamedImports = { elements: [{ name: a }, { name: x, propertyName: b}]}
+// import { a, b as x } from "mod" => name = undefined, namedBinding: NamedImports = { elements: [{ name: a }, { name:
+// x, propertyName: b}]} import d, { a, b as x } from "mod" => name = d, namedBinding: NamedImports = { elements: [{
+// name: a }, { name: x, propertyName: b}]}
 struct ImportClause : NamedDeclaration
 {
     // kind: SyntaxKind::ImportClause;
@@ -2178,6 +2193,26 @@ struct CommentDirective
 };
 
 /*@internal*/
+struct Argument
+{
+    string value;
+    int pos;
+    int end;
+};
+
+struct ArgumentWithCommentRange
+{
+    Argument _arg;
+    PTR(CommentRange) range;
+};
+
+struct PragmaPseudoMapEntry
+{
+    string name;
+    std::map<string, ArgumentWithCommentRange> _args;
+};
+
+/*@internal*/
 using ExportedModulesFromDeclarationEmit = std::vector<Symbol>;
 
 /* @internal */
@@ -2217,7 +2252,8 @@ struct DiagnosticMessage
     boolean elidedInCompatabilityPyramid;
 
     DiagnosticMessage() = default;
-    DiagnosticMessage(DiagnosticMessageStore &item) : code(item.code), category(item.category), key(item.label), message(item.message)
+    DiagnosticMessage(DiagnosticMessageStore &item)
+        : code(item.code), category(item.category), key(item.label), message(item.message)
     {
     }
 };
@@ -2243,7 +2279,8 @@ struct DiagnosticRelatedInformation
 
 struct Diagnostic : DiagnosticRelatedInformation
 {
-    /** May store more in future. For now, this will simply be `true` to indicate when a diagnostic is an unused-identifier diagnostic. */
+    /** May store more in future. For now, this will simply be `true` to indicate when a diagnostic is an
+     * unused-identifier diagnostic. */
     std::vector<string> reportsUnnecessary;
     std::vector<string> reportsDeprecated;
     string source;
@@ -2416,7 +2453,8 @@ struct SourceFile : SourceFileLike
     /* @internal */ std::vector<CommentDirective> commentDirectives;
     // Stores a mapping 'external module reference text' -> 'resolved file name' | undefined
     // It is used to resolve module names in the checker.
-    // Content of this field should never be used directly - use getResolvedModuleFileName/setResolvedModuleFileName functions instead
+    // Content of this field should never be used directly - use getResolvedModuleFileName/setResolvedModuleFileName
+    // functions instead
     /* @internal */ std::map<string, ResolvedModuleFull> resolvedModules;
     /* @internal */ std::map<string, ResolvedTypeReferenceDirective> resolvedTypeReferenceDirectiveNames;
     /* @internal */ NodeArray<PTR(StringLiteralLike)> imports;
@@ -2426,7 +2464,7 @@ struct SourceFile : SourceFileLike
     /* @internal */ std::vector<string> ambientModuleNames;
     /* @internal */ PTR(CheckJsDirective) checkJsDirective;
     /* @internal */ string version;
-    /* @internal */ std::map<string, string> pragmas;
+    /* @internal */ std::map<string, std::map<string, ArgumentWithCommentRange>> pragmas;
     /* @internal */ string localJsxNamespace;
     /* @internal */ string localJsxFragmentNamespace;
     /* @internal */ PTR(EntityName) localJsxFactory;
