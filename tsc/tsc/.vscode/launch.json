@@ -9,7 +9,10 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
-            "args": ["-emit=ast", "C:/temp/1.ts"],
+            "args": [
+                "-emit=ast",
+                "C:/temp/1.ts"
+            ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
@@ -21,7 +24,12 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
-            "args": ["-emit=mlir", "-debug-only=mlir", "-mlir-disable-threading", "C:/temp/1.ts"],
+            "args": [
+                "-emit=mlir",
+                "-debug-only=mlir",
+                "-mlir-disable-threading",
+                "C:\\temp\\experiment\\src\\appwindow.ts"
+            ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
@@ -33,19 +41,30 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/../../__build/tsc-ninja/bin/tsc",
-            "args": ["-emit=mlir", "-debug-only=mlir", "-mlir-disable-threading", "/mnt/c/temp/1.ts"],
+            "args": [
+                "-emit=mlir",
+                "-debug-only=mlir",
+                "-mlir-disable-threading",
+                "/mnt/c/temp/1.ts"
+            ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
-        },          
+        },
         {
             "name": "(Windows) tsc.exe - MLIR-AFFINE",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
-            "args": ["-emit=mlir-affine", "-opt", "-debug-only=affine", "-mlir-disable-threading", "C:/temp/1.ts"],
+            "args": [
+                "-emit=mlir-affine",
+                "-opt",
+                "-debug-only=affine",
+                "-mlir-disable-threading",
+                "C:/temp/1.ts"
+            ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
@@ -57,19 +76,29 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/../../__build/tsc-ninja/bin/tsc",
-            "args": ["-emit=mlir-affine", "-debug-only=affine", "-mlir-disable-threading", "/mnt/c/temp/1.ts"],
+            "args": [
+                "-emit=mlir-affine",
+                "-debug-only=affine",
+                "-mlir-disable-threading",
+                "/mnt/c/temp/1.ts"
+            ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
-        },          
+        },
         {
             "name": "(Windows) tsc.exe - MLIR-LLVM",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
-            "args": ["-emit=mlir-llvm", "-debug-only=llvm", "-mlir-disable-threading", "C:/temp/1.ts"],
+            "args": [
+                "-emit=mlir-llvm",
+                "-debug-only=llvm",
+                "-mlir-disable-threading",
+                "C:/temp/1.ts"
+            ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
@@ -81,19 +110,27 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/../../__build/tsc-ninja/bin/tsc",
-            "args": ["-emit=mlir-llvm", "/mnt/c/temp/1.ts"],
+            "args": [
+                "-emit=mlir-llvm",
+                "/mnt/c/temp/1.ts"
+            ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
-        },            
+        },
         {
             "name": "(Windows) tsc.exe - LLVM",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
-            "args": ["-emit=llvm", "-debug-only=pass", "-opt", "C:/temp/1.ts"],
+            "args": [
+                "-emit=llvm",
+                "-debug-only=pass",
+                "-opt",
+                "C:/temp/1.ts"
+            ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
@@ -105,43 +142,59 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/../../__build/tsc-ninja/bin/tsc",
-            "args": ["-emit=llvm", "/mnt/c/temp/1.ts"],
+            "args": [
+                "-emit=llvm",
+                "/mnt/c/temp/1.ts"
+            ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
-        },        
+        },
         {
             "name": "(Windows) tsc.exe - JIT",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
-            "args": ["-emit=jit", "C:/temp/1.ts", "--shared-libs=${workspaceFolder}/../../__build/tsc/bin/TypeScriptRuntime.dll"],
+            "args": [
+                "-emit=jit",
+                "C:/temp/1.ts",
+                "--shared-libs=${workspaceFolder}/../../__build/tsc/bin/TypeScriptRuntime.dll"
+            ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
-        },        
+        },
         {
             "name": "(Windows) tsc.exe - JIT-OBJ",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/../../__build/tsc/bin/tsc.exe",
-            "args": ["-emit=jit", "-nogc", "-dump-object-file", "-object-filename=out.o", "C:/temp/1.ts"],
+            "args": [
+                "-emit=jit",
+                "-nogc",
+                "-dump-object-file",
+                "-object-filename=out.o",
+                "C:/temp/1.ts"
+            ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
             "visualizerFile": "${workspaceFolder}/../tsc.natvis"
-        },        
+        },
         {
             "name": "(Windows) CMake current - Launch",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${command:cmake.launchTargetPath}",
-            "args": ["-emit=mlir", "C:/temp/1.ts"],
+            "args": [
+                "-emit=mlir",
+                "C:/temp/1.ts"
+            ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],

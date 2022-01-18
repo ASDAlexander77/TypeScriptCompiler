@@ -105,6 +105,8 @@ class MLIRGenImpl
 
     mlir::ModuleOp mlirGenSourceFile(SourceFile module, std::vector<SourceFile> includeFiles)
     {
+        this->includeFiles = includeFiles;
+
         if (failed(mlirGenCodeGenInit(module)))
         {
             return nullptr;
@@ -122,15 +124,6 @@ class MLIRGenImpl
         llvm::ScopedHashTableScope<StringRef, InterfaceInfo::TypePtr> fullNameInterfacesMapScope(fullNameInterfacesMap);
         llvm::ScopedHashTableScope<StringRef, GenericInterfaceInfo::TypePtr> fullNameGenericInterfacesMapScope(
             fullNameGenericInterfacesMap);
-
-        for (auto includeFile : includeFiles)
-        {
-            if (mlir::failed(mlirDiscoverAllDependencies(includeFile)) ||
-                mlir::failed(mlirCodeGenModuleWithDiagnostics(includeFile)))
-            {
-                return nullptr;
-            }
-        }
 
         if (mlir::succeeded(mlirDiscoverAllDependencies(module)) &&
             mlir::succeeded(mlirCodeGenModuleWithDiagnostics(module)))
@@ -176,6 +169,18 @@ class MLIRGenImpl
         genContextPartial.dummyRun = true;
         genContextPartial.cleanUps = new mlir::SmallVector<mlir::Block *>();
         genContextPartial.unresolved = new mlir::SmallVector<std::pair<mlir::Location, std::string>>();
+
+        for (auto includeFile : this->includeFiles)
+        {
+            for (auto &statement : includeFile->statements)
+            {
+                if (failed(mlirGen(statement, genContextPartial)))
+                {
+                    return mlir::failure();
+                }
+            }
+        }
+
         auto notResolved = 0;
         do
         {
@@ -273,6 +278,18 @@ class MLIRGenImpl
 
         // Process generating here
         GenContext genContext{};
+
+        for (auto includeFile : this->includeFiles)
+        {
+            for (auto &statement : includeFile->statements)
+            {
+                if (failed(mlirGen(statement, genContext)))
+                {
+                    return mlir::failure();
+                }
+            }
+        }
+
         for (auto &statement : module->statements)
         {
             if (failed(mlirGen(statement, genContext)))
@@ -428,7 +445,7 @@ class MLIRGenImpl
         theModule = moduleOp;
 
         GenContext moduleGenContext{};
-        auto result = mlirGenBody(moduleDeclarationAST->body, genContext);
+        auto result = mlirGenBody(moduleDeclarationAST->body, moduleGenContext);
 
         // restore
         theModule = parentModule;
@@ -12353,6 +12370,7 @@ class MLIRGenImpl
     // helper to get line number
     Parser parser;
     ts::SourceFile sourceFile;
+    std::vector<SourceFile> includeFiles;
 
     mlir::OpBuilder::InsertPoint functionBeginPoint;
 
