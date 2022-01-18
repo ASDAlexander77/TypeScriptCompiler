@@ -1919,6 +1919,9 @@ struct FileReference : TextRange
 {
     string fileName;
 
+    FileReference() = default;
+    FileReference(TextRange range, string fileName) : TextRange(range), fileName(fileName){};
+
     friend inline auto operator==(const FileReference &current, const FileReference &other) -> boolean
     {
         return current.fileName == other.fileName;
