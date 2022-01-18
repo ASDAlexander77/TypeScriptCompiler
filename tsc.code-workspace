@@ -163,7 +163,6 @@
             "-I../include",
             "-I../../3rdParty/llvm/debug/include",
             "-I../../__build/tsc/include",
-            "-system-headers=0"
         ],
         "clang-tidy.checks": [
             "-*",
