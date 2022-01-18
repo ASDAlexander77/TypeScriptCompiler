@@ -56,6 +56,7 @@
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <numeric>
@@ -121,6 +122,15 @@ class MLIRGenImpl
         llvm::ScopedHashTableScope<StringRef, InterfaceInfo::TypePtr> fullNameInterfacesMapScope(fullNameInterfacesMap);
         llvm::ScopedHashTableScope<StringRef, GenericInterfaceInfo::TypePtr> fullNameGenericInterfacesMapScope(
             fullNameGenericInterfacesMap);
+
+        for (auto includeFile : includeFiles)
+        {
+            if (mlir::failed(mlirDiscoverAllDependencies(includeFile)) ||
+                mlir::failed(mlirCodeGenModuleWithDiagnostics(includeFile)))
+            {
+                return nullptr;
+            }
+        }
 
         if (mlir::succeeded(mlirDiscoverAllDependencies(module)) &&
             mlir::succeeded(mlirCodeGenModuleWithDiagnostics(module)))
@@ -12411,6 +12421,8 @@ namespace typescript
 mlir::OwningModuleRef mlirGenFromSource(const mlir::MLIRContext &context, const llvm::StringRef &fileName,
                                         const llvm::StringRef &source, CompileOptions compileOptions)
 {
+
+    SmallString<128> path = llvm::sys::path::parent_path(fileName);
     MLIRGenImpl mlirGenImpl(context, fileName, compileOptions);
 
     std::vector<SourceFile> includeFiles;
@@ -12425,11 +12437,15 @@ mlir::OwningModuleRef mlirGenFromSource(const mlir::MLIRContext &context, const 
 
     while (filesToProcess.size() > 0)
     {
-        mlir::StringRef refFileName(wstos(filesToProcess.back()));
+        string includeFileName = filesToProcess.back();
+        std::string includeFileNameChar = wstos(includeFileName);
+        mlir::StringRef refFileName(includeFileNameChar);
+        SmallString<128> fullPath = path;
+        sys::path::append(fullPath, refFileName);
 
         filesToProcess.pop_back();
 
-        auto fileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(refFileName);
+        auto fileOrErr = llvm::MemoryBuffer::getFileOrSTDIN(fullPath);
         if (std::error_code ec = fileOrErr.getError())
         {
             emitError(mlir::UnknownLoc::get(const_cast<mlir::MLIRContext *>(&context)))
@@ -12437,7 +12453,11 @@ mlir::OwningModuleRef mlirGenFromSource(const mlir::MLIRContext &context, const 
             continue;
         }
 
-        auto includeFile = parser.parseSourceFile(stows(refFileName.str()), stows(source.str()), ScriptTarget::Latest);
+        auto includeSource = fileOrErr.get()->getBuffer();
+
+        Parser parser;
+        auto includeFile =
+            parser.parseSourceFile(stows(refFileName.str()), stows(includeSource.str()), ScriptTarget::Latest);
         for (auto refFile : includeFile->referencedFiles)
         {
             filesToProcess.push_back(refFile.fileName);
