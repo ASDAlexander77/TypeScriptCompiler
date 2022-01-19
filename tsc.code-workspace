@@ -163,9 +163,7 @@
         "clang-tidy.checks": [
             "bugprone-*",
             "cppcoreguidelines-*",
-            "performance-*",
-            "misc-*",
-            "google-*"
+            "performance-*"
         ],
         "clang-tidy.buildPath": "../../__build/tsc",
         "C_Cpp.codeAnalysis.clangTidy.headerFilter": ".*",
