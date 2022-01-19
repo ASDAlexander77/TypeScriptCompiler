@@ -168,7 +168,8 @@ enum class VariableClass
     Const,
     Let,
     Var,
-    ConstRef
+    ConstRef,
+    External
 };
 
 struct StaticFieldInfo

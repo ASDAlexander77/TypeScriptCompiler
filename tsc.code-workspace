@@ -165,9 +165,11 @@
             "-I../../__build/tsc/include",
         ],
         "clang-tidy.checks": [
-            "-*",
-            "modernize-*",
+            "bugprone-*",
+            "cppcoreguidelines-*",
             "performance-*",
+            "misc-*",
+            "readability-*",
             "google-*"
         ],
         "clang-tidy.buildPath": "../../__build/tsc",

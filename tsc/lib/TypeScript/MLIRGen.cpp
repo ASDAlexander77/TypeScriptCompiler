@@ -1364,6 +1364,7 @@ class MLIRGenImpl
         auto isGlobal = isGlobalScope || varClass == VariableClass::Var;
         auto isConst = (varClass == VariableClass::Const || varClass == VariableClass::ConstRef) &&
                        !genContext.allocateVarsOutsideOfOperation && !genContext.allocateVarsInContextThis;
+        auto isExternal = varClass == VariableClass::External;
 
         auto effectiveName = name;
 
@@ -1475,7 +1476,7 @@ class MLIRGenImpl
                                                       // temp type
                                                       builder.getI32Type(), isConst, effectiveName, mlir::Attribute());
 
-                if (isGlobalScope)
+                if (isGlobalScope && !isExternal)
                 {
                     auto &region = globalOp.getInitializerRegion();
                     auto *block = builder.createBlock(&region);
@@ -1495,17 +1496,12 @@ class MLIRGenImpl
 
                     globalOp.typeAttr(mlir::TypeAttr::get(type));
 
-                    // add return
-                    // TODO: allow only ConstantOp or Undef or Null
-                    if (init)
+                    if (!init)
                     {
-                        builder.create<mlir_ts::GlobalResultOp>(location, mlir::ValueRange{init});
+                        init = builder.create<mlir_ts::UndefOp>(location, type);
                     }
-                    else
-                    {
-                        auto undef = builder.create<mlir_ts::UndefOp>(location, type);
-                        builder.create<mlir_ts::GlobalResultOp>(location, mlir::ValueRange{undef});
-                    }
+
+                    builder.create<mlir_ts::GlobalResultOp>(location, mlir::ValueRange{init});
                 }
             }
 
