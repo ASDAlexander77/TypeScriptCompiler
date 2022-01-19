@@ -8366,6 +8366,7 @@ class MLIRGenImpl
             newClassPtr->name = namePtr;
             newClassPtr->fullName = fullNamePtr;
             newClassPtr->isAbstract = hasModifier(classDeclarationAST, SyntaxKind::AbstractKeyword);
+            newClassPtr->isDeclaration = hasModifier(classDeclarationAST, SyntaxKind::DeclareKeyword);
             newClassPtr->hasVirtualTable = newClassPtr->isAbstract;
 
             getClassesMap().insert({namePtr, newClassPtr});
@@ -8616,8 +8617,8 @@ class MLIRGenImpl
             }
         }
 
-        auto isAbstract = hasModifier(classMember, SyntaxKind::AbstractKeyword);
-        if (isAbstract)
+        auto isMemberAbstract = hasModifier(classMember, SyntaxKind::AbstractKeyword);
+        if (isMemberAbstract)
         {
             newClassPtr->hasVirtualTable = true;
         }
@@ -8831,40 +8832,45 @@ class MLIRGenImpl
 
             NodeFactory nf(NodeFactoryFlags::None);
 
-            NodeArray<Statement> statements;
-
-            /*
-            if (!newClassPtr->baseClasses.empty())
+            Block body = undefined;
+            if (!newClassPtr->isDeclaration)
             {
-                auto superExpr = nf.createToken(SyntaxKind::SuperKeyword);
-                auto callSuper = nf.createCallExpression(superExpr, undefined, undefined);
-                statements.push_back(nf.createExpressionStatement(callSuper));
-            }
-            */
+                NodeArray<Statement> statements;
 
-            // temp return false;
-            auto cmpRttiToParam = nf.createBinaryExpression(
-                nf.createIdentifier(LINSTANCEOF_PARAM_NAME), nf.createToken(SyntaxKind::EqualsEqualsToken),
-                nf.createPropertyAccessExpression(nf.createToken(SyntaxKind::ThisKeyword),
-                                                  nf.createIdentifier(S(RTTI_NAME))));
+                /*
+                if (!newClassPtr->baseClasses.empty())
+                {
+                    auto superExpr = nf.createToken(SyntaxKind::SuperKeyword);
+                    auto callSuper = nf.createCallExpression(superExpr, undefined, undefined);
+                    statements.push_back(nf.createExpressionStatement(callSuper));
+                }
+                */
 
-            auto cmpLogic = cmpRttiToParam;
+                // temp return false;
+                auto cmpRttiToParam = nf.createBinaryExpression(
+                    nf.createIdentifier(LINSTANCEOF_PARAM_NAME), nf.createToken(SyntaxKind::EqualsEqualsToken),
+                    nf.createPropertyAccessExpression(nf.createToken(SyntaxKind::ThisKeyword),
+                                                      nf.createIdentifier(S(RTTI_NAME))));
 
-            if (!newClassPtr->baseClasses.empty())
-            {
-                NodeArray<Expression> argumentsArray;
-                argumentsArray.push_back(nf.createIdentifier(LINSTANCEOF_PARAM_NAME));
-                cmpLogic = nf.createBinaryExpression(
-                    cmpRttiToParam, nf.createToken(SyntaxKind::BarBarEqualsToken),
-                    nf.createCallExpression(nf.createPropertyAccessExpression(nf.createToken(SyntaxKind::SuperKeyword),
+                auto cmpLogic = cmpRttiToParam;
+
+                if (!newClassPtr->baseClasses.empty())
+                {
+                    NodeArray<Expression> argumentsArray;
+                    argumentsArray.push_back(nf.createIdentifier(LINSTANCEOF_PARAM_NAME));
+                    cmpLogic =
+                        nf.createBinaryExpression(cmpRttiToParam, nf.createToken(SyntaxKind::BarBarEqualsToken),
+                                                  nf.createCallExpression(nf.createPropertyAccessExpression(
+                                                                              nf.createToken(SyntaxKind::SuperKeyword),
                                                                               nf.createIdentifier(LINSTANCEOF_NAME)),
-                                            undefined, argumentsArray));
+                                                                          undefined, argumentsArray));
+                }
+
+                auto returnStat = nf.createReturnStatement(cmpLogic);
+                statements.push_back(returnStat);
+
+                body = nf.createBlock(statements, false);
             }
-
-            auto returnStat = nf.createReturnStatement(cmpLogic);
-            statements.push_back(returnStat);
-
-            auto body = nf.createBlock(statements, false);
 
             NodeArray<ParameterDeclaration> parameters;
             parameters.push_back(nf.createParameterDeclaration(undefined, undefined, undefined,
@@ -8874,6 +8880,7 @@ class MLIRGenImpl
             auto instanceOfMethod = nf.createMethodDeclaration(
                 undefined, undefined, undefined, nf.createIdentifier(LINSTANCEOF_NAME), undefined, undefined,
                 parameters, nf.createToken(SyntaxKind::BooleanKeyword), body);
+
             instanceOfMethod->transformFlags |= TransformFlags::ForceVirtual;
             // TODO: you adding new member to the same DOM(parse) instance but it is used for 2 instances of generic
             // type ERROR: do not change members!!!!

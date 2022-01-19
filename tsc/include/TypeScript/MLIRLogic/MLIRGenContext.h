@@ -230,11 +230,13 @@ struct VirtualMethodOrFieldInfo
     {
     }
 
-    VirtualMethodOrFieldInfo(MethodInfo methodInfo, bool isMissing) : methodInfo(methodInfo), isField(false), isMissing(isMissing)
+    VirtualMethodOrFieldInfo(MethodInfo methodInfo, bool isMissing)
+        : methodInfo(methodInfo), isField(false), isMissing(isMissing)
     {
     }
 
-    VirtualMethodOrFieldInfo(mlir_ts::FieldInfo fieldInfo, bool isMissing) : fieldInfo(fieldInfo), isField(true), isMissing(isMissing)
+    VirtualMethodOrFieldInfo(mlir_ts::FieldInfo fieldInfo, bool isMissing)
+        : fieldInfo(fieldInfo), isField(true), isMissing(isMissing)
     {
     }
 
@@ -291,9 +293,10 @@ struct InterfaceInfo
         return mlir::success();
     }
 
-    mlir::LogicalResult getVirtualTable(llvm::SmallVector<VirtualMethodOrFieldInfo> &vtable,
-                                        std::function<mlir_ts::FieldInfo(mlir::Attribute, mlir::Type, bool)> resolveField,
-                                        std::function<MethodInfo &(std::string, mlir_ts::FunctionType, bool)> resolveMethod)
+    mlir::LogicalResult getVirtualTable(
+        llvm::SmallVector<VirtualMethodOrFieldInfo> &vtable,
+        std::function<mlir_ts::FieldInfo(mlir::Attribute, mlir::Type, bool)> resolveField,
+        std::function<MethodInfo &(std::string, mlir_ts::FunctionType, bool)> resolveMethod)
     {
         for (auto &extent : extends)
         {
@@ -355,15 +358,17 @@ struct InterfaceInfo
 
     int getMethodIndex(mlir::StringRef name)
     {
-        auto dist = std::distance(methods.begin(), std::find_if(methods.begin(), methods.end(),
-                                                                [&](InterfaceMethodInfo methodInfo) { return name == methodInfo.name; }));
+        auto dist = std::distance(
+            methods.begin(), std::find_if(methods.begin(), methods.end(),
+                                          [&](InterfaceMethodInfo methodInfo) { return name == methodInfo.name; }));
         return (signed)dist >= (signed)methods.size() ? -1 : dist;
     }
 
     int getFieldIndex(mlir::Attribute id)
     {
-        auto dist = std::distance(
-            fields.begin(), std::find_if(fields.begin(), fields.end(), [&](InterfaceFieldInfo fieldInfo) { return id == fieldInfo.id; }));
+        auto dist = std::distance(fields.begin(),
+                                  std::find_if(fields.begin(), fields.end(),
+                                               [&](InterfaceFieldInfo fieldInfo) { return id == fieldInfo.id; }));
         return (signed)dist >= (signed)fields.size() ? -1 : dist;
     }
 
@@ -386,7 +391,8 @@ struct InterfaceInfo
             }
         }
 
-        LLVM_DEBUG(llvm::dbgs() << "\n!! can't resolve field: " << id << " in interface type: " << interfaceType << "\n";);
+        LLVM_DEBUG(llvm::dbgs() << "\n!! can't resolve field: " << id << " in interface type: " << interfaceType
+                                << "\n";);
 
         return nullptr;
     }
@@ -494,6 +500,7 @@ struct ClassInfo
 
     llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> typeParamsWithArgs;
 
+    bool isDeclaration;
     bool hasConstructor;
     bool hasInitializers;
     bool hasStaticConstructor;
@@ -508,8 +515,9 @@ struct ClassInfo
     bool enteredProcessingStorageClass;
 
     ClassInfo()
-        : hasConstructor(false), hasInitializers(false), hasStaticConstructor(false), hasStaticInitializers(false), hasVirtualTable(false),
-          isAbstract(false), hasRTTI(false), fullyProcessedAtEvaluation(false), fullyProcessed(false), processingStorageClass(false),
+        : isDeclaration(false), hasConstructor(false), hasInitializers(false), hasStaticConstructor(false),
+          hasStaticInitializers(false), hasVirtualTable(false), isAbstract(false), hasRTTI(false),
+          fullyProcessedAtEvaluation(false), fullyProcessed(false), processingStorageClass(false),
           processedStorageClass(false), enteredProcessingStorageClass(false)
     {
     }
@@ -578,9 +586,10 @@ struct ClassInfo
         // do vtable for current class
         for (auto &implement : implements)
         {
-            auto index = std::distance(vtable.begin(), std::find_if(vtable.begin(), vtable.end(), [&](auto vTableRecord) {
-                                           return implement.interface->fullName == vTableRecord.methodInfo.name;
-                                       }));
+            auto index =
+                std::distance(vtable.begin(), std::find_if(vtable.begin(), vtable.end(), [&](auto vTableRecord) {
+                                  return implement.interface->fullName == vTableRecord.methodInfo.name;
+                              }));
             if ((size_t)index < vtable.size())
             {
                 // found interface
@@ -596,9 +605,10 @@ struct ClassInfo
         // methods
         for (auto &method : methods)
         {
-            auto index = std::distance(vtable.begin(), std::find_if(vtable.begin(), vtable.end(), [&](auto vTableMethod) {
-                                           return method.name == vTableMethod.methodInfo.name;
-                                       }));
+            auto index =
+                std::distance(vtable.begin(), std::find_if(vtable.begin(), vtable.end(), [&](auto vTableMethod) {
+                                  return method.name == vTableMethod.methodInfo.name;
+                              }));
             if ((size_t)index < vtable.size())
             {
                 // found method
@@ -633,17 +643,19 @@ struct ClassInfo
 
     int getStaticFieldIndex(mlir::Attribute id)
     {
-        auto dist = std::distance(staticFields.begin(), std::find_if(staticFields.begin(), staticFields.end(),
-                                                                     [&](StaticFieldInfo fldInf) { return id == fldInf.id; }));
+        auto dist =
+            std::distance(staticFields.begin(), std::find_if(staticFields.begin(), staticFields.end(),
+                                                             [&](StaticFieldInfo fldInf) { return id == fldInf.id; }));
         return (signed)dist >= (signed)staticFields.size() ? -1 : dist;
     }
 
     int getMethodIndex(mlir::StringRef name)
     {
-        auto dist = std::distance(methods.begin(), std::find_if(methods.begin(), methods.end(), [&](MethodInfo methodInfo) {
-                                      LLVM_DEBUG(dbgs() << "\nmatching method: " << name << " to " << methodInfo.name << "\n\n";);
-                                      return name == methodInfo.name;
-                                  }));
+        auto dist = std::distance(
+            methods.begin(), std::find_if(methods.begin(), methods.end(), [&](MethodInfo methodInfo) {
+                LLVM_DEBUG(dbgs() << "\nmatching method: " << name << " to " << methodInfo.name << "\n\n";);
+                return name == methodInfo.name;
+            }));
         return (signed)dist >= (signed)methods.size() ? -1 : dist;
     }
 
@@ -694,14 +706,16 @@ struct ClassInfo
 
     int getAccessorIndex(mlir::StringRef name)
     {
-        auto dist = std::distance(accessors.begin(), std::find_if(accessors.begin(), accessors.end(),
-                                                                  [&](AccessorInfo accessorInfo) { return name == accessorInfo.name; }));
+        auto dist = std::distance(accessors.begin(),
+                                  std::find_if(accessors.begin(), accessors.end(),
+                                               [&](AccessorInfo accessorInfo) { return name == accessorInfo.name; }));
         return (signed)dist >= (signed)accessors.size() ? -1 : dist;
     }
 
     int getImplementIndex(mlir::StringRef name)
     {
-        auto dist = std::distance(implements.begin(), std::find_if(implements.begin(), implements.end(), [&](ImplementInfo implementInfo) {
+        auto dist = std::distance(implements.begin(),
+                                  std::find_if(implements.begin(), implements.end(), [&](ImplementInfo implementInfo) {
                                       return name == implementInfo.interface->fullName;
                                   }));
         return (signed)dist >= (signed)implements.size() ? -1 : dist;
