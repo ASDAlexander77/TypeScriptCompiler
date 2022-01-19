@@ -10,3 +10,7 @@ declare function close_window(exitCode: uint32_t): void;
 declare function destroy_window(hwnd: intptr_t): uint32_t;
 declare function default_window_procedure(hwnd: intptr_t, msg: uint32_t, wparam: uint64_t, lparam: uint64_t): intptr_t;
 
+declare function create_vulkan(hwnd: intptr_t): void;
+declare function run_vulkan(): void;
+declare function cleanup_vulkan(): void;
+

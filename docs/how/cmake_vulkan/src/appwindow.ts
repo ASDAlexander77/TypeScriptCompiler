@@ -20,6 +20,7 @@ export class AppWindow {
 
     constructor(parent_handler_window?: intptr_t) {
         this.handler_window = create_window('Hello World!', parent_handler_window, this.onMessage);
+        create_vulkan(this.handler_window);
     }
 
     protected onMessage(uMsg: uint32_t, wParam: uint64_t, lParam: uint64_t): intptr_t {
@@ -30,8 +31,10 @@ export class AppWindow {
             case Messages.Erasebkgnd:
                 return 1;
             case Messages.Paint:
+                run_vulkan();
                 break;
             case Messages.Destroy:
+                cleanup_vulkan();
                 break;
             case Messages.KeyDown: // key down
                 switch (wParam) {
