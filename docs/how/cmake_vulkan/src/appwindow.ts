@@ -1,19 +1,5 @@
 /// <reference path="window.win32.d.ts" />
 
-enum Messages {
-    Destroy = 0x0002,
-    Size = 0x0005,
-    Paint = 0x000f,
-    Close = 0x0010,
-    KeyDown = 0x0100,
-    Erasebkgnd = 0x0014
-}
-
-enum Keys {
-    Escape = 0x1b,
-    Space = 0x20
-}
-
 export class AppWindow {
 
     private handler_window: intptr_t;
@@ -59,9 +45,4 @@ export class Application {
     static run() {
         this.appWindow = new AppWindow();
     }
-}
-
-export function Main()
-{
-    Application.run();
 }

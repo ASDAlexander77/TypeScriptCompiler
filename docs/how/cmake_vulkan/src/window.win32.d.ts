@@ -14,3 +14,16 @@ declare function create_vulkan(hwnd: intptr_t): void;
 declare function run_vulkan(): void;
 declare function cleanup_vulkan(): void;
 
+enum Messages {
+    Destroy = 0x0002,
+    Size = 0x0005,
+    Paint = 0x000f,
+    Close = 0x0010,
+    KeyDown = 0x0100,
+    Erasebkgnd = 0x0014
+}
+
+enum Keys {
+    Escape = 0x1b,
+    Space = 0x20
+}
