@@ -155,10 +155,6 @@
         "cmake.buildDirectory": "${workspaceRoot}/../../__build/tsc",
         "cmake.sourceDirectory": "${workspaceFolder}/..",
         "cmake.parallelJobs": 4,
-        "[cpp]": {
-            "editor.defaultFormatter": "xaver.clang-format",
-        },
-        "C_Cpp.clang_format_style": "Microsoft",
         "clang-tidy.compilerArgs": [
             "-I../include",
             "-I../../3rdParty/llvm/debug/include",
@@ -169,7 +165,6 @@
             "cppcoreguidelines-*",
             "performance-*",
             "misc-*",
-            "readability-*",
             "google-*"
         ],
         "clang-tidy.buildPath": "../../__build/tsc",

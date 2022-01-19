@@ -1471,10 +1471,16 @@ class MLIRGenImpl
 
                 effectiveName = getFullNamespaceName(name);
 
+                SmallVector<mlir::NamedAttribute> attrs;
+                if (isExternal)
+                {
+                    attrs.push_back({mlir::Identifier::get("Linkage", builder.getContext()), builder.getStringAttr("External")});
+                }
+
                 globalOp =
                     builder.create<mlir_ts::GlobalOp>(location,
                                                       // temp type
-                                                      builder.getI32Type(), isConst, effectiveName, mlir::Attribute());
+                                                      builder.getI32Type(), isConst, effectiveName, mlir::Attribute(), attrs);
 
                 if (isGlobalScope && !isExternal)
                 {
@@ -1764,7 +1770,7 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGen(VariableDeclaration item, VariableClass varClass, const GenContext &genContext)
     {
 #ifndef ANY_AS_DEFAULT
-        if (!item->type && !item->initializer)
+        if (!item->type && !item->initializer && !isExternal)
         {
             auto name = MLIRHelper::getName(item->name);
             emitError(loc(item)) << "type of variable '" << name
@@ -1798,7 +1804,8 @@ class MLIRGenImpl
     {
         auto isLet = (variableDeclarationListAST->flags & NodeFlags::Let) == NodeFlags::Let;
         auto isConst = (variableDeclarationListAST->flags & NodeFlags::Const) == NodeFlags::Const;
-        auto varClass = isLet ? VariableClass::Let : isConst ? VariableClass::Const : VariableClass::Var;
+        auto isExternal = (variableDeclarationListAST->flags & NodeFlags::Ambient) == NodeFlags::Ambient;
+        auto varClass = isExternal ? VariableClass::External : isLet ? VariableClass::Let : isConst ? VariableClass::Const : VariableClass::Var;
 
         for (auto &item : variableDeclarationListAST->declarations)
         {
