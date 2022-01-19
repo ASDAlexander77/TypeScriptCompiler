@@ -167,6 +167,7 @@
         ],
         "clang-tidy.buildPath": "../../__build/tsc",
         "C_Cpp.codeAnalysis.clangTidy.headerFilter": ".*",
-        "clang-tidy.lintOnSave": false
+        "clang-tidy.lintOnSave": false,
+        "clang-format.language.cpp.style": "Microsoft"
     }
 }
