@@ -1469,7 +1469,8 @@ class MLIRGenImpl
 
                 theModule.getBody()->walk(lastUse);
 
-                effectiveName = getFullNamespaceName(name);
+                // TODO: investigate why I need it here
+                effectiveName = isFullName ? name : getFullNamespaceName(name);
 
                 SmallVector<mlir::NamedAttribute> attrs;
                 if (isExternal)
@@ -6447,7 +6448,7 @@ class MLIRGenImpl
         {
             if (!genContext.allowPartialResolve)
             {
-                emitError(location) << "Call Method: can't resolve values of all parameters";
+                emitError(location) << "Call constructor: can't resolve values of all parameters";
             }
 
             return mlir::Value();
@@ -6467,7 +6468,7 @@ class MLIRGenImpl
         mlir::Type type;
         auto typeExpression = newExpression->expression;
         if (typeExpression == SyntaxKind::Identifier || typeExpression == SyntaxKind::QualifiedName ||
-            typeExpression == SyntaxKind::PropertyAccessExpression)
+            typeExpression == SyntaxKind::PropertyAccessExpression || typeExpression == SyntaxKind::ThisKeyword)
         {
             auto value = mlirGen(typeExpression, newExpression->typeArguments, genContext);
 
@@ -8275,6 +8276,7 @@ class MLIRGenImpl
             builder.setInsertionPointToStart(&theModule.body().front());
         }
 
+        mlirGenClassNew(classDeclarationAST, newClassPtr, genContext);
         mlirGenClassDefaultConstructor(classDeclarationAST, newClassPtr, genContext);
         mlirGenClassDefaultStaticConstructor(classDeclarationAST, newClassPtr, genContext);
 
@@ -8780,6 +8782,35 @@ class MLIRGenImpl
 
         return mlir::success();
     }
+
+    mlir::LogicalResult mlirGenClassNew(ClassLikeDeclaration classDeclarationAST,
+                                                       ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
+    {
+        if (newClassPtr->isAbstract || newClassPtr->hasNew)
+        {
+            return mlir::success(); 
+        }
+
+        // create constructor
+        newClassPtr->hasNew = true;
+
+        // if we do not have constructor but have initializers we need to create empty dummy constructor
+        NodeFactory nf(NodeFactoryFlags::None);
+
+        NodeArray<Statement> statements;
+
+        auto newCall = nf.createNewExpression(nf.createToken(SyntaxKind::ThisKeyword), undefined, undefined);
+        statements.push_back(nf.createExpressionStatement(newCall));
+
+        auto body = nf.createBlock(statements, /*multiLine*/ false);
+
+        ModifiersArray modifiers;
+        modifiers->push_back(nf.createToken(SyntaxKind::StaticKeyword));
+        auto generatedNew = nf.createMethodDeclaration(undefined, modifiers, undefined, nf.createIdentifier(S(".new")), undefined, undefined, undefined, undefined, body);
+        newClassPtr->extraMembers.push_back(generatedNew);
+
+        return mlir::success();
+    }    
 
     mlir::LogicalResult mlirGenClassDefaultConstructor(ClassLikeDeclaration classDeclarationAST,
                                                        ClassInfo::TypePtr newClassPtr, const GenContext &genContext)

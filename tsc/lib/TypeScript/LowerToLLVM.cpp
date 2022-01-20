@@ -2498,6 +2498,13 @@ struct AddressOfOpLowering : public TsLlvmPattern<mlir_ts::AddressOfOp>
             auto module = addressOfOp->getParentOfType<mlir::ModuleOp>();
             assert(module);
             auto globalOp = module.lookupSymbol<LLVM::GlobalOp>(addressOfOp.global_name());
+            if (!globalOp)
+            {
+                LLVM_DEBUG(llvm::dbgs() << "\n!! NOT found symbol: " << addressOfOp.global_name() << "\n";);
+                assert(globalOp);
+                return mlir::failure();
+            }
+
             LLVM_DEBUG(llvm::dbgs() << "\n!! found symbol: " << globalOp << "\n";);
             actualType = mlir_ts::RefType::get(globalOp.getType());
 

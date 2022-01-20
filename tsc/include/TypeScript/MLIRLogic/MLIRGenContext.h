@@ -502,6 +502,7 @@ struct ClassInfo
     llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> typeParamsWithArgs;
 
     bool isDeclaration;
+    bool hasNew;
     bool hasConstructor;
     bool hasInitializers;
     bool hasStaticConstructor;
@@ -516,7 +517,7 @@ struct ClassInfo
     bool enteredProcessingStorageClass;
 
     ClassInfo()
-        : isDeclaration(false), hasConstructor(false), hasInitializers(false), hasStaticConstructor(false),
+        : isDeclaration(false), hasNew(false), hasConstructor(false), hasInitializers(false), hasStaticConstructor(false),
           hasStaticInitializers(false), hasVirtualTable(false), isAbstract(false), hasRTTI(false),
           fullyProcessedAtEvaluation(false), fullyProcessed(false), processingStorageClass(false),
           processedStorageClass(false), enteredProcessingStorageClass(false)
