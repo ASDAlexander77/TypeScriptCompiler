@@ -7,13 +7,17 @@ class Cls1 {
     }
 }
 
-class Cls2 extends Cls1 {}
+class Cls2 extends Cls1 { }
 
-class C {}
+class C {
 
-class C2 extends C {}
+    foo() { }
 
-class D {}
+}
+
+class C2 extends C { }
+
+class D { }
 
 function iftrue(a: any) {
     assert(a instanceof C);

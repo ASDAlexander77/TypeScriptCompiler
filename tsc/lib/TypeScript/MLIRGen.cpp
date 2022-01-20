@@ -8518,12 +8518,13 @@ class MLIRGenImpl
                                             ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
     {
         // clear all flags
-        for (auto &classMember : classDeclarationAST->members)
+        // extra fields - first, we need .instanceOf first for typr Any
+        for (auto &classMember : newClassPtr->extraMembers)
         {
             classMember->processed = false;
         }
 
-        for (auto &classMember : newClassPtr->extraMembers)
+        for (auto &classMember : classDeclarationAST->members)
         {
             classMember->processed = false;
         }
@@ -8535,7 +8536,7 @@ class MLIRGenImpl
             auto lastTimeNotResolved = notResolved;
             notResolved = 0;
 
-            for (auto &classMember : classDeclarationAST->members)
+            for (auto &classMember : newClassPtr->extraMembers)
             {
                 if (mlir::failed(mlirGenClassMethodMember(classDeclarationAST, newClassPtr, classMember, genContext)))
                 {
@@ -8543,7 +8544,7 @@ class MLIRGenImpl
                 }
             }
 
-            for (auto &classMember : newClassPtr->extraMembers)
+            for (auto &classMember : classDeclarationAST->members)
             {
                 if (mlir::failed(mlirGenClassMethodMember(classDeclarationAST, newClassPtr, classMember, genContext)))
                 {
