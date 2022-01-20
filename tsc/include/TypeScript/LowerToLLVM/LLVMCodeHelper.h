@@ -108,6 +108,13 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
             global = rewriter.create<LLVM::GlobalOp>(loc, type, isConst, linkage, name, value);
 
+            {
+                setStructWritingPoint(global);
+
+                mlir::Value undefVal = rewriter.create<LLVM::UndefOp>(loc, type);
+                rewriter.create<LLVM::ReturnOp>(loc, mlir::ValueRange{undefVal});
+            }
+
             return success();
         }
 
