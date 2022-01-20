@@ -8276,13 +8276,14 @@ class MLIRGenImpl
             builder.setInsertionPointToStart(&theModule.body().front());
         }
 
-        mlirGenClassNew(classDeclarationAST, newClassPtr, genContext);
         mlirGenClassDefaultConstructor(classDeclarationAST, newClassPtr, genContext);
         mlirGenClassDefaultStaticConstructor(classDeclarationAST, newClassPtr, genContext);
 
 #ifdef ENABLE_RTTI
+        // INFO: .instanceOf must be first element in VTable for Cast Any
         mlirGenClassInstanceOfMethod(classDeclarationAST, newClassPtr, genContext);
 #endif
+        mlirGenClassNew(classDeclarationAST, newClassPtr, genContext);
 
         if (mlir::failed(mlirGenClassMembers(location, classDeclarationAST, newClassPtr, genContext)))
         {
@@ -8910,6 +8911,8 @@ class MLIRGenImpl
                 return mlir::success();
             }
 
+            newClassPtr->hasRTTI = true;
+
             NodeFactory nf(NodeFactoryFlags::None);
 
             Block body = undefined;
@@ -8964,9 +8967,14 @@ class MLIRGenImpl
             instanceOfMethod->transformFlags |= TransformFlags::ForceVirtual;
             // TODO: you adding new member to the same DOM(parse) instance but it is used for 2 instances of generic
             // type ERROR: do not change members!!!!
-            newClassPtr->extraMembers.push_back(instanceOfMethod);
 
-            newClassPtr->hasRTTI = true;
+            // INFO: .instanceOf must be first element in VTable for Cast Any
+            for (auto member : newClassPtr->extraMembers)
+            {
+                assert(member == SyntaxKind::Constructor);
+            }
+
+            newClassPtr->extraMembers.push_back(instanceOfMethod);
         }
 
         return mlir::success();
