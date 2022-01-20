@@ -1533,6 +1533,7 @@ class MLIRGenImpl
             {
                 auto res = func();
                 auto type = std::get<0>(res);
+                auto init = std::get<1>(res);
                 if (!type && genContext.allowPartialResolve)
                 {
                     return false;
@@ -1545,7 +1546,6 @@ class MLIRGenImpl
 
                 if (!isExternal)
                 {
-                    auto init = std::get<1>(res);
                     if (init)
                     {
                         // save value
@@ -1553,6 +1553,17 @@ class MLIRGenImpl
                                                                             effectiveName, mlir::IntegerAttr());
                         builder.create<mlir_ts::StoreOp>(location, init, address);
                     }
+
+                    // we need to put undefined into GlobalOp
+                    mlir::OpBuilder::InsertionGuard insertGuard(builder);
+    
+                    auto &region = globalOp.getInitializerRegion();
+                    auto *block = builder.createBlock(&region);
+
+                    builder.setInsertionPoint(block, block->begin());
+
+                    auto undefVal = builder.create<mlir_ts::UndefOp>(location, type);
+                    builder.create<mlir_ts::GlobalResultOp>(location, mlir::ValueRange{undefVal});                    
                 }
             }
         }

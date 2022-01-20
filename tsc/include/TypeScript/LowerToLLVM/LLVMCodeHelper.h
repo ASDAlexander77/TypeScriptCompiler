@@ -63,7 +63,8 @@ class LLVMCodeHelper : public LLVMCodeHelperBase
 
     LLVM::Linkage getLinkage(mlir::Operation *op)
     {
-        auto linkage = LLVM::Linkage::Internal;
+        //auto linkage = LLVM::Linkage::Internal;
+        auto linkage = LLVM::Linkage::External;
         if (auto linkageAttr = op->getAttrOfType<StringAttr>("Linkage"))
         {
             auto val = linkageAttr.getValue();
