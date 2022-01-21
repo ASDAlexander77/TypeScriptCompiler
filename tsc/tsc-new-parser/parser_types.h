@@ -231,13 +231,13 @@ struct Node : TextRange
     /* @internal */ PTR(Symbol) symbol;            // Symbol declared by node (initialized by binding)
     /* @internal */ SymbolTable locals;            // Locals associated with node (initialized by binding)
     /* @internal */ PTR(Node) nextContainer;       // Next container in declaration order (initialized by binding)
-    /* @internal */ PTR(Symbol)
-    localSymbol; // Local symbol declared by node (initialized by binding only for exported nodes)
+    /* @internal */ PTR(Symbol) localSymbol;       // Local symbol declared by node (initialized by binding only for exported nodes)
     ///* @internal */ PTR(FlowNode) flowNode;                  // Associated FlowNode (initialized by binding)
     ///* @internal */ PTR(EmitNode) emitNode;                  // Associated EmitNode (initialized by transforms)
     ///* @internal */ PTR(Type) contextualType;                // Used to temporarily assign a contextual type during
     /// overload resolution
     ///* @internal */ PTR(InferenceContext) inferenceContext;  // Inference context for contextual type
+    /* @internal */ InternalFlags internalFlags;
     /* @internal */ bool processed; // internal field to mark processed node
 };
 

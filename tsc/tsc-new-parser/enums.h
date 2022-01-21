@@ -466,18 +466,10 @@ enum class TransformFlags : number
     ContainsClassFields = 1 << 23,
     ContainsPossibleTopLevelAwait = 1 << 24,
 
-    // Internal
-    ForceConst = 1 << 25,
-    ForceConstRef = 1 << 26,
-    ForceVirtual = 1 << 27,
-    VarsInObjectContext = 1 << 28,
-    ForAwait = 1 << 29,
-
     // Please leave this as 1 << 29.
     // It is the maximum bit we can set before we outgrow the size of a v8 small integer (SMI) on an x86 system.
     // It is a good reminder of how much room we have left
-    // HasComputedFlags = 1 << 29, // Transform flags have been computed.
-    HasComputedFlags = 1 << 30,
+    HasComputedFlags = 1 << 29, // Transform flags have been computed.
 
     // Assertions
     // - Bitmasks that are used to assert facts about the syntax of a node and its subtree.
@@ -532,6 +524,20 @@ enum class TransformFlags : number
 };
 
 ENUM_OPS(TransformFlags)
+
+enum class InternalFlags : number
+{
+    None = 0,
+
+    // Internal
+    ForceConst = 1 << 0,
+    ForceConstRef = 1 << 1,
+    ForceVirtual = 1 << 2,
+    VarsInObjectContext = 1 << 3,
+    ForAwait = 1 << 4,
+};
+
+ENUM_OPS(InternalFlags)
 
 enum class GeneratedIdentifierFlags : number
 {

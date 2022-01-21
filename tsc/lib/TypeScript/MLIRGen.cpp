@@ -1815,12 +1815,12 @@ class MLIRGenImpl
         auto initFunc = [&]() { return getTypeAndInit(item, genContext); };
 
         auto valClassItem = varClass;
-        if ((item->transformFlags & TransformFlags::ForceConst) == TransformFlags::ForceConst)
+        if ((item->internalFlags & InternalFlags::ForceConst) == InternalFlags::ForceConst)
         {
             valClassItem = VariableClass::Const;
         }
 
-        if ((item->transformFlags & TransformFlags::ForceConstRef) == TransformFlags::ForceConstRef)
+        if ((item->internalFlags & InternalFlags::ForceConstRef) == InternalFlags::ForceConstRef)
         {
             valClassItem = VariableClass::ConstRef;
         }
@@ -2300,8 +2300,8 @@ class MLIRGenImpl
             genContextWithPassResult.passResult = new PassResult();
             genContextWithPassResult.state = new int(1);
             genContextWithPassResult.allocateVarsInContextThis =
-                (functionLikeDeclarationBaseAST->transformFlags & TransformFlags::VarsInObjectContext) ==
-                TransformFlags::VarsInObjectContext;
+                (functionLikeDeclarationBaseAST->internalFlags & InternalFlags::VarsInObjectContext) ==
+                InternalFlags::VarsInObjectContext;
             genContextWithPassResult.unresolved = genContext.unresolved;
             genContextWithPassResult.discoverParamsOnly = genContext.discoverParamsOnly;
             genContextWithPassResult.typeAliasMap = genContext.typeAliasMap;
@@ -2499,7 +2499,7 @@ class MLIRGenImpl
         auto nextMethodDecl =
             nf.createMethodDeclaration(undefined, undefined, undefined, nf.createIdentifier(S("next")), undefined,
                                        undefined, undefined, undefined, nextBody);
-        nextMethodDecl->transformFlags |= TransformFlags::VarsInObjectContext;
+        nextMethodDecl->internalFlags |= InternalFlags::VarsInObjectContext;
 
         // copy location info, to fix issue with names of anonymous functions
         nextMethodDecl->pos = functionLikeDeclarationBaseAST->pos;
@@ -2619,8 +2619,8 @@ class MLIRGenImpl
         // if funcGenContext.passResult is null and allocateVarsInContextThis is true, this type should contain fully
         // defined object with local variables as fields
         funcGenContext.allocateVarsInContextThis =
-            (functionLikeDeclarationBaseAST->transformFlags & TransformFlags::VarsInObjectContext) ==
-            TransformFlags::VarsInObjectContext;
+            (functionLikeDeclarationBaseAST->internalFlags & InternalFlags::VarsInObjectContext) ==
+            InternalFlags::VarsInObjectContext;
 
         auto it = getCaptureVarsMap().find(funcProto->getName());
         if (it != getCaptureVarsMap().end())
@@ -3663,7 +3663,7 @@ class MLIRGenImpl
 
         auto location = loc(forStatementAST);
 
-        auto hasAwait = TransformFlags::ForAwait == (forStatementAST->transformFlags & TransformFlags::ForAwait);
+        auto hasAwait = InternalFlags::ForAwait == (forStatementAST->internalFlags & InternalFlags::ForAwait);
 
         // initializer
         // TODO: why do we have ForInitialier
@@ -3799,7 +3799,7 @@ class MLIRGenImpl
 
         auto _a = nf.createIdentifier(S("_a_"));
         auto arrayVar = nf.createVariableDeclaration(_a, undefined, undefined, forInStatementAST->expression);
-        arrayVar->transformFlags |= TransformFlags::ForceConstRef;
+        arrayVar->internalFlags |= InternalFlags::ForceConstRef;
         declarations.push_back(arrayVar);
 
         auto initVars = nf.createVariableDeclarationList(declarations, NodeFlags::Let);
@@ -3849,7 +3849,7 @@ class MLIRGenImpl
         auto _a = nf.createIdentifier(S("_a_"));
         auto arrayVar =
             nf.createVariableDeclaration(_a, undefined, undefined, nf.createIdentifier(S(EXPR_TEMPVAR_NAME)));
-        arrayVar->transformFlags |= TransformFlags::ForceConstRef;
+        arrayVar->internalFlags |= InternalFlags::ForceConstRef;
 
         declarations.push_back(arrayVar);
 
@@ -3883,7 +3883,7 @@ class MLIRGenImpl
         auto forStatNode = nf.createForStatement(initVars, cond, incr, block);
         if (forOfStatementAST->awaitModifier)
         {
-            forStatNode->transformFlags |= TransformFlags::ForAwait;
+            forStatNode->internalFlags |= InternalFlags::ForAwait;
         }
 
         return mlirGen(forStatNode, genContext);
@@ -3943,7 +3943,7 @@ class MLIRGenImpl
         auto forStatNode = nf.createForStatement(initVars, cond, incr, block);
         if (forOfStatementAST->awaitModifier)
         {
-            forStatNode->transformFlags |= TransformFlags::ForAwait;
+            forStatNode->internalFlags |= InternalFlags::ForAwait;
         }
 
         return mlirGen(forStatNode, genContext);
@@ -8665,7 +8665,7 @@ class MLIRGenImpl
             newClassPtr->hasVirtualTable = true;
         }
 
-        auto isVirtual = (classMember->transformFlags & TransformFlags::ForceVirtual) == TransformFlags::ForceVirtual;
+        auto isVirtual = (classMember->internalFlags & InternalFlags::ForceVirtual) == InternalFlags::ForceVirtual;
 #ifdef ALL_METHODS_VIRTUAL
         isVirtual = !isConstructor;
 #endif
@@ -8965,7 +8965,7 @@ class MLIRGenImpl
                 undefined, undefined, undefined, nf.createIdentifier(LINSTANCEOF_NAME), undefined, undefined,
                 parameters, nf.createToken(SyntaxKind::BooleanKeyword), body);
 
-            instanceOfMethod->transformFlags |= TransformFlags::ForceVirtual;
+            instanceOfMethod->internalFlags |= InternalFlags::ForceVirtual;
             // TODO: you adding new member to the same DOM(parse) instance but it is used for 2 instances of generic
             // type ERROR: do not change members!!!!
 
@@ -9509,7 +9509,7 @@ class MLIRGenImpl
         auto isConstructor = classMember == SyntaxKind::Constructor;
         auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
         auto isAbstract = hasModifier(classMember, SyntaxKind::AbstractKeyword);
-        auto isVirtual = (classMember->transformFlags & TransformFlags::ForceVirtual) == TransformFlags::ForceVirtual;
+        auto isVirtual = (classMember->internalFlags & InternalFlags::ForceVirtual) == InternalFlags::ForceVirtual;
 #ifdef ALL_METHODS_VIRTUAL
         isVirtual = !isConstructor;
 #endif
