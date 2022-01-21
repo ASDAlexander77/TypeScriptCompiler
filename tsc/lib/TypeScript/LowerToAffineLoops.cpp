@@ -1217,13 +1217,9 @@ namespace
                     LLVM_DEBUG(llvm::dbgs() << "!! ...call -> invoke: " << op.calleeAttr() << "\n";);
                     LLVM_DEBUG(for (auto opit : op.getOperands()) llvm::dbgs() << "!! ...call -> invoke operands: " << opit << "\n";);
 
-                    auto res = rewriter.create<mlir_ts::InvokeOp>(op->getLoc(), op.getResultTypes(), op.calleeAttr(), op.getArgOperands(),
+                    rewriter.replaceOpWithNewOp<mlir_ts::InvokeOp>(op, op.getResultTypes(), op.calleeAttr(), op.getArgOperands(),
                         continuationBlock, ValueRange{}, unwind, ValueRange{});
-                    if (res.getNumResults())
-                    {
-                        rewriter.replaceOp(op, res.getResults());
-                        return success();
-                    }
+                    return success();
                 }
 
                 rewriter.eraseOp(op);
@@ -1251,13 +1247,9 @@ namespace
 
                     LLVM_DEBUG(for (auto opit : op.getOperands()) llvm::dbgs() << "!! ...call -> invoke operands: " << opit << "\n";);
 
-                    auto res = rewriter.create<mlir_ts::InvokeOp>(op->getLoc(), op.getResultTypes(), op.getOperands(), continuationBlock, ValueRange{},
+                    auto res = rewriter.replaceOpWithNewOp<mlir_ts::InvokeOp>(op, op.getResultTypes(), op.getOperands(), continuationBlock, ValueRange{},
                         unwind, ValueRange{});
-                    if (res.getNumResults())
-                    {
-                        rewriter.replaceOp(op, res.getResults());
-                        return success();
-                    }
+                    return success();
                 }
 
                 rewriter.eraseOp(op);
