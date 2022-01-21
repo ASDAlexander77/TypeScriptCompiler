@@ -1209,7 +1209,6 @@ namespace
         {
             if (auto unwind = tsContext->unwind[op])
             {
-                ValueRange results;
                 {
                     OpBuilder::InsertionGuard guard(rewriter);
                     CodeLogicHelper clh(op, rewriter);
@@ -1220,18 +1219,14 @@ namespace
 
                     auto res = rewriter.create<mlir_ts::InvokeOp>(op->getLoc(), op.getResultTypes(), op.calleeAttr(), op.getArgOperands(),
                         continuationBlock, ValueRange{}, unwind, ValueRange{});
-                    results = ValueRange(res.getResults());
+                    if (res.getNumResults())
+                    {
+                        rewriter.replaceOp(op, res.getResults());
+                        return success();
+                    }
                 }
 
-                if (results.size() > 0)
-                {
-                    rewriter.replaceOp(op, results);
-                }
-                else
-                {
-                    rewriter.eraseOp(op);
-                }
-
+                rewriter.eraseOp(op);
                 return success();
             }
 
@@ -1249,7 +1244,6 @@ namespace
         {
             if (auto unwind = tsContext->unwind[op])
             {
-                ValueRange results;
                 {
                     OpBuilder::InsertionGuard guard(rewriter);
                     CodeLogicHelper clh(op, rewriter);
@@ -1259,18 +1253,14 @@ namespace
 
                     auto res = rewriter.create<mlir_ts::InvokeOp>(op->getLoc(), op.getResultTypes(), op.getOperands(), continuationBlock, ValueRange{},
                         unwind, ValueRange{});
-                    results = ValueRange(res.getResults());
+                    if (res.getNumResults())
+                    {
+                        rewriter.replaceOp(op, res.getResults());
+                        return success();
+                    }
                 }
 
-                if (results.size() > 0)
-                {
-                    rewriter.replaceOp(op, results);
-                }
-                else
-                {
-                    rewriter.eraseOp(op);
-                }
-
+                rewriter.eraseOp(op);
                 return success();
             }
 
