@@ -4276,6 +4276,8 @@ namespace
 
             auto exception = mlirGen(throwStatementAST->expression, genContext);
 
+            VALIDATE_LOGIC(exception, location)
+
             auto throwOp = builder.create<mlir_ts::ThrowOp>(location, exception);
 
             if (!genContext.allowPartialResolve)
