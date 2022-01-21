@@ -6442,13 +6442,18 @@ namespace
             auto classType = resultType.dyn_cast<mlir_ts::ClassType>();
 
             // TODO: call method here
+#if USE_NEW_AS_METHOD                
             if (suppressConstructorCall || !classType)
+#else
+            if (suppressConstructorCall)
+#endif            
             {
                 auto newOp = builder.create<mlir_ts::NewOp>(location, resultType, builder.getBoolAttr(false));
                 return newOp;
             }
             else
             {
+#if USE_NEW_AS_METHOD                
                 auto classInfo = getClassInfoByFullName(classType.getName().getValue());
 
                 auto classRefVal = builder.create<mlir_ts::ClassRefOp>(
@@ -6463,6 +6468,9 @@ namespace
                 SmallVector<mlir::Value, 4> emptyOperands;
                 bool hasReturn;
                 auto newOp = mlirGenCall(location, newFuncRef, emptyOperands, hasReturn, genContext);
+#else
+                auto newOp = builder.create<mlir_ts::NewOp>(location, resultType, builder.getBoolAttr(false));
+#endif                
 
                 assert(newOp);
 
