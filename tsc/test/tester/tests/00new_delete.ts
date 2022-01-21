@@ -8,7 +8,7 @@ function test_int() {
 type int = 1;
 
 function test_array() {
-    const a = new int[10]();
+    const a = new int[10];
     a[0] = 1;
     print(a[0]);
 
