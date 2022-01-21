@@ -535,6 +535,7 @@ enum class InternalFlags : number
     ForceVirtual = 1 << 2,
     VarsInObjectContext = 1 << 3,
     ForAwait = 1 << 4,
+    SuppressConstructorCall = 1 << 5,
 };
 
 ENUM_OPS(InternalFlags)

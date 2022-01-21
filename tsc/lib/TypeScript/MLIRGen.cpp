@@ -6421,7 +6421,7 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::Value NewClassInstance(mlir::Location location, mlir::Value value, NodeArray<Expression> arguments,
+    mlir::Value NewClassInstance(mlir::Location location, mlir::Value value, NodeArray<Expression> arguments, bool suppressConstructorCall,
                                  const GenContext &genContext)
     {
         MLIRTypeHelper mth(builder.getContext());
@@ -6438,6 +6438,10 @@ class MLIRGenImpl
         }
 
         auto newOp = builder.create<mlir_ts::NewOp>(location, resultType, builder.getBoolAttr(false));
+        if (suppressConstructorCall)
+        {
+            return newOp;
+        }
 
         // evaluate constructor
         mlir::Type tupleParamsType;
@@ -6474,7 +6478,9 @@ class MLIRGenImpl
 
             VALIDATE(value, location);
 
-            return NewClassInstance(location, value, newExpression->arguments, genContext);
+            auto suppressConstructorCall = (newExpression->internalFlags & InternalFlags::SuppressConstructorCall) == InternalFlags::SuppressConstructorCall;        
+
+            return NewClassInstance(location, value, newExpression->arguments, suppressConstructorCall, genContext);
         }
         else if (typeExpression == SyntaxKind::ElementAccessExpression)
         {
@@ -8214,7 +8220,7 @@ class MLIRGenImpl
                 location, classInfo->classType,
                 mlir::FlatSymbolRefAttr::get(builder.getContext(), classInfo->classType.getName().getValue()));
 
-            return NewClassInstance(location, classValue, undefined, genContext);
+            return NewClassInstance(location, classValue, undefined, false, genContext);
         }
 
         return mlir::Value();
@@ -8802,6 +8808,7 @@ class MLIRGenImpl
         NodeArray<Statement> statements;
 
         auto newCall = nf.createNewExpression(nf.createToken(SyntaxKind::ThisKeyword), undefined, undefined);
+        newCall->internalFlags |= InternalFlags::SuppressConstructorCall;        
         statements.push_back(nf.createExpressionStatement(newCall));
 
         auto body = nf.createBlock(statements, /*multiLine*/ false);
