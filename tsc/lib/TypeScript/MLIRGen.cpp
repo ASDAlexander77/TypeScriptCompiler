@@ -4278,7 +4278,7 @@ namespace
 
             VALIDATE_LOGIC(exception, location)
 
-            auto throwOp = builder.create<mlir_ts::ThrowOp>(location, exception);
+                auto throwOp = builder.create<mlir_ts::ThrowOp>(location, exception);
 
             if (!genContext.allowPartialResolve)
             {
@@ -6327,6 +6327,42 @@ namespace
             return mlir::success();
         }
 
+        mlir::LogicalResult mlirGenSetVTableToInstance(mlir::Location location, ClassInfo::TypePtr classInfo, mlir::Value thisValue, const GenContext& genContext)
+        {
+            auto virtualTable = classInfo->getHasVirtualTable();
+            if (!virtualTable)
+            {
+                return mlir::success();
+            }
+
+            auto vtableVal = mlirGenPropertyAccessExpression(location, thisValue, VTABLE_NAME, genContext);
+            MLIRCodeLogic mcl(builder);
+            auto vtableRefVal = mcl.GetReferenceOfLoadOp(vtableVal);
+
+            // vtable symbol reference
+            auto fullClassVTableFieldName = concat(classInfo->fullName, VTABLE_NAME);
+            auto vtableAddress = resolveFullNameIdentifier(location, fullClassVTableFieldName, true, genContext);
+
+            mlir::Value vtableValue;
+            if (vtableAddress)
+            {
+                auto castedValue = cast(location, getOpaqueType(), vtableAddress, genContext);
+                vtableValue = castedValue;
+            }
+            else
+            {
+                // we will resolve type later
+                auto classVTableRefOp = builder.create<mlir_ts::AddressOfOp>(
+                    location, getOpaqueType(), fullClassVTableFieldName, ::mlir::IntegerAttr());
+
+                vtableValue = classVTableRefOp;
+            }
+
+            builder.create<mlir_ts::StoreOp>(location, vtableValue, vtableRefVal);
+
+            return mlir::success();
+        }
+
         mlir::LogicalResult mlirGenCallConstructor(mlir::Location location, mlir_ts::ClassType classType,
             mlir::Value thisValue, SmallVector<mlir::Value, 4>& operands,
             bool castThisValueToClass, bool setVTable, const GenContext& genContext)
@@ -6379,30 +6415,7 @@ namespace
             // set virtual table
             if (setVTable && classInfo->getHasVirtualTable())
             {
-                auto vtableVal = mlirGenPropertyAccessExpression(location, effectiveThisValue, VTABLE_NAME, genContext);
-                MLIRCodeLogic mcl(builder);
-                auto vtableRefVal = mcl.GetReferenceOfLoadOp(vtableVal);
-
-                // vtable symbol reference
-                auto fullClassVTableFieldName = concat(classInfo->fullName, VTABLE_NAME);
-                auto vtableAddress = resolveFullNameIdentifier(location, fullClassVTableFieldName, true, genContext);
-
-                mlir::Value vtableValue;
-                if (vtableAddress)
-                {
-                    auto castedValue = cast(location, getOpaqueType(), vtableAddress, genContext);
-                    vtableValue = castedValue;
-                }
-                else
-                {
-                    // we will resolve type later
-                    auto classVTableRefOp = builder.create<mlir_ts::AddressOfOp>(
-                        location, getOpaqueType(), fullClassVTableFieldName, ::mlir::IntegerAttr());
-
-                    vtableValue = classVTableRefOp;
-                }
-
-                builder.create<mlir_ts::StoreOp>(location, vtableValue, vtableRefVal);
+                mlirGenSetVTableToInstance(location, classInfo, effectiveThisValue, genContext);
             }
 
             if (classInfo->getHasConstructor())
