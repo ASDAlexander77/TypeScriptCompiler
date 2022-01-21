@@ -168,6 +168,10 @@
         "clang-tidy.buildPath": "../../__build/tsc",
         "C_Cpp.codeAnalysis.clangTidy.headerFilter": ".*",
         "clang-tidy.lintOnSave": false,
-        "clang-format.language.cpp.style": "Microsoft"
+        "clang-format.language.cpp.style": "Microsoft",
+        "editor.defaultFormatter": "xaver.clang-format",
+        "[cpp]": {
+            "editor.defaultFormatter": "xaver.clang-format"
+        }
     }
 }
