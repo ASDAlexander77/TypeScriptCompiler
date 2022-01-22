@@ -5442,9 +5442,27 @@ class MLIRGenImpl
 
             if (methodInfo.isStatic)
             {
-                auto symbOp = builder.create<mlir_ts::SymbolRefOp>(
-                    location, effectiveFuncType, mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
-                return symbOp;
+                if (thisValue.getDefiningOp<mlir_ts::ClassRefOp>())
+                {
+                    auto symbOp = builder.create<mlir_ts::SymbolRefOp>(
+                        location, effectiveFuncType, mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
+                    return symbOp;
+                }
+                
+                // static accessing via class reference
+                // TODO:
+                auto effectiveThisValue = thisValue;
+
+                auto vtableAccess =
+                    mlirGenPropertyAccessExpression(location, effectiveThisValue, VTABLE_NAME, genContext);
+
+                assert(genContext.allowPartialResolve || methodInfo.virtualIndex >= 0);
+
+                auto virtualSymbOp = builder.create<mlir_ts::VirtualSymbolRefOp>(
+                    location, effectiveFuncType, vtableAccess,
+                    builder.getI32IntegerAttr(methodInfo.virtualIndex),
+                    mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
+                return virtualSymbOp;                
             }
             else
             {

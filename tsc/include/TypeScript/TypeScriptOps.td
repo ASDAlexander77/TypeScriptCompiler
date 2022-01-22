@@ -111,6 +111,25 @@ def VTableOffsetRefOp : TypeScript_Op<"VTableOffsetRef",
   let assemblyFormat = "`(` $vtable `[` $index `]` `)` attr-dict `:` type($vtable) `->` type($value)";
 }
 
+def VirtualSymbolRefOp : TypeScript_Op<"VirtualSymbolRef", 
+    [NoSideEffect]> {
+  let summary = "symbol reference as to virtual static member";
+
+  let arguments = (ins TypeScript_AnyRefLike:$vtable, I32Attr:$index, FlatSymbolRefAttr:$identifier);
+  let results = (outs TypeScript_AnyRefOrCallable:$value);
+
+  let builders = [
+    OpBuilder<(ins "Value":$vtable, "IntegerAttr":$index, "FlatSymbolRefAttr":$identifier),
+    [{ build($_builder, $_state, identifier.getType(), vtable, index, identifier); }]>];
+
+  let extraClassDeclaration = [{
+    Attribute getValue() { return (*this)->getAttr("identifier"); }
+  }];
+
+  let hasCanonicalizer = 1;
+
+  let assemblyFormat = "`(` $vtable `[` $index `]` `)` attr-dict `:`  `:`  type($vtable) `->` type($value)";
+}
 
 def ThisVirtualSymbolRefOp : TypeScript_Op<"ThisVirtualSymbolRef", 
     [NoSideEffect]> {
