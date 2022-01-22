@@ -6105,9 +6105,8 @@ class MLIRGenImpl
                 // seems we are calling type constructor
                 // TODO: review it, really u should forbide to use "a = Class1();" to allocate in stack, or finish it
                 // using Class..new(true) method
+                auto newOp = NewClassInstanceLogicAsOp(location, classType, true, genContext);
                 auto classInfo = getClassInfoByFullName(classType.getName().getValue());
-                auto newOp = builder.create<mlir_ts::NewOp>(location, classType, builder.getBoolAttr(true));
-                mlirGenSetVTableToInstance(location, classInfo, newOp, genContext);
                 mlirGenCallConstructor(location, classInfo, newOp, operands, false, genContext);
                 value = newOp;
             })
@@ -6426,7 +6425,7 @@ class MLIRGenImpl
         if (auto classType = resultType.dyn_cast<mlir_ts::ClassType>())
         {
             auto classInfo = getClassInfoByFullName(classType.getName().getValue());
-            auto newOp = NewClassInstanceAsMethodOrOp(location, classType, !suppressConstructorCall, genContext);
+            auto newOp = NewClassInstanceAsMethodOrOp(location, classInfo, !suppressConstructorCall, genContext);
 
             if (!suppressConstructorCall)
             {
@@ -6451,34 +6450,39 @@ class MLIRGenImpl
             return newOp;
         }
 
-        return NewClassInstanceLogicAsOp(location, resultType, genContext);
+        return NewClassInstanceLogicAsOp(location, resultType, false, genContext);
     }
 
-    mlir::Value NewClassInstanceLogicAsOp(mlir::Location location, mlir::Type typeOfInstance, 
+    mlir::Value NewClassInstanceLogicAsOp(mlir::Location location, mlir::Type typeOfInstance, bool stackAlloc,
                                       const GenContext &genContext)
     {
-        auto newOp = builder.create<mlir_ts::NewOp>(location, typeOfInstance, builder.getBoolAttr(false));
         if (auto classType = typeOfInstance.dyn_cast<mlir_ts::ClassType>())
         {
             // set virtual table
             auto classInfo = getClassInfoByFullName(classType.getName().getValue());
-            mlirGenSetVTableToInstance(location, classInfo, newOp, genContext);
+            return NewClassInstanceLogicAsOp(location, classInfo, stackAlloc, genContext);
         }
-
-        assert(newOp);        
-
+        
+        auto newOp = builder.create<mlir_ts::NewOp>(location, typeOfInstance, builder.getBoolAttr(stackAlloc));
         return newOp;
     }
 
-    mlir::Value NewClassInstanceAsMethodOrOp(mlir::Location location, mlir_ts::ClassType classType, bool asMethodCall,
+    mlir::Value NewClassInstanceLogicAsOp(mlir::Location location, ClassInfo::TypePtr classInfo, bool stackAlloc,
+                                      const GenContext &genContext)
+    {
+        auto newOp = builder.create<mlir_ts::NewOp>(location, classInfo->classType, builder.getBoolAttr(stackAlloc));
+        mlirGenSetVTableToInstance(location, classInfo, newOp, genContext);
+        assert(newOp);        
+        return newOp;        
+    }    
+
+    mlir::Value NewClassInstanceAsMethodOrOp(mlir::Location location, ClassInfo::TypePtr classInfo, bool asMethodCall,
                                       const GenContext &genContext)
     {
         mlir::Value newOp;
 #ifdef USE_NEW_AS_METHOD
         if (asMethodCall)
         {
-            auto classInfo = getClassInfoByFullName(classType.getName().getValue());
-
             auto classRefVal = builder.create<mlir_ts::ClassRefOp>(
                 location, classInfo->classType,
                 mlir::FlatSymbolRefAttr::get(builder.getContext(), classInfo->classType.getName().getValue()));
@@ -6495,7 +6499,7 @@ class MLIRGenImpl
         }
 #endif
 
-        return NewClassInstanceLogicAsOp(location, classType, genContext);
+        return NewClassInstanceLogicAsOp(location, classInfo, false, genContext);
     }
 
     mlir::Value mlirGen(NewExpression newExpression, const GenContext &genContext)
