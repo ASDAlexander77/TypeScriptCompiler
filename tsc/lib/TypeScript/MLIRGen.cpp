@@ -8886,20 +8886,27 @@ class MLIRGenImpl
         // if we do not have constructor but have initializers we need to create empty dummy constructor
         NodeFactory nf(NodeFactoryFlags::None);
 
-        NodeArray<Statement> statements;
+        Block body;
+        auto thisToken = nf.createToken(SyntaxKind::ThisKeyword);
 
-        auto newCall = nf.createNewExpression(nf.createToken(SyntaxKind::ThisKeyword), undefined, undefined);
-        newCall->internalFlags |= InternalFlags::SuppressConstructorCall;
+        if (!newClassPtr->isDeclaration)
+        {
+            NodeArray<Statement> statements;
 
-        auto returnStat = nf.createReturnStatement(newCall);
-        statements.push_back(returnStat);
+            auto newCall = nf.createNewExpression(thisToken, undefined, undefined);
+            newCall->internalFlags |= InternalFlags::SuppressConstructorCall;
 
-        auto body = nf.createBlock(statements, /*multiLine*/ false);
+            auto returnStat = nf.createReturnStatement(newCall);
+            statements.push_back(returnStat);
+
+            body = nf.createBlock(statements, /*multiLine*/ false);
+        }
 
         ModifiersArray modifiers;
         modifiers->push_back(nf.createToken(SyntaxKind::StaticKeyword));
         auto generatedNew = nf.createMethodDeclaration(undefined, modifiers, undefined, nf.createIdentifier(S(".new")),
-                                                       undefined, undefined, undefined, undefined, body);
+                                                       undefined, undefined, undefined, nf.createThisTypeNode(), body);
+
         newClassPtr->extraMembers.push_back(generatedNew);
 
         return mlir::success();
