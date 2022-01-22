@@ -6421,13 +6421,15 @@ class MLIRGenImpl
             resultType = getValueRefType(type);
         }
 
+        // if true, will call Class..new method, otheriwise ts::NewOp which we need to implement Class..new method
+        auto methodCallWay = !suppressConstructorCall;
+
         mlir::Value newOp;
         if (auto classType = resultType.dyn_cast<mlir_ts::ClassType>())
         {
             auto classInfo = getClassInfoByFullName(classType.getName().getValue());
-            auto newOp = NewClassInstanceAsMethodOrOp(location, classInfo, !suppressConstructorCall, genContext);
-
-            if (!suppressConstructorCall)
+            auto newOp = NewClassInstanceAsMethodOrOp(location, classInfo, methodCallWay, genContext);
+            if (methodCallWay)
             {
                 // evaluate constructor
                 mlir::Type tupleParamsType;
@@ -6444,6 +6446,7 @@ class MLIRGenImpl
                     return mlir::Value();
                 }
 
+                assert(newOp);        
                 mlirGenCallConstructor(location, classInfo, newOp, operands, false, genContext);
             }
 
@@ -6472,7 +6475,6 @@ class MLIRGenImpl
     {
         auto newOp = builder.create<mlir_ts::NewOp>(location, classInfo->classType, builder.getBoolAttr(stackAlloc));
         mlirGenSetVTableToInstance(location, classInfo, newOp, genContext);
-        assert(newOp);        
         return newOp;        
     }    
 
