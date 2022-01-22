@@ -6422,21 +6422,61 @@ class MLIRGenImpl
             resultType = getValueRefType(type);
         }
 
-        auto classType = resultType.dyn_cast<mlir_ts::ClassType>();
-
-        // TODO: call method here
-#ifdef USE_NEW_AS_METHOD
-        if (suppressConstructorCall || !classType)
-#else
-        if (suppressConstructorCall)
-#endif
+        mlir::Value newOp;
+        if (auto classType = resultType.dyn_cast<mlir_ts::ClassType>())
         {
-            auto newOp = builder.create<mlir_ts::NewOp>(location, resultType, builder.getBoolAttr(false));
+            auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+            auto newOp = NewClassInstanceAsMethodOrOp(location, classType, !suppressConstructorCall, genContext);
+
+            if (!suppressConstructorCall)
+            {
+                // evaluate constructor
+                mlir::Type tupleParamsType;
+                auto funcValueRef = evaluateProperty(newOp, CONSTRUCTOR_NAME, genContext);
+
+                SmallVector<mlir::Value, 4> operands;
+                if (mlir::failed(mlirGenOperands(arguments, operands, funcValueRef, genContext)))
+                {
+                    if (!genContext.allowPartialResolve)
+                    {
+                        emitError(location) << "Call constructor: can't resolve values of all parameters";
+                    }
+
+                    return mlir::Value();
+                }
+
+                mlirGenCallConstructor(location, classInfo, newOp, operands, false, genContext);
+            }
+
             return newOp;
         }
-        else
+
+        return NewClassInstanceLogicAsOp(location, resultType, genContext);
+    }
+
+    mlir::Value NewClassInstanceLogicAsOp(mlir::Location location, mlir::Type typeOfInstance, 
+                                      const GenContext &genContext)
+    {
+        auto newOp = builder.create<mlir_ts::NewOp>(location, typeOfInstance, builder.getBoolAttr(false));
+        if (auto classType = typeOfInstance.dyn_cast<mlir_ts::ClassType>())
         {
+            // set virtual table
+            auto classInfo = getClassInfoByFullName(classType.getName().getValue());
+            mlirGenSetVTableToInstance(location, classInfo, newOp, genContext);
+        }
+
+        assert(newOp);        
+
+        return newOp;
+    }
+
+    mlir::Value NewClassInstanceAsMethodOrOp(mlir::Location location, mlir_ts::ClassType classType, bool asMethodCall,
+                                      const GenContext &genContext)
+    {
+        mlir::Value newOp;
 #ifdef USE_NEW_AS_METHOD
+        if (asMethodCall)
+        {
             auto classInfo = getClassInfoByFullName(classType.getName().getValue());
 
             auto classRefVal = builder.create<mlir_ts::ClassRefOp>(
@@ -6450,34 +6490,12 @@ class MLIRGenImpl
 
             SmallVector<mlir::Value, 4> emptyOperands;
             bool hasReturn;
-            auto newOp = mlirGenCall(location, newFuncRef, emptyOperands, hasReturn, genContext);
-#else
-            auto newOp = builder.create<mlir_ts::NewOp>(location, resultType, builder.getBoolAttr(false));
-#endif
-
-            assert(newOp);
-
-            // set virtual table
-            mlirGenSetVTableToInstance(location, classInfo, newOp, genContext);
-
-            // evaluate constructor
-            mlir::Type tupleParamsType;
-            auto funcValueRef = evaluateProperty(newOp, CONSTRUCTOR_NAME, genContext);
-
-            SmallVector<mlir::Value, 4> operands;
-            if (mlir::failed(mlirGenOperands(arguments, operands, funcValueRef, genContext)))
-            {
-                if (!genContext.allowPartialResolve)
-                {
-                    emitError(location) << "Call constructor: can't resolve values of all parameters";
-                }
-
-                return mlir::Value();
-            }
-
-            mlirGenCallConstructor(location, classInfo, newOp, operands, false, genContext);
+            newOp = mlirGenCall(location, newFuncRef, emptyOperands, hasReturn, genContext);
             return newOp;
         }
+#endif
+
+        return NewClassInstanceLogicAsOp(location, classType, genContext);
     }
 
     mlir::Value mlirGen(NewExpression newExpression, const GenContext &genContext)
