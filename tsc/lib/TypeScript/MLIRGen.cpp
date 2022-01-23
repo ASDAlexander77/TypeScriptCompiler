@@ -1987,8 +1987,8 @@ class MLIRGenImpl
     {
         std::string fullName = getNameWithArguments(signatureDeclarationBaseAST, genContext);
         std::string objectOwnerName;
-        if (signatureDeclarationBaseAST->parent == SyntaxKind::ClassDeclaration 
-            || signatureDeclarationBaseAST->parent == SyntaxKind::ClassExpression)
+        if (signatureDeclarationBaseAST->parent == SyntaxKind::ClassDeclaration ||
+            signatureDeclarationBaseAST->parent == SyntaxKind::ClassExpression)
         {
             objectOwnerName =
                 getNameWithArguments(signatureDeclarationBaseAST->parent.as<ClassDeclaration>(), genContext);
@@ -5446,10 +5446,11 @@ class MLIRGenImpl
                 if (thisValue.getDefiningOp<mlir_ts::ClassRefOp>())
                 {
                     auto symbOp = builder.create<mlir_ts::SymbolRefOp>(
-                        location, effectiveFuncType, mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
+                        location, effectiveFuncType,
+                        mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
                     return symbOp;
                 }
-                
+
                 // static accessing via class reference
                 // TODO:
                 auto effectiveThisValue = thisValue;
@@ -5460,10 +5461,9 @@ class MLIRGenImpl
                 assert(genContext.allowPartialResolve || methodInfo.virtualIndex >= 0);
 
                 auto virtualSymbOp = builder.create<mlir_ts::VirtualSymbolRefOp>(
-                    location, effectiveFuncType, vtableAccess,
-                    builder.getI32IntegerAttr(methodInfo.virtualIndex),
+                    location, effectiveFuncType, vtableAccess, builder.getI32IntegerAttr(methodInfo.virtualIndex),
                     mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
-                return virtualSymbOp;                
+                return virtualSymbOp;
             }
             else
             {
@@ -6465,7 +6465,7 @@ class MLIRGenImpl
                     return mlir::Value();
                 }
 
-                assert(newOp);        
+                assert(newOp);
                 mlirGenCallConstructor(location, classInfo, newOp, operands, false, genContext);
             }
 
@@ -6476,7 +6476,7 @@ class MLIRGenImpl
     }
 
     mlir::Value NewClassInstanceLogicAsOp(mlir::Location location, mlir::Type typeOfInstance, bool stackAlloc,
-                                      const GenContext &genContext)
+                                          const GenContext &genContext)
     {
         if (auto classType = typeOfInstance.dyn_cast<mlir_ts::ClassType>())
         {
@@ -6484,21 +6484,21 @@ class MLIRGenImpl
             auto classInfo = getClassInfoByFullName(classType.getName().getValue());
             return NewClassInstanceLogicAsOp(location, classInfo, stackAlloc, genContext);
         }
-        
+
         auto newOp = builder.create<mlir_ts::NewOp>(location, typeOfInstance, builder.getBoolAttr(stackAlloc));
         return newOp;
     }
 
     mlir::Value NewClassInstanceLogicAsOp(mlir::Location location, ClassInfo::TypePtr classInfo, bool stackAlloc,
-                                      const GenContext &genContext)
+                                          const GenContext &genContext)
     {
         auto newOp = builder.create<mlir_ts::NewOp>(location, classInfo->classType, builder.getBoolAttr(stackAlloc));
         mlirGenSetVTableToInstance(location, classInfo, newOp, genContext);
-        return newOp;        
-    }    
+        return newOp;
+    }
 
     mlir::Value NewClassInstanceAsMethodOrOp(mlir::Location location, ClassInfo::TypePtr classInfo, bool asMethodCall,
-                                      const GenContext &genContext)
+                                             const GenContext &genContext)
     {
         mlir::Value newOp;
 #ifdef USE_NEW_AS_METHOD
@@ -8518,9 +8518,10 @@ class MLIRGenImpl
         return mlir::failure();
     }
 
-    mlir::LogicalResult mlirGenClassCheckIfDeclaration(mlir::Location location, ClassLikeDeclaration classDeclarationAST,
-                                                ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
-    {        
+    mlir::LogicalResult mlirGenClassCheckIfDeclaration(mlir::Location location,
+                                                       ClassLikeDeclaration classDeclarationAST,
+                                                       ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
+    {
         if (classDeclarationAST != SyntaxKind::ClassExpression)
         {
             return mlir::success();
@@ -8540,8 +8541,8 @@ class MLIRGenImpl
                 }
             }
 
-            if (classMember == SyntaxKind::MethodDeclaration || classMember == SyntaxKind::Constructor || classMember == SyntaxKind::GetAccessor ||
-                classMember == SyntaxKind::SetAccessor)
+            if (classMember == SyntaxKind::MethodDeclaration || classMember == SyntaxKind::Constructor ||
+                classMember == SyntaxKind::GetAccessor || classMember == SyntaxKind::SetAccessor)
             {
                 auto funcLikeDeclaration = classMember.as<FunctionLikeDeclarationBase>();
                 if (funcLikeDeclaration->body)
@@ -10297,10 +10298,16 @@ class MLIRGenImpl
             return;
         }
 
+        auto location = loc(expr);
+
+        // module
+        auto savedModule = theModule;
+        theModule = mlir::ModuleOp::create(location, mlir::StringRef("temp_module"));
+
         // we need to add temporary block
         auto tempFuncType =
             mlir::FunctionType::get(builder.getContext(), ArrayRef<mlir::Type>(), ArrayRef<mlir::Type>());
-        auto tempFuncOp = mlir::FuncOp::create(loc(expr), ".tempfunc", tempFuncType);
+        auto tempFuncOp = mlir::FuncOp::create(location, ".tempfunc", tempFuncType);
         auto &entryBlock = *tempFuncOp.addEntryBlock();
 
         {
@@ -10322,6 +10329,10 @@ class MLIRGenImpl
         entryBlock.erase();
 
         tempFuncOp.erase();
+
+        theModule.erase();
+
+        theModule = savedModule;
     }
 
     mlir::Type evaluateProperty(mlir::Value exprValue, std::string propertyName, const GenContext &genContext)

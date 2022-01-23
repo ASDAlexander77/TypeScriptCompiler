@@ -4,8 +4,21 @@ function foo(x = class { static prop: string }): string {
     return undefined;
 }
 
+function foo2(x = class { static prop: string; static func(); }) 
+{
+    x.func();
+}
+
 function main() {
     foo(class { static prop = "hello" }).length;
+
+    foo2(class { 
+		static prop = "asdasd";
+		static func() 
+		{ 
+			print("Hello World 2", this.prop); 
+		} 
+	});
 
     main2();
 
