@@ -1987,7 +1987,7 @@ class MLIRGenImpl
     {
         std::string fullName = getNameWithArguments(signatureDeclarationBaseAST, genContext);
         std::string objectOwnerName;
-        if (signatureDeclarationBaseAST->parent.is<ClassDeclaration>())
+        if (signatureDeclarationBaseAST->parent.is<ClassLikeDeclaration>() || signatureDeclarationBaseAST->parent.is<ClassElement>())
         {
             objectOwnerName =
                 getNameWithArguments(signatureDeclarationBaseAST->parent.as<ClassDeclaration>(), genContext);
@@ -8451,7 +8451,10 @@ class MLIRGenImpl
         if (classDeclarationAST == SyntaxKind::ClassExpression)
         {
             // this is Class Expression
-            return MLIRHelper::getAnonymousName(loc(classDeclarationAST), ".anoncls") + name;
+            name = MLIRHelper::getAnonymousName(loc(classDeclarationAST), ".anoncls");
+
+            NodeFactory nf(NodeFactoryFlags::None);
+            classDeclarationAST->name = nf.createIdentifier(stows(name));
         }
 
         return name;
