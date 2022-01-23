@@ -1987,12 +1987,13 @@ class MLIRGenImpl
     {
         std::string fullName = getNameWithArguments(signatureDeclarationBaseAST, genContext);
         std::string objectOwnerName;
-        if (signatureDeclarationBaseAST->parent.is<ClassLikeDeclaration>() || signatureDeclarationBaseAST->parent.is<ClassElement>())
+        if (signatureDeclarationBaseAST->parent == SyntaxKind::ClassDeclaration 
+            || signatureDeclarationBaseAST->parent == SyntaxKind::ClassExpression)
         {
             objectOwnerName =
                 getNameWithArguments(signatureDeclarationBaseAST->parent.as<ClassDeclaration>(), genContext);
         }
-        else if (signatureDeclarationBaseAST->parent.is<InterfaceDeclaration>())
+        else if (signatureDeclarationBaseAST->parent == SyntaxKind::InterfaceDeclaration)
         {
             objectOwnerName =
                 getNameWithArguments(signatureDeclarationBaseAST->parent.as<InterfaceDeclaration>(), genContext);
@@ -8276,11 +8277,19 @@ class MLIRGenImpl
         auto classInfo = getClassInfoByFullName(fullName);
         if (classInfo)
         {
-            auto classValue = builder.create<mlir_ts::ClassRefOp>(
-                location, classInfo->classType,
-                mlir::FlatSymbolRefAttr::get(builder.getContext(), classInfo->classType.getName().getValue()));
+            if (classInfo->isDeclaration)
+            {
+                auto undefClass = builder.create<mlir_ts::UndefOp>(location, classInfo->classType);
+                return undefClass;
+            }
+            else
+            {
+                auto classValue = builder.create<mlir_ts::ClassRefOp>(
+                    location, classInfo->classType,
+                    mlir::FlatSymbolRefAttr::get(builder.getContext(), classInfo->classType.getName().getValue()));
 
-            return NewClassInstance(location, classValue, undefined, false, genContext);
+                return NewClassInstance(location, classValue, undefined, false, genContext);
+            }
         }
 
         return mlir::Value();
@@ -8333,6 +8342,9 @@ class MLIRGenImpl
 
         newClassPtr->processingStorageClass = false;
         newClassPtr->processedStorageClass = true;
+
+        // if it is ClassExpression we need to know if it is declaration
+        mlirGenClassCheckIfDeclaration(location, classDeclarationAST, newClassPtr, genContext);
 
         // go to root
         mlir::OpBuilder::InsertPoint savePoint;
@@ -8504,6 +8516,45 @@ class MLIRGenImpl
         }
 
         return mlir::failure();
+    }
+
+    mlir::LogicalResult mlirGenClassCheckIfDeclaration(mlir::Location location, ClassLikeDeclaration classDeclarationAST,
+                                                ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
+    {        
+        if (classDeclarationAST != SyntaxKind::ClassExpression)
+        {
+            return mlir::success();
+        }
+
+        for (auto &classMember : classDeclarationAST->members)
+        {
+            // TODO:
+            if (classMember == SyntaxKind::PropertyDeclaration)
+            {
+                // property declaration
+                auto propertyDeclaration = classMember.as<PropertyDeclaration>();
+                if (propertyDeclaration->initializer)
+                {
+                    // no definition
+                    return mlir::success();
+                }
+            }
+
+            if (classMember == SyntaxKind::MethodDeclaration || classMember == SyntaxKind::Constructor || classMember == SyntaxKind::GetAccessor ||
+                classMember == SyntaxKind::SetAccessor)
+            {
+                auto funcLikeDeclaration = classMember.as<FunctionLikeDeclarationBase>();
+                if (funcLikeDeclaration->body)
+                {
+                    // no definition
+                    return mlir::success();
+                }
+            }
+        }
+
+        newClassPtr->isDeclaration = true;
+
+        return mlir::success();
     }
 
     mlir::LogicalResult mlirGenClassTypeSetFields(ClassInfo::TypePtr newClassPtr,
