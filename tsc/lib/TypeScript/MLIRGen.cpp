@@ -5433,11 +5433,14 @@ class MLIRGenImpl
         if (staticFieldIndex >= 0)
         {
             auto fieldInfo = classInfo->staticFields[staticFieldIndex];
+#ifdef ADD_STATIC_MEMBERS_TO_VTABLE                
             if (thisValue.getDefiningOp<mlir_ts::ClassRefOp>())
             {
+#endif                
                 auto value = resolveFullNameIdentifier(location, fieldInfo.globalVariableName, false, genContext);
                 assert(value);
                 return value;
+#ifdef ADD_STATIC_MEMBERS_TO_VTABLE                    
             }
 
             // static accessing via class reference
@@ -5455,6 +5458,7 @@ class MLIRGenImpl
 
             auto value = builder.create<mlir_ts::LoadOp>(location, fieldInfo.type, virtualSymbOp);
             return value;
+#endif            
         }
 
         // check method access
@@ -5469,12 +5473,15 @@ class MLIRGenImpl
 
             if (methodInfo.isStatic)
             {
+#ifdef ADD_STATIC_MEMBERS_TO_VTABLE                
                 if (thisValue.getDefiningOp<mlir_ts::ClassRefOp>())
                 {
+#endif                    
                     auto symbOp = builder.create<mlir_ts::SymbolRefOp>(
                         location, effectiveFuncType,
                         mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
                     return symbOp;
+#ifdef ADD_STATIC_MEMBERS_TO_VTABLE                
                 }
 
                 // static accessing via class reference
@@ -5490,6 +5497,7 @@ class MLIRGenImpl
                     location, effectiveFuncType, vtableAccess, builder.getI32IntegerAttr(methodInfo.virtualIndex),
                     mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
                 return virtualSymbOp;
+#endif                    
             }
             else
             {

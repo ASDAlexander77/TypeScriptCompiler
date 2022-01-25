@@ -619,6 +619,13 @@ struct ClassInfo
         // methods
         for (auto &method : methods)
         {
+#ifndef ADD_STATIC_MEMBERS_TO_VTABLE            
+            if (method.isStatic)
+            {
+                continue;
+            }
+#endif            
+
             auto index =
                 std::distance(vtable.begin(), std::find_if(vtable.begin(), vtable.end(), [&](auto vTableMethod) {
                                   return method.name == vTableMethod.methodInfo.name;
@@ -639,12 +646,14 @@ struct ClassInfo
             }
         }
 
+#ifdef ADD_STATIC_MEMBERS_TO_VTABLE
         // static fields
         for (auto &staticField : staticFields)
         {
             staticField.virtualIndex = vtable.size();
             vtable.push_back({staticField, false});
         }        
+#endif        
     }
 
     auto getBasesWithRoot(SmallVector<StringRef> &classNames) -> bool
