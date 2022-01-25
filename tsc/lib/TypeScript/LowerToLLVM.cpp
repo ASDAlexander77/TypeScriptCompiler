@@ -3449,14 +3449,19 @@ struct VirtualSymbolRefOpLowering : public TsLlvmPattern<mlir_ts::VirtualSymbolR
 
         TypeHelper th(rewriter);
 
-        auto methodPtr = rewriter.create<mlir_ts::VTableOffsetRefOp>(loc, th.getI8PtrType(), transformed.vtable(),
+        auto methodOrFieldPtr = rewriter.create<mlir_ts::VTableOffsetRefOp>(loc, th.getI8PtrType(), transformed.vtable(),
                                                                      virtualSymbolRefOp.index());
 
         if (auto funcType = virtualSymbolRefOp.getType().dyn_cast<mlir_ts::FunctionType>())
         {
-            auto methodTyped = rewriter.create<mlir_ts::CastOp>(loc, funcType, methodPtr);
+            auto methodTyped = rewriter.create<mlir_ts::CastOp>(loc, funcType, methodOrFieldPtr);
             rewriter.replaceOp(virtualSymbolRefOp, ValueRange{methodTyped});
         }
+        else if (auto fieldType = virtualSymbolRefOp.getType().dyn_cast<mlir_ts::RefType>())
+        {
+            auto fieldTyped = rewriter.create<mlir_ts::CastOp>(loc, fieldType, methodOrFieldPtr);
+            rewriter.replaceOp(virtualSymbolRefOp, ValueRange{fieldTyped});
+        }        
         else
         {
             llvm_unreachable("not implemented");

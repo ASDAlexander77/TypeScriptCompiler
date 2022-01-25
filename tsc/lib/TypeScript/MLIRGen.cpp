@@ -365,7 +365,7 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult registerNamespace(llvm::StringRef namePtr, bool isFunctionNamespace = false)
+    bool registerNamespace(llvm::StringRef namePtr, bool isFunctionNamespace = false)
     {
         auto fullNamePtr = getFullNamespaceName(namePtr);
         auto &namespacesMap = getNamespaceMap();
@@ -391,9 +391,10 @@ class MLIRGenImpl
         else
         {
             currentNamespace = it->getValue();
+            return false;
         }
 
-        return mlir::success();
+        return true;
     }
 
     mlir::LogicalResult exitNamespace()
@@ -410,11 +411,12 @@ class MLIRGenImpl
         auto namespaceName = MLIRHelper::getName(moduleDeclarationAST->name, stringAllocator);
         auto namePtr = namespaceName;
 
-        registerNamespace(namePtr);
+        {
+            MLIRNamespaceGuard nsGuard(currentNamespace);
+            registerNamespace(namePtr);
 
-        auto result = mlirGenBody(moduleDeclarationAST->body, genContext);
-
-        exitNamespace();
+            mlirGenBody(moduleDeclarationAST->body, genContext);
+        }
 
         return mlir::success();
     }
@@ -1356,7 +1358,7 @@ class MLIRGenImpl
         return false;
     }
 
-    bool registerVariable(mlir::Location location, StringRef name, bool isFullName, VariableClass varClass,
+    mlir::Type registerVariable(mlir::Location location, StringRef name, bool isFullName, VariableClass varClass,
                           std::function<std::pair<mlir::Type, mlir::Value>()> func, const GenContext &genContext)
     {
         auto isGlobalScope =
@@ -1454,6 +1456,7 @@ class MLIRGenImpl
         }
         else
         {
+            // generate only for real pass
             mlir_ts::GlobalOp globalOp;
             // get constant
             {
@@ -1598,7 +1601,7 @@ class MLIRGenImpl
             getGlobalsMap().insert({name, varDecl});
         }
 
-        return true;
+        return varDecl->getType();
     }
 
     bool processDeclarationArrayBindingPattern(mlir::Location location, ArrayBindingPattern arrayBindingPattern,
@@ -1717,7 +1720,7 @@ class MLIRGenImpl
             auto name = MLIRHelper::getName(item->name);
 
             // register
-            return registerVariable(location, name, false, varClass, func, genContext);
+            return !!registerVariable(location, name, false, varClass, func, genContext);
         }
 
         return true;
@@ -2067,9 +2070,14 @@ class MLIRGenImpl
         auto fullName = std::get<0>(res);
         auto name = std::get<1>(res);
 
+        registerNamespace(name, true);
+
         mlir_ts::FunctionType funcType;
         auto paramsResult = mlirGenParameters(signatureDeclarationBaseAST, genContext);
         auto result = std::get<0>(paramsResult);
+
+        exitNamespace();
+
         if (mlir::failed(result))
         {
             return std::make_tuple(FunctionPrototypeDOM::TypePtr(nullptr), funcType, SmallVector<mlir::Type>{});
@@ -2631,12 +2639,11 @@ class MLIRGenImpl
 
         auto resultFromBody = mlir::failure();
         {
+            MLIRNamespaceGuard nsGuard(currentNamespace);
             registerNamespace(funcProto->getNameWithoutNamespace(), true);
 
             SymbolTableScopeT varScope(symbolTable);
             resultFromBody = mlirGenFunctionBody(functionLikeDeclarationBaseAST, funcOp, funcProto, funcGenContext);
-
-            exitNamespace();
         }
 
         funcGenContext.cleanState();
@@ -5426,8 +5433,27 @@ class MLIRGenImpl
         if (staticFieldIndex >= 0)
         {
             auto fieldInfo = classInfo->staticFields[staticFieldIndex];
-            auto value = resolveFullNameIdentifier(location, fieldInfo.globalVariableName, false, genContext);
-            assert(value);
+            if (thisValue.getDefiningOp<mlir_ts::ClassRefOp>())
+            {
+                auto value = resolveFullNameIdentifier(location, fieldInfo.globalVariableName, false, genContext);
+                assert(value);
+                return value;
+            }
+
+            // static accessing via class reference
+            // TODO:
+            auto effectiveThisValue = thisValue;
+
+            auto vtableAccess =
+                mlirGenPropertyAccessExpression(location, effectiveThisValue, VTABLE_NAME, genContext);
+
+            assert(genContext.allowPartialResolve || fieldInfo.virtualIndex >= 0);
+
+            auto virtualSymbOp = builder.create<mlir_ts::VirtualSymbolRefOp>(
+                location, mlir_ts::RefType::get(fieldInfo.type), vtableAccess, builder.getI32IntegerAttr(fieldInfo.virtualIndex),
+                mlir::FlatSymbolRefAttr::get(builder.getContext(), fieldInfo.globalVariableName));
+
+            auto value = builder.create<mlir_ts::LoadOp>(location, fieldInfo.type, virtualSymbOp);
             return value;
         }
 
@@ -6375,7 +6401,20 @@ class MLIRGenImpl
         }
         else
         {
-            // we will resolve type later
+            // we need to calculate VTable type
+            /*
+            llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo> virtualTable;
+            classInfo->getVirtualTable(virtualTable);
+            auto virtTuple = getVirtualTableType(virtualTable);
+
+            auto classVTableRefOp = builder.create<mlir_ts::AddressOfOp>(
+                location, mlir_ts::RefType::get(virtTuple), fullClassVTableFieldName, ::mlir::IntegerAttr());
+
+            auto castedValue = cast(location, getOpaqueType(), classVTableRefOp, genContext);
+            vtableValue = castedValue;
+            */
+
+           // vtable type will be detected later
             auto classVTableRefOp = builder.create<mlir_ts::AddressOfOp>(
                 location, getOpaqueType(), fullClassVTableFieldName, ::mlir::IntegerAttr());
 
@@ -8355,13 +8394,14 @@ class MLIRGenImpl
         }
 
         mlirGenClassDefaultConstructor(classDeclarationAST, newClassPtr, genContext);
-        mlirGenClassDefaultStaticConstructor(classDeclarationAST, newClassPtr, genContext);
 
 #ifdef ENABLE_RTTI
         // INFO: .instanceOf must be first element in VTable for Cast Any
         mlirGenClassInstanceOfMethod(classDeclarationAST, newClassPtr, genContext);
 #endif
         mlirGenClassNew(classDeclarationAST, newClassPtr, genContext);
+
+        mlirGenClassDefaultStaticConstructor(classDeclarationAST, newClassPtr, genContext);
 
         /*
         // to support call 'static v = new Class();'
@@ -8392,7 +8432,11 @@ class MLIRGenImpl
             }
         }
 
+        mlirGenClassMembersPost(location, classDeclarationAST, newClassPtr, genContext);
+
         mlirGenClassVirtualTableDefinition(location, newClassPtr, genContext);
+
+        // here we need to process New method;
 
         if (isGenericClass)
         {
@@ -8666,14 +8710,6 @@ class MLIRGenImpl
 
             for (auto &classMember : newClassPtr->extraMembers)
             {
-                // we need to process static_constructor as last member
-                auto isConstructor = classMember == SyntaxKind::Constructor;
-                auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
-                if (isConstructor && isStatic)
-                {
-                    continue;
-                }
-
                 if (mlir::failed(mlirGenClassMethodMember(classDeclarationAST, newClassPtr, classMember, genContext)))
                 {
                     notResolved++;
@@ -8695,17 +8731,38 @@ class MLIRGenImpl
                 }
             }
 
-            // finish, static_constructor
-            for (auto &classMember : newClassPtr->extraMembers)
+            // repeat if not all resolved
+            if (lastTimeNotResolved > 0 && lastTimeNotResolved == notResolved)
             {
-                // we need to process static_constructor as last member
-                auto isConstructor = classMember == SyntaxKind::Constructor;
-                auto isStatic = hasModifier(classMember, SyntaxKind::StaticKeyword);
-                if (!isConstructor || !isStatic)
-                {
-                    continue;
-                }
+                // class can depend on other class declarations
+                // theModule.emitError("can't resolve dependencies in class: ") << newClassPtr->name;
+                return mlir::failure();
+            }
 
+        } while (notResolved > 0);
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult mlirGenClassMembersPost(mlir::Location location, ClassLikeDeclaration classDeclarationAST,
+                                            ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
+    {
+        // clear all flags
+        // extra fields - first, we need .instanceOf first for typr Any
+        for (auto &classMember : newClassPtr->extraMembersPost)
+        {
+            classMember->processed = false;
+        }
+
+        // add methods when we have classType
+        auto notResolved = 0;
+        do
+        {
+            auto lastTimeNotResolved = notResolved;
+            notResolved = 0;
+
+            for (auto &classMember : newClassPtr->extraMembersPost)
+            {
                 if (mlir::failed(mlirGenClassMethodMember(classDeclarationAST, newClassPtr, classMember, genContext)))
                 {
                     notResolved++;
@@ -8870,7 +8927,7 @@ class MLIRGenImpl
             {
                 // process static field - register global
                 auto fullClassStaticFieldName = concat(newClassPtr->fullName, memberNamePtr);
-                registerVariable(
+                auto staticFieldType = registerVariable(
                     location, fullClassStaticFieldName, true,
                     newClassPtr->isDeclaration ? VariableClass::External : VariableClass::Var,
                     [&]() {
@@ -8898,11 +8955,7 @@ class MLIRGenImpl
                     },
                     genContext);
 
-                if (std::find_if(staticFieldInfos.begin(), staticFieldInfos.end(),
-                                 [&](auto staticFld) { return staticFld.id == fieldId; }) == staticFieldInfos.end())
-                {
-                    staticFieldInfos.push_back({fieldId, fullClassStaticFieldName});
-                }
+                staticFieldInfos.push_back({fieldId, staticFieldType, fullClassStaticFieldName, -1});
             }
         }
 
@@ -8945,6 +8998,21 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    mlir::LogicalResult mlirGenForwardDeclaration(std::string funcName, mlir_ts::FunctionType funcType, bool isStatic, bool isVirtual, ClassInfo::TypePtr newClassPtr,
+                                        const GenContext &genContext)
+    {
+        if (newClassPtr->getMethodIndex(funcName) < 0)
+        {
+            return mlir::success();
+        }
+
+        SmallVector<mlir::Type> inputs;
+        SmallVector<mlir::Type> results{newClassPtr->classType};
+        mlir_ts::FuncOp dummyFuncOp;
+        newClassPtr->methods.push_back({funcName, getFunctionType(inputs, results), dummyFuncOp, isStatic, isVirtual, -1});
+        return mlir::success();
+    }
+
     mlir::LogicalResult mlirGenClassNew(ClassLikeDeclaration classDeclarationAST, ClassInfo::TypePtr newClassPtr,
                                         const GenContext &genContext)
     {
@@ -8979,6 +9047,21 @@ class MLIRGenImpl
         modifiers->push_back(nf.createToken(SyntaxKind::StaticKeyword));
         auto generatedNew = nf.createMethodDeclaration(undefined, modifiers, undefined, nf.createIdentifier(S(".new")),
                                                        undefined, undefined, undefined, nf.createThisTypeNode(), body);
+
+        /*
+        // advance declaration of "new"
+        auto isStatic = false;
+#ifdef ALL_METHODS_VIRTUAL
+        auto isVirtual = true;
+#else        
+        auto isVirtual = false;
+#endif        
+        SmallVector<mlir::Type> inputs;
+        SmallVector<mlir::Type> results{newClassPtr->classType};
+        mlirGenForwardDeclaration(".new", getFunctionType(inputs, results), isStatic, isVirtual, newClassPtr, genContext);
+
+        newClassPtr->extraMembersPost.push_back(generatedNew);
+        */
 
         newClassPtr->extraMembers.push_back(generatedNew);
 
@@ -9031,7 +9114,7 @@ class MLIRGenImpl
             ModifiersArray modifiers;
             modifiers.push_back(nf.createToken(SyntaxKind::StaticKeyword));
             auto generatedConstructor = nf.createConstructorDeclaration(undefined, modifiers, undefined, body);
-            newClassPtr->extraMembers.push_back(generatedConstructor);
+            newClassPtr->extraMembersPost.push_back(generatedConstructor);
         }
 
         return mlir::success();
@@ -9066,7 +9149,7 @@ class MLIRGenImpl
         if (std::find_if(staticFieldInfos.begin(), staticFieldInfos.end(),
                          [&](auto staticFld) { return staticFld.id == fieldId; }) == staticFieldInfos.end())
         {
-            staticFieldInfos.push_back({fieldId, fullClassStaticFieldName});
+            staticFieldInfos.push_back({fieldId, getStringType(), fullClassStaticFieldName, -1});
         }
 
         return mlir::success();
@@ -9559,7 +9642,7 @@ class MLIRGenImpl
             else
             {
                 fields.push_back(
-                    {mcl.TupleFieldName(vtableRecord.methodInfo.name), vtableRecord.methodInfo.funcOp.getType()});
+                    {mcl.TupleFieldName(vtableRecord.methodInfo.name), vtableRecord.methodInfo.funcOp ? vtableRecord.methodInfo.funcOp.getType() : vtableRecord.methodInfo.funcType});
             }
         }
 
@@ -9580,8 +9663,16 @@ class MLIRGenImpl
             }
             else
             {
-                fields.push_back(
-                    {mcl.TupleFieldName(vtableRecord.methodInfo.name), vtableRecord.methodInfo.funcOp.getType()});
+                if (!vtableRecord.isStaticField)
+                {
+                    fields.push_back(
+                        {mcl.TupleFieldName(vtableRecord.methodInfo.name), vtableRecord.methodInfo.funcOp ? vtableRecord.methodInfo.funcOp.getType() : vtableRecord.methodInfo.funcType});
+                }
+                else
+                {
+                    fields.push_back(
+                        {vtableRecord.staticFieldInfo.id, mlir_ts::RefType::get(vtableRecord.staticFieldInfo.type)});
+                }
             }
         }
 
@@ -9642,12 +9733,22 @@ class MLIRGenImpl
                     }
                     else
                     {
-                        auto methodConstName = builder.create<mlir_ts::SymbolRefOp>(
-                            location, vtRecord.methodInfo.funcOp.getType(),
-                            mlir::FlatSymbolRefAttr::get(builder.getContext(), vtRecord.methodInfo.funcOp.sym_name()));
+                        mlir::Value methodOrFieldNameRef;
+                        if (!vtRecord.isStaticField)
+                        {
+                            methodOrFieldNameRef = builder.create<mlir_ts::SymbolRefOp>(
+                                location, vtRecord.methodInfo.funcOp.getType(),
+                                mlir::FlatSymbolRefAttr::get(builder.getContext(), vtRecord.methodInfo.funcOp.sym_name()));
+                        }
+                        else
+                        {
+                            methodOrFieldNameRef = builder.create<mlir_ts::SymbolRefOp>(
+                                location, mlir_ts::RefType::get(vtRecord.staticFieldInfo.type),
+                                mlir::FlatSymbolRefAttr::get(builder.getContext(), vtRecord.staticFieldInfo.globalVariableName));
+                        }
 
                         vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
-                            location, virtTuple, methodConstName, vtableValue,
+                            location, virtTuple, methodOrFieldNameRef, vtableValue,
                             builder.getArrayAttr(mth.getStructIndexAttrValue(fieldIndex++)));
                     }
                 }

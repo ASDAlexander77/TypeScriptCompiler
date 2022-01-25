@@ -175,13 +175,16 @@ enum class VariableClass
 struct StaticFieldInfo
 {
     mlir::Attribute id;
+    mlir::Type type;
     mlir::StringRef globalVariableName;
+    int virtualIndex;
 };
 
 struct MethodInfo
 {
     std::string name;
     mlir_ts::FunctionType funcType;
+    // TODO: remove using it, we do not need it, we need actual name of function not function itself
     mlir_ts::FuncOp funcOp;
     bool isStatic;
     bool isVirtual;
@@ -190,9 +193,17 @@ struct MethodInfo
 
 struct VirtualMethodOrInterfaceVTableInfo
 {
-    VirtualMethodOrInterfaceVTableInfo() = default;
+    VirtualMethodOrInterfaceVTableInfo(MethodInfo methodInfo_, bool isInterfaceVTable_) : methodInfo(methodInfo_), isStaticField(false), isInterfaceVTable(isInterfaceVTable_)
+    {
+    }
+
+    VirtualMethodOrInterfaceVTableInfo(StaticFieldInfo staticFieldInfo_, bool isInterfaceVTable_) : staticFieldInfo(staticFieldInfo_), isStaticField(true), isInterfaceVTable(isInterfaceVTable_)
+    {
+    }
 
     MethodInfo methodInfo;
+    StaticFieldInfo staticFieldInfo;
+    bool isStaticField;
     bool isInterfaceVTable;
 };
 
@@ -498,6 +509,7 @@ struct ClassInfo
     llvm::SmallVector<AccessorInfo> accessors;
 
     NodeArray<ClassElement> extraMembers;
+    NodeArray<ClassElement> extraMembersPost;
 
     llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> typeParamsWithArgs;
 
@@ -626,6 +638,13 @@ struct ClassInfo
                 vtable.push_back({method, false});
             }
         }
+
+        // static fields
+        for (auto &staticField : staticFields)
+        {
+            staticField.virtualIndex = vtable.size();
+            vtable.push_back({staticField, false});
+        }        
     }
 
     auto getBasesWithRoot(SmallVector<StringRef> &classNames) -> bool

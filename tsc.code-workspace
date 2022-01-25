@@ -161,7 +161,6 @@
         ],
         "clang-tidy.checks": [
             "bugprone-*",
-            "cppcoreguidelines-*",
             "performance-*"
         ],
         "clang-tidy.buildPath": "../../__build/tsc",

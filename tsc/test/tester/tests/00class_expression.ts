@@ -1,7 +1,5 @@
-// TODO: bug.  because x class and class in foo are different types, static fields are not copied
-// to implement it, you can store all static fields into VTable, and access them via class reference but when you access static via class_storage you can do as for C++
 function foo(x = class { static prop: string }): string {
-    return undefined;
+    return x.prop;
 }
 
 function foo2(x = class { static prop: string; static func(); }) 
@@ -10,7 +8,7 @@ function foo2(x = class { static prop: string; static func(); })
 }
 
 function main() {
-    foo(class { static prop = "hello" }).length;
+    assert(foo(class { static prop = "hello" }).length ==  5);
 
     foo2(class { 
 		static prop = "asdasd";
