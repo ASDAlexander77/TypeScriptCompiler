@@ -1268,6 +1268,46 @@ def TypeScript_NamedGeneric : TypeScript_Type<"NamedGeneric"> {
     }];  
 }
 
+def TypeScript_Infer : TypeScript_Type<"Infer"> {
+  let mnemonic = "infer";
+
+  let description = [{
+    Syntax:
+
+    ```
+    infer-type ::= `Infer<` type `>`
+    ```
+
+    Examples:
+
+    ```mlir
+    infer<!Name>
+    ```
+  }];
+  let parameters = (ins "Type":$elementType);
+
+  // We define the printer inline.
+  let printer = [{ $_printer << "infer<" << getImpl()->elementType << ">"; }];  
+
+  let builders = [
+    TypeBuilderWithInferredContext<(ins "Type":$elementType), [{
+      return Base::get(elementType.getContext(), elementType);
+    }]>
+  ];
+
+  // Parses the above format
+  let parser = [{
+    Type elementType;
+    if ($_parser.parseLess()) return Type();
+    if ($_parser.parseType(elementType)) return Type();
+    if ($_parser.parseGreater()) return Type();
+    return get(elementType);
+  }];  
+
+  let skipDefaultBuilders = 1;  
+}
+
+
 def TypeScript_IsConstTupleRefType : CPred<"$_self.isa<::mlir::typescript::RefType>() && $_self.cast<::mlir::typescript::RefType>().getElementType().isa<::mlir::typescript::ConstTupleType>()">;
 
 def TypeScript_AnyConstTupleRef : DialectType<TypeScript_Dialect, TypeScript_IsConstTupleRefType, "any const tuple reference type">;

@@ -55,6 +55,18 @@ class MLIRHelper
         return nameValue;
     }
 
+    static std::string getName(ts::StringLiteral stringLiteral)
+    {
+        std::string nameValue;
+        if (stringLiteral)
+        {
+            // it can be empty
+            nameValue = convertWideToUTF8(stringLiteral->text);            
+        }
+
+        return nameValue;
+    }
+
     static std::string getName(ts::Node name)
     {
         std::string nameValue;
@@ -66,6 +78,11 @@ class MLIRHelper
         if (name == SyntaxKind::PrivateIdentifier)
         {
             return getName(name.as<ts::PrivateIdentifier>());
+        }
+
+        if (name == SyntaxKind::StringLiteral)
+        {
+            return getName(name.as<ts::StringLiteral>());
         }
 
         return nameValue;

@@ -10837,9 +10837,23 @@ genContext);
         {
             return getResolveTypeParameter(typeReferenceAST.as<TypeParameterDeclaration>(), genContext);
         }
+        else if (kind == SyntaxKind::InferType)
+        { 
+            return getInferType(typeReferenceAST.as<InferTypeNode>(), genContext);
+        }
 
         llvm_unreachable("not implemented type declaration");
         // return getAnyType();
+    }
+
+    mlir::Type getInferType(InferTypeNode inferTypeNodeAST, const GenContext &genContext)
+    {
+        auto type = getType(inferTypeNodeAST->typeParameter, genContext);
+        auto inferType = getInferType(type);
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! infer type [" << inferType << "]\n";);
+
+        return inferType;
     }
 
     mlir::Type getResolveTypeParameter(StringRef typeParamName, bool defaultType, const GenContext &genContext)
@@ -10949,7 +10963,7 @@ genContext);
         }
 
         MLIRTypeHelper mth(builder.getContext());
-        if (typeParam->getConstraint() && !mth.extendsType(type, typeParam->getConstraint()))
+        if (typeParam->getConstraint() && !mth.extendsType(type, typeParam->getConstraint(), pairs))
         {
             emitWarning(location, "") << "Type " << type << " does not satisfy the constraint "
                                       << typeParam->getConstraint() << ".";
@@ -11310,12 +11324,13 @@ genContext);
 
     mlir::Type getConditionalType(ConditionalTypeNode conditionalTypeNode, const GenContext &genContext)
     {
+        auto &typeParamsWithArgs = const_cast<GenContext &>(genContext).typeParamsWithArgs;
         auto checkType = getType(conditionalTypeNode->checkType, genContext);
         auto extendsType = getType(conditionalTypeNode->extendsType, genContext);
 
         MLIRTypeHelper mth(builder.getContext());
 
-        if (mth.extendsType(checkType, extendsType))
+        if (mth.extendsType(checkType, extendsType, typeParamsWithArgs))
         {
             return getType(conditionalTypeNode->trueType, genContext);
         }
@@ -11327,7 +11342,7 @@ genContext);
                 assert(interfaceInfo);
                 for (auto extend : interfaceInfo->extends)
                 {
-                    if (mth.extendsType(extend.second->interfaceType, extendsType))
+                    if (mth.extendsType(extend.second->interfaceType, extendsType, typeParamsWithArgs))
                     {
                         resType = getType(conditionalTypeNode->trueType, genContext);
                         break;
@@ -11339,7 +11354,7 @@ genContext);
                 assert(classInfo);
                 for (auto extend : classInfo->baseClasses)
                 {
-                    if (mth.extendsType(extend->classType, extendsType))
+                    if (mth.extendsType(extend->classType, extendsType, typeParamsWithArgs))
                     {
                         resType = getType(conditionalTypeNode->trueType, genContext);
                         break;
@@ -11762,6 +11777,11 @@ genContext);
                                               mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
     }
 
+    mlir_ts::InferType getInferType(mlir::Type paramType)
+    {
+        return mlir_ts::InferType::get(paramType);
+    }
+
     mlir::Value getUndefined(mlir::Location location)
     {
         return builder.create<mlir_ts::UndefOp>(location, getOptionalType(getUndefPlaceHolderType()));
@@ -11814,7 +11834,13 @@ genContext);
             {
                 auto literalTypeNode = typeItem.as<LiteralTypeNode>();
                 auto literalValue = mlirGen(literalTypeNode->literal.as<Expression>(), genContext);
-                auto constantOp = dyn_cast<mlir_ts::ConstantOp>(literalValue.getDefiningOp());
+
+                assert(literalValue);
+
+                auto constantOp = literalValue.getDefiningOp<mlir_ts::ConstantOp>();
+
+                assert(constantOp);
+
                 attrVal = constantOp.valueAttr();
                 continue;
             }
