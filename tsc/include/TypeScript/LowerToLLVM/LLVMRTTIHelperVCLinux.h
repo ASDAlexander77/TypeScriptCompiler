@@ -94,7 +94,7 @@ class LLVMRTTIHelperVCLinux
 
     void setType(mlir::Type type)
     {
-        mlir::TypeSwitch<mlir::Type>(type)
+        mlir::TypeSwitch<mlir::Type>(MLIRHelper::stripLiteralType(type))
             .Case<mlir::IntegerType>([&](auto intType) {
                 if (intType.getIntOrFloatBitWidth() == 32)
                 {

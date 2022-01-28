@@ -41,7 +41,7 @@ class MLIRCodeLogic
 
     mlir::Attribute ExtractAttr(mlir::Value value, bool removeOpIfSuccess = false)
     {
-        auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(value.getDefiningOp());
+        auto constOp = dyn_cast<mlir_ts::ConstantOp>(value.getDefiningOp());
         if (constOp)
         {
             auto val = constOp.valueAttr();
@@ -54,7 +54,7 @@ class MLIRCodeLogic
     mlir::Value GetReferenceOfLoadOp(mlir::Value value)
     {
         // TODO: sync with Common Logic
-        if (auto loadOp = dyn_cast_or_null<mlir_ts::LoadOp>(value.getDefiningOp()))
+        if (auto loadOp = dyn_cast<mlir_ts::LoadOp>(value.getDefiningOp()))
         {
             // this LoadOp will be removed later as unused
             auto refValue = loadOp.reference();
@@ -67,7 +67,7 @@ class MLIRCodeLogic
     mlir::Type getEffectiveFunctionTypeForTupleField(mlir::Type elementType)
     {
 #ifdef USE_BOUND_FUNCTION_FOR_OBJECTS
-        if (auto boundFuncType = elementType.dyn_cast_or_null<mlir_ts::BoundFunctionType>())
+        if (auto boundFuncType = elementType.dyn_cast<mlir_ts::BoundFunctionType>())
         {
             return mlir_ts::FunctionType::get(context, boundFuncType.getInputs(), boundFuncType.getResults());
         }
@@ -103,7 +103,7 @@ class MLIRCodeLogic
         if (indexAccess && (fieldIndex < 0 || fieldIndex >= tupleType.size()))
         {
             // try to resolve index
-            auto intAttr = fieldId.dyn_cast_or_null<mlir::IntegerAttr>();
+            auto intAttr = fieldId.dyn_cast<mlir::IntegerAttr>();
             if (intAttr)
             {
                 fieldIndex = intAttr.getInt();
@@ -259,7 +259,7 @@ class MLIRCustomMethods
         if (operands.size() > 1)
         {
             auto param2 = operands[1];
-            auto constantOp = dyn_cast_or_null<mlir_ts::ConstantOp>(param2.getDefiningOp());
+            auto constantOp = dyn_cast<mlir_ts::ConstantOp>(param2.getDefiningOp());
             if (constantOp && constantOp.getType().isa<mlir_ts::StringType>())
             {
                 msg = constantOp.value().cast<mlir::StringAttr>().getValue();
@@ -268,7 +268,13 @@ class MLIRCustomMethods
             param2.getDefiningOp()->erase();
         }
 
-        auto assertOp = builder.create<mlir_ts::AssertOp>(location, operands.front(), mlir::StringAttr::get(builder.getContext(), msg));
+        auto op = operands.front();
+        if (!op.getType().isa<mlir_ts::BooleanType>())
+        {
+            op = builder.create<mlir_ts::CastOp>(location, mlir_ts::BooleanType::get(builder.getContext()), op);
+        }
+
+        auto assertOp = builder.create<mlir_ts::AssertOp>(location, op, mlir::StringAttr::get(builder.getContext(), msg));
 
         return mlir::success();
     }
@@ -364,7 +370,15 @@ class MLIRCustomMethods
 
     mlir::LogicalResult mlirGenSwitchState(const mlir::Location &location, ArrayRef<mlir::Value> operands, const GenContext &genContext)
     {
-        auto switchStateOp = builder.create<mlir_ts::SwitchStateOp>(location, operands.front(), builder.getBlock(), mlir::BlockRange{});
+        auto op = operands.front();
+
+        auto int32Type = mlir::IntegerType::get(op.getType().getContext(), 32);
+        if (op.getType() != int32Type)
+        {
+            op = builder.create<mlir_ts::CastOp>(location, int32Type, op);
+        }
+
+        auto switchStateOp = builder.create<mlir_ts::SwitchStateOp>(location, op, builder.getBlock(), mlir::BlockRange{});
 
         auto *block = builder.createBlock(builder.getBlock()->getParent());
         switchStateOp.setSuccessor(block, 0);
@@ -395,7 +409,7 @@ class MLIRPropertyAccessCodeLogic
     MLIRPropertyAccessCodeLogic(mlir::OpBuilder &builder, mlir::Location &location, mlir::Value &expression, mlir::Attribute fieldId)
         : builder(builder), location(location), expression(expression), fieldId(fieldId)
     {
-        if (auto strAttr = fieldId.dyn_cast_or_null<mlir::StringAttr>())
+        if (auto strAttr = fieldId.dyn_cast<mlir::StringAttr>())
         {
             name = strAttr.getValue();
         }
@@ -412,7 +426,9 @@ class MLIRPropertyAccessCodeLogic
             return mlir::Value();
         }
 
-        return builder.create<mlir_ts::ConstantOp>(location, enumType.getElementType(), valueAttr);
+        //return builder.create<mlir_ts::ConstantOp>(location, enumType.getElementType(), valueAttr);
+        auto literalType = mlir_ts::LiteralType::get(valueAttr, valueAttr.getType());
+        return builder.create<mlir_ts::ConstantOp>(location, literalType, valueAttr);
     }
 
     template <typename T> mlir::Value Tuple(T tupleType, bool indexAccess = false)
@@ -425,14 +441,14 @@ class MLIRPropertyAccessCodeLogic
         // resolve index
         auto pair = mcl.TupleFieldType(location, tupleType, fieldId, indexAccess);
         auto fieldIndex = pair.first;
-        bool isBoundRef = false;
-        auto elementTypeForRef = pair.second;
-        auto elementType = mth.isBoundReference(pair.second, isBoundRef);
-
         if (fieldIndex < 0)
         {
             return value;
         }
+
+        bool isBoundRef = false;
+        auto elementTypeForRef = pair.second;
+        auto elementType = mth.isBoundReference(pair.second, isBoundRef);
 
         auto refValue = getExprLoadRefValue();
         if (isBoundRef && !refValue)
@@ -464,14 +480,14 @@ class MLIRPropertyAccessCodeLogic
         // resolve index
         auto pair = mcl.TupleFieldTypeNoError(location, tupleType, fieldId, indexAccess);
         auto fieldIndex = pair.first;
-        bool isBoundRef = false;
-        auto elementTypeForRef = pair.second;
-        auto elementType = mth.isBoundReference(pair.second, isBoundRef);
-
         if (fieldIndex < 0)
         {
             return value;
         }
+
+        bool isBoundRef = false;
+        auto elementTypeForRef = pair.second;
+        auto elementType = mth.isBoundReference(pair.second, isBoundRef);
 
         auto refValue = getExprLoadRefValue();
         if (isBoundRef && !refValue)
@@ -594,11 +610,11 @@ class MLIRPropertyAccessCodeLogic
 
     template <typename T> mlir::Value Ref(T refType)
     {
-        if (auto constTupleType = refType.getElementType().template dyn_cast_or_null<mlir_ts::ConstTupleType>())
+        if (auto constTupleType = refType.getElementType().template dyn_cast<mlir_ts::ConstTupleType>())
         {
             return RefLogic(constTupleType);
         }
-        else if (auto tupleType = refType.getElementType().template dyn_cast_or_null<mlir_ts::TupleType>())
+        else if (auto tupleType = refType.getElementType().template dyn_cast<mlir_ts::TupleType>())
         {
             return RefLogic(tupleType);
         }
@@ -610,11 +626,11 @@ class MLIRPropertyAccessCodeLogic
 
     mlir::Value Object(mlir_ts::ObjectType objectType)
     {
-        if (auto constTupleType = objectType.getStorageType().template dyn_cast_or_null<mlir_ts::ConstTupleType>())
+        if (auto constTupleType = objectType.getStorageType().template dyn_cast<mlir_ts::ConstTupleType>())
         {
             return RefLogic(constTupleType);
         }
-        else if (auto tupleType = objectType.getStorageType().template dyn_cast_or_null<mlir_ts::TupleType>())
+        else if (auto tupleType = objectType.getStorageType().template dyn_cast<mlir_ts::TupleType>())
         {
             return RefLogic(tupleType);
         }
@@ -632,14 +648,14 @@ class MLIRPropertyAccessCodeLogic
         // resolve index
         auto pair = mcl.TupleFieldType(location, tupleType, fieldId);
         auto fieldIndex = pair.first;
-        bool isBoundRef = false;
-        auto elementTypeForRef = pair.second;
-        auto elementType = mth.isBoundReference(pair.second, isBoundRef);
-
         if (fieldIndex < 0)
         {
             return mlir::Value();
         }
+
+        bool isBoundRef = false;
+        auto elementTypeForRef = pair.second;
+        auto elementType = mth.isBoundReference(pair.second, isBoundRef);
 
         auto refType = isBoundRef ? static_cast<mlir::Type>(mlir_ts::BoundRefType::get(elementTypeForRef))
                                   : static_cast<mlir::Type>(mlir_ts::RefType::get(elementTypeForRef));
@@ -650,7 +666,7 @@ class MLIRPropertyAccessCodeLogic
 
     mlir::Value Class(mlir_ts::ClassType classType)
     {
-        if (auto classStorageType = classType.getStorageType().template dyn_cast_or_null<mlir_ts::ClassStorageType>())
+        if (auto classStorageType = classType.getStorageType().template dyn_cast<mlir_ts::ClassStorageType>())
         {
             return Class(classStorageType);
         }
@@ -667,17 +683,17 @@ class MLIRPropertyAccessCodeLogic
         // resolve index
         auto pair = mcl.TupleFieldTypeNoError(location, classStorageType, fieldId);
         auto fieldIndex = pair.first;
+        if (fieldIndex < 0)
+        {
+            return mlir::Value();
+        }
+
         bool isBoundRef = false;
         auto elementTypeForRef = pair.second;
         auto elementType = elementTypeForRef;
         /* as this is class, we do not take reference to class as for object */
         // auto elementType = mcl.isBoundReference(pair.second,
         // isBoundRef);
-
-        if (fieldIndex < 0)
-        {
-            return mlir::Value();
-        }
 
         auto refType = isBoundRef ? static_cast<mlir::Type>(mlir_ts::BoundRefType::get(elementTypeForRef))
                                   : static_cast<mlir::Type>(mlir_ts::RefType::get(elementTypeForRef));
@@ -760,7 +776,7 @@ class MLIRCodeLogicHelper
     {
         // find last string
         auto lastUse = [&](mlir::Operation *op) {
-            if (auto globalOp = dyn_cast_or_null<mlir_ts::GlobalOp>(op))
+            if (auto globalOp = dyn_cast<mlir_ts::GlobalOp>(op))
             {
                 builder.setInsertionPointAfter(globalOp);
             }

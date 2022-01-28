@@ -728,6 +728,11 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
 
         // load address of const string
         auto type = constantOp.getType();
+        if (auto literalType = type.dyn_cast<mlir_ts::LiteralType>())
+        {
+            type = literalType.getElementType();
+        }
+
         if (type.isa<mlir_ts::StringType>())
         {
             LLVMCodeHelper ch(constantOp, rewriter, getTypeConverter());
@@ -741,31 +746,31 @@ struct ConstantOpLowering : public TsLlvmPattern<mlir_ts::ConstantOp>
         }
 
         TypeConverterHelper tch(getTypeConverter());
-        if (auto constArrayType = type.dyn_cast_or_null<mlir_ts::ConstArrayType>())
+        if (auto constArrayType = type.dyn_cast<mlir_ts::ConstArrayType>())
         {
             getOrCreateGlobalArray(constantOp, constArrayType, rewriter);
             return success();
         }
 
-        if (auto arrayType = type.dyn_cast_or_null<mlir_ts::ArrayType>())
+        if (auto arrayType = type.dyn_cast<mlir_ts::ArrayType>())
         {
             getOrCreateGlobalArray(constantOp, arrayType, rewriter);
             return success();
         }
 
-        if (auto constTupleType = type.dyn_cast_or_null<mlir_ts::ConstTupleType>())
+        if (auto constTupleType = type.dyn_cast<mlir_ts::ConstTupleType>())
         {
             getOrCreateGlobalTuple(constantOp, constTupleType, rewriter);
             return success();
         }
 
-        if (auto tupleType = type.dyn_cast_or_null<mlir_ts::TupleType>())
+        if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
         {
             getOrCreateGlobalTuple(constantOp, tupleType, rewriter);
             return success();
         }
 
-        if (auto enumType = type.dyn_cast_or_null<mlir_ts::EnumType>())
+        if (auto enumType = type.dyn_cast<mlir_ts::EnumType>())
         {
             rewriter.eraseOp(constantOp);
             return success();

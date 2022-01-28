@@ -17,5 +17,7 @@ function main() {
         //                                ^
         print("a[" + i + "][" + j + "]= " + a[i][j]);
 
+    print([1, 2, 3][1]);
+
     print("done.");
 }

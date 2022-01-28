@@ -860,16 +860,19 @@ class MLIRGenImpl
         if (auto namedGenType = currentTemplateType.dyn_cast<mlir_ts::NamedGenericType>())
         {
             // merge if exists
+            MLIRTypeHelper mth(builder.getContext());
+
             auto name = namedGenType.getName().getValue();
             auto existType = results.lookup(name);
             if (existType)
             {
-                MLIRTypeHelper mth(builder.getContext());
                 auto defaultUnionType = getUnionType(existType, currentType);
 
                 LLVM_DEBUG(llvm::dbgs() << "\n!! existing type: " << existType << " default type: " << defaultUnionType
                                         << "\n";);
 
+                // TODO: uncomment this line and find out what is the bug (+one more line)
+                currentType = mth.wideStorageType(currentType);
                 currentType = mth.findBaseType(existType, currentType, defaultUnionType);
 
                 LLVM_DEBUG(llvm::dbgs() << "\n!! result type: " << currentType << "\n";);
@@ -877,6 +880,8 @@ class MLIRGenImpl
             }
             else
             {
+                // TODO: uncomment this line and find out what is the bug (+one more line)
+                currentType = mth.wideStorageType(currentType);
                 results.insert({name, currentType});
             }
 
@@ -1265,7 +1270,7 @@ class MLIRGenImpl
         {
             auto interfaceType = ifaceOp.getType();
             auto specType = instantiateSpecializedInterfaceType(location, interfaceType, typeArguments, genContext);
-            if (auto specInterfaceType = specType.dyn_cast<mlir_ts::InterfaceType>())
+            if (auto specInterfaceType = specType.dyn_cast_or_null<mlir_ts::InterfaceType>())
             {
                 return builder.create<mlir_ts::InterfaceRefOp>(
                     location, specInterfaceType,
@@ -1359,7 +1364,7 @@ class MLIRGenImpl
     }
 
     mlir::Type registerVariable(mlir::Location location, StringRef name, bool isFullName, VariableClass varClass,
-                          std::function<std::pair<mlir::Type, mlir::Value>()> func, const GenContext &genContext)
+                                std::function<std::pair<mlir::Type, mlir::Value>()> func, const GenContext &genContext)
     {
         auto isGlobalScope =
             isFullName || !genContext.funcOp; /*symbolTable.getCurScope()->getParentScope() == nullptr*/
@@ -1379,7 +1384,7 @@ class MLIRGenImpl
             auto init = std::get<1>(res);
             if (!type && genContext.allowPartialResolve)
             {
-                return false;
+                return varType;
             }
 
             assert(type);
@@ -1407,7 +1412,7 @@ class MLIRGenImpl
 
                 MLIRTypeHelper mth(builder.getContext());
 
-                auto actualType = mth.convertConstArrayTypeToArrayType(type);
+                auto actualType = mth.wideStorageType(type);
 
                 // this is 'let', if 'let' is func, it should be HybridFunction
                 if (auto funcType = actualType.dyn_cast<mlir_ts::FunctionType>())
@@ -1464,7 +1469,7 @@ class MLIRGenImpl
                 builder.setInsertionPointToStart(theModule.getBody());
                 // find last string
                 auto lastUse = [&](mlir::Operation *op) {
-                    if (auto globalOp = dyn_cast_or_null<mlir_ts::GlobalOp>(op))
+                    if (auto globalOp = dyn_cast<mlir_ts::GlobalOp>(op))
                     {
                         builder.setInsertionPointAfter(globalOp);
                     }
@@ -1540,7 +1545,7 @@ class MLIRGenImpl
                 auto init = std::get<1>(res);
                 if (!type && genContext.allowPartialResolve)
                 {
-                    return false;
+                    return varType;
                 }
 
                 assert(type);
@@ -1806,7 +1811,7 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGen(VariableDeclaration item, VariableClass varClass, const GenContext &genContext)
     {
 #ifndef ANY_AS_DEFAULT
-        if (!item->type && !item->initializer && !isExternal)
+        if (isNoneType(item->type) && !item->initializer && !isExternal)
         {
             auto name = MLIRHelper::getName(item->name);
             emitError(loc(item)) << "type of variable '" << name
@@ -1890,6 +1895,8 @@ class MLIRGenImpl
             params.push_back(std::make_shared<FunctionParamDOM>(THIS_NAME, getOpaqueType(), loc(parametersContextAST)));
         }
 
+        MLIRTypeHelper mth(builder.getContext());
+
         auto formalParams = parametersContextAST->parameters;
         auto index = 0;
         for (auto arg : formalParams)
@@ -1921,6 +1928,8 @@ class MLIRGenImpl
                 auto evalType = evaluate(initializer, genContext);
                 if (evalType)
                 {
+                    evalType = mth.wideStorageType(evalType);
+
                     // TODO: set type if not provided
                     isOptional = true;
                     if (isNoneType(type))
@@ -3217,6 +3226,8 @@ class MLIRGenImpl
 
     mlir::LogicalResult processReturnType(mlir::Value expressionValue, const GenContext &genContext)
     {
+        // TODO: rewrite it using UnionType
+
         // record return type if not provided
         if (genContext.passResult)
         {
@@ -3225,8 +3236,12 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
+            MLIRTypeHelper mth(builder.getContext());
+
             auto type = expressionValue.getType();
             LLVM_DEBUG(dbgs() << "\n!! store return type: " << type << "\n\n");
+
+            type = mth.stripLiteralType(type);
 
             // if return type is not detected, take first and exit
             if (!genContext.passResult->functionReturnType)
@@ -3246,7 +3261,7 @@ class MLIRGenImpl
                     return false;
                 }
 
-                if (auto optType = type.dyn_cast_or_null<mlir_ts::OptionalType>())
+                if (auto optType = type.dyn_cast<mlir_ts::OptionalType>())
                 {
                     return testType(optType.getElementType());
                 }
@@ -3260,7 +3275,6 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
-            MLIRTypeHelper mth(builder.getContext());
             if (mth.hasUndefines(type))
             {
                 return mlir::failure();
@@ -3963,6 +3977,8 @@ class MLIRGenImpl
 
         auto exprValue = mlirGen(forOfStatementAST->expression, genContext);
 
+        VALIDATE_LOGIC(exprValue, location)
+
         auto propertyType = evaluateProperty(exprValue, "next", genContext);
         if (propertyType)
         {
@@ -4052,6 +4068,8 @@ class MLIRGenImpl
     {
         SymbolTableScopeT safeCastVarScope(symbolTable);
 
+        MLIRTypeHelper mth(builder.getContext());
+
         enum
         {
             trueIndex = 0,
@@ -4072,13 +4090,13 @@ class MLIRGenImpl
         }
 
         auto setPreviousCondOrJumpOp = [&](mlir::Operation *jump, mlir::Block *where) {
-            if (auto condOp = dyn_cast_or_null<mlir::CondBranchOp>(jump))
+            if (auto condOp = dyn_cast<mlir::CondBranchOp>(jump))
             {
                 condOp->setSuccessor(where, falseIndex);
                 return;
             }
 
-            if (auto branchOp = dyn_cast_or_null<mlir::BranchOp>(jump))
+            if (auto branchOp = dyn_cast<mlir::BranchOp>(jump))
             {
                 branchOp.setDest(where);
                 return;
@@ -4105,9 +4123,10 @@ class MLIRGenImpl
             extraCode(caseExpr, caseValue);
 
             auto switchValueEffective = switchValue;
-            if (switchValue.getType() != caseValue.getType())
+            auto actualCaseType = mth.stripLiteralType(caseValue.getType());
+            if (switchValue.getType() != actualCaseType)
             {
-                switchValueEffective = cast(location, caseValue.getType(), switchValue, genContext);
+                switchValueEffective = cast(location, actualCaseType, switchValue, genContext);
             }
 
             auto condition = builder.create<mlir_ts::LogicalBinaryOp>(
@@ -4695,12 +4714,14 @@ class MLIRGenImpl
     {
         auto location = loc(binaryExpressionAST);
 
+        MLIRTypeHelper mth(builder.getContext());
+
         auto result = mlirGen(binaryExpressionAST->left, genContext);
-        auto resultType = result.getType();
-        auto type = getTypeByTypeName(binaryExpressionAST->right, genContext);
+        auto resultType = mth.wideStorageType(result.getType());
+        auto type = mth.wideStorageType(getTypeByTypeName(binaryExpressionAST->right, genContext));
 
 #ifdef ENABLE_RTTI
-        if (auto classType = type.dyn_cast_or_null<mlir_ts::ClassType>())
+        if (auto classType = type.dyn_cast<mlir_ts::ClassType>())
         {
             auto classInfo = getClassInfoByFullName(classType.getName().getValue());
             auto fullNameClassRtti = concat(classInfo->fullName, RTTI_NAME);
@@ -4811,7 +4832,7 @@ class MLIRGenImpl
 
         if (leftExpressionValue.getType() != rightExpressionValue.getType())
         {
-            if (rightExpressionValue.getType().dyn_cast_or_null<mlir_ts::CharType>())
+            if (rightExpressionValue.getType().dyn_cast<mlir_ts::CharType>())
             {
                 rightExpressionValue = cast(location, getStringType(), rightExpressionValue, genContext);
             }
@@ -4994,8 +5015,8 @@ class MLIRGenImpl
         // check if const expr.
         if (genContext.allowConstEval)
         {
-            auto leftConstOp = dyn_cast_or_null<mlir_ts::ConstantOp>(leftExpressionValue.getDefiningOp());
-            auto rightConstOp = dyn_cast_or_null<mlir_ts::ConstantOp>(rightExpressionValue.getDefiningOp());
+            auto leftConstOp = dyn_cast<mlir_ts::ConstantOp>(leftExpressionValue.getDefiningOp());
+            auto rightConstOp = dyn_cast<mlir_ts::ConstantOp>(rightExpressionValue.getDefiningOp());
             if (leftConstOp && rightConstOp)
             {
                 // try to evaluate
@@ -5023,12 +5044,12 @@ class MLIRGenImpl
         if (leftExpressionValue.getType() != rightExpressionValue.getType())
         {
             // TODO: temporary hack
-            if (leftExpressionValue.getType().dyn_cast_or_null<mlir_ts::CharType>())
+            if (leftExpressionValue.getType().dyn_cast<mlir_ts::CharType>())
             {
                 leftExpressionValue = cast(loc(leftExpression), getStringType(), leftExpressionValue, genContext);
             }
 
-            if (rightExpressionValue.getType().dyn_cast_or_null<mlir_ts::CharType>())
+            if (rightExpressionValue.getType().dyn_cast<mlir_ts::CharType>())
             {
                 rightExpressionValue = cast(loc(rightExpression), getStringType(), rightExpressionValue, genContext);
             }
@@ -5038,13 +5059,13 @@ class MLIRGenImpl
             if (!MLIRLogicHelper::isLogicOp(opCode))
             {
                 // cast from optional<T> type
-                if (auto leftOptType = leftExpressionValue.getType().dyn_cast_or_null<mlir_ts::OptionalType>())
+                if (auto leftOptType = leftExpressionValue.getType().dyn_cast<mlir_ts::OptionalType>())
                 {
                     leftExpressionValue = builder.create<mlir_ts::ValueOp>(
                         loc(leftExpression), leftOptType.getElementType(), leftExpressionValue);
                 }
 
-                if (auto rightOptType = rightExpressionValue.getType().dyn_cast_or_null<mlir_ts::OptionalType>())
+                if (auto rightOptType = rightExpressionValue.getType().dyn_cast<mlir_ts::OptionalType>())
                 {
                     rightExpressionValue = builder.create<mlir_ts::ValueOp>(
                         loc(rightExpression), rightOptType.getElementType(), rightExpressionValue);
@@ -5054,9 +5075,9 @@ class MLIRGenImpl
         else if (!MLIRLogicHelper::isLogicOp(opCode))
         {
             // special case both are optionals
-            if (auto leftOptType = leftExpressionValue.getType().dyn_cast_or_null<mlir_ts::OptionalType>())
+            if (auto leftOptType = leftExpressionValue.getType().dyn_cast<mlir_ts::OptionalType>())
             {
-                if (auto rightOptType = rightExpressionValue.getType().dyn_cast_or_null<mlir_ts::OptionalType>())
+                if (auto rightOptType = rightExpressionValue.getType().dyn_cast<mlir_ts::OptionalType>())
                 {
                     leftExpressionValue = builder.create<mlir_ts::ValueOp>(
                         loc(leftExpression), leftOptType.getElementType(), leftExpressionValue);
@@ -5326,7 +5347,8 @@ class MLIRGenImpl
     {
         mlir::Value value;
         auto name = cl.getName();
-        TypeSwitch<mlir::Type>(objectValue.getType())
+        auto actualType = objectValue.getType();
+        TypeSwitch<mlir::Type>(actualType)
             .Case<mlir_ts::EnumType>([&](auto enumType) { value = cl.Enum(enumType); })
             .Case<mlir_ts::ConstTupleType>([&](auto constTupleType) { value = cl.Tuple(constTupleType); })
             .Case<mlir_ts::TupleType>([&](auto tupleType) { value = cl.Tuple(tupleType); })
@@ -5381,6 +5403,11 @@ class MLIRGenImpl
                 auto casted = cast(location, frontType, objectValue, genContext);
                 value = mlirGenPropertyAccessExpression(location, casted, name, false, genContext);
             })
+            .Case<mlir_ts::LiteralType>([&](auto literalType) {
+                auto elementType = literalType.getElementType();
+                auto castedValue = builder.create<mlir_ts::CastOp>(location, elementType, objectValue);
+                value = mlirGenPropertyAccessExpression(location, castedValue, name, false, genContext);
+            })
             .Default([](auto type) {});
 
         if (value || genContext.allowPartialResolve)
@@ -5433,32 +5460,32 @@ class MLIRGenImpl
         if (staticFieldIndex >= 0)
         {
             auto fieldInfo = classInfo->staticFields[staticFieldIndex];
-#ifdef ADD_STATIC_MEMBERS_TO_VTABLE                
+#ifdef ADD_STATIC_MEMBERS_TO_VTABLE
             if (thisValue.getDefiningOp<mlir_ts::ClassRefOp>())
             {
-#endif                
+#endif
                 auto value = resolveFullNameIdentifier(location, fieldInfo.globalVariableName, false, genContext);
                 assert(value);
                 return value;
-#ifdef ADD_STATIC_MEMBERS_TO_VTABLE                    
+#ifdef ADD_STATIC_MEMBERS_TO_VTABLE
             }
 
             // static accessing via class reference
             // TODO:
             auto effectiveThisValue = thisValue;
 
-            auto vtableAccess =
-                mlirGenPropertyAccessExpression(location, effectiveThisValue, VTABLE_NAME, genContext);
+            auto vtableAccess = mlirGenPropertyAccessExpression(location, effectiveThisValue, VTABLE_NAME, genContext);
 
             assert(genContext.allowPartialResolve || fieldInfo.virtualIndex >= 0);
 
             auto virtualSymbOp = builder.create<mlir_ts::VirtualSymbolRefOp>(
-                location, mlir_ts::RefType::get(fieldInfo.type), vtableAccess, builder.getI32IntegerAttr(fieldInfo.virtualIndex),
+                location, mlir_ts::RefType::get(fieldInfo.type), vtableAccess,
+                builder.getI32IntegerAttr(fieldInfo.virtualIndex),
                 mlir::FlatSymbolRefAttr::get(builder.getContext(), fieldInfo.globalVariableName));
 
             auto value = builder.create<mlir_ts::LoadOp>(location, fieldInfo.type, virtualSymbOp);
             return value;
-#endif            
+#endif
         }
 
         // check method access
@@ -5473,15 +5500,15 @@ class MLIRGenImpl
 
             if (methodInfo.isStatic)
             {
-#ifdef ADD_STATIC_MEMBERS_TO_VTABLE                
+#ifdef ADD_STATIC_MEMBERS_TO_VTABLE
                 if (thisValue.getDefiningOp<mlir_ts::ClassRefOp>())
                 {
-#endif                    
+#endif
                     auto symbOp = builder.create<mlir_ts::SymbolRefOp>(
                         location, effectiveFuncType,
                         mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
                     return symbOp;
-#ifdef ADD_STATIC_MEMBERS_TO_VTABLE                
+#ifdef ADD_STATIC_MEMBERS_TO_VTABLE
                 }
 
                 // static accessing via class reference
@@ -5497,7 +5524,7 @@ class MLIRGenImpl
                     location, effectiveFuncType, vtableAccess, builder.getI32IntegerAttr(methodInfo.virtualIndex),
                     mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
                 return virtualSymbOp;
-#endif                    
+#endif
             }
             else
             {
@@ -5766,7 +5793,7 @@ class MLIRGenImpl
         }
 
         // check method access
-        if (auto nameAttr = id.dyn_cast_or_null<mlir::StringAttr>())
+        if (auto nameAttr = id.dyn_cast<mlir::StringAttr>())
         {
             auto name = nameAttr.getValue();
             auto methodInfo = interfaceInfo->findMethod(name, totalOffset);
@@ -5793,7 +5820,7 @@ class MLIRGenImpl
                                      T tupleType)
     {
         // get index
-        if (auto indexConstOp = dyn_cast_or_null<mlir_ts::ConstantOp>(argumentExpression.getDefiningOp()))
+        if (auto indexConstOp = argumentExpression.getDefiningOp<mlir_ts::ConstantOp>())
         {
             // this is property access
             MLIRPropertyAccessCodeLogic cl(builder, location, expression, indexConstOp.value());
@@ -5810,16 +5837,28 @@ class MLIRGenImpl
         auto location = loc(elementAccessExpression);
 
         auto expression = mlirGen(elementAccessExpression->expression.as<Expression>(), genContext);
+
+        VALIDATE(expression, location)
+
         auto argumentExpression = mlirGen(elementAccessExpression->argumentExpression.as<Expression>(), genContext);
 
-        auto arrayType = expression.getType();
+        VALIDATE(argumentExpression, location)
+
+        MLIRTypeHelper mth(builder.getContext());
+
+        auto arrayType = expression.getType();        
+        if (arrayType.isa<mlir_ts::LiteralType>())
+        {
+            arrayType = mth.stripLiteralType(arrayType);
+            expression = cast(location, arrayType, expression, genContext);
+        }
 
         mlir::Type elementType;
-        if (auto arrayTyped = arrayType.dyn_cast_or_null<mlir_ts::ArrayType>())
+        if (auto arrayTyped = arrayType.dyn_cast<mlir_ts::ArrayType>())
         {
             elementType = arrayTyped.getElementType();
         }
-        else if (auto vectorType = arrayType.dyn_cast_or_null<mlir_ts::ConstArrayType>())
+        else if (auto vectorType = arrayType.dyn_cast<mlir_ts::ConstArrayType>())
         {
             elementType = vectorType.getElementType();
         }
@@ -5827,11 +5866,11 @@ class MLIRGenImpl
         {
             elementType = getCharType();
         }
-        else if (auto tupleType = arrayType.dyn_cast_or_null<mlir_ts::TupleType>())
+        else if (auto tupleType = arrayType.dyn_cast<mlir_ts::TupleType>())
         {
             return mlirGenElementAccess(location, expression, argumentExpression, tupleType);
         }
-        else if (auto tupleType = arrayType.dyn_cast_or_null<mlir_ts::ConstTupleType>())
+        else if (auto tupleType = arrayType.dyn_cast<mlir_ts::ConstTupleType>())
         {
             return mlirGenElementAccess(location, expression, argumentExpression, tupleType);
         }
@@ -6422,7 +6461,7 @@ class MLIRGenImpl
             vtableValue = castedValue;
             */
 
-           // vtable type will be detected later
+            // vtable type will be detected later
             auto classVTableRefOp = builder.create<mlir_ts::AddressOfOp>(
                 location, getOpaqueType(), fullClassVTableFieldName, ::mlir::IntegerAttr());
 
@@ -6625,7 +6664,7 @@ class MLIRGenImpl
         if (!expr.getType().isa<mlir_ts::RefType>() && !expr.getType().isa<mlir_ts::ValueRefType>() &&
             !expr.getType().isa<mlir_ts::ClassType>())
         {
-            if (auto arrayType = expr.getType().dyn_cast_or_null<mlir_ts::ArrayType>())
+            if (auto arrayType = expr.getType().dyn_cast<mlir_ts::ArrayType>())
             {
                 expr = cast(location, mlir_ts::RefType::get(arrayType.getElementType()), expr, genContext);
             }
@@ -6797,14 +6836,16 @@ class MLIRGenImpl
 
     mlir::Value mlirGen(TrueLiteral trueLiteral, const GenContext &genContext)
     {
-        return builder.create<mlir_ts::ConstantOp>(loc(trueLiteral), getBooleanType(),
-                                                   mlir::BoolAttr::get(builder.getContext(), true));
+        auto attrVal = mlir::BoolAttr::get(builder.getContext(), true);
+        auto literalType = mlir_ts::LiteralType::get(attrVal, getBooleanType());
+        return builder.create<mlir_ts::ConstantOp>(loc(trueLiteral), literalType, attrVal);
     }
 
     mlir::Value mlirGen(FalseLiteral falseLiteral, const GenContext &genContext)
     {
-        return builder.create<mlir_ts::ConstantOp>(loc(falseLiteral), getBooleanType(),
-                                                   mlir::BoolAttr::get(builder.getContext(), false));
+        auto attrVal = mlir::BoolAttr::get(builder.getContext(), false);
+        auto literalType = mlir_ts::LiteralType::get(attrVal, getBooleanType());
+        return builder.create<mlir_ts::ConstantOp>(loc(falseLiteral), literalType, attrVal);
     }
 
     mlir::Value mlirGen(NumericLiteral numericLiteral, const GenContext &genContext)
@@ -6813,45 +6854,52 @@ class MLIRGenImpl
         {
             try
             {
-                return builder.create<mlir_ts::ConstantOp>(
-                    loc(numericLiteral), builder.getI32Type(),
-                    builder.getI32IntegerAttr(to_unsigned_integer(numericLiteral->text)));
+                auto attrVal = builder.getI32IntegerAttr(to_unsigned_integer(numericLiteral->text));
+                auto literalType = mlir_ts::LiteralType::get(attrVal, builder.getI32Type());
+                return builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), literalType, attrVal);
             }
             catch (const std::out_of_range &)
             {
-                return builder.create<mlir_ts::ConstantOp>(
-                    loc(numericLiteral), builder.getI64Type(),
-                    builder.getI64IntegerAttr(to_bignumber(numericLiteral->text)));
+                auto attrVal = builder.getI64IntegerAttr(to_bignumber(numericLiteral->text));
+                auto literalType = mlir_ts::LiteralType::get(attrVal, builder.getI64Type());
+                return builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), literalType, attrVal);
             }
         }
+
 #ifdef NUMBER_F64
-        return builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), getNumberType(),
-                                                   builder.getF64FloatAttr(to_float(numericLiteral->text)));
+        auto attrVal = builder.getF64FloatAttr(to_float(numericLiteral->text));
+        auto literalType = mlir_ts::LiteralType::get(attrVal, getNumberType());
+        return builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), literalType, attrVal);
 #else
-        return builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), getNumberType(),
-                                                   builder.getF32FloatAttr(to_float(numericLiteral->text)));
+        auto attrVal = builder.getF32FloatAttr(to_float(numericLiteral->text));
+        auto literalType = mlir_ts::LiteralType::get(attrVal, getNumberType());
+        return builder.create<mlir_ts::ConstantOp>(loc(numericLiteral), literalType, attrVal);
 #endif
     }
 
     mlir::Value mlirGen(BigIntLiteral bigIntLiteral, const GenContext &genContext)
     {
-        return builder.create<mlir_ts::ConstantOp>(loc(bigIntLiteral), builder.getI64Type(),
-                                                   builder.getI64IntegerAttr(to_bignumber(bigIntLiteral->text)));
+        auto attrVal = builder.getI64IntegerAttr(to_bignumber(bigIntLiteral->text));
+        auto literalType = mlir_ts::LiteralType::get(attrVal, builder.getI64Type());
+        return builder.create<mlir_ts::ConstantOp>(loc(bigIntLiteral), literalType, attrVal);
     }
 
     mlir::Value mlirGen(ts::StringLiteral stringLiteral, const GenContext &genContext)
     {
         auto text = convertWideToUTF8(stringLiteral->text);
 
-        return builder.create<mlir_ts::ConstantOp>(loc(stringLiteral), getStringType(), getStringAttr(text));
+        auto attrVal = getStringAttr(text);
+        auto literalType = mlir_ts::LiteralType::get(attrVal, getStringType());
+        return builder.create<mlir_ts::ConstantOp>(loc(stringLiteral), literalType, attrVal);
     }
 
     mlir::Value mlirGen(ts::NoSubstitutionTemplateLiteral noSubstitutionTemplateLiteral, const GenContext &genContext)
     {
         auto text = convertWideToUTF8(noSubstitutionTemplateLiteral->text);
 
-        return builder.create<mlir_ts::ConstantOp>(loc(noSubstitutionTemplateLiteral), getStringType(),
-                                                   getStringAttr(text));
+        auto attrVal = getStringAttr(text);
+        auto literalType = mlir_ts::LiteralType::get(attrVal, getStringType());
+        return builder.create<mlir_ts::ConstantOp>(loc(noSubstitutionTemplateLiteral), literalType, attrVal);
     }
 
     mlir::Value mlirGenAppendArray(mlir::Location location, mlir::Value arrayDest, mlir::Value arraySrc,
@@ -6937,6 +6985,7 @@ class MLIRGenImpl
                     if (!elementType)
                     {
                         elementType = array.getElementType();
+                        elementType = mth.wideStorageType(elementType);
                     }
 
                     values.push_back(std::make_tuple(array, itemValue, true));
@@ -6950,6 +6999,7 @@ class MLIRGenImpl
             {
                 values.push_back(std::make_tuple(type, itemValue, false));
 
+                type = mth.wideStorageType(type);
                 if (!elementType)
                 {
                     elementType = type;
@@ -6987,7 +7037,7 @@ class MLIRGenImpl
                 SmallVector<mlir_ts::FieldInfo> fieldInfos;
                 for (auto val : values)
                 {
-                    fieldInfos.push_back({mlir::Attribute(), std::get<0>(val)});
+                    fieldInfos.push_back({mlir::Attribute(), mth.wideStorageType(std::get<0>(val))});
                     arrayValues.push_back(std::get<1>(val));
                 }
 
@@ -7056,7 +7106,7 @@ class MLIRGenImpl
             SmallVector<mlir::Type> constTypes;
             for (auto &itemValue : values)
             {
-                auto type = mth.convertConstArrayTypeToArrayType(std::get<1>(itemValue).getType());
+                auto type = mth.wideStorageType(std::get<1>(itemValue).getType());
                 constTypes.push_back(type);
                 if (!elementType)
                 {
@@ -7145,17 +7195,17 @@ class MLIRGenImpl
         auto addFieldInfo = [&](mlir::Attribute fieldId, mlir::Value itemValue) {
             mlir::Type type;
             mlir::Attribute value;
-            if (auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(itemValue.getDefiningOp()))
+            if (auto constOp = itemValue.getDefiningOp<mlir_ts::ConstantOp>())
             {
                 value = constOp.valueAttr();
-                type = mth.convertConstArrayTypeToArrayType(constOp.getType());
+                type = constOp.getType();
             }
-            else if (auto symRefOp = dyn_cast_or_null<mlir_ts::SymbolRefOp>(itemValue.getDefiningOp()))
+            else if (auto symRefOp = itemValue.getDefiningOp<mlir_ts::SymbolRefOp>())
             {
                 value = symRefOp.identifierAttr();
                 type = symRefOp.getType();
             }
-            else if (auto undefOp = dyn_cast_or_null<mlir_ts::UndefOp>(itemValue.getDefiningOp()))
+            else if (auto undefOp = itemValue.getDefiningOp<mlir_ts::UndefOp>())
             {
                 value = builder.getUnitAttr();
                 type = undefOp.getType();
@@ -7168,6 +7218,8 @@ class MLIRGenImpl
             }
 
             values.push_back(value);
+
+            type = mth.wideStorageType(type);
             fieldInfos.push_back({fieldId, type});
         };
 
@@ -7392,7 +7444,7 @@ class MLIRGenImpl
             auto methodRef = std::get<1>(methodRefWithName);
             auto &methodInfo = fieldInfos[methodRef];
 
-            if (auto funcType = methodInfo.type.dyn_cast_or_null<mlir_ts::FunctionType>())
+            if (auto funcType = methodInfo.type.dyn_cast<mlir_ts::FunctionType>())
             {
                 auto captureVars = getCaptureVarsMap().find(funcName);
                 if (captureVars != getCaptureVarsMap().end())
@@ -7473,7 +7525,7 @@ class MLIRGenImpl
         for (auto &methodRef : methodInfos)
         {
             auto &methodInfo = fieldInfos[methodRef];
-            if (auto funcType = methodInfo.type.dyn_cast_or_null<mlir_ts::FunctionType>())
+            if (auto funcType = methodInfo.type.dyn_cast<mlir_ts::FunctionType>())
             {
                 MLIRTypeHelper mth(builder.getContext());
 
@@ -7488,7 +7540,7 @@ class MLIRGenImpl
             auto methodRef = std::get<1>(methodRefWithName);
             auto &methodInfo = fieldInfos[methodRef];
 
-            if (auto funcType = methodInfo.type.dyn_cast_or_null<mlir_ts::FunctionType>())
+            if (auto funcType = methodInfo.type.dyn_cast<mlir_ts::FunctionType>())
             {
                 MLIRTypeHelper mth(builder.getContext());
                 methodInfo.type = mth.getFunctionTypeReplaceOpaqueWithThisType(funcType, objThis);
@@ -8114,6 +8166,7 @@ class MLIRGenImpl
             else
             {
                 auto type = getType(typeAliasDeclarationAST->type, genContext);
+                assert(type);
                 getTypeAliasMap().insert({namePtr, type});
             }
 
@@ -8176,6 +8229,7 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
+        SmallVector<mlir::Type> enumLiteralTypes;
         SmallVector<mlir::NamedAttribute> enumValues;
         int64_t index = 0;
         auto activeBits = 0;
@@ -8194,10 +8248,17 @@ class MLIRGenImpl
                 GenContext enumValueGenContext(genContext);
                 enumValueGenContext.allowConstEval = true;
                 auto enumValue = mlirGen(enumMember->initializer, enumValueGenContext);
-                if (auto constOp = dyn_cast_or_null<mlir_ts::ConstantOp>(enumValue.getDefiningOp()))
+
+                LLVM_DEBUG(llvm::dbgs() << "\n!! enum member: " << memberNamePtr << " = " << enumValue << "\n");
+
+                assert(enumValue.getType().isa<mlir_ts::LiteralType>());
+
+                enumLiteralTypes.push_back(enumValue.getType());
+
+                if (auto constOp = dyn_cast<mlir_ts::ConstantOp>(enumValue.getDefiningOp()))
                 {
                     enumValueAttr = constOp.valueAttr();
-                    if (auto intAttr = enumValueAttr.dyn_cast_or_null<mlir::IntegerAttr>())
+                    if (auto intAttr = enumValueAttr.dyn_cast<mlir::IntegerAttr>())
                     {
                         index = intAttr.getInt();
                         auto currentActiveBits = (int)intAttr.getValue().getActiveBits();
@@ -8215,12 +8276,17 @@ class MLIRGenImpl
             else
             {
                 enumValueAttr = builder.getI32IntegerAttr(index);
+                auto indexType = mlir_ts::LiteralType::get(enumValueAttr, builder.getI32Type());
+                enumLiteralTypes.push_back(indexType);
+
+                LLVM_DEBUG(llvm::dbgs() << "\n!! enum member: " << memberNamePtr << " <- " << indexType << "\n");
             }
 
             enumValues.push_back({mlir::Identifier::get(memberNamePtr, builder.getContext()), enumValueAttr});
             index++;
         }
 
+        /*
         // count used bits
         auto indexUsingBits = std::floor(std::log2(index)) + 1;
         if (indexUsingBits > activeBits)
@@ -8243,7 +8309,7 @@ class MLIRGenImpl
         SmallVector<mlir::NamedAttribute> adjustedEnumValues;
         for (auto enumItem : enumValues)
         {
-            if (auto intAttr = enumItem.second.dyn_cast_or_null<mlir::IntegerAttr>())
+            if (auto intAttr = enumItem.second.dyn_cast<mlir::IntegerAttr>())
             {
                 adjustedEnumValues.push_back({enumItem.first, mlir::IntegerAttr::get(enumIntType, intAttr.getInt())});
             }
@@ -8252,9 +8318,16 @@ class MLIRGenImpl
                 adjustedEnumValues.push_back(enumItem);
             }
         }
+        */
 
-        getEnumsMap().insert({namePtr, std::make_pair(enumIntType, mlir::DictionaryAttr::get(builder.getContext(),
-                                                                                             adjustedEnumValues))});
+        MLIRTypeHelper mth(builder.getContext());
+        auto storeType = mth.getUnionTypeWithMerge(enumLiteralTypes);
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! enum: " << namePtr << " storage type: " << storeType << "\n");
+
+        getEnumsMap().insert(
+            {namePtr, std::make_pair(/*enumIntType*/ storeType,
+                                     mlir::DictionaryAttr::get(builder.getContext(), enumValues /*adjustedEnumValues*/))});
 
         return mlir::success();
     }
@@ -8753,7 +8826,7 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult mlirGenClassMembersPost(mlir::Location location, ClassLikeDeclaration classDeclarationAST,
-                                            ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
+                                                ClassInfo::TypePtr newClassPtr, const GenContext &genContext)
     {
         // clear all flags
         // extra fields - first, we need .instanceOf first for typr Any
@@ -8862,6 +8935,7 @@ class MLIRGenImpl
 
         auto location = loc(classMember);
 
+        MLIRTypeHelper mth(builder.getContext());
         MLIRCodeLogic mcl(builder);
 
         auto &staticFieldInfos = newClassPtr->staticFields;
@@ -8920,13 +8994,21 @@ class MLIRGenImpl
                 if (typeAndInitFlag.second)
                 {
                     newClassPtr->hasInitializers = true;
+                    type = mth.wideStorageType(type);
                 }
 
                 LLVM_DEBUG(dbgs() << "\n!! class field: " << fieldId << " type: " << type << "\n\n");
 
                 if (isNoneType(type))
                 {
+#ifndef ANY_AS_DEFAULT
+                    auto name = MLIRHelper::getName(item->name);
+                    emitError(loc(item)) << "type for field '" << memberNamePtr
+                                        << "' is not provided, field must have type or initializer";
                     return mlir::failure();
+#else
+                    type = getAnyType();
+#endif
                 }
 
                 fieldInfos.push_back({fieldId, type});
@@ -8945,6 +9027,7 @@ class MLIRGenImpl
                             propertyDeclaration->initializer,
                             [&](mlir::Value val) {
                                 typeInit = val.getType();
+                                typeInit = mth.wideStorageType(typeInit);
                                 isConst = isConstValue(val);
                             },
                             genContext);
@@ -9006,8 +9089,9 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirGenForwardDeclaration(std::string funcName, mlir_ts::FunctionType funcType, bool isStatic, bool isVirtual, ClassInfo::TypePtr newClassPtr,
-                                        const GenContext &genContext)
+    mlir::LogicalResult mlirGenForwardDeclaration(std::string funcName, mlir_ts::FunctionType funcType, bool isStatic,
+                                                  bool isVirtual, ClassInfo::TypePtr newClassPtr,
+                                                  const GenContext &genContext)
     {
         if (newClassPtr->getMethodIndex(funcName) < 0)
         {
@@ -9017,7 +9101,8 @@ class MLIRGenImpl
         SmallVector<mlir::Type> inputs;
         SmallVector<mlir::Type> results{newClassPtr->classType};
         mlir_ts::FuncOp dummyFuncOp;
-        newClassPtr->methods.push_back({funcName, getFunctionType(inputs, results), dummyFuncOp, isStatic, isVirtual, -1});
+        newClassPtr->methods.push_back(
+            {funcName, getFunctionType(inputs, results), dummyFuncOp, isStatic, isVirtual, -1});
         return mlir::success();
     }
 
@@ -9061,12 +9146,13 @@ class MLIRGenImpl
         auto isStatic = false;
 #ifdef ALL_METHODS_VIRTUAL
         auto isVirtual = true;
-#else        
+#else
         auto isVirtual = false;
-#endif        
+#endif
         SmallVector<mlir::Type> inputs;
         SmallVector<mlir::Type> results{newClassPtr->classType};
-        mlirGenForwardDeclaration(".new", getFunctionType(inputs, results), isStatic, isVirtual, newClassPtr, genContext);
+        mlirGenForwardDeclaration(".new", getFunctionType(inputs, results), isStatic, isVirtual, newClassPtr,
+genContext);
 
         newClassPtr->extraMembersPost.push_back(generatedNew);
         */
@@ -9434,8 +9520,7 @@ class MLIRGenImpl
                     else
                     {
                         llvm_unreachable("not implemented yet");
-                        /*#
-                        ]]]]]]]]]
+                        /*
                         auto methodConstName = builder.create<mlir_ts::SymbolRefOp>(
                             location, methodOrField.methodInfo.funcOp.getType(),
                             mlir::FlatSymbolRefAttr::get(builder.getContext(),
@@ -9649,8 +9734,9 @@ class MLIRGenImpl
             }
             else
             {
-                fields.push_back(
-                    {mcl.TupleFieldName(vtableRecord.methodInfo.name), vtableRecord.methodInfo.funcOp ? vtableRecord.methodInfo.funcOp.getType() : vtableRecord.methodInfo.funcType});
+                fields.push_back({mcl.TupleFieldName(vtableRecord.methodInfo.name),
+                                  vtableRecord.methodInfo.funcOp ? vtableRecord.methodInfo.funcOp.getType()
+                                                                 : vtableRecord.methodInfo.funcType});
             }
         }
 
@@ -9673,8 +9759,9 @@ class MLIRGenImpl
             {
                 if (!vtableRecord.isStaticField)
                 {
-                    fields.push_back(
-                        {mcl.TupleFieldName(vtableRecord.methodInfo.name), vtableRecord.methodInfo.funcOp ? vtableRecord.methodInfo.funcOp.getType() : vtableRecord.methodInfo.funcType});
+                    fields.push_back({mcl.TupleFieldName(vtableRecord.methodInfo.name),
+                                      vtableRecord.methodInfo.funcOp ? vtableRecord.methodInfo.funcOp.getType()
+                                                                     : vtableRecord.methodInfo.funcType});
                 }
                 else
                 {
@@ -9746,13 +9833,15 @@ class MLIRGenImpl
                         {
                             methodOrFieldNameRef = builder.create<mlir_ts::SymbolRefOp>(
                                 location, vtRecord.methodInfo.funcOp.getType(),
-                                mlir::FlatSymbolRefAttr::get(builder.getContext(), vtRecord.methodInfo.funcOp.sym_name()));
+                                mlir::FlatSymbolRefAttr::get(builder.getContext(),
+                                                             vtRecord.methodInfo.funcOp.sym_name()));
                         }
                         else
                         {
                             methodOrFieldNameRef = builder.create<mlir_ts::SymbolRefOp>(
                                 location, mlir_ts::RefType::get(vtRecord.staticFieldInfo.type),
-                                mlir::FlatSymbolRefAttr::get(builder.getContext(), vtRecord.staticFieldInfo.globalVariableName));
+                                mlir::FlatSymbolRefAttr::get(builder.getContext(),
+                                                             vtRecord.staticFieldInfo.globalVariableName));
                         }
 
                         vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
@@ -10480,18 +10569,18 @@ class MLIRGenImpl
         }
 
         // class to string
-        if (auto stringType = type.dyn_cast_or_null<mlir_ts::StringType>())
+        if (auto stringType = type.dyn_cast<mlir_ts::StringType>())
         {
-            if (auto classType = value.getType().dyn_cast_or_null<mlir_ts::ClassType>())
+            if (auto classType = value.getType().dyn_cast<mlir_ts::ClassType>())
             {
                 return mlirGenCallThisMethod(location, value, "toString", undefined, undefined, genContext);
             }
         }
 
         // class to interface
-        if (auto interfaceType = type.dyn_cast_or_null<mlir_ts::InterfaceType>())
+        if (auto interfaceType = type.dyn_cast<mlir_ts::InterfaceType>())
         {
-            if (auto classType = value.getType().dyn_cast_or_null<mlir_ts::ClassType>())
+            if (auto classType = value.getType().dyn_cast<mlir_ts::ClassType>())
             {
                 auto vtableAccess = mlirGenPropertyAccessExpression(location, value, VTABLE_NAME, genContext);
 
@@ -10536,20 +10625,20 @@ class MLIRGenImpl
         }
 
         // tuple to interface
-        if (auto interfaceType = type.dyn_cast_or_null<mlir_ts::InterfaceType>())
+        if (auto interfaceType = type.dyn_cast<mlir_ts::InterfaceType>())
         {
-            if (auto constTupleType = value.getType().dyn_cast_or_null<mlir_ts::ConstTupleType>())
+            if (auto constTupleType = value.getType().dyn_cast<mlir_ts::ConstTupleType>())
             {
                 return castTupleToInterface(location, value, constTupleType, interfaceType, genContext);
             }
 
-            if (auto tupleType = value.getType().dyn_cast_or_null<mlir_ts::TupleType>())
+            if (auto tupleType = value.getType().dyn_cast<mlir_ts::TupleType>())
             {
                 return castTupleToInterface(location, value, tupleType, interfaceType, genContext);
             }
         }
 
-        if (auto unionType = type.dyn_cast_or_null<mlir_ts::UnionType>())
+        if (auto unionType = type.dyn_cast<mlir_ts::UnionType>())
         {
             MLIRTypeHelper mth(builder.getContext());
             mlir::Type baseType;
@@ -10562,7 +10651,7 @@ class MLIRGenImpl
         }
 
         // optional with union & interface inside
-        if (auto optType = type.dyn_cast_or_null<mlir_ts::OptionalType>())
+        if (auto optType = type.dyn_cast<mlir_ts::OptionalType>())
         {
             auto valueCasted = cast(location, optType.getElementType(), value, genContext);
             VALIDATE(valueCasted, location)
@@ -10848,7 +10937,7 @@ class MLIRGenImpl
 
             // extra code for extracting enum storage type
             // TODO: think if you can avoid doing it
-            if (auto enumType = type.dyn_cast_or_null<mlir_ts::EnumType>())
+            if (auto enumType = type.dyn_cast<mlir_ts::EnumType>())
             {
                 return enumType.getElementType();
             }
@@ -10861,34 +10950,14 @@ class MLIRGenImpl
         llvm_unreachable("not implemented");
     }
 
-    mlir::Type getFirstTypeFromTypeArguments(NodeArray<TypeNode> &typeArguments, const GenContext &genContext,
-                                             bool extractType = false)
+    mlir::Type getFirstTypeFromTypeArguments(NodeArray<TypeNode> &typeArguments, const GenContext &genContext)
     {
-        auto type = getType(typeArguments->front(), genContext);
-        if (extractType)
-        {
-            if (auto literalType = type.dyn_cast<mlir_ts::LiteralType>())
-            {
-                type = literalType.getElementType();
-            }
-        }
-
-        return type;
+        return getType(typeArguments->front(), genContext);
     }
 
-    mlir::Type getSecondTypeFromTypeArguments(NodeArray<TypeNode> &typeArguments, const GenContext &genContext,
-                                              bool extractType = false)
+    mlir::Type getSecondTypeFromTypeArguments(NodeArray<TypeNode> &typeArguments, const GenContext &genContext)
     {
-        auto type = getType(typeArguments[1], genContext);
-        if (extractType)
-        {
-            if (auto literalType = type.dyn_cast<mlir_ts::LiteralType>())
-            {
-                type = literalType.getElementType();
-            }
-        }
-
-        return type;
+        return getType(typeArguments[1], genContext);
     }
 
     mlir::LogicalResult zipTypeParameterWithArgument(
@@ -10988,7 +11057,10 @@ class MLIRGenImpl
             // can be utility type
             if (name == "TypeOf")
             {
-                return getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext, true);
+                MLIRTypeHelper mth(builder.getContext());
+                auto type = getFirstTypeFromTypeArguments(typeReferenceAST->typeArguments, genContext);
+                type = mth.wideStorageType(type);
+                return type;
             }
 
             if (name == "Readonly")
@@ -11204,7 +11276,7 @@ class MLIRGenImpl
     {
         SmallPtrSet<mlir::Type, 2> types;
 
-        MLIRHelper::LoadTypes(types, type);
+        MLIRHelper::loadTypes(types, type);
 
         SmallVector<mlir::Type> resTypes;
         for (auto item : types)
@@ -11225,8 +11297,8 @@ class MLIRGenImpl
         SmallPtrSet<mlir::Type, 2> types;
         SmallPtrSet<mlir::Type, 2> excludeTypes;
 
-        MLIRHelper::LoadTypes(types, type);
-        MLIRHelper::LoadTypes(excludeTypes, exclude);
+        MLIRHelper::loadTypes(types, type);
+        MLIRHelper::loadTypes(excludeTypes, exclude);
 
         SmallVector<mlir::Type> resTypes;
         for (auto item : types)
@@ -11247,8 +11319,8 @@ class MLIRGenImpl
         SmallPtrSet<mlir::Type, 2> types;
         SmallPtrSet<mlir::Type, 2> extractTypes;
 
-        MLIRHelper::LoadTypes(types, type);
-        MLIRHelper::LoadTypes(extractTypes, extract);
+        MLIRHelper::loadTypes(types, type);
+        MLIRHelper::loadTypes(extractTypes, extract);
 
         SmallVector<mlir::Type> resTypes;
         for (auto item : types)
@@ -11773,7 +11845,7 @@ class MLIRGenImpl
             {
                 auto literalTypeNode = typeItem.as<LiteralTypeNode>();
                 auto literalValue = mlirGen(literalTypeNode->literal.as<Expression>(), genContext);
-                auto constantOp = dyn_cast_or_null<mlir_ts::ConstantOp>(literalValue.getDefiningOp());
+                auto constantOp = dyn_cast<mlir_ts::ConstantOp>(literalValue.getDefiningOp());
                 attrVal = constantOp.valueAttr();
                 continue;
             }
@@ -11932,77 +12004,11 @@ class MLIRGenImpl
         return getSignature(indexSignature, genContext);
     }
 
-    struct UnionTypeProcessContext
-    {
-        UnionTypeProcessContext() = default;
-
-        bool isUndefined;
-        bool isNullable;
-        bool isNever;
-        bool isAny;
-        mlir::SmallPtrSet<mlir::Type, 2> types;
-        mlir::SmallPtrSet<mlir::Type, 2> literalTypes;
-    };
-
-    mlir::LogicalResult processUnionTypeItem(mlir::Type type, UnionTypeProcessContext &unionContext,
-                                             const GenContext &genContext)
-    {
-        if (type.isa<mlir_ts::UndefinedType>())
-        {
-            unionContext.isUndefined = true;
-            return mlir::success();
-        }
-
-        if (type.isa<mlir_ts::NullType>())
-        {
-            unionContext.isNullable = true;
-            return mlir::success();
-        }
-
-        if (type.isa<mlir_ts::AnyType>())
-        {
-            unionContext.isAny = true;
-            return mlir::success();
-        }
-
-        if (type.isa<mlir_ts::NeverType>())
-        {
-            unionContext.isNever = true;
-            return mlir::success();
-        }
-
-        if (auto literalType = type.dyn_cast<mlir_ts::LiteralType>())
-        {
-            unionContext.literalTypes.insert(literalType);
-            return mlir::success();
-        }
-
-        if (auto unionType = type.dyn_cast<mlir_ts::UnionType>())
-        {
-            if (mlir::succeeded(processUnionType(unionType, unionContext, genContext)))
-            {
-                return mlir::success();
-            }
-        }
-
-        unionContext.types.insert(type);
-        return mlir::success();
-    }
-
-    mlir::LogicalResult processUnionType(mlir_ts::UnionType unionType, UnionTypeProcessContext &unionContext,
-                                         const GenContext &genContext)
-    {
-        for (auto type : unionType.getTypes())
-        {
-            processUnionTypeItem(type, unionContext, genContext);
-        }
-
-        return mlir::success();
-    }
-
     mlir::Type getUnionType(UnionTypeNode unionTypeNode, const GenContext &genContext)
     {
-        UnionTypeProcessContext unionContext = {};
+        MLIRTypeHelper mth(builder.getContext());
+
+        MLIRTypeHelper::UnionTypeProcessContext unionContext = {};
         for (auto typeItem : unionTypeNode->types)
         {
             auto type = getType(typeItem, genContext);
@@ -12011,7 +12017,7 @@ class MLIRGenImpl
                 llvm_unreachable("wrong type");
             }
 
-            processUnionTypeItem(type, unionContext, genContext);
+            mth.processUnionTypeItem(type, unionContext);
 
             // default wide types
             if (unionContext.isAny)
@@ -12025,43 +12031,7 @@ class MLIRGenImpl
             }
         }
 
-        // merge types with literal types
-        for (auto literalType : unionContext.literalTypes)
-        {
-            auto baseType = literalType.cast<mlir_ts::LiteralType>().getElementType();
-            if (unionContext.types.count(baseType))
-            {
-                continue;
-            }
-
-            unionContext.types.insert(literalType);
-        }
-
-        MLIRTypeHelper mth(builder.getContext());
-        auto isAllValueTypes = true;
-        auto isAllLiteralTypes = true;
-
-        mlir::SmallVector<mlir::Type> typesAll;
-        for (auto type : unionContext.types)
-        {
-            typesAll.push_back(type);
-            isAllValueTypes &= mth.isValueType(type);
-            isAllLiteralTypes &= type.isa<mlir_ts::LiteralType>();
-        }
-
-        if ((isAllValueTypes || isAllLiteralTypes) && unionContext.isNullable)
-        {
-            // return null type back
-            typesAll.push_back(getNullType());
-        }
-
-        mlir::Type retType = typesAll.size() == 1 ? typesAll.front() : getUnionType(typesAll);
-        if (unionContext.isUndefined)
-        {
-            return getOptionalType(retType);
-        }
-
-        return retType;
+        return mth.getUnionTypeMergeTypes(unionContext, false);
     }
 
     mlir_ts::UnionType getUnionType(mlir::Type type1, mlir::Type type2)
@@ -12074,17 +12044,8 @@ class MLIRGenImpl
 
     mlir::Type getUnionType(mlir::SmallVector<mlir::Type> &types)
     {
-        if (types.size() == 0)
-        {
-            return getNeverType();
-        }
-
-        if (types.size() == 1)
-        {
-            return types.front();
-        }
-
-        return mlir_ts::UnionType::get(builder.getContext(), types);
+        MLIRTypeHelper mth(builder.getContext());
+        return mth.getUnionType(types);
     }
 
     mlir::Type getIntersectionType(IntersectionTypeNode intersectionTypeNode, const GenContext &genContext)
@@ -12363,6 +12324,11 @@ class MLIRGenImpl
         genContext.allowPartialResolve = true;
         auto value = mlirGen(literalTypeNode->literal.as<Expression>(), genContext);
         auto type = value.getType();
+        
+        if (auto literalType = type.dyn_cast<mlir_ts::LiteralType>())
+        {
+            return literalType;
+        }
 
         auto constantOp = value.getDefiningOp<mlir_ts::ConstantOp>();
         if (constantOp)

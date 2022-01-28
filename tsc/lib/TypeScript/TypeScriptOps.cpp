@@ -387,6 +387,14 @@ LogicalResult verify(mlir_ts::CastOp op)
             auto types = inUnionType.getTypes();
             if (std::find_if(types.begin(), types.end(), pred) == types.end())
             {
+                ::typescript::MLIRTypeHelper mth(op.getContext());
+                mlir::Type baseType;
+                if (!mth.isUnionTypeNeedsTag(inUnionType, baseType))
+                {
+                    // we need to ignore this case, for example if union<int, int, int> -> string, we need cast int to string
+                    return success();
+                }
+
                 return op.emitOpError("type [") << inUnionType << "] does not have [" << resType << "] type";
             }
 
@@ -463,21 +471,31 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
 
         // union support
         // TODO: review this code, should it be in "cast" logic?
-        auto isInUnionType = in.getType().isa<mlir_ts::UnionType>();
-        auto isResUnionType = res.getType().isa<mlir_ts::UnionType>();
-        if (isResUnionType && !isInUnionType)
+        auto inUnionType = in.getType().dyn_cast<mlir_ts::UnionType>();
+        auto resUnionType = res.getType().dyn_cast<mlir_ts::UnionType>();
+        if (resUnionType && !inUnionType)
         {
-            // TODO: boxing, finish it, need to send TypeOf
-            auto typeOfValue = rewriter.create<mlir_ts::TypeOfOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
-            auto unionValue = rewriter.create<mlir_ts::CreateUnionInstanceOp>(loc, res.getType(), in, typeOfValue);
-            rewriter.replaceOp(castOp, ValueRange{unionValue});
+            ::typescript::MLIRTypeHelper mth(rewriter.getContext());
+            if (mth.isUnionTypeNeedsTag(resUnionType))
+            {
+                // TODO: boxing, finish it, need to send TypeOf
+                auto typeOfValue = rewriter.create<mlir_ts::TypeOfOp>(loc, mlir_ts::StringType::get(rewriter.getContext()), in);
+                auto unionValue = rewriter.create<mlir_ts::CreateUnionInstanceOp>(loc, res.getType(), in, typeOfValue);
+                rewriter.replaceOp(castOp, ValueRange{unionValue});
+            }
+
             return success();
         }
 
-        if (isInUnionType && !isResUnionType)
+        if (inUnionType && !resUnionType)
         {
-            auto value = rewriter.create<mlir_ts::GetValueFromUnionOp>(loc, res.getType(), in);
-            rewriter.replaceOp(castOp, ValueRange{value});
+            ::typescript::MLIRTypeHelper mth(rewriter.getContext());
+            if (mth.isUnionTypeNeedsTag(inUnionType))
+            {
+                auto value = rewriter.create<mlir_ts::GetValueFromUnionOp>(loc, res.getType(), in);
+                rewriter.replaceOp(castOp, ValueRange{value});
+            }
+
             return success();
         }
 

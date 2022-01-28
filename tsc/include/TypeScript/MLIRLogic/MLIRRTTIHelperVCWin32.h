@@ -135,7 +135,7 @@ class MLIRRTTIHelperVCWin32
             return false;
         }
 
-        llvm::TypeSwitch<mlir::Type>(type)
+        llvm::TypeSwitch<mlir::Type>(mth.stripLiteralType(type))
             .Case<mlir::IntegerType>([&](auto intType) {
                 if (intType.getIntOrFloatBitWidth() == 32)
                 {

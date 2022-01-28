@@ -16,7 +16,7 @@ function main1() {
     assert(c == 3);
 }
 
-function* foo2() {
+function* foo2() { 
     let i = 1;
     yield ++i;
     yield ++i;

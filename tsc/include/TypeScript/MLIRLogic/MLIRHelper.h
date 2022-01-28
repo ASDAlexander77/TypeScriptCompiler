@@ -134,7 +134,7 @@ class MLIRHelper
         return false;
     }
 
-    static void LoadTypes(mlir::SmallVector<mlir::Type> &types, mlir::Type type)
+    static void loadTypes(mlir::SmallVector<mlir::Type> &types, mlir::Type type)
     {
         if (auto sourceUnionType = type.dyn_cast<mlir_ts::UnionType>())
         {
@@ -149,7 +149,7 @@ class MLIRHelper
         }
     }
 
-    static void LoadTypes(mlir::SmallPtrSet<mlir::Type, 2> &types, mlir::Type type)
+    static void loadTypes(mlir::SmallPtrSet<mlir::Type, 2> &types, mlir::Type type)
     {
         if (auto sourceUnionType = type.dyn_cast<mlir_ts::UnionType>())
         {
@@ -163,6 +163,16 @@ class MLIRHelper
             types.insert(type);
         }
     }
+
+    static mlir::Type stripLiteralType(mlir::Type type)
+    {
+        if (auto literalType = type.dyn_cast<mlir_ts::LiteralType>())
+        {
+            return literalType.getElementType();
+        }
+
+        return type;
+    }    
 };
 
 } // namespace typescript

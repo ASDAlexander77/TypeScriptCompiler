@@ -167,6 +167,11 @@ class TypeOfOpHelper
             return typeOfLogic(loc, subType.getElementType());
         }
 
+        if (auto literalType = type.dyn_cast_or_null<mlir_ts::LiteralType>())
+        {
+            return typeOfLogic(loc, literalType.getElementType());
+        }
+
         LLVM_DEBUG(llvm::dbgs() << "TypeOf: " << type << "\n");
 
         llvm_unreachable("not implemented");

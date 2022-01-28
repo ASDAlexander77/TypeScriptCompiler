@@ -149,7 +149,6 @@ class CastLogicHelper
             {
                 if (arrayType.getElementType() == refType.getElementType())
                 {
-
                     return rewriter.create<LLVM::ExtractValueOp>(loc, resLLVMType, in,
                                                                  rewriter.getI32ArrayAttr(mlir::ArrayRef<int32_t>(0)));
                 }
@@ -411,6 +410,11 @@ class CastLogicHelper
                 auto unionValue = rewriter.create<mlir_ts::CreateUnionInstanceOp>(loc, resUnionType, in, typeOfValue);
                 return unionValue;
             }
+        }
+
+        if (auto literalType = inType.dyn_cast_or_null<mlir_ts::LiteralType>())
+        {
+            return cast(in, literalType.getElementType(), tch.convertType(literalType.getElementType()), resType, resLLVMType);
         }
 
         return mlir::Value();

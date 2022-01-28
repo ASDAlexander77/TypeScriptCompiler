@@ -147,7 +147,7 @@ class MLIRTypeHelper
 
     bool isUndefinedType(mlir::Type type)
     {
-        if (auto optType = type.dyn_cast_or_null<mlir_ts::OptionalType>())
+        if (auto optType = type.dyn_cast<mlir_ts::OptionalType>())
         {
             return optType == mlir_ts::UndefPlaceHolderType::get(context);
         }
@@ -158,7 +158,7 @@ class MLIRTypeHelper
     mlir::Type isBoundReference(mlir::Type elementType, bool &isBound)
     {
 #ifdef USE_BOUND_FUNCTION_FOR_OBJECTS
-        if (auto funcType = elementType.dyn_cast_or_null<mlir_ts::FunctionType>())
+        if (auto funcType = elementType.dyn_cast<mlir_ts::FunctionType>())
         {
             isBound = true;
             return mlir_ts::BoundFunctionType::get(context, funcType);
@@ -169,9 +169,29 @@ class MLIRTypeHelper
         return elementType;
     }
 
+    mlir::Type wideStorageType(mlir::Type type)
+    {
+        auto actualType = type;
+
+        actualType = stripLiteralType(actualType);
+        actualType = convertConstArrayTypeToArrayType(actualType);
+
+        return actualType;
+    }    
+
+    mlir::Type stripLiteralType(mlir::Type type)
+    {
+        if (auto literalType = type.dyn_cast<mlir_ts::LiteralType>())
+        {
+            return literalType.getElementType();
+        }
+
+        return type;
+    }
+
     mlir::Type convertConstArrayTypeToArrayType(mlir::Type type)
     {
-        if (auto constArrayType = type.dyn_cast_or_null<mlir_ts::ConstArrayType>())
+        if (auto constArrayType = type.dyn_cast<mlir_ts::ConstArrayType>())
         {
             return mlir_ts::ArrayType::get(constArrayType.getElementType());
         }
@@ -182,7 +202,7 @@ class MLIRTypeHelper
     mlir::Type convertConstTupleTypeToTupleType(mlir::Type type)
     {
         // tuple is value and copied already
-        if (auto constTupleType = type.dyn_cast_or_null<mlir_ts::ConstTupleType>())
+        if (auto constTupleType = type.dyn_cast<mlir_ts::ConstTupleType>())
         {
             return mlir_ts::TupleType::get(context, constTupleType.getFields());
         }
@@ -193,7 +213,7 @@ class MLIRTypeHelper
     mlir::Type convertTupleTypeToConstTupleType(mlir::Type type)
     {
         // tuple is value and copied already
-        if (auto tupleType = type.dyn_cast_or_null<mlir_ts::TupleType>())
+        if (auto tupleType = type.dyn_cast<mlir_ts::TupleType>())
         {
             return mlir_ts::ConstTupleType::get(context, tupleType.getFields());
         }
@@ -427,7 +447,7 @@ class MLIRTypeHelper
 
     mlir::Value GetReferenceOfLoadOp(mlir::Value value)
     {
-        if (auto loadOp = mlir::dyn_cast_or_null<mlir_ts::LoadOp>(value.getDefiningOp()))
+        if (auto loadOp = mlir::dyn_cast<mlir_ts::LoadOp>(value.getDefiningOp()))
         {
             // this LoadOp will be removed later as unused
             auto refValue = loadOp.reference();
@@ -455,7 +475,7 @@ class MLIRTypeHelper
                 return true;
             }
 
-            if (auto optType = type.dyn_cast_or_null<mlir_ts::OptionalType>())
+            if (auto optType = type.dyn_cast<mlir_ts::OptionalType>())
             {
                 return testType(optType.getElementType());
             }
@@ -499,35 +519,35 @@ class MLIRTypeHelper
             return true;
         }
 
-        if (auto constTuple = srcType.dyn_cast_or_null<mlir_ts::ConstTupleType>())
+        if (auto constTuple = srcType.dyn_cast<mlir_ts::ConstTupleType>())
         {
-            if (auto matchConstTuple = destType.dyn_cast_or_null<mlir_ts::ConstTupleType>())
+            if (auto matchConstTuple = destType.dyn_cast<mlir_ts::ConstTupleType>())
             {
                 return isCastableTypesLogic(constTuple, matchConstTuple);
             }
 
-            if (auto matchTuple = destType.dyn_cast_or_null<mlir_ts::TupleType>())
+            if (auto matchTuple = destType.dyn_cast<mlir_ts::TupleType>())
             {
                 return isCastableTypesLogic(constTuple, matchTuple);
             }
 
             /*
             // TODO: finish it
-            if (auto ifaceType = destType.dyn_cast_or_null<mlir_ts::InterfaceType>())
+            if (auto ifaceType = destType.dyn_cast<mlir_ts::InterfaceType>())
             {
             }
             */
         }
 
-        if (auto tuple = srcType.dyn_cast_or_null<mlir_ts::TupleType>())
+        if (auto tuple = srcType.dyn_cast<mlir_ts::TupleType>())
         {
-            if (auto matchTuple = destType.dyn_cast_or_null<mlir_ts::TupleType>())
+            if (auto matchTuple = destType.dyn_cast<mlir_ts::TupleType>())
             {
                 return isCastableTypesLogic(tuple, matchTuple);
             }
         }
 
-        if (auto unionType = destType.dyn_cast_or_null<mlir_ts::UnionType>())
+        if (auto unionType = destType.dyn_cast<mlir_ts::UnionType>())
         {
             // calculate store size
             auto pred = [&](auto &item) { return isCastableTypes(item, srcType); };
@@ -554,7 +574,7 @@ class MLIRTypeHelper
                 return true;
             }
 
-            if (auto optType = type.dyn_cast_or_null<mlir_ts::OptionalType>())
+            if (auto optType = type.dyn_cast<mlir_ts::OptionalType>())
             {
                 return testType(optType.getElementType());
             }
@@ -572,12 +592,12 @@ class MLIRTypeHelper
 
     bool hasUndefines(mlir::Type type)
     {
-        if (auto constTuple = type.dyn_cast_or_null<mlir_ts::ConstTupleType>())
+        if (auto constTuple = type.dyn_cast<mlir_ts::ConstTupleType>())
         {
             return hasUndefinesLogic(constTuple);
         }
 
-        if (auto tuple = type.dyn_cast_or_null<mlir_ts::TupleType>())
+        if (auto tuple = type.dyn_cast<mlir_ts::TupleType>())
         {
             return hasUndefinesLogic(tuple);
         }
@@ -643,19 +663,13 @@ class MLIRTypeHelper
 
         if (auto literalType = srcType.dyn_cast<mlir_ts::LiteralType>())
         {
-            if (literalType.getElementType() == dstType)
-            {
-                return true;
-            }
+            return canWideTypeWithoutDataLoss(literalType.getElementType(), dstType);
         }
 
         // wide range type can't be stored into literal
         if (auto literalType = dstType.dyn_cast<mlir_ts::LiteralType>())
         {
-            if (literalType.getElementType() == srcType)
-            {
-                return true;
-            }
+            return canWideTypeWithoutDataLoss(srcType, literalType.getElementType());
         }
 
         return false;
@@ -678,22 +692,22 @@ class MLIRTypeHelper
             return true;
         }
 
-        if (auto constTuple = srcType.dyn_cast_or_null<mlir_ts::ConstTupleType>())
+        if (auto constTuple = srcType.dyn_cast<mlir_ts::ConstTupleType>())
         {
-            if (auto matchConstTuple = dstType.dyn_cast_or_null<mlir_ts::ConstTupleType>())
+            if (auto matchConstTuple = dstType.dyn_cast<mlir_ts::ConstTupleType>())
             {
                 return isSizeEqualLogic(constTuple, matchConstTuple);
             }
 
-            if (auto matchTuple = dstType.dyn_cast_or_null<mlir_ts::TupleType>())
+            if (auto matchTuple = dstType.dyn_cast<mlir_ts::TupleType>())
             {
                 return isSizeEqualLogic(constTuple, matchTuple);
             }
         }
 
-        if (auto tuple = srcType.dyn_cast_or_null<mlir_ts::TupleType>())
+        if (auto tuple = srcType.dyn_cast<mlir_ts::TupleType>())
         {
-            if (auto matchTuple = dstType.dyn_cast_or_null<mlir_ts::TupleType>())
+            if (auto matchTuple = dstType.dyn_cast<mlir_ts::TupleType>())
             {
                 return isSizeEqualLogic(tuple, matchTuple);
             }
@@ -704,14 +718,15 @@ class MLIRTypeHelper
         return false;
     }
 
+    // TODO: obsolete, review usage (use stripLiteralType etc)
     mlir::Type getBaseType(mlir::Type type)
     {
-        if (auto literalType = type.dyn_cast_or_null<mlir_ts::LiteralType>())
+        if (auto literalType = type.dyn_cast<mlir_ts::LiteralType>())
         {
             return literalType.getElementType();
         }
 
-        if (auto enumType = type.dyn_cast_or_null<mlir_ts::EnumType>())
+        if (auto enumType = type.dyn_cast<mlir_ts::EnumType>())
         {
             return enumType.getElementType();
         }
@@ -719,14 +734,17 @@ class MLIRTypeHelper
         return type;
     }
 
+    // TODO: use logic from getUnionTypeWithMerge() 
     bool isUnionTypeNeedsTag(mlir_ts::UnionType unionType)
     {
         mlir::Type baseType;
         return isUnionTypeNeedsTag(unionType, baseType);
     }
 
+    // TODO: use logic from getUnionTypeWithMerge() 
     bool isUnionTypeNeedsTag(mlir_ts::UnionType unionType, mlir::Type &baseType)
     {
+        /*
         bool anyNonTuple = false;
         bool allBaseTypes = true;
         bool isAnyNullable = false;
@@ -761,6 +779,11 @@ class MLIRTypeHelper
         }
 
         return anyNonTuple;
+        */
+
+        auto storeType = getUnionTypeWithMerge(unionType.getTypes());
+        baseType = storeType;
+        return storeType.isa<mlir_ts::UnionType>();
     }
 
     bool extendsType(mlir::Type srcType, mlir::Type extendType)
@@ -770,12 +793,12 @@ class MLIRTypeHelper
             return true;
         }
 
-        if (auto literalType = srcType.dyn_cast_or_null<mlir_ts::LiteralType>())
+        if (auto literalType = srcType.dyn_cast<mlir_ts::LiteralType>())
         {
             return extendsType(literalType.getElementType(), extendType);
         }
 
-        if (auto unionType = extendType.dyn_cast_or_null<mlir_ts::UnionType>())
+        if (auto unionType = extendType.dyn_cast<mlir_ts::UnionType>())
         {
             auto pred = [&](auto &item) { return extendsType(srcType, item); };
             auto types = unionType.getTypes();
@@ -798,6 +821,167 @@ class MLIRTypeHelper
         }
 
         return mlir::Type();
+    }
+
+    // Union Type logic to merge types
+    struct UnionTypeProcessContext
+    {
+        UnionTypeProcessContext() = default;
+
+        bool isUndefined;
+        bool isNullable;
+        bool isNever;
+        bool isAny;
+        mlir::SmallPtrSet<mlir::Type, 2> types;
+        mlir::SmallPtrSet<mlir::Type, 2> literalTypes;
+    };
+
+    mlir::LogicalResult processUnionTypeItem(mlir::Type type, UnionTypeProcessContext &unionContext)
+    {
+        if (type.isa<mlir_ts::UndefinedType>())
+        {
+            unionContext.isUndefined = true;
+            return mlir::success();
+        }
+
+        if (type.isa<mlir_ts::NullType>())
+        {
+            unionContext.isNullable = true;
+            return mlir::success();
+        }
+
+        if (type.isa<mlir_ts::AnyType>())
+        {
+            unionContext.isAny = true;
+            return mlir::success();
+        }
+
+        if (type.isa<mlir_ts::NeverType>())
+        {
+            unionContext.isNever = true;
+            return mlir::success();
+        }
+
+        if (auto literalType = type.dyn_cast<mlir_ts::LiteralType>())
+        {
+            unionContext.literalTypes.insert(literalType);
+            return mlir::success();
+        }
+
+        if (auto unionType = type.dyn_cast<mlir_ts::UnionType>())
+        {
+            if (mlir::succeeded(processUnionType(unionType, unionContext)))
+            {
+                return mlir::success();
+            }
+        }
+
+        unionContext.types.insert(type);
+        return mlir::success();
+    }
+
+    mlir::LogicalResult processUnionType(mlir_ts::UnionType unionType, UnionTypeProcessContext &unionContext)
+    {
+        for (auto type : unionType.getTypes())
+        {
+            processUnionTypeItem(type, unionContext);
+        }
+
+        return mlir::success();
+    }
+
+    mlir::Type getUnionTypeMergeTypes(UnionTypeProcessContext &unionContext, bool mergeLiterals = true)
+    {
+        // merge types with literal types
+        for (auto literalType : unionContext.literalTypes)
+        {
+            if (mergeLiterals)
+            {
+                auto baseType = literalType.cast<mlir_ts::LiteralType>().getElementType();
+                if (unionContext.types.count(baseType))
+                {
+                    continue;
+                }
+
+                unionContext.types.insert(baseType);
+            }
+            else
+            {
+                if (unionContext.types.count(literalType))
+                {
+                    continue;
+                }
+
+                unionContext.types.insert(literalType);
+            }
+        }
+
+        auto isAllValueTypes = true;
+        auto isAllLiteralTypes = true;
+
+        mlir::SmallVector<mlir::Type> typesAll;
+        for (auto type : unionContext.types)
+        {
+            typesAll.push_back(type);
+            isAllValueTypes &= isValueType(type);
+            isAllLiteralTypes &= type.isa<mlir_ts::LiteralType>();
+        }
+
+        if ((isAllValueTypes || isAllLiteralTypes) && unionContext.isNullable)
+        {
+            // return null type back
+            typesAll.push_back(getNullType());
+        }
+
+        mlir::Type retType = typesAll.size() == 1 ? typesAll.front() : getUnionType(typesAll);
+        if (unionContext.isUndefined)
+        {
+            return mlir_ts::OptionalType::get(retType);
+        }
+
+        return retType;
+    }
+
+    mlir::Type getUnionTypeWithMerge(mlir::ArrayRef<mlir::Type> types)
+    {
+        UnionTypeProcessContext unionContext = {};
+        for (auto type : types)
+        {
+            if (!type)
+            {
+                llvm_unreachable("wrong type");
+            }
+
+            processUnionTypeItem(type, unionContext);
+
+            // default wide types
+            if (unionContext.isAny)
+            {
+                return mlir_ts::AnyType::get(context);
+            }
+
+            if (unionContext.isNever)
+            {
+                return mlir_ts::NeverType::get(context);
+            }
+        }
+
+        return getUnionTypeMergeTypes(unionContext);
+    }
+
+    mlir::Type getUnionType(mlir::SmallVector<mlir::Type> &types)
+    {
+        if (types.size() == 0)
+        {
+            return mlir_ts::NeverType::get(context);
+        }
+
+        if (types.size() == 1)
+        {
+            return types.front();
+        }
+
+        return mlir_ts::UnionType::get(context, types);
     }
 };
 
