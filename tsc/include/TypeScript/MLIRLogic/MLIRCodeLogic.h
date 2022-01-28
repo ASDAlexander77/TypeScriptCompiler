@@ -9,6 +9,7 @@
 #include "TypeScript/MLIRLogic/MLIRTypeHelper.h"
 
 #include "llvm/Support/Debug.h"
+#include "llvm/ADT/APSInt.h"
 
 #include "parser_types.h"
 
@@ -426,8 +427,34 @@ class MLIRPropertyAccessCodeLogic
             return mlir::Value();
         }
 
+        mlir::Type typeFromAttr;
+        mlir::TypeSwitch<mlir::Attribute>(valueAttr)
+            .Case<mlir::StringAttr>([&](auto strAttr)
+            {
+                typeFromAttr = mlir_ts::StringType::get(builder.getContext());
+            })
+            .Case<mlir::IntegerAttr>([&](auto intAttr)
+            {
+                typeFromAttr = intAttr.getType();
+            })
+            .Case<mlir::FloatAttr>([&](auto floatAttr)
+            {
+                typeFromAttr = mlir_ts::NumberType::get(builder.getContext());
+            })
+            .Case<mlir::BoolAttr>([&](auto boolAttr)
+            {
+                typeFromAttr = mlir_ts::BooleanType::get(builder.getContext());
+            })
+            .Default([&](auto type)
+            {
+                llvm_unreachable("not implemented");
+            });
+
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! enum: " << propName << " value attr: " << valueAttr << " value type: " << valueAttr.getType() << "\n");
+
         //return builder.create<mlir_ts::ConstantOp>(location, enumType.getElementType(), valueAttr);
-        auto literalType = mlir_ts::LiteralType::get(valueAttr, valueAttr.getType());
+        auto literalType = mlir_ts::LiteralType::get(valueAttr, typeFromAttr);
         return builder.create<mlir_ts::ConstantOp>(location, literalType, valueAttr);
     }
 

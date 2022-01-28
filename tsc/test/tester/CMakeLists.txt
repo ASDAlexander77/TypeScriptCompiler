@@ -74,6 +74,7 @@ endif()
 ######## enable testing ############                     
 add_test(NAME test-compile-00-print COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00print.ts")
 add_test(NAME test-compile-00-assert COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")
+add_test(NAME test-compile-00-enums COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00enum.ts")
 add_test(NAME test-compile-00-funcs COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs.ts")
 add_test(NAME test-compile-00-funcs-capture COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_capture.ts")
 add_test(NAME test-compile-00-funcs-vararg COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_vararg.ts")
@@ -218,6 +219,7 @@ add_test(NAME test-compile-Print-Bug-01 COMMAND test-runner "${PROJECT_SOURCE_DI
 
 add_test(NAME test-jit-00-print COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00print.ts")
 add_test(NAME test-jit-00-assert COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")
+add_test(NAME test-jit-00-enums COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00enum.ts")
 add_test(NAME test-jit-00-funcs COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs.ts")
 add_test(NAME test-jit-00-funcs-capture COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_capture.ts")
 add_test(NAME test-jit-00-funcs-vararg COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00funcs_vararg.ts")

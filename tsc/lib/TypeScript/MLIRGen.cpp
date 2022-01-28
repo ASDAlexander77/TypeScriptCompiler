@@ -8232,7 +8232,7 @@ class MLIRGenImpl
         SmallVector<mlir::Type> enumLiteralTypes;
         SmallVector<mlir::NamedAttribute> enumValues;
         int64_t index = 0;
-        auto activeBits = 0;
+        auto activeBits = 32;
         for (auto enumMember : enumDeclarationAST->members)
         {
             auto memberNamePtr = MLIRHelper::getName(enumMember->name, stringAllocator);
@@ -8266,7 +8266,7 @@ class MLIRGenImpl
                         {
                             activeBits = currentActiveBits;
                         }
-                    }
+                    }                    
                 }
                 else
                 {
@@ -8275,50 +8275,19 @@ class MLIRGenImpl
             }
             else
             {
-                enumValueAttr = builder.getI32IntegerAttr(index);
-                auto indexType = mlir_ts::LiteralType::get(enumValueAttr, builder.getI32Type());
+                auto typeInt = mlir::IntegerType::get(builder.getContext(), activeBits);
+                enumValueAttr = builder.getIntegerAttr(typeInt, index);
+                auto indexType = mlir_ts::LiteralType::get(enumValueAttr, typeInt);
                 enumLiteralTypes.push_back(indexType);
 
                 LLVM_DEBUG(llvm::dbgs() << "\n!! enum member: " << memberNamePtr << " <- " << indexType << "\n");
             }
 
+            LLVM_DEBUG(llvm::dbgs() << "\n!! enum: " << namePtr << " value attr: " << enumValueAttr << "\n");
+
             enumValues.push_back({mlir::Identifier::get(memberNamePtr, builder.getContext()), enumValueAttr});
             index++;
         }
-
-        /*
-        // count used bits
-        auto indexUsingBits = std::floor(std::log2(index)) + 1;
-        if (indexUsingBits > activeBits)
-        {
-            activeBits = indexUsingBits;
-        }
-
-        // get type by size
-        auto bits = 32;
-        if (bits < activeBits)
-        {
-            bits = 64;
-            if (bits < activeBits)
-            {
-                bits = 128;
-            }
-        }
-
-        auto enumIntType = builder.getIntegerType(bits);
-        SmallVector<mlir::NamedAttribute> adjustedEnumValues;
-        for (auto enumItem : enumValues)
-        {
-            if (auto intAttr = enumItem.second.dyn_cast<mlir::IntegerAttr>())
-            {
-                adjustedEnumValues.push_back({enumItem.first, mlir::IntegerAttr::get(enumIntType, intAttr.getInt())});
-            }
-            else
-            {
-                adjustedEnumValues.push_back(enumItem);
-            }
-        }
-        */
 
         MLIRTypeHelper mth(builder.getContext());
         auto storeType = mth.getUnionTypeWithMerge(enumLiteralTypes);
