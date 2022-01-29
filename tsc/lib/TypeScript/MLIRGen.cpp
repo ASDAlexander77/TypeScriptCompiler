@@ -1506,7 +1506,7 @@ class MLIRGenImpl
                         auto init = std::get<1>(res);
                         if (!type && genContext.allowPartialResolve)
                         {
-                            return false;
+                            return varType;
                         }
 
                         assert(type);
@@ -1527,7 +1527,7 @@ class MLIRGenImpl
                         auto type = std::get<0>(res);
                         if (!type && genContext.allowPartialResolve)
                         {
-                            return false;
+                            return varType;
                         }
 
                         assert(type);
@@ -4440,10 +4440,6 @@ class MLIRGenImpl
         mlir::Value value;
         auto valueAttr = constantOp.valueAttr();                
         mlir::TypeSwitch<mlir::Attribute>(valueAttr)
-            .Case<mlir::StringAttr>([&](auto strAttr)
-            {
-                llvm_unreachable("not implemented");
-            })
             .Case<mlir::IntegerAttr>([&](auto intAttr)
             {
                 value = builder.create<mlir_ts::ConstantOp>(location, constantOp.getType(), builder.getIntegerAttr(intAttr.getType(), -intAttr.getValue()));
@@ -4451,14 +4447,6 @@ class MLIRGenImpl
             .Case<mlir::FloatAttr>([&](auto floatAttr)
             {
                 value = builder.create<mlir_ts::ConstantOp>(location, constantOp.getType(), builder.getFloatAttr(floatAttr.getType(), -floatAttr.getValue()));
-            })
-            .Case<mlir::BoolAttr>([&](auto boolAttr)
-            {
-                llvm_unreachable("not implemented");
-            })
-            .Default([&](auto type)
-            {
-                llvm_unreachable("not implemented");
             });
 
         return value;
@@ -4480,7 +4468,11 @@ class MLIRGenImpl
         {
             if (auto constantOp = expressionValue.getDefiningOp<mlir_ts::ConstantOp>())
             {
-                return mlirGenPrefixUnaryExpression(location, constantOp, genContext);
+                auto res = mlirGenPrefixUnaryExpression(location, constantOp, genContext);
+                if (res)
+                {
+                    return res;
+                }
             }
         }
 
