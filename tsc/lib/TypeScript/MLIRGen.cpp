@@ -4446,11 +4446,11 @@ class MLIRGenImpl
             })
             .Case<mlir::IntegerAttr>([&](auto intAttr)
             {
-                value = builder.create<mlir_ts::ConstantOp>(location, builder.getIntegerAttr(intAttr.getType(), -intAttr.getValue()));
+                value = builder.create<mlir_ts::ConstantOp>(location, constantOp.getType(), builder.getIntegerAttr(intAttr.getType(), -intAttr.getValue()));
             })
             .Case<mlir::FloatAttr>([&](auto floatAttr)
             {
-                value = builder.create<mlir_ts::ConstantOp>(location, builder.getFloatAttr(floatAttr.getType(), -floatAttr.getValue()));
+                value = builder.create<mlir_ts::ConstantOp>(location, constantOp.getType(), builder.getFloatAttr(floatAttr.getType(), -floatAttr.getValue()));
             })
             .Case<mlir::BoolAttr>([&](auto boolAttr)
             {
@@ -5866,6 +5866,7 @@ class MLIRGenImpl
         }
         else
         {
+            LLVM_DEBUG(llvm::dbgs() << "\n!! index value: " << argumentExpression << ", check if tuple must be an array\n";);
             llvm_unreachable("not implemented (index)");
         }
     }
