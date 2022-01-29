@@ -4435,6 +4435,35 @@ class MLIRGenImpl
         return mlirGen(leftHandSideExpressionAST.as<Expression>(), genContext);
     }
 
+    mlir::Value mlirGenPrefixUnaryExpression(mlir::Location location, mlir_ts::ConstantOp constantOp, const GenContext &genContext)
+    {
+        mlir::Value value;
+        auto valueAttr = constantOp.valueAttr();                
+        mlir::TypeSwitch<mlir::Attribute>(valueAttr)
+            .Case<mlir::StringAttr>([&](auto strAttr)
+            {
+                llvm_unreachable("not implemented");
+            })
+            .Case<mlir::IntegerAttr>([&](auto intAttr)
+            {
+                value = builder.create<mlir_ts::ConstantOp>(location, builder.getIntegerAttr(intAttr.getType(), -intAttr.getValue()));
+            })
+            .Case<mlir::FloatAttr>([&](auto floatAttr)
+            {
+                value = builder.create<mlir_ts::ConstantOp>(location, builder.getFloatAttr(floatAttr.getType(), -floatAttr.getValue()));
+            })
+            .Case<mlir::BoolAttr>([&](auto boolAttr)
+            {
+                llvm_unreachable("not implemented");
+            })
+            .Default([&](auto type)
+            {
+                llvm_unreachable("not implemented");
+            });
+
+        return value;
+    }
+
     mlir::Value mlirGen(PrefixUnaryExpression prefixUnaryExpressionAST, const GenContext &genContext)
     {
         auto location = loc(prefixUnaryExpressionAST);
@@ -4445,6 +4474,15 @@ class MLIRGenImpl
         auto expressionValue = mlirGen(expression, genContext);
 
         VALIDATE(expressionValue, location)
+
+        // special case "-" for literal value
+        if (opCode == SyntaxKind::MinusToken)
+        {
+            if (auto constantOp = expressionValue.getDefiningOp<mlir_ts::ConstantOp>())
+            {
+                return mlirGenPrefixUnaryExpression(location, constantOp, genContext);
+            }
+        }
 
         auto boolValue = expressionValue;
 
@@ -11461,6 +11499,11 @@ genContext);
             return getStringType();
         }
 
+        if (attr.isa<mlir::IntegerAttr>())
+        {
+            return attr.getType();
+        }        
+
         if (attr.isa<mlir::FloatAttr>())
         {
             return getNumberType();
@@ -11818,6 +11861,8 @@ genContext);
     {
         MLIRCodeLogic mcl(builder);
         mlir::Attribute attrVal;
+        auto arrayMode = true;
+        auto index = 0;
         for (auto typeItem : tupleType->elements)
         {
             if (typeItem == SyntaxKind::NamedTupleMember)
@@ -11829,6 +11874,7 @@ genContext);
 
                 assert(type);
                 types.push_back({mcl.TupleFieldName(namePtr), type});
+                arrayMode = false;
             }
             else if (typeItem == SyntaxKind::LiteralType)
             {
@@ -11842,6 +11888,13 @@ genContext);
                 assert(constantOp);
 
                 attrVal = constantOp.valueAttr();
+
+                if (arrayMode)
+                {
+                    types.push_back({builder.getIntegerAttr(builder.getI32Type(), index), constantOp.getType()});
+                }
+
+                index++;
                 continue;
             }
             else
