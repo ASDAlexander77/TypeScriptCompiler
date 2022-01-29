@@ -7189,7 +7189,7 @@ class MLIRGenImpl
 
         auto location = loc(objectLiteral);
 
-        auto addFuncFieldInfo = [&](mlir::Attribute fieldId, std::string funcName, mlir_ts::FunctionType funcType) {
+        auto addFuncFieldInfo = [&](mlir::Attribute fieldId, const std::string &funcName, mlir_ts::FunctionType funcType) {
             auto type = funcType;
 
             auto captureVars = getCaptureVarsMap().find(funcName);
@@ -8158,6 +8158,11 @@ class MLIRGenImpl
                 typeParameterDOM->setConstraint(getType(typeParameter->constraint, genContext));
             }
 
+            if (typeParameter->_default)
+            {
+                typeParameterDOM->setDefault(getType(typeParameter->_default, genContext));
+            }
+
             return typeParameterDOM;
         }
         else
@@ -8602,7 +8607,7 @@ class MLIRGenImpl
         return mlirGenClassInfo(className(classDeclarationAST, genContext), classDeclarationAST, genContext);
     }
 
-    ClassInfo::TypePtr mlirGenClassInfo(std::string name, ClassLikeDeclaration classDeclarationAST,
+    ClassInfo::TypePtr mlirGenClassInfo(const std::string &name, ClassLikeDeclaration classDeclarationAST,
                                         const GenContext &genContext)
     {
         auto namePtr = StringRef(name).copy(stringAllocator);
@@ -9089,7 +9094,7 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    mlir::LogicalResult mlirGenForwardDeclaration(std::string funcName, mlir_ts::FunctionType funcType, bool isStatic,
+    mlir::LogicalResult mlirGenForwardDeclaration(const std::string &funcName, mlir_ts::FunctionType funcType, bool isStatic,
                                                   bool isVirtual, ClassInfo::TypePtr newClassPtr,
                                                   const GenContext &genContext)
     {
@@ -10160,7 +10165,7 @@ genContext);
         return mlirGenInterfaceInfo(name, declareInterface, genContext);
     }
 
-    InterfaceInfo::TypePtr mlirGenInterfaceInfo(std::string name, bool &declareInterface, const GenContext &genContext)
+    InterfaceInfo::TypePtr mlirGenInterfaceInfo(const std::string &name, bool &declareInterface, const GenContext &genContext)
     {
         declareInterface = false;
 
@@ -10533,7 +10538,7 @@ genContext);
         theModule = savedModule;
     }
 
-    mlir::Type evaluateProperty(mlir::Value exprValue, std::string propertyName, const GenContext &genContext)
+    mlir::Type evaluateProperty(mlir::Value exprValue, const std::string &propertyName, const GenContext &genContext)
     {
         auto location = exprValue.getLoc();
         // we need to add temporary block
@@ -11594,7 +11599,7 @@ genContext);
         return getUnionType(types);
     }
 
-    void getTemplateLiteralSpan(SmallVector<mlir::Type> &types, std::string head,
+    void getTemplateLiteralSpan(SmallVector<mlir::Type> &types, const std::string &head,
                                 NodeArray<TemplateLiteralTypeSpan> &spans, int spanIndex, const GenContext &genContext)
     {
         if (spanIndex >= spans.size())
@@ -11609,7 +11614,7 @@ genContext);
         getTemplateLiteralTypeItem(types, type, head, spans, spanIndex, genContext);
     }
 
-    void getTemplateLiteralTypeItem(SmallVector<mlir::Type> &types, mlir::Type type, std::string head,
+    void getTemplateLiteralTypeItem(SmallVector<mlir::Type> &types, mlir::Type type, const std::string &head,
                                     NodeArray<TemplateLiteralTypeSpan> &spans, int spanIndex,
                                     const GenContext &genContext)
     {
@@ -11636,7 +11641,7 @@ genContext);
         getTemplateLiteralSpan(types, ss.str(), spans, spanIndex + 1, genContext);
     }
 
-    void getTemplateLiteralUnionType(SmallVector<mlir::Type> &types, mlir::Type unionType, std::string head,
+    void getTemplateLiteralUnionType(SmallVector<mlir::Type> &types, mlir::Type unionType, const std::string &head,
                                      NodeArray<TemplateLiteralTypeSpan> &spans, int spanIndex,
                                      const GenContext &genContext)
     {
@@ -12717,7 +12722,7 @@ genContext);
                                          posLineChar.character + 1);
     }
 
-    mlir::StringAttr getStringAttr(std::string text)
+    mlir::StringAttr getStringAttr(const std::string &text)
     {
         return builder.getStringAttr(text);
     }

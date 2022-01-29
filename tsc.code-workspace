@@ -160,7 +160,6 @@
             "-I../../__build/tsc/include",
         ],
         "clang-tidy.checks": [
-            "bugprone-*",
             "performance-*"
         ],
         "clang-tidy.buildPath": "../../__build/tsc",
