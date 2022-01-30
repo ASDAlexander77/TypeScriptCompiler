@@ -1286,7 +1286,7 @@ class MLIRGenImpl
                 if (!genContext.allowPartialResolve)
                 {
                     emitError(location) << "can't instantiate function. '" << funcName
-                                    << "' not all generic types can't identified";
+                                    << "' not all generic types can be identified";
                 }
 
                 return mlir::Value();
