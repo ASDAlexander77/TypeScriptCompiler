@@ -1164,7 +1164,7 @@ class MLIRGenImpl
         return {mlir::success(), funcProto};
     }
 
-    mlir::Type instantiateSpecializedClassType(mlir::Location location, mlir_ts::ClassType genericClassType,
+    std::pair<mlir::LogicalResult, mlir::Type> instantiateSpecializedClassType(mlir::Location location, mlir_ts::ClassType genericClassType,
                                                NodeArray<TypeNode> typeArguments, const GenContext &genContext)
     {
         auto fullNameGenericClassTypeName = genericClassType.getName().getValue();
@@ -1181,7 +1181,7 @@ class MLIRGenImpl
             {
                 // return mlir::Type();
                 // type can't be resolved, so return generic base type
-                return genericClassInfo->classType;
+                return { mlir::success(), genericClassInfo->classType };
             }
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! instantiate specialized class: " << fullNameGenericClassTypeName << " ";
@@ -1200,21 +1200,19 @@ class MLIRGenImpl
             // create new instance of interface with TypeArguments
             if (mlir::failed(std::get<0>(mlirGen(genericClassInfo->classDeclaration, genericTypeGenContext))))
             {
-                return mlir::Type();
+                return { mlir::failure(), mlir::Type() };
             }
 
             // get instance of generic interface type
             auto specType = getSpecializationClassType(genericClassInfo, genericTypeGenContext);
-            return specType;
+            return { mlir::success(), specType };
         }
-        else
-        {
-            // can't find generic instance
-            return mlir::Type();
-        }
+
+        // can't find generic instance
+        return { mlir::success(), mlir::Type() };
     }
 
-    mlir::Type instantiateSpecializedInterfaceType(mlir::Location location, mlir_ts::InterfaceType genericInterfaceType,
+    std::pair<mlir::LogicalResult, mlir::Type> instantiateSpecializedInterfaceType(mlir::Location location, mlir_ts::InterfaceType genericInterfaceType,
                                                    NodeArray<TypeNode> typeArguments, const GenContext &genContext)
     {
         auto fullNameGenericInterfaceTypeName = genericInterfaceType.getName().getValue();
@@ -1229,7 +1227,7 @@ class MLIRGenImpl
             if (mlir::failed(zipTypeParametersWithArguments(location, typeParams, typeArguments,
                                                             genericTypeGenContext.typeParamsWithArgs, genContext)))
             {
-                return mlir::Type();
+                return { mlir::failure(), mlir::Type() };
             }
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! instantiate specialized interface: " << fullNameGenericInterfaceTypeName
@@ -1251,18 +1249,16 @@ class MLIRGenImpl
             {
                 // return mlir::Type();
                 // type can't be resolved, so return generic base type
-                return genericInterfaceInfo->interfaceType;
+                return { mlir::success(), genericInterfaceInfo->interfaceType };
             }
 
             // get instance of generic interface type
             auto specType = getSpecializationInterfaceType(genericInterfaceInfo, genericTypeGenContext);
-            return specType;
+            return { mlir::success(), specType };
         }
-        else
-        {
-            // can't find generic instance
-            return mlir::Type();
-        }
+
+        // can't find generic instance
+        return { mlir::success(), mlir::Type() };
     }
 
     mlir::Value mlirGenSpecialized(mlir::Location location, mlir::Value genResult, NodeArray<TypeNode> typeArguments,
@@ -1300,7 +1296,12 @@ class MLIRGenImpl
         if (auto classOp = genResult.getDefiningOp<mlir_ts::ClassRefOp>())
         {
             auto classType = classOp.getType();
-            auto specType = instantiateSpecializedClassType(location, classType, typeArguments, genContext);
+            auto [result, specType] = instantiateSpecializedClassType(location, classType, typeArguments, genContext);
+            if (mlir::failed(result))
+            {
+                return mlir::Value();
+            }
+
             if (auto specClassType = specType.dyn_cast_or_null<mlir_ts::ClassType>())
             {
                 return builder.create<mlir_ts::ClassRefOp>(
@@ -1308,14 +1309,13 @@ class MLIRGenImpl
                     mlir::FlatSymbolRefAttr::get(builder.getContext(), specClassType.getName().getValue()));
             }
 
-            // can't find generic instance
-            return mlir::Value();
+            return genResult;
         }
 
         if (auto ifaceOp = genResult.getDefiningOp<mlir_ts::InterfaceRefOp>())
         {
             auto interfaceType = ifaceOp.getType();
-            auto specType = instantiateSpecializedInterfaceType(location, interfaceType, typeArguments, genContext);
+            auto [result, specType] = instantiateSpecializedInterfaceType(location, interfaceType, typeArguments, genContext);
             if (auto specInterfaceType = specType.dyn_cast_or_null<mlir_ts::InterfaceType>())
             {
                 return builder.create<mlir_ts::InterfaceRefOp>(
@@ -1323,8 +1323,7 @@ class MLIRGenImpl
                     mlir::FlatSymbolRefAttr::get(builder.getContext(), specInterfaceType.getName().getValue()));
             }
 
-            // can't find generic instance
-            return mlir::Value();
+            return genResult;
         }
 
         return genResult;
@@ -11167,8 +11166,13 @@ genContext);
         if (genericClassTypeInfo)
         {
             auto classType = genericClassTypeInfo->classType;
-            auto specType = instantiateSpecializedClassType(loc(typeReferenceAST), classType,
+            auto [result, specType] = instantiateSpecializedClassType(loc(typeReferenceAST), classType,
                                                             typeReferenceAST->typeArguments, genContext);
+            if (mlir::failed(result))                                                        
+            {
+                return mlir::Type();
+            }
+
             return specType;
         }
 
@@ -11176,8 +11180,13 @@ genContext);
         if (genericInterfaceTypeInfo)
         {
             auto interfaceType = genericInterfaceTypeInfo->interfaceType;
-            auto specType = instantiateSpecializedInterfaceType(loc(typeReferenceAST), interfaceType,
+            auto [result, specType] = instantiateSpecializedInterfaceType(loc(typeReferenceAST), interfaceType,
                                                                 typeReferenceAST->typeArguments, genContext);
+            if (mlir::failed(result))                                                        
+            {
+                return mlir::Type();
+            }
+
             return specType;
         }
 
