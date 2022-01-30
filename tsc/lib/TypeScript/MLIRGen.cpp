@@ -1003,9 +1003,10 @@ class MLIRGenImpl
             MLIRNamespaceGuard ng(currentNamespace);
             currentNamespace = functionGenericTypeInfo->elementNamespace;
 
+            // step 1, add type arguments first
             GenContext genericTypeGenContext(genContext);
             auto typeParams = functionGenericTypeInfo->typeParams;
-            if (typeArguments && typeArguments.size() > 0)
+            if (typeArguments && typeParams.size() == typeArguments.size())
             {
                 // create typeParamsWithArgs from typeArguments
                 if (mlir::failed(zipTypeParametersWithArguments(location, typeParams, typeArguments,
@@ -1014,44 +1015,38 @@ class MLIRGenImpl
                     return mlir_ts::FuncOp();
                 }
             }
-            else if (genericTypeGenContext.callOperands.size() > 0)
+            else if (genericTypeGenContext.callOperands.size() > 0 ||
+                     functionGenericTypeInfo->functionDeclaration->parameters.size() > 0)
             {
-                GenContext funcGenContext(genContext);
-                funcGenContext.discoverParamsOnly = true;
-
-                // we need to map generic parameters to generic types to be able to resolve function parameters which
-                // are not generic
-                for (auto typeParam : typeParams)
+                // add provided type arguments, ignoring defaults
+                if (typeArguments)
                 {
-                    funcGenContext.typeAliasMap.insert(
-                        {typeParam->getName(), getNamedGenericType(typeParam->getName())});
+                    if (mlir::failed(zipTypeParametersWithArgumentsNoDefaults(
+                            location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext)))
+                    {
+                        return mlir_ts::FuncOp();
+                    }
                 }
 
-                auto funcOpWithFuncProto =
-                    mlirGenFunctionPrototype(functionGenericTypeInfo->functionDeclaration, funcGenContext);
-                auto &funcOp = std::get<0>(funcOpWithFuncProto);
-                auto &funcProto = std::get<1>(funcOpWithFuncProto);
-                auto result = std::get<2>(funcOpWithFuncProto);
-                if (!result || !funcOp)
+                auto [result, funcOp] = getFuncArgTypesOfGenericMethod(functionGenericTypeInfo->functionDeclaration,
+                                                                         typeParams, genContext);
+                if (mlir::failed(result))
                 {
                     return mlir_ts::FuncOp();
                 }
 
-                LLVM_DEBUG(llvm::dbgs() << "\n!! func name: " << name
-                                        << ", Op type (resolving from operands): " << funcOp.getType() << "\n";);
-
-                LLVM_DEBUG(llvm::dbgs() << "\n!! func args: "; auto index = 0;
-                           for (auto argInfo
-                                : funcProto->getArgs()) llvm::dbgs()
-                           << "\n_ " << argInfo->getName() << ": " << argInfo->getType() << " = (" << index << ") "
-                           << genContext.callOperands[index++];
-                           llvm::dbgs() << "\n";);
-
                 // TODO: we have func params.
                 StringMap<mlir::Type> inferredTypes;
                 auto index = 0;
-                for (auto argInfo : funcProto->getArgs())
+                auto callOpsCount = genContext.callOperands.size();
+                for (auto argInfo : funcOp->getArgs())
                 {
+                    if (callOpsCount <= index)
+                    {
+                        // there is no more ops
+                        break;
+                    }
+
                     auto type = argInfo->getType();
                     auto op = genContext.callOperands[index++];
 
@@ -1061,13 +1056,6 @@ class MLIRGenImpl
                     }
 
                     inferType(type, op.getType(), inferredTypes);
-                }
-
-                if (!inferredTypes.size())
-                {
-                    // no resolve needed, this type without param
-                    emitError(location) << "type can't be inferred";
-                    return mlir_ts::FuncOp();
                 }
 
                 for (auto &pair : inferredTypes)
@@ -1090,6 +1078,21 @@ class MLIRGenImpl
                         return mlir_ts::FuncOp();
                     }
                 }
+
+                // add default params if not provided
+                if (mlir::failed(zipTypeParametersWithDefaultArguments(
+                        location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext)))
+                {
+                    return mlir_ts::FuncOp();
+                }
+
+                // TODO: check if all typeParams are there
+                if (genericTypeGenContext.typeParamsWithArgs.size() < typeParams.size())
+                {
+                    // no resolve needed, this type without param
+                    emitError(location) << "not all types can't be inferred";
+                    return mlir_ts::FuncOp();
+                }                
             }
             else
             {
@@ -1123,6 +1126,42 @@ class MLIRGenImpl
 
         emitError(location) << "can't find generic " << name << " function.";
         return mlir_ts::FuncOp();
+    }
+
+    std::pair<mlir::LogicalResult, FunctionPrototypeDOM::TypePtr> getFuncArgTypesOfGenericMethod(
+        FunctionLikeDeclarationBase functionLikeDeclarationAST, ArrayRef<TypeParameterDOM::TypePtr> typeParams,
+        const GenContext &genContext)
+    {
+        GenContext funcGenContext(genContext);
+        funcGenContext.discoverParamsOnly = true;
+
+        // we need to map generic parameters to generic types to be able to resolve function parameters which
+        // are not generic
+        for (auto typeParam : typeParams)
+        {
+            funcGenContext.typeAliasMap.insert({typeParam->getName(), getNamedGenericType(typeParam->getName())});
+        }
+
+        auto funcOpWithFuncProto = mlirGenFunctionPrototype(functionLikeDeclarationAST, funcGenContext);
+        auto &funcOp = std::get<0>(funcOpWithFuncProto);
+        auto &funcProto = std::get<1>(funcOpWithFuncProto);
+        auto result = std::get<2>(funcOpWithFuncProto);
+        if (!result || !funcOp)
+        {
+            return {mlir::failure(), {}};
+        }
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! func name: " << funcProto->getName()
+                                << ", Op type (resolving from operands): " << funcOp.getType() << "\n";);
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! func args: "; auto index = 0;
+                   for (auto argInfo
+                        : funcProto->getArgs()) llvm::dbgs()
+                   << "\n_ " << argInfo->getName() << ": " << argInfo->getType() << " = (" << index << ") ";
+                   if (genContext.callOperands.size() > index) llvm::dbgs() << genContext.callOperands[index];
+                   llvm::dbgs() << "\n"; index++;);
+
+        return {mlir::success(), funcProto};
     }
 
     mlir::Type instantiateSpecializedClassType(mlir::Location location, mlir_ts::ClassType genericClassType,
@@ -1239,10 +1278,17 @@ class MLIRGenImpl
             }
 
             // create new function instance
-            auto funcOp = instantiateSpecializedFunctionType(location, symbolOp.identifierAttr().getValue(),
+            auto funcName = symbolOp.identifierAttr().getValue();
+            auto funcOp = instantiateSpecializedFunctionType(location, funcName,
                                                              typeArguments, genContext);
             if (!funcOp)
             {
+                if (!genContext.allowPartialResolve)
+                {
+                    emitError(location) << "can't instantiate function. '" << funcName
+                                    << "' not all generic types can't identified";
+                }
+
                 return mlir::Value();
             }
 
@@ -1281,7 +1327,7 @@ class MLIRGenImpl
             return mlir::Value();
         }
 
-        return mlir::Value();
+        return genResult;
     }
 
     mlir::Value mlirGen(Expression expression, NodeArray<TypeNode> typeArguments, const GenContext &genContext)
@@ -1294,13 +1340,7 @@ class MLIRGenImpl
 
         auto location = loc(expression);
 
-        auto specializedResult = mlirGenSpecialized(location, genResult, typeArguments, genContext);
-        if (specializedResult)
-        {
-            return specializedResult;
-        }
-
-        return genResult;
+        return mlirGenSpecialized(location, genResult, typeArguments, genContext);
     }
 
     mlir::Value mlirGen(ExpressionWithTypeArguments expressionWithTypeArgumentsAST, const GenContext &genContext)
@@ -5975,15 +6015,15 @@ class MLIRGenImpl
         specGenContext.callOperands = operands;
 
         // get function ref.
-        auto specializedFuncRefValue = mlirGenSpecialized(location, funcResult, typeArguments, specGenContext);
-        if (!specializedFuncRefValue)
+        auto actualFuncRefValue = mlirGenSpecialized(location, funcResult, typeArguments, specGenContext);
+        if (!actualFuncRefValue)
         {
-            specializedFuncRefValue = funcResult;
+            return mlir::Value();
         }
 
         auto attrName = StringRef(IDENTIFIER_ATTR_NAME);
-        auto definingOp = specializedFuncRefValue.getDefiningOp();
-        if (isNoneType(specializedFuncRefValue.getType()) &&
+        auto definingOp = actualFuncRefValue.getDefiningOp();
+        if (isNoneType(actualFuncRefValue.getType()) &&
             definingOp->hasAttrOfType<mlir::FlatSymbolRefAttr>(attrName))
         {
             // TODO: when you resolve names such as "print", "parseInt" should return names in mlirGen(Identifier)
@@ -5993,7 +6033,7 @@ class MLIRGenImpl
             // resolve function
             MLIRCustomMethods cm(builder, location);
 
-            if (auto thisSymbolRefOp = specializedFuncRefValue.getDefiningOp<mlir_ts::ThisSymbolRefOp>())
+            if (auto thisSymbolRefOp = actualFuncRefValue.getDefiningOp<mlir_ts::ThisSymbolRefOp>())
             {
                 // do not remove it, it is needed for custom methods to be called correctly
                 operands.insert(operands.begin(), thisSymbolRefOp.thisVal());
@@ -6002,9 +6042,9 @@ class MLIRGenImpl
             return cm.callMethod(functionName, operands, genContext);
         }
 
-        if (auto optFuncRef = specializedFuncRefValue.getType().dyn_cast<mlir_ts::OptionalType>())
+        if (auto optFuncRef = actualFuncRefValue.getType().dyn_cast<mlir_ts::OptionalType>())
         {
-            auto condValue = cast(location, getBooleanType(), specializedFuncRefValue, genContext);
+            auto condValue = cast(location, getBooleanType(), actualFuncRefValue, genContext);
 
             auto resultType = getReturnTypeFromFuncRef(optFuncRef.getElementType());
 
@@ -6017,7 +6057,7 @@ class MLIRGenImpl
             // value if true
 
             auto innerFuncRef =
-                builder.create<mlir_ts::ValueOp>(location, optFuncRef.getElementType(), specializedFuncRefValue);
+                builder.create<mlir_ts::ValueOp>(location, optFuncRef.getElementType(), actualFuncRefValue);
 
             auto hasReturn = false;
             auto value = mlirGenCall(location, innerFuncRef, operands, hasReturn, genContext);
@@ -6048,7 +6088,7 @@ class MLIRGenImpl
         }
 
         auto hasReturn = false;
-        auto value = mlirGenCall(location, specializedFuncRefValue, operands, hasReturn, genContext);
+        auto value = mlirGenCall(location, actualFuncRefValue, operands, hasReturn, genContext);
         if (value)
         {
             return value;
@@ -11024,7 +11064,8 @@ genContext);
         {
             auto &typeParam = typeParams[index];
             auto isDefault = false;
-            auto type = index < argsCount ? getType(typeArgs[index], genContext) : (isDefault = true, typeParam->getDefault());
+            auto type =
+                index < argsCount ? getType(typeArgs[index], genContext) : (isDefault = true, typeParam->getDefault());
             if (!type)
             {
                 return mlir::failure();
@@ -11033,6 +11074,64 @@ genContext);
             if (mlir::failed(zipTypeParameterWithArgument(location, pairs, typeParam, type, isDefault)))
             {
                 return mlir::failure();
+            }
+        }
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult zipTypeParametersWithArgumentsNoDefaults(
+        mlir::Location location, llvm::ArrayRef<TypeParameterDOM::TypePtr> typeParams, NodeArray<TypeNode> typeArgs,
+        llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> &pairs, const GenContext &genContext)
+    {
+        auto argsCount = typeArgs.size();
+        for (auto index = 0; index < typeParams.size(); index++)
+        {
+            auto &typeParam = typeParams[index];
+            auto isDefault = false;
+            auto type =
+                index < argsCount ? getType(typeArgs[index], genContext) : (isDefault = true, typeParam->getDefault());
+            if (!type)
+            {
+                return mlir::failure();
+            }
+
+            if (isDefault)
+            {
+                return mlir::success();
+            }
+
+            if (mlir::failed(zipTypeParameterWithArgument(location, pairs, typeParam, type, isDefault)))
+            {
+                return mlir::failure();
+            }
+        }
+
+        return mlir::success();
+    }
+
+    mlir::LogicalResult zipTypeParametersWithDefaultArguments(
+        mlir::Location location, llvm::ArrayRef<TypeParameterDOM::TypePtr> typeParams, NodeArray<TypeNode> typeArgs,
+        llvm::StringMap<std::pair<TypeParameterDOM::TypePtr, mlir::Type>> &pairs, const GenContext &genContext)
+    {
+        auto argsCount = typeArgs ? typeArgs.size() : 0;
+        for (auto index = 0; index < typeParams.size(); index++)
+        {
+            auto &typeParam = typeParams[index];
+            auto isDefault = false;
+            auto type =
+                index < argsCount ? getType(typeArgs[index], genContext) : (isDefault = true, typeParam->getDefault());
+            if (!type)
+            {
+                return mlir::success();
+            }
+
+            if (isDefault)
+            {
+                if (mlir::failed(zipTypeParameterWithArgument(location, pairs, typeParam, type, isDefault)))
+                {
+                    return mlir::failure();
+                }
             }
         }
 
