@@ -6090,8 +6090,9 @@ class MLIRGenImpl
         }
 
         auto attrName = StringRef(IDENTIFIER_ATTR_NAME);
+        auto virtAttrName = StringRef(VIRTUALFUNC_ATTR_NAME);
         auto definingOp = actualFuncRefValue.getDefiningOp();
-        if (isNoneType(actualFuncRefValue.getType()) &&
+        if ((isNoneType(actualFuncRefValue.getType()) || definingOp->hasAttrOfType<mlir::BoolAttr>(virtAttrName)) &&
             definingOp->hasAttrOfType<mlir::FlatSymbolRefAttr>(attrName))
         {
             // TODO: when you resolve names such as "print", "parseInt" should return names in mlirGen(Identifier)
