@@ -112,9 +112,14 @@ class MLIRRTTIHelperVCLinux
         types.push_back({ss.str(), TypeInfo::ClassTypeInfo, -1});
     }
 
-    void setType(mlir::Type type, std::function<ClassInfo::TypePtr(StringRef fullClassName)> resolveClassInfo)
+    bool setType(mlir::Type type, std::function<ClassInfo::TypePtr(StringRef fullClassName)> resolveClassInfo)
     {
-        llvm::TypeSwitch<mlir::Type>(type)
+        if (!type || type == rewriter.getNoneType())
+        {
+            return false;
+        }
+
+        llvm::TypeSwitch<mlir::Type>(mth.stripLiteralType(type))
             .Case<mlir::IntegerType>([&](auto intType) {
                 if (intType.getIntOrFloatBitWidth() == 32)
                 {
@@ -159,11 +164,18 @@ class MLIRRTTIHelperVCLinux
             })
             .Case<mlir_ts::AnyType>([&](auto anyType) { setI8PtrAsCatchType(); })
             .Default([&](auto type) { llvm_unreachable("not implemented"); });
+
+        return true;
     }
 
-    void setType(mlir::Type type)
+    bool setType(mlir::Type type)
     {
-        llvm::TypeSwitch<mlir::Type>(type)
+        if (!type || type == rewriter.getNoneType())
+        {
+            return false;
+        }
+                
+        llvm::TypeSwitch<mlir::Type>(mth.stripLiteralType(type))
             .Case<mlir::IntegerType>([&](auto intType) {
                 if (intType.getIntOrFloatBitWidth() == 32)
                 {
@@ -200,6 +212,8 @@ class MLIRRTTIHelperVCLinux
             .Case<mlir_ts::ClassType>([&](auto classType) { setClassTypeAsCatchType(classType.getName().getValue()); })
             .Case<mlir_ts::AnyType>([&](auto anyType) { setI8PtrAsCatchType(); })
             .Default([&](auto type) { llvm_unreachable("not implemented"); });
+
+        return true;
     }
 
     void seekLast(mlir::Block *block)
