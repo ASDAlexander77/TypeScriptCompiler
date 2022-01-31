@@ -631,6 +631,26 @@ class MLIRPropertyAccessCodeLogic
 
             return mlir::Value();
         }
+        else if (propName == "forEach")
+        {
+            auto isArray = expression.getType().isa<mlir_ts::ArrayType>();
+            auto isConstArray = !isArray && expression.getType().isa<mlir_ts::ConstArrayType>();
+            if (isArray || isConstArray)
+            {
+                if (isConstArray)
+                {
+                    MLIRTypeHelper mth(builder.getContext());
+                    auto nonConstArray = mth.convertConstArrayTypeToArrayType(expression.getType());
+                    expression = builder.create<mlir_ts::CastOp>(location, nonConstArray, expression);
+                }
+
+                auto symbOp = builder.create<mlir_ts::ThisSymbolRefOp>(location, builder.getNoneType(), expression,
+                                                                       mlir::FlatSymbolRefAttr::get(builder.getContext(), "__array_foreach"));
+                return symbOp;
+            }
+
+            return mlir::Value();
+        }
 
         return mlir::Value();
     }

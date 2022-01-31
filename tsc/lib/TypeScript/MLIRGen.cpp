@@ -6038,6 +6038,43 @@ class MLIRGenImpl
         return mlirGenCallExpression(location, funcResult, callExpression->typeArguments, operands, genContext);
     }
 
+    mlir::LogicalResult mlirGenArrayForEach(const mlir::Location &location, ArrayRef<mlir::Value> operands, const GenContext &genContext)
+    {
+        SymbolTableScopeT varScope(symbolTable);
+
+        auto arraySrc = operands[0];
+        auto funcSrc = operands[1];
+
+        // register vals
+        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>("_src_array_", arraySrc.getType(), location);
+        declare(srcArrayVarDecl, arraySrc, genContext);
+
+        auto funcVarDecl = std::make_shared<VariableDeclarationDOM>("_func_", funcSrc.getType(), location);
+        declare(funcVarDecl, funcSrc, genContext);
+
+        NodeFactory nf(NodeFactoryFlags::None);
+
+        auto _src_array_ident = nf.createIdentifier(S("_src_array_"));
+        auto _func_ident = nf.createIdentifier(S("_func_"));
+
+        auto _v_ident = nf.createIdentifier(S("_v_"));
+
+        NodeArray<VariableDeclaration> declarations;
+        declarations.push_back(nf.createVariableDeclaration(_v_ident));
+        auto declList = nf.createVariableDeclarationList(declarations, NodeFlags::Const);
+
+        NodeArray<Expression> argumentsArray;
+        argumentsArray.push_back(_v_ident);
+
+        auto forOfStat = nf.createForOfStatement(
+            undefined, declList, _src_array_ident,
+            nf.createExpressionStatement(nf.createCallExpression(_func_ident, undefined, argumentsArray)));
+
+        mlirGen(forOfStat, genContext);
+
+        return mlir::success();
+    }
+
     mlir::Value mlirGenCallExpression(mlir::Location location, mlir::Value funcResult,
                                       NodeArray<TypeNode> typeArguments, SmallVector<mlir::Value, 4> &operands,
                                       const GenContext &genContext)
@@ -6061,15 +6098,21 @@ class MLIRGenImpl
             auto calleeName = definingOp->getAttrOfType<mlir::FlatSymbolRefAttr>(attrName);
             auto functionName = calleeName.getValue();
 
-            // resolve function
-            MLIRCustomMethods cm(builder, location);
-
             if (auto thisSymbolRefOp = actualFuncRefValue.getDefiningOp<mlir_ts::ThisSymbolRefOp>())
             {
                 // do not remove it, it is needed for custom methods to be called correctly
                 operands.insert(operands.begin(), thisSymbolRefOp.thisVal());
             }
 
+            // temp hack
+            if (functionName == "__array_foreach")
+            {
+                mlirGenArrayForEach(location, operands, genContext);
+                return mlir::Value();
+            }
+
+            // resolve function
+            MLIRCustomMethods cm(builder, location);
             return cm.callMethod(functionName, operands, genContext);
         }
 
