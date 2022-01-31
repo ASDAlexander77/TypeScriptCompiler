@@ -4,7 +4,7 @@ export class AppWindow {
 
     private handler_window: intptr_t;
 
-    constructor(parent_handler_window?: intptr_t) {
+    export constructor(parent_handler_window?: intptr_t) {
         this.handler_window = create_window('Hello World!', parent_handler_window, this.onMessage);
         create_vulkan(this.handler_window);
     }
@@ -36,13 +36,5 @@ export class AppWindow {
         }
 
         return default_window_procedure(this.handler_window, uMsg, wParam, lParam);
-    }
-}
-
-export class Application {
-    static appWindow: AppWindow;
-
-    static run() {
-        this.appWindow = new AppWindow();
     }
 }
