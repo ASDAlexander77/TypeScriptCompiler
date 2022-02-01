@@ -158,6 +158,7 @@ class FunctionPrototypeDOM
     std::string name;
     std::string nameWithoutNamespace;
     std::vector<FunctionParamDOM::TypePtr> args;
+    mlir::Type funcType;
     mlir::Type returnType;
     bool discovered;
     bool hasCapturedVars;
@@ -168,7 +169,7 @@ class FunctionPrototypeDOM
     using TypePtr = std::shared_ptr<FunctionPrototypeDOM>;
 
     FunctionPrototypeDOM(StringRef name, std::vector<FunctionParamDOM::TypePtr> args)
-        : name(name.str()), args(args), returnType(), discovered(false), hasCapturedVars(false), hasExtraFields(false), noBody(false)
+        : name(name.str()), args(args), funcType(), returnType(), discovered(false), hasCapturedVars(false), hasExtraFields(false), noBody(false)
     {
     }
 
@@ -201,6 +202,15 @@ class FunctionPrototypeDOM
 
         return args.back()->getIsMultiArgs();
     }
+
+    const mlir::Type &getFuncType() const
+    {
+        return funcType;
+    }
+    void setFuncType(mlir::Type funcType_)
+    {
+        funcType = funcType_;
+    }    
 
     const mlir::Type &getReturnType() const
     {

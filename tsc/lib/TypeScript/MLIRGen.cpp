@@ -1036,12 +1036,7 @@ class MLIRGenImpl
                     anyNamedGenericType |= hasAnyNamedGenericType;
                 }
 
-                auto [result, funcOp] = getFuncArgTypesOfGenericMethod(functionGenericTypeInfo->functionDeclaration,
-                                                                         typeParams, genContext);
-                if (mlir::failed(result))
-                {
-                    return mlir_ts::FuncOp();
-                }
+                auto funcOp = functionGenericTypeInfo->funcOp;
 
                 // TODO: we have func params.
                 StringMap<mlir::Type> inferredTypes;
@@ -1142,7 +1137,7 @@ class MLIRGenImpl
 
             if (!genContext.allowPartialResolve)
             {
-                emitError(location) << "can't instantiate specialized function " << name << ".";
+                emitError(location) << "can't instantiate specialized function [" << name << "].";
             }
 
             return mlir_ts::FuncOp();
@@ -1150,7 +1145,7 @@ class MLIRGenImpl
 
         if (!genContext.allowPartialResolve)
         {
-            emitError(location) << "can't find generic " << name << " function.";
+            emitError(location) << "can't find generic [" << name << "] function.";
         }
 
         return mlir_ts::FuncOp();
@@ -1299,7 +1294,8 @@ class MLIRGenImpl
         // TODO: process generic function
         if (auto symbolOp = genResult.getDefiningOp<mlir_ts::SymbolRefOp>())
         {
-            if (!symbolOp.getType().isa<mlir_ts::GenericType>())
+            //if (!symbolOp.getType().isa<mlir_ts::GenericType>())
+            if (!symbolOp->hasAttrOfType<mlir::BoolAttr>(GENERIC_ATTR_NAME))
             {
                 // it is not generic function reference
                 return genResult;
@@ -2357,6 +2353,8 @@ class MLIRGenImpl
 #endif
         }
 
+        funcProto->setFuncType(funcType);
+
         return std::make_tuple(funcOp, funcProto, true);
     }
 
@@ -2647,6 +2645,15 @@ class MLIRGenImpl
 
             getGenericFunctionMap().insert({namePtr, newGenericFunctionPtr});
             fullNameGenericFunctionsMap.insert(fullNamePtr, newGenericFunctionPtr);
+
+            auto [result, funcOp] = getFuncArgTypesOfGenericMethod(functionLikeDeclarationBaseAST, typeParameters, genContext);      
+            if (mlir::failed(result))
+            {
+                return mlir::failure();
+            }                                                                        
+            
+            newGenericFunctionPtr->funcOp = funcOp;
+            newGenericFunctionPtr->funcType = funcOp->getFuncType();
 
             return mlir::success();
         }
@@ -8102,8 +8109,9 @@ class MLIRGenImpl
             auto genericFunctionInfo = getGenericFunctionMap().lookup(name);
 
             auto funcSymbolRef = builder.create<mlir_ts::SymbolRefOp>(
-                location, getGenericType(),
+                location, genericFunctionInfo->funcType,
                 mlir::FlatSymbolRefAttr::get(builder.getContext(), genericFunctionInfo->name));
+            funcSymbolRef->setAttr(GENERIC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
             return funcSymbolRef;
         }
 

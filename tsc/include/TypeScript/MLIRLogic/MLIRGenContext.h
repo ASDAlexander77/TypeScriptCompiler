@@ -156,6 +156,10 @@ struct GenericFunctionInfo
 
     FunctionLikeDeclarationBase functionDeclaration;
 
+    FunctionPrototypeDOM::TypePtr funcOp;
+
+    mlir::Type funcType;
+
     NamespaceInfo_TypePtr elementNamespace;
 
     GenericFunctionInfo()
