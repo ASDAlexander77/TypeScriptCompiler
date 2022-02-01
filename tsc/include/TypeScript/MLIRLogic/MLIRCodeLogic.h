@@ -621,7 +621,8 @@ class MLIRPropertyAccessCodeLogic
 
             return mlir::Value();
         }
-        else if (propName == "push")
+        
+        if (propName == "push")
         {
             if (expression.getType().isa<mlir_ts::ArrayType>())
             {
@@ -634,7 +635,8 @@ class MLIRPropertyAccessCodeLogic
 
             return mlir::Value();
         }
-        else if (propName == "pop")
+        
+        if (propName == "pop")
         {
             if (expression.getType().isa<mlir_ts::ArrayType>())
             {
@@ -646,8 +648,12 @@ class MLIRPropertyAccessCodeLogic
             }
 
             return mlir::Value();
-        }
-        else if (propName == "forEach")
+        }        
+        
+        auto isForEach = propName == "forEach";
+        auto isEvery = propName == "every";
+        auto isSome = propName == "some";
+        if (isForEach || isEvery || isSome)
         {
             auto arrayType = expression.getType().dyn_cast<mlir_ts::ArrayType>();
             auto constArrayType = expression.getType().dyn_cast<mlir_ts::ConstArrayType>();
@@ -667,13 +673,19 @@ class MLIRPropertyAccessCodeLogic
                     elementType = arrayType.getElementType();
                 }
 
+                SmallVector<mlir::Type> resultArgs;
+                if (isEvery || isSome)
+                {
+                    resultArgs.push_back(mlir_ts::BooleanType::get(builder.getContext()));
+                }
+
                 SmallVector<mlir::Type> lambdaArgs{elementType};
-                auto lambdaFuncType = mlir_ts::FunctionType::get(builder.getContext(), lambdaArgs, {});
+                auto lambdaFuncType = mlir_ts::FunctionType::get(builder.getContext(), lambdaArgs, resultArgs);
                 SmallVector<mlir::Type> funcArgs{lambdaFuncType};
-                auto funcType = mlir_ts::FunctionType::get(builder.getContext(), funcArgs, {});
+                auto funcType = mlir_ts::FunctionType::get(builder.getContext(), funcArgs, resultArgs);
                 auto symbOp = builder.create<mlir_ts::ThisSymbolRefOp>(
                     location, funcType, expression,
-                    mlir::FlatSymbolRefAttr::get(builder.getContext(), "__array_foreach"));
+                    mlir::FlatSymbolRefAttr::get(builder.getContext(), isForEach ?  "__array_foreach" : isEvery ? "__array_every" : "__array_some"));
                 symbOp->setAttr(VIRTUALFUNC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
                 return symbOp;
             }

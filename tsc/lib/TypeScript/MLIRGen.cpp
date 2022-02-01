@@ -4661,7 +4661,7 @@ class MLIRGenImpl
         return ifOp.getResult(0);
     }
 
-    mlir::Value mlirGenAndOrLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext, bool andOp)
+    mlir::Value mlirGenAndOrLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext, bool andOp, bool saveResult)
     {
         auto location = loc(binaryExpressionAST);
 
@@ -4718,7 +4718,13 @@ class MLIRGenImpl
 
         builder.setInsertionPointAfter(ifOp);
 
-        return ifOp.results().front();
+        auto result = ifOp.results().front();
+        if (saveResult)
+        {
+            return mlirGenSaveLogicOneItem(location, leftExpressionValue, result, genContext);
+        }
+
+        return result;
     }
 
     mlir::Value mlirGenQuestionQuestionLogic(BinaryExpression binaryExpressionAST, const GenContext &genContext)
@@ -5085,7 +5091,7 @@ class MLIRGenImpl
 
         if (opCode == SyntaxKind::AmpersandAmpersandToken || opCode == SyntaxKind::BarBarToken)
         {
-            return mlirGenAndOrLogic(binaryExpressionAST, genContext, opCode == SyntaxKind::AmpersandAmpersandToken);
+            return mlirGenAndOrLogic(binaryExpressionAST, genContext, opCode == SyntaxKind::AmpersandAmpersandToken, saveResult);
         }
 
         if (opCode == SyntaxKind::QuestionQuestionToken)
@@ -5318,22 +5324,7 @@ class MLIRGenImpl
 
         if (saveResult)
         {
-            if (leftExpressionValueBeforeCast.getType() != result.getType())
-            {
-                result = cast(loc(leftExpression), leftExpressionValueBeforeCast.getType(), result, genContext);
-            }
-
-            // TODO: finish it for field access, review CodeLogicHelper.saveResult
-            if (auto loadOp = dyn_cast<mlir_ts::LoadOp>(leftExpressionValueBeforeCast.getDefiningOp()))
-            {
-                // TODO: when saving const array into variable we need to allocate space and copy array as we need to
-                // have writable array
-                builder.create<mlir_ts::StoreOp>(location, result, loadOp.reference());
-            }
-            else
-            {
-                llvm_unreachable("not implemented");
-            }
+            return mlirGenSaveLogicOneItem(location, leftExpressionValueBeforeCast, result, genContext);
         }
 
         return result;
@@ -6075,6 +6066,103 @@ class MLIRGenImpl
         return mlir::success();
     }
 
+    mlir::Value mlirGenArrayEvery(const mlir::Location &location, ArrayRef<mlir::Value> operands, const GenContext &genContext)
+    {
+        SymbolTableScopeT varScope(symbolTable);
+
+        auto varName = "_ev_";
+        auto initVal = builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(true));
+        registerVariable(location, varName, false, VariableClass::Let, [&]() -> std::pair<mlir::Type, mlir::Value> { return {getBooleanType(), initVal}; }, genContext);
+
+        auto arraySrc = operands[0];
+        auto funcSrc = operands[1];
+
+        // register vals
+        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>("_src_array_", arraySrc.getType(), location);
+        declare(srcArrayVarDecl, arraySrc, genContext);
+
+        auto funcVarDecl = std::make_shared<VariableDeclarationDOM>("_func_", funcSrc.getType(), location);
+        declare(funcVarDecl, funcSrc, genContext);
+
+        NodeFactory nf(NodeFactoryFlags::None);
+
+        auto _src_array_ident = nf.createIdentifier(S("_src_array_"));
+        auto _func_ident = nf.createIdentifier(S("_func_"));
+
+        auto _v_ident = nf.createIdentifier(S("_v_"));
+        auto _result_ident = nf.createIdentifier(stows(varName));
+
+        NodeArray<VariableDeclaration> declarations;
+        declarations.push_back(nf.createVariableDeclaration(_v_ident));
+        auto declList = nf.createVariableDeclarationList(declarations, NodeFlags::Const);
+
+        NodeArray<Expression> argumentsArray;
+        argumentsArray.push_back(_v_ident);
+
+        auto forOfStat = nf.createForOfStatement(
+            undefined, declList, _src_array_ident,
+            nf.createIfStatement(
+                nf.createPrefixUnaryExpression(
+                    nf.createToken(SyntaxKind::ExclamationToken),
+                    nf.createBinaryExpression(
+                        _result_ident, 
+                        nf.createToken(SyntaxKind::AmpersandAmpersandEqualsToken),
+                        nf.createCallExpression(_func_ident, undefined, argumentsArray))), 
+                nf.createBreakStatement(), undefined));
+
+        mlirGen(forOfStat, genContext);
+
+        return resolveIdentifier(location, varName, genContext);
+    }
+
+    mlir::Value mlirGenArraySome(const mlir::Location &location, ArrayRef<mlir::Value> operands, const GenContext &genContext)
+    {
+        SymbolTableScopeT varScope(symbolTable);
+
+        auto varName = "_sm_";
+        auto initVal = builder.create<mlir_ts::ConstantOp>(location, getBooleanType(), builder.getBoolAttr(false));
+        registerVariable(location, varName, false, VariableClass::Let, [&]() -> std::pair<mlir::Type, mlir::Value> { return {getBooleanType(), initVal}; }, genContext);
+
+        auto arraySrc = operands[0];
+        auto funcSrc = operands[1];
+
+        // register vals
+        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>("_src_array_", arraySrc.getType(), location);
+        declare(srcArrayVarDecl, arraySrc, genContext);
+
+        auto funcVarDecl = std::make_shared<VariableDeclarationDOM>("_func_", funcSrc.getType(), location);
+        declare(funcVarDecl, funcSrc, genContext);
+
+        NodeFactory nf(NodeFactoryFlags::None);
+
+        auto _src_array_ident = nf.createIdentifier(S("_src_array_"));
+        auto _func_ident = nf.createIdentifier(S("_func_"));
+
+        auto _v_ident = nf.createIdentifier(S("_v_"));
+        auto _result_ident = nf.createIdentifier(stows(varName));
+
+        NodeArray<VariableDeclaration> declarations;
+        declarations.push_back(nf.createVariableDeclaration(_v_ident));
+        auto declList = nf.createVariableDeclarationList(declarations, NodeFlags::Const);
+
+        NodeArray<Expression> argumentsArray;
+        argumentsArray.push_back(_v_ident);
+
+        auto forOfStat = nf.createForOfStatement(
+            undefined, declList, _src_array_ident,
+            nf.createIfStatement(
+                nf.createBinaryExpression(
+                    _result_ident, 
+                    nf.createToken(SyntaxKind::BarBarEqualsToken),
+                    nf.createCallExpression(_func_ident, undefined, argumentsArray)), 
+                nf.createBreakStatement(), 
+                undefined));
+
+        mlirGen(forOfStat, genContext);
+
+        return resolveIdentifier(location, varName, genContext);
+    }    
+
     mlir::Value mlirGenCallExpression(mlir::Location location, mlir::Value funcResult,
                                       NodeArray<TypeNode> typeArguments, SmallVector<mlir::Value, 4> &operands,
                                       const GenContext &genContext)
@@ -6110,6 +6198,16 @@ class MLIRGenImpl
             {
                 mlirGenArrayForEach(location, operands, genContext);
                 return mlir::Value();
+            }
+
+            if (functionName == "__array_every")
+            {
+                return mlirGenArrayEvery(location, operands, genContext);
+            }
+
+            if (functionName == "__array_some")
+            {
+                return mlirGenArraySome(location, operands, genContext);
             }
 
             // resolve function
@@ -9414,7 +9512,7 @@ genContext);
                     NodeArray<Expression> argumentsArray;
                     argumentsArray.push_back(nf.createIdentifier(LINSTANCEOF_PARAM_NAME));
                     cmpLogic =
-                        nf.createBinaryExpression(cmpRttiToParam, nf.createToken(SyntaxKind::BarBarEqualsToken),
+                        nf.createBinaryExpression(cmpRttiToParam, nf.createToken(SyntaxKind::BarBarToken),
                                                   nf.createCallExpression(nf.createPropertyAccessExpression(
                                                                               nf.createToken(SyntaxKind::SuperKeyword),
                                                                               nf.createIdentifier(LINSTANCEOF_NAME)),
