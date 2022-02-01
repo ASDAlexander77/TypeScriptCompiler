@@ -857,6 +857,12 @@ class MLIRGenImpl
         LLVM_DEBUG(llvm::dbgs() << "\n!! inferring template type: " << templateType << ", type: " << concreteType
                                 << "\n";);
 
+        if (currentTemplateType == currentType)
+        {
+            // nothing todo here
+            return;
+        }
+
         if (auto namedGenType = currentTemplateType.dyn_cast<mlir_ts::NamedGenericType>())
         {
             // merge if exists
@@ -2654,6 +2660,8 @@ class MLIRGenImpl
             
             newGenericFunctionPtr->funcOp = funcOp;
             newGenericFunctionPtr->funcType = funcOp->getFuncType();
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! registered generic function: " << name << ", type: " << funcOp->getFuncType() << "\n";);
 
             return mlir::success();
         }
