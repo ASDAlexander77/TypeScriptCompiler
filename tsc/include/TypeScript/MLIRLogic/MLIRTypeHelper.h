@@ -1035,6 +1035,12 @@ class MLIRTypeHelper
 
         return mlir_ts::UnionType::get(context, types);
     }
+
+    bool isGenericType(mlir::Type type)
+    {
+        // TODO: finish it, for arrays, funcs, classes, interfaces etc
+        return type.isa<mlir_ts::NamedGenericType>();
+    }
 };
 
 } // namespace typescript

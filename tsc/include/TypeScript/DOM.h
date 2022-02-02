@@ -163,13 +163,14 @@ class FunctionPrototypeDOM
     bool discovered;
     bool hasCapturedVars;
     bool hasExtraFields;
+    bool isGenericFunction;
     bool noBody;
 
   public:
     using TypePtr = std::shared_ptr<FunctionPrototypeDOM>;
 
     FunctionPrototypeDOM(StringRef name, std::vector<FunctionParamDOM::TypePtr> args)
-        : name(name.str()), args(args), funcType(), returnType(), discovered(false), hasCapturedVars(false), hasExtraFields(false), noBody(false)
+        : name(name.str()), args(args), funcType(), returnType(), discovered(false), hasCapturedVars(false), hasExtraFields(false), isGenericFunction(false), noBody(false)
     {
     }
 
@@ -247,6 +248,15 @@ class FunctionPrototypeDOM
     {
         hasExtraFields = hasExtraFields_;
     }
+
+    bool getIsGeneric() const
+    {
+        return isGenericFunction;
+    }
+    void setIsGeneric(bool isGenericFunction_)
+    {
+        isGenericFunction = isGenericFunction_;
+    }    
 
     bool getNoBody() const
     {
