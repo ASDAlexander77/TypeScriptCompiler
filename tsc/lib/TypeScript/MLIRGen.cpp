@@ -1130,14 +1130,54 @@ class MLIRGenImpl
 
             if (!anyNamedGenericType)
             {
-                // TODO: instatiate all ArrowFunctions which are not yet instantiated
-
                 // create new instance of function with TypeArguments
                 auto [result, funcOp, funcName] =
                     mlirGenFunctionLikeDeclaration(functionGenericTypeInfo->functionDeclaration, genericTypeGenContext);
                 if (mlir::failed(result))
                 {
                     return mlir_ts::FuncOp();
+                }
+
+                // instatiate all ArrowFunctions which are not yet instantiated
+                auto opIndex = -1;
+                for (auto op : genContext.callOperands)
+                {
+                    opIndex++;
+                    if (auto symbolOp = op.getDefiningOp<mlir_ts::SymbolRefOp>())
+                    {
+                        if (symbolOp->hasAttrOfType<mlir::BoolAttr>(GENERIC_ATTR_NAME))
+                        {
+                            // it is not generic arrow function
+                            auto arrowFunctionGenericTypeInfo = getGenericFunctionInfoByFullName(symbolOp.identifier());
+
+                            GenContext arrowFuncGenContext(genContext);
+                            arrowFuncGenContext.destFuncType = funcOp.getType();
+                            arrowFuncGenContext.argTypeDestFuncType = funcOp.getType().getInput(opIndex);
+
+                            LLVM_DEBUG(llvm::dbgs() << "\n!! delayed arrow func instantiation for func type: " << funcOp.getType() << "\n";);
+
+                            {
+                                mlir::OpBuilder::InsertionGuard guard(builder);
+                                builder.restoreInsertionPoint(functionBeginPoint);
+
+                                auto [result, arrowFuncOp, arrowFuncName] = mlirGenFunctionLikeDeclaration(arrowFunctionGenericTypeInfo->functionDeclaration, arrowFuncGenContext);
+                                if (mlir::failed(result))
+                                {
+                                    if (!genContext.allowPartialResolve)
+                                    {
+                                        emitError(location) << "can't instantiate specialized arrow function.";
+                                    }
+
+                                    // TODO: emit error here
+                                    return mlir_ts::FuncOp();                                    
+                                }                        
+
+                                // fix symbol with new type
+                                op.setType(arrowFuncOp.getType());
+                                symbolOp->removeAttr(GENERIC_ATTR_NAME);
+                            }
+                        }
+                    }
                 }
 
                 return funcOp;
@@ -2528,6 +2568,7 @@ class MLIRGenImpl
     {
         auto location = loc(arrowFunctionAST);
         mlir_ts::FuncOp funcOp;
+        std::string funcName;
 
         {
             mlir::OpBuilder::InsertionGuard guard(builder);
@@ -2536,24 +2577,26 @@ class MLIRGenImpl
             // provide name for it
             auto allowFuncGenContext = GenContext(genContext);
             allowFuncGenContext.thisType = nullptr;
-            auto [result, funcOpRet, funcName] = mlirGenFunctionLikeDeclaration(arrowFunctionAST, allowFuncGenContext);
+            auto [result, funcOpRet, funcNameRet] = mlirGenFunctionLikeDeclaration(arrowFunctionAST, allowFuncGenContext);
             if (mlir::failed(result))
             {
                 return mlir::Value();
             }
 
-            if (!funcOpRet)
-            {
-                // TODO: finish it
-                // seems it is arrow method with generic types, process it later when function params are fully detected
-                // TODO: finish code to fix function type when receiver method is fully identifided because of generic methods
-                auto funcSymbolRef = builder.create<mlir_ts::SymbolRefOp>(
-                    location, getFunctionType(ArrayRef<mlir::Type>{}, ArrayRef<mlir::Type>{}), mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName));
-                funcSymbolRef->setAttr(GENERIC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
-                return funcSymbolRef;                
-            }
-
             funcOp = funcOpRet;
+            funcName = funcNameRet;
+        }
+
+        // in case of Arrow function without types
+        if (!funcOp)
+        {
+            // TODO: finish it
+            // seems it is arrow method with generic types, process it later when function params are fully detected
+            // TODO: finish code to fix function type when receiver method is fully identifided because of generic methods
+            auto funcSymbolRef = builder.create<mlir_ts::SymbolRefOp>(
+                location, getFunctionType(ArrayRef<mlir::Type>{}, ArrayRef<mlir::Type>{}), mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName));
+            funcSymbolRef->setAttr(GENERIC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
+            return funcSymbolRef;                
         }
 
         if (auto trampOp = resolveFunctionWithCapture(location, funcOp.getName(), funcOp.getType(), false, genContext))
