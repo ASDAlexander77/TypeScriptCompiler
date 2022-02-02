@@ -9223,10 +9223,11 @@ class MLIRGenImpl
                     continue;
                 }
 
-                auto ifaceType = mlirGen(implementingType->expression, genContext);
+                auto ifaceType = mlirGen(implementingType, genContext);
                 TypeSwitch<mlir::Type>(ifaceType.getType())
                     .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
                         auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
+                        assert(interfaceInfo);
                         interfaceInfos.push_back({interfaceInfo, -1, false});
                         // TODO: it will error
                         // implementingType->processed = true;
@@ -10023,6 +10024,7 @@ genContext);
             TypeSwitch<mlir::Type>(ifaceType.getType())
                 .template Case<mlir_ts::InterfaceType>([&](auto interfaceType) {
                     auto interfaceInfo = getInterfaceInfoByFullName(interfaceType.getName().getValue());
+                    assert(interfaceInfo);
                     success = !failed(mlirGenClassVirtualTableDefinitionForInterface(loc(implementingType), newClassPtr,
                                                                                      interfaceInfo, genContext));
                 })
