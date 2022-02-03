@@ -5169,7 +5169,7 @@ class MLIRGenImpl
         return mlir::Value();
     }
 
-    mlir::Type unwrapForBinaryOp(SyntaxKind opCode, mlir::Value &leftExpressionValue, mlir::Value &rightExpressionValue, const GenContext &genContext)
+    mlir::LogicalResult  unwrapForBinaryOp(SyntaxKind opCode, mlir::Value &leftExpressionValue, mlir::Value &rightExpressionValue, const GenContext &genContext)
     {
         auto leftLoc = leftExpressionValue.getLoc();
         auto rightLoc = rightExpressionValue.getLoc();
@@ -5233,8 +5233,7 @@ class MLIRGenImpl
             }
         }
 
-        auto resultType = leftExpressionValue.getType();
-        return resultType;
+        return mlir::success();
     }
 
     mlir::LogicalResult adjustTypesForBinaryOp(SyntaxKind opCode, mlir::Value &leftExpressionValue, mlir::Value &rightExpressionValue, const GenContext &genContext)
@@ -5332,10 +5331,19 @@ class MLIRGenImpl
 
             break;
         default:
-            if (leftExpressionValue.getType() != rightExpressionValue.getType())
+            auto resultType = leftExpressionValue.getType();
+            if (rightExpressionValue.getType().isa<mlir_ts::StringType>())
             {
-                rightExpressionValue =
-                    cast(rightLoc, leftExpressionValue.getType(), rightExpressionValue, genContext);
+                resultType = getStringType();
+                if (resultType != leftExpressionValue.getType())
+                {
+                    leftExpressionValue = cast(leftLoc, resultType, leftExpressionValue, genContext);
+                }                
+            }
+
+            if (resultType != rightExpressionValue.getType())
+            {
+                rightExpressionValue = cast(rightLoc, resultType, rightExpressionValue, genContext);
             }
 
             break;
@@ -5434,7 +5442,7 @@ class MLIRGenImpl
         auto leftExpressionValueBeforeCast = leftExpressionValue;
         auto rightExpressionValueBeforeCast = rightExpressionValue;
 
-        auto resultType = unwrapForBinaryOp(opCode, leftExpressionValue, rightExpressionValue, genContext);
+        unwrapForBinaryOp(opCode, leftExpressionValue, rightExpressionValue, genContext);
 
         adjustTypesForBinaryOp(opCode, leftExpressionValue, rightExpressionValue, genContext);
         
