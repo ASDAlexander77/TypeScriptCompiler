@@ -742,54 +742,15 @@ class MLIRTypeHelper
         return type;
     }
 
-    // TODO: use logic from getUnionTypeWithMerge() 
     bool isUnionTypeNeedsTag(mlir_ts::UnionType unionType)
     {
         mlir::Type baseType;
         return isUnionTypeNeedsTag(unionType, baseType);
     }
 
-    // TODO: use logic from getUnionTypeWithMerge() 
     bool isUnionTypeNeedsTag(mlir_ts::UnionType unionType, mlir::Type &baseType)
     {
-        /*
-        bool anyNonTuple = false;
-        bool allBaseTypes = true;
-        bool isAnyNullable = false;
-        bool isAnyValue = false;
-        for (auto type : unionType.getTypes())
-        {
-            auto isNullType = type.isa<mlir_ts::NullType>();
-            isAnyNullable |= isNullType;
-            isAnyValue |= isValueType(type);
-            anyNonTuple |= !type.isa<mlir_ts::TupleType>() || !type.isa<mlir_ts::ConstTupleType>();
-            auto baseTypeOfCurrent = getBaseType(type);
-            if (!baseType && !isNullType)
-            {
-                baseType = baseTypeOfCurrent;
-                allBaseTypes = true;
-            }
-            else if (baseType != baseTypeOfCurrent)
-            {
-                allBaseTypes = false;
-            }
-        }
-
-        if (isAnyNullable && isAnyValue)
-        {
-            // null & value, needs tag
-            return true;
-        }
-
-        if (allBaseTypes)
-        {
-            return false;
-        }
-
-        return anyNonTuple;
-        */
-
-        auto storeType = getUnionTypeWithMerge(unionType.getTypes());
+        auto storeType = getUnionTypeWithMerge(unionType.getTypes(), true);
         baseType = storeType;
         return storeType.isa<mlir_ts::UnionType>();
     }
@@ -946,7 +907,7 @@ class MLIRTypeHelper
         return mlir::success();
     }
 
-    mlir::Type getUnionType(mlir::Type type1, mlir::Type type2)
+    mlir::Type getUnionType(mlir::Type type1, mlir::Type type2, bool mergeLiterals = true)
     {
         if (canCastFromTo(type1, type2))
         {
@@ -961,7 +922,7 @@ class MLIRTypeHelper
         mlir::SmallVector<mlir::Type> types;
         types.push_back(type1);
         types.push_back(type2);
-        return getUnionTypeWithMerge(types);
+        return getUnionTypeWithMerge(types, mergeLiterals);
     }
 
     mlir::Type getUnionTypeMergeTypes(UnionTypeProcessContext &unionContext, bool mergeLiterals = true)
@@ -1016,7 +977,7 @@ class MLIRTypeHelper
         return retType;
     }
 
-    mlir::Type getUnionTypeWithMerge(mlir::ArrayRef<mlir::Type> types)
+    mlir::Type getUnionTypeWithMerge(mlir::ArrayRef<mlir::Type> types, bool mergeLiterals = true)
     {
         UnionTypeProcessContext unionContext = {};
         for (auto type : types)
@@ -1040,7 +1001,7 @@ class MLIRTypeHelper
             }
         }
 
-        return getUnionTypeMergeTypes(unionContext);
+        return getUnionTypeMergeTypes(unionContext, mergeLiterals);
     }
 
     mlir::Type getUnionType(mlir::SmallVector<mlir::Type> &types)

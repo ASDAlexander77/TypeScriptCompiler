@@ -4769,10 +4769,7 @@ class MLIRGenImpl
 
         MLIRTypeHelper mth(builder.getContext());
         auto resultWhenFalseType = evaluate(rightExpression, genContext);
-        auto defaultUnionType = getUnionType(leftExpressionValue.getType(), resultWhenFalseType);
-        auto resultType = andOp
-                              ? mth.findBaseType(resultWhenFalseType, leftExpressionValue.getType(), defaultUnionType)
-                              : mth.findBaseType(leftExpressionValue.getType(), resultWhenFalseType, defaultUnionType);
+        auto resultType = getUnionType(leftExpressionValue.getType(), resultWhenFalseType);
 
         auto condValue = cast(location, getBooleanType(), leftExpressionValue, genContext);
 
@@ -5172,6 +5169,214 @@ class MLIRGenImpl
         return mlir::Value();
     }
 
+    mlir::Type unwrapForBinaryOp(SyntaxKind opCode, mlir::Value &leftExpressionValue, mlir::Value &rightExpressionValue, const GenContext &genContext)
+    {
+        auto leftLoc = leftExpressionValue.getLoc();
+        auto rightLoc = rightExpressionValue.getLoc();
+
+        // type preprocess
+        // TODO: temporary hack
+        if (auto leftType = leftExpressionValue.getType().dyn_cast<mlir_ts::LiteralType>())
+        {
+            leftExpressionValue = cast(leftLoc, leftType.getElementType(), leftExpressionValue, genContext);
+        }
+
+        if (auto rightType = rightExpressionValue.getType().dyn_cast<mlir_ts::LiteralType>())
+        {
+            rightExpressionValue = cast(rightLoc, rightType.getElementType(), rightExpressionValue, genContext);
+        }
+        // end of hack
+
+        if (leftExpressionValue.getType() != rightExpressionValue.getType())
+        {
+            // TODO: temporary hack
+            if (leftExpressionValue.getType().dyn_cast<mlir_ts::CharType>())
+            {
+                leftExpressionValue = cast(leftLoc, getStringType(), leftExpressionValue, genContext);
+            }
+
+            if (rightExpressionValue.getType().dyn_cast<mlir_ts::CharType>())
+            {
+                rightExpressionValue = cast(rightLoc, getStringType(), rightExpressionValue, genContext);
+            }
+
+            // end todo
+
+            if (!MLIRLogicHelper::isLogicOp(opCode))
+            {
+                // cast from optional<T> type
+                if (auto leftOptType = leftExpressionValue.getType().dyn_cast<mlir_ts::OptionalType>())
+                {
+                    leftExpressionValue = builder.create<mlir_ts::ValueOp>(
+                        leftLoc, leftOptType.getElementType(), leftExpressionValue);
+                }
+
+                if (auto rightOptType = rightExpressionValue.getType().dyn_cast<mlir_ts::OptionalType>())
+                {
+                    rightExpressionValue = builder.create<mlir_ts::ValueOp>(
+                        rightLoc, rightOptType.getElementType(), rightExpressionValue);
+                }
+            }
+        }
+        else if (!MLIRLogicHelper::isLogicOp(opCode))
+        {
+            // special case both are optionals
+            if (auto leftOptType = leftExpressionValue.getType().dyn_cast<mlir_ts::OptionalType>())
+            {
+                if (auto rightOptType = rightExpressionValue.getType().dyn_cast<mlir_ts::OptionalType>())
+                {
+                    leftExpressionValue = builder.create<mlir_ts::ValueOp>(
+                        leftLoc, leftOptType.getElementType(), leftExpressionValue);
+                    rightExpressionValue = builder.create<mlir_ts::ValueOp>(
+                        rightLoc, rightOptType.getElementType(), rightExpressionValue);
+                }
+            }
+        }
+
+        auto resultType = leftExpressionValue.getType();
+        return resultType;
+    }
+
+    mlir::LogicalResult adjustTypesForBinaryOp(SyntaxKind opCode, mlir::Value &leftExpressionValue, mlir::Value &rightExpressionValue, const GenContext &genContext)
+    {    
+        auto leftLoc = leftExpressionValue.getLoc();
+        auto rightLoc = rightExpressionValue.getLoc();
+
+        // cast step
+        switch (opCode)
+        {
+        case SyntaxKind::CommaToken:
+            // no cast needed
+            break;
+        case SyntaxKind::LessThanLessThanToken:
+        case SyntaxKind::GreaterThanGreaterThanToken:
+        case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
+            // cast to int
+            if (leftExpressionValue.getType() != builder.getI32Type())
+            {
+                leftExpressionValue = cast(leftLoc, builder.getI32Type(), leftExpressionValue, genContext);
+            }
+
+            if (rightExpressionValue.getType() != builder.getI32Type())
+            {
+                rightExpressionValue =
+                    cast(rightLoc, builder.getI32Type(), rightExpressionValue, genContext);
+            }
+
+            break;
+        case SyntaxKind::SlashToken:
+        case SyntaxKind::PercentToken:
+        case SyntaxKind::AsteriskAsteriskToken:
+
+            if (leftExpressionValue.getType() != getNumberType())
+            {
+                leftExpressionValue = cast(leftLoc, getNumberType(), leftExpressionValue, genContext);
+            }
+
+            if (rightExpressionValue.getType() != getNumberType())
+            {
+                rightExpressionValue = cast(rightLoc, getNumberType(), rightExpressionValue, genContext);
+            }
+
+            break;
+        case SyntaxKind::AsteriskToken:
+        case SyntaxKind::MinusToken:
+        case SyntaxKind::EqualsEqualsToken:
+        case SyntaxKind::EqualsEqualsEqualsToken:
+        case SyntaxKind::ExclamationEqualsToken:
+        case SyntaxKind::ExclamationEqualsEqualsToken:
+        case SyntaxKind::GreaterThanToken:
+        case SyntaxKind::GreaterThanEqualsToken:
+        case SyntaxKind::LessThanToken:
+        case SyntaxKind::LessThanEqualsToken:
+
+            if (leftExpressionValue.getType() != rightExpressionValue.getType())
+            {
+                // cast to base type
+                auto hasNumber = leftExpressionValue.getType() == getNumberType() ||
+                                 rightExpressionValue.getType() == getNumberType();
+                if (hasNumber)
+                {
+                    if (leftExpressionValue.getType() != getNumberType())
+                    {
+                        leftExpressionValue =
+                            cast(leftLoc, getNumberType(), leftExpressionValue, genContext);
+                    }
+
+                    if (rightExpressionValue.getType() != getNumberType())
+                    {
+                        rightExpressionValue =
+                            cast(rightLoc, getNumberType(), rightExpressionValue, genContext);
+                    }
+                }
+                else
+                {
+                    auto hasI32 = leftExpressionValue.getType() == builder.getI32Type() ||
+                                  rightExpressionValue.getType() == builder.getI32Type();
+                    if (hasI32)
+                    {
+                        if (leftExpressionValue.getType() != builder.getI32Type())
+                        {
+                            leftExpressionValue =
+                                cast(leftLoc, builder.getI32Type(), leftExpressionValue, genContext);
+                        }
+
+                        if (rightExpressionValue.getType() != builder.getI32Type())
+                        {
+                            rightExpressionValue =
+                                cast(rightLoc, builder.getI32Type(), rightExpressionValue, genContext);
+                        }
+                    }
+                }
+            }
+
+            break;
+        default:
+            if (leftExpressionValue.getType() != rightExpressionValue.getType())
+            {
+                rightExpressionValue =
+                    cast(rightLoc, leftExpressionValue.getType(), rightExpressionValue, genContext);
+            }
+
+            break;
+        }
+
+        return mlir::success();
+    }
+
+    mlir::Value binaryOpLogic(mlir::Location location, SyntaxKind opCode, mlir::Value leftExpressionValue, mlir::Value rightExpressionValue, const GenContext &genContext)
+    { 
+        auto result = rightExpressionValue;
+        switch (opCode)
+        {
+        case SyntaxKind::EqualsToken:
+            // nothing to do;
+            assert(false);
+            break;
+        case SyntaxKind::EqualsEqualsToken:
+        case SyntaxKind::EqualsEqualsEqualsToken:
+        case SyntaxKind::ExclamationEqualsToken:
+        case SyntaxKind::ExclamationEqualsEqualsToken:
+        case SyntaxKind::GreaterThanToken:
+        case SyntaxKind::GreaterThanEqualsToken:
+        case SyntaxKind::LessThanToken:
+        case SyntaxKind::LessThanEqualsToken:
+            result = builder.create<mlir_ts::LogicalBinaryOp>(location, getBooleanType(),
+                                                              builder.getI32IntegerAttr((int)opCode),
+                                                              leftExpressionValue, rightExpressionValue);
+            break;
+        case SyntaxKind::CommaToken:
+            return rightExpressionValue;
+        default:
+            result = builder.create<mlir_ts::ArithmeticBinaryOp>(location, leftExpressionValue.getType(),
+                                                                 builder.getI32IntegerAttr((int)opCode),
+                                                                 leftExpressionValue, rightExpressionValue);
+            break;
+        }
+
+        return result;
+    }    
+
     mlir::Value mlirGen(BinaryExpression binaryExpressionAST, const GenContext &genContext)
     {
         auto location = loc(binaryExpressionAST);
@@ -5229,192 +5434,11 @@ class MLIRGenImpl
         auto leftExpressionValueBeforeCast = leftExpressionValue;
         auto rightExpressionValueBeforeCast = rightExpressionValue;
 
-        // type preprocess
-        // TODO: temporary hack
-        if (auto leftType = leftExpressionValue.getType().dyn_cast<mlir_ts::LiteralType>())
-        {
-            leftExpressionValue = cast(loc(leftExpression), leftType.getElementType(), leftExpressionValue, genContext);
-        }
+        auto resultType = unwrapForBinaryOp(opCode, leftExpressionValue, rightExpressionValue, genContext);
 
-        if (auto rightType = rightExpressionValue.getType().dyn_cast<mlir_ts::LiteralType>())
-        {
-            rightExpressionValue =
-                cast(loc(rightExpression), rightType.getElementType(), rightExpressionValue, genContext);
-        }
-        // end of hack
-
-        if (leftExpressionValue.getType() != rightExpressionValue.getType())
-        {
-            // TODO: temporary hack
-            if (leftExpressionValue.getType().dyn_cast<mlir_ts::CharType>())
-            {
-                leftExpressionValue = cast(loc(leftExpression), getStringType(), leftExpressionValue, genContext);
-            }
-
-            if (rightExpressionValue.getType().dyn_cast<mlir_ts::CharType>())
-            {
-                rightExpressionValue = cast(loc(rightExpression), getStringType(), rightExpressionValue, genContext);
-            }
-
-            // end todo
-
-            if (!MLIRLogicHelper::isLogicOp(opCode))
-            {
-                // cast from optional<T> type
-                if (auto leftOptType = leftExpressionValue.getType().dyn_cast<mlir_ts::OptionalType>())
-                {
-                    leftExpressionValue = builder.create<mlir_ts::ValueOp>(
-                        loc(leftExpression), leftOptType.getElementType(), leftExpressionValue);
-                }
-
-                if (auto rightOptType = rightExpressionValue.getType().dyn_cast<mlir_ts::OptionalType>())
-                {
-                    rightExpressionValue = builder.create<mlir_ts::ValueOp>(
-                        loc(rightExpression), rightOptType.getElementType(), rightExpressionValue);
-                }
-            }
-        }
-        else if (!MLIRLogicHelper::isLogicOp(opCode))
-        {
-            // special case both are optionals
-            if (auto leftOptType = leftExpressionValue.getType().dyn_cast<mlir_ts::OptionalType>())
-            {
-                if (auto rightOptType = rightExpressionValue.getType().dyn_cast<mlir_ts::OptionalType>())
-                {
-                    leftExpressionValue = builder.create<mlir_ts::ValueOp>(
-                        loc(leftExpression), leftOptType.getElementType(), leftExpressionValue);
-                    rightExpressionValue = builder.create<mlir_ts::ValueOp>(
-                        loc(rightExpression), rightOptType.getElementType(), rightExpressionValue);
-                }
-            }
-        }
-
-        // cast step
-        switch (opCode)
-        {
-        case SyntaxKind::CommaToken:
-            // no cast needed
-            break;
-        case SyntaxKind::LessThanLessThanToken:
-        case SyntaxKind::GreaterThanGreaterThanToken:
-        case SyntaxKind::GreaterThanGreaterThanGreaterThanToken:
-            // cast to int
-            if (leftExpressionValue.getType() != builder.getI32Type())
-            {
-                leftExpressionValue = cast(loc(leftExpression), builder.getI32Type(), leftExpressionValue, genContext);
-            }
-
-            if (rightExpressionValue.getType() != builder.getI32Type())
-            {
-                rightExpressionValue =
-                    cast(loc(rightExpression), builder.getI32Type(), rightExpressionValue, genContext);
-            }
-
-            break;
-        case SyntaxKind::SlashToken:
-        case SyntaxKind::PercentToken:
-        case SyntaxKind::AsteriskAsteriskToken:
-
-            if (leftExpressionValue.getType() != getNumberType())
-            {
-                leftExpressionValue = cast(loc(leftExpression), getNumberType(), leftExpressionValue, genContext);
-            }
-
-            if (rightExpressionValue.getType() != getNumberType())
-            {
-                rightExpressionValue = cast(loc(rightExpression), getNumberType(), rightExpressionValue, genContext);
-            }
-
-            break;
-        case SyntaxKind::AsteriskToken:
-        case SyntaxKind::MinusToken:
-        case SyntaxKind::EqualsEqualsToken:
-        case SyntaxKind::EqualsEqualsEqualsToken:
-        case SyntaxKind::ExclamationEqualsToken:
-        case SyntaxKind::ExclamationEqualsEqualsToken:
-        case SyntaxKind::GreaterThanToken:
-        case SyntaxKind::GreaterThanEqualsToken:
-        case SyntaxKind::LessThanToken:
-        case SyntaxKind::LessThanEqualsToken:
-
-            if (leftExpressionValue.getType() != rightExpressionValue.getType())
-            {
-                // cast to base type
-                auto hasNumber = leftExpressionValue.getType() == getNumberType() ||
-                                 rightExpressionValue.getType() == getNumberType();
-                if (hasNumber)
-                {
-                    if (leftExpressionValue.getType() != getNumberType())
-                    {
-                        leftExpressionValue =
-                            cast(loc(leftExpression), getNumberType(), leftExpressionValue, genContext);
-                    }
-
-                    if (rightExpressionValue.getType() != getNumberType())
-                    {
-                        rightExpressionValue =
-                            cast(loc(rightExpression), getNumberType(), rightExpressionValue, genContext);
-                    }
-                }
-                else
-                {
-                    auto hasI32 = leftExpressionValue.getType() == builder.getI32Type() ||
-                                  rightExpressionValue.getType() == builder.getI32Type();
-                    if (hasI32)
-                    {
-                        if (leftExpressionValue.getType() != builder.getI32Type())
-                        {
-                            leftExpressionValue =
-                                cast(loc(leftExpression), builder.getI32Type(), leftExpressionValue, genContext);
-                        }
-
-                        if (rightExpressionValue.getType() != builder.getI32Type())
-                        {
-                            rightExpressionValue =
-                                cast(loc(rightExpression), builder.getI32Type(), rightExpressionValue, genContext);
-                        }
-                    }
-                }
-            }
-
-            break;
-        default:
-            if (leftExpressionValue.getType() != rightExpressionValue.getType())
-            {
-                rightExpressionValue =
-                    cast(loc(rightExpression), leftExpressionValue.getType(), rightExpressionValue, genContext);
-            }
-
-            break;
-        }
-
-        auto result = rightExpressionValue;
-        switch (opCode)
-        {
-        case SyntaxKind::EqualsToken:
-            // nothing to do;
-            assert(false);
-            break;
-        case SyntaxKind::EqualsEqualsToken:
-        case SyntaxKind::EqualsEqualsEqualsToken:
-        case SyntaxKind::ExclamationEqualsToken:
-        case SyntaxKind::ExclamationEqualsEqualsToken:
-        case SyntaxKind::GreaterThanToken:
-        case SyntaxKind::GreaterThanEqualsToken:
-        case SyntaxKind::LessThanToken:
-        case SyntaxKind::LessThanEqualsToken:
-            result = builder.create<mlir_ts::LogicalBinaryOp>(location, getBooleanType(),
-                                                              builder.getI32IntegerAttr((int)opCode),
-                                                              leftExpressionValue, rightExpressionValue);
-            break;
-        case SyntaxKind::CommaToken:
-            return rightExpressionValue;
-        default:
-            result = builder.create<mlir_ts::ArithmeticBinaryOp>(location, leftExpressionValue.getType(),
-                                                                 builder.getI32IntegerAttr((int)opCode),
-                                                                 leftExpressionValue, rightExpressionValue);
-            break;
-        }
+        adjustTypesForBinaryOp(opCode, leftExpressionValue, rightExpressionValue, genContext);
+        
+        auto result = binaryOpLogic(location, opCode, leftExpressionValue, rightExpressionValue, genContext);
 
         if (saveResult)
         {
@@ -12498,7 +12522,7 @@ genContext);
 
         LLVM_DEBUG(llvm::dbgs() << "\n!! join: " << type1 << " & " << type2;);
 
-        auto resType = mth.getUnionType(type1, type2);
+        auto resType = mth.getUnionType(type1, type2, false);
 
         LLVM_DEBUG(llvm::dbgs() << " = " << resType << "\n";);
 
