@@ -951,6 +951,14 @@ class MLIRGenImpl
                 inferType(currentTemplateType, currentType, results);
                 return;
             }
+
+            if (auto typeArray = concreteType.dyn_cast<mlir_ts::ConstArrayType>())
+            {
+                currentTemplateType = tempArray.getElementType();
+                currentType = typeArray.getElementType();
+                inferType(currentTemplateType, currentType, results);
+                return;
+            }            
         }
 
         // optional -> optional
@@ -1105,7 +1113,7 @@ class MLIRGenImpl
                 if (genericTypeGenContext.typeParamsWithArgs.size() < typeParams.size())
                 {
                     // no resolve needed, this type without param
-                    emitError(location) << "not all types can't be inferred";
+                    emitError(location) << "not all types could be inferred";
                     return mlir_ts::FuncOp();
                 }                
             }
