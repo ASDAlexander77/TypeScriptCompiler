@@ -460,7 +460,7 @@ class MLIRTypeHelper
         return mlir::Value();
     }
 
-    template <typename T1, typename T2> bool isCastableTypesLogic(T1 type, T2 matchType)
+    template <typename T1, typename T2> bool canCastFromToLogic(T1 type, T2 matchType)
     {
         if (type.getFields().size() != matchType.getFields().size())
         {
@@ -515,7 +515,7 @@ class MLIRTypeHelper
         return true;
     }
 
-    bool isCastableTypes(mlir::Type srcType, mlir::Type destType)
+    bool canCastFromTo(mlir::Type srcType, mlir::Type destType)
     {
         if (canWideTypeWithoutDataLoss(srcType, destType))
         {
@@ -526,12 +526,12 @@ class MLIRTypeHelper
         {
             if (auto matchConstTuple = destType.dyn_cast<mlir_ts::ConstTupleType>())
             {
-                return isCastableTypesLogic(constTuple, matchConstTuple);
+                return canCastFromToLogic(constTuple, matchConstTuple);
             }
 
             if (auto matchTuple = destType.dyn_cast<mlir_ts::TupleType>())
             {
-                return isCastableTypesLogic(constTuple, matchTuple);
+                return canCastFromToLogic(constTuple, matchTuple);
             }
 
             /*
@@ -546,14 +546,14 @@ class MLIRTypeHelper
         {
             if (auto matchTuple = destType.dyn_cast<mlir_ts::TupleType>())
             {
-                return isCastableTypesLogic(tuple, matchTuple);
+                return canCastFromToLogic(tuple, matchTuple);
             }
         }
 
         if (auto unionType = destType.dyn_cast<mlir_ts::UnionType>())
         {
             // calculate store size
-            auto pred = [&](auto &item) { return isCastableTypes(item, srcType); };
+            auto pred = [&](auto &item) { return canCastFromTo(item, srcType); };
             auto types = unionType.getTypes();
             if (std::find_if(types.begin(), types.end(), pred) == types.end())
             {
@@ -670,9 +670,14 @@ class MLIRTypeHelper
         }
 
         // wide range type can't be stored into literal
-        if (auto literalType = dstType.dyn_cast<mlir_ts::LiteralType>())
+        if (auto optionalType = dstType.dyn_cast<mlir_ts::OptionalType>())
         {
-            return canWideTypeWithoutDataLoss(srcType, literalType.getElementType());
+            if (auto srcOptionalType = srcType.dyn_cast<mlir_ts::OptionalType>())
+            {
+                return canWideTypeWithoutDataLoss(srcOptionalType.getElementType(), optionalType.getElementType());
+            }
+
+            return canWideTypeWithoutDataLoss(srcType, optionalType.getElementType());
         }
 
         return false;
@@ -912,6 +917,13 @@ class MLIRTypeHelper
             return mlir::success();
         }
 
+        if (auto optionalType = type.dyn_cast<mlir_ts::OptionalType>())
+        {
+            unionContext.isUndefined = true;
+            unionContext.types.insert(optionalType.getElementType());
+            return mlir::success();
+        }
+
         if (auto unionType = type.dyn_cast<mlir_ts::UnionType>())
         {
             if (mlir::succeeded(processUnionType(unionType, unionContext)))
@@ -934,12 +946,22 @@ class MLIRTypeHelper
         return mlir::success();
     }
 
-    mlir_ts::UnionType getUnionType(mlir::Type type1, mlir::Type type2)
+    mlir::Type getUnionType(mlir::Type type1, mlir::Type type2)
     {
+        if (canCastFromTo(type1, type2))
+        {
+            return type2;
+        }
+
+        if (canCastFromTo(type2, type1))
+        {
+            return type1;
+        }
+
         mlir::SmallVector<mlir::Type> types;
         types.push_back(type1);
         types.push_back(type2);
-        return mlir_ts::UnionType::get(context, types);
+        return getUnionTypeWithMerge(types);
     }
 
     mlir::Type getUnionTypeMergeTypes(UnionTypeProcessContext &unionContext, bool mergeLiterals = true)

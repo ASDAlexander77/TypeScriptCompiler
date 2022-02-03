@@ -379,7 +379,7 @@ LogicalResult verify(mlir_ts::CastOp op)
     if (inUnionType || resUnionType)
     {
         ::typescript::MLIRTypeHelper mth(op.getContext());
-        auto cmpTypes = [&](mlir::Type t1, mlir::Type t2) { return mth.isCastableTypes(t1, t2); };
+        auto cmpTypes = [&](mlir::Type t1, mlir::Type t2) { return mth.canCastFromTo(t1, t2); };
 
         if (inUnionType && !resUnionType)
         {
@@ -532,7 +532,7 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
 
             if (auto constTupleRes = res.getType().dyn_cast_or_null<mlir_ts::ConstTupleType>())
             {
-                if (mth.isCastableTypesLogic(constTupleIn, constTupleRes))
+                if (mth.canCastFromToLogic(constTupleIn, constTupleRes))
                 {
                     // create other const tuple from source const tuple
                     if (auto constOp = in.getDefiningOp<mlir_ts::ConstantOp>())
@@ -546,7 +546,7 @@ struct NormalizeCast : public OpRewritePattern<mlir_ts::CastOp>
             else if (auto tupleRes = res.getType().dyn_cast_or_null<mlir_ts::TupleType>())
             {
                 if (mlir_ts::TupleType::get(rewriter.getContext(), constTupleIn.getFields()) != tupleRes &&
-                    mth.isCastableTypesLogic(constTupleIn, tupleRes))
+                    mth.canCastFromToLogic(constTupleIn, tupleRes))
                 {
                     // create other const tuple from source const tuple
                     if (auto constOp = in.getDefiningOp<mlir_ts::ConstantOp>())

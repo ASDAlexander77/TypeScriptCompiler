@@ -3447,12 +3447,12 @@ class MLIRGenImpl
 
             if (mth.hasUndefines(genContext.passResult->functionReturnType))
             {
-                if (!mth.isCastableTypes(genContext.passResult->functionReturnType, type))
+                if (!mth.canCastFromTo(genContext.passResult->functionReturnType, type))
                 {
                     return mlir::failure();
                 }
             }
-            else if (!mth.isCastableTypes(type, genContext.passResult->functionReturnType))
+            else if (!mth.canCastFromTo(type, genContext.passResult->functionReturnType))
             {
                 return mlir::failure();
             }
@@ -10888,6 +10888,8 @@ genContext);
             return value;
         }
 
+        LLVM_DEBUG(llvm::dbgs() << "\n!! cast [" << value.getType() << "] -> [" << type << "]" << "\n";);
+
         // class to string
         if (auto stringType = type.dyn_cast<mlir_ts::StringType>())
         {
@@ -10955,18 +10957,6 @@ genContext);
             if (auto tupleType = value.getType().dyn_cast<mlir_ts::TupleType>())
             {
                 return castTupleToInterface(location, value, tupleType, interfaceType, genContext);
-            }
-        }
-
-        if (auto unionType = type.dyn_cast<mlir_ts::UnionType>())
-        {
-            MLIRTypeHelper mth(builder.getContext());
-            mlir::Type baseType;
-            if (!mth.isUnionTypeNeedsTag(unionType, baseType))
-            {
-                auto valueCasted = cast(location, baseType, value, genContext);
-                VALIDATE(valueCasted, location)
-                return builder.create<mlir_ts::CastOp>(location, type, valueCasted);
             }
         }
 
@@ -12497,12 +12487,22 @@ genContext);
         return mth.getUnionTypeMergeTypes(unionContext, false);
     }
 
-    mlir_ts::UnionType getUnionType(mlir::Type type1, mlir::Type type2)
+    mlir::Type getUnionType(mlir::Type type1, mlir::Type type2)
     {
-        mlir::SmallVector<mlir::Type> types;
-        types.push_back(type1);
-        types.push_back(type2);
-        return mlir_ts::UnionType::get(builder.getContext(), types);
+        if (!type1 || !type2)
+        {
+            return mlir::Type();
+        }
+
+        MLIRTypeHelper mth(builder.getContext());
+
+        LLVM_DEBUG(llvm::dbgs() << "\n!! join: " << type1 << " & " << type2;);
+
+        auto resType = mth.getUnionType(type1, type2);
+
+        LLVM_DEBUG(llvm::dbgs() << " = " << resType << "\n";);
+
+        return resType;
     }
 
     mlir::Type getUnionType(mlir::SmallVector<mlir::Type> &types)
