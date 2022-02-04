@@ -3,6 +3,7 @@
 
 #include "TypeScript/TypeScriptOps.h"
 #include "TypeScript/DOM.h"
+#include "TypeScript/MLIRLogic/MLIRTypeIterator.h"
 #include "TypeScript/MLIRLogic/MLIRHelper.h"
 
 #include "llvm/Support/Debug.h"
@@ -1021,8 +1022,8 @@ class MLIRTypeHelper
 
     bool isGenericType(mlir::Type type)
     {
-        // TODO: finish it, for arrays, funcs, classes, interfaces etc
-        return type.isa<mlir_ts::NamedGenericType>();
+        MLIRTypeIteratorLogic iter{};
+        return iter.some(type, [](mlir::Type type) { return type.isa<mlir_ts::NamedGenericType>(); });
     }
 };
 
