@@ -162,9 +162,10 @@ struct GenericFunctionInfo
 
     NamespaceInfo_TypePtr elementNamespace;
 
-    GenericFunctionInfo()
-    {
-    }
+    bool processing;
+    bool processed;
+
+    GenericFunctionInfo() = default;
 };
 
 enum class VariableClass
@@ -788,6 +789,8 @@ struct NamespaceInfo
     mlir::StringRef fullName;
 
     mlir_ts::NamespaceType namespaceType;
+
+    llvm::StringMap<mlir_ts::FunctionType> functionTypeMap;
 
     llvm::StringMap<mlir_ts::FuncOp> functionMap;
 
