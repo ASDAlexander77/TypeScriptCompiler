@@ -1112,8 +1112,12 @@ class MLIRGenImpl
                 // TODO: check if all typeParams are there
                 if (genericTypeGenContext.typeParamsWithArgs.size() < typeParams.size())
                 {
-                    // no resolve needed, this type without param
-                    emitError(location) << "not all types could be inferred";
+                    if (!genContext.allowPartialResolve)
+                    {
+                        // no resolve needed, this type without param
+                        emitError(location) << "not all types could be inferred";
+                    }
+
                     return {mlir::failure(), mlir::Type(), ""};
                 }                
             }

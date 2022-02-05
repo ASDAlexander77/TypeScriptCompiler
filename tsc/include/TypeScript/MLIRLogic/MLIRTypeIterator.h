@@ -187,7 +187,7 @@ class MLIRTypeIteratorLogic
         auto result = false;
         forEach(type, [&](mlir::Type type) {
             result |= f(type);
-            return result;
+            return !result;
         });
 
         return result;
