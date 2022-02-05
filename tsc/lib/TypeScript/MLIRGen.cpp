@@ -1008,6 +1008,51 @@ class MLIRGenImpl
         }
     }
 
+    bool isDelayedInstantiationForSpeecializedArrowFunctionReference(mlir::Value arrowFunctionRefValue)
+    {
+        if (auto symbolOp = arrowFunctionRefValue.getDefiningOp<mlir_ts::SymbolRefOp>())
+        {
+            return symbolOp->hasAttrOfType<mlir::BoolAttr>(GENERIC_ATTR_NAME);
+        }
+
+        return false;
+    }
+
+    mlir::LogicalResult instantiateSpecializedArrowFunctionHelper(mlir::Location location, mlir::Value arrowFunctionRefValue, mlir::Type recieverType, const GenContext &genContext)
+    {
+        auto symbolOp = arrowFunctionRefValue.getDefiningOp<mlir_ts::SymbolRefOp>();
+        assert(symbolOp);
+        auto arrowFunctionName = symbolOp.identifier();
+
+        // it is not generic arrow function
+        auto arrowFunctionGenericTypeInfo = getGenericFunctionInfoByFullName(arrowFunctionName);
+
+        GenContext arrowFuncGenContext(genContext);
+        arrowFuncGenContext.argTypeDestFuncType = recieverType;
+
+        {
+            mlir::OpBuilder::InsertionGuard guard(builder);
+            builder.restoreInsertionPoint(functionBeginPoint);
+
+            auto [result, arrowFuncOp, arrowFuncName] = mlirGenFunctionLikeDeclaration(arrowFunctionGenericTypeInfo->functionDeclaration, arrowFuncGenContext);
+            if (mlir::failed(result))
+            {
+                if (!genContext.allowPartialResolve)
+                {
+                    emitError(location) << "can't instantiate specialized arrow function.";
+                }
+
+                return mlir::failure();
+            }                        
+
+            // fix symbol with new type
+            arrowFunctionRefValue.setType(arrowFuncOp.getType());
+            symbolOp->removeAttr(GENERIC_ATTR_NAME);
+        }
+
+        return mlir::success();
+    }
+
     std::tuple<mlir::LogicalResult, mlir::Type, std::string> instantiateSpecializedFunctionType(mlir::Location location, StringRef name,
                                                        NodeArray<TypeNode> typeArguments, const GenContext &genContext)
     {
@@ -1172,39 +1217,15 @@ class MLIRGenImpl
                 for (auto op : genContext.callOperands)
                 {
                     opIndex++;
-                    if (auto symbolOp = op.getDefiningOp<mlir_ts::SymbolRefOp>())
+                    if (isDelayedInstantiationForSpeecializedArrowFunctionReference(op))
                     {
-                        if (symbolOp->hasAttrOfType<mlir::BoolAttr>(GENERIC_ATTR_NAME))
+                        LLVM_DEBUG(llvm::dbgs() << "\n!! delayed arrow func instantiation for func type: " << funcOp.getType() << "\n";);
+
+                        auto result = instantiateSpecializedArrowFunctionHelper(location, op, funcOp.getType().getInput(opIndex), genContext);
+                        if (mlir::failed(result))
                         {
-                            // it is not generic arrow function
-                            auto arrowFunctionGenericTypeInfo = getGenericFunctionInfoByFullName(symbolOp.identifier());
-
-                            GenContext arrowFuncGenContext(genContext);
-                            arrowFuncGenContext.destFuncType = funcOp.getType();
-                            arrowFuncGenContext.argTypeDestFuncType = funcOp.getType().getInput(opIndex);
-
-                            LLVM_DEBUG(llvm::dbgs() << "\n!! delayed arrow func instantiation for func type: " << funcOp.getType() << "\n";);
-
-                            {
-                                mlir::OpBuilder::InsertionGuard guard(builder);
-                                builder.restoreInsertionPoint(functionBeginPoint);
-
-                                auto [result, arrowFuncOp, arrowFuncName] = mlirGenFunctionLikeDeclaration(arrowFunctionGenericTypeInfo->functionDeclaration, arrowFuncGenContext);
-                                if (mlir::failed(result))
-                                {
-                                    if (!genContext.allowPartialResolve)
-                                    {
-                                        emitError(location) << "can't instantiate specialized arrow function.";
-                                    }
-
-                                    return {mlir::failure(), mlir::Type(), ""};
-                                }                        
-
-                                // fix symbol with new type
-                                op.setType(arrowFuncOp.getType());
-                                symbolOp->removeAttr(GENERIC_ATTR_NAME);
-                            }
-                        }
+                            return {mlir::failure(), mlir::Type(), ""};
+                        }                            
                     }
                 }
 
