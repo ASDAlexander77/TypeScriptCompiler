@@ -2673,24 +2673,16 @@ class MLIRGenImpl
             // provide name for it
             auto funcGenContext = GenContext(genContext);
             funcGenContext.thisType = nullptr;
-            auto res = mlirGenFunctionLikeDeclaration(functionExpressionAST, funcGenContext);
-            if (mlir::failed(std::get<0>(res)))
+            auto [result, funcOpRet, funcName] = mlirGenFunctionLikeDeclaration(functionExpressionAST, funcGenContext);
+            if (mlir::failed(result))
             {
                 return mlir::Value();
             }
 
-            funcOp = std::get<1>(res);
+            funcOp = funcOpRet;
         }
 
-        if (auto trampOp = resolveFunctionWithCapture(location, funcOp.getName(), funcOp.getType(), false, genContext))
-        {
-            return trampOp;
-        }
-
-        auto funcSymbolRef =
-            builder.create<mlir_ts::SymbolRefOp>(loc(functionExpressionAST), funcOp.getType(),
-                                                 mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
-        return funcSymbolRef;
+        return resolveFunctionWithCapture(location, funcOp.getName(), funcOp.getType(), false, genContext);
     }
 
     mlir::Value mlirGen(ArrowFunction arrowFunctionAST, const GenContext &genContext)
@@ -2731,14 +2723,7 @@ class MLIRGenImpl
             return funcSymbolRef;
         }
 
-        if (auto trampOp = resolveFunctionWithCapture(location, funcOp.getName(), funcOp.getType(), false, genContext))
-        {
-            return trampOp;
-        }
-
-        auto funcSymbolRef = builder.create<mlir_ts::SymbolRefOp>(
-            location, funcOp.getType(), mlir::FlatSymbolRefAttr::get(builder.getContext(), funcOp.getName()));
-        return funcSymbolRef;
+        return resolveFunctionWithCapture(location, funcOp.getName(), funcOp.getType(), false, genContext);
     }
 
     std::tuple<mlir::LogicalResult, mlir_ts::FuncOp, std::string> mlirGenFunctionGenerator(
@@ -8286,7 +8271,7 @@ class MLIRGenImpl
 #endif
         }
 
-        return mlir::Value();
+        return builder.create<mlir_ts::SymbolRefOp>(location, funcType, mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
     }
 
 #ifdef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
@@ -8355,14 +8340,7 @@ class MLIRGenImpl
             auto funcType = funcOp.getType();
             auto funcName = funcOp.getName();
 
-            if (auto trampOp = resolveFunctionWithCapture(location, funcName, funcType, false, genContext))
-            {
-                return trampOp;
-            }
-
-            auto symbOp = builder.create<mlir_ts::SymbolRefOp>(
-                location, funcType, mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName));
-            return symbOp;
+            return resolveFunctionWithCapture(location, funcName, funcType, false, genContext);
         }
 
         return mlir::Value();
@@ -9053,35 +9031,40 @@ class MLIRGenImpl
         return {mlir::success(), newClassPtr->classType.getName().getValue()};
     }
 
+    void appendSpecializedTypeNames(std::string &name, llvm::SmallVector<TypeParameterDOM::TypePtr> &typeParams, const GenContext &genContext)
+    {
+        name.append("<");
+        auto next = false;
+        for (auto typeParam : typeParams)
+        {
+            if (next)
+            {
+                name.append(",");
+            }
+
+            auto type = getResolveTypeParameter(typeParam->getName(), false, genContext);
+            if (type)
+            {
+                llvm::raw_string_ostream s(name);
+                s << type;
+            }
+            else
+            {
+                name.append(typeParam->getName());
+            }
+
+            next = true;
+        }
+
+        name.append(">");
+    }
+
     std::string getSpecializedClassName(GenericClassInfo::TypePtr geneticClassPtr, const GenContext &genContext)
     {
         auto name = geneticClassPtr->fullName.str();
         if (genContext.typeParamsWithArgs.size())
         {
-            name.append("<");
-            auto next = false;
-            for (auto typeParam : geneticClassPtr->typeParams)
-            {
-                if (next)
-                {
-                    name.append(",");
-                }
-
-                auto type = getResolveTypeParameter(typeParam->getName(), false, genContext);
-                if (type)
-                {
-                    llvm::raw_string_ostream s(name);
-                    s << type;
-                }
-                else
-                {
-                    name.append(typeParam->getName());
-                }
-
-                next = false;
-            }
-
-            name.append(">");
+            appendSpecializedTypeNames(name, geneticClassPtr->typeParams, genContext);
         }
 
         return name;
@@ -10616,7 +10599,7 @@ genContext);
                     // name.append(MLIRHelper::getName(typeParam));
                 }
 
-                next = false;
+                next = true;
             }
 
             name.append(">");
@@ -10631,30 +10614,7 @@ genContext);
         auto name = geneticInterfacePtr->fullName.str();
         if (genContext.typeParamsWithArgs.size())
         {
-            name.append("<");
-            auto next = false;
-            for (auto typeParam : geneticInterfacePtr->typeParams)
-            {
-                if (next)
-                {
-                    name.append(",");
-                }
-
-                auto type = getResolveTypeParameter(typeParam->getName(), false, genContext);
-                if (type)
-                {
-                    llvm::raw_string_ostream s(name);
-                    s << type;
-                }
-                else
-                {
-                    name.append(typeParam->getName());
-                }
-
-                next = false;
-            }
-
-            name.append(">");
+            appendSpecializedTypeNames(name, geneticInterfacePtr->typeParams, genContext);
         }
 
         return name;
