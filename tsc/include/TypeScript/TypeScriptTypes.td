@@ -931,7 +931,7 @@ def TypeScript_Function : TypeScript_Type<"Function"> {
       for (size_t i=0, e = getImpl()->inputs.size(); i < e; i++) {
         const auto& input = getImpl()->inputs[i];
         $_printer << input;
-        if (i < e)
+        if (i < e - 1)
           $_printer << ",";
       }      
       if (getImpl()->isVarArg)
@@ -942,7 +942,7 @@ def TypeScript_Function : TypeScript_Type<"Function"> {
       for (size_t i=0, e = getImpl()->results.size(); i < e; i++) {
         const auto& result = getImpl()->results[i];
         $_printer << result;
-        if (i < e)
+        if (i < e - 1)
           $_printer << ",";
       }      
       $_printer << ")>";

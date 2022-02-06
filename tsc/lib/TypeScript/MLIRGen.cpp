@@ -987,6 +987,18 @@ class MLIRGenImpl
             if (funcType.size() > 0)
             {
                 inferTypeFuncType(tempfuncType, funcType, results);
+
+                //lambda(return) -> lambda(return)
+                auto tempfuncRetType = getReturnsFromFuncRef(currentTemplateType);
+                if (tempfuncRetType.size() > 0)
+                {
+                    auto funcRetType = getReturnsFromFuncRef(concreteType);
+                    if (funcRetType.size() > 0)
+                    {
+                        inferTypeFuncType(tempfuncRetType, funcRetType, results);
+                    }
+                }
+
                 return;
             }
         }
@@ -6534,32 +6546,33 @@ class MLIRGenImpl
     // TODO: rename and put in helper class
     mlir::Type getReturnTypeFromFuncRef(mlir::Type funcType)
     {
-        mlir::Type returnType;
+        auto types = getReturnsFromFuncRef(funcType);
+        if (types.size() > 0)
+        {
+            return types.front();
+        }
+
+        return mlir::Type();
+    }
+
+    mlir::ArrayRef<mlir::Type> getReturnsFromFuncRef(mlir::Type funcType)
+    {
+        mlir::ArrayRef<mlir::Type> returnTypes;
 
         auto f = [&](auto calledFuncType) {
-            auto size = calledFuncType.getResults().size();
-            if (size == 1)
-            {
-                returnType = calledFuncType.getResults().front();
-            }
-            else if (size > 0)
-            {
-                llvm_unreachable("not implemented");
-            }
+            returnTypes = calledFuncType.getResults();
         };
 
         TypeSwitch<mlir::Type>(funcType)
             .Case<mlir_ts::FunctionType>([&](auto calledFuncType) { f(calledFuncType); })
             .Case<mlir_ts::HybridFunctionType>([&](auto calledFuncType) { f(calledFuncType); })
             .Case<mlir_ts::BoundFunctionType>([&](auto calledFuncType) { f(calledFuncType); })
-            .Case<mlir::NoneType>([&](auto calledFuncType) { returnType = builder.getNoneType(); })
             .Default([&](auto type) {
                 LLVM_DEBUG(llvm::dbgs() << "\n!! getReturnTypeFromFuncRef is not implemented for " << type << "\n";);
-                llvm_unreachable("not implemented");
             });
 
-        return returnType;
-    }
+        return returnTypes;
+    }    
 
     mlir::Type getParamFromFuncRef(mlir::Type funcType, int index)
     {
