@@ -1021,6 +1021,7 @@ class MLIRGenImpl
     mlir::Type instantiateSpecializedFunctionTypeHelper(mlir::Location location,
                                                                       mlir::Value functionRefValue,
                                                                       mlir::Type recieverType,
+                                                                      bool discoverReturnType,
                                                                       const GenContext &genContext)
     {
         auto symbolOp = functionRefValue.getDefiningOp<mlir_ts::SymbolRefOp>();
@@ -1030,12 +1031,13 @@ class MLIRGenImpl
         // it is not generic arrow function
         auto functionGenericTypeInfo = getGenericFunctionInfoByFullName(functionName);
 
-        return instantiateSpecializedFunctionTypeHelper(location, functionGenericTypeInfo->functionDeclaration, recieverType, genContext);
+        return instantiateSpecializedFunctionTypeHelper(location, functionGenericTypeInfo->functionDeclaration, recieverType, discoverReturnType, genContext);
     }
 
     mlir::Type instantiateSpecializedFunctionTypeHelper(mlir::Location location,
                                                                       FunctionLikeDeclarationBase funcDecl,
                                                                       mlir::Type recieverType,
+                                                                      bool discoverReturnType,
                                                                       const GenContext &genContext)
     {
         GenContext funcGenContext(genContext);
@@ -1044,7 +1046,7 @@ class MLIRGenImpl
         mlir::OpBuilder::InsertionGuard guard(builder);
         builder.restoreInsertionPoint(functionBeginPoint);
 
-        auto [result, funcOp] = getFuncArgTypesOfGenericMethod(funcDecl, {}, funcGenContext);
+        auto [result, funcOp] = getFuncArgTypesOfGenericMethod(funcDecl, {}, discoverReturnType, funcGenContext);
         if (mlir::failed(result))
         {
             if (!genContext.allowPartialResolve)
@@ -1203,7 +1205,7 @@ class MLIRGenImpl
 
                     if (isDelayedInstantiationForSpeecializedArrowFunctionReference(argOp))
                     {
-                        auto recreatedFuncType = instantiateSpecializedFunctionTypeHelper(location, functionGenericTypeInfo->functionDeclaration, mlir::Type(), genericTypeGenContext);
+                        auto recreatedFuncType = instantiateSpecializedFunctionTypeHelper(location, functionGenericTypeInfo->functionDeclaration, mlir::Type(), false, genericTypeGenContext);
 
                         LLVM_DEBUG(llvm::dbgs() << "\n!! instantiate specialized  type function: " << functionGenericTypeInfo->name << " type: " << recreatedFuncType << "\n";);
 
@@ -1212,7 +1214,7 @@ class MLIRGenImpl
                         LLVM_DEBUG(llvm::dbgs() << "\n!! param type for arrow func[" << index << "]: " << paramType << "\n";);
 
                         auto newArrowFuncType =
-                            instantiateSpecializedFunctionTypeHelper(location, argOp, paramType, genericTypeGenContext);
+                            instantiateSpecializedFunctionTypeHelper(location, argOp, paramType, true, genericTypeGenContext);
 
                         LLVM_DEBUG(llvm::dbgs() << "\n!! instantiate specialized arrow type function: " << newArrowFuncType << "\n";);
 
@@ -1340,10 +1342,11 @@ class MLIRGenImpl
 
     std::pair<mlir::LogicalResult, FunctionPrototypeDOM::TypePtr> getFuncArgTypesOfGenericMethod(
         FunctionLikeDeclarationBase functionLikeDeclarationAST, ArrayRef<TypeParameterDOM::TypePtr> typeParams,
+        bool discoverReturnType,
         const GenContext &genContext)
     {
         GenContext funcGenContext(genContext);
-        funcGenContext.discoverParamsOnly = true;
+        funcGenContext.discoverParamsOnly = !discoverReturnType;
 
         // we need to map generic parameters to generic types to be able to resolve function parameters which
         // are not generic
@@ -2441,26 +2444,11 @@ class MLIRGenImpl
                 else if (genContext.argTypeDestFuncType)
                 {
                     auto &argTypeDestFuncType = genContext.argTypeDestFuncType;
-                    if (auto funcType = argTypeDestFuncType.dyn_cast<mlir_ts::FunctionType>())
+                    auto retTypeFromReceiver = getReturnTypeFromFuncRef(argTypeDestFuncType);
+                    if (retTypeFromReceiver && !isNoneType(retTypeFromReceiver))
                     {
-                        if (funcType.getNumResults() > 0)
-                        {
-                            funcProto->setReturnType(funcType.getResult(0));
-                        }
-                    }
-                    else if (auto hybridFuncType = argTypeDestFuncType.dyn_cast<mlir_ts::HybridFunctionType>())
-                    {
-                        if (hybridFuncType.getResults().size() > 0)
-                        {
-                            funcProto->setReturnType(hybridFuncType.getResult(0));
-                        }
-                    }
-                    else if (auto boundFuncType = argTypeDestFuncType.dyn_cast<mlir_ts::BoundFunctionType>())
-                    {
-                        if (boundFuncType.getResults().size() > 0)
-                        {
-                            funcProto->setReturnType(boundFuncType.getResult(0));
-                        }
+                        funcProto->setReturnType(retTypeFromReceiver);
+                        LLVM_DEBUG(llvm::dbgs() << "\n!! set return type from receiver: " << retTypeFromReceiver << "\n";);
                     }
                 }
 
@@ -2861,7 +2849,7 @@ class MLIRGenImpl
             if (!ignoreFunctionArgsDecetion)
             {
                 auto [result, funcOp] =
-                    getFuncArgTypesOfGenericMethod(functionLikeDeclarationBaseAST, typeParameters, genContext);
+                    getFuncArgTypesOfGenericMethod(functionLikeDeclarationBaseAST, typeParameters, false, genContext);
                 if (mlir::failed(result))
                 {
                     return mlir::failure();
