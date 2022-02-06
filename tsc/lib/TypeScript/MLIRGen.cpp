@@ -2682,7 +2682,7 @@ class MLIRGenImpl
             funcOp = funcOpRet;
         }
 
-        return resolveFunctionWithCapture(location, funcOp.getName(), funcOp.getType(), false, genContext);
+        return resolveFunctionWithCapture(location, funcOp.getName(), funcOp.getType(), false, false, genContext);
     }
 
     mlir::Value mlirGen(ArrowFunction arrowFunctionAST, const GenContext &genContext)
@@ -2716,14 +2716,10 @@ class MLIRGenImpl
             // seems it is arrow method with generic types, process it later when function params are fully detected
             // TODO: finish code to fix function type when receiver method is fully identifided because of generic
             // methods
-            auto funcSymbolRef = builder.create<mlir_ts::SymbolRefOp>(
-                location, getFunctionType(ArrayRef<mlir::Type>{}, ArrayRef<mlir::Type>{}),
-                mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName));
-            funcSymbolRef->setAttr(GENERIC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
-            return funcSymbolRef;
+            return resolveFunctionWithCapture(location, funcName, getFunctionType(ArrayRef<mlir::Type>{}, ArrayRef<mlir::Type>{}), false, true, genContext);
         }
 
-        return resolveFunctionWithCapture(location, funcOp.getName(), funcOp.getType(), false, genContext);
+        return resolveFunctionWithCapture(location, funcOp.getName(), funcOp.getType(), false, false, genContext);
     }
 
     std::tuple<mlir::LogicalResult, mlir_ts::FuncOp, std::string> mlirGenFunctionGenerator(
@@ -8240,7 +8236,7 @@ class MLIRGenImpl
     }
 
     mlir::Value resolveFunctionWithCapture(mlir::Location location, StringRef name, mlir_ts::FunctionType funcType,
-                                           bool allocTrampolineInHeap, const GenContext &genContext)
+                                           bool allocTrampolineInHeap, bool addGenericAttrFlag, const GenContext &genContext)
     {
         // check if required capture of vars
         auto captureVars = getCaptureVarsMap().find(name);
@@ -8250,6 +8246,10 @@ class MLIRGenImpl
 
             auto funcSymbolOp = builder.create<mlir_ts::SymbolRefOp>(
                 location, funcType, mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
+            if (addGenericAttrFlag)
+            {
+                funcSymbolOp->setAttr(GENERIC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
+            }
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! func with capture: first type: [ " << funcType.getInput(0)
                                     << " ], func name: " << name << "\n");
@@ -8271,7 +8271,13 @@ class MLIRGenImpl
 #endif
         }
 
-        return builder.create<mlir_ts::SymbolRefOp>(location, funcType, mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
+        auto funcSymbolOp = builder.create<mlir_ts::SymbolRefOp>(location, funcType, mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
+        if (addGenericAttrFlag)
+        {
+            funcSymbolOp->setAttr(GENERIC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
+        }
+
+        return funcSymbolOp;
     }
 
 #ifdef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
@@ -8340,7 +8346,7 @@ class MLIRGenImpl
             auto funcType = funcOp.getType();
             auto funcName = funcOp.getName();
 
-            return resolveFunctionWithCapture(location, funcName, funcType, false, genContext);
+            return resolveFunctionWithCapture(location, funcName, funcType, false, false, genContext);
         }
 
         return mlir::Value();
