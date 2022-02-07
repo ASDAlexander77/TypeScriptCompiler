@@ -1022,7 +1022,13 @@ class MLIRGenImpl
 
     bool isDelayedInstantiationForSpeecializedArrowFunctionReference(mlir::Value arrowFunctionRefValue)
     {
-        if (auto symbolOp = arrowFunctionRefValue.getDefiningOp<mlir_ts::SymbolRefOp>())
+        auto currValue = arrowFunctionRefValue;
+        if (auto createBoundFunctionOp = currValue.getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
+        {
+            currValue = createBoundFunctionOp.func();
+        }
+
+        if (auto symbolOp = currValue.getDefiningOp<mlir_ts::SymbolRefOp>())
         {
             return symbolOp->hasAttrOfType<mlir::BoolAttr>(GENERIC_ATTR_NAME);
         }
@@ -1036,14 +1042,23 @@ class MLIRGenImpl
                                                                       bool discoverReturnType,
                                                                       const GenContext &genContext)
     {
-        auto symbolOp = functionRefValue.getDefiningOp<mlir_ts::SymbolRefOp>();
-        assert(symbolOp);
-        auto functionName = symbolOp.identifier();
+        auto currValue = functionRefValue;
+        if (auto createBoundFunctionOp = currValue.getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
+        {
+            currValue = createBoundFunctionOp.func();
+        }
 
-        // it is not generic arrow function
-        auto functionGenericTypeInfo = getGenericFunctionInfoByFullName(functionName);
+        if (auto symbolOp = currValue.getDefiningOp<mlir_ts::SymbolRefOp>())
+        {
+            auto functionName = symbolOp.identifier();
 
-        return instantiateSpecializedFunctionTypeHelper(location, functionGenericTypeInfo->functionDeclaration, recieverType, discoverReturnType, genContext);
+            // it is not generic arrow function
+            auto functionGenericTypeInfo = getGenericFunctionInfoByFullName(functionName);
+
+            return instantiateSpecializedFunctionTypeHelper(location, functionGenericTypeInfo->functionDeclaration, recieverType, discoverReturnType, genContext);
+        }
+
+        llvm_unreachable("not implemented");
     }
 
     mlir::Type instantiateSpecializedFunctionTypeHelper(mlir::Location location,
@@ -1076,7 +1091,13 @@ class MLIRGenImpl
                                                                   mlir::Value arrowFunctionRefValue,
                                                                   mlir::Type recieverType, const GenContext &genContext)
     {
-        auto symbolOp = arrowFunctionRefValue.getDefiningOp<mlir_ts::SymbolRefOp>();
+        auto currValue = arrowFunctionRefValue;
+        if (auto createBoundFunctionOp = currValue.getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
+        {
+            currValue = createBoundFunctionOp.func();
+        }
+
+        auto symbolOp = currValue.getDefiningOp<mlir_ts::SymbolRefOp>();
         assert(symbolOp);
         auto arrowFunctionName = symbolOp.identifier();
 
