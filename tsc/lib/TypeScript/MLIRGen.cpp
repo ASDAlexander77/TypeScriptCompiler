@@ -2521,37 +2521,7 @@ class MLIRGenImpl
         {
             // important set when it is discovered and in process second type
             funcProto->setHasCapturedVars(true);
-
-#ifndef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
-
-            SmallVector<mlir::NamedAttribute> attrs;
-            SmallVector<mlir::DictionaryAttr> argAttrs;
-
-#ifdef ADD_GC_ATTRIBUTE
-            attrs.push_back({builder.getIdentifier(TS_GC_ATTRIBUTE), mlir::UnitAttr::get(builder.getContext())});
-#endif
-
-            for (auto argType : funcType.getInputs())
-            {
-                SmallVector<mlir::NamedAttribute> argAttrsForType;
-                // add nested to first attr
-                if (argAttrs.size() == 0)
-                {
-                    // we need to force LLVM converter to allow to amend op in attached interface
-                    attrs.push_back(
-                        {builder.getIdentifier(TS_NEST_ATTRIBUTE), mlir::UnitAttr::get(builder.getContext())});
-                    argAttrsForType.push_back(
-                        {builder.getIdentifier(TS_NEST_ATTRIBUTE), mlir::UnitAttr::get(builder.getContext())});
-                }
-
-                auto argDicAttr = mlir::DictionaryAttr::get(builder.getContext(), argAttrsForType);
-                argAttrs.push_back(argDicAttr);
-            }
-
-            funcOp = mlir_ts::FuncOp::create(location, fullName, funcType, attrs, argAttrs);
-#else
             funcOp = mlir_ts::FuncOp::create(location, fullName, funcType);
-#endif
         }
         else
         {
@@ -2648,16 +2618,13 @@ class MLIRGenImpl
                 if (passResult->outerVariables.size() > 0)
                 {
                     MLIRCodeLogic mcl(builder);
-#ifdef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
                     auto isObjectType =
                         genContext.thisType != nullptr && genContext.thisType.isa<mlir_ts::ObjectType>();
                     if (!isObjectType)
                     {
-#endif
                         argTypes.insert(argTypes.begin(), mcl.CaptureType(passResult->outerVariables));
-#ifdef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
                     }
-#endif
+
                     getCaptureVarsMap().insert({name, passResult->outerVariables});
                     funcProto->setHasCapturedVars(true);
 
@@ -3067,13 +3034,11 @@ class MLIRGenImpl
             return mlir::success();
         }
 
-#ifdef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
         auto isObjectType = genContext.thisType != nullptr && genContext.thisType.isa<mlir_ts::ObjectType>();
         if (isObjectType)
         {
             return mlir::success();
         }
-#endif
 
         firstIndex++;
 
@@ -3087,7 +3052,6 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-#ifdef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
     mlir::LogicalResult mlirGenFunctionCapturedParamIfObject(mlir::Location loc, int &firstIndex,
                                                              FunctionPrototypeDOM::TypePtr funcProto,
                                                              mlir::Block::BlockArgListType arguments,
@@ -3121,7 +3085,6 @@ class MLIRGenImpl
 
         return mlir::success();
     }
-#endif
 
     mlir::LogicalResult mlirGenFunctionParams(int firstIndex, FunctionPrototypeDOM::TypePtr funcProto,
                                               mlir::Block::BlockArgListType arguments, const GenContext &genContext)
@@ -3324,12 +3287,10 @@ class MLIRGenImpl
             return mlir::failure();
         }
 
-#ifdef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
         if (failed(mlirGenFunctionCapturedParamIfObject(location, firstIndex, funcProto, arguments, genContext)))
         {
             return mlir::failure();
         }
-#endif
 
         if (failed(mlirGenFunctionCaptures(funcProto, genContext)))
         {
@@ -7707,11 +7668,7 @@ class MLIRGenImpl
             auto hasCaptures = captureVars != getCaptureVarsMap().end();
             if (hasCaptures)
             {
-#ifdef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
                 values.push_back(mlir::FlatSymbolRefAttr::get(builder.getContext(), funcName));
-#else
-                values.push_back(builder.getUnitAttr());
-#endif
             }
             else
             {
@@ -7822,27 +7779,9 @@ class MLIRGenImpl
                 }
             }
 
-#ifndef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
-            auto capturedType = funcType.getInput(0);
-            if (funcProto->getHasCapturedVars())
-            {
-                // save first param as it is captured vars type, and remove it to fix "this" param
-                funcType = getFunctionType(funcType.getInputs().slice(1), funcType.getResults());
-                LLVM_DEBUG(llvm::dbgs() << "\n!! Object without captured FuncType: " << funcType << "\n";);
-            }
-#endif
-
             // recreate type with "this" param as "any"
             auto newFuncType = mth.getFunctionTypeWithOpaqueThis(funcType, true);
             LLVM_DEBUG(llvm::dbgs() << "\n!! Object with this as opaque: " << newFuncType << "\n";);
-#ifndef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
-            if (funcProto->getHasCapturedVars())
-            {
-                newFuncType = mth.getFunctionTypeAddingFirstArgType(newFuncType, capturedType);
-                LLVM_DEBUG(llvm::dbgs() << "\n!! Object with this as opaque and returned captured as first: "
-                                        << newFuncType << "\n";);
-            }
-#endif
 
             // place holder
             addFuncFieldInfo(fieldId, funcName, newFuncType);
@@ -7977,7 +7916,6 @@ class MLIRGenImpl
         }
 
         // create accum. captures
-#ifdef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
         llvm::StringMap<ts::VariableDeclarationDOM::TypePtr> accumulatedCaptureVars;
 
         for (auto &methodRefWithName : methodInfosWithCaptures)
@@ -8023,7 +7961,6 @@ class MLIRGenImpl
                                                       accumulatedCapturedValues, genContext);
             addFieldInfo(mcl.TupleFieldName(CAPTURED_NAME), capturedValue);
         }
-#endif
 
         // final type
         auto constTupleType = getConstTupleType(fieldInfos);
@@ -8086,18 +8023,6 @@ class MLIRGenImpl
             {
                 MLIRTypeHelper mth(builder.getContext());
                 methodInfo.type = mth.getFunctionTypeReplaceOpaqueWithThisType(funcType, objThis);
-
-#ifndef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
-                // TODO: investigate if you can allocate trampolines in heap "change false -> true"
-                if (auto trampOp = resolveFunctionWithCapture(location, funcName, funcType, false, genContext))
-                {
-                    fieldsToSet.push_back({methodInfo.id, trampOp});
-                }
-                else
-                {
-                    assert(false);
-                }
-#endif
             }
         }
 
@@ -8283,14 +8208,9 @@ class MLIRGenImpl
             }
 
             auto captured = mlirGenCreateCapture(location, funcType.getInput(0), capturedValues, genContext);
-#ifndef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
-            return builder.create<mlir_ts::TrampolineOp>(location, newFuncType, funcSymbolOp, captured,
-                                                         builder.getBoolAttr(allocTrampolineInHeap));
-#else
             auto opaqueTypeValue = cast(location, getOpaqueType(), captured, genContext);
             return builder.create<mlir_ts::CreateBoundFunctionOp>(location, getBoundFunctionType(funcType),
                                                                   opaqueTypeValue, funcSymbolOp);
-#endif
         }
 
         auto funcSymbolOp = builder.create<mlir_ts::SymbolRefOp>(location, funcType, mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
@@ -9470,11 +9390,11 @@ class MLIRGenImpl
                 if (isNoneType(type))
                 {
 #ifndef ANY_AS_DEFAULT
-                    auto name = MLIRHelper::getName(item->name);
-                    emitError(loc(item)) << "type for field '" << memberNamePtr
+                    emitError(loc(propertyDeclaration)) << "type for field '" << memberNamePtr
                                          << "' is not provided, field must have type or initializer";
                     return mlir::failure();
 #else
+                    emitWarning(loc(propertyDeclaration)) << "type for field '" << memberNamePtr << "' is any";
                     type = getAnyType();
 #endif
                 }

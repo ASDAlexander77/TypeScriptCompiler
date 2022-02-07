@@ -176,9 +176,11 @@ class MLIRTypeHelper
     mlir::Type wideStorageType(mlir::Type type)
     {
         auto actualType = type;
-
-        actualType = stripLiteralType(actualType);
-        actualType = convertConstArrayTypeToArrayType(actualType);
+        if (actualType)
+        {
+            actualType = stripLiteralType(actualType);
+            actualType = convertConstArrayTypeToArrayType(actualType);
+        }
 
         return actualType;
     }    

@@ -878,34 +878,6 @@ struct SimplifyIndirectCallWithKnownCallee : public OpRewritePattern<mlir_ts::Ca
         }
 
         // supporting trumpoline
-#ifndef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
-        if (auto trampolineOp = indirectCall.getCallee().getDefiningOp<mlir_ts::TrampolineOp>())
-        {
-            if (auto symbolRefOp = trampolineOp.callee().getDefiningOp<mlir_ts::SymbolRefOp>())
-            {
-                // Replace with a direct call.
-                SmallVector<mlir::Value> args;
-                args.push_back(trampolineOp.data_reference());
-                args.append(indirectCall.getArgOperands().begin(), indirectCall.getArgOperands().end());
-                rewriter.replaceOpWithNewOp<mlir_ts::CallOp>(indirectCall, symbolRefOp.identifierAttr(), indirectCall.getResultTypes(),
-                                                             args);
-
-                LLVM_DEBUG(for (auto &arg : args) { llvm::dbgs() << "\n\n SimplifyIndirectCallWithKnownCallee arg: " << arg << "\n"; });
-
-                LLVM_DEBUG(llvm::dbgs() << "\nSimplifyIndirectCallWithKnownCallee: args: " << args.size() << "\n";);
-                LLVM_DEBUG(for (auto &use
-                                : trampolineOp->getUses()) { llvm::dbgs() << "\n use number:" << use.getOperandNumber() << "\n"; });
-
-                if (trampolineOp.use_empty())
-                {
-                    rewriter.eraseOp(trampolineOp);
-                }
-
-                return success();
-            }
-        }
-#endif
-
         if (auto getMethodOp = indirectCall.getCallee().getDefiningOp<mlir_ts::GetMethodOp>())
         {
             if (auto createBoundFunctionOp = getMethodOp.boundFunc().getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
