@@ -1176,7 +1176,7 @@ class MLIRGenImpl
         return mlir::success();
     }
 
-    std::tuple<mlir::LogicalResult, mlir::Type, std::string> instantiateSpecializedFunctionType(
+    std::tuple<mlir::LogicalResult, mlir_ts::FunctionType, std::string> instantiateSpecializedFunctionType(
         mlir::Location location, StringRef name, NodeArray<TypeNode> typeArguments, const GenContext &genContext)
     {
         auto functionGenericTypeInfo = getGenericFunctionInfoByFullName(name);
@@ -1197,7 +1197,7 @@ class MLIRGenImpl
                     location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
                 if (mlir::failed(result))
                 {
-                    return {mlir::failure(), mlir::Type(), ""};
+                    return {mlir::failure(), mlir_ts::FunctionType(), ""};
                 }
 
                 anyNamedGenericType |= hasAnyNamedGenericType;
@@ -1212,7 +1212,7 @@ class MLIRGenImpl
                         location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
                     if (mlir::failed(result))
                     {
-                        return {mlir::failure(), mlir::Type(), ""};
+                        return {mlir::failure(), mlir_ts::FunctionType(), ""};
                     }
 
                     anyNamedGenericType |= hasAnyNamedGenericType;
@@ -1246,7 +1246,7 @@ class MLIRGenImpl
                     if (mlir::failed(appendInferredTypes(location, typeParams, inferredTypes, anyNamedGenericType,
                                                          genericTypeGenContext)))
                     {
-                        return {mlir::failure(), mlir::Type(), ""};
+                        return {mlir::failure(), mlir_ts::FunctionType(), ""};
                     }
 
                     if (isDelayedInstantiationForSpeecializedArrowFunctionReference(argOp))
@@ -1266,7 +1266,7 @@ class MLIRGenImpl
 
                         if (!newArrowFuncType)
                         {
-                            return {mlir::failure(), mlir::Type(), ""};
+                            return {mlir::failure(), mlir_ts::FunctionType(), ""};
                         }
 
                         // infer second type when ArrowType is fully built
@@ -1275,7 +1275,7 @@ class MLIRGenImpl
                         if (mlir::failed(appendInferredTypes(location, typeParams, inferredTypes, anyNamedGenericType,
                                                             genericTypeGenContext)))
                         {
-                            return {mlir::failure(), mlir::Type(), ""};
+                            return {mlir::failure(), mlir_ts::FunctionType(), ""};
                         }
                     }
                 }
@@ -1285,7 +1285,7 @@ class MLIRGenImpl
                     location, typeParams, typeArguments, genericTypeGenContext.typeParamsWithArgs, genContext);
                 if (mlir::failed(resultDefArg))
                 {
-                    return {mlir::failure(), mlir::Type(), ""};
+                    return {mlir::failure(), mlir_ts::FunctionType(), ""};
                 }
 
                 anyNamedGenericType |= hasAnyNamedGenericType;
@@ -1299,7 +1299,7 @@ class MLIRGenImpl
                         emitError(location) << "not all types could be inferred";
                     }
 
-                    return {mlir::failure(), mlir::Type(), ""};
+                    return {mlir::failure(), mlir_ts::FunctionType(), ""};
                 }
             }
             else
@@ -1334,7 +1334,7 @@ class MLIRGenImpl
                         return {mlir::success(), funcType, fullName};
                     }
 
-                    return {mlir::failure(), mlir::Type(), ""};
+                    return {mlir::failure(), mlir_ts::FunctionType(), ""};
                 }
 
                 // create new instance of function with TypeArguments
@@ -1344,7 +1344,7 @@ class MLIRGenImpl
                 functionGenericTypeInfo->processing = false;
                 if (mlir::failed(result))
                 {
-                    return {mlir::failure(), mlir::Type(), ""};
+                    return {mlir::failure(), mlir_ts::FunctionType(), ""};
                 }
 
                 functionGenericTypeInfo->processed = true;
@@ -1362,7 +1362,7 @@ class MLIRGenImpl
                             location, op, funcOp.getType().getInput(opIndex), genContext);
                         if (mlir::failed(result))
                         {
-                            return {mlir::failure(), mlir::Type(), ""};
+                            return {mlir::failure(), mlir_ts::FunctionType(), ""};
                         }
                     }
                 }
@@ -1375,7 +1375,7 @@ class MLIRGenImpl
                 emitError(location) << "can't instantiate specialized function [" << name << "].";
             }
 
-            return {mlir::failure(), mlir::Type(), ""};
+            return {mlir::failure(), mlir_ts::FunctionType(), ""};
         }
 
         if (!genContext.allowPartialResolve)
@@ -1383,7 +1383,7 @@ class MLIRGenImpl
             emitError(location) << "can't find generic [" << name << "] function.";
         }
 
-        return {mlir::failure(), mlir::Type(), ""};
+        return {mlir::failure(), mlir_ts::FunctionType(), ""};
     }
 
     std::pair<mlir::LogicalResult, FunctionPrototypeDOM::TypePtr> getFuncArgTypesOfGenericMethod(
@@ -1552,9 +1552,7 @@ class MLIRGenImpl
                 return mlir::Value();
             }
 
-            auto symbOp = builder.create<mlir_ts::SymbolRefOp>(
-                location, funcType, mlir::FlatSymbolRefAttr::get(builder.getContext(), funcSymbolName));
-            return symbOp;
+            return resolveFunctionWithCapture(location, StringRef(funcSymbolName), funcType, false, false, genContext);
         }
 
         if (auto classOp = genResult.getDefiningOp<mlir_ts::ClassRefOp>())
@@ -8304,62 +8302,6 @@ class MLIRGenImpl
         return funcSymbolOp;
     }
 
-#ifdef REPLACE_TRAMPOLINE_WITH_BOUND_FUNCTION
-
-    mlir::Value resolveFunctionWithCapture(mlir::Location location, StringRef name,
-                                           mlir_ts::BoundFunctionType boundFuncType, bool allocTrampolineInHeap,
-                                           const GenContext &genContext)
-    {
-        // check if required capture of vars
-        auto captureVars = getCaptureVarsMap().find(name);
-        if (captureVars != getCaptureVarsMap().end())
-        {
-            auto funcType = getFunctionType(boundFuncType.getInputs(), boundFuncType.getResults());
-
-            auto funcSymbolOp = builder.create<mlir_ts::SymbolRefOp>(
-                location, funcType, mlir::FlatSymbolRefAttr::get(builder.getContext(), name));
-
-            MLIRCodeLogic mcl(builder);
-            SmallVector<mlir::Value> capturedValues;
-            for (auto &item : captureVars->getValue())
-            {
-                auto varValue = mlirGen(location, item.first(), genContext);
-
-                // review capturing by ref.  it should match storage type
-                auto refValue = mcl.GetReferenceOfLoadOp(varValue);
-                if (refValue)
-                {
-                    capturedValues.push_back(refValue);
-                    // set var as captures
-                    if (auto varOp = refValue.getDefiningOp<mlir_ts::VariableOp>())
-                    {
-                        varOp.capturedAttr(builder.getBoolAttr(true));
-                    }
-                }
-                else
-                {
-                    // this is not ref, this is const value
-                    capturedValues.push_back(varValue);
-                }
-            }
-
-            LLVM_DEBUG(llvm::dbgs() << "\n!! func with capture: first type: [ " << boundFuncType.getInput(0)
-                                    << " ], func name: " << name << "\n");
-
-            LLVM_DEBUG(for (auto &val : capturedValues) llvm::dbgs() << "\n!! captured val: " << val << "\n";);
-
-            // add attributes to track which one sent by ref.
-            auto captured = builder.create<mlir_ts::CaptureOp>(location, boundFuncType.getInput(0), capturedValues);
-            auto opaqueTypeValue = cast(location, getOpaqueType(), captured, genContext);
-            return builder.create<mlir_ts::CreateBoundFunctionOp>(location, boundFuncType, opaqueTypeValue,
-                                                                  funcSymbolOp);
-        }
-
-        return mlir::Value();
-    }
-
-#endif
-
     mlir::Value resolveFunctionNameInNamespace(mlir::Location location, StringRef name, const GenContext &genContext)
     {
         // resolving function
@@ -8400,7 +8342,10 @@ class MLIRGenImpl
         if (getGenericFunctionMap().count(name))
         {
             auto genericFunctionInfo = getGenericFunctionMap().lookup(name);
-            return resolveFunctionWithCapture(location, genericFunctionInfo->name, genericFunctionInfo->funcType, false, true, genContext);            
+
+            auto funcSymbolOp = builder.create<mlir_ts::SymbolRefOp>(location, genericFunctionInfo->funcType, mlir::FlatSymbolRefAttr::get(builder.getContext(), genericFunctionInfo->name));
+            funcSymbolOp->setAttr(GENERIC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
+            return funcSymbolOp;
         }
 
         if (getClassesMap().count(name))
