@@ -1092,7 +1092,8 @@ class MLIRGenImpl
                                                                   mlir::Type recieverType, const GenContext &genContext)
     {
         auto currValue = arrowFunctionRefValue;
-        if (auto createBoundFunctionOp = currValue.getDefiningOp<mlir_ts::CreateBoundFunctionOp>())
+        auto createBoundFunctionOp = currValue.getDefiningOp<mlir_ts::CreateBoundFunctionOp>();
+        if (createBoundFunctionOp)
         {
             currValue = createBoundFunctionOp.func();
         }
@@ -1123,11 +1124,19 @@ class MLIRGenImpl
                 return mlir::failure();
             }
 
-            // fix symbol with new type
-            TypeSwitch<mlir::Type>(arrowFunctionRefValue.getType())
-                .template Case<mlir_ts::BoundFunctionType>([&](auto boundFunc) { arrowFunctionRefValue.setType(getBoundFunctionType(arrowFuncOp.getType())); })
-                .template Case<mlir_ts::HybridFunctionType>([&](auto hybridFuncType) { arrowFunctionRefValue.setType(mlir_ts::HybridFunctionType::get(builder.getContext(), arrowFuncOp.getType())); })
-                .Default([&](auto type) { arrowFunctionRefValue.setType(arrowFuncOp.getType()); });
+            LLVM_DEBUG(llvm::dbgs() << "\n!! fixing arrow func: "<< arrowFuncName << " type: [" << arrowFuncOp.getType() << "\n";);
+
+            // fix symbolref
+            currValue.setType(arrowFuncOp.getType());
+
+            if (createBoundFunctionOp)
+            {
+                // fix create bound if any
+                TypeSwitch<mlir::Type>(createBoundFunctionOp.getType())
+                    .template Case<mlir_ts::BoundFunctionType>([&](auto boundFunc) { arrowFunctionRefValue.setType(getBoundFunctionType(arrowFuncOp.getType())); })
+                    .template Case<mlir_ts::HybridFunctionType>([&](auto hybridFuncType) { arrowFunctionRefValue.setType(mlir_ts::HybridFunctionType::get(builder.getContext(), arrowFuncOp.getType())); })
+                    .Default([&](auto type) { llvm_unreachable("not implemented"); });
+            }
 
             symbolOp->removeAttr(GENERIC_ATTR_NAME);
         }
