@@ -1124,7 +1124,11 @@ class MLIRGenImpl
             }
 
             // fix symbol with new type
-            arrowFunctionRefValue.setType(arrowFuncOp.getType());
+            TypeSwitch<mlir::Type>(arrowFunctionRefValue.getType())
+                .template Case<mlir_ts::BoundFunctionType>([&](auto boundFunc) { arrowFunctionRefValue.setType(getBoundFunctionType(arrowFuncOp.getType())); })
+                .template Case<mlir_ts::HybridFunctionType>([&](auto hybridFuncType) { arrowFunctionRefValue.setType(mlir_ts::HybridFunctionType::get(builder.getContext(), arrowFuncOp.getType())); })
+                .Default([&](auto type) { arrowFunctionRefValue.setType(arrowFuncOp.getType()); });
+
             symbolOp->removeAttr(GENERIC_ATTR_NAME);
         }
 
