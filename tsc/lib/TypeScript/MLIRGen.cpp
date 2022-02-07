@@ -1090,7 +1090,7 @@ class MLIRGenImpl
             mlir::OpBuilder::InsertionGuard guard(builder);
             builder.restoreInsertionPoint(functionBeginPoint);
 
-            auto [result, arrowFuncOp, arrowFuncName] =
+            auto [result, arrowFuncOp, arrowFuncName, isGeneric] =
                 mlirGenFunctionLikeDeclaration(arrowFunctionGenericTypeInfo->functionDeclaration, arrowFuncGenContext);
             if (mlir::failed(result))
             {
@@ -1305,7 +1305,7 @@ class MLIRGenImpl
 
                 // create new instance of function with TypeArguments
                 functionGenericTypeInfo->processing = true;
-                auto [result, funcOp, funcName] =
+                auto [result, funcOp, funcName, isGeneric] =
                     mlirGenFunctionLikeDeclaration(functionGenericTypeInfo->functionDeclaration, genericTypeGenContext);
                 functionGenericTypeInfo->processing = false;
                 if (mlir::failed(result))
@@ -1368,7 +1368,7 @@ class MLIRGenImpl
         }
 
         auto [funcOp, funcProto, result, isGenericType] = mlirGenFunctionPrototype(functionLikeDeclarationAST, funcGenContext);
-        if (!result || !funcOp)
+        if (mlir::failed(result) || !funcOp)
         {
             return {mlir::failure(), {}};
         }
@@ -2419,7 +2419,7 @@ class MLIRGenImpl
         return std::make_tuple(funcProto, funcType, argTypes);
     }
 
-    std::tuple<mlir_ts::FuncOp, FunctionPrototypeDOM::TypePtr, bool, bool> mlirGenFunctionPrototype(
+    std::tuple<mlir_ts::FuncOp, FunctionPrototypeDOM::TypePtr, mlir::LogicalResult, bool> mlirGenFunctionPrototype(
         FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
     {
         auto location = loc(functionLikeDeclarationBaseAST);
@@ -2430,12 +2430,7 @@ class MLIRGenImpl
             mlirGenFunctionSignaturePrototype(functionLikeDeclarationBaseAST, false, genContext);
         if (!funcProto)
         {
-            return std::make_tuple(funcOp, funcProto, false, false);
-        }
-
-        if (funcProto->getIsGeneric())
-        {
-            return std::make_tuple(funcOp, funcProto, true, true);
+            return std::make_tuple(funcOp, funcProto, mlir::failure(), false);
         }
 
         auto fullName = funcProto->getName();
@@ -2478,7 +2473,7 @@ class MLIRGenImpl
             else
             {
                 // false result
-                return std::make_tuple(funcOp, funcProto, false, false);
+                return std::make_tuple(funcOp, funcProto, mlir::failure(), false);
             }
         }
 
@@ -2539,17 +2534,20 @@ class MLIRGenImpl
 
         funcProto->setFuncType(funcType);
 
-        auto funcTypeIt = getFunctionTypeMap().find(fullName);
-        if (funcTypeIt != getFunctionTypeMap().end())
+        if (!funcProto->getIsGeneric())
         {
-            getFunctionTypeMap().erase(funcTypeIt);
+            auto funcTypeIt = getFunctionTypeMap().find(fullName);
+            if (funcTypeIt != getFunctionTypeMap().end())
+            {
+                getFunctionTypeMap().erase(funcTypeIt);
+            }
+
+            getFunctionTypeMap().insert({fullName, funcType});
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! register func name: " << fullName << ", type: " << funcType << "\n";);
         }
 
-        getFunctionTypeMap().insert({fullName, funcType});
-
-        LLVM_DEBUG(llvm::dbgs() << "\n!! register func name: " << fullName << ", type: " << funcType << "\n";);
-
-        return std::make_tuple(funcOp, funcProto, true, false);
+        return std::make_tuple(funcOp, funcProto, mlir::success(), funcProto->getIsGeneric());
     }
 
     mlir::LogicalResult discoverFunctionReturnTypeAndCapturedVars(
@@ -2673,7 +2671,7 @@ class MLIRGenImpl
             // provide name for it
             auto funcGenContext = GenContext(genContext);
             funcGenContext.thisType = nullptr;
-            auto [result, funcOpRet, funcName] = mlirGenFunctionLikeDeclaration(functionExpressionAST, funcGenContext);
+            auto [result, funcOpRet, funcName, isGeneric] = mlirGenFunctionLikeDeclaration(functionExpressionAST, funcGenContext);
             if (mlir::failed(result))
             {
                 return mlir::Value();
@@ -2690,6 +2688,7 @@ class MLIRGenImpl
         auto location = loc(arrowFunctionAST);
         mlir_ts::FuncOp funcOp;
         std::string funcName;
+        bool isGeneric;
 
         {
             mlir::OpBuilder::InsertionGuard guard(builder);
@@ -2698,7 +2697,7 @@ class MLIRGenImpl
             // provide name for it
             auto allowFuncGenContext = GenContext(genContext);
             allowFuncGenContext.thisType = nullptr;
-            auto [result, funcOpRet, funcNameRet] =
+            auto [result, funcOpRet, funcNameRet, isGenericRet] =
                 mlirGenFunctionLikeDeclaration(arrowFunctionAST, allowFuncGenContext);
             if (mlir::failed(result))
             {
@@ -2707,22 +2706,13 @@ class MLIRGenImpl
 
             funcOp = funcOpRet;
             funcName = funcNameRet;
+            isGeneric = isGenericRet;
         }
 
-        // in case of Arrow function without types
-        if (!funcOp)
-        {
-            // TODO: finish it
-            // seems it is arrow method with generic types, process it later when function params are fully detected
-            // TODO: finish code to fix function type when receiver method is fully identifided because of generic
-            // methods
-            return resolveFunctionWithCapture(location, funcName, getFunctionType(ArrayRef<mlir::Type>{}, ArrayRef<mlir::Type>{}), false, true, genContext);
-        }
-
-        return resolveFunctionWithCapture(location, funcOp.getName(), funcOp.getType(), false, false, genContext);
+        return resolveFunctionWithCapture(location, funcOp.getName(), funcOp.getType(), false, isGeneric, genContext);
     }
 
-    std::tuple<mlir::LogicalResult, mlir_ts::FuncOp, std::string> mlirGenFunctionGenerator(
+    std::tuple<mlir::LogicalResult, mlir_ts::FuncOp, std::string, bool> mlirGenFunctionGenerator(
         FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
     {
         auto location = loc(functionLikeDeclarationBaseAST);
@@ -2861,14 +2851,14 @@ class MLIRGenImpl
         return mlir::failure();
     }
 
-    std::tuple<mlir::LogicalResult, mlir_ts::FuncOp, std::string> mlirGenFunctionLikeDeclaration(
+    std::tuple<mlir::LogicalResult, mlir_ts::FuncOp, std::string, bool> mlirGenFunctionLikeDeclaration(
         FunctionLikeDeclarationBase functionLikeDeclarationBaseAST, const GenContext &genContext)
     {
         auto isGenericFunction = functionLikeDeclarationBaseAST->typeParameters.size() > 0;
         if (isGenericFunction && genContext.typeParamsWithArgs.size() == 0)
         {
             return {registerGenericFunctionLike(functionLikeDeclarationBaseAST, false, genContext), mlir_ts::FuncOp(),
-                    ""};
+                    "", false};
         }
 
         // check if it is generator
@@ -2885,7 +2875,7 @@ class MLIRGenImpl
             auto funcOp = lookupFunctionMap(functionName);
             if (funcOp && theModule.lookupSymbol(functionName))
             {
-                return {mlir::success(), funcOp, functionName};
+                return {mlir::success(), funcOp, functionName, false};
             }
         }
 
@@ -2901,16 +2891,16 @@ class MLIRGenImpl
 
         auto [funcOp, funcProto, result, isGeneric] =
             mlirGenFunctionPrototype(functionLikeDeclarationBaseAST, genContext);
-        if (!result || !funcOp)
+        if (mlir::failed(result))
         {
             // in case of ArrowFunction without params and receiver is generic function as well
-            if (result && isGeneric)
-            {
-                return {registerGenericFunctionLike(functionLikeDeclarationBaseAST, true, genContext), funcOp,
-                        funcProto->getName().str()};
-            }
+            return {result, funcOp, "", false};
+        }
 
-            return {result ? mlir::success() : mlir::failure(), funcOp, ""};
+        if (mlir::succeeded(result) && isGeneric)
+        {
+            return {registerGenericFunctionLike(functionLikeDeclarationBaseAST, true, genContext), funcOp,
+                    funcProto->getName().str(), isGeneric};
         }
 
         auto funcGenContext = GenContext(genContext);
@@ -2942,7 +2932,7 @@ class MLIRGenImpl
 
         if (mlir::failed(resultFromBody))
         {
-            return {mlir::failure(), funcOp, ""};
+            return {mlir::failure(), funcOp, "", false};
         }
 
         // set visibility index
@@ -2983,7 +2973,7 @@ class MLIRGenImpl
             builder.setInsertionPointAfter(funcOp);
         }
 
-        return {mlir::success(), funcOp, funcProto->getName().str()};
+        return {mlir::success(), funcOp, funcProto->getName().str(), false};
     }
 
     mlir::LogicalResult mlirGenFunctionEntry(mlir::Location location, FunctionPrototypeDOM::TypePtr funcProto,
@@ -7775,7 +7765,7 @@ class MLIRGenImpl
             auto &funcOp = std::get<0>(funcOpWithFuncProto);
             auto &funcProto = std::get<1>(funcOpWithFuncProto);
             auto result = std::get<2>(funcOpWithFuncProto);
-            if (!result || !funcOp)
+            if (mlir::failed(result) || !funcOp)
             {
                 return;
             }
@@ -8252,7 +8242,7 @@ class MLIRGenImpl
             }
 
             LLVM_DEBUG(llvm::dbgs() << "\n!! func with capture: first type: [ " << funcType.getInput(0)
-                                    << " ], func name: " << name << "\n");
+                                    << " ], func name: " << name << " func type: " << funcType << "\n");
 
             SmallVector<mlir::Value> capturedValues;
             if (mlir::failed(mlirGenResolveCapturedVars(location, captureVars->getValue(), capturedValues, genContext)))
