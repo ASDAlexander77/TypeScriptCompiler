@@ -8400,12 +8400,7 @@ class MLIRGenImpl
         if (getGenericFunctionMap().count(name))
         {
             auto genericFunctionInfo = getGenericFunctionMap().lookup(name);
-
-            auto funcSymbolRef = builder.create<mlir_ts::SymbolRefOp>(
-                location, genericFunctionInfo->funcType,
-                mlir::FlatSymbolRefAttr::get(builder.getContext(), genericFunctionInfo->name));
-            funcSymbolRef->setAttr(GENERIC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
-            return funcSymbolRef;
+            return resolveFunctionWithCapture(location, genericFunctionInfo->name, genericFunctionInfo->funcType, false, true, genContext);            
         }
 
         if (getClassesMap().count(name))

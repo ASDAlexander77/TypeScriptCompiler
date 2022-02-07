@@ -158,7 +158,7 @@ class FunctionPrototypeDOM
     std::string name;
     std::string nameWithoutNamespace;
     std::vector<FunctionParamDOM::TypePtr> args;
-    mlir::Type funcType;
+    mlir_ts::FunctionType funcType;
     mlir::Type returnType;
     bool discovered;
     bool hasCapturedVars;
@@ -204,11 +204,11 @@ class FunctionPrototypeDOM
         return args.back()->getIsMultiArgs();
     }
 
-    const mlir::Type &getFuncType() const
+    const mlir_ts::FunctionType &getFuncType() const
     {
         return funcType;
     }
-    void setFuncType(mlir::Type funcType_)
+    void setFuncType(mlir_ts::FunctionType funcType_)
     {
         funcType = funcType_;
     }    

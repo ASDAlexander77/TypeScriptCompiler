@@ -158,7 +158,7 @@ struct GenericFunctionInfo
 
     FunctionPrototypeDOM::TypePtr funcOp;
 
-    mlir::Type funcType;
+    mlir_ts::FunctionType funcType;
 
     NamespaceInfo_TypePtr elementNamespace;
 
