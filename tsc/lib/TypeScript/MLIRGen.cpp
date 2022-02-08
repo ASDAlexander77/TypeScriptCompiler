@@ -60,6 +60,8 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <numeric>
+#include <algorithm>
+#include <iterator>
 
 using namespace ::typescript;
 using namespace ts;
@@ -541,17 +543,21 @@ class MLIRGenImpl
 
         if (genContext.generatedStatements.size() > 0)
         {
+            // we need to process it only once (to prevent it processing in nested functions with body)
+            NodeArray<Statement> generatedStatements;
+            std::copy(genContext.generatedStatements.begin(), genContext.generatedStatements.end(), std::back_inserter(generatedStatements));
+
+            // clean up
+            const_cast<GenContext &>(genContext).generatedStatements.clear();
+
             // auto generated code
-            for (auto &statement : genContext.generatedStatements)
+            for (auto &statement : generatedStatements)
             {
                 if (failed(mlirGen(statement, genContext)))
                 {
                     return mlir::failure();
                 }
             }
-
-            // clean up
-            const_cast<GenContext &>(genContext).generatedStatements.clear();
         }
 
         for (auto &statement : blockAST->statements)
@@ -1681,9 +1687,7 @@ class MLIRGenImpl
         mlir::Type varType;
         if (!isGlobal)
         {
-            auto res = func();
-            auto type = std::get<0>(res);
-            auto init = std::get<1>(res);
+            auto [type, init] = func();
             if (!type && genContext.allowPartialResolve)
             {
                 return varType;
