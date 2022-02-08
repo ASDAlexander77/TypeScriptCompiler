@@ -141,6 +141,7 @@ add_test(NAME test-compile-00-class-generic COMMAND test-runner "${PROJECT_SOURC
 add_test(NAME test-compile-00-class-generic-interface COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_generic_iface.ts")
 add_test(NAME test-compile-00-class-recursive COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_recursive.ts")
 add_test(NAME test-compile-00-class-expression COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_expression.ts")
+add_test(NAME test-compile-00-class-deconst COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_deconst.ts")
 add_test(NAME test-compile-00-namespace COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00ns.ts")
 add_test(NAME test-compile-00-namespace-enum COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00ns2.ts")
 add_test(NAME test-compile-00-namespace-import COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/00ns3.ts")
@@ -225,6 +226,7 @@ add_test(NAME test-compile-StackTest COMMAND test-runner "${PROJECT_SOURCE_DIR}/
 add_test(NAME test-compile-Raytrace COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/raytrace.ts")
 add_test(NAME test-compile-Path COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/path.ts")
 add_test(NAME test-compile-Print-Bug-01 COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/01print-bug.ts")
+#add_test(NAME test-compile-Abstract-Property-In-Constructor COMMAND test-runner "${PROJECT_SOURCE_DIR}/test/tester/tests/abstractPropertyInConstructor.ts")
 
 add_test(NAME test-jit-00-print COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00print.ts")
 add_test(NAME test-jit-00-assert COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00assert.ts")
@@ -295,6 +297,7 @@ add_test(NAME test-jit-00-class-generic COMMAND test-runner -jit "${PROJECT_SOUR
 add_test(NAME test-jit-00-class-generic-interface COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_generic_iface.ts")
 add_test(NAME test-jit-00-class-recursive COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_recursive.ts")
 add_test(NAME test-jit-00-class-expression COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_expression.ts")
+add_test(NAME test-jit-00-class-deconst COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00class_deconst.ts")
 add_test(NAME test-jit-00-namespace COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00ns.ts")
 add_test(NAME test-jit-00-namespace-enum COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00ns2.ts")
 add_test(NAME test-jit-00-namespace-import COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/00ns3.ts")
@@ -385,3 +388,4 @@ add_test(NAME test-jit-StackTest COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}
 add_test(NAME test-jit-Raytrace COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/raytrace.ts")
 add_test(NAME test-jit-Path COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/path.ts")
 add_test(NAME test-jit-Print-Bug-01 COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/01print-bug.ts")
+#add_test(NAME test-jit-Abstract-Property-In-Constructor COMMAND test-runner -jit "${PROJECT_SOURCE_DIR}/test/tester/tests/abstractPropertyInConstructor.ts")

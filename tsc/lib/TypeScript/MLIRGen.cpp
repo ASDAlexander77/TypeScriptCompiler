@@ -1969,27 +1969,27 @@ class MLIRGenImpl
                                                 std::function<std::pair<mlir::Type, mlir::Value>()> func,
                                                 const GenContext &genContext)
     {
-        auto res = func();
-        auto type = std::get<0>(res);
-        auto init = std::get<1>(res);
+        auto [type, init] = func();
 
         auto index = 0;
         for (auto objectBindingElement : objectBindingPattern->elements)
         {
+            auto propertyName = MLIRHelper::getName(objectBindingElement->propertyName);
+            if (propertyName.empty())
+            {
+                propertyName = MLIRHelper::getName(objectBindingElement->name);
+            }
+
+            auto subInit = mlirGenPropertyAccessExpression(location, init, propertyName, false, genContext);
+
+            // nested obj, objectBindingElement->propertyName -> name
             if (objectBindingElement->name == SyntaxKind::ObjectBindingPattern)
             {
-                // nested obj, objectBindingElement->propertyName -> name
-                auto name = MLIRHelper::getName(objectBindingElement->propertyName);
-                auto subInit = mlirGenPropertyAccessExpression(location, init, name, false, genContext);
-
                 auto objectBindingPattern = objectBindingElement->name.as<ObjectBindingPattern>();
                 return processDeclarationObjectBindingPattern(
                     location, objectBindingPattern, varClass,
                     [&]() { return std::make_pair(subInit.getType(), subInit); }, genContext);
             }
-
-            auto name = MLIRHelper::getName(objectBindingElement->name);
-            auto subInit = mlirGenPropertyAccessExpression(location, init, name, false, genContext);
 
             if (!processDeclaration(
                     objectBindingElement, varClass, [&]() { return std::make_pair(subInit.getType(), subInit); },
@@ -5219,6 +5219,12 @@ class MLIRGenImpl
                                          genContext);
         }
 
+        if (leftExpression == SyntaxKind::ObjectLiteralExpression)
+        {
+            return mlirGenSaveLogicObject(location, leftExpression.as<ObjectLiteralExpression>(), rightExpression,
+                                         genContext);
+        }
+
         auto leftExpressionValue = mlirGen(leftExpression, genContext);
 
         VALIDATE(leftExpressionValue, location)
@@ -5274,6 +5280,55 @@ class MLIRGenImpl
         // no passing value
         return mlir::Value();
     }
+
+    mlir::Value mlirGenSaveLogicObject(mlir::Location location, ObjectLiteralExpression objectLiteralExpression,
+                                      Expression rightExpression, const GenContext &genContext)
+    {
+        auto rightExpressionValue = mlirGen(rightExpression, genContext);
+
+        VALIDATE(rightExpressionValue, location)
+
+        auto index = 0;
+        for (auto item : objectLiteralExpression->properties)
+        {
+            if (item == SyntaxKind::PropertyAssignment)
+            {
+                auto propertyAssignment = item.as<PropertyAssignment>();
+
+                auto propertyName = MLIRHelper::getName(propertyAssignment->name);
+                auto varName = MLIRHelper::getName(propertyAssignment->initializer.as<Node>());
+
+                auto ident = resolveIdentifier(location, varName, genContext);
+
+                auto subInit = mlirGenPropertyAccessExpression(location, rightExpressionValue, propertyName, false, genContext);
+
+                mlirGenSaveLogicOneItem(location, ident, subInit, genContext);
+
+            }
+            else if (item == SyntaxKind::ShorthandPropertyAssignment)
+            {
+                auto shorthandPropertyAssignment = item.as<ShorthandPropertyAssignment>();
+
+                auto propertyName = MLIRHelper::getName(shorthandPropertyAssignment->name);
+                auto varName = propertyName;
+
+                auto ident = resolveIdentifier(location, varName, genContext);
+
+                auto subInit = mlirGenPropertyAccessExpression(location, rightExpressionValue, propertyName, false, genContext);
+
+                mlirGenSaveLogicOneItem(location, ident, subInit, genContext);
+            }
+            else
+            {
+                llvm_unreachable("not implemented");
+            }
+
+            index++;
+        }
+
+        // no passing value
+        return mlir::Value();
+    }    
 
     mlir::LogicalResult unwrapForBinaryOp(SyntaxKind opCode, mlir::Value &leftExpressionValue,
                                           mlir::Value &rightExpressionValue, const GenContext &genContext)
