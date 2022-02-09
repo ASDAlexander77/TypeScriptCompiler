@@ -5926,7 +5926,7 @@ class MLIRGenImpl
                     effectiveThisValue = cast(location, classInfo->classType, thisValue, genContext);
                 }
 
-                if (!baseClass && methodInfo.isVirtual)
+                if (methodInfo.isAbstract || !baseClass && methodInfo.isVirtual)
                 {
                     LLVM_DEBUG(dbgs() << "\n!! Virtual call: func '" << funcOp.getName() << "' in context func. '"
                                       << const_cast<GenContext &>(genContext).funcOp.getName() << "'\n";);
@@ -9546,7 +9546,7 @@ class MLIRGenImpl
     }
 
     mlir::LogicalResult mlirGenForwardDeclaration(const std::string &funcName, mlir_ts::FunctionType funcType,
-                                                  bool isStatic, bool isVirtual, ClassInfo::TypePtr newClassPtr,
+                                                  bool isStatic, bool isVirtual, bool isAbstract, ClassInfo::TypePtr newClassPtr,
                                                   const GenContext &genContext)
     {
         if (newClassPtr->getMethodIndex(funcName) < 0)
@@ -9558,7 +9558,7 @@ class MLIRGenImpl
         SmallVector<mlir::Type> results{newClassPtr->classType};
         mlir_ts::FuncOp dummyFuncOp;
         newClassPtr->methods.push_back(
-            {funcName, getFunctionType(inputs, results), dummyFuncOp, isStatic, isVirtual, -1});
+            {funcName, getFunctionType(inputs, results), dummyFuncOp, isStatic, isVirtual || isAbstract, isAbstract, -1});
         return mlir::success();
     }
 
@@ -10390,12 +10390,12 @@ genContext);
 
             if (newClassPtr->getMethodIndex(methodName) < 0)
             {
-                methodInfos.push_back({methodName, funcOp.getType(), funcOp, isStatic, isAbstract || isVirtual, -1});
+                methodInfos.push_back({methodName, funcOp.getType(), funcOp, isStatic, isAbstract || isVirtual, isAbstract, -1});
             }
 
             if (propertyName.size() > 0)
             {
-                addAccessor(newClassPtr, classMember, propertyName, funcOp, isStatic, isAbstract || isVirtual);
+                addAccessor(newClassPtr, classMember, propertyName, funcOp, isStatic, isAbstract || isVirtual, isAbstract);
             }
         }
 
@@ -10892,14 +10892,14 @@ genContext);
     }
 
     void addAccessor(ClassInfo::TypePtr newClassPtr, ClassElement classMember, std::string &propertyName,
-                     mlir_ts::FuncOp funcOp, bool isStatic, bool isVirtual)
+                     mlir_ts::FuncOp funcOp, bool isStatic, bool isVirtual, bool isAbstract)
     {
         auto &accessorInfos = newClassPtr->accessors;
 
         auto accessorIndex = newClassPtr->getAccessorIndex(propertyName);
         if (accessorIndex < 0)
         {
-            accessorInfos.push_back({propertyName, {}, {}, isStatic, isVirtual});
+            accessorInfos.push_back({propertyName, {}, {}, isStatic, isVirtual, isAbstract});
             accessorIndex = newClassPtr->getAccessorIndex(propertyName);
         }
 

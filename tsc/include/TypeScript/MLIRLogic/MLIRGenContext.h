@@ -193,6 +193,7 @@ struct MethodInfo
     mlir_ts::FuncOp funcOp;
     bool isStatic;
     bool isVirtual;
+    bool isAbstract;
     int virtualIndex;
 };
 
@@ -219,6 +220,7 @@ struct AccessorInfo
     mlir_ts::FuncOp set;
     bool isStatic;
     bool isVirtual;
+    bool isAbstract;
 };
 
 struct InterfaceFieldInfo
