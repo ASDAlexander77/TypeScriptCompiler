@@ -1807,9 +1807,7 @@ class MLIRGenImpl
 
                         builder.setInsertionPoint(block, block->begin());
 
-                        auto res = func();
-                        auto type = std::get<0>(res);
-                        auto init = std::get<1>(res);
+                        auto [type, init] = func();
                         if (!type && genContext.allowPartialResolve)
                         {
                             return varType;
@@ -2259,16 +2257,22 @@ class MLIRGenImpl
             {
                 if (!typeParameter && !initializer)
                 {
+#ifndef ANY_AS_DEFAULT                    
                     auto funcName = MLIRHelper::getName(parametersContextAST->name);
                     emitError(loc(arg)) << "type of parameter '" << namePtr
                                         << "' is not provided, parameter must have type or initializer, function: "
                                         << funcName;
                     return {mlir::failure(), isGenericTypes, params};
+#else
+                    emitWarning(loc(parametersContextAST)) << "type for parameter '" << namePtr << "' is any";
+                    type = getAnyType();
+#endif                    
                 }
-
-                emitError(loc(typeParameter)) << "can't resolve type for parameter '" << namePtr << "'";
-
-                return {mlir::failure(), isGenericTypes, params};
+                else
+                {
+                    emitError(loc(typeParameter)) << "can't resolve type for parameter '" << namePtr << "'";
+                    return {mlir::failure(), isGenericTypes, params};
+                }
             }
 
             /*
@@ -10090,6 +10094,11 @@ genContext);
                         auto fieldValue = mlirGenPropertyAccessExpression(location, classNull,
                                                                           methodOrField.fieldInfo.id, genContext);
                         auto fieldRef = mcl.GetReferenceOfLoadOp(fieldValue);
+                        if (!fieldRef)
+                        {
+                            emitError(location) << "can't find reference for field: " << methodOrField.fieldInfo.id << " in interface: " << newInterfacePtr->interfaceType << " for class: " << newClassPtr->classType;
+                            return std::pair<mlir::Type, mlir::Value>{mlir::Type(), mlir::Value()};
+                        }
 
                         // insert &(null)->field
                         vtableValue = builder.create<mlir_ts::InsertPropertyOp>(
@@ -10250,7 +10259,7 @@ genContext);
 
         // register global
         auto fullClassVTableFieldName = concat(newClassPtr->fullName, VTABLE_NAME);
-        registerVariable(
+        auto vtableRegisteredType = registerVariable(
             location, fullClassVTableFieldName, true,
             newClassPtr->isDeclaration ? VariableClass::External : VariableClass::Var,
             [&]() {
@@ -10276,7 +10285,10 @@ genContext);
                         auto interfaceVTableValue =
                             resolveFullNameIdentifier(location, fullClassInterfaceVTableFieldName, true, genContext);
 
-                        assert(interfaceVTableValue);
+                        if (!interfaceVTableValue)
+                        {
+                            return std::pair<mlir::Type, mlir::Value>{mlir::Type(), mlir::Value()};
+                        }
 
                         auto interfaceVTableValueAsAny =
                             cast(location, getOpaqueType(), interfaceVTableValue, genContext);
@@ -10313,7 +10325,7 @@ genContext);
             },
             genContext);
 
-        return mlir::success();
+        return (vtableRegisteredType) ? mlir::success() : mlir::failure();
     }
 
     mlir::LogicalResult mlirGenClassMethodMember(ClassLikeDeclaration classDeclarationAST,
