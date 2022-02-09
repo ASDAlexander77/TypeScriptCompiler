@@ -8907,6 +8907,10 @@ class MLIRGenImpl
         // if it is ClassExpression we need to know if it is declaration
         mlirGenClassCheckIfDeclaration(location, classDeclarationAST, newClassPtr, genContext);
 
+        // prepare VTable
+        llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo> virtualTable;
+        newClassPtr->getVirtualTable(virtualTable);        
+
         // go to root
         mlir::OpBuilder::InsertPoint savePoint;
         if (isGenericClass)
