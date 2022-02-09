@@ -5908,6 +5908,7 @@ class MLIRGenImpl
             }
             else
             {
+                auto isStorageType = thisValue.getType().isa<mlir_ts::ClassStorageType>();
                 auto effectiveThisValue = thisValue;
                 if (baseClass)
                 {
@@ -5916,7 +5917,7 @@ class MLIRGenImpl
                                       << "', this type: " << thisValue.getType() << " value:" << thisValue << "\n\n";);
 
                     // get reference in case of classStorage
-                    if (thisValue.getType().isa<mlir_ts::ClassStorageType>())
+                    if (isStorageType)
                     {
                         MLIRCodeLogic mcl(builder);
                         thisValue = mcl.GetReferenceOfLoadOp(thisValue);
@@ -5926,13 +5927,14 @@ class MLIRGenImpl
                     effectiveThisValue = cast(location, classInfo->classType, thisValue, genContext);
                 }
 
-                if (methodInfo.isAbstract || !baseClass && methodInfo.isVirtual)
+                // TODO: check if you can split calls such as "this.method" and "super.method" ...
+                if (methodInfo.isAbstract || /*!baseClass &&*/ methodInfo.isVirtual && !isStorageType)
                 {
                     LLVM_DEBUG(dbgs() << "\n!! Virtual call: func '" << funcOp.getName() << "' in context func. '"
                                       << const_cast<GenContext &>(genContext).funcOp.getName() << "'\n";);
 
                     LLVM_DEBUG(dbgs() << "\n!! Virtual call - this val: [ " << effectiveThisValue << " ] func type: [ "
-                                      << effectiveFuncType << " ]\n";);
+                                      << effectiveFuncType << " ] isStorage access: " << isStorageType << "\n";);
 
                     // auto inTheSameFunc = funcOp.getName() == const_cast<GenContext &>(genContext).funcOp.getName();
 
