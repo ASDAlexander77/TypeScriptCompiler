@@ -8894,7 +8894,11 @@ class MLIRGenImpl
             newClassPtr->typeParamsWithArgs = genContext.typeParamsWithArgs;
         }
 
-        if (mlir::failed(mlirGenClassStorageType(location, classDeclarationAST, newClassPtr, genContext)))
+        // init this type (needed to use in property evaluations)
+        GenContext classGenContext(genContext);
+        classGenContext.thisType = newClassPtr->classType;
+
+        if (mlir::failed(mlirGenClassStorageType(location, classDeclarationAST, newClassPtr, classGenContext)))
         {
             newClassPtr->processingStorageClass = false;
             newClassPtr->enteredProcessingStorageClass = false;
@@ -8905,11 +8909,7 @@ class MLIRGenImpl
         newClassPtr->processedStorageClass = true;
 
         // if it is ClassExpression we need to know if it is declaration
-        mlirGenClassCheckIfDeclaration(location, classDeclarationAST, newClassPtr, genContext);
-
-        // prepare VTable
-        llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo> virtualTable;
-        newClassPtr->getVirtualTable(virtualTable);        
+        mlirGenClassCheckIfDeclaration(location, classDeclarationAST, newClassPtr, classGenContext);
 
         // go to root
         mlir::OpBuilder::InsertPoint savePoint;
@@ -8919,31 +8919,36 @@ class MLIRGenImpl
             builder.setInsertionPointToStart(&theModule.body().front());
         }
 
-        mlirGenClassDefaultConstructor(classDeclarationAST, newClassPtr, genContext);
+        // prepare VTable
+        llvm::SmallVector<VirtualMethodOrInterfaceVTableInfo> virtualTable;
+        newClassPtr->getVirtualTable(virtualTable);        
+
+
+        mlirGenClassDefaultConstructor(classDeclarationAST, newClassPtr, classGenContext);
 
 #ifdef ENABLE_RTTI
         // INFO: .instanceOf must be first element in VTable for Cast Any
-        mlirGenClassInstanceOfMethod(classDeclarationAST, newClassPtr, genContext);
+        mlirGenClassInstanceOfMethod(classDeclarationAST, newClassPtr, classGenContext);
 #endif
-        mlirGenClassNew(classDeclarationAST, newClassPtr, genContext);
+        mlirGenClassNew(classDeclarationAST, newClassPtr, classGenContext);
 
-        mlirGenClassDefaultStaticConstructor(classDeclarationAST, newClassPtr, genContext);
+        mlirGenClassDefaultStaticConstructor(classDeclarationAST, newClassPtr, classGenContext);
 
         /*
         // to support call 'static v = new Class();'
-        if (mlir::failed(mlirGenClassStaticFields(location, classDeclarationAST, newClassPtr, genContext)))
+        if (mlir::failed(mlirGenClassStaticFields(location, classDeclarationAST, newClassPtr, classGenContext)))
         {
             return {mlir::failure(), ""};
         }
         */
 
-        if (mlir::failed(mlirGenClassMembers(location, classDeclarationAST, newClassPtr, genContext)))
+        if (mlir::failed(mlirGenClassMembers(location, classDeclarationAST, newClassPtr, classGenContext)))
         {
             return {mlir::failure(), ""};
         }
 
         // generate vtable for interfaces in base class
-        if (mlir::failed(mlirGenClassBaseInterfaces(location, newClassPtr, genContext)))
+        if (mlir::failed(mlirGenClassBaseInterfaces(location, newClassPtr, classGenContext)))
         {
             return {mlir::failure(), ""};
         }
@@ -8952,15 +8957,15 @@ class MLIRGenImpl
         for (auto &heritageClause : classDeclarationAST->heritageClauses)
         {
             if (mlir::failed(
-                    mlirGenClassHeritageClauseImplements(classDeclarationAST, newClassPtr, heritageClause, genContext)))
+                    mlirGenClassHeritageClauseImplements(classDeclarationAST, newClassPtr, heritageClause, classGenContext)))
             {
                 return {mlir::failure(), ""};
             }
         }
 
-        mlirGenClassMembersPost(location, classDeclarationAST, newClassPtr, genContext);
+        mlirGenClassMembersPost(location, classDeclarationAST, newClassPtr, classGenContext);
 
-        mlirGenClassVirtualTableDefinition(location, newClassPtr, genContext);
+        mlirGenClassVirtualTableDefinition(location, newClassPtr, classGenContext);
 
         // here we need to process New method;
 
@@ -8972,7 +8977,7 @@ class MLIRGenImpl
         newClassPtr->enteredProcessingStorageClass = false;
 
         // if we allow multiple class nodes, do we need to store that ClassLikeDecl. has been processed fully
-        if (genContext.allowPartialResolve)
+        if (classGenContext.allowPartialResolve)
         {
             newClassPtr->fullyProcessedAtEvaluation = true;
         }
