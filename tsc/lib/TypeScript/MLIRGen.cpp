@@ -2667,7 +2667,7 @@ class MLIRGenImpl
     mlir::LogicalResult mlirGen(FunctionDeclaration functionDeclarationAST, const GenContext &genContext)
     {
         auto funcGenContext = GenContext(genContext);
-        funcGenContext.passResult = nullptr;
+        funcGenContext.clearScopeVars();
 
         mlir::OpBuilder::InsertionGuard guard(builder);
         auto res = mlirGenFunctionLikeDeclaration(functionDeclarationAST, funcGenContext);
@@ -2685,8 +2685,9 @@ class MLIRGenImpl
 
             // provide name for it
             auto funcGenContext = GenContext(genContext);
+            funcGenContext.clearScopeVars();
             funcGenContext.thisType = nullptr;
-            funcGenContext.passResult = nullptr;
+
             auto [result, funcOpRet, funcName, isGeneric] = mlirGenFunctionLikeDeclaration(functionExpressionAST, funcGenContext);
             if (mlir::failed(result))
             {
@@ -2712,8 +2713,8 @@ class MLIRGenImpl
 
             // provide name for it
             auto allowFuncGenContext = GenContext(genContext);
+            allowFuncGenContext.clearScopeVars();
             allowFuncGenContext.thisType = nullptr;
-            allowFuncGenContext.passResult = nullptr;
             auto [result, funcOpRet, funcNameRet, isGenericRet] =
                 mlirGenFunctionLikeDeclaration(arrowFunctionAST, allowFuncGenContext);
             if (mlir::failed(result))
@@ -2921,8 +2922,8 @@ class MLIRGenImpl
         }
 
         auto funcGenContext = GenContext(genContext);
+        funcGenContext.clearScopeVars();
         funcGenContext.funcOp = funcOp;
-        funcGenContext.passResult = nullptr;
         funcGenContext.state = new int(1);
         // if funcGenContext.passResult is null and allocateVarsInContextThis is true, this type should contain fully
         // defined object with local variables as fields
@@ -2934,6 +2935,12 @@ class MLIRGenImpl
         if (it != getCaptureVarsMap().end())
         {
             funcGenContext.capturedVars = &it->getValue();
+
+            LLVM_DEBUG(llvm::dbgs() << "\n!! func has captured vars: " << funcProto->getName() << "\n";);
+        }
+        else
+        {
+            assert(funcGenContext.capturedVars == nullptr);
         }
 
         auto resultFromBody = mlir::failure();
@@ -7866,8 +7873,8 @@ class MLIRGenImpl
             auto funcName = MLIRHelper::getAnonymousName(loc_check(funcLikeDecl));
 
             auto funcGenContext = GenContext(genContext);
+            funcGenContext.clearScopeVars();
             funcGenContext.thisType = getObjectType(getConstTupleType(fieldInfos));
-            funcGenContext.passResult = nullptr;
 
             auto funcOpWithFuncProto = mlirGenFunctionPrototype(funcLikeDecl, funcGenContext);
             auto &funcOp = std::get<0>(funcOpWithFuncProto);
@@ -7908,8 +7915,8 @@ class MLIRGenImpl
 
         auto processFunctionLike = [&](mlir_ts::ObjectType objThis, FunctionLikeDeclarationBase &funcLikeDecl) {
             auto funcGenContext = GenContext(genContext);
+            funcGenContext.clearScopeVars();
             funcGenContext.thisType = objThis;
-            funcGenContext.passResult = nullptr;
             funcGenContext.rediscover = true;
 
             mlir::OpBuilder::InsertionGuard guard(builder);
@@ -10435,8 +10442,8 @@ genContext);
             classMember->parent = classDeclarationAST;
 
             auto funcGenContext = GenContext(genContext);
+            funcGenContext.clearScopeVars();
             funcGenContext.thisType = newClassPtr->classType;
-            funcGenContext.passResult = nullptr;
             if (isConstructor)
             {
                 if (isStatic && !genContext.allowPartialResolve)
@@ -10914,8 +10921,8 @@ genContext);
             interfaceMember->parent = interfaceDeclarationAST;
 
             auto funcGenContext = GenContext(genContext);
+            funcGenContext.clearScopeVars();
             funcGenContext.thisType = newInterfacePtr->interfaceType;
-            funcGenContext.passResult = nullptr;
 
             auto res = mlirGenFunctionSignaturePrototype(methodSignature, true, funcGenContext);
             auto funcType = std::get<1>(res);

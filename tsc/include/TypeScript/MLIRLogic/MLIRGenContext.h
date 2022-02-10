@@ -60,6 +60,15 @@ struct GenContext
 {
     GenContext() = default;
 
+    void clearScopeVars()
+    {
+        passResult = nullptr;
+        capturedVars = nullptr;
+
+        currentOperation = nullptr;
+        unresolved = nullptr;
+    }
+
     // TODO: you are using "theModule.getBody()->clear();", do you need this hack anymore?
     void clean()
     {
