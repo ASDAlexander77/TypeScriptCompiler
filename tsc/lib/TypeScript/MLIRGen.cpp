@@ -6517,7 +6517,7 @@ class MLIRGenImpl
         auto forOfStat = nf.createForOfStatement(
             undefined, declList, _src_array_ident,
             nf.createExpressionStatement(
-                nf.createYieldExpression(undefined, _v_ident/*nf.createCallExpression(_func_ident, undefined, argumentsArray)*/)));
+                nf.createYieldExpression(undefined, nf.createCallExpression(_func_ident, undefined, argumentsArray))));
 
         // iterator
         NodeArray<Statement> statements;

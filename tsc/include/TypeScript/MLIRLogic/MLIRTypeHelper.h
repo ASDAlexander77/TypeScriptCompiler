@@ -164,8 +164,12 @@ class MLIRTypeHelper
 #ifdef USE_BOUND_FUNCTION_FOR_OBJECTS
         if (auto funcType = elementType.dyn_cast<mlir_ts::FunctionType>())
         {
-            isBound = true;
-            return mlir_ts::BoundFunctionType::get(context, funcType);
+            if (funcType.getNumInputs() > 0 &&
+                (funcType.getInput(0).isa<mlir_ts::OpaqueType>() || funcType.getInput(0).isa<mlir_ts::ObjectType>()))
+            {
+                isBound = true;
+                return mlir_ts::BoundFunctionType::get(context, funcType);
+            }
         }
 #endif
 
