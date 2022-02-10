@@ -11448,28 +11448,26 @@ genContext);
 
     mlir::Type getTypeByTypeName(Node node, const GenContext &genContext)
     {
-        mlir::Value value;
+        mlir::Type type;
         if (node == SyntaxKind::QualifiedName)
         {
-            value = mlirGen(node.as<QualifiedName>(), genContext);
+            auto value = mlirGen(node.as<QualifiedName>(), genContext);
+            assert(value);
+            type = value.getType();
         }
         else
         {
-            value = mlirGen(node.as<Expression>(), genContext);
+            type = evaluate(node.as<Expression>(), genContext);
         }
 
-        if (value)
+        if (type)
         {
-            auto type = value.getType();
-
             // extra code for extracting enum storage type
             // TODO: think if you can avoid doing it
             if (auto enumType = type.dyn_cast<mlir_ts::EnumType>())
             {
                 return enumType.getElementType();
             }
-
-            assert(type);
 
             return type;
         }
