@@ -2666,8 +2666,11 @@ class MLIRGenImpl
 
     mlir::LogicalResult mlirGen(FunctionDeclaration functionDeclarationAST, const GenContext &genContext)
     {
+        auto funcGenContext = GenContext(genContext);
+        funcGenContext.passResult = nullptr;
+
         mlir::OpBuilder::InsertionGuard guard(builder);
-        auto res = mlirGenFunctionLikeDeclaration(functionDeclarationAST, genContext);
+        auto res = mlirGenFunctionLikeDeclaration(functionDeclarationAST, funcGenContext);
         return std::get<0>(res);
     }
 
@@ -2683,6 +2686,7 @@ class MLIRGenImpl
             // provide name for it
             auto funcGenContext = GenContext(genContext);
             funcGenContext.thisType = nullptr;
+            funcGenContext.passResult = nullptr;
             auto [result, funcOpRet, funcName, isGeneric] = mlirGenFunctionLikeDeclaration(functionExpressionAST, funcGenContext);
             if (mlir::failed(result))
             {
@@ -2709,6 +2713,7 @@ class MLIRGenImpl
             // provide name for it
             auto allowFuncGenContext = GenContext(genContext);
             allowFuncGenContext.thisType = nullptr;
+            allowFuncGenContext.passResult = nullptr;
             auto [result, funcOpRet, funcNameRet, isGenericRet] =
                 mlirGenFunctionLikeDeclaration(arrowFunctionAST, allowFuncGenContext);
             if (mlir::failed(result))
@@ -13336,10 +13341,16 @@ genContext);
         }
 
         // return builder.getFileLineColLoc(builder.getIdentifier(fileName), loc->pos, loc->_end);
+        auto fileId = builder.getIdentifier(fileName);
         auto posLineChar =
             parser.getLineAndCharacterOfPosition(sourceFile, loc->pos.textPos != -1 ? loc->pos.textPos : loc->pos.pos);
-        return mlir::FileLineColLoc::get(builder.getContext(), builder.getIdentifier(fileName), posLineChar.line + 1,
+        auto begin = mlir::FileLineColLoc::get(builder.getContext(), fileId, posLineChar.line + 1,
                                          posLineChar.character + 1);
+        auto endLineChar =
+            parser.getLineAndCharacterOfPosition(sourceFile, loc->_end);
+        auto end = mlir::FileLineColLoc::get(builder.getContext(), fileId, endLineChar.line + 1,
+                                         endLineChar.character + 1);
+        return mlir::FusedLoc::get(builder.getContext(), {begin, end});
     }
 
     mlir::StringAttr getStringAttr(const std::string &text)

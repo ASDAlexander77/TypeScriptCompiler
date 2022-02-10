@@ -99,17 +99,29 @@ class MLIRHelper
         return getAnonymousName(loc, "__uf");
     }
 
+    static void getAnonymousNameStep(std::stringstream &ssName, mlir::Location loc)
+    {
+        mlir::TypeSwitch<mlir::LocationAttr>(loc)
+        .Case<mlir::FileLineColLoc>([&](auto loc) {
+            // auto fileName = loc.getFilename();
+            auto line = loc.getLine();
+            auto column = loc.getColumn();
+            ssName << 'L' << line << 'C' << column;
+        })
+        .Case<mlir::FusedLoc>([&](auto loc) {
+            for (auto subLoc : loc.getLocations())
+            {
+                getAnonymousNameStep(ssName, subLoc);
+            }
+        });        
+    }
+
     static std::string getAnonymousName(mlir::Location loc, const char *prefix)
     {
         // auto calculate name
         std::stringstream ssName;
         ssName << prefix;
-        mlir::TypeSwitch<mlir::LocationAttr>(loc).Case<mlir::FileLineColLoc>([&](auto loc) {
-            // auto fileName = loc.getFilename();
-            auto line = loc.getLine();
-            auto column = loc.getColumn();
-            ssName << 'L' << line << 'C' << column;
-        });
+        getAnonymousNameStep(ssName, loc);
         ssName << 'H' << hash_value(loc);
         return ssName.str();
     }
