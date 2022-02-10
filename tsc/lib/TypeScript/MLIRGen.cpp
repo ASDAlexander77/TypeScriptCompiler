@@ -4150,6 +4150,7 @@ class MLIRGenImpl
         auto location = loc(forOfStatementAST);
 
         auto varDecl = std::make_shared<VariableDeclarationDOM>(EXPR_TEMPVAR_NAME, exprValue.getType(), location);
+        varDecl->setIgnoreCapturing();
         declare(varDecl, exprValue, genContext);
 
         NodeFactory nf(NodeFactoryFlags::None);
@@ -4210,6 +4211,7 @@ class MLIRGenImpl
         auto location = loc(forOfStatementAST);
 
         auto varDecl = std::make_shared<VariableDeclarationDOM>(EXPR_TEMPVAR_NAME, exprValue.getType(), location);
+        varDecl->setIgnoreCapturing();
         declare(varDecl, exprValue, genContext);
 
         NodeFactory nf(NodeFactoryFlags::None);
@@ -6512,12 +6514,26 @@ class MLIRGenImpl
 
         auto forOfStat = nf.createForOfStatement(
             undefined, declList, _src_array_ident,
-            nf.createExpressionStatement(
-                nf.createYieldExpression(undefined, nf.createCallExpression(_func_ident, undefined, argumentsArray))));
+            nf.createEmptyStatement()
+            /*nf.createExpressionStatement(
+                nf.createYieldExpression(undefined, nf.createCallExpression(_func_ident, undefined, argumentsArray)))*/);
 
-        mlirGen(forOfStat, genContext);
+        // iterator
+        //auto block = nf.createBlock({forOfStat}, false);
+        NodeArray<Statement> statements;
+        auto yield1 = nf.createExpressionStatement(nf.createYieldExpression(undefined, nf.createLiteralLikeNode(SyntaxKind::NumericLiteral, S("1"))));
+        statements.push_back(yield1);
+        statements.push_back(forOfStat);
+        auto block = nf.createBlock(statements, false);
+        auto funcIter = nf.createFunctionExpression(undefined, nf.createToken(SyntaxKind::AsteriskToken), nf.createIdentifier(S("_iter_")), undefined, undefined, undefined, block);
+        funcIter->pos.pos = 1;
+        funcIter->_end = 2;
 
-        return mlir::Value();
+        // call
+        NodeArray<Expression> emptyArguments;
+        auto callOfIter = nf.createCallExpression(funcIter, undefined, emptyArguments);
+
+        return mlirGen(callOfIter, genContext);
     }    
 
     mlir::Value mlirGenCallExpression(mlir::Location location, mlir::Value funcResult,
