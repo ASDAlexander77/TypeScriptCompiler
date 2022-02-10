@@ -4150,6 +4150,7 @@ class MLIRGenImpl
         auto location = loc(forOfStatementAST);
 
         auto varDecl = std::make_shared<VariableDeclarationDOM>(EXPR_TEMPVAR_NAME, exprValue.getType(), location);
+        // somehow it is detected as external var, seems because it is contains external ref
         varDecl->setIgnoreCapturing();
         declare(varDecl, exprValue, genContext);
 
@@ -4211,6 +4212,7 @@ class MLIRGenImpl
         auto location = loc(forOfStatementAST);
 
         auto varDecl = std::make_shared<VariableDeclarationDOM>(EXPR_TEMPVAR_NAME, exprValue.getType(), location);
+        // somehow it is detected as external var, seems because it is contains external ref
         varDecl->setIgnoreCapturing();
         declare(varDecl, exprValue, genContext);
 
@@ -6514,15 +6516,11 @@ class MLIRGenImpl
 
         auto forOfStat = nf.createForOfStatement(
             undefined, declList, _src_array_ident,
-            nf.createEmptyStatement()
-            /*nf.createExpressionStatement(
-                nf.createYieldExpression(undefined, nf.createCallExpression(_func_ident, undefined, argumentsArray)))*/);
+            nf.createExpressionStatement(
+                nf.createYieldExpression(undefined, _v_ident/*nf.createCallExpression(_func_ident, undefined, argumentsArray)*/)));
 
         // iterator
-        //auto block = nf.createBlock({forOfStat}, false);
         NodeArray<Statement> statements;
-        auto yield1 = nf.createExpressionStatement(nf.createYieldExpression(undefined, nf.createLiteralLikeNode(SyntaxKind::NumericLiteral, S("1"))));
-        statements.push_back(yield1);
         statements.push_back(forOfStat);
         auto block = nf.createBlock(statements, false);
         auto funcIter = nf.createFunctionExpression(undefined, nf.createToken(SyntaxKind::AsteriskToken), nf.createIdentifier(S("_iter_")), undefined, undefined, undefined, block);
