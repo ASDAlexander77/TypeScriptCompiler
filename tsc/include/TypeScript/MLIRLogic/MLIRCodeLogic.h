@@ -653,7 +653,8 @@ class MLIRPropertyAccessCodeLogic
         auto isForEach = propName == "forEach";
         auto isEvery = propName == "every";
         auto isSome = propName == "some";
-        if (isForEach || isEvery || isSome)
+        auto isMap = propName == "map";
+        if (isForEach || isEvery || isSome || isMap)
         {
             auto arrayType = expression.getType().dyn_cast<mlir_ts::ArrayType>();
             auto constArrayType = expression.getType().dyn_cast<mlir_ts::ConstArrayType>();
@@ -685,7 +686,7 @@ class MLIRPropertyAccessCodeLogic
                 auto funcType = mlir_ts::FunctionType::get(builder.getContext(), funcArgs, resultArgs);
                 auto symbOp = builder.create<mlir_ts::ThisSymbolRefOp>(
                     location, funcType, expression,
-                    mlir::FlatSymbolRefAttr::get(builder.getContext(), isForEach ?  "__array_foreach" : isEvery ? "__array_every" : "__array_some"));
+                    mlir::FlatSymbolRefAttr::get(builder.getContext(), isForEach ?  "__array_foreach" : isEvery ? "__array_every" : isSome ? "__array_some" : "__array_map"));
                 symbOp->setAttr(VIRTUALFUNC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
                 return symbOp;
             }

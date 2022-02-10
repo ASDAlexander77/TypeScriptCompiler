@@ -1893,6 +1893,11 @@ class MLIRGenImpl
         if (!isConst || varClass == VariableClass::ConstRef)
         {
             varDecl->setReadWriteAccess();
+            // TODO: HACK: to mark var as local and ignore when capturing
+            if (varClass == VariableClass::ConstRef)
+            {
+                varDecl->setIgnoreCapturing();
+            }
         }
 
         varDecl->setFuncOp(genContext.funcOp);
@@ -6464,6 +6469,45 @@ class MLIRGenImpl
         return resolveIdentifier(location, varName, genContext);
     }
 
+    mlir::Value mlirGenArrayMap(const mlir::Location &location, ArrayRef<mlir::Value> operands,
+                                 const GenContext &genContext)
+    {
+        SymbolTableScopeT varScope(symbolTable);
+
+        auto arraySrc = operands[0];
+        auto funcSrc = operands[1];
+
+        // register vals
+        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>("_src_array_", arraySrc.getType(), location);
+        declare(srcArrayVarDecl, arraySrc, genContext);
+
+        auto funcVarDecl = std::make_shared<VariableDeclarationDOM>("_func_", funcSrc.getType(), location);
+        declare(funcVarDecl, funcSrc, genContext);
+
+        NodeFactory nf(NodeFactoryFlags::None);
+
+        auto _src_array_ident = nf.createIdentifier(S("_src_array_"));
+        auto _func_ident = nf.createIdentifier(S("_func_"));
+
+        auto _v_ident = nf.createIdentifier(S("_v_"));
+
+        NodeArray<VariableDeclaration> declarations;
+        declarations.push_back(nf.createVariableDeclaration(_v_ident));
+        auto declList = nf.createVariableDeclarationList(declarations, NodeFlags::Const);
+
+        NodeArray<Expression> argumentsArray;
+        argumentsArray.push_back(_v_ident);
+
+        auto forOfStat = nf.createForOfStatement(
+            undefined, declList, _src_array_ident,
+            nf.createExpressionStatement(
+                nf.createYieldExpression(undefined, nf.createCallExpression(_func_ident, undefined, argumentsArray))));
+
+        mlirGen(forOfStat, genContext);
+
+        return mlir::Value();
+    }    
+
     mlir::Value mlirGenCallExpression(mlir::Location location, mlir::Value funcResult,
                                       NodeArray<TypeNode> typeArguments, SmallVector<mlir::Value, 4> &operands,
                                       const GenContext &genContext)
@@ -6509,6 +6553,11 @@ class MLIRGenImpl
             if (functionName == "__array_some")
             {
                 return mlirGenArraySome(location, operands, genContext);
+            }
+
+            if (functionName == "__array_map")
+            {
+                return mlirGenArrayMap(location, operands, genContext);
             }
 
             // resolve function
@@ -8158,8 +8207,15 @@ class MLIRGenImpl
             if (genContext.funcOp && valueRegion &&
                 valueRegion->getParentOp() /* && valueRegion->getParentOp()->getParentOp()*/)
             {
+                //auto funcRegion = const_cast<GenContext &>(genContext).funcOp.getCallableRegion();
                 auto funcRegion = const_cast<GenContext &>(genContext).funcOp.getCallableRegion();
                 isOuterVar = !funcRegion->isAncestor(valueRegion);
+                // TODO: HACK
+                if (isOuterVar && value.second->getIgnoreCapturing())
+                {
+                    // special case when "ForceConstRef" pointering to outer variable but it is not outer var
+                    isOuterVar = false;
+                }
             }
 
             // auto isOuterFunctionScope = value.second->getFuncOp() != genContext.funcOp;
@@ -8169,6 +8225,10 @@ class MLIRGenImpl
                                   << "] value pair: " << value.first << " type: " << value.second->getType()
                                   << " readwrite: " << value.second->getReadWriteAccess() << "\n\n";);
 
+                //valueRegion->viewGraph();
+                //const_cast<GenContext &>(genContext).funcOpVarScope.getCallableRegion()->viewGraph();
+
+                // special case, to prevent capturing "_a_" because of reference to outer VaribleOp, whihc hack (review solution for it)
                 genContext.passResult->outerVariables.insert({value.second->getName(), value.second});
             }
 
