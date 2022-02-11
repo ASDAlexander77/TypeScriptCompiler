@@ -1226,6 +1226,8 @@ class MLIRGenImpl
 
                 auto funcOp = functionGenericTypeInfo->funcOp;
 
+                assert(funcOp);
+
                 // TODO: we have func params.
                 auto index = -1;
                 auto callOpsCount = genContext.callOperands.size();
@@ -6534,6 +6536,107 @@ class MLIRGenImpl
         return mlirGen(callOfIter, genContext);
     }    
 
+    mlir::Value mlirGenArrayFilter(const mlir::Location &location, ArrayRef<mlir::Value> operands,
+                                 const GenContext &genContext)
+    {
+        SymbolTableScopeT varScope(symbolTable);
+
+        auto arraySrc = operands[0];
+        auto funcSrc = operands[1];
+
+        // register vals
+        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>("_src_array_", arraySrc.getType(), location);
+        declare(srcArrayVarDecl, arraySrc, genContext);
+
+        auto funcVarDecl = std::make_shared<VariableDeclarationDOM>("_func_", funcSrc.getType(), location);
+        declare(funcVarDecl, funcSrc, genContext);
+
+        NodeFactory nf(NodeFactoryFlags::None);
+
+        auto _src_array_ident = nf.createIdentifier(S("_src_array_"));
+        auto _func_ident = nf.createIdentifier(S("_func_"));
+
+        auto _v_ident = nf.createIdentifier(S("_v_"));
+
+        NodeArray<VariableDeclaration> declarations;
+        declarations.push_back(nf.createVariableDeclaration(_v_ident));
+        auto declList = nf.createVariableDeclarationList(declarations, NodeFlags::Const);
+
+        NodeArray<Expression> argumentsArray;
+        argumentsArray.push_back(_v_ident);
+
+        auto forOfStat = nf.createForOfStatement(
+            undefined, declList, _src_array_ident,
+            nf.createIfStatement(
+                nf.createCallExpression(_func_ident, undefined, argumentsArray),
+                nf.createExpressionStatement(nf.createYieldExpression(undefined, _v_ident)), 
+                undefined));
+
+        // iterator
+        NodeArray<Statement> statements;
+        statements.push_back(forOfStat);
+        auto block = nf.createBlock(statements, false);
+        auto funcIter = nf.createFunctionExpression(undefined, nf.createToken(SyntaxKind::AsteriskToken), nf.createIdentifier(S("_iter_")), undefined, undefined, undefined, block);
+        funcIter->pos.pos = 1;
+        funcIter->_end = 2;
+
+        // call
+        NodeArray<Expression> emptyArguments;
+        auto callOfIter = nf.createCallExpression(funcIter, undefined, emptyArguments);
+
+        return mlirGen(callOfIter, genContext);
+    }    
+
+    mlir::Value mlirGenArrayReduce(const mlir::Location &location, ArrayRef<mlir::Value> operands,
+                                 const GenContext &genContext)
+    {
+        SymbolTableScopeT varScope(symbolTable);
+
+        auto arraySrc = operands[0];
+        auto funcSrc = operands[1];
+        auto initVal = operands[2];
+
+        auto varName = "_reduce_";
+        registerVariable(
+            location, varName, false, VariableClass::Let,
+            [&]() -> std::pair<mlir::Type, mlir::Value> {
+                return {initVal.getType(), initVal};
+            },
+            genContext);
+
+        // register vals
+        auto srcArrayVarDecl = std::make_shared<VariableDeclarationDOM>("_src_array_", arraySrc.getType(), location);
+        declare(srcArrayVarDecl, arraySrc, genContext);
+
+        auto funcVarDecl = std::make_shared<VariableDeclarationDOM>("_func_", funcSrc.getType(), location);
+        declare(funcVarDecl, funcSrc, genContext);
+
+        NodeFactory nf(NodeFactoryFlags::None);
+
+        auto _src_array_ident = nf.createIdentifier(S("_src_array_"));
+        auto _func_ident = nf.createIdentifier(S("_func_"));
+
+        auto _v_ident = nf.createIdentifier(S("_v_"));
+        auto _result_ident = nf.createIdentifier(stows(varName));
+
+        NodeArray<VariableDeclaration> declarations;
+        declarations.push_back(nf.createVariableDeclaration(_v_ident));
+        auto declList = nf.createVariableDeclarationList(declarations, NodeFlags::Const);
+
+        NodeArray<Expression> argumentsArray;
+        argumentsArray.push_back(_src_array_ident);
+        argumentsArray.push_back(_v_ident);
+
+        auto forOfStat = nf.createForOfStatement(
+            undefined, declList, _src_array_ident,
+                nf.createExpressionStatement(nf.createBinaryExpression(_result_ident, nf.createToken(SyntaxKind::EqualsToken),
+                                          nf.createCallExpression(_func_ident, undefined, argumentsArray))));
+
+        mlirGen(forOfStat, genContext);
+
+        return resolveIdentifier(location, varName, genContext);
+    }    
+
     mlir::Value mlirGenCallExpression(mlir::Location location, mlir::Value funcResult,
                                       NodeArray<TypeNode> typeArguments, SmallVector<mlir::Value, 4> &operands,
                                       const GenContext &genContext)
@@ -6584,6 +6687,16 @@ class MLIRGenImpl
             if (functionName == "__array_map")
             {
                 return mlirGenArrayMap(location, operands, genContext);
+            }
+
+            if (functionName == "__array_filter")
+            {
+                return mlirGenArrayFilter(location, operands, genContext);
+            }
+
+            if (functionName == "__array_reduce")
+            {
+                return mlirGenArrayReduce(location, operands, genContext);
             }
 
             // resolve function

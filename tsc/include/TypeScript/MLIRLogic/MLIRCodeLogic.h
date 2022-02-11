@@ -599,6 +599,35 @@ class MLIRPropertyAccessCodeLogic
         return mlir::Value();
     }
 
+    bool isArrayCustomMethod(StringRef propName)
+    {
+        if (propName == "forEach") return true;
+        if (propName == "every") return true;
+        if (propName == "some") return true;
+        if (propName == "map") return true;
+        if (propName == "filter") return true;
+        if (propName == "reduce") return true;
+        return false;
+    }
+
+    bool isArrayCustomMethodReturnsBool(StringRef propName)
+    {
+        if (propName == "every") return true;
+        if (propName == "some") return true;
+        return false;
+    }
+
+    const char* getArrayCustomMethodName(StringRef propName)
+    {
+        if (propName == "forEach") return "__array_foreach";
+        if (propName == "every") return "__array_every";
+        if (propName == "some") return "__array_some";
+        if (propName == "map") return "__array_map";
+        if (propName == "filter") return "__array_filter";
+        if (propName == "reduce") return "__array_reduce";
+        return nullptr;
+    }
+
     template <typename T> mlir::Value Array(T arrayType)
     {
         SmallVector<mlir::NamedAttribute> customAttrs;
@@ -650,11 +679,7 @@ class MLIRPropertyAccessCodeLogic
             return mlir::Value();
         }        
         
-        auto isForEach = propName == "forEach";
-        auto isEvery = propName == "every";
-        auto isSome = propName == "some";
-        auto isMap = propName == "map";
-        if (isForEach || isEvery || isSome || isMap)
+        if (isArrayCustomMethod(propName))
         {
             auto arrayType = expression.getType().dyn_cast<mlir_ts::ArrayType>();
             auto constArrayType = expression.getType().dyn_cast<mlir_ts::ConstArrayType>();
@@ -674,19 +699,35 @@ class MLIRPropertyAccessCodeLogic
                     elementType = arrayType.getElementType();
                 }
 
+                auto isReduce = propName == "reduce";
                 SmallVector<mlir::Type> resultArgs;
-                if (isEvery || isSome)
+                if (isArrayCustomMethodReturnsBool(propName))
                 {
                     resultArgs.push_back(mlir_ts::BooleanType::get(builder.getContext()));
                 }
 
+                mlir::Type genericTypeT;
                 SmallVector<mlir::Type> lambdaArgs{elementType};
+                if (isReduce)
+                {
+                    // add sum param
+                    genericTypeT = mlir_ts::NamedGenericType::get(builder.getContext(), mlir::FlatSymbolRefAttr::get(builder.getContext(), "T"));
+                    lambdaArgs.insert(&lambdaArgs.front(), genericTypeT);
+                }
+
                 auto lambdaFuncType = mlir_ts::FunctionType::get(builder.getContext(), lambdaArgs, resultArgs);
+                
                 SmallVector<mlir::Type> funcArgs{lambdaFuncType};
+                if (isReduce)
+                {
+                    funcArgs.push_back(genericTypeT);
+                }
+
                 auto funcType = mlir_ts::FunctionType::get(builder.getContext(), funcArgs, resultArgs);
                 auto symbOp = builder.create<mlir_ts::ThisSymbolRefOp>(
                     location, funcType, expression,
-                    mlir::FlatSymbolRefAttr::get(builder.getContext(), isForEach ?  "__array_foreach" : isEvery ? "__array_every" : isSome ? "__array_some" : "__array_map"));
+                    mlir::FlatSymbolRefAttr::get(builder.getContext(), 
+                    getArrayCustomMethodName(propName)));
                 symbOp->setAttr(VIRTUALFUNC_ATTR_NAME, mlir::BoolAttr::get(builder.getContext(), true));
                 return symbOp;
             }
