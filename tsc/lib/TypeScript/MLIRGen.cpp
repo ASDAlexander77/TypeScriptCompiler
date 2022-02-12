@@ -33,6 +33,7 @@
 #include "node_factory.h"
 #include "parser.h"
 #include "utilities.h"
+#include "dump.h"
 
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
@@ -6671,13 +6672,15 @@ class MLIRGenImpl
         auto declList = nf.createVariableDeclarationList(declarations, NodeFlags::Const);
 
         NodeArray<Expression> argumentsArray;
-        argumentsArray.push_back(_src_array_ident);
+        argumentsArray.push_back(_result_ident);
         argumentsArray.push_back(_v_ident);
 
         auto forOfStat = nf.createForOfStatement(
             undefined, declList, _src_array_ident,
                 nf.createExpressionStatement(nf.createBinaryExpression(_result_ident, nf.createToken(SyntaxKind::EqualsToken),
                                           nf.createCallExpression(_func_ident, undefined, argumentsArray))));
+
+        LLVM_DEBUG(printDebug(forOfStat););    
 
         mlirGen(forOfStat, genContext);
 
@@ -13542,6 +13545,15 @@ genContext);
         assert(loc_->pos != loc_->_end);
         return loc(loc_);
     }
+
+    void printDebug(ts::Node node)
+    {
+        //Printer<llvm::raw_ostream> printer(llvm::dbgs());
+        std::wcerr << "dump ===============================================" << std::endl;
+        Printer<std::wostream> printer(std::wcerr);
+        printer.printNode(node);
+        std::wcerr << std::endl << "end of dump ========================================" << std::endl;
+    }    
 
     bool hasErrorMessages;
 

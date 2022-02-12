@@ -184,7 +184,8 @@ template <typename OUT> class Printer
             if (variableDeclaration->type)
                 out << " : ";
             forEachChildPrint(variableDeclaration->type);
-            out << " = ";
+            if (variableDeclaration->initializer)
+                out << " = ";
             forEachChildPrint(variableDeclaration->initializer);
             break;
         }
@@ -699,6 +700,7 @@ template <typename OUT> class Printer
             auto classLikeDeclaration = node.as<ClassLikeDeclaration>();
             forEachChildrenPrint(node->decorators);
             forEachChildrenPrint(node->modifiers);
+            out << "class ";
             forEachChildPrint(classLikeDeclaration->name);
             forEachChildrenPrint(classLikeDeclaration->typeParameters, "<", ", ", ">", true);
             forEachChildrenPrint(classLikeDeclaration->heritageClauses);
@@ -709,6 +711,7 @@ template <typename OUT> class Printer
             auto interfaceDeclaration = node.as<InterfaceDeclaration>();
             forEachChildrenPrint(node->decorators);
             forEachChildrenPrint(node->modifiers);
+            out << "interface ";
             forEachChildPrint(interfaceDeclaration->name);
             forEachChildrenPrint(interfaceDeclaration->typeParameters, "<", ", ", ">", true);
             forEachChildrenPrint(interfaceDeclaration->heritageClauses);
@@ -719,8 +722,10 @@ template <typename OUT> class Printer
             auto typeAliasDeclaration = node.as<TypeAliasDeclaration>();
             forEachChildrenPrint(node->decorators);
             forEachChildrenPrint(node->modifiers);
+            out << "type ";
             forEachChildPrint(typeAliasDeclaration->name);
             forEachChildrenPrint(typeAliasDeclaration->typeParameters, "<", ", ", ">", true);
+            out << " = ";
             forEachChildPrint(typeAliasDeclaration->type);
             break;
         }
@@ -728,6 +733,7 @@ template <typename OUT> class Printer
             auto enumDeclaration = node.as<EnumDeclaration>();
             forEachChildrenPrint(node->decorators);
             forEachChildrenPrint(node->modifiers);
+            out << "enum ";
             forEachChildPrint(enumDeclaration->name);
             forEachChildrenPrint(enumDeclaration->members);
             break;
@@ -735,6 +741,7 @@ template <typename OUT> class Printer
         case SyntaxKind::EnumMember: {
             auto enumMember = node.as<EnumMember>();
             forEachChildPrint(enumMember->name);
+            out << ": ";
             forEachChildPrint(enumMember->initializer);
             break;
         }
@@ -742,6 +749,7 @@ template <typename OUT> class Printer
             auto moduleDeclaration = node.as<ModuleDeclaration>();
             forEachChildrenPrint(node->decorators);
             forEachChildrenPrint(node->modifiers);
+            out << "module ";
             forEachChildPrint(moduleDeclaration->name);
             forEachChildPrint(moduleDeclaration->body);
             break;
@@ -750,7 +758,9 @@ template <typename OUT> class Printer
             auto importEqualsDeclaration = node.as<ImportEqualsDeclaration>();
             forEachChildrenPrint(node->decorators);
             forEachChildrenPrint(node->modifiers);
+            out << "import ";
             forEachChildPrint(importEqualsDeclaration->name);
+            out << " = ";
             forEachChildPrint(importEqualsDeclaration->moduleReference);
             break;
         }
