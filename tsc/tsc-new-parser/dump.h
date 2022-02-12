@@ -88,7 +88,16 @@ template <typename OUT> class Printer
             break;
         }
         case SyntaxKind::StringLiteral: {
-            out << node.as<StringLiteral>()->text;
+            auto stringLiteral = node.as<StringLiteral>();
+            if (stringLiteral->singleQuote)
+                out << "'";
+            else 
+                out << "\"";
+            out << stringLiteral->text;
+            if (stringLiteral->singleQuote)
+                out << "'";
+            else 
+                out << "\"";
             break;
         }
         case SyntaxKind::QualifiedName: {
@@ -237,7 +246,7 @@ template <typename OUT> class Printer
         case SyntaxKind::TypeReference: {
             auto typeReferenceNode = node.as<TypeReferenceNode>();
             forEachChildPrint(typeReferenceNode->typeName);
-            forEachChildrenPrint(typeReferenceNode->typeArguments);
+            forEachChildrenPrint(typeReferenceNode->typeArguments, "<", ", ", ">", true);
             break;
         }
         case SyntaxKind::TypePredicate: {
@@ -287,7 +296,7 @@ template <typename OUT> class Printer
             auto importTypeNode = node.as<ImportTypeNode>();
             forEachChildPrint(importTypeNode->argument);
             forEachChildPrint(importTypeNode->qualifier);
-            forEachChildrenPrint(importTypeNode->typeArguments);
+            forEachChildrenPrint(importTypeNode->typeArguments, "<", ", ", ">", true);
             break;
         }
         case SyntaxKind::ParenthesizedType: {
@@ -362,22 +371,24 @@ template <typename OUT> class Printer
             auto callExpression = node.as<CallExpression>();
             forEachChildPrint(callExpression->expression);
             forEachChildPrint(callExpression->questionDotToken);
-            forEachChildrenPrint(callExpression->typeArguments);
-            forEachChildrenPrint(callExpression->arguments);
+            forEachChildrenPrint(callExpression->typeArguments, "<", ", ", ">", true);
+            out << "(";
+            forEachChildrenPrint(callExpression->arguments, nullptr, ", ");
+            out << ")";
             break;
         }
         case SyntaxKind::NewExpression: {
             auto newExpression = node.as<NewExpression>();
             forEachChildPrint(newExpression->expression);
-            forEachChildrenPrint(newExpression->typeArguments);
-            forEachChildrenPrint(newExpression->arguments);
+            forEachChildrenPrint(newExpression->typeArguments, "<", ", ", ">", true);
+            forEachChildrenPrint(newExpression->arguments, nullptr, ", ");
             break;
         }
         case SyntaxKind::TaggedTemplateExpression: {
             auto taggedTemplateExpression = node.as<TaggedTemplateExpression>();
             forEachChildPrint(taggedTemplateExpression->tag);
             forEachChildPrint(taggedTemplateExpression->questionDotToken);
-            forEachChildrenPrint(taggedTemplateExpression->typeArguments);
+            forEachChildrenPrint(taggedTemplateExpression->typeArguments, "<", ", ", ">", true);
             forEachChildPrint(taggedTemplateExpression->_template);
             break;
         }
@@ -773,7 +784,7 @@ template <typename OUT> class Printer
         case SyntaxKind::ExpressionWithTypeArguments: {
             auto expressionWithTypeArguments = node.as<ExpressionWithTypeArguments>();
             forEachChildPrint(expressionWithTypeArguments->expression);
-            forEachChildrenPrint(expressionWithTypeArguments->typeArguments);
+            forEachChildrenPrint(expressionWithTypeArguments->typeArguments, "<", ", ", ">", true);
             break;
         }
         case SyntaxKind::ExternalModuleReference: {
@@ -806,14 +817,14 @@ template <typename OUT> class Printer
         case SyntaxKind::JsxSelfClosingElement: {
             auto jsxSelfClosingElement = node.as<JsxSelfClosingElement>();
             forEachChildPrint(jsxSelfClosingElement->tagName);
-            forEachChildrenPrint(jsxSelfClosingElement->typeArguments);
+            forEachChildrenPrint(jsxSelfClosingElement->typeArguments, "<", ", ", ">", true);
             forEachChildPrint(jsxSelfClosingElement->attributes);
             break;
         }
         case SyntaxKind::JsxOpeningElement: {
             auto jsxOpeningElement = node.as<JsxOpeningElement>();
             forEachChildPrint(jsxOpeningElement->tagName);
-            forEachChildrenPrint(jsxOpeningElement->typeArguments);
+            forEachChildrenPrint(jsxOpeningElement->typeArguments, "<", ", ", ">", true);
             forEachChildPrint(jsxOpeningElement->attributes);
             break;
         }
