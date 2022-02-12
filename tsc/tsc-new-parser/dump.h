@@ -21,9 +21,10 @@ namespace ts
 template <typename OUT> class Printer
 {
     OUT &out;
+    int ident;
 
   public:
-    Printer(OUT &out) : out(out)
+    Printer(OUT &out) : out(out), ident(0)
     {
     }
 
@@ -39,7 +40,7 @@ template <typename OUT> class Printer
     {
         if (!ifAny && open)
         {
-            out << open;
+            printText(open);
         }
 
         auto hasAny = false;
@@ -47,12 +48,12 @@ template <typename OUT> class Printer
         {
             if (!hasAny && ifAny && open)
             {
-                out << open;
+                printText(open);
             }
 
             if (hasAny && separator)
             {
-                out << separator;
+                printText(separator);
             }
 
             hasAny = true;
@@ -61,7 +62,7 @@ template <typename OUT> class Printer
 
         if ((!ifAny || ifAny && hasAny) && end)
         {
-            out << end;
+            printText(end);
         }
     }
 
@@ -80,6 +81,14 @@ template <typename OUT> class Printer
         {
         case SyntaxKind::Identifier: {
             out << node.as<Identifier>()->escapedText.c_str();
+            break;
+        }
+        case SyntaxKind::NumericLiteral: {
+            out << node.as<NumericLiteral>()->text;
+            break;
+        }
+        case SyntaxKind::StringLiteral: {
+            out << node.as<StringLiteral>()->text;
             break;
         }
         case SyntaxKind::QualifiedName: {
@@ -119,7 +128,11 @@ template <typename OUT> class Printer
             forEachChildPrint(parameterDeclaration->dotDotDotToken);
             forEachChildPrint(parameterDeclaration->name);
             forEachChildPrint(parameterDeclaration->questionToken);
+            if (parameterDeclaration->type)
+                out << " : ";
             forEachChildPrint(parameterDeclaration->type);
+            if (parameterDeclaration->initializer)
+                out << " = ";
             forEachChildPrint(parameterDeclaration->initializer);
             break;
         }
@@ -154,12 +167,15 @@ template <typename OUT> class Printer
             break;
         }
         case SyntaxKind::VariableDeclaration: {
+            auto variableDeclaration = node.as<VariableDeclaration>();
             forEachChildrenPrint(node->decorators);
             forEachChildrenPrint(node->modifiers);
-            auto variableDeclaration = node.as<VariableDeclaration>();
             forEachChildPrint(variableDeclaration->name);
             forEachChildPrint(variableDeclaration->exclamationToken);
+            if (variableDeclaration->type)
+                out << " : ";
             forEachChildPrint(variableDeclaration->type);
+            out << " = ";
             forEachChildPrint(variableDeclaration->initializer);
             break;
         }
@@ -188,6 +204,7 @@ template <typename OUT> class Printer
                 forEachChildPrint(signatureDeclarationBase->questionToken);
             forEachChildrenPrint(signatureDeclarationBase->typeParameters, "<", ", ", ">", true);
             forEachChildrenPrint(signatureDeclarationBase->parameters, "(", ", ", ")");
+            out << " => ";
             forEachChildPrint(signatureDeclarationBase->type);
             break;
         }
@@ -328,6 +345,7 @@ template <typename OUT> class Printer
             auto propertyAccessExpression = node.as<PropertyAccessExpression>();
             forEachChildPrint(propertyAccessExpression->expression);
             forEachChildPrint(propertyAccessExpression->questionDotToken);
+            out << ".";
             forEachChildPrint(propertyAccessExpression->name);
             break;
         }
@@ -335,7 +353,9 @@ template <typename OUT> class Printer
             auto elementAccessExpression = node.as<ElementAccessExpression>();
             forEachChildPrint(elementAccessExpression->expression);
             forEachChildPrint(elementAccessExpression->questionDotToken);
+            out << "[";
             forEachChildPrint(elementAccessExpression->argumentExpression);
+            out << "]";
             break;
         }
         case SyntaxKind::CallExpression: {
@@ -437,12 +457,22 @@ template <typename OUT> class Printer
         }
         case SyntaxKind::Block:
         case SyntaxKind::ModuleBlock: {
-            forEachChildrenPrint(node.as<Block>()->statements);
+            newLine();
+            out << "{";
+            incIndent();
+            newLine();
+            
+            forEachChildrenPrint(node.as<Block>()->statements, nullptr, ";\n", ";\n");
+            
+            decIndent();
+            newLine();
+            out << "}";
+            newLine();            
             break;
         }
         case SyntaxKind::SourceFile: {
             auto sourceFile = node.as<SourceFile>();
-            forEachChildrenPrint(sourceFile->statements);
+            forEachChildrenPrint(sourceFile->statements, nullptr, "\n", nullptr);
             forEachChildPrint(sourceFile->endOfFileToken);
             break;
         }
@@ -453,7 +483,23 @@ template <typename OUT> class Printer
             break;
         }
         case SyntaxKind::VariableDeclarationList: {
-            forEachChildrenPrint(node.as<VariableDeclarationList>()->declarations);
+            auto variableDeclarationList = node.as<VariableDeclarationList>();
+
+            auto isLet = (variableDeclarationList->flags & NodeFlags::Let) == NodeFlags::Let;
+            auto isConst = (variableDeclarationList->flags & NodeFlags::Const) == NodeFlags::Const;
+            auto isExternal = (variableDeclarationList->flags & NodeFlags::Ambient) == NodeFlags::Ambient;
+            auto isVar = !isExternal && !isLet && !isConst;
+
+            if (isExternal)
+                out << "export ";
+            if (isLet)
+                out << "let ";
+            if (isConst)
+                out << "const ";
+            if (isVar)
+                out << "var ";
+
+            forEachChildrenPrint(variableDeclarationList->declarations);
             break;
         }
         case SyntaxKind::ExpressionStatement: {
@@ -511,7 +557,11 @@ template <typename OUT> class Printer
             break;
         }
         case SyntaxKind::ReturnStatement: {
-            forEachChildPrint(node.as<ReturnStatement>()->expression);
+            out << "return";
+            auto returnStatement = node.as<ReturnStatement>();
+            if (returnStatement->expression)
+                out << " ";
+            forEachChildPrint(returnStatement->expression);
             break;
         }
         case SyntaxKind::WithStatement: {
@@ -878,7 +928,7 @@ template <typename OUT> class Printer
             break;
         }
         case SyntaxKind::JSDocTypedefTag: {
-            auto jsDocTypedefTag =  node.as<JSDocTypedefTag>();
+            auto jsDocTypedefTag = node.as<JSDocTypedefTag>();
             forEachChildPrint(node.as<JSDocTag>()->tagName);
             if (jsDocTypedefTag->typeExpression && jsDocTypedefTag->typeExpression == SyntaxKind::JSDocTypeExpression)
             {
@@ -943,9 +993,62 @@ template <typename OUT> class Printer
             forEachChildPrint(node.as<PartiallyEmittedExpression>()->expression);
             break;
         }
+        case SyntaxKind::TrueKeyword:
+        case SyntaxKind::FalseKeyword:
+        case SyntaxKind::NullKeyword: {
+            out << Scanner::tokenStrings[node->_kind];
+            break;
+        }
+        case SyntaxKind::EqualsToken:
+        case SyntaxKind::EqualsEqualsToken:
+        case SyntaxKind::EqualsGreaterThanToken:
+        case SyntaxKind::PlusToken: {
+            out << " " << Scanner::tokenStrings[node->_kind] << " ";
+            break;
+        }
+        case SyntaxKind::EndOfFileToken:
+            break;
         default:
             out << "[MISSING " << Scanner::tokenToText[node->_kind] << "]";
+            break;
         }
+    }
+
+    void printText(const char* text)
+    {
+        if (text)
+        {
+            std::string s(text);
+            auto end = s.length() - 1;
+            if (s.at(end) == '\n')
+            {
+                out << s.substr(0, end).c_str();
+                newLine();
+            }
+            else
+            {
+                out << text;
+            }
+        }
+    }
+
+    void newLine()
+    {
+        out << std::endl;
+        for (auto i = 0; i < ident; i++)
+        {
+            out << "\t";
+        }
+    }
+
+    void incIndent()
+    {
+        ident++;
+    }
+
+    void decIndent()
+    {
+        ident--;
     }
 };
 

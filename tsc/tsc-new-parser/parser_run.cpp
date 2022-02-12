@@ -34,10 +34,10 @@ void printParser(const wchar_t *fileName, const wchar_t *str, boolean showLineCh
     ts::FuncT<> visitNode;
     ts::ArrayFuncT<> visitArray;
 
-    auto intent = 0;
+    auto indent = 0;
 
     visitNode = [&](ts::Node child) -> ts::Node {
-        for (auto i = 0; i < intent; i++)
+        for (auto i = 0; i < indent; i++)
         {
             std::cout << "\t";
         }
@@ -57,9 +57,9 @@ void printParser(const wchar_t *fileName, const wchar_t *str, boolean showLineCh
                       << child->_end << " ]" << std::endl;
         }
 
-        intent++;
+        indent++;
         ts::forEachChild(child, visitNode, visitArray);
-        intent--;
+        indent--;
 
         return undefined;
     };
