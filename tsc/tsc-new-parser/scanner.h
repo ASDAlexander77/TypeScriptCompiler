@@ -194,13 +194,16 @@ static auto parsePseudoBigInt(string stringValue) -> string
 
 class Scanner
 {
-  private:
+  public:    
     static std::map<string, SyntaxKind> textToKeyword;
 
     static std::map<string, SyntaxKind> textToToken;
 
     static std::map<SyntaxKind, string> tokenToText;
 
+    static std::map<SyntaxKind, string> tokenStrings;
+
+  private:
     static std::vector<number> unicodeES3IdentifierStart;
 
     static std::vector<number> unicodeES3IdentifierPart;
@@ -212,8 +215,6 @@ class Scanner
     static std::vector<number> unicodeESNextIdentifierStart;
 
     static std::vector<number> unicodeESNextIdentifierPart;
-
-    static std::map<SyntaxKind, string> tokenStrings;
 
     static regex commentDirectiveRegExSingleLine;
 

@@ -9,7 +9,7 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/../../__build/tsc/tsc-new-parser/Debug/tsc-new-parser.exe",
-            "args": ["c:/temp/2.ts", "--line"],
+            "args": ["c:/temp/1.ts", "--source"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],

@@ -21,6 +21,7 @@ namespace fs = std::experimental::filesystem;
 #include "file_helper.h"
 #include "parser.h"
 #include "utilities.h"
+#include "dump.h"
 
 using namespace ts;
 
@@ -75,6 +76,15 @@ void printParser(const wchar_t *fileName, const wchar_t *str, boolean showLineCh
     auto result = ts::forEachChild(sourceFile.as<ts::Node>(), visitNode, visitArray);
 }
 
+void print(const wchar_t *fileName, const wchar_t *str, boolean showLineCharPos)
+{
+    ts::Parser parser;
+    // auto sourceFile = parser.parseSourceFile(S("function f() { let i = 10; }"), ScriptTarget::Latest);
+    auto sourceFile = parser.parseSourceFile(fileName, str, ScriptTarget::Latest);
+
+    printNode(sourceFile);    
+}
+
 boolean hasOption(int argc, char **args, const char *option)
 {
     for (auto i = 1; i < argc; i++)
@@ -115,16 +125,33 @@ int main(int argc, char **args)
 {
     if (argc > 1)
     {
+        auto hasLine = hasOption(argc, args, "--line");
+        auto hasSource = hasOption(argc, args, "--source");
+
         auto file = firstNonOption(argc, args);
         auto exists = file != nullptr && fs::exists(file);
         if (exists)
         {
             auto str = readFile(std::string(file));
-            printParser(ctow(file).c_str(), str.c_str(), hasOption(argc, args, "--line"));
+            if (hasSource)
+            {
+                print(ctow(file).c_str(), str.c_str(), hasLine);
+            }
+            else
+            {
+                printParser(ctow(file).c_str(), str.c_str(), hasLine);
+            }
         }
         else
         {
-            printParser(S(""), ctow(file).c_str(), hasOption(argc, args, "--line"));
+            if (hasSource)
+            {
+                print(S(""), ctow(file).c_str(), hasLine);
+            }
+            else
+            {
+                printParser(S(""), ctow(file).c_str(), hasLine);
+            }
         }
     }
 
