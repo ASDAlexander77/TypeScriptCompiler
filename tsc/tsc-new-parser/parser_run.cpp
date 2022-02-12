@@ -82,7 +82,7 @@ void print(const wchar_t *fileName, const wchar_t *str, boolean showLineCharPos)
     // auto sourceFile = parser.parseSourceFile(S("function f() { let i = 10; }"), ScriptTarget::Latest);
     auto sourceFile = parser.parseSourceFile(fileName, str, ScriptTarget::Latest);
 
-    printNode(sourceFile);    
+    print(sourceFile);    
 }
 
 boolean hasOption(int argc, char **args, const char *option)
