@@ -130,7 +130,7 @@ class FunctionParamDOM : public VariableDeclarationDOM
 
     FunctionParamDOM(StringRef name, mlir::Type type, mlir::Location loc, bool isOptional = false, bool isMultiArgs = false,
                      Expression initValue = undefined, Node bindingPattern = undefined)
-        : VariableDeclarationDOM(name, type, loc, initValue), isOptional(isOptional), isMultiArgs(isMultiArgs),
+        : VariableDeclarationDOM(name, type, loc, initValue), processed(false), isOptional(isOptional), isMultiArgs(isMultiArgs),
           bindingPattern(bindingPattern)
     {
     }
@@ -155,6 +155,8 @@ class FunctionParamDOM : public VariableDeclarationDOM
     {
         return c->getKind() == Base_FunctionParam;
     }
+
+    bool processed;
 
   private:
     bool isOptional;
